@@ -1,5 +1,5 @@
 // The PERSONAL card: "@handle called YES at 38%". Same brand frame as the
-// market card — chunky black outline, white fill, the two ghost eyes, one blue
+// market card — chunky black outline, white fill, the two ghost eyes, one lime
 // accent — because on a timeline the two must read as the same product. What
 // changes is the story: the market card states a question; this one states a
 // POSITION someone took on it, and (once resolved) whether they were right.
@@ -37,7 +37,7 @@ export function renderPositionCard(s: ShareCall): string {
   const markW = isResolved ? 34 : 0; // room for the drawn mark
   const pillW = Math.round(textWidth(pillText, 21) + 44 + markW);
   const pillX = PAD_R - pillW;
-  const pillBg = !isResolved ? C.pill : won ? C.blue : C.barBg;
+  const pillBg = !isResolved ? C.pill : won ? C.accent : C.barBg;
   const pillFg = !isResolved ? C.muted : C.ink;
   const markX = pillX + pillW - 40;
   const mark = !isResolved
@@ -47,7 +47,7 @@ export function renderPositionCard(s: ShareCall): string {
       : `<path d="M ${markX + 2} 88 l 16 16 M ${markX + 18} 88 l -16 16" stroke="${C.muted}" stroke-width="5" fill="none" stroke-linecap="round"/>`;
 
   // Kicker: whose call. Hero: the call itself. The number keeps the brand's
-  // near-black + white outline; the side is the blue accent.
+  // near-black + white outline; the side is the lime accent.
   const kicker = `@${s.handle} called`;
   const heroText = `${s.side.toUpperCase()} · ${s.entryPct}%`;
   let heroFS = 130;
@@ -79,7 +79,7 @@ export function renderPositionCard(s: ShareCall): string {
 
   <text font-size="${q.fs}" font-weight="600" fill="${C.ink}">${questionTspans}</text>
 
-  <text x="${PAD_L}" y="${kickerBaseline}" font-size="${KICKER_FS}" font-weight="600" fill="${C.blue}">${esc(kicker)}</text>
+  <text x="${PAD_L}" y="${kickerBaseline}" font-size="${KICKER_FS}" font-weight="600" fill="${C.accent}">${esc(kicker)}</text>
   <text x="${PAD_L}" y="${HERO_BASE}" font-size="${heroFS}" font-weight="700" fill="${C.number}"
         stroke="${C.white}" stroke-width="9" paint-order="stroke" stroke-linejoin="round">${esc(heroText)}</text>
 

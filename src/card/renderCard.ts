@@ -2,7 +2,7 @@ import { Market } from "../venues/types.js";
 import { logoMark } from "./logoMark.js";
 
 // The card IS Oddie talking. Logo language: chunky black rounded outline,
-// white fill, brand blue (#68C6FF), the two ghost eyes as the one playful
+// white fill, brand lime (#B6F05F), the two ghost eyes as the one playful
 // signature. Super simple: one hero number, one colour, lots of air.
 // No venue named — just Oddie brand + normalized volume as the trust signal.
 //
@@ -15,12 +15,12 @@ import { logoMark } from "./logoMark.js";
 // positioned relative to each other rather than to magic numbers.
 
 export const C = {
-  blue: "#68C6FF",
+  accent: "#B6F05F", // brand lime (the var kept its name; the value is Oddie green)
   ink: "#000000",
-  number: "#141414", // the hero number's fill; near-black so it reads on blue and white alike
+  number: "#141414", // the hero number's fill; near-black so it reads on lime and white alike
   white: "#FFFFFF",
   muted: "#6B7A88",
-  pill: "#EAF6FF",
+  pill: "#F3FBDA",
   barBg: "#E7EDF2",
 };
 
@@ -260,7 +260,7 @@ export function renderCard(m: Market): string {
   <!-- hero number: near-black with a thin white outline, matching the feed. On the
        card's white ground the outline is invisible, so it reads as a solid black
        number; the same treatment over the feed's blue fill shows the white halo. -->
-  <text x="${PAD_L}" y="${kickerBaseline}" font-size="${KICKER_FS}" font-weight="600" fill="${C.blue}">yes</text>
+  <text x="${PAD_L}" y="${kickerBaseline}" font-size="${KICKER_FS}" font-weight="600" fill="${C.accent}">yes</text>
   <text x="${PAD_L}" y="${HERO_BASE}" font-size="${heroFS}" font-weight="700" fill="${C.number}"
         stroke="${C.white}" stroke-width="9" paint-order="stroke" stroke-linejoin="round">${heroText}</text>
 
@@ -268,7 +268,7 @@ export function renderCard(m: Market): string {
   ${balanced ? `<rect x="${PAD_R - badgeW}" y="346" width="${badgeW}" height="40" rx="20" fill="${C.white}" stroke="${C.ink}" stroke-width="3"/>
   <text x="${PAD_R - badgeW / 2}" y="372" font-family="${META}" font-size="20" font-weight="800"
         fill="${C.ink}" text-anchor="middle">${badgeText}</text>` : ""}
-  <text x="${PAD_R}" y="${OFFER_BASE}" font-size="${OFFER_FS}" font-weight="600" fill="${C.blue}"
+  <text x="${PAD_R}" y="${OFFER_BASE}" font-size="${OFFER_FS}" font-weight="600" fill="${C.accent}"
         stroke="${C.ink}" stroke-width="2.5" paint-order="stroke" stroke-linejoin="round"
         text-anchor="end">${offerText}</text>
   <text x="${arrowX - 12}" y="${HERO_BASE}" font-family="${META}" font-size="23" font-weight="800"

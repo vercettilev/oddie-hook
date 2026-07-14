@@ -1,11 +1,11 @@
 {
-  "name": "poppin",
-  "short_name": "poppin",
-  "description": "bet, don't argue — swipe the feed, pick a side, one tap.",
+  "name": "oddie",
+  "short_name": "oddie",
+  "description": "tag oddie. get the market — swipe the feed, pick a side, one tap.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#EAF6FF",
-  "theme_color": "#68C6FF",
+  "background_color": "#F3FBDA",
+  "theme_color": "#B6F05F",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
