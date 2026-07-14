@@ -1,0 +1,2131 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>oddie</title>
+<meta name="color-scheme" content="light dark">
+<!-- Favicon + touch/PWA icons. Absolute paths: oddie.fun points straight at this
+     Express service on Railway, which serves the icons from ./public. One origin,
+     no proxy in front, so a favicon can't 404 on a forgotten rewrite. -->
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>
+  /* Before any CSS is applied, so the page never flashes the wrong theme at
+     someone who chose dark. A stored choice wins; otherwise follow the system.
+     Wrapped because private browsing can throw on localStorage access. */
+  (function(){
+    var t=null; try{ t=localStorage.getItem("oddie_theme"); }catch(e){}
+    var dark = t==="dark" || (t!=="bright" && matchMedia("(prefers-color-scheme:dark)").matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "bright";
+    /* Experimental theme, PARAM-ONLY. ?theme=lime renders this one page load
+       with the lime accent + ghost logo; nothing is stored, so any link without
+       the param is the real brand. (Also scrubs the short-lived persisted
+       preview an earlier build wrote, so no browser stays accidentally limed.) */
+    try{
+      localStorage.removeItem("oddie_brand");
+      if(new URLSearchParams(location.search).get("theme")==="lime")
+        document.documentElement.dataset.brand="lime";
+    }catch(e){}
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
+
+  /* Two families of colour, and the whole dark theme is the line between them.
+   *
+   * SURFACE tokens paint the things that carry the brand: a white fill inside a
+   * chunky black outline. `--white`, `--ink`, `--wash`, `--bar`, `--blue` and
+   * `--muted` belong to that family and DO NOT MOVE between themes. The YES/NO
+   * rows, the tiles, the picker, the sheets and the desktop frame are all made
+   * of them, so they look identical in both themes — which is the point. The
+   * shared card on X is white with a black outline, and the app agrees with it.
+   *
+   * GROUND tokens paint what is behind and around those objects: the page, the
+   * header, the tab bar, the rail, and any text that sits directly on them with
+   * no surface underneath. Only these change.
+   *
+   * A rule that reaches for `--muted` inside a white tile is right. A rule that
+   * reaches for it on the ground is a bug in dark mode — that is what `--muted-g`
+   * is for. */
+  :root{--blue:#68C6FF;--ink:#000;--white:#fff;--muted:#6B7A88;--wash:#EAF6FF;--bar:#E7EDF2;
+    --acc-deep:#14607f; --acc-mid:#2b7aa0; --acc-deeper:#0d4c6b;
+    /* ground, bright */
+    --ground:#fff; --ground-wide:#EAF6FF; --ground-2:#fff; --fade:#fff;
+    --on-ground:#000; --muted-g:#6B7A88; --line-g:#000; --hair-g:#E7EDF2;
+    --chip-bg:#fff; --chip-bd:#D3E9F7; --link-g:#2b7aa0;
+    --dots:rgba(11,58,86,.07);
+    --mark:url("data:image/png;base64,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"); /* the oddie mark, inlined so the mark never depends on a path resolving across origins */
+    --col:560px;      /* the card column, shared by the header and the cards */
+    --rail:248px;     /* desktop left nav */
+    --tabh:62px}      /* mobile bottom tab bar */
+
+  /* Deep, slightly warm near-black. Not #000: pure black next to a 4px pure-black
+   * outline erases the outline, and the outline IS the brand. The ground has to
+   * be dark enough that a white card reads as lit, and far enough from the ink
+   * that the ink still draws. */
+  /* Setting a ground colour on <body> poisons every surface that never declared
+   * its own: a white tile inherited near-white text and its question vanished.
+   * Surfaces carry the ink, always, in both themes. If you add a boxed element,
+   * add it here — the audit checks contrast on the ones that exist. */
+  .orow,.tile,.stat,.rep,.acct,.picker,.csheet,.seg,.segb,.promo,.lb,.bal,
+  .cbtn,.amt,.amt-in,.confirm,.pcancel,.sellbtn,.avatar{color:var(--ink)}
+  .cbtn.x{color:#fff}
+
+  :root[data-theme="dark"]{
+    --ground:#17141C; --ground-wide:#110F16; --ground-2:#1D1924; --fade:#17141C;
+    --on-ground:#F3EFF6; --muted-g:#9C93AC; --line-g:#332C40; --hair-g:#2A2434;
+    --chip-bg:transparent; --chip-bd:#3A3348; --link-g:#7FD0FF;
+    --dots:rgba(255,255,255,.05);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{margin:0;background:var(--ground);color:var(--on-ground);font-family:'Fredoka',system-ui,sans-serif;overscroll-behavior:none}
+
+  /* ---------------------------------------------------------------- shell -- */
+  /* Mobile is one column and nothing else: `display:contents` dissolves the app
+     grid and the frame, so .top keeps floating over a full-bleed scroller exactly
+     as it always has. The desktop rules below are the only thing that assembles
+     a rail / frame / aside layout out of the same markup. */
+  .app,.frame{display:contents}
+  .rail,.side,.watermark{display:none}
+
+  .top{position:fixed;top:0;left:0;right:0;z-index:15;
+    padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;background:var(--ground-2)}
+  /* Only the feed wants the fade — a card runs edge to edge under it. The shells
+     are lists, and a list sliding under a translucent gradient just looks broken. */
+  body[data-view="feed"] .top{background:linear-gradient(var(--fade) 72%, transparent)}
+  body:not([data-view="feed"]) .top{border-bottom:2.5px solid var(--hair-g)}
+  .top-in{max-width:var(--col);margin:0 auto;padding:0 6px}
+  .brand{display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:10px}
+  .brand b{font-size:21px;font-weight:600}
+
+  /* The mark IS the logo now — its blue circle and eyes are baked into the art,
+     so the element is just a sized, clipped surface painting --mark. */
+  .ghost{width:30px;height:30px;border-radius:50%;background:var(--mark) center/contain no-repeat;flex:none}
+  /* A bigger centred mark for the taste interstitials (gate / not-listed). */
+  .gmark{width:60px;height:60px;margin:0 auto 14px;background:var(--mark) center/contain no-repeat}
+
+  .chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;font-family:'Nunito';font-weight:800;font-size:12px;padding:7px 13px;border-radius:999px;
+    border:2px solid var(--chip-bd);background:var(--chip-bg);color:var(--muted-g);cursor:pointer;white-space:nowrap}
+  .chip.on{color:#000;border-color:var(--blue);background:var(--wash)}
+
+  /* The scroller is the feed when it snaps and a plain page when it doesn't. */
+  .scroller{height:100dvh;overflow-y:auto;scrollbar-width:none}
+  .scroller::-webkit-scrollbar{display:none}
+  .scroller.snap{scroll-snap-type:y mandatory}
+  .state{height:100%;display:flex;align-items:center;justify-content:center;
+    font-family:'Nunito';font-weight:800;color:var(--muted-g);text-align:center;padding:24px}
+
+  /* ------------------------------------------------------------------ feed -- */
+  .card{height:100%;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:flex-end;
+    padding:110px 22px calc(env(safe-area-inset-bottom) + var(--tabh) + 16px);position:relative;
+    max-width:var(--col);margin:0 auto}
+  .cat{align-self:flex-start;font-family:'Nunito';font-weight:800;font-size:12px;padding:6px 12px;
+    border-radius:999px;background:var(--wash);color:var(--acc-mid);margin-bottom:auto}
+  .meta{font-family:'Nunito';font-weight:700;font-size:14px;color:var(--muted-g);margin-bottom:14px}
+  .pshare{font-family:'Nunito';font-weight:800;font-size:11.5px;color:#000;background:var(--blue);
+    border:2px solid #000;border-radius:999px;padding:3px 12px;margin-left:8px;cursor:pointer;vertical-align:1px}
+  .waitcta{display:inline-block;font-family:'Fredoka';font-weight:600;font-size:14px;color:#000;
+    background:var(--blue);border:3px solid #000;border-radius:16px;padding:9px 15px;
+    text-decoration:none;box-shadow:0 3px 0 rgba(0,0,0,.16)}
+  /* the post-call belonging line */
+  .socline{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--link-g);margin-top:7px}
+  .take{font-size:min(28px,7vw);font-weight:600;line-height:1.15;color:var(--on-ground);margin:0 0 14px}
+  .social{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:12px 0 0;min-height:16px}
+  /* the 5s undo window after a one-tap call: undo is a real button, change-amount a quiet link */
+  .social .undo{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--ink);
+    background:var(--wash);border:2.5px solid var(--ink);border-radius:999px;
+    padding:4px 13px;margin-left:8px;cursor:pointer;font-variant-numeric:tabular-nums}
+  .social .undo:active{transform:scale(.96)}
+  .social .chgamt{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--link-g);
+    background:none;border:0;padding:4px 2px;margin-left:10px;cursor:pointer;
+    text-decoration:underline;text-underline-offset:3px}
+
+  /* ---- taste-flow interstitials: the category picker and the sign-in gate.
+     Same card surface, but content is centred instead of bottom-anchored, so a
+     step in the feed reads as a moment, not a market. Both themes inherit the
+     card tokens above. */
+  .intercard{justify-content:center;align-items:center;text-align:center;gap:0}
+  .ititle{font-family:'Fredoka';font-weight:600;font-size:min(26px,6.6vw);line-height:1.15;
+    color:var(--on-ground);margin:0 0 8px}
+  .isub{font-family:'Nunito';font-weight:700;font-size:13.5px;color:var(--muted-g);margin:0 0 22px}
+  .tchips{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:0 0 26px;max-width:340px}
+  .tchip{font-family:'Nunito';font-weight:800;font-size:15px;padding:11px 18px;border-radius:999px;
+    border:2.5px solid var(--chip-bd);background:var(--chip-bg);color:var(--on-ground);cursor:pointer;
+    transition:transform .08s}
+  .tchip:active{transform:scale(.96)}
+  .tchip.on{color:#000;border-color:var(--blue);background:var(--blue)}
+  .icont{font-family:'Fredoka';font-weight:600;font-size:16px;color:#000;background:var(--blue);
+    border:3px solid #000;border-radius:16px;padding:12px 30px;cursor:pointer;
+    box-shadow:0 4px 0 rgba(0,0,0,.22)}
+  .icont:disabled{opacity:.4;box-shadow:none;cursor:default}
+  .gatecard .cbtn{max-width:320px}
+
+  /* The odds, both of them. A lone giant "60%" made the reader derive the other
+     side, and a "win 1.7×" stranded on a button 200px away made them pair the two
+     halves of one fact back together. Each row is now one side's whole story, in
+     reading order: which side, how likely, what it pays.
+
+     The row IS the bar. A separate split bar above said the same thing twice, so
+     it folded into the rows: each one fills to its own percentage, and the number
+     sits on top of the fill it describes. `--fill` comes in per-card, inline. */
+  .duel{display:flex;flex-direction:column;gap:11px}
+  .orow{--fill:0%;
+    display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;
+    width:100%;text-align:left;padding:10px 18px 12px;border-radius:22px;border:4px solid #000;
+    background:linear-gradient(90deg, var(--blue) var(--fill), #fff var(--fill));
+    cursor:pointer;transition:.12s;font-family:inherit}
+  .orow:active{transform:scale(.985)}
+  .orow:disabled{cursor:default}
+  .oside{font-size:21px;font-weight:600;color:#000;width:46px}
+  /* The number straddles the fill line, so it must read on the blue AND the white
+     at once. A near-black fill does exactly that — 10:1 on the blue, 18:1 on the
+     white — and a thin WHITE outline (paint-order:stroke fill, so it sits behind
+     the fill as a halo) separates the black from the blue where they meet. Over
+     the white half that halo is invisible, so the digit is a uniform black
+     everywhere: nothing to shimmer on the seam, no pill to patch it. Holds at 4%
+     and 94%, both themes. The shared SVG card uses the same treatment. */
+  .opct{justify-self:center;
+    font-size:min(50px,13vw);font-weight:700;line-height:1;letter-spacing:-.01em;
+    color:#141414;-webkit-text-stroke:3px #fff;paint-order:stroke fill;
+    font-variant-numeric:tabular-nums;text-align:center}
+  .opay{font-family:'Nunito';font-weight:800;font-size:13.5px;color:var(--acc-deep);white-space:nowrap}
+  /* Picked: the row goes solid, overriding the gradient rather than --fill, which
+     arrives inline and would win. */
+  .orow.pick{background:var(--blue)}
+  .orow.dim{opacity:.35}
+  /* On a dark ground the same .35 turns a white row into mud. It has to read as
+     "the side you didn't take", not as a rendering fault. */
+  :root[data-theme="dark"] .orow.dim{opacity:.55}
+
+  /* ----------------------------------------------------- experimental theme --
+   * ?theme=lime, param-only: lives exactly as long as the URL carries it.
+   * No storage, no default change, and shared cards never read any of this. */
+  [data-brand="lime"] .ghost{border-radius:0;background:transparent;border:0;
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><path d=%22M32 5 C17 5 9 17 9 30 L9 53 L15 47.5 L21 54 L27 47.5 L33 54 L39 47.5 L45 54 L51 47.5 L55 52 L55 30 C55 17 47 5 32 5 Z%22 fill=%22white%22 stroke=%22black%22 stroke-width=%225%22 stroke-linejoin=%22round%22/><circle cx=%2235%22 cy=%2227%22 r=%224%22 fill=%22black%22/><circle cx=%2246%22 cy=%2227%22 r=%224%22 fill=%22black%22/><path d=%22M36 38 Q43 43 49 36%22 stroke=%22black%22 stroke-width=%224.5%22 fill=%22none%22 stroke-linecap=%22round%22/></svg>');background-size:contain;background-repeat:no-repeat;background-position:center;
+    width:30px;height:30px}
+  [data-brand="lime"] .ghost::before,[data-brand="lime"] .ghost::after{display:none}
+
+  /* Full rebrand: lime replaces the blue accent system. PLACEHOLDER GREEN —
+   * swap --blue here for the exact hex extracted from the logo. */
+  [data-brand="lime"]{
+    --blue:#C6F53C; --wash:#F3FBDA;
+    --acc-deep:#4d6e10; --acc-mid:#5d8318; --acc-deeper:#3c570b;
+    --link-g:#55781a; --chip-bd:#DDF0B0; --dots:rgba(64,90,10,.08);
+    --ground-wide:#F4FBE3;
+  }
+  /* On near-black the same lime goes muddy; push it electric. */
+  [data-theme="dark"][data-brand="lime"]{
+    --blue:#D4FF4D; --wash:#EFFFC2;
+    --acc-deep:#a8d84a; --acc-mid:#b7e558; --acc-deeper:#c8f06a;
+    --link-g:#CDF56B; --chip-bd:#4a5a20; --dots:rgba(214,255,90,.05);
+  }
+  [data-theme="dark"][data-brand="lime"] .topup{color:#8aa63a}
+  [data-theme="dark"][data-brand="lime"] .bal{color:#000}
+
+  /* In the flow, under the buttons. Floated above them it landed in the same strip
+     as the "You bet 10 → win 32 tokens" line and sat on top of it. Kept in the
+     layout at opacity 0 so nothing reflows when it fades in. */
+  /* balance pill — small and friendly, never a dollar sign anywhere near it */
+  .bal{margin-left:8px;font-family:'Nunito';font-weight:800;font-size:13.5px;
+    padding:4px 11px;border:2.5px solid var(--ink);border-radius:999px;
+    background:var(--wash);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .bal.pulse{animation:balpulse .45s ease}
+
+  /* One tap, bright<->dark, always in the top bar — no menu, no label. It shows the
+     mode you'll GET: a moon in bright, a sun in dark. "Auto" still lives in Profile
+     for people who want to follow the system; tapping here just commits a choice. */
+  .themetog{width:34px;height:34px;flex:none;margin-left:8px;padding:0;
+    display:inline-flex;align-items:center;justify-content:center;
+    border-radius:50%;border:2.5px solid var(--line-g);background:transparent;
+    color:var(--on-ground);cursor:pointer}
+  .themetog svg{width:18px;height:18px;stroke:currentColor;fill:none;
+    stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .themetog:hover{background:var(--ground-2)}
+  .themetog:active{transform:scale(.92)}
+
+  /* Zero-balance nudge: reframes the wait so a busted device reads as "resting",
+     not "locked out". A light wash surface, so it holds in both themes. */
+  .znote{background:var(--wash);border:2.5px solid var(--blue);border-radius:16px;
+    padding:12px 14px;margin-bottom:16px;font-family:'Nunito';font-weight:700;
+    font-size:13px;line-height:1.45;color:var(--ink)}
+  .znote b{font-weight:800}
+
+  /* positions: reputation, live tracking, the sell button */
+  .rep{display:flex;align-items:center;gap:14px;border:3px solid #000;border-radius:22px;
+    background:var(--wash);padding:14px 16px;margin-bottom:16px}
+  /* The score is allowed to be red. That is the whole point of measuring it. */
+  .repnum{font-size:30px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums;flex:none}
+  .repwho{display:flex;flex-direction:column;gap:2px;font-family:'Nunito';font-size:12.5px;color:var(--muted);font-weight:700}
+  .repwho b{font-family:'Baloo 2','Nunito',sans-serif;font-size:15px;color:#000;font-weight:700}
+  .prov{margin-left:6px;font-weight:800;color:#8a6d1f}
+  .prov.done{color:var(--muted)}
+  .cats{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+  .catedge{font-weight:800;font-size:11px;padding:3px 8px;border-radius:999px;border:2px solid var(--bar);background:#fff}
+  .up{color:#0f7b3d} .down{color:#b3261e} .flat{color:var(--muted)}
+  .catedge.up{border-color:#bfe6cd} .catedge.down{border-color:#f0c6c2}
+  .psec{font-size:14px;font-weight:700;margin:20px 0 10px;color:var(--muted-g);
+    font-family:'Nunito';font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+  .track{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.45}
+  .track b{font-weight:800}
+  .sellbtn{font:inherit;font-weight:700;font-size:15px;width:100%;margin-top:11px;padding:10px 0;cursor:pointer;
+    border:3px solid var(--ink);border-radius:14px;background:var(--white)}
+  .sellbtn:hover{background:var(--wash)}
+  .sellbtn:disabled{opacity:.55;cursor:default}
+  /* Honest, non-clickable replacement for the Sell button when a retry is pointless. */
+  .sellnote{font-family:'Nunito';font-weight:700;font-size:12.5px;line-height:1.4;color:var(--muted-g);margin:11px 0 0}
+  /* The sell result — the close made visible, same beat as the locked call state.
+     Sits inside a white tile, so text is --ink; a tinted panel carries the tone. */
+  .sellresult{margin-top:12px;border:3px solid #000;border-radius:14px;padding:12px 14px;background:var(--wash);color:var(--ink)}
+  .sellresult.up{background:#e7f6ec;border-color:#0f7b3d} .sellresult.down{background:#fbe9e7;border-color:#b3261e}
+  .srtop{display:flex;align-items:center;justify-content:space-between}
+  .srtick{font-family:'Fredoka';font-weight:600;font-size:17px;color:var(--ink)}
+  .srdelta{font-family:'Fredoka';font-weight:700;font-size:19px;font-variant-numeric:tabular-nums}
+  .srdelta.up{color:#0f7b3d} .srdelta.down{color:#b3261e} .srdelta.flat{color:var(--muted)}
+  .srnums{font-family:'Nunito';font-weight:800;font-size:14px;color:var(--ink);margin-top:4px;font-variant-numeric:tabular-nums}
+  .srnums .up{color:#0f7b3d} .srnums .down{color:#b3261e} .srnums .flat{color:var(--muted)}
+  .srsub{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted);margin-top:5px}
+  .srdone{margin-top:10px;font-family:'Nunito';font-weight:800;font-size:13px;color:var(--ink);
+    border:2.5px solid #000;border-radius:999px;background:#fff;padding:6px 18px;cursor:pointer}
+  .srdone:active{transform:scale(.97)}
+  .tile.closed{background:var(--wash)}
+  .status.closed{color:var(--muted)}
+  /* The countdown rides inside the pill, quieter than the number it refills. */
+  .topup{font-weight:800;font-size:11px;color:var(--acc-mid);opacity:.85;margin-left:5px}
+
+  /* connect sheet — the only auth surface, and it is never in the way */
+  .bal{cursor:pointer}
+  .cdim{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:60;
+    display:flex;align-items:flex-end;justify-content:center}
+  .csheet{width:100%;max-width:var(--col);background:var(--white);
+    border:3px solid #000;border-radius:24px 24px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom) + 20px)}
+  @media (min-width:721px){ .cdim{align-items:center} .csheet{border-radius:24px} }
+  .csheet h3{font-size:22px;margin:0 0 6px;font-weight:700}
+  .csheet p{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.45}
+  .cbtn{font:inherit;font-weight:700;font-size:16px;width:100%;padding:13px 0;margin-bottom:10px;cursor:pointer;
+    border:3px solid var(--ink);border-radius:16px;background:var(--white);display:flex;align-items:center;justify-content:center;gap:9px}
+  .cbtn.x{background:#000;color:#fff}
+  .cbtn:disabled{opacity:.45;cursor:default}
+  .cbtn .glyph{font-weight:800;font-size:17px}
+  .cclose{font:inherit;font-weight:700;font-size:14px;width:100%;padding:9px 0;cursor:pointer;
+    border:0;background:none;color:var(--muted)}
+  .cnote{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);margin:2px 0 12px;line-height:1.4}
+  .csheet .cnote{color:var(--muted)}   /* inside a white sheet, the surface grey is right */
+
+  /* the one subtle line under a locked call */
+  .upsell{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--link-g);
+    background:none;border:0;padding:6px 0 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+  /* --- sharing ----------------------------------------------------------------
+   * Two entry points. The card icon is discovery ("check this out"); the button
+   * after a call locks is the wedge itself ("I called it — what do you say?").  */
+  /* cat chip on the left, share icon on the right; this row carries the
+     margin-bottom:auto that used to live on .cat, so the take still drops down. */
+  .chead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:auto}
+  .chead .cat{margin-bottom:0}
+  .shareico{width:38px;height:38px;flex:none;display:inline-flex;align-items:center;justify-content:center;
+    border-radius:50%;border:2.5px solid var(--line-g);background:var(--ground);
+    color:var(--on-ground);cursor:pointer;padding:0}
+  .shareico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .shareico:hover{background:var(--ground-2)}
+  .shareico:active{transform:scale(.9)}
+  /* The strong one: a solid blue call-to-action, on-brand, under the locked line. */
+  .sharebig{display:inline-flex;align-items:center;gap:8px;margin-top:10px;
+    font-family:'Fredoka';font-weight:600;font-size:14px;color:#000;
+    background:var(--blue);border:3px solid #000;border-radius:16px;padding:9px 15px;cursor:pointer;
+    box-shadow:0 3px 0 rgba(0,0,0,.16)}
+  .sharebig svg{width:17px;height:17px;stroke:#000;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .sharebig:active{transform:translateY(1px);box-shadow:0 2px 0 rgba(0,0,0,.16)}
+  /* Desktop fallback menu (no native share sheet). */
+  .sdim{position:fixed;inset:0;z-index:80}
+  .smenu{position:fixed;z-index:81;min-width:190px;background:var(--ground-2);
+    border:3px solid var(--line-g);border-radius:16px;padding:6px;
+    box-shadow:0 18px 44px rgba(13,60,90,.24)}
+  .smenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    font-family:'Nunito';font-weight:800;font-size:13.5px;color:var(--on-ground);
+    background:none;border:0;border-radius:11px;padding:10px 12px;cursor:pointer}
+  .smenu button:hover{background:var(--ground)}
+  .smenu svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .toast{position:fixed;left:50%;bottom:calc(var(--tabh) + 22px);transform:translateX(-50%);z-index:90;
+    background:#fff;color:#000;border:3px solid #000;border-radius:14px;padding:9px 15px;max-width:88vw;
+    font-family:'Nunito';font-weight:800;font-size:13px;box-shadow:0 8px 24px rgba(13,60,90,.2)}
+
+  /* the handle: who this stream is called */
+  .hrow{display:flex;align-items:center;gap:10px;border:3px solid #000;border-radius:22px;
+    background:var(--wash);padding:13px 16px;margin-bottom:12px;color:var(--ink)}
+  .hname{font-family:'Baloo 2','Nunito',sans-serif;font-weight:700;font-size:18px;flex:1;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hkind{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted);flex:none}
+  .hedit{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--acc-mid);background:none;border:0;
+    padding:4px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;flex:none}
+  .hin{flex:1;min-width:0;font-family:'Baloo 2','Nunito',sans-serif;font-weight:700;font-size:17px;
+    border:2.5px solid #000;border-radius:12px;padding:7px 11px;background:#fff;color:#000}
+  .hsave{font-family:'Fredoka';font-weight:600;font-size:13.5px;color:#000;background:var(--blue);
+    border:2.5px solid #000;border-radius:12px;padding:8px 13px;cursor:pointer;flex:none}
+  .herr{font-family:'Nunito';font-weight:800;font-size:12px;color:#b3261e;margin:-6px 4px 10px}
+
+  /* profile, once it is real */
+  .acct{display:flex;align-items:center;gap:12px;border:3px solid #000;border-radius:22px;
+    background:var(--wash);padding:14px 16px;margin-bottom:12px}
+  .acct .glyph{font-size:20px;font-weight:800;width:34px;height:34px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;border:2.5px solid #000;background:#fff;flex:none}
+  .acct .who{font-weight:700;font-size:15px}
+  .acct .kind{font-family:'Nunito';font-weight:800;font-size:11.5px;color:var(--muted)}
+
+  /* A three-way switch, built from the same outline the rest of the app is. */
+  .seg{display:flex;gap:0;border:3px solid var(--ink);border-radius:16px;overflow:hidden;background:var(--white);margin-bottom:10px}
+  .segb{flex:1;font:inherit;font-weight:700;font-size:14.5px;padding:11px 0;cursor:pointer;
+    border:0;border-right:3px solid var(--ink);background:var(--white);color:var(--ink)}
+  .segb:last-child{border-right:0}
+  .segb.on{background:var(--blue)}
+  @keyframes balpulse{40%{transform:scale(1.12)}}
+
+  /* amount picker: appears under the rows after a side is chosen.
+
+     `display:flex` here beats the UA's `[hidden]{display:none}` on specificity,
+     so the picker rendered on every card, always — 200px of form nobody asked
+     for, sitting in the column before a side was ever tapped. That one line
+     produced every symptom we chased: the card overflowed its own top and slid
+     the question under the sticky chips bar; the presets showed with none
+     selected, because `setAmt` only runs when a side is chosen; the payout line
+     was blank for the same reason; and Confirm sat there enabled, next to no
+     side and no amount. The `[hidden]` rule below is what `hidden` was always
+     supposed to mean. */
+  .picker{display:flex;flex-direction:column;gap:10px;margin-top:12px;
+    padding:12px;border:3px solid var(--ink);border-radius:18px;background:var(--wash)}
+  .picker[hidden]{display:none}
+  .amts{display:flex;gap:7px;flex-wrap:wrap}
+  .amt{font:inherit;font-weight:700;font-size:14.5px;padding:8px 0;flex:1 1 52px;
+    border:2.5px solid var(--ink);border-radius:12px;background:var(--white);cursor:pointer}
+  /* Pressed, not merely tinted: the fill alone read as decoration next to four
+     identical outlines, so the chosen preset also thickens and sinks. */
+  .amt.on{background:var(--blue);border-width:3.5px;box-shadow:inset 0 2px 0 rgba(0,0,0,.18)}
+  .amt-in{font:inherit;font-size:16px;font-weight:700;width:74px;padding:8px 10px;
+    border:2.5px solid var(--ink);border-radius:12px;background:var(--white);text-align:center}
+  .pline{font-family:'Nunito';font-weight:800;font-size:14px;color:var(--acc-deep);min-height:18px}
+  .pbtns{display:flex;gap:8px}
+  .confirm{font:inherit;font-weight:700;font-size:16px;flex:1;padding:11px 0;cursor:pointer;
+    border:3px solid var(--ink);border-radius:14px;background:var(--blue)}
+  .confirm:disabled{opacity:.4;cursor:default}
+  .pcancel{font:inherit;font-weight:700;width:46px;cursor:pointer;
+    border:3px solid var(--ink);border-radius:14px;background:var(--white)}
+  /* While the picker is open the card is a form, not a poster: the rows shrink
+     to make room so nothing escapes the card on a short phone, and the nudge
+     gets out of the way. Everything comes back the moment the picker closes. */
+  .card.picking .opct{font-size:30px;-webkit-text-stroke-width:2px}
+  .card.picking .orow{padding:6px 16px 8px}
+  .card.picking .oside{font-size:17px}
+  .card.picking .nudge{display:none}
+  /* Empty while picking — it only ever holds the locked line, and `picking` is
+     gone by the time that is written. Reserving its strip cost 28px of the one
+     thing the card cannot spare on a 640px-tall phone: room for the question. */
+  .card.picking .social{display:none}
+  /* The last 22px on an SE-sized screen. The numeral is the loudest thing on the
+     card and the least informative once you are choosing a stake. */
+  @media (max-height:680px){ .card.picking .opct{font-size:26px} }
+
+  .nudge{align-self:center;margin-top:14px;
+    font-family:'Nunito';font-weight:800;font-size:13px;color:var(--muted-g);opacity:0;transition:.3s;
+    pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:2px}
+  .nudge.show{opacity:1}
+  .nudge.show.hint{opacity:.72}   /* quieter than the one you earn by picking a side */
+  .nudge .arrow{font-size:18px;animation:bob 1s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  @media (prefers-reduced-motion:reduce){.nudge .arrow{animation:none}}
+
+  /* ----------------------------------------------------------------- shells -- */
+  .sheet{max-width:var(--col);margin:0 auto;
+    padding:calc(env(safe-area-inset-top) + 104px) 22px calc(env(safe-area-inset-bottom) + var(--tabh) + 28px)}
+  .head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .head h1{font-size:27px;font-weight:600;margin:0;color:var(--on-ground)}
+  .sub{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:0 0 20px}
+
+  /* Says what it is, everywhere it is. These screens read as finished on purpose;
+     the badge is the only thing standing between "shipped" and "mocked up". */
+  .preview{display:inline-flex;align-items:center;gap:5px;flex:none;
+    font-family:'Nunito';font-weight:800;font-size:11px;letter-spacing:.02em;
+    padding:5px 10px 5px 8px;border-radius:999px;border:2px solid #000;background:var(--blue);color:#000}
+  .preview::before{content:"";width:6px;height:6px;border-radius:50%;background:#000}
+
+  .tile{border:3px solid #000;border-radius:22px;background:#fff;padding:16px 16px;margin-bottom:12px}
+  .row{display:flex;align-items:center;gap:12px}
+  .grow{flex:1;min-width:0}
+  .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .num{font-family:'Nunito';font-weight:800;font-variant-numeric:tabular-nums}
+
+  /* profile */
+  .avatar{width:84px;height:84px;border-radius:50%;background:var(--blue);border:3px solid #000;position:relative;flex:none}
+  .avatar::before,.avatar::after{content:"";position:absolute;width:15px;height:15px;background:#000;border-radius:50%;top:31px}
+  .avatar::before{left:19px}.avatar::after{left:50px}
+  .handle{font-size:23px;font-weight:600}
+  .joined{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0 14px}
+  .stat{border:3px solid #000;border-radius:20px;padding:14px 10px;text-align:center;background:#fff}
+  .stat.hero{background:var(--blue)}
+  .stat .v{font-size:29px;font-weight:700;line-height:1}
+  .stat .k{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--acc-mid);margin-top:5px}
+  .stat.hero .k{color:var(--acc-deeper)}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:26px}
+  .badge{font-family:'Nunito';font-weight:800;font-size:12px;padding:7px 12px;border-radius:999px;
+    border:2px solid #000;background:var(--wash)}
+  .sect{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.06em;margin:0 0 10px}
+
+  /* positions */
+  /* Ink, not the inherited muted grey: #6B7A88 on the blue chip is 2.33:1, and
+     it always was — in both themes. Black on blue is what every other blue
+     element uses (.navitem.on, .amt.on). */
+  .side-chip{font-family:'Nunito';font-weight:800;font-size:12px;padding:5px 11px;border-radius:999px;
+    border:2px solid #000;flex:none;color:var(--ink)}
+  .side-chip.yes{background:var(--blue)} .side-chip.no{background:#fff}
+  .q{font-size:16px;font-weight:500;line-height:1.25;margin:0 0 10px}
+  .pmeta{display:flex;align-items:center;gap:8px;font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--muted)}
+  .dot{width:4px;height:4px;border-radius:50%;background:#C7D3DC;flex:none}
+  .status{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:var(--acc-mid);
+    background:var(--wash);border-radius:999px;padding:5px 10px}
+  .summary{display:flex;gap:10px;margin-bottom:16px}
+  .summary .tile{flex:1;margin:0;text-align:center;padding:13px 8px}
+  .summary .v{font-size:22px;font-weight:700;line-height:1}
+  .summary .k{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted);margin-top:4px}
+
+  /* Transaction history — closed positions as instantly-readable win/loss cards.
+     Same chunky-outline white surface as every tile; a coloured left rail and an
+     outcome chip carry the verdict at a glance, the numbers back it up. Text is
+     pinned to --ink because the surface is white in BOTH themes (contrast lesson). */
+  .htile{border:3px solid #000;border-left-width:9px;border-radius:20px;background:#fff;color:var(--ink);
+    padding:13px 15px 12px;margin-bottom:11px}
+  .htile.won{border-left-color:#0f7b3d} .htile.lost{border-left-color:#b3261e} .htile.sold{border-left-color:#9aa7b2}
+  .hhead{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .hbadge{font-family:'Nunito';font-weight:800;font-size:12px;padding:4px 11px;border-radius:999px;border:2.5px solid #000}
+  .hbadge.won{background:#d7f2e0;color:#0b5c2e} .hbadge.lost{background:#f7dbd7;color:#8f1d17} .hbadge.sold{background:#eef3f7;color:#476075}
+  .hwhen{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:#7a8894}
+  .htile .q{font-size:15px;margin-bottom:9px;color:var(--ink)}
+  .hrow2{display:flex;align-items:center;gap:9px;margin-bottom:11px;font-family:'Nunito';font-weight:800;font-size:12.5px;color:#5b6b77}
+  .hfoot{display:flex;align-items:center;gap:12px;font-family:'Nunito';font-weight:800;font-size:13px}
+  .hio{color:var(--ink);font-variant-numeric:tabular-nums}
+  .hshare{margin-left:auto;width:34px;height:34px;flex:none;border:2.5px solid #000;border-radius:50%;
+    background:#fff;cursor:pointer;display:grid;place-items:center;padding:0}
+  .hshare:hover{background:var(--wash)}
+  .hshare svg{width:15px;height:15px;fill:none;stroke:#000;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+  /* leaderboard */
+  .lb{border:3px solid #000;border-radius:22px;overflow:hidden;background:#fff}
+  .lb .r{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:2px solid var(--bar)}
+  .lb .r:last-child{border-bottom:0}
+  .lb .r.you{background:var(--wash)}
+  .rank{width:30px;text-align:center;font-family:'Nunito';font-weight:800;font-size:14px;color:var(--muted);flex:none}
+  /* `podium`, not `top`: `.top` is the fixed page header, and a rank div wearing
+     that class inherits position:fixed;top:0;left:0 and flies to the corner. */
+  .rank.podium{width:27px;height:27px;line-height:23px;border-radius:50%;
+    background:var(--blue);border:2px solid #000;color:#000;font-size:12.5px}
+  .mini{width:34px;height:34px;border-radius:50%;background:var(--blue);border:2px solid #000;position:relative;flex:none}
+  .mini::before,.mini::after{content:"";position:absolute;width:6px;height:6px;background:#000;border-radius:50%;top:12px}
+  .mini::before{left:7px}.mini::after{left:19px}
+  .who{font-family:'Nunito';font-weight:800;font-size:14px}
+  .acc{font-family:'Nunito';font-weight:800;font-size:13px;color:var(--acc-mid);text-align:right;flex:none}
+  /* A negative reputation that renders in the brand's friendly teal is not a
+     measurement, it is a compliment. .acc set the colour and won on specificity. */
+  .acc.up{color:#0f7b3d} .acc.down{color:#b3261e} .acc.flat{color:var(--muted)}
+  .acc small{display:block;font-weight:700;font-size:11px;color:var(--muted)}
+
+  /* notifications */
+  .note{display:flex;gap:12px;padding:14px 0;border-bottom:2px solid var(--bar)}
+  .note:last-child{border-bottom:0}
+  .nicon{width:38px;height:38px;border-radius:50%;border:2.5px solid #000;background:var(--wash);flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:17px}
+  .nicon.win{background:var(--blue)}
+  .ntext{font-family:'Nunito';font-weight:700;font-size:14px;line-height:1.35}
+  .ntext b{font-weight:800}
+  .nwhen{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted);margin-top:3px}
+
+  /* Settlement as a postable moment. White tile in both themes (contrast lesson),
+     a coloured rail for the verdict, and a share button that's loud for a win and
+     a shrug for a loss — never a token reward (a paid share is spam, and rewards
+     are what let the farm in; the win itself is the reason to post). */
+  .ncard{border:3px solid #000;border-left-width:9px;border-radius:18px;background:#fff;color:var(--ink);
+    padding:14px 15px 15px;margin-bottom:11px}
+  .ncard.win{border-left-color:#0f7b3d} .ncard.loss{border-left-color:#b3261e}
+  .nctop{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .ncbadge{font-family:'Nunito';font-weight:800;font-size:12.5px;padding:4px 11px;border-radius:999px;border:2.5px solid #000}
+  .ncbadge.win{background:#d7f2e0;color:#0b5c2e} .ncbadge.loss{background:#f7dbd7;color:#8f1d17}
+  .ncwhen{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:#7a8894}
+  .ncpay{font-family:'Fredoka';font-weight:700;font-size:30px;line-height:1;color:#0f7b3d;margin:2px 0 8px;font-variant-numeric:tabular-nums}
+  .ncbody{font-family:'Nunito';font-weight:700;font-size:13px;line-height:1.4;color:var(--ink);margin:0 0 13px}
+  .ncshare{display:inline-flex;align-items:center;gap:8px;font-family:'Fredoka';font-weight:600;font-size:15px;color:#000;
+    border:3px solid #000;border-radius:14px;padding:9px 17px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.2);transition:transform .08s}
+  .ncshare:active{transform:translateY(1px);box-shadow:0 2px 0 rgba(0,0,0,.2)}
+  .ncshare.win{background:var(--blue)} .ncshare.loss{background:#fff}
+  .ncshare svg{width:16px;height:16px;fill:none;stroke:#000;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .unread{width:8px;height:8px;border-radius:50%;background:var(--blue);border:2px solid #000;align-self:center;flex:none}
+
+  /* --------------------------------------------------------------- mobile nav -- */
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;
+    background:var(--ground-2);border-top:2.5px solid var(--line-g);
+    padding-bottom:env(safe-area-inset-bottom)}
+  .tab{flex:1;background:none;border:0;cursor:pointer;height:var(--tabh);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    font-family:'Nunito';font-weight:800;font-size:10px;color:var(--muted-g);padding:0}
+  .tab svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:2.1;
+    stroke-linecap:round;stroke-linejoin:round}
+  .tab.on{color:var(--on-ground)}
+  .tab.on svg{stroke:var(--on-ground)}
+  .tab.on .ico{background:var(--blue);border-radius:999px}
+  .ico{padding:2px 12px;display:flex;align-items:center;justify-content:center}
+
+  /* ------------------------------------------------------------------ desktop -- */
+  /* Mobile ends at 430px; nothing above changes below that width. From 768px the
+     shell assembles itself: a rail on the left, the card column contained in a
+     framed sheet, and the brand — dot grid, oversized eyes — taking the space the
+     column doesn't need, instead of leaving it blank. */
+  @media (min-width:768px){
+    body{background:var(--ground-wide)}
+    .app{display:grid;grid-template-columns:var(--rail) 1fr;min-height:100dvh;position:relative;z-index:1}
+    .tabs{display:none}
+
+    /* brand fills the negative space */
+    body::before{content:"";position:fixed;inset:0;z-index:0;
+      background:radial-gradient(circle at 1px 1px, var(--dots) 1.5px, transparent 0) 0 0/24px 24px}
+    .watermark{display:block;position:fixed;right:-90px;bottom:-140px;width:520px;height:520px;border-radius:50%;
+      background:var(--blue);opacity:.17;z-index:0}
+    .watermark::before,.watermark::after{content:"";position:absolute;top:210px;width:66px;height:66px;
+      border-radius:50%;background:#0B3A56;opacity:.5}
+    .watermark::before{left:120px}.watermark::after{left:280px}
+
+    .rail{display:flex;flex-direction:column;gap:28px;padding:26px 20px;position:sticky;top:0;height:100dvh}
+    /* The 248px rail can't hold wordmark + pill + toggle on one line, so let it
+       wrap: "oddie" on top, the balance pill and its toggle on the line below.
+       Wrapping (not a wider rail) keeps the frame from shifting. */
+    .rail .brand{justify-content:flex-start;margin:0 0 0 8px;flex-wrap:wrap;row-gap:9px}
+    .rail .brand .bal{margin-left:0}
+    .railnav{display:flex;flex-direction:column;gap:6px}
+    .navitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:16px;cursor:pointer;
+      border:2.5px solid transparent;background:none;font-family:'Fredoka';font-size:15.5px;font-weight:500;
+      color:var(--on-ground);width:100%;text-align:left}
+    .navitem svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:2.1;
+      stroke-linecap:round;stroke-linejoin:round;flex:none}
+    .navitem:hover{background:var(--ground-2)}
+    .navitem.on{background:var(--blue);border-color:#000;color:#000;font-weight:600}
+    .railfoot{margin-top:auto;font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);line-height:1.5}
+
+    .stage{display:flex;align-items:center;justify-content:center;padding:34px 28px}
+    /* The frame is the phone: it is FEED BACKGROUND, not a card, so it takes the
+       ground. It used to hardcode #fff, which in dark mode put --on-ground text
+       on a white sheet — the desktop half of the surface-ink bug, invisible to a
+       check that measured text against `body`. */
+    .frame{display:flex;flex-direction:column;width:min(100%,620px);
+      height:min(920px, calc(100dvh - 68px));background:var(--ground);
+      border:4px solid var(--line-g);border-radius:34px;overflow:hidden;
+      box-shadow:0 26px 60px rgba(13,60,90,.16)}
+
+    /* Inside the frame the header is a real sibling, not a floating overlay: the
+       scroller starts where the header stops, so no card has to reserve space for it. */
+    .top{position:static;background:var(--ground);border-bottom:2.5px solid var(--hair-g);padding:16px 22px 14px}
+    .top-in{max-width:none;padding:0}
+    .top .brand{display:none}          /* the rail carries the wordmark */
+    .scroller{height:auto;flex:1;min-height:0}
+    .card{max-width:none;padding:34px 34px 30px}
+    .sheet{max-width:none;padding:26px 26px 34px}
+
+    /* Dead-centring a ~390px stack in a 780px frame still reads as sunken once the
+       header takes the top. These two spacers split the leftover height 1:3, so the
+       card settles above the optical centre and the slack collects underneath, where
+       the nudge is. flex-basis 0 and shrinkable: on a frame too short to hold the
+       stack they collapse to nothing rather than shoving it under the header. */
+    .card::before{content:"";flex:1 1 0;min-height:0}
+    .card::after{content:"";flex:1.9 1 0;min-height:0}
+    .chead{margin-bottom:22px}         /* on desktop the spacers centre; kill the auto */
+    .opct{font-size:64px}
+    .oside{font-size:23px;width:52px}
+    .opay{font-size:15px}
+    .take{font-size:30px}
+    .orow{padding:12px 22px 14px}
+    .nudge{margin-top:22px}
+  }
+
+  @media (min-width:1200px){
+    .app{grid-template-columns:var(--rail) 1fr 312px}
+    .side{display:flex;flex-direction:column;justify-content:center;padding:34px 28px 34px 0}
+    .promo{border:3.5px solid #000;border-radius:28px;background:#fff;padding:22px}
+    .promo .brand{justify-content:flex-start;margin-bottom:14px}
+    .promo h2{font-size:22px;font-weight:600;margin:0 0 8px;line-height:1.15}
+    .promo p{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted);line-height:1.5;margin:0}
+    .promo .preview{margin-top:16px}
+  }
+
+  /* Short windows — an iPhone SE, or a laptop with the browser chrome eating the
+     height. Shrink the type, never the top padding: the header is ~98px tall on
+     mobile and the stack is measured from the card's top edge, so trimming that
+     padding walks the category chip straight under the chips row. */
+  @media (max-height:680px) and (max-width:767px){
+    .opct{font-size:min(44px,12vw)}
+    .take{font-size:min(26px,6.5vw)}
+    .duel{gap:9px}
+  }
+  @media (max-height:760px) and (min-width:768px){
+    .opct{font-size:52px}
+    .take{font-size:26px}
+    .nudge{margin-top:16px}
+  }
+</style>
+
+<div class="watermark" aria-hidden="true"></div>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><div class="ghost"></div><b>oddie</b><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+    <nav class="railnav" id="railnav"></nav>
+    <div class="railfoot">
+      Preview build.
+    </div>
+  </aside>
+
+  <main class="stage">
+    <div class="frame">
+      <div class="top" id="top"></div>
+      <div class="scroller" id="scroller"><div class="state">loading the odds…</div></div>
+    </div>
+  </main>
+
+  <aside class="side">
+    <div class="promo">
+      <div class="brand"><div class="ghost"></div><b>oddie</b></div>
+      <!-- "see who's right" promised a follow-up we do not send: nothing resolves,
+           nothing notifies. And "ten virtual tokens a call" stopped being true the
+           day the amount picker shipped. Both replaced with things that are so. -->
+      <h2>bet,<br>don&rsquo;t argue.</h2>
+      <p>Tag the bot on a take and it finds the market that prices it. Virtual tokens only — no wallet, no money, nothing to cash out.</p>
+      <span class="preview">Preview</span>
+    </div>
+  </aside>
+</div>
+
+<nav class="tabs" id="tabs"></nav>
+
+<script>
+const API=""; // same origin
+
+/* ------------------------------------------------------- token balance -- */
+/**
+ * Virtual tokens, nothing else. Every device starts with 100, server-side; the
+ * number in the header is the server's, not a local guess — a second tab or a
+ * reload always shows what the database says. `balance` is null until /api/me
+ * answers, and the picker treats null as "unknown, let the server enforce".
+ */
+let balance=null, nextTopUpMs=null;
+let myHandle=null, myHandleEditable=true;
+async function loadBalance(){
+  try{
+    const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
+    if(r.ok){const w=await r.json();balance=w.tokens;nextTopUpMs=w.nextTopUpMs;
+      myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;paintBalance();}
+  }catch(e){/* header just shows no pill; the server still enforces */}
+}
+/** "in 7h", "in 40m", "soon" — never a bare number of milliseconds. */
+function topUpIn(ms){
+  if(ms===null||ms===undefined)return "";
+  const h=Math.floor(ms/3600000);
+  if(h>=1)return `+200 in ${h}h`;
+  const m=Math.floor(ms/60000);
+  return m>=1?`+200 in ${m}m`:"+200 soon";
+}
+// Just the "when", for prose: "21h", "40m", "any minute now".
+function topUpWhen(ms){
+  if(ms===null||ms===undefined)return "soon";
+  const h=Math.floor(ms/3600000);
+  if(h>=1)return `${h}h`;
+  const m=Math.floor(ms/60000);
+  return m>=1?`${m}m`:"any minute now";
+}
+// A device at 0 is not locked out. If it holds open calls it can sell for tokens
+// right now; either way the daily top-up is coming. Say so, gently.
+function zeroNote(d){
+  if(d.tokens>0)return "";
+  const when=topUpWhen(d.nextTopUpMs);
+  if(d.open.length)
+    return `<div class="znote">Out of free tokens — but not stuck. <b>Sell an open call</b> below at its live price to free some up, or your next <b>+200</b> lands in ${when}.</div>`;
+  return `<div class="znote">Out of tokens for now — your next <b>+200</b> lands in ${when}, and each day tops you back toward 1,000. Nothing lost but a little time.</div>`;
+}
+function paintBalance(pulse){
+  if(balance===null)return;
+  // The pill is the only permanent door to sign-in. It opens a sheet; it never
+  // blocks anything behind it.
+  document.querySelectorAll(".bal").forEach(el=>{
+    if(el.dataset.wired)return;
+    el.dataset.wired="1";
+    el.setAttribute("role","button");
+    el.setAttribute("aria-label","Save your balance across devices");
+    el.onclick=()=>connectSheet();
+  });
+  // Two pills — the mobile header's and the desktop rail's. Same number always.
+  // The top-up line only appears when it can do something for you: at the floor
+  // there is nothing to count down to, and a countdown to nothing is a nag.
+  const tip=topUpIn(nextTopUpMs);
+  document.querySelectorAll(".bal").forEach(el=>{
+    el.innerHTML=`🪙 ${balance}${tip?` <span class="topup">${tip}</span>`:""}`;
+    if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
+  });
+}
+/* ------------------------------------------------------------------- theme --
+ * Auto by default, overridable, remembered. Three states rather than two: a
+ * person who never touched it should keep following their phone when it flips
+ * at sunset, and "Auto" is the only way to say that once you have offered a
+ * manual choice at all.
+ *
+ * The theme is a property of this browser, not of the account. It is also, very
+ * deliberately, not a property of the shared card: /card/*.svg is rendered on
+ * the server from market data and never sees this value.
+ */
+/* Experimental favicon: only while ?theme=lime is on the URL — the normal tab
+   never changes. */
+(function(){
+  if(document.documentElement.dataset.brand!=="lime")return;
+  var bg="%23C6F53C";
+  var svg="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='"+bg+"'/><path d='M32 9 C20 9 13 19 13 30 L13 50 L18 45.5 L23 51 L28 45.5 L33 51 L38 45.5 L43 51 L48 45.5 L51 49 L51 30 C51 19 44 9 32 9 Z' fill='white' stroke='black' stroke-width='4' stroke-linejoin='round'/><circle cx='34' cy='27' r='3.4' fill='black'/><circle cx='43' cy='27' r='3.4' fill='black'/><path d='M35 37 Q41 41 46 35' stroke='black' stroke-width='3.6' fill='none' stroke-linecap='round'/></svg>";
+  var l=document.createElement("link");l.rel="icon";l.href=svg;document.head.appendChild(l);
+})();
+
+const THEME_KEY="oddie_theme";
+const systemDark=()=>matchMedia("(prefers-color-scheme:dark)").matches;
+function themeMode(){ try{ return localStorage.getItem(THEME_KEY)||"auto"; }catch(e){ return "auto"; } }
+function resolvedTheme(){ const m=themeMode(); return (m==="dark"||(m==="auto"&&systemDark()))?"dark":"bright"; }
+const MOON='<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
+const SUN='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.4 4.4l1.6 1.6M18 18l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.4 19.6l1.6-1.6M18 6l1.6-1.6"/></svg>';
+// Show the mode a tap will deliver: a moon while bright, a sun while dark.
+function paintThemeToggle(){
+  const to=resolvedTheme()==="dark"?SUN:MOON;
+  document.querySelectorAll(".themetog").forEach(b=>{ if(b.innerHTML!==to)b.innerHTML=to; });
+}
+function paintTheme(){
+  document.documentElement.dataset.theme=resolvedTheme();
+  paintThemeToggle();
+}
+function setTheme(mode){
+  try{ mode==="auto" ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY,mode); }catch(e){}
+  paintTheme();
+}
+// One tap commits the opposite of whatever is on screen now. The header button is
+// re-rendered with each view, so the click is delegated rather than bound.
+document.addEventListener("click",e=>{
+  const t=e.target.closest && e.target.closest(".themetog");
+  if(!t)return;
+  e.preventDefault();
+  setTheme(document.documentElement.dataset.theme==="dark"?"bright":"dark");
+});
+// Follow the system while — and only while — nobody has overridden it.
+matchMedia("(prefers-color-scheme:dark)").addEventListener("change",()=>{ if(themeMode()==="auto")paintTheme(); });
+paintThemeToggle();
+
+/* -------------------------------------------------------- optional identity --
+ * Sign-in is an upgrade and never a wall. The only always-visible entry is the
+ * balance pill; the rest are offers, taken or ignored. Nothing here gates the
+ * feed, a call, a sell, or the leaderboard.
+ */
+let auth={accounts:[],providers:[]};
+async function loadAuth(){
+  try{
+    const r=await fetch(`${API}/api/auth/me?deviceId=${encodeURIComponent(deviceId)}`);
+    if(r.ok)auth=await r.json();
+  }catch(e){/* anonymous is the default, not the failure */}
+}
+const PROV={twitter:{glyph:"𝕏",label:"Connect X",cls:"x",why:"connect your identity"},
+            google:{glyph:"G",label:"Connect Google",cls:"",why:"save across devices"}};
+
+/** X first: it is the identity. Google second: it is the backup. */
+function connectSheet(reason){
+  const linked=new Set(auth.accounts.map(a=>a.provider));
+  const buttons=(auth.providers.length?auth.providers:[{provider:"twitter",available:false},{provider:"google",available:false}])
+    .map(({provider,available})=>{
+      const p=PROV[provider];
+      if(linked.has(provider))return `<button class="cbtn" disabled><span class="glyph">${p.glyph}</span>Connected</button>`;
+      if(!available)return `<button class="cbtn" disabled title="not configured"><span class="glyph">${p.glyph}</span>${p.label} — unavailable</button>`;
+      return `<button class="cbtn ${p.cls}" data-connect="${provider}"><span class="glyph">${p.glyph}</span>${p.label}</button>`;
+    }).join("");
+  const dim=document.createElement("div");
+  dim.className="cdim";
+  dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Connect an account">
+    <h3>${esc(reason||"Save your balance across devices")}</h3>
+    <p>Connect once and your tokens, calls and reputation follow you to any browser. <b>+100 tokens</b>, once.</p>
+    ${buttons}
+    <p class="cnote">We never post anything. Signing in on a browser that already
+      has anonymous tokens will load your account instead — that browser's tokens stay with it.</p>
+    <button class="cclose">Not now</button>
+  </div>`;
+  dim.onclick=(e)=>{ if(e.target===dim)dim.remove(); };
+  dim.querySelector(".cclose").onclick=()=>dim.remove();
+  dim.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
+    location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
+  });
+  document.body.appendChild(dim);
+}
+
+/** Coming back from a provider: say what happened, once, then clean the URL. */
+function authReturn(){
+  const q=new URLSearchParams(location.search);
+  const connected=q.get("connected"), err=q.get("auth_error");
+  if(!connected&&!err)return;
+  const bonus=Number(q.get("bonus")||0);
+  const msg=err?`Couldn't connect (${err}). Nothing changed.`
+    :bonus>0?`Connected. +${bonus} tokens — your balance now follows you.`
+    :`Connected. Your account is loaded on this browser.`;
+  history.replaceState(null,"",location.pathname+location.hash);
+  const el=document.createElement("div");
+  el.className="state";el.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tabh) + 18px);z-index:70;background:#fff;border:3px solid #000;border-radius:16px;padding:10px 16px;max-width:88vw";
+  el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),5200);
+}
+
+// Pointer type, not screen width: nobody swipes a laptop, and a phone plugged
+// into a monitor is still a phone.
+const GESTURE=matchMedia("(pointer:coarse)").matches?"swipe":"scroll";
+const COARSE=matchMedia("(pointer:coarse)").matches;
+
+/**
+ * One-tap calls whose 5s undo window hasn't closed yet. If the person leaves
+ * the page mid-window, the UI already said "Locked", so the promise is kept
+ * here: every still-pending call is committed via sendBeacon on the way out.
+ * (An undo removes the entry, so an undone call is never sent from anywhere.)
+ */
+const PENDING_CALLS=new Set();
+addEventListener("pagehide",()=>{
+  for(const p of PENDING_CALLS){
+    const body=new Blob([JSON.stringify({side:p.side,tokens:p.tokens,deviceId})],{type:"application/json"});
+    try{navigator.sendBeacon(`${API}/api/market/${p.slug}/call`,body);}catch(e){}
+  }
+  PENDING_CALLS.clear();
+});
+
+/* ---------------------------------------------------------------- sharing -- */
+// The shareable link is always the public apex, whatever origin served this page
+// — that is the only host whose /market/[slug] unfurls to the PNG card.
+const SHARE_ORIGIN=location.origin.includes("oddie.fun")?location.origin:"https://oddie.fun";
+const SHARE_ICON='<svg viewBox="0 0 24 24"><path d="M12 15V3M12 3 8 7M12 3l4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>';
+
+let toastT=null;
+function toast(msg){
+  document.querySelectorAll(".toast").forEach(t=>t.remove());
+  const el=document.createElement("div");el.className="toast";el.textContent=msg;
+  document.body.appendChild(el);
+  clearTimeout(toastT);toastT=setTimeout(()=>el.remove(),2600);
+}
+
+// Mobile hands off to the OS sheet (WhatsApp/X/iMessage/copy, the UI they know).
+// Desktop, where Web Share is thin, gets a three-item menu of its own.
+async function shareMarket({slug,text,source,anchor,url}){
+  url=url||`${SHARE_ORIGIN}/market/${slug}`;
+  ev("share_open",{slug,source});
+  if(COARSE && navigator.share){
+    try{ await navigator.share({text,url}); ev("share_done",{slug,source,via:"native"}); }
+    catch(e){ /* the user dismissed the sheet — not an error */ }
+    return;
+  }
+  shareMenu({url,text,slug,source,anchor});
+}
+
+function shareMenu({url,text,slug,source,anchor}){
+  document.querySelectorAll(".sdim,.smenu").forEach(n=>n.remove());
+  const dim=document.createElement("div");dim.className="sdim";
+  const menu=document.createElement("div");menu.className="smenu";
+  const item=(label,icon,fn)=>{
+    const b=document.createElement("button");b.innerHTML=`${icon}<span>${label}</span>`;
+    b.onclick=()=>{fn();close();};return b;
+  };
+  const copyIcon='<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>';
+  const xIcon='<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M18.9 2.5h3.3l-7.2 8.2 8.4 11.1h-6.6l-5.2-6.8-6 6.8H2.3l7.7-8.8L1.9 2.5h6.8l4.7 6.2 5.5-6.2zm-1.2 17.6h1.8L7.6 4.3H5.7l12 15.8z"/></svg>';
+  const waIcon='<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-2.9.8.8-2.8-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.6-6.1c-.3-.1-1.5-.7-1.7-.8s-.4-.1-.5.1-.6.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.6-1.2a.4.4 0 0 0 0-.4c0-.1-.5-1.3-.7-1.7s-.4-.4-.5-.4h-.5a.9.9 0 0 0-.6.3 2.6 2.6 0 0 0-.8 1.9 4.5 4.5 0 0 0 1 2.4 10.3 10.3 0 0 0 4 3.5c1.4.6 2 .7 2.7.6a2.3 2.3 0 0 0 1.5-1 1.9 1.9 0 0 0 .1-1.1c0-.1-.2-.2-.5-.3z"/></svg>';
+  menu.appendChild(item("Copy link",copyIcon,async()=>{
+    try{ await navigator.clipboard.writeText(url); }catch(e){ prompt("Copy this link",url); }
+    toast("Link copied");ev("share_done",{slug,source,via:"copy"});
+  }));
+  menu.appendChild(item("Share to X",xIcon,()=>{
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,"_blank","noopener");
+    ev("share_done",{slug,source,via:"x"});
+  }));
+  menu.appendChild(item("Share to WhatsApp",waIcon,()=>{
+    window.open(`https://wa.me/?text=${encodeURIComponent(text+" "+url)}`,"_blank","noopener");
+    ev("share_done",{slug,source,via:"whatsapp"});
+  }));
+  function close(){dim.remove();menu.remove();document.removeEventListener("keydown",onKey);}
+  function onKey(e){if(e.key==="Escape")close();}
+  dim.onclick=close;document.addEventListener("keydown",onKey);
+  document.body.appendChild(dim);document.body.appendChild(menu);
+  // Anchor near the button that opened it, kept on-screen.
+  const r=anchor?anchor.getBoundingClientRect():{left:innerWidth/2-95,bottom:innerHeight/2,right:innerWidth/2+95};
+  const mw=menu.offsetWidth,mh=menu.offsetHeight;
+  let left=Math.min(Math.max(8,r.right-mw),innerWidth-mw-8);
+  let top=r.bottom+8; if(top+mh>innerHeight-8)top=Math.max(8,r.top-mh-8);
+  menu.style.left=left+"px";menu.style.top=top+"px";
+}
+// The first-load hint fires once per session, not once per category switch.
+let hintRetired=false;
+
+/* ------------------------------------------------- anonymous device id -- */
+/**
+ * A random opaque string, minted once and kept in localStorage. It is NOT a
+ * login and NOT a user: there is no account behind it, nothing a person typed
+ * is ever attached to it, and clearing site data destroys it for good. It exists
+ * so Week 1 can tell one returning browser from two new ones.
+ *
+ * localStorage first, cookie as the fallback — Safari in Private mode and some
+ * in-app browsers (which is where a link from X lands) throw on setItem rather
+ * than returning null. If both are unavailable the id lives for the page's
+ * lifetime only: an unmeasurable session still gets a working feed.
+ */
+const DID_KEY="oddie_did";
+const deviceId=(()=>{
+  const mint=()=>(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now().toString(36));
+  try{
+    const hit=localStorage.getItem(DID_KEY);
+    if(hit)return hit;
+    const id=mint();localStorage.setItem(DID_KEY,id);return id;
+  }catch(e){/* storage blocked — fall through to the cookie */}
+  try{
+    const hit=document.cookie.match(/(?:^|;\s*)oddie_did=([^;]+)/);
+    if(hit)return decodeURIComponent(hit[1]);
+    const id=mint();
+    document.cookie=`${DID_KEY}=${encodeURIComponent(id)};path=/;max-age=31536000;samesite=lax`;
+    return id;
+  }catch(e){/* cookies blocked too */}
+  return mint(); // this session only; the feed still works, it just isn't counted twice
+})();
+
+/* ------------------------------------------------------------- events -- */
+/**
+ * Four events, fire-and-forget. sendBeacon survives the page being closed mid
+ * request, which is exactly when the last card_view of a session fires; fetch
+ * with keepalive is the fallback. Nothing here blocks the UI, and a failed send
+ * is silent by design — analytics must never be able to break the feed.
+ */
+function ev(name,props={}){
+  const body=JSON.stringify({name,deviceId,...props});
+  try{
+    if(navigator.sendBeacon){
+      navigator.sendBeacon(`${API}/api/ev`,new Blob([body],{type:"application/json"}));
+      return;
+    }
+  }catch(e){/* fall through */}
+  try{fetch(`${API}/api/ev`,{method:"POST",headers:{"content-type":"application/json"},body,keepalive:true});}catch(e){}
+}
+
+// The last mock screen became real the day settlement shipped; the MOCK block
+// that fed it is gone with it.
+const ICONS={
+  feed:'<rect x="4" y="3" width="16" height="8" rx="3"/><rect x="4" y="13" width="16" height="8" rx="3"/>',
+  positions:'<rect x="3" y="4" width="18" height="16" rx="4"/><path d="M7.5 12.2l2.7 2.7 5.6-5.6"/>',
+  leaderboard:'<rect x="4" y="12" width="4" height="8" rx="1.6"/><rect x="10" y="6" width="4" height="14" rx="1.6"/><rect x="16" y="14" width="4" height="6" rx="1.6"/>',
+  alerts:'<path d="M6.5 9.5a5.5 5.5 0 1111 0c0 4.5 1.8 5.5 1.8 5.5H4.7s1.8-1 1.8-5.5z"/><path d="M10 19a2 2 0 004 0"/>',
+  profile:'<circle cx="12" cy="8.2" r="3.8"/><path d="M4.6 20c1.4-3.9 4.2-5.8 7.4-5.8s6 1.9 7.4 5.8"/>',
+};
+const NAV=[["feed","Feed"],["positions","Positions"],["leaderboard","Leaderboard"],["alerts","Notifications"],["profile","Profile"]];
+const svg=(k)=>`<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>`;
+
+function money(n){return n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${Math.round(n)}`}
+function fmtMult(p){return (100/p).toFixed(1)+"×"}
+function esc(s){return s.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}
+function n(x){return x.toLocaleString("en-US")}
+
+/* -------------------------------------------------------------- routing --
+   Hash routes, not paths. oddie.fun points straight at this one service, so real
+   paths would work too — but the hash keeps client views (positions, leaderboard,
+   profile) purely in the browser, no server round-trip. The hash never leaves it. */
+const VIEWS=NAV.map(([k])=>k);
+const startSlug=(location.pathname.match(/^\/market\/([^/]+)/)||[])[1]||"";
+let activeCat=new URLSearchParams(location.search).get("cat")||"For you";
+
+function currentView(){
+  const h=location.hash.replace(/^#\/?/,"");
+  return VIEWS.includes(h)?h:"feed";
+}
+
+function paintNav(view){
+  document.getElementById("railnav").innerHTML=NAV.map(([k,label])=>
+    `<button class="navitem${k===view?" on":""}" data-go="${k}">${svg(k)}<span>${label}</span></button>`).join("");
+  document.getElementById("tabs").innerHTML=NAV.map(([k,label])=>
+    `<button class="tab${k===view?" on":""}" data-go="${k}" aria-label="${label}">
+       <span class="ico">${svg(k)}</span><span>${k==="alerts"?"Alerts":label}</span></button>`).join("");
+  document.querySelectorAll("[data-go]").forEach(b=>{
+    b.onclick=()=>{location.hash=b.dataset.go==="feed"?"#/feed":"#/"+b.dataset.go};
+  });
+}
+
+function render(){
+  const view=currentView();
+  document.body.dataset.view=view;   // the header's backdrop keys off this
+  paintNav(view);
+  const scroller=document.getElementById("scroller");
+  scroller.scrollTop=0;
+  if(view==="feed"){scroller.classList.add("snap");loadFeed();}
+  else{scroller.classList.remove("snap");renderShell(view);}
+}
+window.addEventListener("hashchange",render);
+
+/* ---------------------------------------------------------------- header -- */
+function feedTop(cats){
+  document.getElementById("top").innerHTML=
+    `<div class="top-in">
+       <div class="brand"><div class="ghost"></div><b>oddie</b><span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+       <div class="chips" id="chips"></div>
+     </div>`;
+  paintBalance();paintThemeToggle();
+  const el=document.getElementById("chips");
+  (cats||[]).forEach(c=>{
+    const b=document.createElement("button");
+    b.className="chip"+(c===activeCat?" on":"");b.textContent=c;
+    b.onclick=()=>{if(c!==activeCat)ev("cat_change",{cat:c});activeCat=c;loadFeed();};
+    el.appendChild(b);
+  });
+}
+function shellTop(title,preview=true){
+  document.getElementById("top").innerHTML=
+    `<div class="top-in">
+       <div class="brand"><div class="ghost"></div><b>oddie</b><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+       <div class="head"><h1>${title}</h1>${preview?'<span class="preview">Preview</span>':""}</div>
+     </div>`;
+  paintBalance();paintThemeToggle();
+}
+
+/* ------------------------------------------------------------------ feed -- */
+async function loadFeed(){
+  const scroller=document.getElementById("scroller");
+  feedTop(null);
+  scroller.innerHTML='<div class="state">loading the odds…</div>';
+  try{
+    const q=new URLSearchParams();
+    if(startSlug && activeCat==="For you")q.set("start",startSlug);
+    if(activeCat!=="For you")q.set("cat",activeCat);
+    // Taste re-rank: once an anonymous visitor picks categories, the feed tilts
+    // toward them (rank, not filter — the server keeps breadth visible).
+    if(TASTE){const tc=tasteCats();if(tc.length)q.set("cats",tc.join(","));}
+    const r=await fetch(`${API}/api/feed?${q}`);
+    if(!r.ok)throw new Error("feed "+r.status);
+    const data=await r.json();
+    feedTop(data.categories);
+    renderFeed(data.items);
+  }catch(e){
+    scroller.innerHTML='<div class="state">couldn’t load the odds — pull to retry or check the server.</div>';
+    console.error(e);
+  }
+}
+
+/* After a call: which side of the room did you just join? Only said at all
+ * when enough poppers called it that the percentage is a signal — below the
+ * floor the line is simply absent, because "67% of poppers" meaning 2-of-3 is
+ * noise dressed up as precision, and the locked state reads fine without it. */
+const MIN_CROWD=10;
+function socialLine(side,crowd,marketSidePct){
+  const yes=crowd?.yes??0, no=crowd?.no??0, total=yes+no;
+  if(total<MIN_CROWD)return "";
+  const p=Math.round(100*(side==="yes"?yes:no)/total);
+  const m=marketSidePct;
+  if(p>=50&&m<50)return `You're with ${p}% of poppers. The market disagrees (${m}%).`;
+  if(p>=50)return `You're with ${p}% of poppers — and the market (${m}%).`;
+  if(m>=50)return `Only ${p}% of poppers with you — but the market is (${m}%).`;
+  return `Contrarian: ${p}% of poppers and a ${m}% market against you.`;
+}
+
+function renderFeed(items){
+  const scroller=document.getElementById("scroller");
+  scroller.innerHTML="";
+  if(!items.length){scroller.innerHTML='<div class="state">no live markets here right now — try another category.</div>';return;}
+  // TikTok-web taste flow. An anonymous visitor gets the feed metered:
+  //   no categories picked yet -> 2 free cards, then the category picker
+  //   categories picked         -> 3 re-ranked cards, then the sign-in gate
+  // Signed-in / allowlisted / invited visitors see the whole feed (list=items).
+  let list=items, tail=null;
+  if(TASTE){
+    if(!tasteCats().length){list=items.slice(0,2);tail="picker";}
+    else{list=items.slice(0,3);tail="gate";}
+  }
+  list.forEach((m,i)=>{
+    const yes=m.yesPct,no=100-yes;
+    const card=document.createElement("div");card.className="card";
+    card.innerHTML=`
+      <div class="chead">
+        <div class="cat">${esc(m.category)}</div>
+        <button class="shareico" aria-label="Share this market">${SHARE_ICON}</button>
+      </div>
+      <div class="take">${esc(m.question)}</div>
+      <div class="meta">${money(m.volumeUsd)} in play</div>
+      <div class="duel">
+        <button class="orow" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, wins ${fmtMult(yes)}">
+          <span class="oside">YES</span><span class="opct">${yes}%</span><span class="opay">win ${fmtMult(yes)}</span>
+        </button>
+        <button class="orow" style="--fill:${no}%" aria-label="No, ${no} percent, wins ${fmtMult(no)}">
+          <span class="oside">NO</span><span class="opct">${no}%</span><span class="opay">win ${fmtMult(no)}</span>
+        </button>
+      </div>
+      <div class="picker" id="pick${i}" hidden>
+        <div class="amts">
+          <button class="amt" data-v="10">10</button>
+          <button class="amt" data-v="25">25</button>
+          <button class="amt" data-v="50">50</button>
+          <button class="amt" data-v="all">All-in</button>
+          <input class="amt-in" type="number" min="1" inputmode="numeric" aria-label="custom amount">
+        </div>
+        <div class="pline" id="pline${i}"></div>
+        <div class="pbtns">
+          <button class="confirm" id="cf${i}">Confirm</button>
+          <button class="pcancel" aria-label="cancel">✕</button>
+        </div>
+      </div>
+      <div class="social" id="soc${i}"></div>
+      <div class="nudge" id="nudge${i}"><span class="arrow">↑</span><span>${GESTURE} for the next take</span></div>`;
+    card.dataset.slug=m.slug;card.dataset.idx=i;
+    // Discovery share: "check this out". The link unfurls to the card, so the
+    // text stays light — the question rides along in the preview.
+    card.querySelector(".shareico").onclick=(e)=>{e.stopPropagation();
+      shareMarket({slug:m.slug,text:`${m.question} · call it 👇`,source:"card",anchor:e.currentTarget});};
+    const [y,nb]=card.querySelectorAll(".orow");
+    const picker=card.querySelector("#pick"+i), line=card.querySelector("#pline"+i),
+          confirmBtn=card.querySelector("#cf"+i), input=card.querySelector(".amt-in");
+    let side=null, amt=10;
+
+    /**
+     * Two taps: a side, then Confirm. Everything between them is one line that
+     * recomputes live, so the payout math never happens in the user's head.
+     * The picker caps at the balance rather than erroring — running out of
+     * tokens should read as a state, not a mistake.
+     */
+    const pct=()=>side==="yes"?yes:no;
+    const soc=card.querySelector("#soc"+i);
+    /**
+     * Which control the user actually pressed, not which one happens to equal
+     * the amount. With a balance of 50, `50` and `All-in` are the same number
+     * and both used to light up, so "which amount is selected" had two answers.
+     * A custom amount lights none of them, which is correct: the input shows it.
+     */
+    let chosen="10";
+    const setAmt=(v)=>{
+      let capped=false;
+      chosen=String(v);
+      if(v==="all")v=balance??1;
+      v=Math.max(1,Math.floor(Number(v)||1));
+      if(balance!==null&&v>balance){v=Math.max(1,balance);capped=true;}
+      amt=v;
+      card.querySelectorAll(".amt").forEach(b=>{
+        const on=b.dataset.v===chosen;
+        b.classList.toggle("on",on);
+        b.setAttribute("aria-pressed",String(on));
+      });
+      if(balance===0){
+        line.textContent="Out of tokens — nothing left to put on this one.";
+        confirmBtn.disabled=true;return;
+      }
+      confirmBtn.disabled=false;
+      const win=Math.round(amt*100/pct());
+      line.textContent=`Put ${amt} → win ${win} if you're right (${(win/amt).toFixed(1)}×)`
+        +(capped?" — that's everything you've got":"")
+        +(balance!==null&&amt===balance&&!capped?" — all of it":"");
+    };
+    const openPick=(s,initAmt=10)=>{
+      side=s;card.classList.add("picking");
+      (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
+      picker.hidden=false;input.value="";
+      setAmt(initAmt);
+    };
+    const closePick=()=>{
+      side=null;picker.hidden=true;card.classList.remove("picking");
+      y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
+    };
+    card.querySelectorAll(".amt").forEach(b=>b.onclick=()=>{input.value="";setAmt(b.dataset.v);});
+    input.oninput=()=>{if(input.value)setAmt(input.value);};
+    card.querySelector(".pcancel").onclick=closePick;
+
+    /** The one true write path: POST the call, then flip the card to its locked
+     *  state. Both doors — the 5s auto-commit and the picker's Confirm — land
+     *  here, so the locked UI cannot drift between them. */
+    const lockedUI=(s,stake,win,crowd,callId)=>{
+      y.disabled=nb.disabled=true;picker.hidden=true;card.classList.remove("picking");
+      (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
+      // Promise only what happens: the call is recorded; the market, not us,
+      // decides when it means anything. No "we'll tell you who was right".
+      soc.textContent=`Locked — ${stake} tokens on ${s.toUpperCase()}, pays ${win}. Settles when the market resolves.`;
+      // ...and which side of the room they just joined. Solo action, social fact.
+      const slText=crowd?socialLine(s,crowd,s==="yes"?yes:no):"";
+      if(slText){
+        const sl=document.createElement("div");
+        sl.className="socline";
+        sl.textContent=slText;
+        soc.after(sl);
+      }
+      // The strong entry point: "I called it — what do you say?" is bet-don't-
+      // argue itself. The text names their side; the link carries the market.
+      const sb=document.createElement("button");
+      sb.className="sharebig";sb.innerHTML=`${SHARE_ICON}<span>Share your call 🔥</span>`;
+      // The personal card: mint the owner-only share link, then hand it to the
+      // OS sheet. It lands on THEIR timeline — the social layer lives on X.
+      sb.onclick=async(e)=>{
+        const anchor=e.currentTarget;
+        let url;
+        if(callId){
+          try{const r=await fetch(`${API}/api/position/${callId}/sharelink`,{method:"POST",
+            headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+            const j=await r.json();if(j.ok)url=j.url;}catch(e){/* generic link still shares */}
+        }
+        shareMarket({slug:m.slug,text:`calling ${s.toUpperCase()} on this at ${s==="yes"?yes:no}%`,source:"postcall",anchor,url});
+      };
+      (card.querySelector(".socline")||soc).after(sb);
+      // One line, once, only to someone who has not connected. An offer, not a gate.
+      if(!auth.accounts.length){
+        const up=document.createElement("button");
+        up.className="upsell";up.textContent="Connect to save your balance  +100 tokens";
+        up.onclick=()=>connectSheet("Keep this call when you switch devices");
+        sb.after(up);
+      }
+      card.querySelector("#nudge"+i).classList.add("show");
+      card.querySelector("#nudge"+i).classList.remove("hint");
+    };
+    const placeNow=async(s,stake,fromPicker)=>{
+      try{
+        const r=await fetch(`${API}/api/market/${m.slug}/call`,{method:"POST",
+          headers:{"content-type":"application/json"},
+          body:JSON.stringify({side:s,tokens:stake,deviceId})});
+        const j=await r.json().catch(()=>({}));
+        // Put an honest reason where the user is looking: the picker line if the
+        // picker's open, the social slot for a one-tap. Re-arm the controls so the
+        // person can act on what we just told them.
+        const reopen=()=>{
+          if(fromPicker){confirmBtn.disabled=false;confirmBtn.textContent="Confirm";}
+          else{y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");}
+        };
+        const failLine=(txt,keepConfirmOff)=>{
+          reopen();
+          if(fromPicker){line.textContent=txt;if(keepConfirmOff)confirmBtn.disabled=true;}
+          else soc.textContent=txt;
+        };
+        if(!r.ok||!j.ok){
+          // The call did not go through. A one-tap optimistically deducted the
+          // stake up front; give it back before we render why. (insufficient
+          // overwrites this with the server's authoritative balance just below.)
+          if(!fromPicker){balance=(balance??0)+stake;paintBalance();}
+          // Not on the list / free taste spent — this IS the gate moment. Bring it
+          // forward in place, not a picker that quietly fails.
+          if(j.reason==="not_allowed"){
+            picker.hidden=true;card.classList.remove("picking");
+            y.disabled=nb.disabled=true;
+            soc.className="social gatecard";
+            soc.innerHTML=terminalGateInner();wireTerminalGate(soc);
+            ev("gate_shown",{via:"taste_used",slug:m.slug,reason:GATE.reason});
+            return;
+          }
+          // Not enough tokens — never "try again" (trying again can't make tokens).
+          // Say the true number and when the next top-up lands.
+          if(j.reason==="insufficient"){
+            balance=j.balance;paintBalance(true);
+            const when=topUpWhen(nextTopUpMs);
+            if(balance>0){
+              if(fromPicker){setAmt(Math.min(stake,balance));confirmBtn.textContent="Confirm";
+                line.textContent=`Only ${balance} left — pick that or less. Next +200 in ${when}.`;
+                confirmBtn.disabled=false;}
+              else failLine(`That left you ${balance}. Tap again to call with what you've got.`);
+            }else{
+              failLine(`Out of tokens — next +200 in ${when}. Sell an open call to free some up now.`,true);
+            }
+            return;
+          }
+          // Structural refusals — the market, not the network. Trying again changes
+          // nothing, so don't promise it will.
+          if(j.reason==="unpriced"){
+            failLine("This one isn't quoted right now — the odds moved to the edge. Try another market.");
+            return;
+          }
+          if(j.reason==="unknown-market"||r.status===404){
+            failLine("This market just closed — it's no longer taking calls.");
+            return;
+          }
+          // A 5xx or an unreadable body is a server-side hiccup — genuinely
+          // transient, the one refusal where "try again" is the honest answer.
+          if(r.status>=500||!j.reason){
+            failLine("Something went wrong on our end — give it a moment and try again.");
+            return;
+          }
+          // Some other named refusal we didn't special-case: surface the server's
+          // own words if they're human, else an honest structural note.
+          failLine(j.error&&j.error.length<90?j.error:"Couldn't lock it — the market won't take that call.");
+          return;
+        }
+        balance=j.balance;paintBalance(true);loadBalance();
+        lockedUI(s,stake,Math.round(stake*100/j.pctAt),j.crowd,j.id);
+        ev("amount_confirm",{slug:m.slug,idx:i,side:s});
+      }catch(e){
+        // The only genuinely transient failure: we never reached the server or
+        // couldn't read it. This is the one place "try again" is the truth.
+        console.error(e);
+        if(!fromPicker){balance=(balance??0)+stake;paintBalance();
+          y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
+          soc.textContent="Couldn't reach the server — check your connection and try again.";}
+        else{confirmBtn.disabled=false;confirmBtn.textContent="Confirm";
+          line.textContent="Couldn't reach the server — check your connection and try again.";}
+      }
+    };
+
+    confirmBtn.onclick=()=>{
+      confirmBtn.disabled=true;confirmBtn.textContent="Locking…";
+      placeNow(side,amt,true);
+    };
+
+    /**
+     * ONE TAP, DONE. The data said the picker was losing the most engaged
+     * visitors: two side_taps, zero confirms, both abandoned within seconds —
+     * not deliberating an amount, walking away from a second decision. So the
+     * default path makes the call immediately at a default stake, shows the
+     * result with a 5s undo, and the amount picker becomes opt-in ("change
+     * amount"). Undo is honest by construction: the POST only fires when the
+     * window closes (or the page is left mid-window, via sendBeacon), so an
+     * undone call never existed anywhere.
+     */
+    const DEFAULT_STAKE=50;
+    let pending=null; // {s, stake, left, timer, beacon}
+    const clearPendingUI=()=>{
+      y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
+      soc.textContent="";
+    };
+    const cancelPending=(refund=true)=>{
+      if(!pending)return;
+      clearInterval(pending.timer);PENDING_CALLS.delete(pending.beacon);
+      if(refund){balance=(balance??0)+pending.stake;paintBalance();}
+      pending=null;
+    };
+    const commitPending=()=>{
+      if(!pending)return;
+      const {s,stake}=pending;
+      clearInterval(pending.timer);PENDING_CALLS.delete(pending.beacon);
+      pending=null;
+      placeNow(s,stake,false);
+    };
+    const pendingUI=()=>{
+      const {s,stake,left}=pending;
+      const win=Math.round(stake*100/(s==="yes"?yes:no));
+      soc.innerHTML=`Locked — ${stake} on ${s.toUpperCase()}, pays ${win}. `
+        +`<button class="undo">undo (${left})</button>`
+        +`<button class="chgamt">change amount</button>`;
+      soc.querySelector(".undo").onclick=()=>{cancelPending();clearPendingUI();};
+      soc.querySelector(".chgamt").onclick=()=>{
+        const stakeNow=pending.stake;
+        cancelPending();soc.textContent="";
+        openPick(s,stakeNow); // the old flow, now opt-in, seeded with the default
+      };
+    };
+    const startPending=(s)=>{
+      const stake=Math.min(DEFAULT_STAKE,balance??DEFAULT_STAKE);
+      if(!Number.isFinite(stake)||stake<1){ // out of tokens: the picker explains, honestly
+        ev("side_tap",{slug:m.slug,idx:i,side:s});openPick(s);return;
+      }
+      balance-=stake;paintBalance();
+      (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
+      const beacon={slug:m.slug,side:s,tokens:stake};
+      pending={s,stake,left:5,beacon,timer:null};
+      PENDING_CALLS.add(beacon);
+      pendingUI();
+      pending.timer=setInterval(()=>{
+        if(!pending)return;
+        pending.left--;
+        if(pending.left<=0)commitPending();
+        else pendingUI();
+      },1000);
+      ev("side_tap",{slug:m.slug,idx:i,side:s});
+    };
+
+    const tap=(s)=>{
+      if(y.disabled)return;
+      if(!GATE.allowed&&!TASTE){
+        // The rope, said plainly. The card stays a spectacle; playing needs a pass.
+        soc.innerHTML=`<a class="waitcta" href="/about">join the waitlist to play →</a>`;
+        ev("allowlist_denied",{slug:m.slug});
+        return;
+      }
+      // In TASTE mode the tap proceeds: the server grants one free call and then
+      // 403s, at which point placeNow surfaces the gate in place.
+      if(card.classList.contains("picking")){ // picker open: switching sides in place, as before
+        if(side===s)return;
+        const keep=amt;closePick();openPick(s,keep);
+        ev("side_tap",{slug:m.slug,idx:i,side:s});
+        return;
+      }
+      if(pending){
+        if(pending.s===s)return;      // same side again: the 5s clock keeps running
+        cancelPending();clearPendingUI();
+      }
+      startPending(s);
+    };
+    y.onclick=()=>tap("yes");
+    nb.onclick=()=>tap("no");
+    scroller.appendChild(card);
+  });
+  if(tail==="picker")scroller.appendChild(buildPicker());
+  else if(tail==="gate")scroller.appendChild(buildGate());
+  watchDepth(scroller);
+  hintFirstCard(scroller);
+}
+
+/**
+ * Step three of the taste flow: "what do you have takes on?" — the free signal.
+ * Multi-select 1-3 of the five real feed categories, Continue re-ranks the feed
+ * toward them. The picks are logged (taste_pick) and stashed in sessionStorage
+ * so the reload knows to show the re-ranked run and, after it, the gate.
+ */
+function buildPicker(){
+  const CATS=["Sports","Crypto","Politics","Culture","Tech"];
+  const el=document.createElement("div");
+  el.className="card intercard pickcard";
+  el.innerHTML=`
+    <div class="ititle">what do you have<br>takes on?</div>
+    <div class="isub">pick up to 3 — we'll tune your feed</div>
+    <div class="tchips">${CATS.map(c=>`<button class="tchip" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+    <button class="icont" disabled>Continue</button>`;
+  const sel=new Set(), cont=el.querySelector(".icont");
+  el.querySelectorAll(".tchip").forEach(b=>b.onclick=()=>{
+    const c=b.dataset.c;
+    if(sel.has(c)){sel.delete(c);b.classList.remove("on");}
+    else{if(sel.size>=3)return;sel.add(c);b.classList.add("on");}
+    cont.disabled=sel.size===0;
+    cont.textContent=sel.size?`Continue (${sel.size})`:"Continue";
+  });
+  cont.onclick=()=>{
+    const cats=[...sel];
+    try{sessionStorage.setItem("taste_cats",cats.join(","));}catch(e){}
+    ev("taste_pick",{cats:cats.join(",")});
+    document.getElementById("scroller").scrollTop=0;
+    loadFeed(); // reloads with ?cats= -> 3 re-ranked cards, then the gate
+  };
+  return el;
+}
+
+/**
+ * The gate, as the last card in the taste run. Not a wall dropped in front of
+ * the feed — a natural next step reached after a real taste. One line, X first,
+ * Google second. gate_shown fires once, when the card is built.
+ */
+function buildGate(){
+  const el=document.createElement("div");
+  el.className="card intercard gatecard";
+  el.innerHTML=terminalGateInner();
+  wireTerminalGate(el);
+  ev("gate_shown",{via:"feed",reason:GATE.reason});
+  return el;
+}
+
+/**
+ * Feed depth — the Week-2 metric, instrumented now so Week 1 seeds it.
+ *
+ * A card counts as viewed when it is mostly on screen, not when it is rendered:
+ * all forty are in the DOM from the start, so "rendered" would report every
+ * session as forty cards deep. The observer fires once per card per render;
+ * switching category re-renders and legitimately starts the count over, because
+ * the index means "how far into THIS list".
+ */
+function watchDepth(scroller){
+  if(!("IntersectionObserver" in window))return;   // depth goes unmeasured, feed still works
+  const seen=new Set();
+  const io=new IntersectionObserver(entries=>{
+    for(const e of entries){
+      if(!e.isIntersecting)continue;
+      const idx=Number(e.target.dataset.idx);
+      if(seen.has(idx))continue;
+      seen.add(idx);
+      ev("card_view",{slug:e.target.dataset.slug,idx});
+    }
+  },{root:scroller,threshold:.6});
+  scroller.querySelectorAll(".card").forEach(c=>io.observe(c));
+}
+
+/**
+ * Before this, the only sign that the feed continued below was a nudge you had
+ * to pick a side to see — so the one screen a new arrival actually looks at was
+ * the one screen with no way out of it. The first card now says so on its own,
+ * quietly, and stops the moment they act on it.
+ */
+function hintFirstCard(scroller){
+  if(hintRetired)return;
+  const nudge=scroller.querySelector(".nudge");
+  if(!nudge)return;
+  nudge.classList.add("show","hint");
+  const retire=()=>{
+    if(scroller.scrollTop<24)return;   // ignore the snap's own settling jitter
+    hintRetired=true;
+    nudge.classList.remove("show","hint");
+    scroller.removeEventListener("scroll",retire);
+  };
+  scroller.addEventListener("scroll",retire,{passive:true});
+}
+
+/* ---------------------------------------------------------------- shells -- */
+function renderShell(view){
+  const scroller=document.getElementById("scroller");
+  // Positions is REAL — this device's actual calls, no Preview badge. The other
+  // three stay mock until something real exists to put in them.
+  if(view==="positions"){shellTop("Positions",false);loadPositions(scroller);}
+  if(view==="leaderboard"){shellTop("Leaderboard",false);loadLeaderboard(scroller);}
+  if(view==="alerts"){shellTop("Notifications",false);loadNotices(scroller);}
+  if(view==="profile"){shellTop("Profile",false);loadProfile(scroller);}
+}
+
+/**
+ * Real rows: this device's calls, straight from the server. Potential win is
+ * computed from the odds AT LOCK TIME (pct_at), so a position never appears to
+ * change value because the market moved afterwards. Everything is pending —
+ * resolution doesn't exist yet and the copy says only that.
+ */
+/**
+ * Positions is the screen the exit decision is made on, so it has to show the
+ * two numbers that decision is made from: what you paid, and what it is worth
+ * now. Everything else here is derived from those.
+ *
+ * Reputation sits at the top rather than the bottom because it is the score,
+ * and because it is allowed to be negative — a screen that only ever shows a
+ * green number is not measuring anything.
+ */
+async function loadPositions(scroller){
+  scroller.innerHTML='<div class="state">loading your calls…</div>';
+  try{
+    const r=await fetch(`${API}/api/positions?deviceId=${encodeURIComponent(deviceId)}`);
+    if(!r.ok)throw new Error("positions "+r.status);
+    const d=await r.json();
+    balance=d.tokens;nextTopUpMs=d.nextTopUpMs;paintBalance();
+    if(!d.open.length && !d.closed.length){
+      scroller.innerHTML=`<div class="sheet">
+        <p class="sub">Your calls on this device land here.</p>
+        ${zeroNote(d)}
+        <div class="state">Nothing yet — open the feed and call one.</div>
+      </div>`;
+      return;
+    }
+    // History newest-first, and the running totals derived from it: net tokens
+    // won/lost across every closed position, and a win rate over the ones that
+    // actually SETTLED (a sold-early exit is neither a win nor a loss).
+    const history=[...d.closed].sort((a,b)=>new Date(b.closedAt)-new Date(a.closedAt));
+    const net=history.reduce((s,p)=>s+(p.proceeds-p.tokens),0);
+    const settledArr=history.filter(p=>p.exitPct===100||p.exitPct===0);
+    const wins=settledArr.filter(p=>p.exitPct===100).length;
+    const winRate=settledArr.length?Math.round(100*wins/settledArr.length):null;
+    const netStr=`${net>0?"+":net<0?"−":"±"}${Math.abs(net)}`;
+    scroller.innerHTML=`<div class="sheet">
+      <p class="sub">Your calls on this device. Sell any time at the market's current odds, or hold to resolution.</p>
+      ${zeroNote(d)}
+      ${repHTML(d.overall,d.byCategory)}
+      <div class="summary">
+        <div class="tile"><div class="v num ${cls(net)}">${netStr}</div><div class="k">NET TOKENS</div></div>
+        <div class="tile"><div class="v num">${winRate===null?"—":winRate+"%"}</div><div class="k">${settledArr.length?`WIN RATE · ${wins}/${settledArr.length}`:"WIN RATE"}</div></div>
+        <div class="tile"><div class="v num">🪙 ${d.tokens}</div><div class="k">BALANCE</div></div>
+      </div>
+      ${d.open.length?`<h2 class="psec">Open · ${d.open.length}</h2>${d.open.map(openHTML).join("")}`:""}
+      ${history.length?`<h2 class="psec">History · ${history.length}</h2>${history.map(historyHTML).join("")}`:""}
+    </div>`;
+    scroller.querySelectorAll("[data-sell]").forEach(b=>b.onclick=()=>sellPosition(b,scroller));
+    // The victory/defeat card — resolution (or an early exit) as content, out to
+    // their timeline. Every closed row is shareable, not just the settled ones.
+    scroller.querySelectorAll("[data-share]").forEach(b=>b.onclick=async(e)=>{
+      const side=b.dataset.side.toUpperCase(), entry=b.dataset.entry, exit=b.dataset.exit, kind=b.dataset.kind;
+      let url,slug;
+      try{const r=await fetch(`${API}/api/position/${b.dataset.share}/sharelink`,{method:"POST",
+        headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+        const j=await r.json();if(j.ok){url=j.url;slug=(url.match(/market\/([^?]+)/)||[])[1];}}catch(err){}
+      if(!url)return;
+      const text=kind==="won"?`called ${side} at ${entry}% — and it hit`
+        :kind==="lost"?`took ${side} at ${entry}% — market said no`
+        :`sold my ${side} — in at ${entry}%, out at ${exit}%`;
+      shareMarket({slug,url,anchor:e.currentTarget,source:"settled",text});
+    });
+  }catch(e){
+    console.error(e);
+    scroller.innerHTML='<div class="state">couldn’t load your calls — try again in a moment.</div>';
+  }
+}
+
+/** Percentage points, always signed. +0 is a real answer and reads as "flat". */
+const pts=(n)=>`${n>0?"+":n<0?"−":"±"}${Math.abs(Math.round(n*10)/10)}%`;
+const cls=(n)=>n>0?"up":n<0?"down":"flat";
+
+function repHTML(overall,byCat){
+  if(overall.avgEdge===null)
+    return `<div class="rep"><div class="repnum flat">—</div>
+      <div class="repwho"><b>Reputation</b><span>Close a position to get a number. It can go down.</span></div></div>`;
+  const tag=overall.provisional
+    ? `<span class="prov">🌱 provisional · ${overall.closed}/10</span>`
+    : `<span class="prov done">${overall.closed} closed</span>`;
+  const cats=byCat.filter(c=>c.avgEdge!==null).slice(0,3)
+    .map(c=>`<span class="catedge ${cls(c.avgEdge)}">${esc(c.category)} ${pts(c.avgEdge)}</span>`).join("");
+  return `<div class="rep">
+    <div class="repnum ${cls(overall.avgEdge)}">${pts(overall.avgEdge)}</div>
+    <div class="repwho"><b>Reputation</b><span>average edge per call ${tag}</span>
+      ${cats?`<div class="cats">${cats}</div>`:""}</div>
+  </div>`;
+}
+
+function openHTML(p){
+  const live = p.nowPct!==null;
+  // "Called YES at 39% · now 44% ↑ (+5%)" — the whole hold-or-sell argument,
+  // in one line, in the order you'd say it out loud.
+  const track = live
+    ? `Called ${p.side.toUpperCase()} at ${p.entryPct}% · now ${p.nowPct}% ${p.edgeNow>0?"↑":p.edgeNow<0?"↓":"→"} <b class="${cls(p.edgeNow)}">${pts(p.edgeNow)}</b>`
+    : `Called ${p.side.toUpperCase()} at ${p.entryPct}% · the venue isn't quoting this right now`;
+  return `<div class="tile">
+    <p class="q">${esc(p.question)}</p>
+    <div class="pmeta">
+      <span class="side-chip ${p.side}">${p.side.toUpperCase()}</span>
+      <span class="num">${p.tokens} tokens</span>
+      <span class="dot"></span><span class="num">holds to ${p.toWin}</span>
+      <span class="status">open</span>
+    </div>
+    <p class="track">${track}</p>
+    ${live?`<button class="sellbtn" data-sell="${p.id}">Sell now → ${p.valueNow} tokens</button>`:""}
+  </div>`;
+}
+
+/**
+ * One row of history. The verdict is the loud part — a coloured chip and a rail,
+ * "called it ✓" / "market said no" / "sold early" — and the ledger (entry→exit,
+ * tokens in→out, edge) sits under it for anyone who wants the receipt. Every row
+ * is shareable, win OR loss: the defeat card is as much a part of the game as the
+ * victory one. exit 100 = your side resolved true, 0 = false, anything between =
+ * you sold before it settled; the market's own YES/NO follows from your side.
+ */
+function historyHTML(p){
+  const settled=p.exitPct===100||p.exitPct===0;
+  const won=p.exitPct===100;
+  const kind=settled?(won?"won":"lost"):"sold";
+  const badge={won:"called it ✓",lost:"market said no",sold:"sold early"}[kind];
+  const marketYes=(p.side==="yes")===won; // only meaningful when settled
+  const how=settled?`resolved ${marketYes?"YES":"NO"}`:"sold early";
+  const delta=p.proceeds-p.tokens;
+  const deltaStr=`${delta>0?"+":delta<0?"−":"±"}${Math.abs(delta)}`;
+  return `<div class="htile ${kind}">
+    <div class="hhead">
+      <span class="hbadge ${kind}">${badge}</span>
+      <span class="hwhen">${agoOf(p.closedAt)}</span>
+    </div>
+    <p class="q">${esc(p.question)}</p>
+    <div class="hrow2">
+      <span class="side-chip ${p.side}">${p.side.toUpperCase()}</span>
+      <span>${p.entryPct}% → ${p.exitPct}% · ${how}</span>
+    </div>
+    <div class="hfoot">
+      <span class="hio">${p.tokens} → ${p.proceeds} tok <b class="${cls(delta)}">${deltaStr}</b></span>
+      <span class="${cls(p.edge)}">edge ${pts(p.edge)}</span>
+      <button class="hshare" data-share="${p.id}" data-side="${p.side}" data-entry="${p.entryPct}" data-exit="${p.exitPct}" data-kind="${kind}" aria-label="Share this call">${SHARE_ICON}</button>
+    </div>
+  </div>`;
+}
+
+/**
+ * Sell. The button is disabled the instant it is pressed, because the second
+ * press would be a second sale of the same position — the server refuses it,
+ * but a UI that lets you try is a UI that looks broken when it does.
+ */
+async function sellPosition(btn,scroller){
+  const id=btn.dataset.sell;
+  btn.disabled=true;btn.textContent="Selling…";
+  let j={};
+  try{
+    const r=await fetch(`${API}/api/position/${id}/sell`,{method:"POST",
+      headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+    j=await r.json().catch(()=>({reason:"server-error"}));
+    if(r.ok&&j.ok){
+      balance=j.balance;paintBalance(true);
+      ev("sell",{slug:null,side:null});
+      showSellResult(btn,j,scroller); // a visible, satisfying result — not a silent re-render
+      return;
+    }
+  }catch(e){console.error(e);j={reason:"network"};}
+  // Two kinds of failure. TRANSIENT ones (odds refreshing, a server hiccup, a
+  // dropped connection) are worth another tap, so the button re-enables and says
+  // so. STRUCTURAL ones (the market isn't trading, the row is already gone) will
+  // NOT change on a retry — inviting one is the lie we're removing — so they
+  // replace the button with an honest, non-clickable note.
+  const TRANSIENT={"stale-odds":"Odds are refreshing — tap to try again.",
+    "server-error":"Something went wrong — tap to try again.",
+    "network":"Couldn't reach the server — tap to try again."};
+  const STRUCTURAL={
+    "unpriced":"This market isn't quoted right now — you can't sell until it's trading again.",
+    "no-entry-price":"No entry price on record for this one, so it can't be priced to sell.",
+    "already-closed":"Already sold.","not-found":"That position is gone.",
+    "not_allowed":"Selling isn't available on this account yet."};
+  if(TRANSIENT[j.reason]){btn.textContent=TRANSIENT[j.reason];btn.disabled=false;return;}
+  const note=document.createElement("p");
+  note.className="sellnote";
+  note.textContent=STRUCTURAL[j.reason]||"Couldn't sell this position right now.";
+  btn.replaceWith(note);
+}
+
+/**
+ * The close, made visible. Selling used to just silently re-render the screen;
+ * now the tap lands on a result — "Sold ✓ 50 → 74 tokens (+48%)", the edge on the
+ * record — the same beat as the one-tap call's locked state. No confirm dialog
+ * (the sell already happened); a Done button and a 6s timer both fold it back
+ * into History, where the row now lives.
+ */
+function showSellResult(btn,j,scroller){
+  const stake=j.stake, proceeds=j.proceeds, delta=proceeds-stake;
+  const pct=stake?Math.round((proceeds/stake-1)*100):0;
+  const tone=delta>0?"up":delta<0?"down":"flat";
+  const el=document.createElement("div");
+  el.className="sellresult "+tone;
+  el.innerHTML=`
+    <div class="srtop"><span class="srtick">Sold ✓</span>
+      <span class="srdelta ${tone}">${delta>0?"+":delta<0?"−":"±"}${Math.abs(delta)}</span></div>
+    <div class="srnums">${stake} → <b>${proceeds}</b> tokens · <b class="${tone}">${pct>0?"+":pct<0?"−":"±"}${Math.abs(pct)}%</b></div>
+    <div class="srsub">edge ${pts(j.edge)} recorded${delta>0?" — nice exit 🎯":delta<0?" — cut it, no shame":""}</div>
+    <button class="srdone">Done</button>`;
+  btn.replaceWith(el);
+  let done=false;
+  const finish=()=>{if(done)return;done=true;loadPositions(scroller);};
+  el.querySelector(".srdone").onclick=finish;
+  setTimeout(finish,6000);
+}
+
+
+/**
+ * Real standings, ranked by average edge — the same number Positions shows you.
+ * Not by tokens: a leaderboard of tokens is a leaderboard of who started
+ * earliest and staked hardest, which is a fact about time, not about judgement.
+ *
+ * Provisional players are listed and marked, never hidden. They sort below
+ * everyone whose number has settled, so two lucky scalps cannot take the top.
+ */
+let lbTab="edge";
+async function loadLeaderboard(scroller){
+  scroller.innerHTML='<div class="state">counting edges…</div>';
+  try{
+    const r=await fetch(`${API}/api/leaderboard?deviceId=${encodeURIComponent(deviceId)}`);
+    if(!r.ok)throw new Error("leaderboard "+r.status);
+    const data=await r.json();
+    renderLb(scroller,data);
+  }catch(e){
+    console.error(e);
+    scroller.innerHTML='<div class="state">couldn’t load the standings — try again in a moment.</div>';
+  }
+}
+/* Three boards, three virtues: edge = skill, streak = showing up, winnings =
+ * playing AND being right. Raw call count is deliberately not a board. */
+function renderLb(scroller,data){
+  const row=(r,inner)=>`
+    <div class="r${r.you?" you":""}">
+      <div class="rank${r.rank<=3?" podium":""}">${r.rank}</div>
+      <div class="mini"></div>
+      <div class="grow"><div class="who trunc">@${esc(r.handle)}${r.you?" · you":""}</div></div>
+      ${inner}
+    </div>`;
+  const bodies={
+    edge:{sub:"Ranked by average edge — points gained per call, not tokens won. 🌱 means fewer than 10 closed positions.",
+      empty:"Nobody has closed a position yet. Be first.",
+      rows:data.rows,html:(r)=>row({...r,handle:r.handle+(r.provisional?" 🌱":"")},`<div class="acc ${cls(r.avgEdge)}">${pts(r.avgEdge)}<small>${r.closed} closed</small></div>`)},
+    streak:{sub:"Consecutive days with at least one call. Show up, stay up.",
+      empty:"No streaks yet — day one starts now.",
+      rows:data.streaks,html:(r)=>row(r,`<div class="acc ${r.current>0?"up":"flat"}">${r.current}d<small>best ${r.best}d</small></div>`)},
+    winnings:{sub:"Net tokens from settled and sold positions. Volume only counts if you're right.",
+      empty:"No settled tokens yet — make a call and let a market resolve.",
+      rows:data.winnings,html:(r)=>row(r,`<div class="acc ${cls(r.net)}">${r.net>0?"+":""}${r.net}<small>${r.closed} closed</small></div>`)},
+  };
+  const b=bodies[lbTab];
+  scroller.innerHTML=`<div class="sheet">
+    <div class="seg" role="tablist" style="margin-bottom:14px">
+      ${[["edge","Edge"],["streak","Streak"],["winnings","Winnings"]].map(([k,l])=>
+        `<button class="segb${lbTab===k?" on":""}" data-lbtab="${k}" role="tab">${l}</button>`).join("")}
+    </div>
+    <p class="sub">${b.sub}</p>
+    ${b.rows&&b.rows.length?`<div class="lb">${b.rows.map(r=>b.html(r)).join("")}</div>`:`<div class="state">${b.empty}</div>`}
+  </div>`;
+  scroller.querySelectorAll("[data-lbtab]").forEach(t=>t.onclick=()=>{lbTab=t.dataset.lbtab;renderLb(scroller,data);});
+}
+
+
+
+/* Real events only. A row exists because a market this device holds resolved —
+ * nothing invented, nothing "watched on your behalf" that isn't. */
+function agoOf(iso){
+  const s=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);
+  if(s<90)return "just now";
+  const m=Math.floor(s/60); if(m<60)return `${m}m ago`;
+  const h=Math.floor(m/60); if(h<24)return `${h}h ago`;
+  return `${Math.floor(h/24)}d ago`;
+}
+async function loadNotices(scroller){
+  scroller.innerHTML='<div class="state">checking…</div>';
+  ev("alerts_view",{}); // the screen was opened — the read half of retention
+  try{
+    const r=await fetch(`${API}/api/notices?deviceId=${encodeURIComponent(deviceId)}`);
+    if(!r.ok)throw new Error("notices "+r.status);
+    const {notices}=await r.json();
+    // Each rendered notification counts as viewed: the list is short and fully
+    // on screen, so render == read is the honest approximation here.
+    for(const n of notices)ev("notice_view",{slug:n.slug});
+    if(!notices.length){
+      scroller.innerHTML=`<div class="sheet">
+        <p class="sub">When a market you hold resolves, it lands here.</p>
+        <div class="state">Nothing yet — your open calls are still live.</div>
+      </div>`;
+      return;
+    }
+    scroller.innerHTML=`<div class="sheet">
+      <p class="sub">Markets you held that resolved. Won or lost — the call is yours to post.</p>
+      ${notices.map(noticeCardHTML).join("")}
+    </div>`;
+    // The brag, one tap from the alert. Mint the owner-only card, hand it to the
+    // OS share sheet. No token reward, by design — a paid share is spam, and the
+    // reward campaign is exactly what let the farm in. The win is the reason.
+    scroller.querySelectorAll("[data-nshare]").forEach(b=>b.onclick=async(e)=>{
+      const anchor=e.currentTarget, win=b.dataset.win==="1";
+      let url,slug;
+      try{const rr=await fetch(`${API}/api/position/${b.dataset.nshare}/sharelink`,{method:"POST",
+        headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+        const j=await rr.json();if(j.ok){url=j.url;slug=(url.match(/market\/([^?]+)/)||[])[1];}}catch(err){}
+      if(!url)return;
+      shareMarket({slug,url,anchor,source:"settle_notice",
+        text:win?"called it 🔥":"took the other side — market said no 😤"});
+    });
+  }catch(e){
+    console.error(e);
+    scroller.innerHTML='<div class="state">couldn’t load notifications — try again in a moment.</div>';
+  }
+}
+
+/**
+ * A settlement, as a moment worth posting. A win is loud — green rail, the payout
+ * as a hero number, a prominent "Share your call 🔥". A loss is honest, not hidden:
+ * "market said no", and a share button that's a shrug, not a trophy — losers post
+ * too when the framing is funny rather than shaming. Any non-settle notice falls
+ * back to the quiet row. The share needs a callId (the personal card); older
+ * notices without one still render, just without the button.
+ */
+function noticeCardHTML(n){
+  const win=n.kind==="settle_win", loss=n.kind==="settle_loss";
+  if(!win && !loss){
+    return `<div class="tile" style="padding:2px 16px"><div class="note">
+      <div class="nicon">✅</div>
+      <div class="grow"><div class="ntext">${esc(n.body)}</div><div class="nwhen">${agoOf(n.at)}</div></div></div></div>`;
+  }
+  const share=n.callId
+    ? `<button class="ncshare ${win?"win":"loss"}" data-nshare="${n.callId}" data-win="${win?1:0}">${SHARE_ICON}<span>${win?"Share your call 🔥":"Share it anyway 😤"}</span></button>`
+    : "";
+  return `<div class="ncard ${win?"win":"loss"}">
+    <div class="nctop">
+      <span class="ncbadge ${win?"win":"loss"}">${win?"🎉 you called it":"🙃 market said no"}</span>
+      <span class="ncwhen">${agoOf(n.at)}</span>
+    </div>
+    ${win?`<div class="ncpay">+${n.delta} tokens</div>`:""}
+    <p class="ncbody">${esc(n.body)}</p>
+    ${share}
+  </div>`;
+}
+
+/**
+ * Profile is real now, and small. It answers exactly two questions: who is this
+ * browser, and what has it done. The mock handle, the streak and the badges are
+ * gone — none of them were true, and a screen that shows an invented "5-day
+ * streak" next to a real reputation teaches the reader to distrust both.
+ */
+async function loadProfile(scroller){
+  scroller.innerHTML='<div class="state">loading…</div>';
+  await loadAuth();
+  let pos={open:[],closed:[],overall:{avgEdge:null,closed:0,provisional:true},tokens:balance};
+  try{
+    const r=await fetch(`${API}/api/positions?deviceId=${encodeURIComponent(deviceId)}`);
+    if(r.ok)pos=await r.json();
+  }catch(e){/* profile still renders; it just has less to say */}
+
+  const linked=auth.accounts.map(a=>{
+    const p=PROV[a.provider];
+    const who=a.handle||a.name||(a.provider==="google"?"Google account":"X account");
+    return `<div class="acct">
+      <div class="glyph">${p.glyph}</div>
+      <div class="grow"><div class="who trunc">${esc(who)}</div>
+        <div class="kind">${a.provider==="twitter"?"X — your identity":"Google — saved across devices"}</div></div>
+    </div>`;}).join("");
+
+  const rep=pos.overall.avgEdge===null?"—":pts(pos.overall.avgEdge);
+  const repCls=pos.overall.avgEdge===null?"flat":cls(pos.overall.avgEdge);
+
+  await loadBalance(); // the handle rides on /api/me
+  const handleRow=myHandle?`
+    <div class="hrow" id="hrow">
+      <span class="hname">@${esc(myHandle)}</span>
+      ${myHandleEditable
+        ? '<button class="hedit" id="hedit">edit</button>'
+        : '<span class="hkind">your X handle</span>'}
+    </div>
+    <div class="herr" id="herr" hidden></div>`:"";
+
+  scroller.innerHTML=`<div class="sheet">
+    ${handleRow}
+    <p class="sub">${auth.accounts.length
+      ? "Your tokens, calls and reputation follow this account to any browser."
+      : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
+    ${linked||`<button class="cbtn x" data-connect="twitter"><span class="glyph">𝕏</span>Connect X</button>
+       <button class="cbtn" data-connect="google"><span class="glyph">G</span>Connect Google</button>
+       <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+100 tokens</b>, once.</p>`}
+    <div class="summary" style="margin-top:16px">
+      <div class="tile"><div class="v num ${repCls}">${rep}</div><div class="k">REPUTATION</div></div>
+      <div class="tile"><div class="v num">${pos.streak?`${pos.streak.current}d`:"—"}</div><div class="k">STREAK${pos.streak&&pos.streak.best>pos.streak.current?` · BEST ${pos.streak.best}D`:""}</div></div>
+      <div class="tile"><div class="v num">🪙 ${pos.tokens??"—"}</div><div class="k">BALANCE</div></div>
+    </div>
+    ${pos.overall.provisional&&pos.overall.avgEdge!==null
+      ? `<p class="cnote">🌱 provisional — ${pos.overall.closed} of 10 closed positions.</p>`:""}
+    <p class="psec" style="margin-top:24px">Appearance</p>
+    <div class="seg" role="group" aria-label="Theme">
+      ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>
+        `<button class="segb${themeMode()===v?" on":""}" data-theme-mode="${v}">${l}</button>`).join("")}
+    </div>
+    <p class="cnote">Auto follows your system. Shared cards are always the same — your theme never changes the image that goes on X.</p>
+  </div>`;
+  scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
+    location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
+  });
+  scroller.querySelectorAll("[data-theme-mode]").forEach(b=>b.onclick=()=>{
+    setTheme(b.dataset.themeMode);
+    scroller.querySelectorAll("[data-theme-mode]").forEach(x=>x.classList.toggle("on",x===b));
+  });
+  // Rename in place. The server is the judge (shape, blocklist, uniqueness);
+  // this only carries the verdict back.
+  const heditBtn=scroller.querySelector("#hedit");
+  if(heditBtn)heditBtn.onclick=()=>{
+    const row=scroller.querySelector("#hrow"), err=scroller.querySelector("#herr");
+    row.innerHTML=`<input class="hin" id="hin" maxlength="20" value="${esc(myHandle)}"
+        aria-label="handle" autocomplete="off" spellcheck="false">
+      <button class="hsave" id="hsave">Save</button>`;
+    const input=row.querySelector("#hin");
+    input.focus();input.select();
+    row.querySelector("#hsave").onclick=async()=>{
+      err.hidden=true;
+      try{
+        const r=await fetch(`${API}/api/handle`,{method:"POST",
+          headers:{"content-type":"application/json"},
+          body:JSON.stringify({deviceId,handle:input.value})});
+        const j=await r.json();
+        if(!j.ok){err.textContent=j.reason;err.hidden=false;return;}
+        myHandle=j.handle;
+        loadProfile(scroller);
+      }catch(e){err.textContent="couldn't save — try again";err.hidden=false;}
+    };
+    input.onkeydown=(e)=>{if(e.key==="Enter")row.querySelector("#hsave").click();};
+  };
+}
+
+
+/**
+ * The velvet rope, client side. /feed without a pass -> back to the landing
+ * (the waitlist). /market/[slug] stays viewable for everyone — the share loop
+ * must not die — but the call flow swaps to "join the waitlist to play".
+ * ?invite=1 (the invite email's link) shows the sign-in step instead of
+ * bouncing, so an invited person can actually get through the door.
+ * The server enforces the same gate on /call and /sell regardless.
+ */
+let GATE={allowed:false,reason:"signed_out"};
+let TASTE=false; // anonymous free-taste mode: 2 cards -> picker -> 3 cards -> gate
+const tasteCats=()=>{try{return (sessionStorage.getItem("taste_cats")||"").split(",").filter(Boolean);}catch(e){return [];}};
+// The sign-in redirect, shared by the invite screen, the in-feed gate card and
+// the "free taste spent" moment. `p` is the provider (twitter | google); it is
+// also the gate_signin label, so the funnel can see which button converts.
+function startAuth(p){ev("gate_signin",{cat:p});location.href=`${API}/api/auth/${p}/start?deviceId=${encodeURIComponent(deviceId)}`;}
+// The gate itself: one line of copy, X first (prominent, black), Google second.
+// Reused verbatim by the interstitial card and the free-taste-spent handler so
+// the two never drift. gate_shown fires once, at the caller, with its `via`.
+function gateInner(){
+  return `<div class="gmark"></div>
+    <div class="ititle">keep calling — sign in</div>
+    <div class="gatecard-btns" style="width:100%;max-width:320px;margin-top:4px">
+      <button class="cbtn x" data-p="twitter"><span class="glyph">𝕏</span>Sign in with X</button>
+      <button class="cbtn" data-p="google"><span class="glyph">G</span>Sign in with Google</button>
+    </div>
+    <p class="cnote" style="max-width:300px">Free to play. Virtual tokens, nothing to cash out. Your call is saved to this device.</p>`;
+}
+function wireGate(root){root.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>startAuth(b.dataset.p));}
+
+// The OTHER terminal gate: signed in, but the identity isn't on the list yet.
+// Same position in the flow (the last card, after the taste) — the honest room,
+// with hold-my-spot for Google users and the X-handle note for the rest.
+function notListedInner(){
+  const ident=GATE.identity||GATE.email||"your account";
+  const hasEmail=!!GATE.email;
+  return `<div class="gmark"></div>
+    <div class="ititle" style="font-size:min(23px,5.6vw)">almost — invites<br>are rolling out</div>
+    <p class="cnote" style="max-width:340px;margin:2px auto 0">You're signed in as <b>${esc(ident)}</b>.
+      ${GATE.provider==="twitter"?"That X account":"That address"} isn't on the beta list yet — spots open gradually, and the list is the way in.</p>
+    ${hasEmail
+      ? `<button class="cbtn" id="gjoin" style="margin:16px auto 0;max-width:320px">Hold my spot on the waitlist</button><p class="cnote" id="gmsg" style="min-height:0"></p>`
+      : `<p class="cnote" style="max-width:340px;margin:14px auto 0">Your spot is tracked by your X handle — we'll open it up soon. Want an email heads-up? Add one on <a href="/about" style="color:var(--link-g)">the about page</a>.</p>`}`;
+}
+function wireNotListed(root){
+  const gj=root.querySelector("#gjoin");
+  if(!gj)return;
+  gj.onclick=async(e)=>{
+    const b=e.currentTarget;b.disabled=true;b.textContent="Saving…";
+    const msg=root.querySelector("#gmsg");
+    try{
+      const r=await fetch(`${API}/api/waitlist`,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({email:GATE.email})});
+      const j=await r.json().catch(()=>({}));
+      msg.innerHTML=r.ok
+        ? `You're on the list${j.position?` — <b>#${j.position}</b> in line`:""}. We'll email <b>${esc(GATE.email)}</b> the moment a spot opens.`
+        : "Couldn't save — try again in a moment.";
+      b.textContent=r.ok?"Spot held ✓":"Hold my spot on the waitlist";
+      if(!r.ok)b.disabled=false;
+    }catch(err){msg.textContent="Couldn't reach the waitlist — try again.";b.disabled=false;b.textContent="Hold my spot on the waitlist";}
+  };
+}
+// One dispatcher for the terminal gate, so the interstitial card and the
+// free-taste-spent moment always agree. Sign-in for the signed-out; the
+// not-listed room for the signed-in-but-unlisted. allowlist_denied fires here,
+// at the gate — the denial that matters happens AFTER the taste, not before it.
+function terminalGateInner(){return GATE.reason==="not_allowlisted"?notListedInner():gateInner();}
+function wireTerminalGate(root){
+  if(GATE.reason==="not_allowlisted"){wireNotListed(root);ev("allowlist_denied",{});}
+  else wireGate(root);
+}
+const IS_MARKET_PAGE=location.pathname.startsWith("/market/");
+const IS_INVITE=new URLSearchParams(location.search).get("invite")==="1";
+// Render the WHOLE feed, skipping the taste interleaving. A preview/audit switch
+// only: the call-rope still holds (tap shows the waitlist, the server 403s), so
+// this reveals layout, never access. The layout audit navigates with it so every
+// card — including the pathological long-question one — actually exists to measure.
+const FULL=new URLSearchParams(location.search).get("full")==="1";
+async function checkGate(){
+  try{
+    const r=await fetch(`${API}/api/gate?deviceId=${encodeURIComponent(deviceId)}`);
+    if(r.ok)GATE=await r.json();
+  }catch(e){/* gate unreachable: fail closed for /feed, open for /market views */}
+  if(GATE.allowed)return true;
+  if(IS_MARKET_PAGE)return true; // viewable; the call flow handles the rope
+
+  const scroller=document.getElementById("scroller");
+
+  // The one deliberate exception to taste-first: a targeted invite link. Someone
+  // we explicitly invited (and who is signed out) gets the sign-in step directly
+  // rather than being re-teased with a taste they were already promised through.
+  if(IS_INVITE && GATE.reason==="signed_out"){
+    scroller.innerHTML=`<div class="sheet" style="text-align:center;padding-top:56px">
+      <p class="sub" style="font-size:16px">you're invited — sign in to open the feed:</p>
+      <button class="cbtn x" data-p="twitter" style="margin:14px auto 0;max-width:320px"><span class="glyph">𝕏</span>Sign in with X</button>
+      <button class="cbtn" data-p="google" style="margin:10px auto 0;max-width:320px"><span class="glyph">G</span>Sign in with Google</button>
+      <p class="cnote">Free to play. Virtual tokens, nothing to cash out.</p></div>`;
+    scroller.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>startAuth(b.dataset.p));
+    return false;
+  }
+
+  // TikTok-web entry: the feed IS the landing, and the gate is the LAST thing,
+  // never the first. EVERYONE not already through — signed out OR signed in but
+  // not on the list yet — gets the same taste: two free cards, one free call,
+  // the category picker, three re-ranked cards, and only THEN the terminal gate.
+  // Being signed in must not cost the taste; allowlist status only decides which
+  // gate (sign-in vs. "not on the list yet") renders at the end. ?full=1 opts
+  // out (preview/audit). renderFeed reads TASTE and does the interleaving.
+  if(!FULL)TASTE=true;
+  return true;
+}
+(async()=>{
+  const ok=await checkGate();
+  if(ok){
+    try{sessionStorage.removeItem("gate_oauth");}catch(e){}
+    render();loadAuth().then(loadBalance).then(authReturn);
+  }
+})();
+
+// One per page load, not per category switch — a chip is not a new arrival.
+// `slug` carries the door they came through, so "arrived from a tweet" can be
+// separated from "opened /feed directly".
+ev("feed_view", startSlug ? { slug: startSlug } : {});
+</script>

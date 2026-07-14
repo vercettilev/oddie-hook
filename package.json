@@ -1,0 +1,43 @@
+{
+  "name": "oddie-hook",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tag Poppin into a take -> matched live Kalshi/Polymarket market -> branded odds card + slug page.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "test-matcher": "tsx scripts/test-matcher.ts",
+    "test": "npm run test-matcher && npm run test-economy && npm run test-positions && npm run test-accounts && npm run test-settlement && npm run test-semantic && npm run test-copy && npm run test-card-layout && npm run smoke",
+    "events": "tsx scripts/events.ts",
+    "cleanup": "tsx scripts/cleanup-test-rows.ts",
+    "audit-feed": "node scripts/audit-feed.mjs",
+    "peek": "tsx scripts/peek.ts",
+    "test-economy": "tsx scripts/test-economy.ts",
+    "test-positions": "tsx scripts/test-positions.ts",
+    "demo-payload": "tsx scripts/demo-payload.ts",
+    "test-accounts": "tsx scripts/test-accounts.ts",
+    "test-settlement": "tsx scripts/test-settlement.ts",
+    "test-settle-db": "tsx scripts/test-settle-db.ts",
+    "test-semantic": "tsx scripts/test-semantic.ts",
+    "eval-semantic": "tsx scripts/eval-semantic.ts",
+    "test-copy": "tsx scripts/test-copy.ts",
+    "test-card-layout": "tsx scripts/test-card-layout.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "express": "^4.19.2",
+    "pg": "^8.22.0",
+    "tsx": "^4.16.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.20.0",
+    "typescript": "^5.5.0"
+  }
+}

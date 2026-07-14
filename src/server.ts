@@ -1,0 +1,858 @@
+import express from "express";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { getMarketData } from "./venues/index.js";
+import { nearTwins } from "./matching/matcher.js";
+import { matchSemantic, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
+import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall } from "./store/markets.js";
+import { fetchResolution } from "./venues/resolution.js";
+import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
+import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
+import { renderCard } from "./card/renderCard.js";
+import { renderCardPng } from "./card/renderPng.js";
+import { renderPositionCard } from "./card/renderPositionCard.js";
+import { tweetCopy } from "./card/tweetCopy.js";
+import { linkAccount, accountsFor } from "./store/accounts.js";
+import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
+
+const app = express();
+app.use(express.json());
+
+const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
+const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf8");
+
+// Static assets — favicons, touch/PWA icons, the manifest, the raw logos. The two
+// HTML documents keep their own routes (/feed, /tool), and /card, /market are
+// dynamic, so this only ever answers for real files. oddie.fun points straight at
+// this service, so these are served here from ./public — one origin, no proxy
+// allow-list to keep in sync, so the whole /api/ev class of rewrite gaps is gone.
+app.use(express.static(path.join(__dirname, "../public"), { index: false, maxAge: "7d" }));
+
+/**
+ * The hook. Tweet text in -> best market, slug, card URL, landing URL out.
+ *
+ * On a miss we hand back a feed invite rather than the runner-up market. An
+ * adjacent market is not a weaker version of the right answer — its odds
+ * price a different question, so posting it reads as the bot asserting the
+ * opposite of the take it was tagged under. "Here's what's trending" is the
+ * only honest thing we can say when nothing fits. The bot layer does the
+ * posting; this just returns the pieces.
+ *
+ * `matched: false` means we looked at a real market set and nothing fit. It
+ * never means we couldn't look. When the venues are down we return 503 with
+ * no `matched` field and — deliberately — no `feedUrl`: the feed invite is
+ * the honest reply to a genuine miss, and there is nothing honest about it
+ * when the reason is that we have no data. Withholding feedUrl makes posting
+ * one structurally impossible rather than merely discouraged.
+ */
+app.post("/hook", async (req, res) => {
+  const tweetText: string = req.body?.tweetText ?? "";
+  if (!tweetText.trim()) return res.status(400).json({ error: "tweetText required" });
+
+  const data = await getMarketData();
+
+  // One line per call, so the Week-1 matched:false rate can be segmented by which
+  // venues were actually healthy at the time. A miss recorded while a venue was
+  // serving nothing says something about the venue, not about the matcher.
+  const venueCounts = { kalshi: data.venues.kalshi.count, polymarket: data.venues.polymarket.count };
+
+  // Keyed on the raw set, not the bettable one. "Every market is lopsided today"
+  // is a confident miss; "we have no markets" is an outage. They are not the same
+  // answer and the Week-1 numbers must not conflate them.
+  if (data.all.length === 0) {
+    console.log(JSON.stringify({ evt: "hook", matched: null, reason: "data_unavailable", venues: venueCounts, stale: data.stale }));
+    return res.status(503).json({ error: "data_unavailable", venues: data.venues });
+  }
+
+  const match = await matchSemantic(tweetText, data.markets);
+  console.log(
+    JSON.stringify({
+      evt: "hook",
+      // "lexical" | "semantic" | false — Week-1 data segments on what the LLM adds.
+      matched: match ? match.via : false,
+      score: match ? Number(match.score.toFixed(3)) : null,
+      venue: match?.market.venue ?? null,
+      // The audit trail: the referee's one-liner, and the language people
+      // actually used (its absence is why the first six real tweets are gone).
+      why: match?.reason ?? null,
+      tweet: tweetText.slice(0, 140),
+      semantic: semanticEnabled(),
+      venues: venueCounts,
+      bettable: data.markets.length,
+      fetched: data.all.length,
+      stale: data.stale,
+    }),
+  );
+
+  if (!match) {
+    const cat = categorizeText(tweetText);
+    const scoped = cat !== "Other"; // "Other" would scope the feed to leftovers, not to the topic
+    return res.json({
+      matched: false,
+      reason: "no confident market",
+      category: scoped ? cat : null,
+      feedUrl: scoped ? `${BASE_URL}/feed?cat=${encodeURIComponent(cat)}` : `${BASE_URL}/feed`,
+      stale: data.stale,
+    });
+  }
+
+  const rec = await createSlug(match.market);
+  // Markets the matcher literally cannot distinguish from this one (same tokens
+  // after the <3-char drop: July 7 vs July 10). The pick among them was made by
+  // volume, not by the tweet. Surfaced so /tool can warn the operator before a
+  // card goes out by hand. See NOTES/known-gaps.md.
+  const twins = nearTwins(match.market, data.markets);
+  return res.json({
+    matched: true,
+    via: match.via,
+    why: match.reason,
+    score: Number(match.score.toFixed(3)),
+    slug: rec.slug,
+    landingUrl: `${BASE_URL}/market/${rec.slug}`,
+    cardUrl: `${BASE_URL}/card/${rec.slug}.svg`,
+    market: rec.market,
+    nearTwins: twins.map((m) => m.question),
+    // Instant, deterministic lines so /tool always has SOMETHING to copy. The
+    // thread-aware reply lines are LLM work and load separately (/api/replycopy)
+    // so ten threads in a row never wait 6s each on the match response.
+    tweetCopy: tweetCopy(rec.market),
+    copySource: "template",
+    stale: data.stale,
+  });
+});
+
+/**
+ * Thread-aware reply lines, as their own round trip. /tool renders the match
+ * immediately with template copy, then upgrades to these when they land.
+ * Null tweetCopy = the model was off or its lines failed validation; the
+ * caller keeps the templates and says so.
+ */
+app.post("/api/replycopy", async (req, res) => {
+  const { tweetText, slug } = req.body as { tweetText?: string; slug?: string };
+  if (!tweetText?.trim() || !slug) return res.status(400).json({ error: "tweetText and slug required" });
+  const { all } = await getMarketData();
+  const rec = await getSlug(slug, all);
+  if (!rec) return res.status(404).json({ error: "unknown market" });
+  const lines = await replyCopy(tweetText, rec.market);
+  res.json(lines ? { tweetCopy: lines, copySource: "reply" } : { tweetCopy: null, copySource: "template" });
+});
+
+/**
+ * THE PAGE. oddie.fun/market/[slug] serves the feed, positioned so the
+ * tagged market is the top card. The slug is the door into the feed.
+ *
+ * Crawlers (X, WhatsApp, iMessage, Slack) don't run the SPA's JS, so the share
+ * preview has to live in the HTML they fetch. We look the market up and inject
+ * per-slug Open Graph tags whose og:image is the PNG card. A miss just serves
+ * the plain shell — the feed still opens, it simply has no rich preview.
+ */
+const ogEsc = (s: string): string =>
+  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+
+function moneyShort(n: number): string {
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `$${Math.round(n / 1e3)}K`;
+  return `$${Math.round(n)}`;
+}
+
+function marketPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string): string {
+  const m = rec.market;
+  const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
+  const title = m.question;
+  const desc = `call it — ${yes}% yes · ${moneyShort(m.volumeUsd)} in play`;
+  const img = `${BASE_URL}/card/${slug}.png`;
+  const url = `${BASE_URL}/market/${slug}`;
+  const tags = [
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="oddie">`,
+    `<meta property="og:title" content="${ogEsc(title)}">`,
+    `<meta property="og:description" content="${ogEsc(desc)}">`,
+    `<meta property="og:url" content="${ogEsc(url)}">`,
+    `<meta property="og:image" content="${ogEsc(img)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="2000">`,
+    `<meta property="og:image:height" content="1048">`,
+    `<meta property="og:image:alt" content="${ogEsc(title)}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${ogEsc(title)}">`,
+    `<meta name="twitter:description" content="${ogEsc(desc)}">`,
+    `<meta name="twitter:image" content="${ogEsc(img)}">`,
+  ].join("\n");
+  return FEED_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+}
+
+app.get("/market/:slug", async (req, res) => {
+  const { all } = await getMarketData();
+  const rec = await getSlug(req.params.slug, all).catch(() => null);
+  // ?pc=<token>: a PERSONAL share. The unfurl shows their call, not the generic
+  // market — that's the whole reason their followers react. Falls back to the
+  // market og on any mismatch, so a stale token still lands on a working page.
+  const pc = typeof req.query.pc === "string" ? req.query.pc : null;
+  if (rec && pc) {
+    const share = await getShareCall(pc).catch(() => null);
+    if (share && share.slug === req.params.slug) {
+      return res.type("html").send(positionPageHtml(rec, req.params.slug, share));
+    }
+  }
+  res.type("html").send(rec ? marketPageHtml(rec, req.params.slug) : FEED_HTML);
+});
+
+function positionPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string, share: { token: string; handle: string; side: string; entryPct: number; resolved: string | null }): string {
+  const title = `@${share.handle} called ${share.side.toUpperCase()} at ${share.entryPct}%`;
+  const won = share.resolved === share.side;
+  const desc = share.resolved && share.resolved !== "sold"
+    ? `resolved ${share.resolved.toUpperCase()} ${won ? "— called it" : ""} · ${rec.market.question}`
+    : `${rec.market.question} · market says ${Math.round(rec.market.yesPct)}% yes`;
+  const img = `${BASE_URL}/card/pc/${share.token}.png`;
+  const url = `${BASE_URL}/market/${slug}?pc=${share.token}`;
+  const tags = [
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="oddie">`,
+    `<meta property="og:title" content="${ogEsc(title)}">`,
+    `<meta property="og:description" content="${ogEsc(desc)}">`,
+    `<meta property="og:url" content="${ogEsc(url)}">`,
+    `<meta property="og:image" content="${ogEsc(img)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="2000">`,
+    `<meta property="og:image:height" content="1048">`,
+    `<meta property="og:image:alt" content="${ogEsc(title)}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${ogEsc(title)}">`,
+    `<meta name="twitter:description" content="${ogEsc(desc)}">`,
+    `<meta name="twitter:image" content="${ogEsc(img)}">`,
+  ].join("\n");
+  return FEED_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+}
+app.get("/feed", (_req, res) => {
+  res.type("html").send(FEED_HTML); // feed without a start market also works
+});
+
+/**
+ * Feed data: start market first (if given), then same category, then the
+ * rest by volume. Optional ?cat= filters to one category (chips).
+ */
+app.get("/api/feed", async (req, res) => {
+  const startSlug = String(req.query.start ?? "");
+  const cat = String(req.query.cat ?? "");
+  // Personalization: 1-3 picked categories rank FIRST (not filter — breadth
+  // stays visible), each block still volume-sorted.
+  const cats = String(req.query.cats ?? "").split(",").map((x) => x.trim()).filter((x) => (CATEGORIES as readonly string[]).includes(x)).slice(0, 3);
+  const data = await getMarketData();
+
+  // The feed is where a miss sends people. Serving it empty would turn a venue
+  // outage into a landing page that looks like we simply have no markets.
+  if (data.all.length === 0) {
+    return res.status(503).json({ error: "data_unavailable", venues: data.venues });
+  }
+
+  // Cards come from the CURATED set: bettable, and in one of the five chips. The
+  // matcher's universe is wider (`data.markets`) and deliberately not scrollable
+  // — a WTI crude market is a fine answer to a WTI take and a bad card to land on
+  // while swiping. The start slug resolves against the raw set, so a market that
+  // drifted to 98% still opens its own page.
+  const enriched = data.feed.map((m) => ({ m, cat: categorize(m) }));
+  let list = cat && cat !== "For you" ? enriched.filter((e) => e.cat === cat) : enriched;
+
+  const start = startSlug ? await getSlug(startSlug, data.all) : undefined;
+  const startCat = start ? categorize(start.market) : null;
+
+  list = [...list].sort((a, b) => {
+    if (startCat) {
+      const ac = a.cat === startCat ? 0 : 1;
+      const bc = b.cat === startCat ? 0 : 1;
+      if (ac !== bc) return ac - bc; // same category as the door first
+    }
+    return b.m.volumeUsd - a.m.volumeUsd; // then trending by volume
+  });
+
+  // Derive, don't write. Slugs are deterministic, so a feed card is shareable
+  // without minting a row; the row appears if and when someone opens it.
+  if (cats.length) {
+    list = [...list].sort((a, b) => {
+      const ai = cats.includes(a.cat) ? 0 : 1, bi = cats.includes(b.cat) ? 0 : 1;
+      if (ai !== bi) return ai - bi;
+      return b.m.volumeUsd - a.m.volumeUsd;
+    });
+  }
+  const items = list.slice(0, 40).map((e) => ({ slug: slugFor(e.m), category: e.cat, ...e.m }));
+
+  // If a start slug was given, pin it to the very top.
+  if (start) {
+    const i = items.findIndex((x) => x.slug === start.slug);
+    if (i > 0) items.unshift(items.splice(i, 1)[0]);
+    else if (i === -1)
+      items.unshift({ slug: start.slug, category: categorize(start.market), ...start.market });
+  }
+
+  // "Other" is the categorizer's shrug, and `inFeed` filters it out of the feed
+  // by definition — so shipping it as a chip offers a tab that can never hold a
+  // card. It was harmless while every market landed in a real category; widening
+  // the fetch to all tags made it a promise the feed cannot keep.
+  // The social layer, read from the same rows every screen reads: what the
+  // POPPERS said, alongside what the market prices. One query for the page.
+  const crowd = await crowdSplits(items.map((x) => x.slug));
+  const withCrowd = items.map((x) => ({ ...x, crowd: crowd[x.slug] ?? { yes: 0, no: 0 } }));
+
+  const chips = CATEGORIES.filter((c) => c !== "Other");
+  res.json({ categories: ["For you", ...chips], items: withCrowd });
+});
+
+/**
+ * Slug data (JSON) for anything that needs one market. Resolves against the raw
+ * set: a link already in the wild keeps working, and keeps showing live odds,
+ * even after the market drifts past 96%.
+ */
+app.get("/api/market/:slug", async (req, res) => {
+  const { all } = await getMarketData();
+  const rec = await getSlug(req.params.slug, all);
+  if (!rec) return res.status(404).json({ error: "unknown market" });
+  const yesTokens = rec.calls.filter((c) => c.side === "yes").reduce((s, c) => s + c.tokens, 0);
+  const noTokens = rec.calls.filter((c) => c.side === "no").reduce((s, c) => s + c.tokens, 0);
+  res.json({ ...rec, tally: { yesTokens, noTokens, calls: rec.calls.length } });
+});
+
+/**
+ * The card as SVG (rasterize to PNG before posting to X). This one is embedded in
+ * a tweet, so it must still render long after the market left the live set — it
+ * falls back to the stored snapshot.
+ */
+app.get("/card/:slug.svg", async (req, res) => {
+  const { all } = await getMarketData();
+  const rec = await getSlug(req.params.slug, all);
+  if (!rec) return res.status(404).send("unknown market");
+  res.type("image/svg+xml").send(renderCard(rec.market));
+});
+
+/**
+ * The same card as PNG — the shareable image. X and most chat apps refuse to
+ * unfurl an SVG as an og:image, so a pasted oddie.fun/market link needs a raster
+ * to preview. Same pixels as the SVG, only rasterised: the design never forks.
+ *
+ * Rasterising is CPU work and a link dropped in a busy channel is fetched by
+ * several unfurlers at once, so a short cache absorbs the burst. Odds drift
+ * slowly; a few minutes of staleness on a preview image is invisible, and the
+ * live feed the link opens into is always current.
+ */
+const pngCache = new Map<string, { png: Buffer; at: number }>();
+const PNG_TTL_MS = 5 * 60_000;
+
+/**
+ * The personal card, by share token only. Tokens are minted by the call's
+ * owner (below), so this renders exactly the calls people chose to publish.
+ */
+app.get("/card/pc/:token.svg", async (req, res) => {
+  const share = await getShareCall(req.params.token);
+  if (!share) return res.status(404).send("unknown share");
+  res.type("image/svg+xml").send(renderPositionCard(share));
+});
+
+app.get("/card/pc/:token.png", async (req, res) => {
+  const share = await getShareCall(req.params.token);
+  if (!share) return res.status(404).send("unknown share");
+  // Resolution is part of the cache key: the moment a position settles, the
+  // next fetch renders the verdict rather than serving 5 minutes of "in play".
+  const key = `pc:${req.params.token}:${share.resolved ?? "open"}`;
+  const now = Date.now();
+  const hit = pngCache.get(key);
+  if (hit && now - hit.at < PNG_TTL_MS) {
+    return res.type("image/png").set("Cache-Control", "public, max-age=300").send(hit.png);
+  }
+  const png = renderCardPng(renderPositionCard(share));
+  pngCache.set(key, { png, at: now });
+  res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
+});
+
+/** Owner mints the share link for one of their calls. 404 for everyone else. */
+app.post("/api/position/:id/sharelink", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  const id = Number(req.params.id);
+  if (!deviceId || !Number.isInteger(id)) return res.status(400).json({ ok: false });
+  const r = await mintShareToken(id, deviceId);
+  if (!r.ok) return res.status(404).json({ ok: false });
+  res.json({ ok: true, url: `${BASE_URL}/market/${r.slug}?pc=${r.token}`, cardUrl: `${BASE_URL}/card/pc/${r.token}.png` });
+});
+
+app.get("/card/:slug.png", async (req, res) => {
+  const slug = req.params.slug;
+  const now = Date.now();
+  const hit = pngCache.get(slug);
+  if (hit && now - hit.at < PNG_TTL_MS) {
+    return res.type("image/png").set("Cache-Control", "public, max-age=300").send(hit.png);
+  }
+  const { all } = await getMarketData();
+  const rec = await getSlug(slug, all);
+  if (!rec) return res.status(404).send("unknown market");
+  const png = renderCardPng(renderCard(rec.market));
+  pngCache.set(slug, { png, at: now });
+  if (pngCache.size > 300) for (const [k, v] of pngCache) if (now - v.at > PNG_TTL_MS) pngCache.delete(k);
+  res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
+});
+
+/**
+ * The anonymous device id the feed generates and keeps in localStorage. It is a
+ * random opaque string: not a login, not a user, and never joined to anything a
+ * person typed. Anything that does not look like one is treated as absent
+ * rather than stored, so a malformed or hostile value cannot become a key.
+ */
+const DEVICE_ID = /^[a-z0-9-]{8,64}$/i;
+const deviceIdOf = (body: unknown): string | null => {
+  const v = (body as { deviceId?: unknown })?.deviceId;
+  return typeof v === "string" && DEVICE_ID.test(v) ? v : null;
+};
+
+/**
+ * Paper trading, phase 1. Virtual tokens only: every device starts with 100,
+ * a call deducts its stake atomically, and nothing anywhere converts tokens to
+ * or from money. The device id is the only key — no account, no PII.
+ */
+/** The wallet: what you have, and when the game gives you more. */
+/**
+ * The velvet rope. The feed asks this on boot; the call/sell endpoints enforce
+ * it server-side regardless of what any client claims. Passing for the first
+ * time after an invite records invite_accepted — the loop's success metric.
+ */
+/** Honest social proof for the landing: how many markets are live right now.
+ *  Counts, no user numbers, no invention. */
+app.get("/api/stats", async (_req, res) => {
+  const data = await getMarketData();
+  res.json({ liveMarkets: data.markets.length, venues: Object.values(data.venues).filter((v) => v.enabled).length });
+});
+
+app.get("/api/gate", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  const gate = await gateFor(deviceId);
+  if (gate.allowed && gate.justAccepted) {
+    recordEvent({ name: "invite_accepted", deviceId }).catch(() => {});
+  }
+  res.json(gate);
+});
+
+app.get("/api/me", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  const [wallet, handle] = await Promise.all([getWallet(deviceId), displayHandle(deviceId)]);
+  res.json({ ...wallet, ...handle });
+});
+
+/**
+ * One identity, two sources. A linked X account's real @handle wins for display;
+ * the stored (random or chosen) one is what an anonymous device is called and
+ * what editing edits. `handleEditable` is the UI's cue to show or hide the pen.
+ */
+async function displayHandle(deviceId: string): Promise<{ handle: string; handleEditable: boolean }> {
+  const [own, accts] = await Promise.all([ensureHandle(deviceId), accountsFor(deviceId)]);
+  const tw = accts.find((a) => a.provider === "twitter" && a.handle);
+  // Stored X handles carry their own "@"; every consumer prefixes one, so
+  // strip it here — the UI showed "@@levvercetti" before this did.
+  return tw ? { handle: tw.handle!.replace(/^@+/, ""), handleEditable: false } : { handle: own, handleEditable: true };
+}
+
+app.post("/api/handle", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ ok: false, reason: "deviceId required" });
+  const proposed = (req.body as { handle?: unknown })?.handle;
+  if (typeof proposed !== "string") return res.status(400).json({ ok: false, reason: "handle required" });
+  const r = await setHandle(deviceId, proposed);
+  res.status(r.ok ? 200 : 409).json(r);
+});
+
+/** Real notifications: whatever has actually happened to this stream. */
+app.get("/api/notices", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json({ notices: await noticesFor(deviceId) });
+});
+
+/**
+ * Open positions carry today's price so the hold-or-sell decision can be made
+ * on the screen that offers it. Closed ones carry the edge they scored, and the
+ * reputation is the average of exactly those — including the losses.
+ */
+app.get("/api/positions", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  const { all } = await getMarketData();
+  const [wallet, positions, streak] = await Promise.all([getWallet(deviceId), positionsFor(deviceId, all), streakFor(deviceId)]);
+  res.json({ ...positions, tokens: wallet.tokens, nextTopUpMs: wallet.nextTopUpMs, streak });
+});
+
+/**
+ * Sell a position at the venue's current price for that side.
+ *
+ * NOT gated. The curated-launch rope governs OPENING positions (the call flow),
+ * not closing them: you may always exit a position you already hold. Gating the
+ * sell trapped tokens in a market a non-allowlisted holder couldn't leave — and
+ * returned a 403 the screen rendered as "Couldn't sell — try again", a lie that
+ * invited an endless pointless retry. Selling only ever returns YOUR own stake
+ * to YOUR balance; it grants no access, so there is nothing here to gate.
+ *
+ * Every failure is a state the screen can render — the row is gone, it was
+ * already sold, the venue stopped quoting it — so they come back as ok:false
+ * with a reason rather than as an exception. A stale venue is the one case that
+ * must NOT go through: selling against a price nobody is quoting any more is
+ * how a paper economy quietly prints tokens.
+ */
+app.post("/api/position/:id/sell", async (req, res) => {
+  const id = Number(req.params.id);
+  const deviceId = deviceIdOf(req.body);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "bad position id" });
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  try {
+    const data = await getMarketData();
+    if (data.stale) return res.status(503).json({ ok: false, reason: "stale-odds" });
+    const result = await sellPosition(id, deviceId, data.all);
+    if (!result.ok && result.reason === "not-found") return res.status(404).json(result);
+    res.json(result);
+  } catch (err) {
+    // sellPosition re-throws on a DB fault; without this the route 500s with an
+    // HTML body, the client's r.json() throws, and it too reads as "try again".
+    console.error("[sell] unexpected error:", (err as Error).message);
+    res.status(500).json({ ok: false, reason: "server-error" });
+  }
+});
+
+// --- optional identity -------------------------------------------------------
+//
+// Sign-in is an upgrade. Nothing below is ever required to read the feed, place
+// a call, sell a position or appear on the leaderboard. A provider we have no
+// secret for reports itself unavailable rather than pretending to work and
+// dying on the redirect.
+
+/** Which providers can actually be used right now, and who this browser is. */
+app.get("/api/auth/me", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  const providers = PROVIDERS.map((p) => ({ provider: p, available: isConfigured(p) }));
+  if (!deviceId) return res.json({ accounts: [], providers });
+  res.json({ accounts: await accountsFor(deviceId), providers });
+});
+
+/**
+ * Begin the dance. The device id rides in the pending record, not in the
+ * redirect_uri — the provider matches that URI byte for byte against what is
+ * registered in its console, and a query string on it is a mismatch.
+ */
+app.get("/api/auth/:provider/start", (req, res) => {
+  const p = req.params.provider;
+  if (!isProvider(p)) return res.status(404).json({ error: "unknown provider" });
+  if (!isConfigured(p)) return res.status(503).json({ error: "provider not configured", missing: missingSecretEnv(p) });
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+
+  const { verifier, challenge } = pkce();
+  const state = remember(p, verifier, deviceId);
+  res.redirect(authorizeUrl(p, state, challenge, BASE_URL));
+});
+
+/**
+ * Come back. Every failure lands the user on the Profile tab with a message,
+ * because a person halfway through signing in should not meet a JSON blob.
+ */
+app.get("/api/auth/:provider/callback", async (req, res) => {
+  const p = req.params.provider;
+  const back = (params: string) => res.redirect(`${BASE_URL}/feed?${params}#/profile`);
+  if (!isProvider(p)) return back("auth_error=unknown_provider");
+
+  // The provider says no: the user hit Cancel, or the app is misconfigured.
+  if (typeof req.query.error === "string") return back(`auth_error=${encodeURIComponent(req.query.error)}`);
+
+  const code = typeof req.query.code === "string" ? req.query.code : null;
+  const state = typeof req.query.state === "string" ? req.query.state : null;
+  if (!code || !state) return back("auth_error=missing_code");
+
+  // One-shot: a replayed state is a double-tapped back button at best.
+  const pendingAuth = consume(state);
+  if (!pendingAuth || pendingAuth.provider !== p) return back("auth_error=expired");
+
+  try {
+    const identity = await identify(p, code, pendingAuth.verifier, BASE_URL);
+    const result = await linkAccount(pendingAuth.deviceId, identity);
+    console.log(JSON.stringify({ evt: "auth_link", provider: p, seeded: result.seeded, bonus: result.bonus }));
+    return back(`connected=${p}&bonus=${result.bonus}`);
+  } catch (err) {
+    console.error(`[auth] ${p} failed:`, (err as Error).message);
+    return back("auth_error=link_failed");
+  }
+});
+
+/** The exact URI each provider console must have registered. Read-only, no secrets. */
+app.get("/api/auth/config", (_req, res) => {
+  res.json({
+    baseUrl: BASE_URL,
+    providers: PROVIDERS.map((p) => ({
+      provider: p,
+      callback: redirectUri(BASE_URL, p),
+      configured: isConfigured(p),
+      secretEnv: missingSecretEnv(p),
+    })),
+  });
+});
+
+/**
+ * Ranked by average edge. Devices are anonymous and stay that way: the id is
+ * truncated to something you can recognise as your own row and nobody else's.
+ */
+app.get("/api/leaderboard", async (req, res) => {
+  const q = req.query.deviceId;
+  const raw = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  // Board rows are canonical devices; a signed-in browser's own id is not.
+  const me = raw ? await resolveDevice(raw) : null;
+  const [edge, streaks, winnings] = await Promise.all([leaderboard(20), leaderboardStreaks(20), leaderboardWinnings(20)]);
+  res.json({
+    rows: edge.map((r, i) => ({
+      rank: i + 1, handle: r.handle, you: r.deviceId === me,
+      avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed, provisional: r.provisional,
+    })),
+    streaks: streaks.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, current: r.current, best: r.best })),
+    winnings: winnings.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, net: r.net, closed: r.closed })),
+  });
+});
+
+/**
+ * Place a call. Insufficient balance is a 200 with ok:false rather than an
+ * error status: the client caps the picker at the balance, so hitting this
+ * means two tabs raced — a state to render, not a failure to throw.
+ */
+app.post("/api/market/:slug/call", async (req, res) => {
+  const side = req.body?.side;
+  const tokens = Number(req.body?.tokens ?? 0);
+  const deviceId = deviceIdOf(req.body);
+  if (side !== "yes" && side !== "no") return res.status(400).json({ error: "side must be yes|no" });
+  if (!Number.isInteger(tokens) || tokens <= 0 || tokens > 1_000_000) return res.status(400).json({ error: "tokens must be a positive integer" });
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  const gate = await gateFor(deviceId);
+  if (!gate.allowed) {
+    // The free taste: ANY device not through the gate gets ONE call before it —
+    // signed out OR signed-in-but-unlisted alike, because the taste comes first
+    // and the gate is the last thing either of them sees. Capped per device by
+    // the calls already on the books. The `gate` field tells the client which
+    // terminal gate to show once the taste is spent (sign-in vs. not-listed).
+    const FREE_TASTE_CALLS = 1;
+    if ((await callCountOf(deviceId)) >= FREE_TASTE_CALLS) {
+      return res.status(403).json({ ok: false, reason: "not_allowed", gate: gate.reason === "signed_out" ? "taste_used" : gate.reason });
+    }
+  }
+  const { all } = await getMarketData();
+  const result = await placeCall(req.params.slug, side, tokens, deviceId, all);
+  if (!result.ok && result.reason === "unknown-market") return res.status(404).json({ ok: false, reason: "unknown-market", error: "unknown market" });
+  if (!result.ok) return res.json(result);
+  // The split INCLUDING the call just placed — the post-call line's "you're
+  // with 67% of poppers" is computed from what the table now says, not a guess.
+  const crowd = (await crowdSplits([req.params.slug]))[req.params.slug] ?? { yes: 0, no: 0 };
+  res.json({ ...result, crowd });
+});
+
+/**
+ * Week-1 telemetry. Four names, nothing else accepted; an unknown name is a 400
+ * rather than a row, so the table cannot silently grow a fifth event nobody
+ * decided on.
+ *
+ * Answers exactly three questions: how many came, how deep did they scroll, how
+ * many tapped. No IP, no user agent, no referrer, no free text. The feed sends
+ * these with sendBeacon, so the response body is never read — 204 and move on.
+ */
+app.post("/api/ev", async (req, res) => {
+  const name = req.body?.name;
+  const deviceId = deviceIdOf(req.body);
+  if (!(EVENT_NAMES as readonly string[]).includes(name)) return res.status(400).json({ error: "unknown event" });
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+
+  const side = req.body?.side === "yes" || req.body?.side === "no" ? req.body.side : null;
+  const idxRaw = Number(req.body?.idx);
+  const str = (v: unknown, max: number) => (typeof v === "string" && v.length <= max ? v : null);
+
+  await recordEvent({
+    name,
+    deviceId,
+    slug: str(req.body?.slug, 120),
+    idx: Number.isInteger(idxRaw) && idxRaw >= 0 && idxRaw < 1000 ? idxRaw : null,
+    side,
+    cat: str(req.body?.cat, 40),
+  });
+  res.status(204).end();
+});
+
+/**
+ * Week-1 seeding aid, for one operator. Paste a tweet, get the slug, card and
+ * link in one click instead of a curl. It calls /hook on this same origin, so
+ * there is no CORS to arrange.
+ *
+ * It is NOT automation: nothing here touches the X API, and no reply is ever
+ * posted. The card and the link get carried to Twitter by hand.
+ *
+ * Unlisted rather than protected: no nav links here, noindex, and no path anyone
+ * would guess. That is obscurity, not auth — it seeds nothing and reads nothing
+ * that /hook doesn't already expose to anyone who can POST to it.
+ */
+/**
+ * The manual-mention worklist for /tool. Unlisted like /tool itself — no nav
+ * links, noindex — rather than gated.
+ * Copy text is generated here so the operator pastes, posts, and marks sent.
+ */
+/**
+ * The invite panel's data. Waitlist emails come from Supabase (the landing's
+ * store) over plain REST — no SDK. Without SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY
+ * on this service the panel says so and manual allowlisting still works.
+ * Railway-origin only, like /tool.
+ */
+const SUPA = () => ({ url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY });
+
+app.get("/api/invites", async (_req, res) => {
+  const { url, key } = SUPA();
+  let waitlist: { email: string; created_at: string }[] | null = null;
+  if (url && key) {
+    try {
+      const r = await fetch(`${url}/rest/v1/waitlist?select=email,created_at&order=created_at.desc&limit=200`, {
+        headers: { apikey: key, authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000),
+      });
+      if (r.ok) waitlist = (await r.json()) as { email: string; created_at: string }[];
+    } catch (err) { console.error("[invites] supabase read failed:", (err as Error).message); }
+  }
+  res.json({ waitlist, supabase: Boolean(url && key), allowlist: await allowlistRows() });
+});
+
+app.post("/api/invites/send", async (req, res) => {
+  const email = String((req.body as { email?: unknown })?.email ?? "").trim().toLowerCase();
+  const source = String((req.body as { source?: unknown })?.source ?? "waitlist");
+  if (!email.includes("@")) return res.status(400).json({ ok: false, reason: "bad email" });
+  const ok = await addToAllowlist(email, source, true);
+  if (!ok) return res.status(400).json({ ok: false, reason: "bad email" });
+  const sent = await sendMail({
+    to: email,
+    subject: "you're in — Oddie beta",
+    html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:520px">
+  <p style="font-size:17px;font-weight:700;margin:0 0 12px">you're in.</p>
+  <p style="margin:0 0 16px">Your spot on the Oddie beta just opened. Sign in with this Google account and you're playing — free, virtual tokens, nothing to cash out.</p>
+  <p style="margin:0 0 20px"><a href="${BASE_URL}/feed?invite=1" style="display:inline-block;background:#68C6FF;color:#000;font-weight:700;border:3px solid #000;border-radius:14px;padding:10px 18px;text-decoration:none">open the feed →</a></p>
+  <p style="color:#6B7A88;font-size:12.5px;margin:0">oddie · bet, don't argue</p>
+</div>`,
+  });
+  recordEvent({ name: "invite_sent", deviceId: "operator" }).catch(() => {});
+  res.json({ ok: true, mail: sent });
+});
+
+app.get("/api/mentions", async (_req, res) => {
+  const rows = await mentionCandidates();
+  const out = [];
+  for (const r of rows) {
+    const token = r.shareToken ?? (await mintShareTokenForMention(r.callId));
+    const won = r.side === r.outcome;
+    const line = won
+      ? `@${r.handle} called ${r.side.toUpperCase()} at ${r.entryPct}% — resolved ${r.outcome.toUpperCase()} ✓ +${r.proceeds} tokens`
+      : `@${r.handle} called ${r.side.toUpperCase()} at ${r.entryPct}% — resolved ${r.outcome.toUpperCase()}`;
+    out.push({
+      callId: r.callId, handle: r.handle, won, line,
+      url: token ? `${BASE_URL}/market/${r.slug}?pc=${token}` : `${BASE_URL}/market/${r.slug}`,
+      question: r.question, mentionedAt: r.mentionedAt, returned24h: r.returned24h,
+    });
+  }
+  res.json({ mentions: out });
+});
+
+app.post("/api/mentions/:id/sent", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ ok: false });
+  res.json({ ok: await markMentioned(id) });
+});
+
+app.get("/tool", (_req, res) => {
+  res.set("X-Robots-Tag", "noindex, nofollow");
+  res.type("html").send(TOOL_HTML);
+});
+
+/* --------------------------------------------------------------- settlement --
+ * The resolution loop. Every open position's market is checked against its
+ * venue's OWN verdict — never inferred from a market merely dropping out of the
+ * live set (delistings, tag drift and venue outages all look like that too).
+ *
+ * A market still trading at a real price is skipped without a network call, so
+ * the sweep's cost scales with markets that might have resolved, not with all
+ * open positions. Idempotency lives in the store (`WHERE closed_at IS NULL`),
+ * so an overlapping or repeated sweep can only ever settle a position once.
+ */
+// Local demos and tests only: lets a dev box trigger settlement through the API.
+// The env var is not set on Railway, so the route does not exist in production —
+// resolution there comes only from the sweep reading the venue's own verdict.
+if (process.env.ALLOW_TEST_SETTLE === "1") {
+  app.post("/api/_settle", async (req, res) => {
+    const { slug, outcome } = req.body as { slug?: string; outcome?: string };
+    if (!slug || (outcome !== "yes" && outcome !== "no")) return res.status(400).json({ error: "slug and outcome required" });
+    const settled = await settleMarket(slug, outcome);
+    await emailSettled(slug, outcome, settled);
+    res.json({ settled });
+  });
+}
+
+/**
+ * The email leg of settlement outreach: every settled position whose owner has
+ * a verified Google address gets exactly one message. Failures are logged and
+ * swallowed — the tokens are already paid; mail is a courtesy, not a ledger.
+ */
+async function emailSettled(slug: string, outcome: "yes" | "no", settled: { deviceId: string | null; side: "yes" | "no"; stake: number; entryPct: number; proceeds: number }[]): Promise<void> {
+  try {
+    const rec = await getSlug(slug);
+    const question = rec?.market.question ?? slug;
+    const devices = [...new Set(settled.map((x) => x.deviceId).filter((d): d is string => Boolean(d)))];
+    const emails = await emailsFor(devices);
+    for (const p of settled) {
+      const to = p.deviceId ? emails[p.deviceId] : undefined;
+      if (!to) continue;
+      await sendSettleMail({
+        to, question, side: p.side, entryPct: p.entryPct, outcome,
+        proceeds: p.proceeds, stake: p.stake,
+        positionsUrl: `${BASE_URL}/feed#/positions`,
+      });
+    }
+  } catch (err) {
+    console.error("[mail] settle batch failed:", (err as Error).message);
+  }
+}
+
+const SWEEP_EVERY_MS = 10 * 60_000;
+let sweeping = false;
+
+export async function sweepSettlements(): Promise<void> {
+  if (sweeping) return; // one sweep at a time; the next tick catches anything missed
+  sweeping = true;
+  try {
+    const slugs = await openSlugs();
+    if (slugs.length === 0) return;
+    const { all } = await getMarketData();
+    for (const slug of slugs) {
+      const rec = await getSlug(slug, all);
+      if (!rec) continue;
+      const live = all.find((m) => m.venue === rec.market.venue && m.venueId === rec.market.venueId);
+      if (live && live.yesPct > 0 && live.yesPct < 100) continue; // still trading
+      const outcome = await fetchResolution(rec.market.venue, rec.market.venueId);
+      if (!outcome) continue; // closed-not-resolved, unlisted, or a venue hiccup: wait
+      const settled = await settleMarket(slug, outcome);
+      if (settled.length > 0) {
+        console.log(`[settle] ${slug} -> ${outcome}: ${settled.length} position(s), ${settled.reduce((s, x) => s + x.proceeds, 0)} tokens paid`);
+        await emailSettled(slug, outcome, settled);
+      }
+    }
+  } catch (err) {
+    console.error("[settle] sweep failed:", (err as Error).message);
+  } finally {
+    sweeping = false;
+  }
+}
+setInterval(sweepSettlements, SWEEP_EVERY_MS).unref();
+setTimeout(sweepSettlements, 45_000).unref(); // first pass shortly after boot, once venues are warm
+
+const PORT = Number(process.env.PORT ?? 3000);
+app.listen(PORT, () =>
+  console.log(
+    `oddie on ${BASE_URL} (port ${PORT}) — semantic matching ${semanticEnabled() ? "ON" : `OFF (set ${SEMANTIC_KEY_ENV} to enable)`}; settle mail ${mailEnabled() ? "ON" : `DRY-RUN (set ${MAIL_KEY_ENV} to send)`}`,
+  ),
+);

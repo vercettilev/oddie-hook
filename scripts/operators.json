@@ -1,0 +1,11 @@
+{
+  "comment": "Devices excluded from every funnel measurement. confirmed = the operator said so; suspected = pattern-identified (X-linked stream, operator play), remove if disowned.",
+  "confirmed": [
+    "c3f2e1aa-fc5f-4b4d-a453-c46d36a2d4a7",
+    "8b13e378-6692-479c-ad4c-1b99645f2db8"
+  ],
+  "suspected": [
+    "e4db4d44-cf74-4a0c-806b-d471841bb916",
+    "071166c2-bdd9-4e57-a11c-3e6533655b10"
+  ]
+}
