@@ -162,12 +162,15 @@
      to leave the next card's edge peeking below (feed, not single screen), and
      centres its own content so there is no dead space. */
   .card{scroll-snap-align:start;scroll-margin-top:var(--feedtop);position:relative;
-    width:min(var(--col), calc(100% - 26px));margin:0 auto 16px;
-    min-height:calc(100dvh - var(--feedtop) - var(--tabh) - 104px);
-    display:flex;flex-direction:column;justify-content:center;gap:2px;
+    width:min(500px, calc(100% - 24px));margin:0 auto 18px;
+    min-height:56dvh;               /* hugs its content — no internal dead space */
+    display:flex;flex-direction:column;justify-content:center;gap:0;
     background:var(--card-surface);border:2px solid var(--card-line);border-radius:30px;
-    box-shadow:var(--card-shadow);padding:22px 22px 22px;
-    transition:transform .35s cubic-bezier(.2,.9,.25,1)}
+    box-shadow:var(--card-shadow);padding:24px 22px 22px;
+    transform-origin:center center;will-change:transform,opacity;
+    /* Scroll-driven depth (scale+fade) is set inline by the scroll handler; the
+       short ease keeps it smooth between coarse scroll frames. */
+    transition:transform .16s ease-out, opacity .16s ease-out, box-shadow .3s ease}
   .card:first-child{margin-top:var(--feedtop)}
   .scroller{padding-bottom:calc(env(safe-area-inset-bottom) + var(--tabh) + 10px)}
   /* Secondary tier — the category tag recedes below the hero question. */
@@ -182,9 +185,10 @@
     text-decoration:none;box-shadow:0 3px 0 rgba(0,0,0,.16)}
   /* the post-call belonging line */
   .socline{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--link-g);margin-top:7px}
-  /* The hero: the question is the loudest thing on the card. */
-  .take{font-size:min(31px,8vw);font-weight:600;line-height:1.14;letter-spacing:-.015em;
-    color:var(--on-ground);margin:14px 0 12px}
+  /* The hero: the question commands — dramatically larger + tighter than every
+     supporting element, which all sit at ~11-13px. That gap is the hierarchy. */
+  .take{font-size:min(35px,9vw);font-weight:600;line-height:1.07;letter-spacing:-.025em;
+    color:var(--on-ground);margin:12px 0 14px}
   .social{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:12px 0 0;min-height:16px}
   /* the 5s undo window after a one-tap call: undo is a real button, change-amount a quiet link */
   .social .undo{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--ink);
@@ -231,31 +235,37 @@
      other recedes. `--fill` (per-side odds, inline) drives only the rest-state
      meter. The number keeps its white-stroke halo so it reads on white AND on the
      accent fill. */
-  .duel{display:flex;flex-direction:row;gap:12px;margin-top:4px}
-  .orow{--fill:50%;flex:1 1 0;position:relative;overflow:hidden;
+  .duel{display:flex;flex-direction:row;gap:12px;margin-top:6px}
+  .orow{--fill:50%;flex:1 1 0;position:relative;overflow:hidden;isolation:isolate;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
-    min-height:120px;padding:15px 8px 18px;border-radius:24px;border:3.5px solid #000;background:#fff;
+    min-height:122px;padding:15px 8px 18px;border-radius:24px;border:3.5px solid #000;background:#fff;
     cursor:pointer;font-family:inherit;box-shadow:0 3px 0 rgba(0,0,0,.15);
-    transition:transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s ease, background .22s ease, opacity .2s ease}
+    transition:transform .22s cubic-bezier(.34,1.56,.64,1), box-shadow .22s ease, opacity .2s ease}
   .orow:active{transform:translateY(2px) scale(.985);box-shadow:0 1px 0 rgba(0,0,0,.15)}
   .orow:disabled{cursor:default}
+  .orow>*{position:relative;z-index:2}
+  /* The accent FILL: a layer that springs up from the bottom on tap — the "fill",
+     not an instant background swap. overflow clips its spring overshoot. */
+  .orow::before{content:"";position:absolute;inset:0;z-index:1;background:var(--accent);
+    transform:scaleY(0);transform-origin:bottom center;
+    transition:transform .34s cubic-bezier(.34,1.55,.5,1)}
   /* rest-state odds meter: secondary, subtle, along the bottom edge */
-  .orow::after{content:"";position:absolute;left:0;bottom:0;height:5px;width:var(--fill);
+  .orow::after{content:"";position:absolute;left:0;bottom:0;z-index:1;height:5px;width:var(--fill);
     background:var(--accent);opacity:.5;transition:width .55s cubic-bezier(.2,.8,.2,1), opacity .2s}
-  .oside{font-family:'Fredoka';font-size:14px;font-weight:700;letter-spacing:.05em;color:#6B7A88;text-transform:uppercase}
+  .oside{font-family:'Fredoka';font-size:13px;font-weight:700;letter-spacing:.05em;color:#6B7A88;text-transform:uppercase}
   .opct{font-size:min(42px,11vw);font-weight:700;line-height:1;letter-spacing:-.02em;
     color:#141414;-webkit-text-stroke:2.5px #fff;paint-order:stroke fill;font-variant-numeric:tabular-nums;text-align:center}
   .opct-unit{font-size:.48em;font-weight:700;vertical-align:.42em;margin-left:1px}
-  .opay{font-family:'Nunito';font-weight:800;font-size:12.5px;color:#4d6e10;white-space:nowrap}
-  /* Tapped: spring to a solid accent fill and lift — the tactile "locked" beat. */
-  .orow.pick{background:var(--accent);transform:scale(1.02);
-    box-shadow:0 6px 0 rgba(0,0,0,.22), 0 10px 22px rgba(120,165,40,.4)}
+  .opay{font-family:'Nunito';font-weight:800;font-size:12px;color:#4d6e10;white-space:nowrap}
+  /* Tapped: the fill springs up, the tile lifts — a crisp, tactile locked state. */
+  .orow.pick{transform:scale(1.02);box-shadow:0 6px 0 rgba(0,0,0,.22), 0 10px 22px rgba(120,165,40,.4)}
+  .orow.pick::before{transform:scaleY(1)}
   .orow.pick::after{opacity:0}
   .orow.pick .oside{color:#25340a}
   .orow.pick .opay{color:#31480a}
-  .orow.dim{opacity:.4;transform:scale(.965)}
+  .orow.dim{opacity:.4;transform:scale(.955)}
   :root[data-theme="dark"] .orow.dim{opacity:.5}
-  @media (prefers-reduced-motion:reduce){.orow,.orow::after,.card{transition:none}}
+  @media (prefers-reduced-motion:reduce){.orow,.orow::after,.orow::before,.card{transition:none}}
 
   /* The balance pill keeps its pale-lime fill (a SURFACE token) in BOTH themes,
      so in dark mode its number and top-up note must stay dark to read on it. */
@@ -646,36 +656,28 @@
     .navitem.on{background:var(--accent);border-color:#000;color:#000;font-weight:600}
     .railfoot{margin-top:auto;font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);line-height:1.5}
 
-    .stage{display:flex;align-items:center;justify-content:center;padding:34px 28px}
-    /* The frame is the phone: it is FEED BACKGROUND, not a card, so it takes the
-       ground. It used to hardcode #fff, which in dark mode put --on-ground text
-       on a white sheet — the desktop half of the surface-ink bug, invisible to a
-       check that measured text against `body`. */
-    .frame{display:flex;flex-direction:column;width:min(100%,620px);
-      height:min(920px, calc(100dvh - 68px));background:var(--ground);
-      border:4px solid var(--line-g);border-radius:34px;overflow:hidden;
-      box-shadow:0 26px 60px rgba(13,60,90,.16)}
-
-    /* Inside the frame the header is a real sibling, not a floating overlay: the
-       scroller starts where the header stops, so no card has to reserve space for it. */
-    .top{position:static;background:var(--ground);border-bottom:2.5px solid var(--hair-g);padding:16px 22px 14px}
+    .stage{display:flex;align-items:stretch;justify-content:center;padding:0}
+    /* A constrained, centered column — not a wide phone mockup floating in space.
+       The cards carry their own depth now, so the frame's border/shadow/sheet are
+       gone; the quiet dot-grid ground shows on the sides. */
+    .frame{display:flex;flex-direction:column;width:520px;max-width:calc(100% - 40px);
+      height:100dvh;background:transparent;border:none;border-radius:0;box-shadow:none;overflow:hidden}
+    .top{position:static;background:transparent;border-bottom:none;padding:18px 12px 10px}
     .top-in{max-width:none;padding:0}
     .top .brand{display:none}          /* the rail carries the wordmark */
-    .scroller{height:auto;flex:1;min-height:0}
+    .scroller{height:auto;flex:1;min-height:0;scroll-snap-type:y mandatory;
+      scroll-padding-top:12px;padding-bottom:36px}
     .sheet{max-width:none;padding:26px 26px 34px}
-
-    /* Inside the phone frame the card is the same physical object as on mobile,
-       just sized to the frame (no viewport-based min-height, no fixed-header
-       offset, and the old centring spacers retired). */
-    .card{width:calc(100% - 36px);margin:16px auto;scroll-margin-top:14px;
-      min-height:calc(100% - 60px);padding:30px 30px 26px}
-    .card::before,.card::after{display:none}
+    /* Same physical card object as mobile — content-hug, no fixed-bar offset. */
+    .card{width:min(500px, calc(100% - 20px));margin:0 auto 18px;scroll-margin-top:12px;
+      min-height:auto;padding:26px 26px 24px}
+    .card:first-child{margin-top:12px}
     .chead{margin-bottom:2px}
-    .opct{font-size:44px}
-    .oside{font-size:15px}
-    .opay{font-size:13px}
-    .take{font-size:30px}
-    .nudge{margin-top:20px}
+    .opct{font-size:42px}
+    .oside{font-size:13px}
+    .opay{font-size:12px}
+    .take{font-size:33px}
+    .nudge{margin-top:18px}
   }
 
 
@@ -1471,7 +1473,36 @@ function renderFeed(items){
   if(tail==="picker")scroller.appendChild(buildPicker());
   else if(tail==="gate")scroller.appendChild(buildGate());
   watchDepth(scroller);
+  bindDepth(scroller);
   hintFirstCard(scroller);
+}
+
+/**
+ * Scroll-driven depth: the card at the snap line reads full; every card below it
+ * recedes (scale + fade) so the peek is an obvious, layered stack — not a card
+ * stranded in empty space. rAF-throttled, one listener per scroller.
+ */
+let depthRAF=null;
+function applyDepth(scroller){
+  const cards=scroller.querySelectorAll(".card"); if(!cards.length)return;
+  const vh=scroller.clientHeight||window.innerHeight;
+  const pad=parseFloat(getComputedStyle(scroller).scrollPaddingTop)||0;
+  const activeLine=scroller.getBoundingClientRect().top+pad;
+  cards.forEach(card=>{
+    const d=card.getBoundingClientRect().top-activeLine;    // 0 at the snap line
+    let scale=1, op=1;
+    if(d>0){const t=Math.min(1,d/(vh*0.55)); scale=1-0.06*t; op=1-0.5*t;}      // peeking below
+    else if(d<0){const t=Math.min(1,-d/(vh*0.5)); scale=1-0.04*t; op=1-0.55*t;} // scrolled above
+    card.style.transform=`scale(${scale.toFixed(3)})`;
+    card.style.opacity=op.toFixed(3);
+  });
+}
+function bindDepth(scroller){
+  applyDepth(scroller);
+  if(scroller._depthBound)return; scroller._depthBound=true;
+  const onScroll=()=>{ if(depthRAF)return; depthRAF=requestAnimationFrame(()=>{depthRAF=null;applyDepth(scroller);}); };
+  scroller.addEventListener("scroll",onScroll,{passive:true});
+  window.addEventListener("resize",onScroll,{passive:true});
 }
 
 /**
