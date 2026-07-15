@@ -1235,22 +1235,85 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
   }));
 }
 
-/** Every community market with resolution + on-chain state, for the /tool admin list. */
-export async function adminListCommunity(): Promise<Array<{
-  slug: string; question: string; yesPct: number; resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; closesAt: string | null;
-}>> {
+export interface CommunityListItem {
+  slug: string; question: string; yesPct: number;
+  resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; closesAt: string | null;
+  yesTokens: number; noTokens: number; yesPlayers: number; noPlayers: number;
+}
+
+/** Every community market with resolution + on-chain state + pool totals, for the /tool admin panel. */
+export async function adminListCommunity(): Promise<CommunityListItem[]> {
   if (!PERSISTENT) {
     return [...memCommunity.values()].map((meta) => {
       const rec = mem.get(meta.slug)!;
-      return { slug: meta.slug, question: rec.market.question, yesPct: rec.market.yesPct, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, closesAt: rec.market.closesAt };
+      const calls = memCalls.filter((c) => c.slug === meta.slug);
+      const tokens = (s: "yes" | "no") => calls.filter((c) => c.side === s).reduce((a, c) => a + c.tokens, 0);
+      const players = (s: "yes" | "no") => new Set(calls.filter((c) => c.side === s).map((c) => c.deviceId)).size;
+      return {
+        slug: meta.slug, question: rec.market.question, yesPct: rec.market.yesPct,
+        resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, closesAt: rec.market.closesAt,
+        yesTokens: tokens("yes"), noTokens: tokens("no"), yesPlayers: players("yes"), noPlayers: players("no"),
+      };
     });
   }
   await ensureSchema();
-  const { rows } = await db().query<{ slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null }>(`
-    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at
+  const { rows } = await db().query<{
+    slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null;
+    yes_tokens: number; no_tokens: number; yes_players: number; no_players: number;
+  }>(`
+    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at,
+           COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes'), 0)::int AS yes_tokens,
+           COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'), 0)::int  AS no_tokens,
+           COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes')::int AS yes_players,
+           COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no')::int  AS no_players
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
+      LEFT JOIN market_call mc ON mc.slug = c.slug
+     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.created_at
      ORDER BY c.created_at DESC`);
-  return rows.map((r) => ({ slug: r.slug, question: r.question, yesPct: r.yes_pct, resolvedOutcome: r.resolved_outcome, onchainPubkey: r.onchain_pubkey, closesAt: r.closes_at ? r.closes_at.toISOString() : null }));
+  return rows.map((r) => ({
+    slug: r.slug, question: r.question, yesPct: r.yes_pct, resolvedOutcome: r.resolved_outcome,
+    onchainPubkey: r.onchain_pubkey, closesAt: r.closes_at ? r.closes_at.toISOString() : null,
+    yesTokens: r.yes_tokens, noTokens: r.no_tokens, yesPlayers: r.yes_players, noPlayers: r.no_players,
+  }));
+}
+
+export interface CommunityDetailPosition {
+  deviceId: string | null; side: "yes" | "no"; tokens: number; entryPct: number | null; closed: boolean; proceeds: number | null;
+}
+export interface CommunityMarketDetail {
+  slug: string; question: string; closesAt: string | null; yesPct: number; marketId: number;
+  resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; onchainSig: string | null;
+  positions: CommunityDetailPosition[];
+}
+
+/** Full inside-the-market view for the admin panel: meta + every position. The
+ *  server adds handles + payout math on top (it owns handle resolution). */
+export async function communityMarketDetail(slug: string): Promise<CommunityMarketDetail | null> {
+  if (!PERSISTENT) {
+    const meta = memCommunity.get(slug);
+    const rec = mem.get(slug);
+    if (!meta || !rec) return null;
+    const positions = memCalls
+      .filter((c) => c.slug === slug)
+      .map((c) => ({ deviceId: c.deviceId, side: c.side, tokens: c.tokens, entryPct: c.entryPct, closed: Boolean(c.closedAt), proceeds: c.proceeds }));
+    return {
+      slug, question: rec.market.question, closesAt: rec.market.closesAt, yesPct: rec.market.yesPct,
+      marketId: meta.marketId, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig, positions,
+    };
+  }
+  await ensureSchema();
+  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null }>(`
+    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig
+      FROM community_market c JOIN market_slug s ON s.slug = c.slug WHERE c.slug = $1`, [slug]);
+  if (!meta.rows.length) return null;
+  const m = meta.rows[0];
+  const pos = await db().query<{ side: "yes" | "no"; tokens: number; device_id: string | null; pct_at: number | null; closed_at: Date | null; proceeds: number | null }>(`
+    SELECT side, tokens, device_id, pct_at, closed_at, proceeds FROM market_call WHERE slug = $1 ORDER BY at ASC`, [slug]);
+  return {
+    slug, question: m.question, closesAt: m.closes_at ? m.closes_at.toISOString() : null, yesPct: m.yes_pct,
+    marketId: Number(m.market_id), resolvedOutcome: m.resolved_outcome, onchainPubkey: m.onchain_pubkey, onchainSig: m.onchain_sig,
+    positions: pos.rows.map((r) => ({ deviceId: r.device_id, side: r.side, tokens: r.tokens, entryPct: r.pct_at, closed: Boolean(r.closed_at), proceeds: r.proceeds })),
+  };
 }
 
 /** Mark a community market resolved. Returns false if unknown or already resolved

@@ -11,7 +11,8 @@ import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
-import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, markCommunityResolved, type CommunityMarket } from "./store/markets.js";
+import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, type CommunityMarket } from "./store/markets.js";
+import { proceedsFor } from "./store/economy.js";
 import { mintMarket, isChainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { renderCard } from "./card/renderCard.js";
@@ -871,6 +872,43 @@ app.get("/api/community/list", requireAdmin, async (_req, res) => {
   res.json({
     items: items.map((i) => ({ ...i, explorer: i.onchainPubkey ? explorerUrl(i.onchainPubkey) : null })),
     chain: { enabled: isChainEnabled(), admin: await adminAddress(), balanceSol: await adminBalanceSol() },
+  });
+});
+
+// The inside-the-market admin view: pool split, positions (with handles), and a
+// payout preview for BOTH outcomes, so resolution is done with full visibility.
+app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
+  const detail = await communityMarketDetail(req.params.slug);
+  if (!detail) return res.status(404).json({ error: "unknown community market" });
+
+  // Resolve handles once per distinct device (few positions, so this is cheap).
+  const devices = [...new Set(detail.positions.map((p) => p.deviceId).filter((d): d is string => Boolean(d)))];
+  const handleList = await Promise.all(devices.map(async (d) => [d, (await displayHandle(d)).handle] as const));
+  const handles = new Map(handleList);
+
+  let totalYes = 0, totalNo = 0, payoutIfYes = 0, payoutIfNo = 0, winnersYes = 0, winnersNo = 0;
+  const pYes = new Set<string>(), pNo = new Set<string>();
+  const positions = detail.positions.map((p) => {
+    const entry = p.entryPct ?? 0;
+    const payoutIfWin = entry > 0 ? proceedsFor(p.tokens, entry, 100) : 0; // round(stake*100/entry)
+    if (p.side === "yes") { totalYes += p.tokens; if (p.deviceId) pYes.add(p.deviceId); payoutIfYes += payoutIfWin; if (payoutIfWin > 0) winnersYes++; }
+    else { totalNo += p.tokens; if (p.deviceId) pNo.add(p.deviceId); payoutIfNo += payoutIfWin; if (payoutIfWin > 0) winnersNo++; }
+    return {
+      handle: p.deviceId ? (handles.get(p.deviceId) ?? p.deviceId.slice(0, 10) + "…") : "anon",
+      deviceId: p.deviceId, side: p.side, tokens: p.tokens, entryPct: p.entryPct, payoutIfWin, closed: p.closed, proceeds: p.proceeds,
+    };
+  });
+  const total = totalYes + totalNo;
+
+  res.json({
+    slug: detail.slug, question: detail.question, closesAt: detail.closesAt, yesPct: detail.yesPct, marketId: detail.marketId,
+    resolvedOutcome: detail.resolvedOutcome,
+    onchain: detail.onchainPubkey
+      ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey), signature: detail.onchainSig, minted: true }
+      : { minted: false },
+    pool: { totalYes, totalNo, playersYes: pYes.size, playersNo: pNo.size, poolYesPct: total > 0 ? Math.round((100 * totalYes) / total) : null },
+    preview: { ifYes: { totalPayout: payoutIfYes, winners: winnersYes }, ifNo: { totalPayout: payoutIfNo, winners: winnersNo } },
+    positions,
   });
 });
 

@@ -149,7 +149,7 @@
   </div>
 
   <div class="box" id="resolve" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">resolve a community market — settles all positions</p>
+    <p class="verdict" style="font-size:17px">community market admin — pool, positions, payout preview, resolve</p>
     <div id="rlist"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
@@ -514,31 +514,79 @@ async function loadCommunity() {
     if (r.status === 401) { stat.textContent = "admin token missing or wrong."; box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
     const j = await r.json();
     chainEnabled = !!(j.chain && j.chain.enabled);
+    const bal = j.chain && j.chain.balanceSol;
     stat.innerHTML = chainEnabled
-      ? 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 8)) + '… · balance ' + (j.chain.balanceSol == null ? '?' : j.chain.balanceSol.toFixed(3)) + ' SOL'
+      ? 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 10)) + '… · <b>balance ' + (bal == null ? '?' : bal.toFixed(3)) + ' SOL</b>'
+        + (bal != null && bal < 0.05 ? ' — <b style="color:#b00000">low, top up</b>' : '')
       : 'on-chain: <b>disabled</b> (set SOLANA_ADMIN_SECRET_KEY to mint on devnet)';
     if (!j.items.length) { box.innerHTML = '<p class="why">no community markets yet.</p>'; return; }
     box.innerHTML = j.items.map((m) => {
       const done = m.resolvedOutcome;
-      const chain = m.explorer ? ' · <a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">on-chain ↗</a>' : '';
-      return '<div class="box" style="margin-bottom:10px"><p class="why" style="color:var(--ink);font-weight:700">' + esc(m.question) + '</p>'
-        + '<p class="why">' + m.yesPct + '% yes' + chain + (done ? (' · <b>resolved ' + String(done).toUpperCase() + '</b>') : '') + '</p>'
-        + (done ? '' : ('<div class="row" style="margin-top:8px"><button class="ghost rz" data-slug="' + esc(m.slug) + '" data-o="yes">resolve YES</button>'
-          + '<button class="ghost rz" data-slug="' + esc(m.slug) + '" data-o="no">resolve NO</button></div>'))
+      const minted = m.explorer ? '<a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">minted ✓ ↗</a>' : 'on-chain: skipped';
+      const pool = 'YES <b>' + m.yesTokens + '</b> (' + m.yesPlayers + 'p) · NO <b>' + m.noTokens + '</b> (' + m.noPlayers + 'p)';
+      return '<div class="box mkt" data-slug="' + esc(m.slug) + '" style="margin-bottom:10px">'
+        + '<p class="why" style="color:var(--ink);font-weight:700">' + esc(m.question) + (done ? ' · <b>RESOLVED ' + String(done).toUpperCase() + '</b>' : '') + '</p>'
+        + '<p class="why">' + pool + ' · ' + minted + '</p>'
+        + '<div class="row" style="margin-top:6px"><button class="ghost manage" data-slug="' + esc(m.slug) + '">manage / view positions ▾</button></div>'
+        + '<div class="mktdetail" style="margin-top:10px"></div>'
         + '</div>';
     }).join("");
-    box.querySelectorAll(".rz").forEach((b) => { b.onclick = () => resolveMarket(b.dataset.slug, b.dataset.o); });
+    box.querySelectorAll(".manage").forEach((b) => { b.onclick = () => toggleDetail(b); });
   } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
 }
 
-async function resolveMarket(slug, outcome) {
-  if (!confirm("Resolve " + outcome.toUpperCase() + "? This settles all positions and cannot be undone.")) return;
+async function toggleDetail(btn) {
+  const mkt = btn.closest(".mkt"), panel = mkt.querySelector(".mktdetail");
+  if (panel.dataset.open === "1") { panel.style.display = "none"; panel.dataset.open = ""; btn.textContent = "manage / view positions ▾"; return; }
+  panel.style.display = "block"; panel.dataset.open = "1"; btn.textContent = "hide ▴";
+  await loadMarketDetail(btn.dataset.slug, panel);
+}
+
+// The inside-the-market view: on-chain address, pool split, every position, and
+// a payout preview for BOTH outcomes — so resolve is done with full visibility.
+async function loadMarketDetail(slug, panel) {
+  panel.innerHTML = '<p class="why">loading…</p>';
+  try {
+    const r = await fetch("/api/community/market/" + encodeURIComponent(slug), { headers: admHeaders() });
+    const d = await r.json();
+    if (!r.ok) { panel.innerHTML = '<p class="why">' + esc(d.error || "failed") + '</p>'; return; }
+    const oc = d.onchain && d.onchain.minted
+      ? 'minted ✓ — <a href="' + esc(d.onchain.explorer) + '" target="_blank" rel="noopener">' + esc(d.onchain.pubkey) + ' ↗</a>'
+      : 'skipped (no Solana artifact)';
+    const close = d.closesAt ? new Date(d.closesAt).toLocaleString() : '—';
+    const split = d.pool.poolYesPct == null ? 'no bets yet' : (d.pool.poolYesPct + '% YES / ' + (100 - d.pool.poolYesPct) + '% NO');
+    const rows = d.positions.length
+      ? d.positions.map((p) => '<div class="variant"><span class="vtext">' + esc(p.handle)
+          + ' · <b>' + p.side.toUpperCase() + '</b> · ' + p.tokens + ' tok @ ' + (p.entryPct == null ? '?' : p.entryPct + '%') + '</span>'
+          + '<span class="why" style="white-space:nowrap">' + (p.closed ? ('paid ' + (p.proceeds || 0)) : ('→ ' + p.payoutIfWin + ' if ' + p.side.toUpperCase() + ' wins')) + '</span></div>').join("")
+      : '<p class="why">no positions yet.</p>';
+    const done = d.resolvedOutcome;
+    panel.innerHTML =
+        '<p class="why">slug <b>' + esc(d.slug) + '</b> · closes ' + esc(close) + '</p>'
+      + '<p class="why">on-chain: ' + oc + '</p>'
+      + '<p class="why" style="margin-top:6px"><b>Pool</b> — YES ' + d.pool.totalYes + ' tok (' + d.pool.playersYes + ' players) · NO ' + d.pool.totalNo + ' tok (' + d.pool.playersNo + ' players) · split ' + split + ' · set odds ' + d.yesPct + '% YES</p>'
+      + '<p class="why"><b>Payout preview</b> — if <b>YES</b> resolves: ' + d.preview.ifYes.totalPayout + ' tok to ' + d.preview.ifYes.winners + ' winner(s) · if <b>NO</b>: ' + d.preview.ifNo.totalPayout + ' tok to ' + d.preview.ifNo.winners + ' winner(s)</p>'
+      + '<p class="vhead" style="margin-top:8px">positions (' + d.positions.length + ')</p><div class="variants">' + rows + '</div>'
+      + (done
+          ? '<p class="why" style="margin-top:6px"><b>Resolved ' + String(done).toUpperCase() + '</b> — positions settled.</p>'
+          : '<div class="row" style="margin-top:8px">'
+            + '<button class="ghost rz" data-slug="' + esc(d.slug) + '" data-o="yes" data-pay="' + d.preview.ifYes.totalPayout + '" data-win="' + d.preview.ifYes.winners + '">resolve YES (pays ' + d.preview.ifYes.totalPayout + ' to ' + d.preview.ifYes.winners + ')</button>'
+            + '<button class="ghost rz" data-slug="' + esc(d.slug) + '" data-o="no" data-pay="' + d.preview.ifNo.totalPayout + '" data-win="' + d.preview.ifNo.winners + '">resolve NO (pays ' + d.preview.ifNo.totalPayout + ' to ' + d.preview.ifNo.winners + ')</button>'
+            + '</div>');
+    panel.querySelectorAll(".rz").forEach((b) => { b.onclick = () => resolveMarket(b.dataset.slug, b.dataset.o, Number(b.dataset.pay), Number(b.dataset.win)); });
+  } catch (e) { panel.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+}
+
+async function resolveMarket(slug, outcome, payout, winners) {
+  const summary = Number.isFinite(payout) ? ('\n\nThis pays ' + payout + ' tokens to ' + winners + ' winner(s).') : '';
+  if (!confirm('Resolve ' + outcome.toUpperCase() + '?' + summary + '\nSettles all positions and cannot be undone.')) return;
   try {
     const r = await fetch("/api/community/resolve", {
       method: "POST", headers: admHeaders({ "content-type": "application/json" }), body: JSON.stringify({ slug, outcome }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { alert(j.error || "resolve failed"); return; }
+    alert('Resolved ' + outcome.toUpperCase() + ' — ' + (j.settled != null ? j.settled + ' position(s) settled.' : 'done.'));
     loadCommunity();
   } catch (e) { alert(String(e)); }
 }
