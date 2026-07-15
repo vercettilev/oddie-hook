@@ -11,6 +11,7 @@
 //     link carries everything else
 
 import { Market } from "../venues/types.js";
+import { TAGLINE } from "../brand.js";
 
 const mult = (pct: number): string => {
   const m = 100 / pct;
@@ -120,7 +121,7 @@ export function tweetCopy(m: Market): string[] {
 
   // Always-valid fallbacks so every market gets at least three lines.
   out.push(`market says ${yes}%. what do you say? 👇`);
-  out.push(`bet, don't argue — ${yes}% yes 👀`);
+  out.push(`${TAGLINE} — ${yes}% yes 👀`);
 
   return out.slice(0, 5);
 }

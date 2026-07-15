@@ -15,6 +15,7 @@ import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, admin
 import { proceedsFor } from "./store/economy.js";
 import { mintMarket, isChainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
+import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
 import { renderCardPng } from "./card/renderPng.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
@@ -763,7 +764,7 @@ app.post("/api/invites/send", async (req, res) => {
   <p style="font-size:17px;font-weight:700;margin:0 0 12px">you're in.</p>
   <p style="margin:0 0 16px">Your spot on the Oddie beta just opened. Sign in with this Google account and you're playing — free, virtual tokens, nothing to cash out.</p>
   <p style="margin:0 0 20px"><a href="${BASE_URL}/feed?invite=1" style="display:inline-block;background:#68C6FF;color:#000;font-weight:700;border:3px solid #000;border-radius:14px;padding:10px 18px;text-decoration:none">open the feed →</a></p>
-  <p style="color:#6B7A88;font-size:12.5px;margin:0">oddie · bet, don't argue</p>
+  <p style="color:#6B7A88;font-size:12.5px;margin:0">oddie · ${TAGLINE}</p>
 </div>`,
   });
   recordEvent({ name: "invite_sent", deviceId: "operator" }).catch(() => {});
