@@ -32,6 +32,10 @@ const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf
 // allow-list to keep in sync, so the whole /api/ev class of rewrite gaps is gone.
 app.use(express.static(path.join(__dirname, "../public"), { index: false, maxAge: "7d" }));
 
+// Product-first root: oddie.fun by itself drops users straight into the feed,
+// no separate landing page (302, not 301, so we can add a landing later).
+app.get("/", (_req, res) => res.redirect("/feed"));
+
 /**
  * The hook. Tweet text in -> best market, slug, card URL, landing URL out.
  *
