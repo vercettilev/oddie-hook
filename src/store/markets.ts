@@ -1517,9 +1517,11 @@ export async function mintShareTokenForMention(callId: number): Promise<string |
 }
 
 /* -------------------------------------------------------- curated launch --
- * The gate: a device may PLAY only when it resolves to a Google account whose
- * email is on the allowlist. Everyone may still LOOK at a shared market page —
- * the share loop stays alive; the call button is what the velvet rope guards.
+ * Oddie's model is viral spread, not a curated launch: anyone who signs in with
+ * X or Google gets full access immediately — no allowlist, no waitlist, no "not
+ * on the list" screen. The only remaining gate is the free-taste pacing for
+ * signed-OUT devices (a couple of free plays, then the sign-in ask), which is
+ * about when we ask, not who gets in.
  */
 
 const memAllowlist = new Map<string, { source: string; cohort: string; invitedAt: string | null; acceptedAt: string | null }>();
@@ -1539,17 +1541,11 @@ export async function gateFor(rawDeviceId: string): Promise<Gate> {
     const x = mine.find((a) => a.provider === "twitter");
     if (!g && !x) return { allowed: false, reason: "signed_out", email: null, identity: null, provider: null };
     const gEmail = g?.email ?? null;
-    const xUid = x?.uid ?? null;
-    const gRow = gEmail ? memAllowlist.get(gEmail.toLowerCase()) : undefined;
-    const xRow = xUid ? memAllowlistX.get(xUid) : undefined;
-    const row = gRow ?? xRow;
     // X first for the identity we echo back (the reputation thesis lives on X).
     const identity = x ? (x.handle ?? `@${x.uid}`) : gEmail!;
     const provider = x ? "twitter" as const : "google" as const;
-    if (!row) return { allowed: false, reason: "not_allowlisted", email: gEmail, identity, provider };
-    const fresh = !row.acceptedAt;
-    if (!row.acceptedAt) row.acceptedAt = new Date().toISOString();
-    return { allowed: true, email: gEmail, identity, provider, justAccepted: fresh };
+    // Oddie is viral, not gated: any successful sign-in is full access.
+    return { allowed: true, email: gEmail, identity, provider, justAccepted: false };
   }
 
   await ensureSchema();
@@ -1560,24 +1556,14 @@ export async function gateFor(rawDeviceId: string): Promise<Gate> {
   const x = accts.rows.find((a) => a.provider === "twitter");
   if (!g && !x) return { allowed: false, reason: "signed_out", email: null, identity: null, provider: null };
 
-  const gEmail = g?.email ?? "";
-  const xUid = x?.provider_uid ?? "";
-  const xHandle = (x?.handle ?? "").replace(/^@+/, "");
-  const identity = x ? (x.handle ?? `@${x.provider_uid}`) : gEmail;
+  const gEmail = g?.email ?? null;
+  const identity = x ? (x.handle ?? `@${x.provider_uid}`) : (gEmail ?? "");
   const provider = x ? "twitter" as const : "google" as const;
 
-  // One statement: match by Google email OR X uid OR X handle, and stamp
-  // accepted_at exactly once (COALESCE). accepted-in-the-last-10s is the
-  // invite_accepted signal. Empty params match nothing (emails/uids non-empty).
-  const hit = await db().query<{ fresh: boolean }>(
-    `UPDATE allowlist SET accepted_at = COALESCE(accepted_at, now())
-      WHERE (email <> '' AND lower(email) = lower($1))
-         OR ($2 <> '' AND x_uid = $2)
-         OR ($3 <> '' AND lower(x_handle) = lower($3))
-     RETURNING accepted_at > now() - interval '10 seconds' AS fresh`,
-    [gEmail, xUid, xHandle]);
-  if (hit.rows.length === 0) return { allowed: false, reason: "not_allowlisted", email: g?.email ?? null, identity, provider };
-  return { allowed: true, email: g?.email ?? null, identity, provider, justAccepted: Boolean(hit.rows[0].fresh) };
+  // Oddie is viral, not gated: any successful X or Google sign-in is full
+  // access. (The allowlist match that used to live here was Poppin's curated
+  // launch — removed. There is no "not on the list" state anymore.)
+  return { allowed: true, email: gEmail, identity, provider, justAccepted: false };
 }
 
 export async function addToAllowlist(email: string, source: string, invited: boolean, xUid?: string | null, xHandle?: string | null, cohort = "default"): Promise<boolean> {

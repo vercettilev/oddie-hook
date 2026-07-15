@@ -139,6 +139,9 @@
       <input id="cyes" type="number" min="1" max="99" value="50" title="starting YES %"
         style="flex:0 0 90px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
     </div>
+    <!-- Date assist: if the question text carries a deadline, we PRE-FILL the
+         close time as a suggestion and require a look/confirm before Create. -->
+    <div class="box" id="datehint" style="display:none;background:var(--warn);margin-top:8px;padding:10px 12px"></div>
     <div class="row" style="margin-top:10px">
       <button class="primary" id="cgo">Create market</button>
     </div>
@@ -148,16 +151,6 @@
   <div class="box" id="resolve" style="margin-top:22px">
     <p class="verdict" style="font-size:17px">resolve a community market — settles all positions</p>
     <div id="rlist"><p class="why">enter the admin token above, then this loads…</p></div>
-  </div>
-
-  <div class="box" id="invites" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">invites — waitlist → allowlist → "you're in" email</p>
-    <div class="row" style="margin:0 0 10px">
-      <input id="invmail" type="email" placeholder="add an email directly (e.g. an extension user)"
-        style="flex:1 1 240px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
-      <button class="ghost" id="invadd" style="flex:0 0 auto;padding:9px 16px;font-size:14px">invite</button>
-    </div>
-    <div id="ilist"><p class="why">loading…</p></div>
   </div>
 
   <div class="box" id="mentions" style="margin-top:22px">
@@ -332,47 +325,8 @@ function renderError(status, body, raw) {
     </div>`;
 }
 
-async function loadInvites() {
-  const box = document.getElementById("ilist");
-  try {
-    const r = await fetch("/api/invites");
-    const { waitlist, supabase, allowlist } = await r.json();
-    const inAllow = new Map(allowlist.map((a) => [a.email, a]));
-    let html = "";
-    if (!supabase) html += '<p class="warn">Supabase env missing on this service — set <b>SUPABASE_URL</b> + <b>SUPABASE_SERVICE_ROLE_KEY</b> (copy from Vercel) to list the waitlist here. Manual invites below still work.</p>';
-    else if (waitlist === null) html += '<p class="warn">Supabase read failed — check the key.</p>';
-    if (waitlist && waitlist.length) {
-      html += '<p class="vhead">waitlist (newest first)</p>' + waitlist.map((w) => {
-        const a = inAllow.get(String(w.email).toLowerCase());
-        const status = a ? (a.acceptedAt ? "ACCEPTED" : a.invitedAt ? "invited" : "allowlisted") : null;
-        return `<div class="variant"><span class="vtext">${esc(w.email)}
-            <span style="color:var(--muted);font-size:12px"> · ${esc(String(w.created_at).slice(0,10))}${status ? ` · <b>${status}</b>` : ""}</span></span>
-          ${status ? "" : `<button class="ghost inv" data-mail="${esc(w.email)}" data-src="waitlist">invite</button>`}</div>`;
-      }).join("");
-    }
-    const extras = allowlist.filter((a) => !waitlist || !waitlist.some((w) => String(w.email).toLowerCase() === a.email));
-    if (extras.length) {
-      html += '<p class="vhead" style="margin-top:12px">allowlist (other sources)</p>' + extras.map((a) =>
-        `<div class="variant"><span class="vtext">${esc(a.email)}
-          <span style="color:var(--muted);font-size:12px"> · ${esc(a.source)} · ${a.acceptedAt ? "<b>ACCEPTED</b>" : a.invitedAt ? "invited" : "allowlisted"}</span></span></div>`).join("");
-    }
-    box.innerHTML = html || '<p class="why">nobody yet.</p>';
-    box.querySelectorAll(".inv").forEach((b) => b.onclick = async () => {
-      b.disabled = true; b.textContent = "sending…";
-      await fetch("/api/invites/send", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: b.dataset.mail, source: b.dataset.src }) });
-      loadInvites();
-    });
-  } catch (err) { box.innerHTML = '<p class="why">could not load invites.</p>'; }
-}
-loadInvites();
-document.getElementById("invadd").onclick = async () => {
-  const el = document.getElementById("invmail");
-  if (!el.value.includes("@")) return;
-  await fetch("/api/invites/send", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: el.value, source: "manual" }) });
-  el.value = ""; loadInvites();
-};
+// Invites/waitlist panel removed: Oddie's model is viral, not gated. Anyone who
+// signs in with X or Google is in — there is no allowlist to manage.
 
 async function loadMentions() {
   const box = document.getElementById("mlist");
@@ -467,6 +421,58 @@ $("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim
 
 let chainEnabled = false;
 
+// --- date assist: suggest a close time parsed from the question text --------
+// We PRE-FILL a parsed date as a suggestion but never submit it silently: while
+// an unconfirmed suggestion is showing, Create is disabled until you confirm it
+// or edit the field. No clear date found -> the field is left empty, as before.
+let datePending = false;
+const cqEl = $("#cq"), ccloseEl = $("#cclose"), dhintEl = $("#datehint");
+const setCreateEnabled = () => { $("#cgo").disabled = datePending; };
+
+function parseDeadline(text) {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  const M = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+  let y=null, mo=null, d=null, m;
+  if ((m = t.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/))) { y=+m[1]; mo=+m[2]-1; d=+m[3]; }
+  if (mo===null && (m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(20\d{2}))?/)))
+    { mo=M[m[1]]; d=+m[2]; if (m[3]) y=+m[3]; }
+  if (mo===null && (m = t.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:,?\s*(20\d{2}))?/)))
+    { d=+m[1]; mo=M[m[2]]; if (m[3]) y=+m[3]; }
+  if (mo===null && (m = t.match(/\b(20\d{2})\b/))) { y=+m[1]; mo=11; d=31; } // bare year -> end of that year
+  if (mo===null) return null;
+  const now = new Date();
+  if (y===null) { y=now.getFullYear(); if (new Date(y,mo,d,23,59) < now) y++; } // undated month/day -> next occurrence
+  if (d===null) d=31;
+  const dt = new Date(y, mo, d, 23, 59);
+  if (isNaN(dt.getTime()) || dt <= now) return null; // only a future date is a useful suggestion
+  const p = (n) => String(n).padStart(2,"0");
+  return {
+    local: `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`,
+    human: dt.toLocaleString(undefined, { dateStyle:"medium", timeStyle:"short" }),
+  };
+}
+function clearDateSuggestion() { datePending = false; ccloseEl.dataset.auto = ""; dhintEl.style.display = "none"; setCreateEnabled(); }
+let cqTimer = null;
+cqEl.addEventListener("input", () => {
+  clearTimeout(cqTimer);
+  cqTimer = setTimeout(() => {
+    const p = parseDeadline(cqEl.value);
+    if (!p) return;                                        // no clear date -> leave field as-is
+    if (ccloseEl.value && ccloseEl.dataset.auto !== "1") return; // never clobber a manual entry
+    ccloseEl.value = p.local; ccloseEl.dataset.auto = "1";
+    datePending = true;
+    dhintEl.innerHTML = '📅 suggested close time from the question: <b>' + esc(p.human) + '</b>'
+      + ' — check it, then <button class="ghost dconf" style="padding:6px 12px;font-size:13px;margin-left:4px">confirm date</button>'
+      + ' <span style="color:var(--muted);font-size:12px">(or edit it above)</span>';
+    dhintEl.style.display = "block";
+    dhintEl.querySelector(".dconf").onclick = clearDateSuggestion;
+    setCreateEnabled();
+  }, 350);
+});
+// A manual edit of the close field IS the user seeing/confirming it.
+ccloseEl.addEventListener("input", () => { ccloseEl.dataset.auto = ""; if (datePending) clearDateSuggestion(); });
+
 $("#cgo").onclick = createMarket;
 async function createMarket() {
   const q = $("#cq").value.trim();
@@ -475,6 +481,7 @@ async function createMarket() {
   const yesPct = Number($("#cyes").value || 50);
   const cout = $("#cout");
   if (!q) { cout.innerHTML = '<div class="box error"><p class="why">question required</p></div>'; return; }
+  if (datePending) { cout.innerHTML = '<div class="box error"><p class="why">confirm the suggested close time first (or edit it)</p></div>'; return; }
   if (!closeLocal) { cout.innerHTML = '<div class="box error"><p class="why">pick a close time</p></div>'; return; }
   $("#cgo").disabled = true; $("#cgo").textContent = "Creating…";
   cout.innerHTML = '<div class="box"><p class="why">creating market' + (chainEnabled ? ' + minting on devnet…' : '…') + '</p></div>';
@@ -493,7 +500,7 @@ async function createMarket() {
       + '<p class="why"><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.url) + '</a></p>'
       + '<p class="why">' + badge + '</p>'
       + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p></div>';
-    $("#cq").value = "";
+    $("#cq").value = ""; ccloseEl.value = ""; clearDateSuggestion();
     loadCommunity();
   } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }
