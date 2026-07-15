@@ -254,6 +254,22 @@ UPDATE notice n SET call_id = c.id
    AND c.slug = n.slug
    AND c.closed_at IS NOT NULL
    AND c.exit_pct = CASE WHEN n.kind = 'settle_win' THEN 100 ELSE 0 END;
+
+-- Community markets: the admin-created (Layer 1) markets that also get minted
+-- on-chain (Layer 2). The base market lives in market_slug (venue='community');
+-- this table carries what's specific to them — the forced category, manual
+-- resolution state, and the devnet proof (market_id + PDA + tx signature). A
+-- null onchain_pubkey means the on-chain mint was skipped or failed: the market
+-- is still fully playable, it just shows no "on-chain" badge.
+CREATE TABLE IF NOT EXISTS community_market (
+  slug             text PRIMARY KEY REFERENCES market_slug(slug) ON DELETE CASCADE,
+  market_id        bigint NOT NULL,
+  category         text NOT NULL DEFAULT 'Community',
+  resolved_outcome text,
+  onchain_pubkey   text,
+  onchain_sig      text,
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 let pool: pg.Pool | null = null;
@@ -1115,6 +1131,143 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
   } finally {
     client.release();
   }
+}
+
+// --- Community markets (Layer 1 store) --------------------------------------
+// The admin-created markets. Base row lives in market_slug; the extra state
+// (forced category, manual resolution, on-chain proof) lives in community_market
+// (persistent) or memCommunity (in-memory dev/test).
+
+export type CommunityMarket = Market & {
+  marketId: number;
+  category: string;
+  onchainPubkey: string | null;
+  onchainSig: string | null;
+};
+
+interface CommunityMeta {
+  slug: string;
+  marketId: number;
+  category: string;
+  resolvedOutcome: "yes" | "no" | null;
+  onchainPubkey: string | null;
+  onchainSig: string | null;
+}
+const memCommunity = new Map<string, CommunityMeta>();
+
+/** Create a community market (base slug + community row). Returns its slug and
+ *  the numeric id used BOTH as the market's venueId and its on-chain market_id. */
+export async function createCommunityMarket(input: {
+  question: string;
+  closeTime: number; // unix seconds
+  category?: string;
+  yesPct?: number; // starting odds; default 50
+}): Promise<{ slug: string; marketId: number; market: Market }> {
+  const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
+  const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
+  const category = input.category?.trim() || "Community";
+  const market: Market = {
+    venue: "community",
+    venueId: String(marketId),
+    question: input.question,
+    yesPct,
+    closesAt: new Date(input.closeTime * 1000).toISOString(),
+    volumeUsd: 0, // honest: community markets have no real volume
+    venueUrl: "",
+    tags: [],
+  };
+  const rec = await createSlug(market);
+
+  if (!PERSISTENT) {
+    memCommunity.set(rec.slug, {
+      slug: rec.slug, marketId, category, resolvedOutcome: null, onchainPubkey: null, onchainSig: null,
+    });
+    return { slug: rec.slug, marketId, market };
+  }
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO community_market (slug, market_id, category) VALUES ($1,$2,$3)
+     ON CONFLICT (slug) DO NOTHING`,
+    [rec.slug, marketId, category],
+  );
+  return { slug: rec.slug, marketId, market };
+}
+
+/** Record the devnet proof after a successful on-chain mint. */
+export async function setCommunityOnchain(slug: string, pubkey: string, sig: string): Promise<void> {
+  if (!PERSISTENT) {
+    const m = memCommunity.get(slug);
+    if (m) { m.onchainPubkey = pubkey; m.onchainSig = sig; }
+    return;
+  }
+  await ensureSchema();
+  await db().query(`UPDATE community_market SET onchain_pubkey=$2, onchain_sig=$3 WHERE slug=$1`, [slug, pubkey, sig]);
+}
+
+/** Open (unresolved) community markets, Market-shaped + meta. Used for the feed
+ *  AND to price plays (livePctOf needs the market in the "live" set). */
+export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
+  if (!PERSISTENT) {
+    const out: CommunityMarket[] = [];
+    for (const meta of memCommunity.values()) {
+      if (meta.resolvedOutcome) continue;
+      const rec = mem.get(meta.slug);
+      if (!rec) continue;
+      out.push({ ...rec.market, marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig });
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{
+    venue_id: string; question: string; yes_pct: number; closes_at: Date | null; volume_usd: number; venue_url: string;
+    market_id: string; category: string; onchain_pubkey: string | null; onchain_sig: string | null;
+  }>(`
+    SELECT s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
+           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig
+      FROM community_market c JOIN market_slug s ON s.slug = c.slug
+     WHERE c.resolved_outcome IS NULL
+     ORDER BY c.created_at DESC`);
+  return rows.map((r) => ({
+    venue: "community", venueId: r.venue_id, question: r.question, yesPct: r.yes_pct,
+    closesAt: r.closes_at ? r.closes_at.toISOString() : null, volumeUsd: Number(r.volume_usd),
+    venueUrl: r.venue_url, tags: [], marketId: Number(r.market_id), category: r.category,
+    onchainPubkey: r.onchain_pubkey, onchainSig: r.onchain_sig,
+  }));
+}
+
+/** Every community market with resolution + on-chain state, for the /tool admin list. */
+export async function adminListCommunity(): Promise<Array<{
+  slug: string; question: string; yesPct: number; resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; closesAt: string | null;
+}>> {
+  if (!PERSISTENT) {
+    return [...memCommunity.values()].map((meta) => {
+      const rec = mem.get(meta.slug)!;
+      return { slug: meta.slug, question: rec.market.question, yesPct: rec.market.yesPct, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, closesAt: rec.market.closesAt };
+    });
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null }>(`
+    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at
+      FROM community_market c JOIN market_slug s ON s.slug = c.slug
+     ORDER BY c.created_at DESC`);
+  return rows.map((r) => ({ slug: r.slug, question: r.question, yesPct: r.yes_pct, resolvedOutcome: r.resolved_outcome, onchainPubkey: r.onchain_pubkey, closesAt: r.closes_at ? r.closes_at.toISOString() : null }));
+}
+
+/** Mark a community market resolved. Returns false if unknown or already resolved
+ *  (so the caller can avoid double-settling). Actual payout is settleMarket. */
+export async function markCommunityResolved(slug: string, outcome: "yes" | "no"): Promise<boolean> {
+  if (!PERSISTENT) {
+    const m = memCommunity.get(slug);
+    if (!m || m.resolvedOutcome) return false;
+    m.resolvedOutcome = outcome;
+    return true;
+  }
+  await ensureSchema();
+  const { rowCount } = await db().query(
+    `UPDATE community_market SET resolved_outcome=$2 WHERE slug=$1 AND resolved_outcome IS NULL`,
+    [slug, outcome],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 const MIN_CROWD = 10;

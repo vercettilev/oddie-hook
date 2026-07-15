@@ -117,6 +117,37 @@
 
   <div class="out" id="out" aria-live="polite"></div>
 
+  <!-- Community markets: create (virtual product + devnet proof) and resolve.
+       Admin-only; every call carries the ODDIE_ADMIN_TOKEN saved below. -->
+  <div class="box" id="community" style="margin-top:22px">
+    <p class="verdict" style="font-size:17px">community markets — create on the product + mint on Solana devnet</p>
+    <div class="row" style="margin:0 0 8px">
+      <input id="admtok" type="password" placeholder="admin token (ODDIE_ADMIN_TOKEN)"
+        style="flex:1 1 240px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
+      <button class="ghost" id="admsave" style="flex:0 0 auto;padding:9px 16px;font-size:14px">save</button>
+    </div>
+    <p class="why" id="chainstat">—</p>
+    <input id="cq" type="text" maxlength="180" placeholder="question (≤180 chars, e.g. Will oddie hit 1k users by Aug 1?)"
+      style="width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:2px solid var(--ink);border-radius:12px;padding:10px 12px;margin:6px 0">
+    <div class="row" style="margin:0">
+      <input id="cclose" type="datetime-local" title="close time"
+        style="flex:1 1 180px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
+      <input id="ccat" type="text" value="Community" placeholder="category"
+        style="flex:1 1 120px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
+      <input id="cyes" type="number" min="1" max="99" value="50" title="starting YES %"
+        style="flex:0 0 90px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="cgo">Create market</button>
+    </div>
+    <div class="out" id="cout" aria-live="polite"></div>
+  </div>
+
+  <div class="box" id="resolve" style="margin-top:22px">
+    <p class="verdict" style="font-size:17px">resolve a community market — settles all positions</p>
+    <div id="rlist"><p class="why">enter the admin token above, then this loads…</p></div>
+  </div>
+
   <div class="box" id="invites" style="margin-top:22px">
     <p class="verdict" style="font-size:17px">invites — waitlist → allowlist → "you're in" email</p>
     <div class="row" style="margin:0 0 10px">
@@ -422,6 +453,87 @@ async function downloadPng(slug, btn) {
     setTimeout(() => (btn.textContent = was), 1600);
   }
 }
+
+// ---- community markets (admin) --------------------------------------------
+// Every call carries the admin token as x-oddie-admin. The server fails closed:
+// no token / wrong token / unset ODDIE_ADMIN_TOKEN => 401.
+const ADMKEY = "oddie_admin_token";
+const admInput = $("#admtok");
+admInput.value = localStorage.getItem(ADMKEY) || "";
+const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getItem(ADMKEY) || "" }, extra || {});
+$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); };
+
+let chainEnabled = false;
+
+$("#cgo").onclick = createMarket;
+async function createMarket() {
+  const q = $("#cq").value.trim();
+  const closeLocal = $("#cclose").value;
+  const category = $("#ccat").value.trim() || "Community";
+  const yesPct = Number($("#cyes").value || 50);
+  const cout = $("#cout");
+  if (!q) { cout.innerHTML = '<div class="box error"><p class="why">question required</p></div>'; return; }
+  if (!closeLocal) { cout.innerHTML = '<div class="box error"><p class="why">pick a close time</p></div>'; return; }
+  $("#cgo").disabled = true; $("#cgo").textContent = "Creating…";
+  cout.innerHTML = '<div class="box"><p class="why">creating market' + (chainEnabled ? ' + minting on devnet…' : '…') + '</p></div>';
+  try {
+    const r = await fetch("/api/community/create", {
+      method: "POST", headers: admHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ question: q, close_time: new Date(closeLocal).toISOString(), category, yesPct }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { cout.innerHTML = '<div class="box error"><p class="why">admin token missing or wrong — save it above.</p></div>'; return; }
+    if (!r.ok || !j.ok) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "failed") + '</p></div>'; return; }
+    const badge = j.onchain
+      ? '<a href="' + esc(j.onchain.explorer) + '" target="_blank" rel="noopener">on-chain on Solana ↗</a> (' + esc(j.onchain.pubkey.slice(0, 8)) + '…)'
+      : (j.chainEnabled ? '<b>on-chain mint failed</b> — market is live, no badge (check wallet balance / server logs)' : 'on-chain disabled (no admin key set)');
+    cout.innerHTML = '<div class="box hit"><p class="verdict" style="font-size:16px">created ✓</p>'
+      + '<p class="why"><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.url) + '</a></p>'
+      + '<p class="why">' + badge + '</p>'
+      + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p></div>';
+    $("#cq").value = "";
+    loadCommunity();
+  } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
+  finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }
+}
+
+async function loadCommunity() {
+  const box = $("#rlist"), stat = $("#chainstat");
+  if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
+  try {
+    const r = await fetch("/api/community/list", { headers: admHeaders() });
+    if (r.status === 401) { stat.textContent = "admin token missing or wrong."; box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
+    const j = await r.json();
+    chainEnabled = !!(j.chain && j.chain.enabled);
+    stat.innerHTML = chainEnabled
+      ? 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 8)) + '… · balance ' + (j.chain.balanceSol == null ? '?' : j.chain.balanceSol.toFixed(3)) + ' SOL'
+      : 'on-chain: <b>disabled</b> (set SOLANA_ADMIN_SECRET_KEY to mint on devnet)';
+    if (!j.items.length) { box.innerHTML = '<p class="why">no community markets yet.</p>'; return; }
+    box.innerHTML = j.items.map((m) => {
+      const done = m.resolvedOutcome;
+      const chain = m.explorer ? ' · <a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">on-chain ↗</a>' : '';
+      return '<div class="box" style="margin-bottom:10px"><p class="why" style="color:var(--ink);font-weight:700">' + esc(m.question) + '</p>'
+        + '<p class="why">' + m.yesPct + '% yes' + chain + (done ? (' · <b>resolved ' + String(done).toUpperCase() + '</b>') : '') + '</p>'
+        + (done ? '' : ('<div class="row" style="margin-top:8px"><button class="ghost rz" data-slug="' + esc(m.slug) + '" data-o="yes">resolve YES</button>'
+          + '<button class="ghost rz" data-slug="' + esc(m.slug) + '" data-o="no">resolve NO</button></div>'))
+        + '</div>';
+    }).join("");
+    box.querySelectorAll(".rz").forEach((b) => { b.onclick = () => resolveMarket(b.dataset.slug, b.dataset.o); });
+  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+}
+
+async function resolveMarket(slug, outcome) {
+  if (!confirm("Resolve " + outcome.toUpperCase() + "? This settles all positions and cannot be undone.")) return;
+  try {
+    const r = await fetch("/api/community/resolve", {
+      method: "POST", headers: admHeaders({ "content-type": "application/json" }), body: JSON.stringify({ slug, outcome }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) { alert(j.error || "resolve failed"); return; }
+    loadCommunity();
+  } catch (e) { alert(String(e)); }
+}
+loadCommunity();
 </script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 // Everything downstream (matcher, card, slug page) speaks this, never
 // the raw Kalshi/Polymarket payloads.
 
-export type Venue = "kalshi" | "polymarket";
+export type Venue = "kalshi" | "polymarket" | "community";
 
 export interface Market {
   venue: Venue;

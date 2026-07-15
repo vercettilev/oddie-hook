@@ -1,0 +1,713 @@
+{
+  "address": "Ao8tBMVCUMMYAm8cbq2qehP78RCK5xNAPyaXv9TH5FZT",
+  "metadata": {
+    "name": "oddie_chain",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "claim_winnings",
+      "docs": [
+        "Claim a winning position's pro-rata share of the pot. Losing and",
+        "already-claimed positions are rejected."
+      ],
+      "discriminator": [
+        161,
+        215,
+        24,
+        59,
+        14,
+        236,
+        242,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.authority",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          },
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_market",
+      "docs": [
+        "Create a binary YES/NO pari-mutuel market. `authority` becomes the fixed",
+        "admin allowed to resolve it. Positions are accepted until `close_time`."
+      ],
+      "discriminator": [
+        103,
+        226,
+        97,
+        235,
+        200,
+        188,
+        251,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The admin authority; pays for both accounts and becomes the fixed",
+            "resolver for this market."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "arg",
+                "path": "market_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Native SOL escrow, program-owned, one per market."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_id",
+          "type": "u64"
+        },
+        {
+          "name": "question",
+          "type": "string"
+        },
+        {
+          "name": "close_time",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "resolve_market",
+      "docs": [
+        "Resolve the market to a winning side. Callable only by the fixed",
+        "authority, only after `close_time`."
+      ],
+      "discriminator": [
+        155,
+        23,
+        80,
+        173,
+        46,
+        74,
+        23,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Must match `market.authority` (fixed admin), enforced by `has_one`."
+          ],
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.authority",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "outcome",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "take_position",
+      "docs": [
+        "Stake native SOL on a side (0 = YES, 1 = NO). Lamports are escrowed in",
+        "the market vault. Repeated calls accumulate on the same side."
+      ],
+      "discriminator": [
+        33,
+        247,
+        99,
+        64,
+        57,
+        75,
+        247,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.authority",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "docs": [
+            "One position per (market, user). Created on first stake, reused after."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "side",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "QuestionTooLong",
+      "msg": "Question exceeds the maximum allowed length"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidCloseTime",
+      "msg": "Close time must be in the future"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidSide",
+      "msg": "Side must be 0 (YES) or 1 (NO)"
+    },
+    {
+      "code": 6003,
+      "name": "ZeroAmount",
+      "msg": "Stake amount must be greater than zero"
+    },
+    {
+      "code": 6004,
+      "name": "MarketClosed",
+      "msg": "Market is closed for new positions"
+    },
+    {
+      "code": 6005,
+      "name": "MarketAlreadyResolved",
+      "msg": "Market has already been resolved"
+    },
+    {
+      "code": 6006,
+      "name": "MarketNotResolved",
+      "msg": "Market has not been resolved yet"
+    },
+    {
+      "code": 6007,
+      "name": "BettingStillOpen",
+      "msg": "Betting window is still open; cannot resolve yet"
+    },
+    {
+      "code": 6008,
+      "name": "Unauthorized",
+      "msg": "Only the market authority may perform this action"
+    },
+    {
+      "code": 6009,
+      "name": "SideMismatch",
+      "msg": "Position already exists on the opposite side"
+    },
+    {
+      "code": 6010,
+      "name": "AlreadyClaimed",
+      "msg": "Winnings for this position have already been claimed"
+    },
+    {
+      "code": 6011,
+      "name": "NotWinningSide",
+      "msg": "This position is not on the winning side"
+    },
+    {
+      "code": 6012,
+      "name": "NoWinningStakes",
+      "msg": "No stakes exist on the winning side"
+    },
+    {
+      "code": 6013,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Market",
+      "docs": [
+        "A single binary (YES/NO) pari-mutuel prediction market.",
+        "",
+        "All staked SOL lives in the associated [`Vault`] PDA, not in this account.",
+        "`total_yes` / `total_no` track the escrowed pools so payouts can be computed",
+        "without iterating positions."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Admin authority fixed at creation; the only key allowed to resolve."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "market_id",
+            "docs": [
+              "Caller-supplied nonce making the market PDA unique per authority."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "question",
+            "docs": [
+              "Human-readable question, e.g. \"Will SOL close above $200 on 2026-08-01?\"."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "close_time",
+            "docs": [
+              "Unix timestamp after which no new positions are accepted."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "resolved",
+            "docs": [
+              "True once the authority has resolved the outcome."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "winning_side",
+            "docs": [
+              "Winning side (0 = YES, 1 = NO); only meaningful when `resolved`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "total_yes",
+            "docs": [
+              "Total lamports staked on YES."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_no",
+            "docs": [
+              "Total lamports staked on NO."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for the market PDA."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "docs": [
+              "Bump for the vault PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "docs": [
+        "One bettor's stake in one market. A wallet holds at most one position per",
+        "market; repeated `take_position` calls accumulate on the same side."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market this position belongs to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "The wallet that owns (and can claim) this position."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "docs": [
+              "Chosen side (0 = YES, 1 = NO)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Total lamports this wallet has staked."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "docs": [
+              "True once winnings have been claimed."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for the position PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "docs": [
+        "Program-owned native SOL escrow for a single market.",
+        "",
+        "Holds its own rent-exempt reserve plus every lamport staked via",
+        "`take_position`. Payouts are debited directly (the program owns it), so no",
+        "`invoke_signed` is required on the withdrawal path."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market this vault escrows for."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for the vault PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "MARKET_SEED",
+      "docs": [
+        "PDA seed for a `Market` account: [MARKET_SEED, authority, market_id_le]."
+      ],
+      "type": "bytes",
+      "value": "[109, 97, 114, 107, 101, 116]"
+    },
+    {
+      "name": "POSITION_SEED",
+      "docs": [
+        "PDA seed for a `Position` account: [POSITION_SEED, market, owner]."
+      ],
+      "type": "bytes",
+      "value": "[112, 111, 115, 105, 116, 105, 111, 110]"
+    },
+    {
+      "name": "VAULT_SEED",
+      "docs": [
+        "PDA seed for a `Vault` account (native SOL escrow): [VAULT_SEED, market]."
+      ],
+      "type": "bytes",
+      "value": "[118, 97, 117, 108, 116]"
+    }
+  ]
+}

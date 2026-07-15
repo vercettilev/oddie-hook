@@ -10,7 +10,12 @@ export * from "./types.js";
  * and is not expected to — that is different from a venue that is down, and the
  * tests must be able to tell the two apart.
  */
-export const VENUE_ENABLED: Record<Venue, boolean> = {
+// Venues we actually FETCH from. "community" is a Market venue but not a fetched
+// source (those markets are admin-created and live only in our own store), so it
+// never appears in these status/enabled maps.
+type FetchVenue = "kalshi" | "polymarket";
+
+export const VENUE_ENABLED: Record<FetchVenue, boolean> = {
   kalshi: KALSHI_ENABLED, // read-only odds source; see NOTES/kalshi.md
   polymarket: true,
 };
@@ -64,14 +69,14 @@ export interface MarketData {
    * offered as a new match.
    */
   all: Market[];
-  venues: Record<Venue, VenueStatus>;
+  venues: Record<FetchVenue, VenueStatus>;
   /** True when both venues came back empty and we fell back to the last good set. */
   stale: boolean;
   /** Age of the data being served, in ms. 0 for a fresh fetch. */
   ageMs: number;
 }
 
-let cache: { at: number; markets: Market[]; venues: Record<Venue, VenueStatus> } | null = null;
+let cache: { at: number; markets: Market[]; venues: Record<FetchVenue, VenueStatus> } | null = null;
 
 const TTL_MS = 60_000; // markets don't move fast enough to refetch per request
 
@@ -81,7 +86,7 @@ const TTL_MS = 60_000; // markets don't move fast enough to refetch per request
  */
 const MAX_STALE_MS = 10 * 60_000;
 
-function statusOf(r: PromiseSettledResult<Market[]>, venue: Venue): VenueStatus {
+function statusOf(r: PromiseSettledResult<Market[]>, venue: FetchVenue): VenueStatus {
   const enabled = VENUE_ENABLED[venue];
   if (r.status === "fulfilled") return { ok: true, count: r.value.length, enabled };
   return { ok: false, count: 0, enabled, error: r.reason?.message ?? String(r.reason) };
@@ -106,7 +111,7 @@ export async function getMarketData(force = false): Promise<MarketData> {
   }
 
   const [k, p] = await Promise.allSettled([fetchKalshiMarkets(), fetchPolymarketMarkets()]);
-  const venues: Record<Venue, VenueStatus> = { kalshi: statusOf(k, "kalshi"), polymarket: statusOf(p, "polymarket") };
+  const venues: Record<FetchVenue, VenueStatus> = { kalshi: statusOf(k, "kalshi"), polymarket: statusOf(p, "polymarket") };
 
   for (const [name, st] of Object.entries(venues)) {
     if (st.enabled && !st.ok) console.warn(`[venues] ${name} failed:`, st.error);

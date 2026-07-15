@@ -120,6 +120,12 @@
   .chip{flex:none;font-family:'Nunito';font-weight:800;font-size:12px;padding:7px 13px;border-radius:999px;
     border:2px solid var(--chip-bd);background:var(--chip-bg);color:var(--muted-g);cursor:pointer;white-space:nowrap}
   .chip.on{color:#000;border-color:var(--accent);background:var(--wash)}
+  /* Community markets: honest signal in place of a "$X in play" volume figure,
+     plus the on-chain proof badge linking to Solana Explorer (devnet). */
+  .commtag{display:inline-block;font-family:'Nunito';font-weight:800;font-size:11px;
+    padding:2px 8px;border-radius:999px;border:1.5px solid var(--chip-bd);color:var(--muted-g)}
+  .chainbadge{font-weight:800;color:var(--link-g);text-decoration:none;white-space:nowrap}
+  .chainbadge:hover{text-decoration:underline}
 
   /* The scroller is the feed when it snaps and a plain page when it doesn't. */
   .scroller{height:100dvh;overflow-y:auto;scrollbar-width:none}
@@ -1130,7 +1136,9 @@ function renderFeed(items){
         <button class="shareico" aria-label="Share this market">${SHARE_ICON}</button>
       </div>
       <div class="take">${esc(m.question)}</div>
-      <div class="meta">${money(m.volumeUsd)} in play</div>
+      <div class="meta">${m.community
+        ? `<span class="commtag">community market</span>${m.onchain?` · <a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
+        : `${money(m.volumeUsd)} in play`}</div>
       <div class="duel">
         <button class="orow" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, wins ${fmtMult(yes)}">
           <span class="oside">YES</span><span class="opct">${yes}%</span><span class="opay">win ${fmtMult(yes)}</span>

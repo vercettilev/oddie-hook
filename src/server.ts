@@ -2,13 +2,17 @@ import express from "express";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { timingSafeEqual } from "node:crypto";
 import { getMarketData } from "./venues/index.js";
+import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
+import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, markCommunityResolved, type CommunityMarket } from "./store/markets.js";
+import { mintMarket, isChainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { renderCard } from "./card/renderCard.js";
 import { renderCardPng } from "./card/renderPng.js";
@@ -292,16 +296,35 @@ app.get("/api/feed", async (req, res) => {
       items.unshift({ slug: start.slug, category: categorize(start.market), ...start.market });
   }
 
+  // Community markets (Layer 1): honest — no venue volume, an optional on-chain
+  // badge. They surface in "For you" newest-first (a freshly created market is
+  // "born" at the top) and under their own "Community" chip; a venue-category
+  // filter excludes them by definition.
+  let community: CommunityMarket[] = [];
+  try { community = await openCommunityMarkets(); }
+  catch (e) { console.error("[community] feed load failed (serving venue markets only):", (e as Error).message); }
+  const communityItems = community.map((m) => ({
+    ...m,
+    slug: slugFor(m), category: "Community",
+    community: true as const,
+    onchain: m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
+  }));
+
+  let feedItems: Array<Record<string, unknown> & { slug: string }> = items;
+  if (cat === "Community") feedItems = communityItems;
+  else if (!cat || cat === "For you") feedItems = [...communityItems, ...items];
+
   // "Other" is the categorizer's shrug, and `inFeed` filters it out of the feed
   // by definition — so shipping it as a chip offers a tab that can never hold a
   // card. It was harmless while every market landed in a real category; widening
   // the fetch to all tags made it a promise the feed cannot keep.
   // The social layer, read from the same rows every screen reads: what the
   // POPPERS said, alongside what the market prices. One query for the page.
-  const crowd = await crowdSplits(items.map((x) => x.slug));
-  const withCrowd = items.map((x) => ({ ...x, crowd: crowd[x.slug] ?? { yes: 0, no: 0 } }));
+  const crowd = await crowdSplits(feedItems.map((x) => x.slug));
+  const withCrowd = feedItems.map((x) => ({ ...x, crowd: crowd[x.slug] ?? { yes: 0, no: 0 } }));
 
-  const chips = CATEGORIES.filter((c) => c !== "Other");
+  const chips: string[] = CATEGORIES.filter((c) => c !== "Other");
+  if (community.length) chips.push("Community");
   res.json({ categories: ["For you", ...chips], items: withCrowd });
 });
 
@@ -647,7 +670,7 @@ app.post("/api/market/:slug/call", async (req, res) => {
       return res.status(403).json({ ok: false, reason: "not_allowed", gate: gate.reason === "signed_out" ? "taste_used" : gate.reason });
     }
   }
-  const { all } = await getMarketData();
+  const all = await pricingSet(); // venue markets + open community markets, so a community market can be entered
   const result = await placeCall(req.params.slug, side, tokens, deviceId, all);
   if (!result.ok && result.reason === "unknown-market") return res.status(404).json({ ok: false, reason: "unknown-market", error: "unknown market" });
   if (!result.ok) return res.json(result);
@@ -773,6 +796,94 @@ app.post("/api/mentions/:id/sent", async (req, res) => {
 app.get("/tool", (_req, res) => {
   res.set("X-Robots-Tag", "noindex, nofollow");
   res.type("html").send(TOOL_HTML);
+});
+
+/* ------------------------------------------------ community markets (admin) --
+ * Layer 1 (virtual product) + Layer 2 (devnet proof). Create and resolve are
+ * admin-only and FAIL CLOSED: with no ODDIE_ADMIN_TOKEN set, or a missing/wrong
+ * token, every request is rejected — never open. /tool is otherwise reachable by
+ * anyone, and resolve settles real user positions, so the token is the only gate.
+ */
+function adminOk(req: express.Request): boolean {
+  const token = process.env.ODDIE_ADMIN_TOKEN;
+  if (!token) return false; // fail closed: unconfigured => nobody is admin
+  const provided = req.get("x-oddie-admin") ?? "";
+  const a = Buffer.from(provided);
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (!adminOk(req)) {
+    res.status(401).json({ error: "admin token required" });
+    return;
+  }
+  next();
+}
+
+/** Venue markets plus open community markets — the set used to PRICE plays, so a
+ *  community market (which no venue feed knows about) can still be entered. */
+async function pricingSet(): Promise<Market[]> {
+  const data = await getMarketData();
+  let community: CommunityMarket[] = [];
+  try { community = await openCommunityMarkets(); }
+  catch (e) { console.error("[community] pricing load failed (venue-only):", (e as Error).message); }
+  return [...data.all, ...community];
+}
+
+// Create a Community market: virtual first (always), then mint on devnet (soft).
+app.post("/api/community/create", requireAdmin, async (req, res) => {
+  const question = String(req.body?.question ?? "").trim();
+  const category = (String(req.body?.category ?? "Community").trim()) || "Community";
+  const yesPct = Number(req.body?.yesPct ?? 50);
+  const closeInput = req.body?.close_time ?? req.body?.closeTime;
+
+  if (!question) return res.status(400).json({ error: "question required" });
+  if (question.length > 180) return res.status(400).json({ error: "question must be ≤180 characters (on-chain limit)" });
+  let closeTime: number;
+  if (typeof closeInput === "number") closeTime = Math.floor(closeInput);
+  else {
+    const t = Date.parse(String(closeInput));
+    if (Number.isNaN(t)) return res.status(400).json({ error: "invalid close_time" });
+    closeTime = Math.floor(t / 1000);
+  }
+  if (!(closeTime > Math.floor(Date.now() / 1000))) return res.status(400).json({ error: "close_time must be in the future" });
+  if (!Number.isFinite(yesPct) || yesPct < 1 || yesPct > 99) return res.status(400).json({ error: "starting odds must be 1–99" });
+
+  const { slug, marketId } = await createCommunityMarket({ question, closeTime, category, yesPct });
+
+  // Layer 2 — devnet proof. Soft by design: a failure here never blocks Layer 1.
+  let onchain: { pubkey: string; explorer: string; signature: string } | null = null;
+  const minted = await mintMarket({ marketId, question, closeTime });
+  if (minted) {
+    await setCommunityOnchain(slug, minted.pubkey, minted.signature);
+    onchain = { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature };
+  }
+
+  res.json({
+    ok: true, slug, marketId, url: `${BASE_URL}/market/${slug}`,
+    onchain, chainEnabled: isChainEnabled(),
+  });
+});
+
+// List community markets for the resolve control + a small chain-status readout.
+app.get("/api/community/list", requireAdmin, async (_req, res) => {
+  const items = await adminListCommunity();
+  res.json({
+    items: items.map((i) => ({ ...i, explorer: i.onchainPubkey ? explorerUrl(i.onchainPubkey) : null })),
+    chain: { enabled: isChainEnabled(), admin: adminAddress(), balanceSol: await adminBalanceSol() },
+  });
+});
+
+// Manual resolution: mark resolved, then settle every open position on the slug.
+app.post("/api/community/resolve", requireAdmin, async (req, res) => {
+  const slug = String(req.body?.slug ?? "");
+  const outcome = req.body?.outcome;
+  if (!slug || (outcome !== "yes" && outcome !== "no")) return res.status(400).json({ error: "slug and outcome (yes|no) required" });
+  const ok = await markCommunityResolved(slug, outcome);
+  if (!ok) return res.status(409).json({ error: "unknown or already-resolved community market" });
+  const settled = await settleMarket(slug, outcome);
+  await emailSettled(slug, outcome, settled);
+  res.json({ ok: true, slug, outcome, settled: settled.length });
 });
 
 /* --------------------------------------------------------------- settlement --
