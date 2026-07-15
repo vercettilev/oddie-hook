@@ -636,12 +636,13 @@ app.post("/api/market/:slug/call", async (req, res) => {
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   const gate = await gateFor(deviceId);
   if (!gate.allowed) {
-    // The free taste: ANY device not through the gate gets ONE call before it —
-    // signed out OR signed-in-but-unlisted alike, because the taste comes first
-    // and the gate is the last thing either of them sees. Capped per device by
-    // the calls already on the books. The `gate` field tells the client which
-    // terminal gate to show once the taste is spent (sign-in vs. not-listed).
-    const FREE_TASTE_CALLS = 1;
+    // The free taste: ANY device not through the gate gets TWO calls before it —
+    // one on the opening card, one on the personalized card after the category
+    // picker — signed out OR signed-in-but-unlisted alike, because the taste
+    // comes first and the gate is the last thing either of them sees. Capped per
+    // device by the calls already on the books. The `gate` field tells the client
+    // which terminal gate to show once the taste is spent (sign-in vs. not-listed).
+    const FREE_TASTE_CALLS = 2;
     if ((await callCountOf(deviceId)) >= FREE_TASTE_CALLS) {
       return res.status(403).json({ ok: false, reason: "not_allowed", gate: gate.reason === "signed_out" ? "taste_used" : gate.reason });
     }

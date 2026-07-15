@@ -1110,14 +1110,16 @@ function renderFeed(items){
   const scroller=document.getElementById("scroller");
   scroller.innerHTML="";
   if(!items.length){scroller.innerHTML='<div class="state">no live markets here right now — try another category.</div>';return;}
-  // TikTok-web taste flow. An anonymous visitor gets the feed metered:
-  //   no categories picked yet -> 2 free cards, then the category picker
-  //   categories picked         -> 3 re-ranked cards, then the sign-in gate
-  // Signed-in / allowlisted / invited visitors see the whole feed (list=items).
+  // TikTok-web taste flow. An anonymous visitor gets the feed metered so the
+  // personalization investment lands BEFORE the gate:
+  //   no categories picked yet -> 1 free card, then the category picker
+  //   categories picked         -> 1 re-ranked card, then the sign-in gate
+  // Two free bets total (one per card); the gate falls on the 3rd. Signed-in /
+  // allowlisted / invited visitors see the whole feed (list=items).
   let list=items, tail=null;
   if(TASTE){
-    if(!tasteCats().length){list=items.slice(0,2);tail="picker";}
-    else{list=items.slice(0,3);tail="gate";}
+    if(!tasteCats().length){list=items.slice(0,1);tail="picker";}
+    else{list=items.slice(0,1);tail="gate";}
   }
   list.forEach((m,i)=>{
     const yes=m.yesPct,no=100-yes;
@@ -1442,10 +1444,12 @@ function renderFeed(items){
 }
 
 /**
- * Step three of the taste flow: "what do you have takes on?" — the free signal.
- * Multi-select 1-3 of the five real feed categories, Continue re-ranks the feed
- * toward them. The picks are logged (taste_pick) and stashed in sessionStorage
- * so the reload knows to show the re-ranked run and, after it, the gate.
+ * The pivot of the taste flow, now surfaced right after the FIRST card (not the
+ * second) so the personalization investment lands before the gate: "what do you
+ * have takes on?" — the free signal. Multi-select 1-3 of the five real feed
+ * categories, Continue re-ranks the feed toward them. The picks are logged
+ * (taste_pick) and stashed in sessionStorage so the reload knows to show the
+ * one re-ranked card and, after it, the gate.
  */
 function buildPicker(){
   const CATS=["Sports","Crypto","Politics","Culture","Tech"];
@@ -1469,7 +1473,7 @@ function buildPicker(){
     try{sessionStorage.setItem("taste_cats",cats.join(","));}catch(e){}
     ev("taste_pick",{cats:cats.join(",")});
     document.getElementById("scroller").scrollTop=0;
-    loadFeed(); // reloads with ?cats= -> 3 re-ranked cards, then the gate
+    loadFeed(); // reloads with ?cats= -> 1 re-ranked card, then the gate
   };
   return el;
 }
@@ -1993,7 +1997,7 @@ async function loadProfile(scroller){
  * The server enforces the same gate on /call and /sell regardless.
  */
 let GATE={allowed:false,reason:"signed_out"};
-let TASTE=false; // anonymous free-taste mode: 2 cards -> picker -> 3 cards -> gate
+let TASTE=false; // anonymous free-taste mode: card -> picker -> card -> gate (2 free bets)
 const tasteCats=()=>{try{return (sessionStorage.getItem("taste_cats")||"").split(",").filter(Boolean);}catch(e){return [];}};
 // The sign-in redirect, shared by the invite screen, the in-feed gate card and
 // the "free taste spent" moment. `p` is the provider (twitter | google); it is
