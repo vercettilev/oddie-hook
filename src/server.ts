@@ -870,7 +870,7 @@ app.get("/api/community/list", requireAdmin, async (_req, res) => {
   const items = await adminListCommunity();
   res.json({
     items: items.map((i) => ({ ...i, explorer: i.onchainPubkey ? explorerUrl(i.onchainPubkey) : null })),
-    chain: { enabled: isChainEnabled(), admin: adminAddress(), balanceSol: await adminBalanceSol() },
+    chain: { enabled: isChainEnabled(), admin: await adminAddress(), balanceSol: await adminBalanceSol() },
   });
 });
 

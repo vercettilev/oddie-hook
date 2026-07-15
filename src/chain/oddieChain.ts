@@ -2,40 +2,33 @@
  * Layer 2 — the on-chain proof. When an admin creates a Community market we ALSO
  * mint it on the oddie-chain pari-mutuel program on Solana devnet, as a provable
  * "this market really exists on Solana" artifact. Create-only: users still play
- * with virtual tokens off-chain. Every path here fails SOFT — if the key is
- * missing, the wallet is broke, or the RPC hiccups, `mintMarket` returns null and
- * the caller creates the virtual market anyway, just without the badge.
+ * with virtual tokens off-chain.
+ *
+ * ISOLATION IS THE CONTRACT: this module has NO top-level runtime dependency on
+ * @coral-xyz/anchor (or anything that can throw). The heavy libs load lazily via
+ * dynamic import() inside a guarded init, so ANY failure here — a bad import, a
+ * missing/broken key, an RPC outage — degrades to "no on-chain badge" and NEVER
+ * crashes server boot or blocks the product. On-chain is a bonus, not a boot dep.
  */
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import path from "path";
-import * as anchor from "@coral-xyz/anchor";
-import { BN } from "@coral-xyz/anchor";
-import bs58 from "bs58";
-
-const { Connection, Keypair, PublicKey, SystemProgram } = anchor.web3;
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+// Type-only import: erased at compile time, so it adds ZERO runtime dependency.
+import type * as Anchor from "@coral-xyz/anchor";
 
 const RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const CLUSTER = "devnet";
 const SECRET = process.env.SOLANA_ADMIN_SECRET_KEY;
+const IDL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "oddie_chain_idl.json");
 
-// Lazily load the bundled IDL (default JSON import needs assertions under native
-// ESM; reading the file avoids that and works identically under tsx).
-const idl = JSON.parse(
-  readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), "oddie_chain_idl.json"),
-    "utf8",
-  ),
-) as anchor.Idl & { address: string };
-
-const PROGRAM_ID = new PublicKey(process.env.ODDIE_CHAIN_PROGRAM_ID ?? (idl as any).address);
-
-// A create needs ~0.0039 SOL (Market + Vault rent + fee). Refuse to attempt
-// below a small buffer so we fail fast+soft rather than eating a doomed tx fee.
+// A create needs ~0.0039 SOL (Market + Vault rent + fee). Refuse below a small
+// buffer so we fail fast+soft rather than eating a doomed tx fee.
 const MIN_LAMPORTS = 10_000_000; // 0.01 SOL
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 export type MintResult = { pubkey: string; signature: string };
+
+// --- pure, import-safe helpers (no anchor, cannot throw at load) -------------
 
 /** Whether the on-chain layer is configured at all (admin key present). */
 export function isChainEnabled(): boolean {
@@ -47,109 +40,123 @@ export function explorerUrl(pubkey: string): string {
   return `https://explorer.solana.com/address/${pubkey}?cluster=${CLUSTER}`;
 }
 
-function parseKeypair(raw: string): anchor.web3.Keypair {
-  const s = raw.trim();
-  // Accept either the solana-keygen JSON array ([12,34,...]) or a base58 string.
-  const bytes = s.startsWith("[") ? Uint8Array.from(JSON.parse(s)) : bs58.decode(s);
-  return Keypair.fromSecretKey(bytes);
+// --- lazy client (all runtime anchor usage lives behind this) ----------------
+
+interface ChainClient {
+  program: Anchor.Program;
+  admin: Anchor.web3.Keypair;
+  connection: Anchor.web3.Connection;
+  programId: Anchor.web3.PublicKey;
+  web3: typeof import("@coral-xyz/anchor")["web3"];
+  // BN + PublicKey constructors captured from the runtime module.
+  BN: new (v: number | string) => { toArrayLike(buf: BufferConstructor, endian: string, len: number): Buffer };
 }
 
-let cached: { program: anchor.Program; admin: anchor.web3.Keypair; connection: anchor.web3.Connection } | null = null;
+let cached: ChainClient | null = null;
+let initFailed = false;
 
-function client() {
+/** Build (once) the anchor program + admin keypair, importing anchor lazily.
+ *  Returns null on ANY failure — unconfigured, unparseable key, broken import. */
+async function load(): Promise<ChainClient | null> {
   if (cached) return cached;
-  if (!SECRET) return null;
-  let admin: anchor.web3.Keypair;
+  if (initFailed || !SECRET) return null;
   try {
-    admin = parseKeypair(SECRET);
+    const anchor = await import("@coral-xyz/anchor");
+    const bs58 = (await import("bs58")).default;
+    const { web3 } = anchor;
+
+    const idl = JSON.parse(readFileSync(IDL_PATH, "utf8")) as Anchor.Idl & { address: string };
+    const programId = new web3.PublicKey(process.env.ODDIE_CHAIN_PROGRAM_ID ?? idl.address);
+
+    const s = SECRET.trim();
+    const bytes = s.startsWith("[") ? Uint8Array.from(JSON.parse(s)) : bs58.decode(s);
+    const admin = web3.Keypair.fromSecretKey(bytes);
+
+    const connection = new web3.Connection(RPC_URL, "confirmed");
+    const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(admin), {
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+    const program = new anchor.Program(idl, provider);
+
+    cached = { program, admin, connection, programId, web3, BN: anchor.BN as unknown as ChainClient["BN"] };
+    console.log(`[chain] on-chain layer ready; admin ${admin.publicKey.toBase58()}`);
+    return cached;
   } catch (e) {
-    console.error("[chain] SOLANA_ADMIN_SECRET_KEY is set but unparseable:", (e as Error).message);
+    initFailed = true; // don't retry a broken init on every request
+    console.error("[chain] init failed; on-chain layer disabled, product unaffected:", (e as Error).message);
     return null;
   }
-  const connection = new Connection(RPC_URL, "confirmed");
-  const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(admin), {
-    commitment: "confirmed",
-    preflightCommitment: "confirmed",
-  });
-  const program = new anchor.Program(idl, provider);
-  cached = { program, admin, connection };
-  return cached;
 }
 
-/** The admin (market authority) address, for funding/status displays. null if unset. */
-export function adminAddress(): string | null {
-  const c = client();
+/** The admin (market authority) address, or null if unconfigured/broken. */
+export async function adminAddress(): Promise<string | null> {
+  const c = await load();
   return c ? c.admin.publicKey.toBase58() : null;
+}
+
+/** Balance of the admin wallet in SOL, or null if unconfigured/unreachable. */
+export async function adminBalanceSol(): Promise<number | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    return (await c.connection.getBalance(c.admin.publicKey)) / LAMPORTS_PER_SOL;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Mint a market on devnet. Returns the market PDA + tx signature on success, or
  * null on ANY failure (unconfigured, underfunded, RPC error). Never throws.
- *
- * `marketId` must be unique per authority (it seeds the PDA); the caller passes
- * the community market's own id so the two layers share one identifier.
+ * `marketId` seeds the PDA; the caller passes the community market's own id so
+ * the two layers share one identifier.
  */
 export async function mintMarket(args: {
   marketId: number;
   question: string;
   closeTime: number;
 }): Promise<MintResult | null> {
-  const c = client();
+  const c = await load();
   if (!c) return null;
-  const { program, admin, connection } = c;
-
   try {
-    // On-chain guards mirror the program's own require!s, checked here so we fail
-    // before spending a fee on a tx the program would reject anyway.
     if (args.question.length > 180) {
       console.error("[chain] question exceeds 180 bytes; skipping on-chain mint");
       return null;
     }
-    const bal = await connection.getBalance(admin.publicKey);
+    const bal = await c.connection.getBalance(c.admin.publicKey);
     if (bal < MIN_LAMPORTS) {
       console.error(
-        `[chain] admin wallet ${admin.publicKey.toBase58()} low: ${(bal / LAMPORTS_PER_SOL).toFixed(4)} SOL ` +
+        `[chain] admin wallet ${c.admin.publicKey.toBase58()} low: ${(bal / LAMPORTS_PER_SOL).toFixed(4)} SOL ` +
           `(< ${(MIN_LAMPORTS / LAMPORTS_PER_SOL).toFixed(2)}). Fund it. Skipping on-chain mint.`,
       );
       return null;
     }
 
-    const marketIdBn = new BN(args.marketId);
-    const [marketPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("market"), admin.publicKey.toBuffer(), marketIdBn.toArrayLike(Buffer, "le", 8)],
-      PROGRAM_ID,
+    const marketIdBn = new c.BN(args.marketId);
+    const [marketPda] = c.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), c.admin.publicKey.toBuffer(), marketIdBn.toArrayLike(Buffer, "le", 8)],
+      c.programId,
     );
-    const [vaultPda] = PublicKey.findProgramAddressSync(
+    const [vaultPda] = c.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("vault"), marketPda.toBuffer()],
-      PROGRAM_ID,
+      c.programId,
     );
 
-    const signature = await program.methods
-      .createMarket(marketIdBn, args.question, new BN(args.closeTime))
+    const signature = await c.program.methods
+      .createMarket(marketIdBn, args.question, new c.BN(args.closeTime))
       .accountsStrict({
-        authority: admin.publicKey,
+        authority: c.admin.publicKey,
         market: marketPda,
         vault: vaultPda,
-        systemProgram: SystemProgram.programId,
+        systemProgram: c.web3.SystemProgram.programId,
       })
       .rpc();
 
     console.log(`[chain] minted market ${marketPda.toBase58()} (sig ${signature.slice(0, 8)}…)`);
     return { pubkey: marketPda.toBase58(), signature };
   } catch (e) {
-    // Soft failure by design: the product must ship the virtual market regardless.
     console.error("[chain] mintMarket failed (virtual market still created):", (e as Error).message);
-    return null;
-  }
-}
-
-/** Balance of the admin wallet in SOL, or null if unconfigured/unreachable. */
-export async function adminBalanceSol(): Promise<number | null> {
-  const c = client();
-  if (!c) return null;
-  try {
-    return (await c.connection.getBalance(c.admin.publicKey)) / LAMPORTS_PER_SOL;
-  } catch {
     return null;
   }
 }
