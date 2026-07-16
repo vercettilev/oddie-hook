@@ -158,19 +158,37 @@
   .rby{margin-top:9px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.4;
     color:#3c570b;background:var(--wash);border-radius:12px;padding:8px 11px}
   .rby b{font-weight:800}
-  /* Cold-visitor onboarding strip: one pinned line at the top of "For you".
-     Fixed dark text on the fixed pale-lime wash so it holds AA in both themes
-     (same rule as .rby / .chainbadge). Carries the header clearance when it is
-     the first scroller child; when dismissed, .card:first-child reclaims it. */
-  .onbstrip{width:min(var(--feedcol), calc(100% - 24px));margin:var(--feedtop) auto 12px;
-    display:flex;align-items:center;gap:10px;background:var(--wash);
+  /* Cold-visitor onboarding. A snap-aligned WRAP is the key: the scroller uses
+     scroll-snap mandatory, which otherwise snaps straight to the first card on
+     load and hides these above the fold. Making the wrap the first snap point
+     (scroll-snap-align:start + matching scroll-margin-top) lands the viewport ON
+     it at load — visible with no scroll. Carries the header clearance while
+     present; when both rows are dismissed, .card:first-child reclaims it.
+     Two distinct rows, dismissed independently. */
+  .onbwrap{width:min(var(--feedcol), calc(100% - 24px));margin:var(--feedtop) auto 12px;
+    display:flex;flex-direction:column;gap:8px;
+    scroll-snap-align:start;scroll-margin-top:var(--feedtop)}
+  /* tag instruction — fixed dark text on the fixed pale-lime wash (AA in both
+     themes, same rule as .rby / .chainbadge). */
+  .onbstrip{display:flex;align-items:center;gap:10px;background:var(--wash);
     border:2px solid var(--card-line);border-radius:16px;padding:11px 14px;
     box-shadow:var(--card-shadow);font-family:'Nunito';font-weight:800;
     font-size:13px;line-height:1.35;color:#3c570b}
   .onbstrip .onbtxt{flex:1}
   .onbstrip b{font-weight:900}
-  .onbx{flex:0 0 auto;border:none;background:transparent;color:#3c570b;font-size:20px;
-    line-height:1;cursor:pointer;padding:0 2px;font-weight:900;opacity:.65}
+  /* follow prompt — visually distinct: theme card surface + lime accent border
+     and a lime follow pill. Card tokens (surface/on-ground) are theme-safe. */
+  .onbfollow{display:flex;align-items:center;gap:9px;background:var(--card-surface);
+    border:2px solid var(--accent);border-radius:14px;padding:8px 10px 8px 13px;
+    box-shadow:var(--card-shadow);font-family:'Nunito';font-weight:800;
+    font-size:12.5px;line-height:1.3;color:var(--on-ground)}
+  .onbfollow .flabel{flex:1}
+  .fbtn{flex:0 0 auto;text-decoration:none;background:var(--accent);color:#17250a;
+    font-family:'Nunito';font-weight:900;font-size:12.5px;border-radius:999px;
+    padding:6px 12px;white-space:nowrap;border:1.5px solid rgba(0,0,0,.28)}
+  .fbtn:active{transform:scale(.95)}
+  .onbx{flex:0 0 auto;border:none;background:transparent;color:currentColor;font-size:20px;
+    line-height:1;cursor:pointer;padding:0 2px;font-weight:900;opacity:.6}
   .onbx:hover{opacity:1}
   .onbx:active{transform:scale(.9)}
 
@@ -685,6 +703,7 @@
     .sheet{max-width:none;padding:26px 26px 34px}
     .card{width:100%;max-width:none;margin:0 0 18px;scroll-margin-top:6px;min-height:auto;padding:26px 26px 24px}
     .card:first-child{margin-top:2px}
+    .onbwrap{width:100%;max-width:none;margin:2px 0 14px;scroll-margin-top:6px}
     .chead{margin-bottom:2px}
     .opct{font-size:44px}
     .oside{font-size:13px}
@@ -1183,22 +1202,39 @@ function socialLine(side,crowd,marketSidePct){
   return `Contrarian: ${p}% of poppers and a ${m}% market against you.`;
 }
 
-// Cold-visitor onboarding strip. Shown only on the "For you" tab, only for a
-// cold/organic visit (no market permalink context — a permalink page already
-// has the tweet as its explanation), and only until dismissed once.
-const ONB_KEY="oddie_onboard_dismissed";
-function onboardingWanted(){
-  if(activeCat!=="For you"||startSlug)return false;
-  try{return !localStorage.getItem(ONB_KEY);}catch(e){return false;}
-}
+// Cold-visitor onboarding. Shown only on the "For you" tab, only for a cold/
+// organic visit (no permalink context — a permalink page already has the tweet
+// as its explanation). Two independent rows: the tag instruction and a follow
+// prompt, each persisted separately (a visitor may dismiss one but not the
+// other). Both live in one snap-aligned wrap so they're visible on load.
+const ONB_KEY="oddie_onboard_dismissed";    // tag-instruction strip
+const FOLLOW_KEY="oddie_follow_dismissed";   // follow prompt (independent)
+function onboardingCold(){ return activeCat==="For you" && !startSlug; }
+function lsGet(k){ try{return localStorage.getItem(k);}catch(e){return "1";} } // fail closed → hidden
+function lsSet(k){ try{localStorage.setItem(k,"1");}catch(e){} }
 function maybeOnboarding(scroller){
-  if(!onboardingWanted())return;
-  const strip=document.createElement("div");
-  strip.className="onbstrip";
-  strip.innerHTML='<span class="onbtxt">tag <b>@oddie_so</b> under any take on X — we turn it into a market you can play</span>'
-    +'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
-  strip.querySelector(".onbx").onclick=()=>{try{localStorage.setItem(ONB_KEY,"1");}catch(e){}strip.remove();ev("onboard_dismiss",{});};
-  scroller.appendChild(strip);
+  if(!onboardingCold())return;
+  const showTag=!lsGet(ONB_KEY), showFollow=!lsGet(FOLLOW_KEY);
+  if(!showTag && !showFollow)return;
+  const wrap=document.createElement("div"); wrap.className="onbwrap";
+  const prune=()=>{ if(!wrap.querySelector(".onbstrip,.onbfollow"))wrap.remove(); }; // both gone → card reclaims clearance
+  if(showTag){
+    const s=document.createElement("div"); s.className="onbstrip";
+    s.innerHTML='<span class="onbtxt">tag <b>@oddie_so</b> under any take on X — we turn it into a market you can play</span>'
+      +'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
+    s.querySelector(".onbx").onclick=()=>{lsSet(ONB_KEY);s.remove();prune();ev("onboard_dismiss",{});};
+    wrap.appendChild(s);
+  }
+  if(showFollow){
+    const f=document.createElement("div"); f.className="onbfollow";
+    f.innerHTML='<span class="flabel">results + new markets, straight to your feed</span>'
+      +'<a class="fbtn" href="https://x.com/intent/follow?screen_name=oddiefun" target="_blank" rel="noopener">follow @oddiefun ↗</a>'
+      +'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
+    f.querySelector(".fbtn").onclick=()=>ev("follow_click",{});
+    f.querySelector(".onbx").onclick=()=>{lsSet(FOLLOW_KEY);f.remove();prune();ev("follow_dismiss",{});};
+    wrap.appendChild(f);
+  }
+  scroller.appendChild(wrap);
 }
 
 function renderFeed(items){
