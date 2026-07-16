@@ -1048,6 +1048,10 @@ export interface Notice {
   /** The settled call this notice is about, so the alert can mint its share card. */
   callId: number | null;
   at: string;
+  /** Settlement notices only: the odds they took (their side's price) and the
+   *  resolved outcome — enough for the client to build a "Share to X" intent. */
+  oddsPct?: number | null;
+  outcome?: "yes" | "no" | null;
 }
 
 interface MemNotice extends Notice { deviceId: string }
@@ -1061,11 +1065,100 @@ export async function noticesFor(rawDeviceId: string, limit = 30): Promise<Notic
       .map(({ deviceId: _d, ...n }) => n);
   }
   await ensureSchema();
-  const { rows } = await db().query<{ id: number; kind: string; body: string; delta: number | null; slug: string | null; call_id: number | null; created_at: Date }>(
-    `SELECT id, kind, body, delta, slug, call_id, created_at FROM notice WHERE device_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+  // Join the settled call so a settlement notice carries the odds they took and
+  // the resolved outcome (won ⇒ their side, else the opposite) for the share intent.
+  const { rows } = await db().query<{
+    id: number; kind: string; body: string; delta: number | null; slug: string | null; call_id: number | null; created_at: Date;
+    pct_at: number | null; side: "yes" | "no" | null; exit_pct: number | null;
+  }>(
+    `SELECT n.id, n.kind, n.body, n.delta, n.slug, n.call_id, n.created_at, mc.pct_at, mc.side, mc.exit_pct
+       FROM notice n LEFT JOIN market_call mc ON mc.id = n.call_id
+      WHERE n.device_id = $1 ORDER BY n.created_at DESC, n.id DESC LIMIT $2`,
     [deviceId, limit],
   );
-  return rows.map((r) => ({ id: r.id, kind: r.kind, body: r.body, delta: r.delta, slug: r.slug, callId: r.call_id, at: r.created_at.toISOString() }));
+  return rows.map((r) => {
+    const settle = r.kind === "settle_win" || r.kind === "settle_loss";
+    const won = r.exit_pct === 100;
+    const outcome = settle && r.side ? (won ? r.side : r.side === "yes" ? "no" : "yes") : null;
+    return {
+      id: r.id, kind: r.kind, body: r.body, delta: r.delta, slug: r.slug, callId: r.call_id, at: r.created_at.toISOString(),
+      oddsPct: settle && r.pct_at != null ? Math.max(1, Math.min(99, Math.round(r.pct_at))) : null,
+      outcome,
+    };
+  });
+}
+
+// --- Accuracy record (per user, per category) -------------------------------
+// The public reputation metric. Derived, not stored: a RESOLVED pick is a
+// settled market_call whose exit_pct is exactly 0 or 100 (a SOLD position exits
+// at a live 1–99 price, so this cleanly excludes trading from the record).
+// correct = exit_pct 100; category = the community category if any, else the
+// market's. Streaks are chronological by resolution time.
+const MIN_RESOLVED_FOR_ACCURACY = 5;   // below this: "building track record", no %
+const MIN_PER_CATEGORY_FOR_BEST = 2;   // don't crown "100% in Crypto" off one pick
+
+export interface CategoryAccuracy { category: string; resolved: number; correct: number; pct: number }
+export interface AccuracyRecord {
+  resolved: number;
+  correct: number;
+  accuracyPct: number | null; // null until resolved >= minResolved
+  hasEnough: boolean;
+  minResolved: number;
+  streak: number;             // current trailing consecutive-correct
+  bestStreak: number;
+  bestTopic: { category: string; pct: number; resolved: number } | null;
+  byCategory: CategoryAccuracy[];
+}
+
+/** Pure: resolved picks in RESOLUTION order (oldest first) → the record. */
+function computeAccuracy(rows: { correct: boolean; category: string }[]): AccuracyRecord {
+  const resolved = rows.length;
+  const correct = rows.filter((r) => r.correct).length;
+  const hasEnough = resolved >= MIN_RESOLVED_FOR_ACCURACY;
+
+  let cur = 0, best = 0;
+  for (const r of rows) { if (r.correct) { cur++; if (cur > best) best = cur; } else cur = 0; }
+
+  const m = new Map<string, { resolved: number; correct: number }>();
+  for (const r of rows) { const e = m.get(r.category) ?? { resolved: 0, correct: 0 }; e.resolved++; if (r.correct) e.correct++; m.set(r.category, e); }
+  const byCategory: CategoryAccuracy[] = [...m.entries()]
+    .map(([category, e]) => ({ category, resolved: e.resolved, correct: e.correct, pct: Math.round((100 * e.correct) / e.resolved) }))
+    .sort((a, b) => b.pct - a.pct || b.resolved - a.resolved);
+  const topPick = byCategory.filter((c) => c.resolved >= MIN_PER_CATEGORY_FOR_BEST)[0] ?? byCategory[0] ?? null;
+
+  return {
+    resolved, correct,
+    accuracyPct: hasEnough ? Math.round((100 * correct) / resolved) : null,
+    hasEnough, minResolved: MIN_RESOLVED_FOR_ACCURACY,
+    streak: cur, bestStreak: best,
+    bestTopic: topPick ? { category: topPick.category, pct: topPick.pct, resolved: topPick.resolved } : null,
+    byCategory,
+  };
+}
+
+export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  let rows: { correct: boolean; category: string }[];
+  if (!PERSISTENT) {
+    rows = memCalls
+      .filter((c) => c.deviceId === deviceId && c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
+      .sort((a, b) => (a.closedAt! < b.closedAt! ? -1 : a.closedAt! > b.closedAt! ? 1 : a.id - b.id))
+      .map((c) => ({ correct: c.exitPct === 100, category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question) }));
+  } else {
+    await ensureSchema();
+    const { rows: qr } = await db().query<{ exit_pct: number; question: string; comm_cat: string | null }>(
+      `SELECT mc.exit_pct, s.question, cm.category AS comm_cat
+         FROM market_call mc
+         JOIN market_slug s ON s.slug = mc.slug
+         LEFT JOIN community_market cm ON cm.slug = mc.slug
+        WHERE mc.device_id = $1 AND mc.closed_at IS NOT NULL
+          AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
+        ORDER BY mc.closed_at ASC, mc.id ASC`,
+      [deviceId],
+    );
+    rows = qr.map((r) => ({ correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question) }));
+  }
+  return computeAccuracy(rows);
 }
 
 /* --------------------------------------------------------------- settlement --
@@ -1108,7 +1201,7 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
       c.proceeds = proceeds;
       const w = memBalance.get(c.deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: Date.now() };
       memBalance.set(c.deviceId, { ...w, tokens: w.tokens + proceeds });
-      pushNoticeMem(c.deviceId, slug, rec?.market.question ?? slug, outcome, c.side, proceeds, c.id, crowd);
+      pushNoticeMem(c.deviceId, slug, rec?.market.question ?? slug, outcome, c.side, c.entryPct, proceeds, c.id, crowd);
       out.push({ callId: c.id, deviceId: c.deviceId, side: c.side, stake: c.tokens, entryPct: c.entryPct, exitPct, proceeds, edge: edgePts(c.entryPct, exitPct) });
     }
     return out;
@@ -1145,7 +1238,7 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
       const won = r.side === outcome;
       await client.query(
         `INSERT INTO notice (device_id, kind, body, delta, slug, call_id) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [r.device_id, won ? "settle_win" : "settle_loss", noticeBody(question, outcome, r.side, r.proceeds, crowd), won ? r.proceeds : null, slug, r.id],
+        [r.device_id, won ? "settle_win" : "settle_loss", noticeBody(question, outcome, r.side, r.pct_at, r.proceeds, crowd), won ? r.proceeds : null, slug, r.id],
       );
     }
     await client.query("COMMIT");
@@ -1465,19 +1558,22 @@ function crowdClause(outcome: "yes" | "no", won: boolean, crowd?: CrowdSplit): s
   return ` ${rightPct}% of poppers called it.`;
 }
 
-function noticeBody(question: string, outcome: "yes" | "no", side: "yes" | "no", proceeds: number, crowd?: CrowdSplit): string {
+function noticeBody(question: string, outcome: "yes" | "no", side: "yes" | "no", entryPct: number, proceeds: number, crowd?: CrowdSplit): string {
   const won = side === outcome;
+  const odds = Math.max(1, Math.min(99, Math.round(entryPct)));
+  // Resolution-as-content: name the call, their odds, the outcome, and the verdict.
   return won
-    ? `You were right on “${question}” — +${proceeds} tokens.${crowdClause(outcome, true, crowd)}`
-    : `Market resolved ${outcome.toUpperCase()}: “${question}”. Your ${side.toUpperCase()} call didn't land.${crowdClause(outcome, false, crowd)}`;
+    ? `You called “${question}” at ${odds}% — it resolved ${outcome.toUpperCase()}. You were right. +${proceeds} tokens.${crowdClause(outcome, true, crowd)}`
+    : `You called “${question}” at ${odds}% — it resolved ${outcome.toUpperCase()}. You were wrong.${crowdClause(outcome, false, crowd)}`;
 }
 
-function pushNoticeMem(deviceId: string, slug: string, question: string, outcome: "yes" | "no", side: "yes" | "no", proceeds: number, callId: number, crowd?: CrowdSplit): void {
+function pushNoticeMem(deviceId: string, slug: string, question: string, outcome: "yes" | "no", side: "yes" | "no", entryPct: number, proceeds: number, callId: number, crowd?: CrowdSplit): void {
   const won = side === outcome;
   memNotices.unshift({
     id: ++memNoticeId, deviceId, kind: won ? "settle_win" : "settle_loss",
-    body: noticeBody(question, outcome, side, proceeds, crowd),
+    body: noticeBody(question, outcome, side, entryPct, proceeds, crowd),
     delta: won ? proceeds : null, slug, callId, at: new Date().toISOString(),
+    oddsPct: Math.max(1, Math.min(99, Math.round(entryPct))), outcome,
   });
 }
 

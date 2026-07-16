@@ -584,6 +584,22 @@
   .summary .v{font-size:22px;font-weight:700;line-height:1}
   .summary .k{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted);margin-top:4px}
 
+  /* Accuracy record — the four public reputation stats. Tiles are the fixed
+     white .tile, so text is FIXED dark to hold contrast in both themes. */
+  .trhead{display:flex;align-items:center;justify-content:space-between;margin:16px 0 10px}
+  .trhead .psec{margin:0}
+  .trshare{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#17250a;
+    border:1.5px solid rgba(0,0,0,.28);border-radius:999px;padding:6px 13px;
+    font-family:'Nunito';font-weight:900;font-size:13px;cursor:pointer}
+  .trshare svg{width:15px;height:15px;fill:none;stroke:#17250a;stroke-width:2.2}
+  .trshare:active{transform:scale(.96)}
+  .trstats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+  .trstats .tile{margin:0;text-align:center;padding:14px 8px}
+  .trstats .v{font-size:24px;font-weight:800;line-height:1.05;color:#17250a}
+  .trstats .v.topic{font-size:17px}
+  .trstats .k{font-family:'Nunito';font-weight:800;font-size:11px;color:#5c6660;margin-top:5px}
+  .trstats .best{font-size:11px;font-weight:800;color:#5c6660;white-space:nowrap}
+
   /* Transaction history — closed positions as instantly-readable win/loss cards.
      Same chunky-outline white surface as every tile; a coloured left rail and an
      outcome chip carry the verdict at a glance, the numbers back it up. Text is
@@ -989,6 +1005,15 @@ async function shareMarket({slug,text,source,anchor,url}){
     return;
   }
   shareMenu({url,text,slug,source,anchor});
+}
+
+// Direct X post-intent for the reputation shares (settlement notification +
+// profile). Pre-fills the text and appends the link; X lets them edit before
+// posting. Reusable as-is once we automate posting.
+function xShare(text,url,source){
+  ev("share_open",{source});
+  window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}${url?`&url=${encodeURIComponent(url)}`:""}`,"_blank","noopener");
+  ev("share_done",{source,via:"x"});
 }
 
 function shareMenu({url,text,slug,source,anchor}){
@@ -2021,6 +2046,8 @@ async function loadNotices(scroller){
     const r=await fetch(`${API}/api/notices?deviceId=${encodeURIComponent(deviceId)}`);
     if(!r.ok)throw new Error("notices "+r.status);
     const {notices}=await r.json();
+    // The share text carries the user's accuracy, so fetch it once for this screen.
+    let acc=null; try{const ar=await fetch(`${API}/api/accuracy?deviceId=${encodeURIComponent(deviceId)}`);if(ar.ok)acc=await ar.json();}catch(e){}
     // Each rendered notification counts as viewed: the list is short and fully
     // on screen, so render == read is the honest approximation here.
     for(const n of notices)ev("notice_view",{slug:n.slug});
@@ -2035,18 +2062,15 @@ async function loadNotices(scroller){
       <p class="sub">Markets you held that resolved. Won or lost — the call is yours to post.</p>
       ${notices.map(noticeCardHTML).join("")}
     </div>`;
-    // The brag, one tap from the alert. Mint the owner-only card, hand it to the
-    // OS share sheet. No token reward, by design — a paid share is spam, and the
-    // reward campaign is exactly what let the farm in. The win is the reason.
-    scroller.querySelectorAll("[data-nshare]").forEach(b=>b.onclick=async(e)=>{
-      const anchor=e.currentTarget, win=b.dataset.win==="1";
-      let url,slug;
-      try{const rr=await fetch(`${API}/api/position/${b.dataset.nshare}/sharelink`,{method:"POST",
-        headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
-        const j=await rr.json();if(j.ok){url=j.url;slug=(url.match(/market\/([^?]+)/)||[])[1];}}catch(err){}
-      if(!url)return;
-      shareMarket({slug,url,anchor,source:"settle_notice",
-        text:win?"called it 🔥":"took the other side — market said no 😤"});
+    // Resolution as content: one tap opens a pre-filled X post — their call, the
+    // odds they took, the outcome, and their accuracy. They edit before posting.
+    const accClause=acc&&acc.hasEnough?`${acc.accuracyPct}% accuracy on oddie`:"on oddie";
+    scroller.querySelectorAll("[data-nshare]").forEach(b=>b.onclick=()=>{
+      const slug=b.dataset.slug, odds=b.dataset.odds, outcome=(b.dataset.outcome||"").toUpperCase(), win=b.dataset.win==="1";
+      const lead=win?"called it":"missed this one";
+      const oddsClause=odds?` at ${odds}%`:"";
+      const text=`${lead}${oddsClause} → resolved ${outcome}. ${accClause}`;
+      xShare(text, slug?`${SHARE_ORIGIN}/m/${slug}`:SHARE_ORIGIN, "settle_notice");
     });
   }catch(e){
     console.error(e);
@@ -2069,8 +2093,8 @@ function noticeCardHTML(n){
       <div class="nicon">✅</div>
       <div class="grow"><div class="ntext">${esc(n.body)}</div><div class="nwhen">${agoOf(n.at)}</div></div></div></div>`;
   }
-  const share=n.callId
-    ? `<button class="ncshare ${win?"win":"loss"}" data-nshare="${n.callId}" data-win="${win?1:0}">${SHARE_ICON}<span>${win?"Share your call 🔥":"Share it anyway 😤"}</span></button>`
+  const share=n.slug
+    ? `<button class="ncshare ${win?"win":"loss"}" data-nshare data-slug="${esc(n.slug)}" data-odds="${n.oddsPct??""}" data-outcome="${n.outcome??""}" data-win="${win?1:0}">${SHARE_ICON}<span>Share to X</span></button>`
     : "";
   return `<div class="ncard ${win?"win":"loss"}">
     <div class="nctop">
@@ -2107,8 +2131,15 @@ async function loadProfile(scroller){
         <div class="kind">${a.provider==="twitter"?"X — your identity":"Google — saved across devices"}</div></div>
     </div>`;}).join("");
 
-  const rep=pos.overall.avgEdge===null?"—":pts(pos.overall.avgEdge);
-  const repCls=pos.overall.avgEdge===null?"flat":cls(pos.overall.avgEdge);
+  // The accuracy record — the four public stats (accuracy %, streak, best topic,
+  // resolved picks). Below the min resolved-pick threshold, accuracy reads
+  // "building" instead of a misleadingly-precise % off a tiny sample.
+  let acc=null;
+  try{const ar=await fetch(`${API}/api/accuracy?deviceId=${encodeURIComponent(deviceId)}`);if(ar.ok)acc=await ar.json();}catch(e){}
+  const accVal=acc?(acc.hasEnough?`${acc.accuracyPct}%`:"building"):"—";
+  const streakVal=acc?String(acc.streak):"—";
+  const bestTopicVal=acc&&acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
+  const resolvedVal=acc?String(acc.resolved):"—";
 
   await loadBalance(); // the handle rides on /api/me
   const handleRow=myHandle?`
@@ -2128,13 +2159,18 @@ async function loadProfile(scroller){
     ${linked||`<button class="cbtn x" data-connect="twitter"><span class="glyph">𝕏</span>Connect X</button>
        <button class="cbtn" data-connect="google"><span class="glyph">G</span>Connect Google</button>
        <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+100 tokens</b>, once.</p>`}
-    <div class="summary" style="margin-top:16px">
-      <div class="tile"><div class="v num ${repCls}">${rep}</div><div class="k">REPUTATION</div></div>
-      <div class="tile"><div class="v num">${pos.streak?`${pos.streak.current}d`:"—"}</div><div class="k">STREAK${pos.streak&&pos.streak.best>pos.streak.current?` · BEST ${pos.streak.best}D`:""}</div></div>
-      <div class="tile"><div class="v num">🪙 ${pos.tokens??"—"}</div><div class="k">BALANCE</div></div>
+    <div class="trhead">
+      <p class="psec">Track record</p>
+      <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
     </div>
-    ${pos.overall.provisional&&pos.overall.avgEdge!==null
-      ? `<p class="cnote">🌱 provisional — ${pos.overall.closed} of 10 closed positions.</p>`:""}
+    <div class="trstats">
+      <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
+      <div class="tile"><div class="v">${esc(streakVal)}${acc&&acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:""}</div><div class="k">STREAK</div></div>
+      <div class="tile"><div class="v topic">${esc(bestTopicVal)}</div><div class="k">BEST TOPIC</div></div>
+      <div class="tile"><div class="v">${esc(resolvedVal)}</div><div class="k">RESOLVED PICKS</div></div>
+    </div>
+    ${acc&&!acc.hasEnough
+      ? `<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Accuracy shows at ${acc.minResolved}.</p>`:""}
     <p class="psec" style="margin-top:24px">Appearance</p>
     <div class="seg" role="group" aria-label="Theme">
       ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>
@@ -2145,6 +2181,15 @@ async function loadProfile(scroller){
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
+  // Shareable profile card. GAP: no public per-user profile URL yet — links to
+  // oddie.fun for now; swap to the public profile URL once those ship.
+  const trshareBtn=scroller.querySelector("#trshare");
+  if(trshareBtn)trshareBtn.onclick=()=>{
+    const text=acc&&acc.hasEnough
+      ? `${acc.accuracyPct}% accuracy, ${acc.streak}-pick streak on oddie`
+      : "building my track record on oddie";
+    xShare(text, "https://oddie.fun", "profile");
+  };
   scroller.querySelectorAll("[data-theme-mode]").forEach(b=>b.onclick=()=>{
     setTheme(b.dataset.themeMode);
     scroller.querySelectorAll("[data-theme-mode]").forEach(x=>x.classList.toggle("on",x===b));
