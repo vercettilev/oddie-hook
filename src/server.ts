@@ -1185,7 +1185,12 @@ app.get("/api/tweet/log", requireAdmin, async (req, res) => {
 
 // Internal wedge metrics (read-only, admin). All-time over the data we log.
 app.get("/api/metrics", requireAdmin, async (_req, res) => {
-  res.json(await metricsSummary());
+  try {
+    res.json(await metricsSummary());
+  } catch (e) {
+    console.error("[metrics] failed:", (e as Error).message);
+    res.status(500).json({ error: "metrics query failed (see server logs)" });
+  }
 });
 
 /* --------------------------------------------------------------- settlement --

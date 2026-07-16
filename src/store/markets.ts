@@ -1613,19 +1613,20 @@ export async function metricsSummary(): Promise<MetricsSummary> {
     });
   }
   await ensureSchema();
-  const ms = (col: string) => `extract(epoch from ${col}) * 1000`;
+  // NB: `at` is a reserved SQL keyword — quote the column and alias to `at_ms`.
+  const ms = (col: string) => `extract(epoch from "${col}") * 1000`;
   const [replies, calls, notices, views, rc] = await Promise.all([
     db().query<{ source_url: string | null; match_type: string }>(`SELECT source_url, match_type FROM tweet_reply_log`),
-    db().query<{ device_id: string; slug: string; at: number }>(`SELECT device_id, slug, ${ms("at")} at FROM market_call WHERE device_id IS NOT NULL`),
-    db().query<{ device_id: string; at: number }>(`SELECT device_id, ${ms("created_at")} at FROM notice WHERE kind IN ('settle_win','settle_loss')`),
-    db().query<{ device_id: string | null; slug: string; at: number }>(`SELECT device_id, slug, ${ms("at")} at FROM page_view`),
+    db().query<{ device_id: string; slug: string; at_ms: number }>(`SELECT device_id, slug, ${ms("at")} AS at_ms FROM market_call WHERE device_id IS NOT NULL`),
+    db().query<{ device_id: string; at_ms: number }>(`SELECT device_id, ${ms("created_at")} AS at_ms FROM notice WHERE kind IN ('settle_win','settle_loss')`),
+    db().query<{ device_id: string | null; slug: string; at_ms: number }>(`SELECT device_id, slug, ${ms("at")} AS at_ms FROM page_view`),
     db().query<{ n: number }>(`SELECT count(*)::int n FROM community_market WHERE resolved_outcome IS NOT NULL`),
   ]);
   return computeMetrics({
     replies: replies.rows.map((r) => ({ sourceUrl: r.source_url, matchType: r.match_type })),
-    calls: calls.rows.map((r) => ({ deviceId: r.device_id, slug: r.slug, at: Number(r.at) })),
-    notices: notices.rows.map((r) => ({ deviceId: r.device_id, at: Number(r.at) })),
-    views: views.rows.map((r) => ({ deviceId: r.device_id, slug: r.slug, at: Number(r.at) })),
+    calls: calls.rows.map((r) => ({ deviceId: r.device_id, slug: r.slug, at: Number(r.at_ms) })),
+    notices: notices.rows.map((r) => ({ deviceId: r.device_id, at: Number(r.at_ms) })),
+    views: views.rows.map((r) => ({ deviceId: r.device_id, slug: r.slug, at: Number(r.at_ms) })),
     resolvedCommunity: rc.rows[0]?.n ?? 0,
   });
 }
