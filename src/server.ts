@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -496,8 +496,22 @@ app.get("/api/me", async (req, res) => {
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const [wallet, handle] = await Promise.all([getWallet(deviceId), displayHandle(deviceId)]);
-  res.json({ ...wallet, ...handle });
+  const [wallet, handle, claim] = await Promise.all([getWallet(deviceId), displayHandle(deviceId), claimStatus(deviceId)]);
+  res.json({ ...wallet, ...handle, claim });
+});
+
+// The daily claim — the active retention hook. GET reports status (claimable,
+// streak, countdown); POST collects it (idempotent within the window).
+app.get("/api/claim", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json(await claimStatus(deviceId));
+});
+app.post("/api/claim", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json(await claimDaily(deviceId));
 });
 
 /**

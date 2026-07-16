@@ -159,6 +159,9 @@
       <input id="cyes" type="number" min="1" max="99" value="50" title="starting YES %"
         style="flex:0 0 90px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
     </div>
+    <!-- Retention flag (soft, never blocks): a market that resolves months out
+         kills the come-back-for-the-result loop. -->
+    <div id="clongwarn" style="display:none;background:var(--warn);border:2px solid var(--ink);border-radius:10px;padding:8px 12px;margin-top:8px;font-size:13px;font-weight:700"></div>
     <!-- Date assist: if the question text carries a deadline, we PRE-FILL the
          close time as a suggestion and require a look/confirm before Create. -->
     <div class="box" id="datehint" style="display:none;background:var(--warn);margin-top:8px;padding:10px 12px"></div>
@@ -486,6 +489,7 @@ cqEl.addEventListener("input", () => {
     if (!p) return;                                        // no clear date -> leave field as-is
     if (ccloseEl.value && ccloseEl.dataset.auto !== "1") return; // never clobber a manual entry
     ccloseEl.value = p.local; ccloseEl.dataset.auto = "1";
+    checkLongClose();
     datePending = true;
     dhintEl.innerHTML = '📅 suggested close time from the question: <b>' + esc(p.human) + '</b>'
       + ' — check it, then <button class="ghost dconf" style="padding:6px 12px;font-size:13px;margin-left:4px">confirm date</button>'
@@ -496,7 +500,25 @@ cqEl.addEventListener("input", () => {
   }, 350);
 });
 // A manual edit of the close field IS the user seeing/confirming it.
-ccloseEl.addEventListener("input", () => { ccloseEl.dataset.auto = ""; if (datePending) clearDateSuggestion(); });
+ccloseEl.addEventListener("input", () => { ccloseEl.dataset.auto = ""; if (datePending) clearDateSuggestion(); checkLongClose(); });
+
+// Soft retention flag: warn (never block) when the close time is far out. A
+// market that resolves in months means nobody comes back for the notification.
+const LONG_CLOSE_DAYS = 14;
+function checkLongClose() {
+  const w = $("#clongwarn");
+  const v = ccloseEl.value;
+  if (!v) { w.style.display = "none"; return; }
+  const t = new Date(v).getTime();
+  if (isNaN(t)) { w.style.display = "none"; return; }
+  const days = (t - Date.now()) / 86400000;
+  if (days > LONG_CLOSE_DAYS) {
+    w.innerHTML = '⚠️ closes ~' + Math.round(days) + ' days out — long-close markets weaken retention (nobody returns for a result months away). Consider narrowing this, unless the claim genuinely needs that long.';
+    w.style.display = "block";
+  } else {
+    w.style.display = "none";
+  }
+}
 
 // --- claim-extraction engine: paste an argument -> drafted market (or refusal).
 // The gate grade rides along in a hidden var so Create can send it (and so an
@@ -592,6 +614,7 @@ function fillFromExtraction(x) {
   $("#ccat").value = (x.category || "Community");
   if (x.close_time) { ccloseEl.value = toLocalInput(x.close_time); ccloseEl.dataset.auto = ""; }
   clearDateSuggestion();
+  checkLongClose(); // flag if the inferred/entered close is far out
   return '<div class="box"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">' + (x.resolvability === "clean" ? "✓ " : "⚠ ") + esc(badge[1]) + '</p>'
     + '<p class="why">' + esc(x.reason) + '</p>'
     + (x.close_time_inferred ? '<p class="why" style="color:var(--muted)">📅 close time was inferred — double-check it.</p>' : '')
@@ -600,7 +623,7 @@ function fillFromExtraction(x) {
 
 function clearCreateForm() {
   $("#cq").value = ""; $("#ccrit").value = ""; $("#ccat").value = "Community";
-  ccloseEl.value = ""; clearDateSuggestion();
+  ccloseEl.value = ""; clearDateSuggestion(); checkLongClose();
 }
 
 // --- reply generator: a confirmed market -> a ready-to-paste X reply ---------
@@ -702,7 +725,7 @@ async function createMarket() {
     // Read the source URL + market details BEFORE clearing the form below.
     generateReply({ slug: j.slug, question: q, yesPct: yesPct, marketId: String(j.marketId), matchType: "new", closesAt: new Date(closeLocal).toISOString() });
     $("#cq").value = ""; $("#ccrit").value = ""; $("#cx").value = ""; $("#cxout").innerHTML = "";
-    ccloseEl.value = ""; lastResolvability = null; lastMatchPath = "none"; lastMatch = null; clearDateSuggestion();
+    ccloseEl.value = ""; lastResolvability = null; lastMatchPath = "none"; lastMatch = null; clearDateSuggestion(); checkLongClose();
     loadCommunity();
   } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }

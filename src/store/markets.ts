@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import pg from "pg";
 import {
-  STARTING_TOKENS, TOKEN_FLOOR, TOPUP_INTERVAL_MS,
-  applyTopUp, edgePts, nextTopUpIn, proceedsFor, reputationOf, sharesFor,
+  STARTING_TOKENS, TOKEN_FLOOR,
+  DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
+  edgePts, proceedsFor, reputationOf, sharesFor,
   type Reputation,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
@@ -187,6 +188,13 @@ CREATE INDEX IF NOT EXISTS device_account_acct_idx ON device_account(account_id)
 -- "Popper_1" cannot impersonate "popper_1".
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS handle text;
 CREATE UNIQUE INDEX IF NOT EXISTS device_balance_handle_key ON device_balance (lower(handle));
+
+-- The daily claim: when the device last collected, and its consecutive-day
+-- streak. The grant itself lands in the tokens column; these two drive the
+-- active claim hook and its streak counter. (topped_up_at stays for backfill
+-- but no longer grants — the claim replaced the passive top-up.)
+ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS last_claim_at timestamptz;
+ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS claim_streak integer NOT NULL DEFAULT 0;
 
 -- Real notifications: one row per thing that actually happened to this device's
 -- stream (a settlement, for now). Append-only; the UI reads, never writes.
@@ -553,73 +561,102 @@ export function _memGrant(deviceId: string, tokens: number): void {
 }
 
 /**
- * Read a device's wallet, granting the daily top-up if one is due.
- *
- * The arithmetic lives in economy.ts and is unit-tested with an injected clock;
- * this function's only job is to persist what that function decided.
- *
- * The UPDATE is guarded on the WINDOW and the BALANCE, never on the timestamp's
- * value. An earlier version wrote `WHERE topped_up_at = $jsDate`, which reads
- * like an optimistic lock and is in fact a lock that never opens: Postgres keeps
- * timestamptz to the microsecond and a JS Date truncates to the millisecond, so
- * `...178902` was compared against `...178` and matched nothing. The grant was
- * computed, the UPDATE touched zero rows, `granted` came back 0, and no balance
- * would ever have risen — silently, for everyone, forever. Nothing in the
- * in-memory tests could see it, because that path compares numbers.
- *
- * Two tabs racing still produce one grant: the first sets topped_up_at = now(),
- * so the second's window predicate fails. If a call deducted a stake in between,
- * the `tokens = $prev` predicate fails instead and the grant simply waits for
- * the next read — a top-up that is one page-load late is not a bug; a top-up
- * that silently overwrites a stake is.
+ * Read a device's wallet. Coins no longer accrue passively here — the daily
+ * grant is an ACTIVE claim (claimStatus/claimDaily), so this only ensures the
+ * row exists and reports the balance. `nextTopUpMs` stays in the shape (null)
+ * so callers/clients that read it don't break; the countdown moved to the claim.
  */
 export async function getWallet(rawDeviceId: string): Promise<Wallet> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const now = Date.now();
 
   if (!PERSISTENT) {
-    const cur = memBalance.get(deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: now };
-    const next = applyTopUp(cur.tokens, cur.toppedUpAt, now);
-    memBalance.set(deviceId, { tokens: next.tokens, toppedUpAt: next.toppedUpAt });
-    return { tokens: next.tokens, floor: TOKEN_FLOOR, nextTopUpMs: nextTopUpIn(next.tokens, next.toppedUpAt, now), granted: next.granted };
+    const cur = memBalance.get(deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: Date.now() };
+    if (!memBalance.has(deviceId)) memBalance.set(deviceId, cur);
+    return { tokens: cur.tokens, floor: TOKEN_FLOOR, nextTopUpMs: null, granted: 0 };
   }
 
   await ensureSchema();
   await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
-  const { rows } = await db().query<{ tokens: number; topped_up_at: Date }>(
-    `SELECT tokens, topped_up_at FROM device_balance WHERE device_id = $1`,
-    [deviceId],
-  );
-  const cur = rows[0];
-  const next = applyTopUp(cur.tokens, cur.topped_up_at.getTime(), now);
+  const { rows } = await db().query<{ tokens: number }>(`SELECT tokens FROM device_balance WHERE device_id = $1`, [deviceId]);
+  return { tokens: rows[0].tokens, floor: TOKEN_FLOOR, nextTopUpMs: null, granted: 0 };
+}
 
-  if (next.toppedUpAt !== cur.topped_up_at.getTime()) {
-    const upd = await db().query<{ tokens: number; topped_up_at: Date }>(
-      `UPDATE device_balance SET tokens = $1, topped_up_at = now()
-        WHERE device_id = $2
-          AND tokens = $3
-          AND topped_up_at <= now() - make_interval(secs => $4)
-       RETURNING tokens, topped_up_at`,
-      [next.tokens, deviceId, cur.tokens, TOPUP_INTERVAL_MS / 1000],
-    );
-    if (upd.rows.length === 1) {
-      const r = upd.rows[0];
-      return {
-        tokens: r.tokens,
-        floor: TOKEN_FLOOR,
-        nextTopUpMs: nextTopUpIn(r.tokens, r.topped_up_at.getTime(), now),
-        granted: r.tokens - cur.tokens,
-      };
-    }
-    // Someone else got there first, or a stake moved under us. Report the truth.
-    const fresh = await db().query<{ tokens: number; topped_up_at: Date }>(
-      `SELECT tokens, topped_up_at FROM device_balance WHERE device_id = $1`,
-      [deviceId],
-    );
-    const r = fresh.rows[0];
-    return { tokens: r.tokens, floor: TOKEN_FLOOR, nextTopUpMs: nextTopUpIn(r.tokens, r.topped_up_at.getTime(), now), granted: 0 };
+// --- Daily claim: the active retention hook ---------------------------------
+const memClaim = new Map<string, { lastClaimAt: number | null; streak: number }>();
+
+export interface ClaimStatus {
+  claimable: boolean;
+  nextClaimMs: number | null; // until the next claim opens; null when claimable now
+  streak: number;             // EFFECTIVE streak (0 if a day was missed)
+  amount: number;             // what a claim grants
+  lastClaimAt: string | null;
+}
+export interface ClaimResult extends ClaimStatus { granted: number; balance: number }
+
+/** Pure: from the last-claim time + stored streak, what the client should see. */
+function computeClaim(lastMs: number | null, streak: number, now: number): Omit<ClaimStatus, "lastClaimAt"> {
+  const claimable = lastMs === null || now - lastMs >= CLAIM_INTERVAL_MS;
+  const nextClaimMs = claimable ? null : Math.max(0, lastMs! + CLAIM_INTERVAL_MS - now);
+  // A missed day (no claim within the streak window) reads as a broken streak,
+  // even before the next claim formally resets it to 1.
+  const effStreak = lastMs !== null && now - lastMs < STREAK_WINDOW_MS ? streak : 0;
+  return { claimable, nextClaimMs, streak: effStreak, amount: DAILY_CLAIM };
+}
+
+export async function claimStatus(rawDeviceId: string): Promise<ClaimStatus> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const now = Date.now();
+  if (!PERSISTENT) {
+    const c = memClaim.get(deviceId) ?? { lastClaimAt: null, streak: 0 };
+    return { ...computeClaim(c.lastClaimAt, c.streak, now), lastClaimAt: c.lastClaimAt ? new Date(c.lastClaimAt).toISOString() : null };
   }
-  return { tokens: cur.tokens, floor: TOKEN_FLOOR, nextTopUpMs: nextTopUpIn(cur.tokens, cur.topped_up_at.getTime(), now), granted: 0 };
+  await ensureSchema();
+  await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
+  const { rows } = await db().query<{ last_claim_at: Date | null; claim_streak: number }>(
+    `SELECT last_claim_at, claim_streak FROM device_balance WHERE device_id = $1`, [deviceId]);
+  const last = rows[0]?.last_claim_at ? rows[0].last_claim_at.getTime() : null;
+  return { ...computeClaim(last, rows[0]?.claim_streak ?? 0, now), lastClaimAt: last ? new Date(last).toISOString() : null };
+}
+
+/** Collect the daily grant. Idempotent within a window (a double-tap grants
+ *  once); continues the streak if within the window, else resets it to 1. The
+ *  balance is never reset — only the streak. */
+export async function claimDaily(rawDeviceId: string): Promise<ClaimResult> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const now = Date.now();
+  if (!PERSISTENT) {
+    const bal = memBalance.get(deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: now };
+    if (!memBalance.has(deviceId)) memBalance.set(deviceId, bal);
+    const c = memClaim.get(deviceId) ?? { lastClaimAt: null, streak: 0 };
+    const st = computeClaim(c.lastClaimAt, c.streak, now);
+    if (!st.claimable) return { ...st, lastClaimAt: c.lastClaimAt ? new Date(c.lastClaimAt).toISOString() : null, granted: 0, balance: bal.tokens };
+    const newStreak = c.lastClaimAt !== null && now - c.lastClaimAt < STREAK_WINDOW_MS ? c.streak + 1 : 1;
+    bal.tokens += DAILY_CLAIM;
+    memClaim.set(deviceId, { lastClaimAt: now, streak: newStreak });
+    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: newStreak, amount: DAILY_CLAIM, lastClaimAt: new Date(now).toISOString(), granted: DAILY_CLAIM, balance: bal.tokens };
+  }
+  await ensureSchema();
+  await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
+  // Atomic: grant + streak bump only if the window has elapsed. A concurrent
+  // double-tap fails the WHERE on the second and grants nothing.
+  const { rows } = await db().query<{ tokens: number; claim_streak: number; last_claim_at: Date }>(
+    `UPDATE device_balance SET
+        tokens = tokens + $2,
+        claim_streak = CASE WHEN last_claim_at IS NOT NULL AND last_claim_at > now() - make_interval(secs => $3)
+                            THEN claim_streak + 1 ELSE 1 END,
+        last_claim_at = now()
+      WHERE device_id = $1
+        AND (last_claim_at IS NULL OR last_claim_at <= now() - make_interval(secs => $4))
+      RETURNING tokens, claim_streak, last_claim_at`,
+    [deviceId, DAILY_CLAIM, STREAK_WINDOW_MS / 1000, CLAIM_INTERVAL_MS / 1000],
+  );
+  if (rows.length === 1) {
+    const r = rows[0];
+    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: r.claim_streak, amount: DAILY_CLAIM, lastClaimAt: r.last_claim_at.toISOString(), granted: DAILY_CLAIM, balance: r.tokens };
+  }
+  // Already claimed within the window — report current state, no grant.
+  const [st, w] = await Promise.all([claimStatus(deviceId), getWallet(deviceId)]);
+  return { ...st, granted: 0, balance: w.tokens };
 }
 
 /** Tokens only. Kept for callers that do not care about the top-up. */

@@ -19,6 +19,17 @@ export const TOKEN_FLOOR = 1000;
 export const DAILY_TOPUP = 200;
 export const TOPUP_INTERVAL_MS = 24 * 3_600_000;
 
+/**
+ * The daily claim — the same coins, but as an ACTIVE retention hook rather than
+ * a passive tick. A player taps once per window to collect, and a streak of
+ * consecutive claimed days is the visible reason to come back tomorrow. A claim
+ * within STREAK_WINDOW of the last continues the streak; a longer gap (a missed
+ * day) resets it to 1 — the streak resets, never the balance.
+ */
+export const DAILY_CLAIM = 200;
+export const CLAIM_INTERVAL_MS = 24 * 3_600_000;   // one claim per day
+export const STREAK_WINDOW_MS = 48 * 3_600_000;    // claim before this → streak lives
+
 /** Below this many closed positions, a reputation is noise wearing a number. */
 export const PROVISIONAL_BELOW = 10;
 

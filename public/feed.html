@@ -191,6 +191,21 @@
     line-height:1;cursor:pointer;padding:0 2px;font-weight:900;opacity:.6}
   .onbx:hover{opacity:1}
   .onbx:active{transform:scale(.9)}
+  /* Daily claim — the active retention hook. Prominent lime card when claimable;
+     a quiet card with a countdown once claimed. Fixed dark text on the fixed
+     lime accent holds contrast in both themes. */
+  .claimcard{display:flex;align-items:center;gap:12px;border-radius:16px;padding:12px 14px;
+    border:2px solid var(--card-line);box-shadow:var(--card-shadow);font-family:'Nunito'}
+  .claimcard.ready{background:var(--accent);color:#17250a;border-color:#17250a}
+  .claimcard.done{background:var(--card-surface);color:var(--on-ground)}
+  .cc-grow{flex:1;min-width:0}
+  .cc-title{font-weight:900;font-size:14px;line-height:1.2}
+  .cc-sub{font-weight:800;font-size:12px;margin-top:3px;opacity:.85}
+  .cc-next{flex:0 0 auto;font-weight:900;font-size:12.5px;color:var(--muted-g);white-space:nowrap}
+  .claimbtn{flex:0 0 auto;border:1.5px solid rgba(0,0,0,.3);background:#17250a;color:var(--accent);
+    font-family:'Nunito';font-weight:900;font-size:14px;border-radius:999px;padding:9px 16px;cursor:pointer}
+  .claimbtn:active{transform:scale(.96)}
+  .claimbtn:disabled{opacity:.6}
 
   /* The scroller is the feed when it snaps and a plain page when it doesn't. */
   .scroller{height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
@@ -805,12 +820,20 @@ const API=""; // same origin
  * reload always shows what the database says. `balance` is null until /api/me
  * answers, and the picker treats null as "unknown, let the server enforce".
  */
-let balance=null, nextTopUpMs=null;
+let balance=null, nextTopUpMs=null, claim=null;
 let myHandle=null, myHandleEditable=true;
+// "14h", "40m", "any moment" — the wait until the next daily claim opens.
+function claimWhen(ms){
+  if(ms===null||ms===undefined)return "soon";
+  const h=Math.floor(ms/3600000);
+  if(h>=1)return `${h}h`;
+  const m=Math.floor(ms/60000);
+  return m>=1?`${m}m`:"any moment";
+}
 async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
-    if(r.ok){const w=await r.json();balance=w.tokens;nextTopUpMs=w.nextTopUpMs;
+    if(r.ok){const w=await r.json();balance=w.tokens;nextTopUpMs=w.nextTopUpMs;if(w.claim)claim=w.claim;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;paintBalance();}
   }catch(e){/* header just shows no pill; the server still enforces */}
 }
@@ -834,10 +857,9 @@ function topUpWhen(ms){
 // right now; either way the daily top-up is coming. Say so, gently.
 function zeroNote(d){
   if(d.tokens>0)return "";
-  const when=topUpWhen(d.nextTopUpMs);
   if(d.open.length)
-    return `<div class="znote">Out of free tokens — but not stuck. <b>Sell an open call</b> below at its live price to free some up, or your next <b>+200</b> lands in ${when}.</div>`;
-  return `<div class="znote">Out of tokens for now — your next <b>+200</b> lands in ${when}, and each day tops you back toward 1,000. Nothing lost but a little time.</div>`;
+    return `<div class="znote">Out of free tokens — but not stuck. <b>Sell an open call</b> below at its live price to free some up, or <b>claim your daily coins</b> on the feed.</div>`;
+  return `<div class="znote">Out of tokens for now — <b>claim your daily coins</b> on the feed to top back up, then come back tomorrow for more. Nothing lost but a little time.</div>`;
 }
 function paintBalance(pulse){
   if(balance===null)return;
@@ -1200,8 +1222,14 @@ async function loadFeed(){
     // Taste re-rank: once an anonymous visitor picks categories, the feed tilts
     // toward them (rank, not filter — the server keeps breadth visible).
     if(TASTE){const tc=tasteCats();if(tc.length)q.set("cats",tc.join(","));}
-    const r=await fetch(`${API}/api/feed?${q}`);
+    // Fetch the daily-claim status alongside the feed so the claim card is ready
+    // to render at the top on first paint (the retention hook, not a later pop-in).
+    const [r,cr]=await Promise.all([
+      fetch(`${API}/api/feed?${q}`),
+      fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`).catch(()=>null),
+    ]);
     if(!r.ok)throw new Error("feed "+r.status);
+    if(cr&&cr.ok)claim=await cr.json();
     const data=await r.json();
     feedTop(data.categories);
     renderFeed(data.items);
@@ -1237,12 +1265,17 @@ const FOLLOW_KEY="oddie_follow_dismissed";   // follow prompt (independent)
 function onboardingCold(){ return activeCat==="For you" && !startSlug; }
 function lsGet(k){ try{return localStorage.getItem(k);}catch(e){return "1";} } // fail closed → hidden
 function lsSet(k){ try{localStorage.setItem(k,"1");}catch(e){} }
-function maybeOnboarding(scroller){
-  if(!onboardingCold())return;
-  const showTag=!lsGet(ONB_KEY), showFollow=!lsGet(FOLLOW_KEY);
-  if(!showTag && !showFollow)return;
+// The top-of-feed hooks: the daily-claim card (everyone) + the cold-visitor
+// onboarding banners. All in one snap-aligned wrap so they're visible on load.
+function maybeFeedTop(scroller){
+  const cold=onboardingCold();
+  const showTag=cold && !lsGet(ONB_KEY);
+  const showFollow=cold && !lsGet(FOLLOW_KEY);
+  const showClaim=!!claim;
+  if(!showClaim && !showTag && !showFollow)return;
   const wrap=document.createElement("div"); wrap.className="onbwrap";
-  const prune=()=>{ if(!wrap.querySelector(".onbstrip,.onbfollow"))wrap.remove(); }; // both gone → card reclaims clearance
+  if(showClaim)wrap.appendChild(claimCard());
+  const prune=()=>{ if(!wrap.querySelector(".onbstrip,.onbfollow,.claimcard"))wrap.remove(); };
   if(showTag){
     const s=document.createElement("div"); s.className="onbstrip";
     s.innerHTML='<span class="onbtxt">tag <b>@oddie_so</b> under any take on X — we turn it into a market you can play</span>'
@@ -1262,11 +1295,48 @@ function maybeOnboarding(scroller){
   scroller.appendChild(wrap);
 }
 
+// The daily-claim card. Prominent (lime, a Claim button) when claimable; quiet
+// (a countdown) once claimed. The streak line is the reason to come back.
+function claimCard(){
+  const el=document.createElement("div");
+  const st=claim.streak||0;
+  const streakLine=st>0?`🔥 ${st}-day streak`:"start a daily streak";
+  if(claim.claimable){
+    el.className="claimcard ready";
+    el.innerHTML=`<div class="cc-grow">
+        <div class="cc-title">Claim your daily coins</div>
+        <div class="cc-sub">${st>0?`🔥 ${st}-day streak — keep it alive`:"tap to start your streak"}</div>
+      </div>
+      <button class="claimbtn" id="claimbtn">Claim +${claim.amount}</button>`;
+    el.querySelector("#claimbtn").onclick=async(e)=>{
+      const btn=e.currentTarget; btn.disabled=true; btn.textContent="…";
+      try{
+        const r=await fetch(`${API}/api/claim`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+        const j=await r.json();
+        if(!r.ok)throw new Error("claim "+r.status);
+        claim={claimable:false,nextClaimMs:j.nextClaimMs,streak:j.streak,amount:j.amount,lastClaimAt:j.lastClaimAt};
+        if(typeof j.balance==="number"){balance=j.balance;paintBalance(true);}
+        ev("claim_daily",{streak:j.streak,granted:j.granted});
+        el.replaceWith(claimCard()); // swap to the claimed state in place
+        if(j.granted>0)toast(`+${j.granted} coins · 🔥 ${j.streak}-day streak`);
+      }catch(err){btn.disabled=false;btn.textContent=`Claim +${claim.amount}`;}
+    };
+  }else{
+    el.className="claimcard done";
+    el.innerHTML=`<div class="cc-grow">
+        <div class="cc-title">✓ Coins claimed · ${streakLine}</div>
+        <div class="cc-sub">come back for tomorrow's drop to keep the streak</div>
+      </div>
+      <div class="cc-next">next in ${claimWhen(claim.nextClaimMs)}</div>`;
+  }
+  return el;
+}
+
 function renderFeed(items){
   const scroller=document.getElementById("scroller");
   scroller.innerHTML="";
   if(!items.length){scroller.innerHTML='<div class="state">no live markets here right now — try another category.</div>';return;}
-  maybeOnboarding(scroller); // pinned strip first, so cards flow beneath it
+  maybeFeedTop(scroller); // claim card + onboarding, pinned first so cards flow beneath
   // TikTok-web taste flow. An anonymous visitor gets the feed metered so the
   // personalization investment lands BEFORE the gate:
   //   no categories picked yet -> 1 free card, then the category picker
