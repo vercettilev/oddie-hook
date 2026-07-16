@@ -524,7 +524,7 @@ function checkLongClose() {
 // The gate grade rides along in a hidden var so Create can send it (and so an
 // unresolvable verdict blocks Create outright). Every field the engine fills is
 // editable — the operator has the last word before anything is published.
-let lastResolvability = null, lastMatchPath = "none", lastMatch = null;
+let lastResolvability = null, lastMatchPath = "none", lastMatch = null, lastAppropriate = true;
 function toLocalInput(iso) {
   const dt = new Date(iso);
   if (isNaN(dt.getTime())) return "";
@@ -556,6 +556,7 @@ async function extractMarket() {
 // no match falls through to the resolvability gate + community create form.
 function renderOutcome(x, match, venuesAvailable) {
   lastResolvability = x.resolvability;
+  lastAppropriate = x.appropriate !== false;
   lastMatchPath = match.path;
   lastMatch = match;
   $("#creply").innerHTML = ""; // clear any reply from a previous run
@@ -603,6 +604,14 @@ function matchPanel(match, venuesAvailable) {
 // Fill the create form from the extraction and return the gate-badge HTML.
 function fillFromExtraction(x) {
   const badge = { clean: ["#0a7d2c", "CLEAN — eligible to publish"], fuzzy: ["#a56a00", "FUZZY — review before posting"], unresolvable: ["#b00020", "UNRESOLVABLE — cannot be a market"] }[x.resolvability] || ["#555", x.resolvability];
+  // Appropriateness block takes precedence over resolvability — the subject is
+  // off-limits regardless of whether it could be settled.
+  if (x.appropriate === false) {
+    clearCreateForm();
+    return '<div class="box error"><p class="verdict" style="font-size:15px;color:#b00020">🚫 BLOCKED — inappropriate subject</p>'
+      + '<p class="why">' + esc(x.reason) + '</p>'
+      + '<p class="why" style="color:var(--muted)">no market was drafted — this subject isn\'t allowed (private individual, real-person harm/health, or harassment).</p></div>';
+  }
   if (x.resolvability === "unresolvable") {
     clearCreateForm();
     return '<div class="box error"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">✕ ' + esc(badge[1]) + '</p>'
@@ -701,6 +710,7 @@ async function createMarket() {
   const cout = $("#cout");
   if (!q) { cout.innerHTML = '<div class="box error"><p class="why">question required</p></div>'; return; }
   if (lastMatchPath === "venue") { cout.innerHTML = '<div class="box error"><p class="why">a live venue market already covers this — no new market needed. Re-extract with different text to override.</p></div>'; return; }
+  if (lastAppropriate === false) { cout.innerHTML = '<div class="box error"><p class="why">this subject was blocked as inappropriate — it can\'t be a market. Edit the argument and extract again, or clear the fields.</p></div>'; return; }
   if (lastResolvability === "unresolvable") { cout.innerHTML = '<div class="box error"><p class="why">the engine graded this unresolvable — it can\'t be a market. Edit the argument and extract again, or clear the fields.</p></div>'; return; }
   if (datePending) { cout.innerHTML = '<div class="box error"><p class="why">confirm the suggested close time first (or edit it)</p></div>'; return; }
   if (!closeLocal) { cout.innerHTML = '<div class="box error"><p class="why">pick a close time</p></div>'; return; }
@@ -725,7 +735,7 @@ async function createMarket() {
     // Read the source URL + market details BEFORE clearing the form below.
     generateReply({ slug: j.slug, question: q, yesPct: yesPct, marketId: String(j.marketId), matchType: "new", closesAt: new Date(closeLocal).toISOString() });
     $("#cq").value = ""; $("#ccrit").value = ""; $("#cx").value = ""; $("#cxout").innerHTML = "";
-    ccloseEl.value = ""; lastResolvability = null; lastMatchPath = "none"; lastMatch = null; clearDateSuggestion(); checkLongClose();
+    ccloseEl.value = ""; lastResolvability = null; lastAppropriate = true; lastMatchPath = "none"; lastMatch = null; clearDateSuggestion(); checkLongClose();
     loadCommunity();
   } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }

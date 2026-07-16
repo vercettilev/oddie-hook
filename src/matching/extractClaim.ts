@@ -44,7 +44,12 @@ export interface Extraction {
   close_time_inferred: boolean;
   category: ExtractCategory;
   resolvability: Resolvability;
-  /** One line: why this grade — the human-readable gate explanation. */
+  /** The appropriateness gate, separate from resolvability: false = the subject
+   *  is off-limits for a market (private individual, real-person harm/health,
+   *  harassment). A claim can be resolvable AND inappropriate — both block it. */
+  appropriate: boolean;
+  /** One line: why this grade — the human-readable gate explanation. When the
+   *  claim is blocked, this explains the block (resolvability OR appropriateness). */
   reason: string;
 }
 
@@ -61,14 +66,21 @@ Return ONLY the structured object. Fields:
     - clean: a specific, verifiable outcome with a bounded timeframe and a nameable public source. Only clean markets are eligible for auto-publish, so hold this bar HIGH.
     - fuzzy: a real prediction, but the wording, threshold, timeframe, or source needs a human to tighten before it is safe. Produce the market, but flagged.
     - unresolvable: subjective taste ("X is the GOAT", "this album is better"), no verifiable outcome, no bounded timeframe, or a private matter no public source can settle. REFUSE — leave question and resolution_criteria empty.
-- reason: one short sentence explaining the grade in plain language (this is shown to the operator, and to a bettor as the refusal explanation).
+- appropriate: true if the SUBJECT is acceptable for a public prediction market; false if it is not. This is a SEPARATE judgment from resolvability — a claim can be perfectly resolvable and still inappropriate. Set false and refuse (empty question and criteria) when the claim is:
+    - about an identifiable PRIVATE individual (a named non-public-figure — a normal person, not a politician/CEO/celebrity/athlete/public official acting in public life);
+    - about the DEATH, serious harm, injury, illness, or health outcome of a real, identifiable person (e.g. "will <person> die/get cancer/relapse before X");
+    - primarily an INSULT, slur, or HARASSMENT dressed up as a question ("will everyone finally admit <person> is a <slur>").
+  Public figures' clearly public/professional outcomes are fine (elections, sports results, a CEO's company hitting a number). When unsure whether someone is public or the subject crosses a line, set appropriate false.
+- appropriate_reason: when appropriate is false, one plain-language sentence a bettor can read explaining why we won't make this market. Empty when appropriate is true.
+- reason: one short sentence explaining the resolvability grade in plain language.
 
 Rules, in order:
 1. ERR TOWARD fuzzy/unresolvable when unsure. A market we never made costs nothing; a market we resolve wrong is unrecoverable.
 2. A claim of pure taste, opinion, or aesthetics is unresolvable no matter how strongly stated. "Best", "overrated", "mid", "GOAT", "should", "deserves" with no measurable proxy → unresolvable.
 3. No bounded timeframe and none can be reasonably inferred → unresolvable.
 4. Private/unverifiable matters (someone's private relationship, undisclosed internal numbers, unfalsifiable claims about intent) → unresolvable.
-5. The question must be about the SAME event, threshold, person and date the argument is actually about — never a related-but-different one.`;
+5. The question must be about the SAME event, threshold, person and date the argument is actually about — never a related-but-different one.
+6. The appropriateness gate runs ALONGSIDE resolvability, never instead of it. Judge both. If the subject crosses a line above, set appropriate false and refuse even if the claim is otherwise cleanly resolvable.`;
 
 const SCHEMA = {
   type: "object",
@@ -80,6 +92,8 @@ const SCHEMA = {
     close_time_inferred: { type: "boolean" },
     category: { type: "string", enum: EXTRACT_CATEGORIES as unknown as string[] },
     resolvability: { type: "string", enum: ["clean", "fuzzy", "unresolvable"] },
+    appropriate: { type: "boolean" },
+    appropriate_reason: { type: "string" },
     reason: { type: "string" },
   },
   required: [
@@ -89,6 +103,8 @@ const SCHEMA = {
     "close_time_inferred",
     "category",
     "resolvability",
+    "appropriate",
+    "appropriate_reason",
     "reason",
   ],
 } as const;
@@ -146,14 +162,26 @@ function normalize(v: Record<string, unknown>): Extraction {
 
   let question = str(v.question).slice(0, 180); // 180 = the on-chain question limit
   let resolution_criteria = str(v.resolution_criteria).slice(0, 600);
-  let close_time = typeof v.close_time === "string" && v.close_time.trim() ? v.close_time.trim() : null;
+  const close_time = typeof v.close_time === "string" && v.close_time.trim() ? v.close_time.trim() : null;
+
+  // Appropriateness gate: separate from resolvability, either one blocks. Fail
+  // closed on a non-true value.
+  const appropriate = v.appropriate === true;
 
   // Invariant: a resolvable grade needs a question, and a refusal carries none.
   if (resolvability !== "unresolvable" && !question) resolvability = "unresolvable";
-  if (resolvability === "unresolvable") {
+  // Blocked when unresolvable OR inappropriate → carry no half-built market.
+  const blocked = resolvability === "unresolvable" || !appropriate;
+  if (blocked) {
     question = "";
     resolution_criteria = "";
   }
+
+  // The reason a bettor sees: the appropriateness reason takes precedence when the
+  // block is on subject grounds, else the resolvability reason.
+  const reason = !appropriate
+    ? (str(v.appropriate_reason) || "this subject isn’t appropriate for a market")
+    : (str(v.reason).slice(0, 240) || "no reason given");
 
   return {
     question,
@@ -162,7 +190,8 @@ function normalize(v: Record<string, unknown>): Extraction {
     close_time_inferred: Boolean(v.close_time_inferred),
     category,
     resolvability,
-    reason: str(v.reason).slice(0, 240) || "no reason given",
+    appropriate,
+    reason,
   };
 }
 

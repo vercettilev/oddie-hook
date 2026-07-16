@@ -1138,7 +1138,12 @@ export interface CategoryAccuracy { category: string; resolved: number; correct:
 export interface AccuracyRecord {
   resolved: number;
   correct: number;
-  accuracyPct: number | null; // null until resolved >= minResolved
+  accuracyPct: number | null; // raw hit rate — null until resolved >= minResolved
+  // Calibration-adjusted reputation. meanEdge = mean(outcome − impliedProb): how
+  // much the user beat the odds they took. Rewards correct low-prob calls, and
+  // neutralises a safe favourite-only bettor to ~500. oddieScore = 500 + 1000·edge.
+  oddieScore: number | null;  // 0..1000, 500 = matches the market; null until hasEnough
+  meanEdge: number | null;    // −1..1, the raw signal behind the score
   hasEnough: boolean;
   minResolved: number;
   streak: number;             // current trailing consecutive-correct
@@ -1147,14 +1152,21 @@ export interface AccuracyRecord {
   byCategory: CategoryAccuracy[];
 }
 
-/** Pure: resolved picks in RESOLUTION order (oldest first) → the record. */
-function computeAccuracy(rows: { correct: boolean; category: string }[]): AccuracyRecord {
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
+/** Pure: resolved picks in RESOLUTION order (oldest first) → the record. Each
+ *  row carries `pct` = the implied probability of the side they took (0..1). */
+function computeAccuracy(rows: { correct: boolean; category: string; pct: number }[]): AccuracyRecord {
   const resolved = rows.length;
   const correct = rows.filter((r) => r.correct).length;
   const hasEnough = resolved >= MIN_RESOLVED_FOR_ACCURACY;
 
   let cur = 0, best = 0;
   for (const r of rows) { if (r.correct) { cur++; if (cur > best) best = cur; } else cur = 0; }
+
+  // Calibration-adjusted score: per pick, edge = outcome(1|0) − impliedProb.
+  const meanEdge = resolved ? rows.reduce((a, r) => a + ((r.correct ? 1 : 0) - r.pct), 0) / resolved : 0;
+  const oddieScore = clamp(Math.round(500 + 1000 * meanEdge), 0, 1000);
 
   const m = new Map<string, { resolved: number; correct: number }>();
   for (const r of rows) { const e = m.get(r.category) ?? { resolved: 0, correct: 0 }; e.resolved++; if (r.correct) e.correct++; m.set(r.category, e); }
@@ -1166,6 +1178,8 @@ function computeAccuracy(rows: { correct: boolean; category: string }[]): Accura
   return {
     resolved, correct,
     accuracyPct: hasEnough ? Math.round((100 * correct) / resolved) : null,
+    oddieScore: hasEnough ? oddieScore : null,
+    meanEdge: hasEnough ? Math.round(meanEdge * 1000) / 1000 : null,
     hasEnough, minResolved: MIN_RESOLVED_FOR_ACCURACY,
     streak: cur, bestStreak: best,
     bestTopic: topPick ? { category: topPick.category, pct: topPick.pct, resolved: topPick.resolved } : null,
@@ -1175,16 +1189,19 @@ function computeAccuracy(rows: { correct: boolean; category: string }[]): Accura
 
 export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> {
   const deviceId = await resolveDevice(rawDeviceId);
-  let rows: { correct: boolean; category: string }[];
+  // pct = the implied probability of the side taken (their price ÷ 100), clamped
+  // to (0,1). It is what the calibration score is measured against.
+  const prob = (pctAt: number) => clamp(pctAt / 100, 0.01, 0.99);
+  let rows: { correct: boolean; category: string; pct: number }[];
   if (!PERSISTENT) {
     rows = memCalls
       .filter((c) => c.deviceId === deviceId && c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
       .sort((a, b) => (a.closedAt! < b.closedAt! ? -1 : a.closedAt! > b.closedAt! ? 1 : a.id - b.id))
-      .map((c) => ({ correct: c.exitPct === 100, category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question) }));
+      .map((c) => ({ correct: c.exitPct === 100, category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question), pct: prob(c.entryPct) }));
   } else {
     await ensureSchema();
-    const { rows: qr } = await db().query<{ exit_pct: number; question: string; comm_cat: string | null }>(
-      `SELECT mc.exit_pct, s.question, cm.category AS comm_cat
+    const { rows: qr } = await db().query<{ exit_pct: number; pct_at: number; question: string; comm_cat: string | null }>(
+      `SELECT mc.exit_pct, mc.pct_at, s.question, cm.category AS comm_cat
          FROM market_call mc
          JOIN market_slug s ON s.slug = mc.slug
          LEFT JOIN community_market cm ON cm.slug = mc.slug
@@ -1193,7 +1210,7 @@ export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> 
         ORDER BY mc.closed_at ASC, mc.id ASC`,
       [deviceId],
     );
-    rows = qr.map((r) => ({ correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question) }));
+    rows = qr.map((r) => ({ correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question), pct: prob(r.pct_at) }));
   }
   return computeAccuracy(rows);
 }
@@ -1674,6 +1691,35 @@ export async function crowdSplits(slugs: string[]): Promise<Record<string, Crowd
     out[r.slug] ??= { yes: 0, no: 0 };
     out[r.slug][r.side] = r.n;
   }
+  return out;
+}
+
+// A new community market shows "market forming" (a call count, not a %) until
+// this many DISTINCT players have taken a position — below it, a percentage is
+// noise the first few callers could skew. Distinct devices, so one user can't
+// cross the line alone.
+export const MARKET_FORMING_MIN = 5;
+
+/** Distinct-player count per slug (across both sides), for the forming gate. */
+export async function communityPlayerCounts(slugs: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (slugs.length === 0) return out;
+  if (!PERSISTENT) {
+    for (const slug of slugs) {
+      const devices = new Set<string>();
+      for (const c of memCalls) if (c.slug === slug && c.deviceId) devices.add(c.deviceId);
+      out[slug] = devices.size;
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; n: number }>(
+    `SELECT slug, count(DISTINCT device_id)::int n FROM market_call
+      WHERE slug = ANY($1) AND device_id IS NOT NULL GROUP BY slug`,
+    [slugs],
+  );
+  for (const r of rows) out[r.slug] = r.n;
+  for (const s of slugs) out[s] ??= 0;
   return out;
 }
 

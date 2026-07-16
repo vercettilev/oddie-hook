@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -171,14 +171,17 @@ function moneyShort(n: number): string {
   return `$${Math.round(n)}`;
 }
 
-function marketPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number; venue?: string } }, slug: string): string {
+function marketPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number; venue?: string } }, slug: string, forming?: { positions: number } | null): string {
   const m = rec.market;
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const title = m.question;
   // Community markets speak "% yes", never venue volume ("$0 in play" would be
   // venue framing on a community share); venue markets keep their liquidity line.
+  // A market still FORMING has no meaningful %, so it shows the call count.
   const desc = m.venue === "community"
-    ? `call it — ${yes}% yes right now`
+    ? (forming
+        ? `market forming — ${forming.positions} ${forming.positions === 1 ? "call" : "calls"} so far`
+        : `call it — ${yes}% yes right now`)
     : `call it — ${yes}% yes · ${moneyShort(m.volumeUsd)} in play`;
   const img = `${BASE_URL}/card/${slug}.png`;
   const url = `${BASE_URL}/m/${slug}`; // canonical: the short permalink
@@ -217,7 +220,14 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
       return res.type("html").send(positionPageHtml(rec, req.params.slug, share));
     }
   }
-  res.type("html").send(rec ? marketPageHtml(rec, req.params.slug) : FEED_HTML);
+  // For a community market, the og line reflects the forming state (call count
+  // until the market has formed, then the %).
+  let forming: { positions: number } | null = null;
+  if (rec && rec.market.venue === "community") {
+    const n = (await communityPlayerCounts([req.params.slug]).catch(() => ({} as Record<string, number>)))[req.params.slug] ?? 0;
+    if (n < MARKET_FORMING_MIN) forming = { positions: n };
+  }
+  res.type("html").send(rec ? marketPageHtml(rec, req.params.slug, forming) : FEED_HTML);
 });
 
 function positionPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string, share: { token: string; handle: string; side: string; entryPct: number; resolved: string | null }): string {
@@ -357,12 +367,22 @@ app.get("/api/feed", async (req, res) => {
   let community: CommunityMarket[] = [];
   try { community = await openCommunityMarkets(); }
   catch (e) { console.error("[community] feed load failed (serving venue markets only):", (e as Error).message); }
-  const communityItems = community.map((m) => ({
-    ...m,
-    slug: slugFor(m), category: "Community",
-    community: true as const,
-    onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-  }));
+  // "Market forming": below MARKET_FORMING_MIN distinct players a % is skewable
+  // noise, so we show the call count instead until the market has formed.
+  const playerCounts = await communityPlayerCounts(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
+  const communityItems = community.map((m) => {
+    const slug = slugFor(m);
+    const positions = playerCounts[slug] ?? 0;
+    return {
+      ...m,
+      slug, category: "Community",
+      community: true as const,
+      positions,
+      forming: positions < MARKET_FORMING_MIN,
+      formingMin: MARKET_FORMING_MIN,
+      onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
+    };
+  });
 
   let feedItems: Array<Record<string, unknown> & { slug: string }> = items;
   if (cat === "Community") {

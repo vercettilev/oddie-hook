@@ -339,6 +339,9 @@
     padding:4px 11px;border:2.5px solid var(--ink);border-radius:999px;
     background:var(--wash);white-space:nowrap;font-variant-numeric:tabular-nums}
   .bal.pulse{animation:balpulse .45s ease}
+  /* "Points" label inside the balance pill — makes clear the number is Oddie
+     Points (spendable), distinct from the Oddie Score (reputation). */
+  .ptslbl{font-size:9.5px;font-weight:800;opacity:.62;letter-spacing:.03em;text-transform:uppercase}
   /* Pick-streak badge — visible identity beside the balance. Small, warm, fixed
      colours (holds contrast in both themes); only rendered at streak 2+. */
   .streakbadge{display:inline-flex;align-items:center;margin-left:6px;vertical-align:middle;
@@ -423,6 +426,11 @@
   .cclose{font:inherit;font-weight:700;font-size:14px;width:100%;padding:9px 0;cursor:pointer;
     border:0;background:none;color:var(--muted)}
   .cnote{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);margin:2px 0 12px;line-height:1.4}
+  /* Custody / no-real-money disclaimer — low-key but present. Used on the sign-up
+     sheet and as a quiet profile footer. Never a modal, never blocking. */
+  .disclaimer{font-family:'Nunito';font-weight:700;font-size:10.5px;line-height:1.45;
+    color:var(--muted-g);opacity:.8;margin:12px 0 0}
+  .pfoot{margin-top:26px;padding-top:14px;border-top:1px solid var(--card-line);text-align:center}
   .csheet .cnote{color:var(--muted)}   /* inside a white sheet, the surface grey is right */
 
   /* the one subtle line under a locked call */
@@ -619,6 +627,15 @@
   .trstats .v.topic{font-size:17px}
   .trstats .k{font-family:'Nunito';font-weight:800;font-size:11px;color:#5c6660;margin-top:5px}
   .trstats .best{font-size:11px;font-weight:800;color:#5c6660;white-space:nowrap}
+  /* Oddie Score — the calibration-adjusted reputation, given hero prominence over
+     the raw stat tiles. Fixed dark text on the fixed lime accent (AA both themes). */
+  .oscore{display:flex;align-items:center;gap:14px;background:var(--accent);color:#17250a;
+    border:2px solid var(--card-line);border-radius:18px;padding:13px 18px;margin-bottom:12px;
+    box-shadow:var(--card-shadow)}
+  .oscore-num{font-size:38px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+  .oscore-lab{display:flex;flex-direction:column;gap:2px}
+  .oscore-lab b{font-family:'Nunito';font-size:14px;font-weight:900}
+  .oscore-lab span{font-family:'Nunito';font-size:11px;font-weight:700;opacity:.82;line-height:1.3}
 
   /* Transaction history — closed positions as instantly-readable win/loss cards.
      Same chunky-outline white surface as every tile; a coloured left rail and an
@@ -864,8 +881,8 @@ function topUpWhen(ms){
 function zeroNote(d){
   if(d.tokens>0)return "";
   if(d.open.length)
-    return `<div class="znote">Out of free tokens — but not stuck. <b>Sell an open call</b> below at its live price to free some up, or <b>claim your daily coins</b> on the feed.</div>`;
-  return `<div class="znote">Out of tokens for now — <b>claim your daily coins</b> on the feed to top back up, then come back tomorrow for more. Nothing lost but a little time.</div>`;
+    return `<div class="znote">Out of free Oddie Points — but not stuck. <b>Sell an open call</b> below at its live price to free some up, or <b>claim your daily Points</b> on the feed.</div>`;
+  return `<div class="znote">Out of Oddie Points for now — <b>claim your daily Points</b> on the feed to top back up, then come back tomorrow for more. Nothing lost but a little time.</div>`;
 }
 function paintBalance(pulse){
   if(balance===null)return;
@@ -883,7 +900,7 @@ function paintBalance(pulse){
   // there is nothing to count down to, and a countdown to nothing is a nag.
   const tip=topUpIn(nextTopUpMs);
   document.querySelectorAll(".bal").forEach(el=>{
-    el.innerHTML=`🪙 ${balance}${tip?` <span class="topup">${tip}</span>`:""}`;
+    el.innerHTML=`🪙 ${balance} <span class="ptslbl">Points</span>${tip?` <span class="topup">${tip}</span>`:""}`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
     // Persistent pick-streak badge as visible identity, right beside the balance.
     // Shown only at 2+ (a 1 isn't a streak); it disappears the moment a wrong
@@ -966,10 +983,11 @@ function connectSheet(reason){
   dim.className="cdim";
   dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Connect an account">
     <h3>${esc(reason||"Save your balance across devices")}</h3>
-    <p>Connect once and your tokens, calls and reputation follow you to any browser. <b>+100 tokens</b>, once.</p>
+    <p>Connect once and your Oddie Points, calls and reputation follow you to any browser. <b>+100 Oddie Points</b>, once.</p>
     ${buttons}
     <p class="cnote">We never post anything. Signing in on a browser that already
-      has anonymous tokens will load your account instead — that browser's tokens stay with it.</p>
+      has anonymous Oddie Points will load your account instead — that browser's Points stay with it.</p>
+    <p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p>
     <button class="cclose">Not now</button>
   </div>`;
   dim.onclick=(e)=>{ if(e.target===dim)dim.remove(); };
@@ -987,7 +1005,7 @@ function authReturn(){
   if(!connected&&!err)return;
   const bonus=Number(q.get("bonus")||0);
   const msg=err?`Couldn't connect (${err}). Nothing changed.`
-    :bonus>0?`Connected. +${bonus} tokens — your balance now follows you.`
+    :bonus>0?`Connected. +${bonus} Oddie Points — your balance now follows you.`
     :`Connected. Your account is loaded on this browser.`;
   history.replaceState(null,"",location.pathname+location.hash);
   const el=document.createElement("div");
@@ -1322,7 +1340,7 @@ function claimCard(){
   if(claim.claimable){
     el.className="claimcard ready";
     el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">Claim your daily coins</div>
+        <div class="cc-title">Claim your daily Oddie Points</div>
         <div class="cc-sub">${st>0?`🔥 ${st}-day streak — keep it alive`:"tap to start your streak"}</div>
       </div>
       <button class="claimbtn" id="claimbtn">Claim +${claim.amount}</button>`;
@@ -1336,13 +1354,13 @@ function claimCard(){
         if(typeof j.balance==="number"){balance=j.balance;paintBalance(true);}
         ev("claim_daily",{streak:j.streak,granted:j.granted});
         el.replaceWith(claimCard()); // swap to the claimed state in place
-        if(j.granted>0)toast(`+${j.granted} coins · 🔥 ${j.streak}-day streak`);
+        if(j.granted>0)toast(`+${j.granted} Points · 🔥 ${j.streak}-day streak`);
       }catch(err){btn.disabled=false;btn.textContent=`Claim +${claim.amount}`;}
     };
   }else{
     el.className="claimcard done";
     el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">✓ Coins claimed · ${streakLine}</div>
+        <div class="cc-title">✓ Points claimed · ${streakLine}</div>
         <div class="cc-sub">come back for tomorrow's drop to keep the streak</div>
       </div>
       <div class="cc-next">next in ${claimWhen(claim.nextClaimMs)}</div>`;
@@ -1376,7 +1394,7 @@ function renderFeed(items){
       </div>
       <div class="take">${esc(m.question)}</div>
       <div class="meta">${m.community
-        ? `<span class="commtag">community market</span><span class="cdown">${yes}% yes · ${closesIn(m.closesAt)}</span>${m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
+        ? `<span class="commtag">community market</span><span class="cdown">${m.forming ? `<b>market forming</b> · ${m.positions} ${m.positions===1?"call":"calls"} so far` : `${yes}% yes`} · ${closesIn(m.closesAt)}</span>${m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
         : `${money(m.volumeUsd)} in play`}</div>
       ${m.community && m.resolutionCriteria ? `<div class="rby"><b>Resolves by:</b> ${esc(m.resolutionCriteria)}</div>` : ""}
       <div class="duel">
@@ -1505,7 +1523,7 @@ function renderFeed(items){
       // One line, once, only to someone who has not connected. An offer, not a gate.
       if(!auth.accounts.length){
         const up=document.createElement("button");
-        up.className="upsell";up.textContent="Connect to save your balance  +100 tokens";
+        up.className="upsell";up.textContent="Connect to save your balance  +100 Oddie Points";
         up.onclick=()=>connectSheet("Keep this call when you switch devices");
         sb.after(up);
       }
@@ -1894,7 +1912,7 @@ async function loadPositions(scroller){
       <div class="summary">
         <div class="tile"><div class="v num ${cls(net)}">${netStr}</div><div class="k">NET TOKENS</div></div>
         <div class="tile"><div class="v num">${winRate===null?"—":winRate+"%"}</div><div class="k">${settledArr.length?`WIN RATE · ${wins}/${settledArr.length}`:"WIN RATE"}</div></div>
-        <div class="tile"><div class="v num">🪙 ${d.tokens}</div><div class="k">BALANCE</div></div>
+        <div class="tile"><div class="v num">🪙 ${d.tokens}</div><div class="k">ODDIE POINTS</div></div>
       </div>
       ${d.open.length?`<h2 class="psec">Open · ${d.open.length}</h2>${d.open.map(openHTML).join("")}`:""}
       ${history.length?`<h2 class="psec">History · ${history.length}</h2>${history.map(historyHTML).join("")}`:""}
@@ -2228,6 +2246,8 @@ async function loadProfile(scroller){
   const streakVal=acc?String(acc.streak):"—";
   const bestTopicVal=acc&&acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
   const resolvedVal=acc?String(acc.resolved):"—";
+  // Oddie Score — the calibration-adjusted reputation (500 = matches the market).
+  const scoreVal=acc?(acc.hasEnough?String(acc.oddieScore):"building"):"—";
 
   await loadBalance(); // the handle rides on /api/me
   const handleRow=myHandle?`
@@ -2242,14 +2262,18 @@ async function loadProfile(scroller){
   scroller.innerHTML=`<div class="sheet">
     ${handleRow}
     <p class="sub">${auth.accounts.length
-      ? "Your tokens, calls and reputation follow this account to any browser."
+      ? "Your Oddie Points, calls and reputation follow this account to any browser."
       : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
     ${linked||`<button class="cbtn x" data-connect="twitter"><span class="glyph">𝕏</span>Connect X</button>
        <button class="cbtn" data-connect="google"><span class="glyph">G</span>Connect Google</button>
-       <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+100 tokens</b>, once.</p>`}
+       <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+100 Oddie Points</b>, once.</p>`}
     <div class="trhead">
       <p class="psec">Track record</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
+    </div>
+    <div class="oscore">
+      <div class="oscore-num">${esc(scoreVal)}</div>
+      <div class="oscore-lab"><b>Oddie Score</b><span>calibration-adjusted reputation · 500 = matches the market</span></div>
     </div>
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -2265,6 +2289,7 @@ async function loadProfile(scroller){
         `<button class="segb${themeMode()===v?" on":""}" data-theme-mode="${v}">${l}</button>`).join("")}
     </div>
     <p class="cnote">Auto follows your system. Shared cards are always the same — your theme never changes the image that goes on X.</p>
+    <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
   </div>`;
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
