@@ -280,9 +280,23 @@ ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolvability       text;
 -- engine's structured output, and (on publish) the operator's final edits.
 CREATE TABLE IF NOT EXISTS extraction_log (
   id         bigserial PRIMARY KEY,
-  kind       text NOT NULL,          -- 'extract' | 'publish'
+  kind       text NOT NULL,          -- 'extract' | 'match' | 'publish'
   input      text NOT NULL,
   output     jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- "Tweet mode": every ready-to-post X reply we generated for a mention. The
+-- record of what was (manually) posted, and the substrate for the reusable
+-- reply logic once we automate. One row per generated reply.
+CREATE TABLE IF NOT EXISTS tweet_reply_log (
+  id         bigserial PRIMARY KEY,
+  source_url text,                    -- the tweet that triggered it
+  market_id  text,                    -- venue id or the community market_id
+  match_type text NOT NULL,           -- 'venue' | 'closest' | 'new'
+  slug       text,
+  permalink  text,
+  reply_text text NOT NULL,           -- the primary reply we handed the operator
   created_at timestamptz NOT NULL DEFAULT now()
 );
 `;
@@ -1235,6 +1249,62 @@ export async function logExtraction(kind: "extract" | "match" | "publish", input
   } catch (e) {
     console.error("[extract-log] write failed (non-fatal):", (e as Error).message);
   }
+}
+
+// --- Tweet mode: generated-reply log ----------------------------------------
+export interface TweetReplyLogEntry {
+  sourceUrl: string | null;
+  marketId: string | null;
+  matchType: "venue" | "closest" | "new";
+  slug: string | null;
+  permalink: string | null;
+  replyText: string;
+}
+export interface TweetReplyLogItem extends TweetReplyLogEntry {
+  id: number;
+  createdAt: string;
+}
+const memTweetLog: TweetReplyLogItem[] = [];
+let memTweetId = 0;
+
+/** Record one generated reply. Returns the stored row so the caller can echo the
+ *  id/timestamp. Best-effort — a log failure must not fail reply generation. */
+export async function logTweetReply(entry: TweetReplyLogEntry): Promise<TweetReplyLogItem | null> {
+  const createdAt = new Date().toISOString();
+  try {
+    if (!PERSISTENT) {
+      const row = { ...entry, id: ++memTweetId, createdAt };
+      memTweetLog.unshift(row);
+      return row;
+    }
+    await ensureSchema();
+    const { rows } = await db().query<{ id: string; created_at: Date }>(
+      `INSERT INTO tweet_reply_log (source_url, market_id, match_type, slug, permalink, reply_text)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at`,
+      [entry.sourceUrl, entry.marketId, entry.matchType, entry.slug, entry.permalink, entry.replyText],
+    );
+    return { ...entry, id: Number(rows[0].id), createdAt: rows[0].created_at.toISOString() };
+  } catch (e) {
+    console.error("[tweet-log] write failed (non-fatal):", (e as Error).message);
+    return null;
+  }
+}
+
+/** Recent generated replies, newest first — the /tool list view. */
+export async function listTweetReplies(limit = 50): Promise<TweetReplyLogItem[]> {
+  const n = Math.max(1, Math.min(200, Math.floor(limit)));
+  if (!PERSISTENT) return memTweetLog.slice(0, n);
+  await ensureSchema();
+  const { rows } = await db().query<{
+    id: string; source_url: string | null; market_id: string | null; match_type: string;
+    slug: string | null; permalink: string | null; reply_text: string; created_at: Date;
+  }>(`SELECT id, source_url, market_id, match_type, slug, permalink, reply_text, created_at
+        FROM tweet_reply_log ORDER BY id DESC LIMIT $1`, [n]);
+  return rows.map((r) => ({
+    id: Number(r.id), sourceUrl: r.source_url, marketId: r.market_id,
+    matchType: r.match_type as TweetReplyLogEntry["matchType"], slug: r.slug,
+    permalink: r.permalink, replyText: r.reply_text, createdAt: r.created_at.toISOString(),
+  }));
 }
 
 /** Record the devnet proof after a successful on-chain mint. */

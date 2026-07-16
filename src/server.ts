@@ -11,8 +11,9 @@ import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
-import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, type CommunityMarket } from "./store/markets.js";
+import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
+import { buildTweetReply } from "./matching/tweetReply.js";
 import { proceedsFor } from "./store/economy.js";
 import { mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
@@ -1022,6 +1023,46 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
   const settled = await settleMarket(slug, outcome);
   await emailSettled(slug, outcome, settled);
   res.json({ ok: true, slug, outcome, settled: settled.length });
+});
+
+// Tweet mode: given a CONFIRMED market (venue match auto-accepted, closest match
+// approved, or a Community market just created), generate a ready-to-paste X
+// reply + an ASCII fallback, and log it. No X API — this is the manual-post
+// workflow; the reply logic (buildTweetReply) is pure so it drops into an
+// automated listener later unchanged.
+app.post("/api/tweet/generate", requireAdmin, async (req, res) => {
+  const b = req.body ?? {};
+  const matchType = b.match_type;
+  if (matchType !== "venue" && matchType !== "closest" && matchType !== "new") {
+    return res.status(400).json({ error: "match_type must be venue|closest|new" });
+  }
+  const slug = String(b.slug ?? "").trim();
+  const question = String(b.question ?? "").trim();
+  if (!slug || !question) return res.status(400).json({ error: "slug and question required" });
+  const yesPct = Number(b.yes_pct ?? 50);
+  const sourceUrl = b.source_url != null ? String(b.source_url).trim() || null : null;
+  const marketId = b.market_id != null ? String(b.market_id) : null;
+  const closesAt = b.closes_at != null ? String(b.closes_at) : null;
+
+  const permalink = `${BASE_URL}/m/${slug}`;
+  // A just-created Community market has no pool yet, so quote starting odds + a
+  // deadline; a live venue market (venue/closest) quotes its real yes/no odds.
+  const reply = buildTweetReply({
+    question, yesPct: Number.isFinite(yesPct) ? yesPct : 50, permalink,
+    kind: matchType === "new" ? "new" : "existing", closesAt,
+  });
+
+  const logged = await logTweetReply({
+    sourceUrl, marketId, matchType, slug, permalink, replyText: reply.primary,
+  });
+  res.json({ ok: true, primary: reply.primary, fallback: reply.fallback, permalink, logId: logged?.id ?? null, createdAt: logged?.createdAt ?? null });
+});
+
+// The list view: everything generated so far, newest first.
+app.get("/api/tweet/log", requireAdmin, async (req, res) => {
+  const limit = Number(req.query.limit ?? 50);
+  const items = await listTweetReplies(Number.isFinite(limit) ? limit : 50);
+  res.json({ items });
 });
 
 /* --------------------------------------------------------------- settlement --

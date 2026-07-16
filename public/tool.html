@@ -134,13 +134,17 @@
          a disagreement); the engine drafts a clean YES/NO market below, or
          refuses when there's nothing verifiable to settle. Precision over recall. -->
     <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
-      <textarea id="cx" placeholder="paste the argument / tweet(s) to convert into a market…"
+      <p class="why" style="margin:0 0 6px;font-weight:800">tweet mode — mention in, ready-to-paste reply out</p>
+      <textarea id="cx" placeholder="paste the tagged tweet (+ optional thread context)…"
         style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:66px;resize:vertical"></textarea>
+      <input id="csrc" type="url" placeholder="source tweet URL (optional — logged so we know what triggered this)"
+        style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:2px solid var(--ink);border-radius:10px;padding:8px 11px;margin:6px 0 0">
       <div class="row" style="margin:8px 0 0">
         <button class="ghost" id="cxgo" style="padding:9px 16px;font-size:14px">Extract market →</button>
         <span class="why" id="cxstat" style="align-self:center;margin:0"></span>
       </div>
       <div id="cxout" style="margin-top:8px"></div>
+      <div id="creply" style="margin-top:8px"></div>
     </div>
 
     <input id="cq" type="text" maxlength="180" placeholder="question (≤180 chars, e.g. Will oddie hit 1k users by Aug 1?)"
@@ -167,6 +171,11 @@
   <div class="box" id="resolve" style="margin-top:22px">
     <p class="verdict" style="font-size:17px">community market admin — pool, positions, payout preview, resolve</p>
     <div id="rlist"><p class="why">enter the admin token above, then this loads…</p></div>
+  </div>
+
+  <div class="box" id="tweetlogbox" style="margin-top:22px">
+    <p class="verdict" style="font-size:17px">generated X replies — newest first (what to post, and a record of it)</p>
+    <div id="tweetlog"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
   <div class="box" id="mentions" style="margin-top:22px">
@@ -433,7 +442,7 @@ const ADMKEY = "oddie_admin_token";
 const admInput = $("#admtok");
 admInput.value = localStorage.getItem(ADMKEY) || "";
 const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getItem(ADMKEY) || "" }, extra || {});
-$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); };
+$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); };
 
 let chainEnabled = false;
 
@@ -493,7 +502,7 @@ ccloseEl.addEventListener("input", () => { ccloseEl.dataset.auto = ""; if (dateP
 // The gate grade rides along in a hidden var so Create can send it (and so an
 // unresolvable verdict blocks Create outright). Every field the engine fills is
 // editable — the operator has the last word before anything is published.
-let lastResolvability = null, lastMatchPath = "none";
+let lastResolvability = null, lastMatchPath = "none", lastMatch = null;
 function toLocalInput(iso) {
   const dt = new Date(iso);
   if (isNaN(dt.getTime())) return "";
@@ -526,13 +535,23 @@ async function extractMarket() {
 function renderOutcome(x, match, venuesAvailable) {
   lastResolvability = x.resolvability;
   lastMatchPath = match.path;
+  lastMatch = match;
+  $("#creply").innerHTML = ""; // clear any reply from a previous run
   let html = matchPanel(match, venuesAvailable);
   if (match.path === "venue") {
     clearCreateForm(); // no new market — leave nothing for Create to submit
-  } else {
-    html += fillFromExtraction(x); // closest & none both allow minting a new one
+    $("#cxout").innerHTML = html;
+    // venue match is auto-accepted — generate the ready-to-post reply now
+    generateReply({ slug: match.market.slug, question: match.market.question, yesPct: match.market.yesPct, marketId: match.market.id, matchType: "venue" });
+    return;
   }
+  html += fillFromExtraction(x); // closest & none both allow minting a new one
   $("#cxout").innerHTML = html;
+  if (match.path === "closest") {
+    // Medium confidence: nothing auto-fires. The operator approves first.
+    const btn = document.getElementById("approveClosest");
+    if (btn) btn.onclick = () => generateReply({ slug: match.market.slug, question: match.market.question, yesPct: match.market.yesPct, marketId: match.market.id, matchType: "closest" });
+  }
 }
 
 function matchPanel(match, venuesAvailable) {
@@ -550,7 +569,8 @@ function matchPanel(match, venuesAvailable) {
       + '<a href="/m/' + esc(m.slug) + '" target="_blank" rel="noopener">preview on oddie ↗</a></p>'
       + (match.path === "venue"
         ? '<p class="why" style="color:var(--muted)">this claim is already covered — nothing was created.</p>'
-        : '<p class="why" style="color:var(--muted)">eyeball it: if this is the same market, use it. If not, edit the draft below and Create a new one.</p>')
+        : '<p class="why" style="color:var(--muted)">eyeball it: if this is the same market, approve it for a reply. If not, edit the draft below and Create a new one.</p>'
+          + '<div class="row" style="margin-top:8px"><button class="ghost" id="approveClosest" style="padding:8px 14px;font-size:13px">✓ approve this match &amp; generate reply</button></div>')
       + '</div>';
   }
   // no match
@@ -583,6 +603,71 @@ function clearCreateForm() {
   ccloseEl.value = ""; clearDateSuggestion();
 }
 
+// --- reply generator: a confirmed market -> a ready-to-paste X reply ---------
+// Called for a venue match (auto), an approved closest match, or a freshly
+// created Community market. Server owns the wording + logging (buildTweetReply),
+// so the exact same call drops into an automated listener later.
+async function generateReply(info) {
+  const box = $("#creply");
+  box.innerHTML = '<div class="box"><p class="why">generating reply…</p></div>';
+  try {
+    const r = await fetch("/api/tweet/generate", {
+      method: "POST", headers: admHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({
+        source_url: $("#csrc").value.trim() || null,
+        match_type: info.matchType, slug: info.slug, question: info.question,
+        yes_pct: info.yesPct, market_id: info.marketId || null, closes_at: info.closesAt || null,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { box.innerHTML = '<div class="box error"><p class="why">admin token missing or wrong — save it above.</p></div>'; return; }
+    if (!r.ok || !j.ok) { box.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "reply generation failed") + '</p></div>'; return; }
+    renderReply(j);
+    loadTweetLog();
+  } catch (e) { box.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
+}
+
+function renderReply(j) {
+  $("#creply").innerHTML =
+    '<div class="box hit"><p class="verdict" style="font-size:15px">📋 ready-to-post reply — copy into X</p>'
+    + replyRow("cprimary", j.primary)
+    + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
+    + replyRow("cfallback", j.fallback)
+    + '<p class="why" style="margin-top:8px"><b>' + j.primary.length + '</b>/280 chars · <a href="' + esc(j.permalink) + '" target="_blank" rel="noopener">' + esc(j.permalink) + '</a></p></div>';
+  wireCopy("cprimary", j.primary);
+  wireCopy("cfallback", j.fallback);
+}
+function replyRow(id, text) {
+  return '<div style="display:flex;gap:8px;align-items:flex-start;margin-top:6px">'
+    + '<textarea readonly rows="2" style="flex:1;box-sizing:border-box;font:inherit;font-size:13px;border:2px solid var(--ink);border-radius:10px;padding:8px 10px;resize:vertical">' + esc(text) + '</textarea>'
+    + '<button class="ghost" id="' + id + 'btn" style="flex:0 0 auto;padding:8px 14px;font-size:13px">Copy</button></div>';
+}
+function wireCopy(id, text) { const b = document.getElementById(id + "btn"); if (b) b.onclick = () => copy(text, b); }
+
+// --- log view: everything generated so far, newest first --------------------
+async function loadTweetLog() {
+  const box = $("#tweetlog");
+  if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
+  try {
+    const r = await fetch("/api/tweet/log?limit=50", { headers: admHeaders() });
+    if (r.status === 401) { box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
+    const j = await r.json().catch(() => ({ items: [] }));
+    const items = j.items || [];
+    if (!items.length) { box.innerHTML = '<p class="why">nothing generated yet — extract a tweet above.</p>'; return; }
+    box.innerHTML = items.map((it) => {
+      const tag = { venue: ["#0a7d2c", "venue"], closest: ["#a56a00", "closest"], new: ["#3c570b", "new"] }[it.matchType] || ["#555", it.matchType];
+      const when = new Date(it.createdAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+      return '<div class="box" style="margin:0 0 8px;padding:10px 12px">'
+        + '<p class="why" style="margin:0"><b style="color:' + tag[0] + '">' + esc(tag[1]) + '</b> · ' + esc(when)
+        + (it.sourceUrl ? ' · <a href="' + esc(it.sourceUrl) + '" target="_blank" rel="noopener">source ↗</a>' : '')
+        + (it.marketId ? ' · <code style="font-size:11px">' + esc(it.marketId) + '</code>' : '') + '</p>'
+        + '<p class="why" style="margin:5px 0 0;color:var(--ink)">' + esc(it.replyText) + '</p>'
+        + (it.permalink ? '<p class="why" style="margin:2px 0 0"><a href="' + esc(it.permalink) + '" target="_blank" rel="noopener">' + esc(it.permalink) + '</a></p>' : '')
+        + '</div>';
+    }).join("");
+  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+}
+
 $("#cgo").onclick = createMarket;
 async function createMarket() {
   const q = $("#cq").value.trim();
@@ -613,8 +698,11 @@ async function createMarket() {
       + '<p class="why"><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.url) + '</a></p>'
       + '<p class="why">' + badge + '</p>'
       + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p></div>';
+    // The market is confirmed (just created) — generate its ready-to-post reply.
+    // Read the source URL + market details BEFORE clearing the form below.
+    generateReply({ slug: j.slug, question: q, yesPct: yesPct, marketId: String(j.marketId), matchType: "new", closesAt: new Date(closeLocal).toISOString() });
     $("#cq").value = ""; $("#ccrit").value = ""; $("#cx").value = ""; $("#cxout").innerHTML = "";
-    ccloseEl.value = ""; lastResolvability = null; lastMatchPath = "none"; clearDateSuggestion();
+    ccloseEl.value = ""; lastResolvability = null; lastMatchPath = "none"; lastMatch = null; clearDateSuggestion();
     loadCommunity();
   } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }
@@ -705,6 +793,7 @@ async function resolveMarket(slug, outcome, payout, winners) {
   } catch (e) { alert(String(e)); }
 }
 loadCommunity();
+loadTweetLog();
 </script>
 </body>
 </html>
