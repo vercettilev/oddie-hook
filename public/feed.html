@@ -136,17 +136,18 @@
   /* Satisfying switch: the active chip fills solid accent and gives a little pop. */
   .chip.on{color:#000;border-color:var(--accent);background:var(--accent);transform:scale(1.05);
     box-shadow:0 2px 8px rgba(120,165,40,.35)}
-  /* Community markets: honest signal in place of a "$X in play" volume figure,
-     plus the on-chain proof badge linking to Solana Explorer (devnet). */
+  /* Community markets: honest signal + the on-chain proof badge. Both are filled
+     SURFACE chips (backgrounds fixed across themes) with FIXED dark text, so they
+     hold AA in both themes — the old --muted-g / --link-g text turned pale-on-pale
+     and near-invisible on the dark card. commtag is neutral grey; the credibility
+     badge keeps the lime tint. */
   .commtag{display:inline-block;font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.02em;
-    padding:2px 8px;border-radius:999px;border:1.5px solid var(--chip-bd);color:var(--muted-g)}
-  /* On-chain: a small, tasteful credibility badge — a lime dot + label, never
-     competing with the question. */
+    padding:3px 9px;border-radius:999px;background:var(--bar);color:#48525d}
   .chainbadge{display:inline-flex;align-items:center;gap:4px;font-family:'Nunito';font-weight:800;
-    font-size:10.5px;letter-spacing:.02em;color:var(--link-g);text-decoration:none;white-space:nowrap;
-    padding:2px 9px 2px 7px;border-radius:999px;border:1.5px solid var(--chip-bd);background:var(--wash)}
+    font-size:10.5px;letter-spacing:.02em;color:#3c570b;text-decoration:none;white-space:nowrap;
+    padding:3px 10px 3px 8px;border-radius:999px;background:var(--wash)}
   .chainbadge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);
-    box-shadow:0 0 0 1.5px rgba(0,0,0,.15)}
+    box-shadow:0 0 0 1.5px rgba(0,0,0,.22)}
   .chainbadge:active{transform:scale(.94)}
 
   /* The scroller is the feed when it snaps and a plain page when it doesn't. */
@@ -668,6 +669,29 @@
     .tabs{display:flex;left:50%;right:auto;transform:translateX(-50%);
       width:var(--feedcol);max-width:calc(100% - 40px);
       border:2.5px solid var(--line-g);border-bottom:0;border-radius:20px 20px 0 0;overflow:hidden}
+  }
+
+  /* Wide screens: the nav becomes a LEFT sidebar (Twitter/X pattern), filling the
+     empty region beside the centred column instead of a bottom bar. The rail is
+     fixed and out of flow, so the feed column stays dead-centre in the viewport;
+     the ~218px rail tucks into the left gutter without touching the column. */
+  @media (min-width:1024px){
+    .rail{display:flex;position:fixed;left:0;top:0;z-index:16;height:100dvh;width:218px;box-sizing:border-box;
+      flex-direction:column;gap:26px;padding:26px 18px}
+    .rail .brand{display:flex;justify-content:flex-start;align-items:center;gap:9px;flex-wrap:wrap;row-gap:9px;margin:0 0 0 6px}
+    .rail .brand .bal{margin-left:0}
+    .railnav{display:flex;flex-direction:column;gap:6px}
+    .navitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:16px;cursor:pointer;
+      border:2.5px solid transparent;background:none;font-family:'Fredoka';font-size:15px;font-weight:500;
+      color:var(--on-ground);width:100%;text-align:left}
+    .navitem svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:2.1;
+      stroke-linecap:round;stroke-linejoin:round;flex:none}
+    .navitem:hover{background:var(--ground-2)}
+    .navitem.on{background:var(--accent);border-color:#000;color:#000;font-weight:600}
+    .railfoot{display:block;margin-top:auto;font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g)}
+    .top .brand{display:none}     /* the rail carries the wordmark + balance + toggle */
+    .tabs{display:none}           /* no bottom bar on desktop */
+    .scroller{padding-bottom:26px}
   }
 
 
