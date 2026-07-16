@@ -152,6 +152,12 @@
   .chainbadge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);
     box-shadow:0 0 0 1.5px rgba(0,0,0,.22)}
   .chainbadge:active{transform:scale(.94)}
+  /* "Resolves by: …" — the settlement rules a bettor sees BEFORE playing. Quiet,
+     but always present when a community market carries criteria. FIXED dark text
+     on the pale-lime wash so it holds AA in both themes (same rule as chainbadge). */
+  .rby{margin-top:9px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.4;
+    color:#3c570b;background:var(--wash);border-radius:12px;padding:8px 11px}
+  .rby b{font-weight:800}
 
   /* The scroller is the feed when it snaps and a plain page when it doesn't. */
   .scroller{height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
@@ -1189,6 +1195,7 @@ function renderFeed(items){
       <div class="meta">${m.community
         ? `<span class="commtag">community market</span><span class="cdown">${yes}% yes · ${closesIn(m.closesAt)}</span>${m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
         : `${money(m.volumeUsd)} in play`}</div>
+      ${m.community && m.resolutionCriteria ? `<div class="rby"><b>Resolves by:</b> ${esc(m.resolutionCriteria)}</div>` : ""}
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">
           <span class="oside">YES</span>

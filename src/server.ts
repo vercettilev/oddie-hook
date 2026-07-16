@@ -11,7 +11,8 @@ import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
-import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, type CommunityMarket } from "./store/markets.js";
+import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, type CommunityMarket } from "./store/markets.js";
+import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { proceedsFor } from "./store/economy.js";
 import { mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
@@ -863,15 +864,39 @@ async function pricingSet(): Promise<Market[]> {
   return [...data.all, ...community];
 }
 
+// The claim-extraction engine: paste an argument, get a clean YES/NO market —
+// or a plain-language refusal. The quality gate for the whole product; nothing
+// is written here, so it is safe to call as often as the operator likes.
+app.post("/api/community/extract", requireAdmin, async (req, res) => {
+  const text = String(req.body?.text ?? "").trim();
+  if (!text) return res.status(400).json({ error: "text required" });
+  if (text.length > 4000) return res.status(400).json({ error: "text too long (≤4000 chars)" });
+  if (!extractEnabled()) return res.status(503).json({ error: `extraction unavailable — set ${EXTRACT_KEY_ENV}` });
+  try {
+    const out = await runExtract(text);
+    void logExtraction("extract", text, out); // fire-and-forget; never blocks the response
+    res.json({ ok: true, extraction: out });
+  } catch (e) {
+    console.error("[extract] failed:", (e as Error).message);
+    res.status(502).json({ error: "extraction failed — try again (see server logs)" });
+  }
+});
+
 // Create a Community market: virtual first (always), then mint on devnet (soft).
 app.post("/api/community/create", requireAdmin, async (req, res) => {
   const question = String(req.body?.question ?? "").trim();
   const category = (String(req.body?.category ?? "Community").trim()) || "Community";
   const yesPct = Number(req.body?.yesPct ?? 50);
   const closeInput = req.body?.close_time ?? req.body?.closeTime;
+  const resolutionCriteria = req.body?.resolution_criteria != null ? String(req.body.resolution_criteria).trim() : null;
+  const resolvability = req.body?.resolvability != null ? String(req.body.resolvability).trim() : null;
 
   if (!question) return res.status(400).json({ error: "question required" });
   if (question.length > 180) return res.status(400).json({ error: "question must be ≤180 characters (on-chain limit)" });
+  // The gate is enforced server-side too: an unresolvable claim is never a market,
+  // no matter what the client posts.
+  if (resolvability === "unresolvable") return res.status(422).json({ error: "unresolvable claims cannot become markets" });
+  if (resolutionCriteria && resolutionCriteria.length > 600) return res.status(400).json({ error: "resolution criteria must be ≤600 characters" });
   let closeTime: number;
   if (typeof closeInput === "number") closeTime = Math.floor(closeInput);
   else {
@@ -882,7 +907,9 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
   if (!(closeTime > Math.floor(Date.now() / 1000))) return res.status(400).json({ error: "close_time must be in the future" });
   if (!Number.isFinite(yesPct) || yesPct < 1 || yesPct > 99) return res.status(400).json({ error: "starting odds must be 1–99" });
 
-  const { slug, marketId } = await createCommunityMarket({ question, closeTime, category, yesPct });
+  const { slug, marketId } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability });
+  // The published record, incl. any operator edits — the other half of the tuning log.
+  void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
   // Layer 2 — devnet proof. Soft by design: a failure here never blocks Layer 1.
   let onchain: { pubkey: string; explorer: string; signature: string } | null = null;
@@ -936,7 +963,7 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
 
   res.json({
     slug: detail.slug, question: detail.question, closesAt: detail.closesAt, yesPct: detail.yesPct, marketId: detail.marketId,
-    resolvedOutcome: detail.resolvedOutcome,
+    resolvedOutcome: detail.resolvedOutcome, resolutionCriteria: detail.resolutionCriteria, resolvability: detail.resolvability,
     onchain: onchainEnabled() && detail.onchainPubkey
       ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey), signature: detail.onchainSig, minted: true }
       : { minted: false },
@@ -1041,6 +1068,6 @@ setTimeout(sweepSettlements, 45_000).unref(); // first pass shortly after boot, 
 const PORT = Number(process.env.PORT ?? 3000);
 app.listen(PORT, () =>
   console.log(
-    `oddie on ${BASE_URL} (port ${PORT}) — semantic matching ${semanticEnabled() ? "ON" : `OFF (set ${SEMANTIC_KEY_ENV} to enable)`}; settle mail ${mailEnabled() ? "ON" : `DRY-RUN (set ${MAIL_KEY_ENV} to send)`}`,
+    `oddie on ${BASE_URL} (port ${PORT}) — semantic matching ${semanticEnabled() ? "ON" : `OFF (set ${SEMANTIC_KEY_ENV} to enable)`}; claim extraction ${extractEnabled() ? "ON" : `OFF (set ${EXTRACT_KEY_ENV} to enable)`}; settle mail ${mailEnabled() ? "ON" : `DRY-RUN (set ${MAIL_KEY_ENV} to send)`}`,
   ),
 );

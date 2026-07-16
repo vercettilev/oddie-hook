@@ -270,6 +270,21 @@ CREATE TABLE IF NOT EXISTS community_market (
   onchain_sig      text,
   created_at       timestamptz NOT NULL DEFAULT now()
 );
+-- The claim-extraction engine writes these: the rules a bettor sees before
+-- playing ("Resolves by: …"), and the gate grade (clean|fuzzy|unresolvable).
+-- Added via ALTER so existing deployments pick them up without a migration tool.
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolution_criteria text;
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolvability       text;
+
+-- Every extraction, logged for later prompt tuning: the input argument, the
+-- engine's structured output, and (on publish) the operator's final edits.
+CREATE TABLE IF NOT EXISTS extraction_log (
+  id         bigserial PRIMARY KEY,
+  kind       text NOT NULL,          -- 'extract' | 'publish'
+  input      text NOT NULL,
+  output     jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 let pool: pg.Pool | null = null;
@@ -1143,6 +1158,8 @@ export type CommunityMarket = Market & {
   category: string;
   onchainPubkey: string | null;
   onchainSig: string | null;
+  resolutionCriteria: string | null;
+  resolvability: string | null;
 };
 
 interface CommunityMeta {
@@ -1152,6 +1169,8 @@ interface CommunityMeta {
   resolvedOutcome: "yes" | "no" | null;
   onchainPubkey: string | null;
   onchainSig: string | null;
+  resolutionCriteria: string | null;
+  resolvability: string | null;
 }
 const memCommunity = new Map<string, CommunityMeta>();
 
@@ -1162,10 +1181,14 @@ export async function createCommunityMarket(input: {
   closeTime: number; // unix seconds
   category?: string;
   yesPct?: number; // starting odds; default 50
+  resolutionCriteria?: string | null; // the "Resolves by: …" rules bettors see
+  resolvability?: string | null; // gate grade: clean | fuzzy | unresolvable
 }): Promise<{ slug: string; marketId: number; market: Market }> {
   const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
   const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
   const category = input.category?.trim() || "Community";
+  const resolutionCriteria = input.resolutionCriteria?.trim() || null;
+  const resolvability = input.resolvability?.trim() || null;
   const market: Market = {
     venue: "community",
     venueId: String(marketId),
@@ -1181,16 +1204,37 @@ export async function createCommunityMarket(input: {
   if (!PERSISTENT) {
     memCommunity.set(rec.slug, {
       slug: rec.slug, marketId, category, resolvedOutcome: null, onchainPubkey: null, onchainSig: null,
+      resolutionCriteria, resolvability,
     });
     return { slug: rec.slug, marketId, market };
   }
   await ensureSchema();
   await db().query(
-    `INSERT INTO community_market (slug, market_id, category) VALUES ($1,$2,$3)
-     ON CONFLICT (slug) DO NOTHING`,
-    [rec.slug, marketId, category],
+    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability)
+     VALUES ($1,$2,$3,$4,$5) ON CONFLICT (slug) DO NOTHING`,
+    [rec.slug, marketId, category, resolutionCriteria, resolvability],
   );
   return { slug: rec.slug, marketId, market };
+}
+
+/** Append one extraction-engine event for later prompt tuning. `kind` is
+ *  'extract' (what the engine returned for a pasted argument) or 'publish' (the
+ *  operator's final, possibly-edited values at create time). Best-effort: a log
+ *  failure must never block extraction or market creation. */
+const memExtractionLog: { kind: string; input: string; output: unknown; createdAt: string }[] = [];
+export async function logExtraction(kind: "extract" | "publish", input: string, output: unknown): Promise<void> {
+  try {
+    if (!PERSISTENT) {
+      memExtractionLog.push({ kind, input, output, createdAt: new Date().toISOString() });
+      return;
+    }
+    await ensureSchema();
+    await db().query(`INSERT INTO extraction_log (kind, input, output) VALUES ($1,$2,$3)`, [
+      kind, input, JSON.stringify(output),
+    ]);
+  } catch (e) {
+    console.error("[extract-log] write failed (non-fatal):", (e as Error).message);
+  }
 }
 
 /** Record the devnet proof after a successful on-chain mint. */
@@ -1213,7 +1257,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
       if (meta.resolvedOutcome) continue;
       const rec = mem.get(meta.slug);
       if (!rec) continue;
-      out.push({ ...rec.market, marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig });
+      out.push({ ...rec.market, marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig, resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability });
     }
     return out;
   }
@@ -1221,9 +1265,10 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
   const { rows } = await db().query<{
     venue_id: string; question: string; yes_pct: number; closes_at: Date | null; volume_usd: number; venue_url: string;
     market_id: string; category: string; onchain_pubkey: string | null; onchain_sig: string | null;
+    resolution_criteria: string | null; resolvability: string | null;
   }>(`
     SELECT s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig
+           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
      WHERE c.resolved_outcome IS NULL
      ORDER BY c.created_at DESC`);
@@ -1232,6 +1277,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
     closesAt: r.closes_at ? r.closes_at.toISOString() : null, volumeUsd: Number(r.volume_usd),
     venueUrl: r.venue_url, tags: [], marketId: Number(r.market_id), category: r.category,
     onchainPubkey: r.onchain_pubkey, onchainSig: r.onchain_sig,
+    resolutionCriteria: r.resolution_criteria, resolvability: r.resolvability,
   }));
 }
 
@@ -1283,6 +1329,7 @@ export interface CommunityDetailPosition {
 export interface CommunityMarketDetail {
   slug: string; question: string; closesAt: string | null; yesPct: number; marketId: number;
   resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; onchainSig: string | null;
+  resolutionCriteria: string | null; resolvability: string | null;
   positions: CommunityDetailPosition[];
 }
 
@@ -1298,12 +1345,13 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
       .map((c) => ({ deviceId: c.deviceId, side: c.side, tokens: c.tokens, entryPct: c.entryPct, closed: Boolean(c.closedAt), proceeds: c.proceeds }));
     return {
       slug, question: rec.market.question, closesAt: rec.market.closesAt, yesPct: rec.market.yesPct,
-      marketId: meta.marketId, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig, positions,
+      marketId: meta.marketId, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
+      resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability, positions,
     };
   }
   await ensureSchema();
-  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null }>(`
-    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig
+  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null }>(`
+    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability
       FROM community_market c JOIN market_slug s ON s.slug = c.slug WHERE c.slug = $1`, [slug]);
   if (!meta.rows.length) return null;
   const m = meta.rows[0];
@@ -1312,6 +1360,7 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
   return {
     slug, question: m.question, closesAt: m.closes_at ? m.closes_at.toISOString() : null, yesPct: m.yes_pct,
     marketId: Number(m.market_id), resolvedOutcome: m.resolved_outcome, onchainPubkey: m.onchain_pubkey, onchainSig: m.onchain_sig,
+    resolutionCriteria: m.resolution_criteria, resolvability: m.resolvability,
     positions: pos.rows.map((r) => ({ deviceId: r.device_id, side: r.side, tokens: r.tokens, entryPct: r.pct_at, closed: Boolean(r.closed_at), proceeds: r.proceeds })),
   };
 }

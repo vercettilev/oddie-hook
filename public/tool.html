@@ -129,8 +129,24 @@
       <button class="ghost" id="admsave" style="flex:0 0 auto;padding:9px 16px;font-size:14px">save</button>
     </div>
     <p class="why" id="chainstat">—</p>
+
+    <!-- Claim-extraction engine: paste an argument (a tweet, or a few tweets of
+         a disagreement); the engine drafts a clean YES/NO market below, or
+         refuses when there's nothing verifiable to settle. Precision over recall. -->
+    <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
+      <textarea id="cx" placeholder="paste the argument / tweet(s) to convert into a market…"
+        style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:66px;resize:vertical"></textarea>
+      <div class="row" style="margin:8px 0 0">
+        <button class="ghost" id="cxgo" style="padding:9px 16px;font-size:14px">Extract market →</button>
+        <span class="why" id="cxstat" style="align-self:center;margin:0"></span>
+      </div>
+      <div id="cxout" style="margin-top:8px"></div>
+    </div>
+
     <input id="cq" type="text" maxlength="180" placeholder="question (≤180 chars, e.g. Will oddie hit 1k users by Aug 1?)"
       style="width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:2px solid var(--ink);border-radius:12px;padding:10px 12px;margin:6px 0">
+    <textarea id="ccrit" placeholder="resolution criteria — exactly what evidence settles YES vs NO, and the source to check"
+      style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px;margin:0 0 6px;min-height:54px;resize:vertical"></textarea>
     <div class="row" style="margin:0">
       <input id="cclose" type="datetime-local" title="close time"
         style="flex:1 1 180px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
@@ -473,14 +489,70 @@ cqEl.addEventListener("input", () => {
 // A manual edit of the close field IS the user seeing/confirming it.
 ccloseEl.addEventListener("input", () => { ccloseEl.dataset.auto = ""; if (datePending) clearDateSuggestion(); });
 
+// --- claim-extraction engine: paste an argument -> drafted market (or refusal).
+// The gate grade rides along in a hidden var so Create can send it (and so an
+// unresolvable verdict blocks Create outright). Every field the engine fills is
+// editable — the operator has the last word before anything is published.
+let lastResolvability = null;
+function toLocalInput(iso) {
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return "";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+}
+$("#cxgo").onclick = extractMarket;
+async function extractMarket() {
+  const text = $("#cx").value.trim();
+  const stat = $("#cxstat"), out = $("#cxout");
+  if (!text) { stat.textContent = "paste an argument first."; return; }
+  $("#cxgo").disabled = true; stat.textContent = "extracting… (a few seconds)"; out.innerHTML = "";
+  try {
+    const r = await fetch("/api/community/extract", {
+      method: "POST", headers: admHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ text }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { stat.textContent = "admin token missing or wrong — save it above."; return; }
+    if (!r.ok || !j.ok) { stat.textContent = ""; out.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "extraction failed") + '</p></div>'; return; }
+    stat.textContent = "";
+    applyExtraction(j.extraction);
+  } catch (e) { stat.textContent = ""; out.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
+  finally { $("#cxgo").disabled = false; }
+}
+function applyExtraction(x) {
+  lastResolvability = x.resolvability;
+  const badge = { clean: ["#0a7d2c", "CLEAN — eligible to publish"], fuzzy: ["#a56a00", "FUZZY — review before posting"], unresolvable: ["#b00020", "UNRESOLVABLE — cannot be a market"] }[x.resolvability] || ["#555", x.resolvability];
+  const out = $("#cxout");
+  if (x.resolvability === "unresolvable") {
+    // The gate refuses in plain language; leave the form untouched and block Create.
+    out.innerHTML = '<div class="box error"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">✕ ' + esc(badge[1]) + '</p>'
+      + '<p class="why">' + esc(x.reason) + '</p>'
+      + '<p class="why" style="color:var(--muted)">no market was drafted — this argument has nothing a settlement can check.</p></div>';
+    setCreateEnabled();
+    return;
+  }
+  // Fill every field; each stays editable. A manual close time counts as confirmed.
+  $("#cq").value = x.question;
+  $("#ccrit").value = x.resolution_criteria;
+  $("#ccat").value = (x.category || "Community");
+  if (x.close_time) { ccloseEl.value = toLocalInput(x.close_time); ccloseEl.dataset.auto = ""; }
+  clearDateSuggestion();
+  out.innerHTML = '<div class="box"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">' + (x.resolvability === "clean" ? "✓ " : "⚠ ") + esc(badge[1]) + '</p>'
+    + '<p class="why">' + esc(x.reason) + '</p>'
+    + (x.close_time_inferred ? '<p class="why" style="color:var(--muted)">📅 close time was inferred — double-check it.</p>' : '')
+    + '<p class="why" style="color:var(--muted)">edit anything below, then Create.</p></div>';
+}
+
 $("#cgo").onclick = createMarket;
 async function createMarket() {
   const q = $("#cq").value.trim();
   const closeLocal = $("#cclose").value;
   const category = $("#ccat").value.trim() || "Community";
   const yesPct = Number($("#cyes").value || 50);
+  const criteria = $("#ccrit").value.trim();
   const cout = $("#cout");
   if (!q) { cout.innerHTML = '<div class="box error"><p class="why">question required</p></div>'; return; }
+  if (lastResolvability === "unresolvable") { cout.innerHTML = '<div class="box error"><p class="why">the engine graded this unresolvable — it can\'t be a market. Edit the argument and extract again, or clear the fields.</p></div>'; return; }
   if (datePending) { cout.innerHTML = '<div class="box error"><p class="why">confirm the suggested close time first (or edit it)</p></div>'; return; }
   if (!closeLocal) { cout.innerHTML = '<div class="box error"><p class="why">pick a close time</p></div>'; return; }
   $("#cgo").disabled = true; $("#cgo").textContent = "Creating…";
@@ -488,7 +560,7 @@ async function createMarket() {
   try {
     const r = await fetch("/api/community/create", {
       method: "POST", headers: admHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ question: q, close_time: new Date(closeLocal).toISOString(), category, yesPct }),
+      body: JSON.stringify({ question: q, close_time: new Date(closeLocal).toISOString(), category, yesPct, resolution_criteria: criteria || null, resolvability: lastResolvability }),
     });
     const j = await r.json().catch(() => ({}));
     if (r.status === 401) { cout.innerHTML = '<div class="box error"><p class="why">admin token missing or wrong — save it above.</p></div>'; return; }
@@ -500,7 +572,8 @@ async function createMarket() {
       + '<p class="why"><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.url) + '</a></p>'
       + '<p class="why">' + badge + '</p>'
       + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p></div>';
-    $("#cq").value = ""; ccloseEl.value = ""; clearDateSuggestion();
+    $("#cq").value = ""; $("#ccrit").value = ""; $("#cx").value = ""; $("#cxout").innerHTML = "";
+    ccloseEl.value = ""; lastResolvability = null; clearDateSuggestion();
     loadCommunity();
   } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }
