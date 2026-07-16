@@ -158,6 +158,21 @@
   .rby{margin-top:9px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.4;
     color:#3c570b;background:var(--wash);border-radius:12px;padding:8px 11px}
   .rby b{font-weight:800}
+  /* Cold-visitor onboarding strip: one pinned line at the top of "For you".
+     Fixed dark text on the fixed pale-lime wash so it holds AA in both themes
+     (same rule as .rby / .chainbadge). Carries the header clearance when it is
+     the first scroller child; when dismissed, .card:first-child reclaims it. */
+  .onbstrip{width:min(var(--feedcol), calc(100% - 24px));margin:var(--feedtop) auto 12px;
+    display:flex;align-items:center;gap:10px;background:var(--wash);
+    border:2px solid var(--card-line);border-radius:16px;padding:11px 14px;
+    box-shadow:var(--card-shadow);font-family:'Nunito';font-weight:800;
+    font-size:13px;line-height:1.35;color:#3c570b}
+  .onbstrip .onbtxt{flex:1}
+  .onbstrip b{font-weight:900}
+  .onbx{flex:0 0 auto;border:none;background:transparent;color:#3c570b;font-size:20px;
+    line-height:1;cursor:pointer;padding:0 2px;font-weight:900;opacity:.65}
+  .onbx:hover{opacity:1}
+  .onbx:active{transform:scale(.9)}
 
   /* The scroller is the feed when it snaps and a plain page when it doesn't. */
   .scroller{height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
@@ -1168,10 +1183,29 @@ function socialLine(side,crowd,marketSidePct){
   return `Contrarian: ${p}% of poppers and a ${m}% market against you.`;
 }
 
+// Cold-visitor onboarding strip. Shown only on the "For you" tab, only for a
+// cold/organic visit (no market permalink context — a permalink page already
+// has the tweet as its explanation), and only until dismissed once.
+const ONB_KEY="oddie_onboard_dismissed";
+function onboardingWanted(){
+  if(activeCat!=="For you"||startSlug)return false;
+  try{return !localStorage.getItem(ONB_KEY);}catch(e){return false;}
+}
+function maybeOnboarding(scroller){
+  if(!onboardingWanted())return;
+  const strip=document.createElement("div");
+  strip.className="onbstrip";
+  strip.innerHTML='<span class="onbtxt">tag <b>@oddie_so</b> under any take on X — we turn it into a market you can play</span>'
+    +'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
+  strip.querySelector(".onbx").onclick=()=>{try{localStorage.setItem(ONB_KEY,"1");}catch(e){}strip.remove();ev("onboard_dismiss",{});};
+  scroller.appendChild(strip);
+}
+
 function renderFeed(items){
   const scroller=document.getElementById("scroller");
   scroller.innerHTML="";
   if(!items.length){scroller.innerHTML='<div class="state">no live markets here right now — try another category.</div>';return;}
+  maybeOnboarding(scroller); // pinned strip first, so cards flow beneath it
   // TikTok-web taste flow. An anonymous visitor gets the feed metered so the
   // personalization investment lands BEFORE the gate:
   //   no categories picked yet -> 1 free card, then the category picker

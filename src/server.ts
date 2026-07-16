@@ -299,10 +299,11 @@ app.get("/api/feed", async (req, res) => {
   }
   const items = list.slice(0, 40).map((e) => ({ slug: slugFor(e.m), category: e.cat, ...e.m }));
 
-  // Community markets ARE the product: they rank first in the default feed —
-  // a fresh visitor's first cards are community markets whenever any are live —
-  // and venue markets fill in after. The on-chain badge is emitted only while
-  // ONCHAIN_ENABLED is on (stored pubkeys stay in the DB either way).
+  // Community markets are the product, but they are NOT the right first thing a
+  // cold, organic visitor sees: a niche insider question with zero context is a
+  // bad front door. So placement is source-aware (see feedItems below). The
+  // on-chain badge is emitted only while ONCHAIN_ENABLED is on (stored pubkeys
+  // stay in the DB either way).
   let community: CommunityMarket[] = [];
   try { community = await openCommunityMarkets(); }
   catch (e) { console.error("[community] feed load failed (serving venue markets only):", (e as Error).message); }
@@ -314,8 +315,17 @@ app.get("/api/feed", async (req, res) => {
   }));
 
   let feedItems: Array<Record<string, unknown> & { slug: string }> = items;
-  if (cat === "Community") feedItems = communityItems;
-  else if (!cat || cat === "For you") feedItems = [...communityItems, ...items];
+  if (cat === "Community") {
+    // The Community tab is Community markets' correct home — they rank normally here.
+    feedItems = communityItems;
+  } else if (!cat || cat === "For you") {
+    // Source-aware ordering for the default feed:
+    //  - permalink landing (start set): UNCHANGED — community-first, and the
+    //    shared market is pinned above it anyway (that market IS the context).
+    //  - cold/organic visit (no start): broad-appeal venue markets lead; community
+    //    still appears, just not auto-ranked to the top with no context to frame it.
+    feedItems = start ? [...communityItems, ...items] : [...items, ...communityItems];
+  }
 
   // A start slug (a /m/ permalink landing) pins ITS market to the very top —
   // above even the community block: the shared market is the page's headline,
