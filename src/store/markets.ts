@@ -1225,6 +1225,58 @@ export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> 
   return computeAccuracy(rows);
 }
 
+/** Reverse handle → device lookup, for the public profile page at /@{handle}. */
+export async function deviceForHandle(rawHandle: string): Promise<string | null> {
+  const h = rawHandle.replace(/^@+/, "").toLowerCase();
+  if (!h) return null;
+  if (!PERSISTENT) {
+    for (const [dev, hh] of memHandle) if (hh.toLowerCase() === h) return dev;
+    return null;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ device_id: string }>(
+    `SELECT device_id FROM device_balance WHERE lower(handle) = $1`, [h]);
+  return rows[0]?.device_id ?? null;
+}
+
+export interface ResolvedCall {
+  question: string;
+  side: "yes" | "no";
+  oddsPct: number;        // the price they took on their side
+  outcome: "yes" | "no";  // how the market resolved
+  correct: boolean;
+  closedAt: string;
+}
+
+/** A device's recent RESOLVED calls (exit_pct 0/100), newest first — the public
+ *  profile's track feed. Sold positions (exit 1–99) are excluded, same rule as
+ *  the accuracy record. */
+export async function resolvedCallsFor(rawDeviceId: string, limit = 20): Promise<ResolvedCall[]> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const n = Math.max(1, Math.min(50, Math.floor(limit)));
+  const shape = (side: "yes" | "no", exit: number, pct: number, question: string, closedAt: string): ResolvedCall => {
+    const correct = exit === 100;
+    return { question, side, oddsPct: Math.max(1, Math.min(99, Math.round(pct))), outcome: correct ? side : side === "yes" ? "no" : "yes", correct, closedAt };
+  };
+  if (!PERSISTENT) {
+    return memCalls
+      .filter((c) => c.deviceId === deviceId && c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
+      .sort((a, b) => (a.closedAt! < b.closedAt! ? 1 : a.closedAt! > b.closedAt! ? -1 : b.id - a.id))
+      .slice(0, n)
+      .map((c) => shape(c.side, c.exitPct as number, c.entryPct, c.question, c.closedAt!));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ side: "yes" | "no"; exit_pct: number; pct_at: number; question: string; closed_at: Date }>(
+    `SELECT mc.side, mc.exit_pct, mc.pct_at, s.question, mc.closed_at
+       FROM market_call mc JOIN market_slug s ON s.slug = mc.slug
+      WHERE mc.device_id = $1 AND mc.closed_at IS NOT NULL
+        AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
+      ORDER BY mc.closed_at DESC, mc.id DESC LIMIT $2`,
+    [deviceId, n],
+  );
+  return rows.map((r) => shape(r.side, r.exit_pct, r.pct_at, r.question, r.closed_at.toISOString()));
+}
+
 /**
  * A device's category engagement — every position it has ever taken (open OR
  * resolved), counted by category. The signal for personalizing "For you": a

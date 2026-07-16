@@ -636,6 +636,16 @@
   .oscore-lab{display:flex;flex-direction:column;gap:2px}
   .oscore-lab b{font-family:'Nunito';font-size:14px;font-weight:900}
   .oscore-lab span{font-family:'Nunito';font-size:11px;font-weight:700;opacity:.82;line-height:1.3}
+  /* Public-profile recent-calls feed: compact rows, a win/loss rail. */
+  .pcall{border:2px solid var(--card-line);border-left-width:6px;border-radius:12px;
+    background:var(--card-surface);padding:10px 13px;margin-bottom:8px}
+  .pcall.win{border-left-color:#0a7d2c}
+  .pcall.loss{border-left-color:#b00020}
+  .pcall-q{font-family:'Nunito';font-weight:800;font-size:13.5px;line-height:1.35;color:var(--on-ground)}
+  .pcall-meta{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-family:'Nunito';font-weight:800;font-size:12px}
+  .pcall-side{color:var(--muted-g)}
+  .pcall.win .pcall-out{color:#0a7d2c}
+  .pcall.loss .pcall-out{color:#b00020}
 
   /* Transaction history — closed positions as instantly-readable win/loss cards.
      Same chunky-outline white surface as every tile; a coloured left rail and an
@@ -1189,6 +1199,8 @@ function n(x){return x.toLocaleString("en-US")}
 const VIEWS=NAV.map(([k])=>k);
 // Both permalink shapes: /m/{slug} is canonical, /market/{slug} lives on in old links.
 const startSlug=(location.pathname.match(/^\/(?:m|market)\/([^/]+)/)||[])[1]||"";
+// Public profile page: /@{handle}. A path route, like the market permalink.
+const profileHandle=(location.pathname.match(/^\/@([^/?#]+)/)||[])[1]||"";
 let activeCat=new URLSearchParams(location.search).get("cat")||"For you";
 
 // Permalink landing → log one device-attributed page view for the wedge metrics
@@ -1215,6 +1227,8 @@ function paintNav(view){
 }
 
 function render(){
+  // A /@{handle} path renders the public profile, independent of the hash router.
+  if(profileHandle){document.body.dataset.view="profile";renderPublicProfile();return;}
   const view=currentView();
   document.body.dataset.view=view;   // the header's backdrop keys off this
   paintNav(view);
@@ -1873,6 +1887,68 @@ function renderShell(view){
   if(view==="profile"){shellTop("Profile",false);loadProfile(scroller);}
 }
 
+// --- Public profile page (/@{handle}) — read-only, works fully logged out ----
+// Reuses the private Profile's Oddie Score / stats styling, plus a feed of the
+// handle's recent resolved calls. Nav navigates absolutely so it escapes /@.
+function pubCallRow(c){
+  const win=c.correct;
+  return `<div class="pcall ${win?'win':'loss'}">
+    <div class="pcall-q">${esc(c.question)}</div>
+    <div class="pcall-meta">
+      <span class="pcall-side">called ${c.side.toUpperCase()} @ ${c.oddsPct}%</span>
+      <span class="pcall-out">→ ${c.outcome.toUpperCase()} · ${win?'✓ right':'✗ wrong'}</span>
+    </div>
+  </div>`;
+}
+async function renderPublicProfile(){
+  const handle=profileHandle;
+  shellTop("@"+handle,false);
+  paintNav("profile");
+  // Nav from a /@ page does a real navigation back to the feed (not a hash swap).
+  document.querySelectorAll("[data-go]").forEach(b=>{b.onclick=()=>{location.href=b.dataset.go==="feed"?"/feed":"/feed#/"+b.dataset.go;};});
+  const scroller=document.getElementById("scroller");
+  scroller.classList.remove("snap");
+  scroller.innerHTML='<div class="state">loading…</div>';
+  await loadBalance().catch(()=>{}); // so "your profile" self-check has myHandle
+  let data=null;
+  try{const r=await fetch(`${API}/api/profile/${encodeURIComponent(handle)}`);data=r.ok?await r.json():{exists:false};}catch(e){}
+  if(!data||data.exists===false){
+    scroller.innerHTML=`<div class="sheet">
+      <p class="sub">No profile for <b>@${esc(handle)}</b>.</p>
+      <div class="state">This handle hasn’t made any calls yet, or doesn’t exist.</div>
+      <div class="row" style="justify-content:center;margin-top:14px"><a class="cbtn" href="/feed">Open the feed</a></div>
+    </div>`;
+    return;
+  }
+  const acc=data.accuracy, calls=data.recentCalls||[];
+  const scoreVal=acc.hasEnough?String(acc.oddieScore):"building";
+  const accVal=acc.hasEnough?`${acc.accuracyPct}%`:"building";
+  const bestTopicVal=acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
+  const isMe=myHandle&&myHandle.toLowerCase()===String(data.handle).toLowerCase();
+  scroller.innerHTML=`<div class="sheet">
+    <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
+    <div class="trhead"><p class="psec">Track record</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
+    <div class="oscore"><div class="oscore-num">${esc(scoreVal)}</div><div class="oscore-lab"><b>Oddie Score</b><span>calibration-adjusted reputation · 500 = matches the market</span></div></div>
+    <div class="trstats">
+      <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
+      <div class="tile"><div class="v">${acc.streak}${acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:''}</div><div class="k">STREAK</div></div>
+      <div class="tile"><div class="v topic">${esc(bestTopicVal)}</div><div class="k">BEST TOPIC</div></div>
+      <div class="tile"><div class="v">${acc.resolved}</div><div class="k">RESOLVED PICKS</div></div>
+    </div>
+    ${!acc.hasEnough?`<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Oddie Score shows at ${acc.minResolved}.</p>`:''}
+    <p class="psec" style="margin-top:22px">Recent calls</p>
+    ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
+    <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
+  </div>`;
+  const sb=scroller.querySelector("#pubshare");
+  if(sb)sb.onclick=()=>{
+    const text=acc.hasEnough
+      ?`@${data.handle} — Oddie Score ${acc.oddieScore}, ${acc.accuracyPct}% accuracy on oddie`
+      :`@${data.handle} is building a track record on oddie`;
+    xShare(text, `${SHARE_ORIGIN}/@${data.handle}`, "public_profile");
+  };
+}
+
 /**
  * Real rows: this device's calls, straight from the server. Potential win is
  * computed from the odds AT LOCK TIME (pct_at), so a position never appears to
@@ -2183,7 +2259,9 @@ async function loadNotices(scroller){
       const lead=win?"called it":"missed this one";
       const oddsClause=odds?` at ${odds}%`:"";
       const text=`${lead}${oddsClause} → resolved ${outcome}. ${accClause}`;
-      xShare(text, slug?`${SHARE_ORIGIN}/m/${slug}`:SHARE_ORIGIN, "settle_notice");
+      // Point at the public profile (the reputation loop's home); fall back to
+      // the market permalink if this device has no handle yet.
+      xShare(text, myHandle?`${SHARE_ORIGIN}/@${myHandle}`:(slug?`${SHARE_ORIGIN}/m/${slug}`:SHARE_ORIGIN), "settle_notice");
     });
   }catch(e){
     console.error(e);
@@ -2301,14 +2379,14 @@ async function loadProfile(scroller){
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
-  // Shareable profile card. GAP: no public per-user profile URL yet — links to
-  // oddie.fun for now; swap to the public profile URL once those ship.
+  // Shareable profile card → the public profile at /@{handle} (falls back to the
+  // homepage only if this device somehow has no handle yet).
   const trshareBtn=scroller.querySelector("#trshare");
   if(trshareBtn)trshareBtn.onclick=()=>{
     const text=acc&&acc.hasEnough
       ? `${acc.accuracyPct}% accuracy, ${acc.streak}-pick streak on oddie`
       : "building my track record on oddie";
-    xShare(text, "https://oddie.fun", "profile");
+    xShare(text, myHandle?`${SHARE_ORIGIN}/@${myHandle}`:"https://oddie.fun", "profile");
   };
   scroller.querySelectorAll("[data-theme-mode]").forEach(b=>b.onclick=()=>{
     setTheme(b.dataset.themeMode);

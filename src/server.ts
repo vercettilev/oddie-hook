@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -20,6 +20,7 @@ import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
 import { renderCardPng } from "./card/renderPng.js";
+import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { tweetCopy } from "./card/tweetCopy.js";
 import { linkAccount, accountsFor } from "./store/accounts.js";
@@ -228,6 +229,55 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
     if (n < MARKET_FORMING_MIN) forming = { positions: n };
   }
   res.type("html").send(rec ? marketPageHtml(rec, req.params.slug, forming) : FEED_HTML);
+});
+
+// Public profile page — the reputation/share loop's real destination. Serves the
+// SPA shell with per-handle og tags (image = the profile card), so a shared
+// /@{handle} link unfurls on X showing the Oddie Score. Fully viewable logged
+// out; the SPA renders the public view from /api/profile/{handle}.
+function profilePageHtml(handle: string, acc: { oddieScore: number | null; accuracyPct: number | null; streak: number; resolved: number; hasEnough: boolean }): string {
+  const title = `@${handle} on oddie`;
+  const desc = acc.hasEnough
+    ? `Oddie Score ${acc.oddieScore} · ${acc.accuracyPct}% accuracy · ${acc.resolved} resolved picks`
+    : `building a track record — ${acc.resolved} resolved picks so far`;
+  const img = `${BASE_URL}/card/u/${encodeURIComponent(handle)}.png`;
+  const url = `${BASE_URL}/@${handle}`;
+  const tags = [
+    `<link rel="canonical" href="${ogEsc(url)}">`,
+    `<meta property="og:type" content="profile">`,
+    `<meta property="og:site_name" content="oddie">`,
+    `<meta property="og:title" content="${ogEsc(title)}">`,
+    `<meta property="og:description" content="${ogEsc(desc)}">`,
+    `<meta property="og:url" content="${ogEsc(url)}">`,
+    `<meta property="og:image" content="${ogEsc(img)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="2000">`,
+    `<meta property="og:image:height" content="1048">`,
+    `<meta property="og:image:alt" content="${ogEsc(title)}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${ogEsc(title)}">`,
+    `<meta name="twitter:description" content="${ogEsc(desc)}">`,
+    `<meta name="twitter:image" content="${ogEsc(img)}">`,
+  ].join("\n");
+  return FEED_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+}
+
+app.get("/@:handle", async (req, res) => {
+  const handle = String(req.params.handle).replace(/^@+/, "");
+  const deviceId = await deviceForHandle(handle).catch(() => null);
+  // Unknown handle: still serve the SPA (it shows a "no such profile" state).
+  if (!deviceId) return res.type("html").send(FEED_HTML);
+  const [acc, hd] = await Promise.all([accuracyFor(deviceId), displayHandle(deviceId)]);
+  res.type("html").send(profilePageHtml(hd.handle, acc));
+});
+
+// Public profile data (no auth — anyone can view anyone's record).
+app.get("/api/profile/:handle", async (req, res) => {
+  const handle = String(req.params.handle).replace(/^@+/, "");
+  const deviceId = await deviceForHandle(handle).catch(() => null);
+  if (!deviceId) return res.status(404).json({ exists: false });
+  const [acc, recentCalls, hd] = await Promise.all([accuracyFor(deviceId), resolvedCallsFor(deviceId, 20), displayHandle(deviceId)]);
+  res.json({ exists: true, handle: hd.handle, accuracy: acc, recentCalls });
 });
 
 function positionPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string, share: { token: string; handle: string; side: string; entryPct: number; resolved: string | null }): string {
@@ -518,6 +568,26 @@ app.get("/card/:slug.png", async (req, res) => {
   const png = renderCardPng(renderCard(rec.market));
   pngCache.set(slug, { png, at: now });
   if (pngCache.size > 300) for (const [k, v] of pngCache) if (now - v.at > PNG_TTL_MS) pngCache.delete(k);
+  res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
+});
+
+// The public-profile og image — same renderer/cache as the market card.
+app.get("/card/u/:handle.png", async (req, res) => {
+  const handle = String(req.params.handle).replace(/^@+/, "");
+  const key = `@${handle.toLowerCase()}`;
+  const now = Date.now();
+  const hit = pngCache.get(key);
+  if (hit && now - hit.at < PNG_TTL_MS) {
+    return res.type("image/png").set("Cache-Control", "public, max-age=300").send(hit.png);
+  }
+  const deviceId = await deviceForHandle(handle).catch(() => null);
+  if (!deviceId) return res.status(404).send("unknown profile");
+  const [acc, hd] = await Promise.all([accuracyFor(deviceId), displayHandle(deviceId)]);
+  const png = renderCardPng(renderProfileCard({
+    handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
+    streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
+  }));
+  pngCache.set(key, { png, at: now });
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
 });
 
