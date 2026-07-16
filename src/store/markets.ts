@@ -1222,7 +1222,7 @@ export async function createCommunityMarket(input: {
  *  operator's final, possibly-edited values at create time). Best-effort: a log
  *  failure must never block extraction or market creation. */
 const memExtractionLog: { kind: string; input: string; output: unknown; createdAt: string }[] = [];
-export async function logExtraction(kind: "extract" | "publish", input: string, output: unknown): Promise<void> {
+export async function logExtraction(kind: "extract" | "match" | "publish", input: string, output: unknown): Promise<void> {
   try {
     if (!PERSISTENT) {
       memExtractionLog.push({ kind, input, output, createdAt: new Date().toISOString() });

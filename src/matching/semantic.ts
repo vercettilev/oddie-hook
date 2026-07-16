@@ -75,16 +75,21 @@ export function buildCandidates(tweetText: string, markets: Market[]): MatchResu
 interface Verdict {
   pick: number | null;
   reason: string;
+  /** 0-100: how sure the pick is the SAME falsifiable proposition. Optional so
+   *  the existing test mocks (which omit it) still typecheck; the real referee
+   *  always sets it, and consumers default a missing value to 0. */
+  confidence?: number;
 }
 
-const SYSTEM = `You match tweets to prediction markets for a betting product. You are given one tweet and a numbered list of live markets. Answer with JSON only: {"pick": <number or null>, "reason": "<one short sentence>"}.
+const SYSTEM = `You match tweets to prediction markets for a betting product. You are given one tweet and a numbered list of live markets. Answer with JSON only: {"pick": <number or null>, "confidence": <0-100>, "reason": "<one short sentence>"}.
 
 Rules, in order:
 - A WRONG CARD IS WORSE THAN SILENCE. When unsure, pick null.
 - Pick a market only if a reasonable human would say the tweet's claim or subject is CLEARLY about that market's question. Entity knowledge is exactly what you are for: a tweet about Mbappé is about France; a club is about its league; a CEO is about their company.
 - The tweet must carry a stance, prediction, hope, fear or hot take that the market's question prices. Plain news reports, announcements, nostalgia and throwback posts with no forward-looking angle: null.
 - Never pick a market about a DIFFERENT event, date, threshold or person than the tweet implies, however close. Related-but-different is null.
-- At most one pick.`;
+- At most one pick.
+- confidence: how sure you are the tweet is about the picked market's EXACT question. 85-100 only when the tweet's claim and the market's question are the same falsifiable proposition — same event, threshold, date. 55-84 when clearly related and probably the same, but with some ambiguity (wording, which of several near-identical markets, a threshold/date not fully pinned). Below 55 when it is a stretch. If pick is null, confidence is 0.`;
 
 function candidateLines(cands: MatchResult[]): string {
   return cands
@@ -125,12 +130,13 @@ export async function referee(tweetText: string, cands: MatchResult[]): Promise<
   const text = body.content?.find((b) => b.type === "text")?.text ?? "";
   const json = text.match(/\{[\s\S]*\}/)?.[0];
   if (!json) throw new Error("referee returned no JSON");
-  const v = JSON.parse(json) as { pick?: unknown; reason?: unknown };
+  const v = JSON.parse(json) as { pick?: unknown; reason?: unknown; confidence?: unknown };
   const pick =
     typeof v.pick === "number" && Number.isInteger(v.pick) && v.pick >= 1 && v.pick <= cands.length
       ? v.pick
       : null;
-  return { pick, reason: typeof v.reason === "string" ? v.reason.slice(0, 200) : "" };
+  const confidence = pick === null ? 0 : typeof v.confidence === "number" ? Math.max(0, Math.min(100, Math.round(v.confidence))) : 0;
+  return { pick, confidence, reason: typeof v.reason === "string" ? v.reason.slice(0, 200) : "" };
 }
 
 /** Cumulative token spend across referee calls — the eval's cost line. */
@@ -236,6 +242,50 @@ async function replyCopyOnce(tweetText: string, m: Market): Promise<string[] | n
     console.error("[reply-copy] unavailable:", (err as Error).message);
     return null;
   }
+}
+
+/* --------------------------------------------------- venue match before mint --
+ * The claim-extraction engine asks a different question of the SAME matcher:
+ * before minting a new Community market for an extracted claim, does a live
+ * venue market (Polymarket/Kalshi) already cover it? Reusing the matcher here is
+ * the point — one entity-linking brain, two callers.
+ *
+ * Unlike /hook (which lexical-short-circuits to stay cheap at volume), this path
+ * is low-volume and interactive, and it needs ONE consistent, tunable score
+ * across every case. So it always runs the referee over the same candidate set
+ * buildCandidates produces, and tiers on the referee's own confidence:
+ *   >= VENUE_CONFIDENCE   -> "venue"   : same proposition, safe to hand back as-is
+ *   >= CLOSEST_CONFIDENCE -> "closest" : probably it, but an operator must eyeball
+ *   below                 -> null      : no usable match; fall through to minting
+ * The two bars are named constants precisely so they can be moved against the
+ * logged real cases later.
+ */
+export const VENUE_CONFIDENCE = 80;
+export const CLOSEST_CONFIDENCE = 55;
+
+export interface VenueMatch {
+  market: Market;
+  confidence: number; // 0-100, the referee's own calibration
+  reason: string;
+  tier: "venue" | "closest";
+}
+
+export async function matchVenue(text: string, markets: Market[]): Promise<VenueMatch | null> {
+  if (!semanticEnabled()) return null;
+  const cands = buildCandidates(text, markets);
+  if (cands.length === 0) return null;
+  const v = await refereeImpl(text, cands); // the SAME referee the tag flow uses
+  if (v.pick === null) return null;
+  const chosen = cands[v.pick - 1];
+  if (!chosen) return null; // a pick outside the list is a hallucination
+  const confidence = v.confidence ?? 0;
+  if (confidence < CLOSEST_CONFIDENCE) return null; // not good enough — mint a new one
+  return {
+    market: chosen.market,
+    confidence,
+    reason: v.reason,
+    tier: confidence >= VENUE_CONFIDENCE ? "venue" : "closest",
+  };
 }
 
 /**

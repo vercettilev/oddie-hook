@@ -493,7 +493,7 @@ ccloseEl.addEventListener("input", () => { ccloseEl.dataset.auto = ""; if (dateP
 // The gate grade rides along in a hidden var so Create can send it (and so an
 // unresolvable verdict blocks Create outright). Every field the engine fills is
 // editable — the operator has the last word before anything is published.
-let lastResolvability = null;
+let lastResolvability = null, lastMatchPath = "none";
 function toLocalInput(iso) {
   const dt = new Date(iso);
   if (isNaN(dt.getTime())) return "";
@@ -505,7 +505,7 @@ async function extractMarket() {
   const text = $("#cx").value.trim();
   const stat = $("#cxstat"), out = $("#cxout");
   if (!text) { stat.textContent = "paste an argument first."; return; }
-  $("#cxgo").disabled = true; stat.textContent = "extracting… (a few seconds)"; out.innerHTML = "";
+  $("#cxgo").disabled = true; stat.textContent = "checking venue markets + extracting… (a few seconds)"; out.innerHTML = "";
   try {
     const r = await fetch("/api/community/extract", {
       method: "POST", headers: admHeaders({ "content-type": "application/json" }),
@@ -515,32 +515,72 @@ async function extractMarket() {
     if (r.status === 401) { stat.textContent = "admin token missing or wrong — save it above."; return; }
     if (!r.ok || !j.ok) { stat.textContent = ""; out.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "extraction failed") + '</p></div>'; return; }
     stat.textContent = "";
-    applyExtraction(j.extraction);
+    renderOutcome(j.extraction, j.match || { path: "none" }, j.venuesAvailable !== false);
   } catch (e) { stat.textContent = ""; out.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
   finally { $("#cxgo").disabled = false; }
 }
-function applyExtraction(x) {
+
+// Three clearly-labeled outcomes. A venue match hands back the existing market
+// and creates nothing; a closest match is shown for review but never auto-used;
+// no match falls through to the resolvability gate + community create form.
+function renderOutcome(x, match, venuesAvailable) {
   lastResolvability = x.resolvability;
+  lastMatchPath = match.path;
+  let html = matchPanel(match, venuesAvailable);
+  if (match.path === "venue") {
+    clearCreateForm(); // no new market — leave nothing for Create to submit
+  } else {
+    html += fillFromExtraction(x); // closest & none both allow minting a new one
+  }
+  $("#cxout").innerHTML = html;
+}
+
+function matchPanel(match, venuesAvailable) {
+  if (match.path === "venue" || match.path === "closest") {
+    const m = match.market, conf = match.confidence;
+    const venue = m.venue.charAt(0).toUpperCase() + m.venue.slice(1);
+    const header = match.path === "venue"
+      ? ['#0a7d2c', '✅ VENUE MATCH — already live, no new market']
+      : ['#a56a00', '🟡 CLOSEST MATCH — needs review, not auto-published'];
+    return '<div class="box" style="border-color:' + header[0] + '"><p class="verdict" style="font-size:15px;color:' + header[0] + '">' + esc(header[1]) + '</p>'
+      + '<p class="why" style="color:var(--ink);font-weight:700">' + esc(m.question) + '</p>'
+      + '<p class="why"><b>' + esc(venue) + '</b> · ' + m.yesPct + '% yes · confidence <b>' + conf + '/100</b> · <code>' + esc(m.id) + '</code></p>'
+      + '<p class="why">' + esc(match.reason) + '</p>'
+      + '<p class="why">' + (m.venueUrl ? '<a href="' + esc(m.venueUrl) + '" target="_blank" rel="noopener">open on ' + esc(venue) + ' ↗</a> · ' : '')
+      + '<a href="/m/' + esc(m.slug) + '" target="_blank" rel="noopener">preview on oddie ↗</a></p>'
+      + (match.path === "venue"
+        ? '<p class="why" style="color:var(--muted)">this claim is already covered — nothing was created.</p>'
+        : '<p class="why" style="color:var(--muted)">eyeball it: if this is the same market, use it. If not, edit the draft below and Create a new one.</p>')
+      + '</div>';
+  }
+  // no match
+  return '<div class="box"><p class="verdict" style="font-size:15px">🆕 NO MATCH — creating new</p>'
+    + '<p class="why">' + (venuesAvailable ? 'no live venue market clears the confidence bar' : '⚠ venue markets unavailable right now — could not dedup') + ' → drafting a Community market below.</p></div>';
+}
+
+// Fill the create form from the extraction and return the gate-badge HTML.
+function fillFromExtraction(x) {
   const badge = { clean: ["#0a7d2c", "CLEAN — eligible to publish"], fuzzy: ["#a56a00", "FUZZY — review before posting"], unresolvable: ["#b00020", "UNRESOLVABLE — cannot be a market"] }[x.resolvability] || ["#555", x.resolvability];
-  const out = $("#cxout");
   if (x.resolvability === "unresolvable") {
-    // The gate refuses in plain language; leave the form untouched and block Create.
-    out.innerHTML = '<div class="box error"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">✕ ' + esc(badge[1]) + '</p>'
+    clearCreateForm();
+    return '<div class="box error"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">✕ ' + esc(badge[1]) + '</p>'
       + '<p class="why">' + esc(x.reason) + '</p>'
       + '<p class="why" style="color:var(--muted)">no market was drafted — this argument has nothing a settlement can check.</p></div>';
-    setCreateEnabled();
-    return;
   }
-  // Fill every field; each stays editable. A manual close time counts as confirmed.
   $("#cq").value = x.question;
   $("#ccrit").value = x.resolution_criteria;
   $("#ccat").value = (x.category || "Community");
   if (x.close_time) { ccloseEl.value = toLocalInput(x.close_time); ccloseEl.dataset.auto = ""; }
   clearDateSuggestion();
-  out.innerHTML = '<div class="box"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">' + (x.resolvability === "clean" ? "✓ " : "⚠ ") + esc(badge[1]) + '</p>'
+  return '<div class="box"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">' + (x.resolvability === "clean" ? "✓ " : "⚠ ") + esc(badge[1]) + '</p>'
     + '<p class="why">' + esc(x.reason) + '</p>'
     + (x.close_time_inferred ? '<p class="why" style="color:var(--muted)">📅 close time was inferred — double-check it.</p>' : '')
     + '<p class="why" style="color:var(--muted)">edit anything below, then Create.</p></div>';
+}
+
+function clearCreateForm() {
+  $("#cq").value = ""; $("#ccrit").value = ""; $("#ccat").value = "Community";
+  ccloseEl.value = ""; clearDateSuggestion();
 }
 
 $("#cgo").onclick = createMarket;
@@ -552,6 +592,7 @@ async function createMarket() {
   const criteria = $("#ccrit").value.trim();
   const cout = $("#cout");
   if (!q) { cout.innerHTML = '<div class="box error"><p class="why">question required</p></div>'; return; }
+  if (lastMatchPath === "venue") { cout.innerHTML = '<div class="box error"><p class="why">a live venue market already covers this — no new market needed. Re-extract with different text to override.</p></div>'; return; }
   if (lastResolvability === "unresolvable") { cout.innerHTML = '<div class="box error"><p class="why">the engine graded this unresolvable — it can\'t be a market. Edit the argument and extract again, or clear the fields.</p></div>'; return; }
   if (datePending) { cout.innerHTML = '<div class="box error"><p class="why">confirm the suggested close time first (or edit it)</p></div>'; return; }
   if (!closeLocal) { cout.innerHTML = '<div class="box error"><p class="why">pick a close time</p></div>'; return; }
@@ -573,7 +614,7 @@ async function createMarket() {
       + '<p class="why">' + badge + '</p>'
       + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p></div>';
     $("#cq").value = ""; $("#ccrit").value = ""; $("#cx").value = ""; $("#cxout").innerHTML = "";
-    ccloseEl.value = ""; lastResolvability = null; clearDateSuggestion();
+    ccloseEl.value = ""; lastResolvability = null; lastMatchPath = "none"; clearDateSuggestion();
     loadCommunity();
   } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }

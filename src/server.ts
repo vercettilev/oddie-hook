@@ -6,7 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import { getMarketData } from "./venues/index.js";
 import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
-import { matchSemantic, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
+import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
@@ -864,18 +864,57 @@ async function pricingSet(): Promise<Market[]> {
   return [...data.all, ...community];
 }
 
-// The claim-extraction engine: paste an argument, get a clean YES/NO market —
-// or a plain-language refusal. The quality gate for the whole product; nothing
-// is written here, so it is safe to call as often as the operator likes.
+// The claim-extraction engine, now front-run by a DEDUP check: before we ever
+// mint a new Community market for a claim, we ask the existing semantic matcher
+// whether a live venue market (Polymarket/Kalshi) already covers it. Three
+// outcomes, all surfaced to the operator (nothing is written here):
+//   venue   — high confidence: hand back the existing market, make nothing new
+//   closest — medium: show it for a human eyeball; do NOT auto-publish
+//   none    — no usable match: fall through to the resolvability gate + minting
 app.post("/api/community/extract", requireAdmin, async (req, res) => {
   const text = String(req.body?.text ?? "").trim();
   if (!text) return res.status(400).json({ error: "text required" });
   if (text.length > 4000) return res.status(400).json({ error: "text too long (≤4000 chars)" });
   if (!extractEnabled()) return res.status(503).json({ error: `extraction unavailable — set ${EXTRACT_KEY_ENV}` });
   try {
-    const out = await runExtract(text);
-    void logExtraction("extract", text, out); // fire-and-forget; never blocks the response
-    res.json({ ok: true, extraction: out });
+    const extraction = await runExtract(text);
+    void logExtraction("extract", text, extraction);
+
+    // Match on the extracted question when we have one; otherwise on the raw
+    // argument (an unresolvable-to-mint claim can still already exist on a venue).
+    const matchText = extraction.question || text;
+    const data = await getMarketData();
+    const venuesAvailable = data.markets.length > 0;
+    let match: Record<string, unknown> = { path: "none" };
+    if (venuesAvailable) {
+      const vm = await matchVenue(matchText, data.markets).catch((e) => {
+        console.error("[extract] venue match failed (treating as no match):", (e as Error).message);
+        return null;
+      });
+      if (vm) {
+        const m = vm.market;
+        match = {
+          path: vm.tier, // "venue" | "closest"
+          confidence: vm.confidence,
+          reason: vm.reason,
+          market: {
+            id: `${m.venue}:${m.venueId}`, venue: m.venue, venueId: m.venueId,
+            question: m.question, yesPct: m.yesPct, volumeUsd: m.volumeUsd,
+            category: categorize(m), venueUrl: m.venueUrl, slug: slugFor(m),
+          },
+        };
+      }
+    } else {
+      match = { path: "none", venuesUnavailable: true };
+    }
+
+    // Every case logged with its path + confidence, for tuning the two bars later.
+    void logExtraction("match", matchText, {
+      path: match.path, confidence: match.confidence ?? null,
+      matchedId: (match.market as { id?: string })?.id ?? null, venuesAvailable,
+    });
+
+    res.json({ ok: true, extraction, match, venuesAvailable });
   } catch (e) {
     console.error("[extract] failed:", (e as Error).message);
     res.status(502).json({ error: "extraction failed — try again (see server logs)" });
