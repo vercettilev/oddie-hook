@@ -143,6 +143,9 @@
      badge keeps the lime tint. */
   .commtag{display:inline-block;font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.02em;
     padding:3px 9px;border-radius:999px;background:var(--bar);color:#48525d}
+  /* Community meta line: "% yes" + countdown — quiet supporting text, same tier
+     as the venue cards' "$X in play". */
+  .cdown{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--muted-g);white-space:nowrap}
   .chainbadge{display:inline-flex;align-items:center;gap:4px;font-family:'Nunito';font-weight:800;
     font-size:10.5px;letter-spacing:.02em;color:#3c570b;text-decoration:none;white-space:nowrap;
     padding:3px 10px 3px 8px;border-radius:999px;background:var(--wash)}
@@ -923,7 +926,7 @@ addEventListener("pagehide",()=>{
 
 /* ---------------------------------------------------------------- sharing -- */
 // The shareable link is always the public apex, whatever origin served this page
-// — that is the only host whose /market/[slug] unfurls to the PNG card.
+// — that is the only host whose /m/[slug] permalink unfurls to the PNG card.
 const SHARE_ORIGIN=location.origin.includes("oddie.fun")?location.origin:"https://oddie.fun";
 const SHARE_ICON='<svg viewBox="0 0 24 24"><path d="M12 15V3M12 3 8 7M12 3l4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>';
 
@@ -938,7 +941,7 @@ function toast(msg){
 // Mobile hands off to the OS sheet (WhatsApp/X/iMessage/copy, the UI they know).
 // Desktop, where Web Share is thin, gets a three-item menu of its own.
 async function shareMarket({slug,text,source,anchor,url}){
-  url=url||`${SHARE_ORIGIN}/market/${slug}`;
+  url=url||`${SHARE_ORIGIN}/m/${slug}`;
   ev("share_open",{slug,source});
   if(COARSE && navigator.share){
     try{ await navigator.share({text,url}); ev("share_done",{slug,source,via:"native"}); }
@@ -1047,6 +1050,15 @@ const svg=(k)=>`<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>`;
 
 function money(n){return n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${Math.round(n)}`}
 function fmtMult(p){return (100/p).toFixed(1)+"×"}
+/* Community-market meta: how long until it closes, in the two largest units.
+ * "closes in 12d 4h" beats a timestamp — nobody does date math mid-swipe. */
+function closesIn(iso){
+  if(!iso)return "";
+  const ms=new Date(iso).getTime()-Date.now();
+  if(!(ms>0))return "closing";
+  const d=Math.floor(ms/864e5), h=Math.floor(ms%864e5/36e5), mi=Math.floor(ms%36e5/6e4);
+  return d>0?`closes in ${d}d ${h}h`:h>0?`closes in ${h}h ${mi}m`:`closes in ${mi}m`;
+}
 function esc(s){return s.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}
 function n(x){return x.toLocaleString("en-US")}
 
@@ -1055,7 +1067,8 @@ function n(x){return x.toLocaleString("en-US")}
    paths would work too — but the hash keeps client views (positions, leaderboard,
    profile) purely in the browser, no server round-trip. The hash never leaves it. */
 const VIEWS=NAV.map(([k])=>k);
-const startSlug=(location.pathname.match(/^\/market\/([^/]+)/)||[])[1]||"";
+// Both permalink shapes: /m/{slug} is canonical, /market/{slug} lives on in old links.
+const startSlug=(location.pathname.match(/^\/(?:m|market)\/([^/]+)/)||[])[1]||"";
 let activeCat=new URLSearchParams(location.search).get("cat")||"For you";
 
 function currentView(){
@@ -1174,7 +1187,7 @@ function renderFeed(items){
       </div>
       <div class="take">${esc(m.question)}</div>
       <div class="meta">${m.community
-        ? `<span class="commtag">community market</span>${m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
+        ? `<span class="commtag">community market</span><span class="cdown">${yes}% yes · ${closesIn(m.closesAt)}</span>${m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
         : `${money(m.volumeUsd)} in play`}</div>
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">
@@ -2100,7 +2113,13 @@ const tasteCats=()=>{try{return (sessionStorage.getItem("taste_cats")||"").split
 // The sign-in redirect, shared by the invite screen, the in-feed gate card and
 // the "free taste spent" moment. `p` is the provider (twitter | google); it is
 // also the gate_signin label, so the funnel can see which button converts.
-function startAuth(p){ev("gate_signin",{cat:p});location.href=`${API}/api/auth/${p}/start?deviceId=${encodeURIComponent(deviceId)}`;}
+function startAuth(p){
+  ev("gate_signin",{cat:p});
+  // A sign-in that starts on a market permalink must land back ON that market —
+  // the person came to play this one. The server validates it's a local path.
+  const ret=IS_MARKET_PAGE?`&return=${encodeURIComponent(location.pathname)}`:"";
+  location.href=`${API}/api/auth/${p}/start?deviceId=${encodeURIComponent(deviceId)}${ret}`;
+}
 // The gate itself: one line of copy, X first (prominent, black), Google second.
 // Reused verbatim by the interstitial card and the free-taste-spent handler so
 // the two never drift. gate_shown fires once, at the caller, with its `via`.
@@ -2156,7 +2175,7 @@ function wireTerminalGate(root){
   if(GATE.reason==="not_allowlisted"){wireNotListed(root);ev("allowlist_denied",{});}
   else wireGate(root);
 }
-const IS_MARKET_PAGE=location.pathname.startsWith("/market/");
+const IS_MARKET_PAGE=location.pathname.startsWith("/m/")||location.pathname.startsWith("/market/");
 const IS_INVITE=new URLSearchParams(location.search).get("invite")==="1";
 // Render the WHOLE feed, skipping the taste interleaving. A preview/audit switch
 // only: the call-rope still holds (tap shows the waitlist, the server 403s), so

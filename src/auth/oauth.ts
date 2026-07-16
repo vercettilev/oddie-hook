@@ -101,16 +101,19 @@ export function pkce(): Pkce {
  * window costs one retry and nothing else. A table would need cleaning, and a
  * cookie would need a signing secret we do not otherwise have.
  */
-interface Pending { provider: Provider; verifier: string; deviceId: string; at: number }
+interface Pending { provider: Provider; verifier: string; deviceId: string; at: number; returnTo: string | null }
 const pending = new Map<string, Pending>();
 const PENDING_TTL_MS = 10 * 60_000;
 
-export function remember(provider: Provider, verifier: string, deviceId: string): string {
+/** `returnTo` rides the state: a sign-in that started on a market permalink
+ *  lands back ON that market, not on the generic feed. Local paths only —
+ *  the caller validates before passing it in. */
+export function remember(provider: Provider, verifier: string, deviceId: string, returnTo: string | null = null): string {
   const state = b64url(randomBytes(24));
   // Opportunistic sweep: a login that never came back is not worth a timer.
   const cutoff = Date.now() - PENDING_TTL_MS;
   for (const [k, v] of pending) if (v.at < cutoff) pending.delete(k);
-  pending.set(state, { provider, verifier, deviceId, at: Date.now() });
+  pending.set(state, { provider, verifier, deviceId, at: Date.now(), returnTo });
   return state;
 }
 

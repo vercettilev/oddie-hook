@@ -13,7 +13,7 @@ import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, type CommunityMarket } from "./store/markets.js";
 import { proceedsFor } from "./store/economy.js";
-import { mintMarket, isChainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
+import { mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
@@ -169,14 +169,19 @@ function moneyShort(n: number): string {
   return `$${Math.round(n)}`;
 }
 
-function marketPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string): string {
+function marketPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number; venue?: string } }, slug: string): string {
   const m = rec.market;
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const title = m.question;
-  const desc = `call it — ${yes}% yes · ${moneyShort(m.volumeUsd)} in play`;
+  // Community markets speak "% yes", never venue volume ("$0 in play" would be
+  // venue framing on a community share); venue markets keep their liquidity line.
+  const desc = m.venue === "community"
+    ? `call it — ${yes}% yes right now`
+    : `call it — ${yes}% yes · ${moneyShort(m.volumeUsd)} in play`;
   const img = `${BASE_URL}/card/${slug}.png`;
-  const url = `${BASE_URL}/market/${slug}`;
+  const url = `${BASE_URL}/m/${slug}`; // canonical: the short permalink
   const tags = [
+    `<link rel="canonical" href="${ogEsc(url)}">`,
     `<meta property="og:type" content="website">`,
     `<meta property="og:site_name" content="oddie">`,
     `<meta property="og:title" content="${ogEsc(title)}">`,
@@ -195,7 +200,9 @@ function marketPageHtml(rec: { market: { question: string; yesPct: number; volum
   return FEED_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
 }
 
-app.get("/market/:slug", async (req, res) => {
+// The market permalink — every market's canonical landing page. /m/{slug} is
+// the short share path; /market/{slug} (already in the wild) serves the same.
+app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
   const { all } = await getMarketData();
   const rec = await getSlug(req.params.slug, all).catch(() => null);
   // ?pc=<token>: a PERSONAL share. The unfurl shows their call, not the generic
@@ -290,18 +297,10 @@ app.get("/api/feed", async (req, res) => {
   }
   const items = list.slice(0, 40).map((e) => ({ slug: slugFor(e.m), category: e.cat, ...e.m }));
 
-  // If a start slug was given, pin it to the very top.
-  if (start) {
-    const i = items.findIndex((x) => x.slug === start.slug);
-    if (i > 0) items.unshift(items.splice(i, 1)[0]);
-    else if (i === -1)
-      items.unshift({ slug: start.slug, category: categorize(start.market), ...start.market });
-  }
-
-  // Community markets (Layer 1): honest — no venue volume, an optional on-chain
-  // badge. They surface in "For you" newest-first (a freshly created market is
-  // "born" at the top) and under their own "Community" chip; a venue-category
-  // filter excludes them by definition.
+  // Community markets ARE the product: they rank first in the default feed —
+  // a fresh visitor's first cards are community markets whenever any are live —
+  // and venue markets fill in after. The on-chain badge is emitted only while
+  // ONCHAIN_ENABLED is on (stored pubkeys stay in the DB either way).
   let community: CommunityMarket[] = [];
   try { community = await openCommunityMarkets(); }
   catch (e) { console.error("[community] feed load failed (serving venue markets only):", (e as Error).message); }
@@ -309,12 +308,31 @@ app.get("/api/feed", async (req, res) => {
     ...m,
     slug: slugFor(m), category: "Community",
     community: true as const,
-    onchain: m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
+    onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
   }));
 
   let feedItems: Array<Record<string, unknown> & { slug: string }> = items;
   if (cat === "Community") feedItems = communityItems;
   else if (!cat || cat === "For you") feedItems = [...communityItems, ...items];
+
+  // A start slug (a /m/ permalink landing) pins ITS market to the very top —
+  // above even the community block: the shared market is the page's headline,
+  // the rest of the feed is "related" below it.
+  if (start) {
+    const i = feedItems.findIndex((x) => x.slug === start.slug);
+    if (i > 0) feedItems.unshift(feedItems.splice(i, 1)[0]);
+    else if (i === -1) {
+      // Not in the live set (drifted odds, or a resolved community market): the
+      // permalink still opens. Community rows keep community framing either way.
+      const isCommunity = start.market.venue === "community";
+      feedItems.unshift({
+        slug: start.slug,
+        category: isCommunity ? "Community" : categorize(start.market),
+        ...(isCommunity ? { community: true as const, onchain: null } : {}),
+        ...start.market,
+      });
+    }
+  }
 
   // "Other" is the categorizer's shrug, and `inFeed` filters it out of the feed
   // by definition — so shipping it as a chip offers a tab that can never hold a
@@ -578,8 +596,15 @@ app.get("/api/auth/:provider/start", (req, res) => {
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
 
+  // Optional post-auth destination (e.g. the /m/{slug} permalink the tap came
+  // from). Strictly a LOCAL path — anything else (absolute URLs, protocol-
+  // relative "//host") is dropped, so this can never become an open redirect.
+  const rq = req.query.return;
+  const returnTo =
+    typeof rq === "string" && rq.startsWith("/") && !rq.startsWith("//") && rq.length <= 200 ? rq : null;
+
   const { verifier, challenge } = pkce();
-  const state = remember(p, verifier, deviceId);
+  const state = remember(p, verifier, deviceId, returnTo);
   res.redirect(authorizeUrl(p, state, challenge, BASE_URL));
 });
 
@@ -607,6 +632,12 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
     const identity = await identify(p, code, pendingAuth.verifier, BASE_URL);
     const result = await linkAccount(pendingAuth.deviceId, identity);
     console.log(JSON.stringify({ evt: "auth_link", provider: p, seeded: result.seeded, bonus: result.bonus }));
+    // A sign-in that began on a market permalink returns TO that market — the
+    // person came to play this one, not to meet the generic feed.
+    if (pendingAuth.returnTo) {
+      const sep = pendingAuth.returnTo.includes("?") ? "&" : "?";
+      return res.redirect(`${BASE_URL}${pendingAuth.returnTo}${sep}connected=${p}&bonus=${result.bonus}`);
+    }
     return back(`connected=${p}&bonus=${result.bonus}`);
   } catch (err) {
     console.error(`[auth] ${p} failed:`, (err as Error).message);
@@ -862,16 +893,18 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
   }
 
   res.json({
-    ok: true, slug, marketId, url: `${BASE_URL}/market/${slug}`,
+    ok: true, slug, marketId, url: `${BASE_URL}/m/${slug}`,
     onchain, chainEnabled: isChainEnabled(),
   });
 });
 
 // List community markets for the resolve control + a small chain-status readout.
+// Explorer links (even for markets minted earlier) surface only while
+// ONCHAIN_ENABLED is on; the underlying pubkeys stay stored regardless.
 app.get("/api/community/list", requireAdmin, async (_req, res) => {
   const items = await adminListCommunity();
   res.json({
-    items: items.map((i) => ({ ...i, explorer: i.onchainPubkey ? explorerUrl(i.onchainPubkey) : null })),
+    items: items.map((i) => ({ ...i, explorer: onchainEnabled() && i.onchainPubkey ? explorerUrl(i.onchainPubkey) : null })),
     chain: { enabled: isChainEnabled(), admin: await adminAddress(), balanceSol: await adminBalanceSol() },
   });
 });
@@ -904,7 +937,7 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   res.json({
     slug: detail.slug, question: detail.question, closesAt: detail.closesAt, yesPct: detail.yesPct, marketId: detail.marketId,
     resolvedOutcome: detail.resolvedOutcome,
-    onchain: detail.onchainPubkey
+    onchain: onchainEnabled() && detail.onchainPubkey
       ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey), signature: detail.onchainSig, minted: true }
       : { minted: false },
     pool: { totalYes, totalNo, playersYes: pYes.size, playersNo: pNo.size, poolYesPct: total > 0 ? Math.round((100 * totalYes) / total) : null },

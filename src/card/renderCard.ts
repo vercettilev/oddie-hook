@@ -182,15 +182,19 @@ export function eye(cx: number, cy: number, r: number): string {
 
 const WORDMARK_RIGHT = 140 + textWidth("oddie", 46);
 
-/** Volume pill, dropped down to just the money if the full string would reach the wordmark. */
+/** Volume pill, dropped down to just the money if the full string would reach
+ *  the wordmark. Community markets have no venue volume — their pill speaks
+ *  "% yes" language: the countdown (and "community" if it fits). */
 function volumePill(m: Market): { text: string; w: number; x: number } {
-  const full = money(m.volumeUsd) + " in play" + timeLeft(m.closesAt);
-  for (const text of [full, money(m.volumeUsd) + " in play"]) {
+  const candidates = m.venue === "community"
+    ? [`community${timeLeft(m.closesAt)}`, timeLeft(m.closesAt).replace(/^ · /, "") || "community"]
+    : [money(m.volumeUsd) + " in play" + timeLeft(m.closesAt), money(m.volumeUsd) + " in play"];
+  for (const text of candidates) {
     const w = Math.round(textWidth(text, 21) + 44);
     const x = PAD_R - w;
     if (x >= WORDMARK_RIGHT + 24) return { text, w, x };
   }
-  const text = money(m.volumeUsd);
+  const text = m.venue === "community" ? "community" : money(m.volumeUsd);
   const w = Math.round(textWidth(text, 21) + 44);
   return { text, w, x: PAD_R - w };
 }

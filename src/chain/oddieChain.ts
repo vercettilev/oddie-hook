@@ -16,6 +16,17 @@ import path from "node:path";
 // Type-only import: erased at compile time, so it adds ZERO runtime dependency.
 import type * as Anchor from "@coral-xyz/anchor";
 
+/**
+ * ONCHAIN_ENABLED — master switch for the whole on-chain layer, default OFF.
+ * Oddie's repositioning (2026-07) makes community markets the product and parks
+ * the Solana layer: with the flag off, no devnet create_market is attempted and
+ * no badge/explorer link is emitted anywhere. Everything below — the Anchor
+ * client, admin keypair wiring, minting — is intact and tested; it is PRESERVED
+ * for a future grant demo. Set ONCHAIN_ENABLED=true to restore the full
+ * behavior with zero code changes.
+ */
+const ONCHAIN = (process.env.ONCHAIN_ENABLED ?? "false").toLowerCase() === "true";
+
 const RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const CLUSTER = "devnet";
 const SECRET = process.env.SOLANA_ADMIN_SECRET_KEY;
@@ -30,9 +41,15 @@ export type MintResult = { pubkey: string; signature: string };
 
 // --- pure, import-safe helpers (no anchor, cannot throw at load) -------------
 
-/** Whether the on-chain layer is configured at all (admin key present). */
+/** The flag alone — gates DISPLAY of on-chain artifacts (badges, explorer
+ *  links), including ones minted before the flag was turned off. */
+export function onchainEnabled(): boolean {
+  return ONCHAIN;
+}
+
+/** Whether minting can actually happen: flag on AND admin key present. */
 export function isChainEnabled(): boolean {
-  return Boolean(SECRET);
+  return ONCHAIN && Boolean(SECRET);
 }
 
 /** Solana Explorer link for a market account on devnet. */
@@ -58,6 +75,7 @@ let initFailed = false;
 /** Build (once) the anchor program + admin keypair, importing anchor lazily.
  *  Returns null on ANY failure — unconfigured, unparseable key, broken import. */
 async function load(): Promise<ChainClient | null> {
+  if (!ONCHAIN) return null; // flag off: never touch anchor, never call devnet
   if (cached) return cached;
   if (initFailed || !SECRET) return null;
   try {
