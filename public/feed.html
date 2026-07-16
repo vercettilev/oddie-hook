@@ -339,6 +339,11 @@
     padding:4px 11px;border:2.5px solid var(--ink);border-radius:999px;
     background:var(--wash);white-space:nowrap;font-variant-numeric:tabular-nums}
   .bal.pulse{animation:balpulse .45s ease}
+  /* Pick-streak badge — visible identity beside the balance. Small, warm, fixed
+     colours (holds contrast in both themes); only rendered at streak 2+. */
+  .streakbadge{display:inline-flex;align-items:center;margin-left:6px;vertical-align:middle;
+    font-family:'Nunito';font-weight:900;font-size:12px;line-height:1;color:#7a3b00;
+    background:#ffd8a8;border:2px solid var(--ink);border-radius:999px;padding:3px 8px;white-space:nowrap}
 
   /* One tap, bright<->dark, always in the top bar — no menu, no label. It shows the
      mode you'll GET: a moon in bright, a sun in dark. "Auto" still lives in Profile
@@ -820,7 +825,7 @@ const API=""; // same origin
  * reload always shows what the database says. `balance` is null until /api/me
  * answers, and the picker treats null as "unknown, let the server enforce".
  */
-let balance=null, nextTopUpMs=null, claim=null;
+let balance=null, nextTopUpMs=null, claim=null, pickStreak=0;
 let myHandle=null, myHandleEditable=true;
 // "14h", "40m", "any moment" — the wait until the next daily claim opens.
 function claimWhen(ms){
@@ -834,6 +839,7 @@ async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok){const w=await r.json();balance=w.tokens;nextTopUpMs=w.nextTopUpMs;if(w.claim)claim=w.claim;
+      if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;paintBalance();}
   }catch(e){/* header just shows no pill; the server still enforces */}
 }
@@ -879,6 +885,15 @@ function paintBalance(pulse){
   document.querySelectorAll(".bal").forEach(el=>{
     el.innerHTML=`🪙 ${balance}${tip?` <span class="topup">${tip}</span>`:""}`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
+    // Persistent pick-streak badge as visible identity, right beside the balance.
+    // Shown only at 2+ (a 1 isn't a streak); it disappears the moment a wrong
+    // pick breaks the run (server sends pickStreak 0/1 → no badge, no false comfort).
+    let badge=el.nextElementSibling;
+    if(!badge||!badge.classList||!badge.classList.contains("streakbadge")){
+      badge=document.createElement("span");badge.className="streakbadge";el.after(badge);
+    }
+    if(pickStreak>=2){badge.textContent=`🔥 ${pickStreak}`;badge.title=`${pickStreak}-pick streak`;badge.style.display="";}
+    else{badge.style.display="none";}
   });
 }
 /* ------------------------------------------------------------------- theme --
@@ -1219,6 +1234,9 @@ async function loadFeed(){
     const q=new URLSearchParams();
     if(startSlug && activeCat==="For you")q.set("start",startSlug);
     if(activeCat!=="For you")q.set("cat",activeCat);
+    // Sent so the server can bias "For you" toward this device's play history
+    // (signed-in users with positions). Cold devices with no history are unaffected.
+    q.set("deviceId",deviceId);
     // Taste re-rank: once an anonymous visitor picks categories, the feed tilts
     // toward them (rank, not filter — the server keeps breadth visible).
     if(TASTE){const tc=tasteCats();if(tc.length)q.set("cats",tc.join(","));}

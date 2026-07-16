@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -254,12 +254,43 @@ app.get("/feed", (_req, res) => {
  * Feed data: start market first (if given), then same category, then the
  * rest by volume. Optional ?cat= filters to one category (chips).
  */
+// How many past picks a device needs before its history overrides the cold
+// default. Below this, one or two picks is noise, not a taste.
+const FEED_HISTORY_MIN = 3;
+
+/**
+ * Re-rank venue cards toward a device's most-played categories, while injecting
+ * up to two markets from OTHER categories into the head — engagement bias, not
+ * a filter bubble. Leads with the top category, drops an "other" at positions 2
+ * and 5, then fills the rest (top category, then the remaining others).
+ */
+function personalizeByHistory<T extends { cat: string; m: { volumeUsd: number } }>(list: T[], weight: Map<string, number>): T[] {
+  const w = (c: string) => weight.get(c) ?? 0;
+  const sorted = [...list].sort((a, b) => w(b.cat) - w(a.cat) || b.m.volumeUsd - a.m.volumeUsd);
+  const topCat = sorted[0]?.cat ?? null;
+  if (topCat === null) return sorted;
+  const top = sorted.filter((e) => e.cat === topCat);
+  const others = sorted.filter((e) => e.cat !== topCat);
+  if (!top.length || !others.length) return sorted; // only one category present — nothing to interleave
+  const inject = new Set([1, 4]); // 0-indexed head positions for an "other" card
+  const out: T[] = [];
+  let ti = 0, oi = 0, injected = 0;
+  for (let i = 0; out.length < sorted.length; i++) {
+    if (inject.has(i) && injected < 2 && oi < others.length) { out.push(others[oi++]); injected++; }
+    else if (ti < top.length) out.push(top[ti++]);
+    else if (oi < others.length) out.push(others[oi++]);
+    else break;
+  }
+  return out;
+}
+
 app.get("/api/feed", async (req, res) => {
   const startSlug = String(req.query.start ?? "");
   const cat = String(req.query.cat ?? "");
   // Personalization: 1-3 picked categories rank FIRST (not filter — breadth
   // stays visible), each block still volume-sorted.
   const cats = String(req.query.cats ?? "").split(",").map((x) => x.trim()).filter((x) => (CATEGORIES as readonly string[]).includes(x)).slice(0, 3);
+  const feedDevice = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
   const data = await getMarketData();
 
   // The feed is where a miss sends people. Serving it empty would turn a venue
@@ -297,6 +328,25 @@ app.get("/api/feed", async (req, res) => {
       return b.m.volumeUsd - a.m.volumeUsd;
     });
   }
+
+  // Ranking signal for the default "For you" feed: explicit picks > play history
+  // > cold default. History bias applies only to a device with a real track of
+  // play; a cold/anonymous visitor (no history) keeps the broad-appeal default.
+  // Logged either way so the choice can be sanity-checked later.
+  let rankSignal: "picked" | "history" | "cold" = cats.length ? "picked" : "cold";
+  if (!cats.length && (!cat || cat === "For you") && !start && feedDevice) {
+    const hist = await categoryHistoryFor(feedDevice).catch(() => [] as { category: string; count: number }[]);
+    const total = hist.reduce((a, h) => a + h.count, 0);
+    if (total >= FEED_HISTORY_MIN) {
+      list = personalizeByHistory(list, new Map(hist.map((h) => [h.category, h.count])));
+      rankSignal = "history";
+      console.log(JSON.stringify({ evt: "feed_rank", signal: "history", device: feedDevice.slice(0, 8), picks: total, top: hist.slice(0, 3) }));
+    }
+  }
+  if (rankSignal !== "history") {
+    console.log(JSON.stringify({ evt: "feed_rank", signal: rankSignal, device: feedDevice ? feedDevice.slice(0, 8) : null }));
+  }
+
   const items = list.slice(0, 40).map((e) => ({ slug: slugFor(e.m), category: e.cat, ...e.m }));
 
   // Community markets are the product, but they are NOT the right first thing a
@@ -496,8 +546,9 @@ app.get("/api/me", async (req, res) => {
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const [wallet, handle, claim] = await Promise.all([getWallet(deviceId), displayHandle(deviceId), claimStatus(deviceId)]);
-  res.json({ ...wallet, ...handle, claim });
+  const [wallet, handle, claim, acc] = await Promise.all([getWallet(deviceId), displayHandle(deviceId), claimStatus(deviceId), accuracyFor(deviceId)]);
+  // pickStreak drives the persistent streak badge near the balance (2+ only).
+  res.json({ ...wallet, ...handle, claim, pickStreak: acc.streak });
 });
 
 // The daily claim — the active retention hook. GET reports status (claimable,

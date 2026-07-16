@@ -1198,6 +1198,37 @@ export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> 
   return computeAccuracy(rows);
 }
 
+/**
+ * A device's category engagement — every position it has ever taken (open OR
+ * resolved), counted by category. The signal for personalizing "For you": a
+ * player with a Sports-heavy history should see Sports lead. Counts ALL picks
+ * (not just resolved) so a new signed-in user's open positions shape the feed
+ * immediately. Empty for a device that has never played (a cold visitor).
+ */
+export async function categoryHistoryFor(rawDeviceId: string): Promise<{ category: string; count: number }[]> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const counts = new Map<string, number>();
+  const bump = (cat: string) => counts.set(cat, (counts.get(cat) ?? 0) + 1);
+  if (!PERSISTENT) {
+    for (const c of memCalls) {
+      if (c.deviceId !== deviceId) continue;
+      bump(memCommunity.get(c.slug)?.category ?? categorizeText(c.question));
+    }
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ question: string; comm_cat: string | null }>(
+      `SELECT s.question, cm.category AS comm_cat
+         FROM market_call mc
+         JOIN market_slug s ON s.slug = mc.slug
+         LEFT JOIN community_market cm ON cm.slug = mc.slug
+        WHERE mc.device_id = $1`,
+      [deviceId],
+    );
+    for (const r of rows) bump(r.comm_cat ?? categorizeText(r.question));
+  }
+  return [...counts.entries()].map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count);
+}
+
 /* --------------------------------------------------------------- settlement --
  * The venue resolved; pay everyone holding the market, exactly once.
  *
