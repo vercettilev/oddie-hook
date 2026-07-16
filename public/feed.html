@@ -1191,6 +1191,13 @@ const VIEWS=NAV.map(([k])=>k);
 const startSlug=(location.pathname.match(/^\/(?:m|market)\/([^/]+)/)||[])[1]||"";
 let activeCat=new URLSearchParams(location.search).get("cat")||"For you";
 
+// Permalink landing → log one device-attributed page view for the wedge metrics
+// (click→pick). Fire-and-forget; a failure never affects the page.
+if(startSlug){
+  try{fetch(`${API}/api/pageview`,{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({slug:startSlug,deviceId})});}catch(e){}
+}
+
 function currentView(){
   const h=location.hash.replace(/^#\/?/,"");
   return VIEWS.includes(h)?h:"feed";

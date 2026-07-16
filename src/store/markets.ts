@@ -307,6 +307,16 @@ CREATE TABLE IF NOT EXISTS tweet_reply_log (
   reply_text text NOT NULL,           -- the primary reply we handed the operator
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Permalink landings (/m/{slug}), for the internal wedge metrics (click→pick).
+-- One row per view; device_id ties a view to the pick that may follow it.
+CREATE TABLE IF NOT EXISTS page_view (
+  id         bigserial PRIMARY KEY,
+  slug       text NOT NULL,
+  device_id  text,
+  at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS page_view_slug_idx ON page_view(slug);
 `;
 
 let pool: pg.Pool | null = null;
@@ -1483,6 +1493,141 @@ export async function listTweetReplies(limit = 50): Promise<TweetReplyLogItem[]>
     matchType: r.match_type as TweetReplyLogEntry["matchType"], slug: r.slug,
     permalink: r.permalink, replyText: r.reply_text, createdAt: r.created_at.toISOString(),
   }));
+}
+
+// --- Internal wedge metrics -------------------------------------------------
+// Read-only instrumentation over the data we already log. Small data, internal
+// tool → fetch the raw rows and compute in JS rather than six bespoke queries.
+
+interface MemView { slug: string; deviceId: string | null; at: number }
+const memPageView: MemView[] = [];
+
+/** Log a permalink landing. device_id is resolved so a view joins to the pick
+ *  that may follow it (click→pick). Best-effort — never blocks the page. */
+export async function logPageView(slug: string, rawDeviceId: string | null): Promise<void> {
+  try {
+    const deviceId = rawDeviceId ? await resolveDevice(rawDeviceId) : null;
+    if (!PERSISTENT) { memPageView.push({ slug, deviceId, at: Date.now() }); return; }
+    await ensureSchema();
+    await db().query(`INSERT INTO page_view (slug, device_id) VALUES ($1,$2)`, [slug, deviceId]);
+  } catch (e) {
+    console.error("[pageview] write failed (non-fatal):", (e as Error).message);
+  }
+}
+
+export interface MetricsSummary {
+  generatedAt: string;
+  replies: { total: number; uniqueTaggers: number; repeatTaggers: number; repeatTaggerRate: number | null; unattributed: number };
+  clickToPick: { views: number; attributableViews: number; converted: number; rate: number | null };
+  secondPick: { pickers: number; withSecond: number; rate: number | null; windowMin: number };
+  postResolution: { notified: number; returned: number; rate: number | null; windowDays: number };
+  matchBreakdown: { venue: number; closest: number; new: number; total: number };
+  uncontested: { resolvedCommunity: number; note: string };
+}
+
+/** Parse the tagger's handle from a source tweet URL (x.com/<handle>/status/…). */
+function taggerHandle(url: string | null): string | null {
+  if (!url) return null;
+  const m = /(?:x|twitter)\.com\/([^/?#]+)/i.exec(url);
+  if (!m) return null;
+  const h = m[1].toLowerCase();
+  return ["i", "intent", "home", "search", "hashtag", "explore"].includes(h) ? null : h;
+}
+
+interface MetricsData {
+  replies: { sourceUrl: string | null; matchType: string }[];
+  calls: { deviceId: string; slug: string; at: number }[];
+  notices: { deviceId: string; at: number }[]; // settlements only
+  views: { deviceId: string | null; slug: string; at: number }[];
+  resolvedCommunity: number;
+}
+
+function computeMetrics(d: MetricsData): MetricsSummary {
+  const pct = (num: number, den: number) => (den > 0 ? Math.round((1000 * num) / den) / 10 : null);
+
+  // 1. Repeat tagger: of distinct identifiable taggers, how many had >1 claim processed.
+  const perHandle = new Map<string, number>();
+  let unattributed = 0;
+  for (const r of d.replies) {
+    const h = taggerHandle(r.sourceUrl);
+    if (!h) { unattributed++; continue; }
+    perHandle.set(h, (perHandle.get(h) ?? 0) + 1);
+  }
+  const uniqueTaggers = perHandle.size;
+  const repeatTaggers = [...perHandle.values()].filter((n) => n > 1).length;
+
+  // 2. Click-to-pick: distinct (device,slug) permalink views where that device later called that market.
+  const pickSet = new Set(d.calls.map((c) => `${c.deviceId}|${c.slug}`));
+  const viewPairs = new Set<string>();
+  for (const v of d.views) if (v.deviceId) viewPairs.add(`${v.deviceId}|${v.slug}`);
+  let converted = 0;
+  for (const key of viewPairs) if (pickSet.has(key)) converted++;
+
+  // 3. Second pick within 30 min: of pickers, how many placed two calls ≤30 min apart.
+  const WIN = 30 * 60_000;
+  const byDevice = new Map<string, number[]>();
+  for (const c of d.calls) { const a = byDevice.get(c.deviceId) ?? []; a.push(c.at); byDevice.set(c.deviceId, a); }
+  let withSecond = 0;
+  for (const times of byDevice.values()) {
+    times.sort((a, b) => a - b);
+    for (let i = 1; i < times.length; i++) if (times[i] - times[i - 1] <= WIN) { withSecond++; break; }
+  }
+  const pickers = byDevice.size;
+
+  // 4. Post-resolution return: of notified devices, how many placed a new call within 7 days after a settle notice.
+  const DAYS7 = 7 * 24 * 3_600_000;
+  const notifyTimes = new Map<string, number[]>();
+  for (const n of d.notices) { const a = notifyTimes.get(n.deviceId) ?? []; a.push(n.at); notifyTimes.set(n.deviceId, a); }
+  let returned = 0;
+  for (const [dev, times] of notifyTimes) {
+    const cs = byDevice.get(dev) ?? [];
+    if (times.some((t) => cs.some((ct) => ct > t && ct <= t + DAYS7))) returned++;
+  }
+  const notified = notifyTimes.size;
+
+  // 5. Match-type breakdown of processed claims (from the reply log).
+  const mb = { venue: 0, closest: 0, new: 0 };
+  for (const r of d.replies) if (r.matchType === "venue" || r.matchType === "closest" || r.matchType === "new") mb[r.matchType]++;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    replies: { total: d.replies.length, uniqueTaggers, repeatTaggers, repeatTaggerRate: pct(repeatTaggers, uniqueTaggers), unattributed },
+    clickToPick: { views: d.views.length, attributableViews: viewPairs.size, converted, rate: pct(converted, viewPairs.size) },
+    secondPick: { pickers, withSecond, rate: pct(withSecond, pickers), windowMin: 30 },
+    postResolution: { notified, returned, rate: pct(returned, notified), windowDays: 7 },
+    matchBreakdown: { ...mb, total: mb.venue + mb.closest + mb.new },
+    // 6. Uncontested resolutions: no dispute/flag mechanism exists yet → N/A by design.
+    uncontested: { resolvedCommunity: d.resolvedCommunity, note: "N/A — no dispute/flag mechanism yet" },
+  };
+}
+
+export async function metricsSummary(): Promise<MetricsSummary> {
+  if (!PERSISTENT) {
+    const settle = new Set(["settle_win", "settle_loss"]);
+    return computeMetrics({
+      replies: memTweetLog.map((t) => ({ sourceUrl: t.sourceUrl, matchType: t.matchType })),
+      calls: memCalls.filter((c) => c.deviceId).map((c) => ({ deviceId: c.deviceId, slug: c.slug, at: Date.parse(c.at) })),
+      notices: memNotices.filter((n) => settle.has(n.kind)).map((n) => ({ deviceId: n.deviceId, at: Date.parse(n.at) })),
+      views: memPageView.map((v) => ({ deviceId: v.deviceId, slug: v.slug, at: v.at })),
+      resolvedCommunity: [...memCommunity.values()].filter((m) => m.resolvedOutcome).length,
+    });
+  }
+  await ensureSchema();
+  const ms = (col: string) => `extract(epoch from ${col}) * 1000`;
+  const [replies, calls, notices, views, rc] = await Promise.all([
+    db().query<{ source_url: string | null; match_type: string }>(`SELECT source_url, match_type FROM tweet_reply_log`),
+    db().query<{ device_id: string; slug: string; at: number }>(`SELECT device_id, slug, ${ms("at")} at FROM market_call WHERE device_id IS NOT NULL`),
+    db().query<{ device_id: string; at: number }>(`SELECT device_id, ${ms("created_at")} at FROM notice WHERE kind IN ('settle_win','settle_loss')`),
+    db().query<{ device_id: string | null; slug: string; at: number }>(`SELECT device_id, slug, ${ms("at")} at FROM page_view`),
+    db().query<{ n: number }>(`SELECT count(*)::int n FROM community_market WHERE resolved_outcome IS NOT NULL`),
+  ]);
+  return computeMetrics({
+    replies: replies.rows.map((r) => ({ sourceUrl: r.source_url, matchType: r.match_type })),
+    calls: calls.rows.map((r) => ({ deviceId: r.device_id, slug: r.slug, at: Number(r.at) })),
+    notices: notices.rows.map((r) => ({ deviceId: r.device_id, at: Number(r.at) })),
+    views: views.rows.map((r) => ({ deviceId: r.device_id, slug: r.slug, at: Number(r.at) })),
+    resolvedCommunity: rc.rows[0]?.n ?? 0,
+  });
 }
 
 /** Record the devnet proof after a successful on-chain mint. */

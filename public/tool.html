@@ -176,6 +176,14 @@
     <div id="rlist"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
+  <div class="box" id="metricsbox" style="margin-top:22px">
+    <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px">
+      <p class="verdict" style="font-size:17px;margin:0">wedge metrics — internal, read-only (all-time)</p>
+      <button class="ghost" id="mrefresh" style="padding:7px 14px;font-size:13px">refresh</button>
+    </div>
+    <div id="metrics"><p class="why">enter the admin token above, then this loads…</p></div>
+  </div>
+
   <div class="box" id="tweetlogbox" style="margin-top:22px">
     <p class="verdict" style="font-size:17px">generated X replies — newest first (what to post, and a record of it)</p>
     <div id="tweetlog"><p class="why">enter the admin token above, then this loads…</p></div>
@@ -445,7 +453,7 @@ const ADMKEY = "oddie_admin_token";
 const admInput = $("#admtok");
 admInput.value = localStorage.getItem(ADMKEY) || "";
 const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getItem(ADMKEY) || "" }, extra || {});
-$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); };
+$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); };
 
 let chainEnabled = false;
 
@@ -656,6 +664,7 @@ async function generateReply(info) {
     if (!r.ok || !j.ok) { box.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "reply generation failed") + '</p></div>'; return; }
     renderReply(j);
     loadTweetLog();
+loadMetrics();
   } catch (e) { box.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
 }
 
@@ -677,6 +686,48 @@ function replyRow(id, text) {
 function wireCopy(id, text) { const b = document.getElementById(id + "btn"); if (b) b.onclick = () => copy(text, b); }
 
 // --- log view: everything generated so far, newest first --------------------
+// Internal wedge-metrics dashboard. Read-only; each row states its own
+// numerator/denominator so the calculation is auditable at a glance.
+$("#mrefresh").onclick = loadMetrics;
+async function loadMetrics() {
+  const box = $("#metrics");
+  if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
+  box.innerHTML = '<p class="why">loading…</p>';
+  try {
+    const r = await fetch("/api/metrics", { headers: admHeaders() });
+    if (r.status === 401) { box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
+    const m = await r.json();
+    const P = (v) => v == null ? "N/A" : v + "%";
+    const rows = [
+      ["Repeat tagger rate", P(m.replies.repeatTaggerRate),
+        `${m.replies.repeatTaggers} of ${m.replies.uniqueTaggers} identifiable taggers had &gt;1 claim processed`,
+        `${m.replies.total} replies logged · ${m.replies.unattributed} with no parseable handle`],
+      ["Click → pick rate", P(m.clickToPick.rate),
+        `${m.clickToPick.converted} of ${m.clickToPick.attributableViews} device·market permalink visits led to a pick`,
+        `${m.clickToPick.views} total permalink views logged`],
+      ["Same-session 2nd pick", P(m.secondPick.rate),
+        `${m.secondPick.withSecond} of ${m.secondPick.pickers} pickers placed a 2nd call ≤${m.secondPick.windowMin} min later`, ""],
+      ["Post-resolution return", P(m.postResolution.rate),
+        `${m.postResolution.returned} of ${m.postResolution.notified} notified users called again within ${m.postResolution.windowDays} days`, ""],
+      ["Uncontested resolutions", "N/A",
+        esc(m.uncontested.note), `${m.uncontested.resolvedCommunity} community markets resolved`],
+    ];
+    const mb = m.matchBreakdown;
+    const mbCell = mb.total
+      ? `venue <b>${mb.venue}</b> · closest <b>${mb.closest}</b> · new <b>${mb.new}</b> &nbsp;(of ${mb.total})`
+      : "no claims processed yet";
+    box.innerHTML =
+      '<table style="width:100%;border-collapse:collapse">'
+      + rows.map(([name, val, det, sub]) => `<tr style="border-top:1px solid rgba(0,0,0,.12)">
+          <td style="padding:9px 6px;vertical-align:top"><b style="font-size:13.5px">${name}</b>${sub ? `<br><span style="color:var(--muted);font-size:11px">${sub}</span>` : ""}</td>
+          <td style="padding:9px 8px;text-align:right;white-space:nowrap;font-size:17px;font-weight:800;vertical-align:top">${val}</td>
+          <td style="padding:9px 6px;color:var(--muted);font-size:11px;line-height:1.35;vertical-align:top;width:44%">${det}</td></tr>`).join("")
+      + `<tr style="border-top:1px solid rgba(0,0,0,.12)"><td style="padding:9px 6px;vertical-align:top"><b style="font-size:13.5px">Match-type breakdown</b></td><td colspan="2" style="padding:9px 6px;font-size:13px;vertical-align:top">${mbCell}</td></tr>`
+      + "</table>"
+      + `<p class="why" style="color:var(--muted);margin-top:8px">as of ${new Date(m.generatedAt).toLocaleString()}</p>`;
+  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+}
+
 async function loadTweetLog() {
   const box = $("#tweetlog");
   if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
@@ -827,6 +878,7 @@ async function resolveMarket(slug, outcome, payout, winners) {
 }
 loadCommunity();
 loadTweetLog();
+loadMetrics();
 </script>
 </body>
 </html>

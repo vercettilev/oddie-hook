@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -583,6 +583,17 @@ app.post("/api/claim", async (req, res) => {
   const deviceId = deviceIdOf(req.body);
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   res.json(await claimDaily(deviceId));
+});
+
+// A permalink landing (fired by the SPA when it opens on a /m/{slug} page), so
+// the wedge metrics can measure click→pick. Device-attributed; bots that fetch
+// the og tags without running JS never fire it, which is what we want.
+app.post("/api/pageview", async (req, res) => {
+  const slug = String(req.body?.slug ?? "").trim();
+  if (!slug) return res.status(400).json({ error: "slug required" });
+  const deviceId = deviceIdOf(req.body); // optional
+  void logPageView(slug, deviceId || null); // fire-and-forget
+  res.json({ ok: true });
 });
 
 /**
@@ -1170,6 +1181,11 @@ app.get("/api/tweet/log", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const items = await listTweetReplies(Number.isFinite(limit) ? limit : 50);
   res.json({ items });
+});
+
+// Internal wedge metrics (read-only, admin). All-time over the data we log.
+app.get("/api/metrics", requireAdmin, async (_req, res) => {
+  res.json(await metricsSummary());
 });
 
 /* --------------------------------------------------------------- settlement --
