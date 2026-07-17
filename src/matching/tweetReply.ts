@@ -22,6 +22,9 @@ export const FREE_POINTS = 50;
 export interface TweetReplyInput {
   question: string;
   permalink: string; // canonical /m/{slug} URL
+  /** Optional short teaser above the question (e.g. "PSG or not?"). Included only
+   *  when the whole reply still fits under the limit with the FULL question. */
+  hook?: string;
   // Retained for caller compatibility only — the copy no longer varies by odds,
   // market state, or close date, so none of these affect the output.
   yesPct?: number;
@@ -46,10 +49,22 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
 
 export function buildTweetReply(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
+  const cta = `Pick a side with ${FREE_POINTS} free points`;
+  const suffix = `\n\n${cta} ↓\n${link}`;
+  const hook = (input.hook ?? "").trim();
+
+  // The hook rides on top ONLY if the whole reply — hook + the FULL (untruncated)
+  // question + CTA + link — still clears the limit. Otherwise drop it and go
+  // straight to the question. (Never truncate the question to make room for a hook.)
+  const withHook = hook ? `${hook}\n\n${input.question}${suffix}` : "";
+  const primary = hook && withHook.length <= TWEET_LIMIT
+    ? withHook
+    : fit("", input.question, suffix, TWEET_LIMIT);
+
   return {
-    // Copy box: question, blank line, CTA + arrow, permalink.
-    primary: fit("", input.question, `\n\nMake your call with ${FREE_POINTS} free points ↓\n${link}`, TWEET_LIMIT),
-    // Plain-text fallback: same message, single line, no arrow (ASCII only).
-    fallback: fit("", input.question, ` Make your call with ${FREE_POINTS} free points: ${link}`, TWEET_LIMIT),
+    primary,
+    // Plain-text fallback: the same CTA, one ASCII line, question-first (no hook,
+    // no arrow) — the barest version for when the formatted reply looks off.
+    fallback: fit("", input.question, ` ${cta}: ${link}`, TWEET_LIMIT),
   };
 }

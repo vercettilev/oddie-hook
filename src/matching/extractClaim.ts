@@ -51,6 +51,10 @@ export interface Extraction {
   /** One line: why this grade — the human-readable gate explanation. When the
    *  claim is blocked, this explains the block (resolvability OR appropriateness). */
   reason: string;
+  /** A very short, scroll-stopping teaser for the tweet reply (e.g. "PSG or
+   *  not?"). Optional — the reply omits it when it doesn't fit. Empty when the
+   *  claim is blocked. */
+  hook: string;
 }
 
 const SYSTEM = `You convert an argument (a tweet, or a few tweets of a disagreement) into a clean, resolvable YES/NO prediction market — or you refuse. You are the quality gate for a real-money-style betting product: a market that resolves wrong poisons the accuracy record, which is the whole moat. So your bias is PRECISION OVER RECALL. When unsure, grade DOWN.
@@ -73,6 +77,7 @@ Return ONLY the structured object. Fields:
   Public figures' clearly public/professional outcomes are fine (elections, sports results, a CEO's company hitting a number). When unsure whether someone is public or the subject crosses a line, set appropriate false.
 - appropriate_reason: when appropriate is false, one plain-language sentence a bettor can read explaining why we won't make this market. Empty when appropriate is true.
 - reason: one short sentence explaining the resolvability grade in plain language.
+- hook: a VERY short, punchy teaser for the tweet reply — a few words that make someone stop scrolling, phrased as a mini-question or tease. Max ~28 characters. Examples: "PSG or not?", "BTC to 100k?", "Arsenal's year?", "Fed cut coming?". Do NOT restate the full question; it is a tease above it. Leave "" if nothing crisp fits or the claim is blocked.
 
 Rules, in order:
 1. ERR TOWARD fuzzy/unresolvable when unsure. A market we never made costs nothing; a market we resolve wrong is unrecoverable.
@@ -95,6 +100,7 @@ const SCHEMA = {
     appropriate: { type: "boolean" },
     appropriate_reason: { type: "string" },
     reason: { type: "string" },
+    hook: { type: "string" },
   },
   required: [
     "question",
@@ -106,6 +112,7 @@ const SCHEMA = {
     "appropriate",
     "appropriate_reason",
     "reason",
+    "hook",
   ],
 } as const;
 
@@ -183,6 +190,9 @@ function normalize(v: Record<string, unknown>): Extraction {
     ? (str(v.appropriate_reason) || "this subject isn’t appropriate for a market")
     : (str(v.reason).slice(0, 240) || "no reason given");
 
+  // The teaser rides only on a live market; a blocked claim carries nothing.
+  const hook = blocked ? "" : str(v.hook).slice(0, 40);
+
   return {
     question,
     resolution_criteria,
@@ -192,6 +202,7 @@ function normalize(v: Record<string, unknown>): Extraction {
     resolvability,
     appropriate,
     reason,
+    hook,
   };
 }
 

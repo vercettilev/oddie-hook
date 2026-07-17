@@ -1227,18 +1227,14 @@ app.post("/api/tweet/generate", requireAdmin, async (req, res) => {
   const slug = String(b.slug ?? "").trim();
   const question = String(b.question ?? "").trim();
   if (!slug || !question) return res.status(400).json({ error: "slug and question required" });
-  const yesPct = Number(b.yes_pct ?? 50);
   const sourceUrl = b.source_url != null ? String(b.source_url).trim() || null : null;
   const marketId = b.market_id != null ? String(b.market_id) : null;
-  const closesAt = b.closes_at != null ? String(b.closes_at) : null;
+  const hook = b.hook != null ? String(b.hook).trim() : "";
 
   const permalink = `${BASE_URL}/m/${slug}`;
-  // A just-created Community market has no pool yet, so quote starting odds + a
-  // deadline; a live venue market (venue/closest) quotes its real yes/no odds.
-  const reply = buildTweetReply({
-    question, yesPct: Number.isFinite(yesPct) ? yesPct : 50, permalink,
-    kind: matchType === "new" ? "new" : "existing", closesAt,
-  });
+  // Same copy across all three outcomes (venue / closest / new): question-first,
+  // odds-free, with an optional teaser hook when it fits.
+  const reply = buildTweetReply({ question, permalink, hook });
 
   const logged = await logTweetReply({
     sourceUrl, marketId, matchType, slug, permalink, replyText: reply.primary,

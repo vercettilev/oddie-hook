@@ -532,7 +532,7 @@ function checkLongClose() {
 // The gate grade rides along in a hidden var so Create can send it (and so an
 // unresolvable verdict blocks Create outright). Every field the engine fills is
 // editable — the operator has the last word before anything is published.
-let lastResolvability = null, lastMatchPath = "none", lastMatch = null, lastAppropriate = true;
+let lastResolvability = null, lastMatchPath = "none", lastMatch = null, lastAppropriate = true, lastHook = "";
 function toLocalInput(iso) {
   const dt = new Date(iso);
   if (isNaN(dt.getTime())) return "";
@@ -567,13 +567,14 @@ function renderOutcome(x, match, venuesAvailable) {
   lastAppropriate = x.appropriate !== false;
   lastMatchPath = match.path;
   lastMatch = match;
+  lastHook = x.hook || ""; // the extraction's teaser — reused across all three outcomes
   $("#creply").innerHTML = ""; // clear any reply from a previous run
   let html = matchPanel(match, venuesAvailable);
   if (match.path === "venue") {
     clearCreateForm(); // no new market — leave nothing for Create to submit
     $("#cxout").innerHTML = html;
     // venue match is auto-accepted — generate the ready-to-post reply now
-    generateReply({ slug: match.market.slug, question: match.market.question, yesPct: match.market.yesPct, marketId: match.market.id, matchType: "venue" });
+    generateReply({ slug: match.market.slug, question: match.market.question, marketId: match.market.id, matchType: "venue", hook: lastHook });
     return;
   }
   html += fillFromExtraction(x); // closest & none both allow minting a new one
@@ -581,7 +582,7 @@ function renderOutcome(x, match, venuesAvailable) {
   if (match.path === "closest") {
     // Medium confidence: nothing auto-fires. The operator approves first.
     const btn = document.getElementById("approveClosest");
-    if (btn) btn.onclick = () => generateReply({ slug: match.market.slug, question: match.market.question, yesPct: match.market.yesPct, marketId: match.market.id, matchType: "closest" });
+    if (btn) btn.onclick = () => generateReply({ slug: match.market.slug, question: match.market.question, marketId: match.market.id, matchType: "closest", hook: lastHook });
   }
 }
 
@@ -656,7 +657,7 @@ async function generateReply(info) {
       body: JSON.stringify({
         source_url: $("#csrc").value.trim() || null,
         match_type: info.matchType, slug: info.slug, question: info.question,
-        yes_pct: info.yesPct, market_id: info.marketId || null, closes_at: info.closesAt || null,
+        market_id: info.marketId || null, hook: info.hook || "",
       }),
     });
     const j = await r.json().catch(() => ({}));
@@ -784,7 +785,7 @@ async function createMarket() {
       + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p></div>';
     // The market is confirmed (just created) — generate its ready-to-post reply.
     // Read the source URL + market details BEFORE clearing the form below.
-    generateReply({ slug: j.slug, question: q, yesPct: yesPct, marketId: String(j.marketId), matchType: "new", closesAt: new Date(closeLocal).toISOString() });
+    generateReply({ slug: j.slug, question: q, marketId: String(j.marketId), matchType: "new", hook: lastHook });
     $("#cq").value = ""; $("#ccrit").value = ""; $("#cx").value = ""; $("#cxout").innerHTML = "";
     ccloseEl.value = ""; lastResolvability = null; lastAppropriate = true; lastMatchPath = "none"; lastMatch = null; clearDateSuggestion(); checkLongClose();
     loadCommunity();
