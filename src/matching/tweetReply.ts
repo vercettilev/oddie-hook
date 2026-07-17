@@ -7,17 +7,26 @@
 // calls it today, and the same function drops straight into an automated
 // listener later. Nothing here knows how the market was confirmed or how the
 // reply gets posted — it only shapes text.
+//
+// The copy is QUESTION-FIRST and ODDS-FREE: the permalink's card / og:image
+// already shows the live odds, so the tweet stays clean. Identical for a venue
+// match and a freshly-created Community market — no "found it" / "made it"
+// prefix, no "% yes · % no".
 
 export const TWEET_LIMIT = 280;
 
+// The "N free points" figure in the copy — a stake-sized number (one call costs
+// 50). A single constant so the copy has one source of truth to change later.
+export const FREE_POINTS = 50;
+
 export interface TweetReplyInput {
   question: string;
-  yesPct: number; // 0-100
   permalink: string; // canonical /m/{slug} URL
-  /** "existing" = a live venue market with real odds; "new" = a just-created
-   *  Community market with no pool yet, so we quote starting odds + a deadline. */
-  kind: "existing" | "new";
-  closesAt?: string | null; // ISO; used only for "new"
+  // Retained for caller compatibility only — the copy no longer varies by odds,
+  // market state, or close date, so none of these affect the output.
+  yesPct?: number;
+  kind?: "existing" | "new";
+  closesAt?: string | null;
 }
 
 export interface TweetReply {
@@ -25,22 +34,9 @@ export interface TweetReply {
   fallback: string;
 }
 
-/** "2026-08-01T…" -> "Aug 1" (or "Jan 1 2027" when it's not this year). Kept
- *  tiny and dependency-free; a bad/missing date just yields "" and the caller's
- *  template omits the clause. Uses a fixed reference year so it's deterministic
- *  in tests (Date.now is avoided elsewhere in this codebase for the same reason). */
-function shortDate(iso: string | null | undefined, thisYear: number): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
-  const base = `${mon} ${d.getUTCDate()}`;
-  return d.getUTCFullYear() === thisYear ? base : `${base} ${d.getUTCFullYear()}`;
-}
-
 /** Assemble prefix + question + suffix so the whole thing fits `limit`, trimming
- *  the QUESTION (never the odds or the link) with an ellipsis when it's too long.
- *  The link and odds are the payload; the question is the part that can give. */
+ *  the QUESTION (never the CTA or the link) with an ellipsis when it's too long.
+ *  The link is the payload; the question is the part that can give. */
 function fit(prefix: string, question: string, suffix: string, limit: number): string {
   const room = limit - prefix.length - suffix.length;
   if (room <= 1) return (prefix + suffix).slice(0, limit); // pathological: no room for the question
@@ -48,21 +44,12 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
   return prefix + q + suffix;
 }
 
-export function buildTweetReply(input: TweetReplyInput, thisYear = 2026): TweetReply {
-  const yes = Math.max(0, Math.min(100, Math.round(input.yesPct)));
-  const no = 100 - yes;
+export function buildTweetReply(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
-
-  if (input.kind === "new") {
-    const date = shortDate(input.closesAt, thisYear);
-    const closes = date ? `, closes ${date}` : "";
-    return {
-      primary: fit("just made the market. ", input.question, ` — ${yes}% yes${closes}. play free, no wallet ↓ ${link}`, TWEET_LIMIT),
-      fallback: fit("", input.question, ` - ${yes}% yes${closes}. play free, no wallet: ${link}`, TWEET_LIMIT),
-    };
-  }
   return {
-    primary: fit("found the market. ", input.question, ` — ${yes}% yes · ${no}% no. play free, no wallet ↓ ${link}`, TWEET_LIMIT),
-    fallback: fit("", input.question, ` - ${yes}% yes / ${no}% no. play free, no wallet: ${link}`, TWEET_LIMIT),
+    // Copy box: question, blank line, CTA + arrow, permalink.
+    primary: fit("", input.question, `\n\nMake your call with ${FREE_POINTS} free points ↓\n${link}`, TWEET_LIMIT),
+    // Plain-text fallback: same message, single line, no arrow (ASCII only).
+    fallback: fit("", input.question, ` Make your call with ${FREE_POINTS} free points: ${link}`, TWEET_LIMIT),
   };
 }
