@@ -7,7 +7,7 @@
 // no function in this file has any idea what a dollar is.
 
 /** A new device's stake in the game. */
-export const STARTING_TOKENS = 1000;
+export const STARTING_TOKENS = 2200;
 
 /**
  * Tokens are renewable, because a locked-out player is a lost player. A device

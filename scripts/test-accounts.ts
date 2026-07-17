@@ -40,9 +40,9 @@ const BOB_PHONE = "bob-phone-00001";
 
 console.log("\nan anonymous device plays, then signs in");
 {
-  await placeCall(slugFor(btc), "yes", 50, PHONE, [btc]);       // 1000 -> 950
+  await placeCall(slugFor(btc), "yes", 50, PHONE, [btc]);       // 2200 -> 2150
   const before = (await getWallet(PHONE)).tokens;
-  check("staked 50 of its free 1000", before === 950, `${before}`);
+  check("staked 50 of its free 2200", before === 2150, `${before}`);
 
   const r = await linkAccount(PHONE, ALICE_X);
   check("the first link seeds the account", r.seeded === true);
@@ -71,9 +71,9 @@ console.log("\nthe same identity on a second browser");
   check("...it points at the phone's stream", r.canonicalDevice === PHONE);
 
   const w = await getWallet(LAPTOP);
-  check("the laptop now reads the ACCOUNT's balance (1050)", w.tokens === 1050, `${w.tokens}`);
+  check("the laptop now reads the ACCOUNT's balance (2250)", w.tokens === 2250, `${w.tokens}`);
   // The whole anti-farming rule, stated as a number: the laptop's free 1000 did
-  // not arrive. 1050 = 950 staked-down phone + 100 bonus.
+  // not arrive. 2250 = 2150 staked-down phone + 100 bonus.
   check("...and its own free 1000 was NOT added", w.tokens !== 2050 && w.tokens !== 1000);
 
   const pos = await positionsFor(LAPTOP, [btc]);
@@ -91,7 +91,7 @@ console.log("\nplay on one device shows up on the other");
   check("the phone sees it closed", fromPhone.closed.length === 1 && fromPhone.open.length === 0);
   check("...and the edge is on the account's reputation", fromPhone.overall.avgEdge === 5, `${fromPhone.overall.avgEdge}`);
   const bal = (await getWallet(PHONE)).tokens;
-  check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === 1050 + 56, `${bal}`);
+  check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === 2250 + 56, `${bal}`);
 }
 
 console.log("\na second provider on the same person");

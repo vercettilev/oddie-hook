@@ -117,10 +117,10 @@ CREATE TABLE IF NOT EXISTS device_balance (
   tokens     integer NOT NULL DEFAULT 100 CHECK (tokens >= 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );
--- Tokens are renewable now, and a new device gets a real bankroll. The default
--- is raised rather than the existing rows rewritten: a device that spent down
--- to 30 earned that 30, and the daily top-up is what carries it back up.
-ALTER TABLE device_balance ALTER COLUMN tokens SET DEFAULT 1000;
+-- A new device gets a real bankroll (2200). Only the DEFAULT is raised, never
+-- the existing rows: ALTER COLUMN … SET DEFAULT changes future inserts only, so
+-- a device that spent down to 30 keeps its 30 — the daily claim carries it up.
+ALTER TABLE device_balance ALTER COLUMN tokens SET DEFAULT 2200;
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS topped_up_at timestamptz NOT NULL DEFAULT now();
 
 -- Early exit. A call is OPEN until it is sold (or, one day, settled); closing it

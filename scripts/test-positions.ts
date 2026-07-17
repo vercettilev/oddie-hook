@@ -38,7 +38,7 @@ for (const m of [btc, cup, fed]) await createSlug(m);
 console.log("\na fresh device");
 {
   const w = await getWallet(DEV);
-  check("starts at 1000 tokens", w.tokens === STARTING_TOKENS && w.tokens === 1000, `${w.tokens}`);
+  check("starts at 2200 tokens", w.tokens === STARTING_TOKENS && w.tokens === 2200, `${w.tokens}`);
   check("is at the floor, so no top-up is pending", w.nextTopUpMs === null);
 }
 
@@ -46,7 +46,7 @@ console.log("\ncall YES at 39, market rises to 44, sell");
 {
   const r = await placeCall(slugFor(btc), "yes", 50, DEV, [btc]);
   check("the call locks at the live price", r.ok && r.pctAt === 39, JSON.stringify(r));
-  check("the stake leaves the balance", (await getWallet(DEV)).tokens === 950);
+  check("the stake leaves the balance", (await getWallet(DEV)).tokens === 2150);
 
   const moved = await priceAt(btc, 44);
   const pos = await positionsFor(DEV, [moved]);
@@ -60,7 +60,7 @@ console.log("\ncall YES at 39, market rises to 44, sell");
   const sold = await sellPosition(p.id, DEV, [moved]);
   check("selling pays 56 tokens", sold.ok && sold.proceeds === 56, JSON.stringify(sold));
   check("...records a +5 edge", sold.ok && sold.edge === 5);
-  check("the tokens come back", (await getWallet(DEV)).tokens === 950 + 56);
+  check("the tokens come back", (await getWallet(DEV)).tokens === 2150 + 56);
 
   const again = await sellPosition(p.id, DEV, [moved]);
   check("selling twice pays once", !again.ok && again.reason === "already-closed", JSON.stringify(again));
