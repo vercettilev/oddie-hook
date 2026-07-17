@@ -636,6 +636,25 @@
   .oscore-lab{display:flex;flex-direction:column;gap:2px}
   .oscore-lab b{font-family:'Nunito';font-size:14px;font-weight:900}
   .oscore-lab span{font-family:'Nunito';font-size:11px;font-weight:700;opacity:.82;line-height:1.3}
+  /* Season rank stamp — the "top 8%" that carries the oscore's right edge. Status
+     is a PLACE, never a points number. Sits inside the lime oscore block. */
+  .oscore-rank{margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:1px}
+  .oscore-rank b{font-family:'Nunito';font-size:20px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+  .oscore-rank span{font-family:'Nunito';font-size:10px;font-weight:800;opacity:.82;letter-spacing:.03em}
+  /* Oddie Points — the spendable play balance, the OTHER of the two user numbers.
+     A quiet strip above the identity block so the profile leads with both. */
+  .opoints{display:flex;align-items:baseline;gap:9px;border:2px solid var(--card-line);
+    border-radius:16px;background:var(--card-surface);padding:12px 16px;margin-bottom:12px}
+  .opoints .v{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:var(--fg)}
+  .opoints .k{font-family:'Nunito';font-size:12px;font-weight:800;color:var(--muted-g)}
+  .opoints .k b{font-weight:900;color:var(--fg)}
+  /* Badges — earned identity markers, prominent and screenshot-friendly. Lime
+     pills with the brand ink, wrapping under the score. */
+  .badges{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 14px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-family:'Nunito';font-weight:900;
+    font-size:12.5px;color:#17250a;background:var(--accent);border:2px solid var(--card-line);
+    border-radius:999px;padding:6px 12px;box-shadow:var(--card-shadow);white-space:nowrap}
+  .badge .bico{font-size:13px;line-height:1}
   /* Public-profile recent-calls feed: compact rows, a win/loss rail. */
   .pcall{border:2px solid var(--card-line);border-left-width:6px;border-radius:12px;
     background:var(--card-surface);padding:10px 13px;margin-bottom:8px}
@@ -853,6 +872,9 @@ const API=""; // same origin
  * answers, and the picker treats null as "unknown, let the server enforce".
  */
 let balance=null, nextTopUpMs=null, claim=null, pickStreak=0;
+// Identity extras from /api/me, for the private profile: earned badges and the
+// season rank. Cached from the same call that fills the balance pill.
+let myBadges=[], myRank=null;
 let myHandle=null, myHandleEditable=true;
 // "14h", "40m", "any moment" — the wait until the next daily claim opens.
 function claimWhen(ms){
@@ -867,6 +889,7 @@ async function loadBalance(){
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok){const w=await r.json();balance=w.tokens;nextTopUpMs=w.nextTopUpMs;if(w.claim)claim=w.claim;
       if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
+      myBadges=w.badges||[];myRank=w.rank||null;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;paintBalance();}
   }catch(e){/* header just shows no pill; the server still enforces */}
 }
@@ -1887,6 +1910,23 @@ function renderShell(view){
   if(view==="profile"){shellTop("Profile",false);loadProfile(scroller);}
 }
 
+// Identity block bits shared by the public and private profiles: earned badges
+// (as lime pills) and the season rank stamp. The two-concept model shows the
+// user their Oddie Points and their Oddie Score; badges + rank are IDENTITY and
+// STATUS, never a third points number.
+const BADGE_ICON={founding:"🏛️",streak:"🔥",category:"🎯",rank:"📈"};
+function badgesHtml(badges){
+  if(!badges||!badges.length)return "";
+  return `<div class="badges">${badges.map(b=>
+    `<span class="badge" title="${esc(b.detail||b.label)}"><span class="bico">${BADGE_ICON[b.kind]||"⭐"}</span>${esc(b.label)}</span>`
+  ).join("")}</div>`;
+}
+// The rank stamp that rides the right edge of the lime Oddie Score block.
+function rankStampHtml(rank){
+  if(!rank)return "";
+  return `<div class="oscore-rank"><b>Top ${rank.topPct}%</b><span>SEASON RANK</span></div>`;
+}
+
 // --- Public profile page (/@{handle}) — read-only, works fully logged out ----
 // Reuses the private Profile's Oddie Score / stats styling, plus a feed of the
 // handle's recent resolved calls. Nav navigates absolutely so it escapes /@.
@@ -1920,7 +1960,7 @@ async function renderPublicProfile(){
     </div>`;
     return;
   }
-  const acc=data.accuracy, calls=data.recentCalls||[];
+  const acc=data.accuracy, calls=data.recentCalls||[], badges=data.badges||[], rank=data.rank||null;
   const scoreVal=acc.hasEnough?String(acc.oddieScore):"building";
   const accVal=acc.hasEnough?`${acc.accuracyPct}%`:"building";
   const bestTopicVal=acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
@@ -1928,7 +1968,8 @@ async function renderPublicProfile(){
   scroller.innerHTML=`<div class="sheet">
     <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
     <div class="trhead"><p class="psec">Track record</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
-    <div class="oscore"><div class="oscore-num">${esc(scoreVal)}</div><div class="oscore-lab"><b>Oddie Score</b><span>calibration-adjusted reputation · 500 = matches the market</span></div></div>
+    <div class="oscore"><div class="oscore-num">${esc(scoreVal)}</div><div class="oscore-lab"><b>Oddie Score</b><span>calibration-adjusted reputation · 500 = matches the market</span></div>${acc.hasEnough?rankStampHtml(rank):""}</div>
+    ${badgesHtml(badges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
       <div class="tile"><div class="v">${acc.streak}${acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:''}</div><div class="k">STREAK</div></div>
@@ -2352,6 +2393,10 @@ async function loadProfile(scroller){
     ${linked||`<button class="cbtn x" data-connect="twitter"><span class="glyph">𝕏</span>Connect X</button>
        <button class="cbtn" data-connect="google"><span class="glyph">G</span>Connect Google</button>
        <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+100 Oddie Points</b>, once.</p>`}
+    <div class="opoints">
+      <span class="v">${balance==null?"—":String(balance).replace(/\B(?=(\d{3})+(?!\d))/g,",")}</span>
+      <span class="k"><b>Oddie Points</b> · your play balance</span>
+    </div>
     <div class="trhead">
       <p class="psec">Track record</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
@@ -2359,7 +2404,9 @@ async function loadProfile(scroller){
     <div class="oscore">
       <div class="oscore-num">${esc(scoreVal)}</div>
       <div class="oscore-lab"><b>Oddie Score</b><span>calibration-adjusted reputation · 500 = matches the market</span></div>
+      ${acc&&acc.hasEnough?rankStampHtml(myRank):""}
     </div>
+    ${badgesHtml(myBadges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
       <div class="tile"><div class="v">${esc(streakVal)}${acc&&acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:""}</div><div class="k">STREAK</div></div>

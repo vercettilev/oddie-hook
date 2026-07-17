@@ -1277,6 +1277,155 @@ export async function resolvedCallsFor(rawDeviceId: string, limit = 20): Promise
   return rows.map((r) => shape(r.side, r.exit_pct, r.pct_at, r.question, r.closed_at.toISOString()));
 }
 
+/* ------------------------------------------------------------- identity ------
+ * Badges and season rank. The product shows the user exactly TWO numbers:
+ * their spendable Oddie Points, and their Oddie Score. Contribution/standing is
+ * NOT a third number — it is expressed as earned badges (identity markers) and
+ * a leaderboard RANK ("top 8%"), never as a raw "season points" figure.
+ *
+ * Every badge here is derived from data we ALREADY store — no new columns, no
+ * new tracking. Founding = order of wallet creation (device_balance.created_at);
+ * streak tiers = the accuracy record's bestStreak; category top-% = the season
+ * standings, which are just the resolved-pick history re-ranked per category.
+ */
+export interface Badge {
+  id: string;
+  kind: "founding" | "streak" | "category" | "rank";
+  label: string;      // the screenshot-friendly line, e.g. "Top 10% · Crypto"
+  emoji: string;      // UI only; the PNG card renders text (resvg has no emoji font)
+  detail?: string;    // small subtitle under the label
+}
+export interface SeasonRank { rank: number; total: number; topPct: number; }
+
+// The first N devices to ever hold a wallet wear the Founding Caller badge. A
+// rank cutoff (not a date) so it stays correct without knowing the launch day —
+// bump this if the founding cohort should be wider/narrower.
+const FOUNDING_MAX_RANK = 1000;
+const STREAK_TIERS = [25, 10, 5];   // the highest tier a bestStreak reaches wins
+const CATEGORY_TOP_PCT = 10;        // "top X% in {category}"
+const MIN_CATEGORY_FOR_BADGE = 5;   // resolved picks in a category before it can badge
+
+interface StandingRow { deviceId: string; correct: boolean; category: string; pct: number }
+interface Standings {
+  overall: { deviceId: string; score: number }[];                 // ranked by calibration, best first
+  catRank: Map<string, { deviceId: string; pct: number }[]>;      // per category, best first
+}
+
+/** Pure: every device's resolved settled picks → an overall ranking (by the same
+ *  calibration the Oddie Score shows) plus a per-category ranking. Only devices
+ *  past the accuracy threshold are ranked, so a lucky one-pick run can't chart. */
+function computeStandings(rows: StandingRow[]): Standings {
+  const byDev = new Map<string, { edges: number[]; cats: Map<string, { r: number; c: number }> }>();
+  for (const r of rows) {
+    let d = byDev.get(r.deviceId);
+    if (!d) { d = { edges: [], cats: new Map() }; byDev.set(r.deviceId, d); }
+    d.edges.push((r.correct ? 1 : 0) - r.pct);
+    let c = d.cats.get(r.category);
+    if (!c) { c = { r: 0, c: 0 }; d.cats.set(r.category, c); }
+    c.r++; if (r.correct) c.c++;
+  }
+  const overall = [...byDev.entries()]
+    .filter(([, d]) => d.edges.length >= MIN_RESOLVED_FOR_ACCURACY)
+    .map(([deviceId, d]) => ({ deviceId, score: d.edges.reduce((a, b) => a + b, 0) / d.edges.length }))
+    .sort((a, b) => b.score - a.score);
+
+  const cats = new Set<string>();
+  for (const d of byDev.values()) for (const k of d.cats.keys()) cats.add(k);
+  const catRank = new Map<string, { deviceId: string; pct: number }[]>();
+  for (const cat of cats) {
+    const list = [...byDev.entries()]
+      .map(([deviceId, d]) => ({ deviceId, c: d.cats.get(cat) }))
+      .filter((x): x is { deviceId: string; c: { r: number; c: number } } => !!x.c && x.c.r >= MIN_CATEGORY_FOR_BADGE)
+      .map((x) => ({ deviceId: x.deviceId, pct: x.c.c / x.c.r }))
+      .sort((a, b) => b.pct - a.pct);
+    if (list.length) catRank.set(cat, list);
+  }
+  return { overall, catRank };
+}
+
+// The standings are the same for everyone and cheap to reuse, so cache them for
+// a minute rather than re-scanning the whole history on every profile view.
+let standingsCache: { at: number; val: Standings } | null = null;
+const STANDINGS_TTL_MS = 60_000;
+
+async function seasonStandings(): Promise<Standings> {
+  const now = Date.now();
+  if (standingsCache && now - standingsCache.at < STANDINGS_TTL_MS) return standingsCache.val;
+  const prob = (pctAt: number) => clamp(pctAt / 100, 0.01, 0.99);
+  let rows: StandingRow[];
+  if (!PERSISTENT) {
+    rows = memCalls
+      .filter((c) => c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
+      .map((c) => ({ deviceId: c.deviceId, correct: c.exitPct === 100, category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question), pct: prob(c.entryPct) }));
+  } else {
+    await ensureSchema();
+    const { rows: qr } = await db().query<{ device_id: string; exit_pct: number; pct_at: number; question: string; comm_cat: string | null }>(
+      `SELECT mc.device_id, mc.exit_pct, mc.pct_at, s.question, cm.category AS comm_cat
+         FROM market_call mc
+         JOIN market_slug s ON s.slug = mc.slug
+         LEFT JOIN community_market cm ON cm.slug = mc.slug
+        WHERE mc.device_id IS NOT NULL AND mc.closed_at IS NOT NULL
+          AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL`,
+    );
+    rows = qr.map((r) => ({ deviceId: r.device_id, correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question), pct: prob(r.pct_at) }));
+  }
+  const val = computeStandings(rows);
+  standingsCache = { at: now, val };
+  return val;
+}
+
+/** This device's season standing as a percentile ("top 8%"), or null while it is
+ *  still provisional (under the resolved-pick threshold). Ranks by the very same
+ *  calibration the Oddie Score reports, so the rank and the score never disagree. */
+export async function seasonRankFor(rawDeviceId: string): Promise<SeasonRank | null> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const { overall } = await seasonStandings();
+  const total = overall.length;
+  const i = overall.findIndex((r) => r.deviceId === deviceId);
+  if (i < 0 || total === 0) return null;
+  const rank = i + 1;
+  return { rank, total, topPct: Math.max(1, Math.ceil((rank / total) * 100)) };
+}
+
+/** Is this device inside the founding cohort (one of the first wallets)? */
+async function isFounding(deviceId: string): Promise<boolean> {
+  if (!PERSISTENT) return false; // no creation order in mem; founding is a prod concept
+  await ensureSchema();
+  const { rows } = await db().query<{ rnk: string }>(
+    `SELECT (SELECT count(*) FROM device_balance b2 WHERE b2.created_at <= b.created_at) AS rnk
+       FROM device_balance b WHERE b.device_id = $1`, [deviceId]);
+  return rows[0] ? Number(rows[0].rnk) <= FOUNDING_MAX_RANK : false;
+}
+
+/** The badges a device has earned, most identity-defining first. `acc` is passed
+ *  in (the caller already has it) so this adds at most two cheap lookups. */
+export async function badgesFor(rawDeviceId: string, acc: AccuracyRecord): Promise<Badge[]> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const badges: Badge[] = [];
+
+  if (await isFounding(deviceId).catch(() => false)) {
+    badges.push({ id: "founding", kind: "founding", label: "Founding Caller", emoji: "🏛️", detail: "one of the first on oddie" });
+  }
+
+  const tier = STREAK_TIERS.find((t) => acc.bestStreak >= t);
+  if (tier) badges.push({ id: `streak-${tier}`, kind: "streak", label: `${tier}-Call Streak`, emoji: "🔥", detail: `${tier} correct in a row` });
+
+  // Category top-% — for every category this device is deep enough in, its rank
+  // among everyone deep enough in that category. Best category first, capped.
+  const { catRank } = await seasonStandings();
+  const cat: Badge[] = [];
+  for (const [category, list] of catRank) {
+    const i = list.findIndex((r) => r.deviceId === deviceId);
+    if (i < 0) continue;
+    const pctile = Math.ceil(((i + 1) / list.length) * 100);
+    if (pctile <= CATEGORY_TOP_PCT) cat.push({ id: `cat-${category}`, kind: "category", label: `Top ${CATEGORY_TOP_PCT}% · ${category}`, emoji: "🎯", detail: `${list[i].deviceId === deviceId ? Math.round(list[i].pct * 100) : 0}% accuracy` });
+  }
+  cat.sort((a, b) => a.label.localeCompare(b.label));
+  badges.push(...cat.slice(0, 3));
+
+  return badges;
+}
+
 /**
  * A device's category engagement — every position it has ever taken (open OR
  * resolved), counted by category. The signal for personalizing "For you": a
