@@ -184,6 +184,14 @@
     <div id="metrics"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
+  <div class="box" id="usersbox" style="margin-top:22px">
+    <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px">
+      <p class="verdict" style="font-size:17px;margin:0">users — every device, most recent activity first (internal, read-only)</p>
+      <button class="ghost" id="urefresh" style="padding:7px 14px;font-size:13px">refresh</button>
+    </div>
+    <div id="users"><p class="why">enter the admin token above, then this loads…</p></div>
+  </div>
+
   <div class="box" id="tweetlogbox" style="margin-top:22px">
     <p class="verdict" style="font-size:17px">generated X replies — newest first (what to post, and a record of it)</p>
     <div id="tweetlog"><p class="why">enter the admin token above, then this loads…</p></div>
@@ -453,7 +461,7 @@ const ADMKEY = "oddie_admin_token";
 const admInput = $("#admtok");
 admInput.value = localStorage.getItem(ADMKEY) || "";
 const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getItem(ADMKEY) || "" }, extra || {});
-$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); };
+$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); loadUsers(); };
 
 let chainEnabled = false;
 
@@ -746,6 +754,43 @@ async function loadMetrics() {
   } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
 }
 
+$("#urefresh").onclick = loadUsers;
+async function loadUsers() {
+  const box = $("#users");
+  if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
+  box.innerHTML = '<p class="why">loading…</p>';
+  try {
+    const r = await fetch("/api/admin/users", { headers: admHeaders() });
+    if (r.status === 401) { box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
+    const { users } = await r.json();
+    if (!users || !users.length) { box.innerHTML = '<p class="why">no devices yet.</p>'; return; }
+    const d = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" }); } catch { return "—"; } };
+    const who = (u) => u.handle
+      ? `<b>@${esc(u.handle)}</b>${u.linked ? '<span title="linked X account" style="color:var(--muted)"> 𝕏</span>' : ""}`
+      : `<span style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)" title="${esc(u.deviceId)}">${esc(u.deviceId.slice(0, 10))}…</span>`;
+    const num = (n) => n == null ? "—" : n;
+    const th = (t, r) => `<th style="padding:7px 8px;text-align:${r ? "right" : "left"};font-size:11px;color:var(--muted);font-weight:800;white-space:nowrap">${t}</th>`;
+    const td = (v, r, extra = "") => `<td style="padding:8px 8px;text-align:${r ? "right" : "left"};font-size:12.5px;vertical-align:top;${extra}">${v}</td>`;
+    box.innerHTML =
+      `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px">`
+      + `<tr>${th("User")}${th("First seen", 1)}${th("Points", 1)}${th("Calls", 1)}${th("Resolved", 1)}${th("Acc%", 1)}${th("Oddie", 1)}${th("Surfaced", 1)}${th("Season", 1)}${th("Founding", 1)}</tr>`
+      + users.map((u) => `<tr style="border-top:1px solid rgba(0,0,0,.12)">`
+          + td(who(u))
+          + td(d(u.firstSeen), 1, "white-space:nowrap;color:var(--muted)")
+          + td(`<b>${u.tokens.toLocaleString("en-US")}</b>`, 1)
+          + td(num(u.totalCalls), 1)
+          + td(num(u.resolved), 1)
+          + td(u.accuracyPct == null ? "—" : u.accuracyPct + "%", 1)
+          + td(u.oddieScore == null ? "—" : `<b>${u.oddieScore}</b>`, 1)
+          + td(u.surfaced ? `<b>${u.surfaced}</b>` : "—", 1)
+          + td(u.seasonPoints ? `<b>${u.seasonPoints}</b>` : "—", 1)
+          + td(u.founding ? "✓" : "—", 1, u.founding ? "color:#2e7d0e;font-weight:800" : "color:var(--muted)")
+          + `</tr>`).join("")
+      + "</table></div>"
+      + `<p class="why" style="color:var(--muted);margin-top:8px">${users.length} unique device${users.length === 1 ? "" : "s"} · Season Points is a backend value, never shown to users</p>`;
+  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+}
+
 async function loadTweetLog() {
   const box = $("#tweetlog");
   if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
@@ -897,6 +942,7 @@ async function resolveMarket(slug, outcome, payout, winners) {
 loadCommunity();
 loadTweetLog();
 loadMetrics();
+loadUsers();
 </script>
 </body>
 </html>

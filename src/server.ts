@@ -12,7 +12,7 @@ import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, 
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
-import { recordSurfacer, awardSurface, seasonPointsLog } from "./store/markets.js";
+import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
 import { proceedsFor } from "./store/economy.js";
@@ -1269,6 +1269,17 @@ app.get("/api/tweet/log", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const items = await listTweetReplies(Number.isFinite(limit) ? limit : 50);
   res.json({ items });
+});
+
+// Every device the product has touched + what they've done (read-only, admin).
+// One row per unique user; the operator's "who's here" view.
+app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+  try {
+    res.json({ users: await usersActivity() });
+  } catch (e) {
+    console.error("[users] failed:", (e as Error).message);
+    res.status(500).json({ error: "users view unavailable" });
+  }
 });
 
 // Season Points audit trail (read-only, admin). The backend contribution ledger:

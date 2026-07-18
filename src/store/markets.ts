@@ -1706,6 +1706,11 @@ async function deviceForTwitterHandle(handle: string | null): Promise<string | n
   if (!handle) return null;
   const h = handle.replace(/^@+/, "").toLowerCase();
   if (!PERSISTENT) {
+    // Mirror the persistent order: a LINKED twitter account wins over a merely
+    // chosen handle. (memHandle holds chosen handles; _memAccounts the linked ones.)
+    const { _memAccounts } = await import("./accounts.js");
+    const acct = _memAccounts.find((a) => a.provider === "twitter" && a.handle && a.handle.replace(/^@+/, "").toLowerCase() === h);
+    if (acct) return acct.canonicalDevice;
     for (const [dev, hh] of memHandle) if (hh.replace(/^@+/, "").toLowerCase() === h) return dev;
     return null;
   }
@@ -1818,9 +1823,15 @@ async function awardParticipation(slug: string, deviceId: string, firstEver: boo
 export async function seasonPointsFor(rawDeviceId: string): Promise<number> {
   const deviceId = await resolveDevice(rawDeviceId);
   if (!PERSISTENT) {
-    const handle = memHandle.get(deviceId)?.replace(/^@+/, "").toLowerCase() ?? null;
+    // The device's handles: its chosen one plus any linked twitter handles — so
+    // handle-only rows logged before signup still count (mirrors the SQL below).
+    const { _memAccounts } = await import("./accounts.js");
+    const handles = new Set<string>();
+    const chosen = memHandle.get(deviceId)?.replace(/^@+/, "").toLowerCase();
+    if (chosen) handles.add(chosen);
+    for (const a of _memAccounts) if (a.provider === "twitter" && a.canonicalDevice === deviceId && a.handle) handles.add(a.handle.replace(/^@+/, "").toLowerCase());
     return memSeasonLog.reduce((sum, r) =>
-      sum + (r.deviceId === deviceId || (r.deviceId === null && handle !== null && r.handle === handle) ? r.amount : 0), 0);
+      sum + (r.deviceId === deviceId || (r.deviceId === null && r.handle !== null && handles.has(r.handle)) ? r.amount : 0), 0);
   }
   await ensureSchema();
   const { rows } = await db().query<{ total: string | null }>(
@@ -1844,6 +1855,89 @@ export async function seasonPointsLog(limit = 100): Promise<SeasonPointsRow[]> {
   const { rows } = await db().query<{ device_id: string | null; handle: string | null; event: string; amount: number; slug: string | null; created_at: Date }>(
     `SELECT device_id, handle, event, amount, slug, created_at FROM season_points_log ORDER BY id DESC LIMIT $1`, [n]);
   return rows.map((r) => ({ deviceId: r.device_id, handle: r.handle, event: r.event, amount: r.amount, slug: r.slug, createdAt: r.created_at.toISOString() }));
+}
+
+/* --------------------------------------------------------- users view -------
+ * One row per device the product has ever touched, with everything an operator
+ * needs to see who's here and what they've done. Admin-only, small-volume — it
+ * calls accuracyFor / seasonPointsFor per device rather than hand-rolling one
+ * giant join, trading a few extra reads for correctness and reuse.
+ */
+export interface UserActivity {
+  deviceId: string;
+  handle: string | null;      // twitter-linked handle if any, else the chosen one, else null
+  linked: boolean;            // the handle came from a linked twitter account
+  firstSeen: string;          // ISO — created_at (persistent) or first call (mem)
+  tokens: number;             // current Oddie Points balance
+  totalCalls: number;         // positions ever taken
+  resolved: number;
+  accuracyPct: number | null;
+  oddieScore: number | null;
+  surfaced: number;           // markets this user surfaced (market_surfacer)
+  seasonPoints: number;       // backend contribution total
+  founding: boolean;
+  lastActivity: string;       // ISO — last call, else firstSeen (the sort key)
+}
+
+export async function usersActivity(): Promise<UserActivity[]> {
+  interface Base { deviceId: string; createdAt: string; tokens: number; chosen: string | null; totalCalls: number; lastAt: string | null }
+  let base: Base[];
+  const twMap = new Map<string, string>(); // device -> linked twitter handle (lowercased, no @)
+  let surfacers: { deviceId: string | null; handle: string | null }[];
+
+  if (!PERSISTENT) {
+    const devices = new Set<string>([...memBalance.keys(), ...memCalls.map((c) => c.deviceId)]);
+    base = [...devices].map((deviceId) => {
+      const times = memCalls.filter((c) => c.deviceId === deviceId).map((c) => c.at).sort();
+      return {
+        deviceId,
+        createdAt: times[0] ?? new Date().toISOString(), // mem has no signup row; first call stands in
+        tokens: memBalance.get(deviceId)?.tokens ?? STARTING_TOKENS,
+        chosen: memHandle.get(deviceId) ?? null,
+        totalCalls: times.length,
+        lastAt: times.length ? times[times.length - 1] : null,
+      };
+    });
+    const { _memAccounts } = await import("./accounts.js");
+    for (const a of _memAccounts) if (a.provider === "twitter" && a.handle) twMap.set(a.canonicalDevice, a.handle.replace(/^@+/, "").toLowerCase());
+    surfacers = [...memSurfacer.values()].map((s) => ({ deviceId: s.deviceId, handle: s.handle }));
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ device_id: string; created_at: Date; tokens: number; chosen: string | null; total_calls: string; last_at: Date | null }>(
+      `SELECT db.device_id, db.created_at, db.tokens, db.handle AS chosen,
+              COALESCE(cc.n, 0) AS total_calls, cc.last_at
+         FROM device_balance db
+         LEFT JOIN (SELECT device_id, count(*) n, max(at) last_at
+                      FROM market_call WHERE device_id IS NOT NULL GROUP BY device_id) cc
+           ON cc.device_id = db.device_id`);
+    base = rows.map((r) => ({
+      deviceId: r.device_id, createdAt: r.created_at.toISOString(), tokens: r.tokens, chosen: r.chosen,
+      totalCalls: Number(r.total_calls), lastAt: r.last_at ? r.last_at.toISOString() : null,
+    }));
+    const tw = await db().query<{ canonical_device: string; handle: string }>(
+      `SELECT canonical_device, handle FROM account WHERE provider='twitter' AND handle IS NOT NULL`);
+    for (const a of tw.rows) twMap.set(a.canonical_device, a.handle.replace(/^@+/, "").toLowerCase());
+    const sf = await db().query<{ device_id: string | null; handle: string | null }>(`SELECT device_id, handle FROM market_surfacer`);
+    surfacers = sf.rows.map((s) => ({ deviceId: s.device_id, handle: s.handle }));
+  }
+
+  // Founding = the first FOUNDING_MAX_RANK devices by created_at (same rule as isFounding).
+  const founding = new Set([...base].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0)).slice(0, FOUNDING_MAX_RANK).map((b) => b.deviceId));
+
+  const out: UserActivity[] = [];
+  for (const b of base) {
+    const tw = twMap.get(b.deviceId) ?? null;
+    const [acc, sp] = await Promise.all([accuracyFor(b.deviceId), seasonPointsFor(b.deviceId)]);
+    const surfaced = surfacers.filter((s) => s.deviceId === b.deviceId || (s.deviceId == null && tw != null && s.handle === tw)).length;
+    out.push({
+      deviceId: b.deviceId, handle: tw ?? b.chosen ?? null, linked: tw != null, firstSeen: b.createdAt,
+      tokens: b.tokens, totalCalls: b.totalCalls, resolved: acc.resolved, accuracyPct: acc.accuracyPct,
+      oddieScore: acc.oddieScore, surfaced, seasonPoints: sp, founding: founding.has(b.deviceId),
+      lastActivity: b.lastAt ?? b.createdAt,
+    });
+  }
+  out.sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : a.lastActivity > b.lastActivity ? -1 : 0)); // most recent first
+  return out;
 }
 
 /** Append one extraction-engine event for later prompt tuning. `kind` is
