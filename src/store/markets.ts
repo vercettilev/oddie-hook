@@ -1877,7 +1877,27 @@ export interface UserActivity {
   surfaced: number;           // markets this user surfaced (market_surfacer)
   seasonPoints: number;       // backend contribution total
   founding: boolean;
+  isTest: boolean;            // a known test/probe device, not real traffic
   lastActivity: string;       // ISO — last call, else firstSeen (the sort key)
+}
+
+// Known test/probe devices that live in the PROD database — kept in sync with
+// scripts/cleanup-test-rows.ts, plus the probe families deploys create. Used
+// only to CLASSIFY rows in the admin users view (never to delete): worst case a
+// device is filtered out of the default "real users" list but still counted in
+// the total and visible under "show all". Real device ids are UUIDs or random
+// strings, so these literal/prefix matches can't collide with a genuine user.
+const KNOWN_TEST_DEVICE_IDS = new Set<string>([
+  "ed238db0-a84c-491b-ab2e-273c585e929a", // poppin.so-origin session
+  "ddb3938c-8243-46cf-abe7-7aef4b0e416e", // paper-trading session, production
+  "6292e497-81e2-4241-9654-c534dc696f66", // analytics session, production
+  "race-test-device-0001",
+  "deploy-probe-0001", "deploy-probe-0002", "deploy-probe-0003",
+  "rewrite-probe-01", "rewrite-probe-02",
+]);
+const TEST_DEVICE_PATTERN = /^(deploy-probe-|rewrite-probe-|race-test-|test-device-)/i;
+export function isTestDevice(deviceId: string): boolean {
+  return KNOWN_TEST_DEVICE_IDS.has(deviceId) || TEST_DEVICE_PATTERN.test(deviceId);
 }
 
 export async function usersActivity(): Promise<UserActivity[]> {
@@ -1934,6 +1954,7 @@ export async function usersActivity(): Promise<UserActivity[]> {
       deviceId: b.deviceId, handle: tw ?? b.chosen ?? null, linked: tw != null, firstSeen: b.createdAt,
       tokens: b.tokens, totalCalls: b.totalCalls, resolved: acc.resolved, accuracyPct: acc.accuracyPct,
       oddieScore: acc.oddieScore, surfaced, seasonPoints: sp, founding: founding.has(b.deviceId),
+      isTest: isTestDevice(b.deviceId),
       lastActivity: b.lastAt ?? b.createdAt,
     });
   }

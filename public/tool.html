@@ -754,6 +754,14 @@ async function loadMetrics() {
   } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
 }
 
+// A device only counts as a REAL user if it did something (a call, a surfaced
+// market, a resolved pick) AND isn't a known test/probe device. Everything else
+// is noise — the boot-only rows a fresh page load mints, and seeded test rows.
+let USERS_CACHE = [];
+let usersShowAll = false;
+const userHasEvents = (u) => u.totalCalls > 0 || u.surfaced > 0 || u.resolved > 0;
+const userIsNoise = (u) => u.isTest || !userHasEvents(u);
+
 $("#urefresh").onclick = loadUsers;
 async function loadUsers() {
   const box = $("#users");
@@ -763,18 +771,42 @@ async function loadUsers() {
     const r = await fetch("/api/admin/users", { headers: admHeaders() });
     if (r.status === 401) { box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
     const { users } = await r.json();
-    if (!users || !users.length) { box.innerHTML = '<p class="why">no devices yet.</p>'; return; }
-    const d = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" }); } catch { return "—"; } };
-    const who = (u) => u.handle
+    USERS_CACHE = users || [];
+    renderUsersTable();
+  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+}
+
+function renderUsersTable() {
+  const box = $("#users");
+  const users = USERS_CACHE;
+  if (!users.length) { box.innerHTML = '<p class="why">no devices yet.</p>'; return; }
+  const real = users.filter((u) => !userIsNoise(u));
+  const testN = users.filter((u) => u.isTest).length;
+  const bootN = users.filter((u) => !u.isTest && !userHasEvents(u)).length;
+  const shown = usersShowAll ? users : real;
+
+  const d = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" }); } catch { return "—"; } };
+  const tag = (t, title) => ` <span title="${esc(title)}" style="font-size:10px;font-weight:800;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;white-space:nowrap">${t}</span>`;
+  const who = (u) => {
+    const base = u.handle
       ? `<b>@${esc(u.handle)}</b>${u.linked ? '<span title="linked X account" style="color:var(--muted)"> 𝕏</span>' : ""}`
       : `<span style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)" title="${esc(u.deviceId)}">${esc(u.deviceId.slice(0, 10))}…</span>`;
-    const num = (n) => n == null ? "—" : n;
-    const th = (t, r) => `<th style="padding:7px 8px;text-align:${r ? "right" : "left"};font-size:11px;color:var(--muted);font-weight:800;white-space:nowrap">${t}</th>`;
-    const td = (v, r, extra = "") => `<td style="padding:8px 8px;text-align:${r ? "right" : "left"};font-size:12.5px;vertical-align:top;${extra}">${v}</td>`;
-    box.innerHTML =
-      `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:720px">`
-      + `<tr>${th("User")}${th("First seen", 1)}${th("Points", 1)}${th("Calls", 1)}${th("Resolved", 1)}${th("Acc%", 1)}${th("Oddie", 1)}${th("Surfaced", 1)}${th("Season", 1)}${th("Founding", 1)}</tr>`
-      + users.map((u) => `<tr style="border-top:1px solid rgba(0,0,0,.12)">`
+    return base + (u.isTest ? tag("test", "known test/probe device") : (!userHasEvents(u) ? tag("boot-only", "no calls, surfaced markets, or resolved picks — a page-load record") : ""));
+  };
+  const num = (n) => n == null ? "—" : n;
+  const th = (t, r) => `<th style="padding:7px 8px;text-align:${r ? "right" : "left"};font-size:11px;color:var(--muted);font-weight:800;white-space:nowrap">${t}</th>`;
+  const td = (v, r, extra = "") => `<td style="padding:8px 8px;text-align:${r ? "right" : "left"};font-size:12.5px;vertical-align:top;${extra}">${v}</td>`;
+
+  const summary = `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 10px">
+      <p class="why" style="margin:0"><b style="font-size:15px;color:var(--on-ground)">${real.length}</b> real user${real.length === 1 ? "" : "s"} <span style="color:var(--muted)">(with ≥1 event)</span> · <b>${users.length}</b> total devices <span style="color:var(--muted)">— ${bootN} boot-only, ${testN} test/probe</span></p>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none">
+        <input type="checkbox" id="ushowall"${usersShowAll ? " checked" : ""}> show boot-only / test devices</label>
+    </div>`;
+
+  const rows = shown.length
+    ? shown.map((u) => {
+        const dim = userIsNoise(u) ? "opacity:.5;" : "";
+        return `<tr style="border-top:1px solid rgba(0,0,0,.12);${dim}">`
           + td(who(u))
           + td(d(u.firstSeen), 1, "white-space:nowrap;color:var(--muted)")
           + td(`<b>${u.tokens.toLocaleString("en-US")}</b>`, 1)
@@ -784,11 +816,19 @@ async function loadUsers() {
           + td(u.oddieScore == null ? "—" : `<b>${u.oddieScore}</b>`, 1)
           + td(u.surfaced ? `<b>${u.surfaced}</b>` : "—", 1)
           + td(u.seasonPoints ? `<b>${u.seasonPoints}</b>` : "—", 1)
-          + td(u.founding ? "✓" : "—", 1, u.founding ? "color:#2e7d0e;font-weight:800" : "color:var(--muted)")
-          + `</tr>`).join("")
-      + "</table></div>"
-      + `<p class="why" style="color:var(--muted);margin-top:8px">${users.length} unique device${users.length === 1 ? "" : "s"} · Season Points is a backend value, never shown to users</p>`;
-  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+          + `</tr>`;
+      }).join("")
+    : `<tr><td colspan="9" style="padding:14px 8px;color:var(--muted);font-size:12.5px">no real users yet — every device so far is boot-only or test. Tick "show all" to see them.</td></tr>`;
+
+  box.innerHTML = summary
+    + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:660px">`
+    + `<tr>${th("User")}${th("First seen", 1)}${th("Points", 1)}${th("Calls", 1)}${th("Resolved", 1)}${th("Acc%", 1)}${th("Oddie", 1)}${th("Surfaced", 1)}${th("Season", 1)}</tr>`
+    + rows
+    + "</table></div>"
+    + `<p class="why" style="color:var(--muted);margin-top:8px">"real" = did something (call / surfaced market / resolved pick) and isn't a known test device. Season Points is a backend value, never shown to users. (Founding Caller is hidden here — at this volume every device qualifies, so it's not yet a useful signal.)</p>`;
+
+  const cb = box.querySelector("#ushowall");
+  if (cb) cb.onchange = () => { usersShowAll = cb.checked; renderUsersTable(); };
 }
 
 async function loadTweetLog() {
