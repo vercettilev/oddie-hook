@@ -13,7 +13,7 @@ import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
-import { buildTweetReply } from "./matching/tweetReply.js";
+import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
 import { proceedsFor } from "./store/economy.js";
 import { mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
@@ -1236,14 +1236,22 @@ app.post("/api/tweet/generate", requireAdmin, async (req, res) => {
   const hook = b.hook != null ? String(b.hook).trim() : "";
 
   const permalink = `${BASE_URL}/m/${slug}`;
-  // Same copy across all three outcomes (venue / closest / new): question-first,
-  // odds-free, with an optional teaser hook when it fits.
+  // Two copy variants off the same market (venue / closest / new): the REPLY (to
+  // post under the tweet) and the QUOTE (to quote-post on the poster's timeline).
+  // Both question-first, odds-free, with an optional teaser hook when it fits.
   const reply = buildTweetReply({ question, permalink, hook });
+  const quote = buildTweetQuote({ question, permalink, hook });
 
+  // The reply primary stays the logged canonical (unchanged wedge metric).
   const logged = await logTweetReply({
     sourceUrl, marketId, matchType, slug, permalink, replyText: reply.primary,
   });
-  res.json({ ok: true, primary: reply.primary, fallback: reply.fallback, permalink, logId: logged?.id ?? null, createdAt: logged?.createdAt ?? null });
+  res.json({
+    ok: true,
+    primary: reply.primary, fallback: reply.fallback,
+    quote: quote.primary, quoteFallback: quote.fallback,
+    permalink, logId: logged?.id ?? null, createdAt: logged?.createdAt ?? null,
+  });
 });
 
 // The list view: everything generated so far, newest first.

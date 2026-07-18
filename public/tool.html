@@ -670,14 +670,31 @@ loadMetrics();
 }
 
 function renderReply(j) {
+  // Two variants off the same market: REPLY (post under the tweet) and QUOTE
+  // (quote-post on your own timeline — more visible, less spammy). Each has its
+  // own copy button + a plain-text fallback, so the operator picks per situation.
+  const hasQuote = typeof j.quote === "string" && j.quote.length;
   $("#creply").innerHTML =
-    '<div class="box hit"><p class="verdict" style="font-size:15px">📋 ready-to-post reply — copy into X</p>'
+    '<div class="box hit"><p class="verdict" style="font-size:15px">📋 reply — post under the tweet</p>'
     + replyRow("cprimary", j.primary)
     + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
     + replyRow("cfallback", j.fallback)
-    + '<p class="why" style="margin-top:8px"><b>' + j.primary.length + '</b>/280 chars · <a href="' + esc(j.permalink) + '" target="_blank" rel="noopener">' + esc(j.permalink) + '</a></p></div>';
+    + '<p class="why" style="margin-top:8px"><b>' + j.primary.length + '</b>/280 chars</p>'
+    + (hasQuote
+        ? '<hr style="border:none;border-top:2px dashed var(--line);margin:16px 0">'
+          + '<p class="verdict" style="font-size:15px">🔁 quote — quote-post on your timeline</p>'
+          + replyRow("cquote", j.quote)
+          + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
+          + replyRow("cquotefb", j.quoteFallback)
+          + '<p class="why" style="margin-top:8px"><b>' + j.quote.length + '</b>/280 chars</p>'
+        : "")
+    + '<p class="why" style="margin-top:8px">market · <a href="' + esc(j.permalink) + '" target="_blank" rel="noopener">' + esc(j.permalink) + '</a></p></div>';
   wireCopy("cprimary", j.primary);
   wireCopy("cfallback", j.fallback);
+  if (hasQuote) {
+    wireCopy("cquote", j.quote);
+    wireCopy("cquotefb", j.quoteFallback);
+  }
 }
 function replyRow(id, text) {
   return '<div style="display:flex;gap:8px;align-items:flex-start;margin-top:6px">'

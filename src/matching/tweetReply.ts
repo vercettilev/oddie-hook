@@ -68,3 +68,45 @@ export function buildTweetReply(input: TweetReplyInput): TweetReply {
     fallback: fit("", input.question, ` ${cta}: ${link}`, TWEET_LIMIT),
   };
 }
+
+// The default framing line for a quote — used when no hook is supplied. It has to
+// stand on its own in the poster's timeline (there's no tweet above it to answer),
+// so it states WHY this is being posted rather than answering anything.
+const QUOTE_LEAD = "this deserves a market.";
+
+/**
+ * The QUOTE-tweet variant: same market, same rules, but written to be posted as
+ * a quote of the original rather than buried in a reply. Because it shows up in
+ * the poster's own timeline with no parent tweet visible, it opens with a
+ * standalone framing line (the hook when one fits, else "this deserves a
+ * market.") instead of diving straight into the question. Lowercase, casual —
+ * the voice of someone sharing, not answering.
+ */
+export function buildTweetQuote(input: TweetReplyInput): TweetReply {
+  const link = input.permalink;
+  const cta = `pick a side with ${FREE_POINTS} free points`;
+  const suffix = `\n\n${cta} ↓\n${link}`;
+  const hook = (input.hook ?? "").trim();
+
+  // The framing line is ALWAYS present — it is what makes the quote stand on its
+  // own (the reply, by contrast, dives straight into the question). The hook, when
+  // one is supplied and the whole quote still fits, rides one line above the
+  // framing as a tight two-beat opener ("Argentina's year? / this deserves a
+  // market."). If it wouldn't fit, drop the hook; the framing stays.
+  const base = `${QUOTE_LEAD}\n\n${input.question}${suffix}`;
+  const withHook = hook ? `${hook}\n${QUOTE_LEAD}\n\n${input.question}${suffix}` : "";
+  const primary = hook && withHook.length <= TWEET_LIMIT
+    ? withHook
+    : base.length <= TWEET_LIMIT
+      ? base
+      // Only a very long question reaches here; keep the framing + CTA + link and
+      // trim the QUESTION to fit, exactly as the reply builder does.
+      : fit(`${QUOTE_LEAD}\n\n`, input.question, suffix, TWEET_LIMIT);
+
+  return {
+    primary,
+    // Plain-text fallback: the framing line + question + CTA on one ASCII line,
+    // no hook, no arrows — for when the formatted quote looks off.
+    fallback: fit(`${QUOTE_LEAD} `, input.question, ` ${cta}: ${link}`, TWEET_LIMIT),
+  };
+}
