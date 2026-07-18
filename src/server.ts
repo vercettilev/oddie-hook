@@ -12,6 +12,7 @@ import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, 
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
+import { recordSurfacer, awardSurface, seasonPointsLog } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
 import { proceedsFor } from "./store/economy.js";
@@ -1246,6 +1247,15 @@ app.post("/api/tweet/generate", requireAdmin, async (req, res) => {
   const logged = await logTweetReply({
     sourceUrl, marketId, matchType, slug, permalink, replyText: reply.primary,
   });
+
+  // A tagged claim just became a live market (venue-matched or created): record
+  // its surfacer (the tweet author, from the source URL) and award +50 Season
+  // Points, once. Backend-only; best-effort so it never blocks the reply.
+  void (async () => {
+    await recordSurfacer(slug, { sourceUrl });
+    await awardSurface(slug);
+  })().catch(() => {});
+
   res.json({
     ok: true,
     primary: reply.primary, fallback: reply.fallback,
@@ -1259,6 +1269,19 @@ app.get("/api/tweet/log", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const items = await listTweetReplies(Number.isFinite(limit) ? limit : 50);
   res.json({ items });
+});
+
+// Season Points audit trail (read-only, admin). The backend contribution ledger:
+// who earned what, for which event, on which market — so we can tune the values
+// against real behaviour. Never exposed to end users.
+app.get("/api/admin/season-points", requireAdmin, async (req, res) => {
+  const limit = Number(req.query.limit ?? 100);
+  try {
+    res.json({ log: await seasonPointsLog(Number.isFinite(limit) ? limit : 100) });
+  } catch (e) {
+    console.error("[season-points] failed:", (e as Error).message);
+    res.status(500).json({ error: "season points log unavailable" });
+  }
 });
 
 // Internal wedge metrics (read-only, admin). All-time over the data we log.

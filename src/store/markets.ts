@@ -317,6 +317,35 @@ CREATE TABLE IF NOT EXISTS page_view (
   at         timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS page_view_slug_idx ON page_view(slug);
+
+-- Who surfaced a market — the contributor a tagged claim came from. Keyed by
+-- slug so it covers BOTH venue matches (no community_market row) and created
+-- markets. The contributor is a tweet author, so the natural identity is a
+-- twitter handle; device_id is filled in when that handle has an Oddie account.
+CREATE TABLE IF NOT EXISTS market_surfacer (
+  slug        text PRIMARY KEY REFERENCES market_slug(slug) ON DELETE CASCADE,
+  handle      text,                          -- tweet author, lowercased
+  device_id   text,                          -- resolved from handle when known
+  source_url  text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- The Season Points ledger. BACKEND-ONLY (never shown as a standalone number):
+-- it is both the audit trail for every award AND the source of truth for a
+-- contributor's total (SUM(amount)). dedup_key makes every event idempotent —
+-- a re-generated reply or a retried settle can never double-award.
+CREATE TABLE IF NOT EXISTS season_points_log (
+  id         bigserial PRIMARY KEY,
+  device_id  text,                           -- creditee device when resolvable
+  handle     text,                           -- creditee handle (always, when known)
+  event      text NOT NULL,                  -- surface|three_players|first_timer|clean_resolve
+  amount     integer NOT NULL,
+  slug       text,                           -- the related market
+  dedup_key  text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS spl_device_idx ON season_points_log(device_id);
+CREATE INDEX IF NOT EXISTS spl_handle_idx ON season_points_log(handle);
 `;
 
 let pool: pg.Pool | null = null;
@@ -705,16 +734,24 @@ export async function placeCall(
   if (!PERSISTENT) {
     const w = await getWallet(deviceId);
     if (w.tokens < tokens) return { ok: false, reason: "insufficient", balance: w.tokens };
+    const firstEver = !memCalls.some((c) => c.deviceId === deviceId); // before this call lands
     memBalance.set(deviceId, { tokens: w.tokens - tokens, toppedUpAt: memBalance.get(deviceId)!.toppedUpAt });
     rec.calls.push({ side, tokens, at: new Date().toISOString() });
     memCalls.unshift({
       id: ++memId, deviceId, slug: rec.slug, question: rec.market.question, side, tokens,
       entryPct: pctAt, at: new Date().toISOString(), closedAt: null, exitPct: null, proceeds: null,
     });
+    const distinct = new Set(memCalls.filter((c) => c.slug === rec.slug && c.deviceId).map((c) => c.deviceId)).size;
+    void awardParticipation(rec.slug, deviceId, firstEver, distinct);
     return { ok: true, id: memId, balance: w.tokens - tokens, calls: rec.calls.length, pctAt };
   }
 
   await getWallet(deviceId); // ensure the row exists (and collect any top-up) first
+  // Is this the device's first-ever call? Read BEFORE the insert (best-effort;
+  // a read failure just means no first-timer award, never a blocked call).
+  const firstEver = await db().query<{ e: boolean }>(
+    `SELECT NOT EXISTS(SELECT 1 FROM market_call WHERE device_id=$1) AS e`, [deviceId],
+  ).then((r) => r.rows[0]?.e === true).catch(() => false);
   const client = await db().connect();
   try {
     await client.query("BEGIN");
@@ -733,6 +770,13 @@ export async function placeCall(
     );
     await client.query("COMMIT");
     rec.calls = await loadCalls(rec.slug);
+    // Contribution awards land AFTER commit, off the hot path. The distinct-count
+    // read races with concurrent calls, but the dedup key makes a double-award at
+    // "exactly 3" impossible, so a race at worst awards on someone else's insert.
+    const distinct = await db().query<{ n: number }>(
+      `SELECT count(DISTINCT device_id)::int n FROM market_call WHERE slug=$1 AND device_id IS NOT NULL`, [rec.slug],
+    ).then((r) => r.rows[0]?.n ?? 0).catch(() => 0);
+    void awardParticipation(rec.slug, deviceId, firstEver, distinct);
     return { ok: true, id: ins.rows[0].id, balance: upd.rows[0].tokens, calls: rec.calls.length, pctAt };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -1500,6 +1544,7 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
       pushNoticeMem(c.deviceId, slug, rec?.market.question ?? slug, outcome, c.side, c.entryPct, proceeds, c.id, crowd);
       out.push({ callId: c.id, deviceId: c.deviceId, side: c.side, stake: c.tokens, entryPct: c.entryPct, exitPct, proceeds, edge: edgePts(c.entryPct, exitPct) });
     }
+    void awardCleanResolve(slug); // +50 to the surfacer: clean resolution
     return out;
   }
 
@@ -1539,6 +1584,7 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
     }
     await client.query("COMMIT");
 
+    void awardCleanResolve(slug); // +50 to the surfacer: clean resolution (post-commit, best-effort)
     return closed.rows.map((r) => ({
       callId: r.id, deviceId: r.device_id, side: r.side, stake: r.tokens,
       entryPct: r.pct_at, exitPct: r.exit_pct, proceeds: r.proceeds, edge: edgePts(r.pct_at, r.exit_pct),
@@ -1576,6 +1622,13 @@ interface CommunityMeta {
   resolvability: string | null;
 }
 const memCommunity = new Map<string, CommunityMeta>();
+
+// In-memory mirrors of market_surfacer and season_points_log (the mem backend
+// tests run against). Same shape as the tables above.
+interface MemSurfacer { handle: string | null; deviceId: string | null; sourceUrl: string | null; createdAt: string }
+const memSurfacer = new Map<string, MemSurfacer>();
+interface MemSeasonRow { deviceId: string | null; handle: string | null; event: string; amount: number; slug: string | null; dedupKey: string; createdAt: string }
+const memSeasonLog: MemSeasonRow[] = [];
 
 /** Create a community market (base slug + community row). Returns its slug and
  *  the numeric id used BOTH as the market's venueId and its on-chain market_id. */
@@ -1618,6 +1671,179 @@ export async function createCommunityMarket(input: {
     [rec.slug, marketId, category, resolutionCriteria, resolvability],
   );
   return { slug: rec.slug, marketId, market };
+}
+
+/* --------------------------------------------------------- Season Points -----
+ * Backend-only CONTRIBUTION score. It is never shown as a standalone number
+ * (per the two-concept model); it exists to feed future reward eligibility and
+ * to let us tune real contribution against behaviour. It does NOT drive the
+ * season rank — that stays the calibrated Oddie Score.
+ *
+ * Everything routes through one idempotent award() and one ledger table, so the
+ * total is always SUM(amount) and no event can ever pay twice.
+ */
+export const SEASON_POINTS = {
+  surface: 50,        // a tagged claim cleared the gate and became a live market
+  three_players: 100, // that market reached 3 distinct participants
+  first_timer: 100,   // a brand-new player took their first-ever call on it
+  clean_resolve: 50,  // it resolved cleanly (no manual override)
+} as const;
+export type SeasonEvent = keyof typeof SEASON_POINTS;
+
+/** Pull the tweet author's handle out of a status URL (x.com / twitter.com).
+ *  Lowercased, no "@". Null when the URL isn't a recognisable tweet permalink —
+ *  an operator-created market with no identifiable contributor earns nothing. */
+export function handleFromSourceUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = String(url).match(/(?:^|\/\/)(?:www\.)?(?:x|twitter|fixupx|vxtwitter)\.com\/([A-Za-z0-9_]{1,15})\/status\//i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** Resolve a twitter handle to a canonical device, or null if that handle has
+ *  no Oddie account yet. Checks the linked-account table first (the authoritative
+ *  twitter→device map), then a device that simply set this as its handle. */
+async function deviceForTwitterHandle(handle: string | null): Promise<string | null> {
+  if (!handle) return null;
+  const h = handle.replace(/^@+/, "").toLowerCase();
+  if (!PERSISTENT) {
+    for (const [dev, hh] of memHandle) if (hh.replace(/^@+/, "").toLowerCase() === h) return dev;
+    return null;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ device_id: string }>(
+    `SELECT canonical_device AS device_id FROM account
+       WHERE provider='twitter' AND lower(handle)=$1 ORDER BY created_at LIMIT 1`, [h]);
+  if (rows[0]) return rows[0].device_id;
+  const { rows: r2 } = await db().query<{ device_id: string }>(
+    `SELECT device_id FROM device_balance WHERE lower(handle)=$1 LIMIT 1`, [h]);
+  return r2[0]?.device_id ?? null;
+}
+
+/** Record who surfaced a market — once per slug (the first writer wins). Safe to
+ *  call repeatedly (every reply generation does). Resolves the handle→device at
+ *  write time as a convenience; awards resolve again in case they sign up later. */
+export async function recordSurfacer(slug: string, input: { handle?: string | null; deviceId?: string | null; sourceUrl?: string | null }): Promise<void> {
+  const handle = (input.handle ?? handleFromSourceUrl(input.sourceUrl))?.replace(/^@+/, "").toLowerCase() ?? null;
+  const sourceUrl = input.sourceUrl ?? null;
+  const deviceId = input.deviceId ?? (await deviceForTwitterHandle(handle).catch(() => null));
+  if (!handle && !deviceId) return; // no identifiable contributor — nothing to record
+  if (!PERSISTENT) {
+    if (!memSurfacer.has(slug)) memSurfacer.set(slug, { handle, deviceId, sourceUrl, createdAt: new Date().toISOString() });
+    return;
+  }
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO market_surfacer (slug, handle, device_id, source_url)
+     VALUES ($1,$2,$3,$4) ON CONFLICT (slug) DO NOTHING`,
+    [slug, handle, deviceId, sourceUrl],
+  );
+}
+
+export interface Surfacer { handle: string | null; deviceId: string | null }
+export async function surfacerFor(slug: string): Promise<Surfacer | null> {
+  if (!PERSISTENT) { const s = memSurfacer.get(slug); return s ? { handle: s.handle, deviceId: s.deviceId } : null; }
+  await ensureSchema();
+  const { rows } = await db().query<{ handle: string | null; device_id: string | null }>(
+    `SELECT handle, device_id FROM market_surfacer WHERE slug=$1`, [slug]);
+  return rows[0] ? { handle: rows[0].handle, deviceId: rows[0].device_id } : null;
+}
+
+/** The one idempotent write. Credits `slug`'s surfacer (resolving handle→device
+ *  freshly, so a contributor who signed up AFTER surfacing still gets the row
+ *  attributed to their device). No surfacer, or an amount already logged under
+ *  the dedup key, is a silent no-op. Best-effort: never throws into the caller.
+ *  Returns whether a new award landed. */
+async function awardSeasonPoints(event: SeasonEvent, slug: string, dedupKey: string): Promise<boolean> {
+  try {
+    const surfacer = await surfacerFor(slug);
+    if (!surfacer) return false; // nobody to credit
+    const amount = SEASON_POINTS[event];
+    const handle = surfacer.handle;
+    const deviceId = surfacer.deviceId ?? (await deviceForTwitterHandle(handle).catch(() => null));
+    if (!handle && !deviceId) return false;
+    if (!PERSISTENT) {
+      if (memSeasonLog.some((r) => r.dedupKey === dedupKey)) return false;
+      memSeasonLog.push({ deviceId, handle, event, amount, slug, dedupKey, createdAt: new Date().toISOString() });
+      return true;
+    }
+    await ensureSchema();
+    const { rowCount } = await db().query(
+      `INSERT INTO season_points_log (device_id, handle, event, amount, slug, dedup_key)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (dedup_key) DO NOTHING`,
+      [deviceId, handle, event, amount, slug, dedupKey],
+    );
+    return (rowCount ?? 0) > 0;
+  } catch { return false; }
+}
+
+// The four earning events. Each is idempotent by construction (its dedup key),
+// so callers can fire them freely without tracking whether they already have.
+
+/** +50: a tagged claim cleared the gate and became a live market. Once per market. */
+export async function awardSurface(slug: string): Promise<boolean> {
+  return awardSeasonPoints("surface", slug, `surface:${slug}`);
+}
+/** +100: `slug` just reached 3 distinct participants. Once per market. */
+export async function awardThreePlayers(slug: string): Promise<boolean> {
+  return awardSeasonPoints("three_players", slug, `three_players:${slug}`);
+}
+/** +100: a brand-new player took their first-ever call on `slug`. Keyed by the
+ *  new player, so a surfacer is paid once per distinct newcomer they bring in.
+ *  A surfacer taking their OWN first call earns nothing — that isn't bringing
+ *  anyone in. */
+export async function awardFirstTimer(slug: string, newDeviceId: string): Promise<boolean> {
+  const s = await surfacerFor(slug).catch(() => null);
+  if (s?.deviceId && s.deviceId === newDeviceId) return false;
+  return awardSeasonPoints("first_timer", slug, `first_timer:${newDeviceId}`);
+}
+/** +50: `slug` resolved cleanly (no manual override — the only kind today). Once. */
+export async function awardCleanResolve(slug: string): Promise<boolean> {
+  return awardSeasonPoints("clean_resolve", slug, `clean_resolve:${slug}`);
+}
+
+/** The two placeCall-driven awards, fired best-effort after a call lands: the
+ *  3-distinct-participants milestone and the newcomer's first-ever call. Both
+ *  credit the market's surfacer; both are idempotent, so firing on every call is
+ *  safe. Never throws — participation must never break placing a call. */
+async function awardParticipation(slug: string, deviceId: string, firstEver: boolean, distinct: number): Promise<void> {
+  try {
+    if (distinct === 3) await awardThreePlayers(slug);
+    if (firstEver) await awardFirstTimer(slug, deviceId);
+  } catch { /* best-effort */ }
+}
+
+/** A device's Season Points total. Sums rows credited to the device, PLUS any
+ *  handle-only rows for the device's linked twitter handles that were logged
+ *  before it had an account — so surfacing done pre-signup still counts. */
+export async function seasonPointsFor(rawDeviceId: string): Promise<number> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) {
+    const handle = memHandle.get(deviceId)?.replace(/^@+/, "").toLowerCase() ?? null;
+    return memSeasonLog.reduce((sum, r) =>
+      sum + (r.deviceId === deviceId || (r.deviceId === null && handle !== null && r.handle === handle) ? r.amount : 0), 0);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ total: string | null }>(
+    `SELECT COALESCE(SUM(amount),0) AS total FROM season_points_log spl
+      WHERE spl.device_id = $1
+         OR (spl.device_id IS NULL AND spl.handle IN (
+              SELECT lower(handle) FROM account WHERE provider='twitter' AND canonical_device=$1 AND handle IS NOT NULL
+              UNION SELECT lower(handle) FROM device_balance WHERE device_id=$1 AND handle IS NOT NULL))`,
+    [deviceId]);
+  return Number(rows[0]?.total ?? 0);
+}
+
+export interface SeasonPointsRow { deviceId: string | null; handle: string | null; event: string; amount: number; slug: string | null; createdAt: string }
+/** The audit trail, newest first — for tuning the values against real behaviour. */
+export async function seasonPointsLog(limit = 100): Promise<SeasonPointsRow[]> {
+  const n = Math.max(1, Math.min(500, Math.floor(limit)));
+  if (!PERSISTENT) {
+    return [...memSeasonLog].reverse().slice(0, n).map((r) => ({ deviceId: r.deviceId, handle: r.handle, event: r.event, amount: r.amount, slug: r.slug, createdAt: r.createdAt }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ device_id: string | null; handle: string | null; event: string; amount: number; slug: string | null; created_at: Date }>(
+    `SELECT device_id, handle, event, amount, slug, created_at FROM season_points_log ORDER BY id DESC LIMIT $1`, [n]);
+  return rows.map((r) => ({ deviceId: r.device_id, handle: r.handle, event: r.event, amount: r.amount, slug: r.slug, createdAt: r.created_at.toISOString() }));
 }
 
 /** Append one extraction-engine event for later prompt tuning. `kind` is
