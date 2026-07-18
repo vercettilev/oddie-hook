@@ -129,6 +129,13 @@
 
   .chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
   .chips::-webkit-scrollbar{display:none}
+  /* Scroll affordance: a fade on the right edge hints the row keeps going. It
+     fades out (.at-end) once there's nothing left to reveal, so it never sits on
+     top of the final chip. Matches the header surface (--ground-2). */
+  .chipswrap{position:relative}
+  .chipswrap::after{content:"";position:absolute;top:0;right:0;bottom:0;width:34px;pointer-events:none;
+    background:linear-gradient(to right, rgba(0,0,0,0), var(--ground-2));opacity:1;transition:opacity .18s ease}
+  .chipswrap.at-end::after{opacity:0}
   .chip{flex:none;font-family:'Nunito';font-weight:800;font-size:12px;padding:7px 13px;border-radius:999px;
     border:2px solid var(--chip-bd);background:var(--chip-bg);color:var(--muted-g);cursor:pointer;white-space:nowrap;
     transition:transform .16s cubic-bezier(.34,1.56,.64,1), background .18s ease, color .18s ease, border-color .18s ease}
@@ -170,19 +177,15 @@
     scroll-snap-align:start;scroll-margin-top:var(--feedtop)}
   /* tag instruction — fixed dark text on the fixed pale-lime wash (AA in both
      themes, same rule as .rby / .chainbadge). */
-  .onbstrip{display:flex;align-items:center;gap:10px;background:var(--wash);
+  /* One consolidated strip: primary tag instruction, with the follow pill riding
+     inline as a secondary element (wrapping under the text on narrow screens
+     rather than becoming a second banner). */
+  .onbstrip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;background:var(--wash);
     border:2px solid var(--card-line);border-radius:16px;padding:11px 14px;
     box-shadow:var(--card-shadow);font-family:'Nunito';font-weight:800;
     font-size:13px;line-height:1.35;color:#3c570b}
-  .onbstrip .onbtxt{flex:1}
+  .onbstrip .onbtxt{flex:1 1 60%;min-width:0}
   .onbstrip b{font-weight:900}
-  /* follow prompt — visually distinct: theme card surface + lime accent border
-     and a lime follow pill. Card tokens (surface/on-ground) are theme-safe. */
-  .onbfollow{display:flex;align-items:center;gap:9px;background:var(--card-surface);
-    border:2px solid var(--accent);border-radius:14px;padding:8px 10px 8px 13px;
-    box-shadow:var(--card-shadow);font-family:'Nunito';font-weight:800;
-    font-size:12.5px;line-height:1.3;color:var(--on-ground)}
-  .onbfollow .flabel{flex:1}
   .fbtn{flex:0 0 auto;text-decoration:none;background:var(--accent);color:#17250a;
     font-family:'Nunito';font-weight:900;font-size:12.5px;border-radius:999px;
     padding:6px 12px;white-space:nowrap;border:1.5px solid rgba(0,0,0,.28)}
@@ -202,6 +205,12 @@
   .cc-title{font-weight:900;font-size:14px;line-height:1.2}
   .cc-sub{font-weight:800;font-size:12px;margin-top:3px;opacity:.85}
   .cc-next{flex:0 0 auto;font-weight:900;font-size:12.5px;color:var(--muted-g);white-space:nowrap}
+  /* The claimed confirmation collapses to a slim line after a few seconds — it's
+     a receipt, not a standing CTA, so it shouldn't hold full banner height. */
+  .claimcard.done{transition:padding .3s ease}
+  .claimcard.done.cc-mini{padding:7px 13px}
+  .claimcard.done.cc-mini .cc-sub{display:none}
+  .claimcard.done.cc-mini .cc-title{font-size:12.5px}
   .claimbtn{flex:0 0 auto;border:1.5px solid rgba(0,0,0,.3);background:#17250a;color:var(--accent);
     font-family:'Nunito';font-weight:900;font-size:14px;border-radius:999px;padding:9px 16px;cursor:pointer}
   .claimbtn:active{transform:scale(.96)}
@@ -1267,7 +1276,7 @@ function feedTop(cats){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
        <div class="brand"><div class="ghost"></div><b>oddie</b><span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
-       <div class="chips" id="chips"></div>
+       <div class="chipswrap"><div class="chips" id="chips"></div></div>
      </div>`;
   paintBalance();paintThemeToggle();
   const el=document.getElementById("chips");
@@ -1277,7 +1286,19 @@ function feedTop(cats){
     b.onclick=()=>{if(c!==activeCat)ev("cat_change",{cat:c});activeCat=c;loadFeed();};
     el.appendChild(b);
   });
+  // Right-edge fade affordance: the category row scrolls horizontally on mobile
+  // (it was clipping "Cult…" at the edge with no hint). Show the fade only while
+  // there's more to reveal, so it never obscures the last chip once fully swiped.
+  // The scroll listener rides on #chips (rebuilt each render, so no leak); the
+  // resize listener is registered once against whatever #chips is current.
+  el.addEventListener("scroll",syncChipFade,{passive:true});
+  requestAnimationFrame(syncChipFade);
 }
+function syncChipFade(){
+  const el=document.getElementById("chips"); if(!el||!el.parentElement)return;
+  el.parentElement.classList.toggle("at-end", el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
+}
+window.addEventListener("resize",syncChipFade,{passive:true});
 function shellTop(title,preview=true){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
@@ -1355,22 +1376,23 @@ function maybeFeedTop(scroller){
   if(!showClaim && !showTag && !showFollow)return;
   const wrap=document.createElement("div"); wrap.className="onbwrap";
   if(showClaim)wrap.appendChild(claimCard());
-  const prune=()=>{ if(!wrap.querySelector(".onbstrip,.onbfollow,.claimcard"))wrap.remove(); };
-  if(showTag){
+  const prune=()=>{ if(!wrap.querySelector(".onbstrip,.claimcard"))wrap.remove(); };
+  // ONE consolidated onboarding banner: the tag instruction is the primary CTA;
+  // the follow prompt rides inline as a secondary pill on the same strip (not a
+  // second full banner). A single × dismisses both. A visitor who already
+  // dismissed one sees only the other, still in a single compact strip.
+  if(showTag || showFollow){
     const s=document.createElement("div"); s.className="onbstrip";
-    s.innerHTML='<span class="onbtxt">tag <b>@oddie_so</b> under any take on X — we turn it into a market you can play</span>'
-      +'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
-    s.querySelector(".onbx").onclick=()=>{lsSet(ONB_KEY);s.remove();prune();ev("onboard_dismiss",{});};
+    const tagHtml=showTag
+      ? '<span class="onbtxt">tag <b>@oddiefun</b> under any take on X — we turn it into a market you can play</span>'
+      : '<span class="onbtxt">follow for results + fresh markets, straight to your feed</span>';
+    const followHtml=showFollow
+      ? '<a class="fbtn" href="https://x.com/intent/follow?screen_name=oddiefun" target="_blank" rel="noopener">follow @oddiefun ↗</a>'
+      : '';
+    s.innerHTML=tagHtml+followHtml+'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
+    const fb=s.querySelector(".fbtn"); if(fb)fb.onclick=()=>ev("follow_click",{});
+    s.querySelector(".onbx").onclick=()=>{lsSet(ONB_KEY);lsSet(FOLLOW_KEY);s.remove();prune();ev("onboard_dismiss",{});};
     wrap.appendChild(s);
-  }
-  if(showFollow){
-    const f=document.createElement("div"); f.className="onbfollow";
-    f.innerHTML='<span class="flabel">results + new markets, straight to your feed</span>'
-      +'<a class="fbtn" href="https://x.com/intent/follow?screen_name=oddiefun" target="_blank" rel="noopener">follow @oddiefun ↗</a>'
-      +'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
-    f.querySelector(".fbtn").onclick=()=>ev("follow_click",{});
-    f.querySelector(".onbx").onclick=()=>{lsSet(FOLLOW_KEY);f.remove();prune();ev("follow_dismiss",{});};
-    wrap.appendChild(f);
   }
   scroller.appendChild(wrap);
 }
@@ -1408,6 +1430,9 @@ function claimCard(){
         <div class="cc-sub">come back for tomorrow's drop to keep the streak</div>
       </div>
       <div class="cc-next">next in ${claimWhen(claim.nextClaimMs)}</div>`;
+    // A confirmation, not a standing CTA: collapse to a slim one-line pill after a
+    // few seconds so it stops competing with the tag banner for space on mobile.
+    setTimeout(()=>el.classList.add("cc-mini"),4000);
   }
   return el;
 }
