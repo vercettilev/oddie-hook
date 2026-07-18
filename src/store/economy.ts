@@ -6,8 +6,8 @@
 // Virtual tokens only. Nothing here converts to money in either direction, and
 // no function in this file has any idea what a dollar is.
 
-/** A new device's stake in the game. */
-export const STARTING_TOKENS = 2200;
+/** A new device's stake in the game — one day's claim (200), i.e. 4 calls at 50. */
+export const STARTING_TOKENS = 200;
 
 /**
  * Tokens are renewable, because a locked-out player is a lost player. A device

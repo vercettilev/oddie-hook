@@ -116,7 +116,7 @@ console.log("\ntokens are renewable");
   const t0 = 1_000_000_000_000;
   const day = TOPUP_INTERVAL_MS;
 
-  check("a new device starts at 2200", STARTING_TOKENS === 2200);
+  check("a new device starts at 200", STARTING_TOKENS === 200);
 
   check("nothing is granted before the window is up", applyTopUp(0, t0, t0 + day - 1).granted === 0);
   check("a broke device is topped up after a day", applyTopUp(0, t0, t0 + day).tokens === DAILY_TOPUP);
@@ -167,7 +167,7 @@ console.log("\none device, three positions, one of them wrong");
   balance += settled; edges.push(edgePts(20, 100));
   check("held to a winning settlement: 10 -> 50 tokens", settled === 50, `${settled}`);
 
-  check("balance tracks every leg", balance === 2200 - 50 + 56 - 100 + 74 - 10 + 50, `${balance}`);
+  check("balance tracks every leg", balance === STARTING_TOKENS - 50 + 56 - 100 + 74 - 10 + 50, `${balance}`);
 
   const rep = reputationOf(edges);
   check("reputation averages +23 across the three", near(rep.avgEdge!, (5 - 16 + 80) / 3), `${rep.avgEdge}`);

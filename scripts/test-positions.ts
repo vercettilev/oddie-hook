@@ -38,7 +38,7 @@ for (const m of [btc, cup, fed]) await createSlug(m);
 console.log("\na fresh device");
 {
   const w = await getWallet(DEV);
-  check("starts at 2200 tokens", w.tokens === STARTING_TOKENS && w.tokens === 2200, `${w.tokens}`);
+  check("starts at 200 tokens", w.tokens === STARTING_TOKENS && w.tokens === 200, `${w.tokens}`);
   check("is at the floor, so no top-up is pending", w.nextTopUpMs === null);
 }
 
@@ -46,7 +46,7 @@ console.log("\ncall YES at 39, market rises to 44, sell");
 {
   const r = await placeCall(slugFor(btc), "yes", 50, DEV, [btc]);
   check("the call locks at the live price", r.ok && r.pctAt === 39, JSON.stringify(r));
-  check("the stake leaves the balance", (await getWallet(DEV)).tokens === 2150);
+  check("the stake leaves the balance", (await getWallet(DEV)).tokens === 150);
 
   const moved = await priceAt(btc, 44);
   const pos = await positionsFor(DEV, [moved]);
@@ -60,7 +60,7 @@ console.log("\ncall YES at 39, market rises to 44, sell");
   const sold = await sellPosition(p.id, DEV, [moved]);
   check("selling pays 56 tokens", sold.ok && sold.proceeds === 56, JSON.stringify(sold));
   check("...records a +5 edge", sold.ok && sold.edge === 5);
-  check("the tokens come back", (await getWallet(DEV)).tokens === 2150 + 56);
+  check("the tokens come back", (await getWallet(DEV)).tokens === 150 + 56);
 
   const again = await sellPosition(p.id, DEV, [moved]);
   check("selling twice pays once", !again.ok && again.reason === "already-closed", JSON.stringify(again));
@@ -117,14 +117,15 @@ console.log("\nprovisional clears at ten");
 
 console.log("\nthe leaderboard ranks edge, not tokens");
 {
-  // A whale: one huge stake, a tiny edge. It must lose to the device above.
+  // A whale: its whole bankroll on one call, for a tiny edge. It must lose to the
+  // established device above — the board ranks edge, not tokens won.
   const m = mk("WHALE", "Will the whale learn by July?", 40);
   await createSlug(m);
-  await placeCall(slugFor(m), "yes", 900, OTHER, [m]);
+  await placeCall(slugFor(m), "yes", 180, OTHER, [m]);
   const moved = await priceAt(m, 42);
   const open = (await positionsFor(OTHER, [moved])).open[0];
   const sold = await sellPosition(open.id, OTHER, [moved]);
-  check("the whale wins far more tokens", sold.ok && sold.proceeds - 900 > 40, JSON.stringify(sold));
+  check("the whale won tokens on the trade", sold.ok && sold.proceeds > 180, JSON.stringify(sold));
 
   const board = await leaderboard();
   const me = board.find((r) => r.deviceId === DEV)!;

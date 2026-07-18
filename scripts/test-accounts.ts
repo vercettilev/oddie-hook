@@ -40,9 +40,9 @@ const BOB_PHONE = "bob-phone-00001";
 
 console.log("\nan anonymous device plays, then signs in");
 {
-  await placeCall(slugFor(btc), "yes", 50, PHONE, [btc]);       // 2200 -> 2150
+  await placeCall(slugFor(btc), "yes", 50, PHONE, [btc]);       // 200 -> 150
   const before = (await getWallet(PHONE)).tokens;
-  check("staked 50 of its free 2200", before === 2150, `${before}`);
+  check("staked 50 of its free 200", before === 150, `${before}`);
 
   const r = await linkAccount(PHONE, ALICE_X);
   check("the first link seeds the account", r.seeded === true);
@@ -61,9 +61,9 @@ console.log("\nan anonymous device plays, then signs in");
 
 console.log("\nthe same identity on a second browser");
 {
-  // The laptop is a brand-new device: it is born with 1000 free tokens.
+  // The laptop is a brand-new device: it is born with the free starting tokens.
   const fresh = (await getWallet(LAPTOP)).tokens;
-  check("the laptop starts anonymous at 1000", fresh === STARTING_TOKENS, `${fresh}`);
+  check("the laptop starts anonymous at 200", fresh === STARTING_TOKENS, `${fresh}`);
 
   const r = await linkAccount(LAPTOP, ALICE_X);
   check("no second bonus for the same identity", r.bonus === 0, JSON.stringify(r));
@@ -71,10 +71,11 @@ console.log("\nthe same identity on a second browser");
   check("...it points at the phone's stream", r.canonicalDevice === PHONE);
 
   const w = await getWallet(LAPTOP);
-  check("the laptop now reads the ACCOUNT's balance (2250)", w.tokens === 2250, `${w.tokens}`);
-  // The whole anti-farming rule, stated as a number: the laptop's free 1000 did
-  // not arrive. 2250 = 2150 staked-down phone + 100 bonus.
-  check("...and its own free 1000 was NOT added", w.tokens !== 2050 && w.tokens !== 1000);
+  check("the laptop now reads the ACCOUNT's balance (250)", w.tokens === 250, `${w.tokens}`);
+  // The whole anti-farming rule, stated as a number: the laptop's own free
+  // starting tokens did not arrive. 250 = 150 staked-down phone + 100 bonus,
+  // NOT the account balance plus the laptop's fresh grant, nor the fresh grant alone.
+  check("...and its own free 200 was NOT added", w.tokens !== 250 + STARTING_TOKENS && w.tokens !== STARTING_TOKENS);
 
   const pos = await positionsFor(LAPTOP, [btc]);
   check("the laptop sees the phone's open position", pos.open.length === 1, `${pos.open.length}`);
@@ -91,7 +92,7 @@ console.log("\nplay on one device shows up on the other");
   check("the phone sees it closed", fromPhone.closed.length === 1 && fromPhone.open.length === 0);
   check("...and the edge is on the account's reputation", fromPhone.overall.avgEdge === 5, `${fromPhone.overall.avgEdge}`);
   const bal = (await getWallet(PHONE)).tokens;
-  check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === 2250 + 56, `${bal}`);
+  check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === 250 + 56, `${bal}`);
 }
 
 console.log("\na second provider on the same person");
@@ -116,7 +117,7 @@ console.log("\nsomeone else is someone else");
   const bob = await positionsFor(BOB_PHONE, []);
   check("Bob sees none of Alice's positions", bob.closed.length === 0 && bob.open.length === 0);
   const bal = (await getWallet(BOB_PHONE)).tokens;
-  check("Bob has his own 1000 + 100", bal === STARTING_TOKENS + CONNECT_BONUS, `${bal}`);
+  check("Bob has his own 200 + 100", bal === STARTING_TOKENS + CONNECT_BONUS, `${bal}`);
 }
 
 console.log("\nthe bonus cannot be re-claimed by deleting devices");
