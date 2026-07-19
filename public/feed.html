@@ -159,12 +159,20 @@
   .chainbadge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);
     box-shadow:0 0 0 1.5px rgba(0,0,0,.22)}
   .chainbadge:active{transform:scale(.94)}
-  /* "Resolves by: …" — the settlement rules a bettor sees BEFORE playing. Quiet,
-     but always present when a community market carries criteria. FIXED dark text
-     on the pale-lime wash so it holds AA in both themes (same rule as chainbadge). */
-  .rby{margin-top:9px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.4;
-    color:#3c570b;background:var(--wash);border-radius:12px;padding:8px 11px}
-  .rby b{font-weight:800}
+  /* Resolution criteria — kept for transparency but SECONDARY: a collapsed row
+     UNDER the YES/NO buttons, not a headline block above them. The question and
+     the tap targets lead; the full settlement wording is one tap away. */
+  .rby{margin:12px 0 0}
+  .rby>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    font-family:'Nunito';font-weight:800;font-size:11.5px;letter-spacing:.01em;
+    color:var(--muted-g);padding:3px 0;user-select:none}
+  .rby>summary::-webkit-details-marker{display:none}
+  .rby>summary::before{content:"›";font-weight:900;font-size:14px;line-height:1;
+    transition:transform .15s ease;display:inline-block}
+  .rby[open]>summary::before{transform:rotate(90deg)}
+  .rby-body{margin:8px 0 2px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
+    color:var(--muted-g);border-left:2px solid var(--hair-g);padding-left:11px}
+  .card.picking .rby{display:none}   /* stay out of the way once a side is chosen */
   /* Cold-visitor onboarding. A snap-aligned WRAP is the key: the scroller uses
      scroll-snap mandatory, which otherwise snaps straight to the first card on
      load and hides these above the fold. Making the wrap the first snap point
@@ -231,8 +239,15 @@
      centres its own content so there is no dead space. */
   .card{scroll-snap-align:start;scroll-margin-top:var(--feedtop);position:relative;
     width:min(var(--feedcol), calc(100% - 24px));margin:0 auto 18px;
-    min-height:auto;                /* truly hugs its content — no internal dead space */
-    display:flex;flex-direction:column;justify-content:flex-start;gap:0;
+    /* Fill the visible band — the viewport minus the fixed header and the bottom
+       tab bar — and CENTER the content within it, so the question and the YES/NO
+       tap targets always land fully visible around the middle of the screen, with
+       no scrolling or guessing. `safe center` falls back to top-alignment if the
+       content is ever taller than the band (tiny phone + long question), so the
+       question can never be clipped under the header. dvh tracks X's in-app
+       browser chrome as it grows/shrinks. */
+    min-height:calc(100dvh - var(--feedtop) - var(--tabh) - env(safe-area-inset-bottom) - 30px);
+    display:flex;flex-direction:column;justify-content:center;justify-content:safe center;gap:0;
     background:var(--card-surface);border:2px solid var(--card-line);border-radius:30px;
     box-shadow:var(--card-shadow);padding:24px 22px 22px;
     transform-origin:center center;will-change:transform,opacity;
@@ -1372,7 +1387,10 @@ function maybeFeedTop(scroller){
   const cold=onboardingCold();
   const showTag=cold && !lsGet(ONB_KEY);
   const showFollow=cold && !lsGet(FOLLOW_KEY);
-  const showClaim=!!claim;
+  // On a shared-market landing (/m/{slug}) the market itself must lead and sit
+  // centered — so the daily-claim banner (a retention hook for the organic feed)
+  // is suppressed here; it still shows on a normal feed visit.
+  const showClaim=!!claim && !startSlug;
   if(!showClaim && !showTag && !showFollow)return;
   const wrap=document.createElement("div"); wrap.className="onbwrap";
   if(showClaim)wrap.appendChild(claimCard());
@@ -1465,7 +1483,6 @@ function renderFeed(items){
       <div class="meta">${m.community
         ? `<span class="commtag">community market</span><span class="cdown">${m.forming ? `<b>market forming</b> · ${m.positions} ${m.positions===1?"call":"calls"} so far` : `${yes}% yes`} · ${closesIn(m.closesAt)}</span>${m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
         : `${money(m.volumeUsd)} in play`}</div>
-      ${m.community && m.resolutionCriteria ? `<div class="rby"><b>Resolves by:</b> ${esc(m.resolutionCriteria)}</div>` : ""}
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">
           <span class="oside">YES</span>
@@ -1478,6 +1495,7 @@ function renderFeed(items){
           <span class="opay">${fmtMult(no)}</span>
         </button>
       </div>
+      ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
       <div class="picker" id="pick${i}" hidden>
         <div class="amts">
           <button class="amt" data-v="10">10</button>
