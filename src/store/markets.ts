@@ -2609,7 +2609,10 @@ const memAllowlist = new Map<string, { source: string; cohort: string; invitedAt
 const memAllowlistX = new Map<string, { source: string; invitedAt: string | null; acceptedAt: string | null; handle: string | null }>();
 
 export type Gate =
-  | { allowed: true; email: string | null; identity: string; provider: "google" | "twitter"; justAccepted: boolean }
+  // `allowed` is now always true — there is no rope. identity/provider are null
+  // for an anonymous visitor (they can play without signing in) and set once
+  // they connect an account, purely so the UI can echo who they are.
+  | { allowed: true; email: string | null; identity: string | null; provider: "google" | "twitter" | null; justAccepted: boolean }
   | { allowed: false; reason: "signed_out" | "not_allowlisted"; email: string | null; identity: string | null; provider: "google" | "twitter" | null };
 
 export async function gateFor(rawDeviceId: string): Promise<Gate> {
@@ -2620,12 +2623,12 @@ export async function gateFor(rawDeviceId: string): Promise<Gate> {
     const mine = _memAccounts.filter((a) => a.canonicalDevice === deviceId);
     const g = mine.find((a) => a.provider === "google" && a.email);
     const x = mine.find((a) => a.provider === "twitter");
-    if (!g && !x) return { allowed: false, reason: "signed_out", email: null, identity: null, provider: null };
+    // Anonymous is full access too — enter and vote, no sign-in, no waitlist.
+    if (!g && !x) return { allowed: true, email: null, identity: null, provider: null, justAccepted: false };
     const gEmail = g?.email ?? null;
     // X first for the identity we echo back (the reputation thesis lives on X).
     const identity = x ? (x.handle ?? `@${x.uid}`) : gEmail!;
     const provider = x ? "twitter" as const : "google" as const;
-    // Oddie is viral, not gated: any successful sign-in is full access.
     return { allowed: true, email: gEmail, identity, provider, justAccepted: false };
   }
 
@@ -2635,15 +2638,16 @@ export async function gateFor(rawDeviceId: string): Promise<Gate> {
     `SELECT provider, email, provider_uid, handle FROM account WHERE canonical_device = $1 ORDER BY created_at`, [deviceId]);
   const g = accts.rows.find((a) => a.provider === "google" && a.email);
   const x = accts.rows.find((a) => a.provider === "twitter");
-  if (!g && !x) return { allowed: false, reason: "signed_out", email: null, identity: null, provider: null };
+  // Anonymous is full access too — enter and vote, no sign-in, no waitlist.
+  if (!g && !x) return { allowed: true, email: null, identity: null, provider: null, justAccepted: false };
 
   const gEmail = g?.email ?? null;
   const identity = x ? (x.handle ?? `@${x.provider_uid}`) : (gEmail ?? "");
   const provider = x ? "twitter" as const : "google" as const;
 
-  // Oddie is viral, not gated: any successful X or Google sign-in is full
-  // access. (The allowlist match that used to live here was Poppin's curated
-  // launch — removed. There is no "not on the list" state anymore.)
+  // Oddie is viral, not gated: signing in just attaches an identity/streak that
+  // follows you across devices. It was never required to play, and now the
+  // anonymous case above says so explicitly — no rope, no waitlist, no taste cap.
   return { allowed: true, email: gEmail, identity, provider, justAccepted: false };
 }
 

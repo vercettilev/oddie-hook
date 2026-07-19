@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
-import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, callCountOf } from "./store/markets.js";
+import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -885,19 +885,10 @@ app.post("/api/market/:slug/call", async (req, res) => {
   if (side !== "yes" && side !== "no") return res.status(400).json({ error: "side must be yes|no" });
   if (!Number.isInteger(tokens) || tokens <= 0 || tokens > 1_000_000) return res.status(400).json({ error: "tokens must be a positive integer" });
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const gate = await gateFor(deviceId);
-  if (!gate.allowed) {
-    // The free taste: ANY device not through the gate gets TWO calls before it —
-    // one on the opening card, one on the personalized card after the category
-    // picker — signed out OR signed-in-but-unlisted alike, because the taste
-    // comes first and the gate is the last thing either of them sees. Capped per
-    // device by the calls already on the books. The `gate` field tells the client
-    // which terminal gate to show once the taste is spent (sign-in vs. not-listed).
-    const FREE_TASTE_CALLS = 2;
-    if ((await callCountOf(deviceId)) >= FREE_TASTE_CALLS) {
-      return res.status(403).json({ ok: false, reason: "not_allowed", gate: gate.reason === "signed_out" ? "taste_used" : gate.reason });
-    }
-  }
+  // No rope on voting: any device — anonymous or signed in — may place calls
+  // with its free points. Signing in is optional (it just attaches an identity
+  // that follows you across devices). This is what makes a seeded reply link
+  // playable the instant someone taps it.
   const all = await pricingSet(); // venue markets + open community markets, so a community market can be entered
   const result = await placeCall(req.params.slug, side, tokens, deviceId, all);
   if (!result.ok && result.reason === "unknown-market") return res.status(404).json({ ok: false, reason: "unknown-market", error: "unknown market" });

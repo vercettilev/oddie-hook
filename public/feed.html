@@ -1752,14 +1752,9 @@ function renderFeed(items){
 
     const tap=(s)=>{
       if(y.disabled)return;
-      if(!GATE.allowed&&!TASTE){
-        // The rope, said plainly. The card stays a spectacle; playing needs a pass.
-        soc.innerHTML=`<a class="waitcta" href="/about">join the waitlist to play →</a>`;
-        ev("allowlist_denied",{slug:m.slug});
-        return;
-      }
-      // In TASTE mode the tap proceeds: the server grants one free call and then
-      // 403s, at which point placeNow surfaces the gate in place.
+      // No rope: any tap proceeds to a vote. Anonymous visitors play with their
+      // free points; the server never blocks a call. (The waitlist CTA that used
+      // to sit here is gone — a seeded reply link is playable on the first tap.)
       if(card.classList.contains("picking")){ // picker open: switching sides in place, as before
         if(side===s)return;
         const keep=amt;closePick();openPick(s,keep);
