@@ -1204,6 +1204,12 @@ export interface AccuracyRecord {
   streak: number;             // current trailing consecutive-correct
   bestStreak: number;
   bestTopic: { category: string; pct: number; resolved: number } | null;
+  // Per-category accuracy, gated the SAME way the global accuracyPct is: a
+  // category needs its own MIN_RESOLVED_FOR_ACCURACY resolved picks before it
+  // appears here at all. A category short of that bar is simply absent — never
+  // a placeholder, never a misleadingly-precise % off a couple of picks. (Not to
+  // be confused with bestTopic above, a DIFFERENT, lower bar — "best topic" is
+  // allowed to crown a category off a smaller sample.)
   byCategory: CategoryAccuracy[];
 }
 
@@ -1225,10 +1231,15 @@ function computeAccuracy(rows: { correct: boolean; category: string; pct: number
 
   const m = new Map<string, { resolved: number; correct: number }>();
   for (const r of rows) { const e = m.get(r.category) ?? { resolved: 0, correct: 0 }; e.resolved++; if (r.correct) e.correct++; m.set(r.category, e); }
-  const byCategory: CategoryAccuracy[] = [...m.entries()]
+  const byCategoryAll: CategoryAccuracy[] = [...m.entries()]
     .map(([category, e]) => ({ category, resolved: e.resolved, correct: e.correct, pct: Math.round((100 * e.correct) / e.resolved) }))
     .sort((a, b) => b.pct - a.pct || b.resolved - a.resolved);
-  const topPick = byCategory.filter((c) => c.resolved >= MIN_PER_CATEGORY_FOR_BEST)[0] ?? byCategory[0] ?? null;
+  // "Best topic" keeps its own, lower bar (MIN_PER_CATEGORY_FOR_BEST) — a category
+  // can be someone's standout even off a couple of picks. The displayed BREAKDOWN
+  // below reuses the global accuracy threshold instead: the same "building track
+  // record" convention, applied per category rather than to the whole record.
+  const topPick = byCategoryAll.filter((c) => c.resolved >= MIN_PER_CATEGORY_FOR_BEST)[0] ?? byCategoryAll[0] ?? null;
+  const byCategory = byCategoryAll.filter((c) => c.resolved >= MIN_RESOLVED_FOR_ACCURACY);
 
   return {
     resolved, correct,

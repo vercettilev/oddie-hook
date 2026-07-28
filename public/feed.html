@@ -668,6 +668,17 @@
   .trstats .v.topic{font-size:17px}
   .trstats .k{font-family:'Nunito';font-weight:800;font-size:11px;color:#5c6660;margin-top:5px}
   .trstats .best{font-size:11px;font-weight:800;color:#5c6660;white-space:nowrap}
+  /* Per-category accuracy — supporting detail below the Oddie Score, one row per
+     category that has cleared its own resolved-picks threshold (the same
+     "building track record" minimum, applied per category instead of globally).
+     A category short of that bar is simply absent — no placeholder, no zero. */
+  .catbreak{display:flex;flex-direction:column;gap:7px;margin-bottom:8px}
+  .catrow{display:flex;align-items:center;gap:10px;border:2px solid var(--card-line);
+    border-radius:12px;background:var(--card-surface);padding:9px 13px;
+    font-family:'Nunito';font-weight:800;font-size:13px}
+  .catrow .catname{flex:1;color:var(--on-ground)}
+  .catrow .catpct{color:var(--on-ground);font-size:15px;font-weight:900}
+  .catrow .catn{color:var(--muted-g);font-size:12px;white-space:nowrap}
   /* Oddie Score — the calibration-adjusted reputation, given hero prominence over
      the raw stat tiles. Fixed dark text on the fixed lime accent (AA both themes). */
   .oscore{display:flex;align-items:center;gap:14px;background:var(--accent);color:#17250a;
@@ -1994,6 +2005,17 @@ function rankStampHtml(rank){
   if(!rank)return "";
   return `<div class="oscore-rank"><b>Top ${rank.topPct}%</b><span>SEASON RANK</span></div>`;
 }
+// Per-category accuracy — supporting detail BELOW the Oddie Score (the primary
+// number, shown first). The server already withheld any category short of its
+// own resolved-picks threshold, so every row here is qualified by construction:
+// nothing to gate client-side, and no placeholder for the categories left out.
+function categoryBreakdownHtml(byCategory){
+  if(!byCategory||!byCategory.length)return "";
+  return `<p class="psec" style="margin-top:22px">By category</p>
+    <div class="catbreak">${byCategory.map(c=>
+      `<div class="catrow"><span class="catname">${esc(c.category)}</span><span class="catpct">${c.pct}%</span><span class="catn">${c.resolved} resolved</span></div>`
+    ).join("")}</div>`;
+}
 
 // --- Public profile page (/@{handle}) — read-only, works fully logged out ----
 // Reuses the private Profile's Oddie Score / stats styling, plus a feed of the
@@ -2045,6 +2067,7 @@ async function renderPublicProfile(){
       <div class="tile"><div class="v">${acc.resolved}</div><div class="k">RESOLVED PICKS</div></div>
     </div>
     ${!acc.hasEnough?`<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Oddie Score shows at ${acc.minResolved}.</p>`:''}
+    ${categoryBreakdownHtml(acc.byCategory)}
     <p class="psec" style="margin-top:22px">Recent calls</p>
     ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
     <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
@@ -2483,6 +2506,7 @@ async function loadProfile(scroller){
     </div>
     ${acc&&!acc.hasEnough
       ? `<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Accuracy shows at ${acc.minResolved}.</p>`:""}
+    ${categoryBreakdownHtml(acc&&acc.byCategory)}
     <p class="psec" style="margin-top:24px">Appearance</p>
     <div class="seg" role="group" aria-label="Theme">
       ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>
