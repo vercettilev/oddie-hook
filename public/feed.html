@@ -71,7 +71,16 @@
        float on. `--feed-ground` sits behind the card so it reads as liftable. */
     --feed-ground:#E9F2D2; --card-surface:#FBFDF6; --card-line:#101010;
     --card-shadow:0 2px 5px rgba(35,55,15,.05), 0 12px 26px rgba(45,65,20,.11), 0 30px 56px rgba(45,65,20,.08);
-    --feedtop:calc(env(safe-area-inset-top) + 96px)}
+    --feedtop:calc(env(safe-area-inset-top) + 96px);
+    /* ---------------------------------------------------------- design system --
+       One radius scale, one shadow scale, one type scale — reused across home,
+       feed cards, permalink, profile and the og cards so nothing competes for
+       attention that shouldn't. Hero text (questions, the Oddie Score) is the
+       one thing allowed to be big; everything else steps down deliberately. */
+    --r-xs:10px; --r-sm:14px; --r-md:18px; --r-lg:24px; --r-xl:30px;
+    --shadow-chip:0 1px 2px rgba(30,45,10,.07), 0 3px 8px rgba(30,45,10,.06);
+    --shadow-pop:0 2px 6px rgba(30,45,10,.09), 0 10px 24px rgba(40,60,15,.14);
+    --fs-hero:min(38px,9.5vw); --fs-title:22px; --fs-body:15px; --fs-label:13px; --fs-caption:11.5px}
 
   /* Deep, slightly warm near-black. Not #000: pure black next to a 4px pure-black
    * outline erases the outline, and the outline IS the brand. The ground has to
@@ -96,6 +105,8 @@
     /* Elevated card panel sits above the deeper feed ground; heavier shadow. */
     --feed-ground:#0C0A11; --card-surface:#211D2A; --card-line:#39333F;
     --card-shadow:0 3px 10px rgba(0,0,0,.5), 0 22px 50px rgba(0,0,0,.62);
+    --shadow-chip:0 1px 2px rgba(0,0,0,.35), 0 3px 8px rgba(0,0,0,.3);
+    --shadow-pop:0 2px 8px rgba(0,0,0,.4), 0 12px 28px rgba(0,0,0,.5);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -369,7 +380,25 @@
   .orow.pick .opay{color:#31480a}
   .orow.dim{opacity:.4;transform:scale(.955)}
   :root[data-theme="dark"] .orow.dim{opacity:.5}
-  @media (prefers-reduced-motion:reduce){.orow,.orow::after,.orow::before,.card{transition:none}}
+  /* The confirmation snap: one quick ring-flash the instant a call locks in — the
+     "juice" on the single most important tap in the product. A ring (not a fill
+     swap, that already happened) expands and fades once, tasteful not gaudy. */
+  .orow.locked-flash::after{content:"";position:absolute;inset:-3px;z-index:3;border-radius:inherit;
+    border:3px solid var(--accent);opacity:0;pointer-events:none;
+    animation:lockring .6s cubic-bezier(.2,.7,.3,1)}
+  @keyframes lockring{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.14)}}
+
+  /* Shared entrance: a fast, staggered rise+fade — cards, badges, medallions,
+     stat rows all use this ONE motion so the product feels like one system
+     rather than every screen inventing its own animation. */
+  @keyframes enterUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .enter{animation:enterUp .42s cubic-bezier(.2,.7,.3,1) backwards}
+
+  @media (prefers-reduced-motion:reduce){
+    .orow,.orow::after,.orow::before,.card{transition:none}
+    .orow.locked-flash::after{animation:none;display:none}
+    .enter{animation:none}
+  }
 
   /* The balance pill keeps its pale-lime fill (a SURFACE token) in BOTH themes,
      so in dark mode its number and top-up note must stay dark to read on it. */
@@ -614,27 +643,62 @@
      shellTop()'s — so the top padding here is smaller than .sheet's 104px. */
   .homewrap{max-width:var(--col);margin:0 auto;
     padding:calc(env(safe-area-inset-top) + 82px) 20px calc(env(safe-area-inset-bottom) + var(--tabh) + 28px)}
-  .hero{text-align:center;padding:6px 0 24px}
-  .herotitle{font-size:min(32px,8.6vw);font-weight:600;line-height:1.14;letter-spacing:-.02em;
-    color:var(--on-ground);margin:0 0 12px}
-  .herosub{font-family:'Nunito';font-weight:700;font-size:14px;line-height:1.45;color:var(--muted-g);
-    max-width:320px;margin:0 auto 20px}
+  /* Home is a static page, not a stack of full-screen cards: the Daily Call
+     borrows the feed's card styling but must NOT borrow the feed's near-full-
+     viewport min-height, or the page reads as "one card per screen" (feed-like)
+     even with snap correctly disabled. It hugs its own content — a secondary
+     "try this" slot under the tag CTA, not a takeover. Same reasoning kills
+     scroll-snap-align: harmless without a snap container, but pointless here. */
+  .homewrap .card{min-height:auto;scroll-snap-align:none;scroll-margin-top:0}
+  .homewrap .card:first-child{margin-top:0}
+  /* "Daily Call" itself reads as a quiet label over a secondary slot, not a
+     section header competing with the hero above it. */
+  .homewrap .psec{text-align:center;margin:6px 0 10px}
+  .hero{position:relative;text-align:center;padding:10px 0 26px}
+  /* A soft lime glow seated behind the headline — the one "premium" cue a
+     hackathon build skips. Pure gradient, no image, invisible on load until
+     the hero's own .enter fade brings it in with everything else. */
+  .hero::before{content:"";position:absolute;top:-40px;left:50%;width:340px;height:220px;
+    transform:translateX(-50%);background:radial-gradient(ellipse at center, rgba(182,240,95,.35), transparent 70%);
+    filter:blur(2px);pointer-events:none;z-index:0}
+  :root[data-theme="dark"] .hero::before{background:radial-gradient(ellipse at center, rgba(182,240,95,.16), transparent 70%)}
+  .hero>*{position:relative;z-index:1}
+  .herotitle{font-size:min(36px,9vw);font-weight:700;line-height:1.08;letter-spacing:-.025em;
+    color:var(--on-ground);margin:0 0 13px}
+  .herosub{font-family:'Nunito';font-weight:700;font-size:var(--fs-label);line-height:1.5;color:var(--muted-g);
+    max-width:320px;margin:0 auto 22px}
   .herosub b{color:var(--on-ground);font-weight:900}
   .herocta{display:inline-flex;align-items:center;gap:9px;font-family:'Fredoka';font-weight:600;font-size:16px;
-    color:#17250a;background:var(--accent);border:2.5px solid #000;border-radius:999px;
-    padding:13px 24px;text-decoration:none;box-shadow:0 3px 0 rgba(0,0,0,.18)}
+    color:#17250a;background:linear-gradient(180deg, #c4f57a, var(--accent) 60%);
+    border:2.5px solid #000;border-radius:999px;
+    padding:14px 26px;text-decoration:none;box-shadow:0 4px 0 rgba(0,0,0,.18), var(--shadow-pop);
+    transition:transform .12s ease, box-shadow .12s ease}
   .herocta:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
   .herocta .glyphx{font-size:17px;line-height:1}
-  /* Three beats, icon + a few words each — no paragraphs, per the brief. */
-  .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:6px;margin:28px 0 4px}
-  .howstep{display:flex;flex-direction:column;align-items:center;gap:5px;width:82px;
-    font-family:'Nunito';font-weight:800;font-size:11.5px;line-height:1.25;color:var(--muted-g);text-align:center}
-  .howstep .howico{font-size:23px;line-height:1}
-  .howarrow{flex:none;color:var(--muted-g);font-weight:700;font-size:15px;margin-top:9px}
+  /* Three beats, icon + a few words each — no paragraphs, per the brief. Each
+     gets its own medallion (a soft chip circle) instead of a bare emoji
+     floating in text, so the row reads as a designed sequence, not a caption. */
+  .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:2px;margin:30px 0 4px}
+  .howstep{display:flex;flex-direction:column;align-items:center;gap:9px;width:84px;
+    font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);line-height:1.25;color:var(--muted-g);text-align:center}
+  .howstep .howico{display:flex;align-items:center;justify-content:center;width:52px;height:52px;
+    border-radius:50%;background:var(--wash);border:2px solid var(--card-line);
+    font-size:22px;line-height:1;box-shadow:var(--shadow-chip)}
+  :root[data-theme="dark"] .howstep .howico{background:var(--card-surface)}
+  .howarrow{flex:none;color:var(--card-line);opacity:.35;font-weight:700;font-size:16px;margin-top:24px}
   /* The feed is a destination now, chosen not defaulted-into — one quiet link. */
-  .browselink{display:block;text-align:center;font-family:'Nunito';font-weight:800;font-size:13px;
-    color:var(--link-g);text-decoration:none;margin:26px 0 4px;padding:10px}
-  .browselink:active{opacity:.7}
+  /* Tertiary, nearly hidden by design: tagging is the primary action, the Daily
+     Call is one thing to try, and browsing the catalog is the last resort for
+     someone who wants it anyway — not a peer of the other two. */
+  .browselink{display:block;text-align:center;font-family:'Nunito';font-weight:700;font-size:var(--fs-caption);
+    color:var(--muted-g);text-decoration:none;margin:30px 0 4px;padding:10px;opacity:.75}
+  .browselink:active{opacity:.5}
+  /* The points incentive under the tag CTA — wired live to the actual Season
+     Points surface-award amount (server), never a hardcoded number that can
+     drift from what the backend actually pays out. */
+  .heroincentive{font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);
+    color:var(--acc-deep);max-width:280px;margin:2px auto 0;line-height:1.4}
+  :root[data-theme="dark"] .heroincentive{color:var(--acc-mid)}
 
   /* Says what it is, everywhere it is. These screens read as finished on purpose;
      the badge is the only thing standing between "shipped" and "mocked up". */
@@ -863,8 +927,13 @@
     /* Same physical card object as mobile — content-hug, filling the column; the
        22px side padding gives the soft shadow room (the scroller would clip it).
        The next card peeks + recedes below. */
-    .scroller{height:auto;flex:1;min-height:0;scroll-snap-type:y mandatory;
+    /* scroll-snap-type is scoped to .scroller.snap ONLY (matches the mobile rule) —
+       it used to apply unconditionally here, which leaked feed-style snap-scroll
+       onto every other view at desktop widths, home included. A static page must
+       scroll like a static page: no snap container, no bounce-to-next-section. */
+    .scroller{height:auto;flex:1;min-height:0;
       scroll-padding-top:6px;padding:0 22px calc(var(--tabh) + 24px)}
+    .scroller.snap{scroll-snap-type:y mandatory}
     .sheet{max-width:none;padding:26px 26px 34px}
     .card{width:100%;max-width:none;margin:0 0 18px;scroll-margin-top:6px;min-height:auto;padding:26px 26px 24px}
     .card:first-child{margin-top:2px}
@@ -1236,6 +1305,12 @@ let hintRetired=false;
  * than returning null. If both are unavailable the id lives for the page's
  * lifetime only: an unmeasurable session still gets a working feed.
  */
+// Some browsers restore the previous scroll offset on a fresh load of "/" (most
+// commonly iOS Safari / in-app browsers after backgrounding). That fights the
+// requirement that home always opens at the top — take manual control up front,
+// once, before anything renders. try/catch: not every embedded webview exposes it.
+try{if("scrollRestoration" in history)history.scrollRestoration="manual";}catch(e){}
+
 const DID_KEY="oddie_did";
 const deviceId=(()=>{
   const mint=()=>(crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+Date.now().toString(36));
@@ -1301,6 +1376,23 @@ function closesIn(iso){
 }
 function esc(s){return s.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}
 function n(x){return x.toLocaleString("en-US")}
+// Animated count-up — cheap, tasteful motion for a hero number (Oddie Score,
+// points, resolved counts) on first paint. Skipped entirely under
+// prefers-reduced-motion; the element just shows the final value immediately.
+const REDUCE_MOTION=matchMedia("(prefers-reduced-motion: reduce)").matches;
+function countUp(el,to,opts={}){
+  if(!el||!Number.isFinite(to))return;
+  if(REDUCE_MOTION){el.textContent=(opts.fmt||String)(to);return;}
+  const dur=opts.duration||700, from=opts.from||0, start=performance.now();
+  const ease=(t)=>1-Math.pow(1-t,3); // easeOutCubic — fast start, gentle settle
+  const step=(now)=>{
+    const t=Math.min(1,(now-start)/dur);
+    const val=Math.round(from+(to-from)*ease(t));
+    el.textContent=(opts.fmt||String)(val);
+    if(t<1)requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 
 /* -------------------------------------------------------------- routing --
    Hash routes, not paths. oddie.fun points straight at this one service, so real
@@ -1712,7 +1804,11 @@ function buildCard(m,i){
             headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
             const j=await r.json();if(j.ok)url=j.url;}catch(e){/* generic link still shares */}
         }
-        shareMarket({slug:m.slug,text:`calling ${s.toUpperCase()} on this at ${s==="yes"?yes:no}%`,source:"postcall",anchor,url});
+        // Short, confident, challenge-toned — matching the "make the call" voice
+        // everywhere else, not a dry status readout. The link rides separately
+        // (native share / the X intent both append it), so the ↓ just cues that
+        // it's coming right after.
+        shareMarket({slug:m.slug,text:`${s.toUpperCase()} at ${s==="yes"?yes:no}%. prove me wrong ↓`,source:"postcall",anchor,url});
       };
       (card.querySelector(".socline")||soc).after(sb);
       // One line, once, only to someone who has not connected. An offer, not a gate.
@@ -1909,16 +2005,21 @@ async function renderHome(){
   homeTop();
   const scroller=document.getElementById("scroller");
   scroller.classList.remove("snap");
+  // Home always opens at the top — no exceptions. Some browsers (iOS Safari and
+  // in-app webviews especially) restore a prior scroll offset on a fresh load of
+  // "/"; force both the internal scroller AND the window itself before anything
+  // else runs, so the hero is what a first tap of a shared link actually sees.
+  scroller.scrollTop=0; window.scrollTo(0,0);
   scroller.innerHTML='<div class="state">loading…</div>';
   await loadBalance().catch(()=>{}); // balance pill + streak badge, same as everywhere
   try{
     const cr=await fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`);
     if(cr.ok)claim=await cr.json();
   }catch(e){/* claim strip just won't render; nothing else depends on it */}
-  let featured=null;
+  let featured=null, surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
   try{
     const r=await fetch(`${API}/api/home`);
-    if(r.ok)featured=(await r.json()).featured;
+    if(r.ok){const j=await r.json();featured=j.featured;if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
   }catch(e){/* the featured slot degrades to absent, not an error state */}
 
   const wrap=document.createElement("div");wrap.className="homewrap";
@@ -1927,6 +2028,7 @@ async function renderHome(){
       <p class="herosub">tag <b>@oddiefun</b> under any claim on X — it turns into a market that keeps score</p>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
+      <p class="heroincentive">tag a claim on X — if it becomes a market, you earn <b>${surfaceReward}</b> points</p>
     </div>`;
 
   // The daily-claim strip is a retention hook, not onboarding — it belongs on
@@ -1966,6 +2068,14 @@ async function renderHome(){
 
   scroller.innerHTML="";
   scroller.appendChild(wrap);
+  // A fast, staggered rise+fade down the page on first paint — the one motion
+  // cue that says "designed", not "just appeared". Capped stagger so a long
+  // page never reads as sluggish.
+  [...wrap.children].forEach((el,idx)=>{el.classList.add("enter");el.style.animationDelay=`${Math.min(idx*55,220)}ms`;});
+  // Re-assert the top after the swap: replacing innerHTML can itself nudge a
+  // scroll position mid-layout on some engines, so this is the belt to the
+  // suspenders above, not a duplicate of it.
+  scroller.scrollTop=0; window.scrollTo(0,0);
 }
 
 /**
