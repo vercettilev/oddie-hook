@@ -2491,6 +2491,10 @@ export interface ShareCall {
   side: "yes" | "no";
   entryPct: number;
   volumeUsd: number;
+  /** The market's venue — so the personal card can tell a real venue dollar
+   *  figure apart from a community market, which never has one. */
+  venue: Market["venue"];
+  closesAt: string | null;
   /** null while open; the resolved side once settled at 100/0, or "sold". */
   resolved: "yes" | "no" | "sold" | null;
   handle: string;
@@ -2537,6 +2541,7 @@ export async function getShareCall(token: string): Promise<ShareCall | null> {
     return {
       token, slug: c.slug, question: c.question, side: c.side, entryPct: c.entryPct,
       volumeUsd: rec?.market.volumeUsd ?? 0,
+      venue: rec?.market.venue ?? "community", closesAt: rec?.market.closesAt ?? null,
       resolved: c.exitPct === null ? null : c.exitPct === 100 ? c.side : c.exitPct === 0 ? (c.side === "yes" ? "no" : "yes") : "sold",
       handle: (memHandle.get(c.deviceId) ?? `#${c.deviceId.slice(0, 4)}`).replace(/^@+/, ""),
     };
@@ -2544,9 +2549,10 @@ export async function getShareCall(token: string): Promise<ShareCall | null> {
   await ensureSchema();
   const { rows } = await db().query<{
     slug: string; question: string; side: "yes" | "no"; pct_at: number | null; exit_pct: number | null;
+    venue: Market["venue"]; closes_at: Date | null;
     volume_usd: number; device_id: string; handle: string | null; acct_handle: string | null;
   }>(
-    `SELECT mc.slug, ms.question, mc.side, mc.pct_at, mc.exit_pct, ms.volume_usd, mc.device_id,
+    `SELECT mc.slug, ms.question, mc.side, mc.pct_at, mc.exit_pct, ms.venue, ms.closes_at, ms.volume_usd, mc.device_id,
             db.handle,
             (SELECT a.handle FROM account a WHERE a.canonical_device = mc.device_id AND a.provider = 'twitter'
               AND a.handle IS NOT NULL ORDER BY a.created_at LIMIT 1) AS acct_handle
@@ -2559,6 +2565,7 @@ export async function getShareCall(token: string): Promise<ShareCall | null> {
   return {
     token, slug: r.slug, question: r.question, side: r.side, entryPct: r.pct_at,
     volumeUsd: Number(r.volume_usd),
+    venue: r.venue, closesAt: r.closes_at ? r.closes_at.toISOString() : null,
     resolved: r.exit_pct === null ? null : r.exit_pct === 100 ? r.side : r.exit_pct === 0 ? (r.side === "yes" ? "no" : "yes") : "sold",
     handle: (r.acct_handle ?? r.handle ?? `#${(r.device_id ?? "anon").slice(0, 4)}`).replace(/^@+/, ""),
   };

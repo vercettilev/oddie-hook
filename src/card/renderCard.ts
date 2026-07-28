@@ -184,8 +184,17 @@ const WORDMARK_RIGHT = 140 + textWidth("oddie", 46);
 
 /** Volume pill, dropped down to just the money if the full string would reach
  *  the wordmark. Community markets have no venue volume — their pill speaks
- *  "% yes" language: the countdown (and "community" if it fits). */
-function volumePill(m: Market): { text: string; w: number; x: number } {
+ *  "% yes" language: the countdown (and "community" if it fits).
+ *
+ *  Exported: the personal call card (renderPositionCard.ts) shares this EXACT
+ *  logic rather than reimplementing it, so a community-market position never
+ *  again drifts into showing "$0 in play" — a dollar figure that was never
+ *  real for a market with no venue volume. Narrowed to the three fields this
+ *  actually reads (not the full Market) so a caller with a partial shape —
+ *  ShareCall, not a live venue Market — can pass it directly. Geometry (PAD_R,
+ *  the wordmark position) is identical between the two cards, so the returned
+ *  x/w need no adjustment at the call site. */
+export function volumePill(m: { venue: Market["venue"]; closesAt: string | null; volumeUsd: number }): { text: string; w: number; x: number } {
   const candidates = m.venue === "community"
     ? [`community${timeLeft(m.closesAt)}`, timeLeft(m.closesAt).replace(/^ · /, "") || "community"]
     : [money(m.volumeUsd) + " in play" + timeLeft(m.closesAt), money(m.volumeUsd) + " in play"];

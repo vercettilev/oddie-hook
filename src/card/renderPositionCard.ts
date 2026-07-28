@@ -9,7 +9,7 @@
 // chose to make it one.
 
 import type { ShareCall } from "../store/markets.js";
-import { C, FONT, META, esc, layoutQuestion, money, textWidth } from "./renderCard.js";
+import { C, FONT, META, esc, layoutQuestion, textWidth, volumePill } from "./renderCard.js";
 import { logoMark } from "./logoMark.js";
 
 const W = 1000;
@@ -31,12 +31,24 @@ export function renderPositionCard(s: ShareCall): string {
   // Top-right pill: volume while open, the verdict once resolved. The check and
   // cross are DRAWN, not typed: the bundled fonts have no U+2713 and resvg has
   // no system fallback, so the glyph route renders tofu.
+  //
+  // The OPEN state shares the exact volumePill() logic the general market card
+  // uses: a real $ figure for a venue market, forming/closes-in language for a
+  // community market (which has no venue volume — it must never read "$0 in
+  // play"). Geometry (PAD_R, the wordmark) is identical between the two cards,
+  // so its x/w are used as-is, no re-derivation.
   const won = s.resolved === s.side;
   const isResolved = s.resolved !== null && s.resolved !== "sold";
-  const pillText = isResolved ? `resolved ${s.resolved!.toUpperCase()}` : `${money(s.volumeUsd)} in play`;
   const markW = isResolved ? 34 : 0; // room for the drawn mark
-  const pillW = Math.round(textWidth(pillText, 21) + 44 + markW);
-  const pillX = PAD_R - pillW;
+  let pillText: string, pillW: number, pillX: number;
+  if (isResolved) {
+    pillText = `resolved ${s.resolved!.toUpperCase()}`;
+    pillW = Math.round(textWidth(pillText, 21) + 44 + markW);
+    pillX = PAD_R - pillW;
+  } else {
+    const vp = volumePill({ venue: s.venue, closesAt: s.closesAt, volumeUsd: s.volumeUsd });
+    pillText = vp.text; pillW = vp.w; pillX = vp.x;
+  }
   const pillBg = !isResolved ? C.pill : won ? C.accent : C.barBg;
   const pillFg = !isResolved ? C.muted : C.ink;
   const markX = pillX + pillW - 40;
