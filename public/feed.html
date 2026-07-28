@@ -194,6 +194,11 @@
     border:2px solid var(--card-line);border-radius:16px;padding:11px 14px;
     box-shadow:var(--card-shadow);font-family:'Nunito';font-weight:800;
     font-size:13px;line-height:1.35;color:#3c570b}
+  /* The hero headline — one line, full width at the top of the banner. The
+     positioning a first-timer reads on load; kept to a single tight line so it
+     adds ~one line of height, not a section. */
+  .onbstrip .onbhero{flex-basis:100%;font-family:'Fredoka';font-weight:600;
+    font-size:16px;line-height:1.1;letter-spacing:-.01em;color:#17250a}
   .onbstrip .onbtxt{flex:1 1 60%;min-width:0}
   .onbstrip b{font-weight:900}
   .fbtn{flex:0 0 auto;text-decoration:none;background:var(--accent);color:#17250a;
@@ -1403,13 +1408,16 @@ function maybeFeedTop(scroller){
   // dismissed one sees only the other, still in a single compact strip.
   if(showTag || showFollow){
     const s=document.createElement("div"); s.className="onbstrip";
+    // The visible hero: one headline line, integrated into the banner (not a
+    // section), shown to a first-time visitor alongside the tag instruction.
+    const heroHtml=showTag ? '<span class="onbhero">Tag it. Make the call. See who was right.</span>' : '';
     const tagHtml=showTag
       ? '<span class="onbtxt">tag <b>@oddiefun</b> under any claim on X — it turns into a market that keeps score</span>'
       : '<span class="onbtxt">follow to see which calls were right</span>';
     const followHtml=showFollow
       ? '<a class="fbtn" href="https://x.com/intent/follow?screen_name=oddiefun" target="_blank" rel="noopener">follow @oddiefun ↗</a>'
       : '';
-    s.innerHTML=tagHtml+followHtml+'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
+    s.innerHTML=heroHtml+tagHtml+followHtml+'<button class="onbx" type="button" aria-label="Dismiss">×</button>';
     const fb=s.querySelector(".fbtn"); if(fb)fb.onclick=()=>ev("follow_click",{});
     s.querySelector(".onbx").onclick=()=>{lsSet(ONB_KEY);lsSet(FOLLOW_KEY);s.remove();prune();ev("onboard_dismiss",{});};
     wrap.appendChild(s);
