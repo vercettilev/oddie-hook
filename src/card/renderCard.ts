@@ -22,6 +22,10 @@ export const C = {
   muted: "#6B7A88",
   pill: "#F3FBDA",
   barBg: "#E7EDF2",
+  // The darker olive the live app falls back to for small lime-on-white text
+  // (its --acc-deep token) — bare accent lime reads fine as a big hero fill or
+  // a large kicker, but loses contrast at caption sizes.
+  accentDeep: "#4d6e10",
 };
 
 export const FONT = "'Fredoka', 'Trebuchet MS', sans-serif";
@@ -78,13 +82,15 @@ export function textWidth(s: string, fs: number): number {
   return em * fs;
 }
 
-interface Wrapped {
+export interface Wrapped {
   lines: string[];
   overflow: boolean;
 }
 
-/** Greedy wrap to a pixel budget. Long single words are hard-broken. */
-function wrapToWidth(text: string, maxW: number, fs: number, maxLines: number): Wrapped {
+/** Greedy wrap to a pixel budget. Long single words are hard-broken. Exported:
+ *  renderProfileCard.ts reuses this for badge-medallion labels rather than
+ *  hand-rolling a second wrap implementation. */
+export function wrapToWidth(text: string, maxW: number, fs: number, maxLines: number): Wrapped {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let cur = "";

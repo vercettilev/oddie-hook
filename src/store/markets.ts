@@ -1291,18 +1291,18 @@ export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> 
   return computeAccuracy(rows);
 }
 
-/** Reverse handle → device lookup, for the public profile page at /@{handle}. */
+/** Reverse handle → device lookup, for the public profile page at /@{handle}.
+ *  Delegates to deviceForTwitterHandle (declared below — safe: it's a hoisted
+ *  function declaration) rather than reimplementing the same two-source
+ *  resolution here. It used to only check a device's CHOSEN handle (mem:
+ *  memHandle; prod: device_balance.handle), so a user who linked X but never
+ *  separately picked that same string as their handle got a working private
+ *  profile and a 404 on their own /@handle. deviceForTwitterHandle already
+ *  checks the LINKED account first and falls back to the chosen handle — the
+ *  exact resolution /@handle needs — so reusing it means the two call sites
+ *  (Season Points attribution, public profile lookup) can't drift apart again. */
 export async function deviceForHandle(rawHandle: string): Promise<string | null> {
-  const h = rawHandle.replace(/^@+/, "").toLowerCase();
-  if (!h) return null;
-  if (!PERSISTENT) {
-    for (const [dev, hh] of memHandle) if (hh.toLowerCase() === h) return dev;
-    return null;
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ device_id: string }>(
-    `SELECT device_id FROM device_balance WHERE lower(handle) = $1`, [h]);
-  return rows[0]?.device_id ?? null;
+  return deviceForTwitterHandle(rawHandle);
 }
 
 export interface ResolvedCall {

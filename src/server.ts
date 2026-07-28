@@ -645,7 +645,7 @@ app.get("/card/u/:handle.png", async (req, res) => {
   const png = renderCardPng(renderProfileCard({
     handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
-    badges: badges.map((b) => b.label), rankTopPct: rank ? rank.topPct : null,
+    badges: badges.map((b) => ({ label: b.label, kind: b.kind })), rankTopPct: rank ? rank.topPct : null,
   }));
   pngCache.set(key, { png, at: now });
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
