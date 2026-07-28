@@ -167,15 +167,31 @@
      badge keeps the lime tint. */
   .commtag{display:inline-block;font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.02em;
     padding:3px 9px;border-radius:999px;background:var(--bar);color:#48525d}
-  /* Community meta line: "% yes" + countdown — quiet supporting text, same tier
-     as the venue cards' "$X in play". */
-  .cdown{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--muted-g);white-space:nowrap}
   .chainbadge{display:inline-flex;align-items:center;gap:4px;font-family:'Nunito';font-weight:800;
     font-size:10.5px;letter-spacing:.02em;color:#3c570b;text-decoration:none;white-space:nowrap;
     padding:3px 10px 3px 8px;border-radius:999px;background:var(--wash)}
   .chainbadge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);
     box-shadow:0 0 0 1.5px rgba(0,0,0,.22)}
   .chainbadge:active{transform:scale(.94)}
+  /* The metadata row, as small pills with icons instead of flat grey text — the
+     state ("forming", "closes in Nd", "$X in play") reads at a glance instead
+     of competing with the question for attention at the same weight. One chip
+     component, three uses. Text stays FIXED dark on a FIXED light chip surface
+     (same AA rule as .commtag/.chainbadge — the surface never adapts to theme,
+     so the text can't either). */
+  .mchip{display:inline-flex;align-items:center;gap:5px;font-family:'Nunito';font-weight:800;
+    font-size:12px;letter-spacing:.01em;color:#3c4550;white-space:nowrap;
+    padding:4px 10px 4px 8px;border-radius:999px;background:var(--wash);box-shadow:var(--shadow-chip)}
+  .mchip svg{width:13px;height:13px;flex:none;stroke:currentColor;fill:none;stroke-width:2.2;
+    stroke-linecap:round;stroke-linejoin:round;opacity:.75}
+  /* Forming: a live pulsing dot says "still filling up" without a word doing the
+     work — the same visual language a status indicator uses everywhere else. */
+  .mchip-forming{color:#5c4300;background:#fff3d6}
+  .mchip-forming .pulsedot{width:7px;height:7px;border-radius:50%;background:#e0a300;flex:none;
+    box-shadow:0 0 0 0 rgba(224,163,0,.55);animation:pulsedot 1.8s ease-out infinite}
+  :root[data-theme="dark"] .mchip-forming{color:#f5cf6b;background:#3a2c05}
+  @keyframes pulsedot{0%{box-shadow:0 0 0 0 rgba(224,163,0,.55)}70%{box-shadow:0 0 0 7px rgba(224,163,0,0)}100%{box-shadow:0 0 0 0 rgba(224,163,0,0)}}
+  @media (prefers-reduced-motion:reduce){.mchip-forming .pulsedot{animation:none}}
   /* Resolution criteria — kept for transparency but SECONDARY: a collapsed row
      UNDER the YES/NO buttons, not a headline block above them. The question and
      the tap targets lead; the full settlement wording is one tap away. */
@@ -280,13 +296,21 @@
        browser chrome as it grows/shrinks. */
     min-height:calc(100dvh - var(--feedtop) - var(--tabh) - env(safe-area-inset-bottom) - 30px);
     display:flex;flex-direction:column;justify-content:center;justify-content:safe center;gap:0;
-    background:var(--card-surface);border:2px solid var(--card-line);border-radius:30px;
-    box-shadow:var(--card-shadow);padding:24px 22px 22px;
+    background:var(--card-surface);border:2px solid var(--card-line);border-radius:var(--r-xl);
+    box-shadow:var(--card-shadow);padding:24px 22px 22px;overflow:hidden;
     transform-origin:center center;will-change:transform,opacity;
     /* Scroll-driven depth (scale+fade) is set inline by the scroll handler; the
        short ease keeps it smooth between coarse scroll frames. */
     transition:transform .16s ease-out, opacity .16s ease-out, box-shadow .3s ease}
   .card:first-child{margin-top:var(--feedtop)}
+  /* A layered surface, not a flat tile: a soft diagonal sheen across the top —
+     the one "this was designed" cue a card gets for free, at rest, no motion.
+     Very low-alpha so it reads as depth, not a visible stripe. */
+  .card::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+    background:linear-gradient(155deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,0) 26%);
+    border-radius:inherit}
+  :root[data-theme="dark"] .card::before{background:linear-gradient(155deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,0) 26%)}
+  .card>*{position:relative;z-index:1}
   .scroller{padding-bottom:calc(env(safe-area-inset-bottom) + var(--tabh) + 10px)}
   /* Secondary tier — the category tag recedes below the hero question. Its
      background is the FIXED pale-lime --wash (same in both themes), so the text
@@ -1225,6 +1249,10 @@ addEventListener("pagehide",()=>{
 // — that is the only host whose /m/[slug] permalink unfurls to the PNG card.
 const SHARE_ORIGIN=location.origin.includes("oddie.fun")?location.origin:"https://oddie.fun";
 const SHARE_ICON='<svg viewBox="0 0 24 24"><path d="M12 15V3M12 3 8 7M12 3l4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>';
+// The metadata-row chip icons — same outline language as SHARE_ICON, sized by
+// .mchip svg. CLOCK_ICON = close time; COIN_ICON = real venue volume.
+const CLOCK_ICON='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
+const COIN_ICON='<svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>';
 
 let toastT=null;
 function toast(msg){
@@ -1645,7 +1673,14 @@ function renderFeed(items){
     if(!tasteCats().length){list=items.slice(0,1);tail="picker";}
     else{list=items.slice(0,1);tail="gate";}
   }
-  list.forEach((m,i)=>{scroller.appendChild(buildCard(m,i));});
+  list.forEach((m,i)=>{
+    const card=buildCard(m,i);
+    // The same staggered rise+fade home uses on first paint — one motion
+    // system, not a per-screen reinvention. Capped delay: a card 20 deep in
+    // the feed has long finished animating by the time a swipe reaches it.
+    card.classList.add("enter");card.style.animationDelay=`${Math.min(i*55,220)}ms`;
+    scroller.appendChild(card);
+  });
   if(tail==="picker")scroller.appendChild(buildPicker());
   else if(tail==="gate")scroller.appendChild(buildGate());
   watchDepth(scroller);
@@ -1661,6 +1696,19 @@ function renderFeed(items){
  * `i` only needs to be unique among cards mounted TOGETHER (it seeds local
  * per-card DOM ids, always queried scoped to the card, never globally).
  */
+// The metadata row: small pills with icons instead of flat grey text, so the
+// state reads at a glance — a pulsing dot while a community market is still
+// filling up, a clock once there's a real close date, a coin stack for a venue
+// market's actual dollar volume. One function, every card (feed, permalink, home).
+function metaRowHtml(m,yes){
+  if(!m.community)return `<span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>`;
+  const stateChip=m.forming
+    ? `<span class="mchip mchip-forming"><span class="pulsedot"></span>forming · ${m.positions} ${m.positions===1?"call":"calls"}</span>`
+    : `<span class="mchip">${yes}% yes</span>`;
+  const clockChip=m.closesAt?`<span class="mchip mchip-clock">${CLOCK_ICON}${closesIn(m.closesAt)}</span>`:"";
+  const chain=m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:"";
+  return `<span class="commtag">community market</span>${stateChip}${clockChip}${chain}`;
+}
 function buildCard(m,i){
     const yes=m.yesPct,no=100-yes;
     const card=document.createElement("div");card.className="card";
@@ -1670,9 +1718,7 @@ function buildCard(m,i){
         <button class="shareico" aria-label="Share this market">${SHARE_ICON}</button>
       </div>
       <div class="take">${esc(m.question)}</div>
-      <div class="meta">${m.community
-        ? `<span class="commtag">community market</span><span class="cdown">${m.forming ? `<b>market forming</b> · ${m.positions} ${m.positions===1?"call":"calls"} so far` : `${yes}% yes`} · ${closesIn(m.closesAt)}</span>${m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:""}`
-        : `${money(m.volumeUsd)} in play`}</div>
+      <div class="meta">${metaRowHtml(m,yes)}</div>
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">
           <span class="oside">YES</span>
@@ -1778,7 +1824,11 @@ function buildCard(m,i){
      *  here, so the locked UI cannot drift between them. */
     const lockedUI=(s,stake,win,crowd,callId)=>{
       y.disabled=nb.disabled=true;picker.hidden=true;card.classList.remove("picking");
-      (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
+      // The confirmation snap: fires exactly once, exactly HERE — the single
+      // moment a call actually locks in (both the 5s auto-commit and the
+      // picker's Confirm funnel through this one function), never on the
+      // earlier optimistic tap that a 5s undo can still cancel.
+      (s==="yes"?y:nb).classList.add("pick","locked-flash");(s==="yes"?nb:y).classList.add("dim");
       // Promise only what happens: the call is recorded; the market, not us,
       // decides when it means anything. No "we'll tell you who was right".
       soc.textContent=`Locked — ${stake} tokens on ${s.toUpperCase()}, pays ${win}. Settles when the market resolves.`;
