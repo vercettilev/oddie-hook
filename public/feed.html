@@ -15,13 +15,15 @@
 <!-- Share preview for the bare oddie.fun / feed link. /market/[slug] pages get
      their own per-market card og tags injected server-side right after <title>,
      which precede these, so the card wins there and the banner is the root's. -->
-<meta name="description" content="tag oddie. get the market — swipe live prediction markets, pick a side, one tap.">
+<meta name="description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun under any claim.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
-<meta property="og:title" content="oddie — tag oddie. get the market.">
-<meta property="og:description" content="swipe a feed of live prediction markets, pick a side, one tap.">
+<meta property="og:title" content="Tag it. Make the call. See who was right.">
+<meta property="og:description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.">
 <meta property="og:image" content="https://oddie.fun/banner.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Tag it. Make the call. See who was right.">
+<meta name="twitter:description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.">
 <meta name="twitter:image" content="https://oddie.fun/banner.png">
 <script>
   /* Before any CSS is applied, so the page never flashes the wrong theme at
@@ -1402,8 +1404,8 @@ function maybeFeedTop(scroller){
   if(showTag || showFollow){
     const s=document.createElement("div"); s.className="onbstrip";
     const tagHtml=showTag
-      ? '<span class="onbtxt">tag <b>@oddiefun</b> under any take on X — we turn it into a market you can play</span>'
-      : '<span class="onbtxt">follow for results + fresh markets, straight to your feed</span>';
+      ? '<span class="onbtxt">tag <b>@oddiefun</b> under any claim on X — it turns into a market that keeps score</span>'
+      : '<span class="onbtxt">follow to see which calls were right</span>';
     const followHtml=showFollow
       ? '<a class="fbtn" href="https://x.com/intent/follow?screen_name=oddiefun" target="_blank" rel="noopener">follow @oddiefun ↗</a>'
       : '';

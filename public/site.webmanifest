@@ -1,7 +1,7 @@
 {
   "name": "oddie",
   "short_name": "oddie",
-  "description": "tag oddie. get the market — swipe the feed, pick a side, one tap.",
+  "description": "Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F3FBDA",
