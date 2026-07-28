@@ -129,6 +129,7 @@
       <button class="ghost" id="admsave" style="flex:0 0 auto;padding:9px 16px;font-size:14px">save</button>
     </div>
     <p class="why" id="chainstat">—</p>
+    <p class="why" id="featstat" style="margin-top:2px">—</p>
 
     <!-- Claim-extraction engine: paste an argument (a tweet, or a few tweets of
          a disagreement); the engine drafts a clean YES/NO market below, or
@@ -895,33 +896,77 @@ async function createMarket() {
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }
 }
 
+// The homepage's "Daily Call" pick — the raw admin choice (null = none set,
+// home falls back to the most recent community market with activity).
+let featuredSlug = null;
+
 async function loadCommunity() {
   const box = $("#rlist"), stat = $("#chainstat");
   if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
   try {
-    const r = await fetch("/api/community/list", { headers: admHeaders() });
+    const [r, fr] = await Promise.all([
+      fetch("/api/community/list", { headers: admHeaders() }),
+      fetch("/api/admin/featured", { headers: admHeaders() }).catch(() => null),
+    ]);
     if (r.status === 401) { stat.textContent = "admin token missing or wrong."; box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
     const j = await r.json();
+    const f = fr && fr.ok ? await fr.json().catch(() => null) : null;
+    featuredSlug = f ? f.slug : null;
     chainEnabled = !!(j.chain && j.chain.enabled);
     const bal = j.chain && j.chain.balanceSol;
     stat.innerHTML = chainEnabled
       ? 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 10)) + '… · <b>balance ' + (bal == null ? '?' : bal.toFixed(3)) + ' SOL</b>'
         + (bal != null && bal < 0.05 ? ' — <b style="color:#b00000">low, top up</b>' : '')
       : 'on-chain: <b>off</b> — parked behind ONCHAIN_ENABLED (set it to true + SOLANA_ADMIN_SECRET_KEY to restore devnet minting)';
+    // The homepage's "Daily Call" status — what's picked (if anything) vs. what's
+    // effectively live right now (the fallback is the most recent active market).
+    const featBox = $("#featstat");
+    if (featBox) {
+      featBox.innerHTML = f
+        ? (f.slug
+            ? '<b>Daily Call</b> — explicitly featuring <b>' + esc(f.slug) + '</b>'
+              + (f.resolved && f.resolved.slug === f.slug ? ': "' + esc(f.resolved.question) + '"' : ' (not open right now — home is showing the fallback)')
+            : (f.resolved
+                ? '<b>Daily Call</b> — no explicit pick; showing the fallback: "' + esc(f.resolved.question) + '"'
+                : '<b>Daily Call</b> — no explicit pick, and no community market to fall back to (home\'s featured slot is empty).'))
+        : '<b>Daily Call</b> — status unavailable.';
+    }
     if (!j.items.length) { box.innerHTML = '<p class="why">no community markets yet.</p>'; return; }
     box.innerHTML = j.items.map((m) => {
       const done = m.resolvedOutcome;
       const minted = m.explorer ? '<a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">minted ✓ ↗</a>' : 'on-chain: skipped';
       const pool = 'YES <b>' + m.yesTokens + '</b> (' + m.yesPlayers + 'p) · NO <b>' + m.noTokens + '</b> (' + m.noPlayers + 'p)';
-      return '<div class="box mkt" data-slug="' + esc(m.slug) + '" style="margin-bottom:10px">'
-        + '<p class="why" style="color:var(--ink);font-weight:700">' + esc(m.question) + (done ? ' · <b>RESOLVED ' + String(done).toUpperCase() + '</b>' : '') + '</p>'
+      const isFeatured = featuredSlug === m.slug;
+      const featureBtn = done ? '' // a resolved market can't be the Daily Call
+        : isFeatured
+          ? '<button class="ghost unfeature" data-slug="' + esc(m.slug) + '" style="border-color:var(--accent)">★ Daily Call — clear</button>'
+          : '<button class="ghost feature" data-slug="' + esc(m.slug) + '">☆ feature this market</button>';
+      return '<div class="box mkt" data-slug="' + esc(m.slug) + '" style="margin-bottom:10px' + (isFeatured ? ';border-color:var(--accent)' : '') + '">'
+        + '<p class="why" style="color:var(--ink);font-weight:700">' + (isFeatured ? '★ ' : '') + esc(m.question) + (done ? ' · <b>RESOLVED ' + String(done).toUpperCase() + '</b>' : '') + '</p>'
         + '<p class="why">' + pool + ' · ' + minted + '</p>'
-        + '<div class="row" style="margin-top:6px"><button class="ghost manage" data-slug="' + esc(m.slug) + '">manage / view positions ▾</button></div>'
+        + '<div class="row" style="margin-top:6px">'
+        + '<button class="ghost manage" data-slug="' + esc(m.slug) + '">manage / view positions ▾</button>'
+        + featureBtn
+        + '</div>'
         + '<div class="mktdetail" style="margin-top:10px"></div>'
         + '</div>';
     }).join("");
     box.querySelectorAll(".manage").forEach((b) => { b.onclick = () => toggleDetail(b); });
+    box.querySelectorAll(".feature").forEach((b) => { b.onclick = () => setFeatured(b.dataset.slug); });
+    box.querySelectorAll(".unfeature").forEach((b) => { b.onclick = () => setFeatured(null); });
   } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
+}
+
+// Set (or, with null, clear) the homepage's featured "Daily Call" market.
+async function setFeatured(slug) {
+  try {
+    const r = await fetch("/api/admin/featured", {
+      method: "POST", headers: admHeaders({ "content-type": "application/json" }), body: JSON.stringify({ slug }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) { alert(j.error || "couldn't update the featured market"); return; }
+    loadCommunity();
+  } catch (e) { alert(String(e)); }
 }
 
 async function toggleDetail(btn) {

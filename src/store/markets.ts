@@ -347,6 +347,16 @@ CREATE TABLE IF NOT EXISTS season_points_log (
 );
 CREATE INDEX IF NOT EXISTS spl_device_idx ON season_points_log(device_id);
 CREATE INDEX IF NOT EXISTS spl_handle_idx ON season_points_log(handle);
+
+-- The home page's "Daily Call" slot — a single admin-picked community market
+-- slug. Deliberately ONE row (id fixed at 1): there is only ever one featured
+-- market at a time. NULL slug (or no row yet) means "no explicit pick" — the
+-- home page then falls back to the most recent community market with activity.
+CREATE TABLE IF NOT EXISTS featured_market (
+  id     integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  slug   text,
+  set_at timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 let pool: pg.Pool | null = null;
@@ -2212,6 +2222,33 @@ export async function setCommunityOnchain(slug: string, pubkey: string, sig: str
   }
   await ensureSchema();
   await db().query(`UPDATE community_market SET onchain_pubkey=$2, onchain_sig=$3 WHERE slug=$1`, [slug, pubkey, sig]);
+}
+
+/* ------------------------------------------------------- featured market -----
+ * The home page's "Daily Call" slot — one admin-picked slug. The resolution
+ * logic (explicit pick vs. the "most recent community market with activity"
+ * fallback) lives in server.ts, where the live market data already is; this is
+ * just the raw stored pick.
+ */
+let memFeaturedSlug: string | null = null;
+
+/** Set (or, with null, clear) the featured slug. */
+export async function setFeaturedMarket(slug: string | null): Promise<void> {
+  if (!PERSISTENT) { memFeaturedSlug = slug; return; }
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO featured_market (id, slug, set_at) VALUES (1, $1, now())
+       ON CONFLICT (id) DO UPDATE SET slug = $1, set_at = now()`,
+    [slug],
+  );
+}
+
+/** The raw stored pick, or null if none was ever set (or it was cleared). */
+export async function getFeaturedSlug(): Promise<string | null> {
+  if (!PERSISTENT) return memFeaturedSlug;
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string | null }>(`SELECT slug FROM featured_market WHERE id = 1`);
+  return rows[0]?.slug ?? null;
 }
 
 /** Open (unresolved) community markets, Market-shaped + meta. Used for the feed

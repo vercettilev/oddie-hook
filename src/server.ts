@@ -13,6 +13,7 @@ import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
+import { setFeaturedMarket, getFeaturedSlug } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
 import { proceedsFor } from "./store/economy.js";
@@ -42,9 +43,13 @@ const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf
 // allow-list to keep in sync, so the whole /api/ev class of rewrite gaps is gone.
 app.use(express.static(path.join(__dirname, "../public"), { index: false, maxAge: "7d" }));
 
-// Product-first root: oddie.fun by itself drops users straight into the feed,
-// no separate landing page (302, not 301, so we can add a landing later).
-app.get("/", (_req, res) => res.redirect("/feed"));
+// The homepage. Positioning-first: it sells the chain (claim -> tag -> call ->
+// opponent -> resolution -> receipt -> reputation), not a market catalog. Same
+// SPA shell as /feed (deviceId, theme boot, header, nav, daily-claim strip all
+// come along for free) — the client renders a "home" view instead of loading
+// the feed when the path is bare "/". /feed is unchanged: a real destination,
+// not the default.
+app.get("/", (_req, res) => res.type("html").send(FEED_HTML));
 
 /**
  * The hook. Tweet text in -> best market, slug, card URL, landing URL out.
@@ -483,6 +488,52 @@ app.get("/api/feed", async (req, res) => {
   const chips: string[] = CATEGORIES.filter((c) => c !== "Other");
   if (community.length) chips.push("Community");
   res.json({ categories: ["For you", ...chips], items: withCrowd });
+});
+
+/**
+ * The homepage's "Daily Call" slot. Resolution order:
+ *   1. the admin's explicit pick (/tool), IF it's still an open community market
+ *   2. the most recent open community market WITH at least one position
+ *   3. the most recent open community market at all (never leave Daily Call
+ *      empty just because a fresh market has zero positions yet)
+ * Independent of venue data on purpose — the featured slot is a community
+ * market by design, and the home page must render even if venue APIs are down.
+ */
+async function resolveFeatured(): Promise<(Record<string, unknown> & { slug: string }) | null> {
+  let community: CommunityMarket[] = [];
+  try { community = await openCommunityMarkets(); }
+  catch (e) { console.error("[home] community load failed:", (e as Error).message); }
+  if (!community.length) return null;
+
+  const sorted = [...community].sort((a, b) => b.marketId - a.marketId); // most recent first
+  const slugs = sorted.map((m) => slugFor(m));
+  const playerCounts = await communityPlayerCounts(slugs).catch(() => ({} as Record<string, number>));
+
+  const explicitSlug = await getFeaturedSlug().catch(() => null);
+  const bySlug = new Map(sorted.map((m) => [slugFor(m), m]));
+  let chosen = explicitSlug ? bySlug.get(explicitSlug) : undefined;
+  if (!chosen) {
+    const withActivity = sorted.filter((m) => (playerCounts[slugFor(m)] ?? 0) > 0);
+    chosen = withActivity[0] ?? sorted[0];
+  }
+
+  const slug = slugFor(chosen);
+  const positions = playerCounts[slug] ?? 0;
+  const [crowd, surfacers] = await Promise.all([
+    crowdSplits([slug]),
+    surfacersFor([slug]).catch(() => ({} as Record<string, string | null>)),
+  ]);
+  return {
+    ...chosen, slug, category: "Community", community: true as const,
+    positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
+    onchain: onchainEnabled() && chosen.onchainPubkey ? explorerUrl(chosen.onchainPubkey) : null,
+    crowd: crowd[slug] ?? { yes: 0, no: 0 },
+    challengeHandle: surfacers[slug] ?? null,
+  };
+}
+app.get("/api/home", async (_req, res) => {
+  const featured = await resolveFeatured().catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return null; });
+  res.json({ featured });
 });
 
 /**
@@ -1263,6 +1314,25 @@ app.get("/api/tweet/log", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const items = await listTweetReplies(Number.isFinite(limit) ? limit : 50);
   res.json({ items });
+});
+
+// The homepage's "Daily Call" toggle. GET shows both the raw admin pick and
+// what's EFFECTIVELY live right now (the same resolution /api/home uses), so
+// /tool can tell the operator "you haven't picked one — this is the fallback."
+app.get("/api/admin/featured", requireAdmin, async (_req, res) => {
+  const slug = await getFeaturedSlug().catch(() => null);
+  const resolved = await resolveFeatured().catch(() => null);
+  res.json({ slug, resolved: resolved ? { slug: resolved.slug, question: resolved.question } : null });
+});
+app.post("/api/admin/featured", requireAdmin, async (req, res) => {
+  const raw = req.body?.slug;
+  const slug = raw == null || raw === "" ? null : String(raw).trim();
+  if (slug) {
+    const exists = await communityMarketDetail(slug).catch(() => null);
+    if (!exists) return res.status(404).json({ error: "unknown community market" });
+  }
+  await setFeaturedMarket(slug);
+  res.json({ ok: true, slug });
 });
 
 // Every device the product has touched + what they've done (read-only, admin).

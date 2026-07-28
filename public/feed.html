@@ -121,6 +121,10 @@
   .top-in{max-width:var(--col);margin:0 auto;padding:0 6px}
   .brand{display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:10px}
   .brand b{font-size:21px;font-weight:600}
+  /* The logo+wordmark, now a real link home — grouped so the two keep their own
+     8px gap (matching the old flat layout) while acting as one tap target. */
+  .brandlink{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit}
+  .brandlink:active{opacity:.82}
 
   /* The mark IS the logo — the Oddie ghost on its lime tile, baked into the art.
      A rounded square (app-icon shape), not a circle, so it reads as the same tile
@@ -605,6 +609,33 @@
   .head h1{font-size:27px;font-weight:600;margin:0;color:var(--on-ground)}
   .sub{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:0 0 20px}
 
+  /* ------------------------------------------------------------------ home -- */
+  /* homeTop() is a brand-row-only header (no chips, no title row), shorter than
+     shellTop()'s — so the top padding here is smaller than .sheet's 104px. */
+  .homewrap{max-width:var(--col);margin:0 auto;
+    padding:calc(env(safe-area-inset-top) + 82px) 20px calc(env(safe-area-inset-bottom) + var(--tabh) + 28px)}
+  .hero{text-align:center;padding:6px 0 24px}
+  .herotitle{font-size:min(32px,8.6vw);font-weight:600;line-height:1.14;letter-spacing:-.02em;
+    color:var(--on-ground);margin:0 0 12px}
+  .herosub{font-family:'Nunito';font-weight:700;font-size:14px;line-height:1.45;color:var(--muted-g);
+    max-width:320px;margin:0 auto 20px}
+  .herosub b{color:var(--on-ground);font-weight:900}
+  .herocta{display:inline-flex;align-items:center;gap:9px;font-family:'Fredoka';font-weight:600;font-size:16px;
+    color:#17250a;background:var(--accent);border:2.5px solid #000;border-radius:999px;
+    padding:13px 24px;text-decoration:none;box-shadow:0 3px 0 rgba(0,0,0,.18)}
+  .herocta:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
+  .herocta .glyphx{font-size:17px;line-height:1}
+  /* Three beats, icon + a few words each — no paragraphs, per the brief. */
+  .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:6px;margin:28px 0 4px}
+  .howstep{display:flex;flex-direction:column;align-items:center;gap:5px;width:82px;
+    font-family:'Nunito';font-weight:800;font-size:11.5px;line-height:1.25;color:var(--muted-g);text-align:center}
+  .howstep .howico{font-size:23px;line-height:1}
+  .howarrow{flex:none;color:var(--muted-g);font-weight:700;font-size:15px;margin-top:9px}
+  /* The feed is a destination now, chosen not defaulted-into — one quiet link. */
+  .browselink{display:block;text-align:center;font-family:'Nunito';font-weight:800;font-size:13px;
+    color:var(--link-g);text-decoration:none;margin:26px 0 4px;padding:10px}
+  .browselink:active{opacity:.7}
+
   /* Says what it is, everywhere it is. These screens read as finished on purpose;
      the badge is the only thing standing between "shipped" and "mocked up". */
   .preview{display:inline-flex;align-items:center;gap:5px;flex:none;
@@ -895,7 +926,7 @@
 
 <div class="app">
   <aside class="rail">
-    <div class="brand"><div class="ghost"></div><b>oddie</b><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+    <div class="brand"><a class="brandlink" href="/" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
     <nav class="railnav" id="railnav"></nav>
     <div class="railfoot">
       Preview build.
@@ -1252,6 +1283,10 @@ const ICONS={
 };
 const NAV=[["feed","Feed"],["positions","Positions"],["leaderboard","Leaderboard"],["alerts","Notifications"],["profile","Profile"]];
 const svg=(k)=>`<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>`;
+// The logo + wordmark, a real link home from every screen (it used to do
+// nothing). Balance pill and theme toggle ride alongside it, outside this mark,
+// in each header — they're not part of "going home".
+const BRAND_MARK='<a class="brandlink" href="/" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a>';
 
 function money(n){return n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${Math.round(n)}`}
 function fmtMult(p){return (100/p).toFixed(1)+"×"}
@@ -1276,6 +1311,9 @@ const VIEWS=NAV.map(([k])=>k);
 const startSlug=(location.pathname.match(/^\/(?:m|market)\/([^/]+)/)||[])[1]||"";
 // Public profile page: /@{handle}. A path route, like the market permalink.
 const profileHandle=(location.pathname.match(/^\/@([^/?#]+)/)||[])[1]||"";
+// The homepage: bare "/", nothing else. Sells the chain (tag -> call -> who was
+// right) instead of showing the feed — oddie.fun is no longer a redirect to it.
+const isHomePath=location.pathname==="/";
 let activeCat=new URLSearchParams(location.search).get("cat")||"For you";
 
 // Permalink landing → log one device-attributed page view for the wedge metrics
@@ -1304,6 +1342,9 @@ function paintNav(view){
 function render(){
   // A /@{handle} path renders the public profile, independent of the hash router.
   if(profileHandle){document.body.dataset.view="profile";renderPublicProfile();return;}
+  // The bare homepage — but only while no hash has taken over (tapping a nav tab
+  // from home sets #/feed etc., which must render normally on top of "/").
+  if(isHomePath && !location.hash){document.body.dataset.view="home";renderHome();return;}
   const view=currentView();
   document.body.dataset.view=view;   // the header's backdrop keys off this
   paintNav(view);
@@ -1318,7 +1359,7 @@ window.addEventListener("hashchange",render);
 function feedTop(cats){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
-       <div class="brand"><div class="ghost"></div><b>oddie</b><span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+       <div class="brand">${BRAND_MARK}<span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
        <div class="chipswrap"><div class="chips" id="chips"></div></div>
      </div>`;
   paintBalance();paintThemeToggle();
@@ -1345,8 +1386,18 @@ window.addEventListener("resize",syncChipFade,{passive:true});
 function shellTop(title,preview=true){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
-       <div class="brand"><div class="ghost"></div><b>oddie</b><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+       <div class="brand">${BRAND_MARK}<span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
        <div class="head"><h1>${title}</h1>${preview?'<span class="preview">Preview</span>':""}</div>
+     </div>`;
+  paintBalance();paintThemeToggle();
+}
+// The home page's minimal header: brand row only, no chips, no title — the hero
+// content below carries the page. Same shell chrome (balance pill, theme toggle,
+// bottom nav) as every other screen, per "the home screen IS the onboarding."
+function homeTop(){
+  document.getElementById("top").innerHTML=
+    `<div class="top-in">
+       <div class="brand">${BRAND_MARK}<span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
      </div>`;
   paintBalance();paintThemeToggle();
 }
@@ -1502,7 +1553,23 @@ function renderFeed(items){
     if(!tasteCats().length){list=items.slice(0,1);tail="picker";}
     else{list=items.slice(0,1);tail="gate";}
   }
-  list.forEach((m,i)=>{
+  list.forEach((m,i)=>{scroller.appendChild(buildCard(m,i));});
+  if(tail==="picker")scroller.appendChild(buildPicker());
+  else if(tail==="gate")scroller.appendChild(buildGate());
+  watchDepth(scroller);
+  bindDepth(scroller);
+  hintFirstCard(scroller);
+}
+
+/**
+ * Build one market card — question, YES/NO, picker, share, challenge, resolution
+ * criteria, the whole tap-to-call interaction — and return it UNATTACHED, so a
+ * caller can append it to the feed's scroller (the original use) or drop the
+ * exact same tappable card into the home page's featured "Daily Call" slot.
+ * `i` only needs to be unique among cards mounted TOGETHER (it seeds local
+ * per-card DOM ids, always queried scoped to the card, never globally).
+ */
+function buildCard(m,i){
     const yes=m.yesPct,no=100-yes;
     const card=document.createElement("div");card.className="card";
     card.innerHTML=`
@@ -1829,13 +1896,76 @@ function renderFeed(items){
     };
     y.onclick=()=>tap("yes");
     nb.onclick=()=>tap("no");
-    scroller.appendChild(card);
-  });
-  if(tail==="picker")scroller.appendChild(buildPicker());
-  else if(tail==="gate")scroller.appendChild(buildGate());
-  watchDepth(scroller);
-  bindDepth(scroller);
-  hintFirstCard(scroller);
+    return card;
+}
+
+/* ------------------------------------------------------------------ home --
+ * The new default at "/". Sells the product's actual chain — claim -> tag ->
+ * call -> opponent -> resolution -> receipt -> reputation — instead of opening
+ * on a market catalog. No gate, no extra step: this screen IS the onboarding.
+ */
+async function renderHome(){
+  paintNav("");         // home isn't one of the 5 nav destinations — none highlighted
+  homeTop();
+  const scroller=document.getElementById("scroller");
+  scroller.classList.remove("snap");
+  scroller.innerHTML='<div class="state">loading…</div>';
+  await loadBalance().catch(()=>{}); // balance pill + streak badge, same as everywhere
+  try{
+    const cr=await fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`);
+    if(cr.ok)claim=await cr.json();
+  }catch(e){/* claim strip just won't render; nothing else depends on it */}
+  let featured=null;
+  try{
+    const r=await fetch(`${API}/api/home`);
+    if(r.ok)featured=(await r.json()).featured;
+  }catch(e){/* the featured slot degrades to absent, not an error state */}
+
+  const wrap=document.createElement("div");wrap.className="homewrap";
+  wrap.innerHTML=`<div class="hero">
+      <h1 class="herotitle">Tag it. Make the call.<br>See who was right.</h1>
+      <p class="herosub">tag <b>@oddiefun</b> under any claim on X — it turns into a market that keeps score</p>
+      <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
+        <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
+    </div>`;
+
+  // The daily-claim strip is a retention hook, not onboarding — it belongs on
+  // every screen, home included. (The tag-instruction banner is deliberately
+  // NOT reused here: the hero above already carries that exact message.)
+  if(claim)wrap.appendChild(claimCard());
+
+  // The "Daily Call": one live market, front and center, tappable right there —
+  // the SAME card + interaction code the feed uses (buildCard), so YES/NO here
+  // behaves identically. A cold visitor gets one immediate thing to do.
+  if(featured){
+    const label=document.createElement("p");label.className="psec";label.textContent="Daily Call";
+    wrap.appendChild(label);
+    const card=buildCard(featured,0);
+    // "swipe for the next take" doesn't apply — there's one card. Suppress it
+    // via a permanent inline !important rather than removing the node: lockedUI
+    // unconditionally looks it up by id after a call locks in, and a missing
+    // element there would throw (silently swallowed by the pending-commit catch,
+    // which would then wrongly claim "couldn't reach the server").
+    card.querySelector(".nudge")?.style.setProperty("display","none","important");
+    wrap.appendChild(card);
+  }
+
+  // The three-beat "how it works" — icons + a few words each, no paragraphs.
+  const how=document.createElement("div");how.className="howitworks";
+  how.innerHTML=`<div class="howstep"><span class="howico">🏷️</span><span>tag a claim</span></div>
+    <div class="howarrow">→</div>
+    <div class="howstep"><span class="howico">☝️</span><span>make the call</span></div>
+    <div class="howarrow">→</div>
+    <div class="howstep"><span class="howico">🏆</span><span>see who was right</span></div>`;
+  wrap.appendChild(how);
+
+  // The feed is a destination now, not the default — one quiet link down.
+  const browse=document.createElement("a");browse.className="browselink";browse.href="/feed";
+  browse.textContent="browse all markets →";
+  wrap.appendChild(browse);
+
+  scroller.innerHTML="";
+  scroller.appendChild(wrap);
 }
 
 /**
