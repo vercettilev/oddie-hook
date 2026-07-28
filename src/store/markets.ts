@@ -1014,7 +1014,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
 // --- Week-1 events ----------------------------------------------------------
 
 /** The only names that are ever written. An unknown name is dropped, not stored. */
-export const EVENT_NAMES = ["feed_view", "card_view", "side_tap", "amount_confirm", "cat_change", "sell", "share_open", "share_done", "alerts_view", "notice_view", "allowlist_denied", "invite_sent", "invite_accepted", "taste_pick", "gate_shown", "gate_signin"] as const;
+export const EVENT_NAMES = ["feed_view", "card_view", "side_tap", "amount_confirm", "cat_change", "sell", "share_open", "share_done", "alerts_view", "notice_view", "allowlist_denied", "invite_sent", "invite_accepted", "taste_pick", "gate_shown", "gate_signin", "challenge_click"] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
 export interface EventInput {
@@ -1752,6 +1752,24 @@ export async function surfacerFor(slug: string): Promise<Surfacer | null> {
   const { rows } = await db().query<{ handle: string | null; device_id: string | null }>(
     `SELECT handle, device_id FROM market_surfacer WHERE slug=$1`, [slug]);
   return rows[0] ? { handle: rows[0].handle, deviceId: rows[0].device_id } : null;
+}
+
+/** Batch surfacer HANDLES for a set of markets — the tweet author a claim came
+ *  from, i.e. the party the "challenge the other side" reply is aimed at. One
+ *  query for a whole feed; null where a market has no identifiable source. */
+export async function surfacersFor(slugs: string[]): Promise<Record<string, string | null>> {
+  const out: Record<string, string | null> = {};
+  if (slugs.length === 0) return out;
+  if (!PERSISTENT) {
+    for (const slug of slugs) out[slug] = memSurfacer.get(slug)?.handle ?? null;
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; handle: string | null }>(
+    `SELECT slug, handle FROM market_surfacer WHERE slug = ANY($1)`, [slugs]);
+  for (const r of rows) out[r.slug] = r.handle;
+  for (const s of slugs) out[s] ??= null;
+  return out;
 }
 
 /** The one idempotent write. Credits `slug`'s surfacer (resolving handle→device

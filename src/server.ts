@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -475,7 +475,10 @@ app.get("/api/feed", async (req, res) => {
   // The social layer, read from the same rows every screen reads: what the
   // POPPERS said, alongside what the market prices. One query for the page.
   const crowd = await crowdSplits(feedItems.map((x) => x.slug));
-  const withCrowd = feedItems.map((x) => ({ ...x, crowd: crowd[x.slug] ?? { yes: 0, no: 0 } }));
+  // The surfacer handle per market — the party a "challenge the other side" reply
+  // is aimed at. One query for the whole feed; null where a market has no source.
+  const surfacers = await surfacersFor(feedItems.map((x) => x.slug)).catch(() => ({} as Record<string, string | null>));
+  const withCrowd = feedItems.map((x) => ({ ...x, crowd: crowd[x.slug] ?? { yes: 0, no: 0 }, challengeHandle: surfacers[x.slug] ?? null }));
 
   const chips: string[] = CATEGORIES.filter((c) => c !== "Other");
   if (community.length) chips.push("Community");

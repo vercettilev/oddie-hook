@@ -175,6 +175,16 @@
   .rby-body{margin:8px 0 2px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
     color:var(--muted-g);border-left:2px solid var(--hair-g);padding-left:11px}
   .card.picking .rby{display:none}   /* stay out of the way once a side is chosen */
+  /* Challenge the other side — a core mechanic on the market page: a pre-filled
+     X intent aimed at the claim's author. Secondary to YES/NO (outlined, not the
+     lime primary), full width below them. Hidden once a side is being confirmed. */
+  .challenge{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;box-sizing:border-box;
+    margin:12px 0 0;font-family:'Fredoka';font-weight:600;font-size:14px;color:var(--on-ground);
+    background:transparent;border:2px solid var(--card-line);border-radius:14px;padding:11px 14px;
+    cursor:pointer;transition:transform .1s ease,background .15s ease}
+  .challenge:hover{background:var(--ground-2)}
+  .challenge:active{transform:scale(.97)}
+  .card.picking .challenge{display:none}
   /* Cold-visitor onboarding. A snap-aligned WRAP is the key: the scroller uses
      scroll-snap mandatory, which otherwise snaps straight to the first card on
      load and hides these above the fold. Making the wrap the first snap point
@@ -1506,6 +1516,7 @@ function renderFeed(items){
         </button>
       </div>
       ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
+      ${m.slug===startSlug ? `<button class="challenge" data-challenge type="button">⚔️ Challenge the other side</button>` : ""}
       <div class="picker" id="pick${i}" hidden>
         <div class="amts">
           <button class="amt" data-v="10">10</button>
@@ -1527,6 +1538,15 @@ function renderFeed(items){
     // text stays light — the question rides along in the preview.
     card.querySelector(".shareico").onclick=(e)=>{e.stopPropagation();
       shareMarket({slug:m.slug,text:`${m.question} · call it 👇`,source:"card",anchor:e.currentTarget});};
+    // Challenge the other side: a pre-filled X intent aimed at the party the
+    // claim came from (the tweet author, if we know them), else generically
+    // framed. Nothing is posted — the compose window opens, they choose to send.
+    const chBtn=card.querySelector("[data-challenge]");
+    if(chBtn)chBtn.onclick=(e)=>{e.stopPropagation();
+      const handle=(m.challengeHandle||"").replace(/^@+/,"");
+      const text=(handle?`@${handle} `:"")+"You sound confident. Make the call:";
+      xShare(text, `${SHARE_ORIGIN}/m/${m.slug}`, "challenge");
+      ev("challenge_click",{slug:m.slug,targeted:!!handle});};
     const [y,nb]=card.querySelectorAll(".orow");
     const picker=card.querySelector("#pick"+i), line=card.querySelector("#pline"+i),
           confirmBtn=card.querySelector("#cf"+i), input=card.querySelector(".amt-in");
