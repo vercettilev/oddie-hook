@@ -790,42 +790,62 @@
   /* Per-category accuracy — supporting detail below the Oddie Score, one row per
      category that has cleared its own resolved-picks threshold (the same
      "building track record" minimum, applied per category instead of globally).
-     A category short of that bar is simply absent — no placeholder, no zero. */
-  .catbreak{display:flex;flex-direction:column;gap:7px;margin-bottom:8px}
-  .catrow{display:flex;align-items:center;gap:10px;border:2px solid var(--card-line);
-    border-radius:12px;background:var(--card-surface);padding:9px 13px;
-    font-family:'Nunito';font-weight:800;font-size:13px}
-  .catrow .catname{flex:1;color:var(--on-ground)}
-  .catrow .catpct{color:var(--on-ground);font-size:15px;font-weight:900}
-  .catrow .catn{color:var(--muted-g);font-size:12px;white-space:nowrap}
-  /* Oddie Score — the calibration-adjusted reputation, given hero prominence over
-     the raw stat tiles. Fixed dark text on the fixed lime accent (AA both themes). */
-  .oscore{display:flex;align-items:center;gap:14px;background:var(--accent);color:#17250a;
-    border:2px solid var(--card-line);border-radius:18px;padding:13px 18px;margin-bottom:12px;
+     A category short of that bar is simply absent — no placeholder, no zero.
+     A mini progress bar carries the % visually, not just as a number. */
+  .catbreak{display:flex;flex-direction:column;gap:9px;margin-bottom:8px}
+  .catrow{border:2px solid var(--card-line);border-radius:var(--r-md);
+    background:var(--card-surface);padding:11px 14px;box-shadow:var(--shadow-chip)}
+  .catrow-top{display:flex;align-items:baseline;gap:8px;font-family:'Nunito';font-weight:800}
+  .catrow .catname{flex:1;color:var(--on-ground);font-size:13px}
+  .catrow .catpct{color:var(--on-ground);font-size:17px;font-weight:900;font-variant-numeric:tabular-nums}
+  .catbar{height:6px;border-radius:999px;background:var(--hair-g);margin:8px 0 6px;overflow:hidden}
+  .catbar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg, var(--acc-mid), var(--accent))}
+  .catrow .catn{color:var(--muted-g);font-size:11px;font-weight:700;font-family:'Nunito'}
+
+  /* ---- the trophy room: Oddie Score as a ring/gauge, badges as medallions ---- */
+  /* The ring: a conic-gradient donut filled to score/1000, the number counted up
+     inside it on first paint. The container drops the old flat-lime block — the
+     ring itself now carries the accent, so the surrounding card can be neutral
+     and let the ring read as the hero the way a gauge does on a dashboard. */
+  .oscore{display:flex;align-items:center;gap:18px;background:var(--card-surface);color:var(--on-ground);
+    border:2px solid var(--card-line);border-radius:var(--r-xl);padding:20px;margin-bottom:14px;
     box-shadow:var(--card-shadow)}
-  .oscore-num{font-size:38px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-  .oscore-lab{display:flex;flex-direction:column;gap:2px}
-  .oscore-lab b{font-family:'Nunito';font-size:14px;font-weight:900}
-  .oscore-lab span{font-family:'Nunito';font-size:11px;font-weight:700;opacity:.82;line-height:1.3}
-  /* Season rank stamp — the "top 8%" that carries the oscore's right edge. Status
-     is a PLACE, never a points number. Sits inside the lime oscore block. */
-  .oscore-rank{margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:1px}
-  .oscore-rank b{font-family:'Nunito';font-size:20px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
-  .oscore-rank span{font-family:'Nunito';font-size:10px;font-weight:800;opacity:.82;letter-spacing:.03em}
+  .scorering{position:relative;flex:none;width:112px;height:112px;border-radius:50%;
+    background:conic-gradient(var(--accent) calc(var(--score-pct,0) * 360deg), var(--hair-g) 0deg);
+    box-shadow:var(--shadow-pop)}
+  .scorering::after{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--card-surface)}
+  .scorering-inner{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center}
+  .scorering-num{font-size:28px;font-weight:800;line-height:1;color:var(--on-ground);font-variant-numeric:tabular-nums}
+  .scorering-num.building{font-size:15px}
+  .scorering-lab{font-family:'Nunito';font-size:9px;font-weight:900;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--muted-g);margin-top:4px}
+  .oscore-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+  .oscore-title{font-family:'Fredoka';font-weight:600;font-size:17px;color:var(--on-ground)}
+  .oscore-desc{font-family:'Nunito';font-weight:700;font-size:11.5px;line-height:1.4;color:var(--muted-g)}
+  /* Season rank — status expressed as a PLACE, a small trophy pill under the
+     description rather than crammed into the ring's corner. */
+  .rankpill{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
+    font-family:'Nunito';font-weight:900;font-size:12px;color:#5c4300;background:#fff3d6;
+    border-radius:999px;padding:5px 12px 5px 9px;box-shadow:var(--shadow-chip)}
+  :root[data-theme="dark"] .rankpill{color:#f5cf6b;background:#3a2c05}
   /* Oddie Points — the spendable play balance, the OTHER of the two user numbers.
      A quiet strip above the identity block so the profile leads with both. */
   .opoints{display:flex;align-items:baseline;gap:9px;border:2px solid var(--card-line);
     border-radius:16px;background:var(--card-surface);padding:12px 16px;margin-bottom:12px}
-  .opoints .v{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:var(--fg)}
+  .opoints .v{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:var(--on-ground)}
   .opoints .k{font-family:'Nunito';font-size:12px;font-weight:800;color:var(--muted-g)}
-  .opoints .k b{font-weight:900;color:var(--fg)}
-  /* Badges — earned identity markers, prominent and screenshot-friendly. Lime
-     pills with the brand ink, wrapping under the score. */
-  .badges{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 14px}
-  .badge{display:inline-flex;align-items:center;gap:6px;font-family:'Nunito';font-weight:900;
-    font-size:12.5px;color:#17250a;background:var(--accent);border:2px solid var(--card-line);
-    border-radius:999px;padding:6px 12px;box-shadow:var(--card-shadow);white-space:nowrap}
-  .badge .bico{font-size:13px;line-height:1}
+  .opoints .k b{font-weight:900;color:var(--on-ground)}
+  /* Badges — earned identity as MEDALLIONS, not flat pills: a circular icon with
+     a lime medal-sheen + real shadow, caption below. Same visual language as
+     home's how-it-works steps (a circle behind an icon), but with more presence
+     — these are achievements, not instructions. */
+  .badges{display:flex;flex-wrap:wrap;gap:14px;margin:2px 0 16px}
+  .medal{display:flex;flex-direction:column;align-items:center;gap:7px;width:78px;text-align:center}
+  .medal-ico{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:23px;line-height:1;background:radial-gradient(circle at 32% 26%, #eefccb, var(--accent) 74%);
+    border:2.5px solid var(--card-line);box-shadow:var(--shadow-pop)}
+  .medal-lab{font-family:'Nunito';font-weight:800;font-size:10.5px;line-height:1.25;color:var(--on-ground)}
   /* Public-profile recent-calls feed: compact rows, a win/loss rail. */
   .pcall{border:2px solid var(--card-line);border-left-width:6px;border-radius:12px;
     background:var(--card-surface);padding:10px 13px;margin-bottom:8px}
@@ -2279,31 +2299,60 @@ function renderShell(view){
   if(view==="profile"){shellTop("Profile",false);loadProfile(scroller);}
 }
 
-// Identity block bits shared by the public and private profiles: earned badges
-// (as lime pills) and the season rank stamp. The two-concept model shows the
-// user their Oddie Points and their Oddie Score; badges + rank are IDENTITY and
-// STATUS, never a third points number.
+// Identity block bits shared by the public and private profiles — the trophy
+// room. The two-concept model shows the user their Oddie Points and their
+// Oddie Score; badges + rank are IDENTITY and STATUS, never a third number.
 const BADGE_ICON={founding:"🏛️",streak:"🔥",category:"🎯",rank:"📈"};
+// Badges as medallions: a circular icon with a lime medal-sheen, caption below
+// — screenshot-friendly the way an achievement screen is, not a flat pill row.
 function badgesHtml(badges){
   if(!badges||!badges.length)return "";
   return `<div class="badges">${badges.map(b=>
-    `<span class="badge" title="${esc(b.detail||b.label)}"><span class="bico">${BADGE_ICON[b.kind]||"⭐"}</span>${esc(b.label)}</span>`
+    `<div class="medal" title="${esc(b.detail||b.label)}"><div class="medal-ico">${BADGE_ICON[b.kind]||"⭐"}</div><div class="medal-lab">${esc(b.label)}</div></div>`
   ).join("")}</div>`;
 }
-// The rank stamp that rides the right edge of the lime Oddie Score block.
-function rankStampHtml(rank){
-  if(!rank)return "";
-  return `<div class="oscore-rank"><b>Top ${rank.topPct}%</b><span>SEASON RANK</span></div>`;
+// The Oddie Score hero: a ring/gauge filled to score/1000, the number counted
+// up on first paint (see the countUp() call right after each profile renders).
+// id="scoreringnum" is safe to reuse across the private/public views — they
+// never coexist in the DOM, same convention as #bal elsewhere in this file.
+function oscoreHtml(score,hasEnough,rank){
+  const pct=hasEnough&&score!=null?Math.max(0,Math.min(1,score/1000)):0;
+  const rankChip=hasEnough&&rank?`<span class="rankpill">🏆 Top ${rank.topPct}% this season</span>`:"";
+  return `<div class="oscore">
+      <div class="scorering" style="--score-pct:${pct}">
+        <div class="scorering-inner">
+          <div class="scorering-num${hasEnough?"":" building"}" id="scoreringnum">${hasEnough?"0":"building"}</div>
+          <div class="scorering-lab">${hasEnough?"ODDIE SCORE":"TRACK RECORD"}</div>
+        </div>
+      </div>
+      <div class="oscore-side">
+        <div class="oscore-title">Oddie Score</div>
+        <p class="oscore-desc">calibration-adjusted reputation · 500 = matches the market</p>
+        ${rankChip}
+      </div>
+    </div>`;
+}
+/** Count the ring's number up to the real score, once, right after the profile
+ *  HTML lands in the DOM. A no-op (skipped, not zeroed) below the threshold —
+ *  "building" is text, not a number to animate toward. */
+function animateOscore(scroller,score,hasEnough){
+  if(!hasEnough||score==null)return;
+  countUp(scroller.querySelector("#scoreringnum"),score,{duration:850});
 }
 // Per-category accuracy — supporting detail BELOW the Oddie Score (the primary
 // number, shown first). The server already withheld any category short of its
 // own resolved-picks threshold, so every row here is qualified by construction:
 // nothing to gate client-side, and no placeholder for the categories left out.
+// Each row carries a mini progress bar so the % reads visually, not just as text.
 function categoryBreakdownHtml(byCategory){
   if(!byCategory||!byCategory.length)return "";
   return `<p class="psec" style="margin-top:22px">By category</p>
     <div class="catbreak">${byCategory.map(c=>
-      `<div class="catrow"><span class="catname">${esc(c.category)}</span><span class="catpct">${c.pct}%</span><span class="catn">${c.resolved} resolved</span></div>`
+      `<div class="catrow">
+         <div class="catrow-top"><span class="catname">${esc(c.category)}</span><span class="catpct">${c.pct}%</span></div>
+         <div class="catbar"><div class="catbar-fill" style="width:${c.pct}%"></div></div>
+         <span class="catn">${c.resolved} resolved</span>
+       </div>`
     ).join("")}</div>`;
 }
 
@@ -2341,14 +2390,13 @@ async function renderPublicProfile(){
     return;
   }
   const acc=data.accuracy, calls=data.recentCalls||[], badges=data.badges||[], rank=data.rank||null;
-  const scoreVal=acc.hasEnough?String(acc.oddieScore):"building";
   const accVal=acc.hasEnough?`${acc.accuracyPct}%`:"building";
   const bestTopicVal=acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
   const isMe=myHandle&&myHandle.toLowerCase()===String(data.handle).toLowerCase();
   scroller.innerHTML=`<div class="sheet">
     <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
     <div class="trhead"><p class="psec">Track record</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
-    <div class="oscore"><div class="oscore-num">${esc(scoreVal)}</div><div class="oscore-lab"><b>Oddie Score</b><span>calibration-adjusted reputation · 500 = matches the market</span></div>${acc.hasEnough?rankStampHtml(rank):""}</div>
+    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank)}
     ${badgesHtml(badges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -2362,6 +2410,7 @@ async function renderPublicProfile(){
     ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
     <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
   </div>`;
+  animateOscore(scroller,acc.oddieScore,acc.hasEnough);
   const sb=scroller.querySelector("#pubshare");
   if(sb)sb.onclick=()=>{
     const text=acc.hasEnough
@@ -2753,8 +2802,6 @@ async function loadProfile(scroller){
   const streakVal=acc?String(acc.streak):"—";
   const bestTopicVal=acc&&acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
   const resolvedVal=acc?String(acc.resolved):"—";
-  // Oddie Score — the calibration-adjusted reputation (500 = matches the market).
-  const scoreVal=acc?(acc.hasEnough?String(acc.oddieScore):"building"):"—";
 
   await loadBalance(); // the handle rides on /api/me
   const handleRow=myHandle?`
@@ -2782,11 +2829,7 @@ async function loadProfile(scroller){
       <p class="psec">Track record</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
     </div>
-    <div class="oscore">
-      <div class="oscore-num">${esc(scoreVal)}</div>
-      <div class="oscore-lab"><b>Oddie Score</b><span>calibration-adjusted reputation · 500 = matches the market</span></div>
-      ${acc&&acc.hasEnough?rankStampHtml(myRank):""}
-    </div>
+    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank)}
     ${badgesHtml(myBadges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -2805,6 +2848,7 @@ async function loadProfile(scroller){
     <p class="cnote">Auto follows your system. Shared cards are always the same — your theme never changes the image that goes on X.</p>
     <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
   </div>`;
+  animateOscore(scroller,acc?acc.oddieScore:null,!!(acc&&acc.hasEnough));
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
