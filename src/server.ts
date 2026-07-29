@@ -433,6 +433,12 @@ app.get("/api/feed", async (req, res) => {
     return {
       ...m,
       slug, category: "Community",
+      // The market's own topical pick (Sports/Crypto/…), preserved under a
+      // separate field since `category` above is deliberately flattened to
+      // the single "Community" chip — the client groups the feed's community
+      // cluster by this instead, so a football claim and a crypto claim don't
+      // render back-to-back with no distinction.
+      topicCategory: m.category,
       community: true as const,
       positions,
       forming: positions < MARKET_FORMING_MIN,

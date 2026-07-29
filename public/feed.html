@@ -155,6 +155,13 @@
     border:2px solid var(--chip-bd);background:var(--chip-bg);color:var(--muted-g);cursor:pointer;white-space:nowrap;
     transition:transform .16s cubic-bezier(.34,1.56,.64,1), background .18s ease, color .18s ease, border-color .18s ease}
   .chip:active{transform:scale(.93)}
+  /* Category header above each cluster of community markets in the grouped
+     "For you" feed — same quiet label language as .psec ("Daily Call"),
+     left-aligned since it sits inline in a scrolling list, not a page section.
+     Not a snap stop (the swipe feed's own cards are) — it rides along with
+     the first card of its cluster. */
+  .catgroup-header{font-family:'Nunito';font-weight:800;font-size:13px;text-transform:uppercase;
+    letter-spacing:.06em;color:var(--muted-g);margin:22px 2px 10px;scroll-snap-align:none}
   /* Satisfying switch: the active chip fills solid accent and gives a little pop. */
   .chip.on{color:#000;border-color:var(--accent);background:var(--accent);transform:scale(1.05);
     box-shadow:0 2px 8px rgba(120,165,40,.35)}
@@ -984,6 +991,11 @@
        the next), the nav in a centred bottom bar, and a quiet atmospheric ground
        doing equal work on both sides. No offset rail, nothing overflowing. */
     body{background:var(--feed-ground);overflow:hidden}
+    /* The column was pinned at a fixed 500px regardless of viewport, so a wide
+       monitor read as mostly empty margin either side. Let it breathe with the
+       viewport instead — scales up to a sensible cap so cards never stretch
+       into a thin-content, all-whitespace layout, but a lot less floats. */
+    body{--feedcol:min(560px, 62vw)}
     /* A soft lime glow seated high in the viewport, fading into the ground colour
        below it — same recipe as .hero::before, just sized for the whole page
        rather than one headline. Reads as atmosphere, not a technical grid. */
@@ -1035,9 +1047,14 @@
 
   /* Wide screens: the nav becomes a LEFT sidebar (Twitter/X pattern), filling the
      empty region beside the centred column instead of a bottom bar. The rail is
-     fixed and out of flow, so the feed column stays dead-centre in the viewport;
-     the ~218px rail tucks into the left gutter without touching the column. */
+     fixed and out of flow, so .app reserves its 218px with padding-left — the
+     column then centres in the space actually left over, not the full viewport,
+     which used to read as the column drifting left of true-center with a huge
+     dead patch on the right. The column also widens further on very wide
+     monitors, same reasoning as the 768px step: less floating whitespace. */
   @media (min-width:1024px){
+    body{--feedcol:min(660px, 46vw)}
+    .app{padding-left:218px}
     .rail{display:flex;position:fixed;left:0;top:0;z-index:16;height:100dvh;width:218px;box-sizing:border-box;
       flex-direction:column;gap:26px;padding:26px 18px}
     .rail .brand{display:flex;justify-content:flex-start;align-items:center;gap:9px;flex-wrap:wrap;row-gap:9px;margin:0 0 0 6px}
@@ -1716,23 +1733,67 @@ function claimCard(){
   return el;
 }
 
+/**
+ * Community markets, grouped by category with a header above each cluster —
+ * previously they rendered as one flat run (a football claim next to a crypto
+ * claim next to a politics claim, in whatever order calls came in). Venue
+ * items keep their existing order untouched; the server already appends the
+ * community block as one contiguous run in the default "For you" feed, so
+ * only that run gets re-sliced into per-category clusters here.
+ *
+ * Ordering choice: most markets first (not most-recently-active) — simple,
+ * deterministic, and doesn't require tracking a per-category last-activity
+ * timestamp the server doesn't currently expose. Ties keep the server's
+ * original relative order (stable sort + Map insertion order).
+ */
+function groupCommunityByCategory(items){
+  const firstCommunityIdx=items.findIndex(m=>m.community);
+  if(firstCommunityIdx===-1)return items;
+  const before=items.slice(0,firstCommunityIdx);
+  const communityRun=items.filter(m=>m.community);
+  const after=items.slice(firstCommunityIdx).filter(m=>!m.community);
+  const groups=new Map();
+  communityRun.forEach(m=>{
+    const k=m.topicCategory||"Other";
+    if(!groups.has(k))groups.set(k,[]);
+    groups.get(k).push(m);
+  });
+  const grouped=[];
+  [...groups.entries()].sort((a,b)=>b[1].length-a[1].length).forEach(([cat,ms])=>{
+    grouped.push({__catHeader:cat});
+    grouped.push(...ms);
+  });
+  return [...before,...grouped,...after];
+}
+
 function renderFeed(items){
   const scroller=document.getElementById("scroller");
   scroller.innerHTML="";
   if(!items.length){scroller.innerHTML='<div class="state">no live markets here right now — try another category.</div>';return;}
   maybeFeedTop(scroller); // claim card + onboarding, pinned first so cards flow beneath
+  // Grouping is a "For you"/all-markets thing — a single-category chip view is
+  // already one category, and a permalink landing (startSlug) pins its own
+  // market up top, a different flow this shouldn't disturb.
+  const ordered=(activeCat==="For you" && !startSlug) ? groupCommunityByCategory(items) : items;
   // TikTok-web taste flow. An anonymous visitor gets the feed metered so the
   // personalization investment lands BEFORE the gate:
   //   no categories picked yet -> 1 free card, then the category picker
   //   categories picked         -> 1 re-ranked card, then the sign-in gate
   // Two free bets total (one per card); the gate falls on the 3rd. Signed-in /
-  // allowlisted / invited visitors see the whole feed (list=items).
-  let list=items, tail=null;
+  // allowlisted / invited visitors see the whole feed (list=ordered).
+  let list=ordered, tail=null;
   if(TASTE){
-    if(!tasteCats().length){list=items.slice(0,1);tail="picker";}
-    else{list=items.slice(0,1);tail="gate";}
+    if(!tasteCats().length){list=ordered.slice(0,1);tail="picker";}
+    else{list=ordered.slice(0,1);tail="gate";}
   }
   list.forEach((m,i)=>{
+    if(m.__catHeader){
+      const h=document.createElement("div");
+      h.className="catgroup-header";
+      h.textContent=m.__catHeader;
+      scroller.appendChild(h);
+      return;
+    }
     const card=buildCard(m,i);
     // The same staggered rise+fade home uses on first paint — one motion
     // system, not a per-screen reinvention. Capped delay: a card 20 deep in
