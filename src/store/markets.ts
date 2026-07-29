@@ -1343,6 +1343,57 @@ export async function resolvedCallsFor(rawDeviceId: string, limit = 20): Promise
   return rows.map((r) => shape(r.side, r.exit_pct, r.pct_at, r.question, r.closed_at.toISOString()));
 }
 
+export interface MarketCaller {
+  handle: string | null;  // null -> the client shows "anonymous caller"
+  side: "yes" | "no";
+  pct: number;            // the odds they took, at entry
+  at: string;
+}
+/** Every call on a market, most-recent-first — the permalink page's "who
+ *  called what". A LINKED X handle wins over a merely chosen one (same
+ *  convention as the leaderboard/profile); a device with neither is exactly
+ *  what "anonymous caller" means, not a bug. Capped at `limit`; `total` is the
+ *  real count so the client can render "+N more" without a second round trip. */
+export async function callersFor(rawSlug: string, limit = 20): Promise<{ callers: MarketCaller[]; total: number }> {
+  const slug = rawSlug;
+  const n = Math.max(1, Math.min(50, Math.floor(limit)));
+  if (!PERSISTENT) {
+    const { _memAccounts } = await import("./accounts.js");
+    const twByDevice = new Map<string, string>();
+    for (const a of _memAccounts) if (a.provider === "twitter" && a.handle) twByDevice.set(a.canonicalDevice, a.handle.replace(/^@+/, ""));
+    const rows = memCalls
+      .filter((c) => c.slug === slug && c.deviceId)
+      .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.id - a.id));
+    const callers = rows.slice(0, n).map((c) => ({
+      handle: twByDevice.get(c.deviceId) ?? memHandle.get(c.deviceId) ?? null,
+      side: c.side, pct: c.entryPct, at: c.at,
+    }));
+    return { callers, total: rows.length };
+  }
+  await ensureSchema();
+  const [{ rows }, countRes] = await Promise.all([
+    db().query<{ side: "yes" | "no"; pct_at: number; at: Date; handle: string | null }>(
+      `SELECT mc.side, mc.pct_at, mc.at, COALESCE(tw.handle, db.handle) AS handle
+         FROM market_call mc
+         LEFT JOIN device_balance db ON db.device_id = mc.device_id
+         LEFT JOIN LATERAL (
+           SELECT a.handle FROM account a
+            WHERE a.canonical_device = mc.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
+            ORDER BY a.created_at LIMIT 1
+         ) tw ON true
+        WHERE mc.slug = $1 AND mc.device_id IS NOT NULL AND mc.pct_at IS NOT NULL
+        ORDER BY mc.at DESC, mc.id DESC LIMIT $2`,
+      [slug, n],
+    ),
+    db().query<{ n: string }>(`SELECT count(*)::text n FROM market_call WHERE slug = $1 AND device_id IS NOT NULL`, [slug]),
+  ]);
+  const callers = rows.map((r) => ({
+    handle: r.handle ? r.handle.replace(/^@+/, "") : null,
+    side: r.side, pct: r.pct_at, at: r.at.toISOString(),
+  }));
+  return { callers, total: Number(countRes.rows[0]?.n ?? callers.length) };
+}
+
 /* ------------------------------------------------------------- identity ------
  * Badges and season rank. The product shows the user exactly TWO numbers:
  * their spendable Oddie Points, and their Oddie Score. Contribution/standing is
@@ -1775,21 +1826,26 @@ export async function surfacerFor(slug: string): Promise<Surfacer | null> {
   return rows[0] ? { handle: rows[0].handle, deviceId: rows[0].device_id } : null;
 }
 
-/** Batch surfacer HANDLES for a set of markets — the tweet author a claim came
- *  from, i.e. the party the "challenge the other side" reply is aimed at. One
- *  query for a whole feed; null where a market has no identifiable source. */
-export async function surfacersFor(slugs: string[]): Promise<Record<string, string | null>> {
-  const out: Record<string, string | null> = {};
+export interface SurfacerInfo { handle: string | null; sourceUrl: string | null }
+/** Batch surfacer info for a set of markets — the tweet author a claim came
+ *  from (for "challenge the other side") and the tweet's own URL (for the
+ *  permalink page's source-tweet card). One query for a whole feed; both
+ *  fields null where a market has no identifiable source. */
+export async function surfacersFor(slugs: string[]): Promise<Record<string, SurfacerInfo>> {
+  const out: Record<string, SurfacerInfo> = {};
   if (slugs.length === 0) return out;
   if (!PERSISTENT) {
-    for (const slug of slugs) out[slug] = memSurfacer.get(slug)?.handle ?? null;
+    for (const slug of slugs) {
+      const s = memSurfacer.get(slug);
+      out[slug] = { handle: s?.handle ?? null, sourceUrl: s?.sourceUrl ?? null };
+    }
     return out;
   }
   await ensureSchema();
-  const { rows } = await db().query<{ slug: string; handle: string | null }>(
-    `SELECT slug, handle FROM market_surfacer WHERE slug = ANY($1)`, [slugs]);
-  for (const r of rows) out[r.slug] = r.handle;
-  for (const s of slugs) out[s] ??= null;
+  const { rows } = await db().query<{ slug: string; handle: string | null; source_url: string | null }>(
+    `SELECT slug, handle, source_url FROM market_surfacer WHERE slug = ANY($1)`, [slugs]);
+  for (const r of rows) out[r.slug] = { handle: r.handle, sourceUrl: r.source_url };
+  for (const s of slugs) out[s] ??= { handle: null, sourceUrl: null };
   return out;
 }
 

@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -480,10 +480,30 @@ app.get("/api/feed", async (req, res) => {
   // The social layer, read from the same rows every screen reads: what the
   // POPPERS said, alongside what the market prices. One query for the page.
   const crowd = await crowdSplits(feedItems.map((x) => x.slug));
-  // The surfacer handle per market — the party a "challenge the other side" reply
-  // is aimed at. One query for the whole feed; null where a market has no source.
-  const surfacers = await surfacersFor(feedItems.map((x) => x.slug)).catch(() => ({} as Record<string, string | null>));
-  const withCrowd = feedItems.map((x) => ({ ...x, crowd: crowd[x.slug] ?? { yes: 0, no: 0 }, challengeHandle: surfacers[x.slug] ?? null }));
+  // The surfacer handle + source tweet per market — the party a "challenge the
+  // other side" reply is aimed at, and the permalink's source-tweet card. One
+  // query for the whole feed; null where a market has no source.
+  const surfacers = await surfacersFor(feedItems.map((x) => x.slug)).catch(
+    () => ({} as Record<string, { handle: string | null; sourceUrl: string | null }>),
+  );
+  // "Who called what" is permalink-only: fetching it for every card in the feed
+  // would be an N+1 query across a whole page, so it's scoped to just the
+  // pinned start market.
+  const callers = start ? await callersFor(start.slug, 20).catch(() => null) : null;
+  const withCrowd = feedItems.map((x) => {
+    const surfacer = surfacers[x.slug];
+    const extra: Record<string, unknown> = {
+      ...x,
+      crowd: crowd[x.slug] ?? { yes: 0, no: 0 },
+      challengeHandle: surfacer?.handle ?? null,
+      sourceUrl: surfacer?.sourceUrl ?? null,
+    };
+    if (callers && start && x.slug === start.slug) {
+      extra.callers = callers.callers;
+      extra.callersTotal = callers.total;
+    }
+    return extra;
+  });
 
   const chips: string[] = CATEGORIES.filter((c) => c !== "Other");
   if (community.length) chips.push("Community");
@@ -521,14 +541,17 @@ async function resolveFeatured(): Promise<(Record<string, unknown> & { slug: str
   const positions = playerCounts[slug] ?? 0;
   const [crowd, surfacers] = await Promise.all([
     crowdSplits([slug]),
-    surfacersFor([slug]).catch(() => ({} as Record<string, string | null>)),
+    surfacersFor([slug]).catch(() => ({} as Record<string, { handle: string | null; sourceUrl: string | null }>)),
   ]);
+  const surfacer = surfacers[slug];
+  // Home's Daily Call deliberately carries no sourceUrl/callers — those are
+  // permalink-page-only (see /api/feed above, gated on the start slug).
   return {
     ...chosen, slug, category: "Community", community: true as const,
     positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
     onchain: onchainEnabled() && chosen.onchainPubkey ? explorerUrl(chosen.onchainPubkey) : null,
     crowd: crowd[slug] ?? { yes: 0, no: 0 },
-    challengeHandle: surfacers[slug] ?? null,
+    challengeHandle: surfacer?.handle ?? null,
   };
 }
 app.get("/api/home", async (_req, res) => {

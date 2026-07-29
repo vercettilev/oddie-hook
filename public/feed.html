@@ -206,6 +206,38 @@
   .rby-body{margin:8px 0 2px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
     color:var(--muted-g);border-left:2px solid var(--hair-g);padding-left:11px}
   .card.picking .rby{display:none}   /* stay out of the way once a side is chosen */
+  /* Source tweet — permalink-only, sits above the question. Same surface/line
+     tokens as the elevated card itself, not a competing block. */
+  .srctweet{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:9px 12px;
+    border-radius:var(--r-md);background:var(--card-surface);border:1.5px solid var(--hair-g);
+    box-shadow:var(--shadow-chip);text-decoration:none}
+  .srctweet-ico{flex:none;width:26px;height:26px;border-radius:50%;background:var(--card-line);
+    display:flex;align-items:center;justify-content:center}
+  .srctweet-ico svg{width:13px;height:13px;fill:var(--card-surface)}
+  .srctweet-body{min-width:0;flex:1}
+  .srctweet-lab{font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);color:var(--muted-g);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srctweet-lab b{color:var(--on-ground);font-weight:900}
+  .srctweet-link{font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);color:var(--muted-g);
+    display:inline-flex;align-items:center;gap:3px;margin-top:1px}
+  /* "Who called what" — visually secondary, small rows below YES/NO. */
+  .callers{margin:12px 0 0}
+  .callers-lab{font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);color:var(--muted-g);
+    margin:0 0 6px}
+  .callers-list{display:flex;flex-direction:column;gap:5px}
+  .caller-row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--r-sm);
+    background:var(--card-surface);border:1px solid var(--hair-g);font-family:'Nunito'}
+  .caller-handle{flex:1;min-width:0;font-weight:800;font-size:12.5px;color:var(--on-ground);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .caller-side{flex:none;font-weight:900;font-size:10.5px;letter-spacing:.02em;padding:2px 7px;
+    border-radius:999px}
+  .caller-side.yes{color:#1f7a3f;background:#dff5e6}
+  .caller-side.no{color:#a3283d;background:#fbdfe4}
+  :root[data-theme="dark"] .caller-side.yes{color:#7fe0a4;background:#0f3320}
+  :root[data-theme="dark"] .caller-side.no{color:#f2a3b4;background:#3a1420}
+  .caller-pct{flex:none;font-weight:800;font-size:11.5px;color:var(--muted-g);min-width:30px;text-align:right}
+  .callers-more{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);
+    margin:5px 2px 0}
   /* Challenge the other side — a core mechanic on the market page: a pre-filled
      X intent aimed at the claim's author. Secondary to YES/NO (outlined, not the
      lime primary), full width below them. Hidden once a side is being confirmed. */
@@ -1269,6 +1301,7 @@ addEventListener("pagehide",()=>{
 // — that is the only host whose /m/[slug] permalink unfurls to the PNG card.
 const SHARE_ORIGIN=location.origin.includes("oddie.fun")?location.origin:"https://oddie.fun";
 const SHARE_ICON='<svg viewBox="0 0 24 24"><path d="M12 15V3M12 3 8 7M12 3l4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>';
+const X_ICON='<svg viewBox="0 0 24 24"><path d="M18.9 2H22l-7.6 8.7L23.3 22H16.9l-5-6.5-5.7 6.5H2.9l8.1-9.3L2 2h6.6l4.5 6 5.8-6Zm-1.1 18.2h1.7L7.1 3.7H5.3l12.5 16.5Z"/></svg>';
 // The metadata-row chip icons — same outline language as SHARE_ICON, sized by
 // .mchip svg. CLOCK_ICON = close time; COIN_ICON = real venue volume.
 const CLOCK_ICON='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
@@ -1737,6 +1770,13 @@ function buildCard(m,i){
         <div class="cat">${esc(m.category)}</div>
         <button class="shareico" aria-label="Share this market">${SHARE_ICON}</button>
       </div>
+      ${m.slug===startSlug && m.sourceUrl ? `<a class="srctweet" href="${esc(m.sourceUrl)}" target="_blank" rel="noopener noreferrer">
+        <span class="srctweet-ico">${X_ICON}</span>
+        <span class="srctweet-body">
+          <div class="srctweet-lab">Tagged from a post${m.challengeHandle?` by <b>@${esc(m.challengeHandle)}</b>`:""}</div>
+          <div class="srctweet-link">View the original post on X ↗</div>
+        </span>
+      </a>` : ""}
       <div class="take">${esc(m.question)}</div>
       <div class="meta">${metaRowHtml(m,yes)}</div>
       <div class="duel">
@@ -1752,6 +1792,16 @@ function buildCard(m,i){
         </button>
       </div>
       ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
+      ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">
+        <div class="callers-lab">Who called it</div>
+        <div class="callers-list">${m.callers.map(c=>`
+          <div class="caller-row">
+            <span class="caller-handle">${c.handle?`@${esc(c.handle)}`:"anonymous caller"}</span>
+            <span class="caller-side ${c.side}">${c.side.toUpperCase()}</span>
+            <span class="caller-pct">${Math.round(c.pct)}%</span>
+          </div>`).join("")}</div>
+        ${m.callersTotal>m.callers.length ? `<div class="callers-more">+${m.callersTotal-m.callers.length} more</div>` : ""}
+      </div>` : ""}
       ${m.slug===startSlug ? `<button class="challenge" data-challenge type="button">⚔️ Challenge the other side</button>` : ""}
       <div class="picker" id="pick${i}" hidden>
         <div class="amts">
