@@ -203,6 +203,12 @@ ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS claim_streak integer NOT NUL
 -- there is nothing to compare against yet, only a baseline to record.
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS last_seen_rank integer;
 
+-- Whether this device has ever been shown the post-first-call tag-teaching
+-- moment ("now the real move: tag @oddiefun...") — see claimTagTeachingMoment.
+-- A single ever-flag, not a notice-queue row: this is a one-time onboarding
+-- beat tied to the device, not a replayable event.
+ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS tag_teaching_seen_at timestamptz;
+
 -- Real notifications: one row per thing that actually happened to this device's
 -- stream (a settlement, for now). Append-only; the UI reads, never writes.
 CREATE TABLE IF NOT EXISTS notice (
@@ -741,10 +747,34 @@ export async function getBalance(deviceId: string): Promise<number> {
 }
 
 export type PlaceResult =
-  | { ok: true; id: number; balance: number; calls: number; pctAt: number }
+  | { ok: true; id: number; balance: number; calls: number; pctAt: number; firstEver: boolean }
   | { ok: false; reason: "insufficient"; balance: number }
   | { ok: false; reason: "unknown-market" }
   | { ok: false; reason: "unpriced" };
+
+/** Does this device have ANY call, ever (open, closed, sold — doesn't matter)?
+ *  The cheapest possible "has this browser ever played" check: one EXISTS
+ *  against market_call, no joins. Shared by placeCall's firstEver (must run
+ *  BEFORE this call lands) and the home page's new-user onboarding cue. */
+async function hasAnyCallFor(deviceId: string): Promise<boolean> {
+  if (!PERSISTENT) return memCalls.some((c) => c.deviceId === deviceId);
+  await ensureSchema();
+  const { rows } = await db().query<{ e: boolean }>(
+    `SELECT EXISTS(SELECT 1 FROM market_call WHERE device_id=$1) AS e`, [deviceId],
+  );
+  return rows[0]?.e === true;
+}
+
+/** Home page onboarding: true for a device that has never placed a call — the
+ *  gate for stage 1 of the two-stage onboarding (the "make your first call"
+ *  cue). deviceId here is NOT pre-resolved (unlike most exports) because the
+ *  caller — /api/home — already has a raw deviceId and this is a thin negation
+ *  of hasAnyCallFor; resolving through an account is still correct since a
+ *  signed-in device's history lives on its canonical device either way. */
+export async function isNewUserFor(rawDeviceId: string): Promise<boolean> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  return !(await hasAnyCallFor(deviceId));
+}
 
 /**
  * The one write of paper trading: deduct the stake and record the call, or do
@@ -771,7 +801,7 @@ export async function placeCall(
   if (!PERSISTENT) {
     const w = await getWallet(deviceId);
     if (w.tokens < tokens) return { ok: false, reason: "insufficient", balance: w.tokens };
-    const firstEver = !memCalls.some((c) => c.deviceId === deviceId); // before this call lands
+    const firstEver = !(await hasAnyCallFor(deviceId)); // before this call lands
     memBalance.set(deviceId, { tokens: w.tokens - tokens, toppedUpAt: memBalance.get(deviceId)!.toppedUpAt });
     rec.calls.push({ side, tokens, at: new Date().toISOString() });
     memCalls.unshift({
@@ -781,15 +811,13 @@ export async function placeCall(
     const distinct = new Set(memCalls.filter((c) => c.slug === rec.slug && c.deviceId).map((c) => c.deviceId)).size;
     void awardParticipation(rec.slug, deviceId, firstEver, distinct);
     void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
-    return { ok: true, id: memId, balance: w.tokens - tokens, calls: rec.calls.length, pctAt };
+    return { ok: true, id: memId, balance: w.tokens - tokens, calls: rec.calls.length, pctAt, firstEver };
   }
 
   await getWallet(deviceId); // ensure the row exists (and collect any top-up) first
   // Is this the device's first-ever call? Read BEFORE the insert (best-effort;
   // a read failure just means no first-timer award, never a blocked call).
-  const firstEver = await db().query<{ e: boolean }>(
-    `SELECT NOT EXISTS(SELECT 1 FROM market_call WHERE device_id=$1) AS e`, [deviceId],
-  ).then((r) => r.rows[0]?.e === true).catch(() => false);
+  const firstEver = await hasAnyCallFor(deviceId).then((has) => !has).catch(() => false);
   const client = await db().connect();
   try {
     await client.query("BEGIN");
@@ -816,7 +844,7 @@ export async function placeCall(
     ).then((r) => r.rows[0]?.n ?? 0).catch(() => 0);
     void awardParticipation(rec.slug, deviceId, firstEver, distinct);
     void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
-    return { ok: true, id: ins.rows[0].id, balance: upd.rows[0].tokens, calls: rec.calls.length, pctAt };
+    return { ok: true, id: ins.rows[0].id, balance: upd.rows[0].tokens, calls: rec.calls.length, pctAt, firstEver };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
@@ -1943,6 +1971,38 @@ export async function rankMovementFor(rawDeviceId: string): Promise<RankMovement
   return previous > current.rank
     ? { direction: "up", spots: previous - current.rank, rank: current.rank }     // lower rank number = better
     : { direction: "down", spots: current.rank - previous, rank: current.rank };
+}
+
+const memTagTeachingSeen = new Set<string>();
+
+/**
+ * Stage 2 of new-user onboarding: "now the real move — tag @oddiefun on X."
+ * Shown once, ever, right after a device's first-ever call locks. The read IS
+ * the mark-seen — same one-shot contract as rankMovementFor above — so a
+ * client only ever needs to call this once (right after a firstEver:true
+ * placeCall) and trust the boolean it gets back, with no separate "mark seen"
+ * round trip and no way to accidentally show it twice from a retry or a
+ * double-render.
+ */
+export async function claimTagTeachingMoment(rawDeviceId: string): Promise<boolean> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) {
+    if (memTagTeachingSeen.has(deviceId)) return false;
+    memTagTeachingSeen.add(deviceId);
+    return true;
+  }
+  await ensureSchema();
+  await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
+  // Only the request that actually flips it NULL -> now() gets a row back —
+  // that's what makes this atomic under a real race, not just single-threaded
+  // mem-mode: two concurrent requests can't both win.
+  const { rows } = await db().query(
+    `UPDATE device_balance SET tag_teaching_seen_at = now()
+       WHERE device_id = $1 AND tag_teaching_seen_at IS NULL
+       RETURNING 1`,
+    [deviceId],
+  );
+  return rows.length > 0;
 }
 
 /** Is this device inside the founding cohort (one of the first wallets)? */

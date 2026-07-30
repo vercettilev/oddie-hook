@@ -358,6 +358,19 @@
     border-radius:inherit}
   :root[data-theme="dark"] .card::before{background:linear-gradient(155deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,0) 26%)}
   .card>*{position:relative;z-index:1}
+  /* Stage 1 onboarding: a restrained pulse on the FIRST open-market card for a
+     zero-position visitor — directional emphasis, not a modal, not a flashing
+     "look here". A static ring (no pulse) under reduced motion still marks the
+     card; it just doesn't move. */
+  .firstcall-cue{border-color:var(--accent);
+    box-shadow:var(--card-shadow), 0 0 0 3px rgba(182,240,95,.35)}
+  @media (prefers-reduced-motion: no-preference){
+    .firstcall-cue{animation:firstcallPulse 2.4s ease-in-out infinite}
+  }
+  @keyframes firstcallPulse{
+    0%,100%{box-shadow:var(--card-shadow), 0 0 0 3px rgba(182,240,95,.35)}
+    50%{box-shadow:var(--card-shadow), 0 0 0 7px rgba(182,240,95,.12)}
+  }
   .scroller{padding-bottom:calc(env(safe-area-inset-bottom) + var(--tabh) + 10px)}
   /* Secondary tier — the category tag recedes below the hero question. Its
      background is the FIXED pale-lime --wash (same in both themes), so the text
@@ -527,6 +540,12 @@
   .catedge.up{border-color:#bfe6cd} .catedge.down{border-color:#f0c6c2}
   .psec{font-size:14px;font-weight:700;margin:20px 0 10px;color:var(--muted-g);
     font-family:'Nunito';font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+  /* Stage 1 onboarding: the section header itself becomes the cue for a
+     zero-position visitor ("Make your first call ↓") — same weight/size as
+     every other section label, just accent-colored so it reads as a nudge,
+     not an alert. */
+  .psec.cue{color:#4d7a1a}
+  :root[data-theme="dark"] .psec.cue{color:var(--accent)}
   .track{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.45}
   .track b{font-weight:800}
   .sellbtn{font:inherit;font-weight:700;font-size:15px;width:100%;margin-top:11px;padding:10px 0;cursor:pointer;
@@ -581,6 +600,22 @@
   /* the one subtle line under a locked call */
   .upsell{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--link-g);
     background:none;border:0;padding:6px 0 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+
+  /* Stage 2 onboarding: the one-time "now the real move" teaching moment,
+     appended after the locked call's existing CTA(s) — never replacing or
+     hiding the share button above it, which stays the loudest thing here.
+     A quiet callout (the same pale-wash treatment as .znote), not a second
+     hero: this is a lesson, not another ask. */
+  .onboard-teach{margin-top:14px;padding:14px 16px;border:1.5px solid var(--hair-g);
+    border-radius:var(--r-md);background:var(--wash)}
+  :root[data-theme="dark"] .onboard-teach{background:#1c2410;border-color:#2a3318}
+  .onboard-teach-body{font-family:'Nunito';font-weight:700;font-size:13px;line-height:1.5;
+    color:var(--on-ground);margin:0 0 10px}
+  .onboard-teach-body b{font-weight:900}
+  .onboard-teach-cta{display:inline-flex;align-items:center;gap:7px;font-family:'Fredoka';
+    font-weight:600;font-size:13.5px;color:#fff;background:#000;border-radius:999px;
+    padding:9px 16px;text-decoration:none}
+  .onboard-teach-cta .glyphx{font-size:14px;line-height:1}
 
   /* --- sharing ----------------------------------------------------------------
    * Two entry points. The card icon is discovery ("check this out"); the button
@@ -2267,7 +2302,7 @@ function buildCard(m,i){
     /** The one true write path: POST the call, then flip the card to its locked
      *  state. Both doors — the 5s auto-commit and the picker's Confirm — land
      *  here, so the locked UI cannot drift between them. */
-    const lockedUI=(s,stake,win,crowd,callId)=>{
+    const lockedUI=(s,stake,win,crowd,callId,firstEver)=>{
       y.disabled=nb.disabled=true;picker.hidden=true;card.classList.remove("picking");
       // The confirmation snap: fires exactly once, exactly HERE — the single
       // moment a call actually locks in (both the 5s auto-commit and the
@@ -2306,12 +2341,40 @@ function buildCard(m,i){
         shareMarket({slug:m.slug,text:`${s.toUpperCase()} at ${s==="yes"?yes:no}%. prove me wrong ↓`,source:"postcall",anchor,url});
       };
       (card.querySelector(".socline")||soc).after(sb);
+      // Both post-lock CTAs stack below the locked line in the order a first-
+      // timer should meet them: share the call, then (if anonymous) the save-
+      // your-balance offer, then (stage 2, below) the tag-teaching moment —
+      // each .after() chains off the last, so none of the three ever displaces
+      // another; they're just three rows in order, all reachable by scrolling.
+      let lastCta=sb;
       // One line, once, only to someone who has not connected. An offer, not a gate.
       if(!auth.accounts.length){
         const up=document.createElement("button");
         up.className="upsell";up.textContent="Connect to save your balance  +100 Oddie Points";
         up.onclick=()=>connectSheet("Keep this call when you switch devices");
         sb.after(up);
+        lastCta=up;
+      }
+      // Stage 2 of onboarding — "now teach them the tag." Only attempted when
+      // THIS call was firstEver:true (never on a returning player's calls), and
+      // even then the server's claimTagTeachingMoment is the real one-shot gate:
+      // best-effort, fire-and-forget, same tolerance as awardParticipation for
+      // "this extra doesn't ship, the call itself already did."
+      if(firstEver){
+        (async()=>{
+          try{
+            const r=await fetch(`${API}/api/onboarding/tag-teaching-seen`,{method:"POST",
+              headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+            const j=await r.json().catch(()=>({}));
+            if(!j.show)return;
+            const teach=document.createElement("div");
+            teach.className="onboard-teach";
+            teach.innerHTML=`<p class="onboard-teach-body">🎉 First call locked. Now the real move: markets here are born from X — tag <b>@oddiefun</b> under any claim and earn <b>+50</b> when it becomes a market.</p>
+              <a class="onboard-teach-cta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
+                <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>`;
+            lastCta.after(teach);
+          }catch(e){/* the teaching moment just doesn't fire; the call itself already locked */}
+        })();
       }
       card.querySelector("#nudge"+i).classList.add("show");
       card.querySelector("#nudge"+i).classList.remove("hint");
@@ -2386,7 +2449,7 @@ function buildCard(m,i){
           return;
         }
         balance=j.balance;paintBalance(true);loadBalance();
-        lockedUI(s,stake,Math.round(stake*100/j.pctAt),j.crowd,j.id);
+        lockedUI(s,stake,Math.round(stake*100/j.pctAt),j.crowd,j.id,j.firstEver===true);
         ev("amount_confirm",{slug:m.slug,idx:i,side:s});
       }catch(e){
         // The only genuinely transient failure: we never reached the server or
@@ -2515,7 +2578,7 @@ async function renderHome(){
   // actually sent rows for it — so a fetch failure, a cold database, or a
   // genuinely thin product all degrade to the section being absent. Nothing
   // here has a placeholder or a sample row to fall back to, by design.
-  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
+  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50, newUser=false; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
   try{
     // deviceId unlocks the one PERSONAL section (openCalls) — every other
     // section on Home is aggregate and renders the same for anyone.
@@ -2526,6 +2589,7 @@ async function renderHome(){
       topCallers=Array.isArray(j.topCallers)?j.topCallers:[];
       activity=j.activity&&typeof j.activity==="object"?j.activity:null;
       openCalls=j.openCalls&&typeof j.openCalls==="object"?j.openCalls:null;
+      newUser=j.newUser===true;
       if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
   }catch(e){/* every section degrades to absent, not an error state */}
 
@@ -2592,7 +2656,7 @@ async function renderHome(){
       countUp(el,Number(el.dataset.to),{duration:800})));
   }
 
-  const section=(text,id)=>{const p=document.createElement("p");p.className="psec";p.textContent=text;if(id)p.id=id;wrap.appendChild(p);};
+  const section=(text,id,cls)=>{const p=document.createElement("p");p.className=cls?`psec ${cls}`:"psec";p.textContent=text;if(id)p.id=id;wrap.appendChild(p);};
 
   // PROOF, before the markets. The hero promises "see who was right"; these two
   // sections are the only things on the page that actually demonstrate it, so
@@ -2673,10 +2737,16 @@ async function renderHome(){
   // what these are: it used to read "Live right now", which promised urgency
   // that a market closing in five weeks does not have.
   if(featured.length){
+    // Stage 1 of onboarding: a visitor with zero calls, ever, gets directional
+    // emphasis toward the lowest-friction first action — the header names the
+    // action instead of the section, and the first card gets a restrained glow
+    // (see .firstcall-cue). No modal, nothing blocking; a returning player
+    // (newUser===false) sees the exact same section as always.
     // The id is the settled cards' scroll target — see the .stl-cta handler.
-    section("Open markets","openmarkets");
+    section(newUser?"Make your first call ↓":"Open markets","openmarkets",newUser?"cue":"");
     featured.forEach((m,i)=>{
       const card=buildCard(m,i);
+      if(newUser&&i===0)card.classList.add("firstcall-cue");
       // "swipe for the next take" doesn't apply — this is a short static list,
       // not a swipeable feed. Suppress it via a permanent inline !important
       // rather than removing the node: lockedUI unconditionally looks it up by

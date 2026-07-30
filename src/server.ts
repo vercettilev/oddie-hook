@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -602,7 +602,7 @@ app.get("/api/home", async (req, res) => {
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   // Every section degrades to absent on failure, never to a fake: the client
   // renders each one only when its array is non-empty (see renderHome).
-  const [featured, settled, board, activity, openCalls] = await Promise.all([
+  const [featured, settled, board, activity, openCalls, newUser] = await Promise.all([
     resolveFeatured().catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
     // Two, not three: settled rows look alike, so the third adds repetition
     // rather than proof — and the 175px it costs is what keeps the leaderboard
@@ -613,6 +613,11 @@ app.get("/api/home", async (req, res) => {
     deviceId
       ? openCallsSummaryFor(deviceId).catch((e) => { console.error("[home] openCalls failed:", (e as Error).message); return null; })
       : Promise.resolve(null),
+    // Stage 1 of onboarding: true only for a device with zero calls, ever — a
+    // failure here defaults to false (never falsely cue a returning player).
+    deviceId
+      ? isNewUserFor(deviceId).catch((e) => { console.error("[home] newUser failed:", (e as Error).message); return false; })
+      : Promise.resolve(false),
   ]);
   // Only RANKED callers are eligible — `provisional` is the store's existing
   // "sample too small to mean anything" flag, and the full Leaderboard sorts
@@ -625,7 +630,7 @@ app.get("/api/home", async (req, res) => {
     : [];
   // The tag-CTA's points-incentive line reads this live rather than hardcoding
   // "50" — the two can never drift apart, because there's only one number.
-  res.json({ featured, settled, topCallers, activity, openCalls, surfaceReward: SEASON_POINTS.surface });
+  res.json({ featured, settled, topCallers, activity, openCalls, newUser, surfaceReward: SEASON_POINTS.surface });
 });
 
 /**
@@ -868,6 +873,20 @@ app.post("/api/celebrations/seen", async (req, res) => {
   }
   await markCelebrationsSeen(deviceId, raw);
   res.json({ ok: true });
+});
+
+/**
+ * Stage 2 of new-user onboarding — the "now the real move: tag @oddiefun"
+ * teaching moment, shown once inline right after a device's first-ever call
+ * locks. The client only calls this when placeCall just reported
+ * firstEver:true; the response IS the one-shot gate (see claimTagTeachingMoment) —
+ * `show:true` at most once per device, ever, regardless of how many times a
+ * firstEver:true call is (mistakenly or not) reported.
+ */
+app.post("/api/onboarding/tag-teaching-seen", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json({ show: await claimTagTeachingMoment(deviceId) });
 });
 
 /**

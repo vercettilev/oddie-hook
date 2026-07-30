@@ -9,7 +9,7 @@
     "start": "tsx src/server.ts",
     "smoke": "tsx scripts/smoke.ts",
     "test-matcher": "tsx scripts/test-matcher.ts",
-    "test": "npm run test-matcher && npm run test-economy && npm run test-positions && npm run test-accounts && npm run test-home && npm run test-celebrations && npm run test-return-triggers && npm run test-score-motion && npm run test-settlement && npm run test-semantic && npm run test-copy && npm run test-card-layout && npm run smoke",
+    "test": "npm run test-matcher && npm run test-economy && npm run test-positions && npm run test-accounts && npm run test-home && npm run test-celebrations && npm run test-return-triggers && npm run test-score-motion && npm run test-onboarding && npm run test-settlement && npm run test-semantic && npm run test-copy && npm run test-card-layout && npm run smoke",
     "events": "tsx scripts/events.ts",
     "cleanup": "tsx scripts/cleanup-test-rows.ts",
     "audit-feed": "node scripts/audit-feed.mjs",
@@ -27,7 +27,8 @@
     "test-home": "tsx scripts/test-home.ts",
     "test-celebrations": "tsx scripts/test-celebrations.ts",
     "test-return-triggers": "tsx scripts/test-return-triggers.ts",
-    "test-score-motion": "tsx scripts/test-score-motion.ts"
+    "test-score-motion": "tsx scripts/test-score-motion.ts",
+    "test-onboarding": "tsx scripts/test-onboarding.ts"
   },
   "engines": {
     "node": ">=20"
