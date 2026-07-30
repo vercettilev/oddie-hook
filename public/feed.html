@@ -948,6 +948,19 @@
      gap with nothing above it to justify it. */
   .streakwrap:not([hidden]) + .claimcard{margin-top:var(--sp-1)}
 
+  /* "Your open calls" — the Zeigarnik hook, sitting right below the claim
+     strip: two personal "you have a reason to come back" rows back to back,
+     before the page moves on to aggregate/social sections. A row, not a card
+     — quieter than the claim strip above it, since it's a status, not an ask. */
+  .opencalls{display:flex;align-items:center;gap:11px;margin:var(--sp-2) 0 0;padding:11px 14px;
+    border:1.5px solid var(--hair-g);border-radius:var(--r-md);background:var(--card-surface);
+    text-decoration:none;box-shadow:var(--shadow-chip)}
+  .oc-ico{flex:none;font-size:17px;line-height:1}
+  .oc-text{flex:1;min-width:0;font-family:'Nunito';font-weight:800;font-size:13px;color:var(--on-ground)}
+  .oc-text b{font-weight:900}
+  .oc-sub{color:var(--muted-g);font-weight:700}
+  .oc-arrow{flex:none;color:var(--muted-g);font-weight:800;font-size:14px}
+
   /* Leaderboard teaser — three ranked callers, so a cold visitor can see a
      competition exists. Same rank/handle/edge shape as the full board it links
      to (no new metric invented for the teaser), just compact rows on the
@@ -2472,14 +2485,17 @@ async function renderHome(){
   // actually sent rows for it — so a fetch failure, a cold database, or a
   // genuinely thin product all degrade to the section being absent. Nothing
   // here has a placeholder or a sample row to fall back to, by design.
-  let featured=[], settled=[], topCallers=[], activity=null, surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
+  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
   try{
-    const r=await fetch(`${API}/api/home`);
+    // deviceId unlocks the one PERSONAL section (openCalls) — every other
+    // section on Home is aggregate and renders the same for anyone.
+    const r=await fetch(`${API}/api/home?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok){const j=await r.json();
       featured=Array.isArray(j.featured)?j.featured:[];
       settled=Array.isArray(j.settled)?j.settled:[];
       topCallers=Array.isArray(j.topCallers)?j.topCallers:[];
       activity=j.activity&&typeof j.activity==="object"?j.activity:null;
+      openCalls=j.openCalls&&typeof j.openCalls==="object"?j.openCalls:null;
       if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
   }catch(e){/* every section degrades to absent, not an error state */}
 
@@ -2510,6 +2526,21 @@ async function renderHome(){
   // NOT reused here: the hero above already carries that exact message.)
   // Claiming can start a streak (0 -> 1 day), so the pill repaints on claim.
   if(claim)wrap.appendChild(claimCard({streakShownAbove:true,onClaimed:paintStreak}));
+
+  // "Your open calls" — the Zeigarnik hook: an unresolved prediction, visible
+  // the moment they land, is a reason to come back that the daily claim isn't.
+  // Hidden entirely with zero open positions — never "0 open calls" theatre.
+  if(openCalls&&openCalls.count>0){
+    const bare=openCalls.nextCloseAt?closesIn(openCalls.nextCloseAt).replace(/^closes in /,""):null;
+    // "closing" is closesIn()'s own wording for "past due, not yet swept" — a
+    // stale duration reads worse than just omitting the clause here.
+    const nextClause=bare&&bare!=="closing"?` · next one resolves in ${esc(bare)}`:"";
+    const row=document.createElement("a");row.className="opencalls";row.href="#/positions";
+    row.innerHTML=`<span class="oc-ico">🎯</span>
+      <span class="oc-text">You have <b>${openCalls.count}</b> open call${openCalls.count===1?"":"s"}${nextClause}</span>
+      <span class="oc-arrow">→</span>`;
+    wrap.appendChild(row);
+  }
 
   // Live activity — real counters over the rolling last 24h. Any counter that is
   // zero is dropped rather than shown as "0", and if none survive the strip
@@ -3253,11 +3284,15 @@ async function loadNotices(scroller){
  * back to the quiet row. The share needs a callId (the personal card); older
  * notices without one still render, just without the button.
  */
+// Icon by kind for the quiet, non-settlement rows — a market resolving is a
+// visually different event from "someone joined against you", so they read at
+// a glance in the same list rather than blurring into one generic ✅.
+const NOTICE_ICON={opposite_side:"⚔️",closing_soon:"⏰"};
 function noticeCardHTML(n){
   const win=n.kind==="settle_win", loss=n.kind==="settle_loss";
   if(!win && !loss){
     return `<div class="tile" style="padding:2px 16px"><div class="note">
-      <div class="nicon">✅</div>
+      <div class="nicon">${NOTICE_ICON[n.kind]||"✅"}</div>
       <div class="grow"><div class="ntext">${esc(n.body)}</div><div class="nwhen">${agoOf(n.at)}</div></div></div></div>`;
   }
   const share=n.slug

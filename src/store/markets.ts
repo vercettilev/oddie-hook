@@ -222,6 +222,12 @@ ALTER TABLE notice ADD COLUMN IF NOT EXISTS call_id bigint;
 -- irrelevant to every other kind.
 ALTER TABLE notice ADD COLUMN IF NOT EXISTS seen_at timestamptz;
 
+-- A running count for notice kinds that BATCH same-day repeats into one row
+-- instead of one row per event (opposite_side: "3 people took the other side
+-- today" rather than three separate pings) — see notifyOppositeSide. NULL for
+-- every kind that doesn't batch.
+ALTER TABLE notice ADD COLUMN IF NOT EXISTS count integer;
+
 -- A call becomes shareable only when its owner mints a token for it. Random,
 -- not the sequential id: calls must not be enumerable from outside, because a
 -- share card names a handle and a side.
@@ -762,6 +768,7 @@ export async function placeCall(
     });
     const distinct = new Set(memCalls.filter((c) => c.slug === rec.slug && c.deviceId).map((c) => c.deviceId)).size;
     void awardParticipation(rec.slug, deviceId, firstEver, distinct);
+    void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
     return { ok: true, id: memId, balance: w.tokens - tokens, calls: rec.calls.length, pctAt };
   }
 
@@ -796,6 +803,7 @@ export async function placeCall(
       `SELECT count(DISTINCT device_id)::int n FROM market_call WHERE slug=$1 AND device_id IS NOT NULL`, [rec.slug],
     ).then((r) => r.rows[0]?.n ?? 0).catch(() => 0);
     void awardParticipation(rec.slug, deviceId, firstEver, distinct);
+    void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
     return { ok: true, id: ins.rows[0].id, balance: upd.rows[0].tokens, calls: rec.calls.length, pctAt };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -1164,7 +1172,7 @@ export interface Notice {
   outcome?: "yes" | "no" | null;
 }
 
-interface MemNotice extends Notice { deviceId: string; seenAt: string | null }
+interface MemNotice extends Notice { deviceId: string; seenAt: string | null; count: number | null }
 const memNotices: MemNotice[] = [];
 let memNoticeId = 0;
 
@@ -1172,7 +1180,7 @@ export async function noticesFor(rawDeviceId: string, limit = 30): Promise<Notic
   const deviceId = await resolveDevice(rawDeviceId);
   if (!PERSISTENT) {
     return memNotices.filter((n) => n.deviceId === deviceId).slice(0, limit)
-      .map(({ deviceId: _d, seenAt: _s, ...n }) => n);
+      .map(({ deviceId: _d, seenAt: _s, count: _c, ...n }) => n);
   }
   await ensureSchema();
   // Join the settled call so a settlement notice carries the odds they took and
@@ -2814,8 +2822,222 @@ function pushNoticeMem(deviceId: string, slug: string, question: string, outcome
     body: noticeBody(question, outcome, side, entryPct, proceeds, crowd),
     delta: won ? proceeds : null, slug, callId, at: new Date().toISOString(),
     oddsPct: Math.max(1, Math.min(99, Math.round(entryPct))), outcome,
-    seenAt: null,
+    seenAt: null, count: null,
   });
+}
+
+/** Linked X handle wins over the chosen one — same convention as leaderboard()/
+ *  callersFor(). Null means genuinely anonymous (no linked account, never chose
+ *  one): callers must show that as "anonymous caller", never as this device's
+ *  random stub handle — ensureHandle()'s mint is an internal identifier, not a
+ *  real identity to name someone by in a social notification. */
+async function displayHandleFor(deviceId: string): Promise<string | null> {
+  if (!PERSISTENT) {
+    const { _memAccounts } = await import("./accounts.js");
+    const tw = _memAccounts.find((a) => a.provider === "twitter" && a.canonicalDevice === deviceId && a.handle);
+    return tw?.handle ? tw.handle.replace(/^@+/, "") : (memHandle.get(deviceId) ?? null);
+  }
+  await ensureSchema();
+  // FROM a literal one-row subquery, not device_balance directly — this must
+  // return a real answer even for a device with no device_balance row yet
+  // (a LEFT JOIN off device_balance would return zero rows instead of null).
+  const { rows } = await db().query<{ handle: string | null }>(
+    `SELECT COALESCE(tw.handle, db.handle) AS handle
+       FROM (SELECT $1::text AS device_id) d
+       LEFT JOIN device_balance db ON db.device_id = d.device_id
+       LEFT JOIN LATERAL (
+         SELECT a.handle FROM account a
+          WHERE a.canonical_device = d.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
+          ORDER BY a.created_at LIMIT 1
+       ) tw ON true`,
+    [deviceId],
+  );
+  return rows[0]?.handle ? rows[0].handle.replace(/^@+/, "") : null;
+}
+
+const OPPOSITE_SIDE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * "Someone took the other side" — fired best-effort after placeCall lands, for
+ * every OTHER device holding an open position on the OPPOSITE side of the same
+ * market. Rate-limited to one notice per (holder, market) per rolling 24h: a
+ * repeat inside that window UPDATES the existing row into a batched count
+ * ("3 people took the other side today") instead of inserting a second one, so
+ * an active market cannot spam a position-holder. Never throws — this must
+ * never break placing a call.
+ */
+export async function notifyOppositeSide(slug: string, question: string, callerDeviceId: string, callerSide: "yes" | "no"): Promise<void> {
+  try {
+    const holderSide: "yes" | "no" = callerSide === "yes" ? "no" : "yes";
+    let holders: string[];
+    if (!PERSISTENT) {
+      holders = [...new Set(
+        memCalls
+          .filter((c) => c.slug === slug && !c.closedAt && c.side === holderSide && c.deviceId && c.deviceId !== callerDeviceId)
+          .map((c) => c.deviceId),
+      )];
+    } else {
+      await ensureSchema();
+      const { rows } = await db().query<{ device_id: string }>(
+        `SELECT DISTINCT device_id FROM market_call
+          WHERE slug = $1 AND closed_at IS NULL AND side = $2 AND device_id IS NOT NULL AND device_id != $3`,
+        [slug, holderSide, callerDeviceId],
+      );
+      holders = rows.map((r) => r.device_id);
+    }
+    if (!holders.length) return;
+
+    const callerHandle = await displayHandleFor(callerDeviceId);
+    const firstBody = callerHandle
+      ? `@${callerHandle} just called ${callerSide.toUpperCase()} on "${question}" — you're on ${holderSide.toUpperCase()}.`
+      : `anonymous caller just called ${callerSide.toUpperCase()} on "${question}" — you're on ${holderSide.toUpperCase()}.`;
+
+    for (const holderDeviceId of holders) {
+      if (!PERSISTENT) {
+        const cutoff = Date.now() - OPPOSITE_SIDE_WINDOW_MS;
+        const existing = memNotices.find((n) =>
+          n.deviceId === holderDeviceId && n.slug === slug && n.kind === "opposite_side" && Date.parse(n.at) >= cutoff);
+        if (existing) {
+          const count = (existing.count ?? 1) + 1;
+          existing.count = count;
+          existing.body = `${count} people took the other side of "${question}" today — you're on ${holderSide.toUpperCase()}.`;
+          existing.at = new Date().toISOString();
+        } else {
+          memNotices.unshift({
+            id: ++memNoticeId, deviceId: holderDeviceId, kind: "opposite_side", body: firstBody,
+            delta: null, slug, callId: null, at: new Date().toISOString(),
+            oddsPct: null, outcome: null, seenAt: null, count: 1,
+          });
+        }
+      } else {
+        await ensureSchema();
+        const { rows } = await db().query<{ id: number; count: number | null }>(
+          `SELECT id, count FROM notice
+            WHERE device_id = $1 AND slug = $2 AND kind = 'opposite_side' AND created_at >= now() - interval '24 hours'
+            ORDER BY created_at DESC LIMIT 1`,
+          [holderDeviceId, slug],
+        );
+        const existing = rows[0];
+        if (existing) {
+          const count = (existing.count ?? 1) + 1;
+          const body = `${count} people took the other side of "${question}" today — you're on ${holderSide.toUpperCase()}.`;
+          await db().query(`UPDATE notice SET body = $1, count = $2, created_at = now() WHERE id = $3`, [body, count, existing.id]);
+        } else {
+          await db().query(
+            `INSERT INTO notice (device_id, kind, body, slug, count) VALUES ($1,'opposite_side',$2,$3,1)`,
+            [holderDeviceId, firstBody, slug],
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[notify] opposite-side failed:", (err as Error).message);
+  }
+}
+
+const CLOSING_SOON_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** How many hours to say in "closes in {H}h" — never 0 (a market a few minutes
+ *  out should still read as "closes in 1h", not "closes in 0h"). */
+const hoursUntil = (closesAtMs: number, nowMs: number): number => Math.max(1, Math.round((closesAtMs - nowMs) / 3_600_000));
+
+/**
+ * "Your market closes soon" — a periodic sweep (called from server.ts on the
+ * same interval-timer pattern as sweepSettlements), not a per-call hook: this
+ * fires on the PASSAGE OF TIME, not on an event. For every open market closing
+ * within the next 24h, every device holding an open position on it gets
+ * exactly ONE notice, ever — no rolling window, no batching, because a market
+ * only crosses the "24h out" line once. Returns how many notices it sent, for
+ * the sweep's own logging.
+ */
+export async function notifyClosingSoon(): Promise<number> {
+  const now = Date.now();
+  let sent = 0;
+
+  if (!PERSISTENT) {
+    const openSlugsList = [...new Set(memCalls.filter((c) => !c.closedAt).map((c) => c.slug))];
+    for (const slug of openSlugsList) {
+      const rec = mem.get(slug);
+      const closesAt = rec?.market.closesAt;
+      if (!closesAt) continue;
+      const closesAtMs = new Date(closesAt).getTime();
+      if (!(closesAtMs > now && closesAtMs <= now + CLOSING_SOON_WINDOW_MS)) continue;
+      const holders = new Set(
+        memCalls.filter((c) => c.slug === slug && !c.closedAt && c.deviceId).map((c) => c.deviceId),
+      );
+      const body = `"${rec!.market.question}" closes in ${hoursUntil(closesAtMs, now)}h — resolution coming.`;
+      for (const deviceId of holders) {
+        const already = memNotices.some((n) => n.deviceId === deviceId && n.slug === slug && n.kind === "closing_soon");
+        if (already) continue;
+        memNotices.unshift({
+          id: ++memNoticeId, deviceId, kind: "closing_soon", body,
+          delta: null, slug, callId: null, at: new Date().toISOString(),
+          oddsPct: null, outcome: null, seenAt: null, count: null,
+        });
+        sent++;
+      }
+    }
+    return sent;
+  }
+
+  await ensureSchema();
+  const { rows: closingMarkets } = await db().query<{ slug: string; question: string; closes_at: Date }>(
+    `SELECT DISTINCT s.slug, s.question, s.closes_at
+       FROM market_slug s
+       JOIN market_call mc ON mc.slug = s.slug AND mc.closed_at IS NULL
+      WHERE s.closes_at IS NOT NULL AND s.closes_at > now() AND s.closes_at <= now() + interval '24 hours'`,
+  );
+  for (const m of closingMarkets) {
+    const body = `"${m.question}" closes in ${hoursUntil(m.closes_at.getTime(), now)}h — resolution coming.`;
+    // The LEFT JOIN ... WHERE n.id IS NULL is the "not yet notified" filter in
+    // one query — holders of an open position on this slug with no existing
+    // closing_soon row for them.
+    const { rows: unnotified } = await db().query<{ device_id: string }>(
+      `SELECT DISTINCT mc.device_id
+         FROM market_call mc
+         LEFT JOIN notice n ON n.device_id = mc.device_id AND n.slug = mc.slug AND n.kind = 'closing_soon'
+        WHERE mc.slug = $1 AND mc.closed_at IS NULL AND mc.device_id IS NOT NULL AND n.id IS NULL`,
+      [m.slug],
+    );
+    if (!unnotified.length) continue;
+    const values = unnotified.map((_, i) => `($${i * 3 + 1},'closing_soon',$${i * 3 + 2},$${i * 3 + 3})`).join(",");
+    const params = unnotified.flatMap((r) => [r.device_id, body, m.slug]);
+    await db().query(`INSERT INTO notice (device_id, kind, body, slug) VALUES ${values}`, params);
+    sent += unnotified.length;
+  }
+  return sent;
+}
+
+export interface OpenCallsSummary {
+  count: number;
+  /** The earliest closesAt among the device's open positions with a known
+   *  close time, or null if it has none (venue markets sometimes don't). */
+  nextCloseAt: string | null;
+}
+
+/** The home page's "Zeigarnik hook" — how many open calls this device has, and
+ *  when the soonest one resolves. One aggregate query; the client hides the
+ *  whole row when count is 0, so this never fabricates a reason to come back. */
+export async function openCallsSummaryFor(rawDeviceId: string): Promise<OpenCallsSummary> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) {
+    const open = memCalls.filter((c) => c.deviceId === deviceId && !c.closedAt);
+    if (!open.length) return { count: 0, nextCloseAt: null };
+    const closeTimes = open
+      .map((c) => mem.get(c.slug)?.market.closesAt)
+      .filter((x): x is string => Boolean(x));
+    const nextCloseAt = closeTimes.length ? closeTimes.reduce((a, b) => (a < b ? a : b)) : null;
+    return { count: open.length, nextCloseAt };
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ n: string; next_close: Date | null }>(
+    `SELECT count(*)::text AS n, min(s.closes_at) AS next_close
+       FROM market_call mc JOIN market_slug s ON s.slug = mc.slug
+      WHERE mc.device_id = $1 AND mc.closed_at IS NULL`,
+    [deviceId],
+  );
+  const count = Number(rows[0]?.n ?? 0);
+  return { count, nextCloseAt: count && rows[0]?.next_close ? rows[0].next_close.toISOString() : null };
 }
 
 /* ------------------------------------------------------------------- crowd --

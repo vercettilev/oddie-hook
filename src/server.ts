@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -595,10 +595,14 @@ const HOME_TOP_CALLERS_SHOWN = 3;
  *  min-resolved/provisional bar still decides who is eligible at all. */
 const HOME_MIN_RANKED = 1;
 
-app.get("/api/home", async (_req, res) => {
+app.get("/api/home", async (req, res) => {
+  // deviceId is optional here (home renders fine cold, no deviceId at all) —
+  // when present it unlocks the one PERSONAL section, openCalls.
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   // Every section degrades to absent on failure, never to a fake: the client
   // renders each one only when its array is non-empty (see renderHome).
-  const [featured, settled, board, activity] = await Promise.all([
+  const [featured, settled, board, activity, openCalls] = await Promise.all([
     resolveFeatured().catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
     // Two, not three: settled rows look alike, so the third adds repetition
     // rather than proof — and the 175px it costs is what keeps the leaderboard
@@ -606,6 +610,9 @@ app.get("/api/home", async (_req, res) => {
     recentlySettled(2).catch((e) => { console.error("[home] settled failed:", (e as Error).message); return []; }),
     leaderboard(20).catch((e) => { console.error("[home] leaderboard failed:", (e as Error).message); return []; }),
     homeActivity().catch((e) => { console.error("[home] activity failed:", (e as Error).message); return null; }),
+    deviceId
+      ? openCallsSummaryFor(deviceId).catch((e) => { console.error("[home] openCalls failed:", (e as Error).message); return null; })
+      : Promise.resolve(null),
   ]);
   // Only RANKED callers are eligible — `provisional` is the store's existing
   // "sample too small to mean anything" flag, and the full Leaderboard sorts
@@ -618,7 +625,7 @@ app.get("/api/home", async (_req, res) => {
     : [];
   // The tag-CTA's points-incentive line reads this live rather than hardcoding
   // "50" — the two can never drift apart, because there's only one number.
-  res.json({ featured, settled, topCallers, activity, surfaceReward: SEASON_POINTS.surface });
+  res.json({ featured, settled, topCallers, activity, openCalls, surfaceReward: SEASON_POINTS.surface });
 });
 
 /**
@@ -1558,6 +1565,30 @@ export async function sweepSettlements(): Promise<void> {
 }
 setInterval(sweepSettlements, SWEEP_EVERY_MS).unref();
 setTimeout(sweepSettlements, 45_000).unref(); // first pass shortly after boot, once venues are warm
+
+// "Your market closes soon" — a return trigger driven by the passage of time,
+// not an event, so it needs its own clock rather than a hook in placeCall.
+// Longer interval than the settlement sweep: urgency here is measured in
+// hours, not minutes, and notifyClosingSoon() is itself idempotent (the
+// per-device "already notified" check lives in the store), so a slower
+// cadence just means "closes in 24h" might occasionally read "closes in 23h"
+// by the time it's caught — never a duplicate, never a miss.
+const CLOSING_SOON_SWEEP_MS = 30 * 60_000;
+let sweepingClosingSoon = false;
+async function sweepClosingSoon(): Promise<void> {
+  if (sweepingClosingSoon) return;
+  sweepingClosingSoon = true;
+  try {
+    const sent = await notifyClosingSoon();
+    if (sent > 0) console.log(`[notify] closing-soon: ${sent} notice(s) sent`);
+  } catch (err) {
+    console.error("[notify] closing-soon sweep failed:", (err as Error).message);
+  } finally {
+    sweepingClosingSoon = false;
+  }
+}
+setInterval(sweepClosingSoon, CLOSING_SOON_SWEEP_MS).unref();
+setTimeout(sweepClosingSoon, 60_000).unref(); // first pass shortly after boot
 
 const PORT = Number(process.env.PORT ?? 3000);
 app.listen(PORT, () =>
