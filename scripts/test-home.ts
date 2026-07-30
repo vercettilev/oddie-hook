@@ -50,7 +50,12 @@ async function resolve(slug: string, outcome: "yes" | "no"): Promise<void> {
   await settleMarket(slug, outcome);
 }
 
-const DEV = (n: number) => `dev-${String(n).repeat(32).slice(0, 32)}`;
+// NOT String(n).repeat(32).slice(0,32) — for single-repeated-digit n (1, 11,
+// 111...) that collapses to the same 32-char string for every n sharing a
+// digit, so DEV(1) and DEV(11) silently collided (both "1111...1", 32 chars).
+// Padding n into a fixed-width prefix BEFORE any repetition makes collision
+// impossible for n up to 8 digits.
+const DEV = (n: number) => `dev-${String(n).padStart(8, "0")}${"a".repeat(24)}`;
 
 console.log("\nnothing has happened yet");
 {
