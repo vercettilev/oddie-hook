@@ -79,7 +79,13 @@
     --r-xs:10px; --r-sm:14px; --r-md:18px; --r-lg:24px; --r-xl:30px;
     --shadow-chip:0 1px 2px rgba(30,45,10,.07), 0 3px 8px rgba(30,45,10,.06);
     --shadow-pop:0 2px 6px rgba(30,45,10,.09), 0 10px 24px rgba(40,60,15,.14);
-    --fs-hero:min(38px,9.5vw); --fs-title:22px; --fs-body:15px; --fs-label:13px; --fs-caption:11.5px}
+    --fs-hero:min(38px,9.5vw); --fs-title:22px; --fs-body:15px; --fs-label:13px; --fs-caption:11.5px;
+    /* Spacing scale, 8px base — every gap on a static page (Home first; the
+       feed's own card-to-card rhythm has its own reasons and stays as-is)
+       should be one of these, not a one-off value picked by eye. sp-1/2 group
+       tightly-related content (a headline and its subtext); sp-4/5/6 separate
+       distinct sections, largest gap for the biggest jump in the page. */
+    --sp-1:8px; --sp-2:16px; --sp-3:24px; --sp-4:32px; --sp-5:40px; --sp-6:48px}
 
   /* Deep, slightly warm near-black. Not #000: pure black next to a 4px pure-black
    * outline erases the outline, and the outline IS the brand. The ground has to
@@ -707,10 +713,15 @@
   /* homeTop() is a brand-row-only header (no chips, no title row), shorter than
      shellTop()'s — so the top padding here is smaller than .sheet's 104px. */
   /* Matches --feedcol, not --col: the feed's cards scale with the viewport at
-     desktop widths (see the 768px/1024px breakpoints below), and the hero
-     used to stay pinned at the older fixed --col, so Home read as narrower
-     than the feed it sits above — two different "how wide is this page"
-     answers on the same product. */
+     desktop widths (see the 768px/1024px/1440px breakpoints below), and the
+     hero used to stay pinned at the older fixed --col, so Home read as
+     narrower than the feed it sits above — two different "how wide is this
+     page" answers on the same product. */
+  /* Every gap from here down is owned by exactly one element (its own
+     margin-top marks "a new section starts here"), using the --sp-* scale —
+     see the note by --sp-1. Adjacent block margins collapse in normal flow,
+     so an optional element (the claim card, the featured-markets label) can
+     be skipped entirely without leaving a doubled or missing gap behind it. */
   .homewrap{max-width:var(--feedcol);margin:0 auto;
     padding:calc(env(safe-area-inset-top) + 82px) 20px calc(env(safe-area-inset-bottom) + var(--tabh) + 28px)}
   /* Home is a static page, not a stack of full-screen cards: the featured
@@ -719,13 +730,17 @@
      (feed-like) even with snap correctly disabled. Each hugs its own content —
      a secondary "try this" section under the tag CTA, not a takeover. Same
      reasoning kills scroll-snap-align: harmless without a snap container, but
-     pointless here. */
-  .homewrap .card{min-height:auto;scroll-snap-align:none;scroll-margin-top:0}
+     pointless here. Tight, uniform gap card-to-card — a list, not separate
+     sections — the big section gap arrives via .howitworks' own margin-top. */
+  .homewrap .card{min-height:auto;scroll-snap-align:none;scroll-margin-top:0;margin:0 0 var(--sp-2)}
   .homewrap .card:first-child{margin-top:0}
   /* The section label reads as a quiet caption over a secondary section, not a
-     header competing with the hero above it. */
-  .homewrap .psec{text-align:center;margin:6px 0 10px}
-  .hero{position:relative;text-align:center;padding:10px 0 26px}
+     header competing with the hero above it — margin-top is the section gap
+     (collapses with whatever precedes: the hero, or the claim card when it's
+     showing), margin-bottom is the tight "caption to its own list" gap. */
+  .homewrap .psec{text-align:center;margin:var(--sp-6) 0 var(--sp-2)}
+  .homewrap .claimcard{margin:var(--sp-6) 0 0}
+  .hero{position:relative;text-align:center}
   /* A soft lime glow seated behind the headline — the one "premium" cue a
      hackathon build skips. Pure gradient, no image, invisible on load until
      the hero's own .enter fade brings it in with everything else. */
@@ -734,10 +749,15 @@
     filter:blur(2px);pointer-events:none;z-index:0}
   :root[data-theme="dark"] .hero::before{background:radial-gradient(ellipse at center, rgba(182,240,95,.16), transparent 70%)}
   .hero>*{position:relative;z-index:1}
+  /* Headline → subtext → +50 stat → CTA is ONE tightly-related group (the
+     hero's core pitch, read top to bottom in one breath), so every gap in it
+     is the same small scale step — the +50 stat used to sit with noticeably
+     more air above and below it than its neighbours, which is exactly what
+     made it read as a pasted-in island instead of the next line of the pitch. */
   .herotitle{font-size:min(36px,9vw);font-weight:700;line-height:1.08;letter-spacing:-.025em;
-    color:var(--on-ground);margin:0 0 13px}
+    color:var(--on-ground);margin:0 0 var(--sp-2)}
   .herosub{font-family:'Nunito';font-weight:700;font-size:var(--fs-label);line-height:1.5;color:var(--muted-g);
-    max-width:320px;margin:0 auto 22px}
+    max-width:320px;margin:0 auto var(--sp-2)}
   .herosub b{color:var(--on-ground);font-weight:900}
   .herocta{display:inline-flex;align-items:center;gap:9px;font-family:'Fredoka';font-weight:600;font-size:16px;
     color:#17250a;background:linear-gradient(180deg, #c4f57a, var(--accent) 60%);
@@ -748,8 +768,12 @@
   .herocta .glyphx{font-size:17px;line-height:1}
   /* Three beats, icon + a few words each — no paragraphs, per the brief. Each
      gets its own medallion (a soft chip circle) instead of a bare emoji
-     floating in text, so the row reads as a designed sequence, not a caption. */
-  .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:2px;margin:30px 0 4px}
+     floating in text, so the row reads as a designed sequence, not a caption.
+     margin-top is the section gap (see the .homewrap note); this is also the
+     one guaranteed-present element after the hero, so it's the reliable place
+     to own that gap even when the claim card and featured markets are both
+     absent (a signed-out cold visit with no community markets yet). */
+  .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:2px;margin:var(--sp-6) 0 0}
   .howstep{display:flex;flex-direction:column;align-items:center;gap:9px;width:84px;
     font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);line-height:1.25;color:var(--muted-g);text-align:center}
   .howstep .howico{display:flex;align-items:center;justify-content:center;width:52px;height:52px;
@@ -758,18 +782,20 @@
   :root[data-theme="dark"] .howstep .howico{background:var(--card-surface)}
   .howarrow{flex:none;color:var(--card-line);opacity:.35;font-weight:700;font-size:16px;margin-top:24px}
   /* The feed is a destination now, chosen not defaulted-into — one quiet link. */
-  /* Tertiary, nearly hidden by design: tagging is the primary action, the Daily
-     Call is one thing to try, and browsing the catalog is the last resort for
-     someone who wants it anyway — not a peer of the other two. */
+  /* Tertiary, nearly hidden by design: tagging is the primary action, the
+     featured markets are a few things to try, and browsing the catalog is the
+     last resort for someone who wants it anyway — not a peer of the others,
+     so its own gap (sp-4) is a step down from the sp-6 used between the
+     bigger sections above it. */
   .browselink{display:block;text-align:center;font-family:'Nunito';font-weight:700;font-size:var(--fs-caption);
-    color:var(--muted-g);text-decoration:none;margin:30px 0 4px;padding:10px;opacity:.75}
+    color:var(--muted-g);text-decoration:none;margin:var(--sp-4) 0 0;padding:10px;opacity:.75}
   .browselink:active{opacity:.5}
   /* The points incentive, ABOVE the tag CTA — the loudest thing on the page
      after the headline, per the brief. Wired live to the actual Season Points
      surface-award amount (server), never a hardcoded number that can drift
      from what the backend actually pays out. */
   .incentivebig{font-family:'Nunito';font-weight:800;font-size:16px;line-height:1.4;
-    color:var(--on-ground);max-width:300px;margin:0 auto 20px}
+    color:var(--on-ground);max-width:300px;margin:0 auto var(--sp-2)}
   .incentivebig .ptsnum{display:block;font-family:'Fredoka';font-weight:700;font-size:44px;
     line-height:1.05;color:var(--acc-deep);margin:0 0 2px}
   :root[data-theme="dark"] .incentivebig .ptsnum{color:var(--accent)}
@@ -1006,6 +1032,11 @@
        viewport instead — scales up to a sensible cap so cards never stretch
        into a thin-content, all-whitespace layout, but a lot less floats. */
     body{--feedcol:min(560px, 62vw)}
+    /* .top is in normal flow here (not fixed, like on mobile), so it already
+       occupies its own space above the scroller — .homewrap doesn't also need
+       mobile's ~82px clearance for a fixed header it doesn't have. That extra
+       padding was dead air between the header rule and the hero headline. */
+    .homewrap{padding-top:calc(env(safe-area-inset-top) + var(--sp-4))}
     /* A soft lime glow seated high in the viewport, fading into the ground colour
        below it — same recipe as .hero::before, just sized for the whole page
        rather than one headline. Reads as atmosphere, not a technical grid. */
@@ -1061,9 +1092,13 @@
      column then centres in the space actually left over, not the full viewport,
      which used to read as the column drifting left of true-center with a huge
      dead patch on the right. The column also widens further on very wide
-     monitors, same reasoning as the 768px step: less floating whitespace. */
+     monitors, same reasoning as the 768px step: less floating whitespace.
+     (58vw, not the 46vw this used to be: at exactly 1024px that resolved to
+     ~471px — NARROWER than the 768px step's own 560px cap one pixel to the
+     left of this breakpoint, a visible dip right at the boundary. 58vw clears
+     560 at 1024 so the column only ever grows crossing a breakpoint.) */
   @media (min-width:1024px){
-    body{--feedcol:min(660px, 46vw)}
+    body{--feedcol:min(660px, 58vw)}
     .app{padding-left:218px}
     .rail{display:flex;position:fixed;left:0;top:0;z-index:16;height:100dvh;width:218px;box-sizing:border-box;
       flex-direction:column;gap:26px;padding:26px 18px}
@@ -1081,6 +1116,15 @@
     .top .brand{display:none}     /* the rail carries the wordmark + balance + toggle */
     .tabs{display:none}           /* no bottom bar on desktop */
     .scroller{padding-bottom:26px}
+  }
+
+  /* A large monitor (1440px+) still had the 660px cap from the step above —
+     comfortably readable, but narrow enough that a market card's question
+     routinely wrapped to 3 lines where the extra room would settle it at 2,
+     and left enough slack beside the rail that the column read as adrift
+     rather than confidently sized for the space. */
+  @media (min-width:1440px){
+    body{--feedcol:min(760px, 53vw)}
   }
 
 
