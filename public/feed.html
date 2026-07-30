@@ -796,8 +796,11 @@
      the notification cards already use: a compact card with a coloured left
      rail for the verdict, question first, then who was right. Never rendered
      with fabricated rows — the section is absent when nothing has settled. */
+  /* A DIV, not an anchor: the card now holds two links of its own (the question
+     and the "make your own call" bridge), and interactive content cannot nest
+     inside an <a>. */
   .stl{display:block;border:2px solid var(--card-line);border-left-width:6px;border-radius:var(--r-md);
-    background:var(--card-surface);padding:12px 14px;margin:0 0 var(--sp-1);text-decoration:none;
+    background:var(--card-surface);padding:12px 14px;margin:0 0 var(--sp-1);
     box-shadow:var(--shadow-chip)}
   .stl.yes{border-left-color:#0a7d2c}
   .stl.no{border-left-color:#b00020}
@@ -809,7 +812,8 @@
   :root[data-theme="dark"] .stl.yes .stl-out{color:#7fe0a4;background:#0f3320}
   :root[data-theme="dark"] .stl.no .stl-out{color:#f2a3b4;background:#3a1420}
   .stl-when{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted-g);white-space:nowrap}
-  .stl-q{font-family:'Nunito';font-weight:800;font-size:13.5px;line-height:1.35;color:var(--on-ground)}
+  .stl-q{display:block;font-family:'Nunito';font-weight:800;font-size:13.5px;line-height:1.35;
+    color:var(--on-ground);text-decoration:none}
   .stl-wins{margin-top:8px;padding-top:8px;border-top:1px solid var(--hair-g);
     display:flex;flex-direction:column;gap:4px}
   .stl-win{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g)}
@@ -819,6 +823,50 @@
   /* Everyone was wrong is a real, and frankly better, outcome to show than a
      padded row — so it gets said plainly rather than hiding the market. */
   .stl-none{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g);opacity:.85}
+  /* The spectator-to-player bridge, at the exact moment the proof lands. Quiet
+     on purpose — it's an offer, not a second CTA competing with the hero's. */
+  .stl-cta{display:inline-block;margin-top:9px;font-family:'Nunito';font-weight:800;
+    font-size:var(--fs-caption);color:var(--acc-deep);text-decoration:none;opacity:.9}
+  :root[data-theme="dark"] .stl-cta{color:var(--acc-mid)}
+  .stl-cta:active{opacity:.6}
+
+  /* Live activity — a row of real counters over the rolling last 24h. Each
+     counter is dropped when it's zero and the whole strip is dropped when none
+     survive, so this can never read as "0 calls today" theatre. */
+  .livestrip{display:flex;align-items:stretch;justify-content:center;gap:0;margin:var(--sp-6) 0 0;
+    border:1.5px solid var(--hair-g);border-radius:var(--r-md);background:var(--card-surface);
+    box-shadow:var(--shadow-chip);overflow:hidden}
+  .lsi{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;
+    padding:10px 8px;border-left:1px solid var(--hair-g);text-align:center}
+  .lsi:first-child{border-left:0}
+  .lsi-n{font-family:'Fredoka';font-weight:700;font-size:21px;line-height:1;color:var(--on-ground);
+    font-variant-numeric:tabular-nums}
+  .lsi-k{font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.02em;color:var(--muted-g);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  /* A live counter deserves a live cue — one dot, on the first item only. Its
+     own keyframe rather than .mchip-forming's: that one pulses an amber ring,
+     which reads wrong behind a lime dot. */
+  .lsi:first-child .lsi-n::after{content:"";display:inline-block;width:6px;height:6px;margin-left:5px;
+    border-radius:50%;background:var(--accent);vertical-align:middle;
+    box-shadow:0 0 0 0 rgba(182,240,95,.6);animation:livedot 1.8s ease-out infinite}
+  @keyframes livedot{0%{box-shadow:0 0 0 0 rgba(182,240,95,.6)}70%{box-shadow:0 0 0 7px rgba(182,240,95,0)}100%{box-shadow:0 0 0 0 rgba(182,240,95,0)}}
+  @media (prefers-reduced-motion:reduce){.lsi:first-child .lsi-n::after{animation:none}}
+
+  /* Claim streak — the grind, made visible where a returning farmer lands. Sits
+     directly above the claim strip; the claim card drops its own duplicate
+     mention of the streak whenever this pill is rendering (see claimCard). */
+  .streakpill{display:inline-flex;align-items:center;gap:6px;font-family:'Nunito';font-weight:900;
+    font-size:12px;color:#7a4a00;background:#ffeec2;border:1.5px solid #e8b34a;
+    border-radius:999px;padding:5px 12px}
+  :root[data-theme="dark"] .streakpill{color:#f5cf6b;background:#3a2c05;border-color:#6b5312}
+  .streakwrap{text-align:center;margin:var(--sp-6) 0 0}
+  /* The pill owns the section gap when it renders, so the claim strip below it
+     tightens up to read as one unit with it rather than two stacked sections.
+     Scoped to :not([hidden]) because the wrapper is always in the DOM (a claim
+     can start a streak, and the pill has to be able to appear without a
+     re-render) — without this, a streakless visitor would get the tightened
+     gap with nothing above it to justify it. */
+  .streakwrap:not([hidden]) + .claimcard{margin-top:var(--sp-1)}
 
   /* Leaderboard teaser — three ranked callers, so a cold visitor can see a
      competition exists. Same rank/handle/edge shape as the full board it links
@@ -1600,6 +1648,33 @@ function countUp(el,to,opts={}){
   requestAnimationFrame(step);
 }
 
+/**
+ * Smooth-scroll an element to the top of its scrolling container.
+ *
+ * Hand-rolled rather than scrollIntoView({behavior:"smooth"}) because the target
+ * lives in a NESTED overflow container: scrollIntoView walks every scrollable
+ * ancestor, so it also nudges the document, and its resting position is decided
+ * by scroll-padding rather than by us. Driving #scroller.scrollTop directly is
+ * the same thing renderHome already does to reset to the top, keeps the landing
+ * offset explicit, and reuses countUp's easeOutCubic so the two bits of motion
+ * on the page match. Degrades to an instant jump under prefers-reduced-motion.
+ */
+function scrollToEl(container,el,{duration=520,offset=8}={}){
+  if(!container||!el)return;
+  const to=Math.max(0,Math.min(
+    el.getBoundingClientRect().top-container.getBoundingClientRect().top+container.scrollTop-offset,
+    container.scrollHeight-container.clientHeight));
+  const from=container.scrollTop;
+  if(REDUCE_MOTION||Math.abs(to-from)<2){container.scrollTop=to;return;}
+  const start=performance.now(), ease=(t)=>1-Math.pow(1-t,3);
+  const step=(now)=>{
+    const t=Math.min(1,(now-start)/duration);
+    container.scrollTop=from+(to-from)*ease(t);
+    if(t<1)requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 /* -------------------------------------------------------------- routing --
    Hash routes, not paths. oddie.fun points straight at this one service, so real
    paths would work too — but the hash keeps client views (positions, leaderboard,
@@ -1797,15 +1872,20 @@ function maybeFeedTop(scroller){
 
 // The daily-claim card. Prominent (lime, a Claim button) when claimable; quiet
 // (a countdown) once claimed. The streak line is the reason to come back.
-function claimCard(){
+// `streakShownAbove` is set by home, which renders the streak as its own pill
+// directly above this card — without it the same "🔥 N-day streak" would appear
+// twice, a few pixels apart.
+function claimCard(opts={}){
+  const {streakShownAbove=false}=opts;
   const el=document.createElement("div");
   const st=claim.streak||0;
-  const streakLine=st>0?`🔥 ${st}-day streak`:"start a daily streak";
+  // Say the streak here only when nothing else on the page is already saying it.
+  const sayStreak=st>0 && !streakShownAbove;
   if(claim.claimable){
     el.className="claimcard ready";
     el.innerHTML=`<div class="cc-grow">
         <div class="cc-title">Claim your daily Oddie Points</div>
-        <div class="cc-sub">${st>0?`🔥 ${st}-day streak — keep it alive`:"tap to start your streak"}</div>
+        <div class="cc-sub">${sayStreak?`🔥 ${st}-day streak — keep it alive`:st>0?"keep the streak alive":"tap to start your streak"}</div>
       </div>
       <button class="claimbtn" id="claimbtn">Claim +${claim.amount}</button>`;
     el.querySelector("#claimbtn").onclick=async(e)=>{
@@ -1817,14 +1897,17 @@ function claimCard(){
         claim={claimable:false,nextClaimMs:j.nextClaimMs,streak:j.streak,amount:j.amount,lastClaimAt:j.lastClaimAt};
         if(typeof j.balance==="number"){balance=j.balance;paintBalance(true);}
         ev("claim_daily",{streak:j.streak,granted:j.granted});
-        el.replaceWith(claimCard()); // swap to the claimed state in place
+        // Claiming can START a streak (0 -> 1), so the pill above has to be
+        // brought into existence / updated, not just this card swapped.
+        el.replaceWith(claimCard(opts));  // same context, so the streak isn't double-said
+        if(typeof opts.onClaimed==="function")opts.onClaimed(j.streak);
         if(j.granted>0)toast(`+${j.granted} Points · 🔥 ${j.streak}-day streak`);
       }catch(err){btn.disabled=false;btn.textContent=`Claim +${claim.amount}`;}
     };
   }else{
     el.className="claimcard done";
     el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">✓ Points claimed · ${streakLine}</div>
+        <div class="cc-title">✓ Points claimed${sayStreak?` · 🔥 ${st}-day streak`:""}</div>
         <div class="cc-sub">come back for tomorrow's drop to keep the streak</div>
       </div>
       <div class="cc-next">next in ${claimWhen(claim.nextClaimMs)}</div>`;
@@ -2309,13 +2392,14 @@ async function renderHome(){
   // actually sent rows for it — so a fetch failure, a cold database, or a
   // genuinely thin product all degrade to the section being absent. Nothing
   // here has a placeholder or a sample row to fall back to, by design.
-  let featured=[], settled=[], topCallers=[], surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
+  let featured=[], settled=[], topCallers=[], activity=null, surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
   try{
     const r=await fetch(`${API}/api/home`);
     if(r.ok){const j=await r.json();
       featured=Array.isArray(j.featured)?j.featured:[];
       settled=Array.isArray(j.settled)?j.settled:[];
       topCallers=Array.isArray(j.topCallers)?j.topCallers:[];
+      activity=j.activity&&typeof j.activity==="object"?j.activity:null;
       if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
   }catch(e){/* every section degrades to absent, not an error state */}
 
@@ -2328,12 +2412,46 @@ async function renderHome(){
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
     </div>`;
 
+  // An active claim streak, as its own badge above the claim strip. Farmers grind
+  // streaks, and buried in the claim card's grey sub-line it was easy to miss.
+  // Rendered only for a REAL streak of at least a day; the claim card is told to
+  // stop repeating it so the same fact isn't stated twice in adjacent elements.
+  const streakWrap=document.createElement("div");streakWrap.className="streakwrap";
+  const paintStreak=(st)=>{
+    const n=st||0;
+    streakWrap.innerHTML=n>0?`<span class="streakpill">🔥 ${n}-day streak</span>`:"";
+    streakWrap.hidden=!(n>0);
+  };
+  paintStreak(claim&&claim.streak);
+  if(claim)wrap.appendChild(streakWrap);
+
   // The daily-claim strip is a retention hook, not onboarding — it belongs on
   // every screen, home included. (The tag-instruction banner is deliberately
   // NOT reused here: the hero above already carries that exact message.)
-  if(claim)wrap.appendChild(claimCard());
+  // Claiming can start a streak (0 -> 1 day), so the pill repaints on claim.
+  if(claim)wrap.appendChild(claimCard({streakShownAbove:true,onClaimed:paintStreak}));
 
-  const section=(text)=>{const p=document.createElement("p");p.className="psec";p.textContent=text;wrap.appendChild(p);};
+  // Live activity — real counters over the rolling last 24h. Any counter that is
+  // zero is dropped rather than shown as "0", and if none survive the strip
+  // never enters the DOM: at genuinely low volume this shows less, never
+  // something invented. Numbers count up on first paint.
+  const counters=activity?[
+    ["marketsOpen","markets open"],
+    ["callsToday","calls today"],
+    ["pointsWonToday","points won today"],
+  ].map(([k,label])=>({label,n:Number(activity[k])||0})).filter(c=>c.n>0):[];
+  if(counters.length){
+    const strip=document.createElement("div");strip.className="livestrip";
+    strip.innerHTML=counters.map(c=>
+      `<div class="lsi"><span class="lsi-n" data-to="${c.n}">0</span><span class="lsi-k">${esc(c.label)}</span></div>`).join("");
+    wrap.appendChild(strip);
+    // Deferred to after the swap into the document — countUp drives rAF against
+    // a live element, and the wrap isn't attached yet at this point.
+    queueMicrotask(()=>strip.querySelectorAll(".lsi-n").forEach(el=>
+      countUp(el,Number(el.dataset.to),{duration:800})));
+  }
+
+  const section=(text,id)=>{const p=document.createElement("p");p.className="psec";p.textContent=text;if(id)p.id=id;wrap.appendChild(p);};
 
   // PROOF, before the markets. The hero promises "see who was right"; these two
   // sections are the only things on the page that actually demonstrate it, so
@@ -2343,12 +2461,13 @@ async function renderHome(){
   // evidence" problem. Both sections render ONLY with real data behind them.
 
   // 1. Recently settled: the loop completing. Question, verdict, who was right.
+  //    Each card ends with a bridge into playing — the moment the proof lands is
+  //    the moment a spectator is most likely to take a side themselves.
   if(settled.length){
     section("Recently settled");
     settled.forEach((s)=>{
-      const a=document.createElement("a");
-      a.className=`stl ${s.outcome}`;
-      a.href=`/m/${encodeURIComponent(s.slug)}`;
+      const card=document.createElement("div");
+      card.className=`stl ${s.outcome}`;
       // Winners are pre-sorted by the odds they took (best call first) and
       // pre-capped server-side; winnerTotal carries the real count for "+N more".
       const wins=s.winners.map(w=>
@@ -2359,21 +2478,34 @@ async function renderHome(){
       const body=s.winnerTotal
         ? `<div class="stl-wins">${wins}${more}</div>`
         : (s.callers?`<div class="stl-wins"><div class="stl-none">nobody called this one right</div></div>`:"");
-      a.innerHTML=`
+      // The bridge goes to the open markets on THIS page when there are any, and
+      // falls through to the feed when there aren't. Its href is always the feed
+      // so it behaves like a real link (middle-click, right-click); the smooth
+      // scroll is a click-time upgrade, never a hash change — the router would
+      // treat a hash as a view and navigate away.
+      card.innerHTML=`
         <div class="stl-head">
           <span class="stl-out">RESOLVED ${s.outcome.toUpperCase()}</span>
           <span class="stl-when">${agoOf(s.settledAt)}</span>
         </div>
-        <div class="stl-q">${esc(s.question)}</div>
-        ${body}`;
-      wrap.appendChild(a);
+        <a class="stl-q" href="/m/${encodeURIComponent(s.slug)}">${esc(s.question)}</a>
+        ${body}
+        <a class="stl-cta" href="/feed">make your own call →</a>`;
+      card.querySelector(".stl-cta").onclick=(e)=>{
+        const target=wrap.querySelector("#openmarkets");
+        if(!target)return;           // no open markets on the page — let /feed happen
+        e.preventDefault();
+        scrollToEl(document.getElementById("scroller"),target);
+      };
+      wrap.appendChild(card);
     });
   }
 
   // 2. Top callers: a competition exists. Rank/handle/edge — the same three
   // columns the full Leaderboard's primary board shows, so the teaser and the
-  // page it links to can never disagree. Server sends [] below the ranked-user
-  // threshold, so there is nothing to pad here.
+  // page it links to can never disagree. The server sends [] when NO caller is
+  // ranked yet; one ranked caller is enough to render, because "here is the
+  // person to beat" is a real competition even with a single name in it.
   if(topCallers.length){
     section("Top callers");
     // Hash route, same as the nav buttons — a real href so it middle-clicks and
@@ -2387,7 +2519,7 @@ async function renderHome(){
       </div>`).join("");
     wrap.appendChild(box);
     const more=document.createElement("a");more.className="topc-more";more.href="#/leaderboard";
-    more.textContent="see the full leaderboard →";
+    more.textContent="climb the board →";
     wrap.appendChild(more);
   }
 
@@ -2400,7 +2532,8 @@ async function renderHome(){
   // what these are: it used to read "Live right now", which promised urgency
   // that a market closing in five weeks does not have.
   if(featured.length){
-    section("Open markets");
+    // The id is the settled cards' scroll target — see the .stl-cta handler.
+    section("Open markets","openmarkets");
     featured.forEach((m,i)=>{
       const card=buildCard(m,i);
       // "swipe for the next take" doesn't apply — this is a short static list,

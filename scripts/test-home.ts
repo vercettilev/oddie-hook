@@ -13,7 +13,7 @@ if (process.env.DATABASE_URL) {
 
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, leaderboard,
-  markCommunityResolved, settleMarket, setHandle, recentlySettled,
+  markCommunityResolved, settleMarket, setHandle, recentlySettled, homeActivity,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -23,13 +23,15 @@ function check(name: string, ok: boolean, detail = ""): void {
   else { failures++; console.error(`  ✗ ${name}`); if (detail) console.error(`      ${detail}`); }
 }
 
-/** Mirrors the gate in /api/home exactly: fewer than three RANKED callers and
- *  the teaser is omitted, because two rows is not a competition and a
- *  provisional row is a standing that hasn't settled yet. */
-const HOME_TOP_CALLERS = 3;
+/** Mirrors the gate in /api/home exactly: ONE ranked caller is enough to render
+ *  (at low volume, requiring three hid the board completely), it lists at most
+ *  three, and a provisional caller is never eligible — that's a standing which
+ *  hasn't settled yet. */
+const HOME_TOP_CALLERS_SHOWN = 3;
+const HOME_MIN_RANKED = 1;
 async function topCallers() {
   const ranked = (await leaderboard(20)).filter((r) => !r.provisional);
-  return ranked.length >= HOME_TOP_CALLERS ? ranked.slice(0, HOME_TOP_CALLERS) : [];
+  return ranked.length >= HOME_MIN_RANKED ? ranked.slice(0, HOME_TOP_CALLERS_SHOWN) : [];
 }
 
 const soon = () => Math.floor(Date.now() / 1000) + 86_400;
@@ -109,28 +111,51 @@ console.log("\nsettled markets are ordered by when they settled");
 
 console.log("\nthe leaderboard teaser's ranked-caller gate");
 {
-  // Two devices cross the provisional bar; a third deliberately does not.
+  // Nothing so far has crossed the provisional bar — every earlier device has a
+  // handful of closed positions at most.
+  check("with zero ranked callers the teaser is empty", (await topCallers()).length === 0);
+
+  // One device over the bar; another deliberately left short of it.
   for (let i = 0; i < 11; i++) {
     const slug = await mk(`Ranked-bar filler ${i}?`, 50);
     await call(slug, DEV(5), "yes");
-    await call(slug, DEV(6), "yes");
-    if (i < 3) await call(slug, DEV(7), "yes");
+    if (i < 3) await call(slug, DEV(7), "yes"); // 3 closed -> stays provisional
     await resolve(slug, "yes");
   }
   const board = await leaderboard(20);
-  const ranked = board.filter((r) => !r.provisional);
-  check("two callers are ranked", ranked.length === 2, ranked.map((r) => r.handle).join(", "));
+  check("exactly one caller is ranked", board.filter((r) => !r.provisional).length === 1);
   check("the short-sample caller is on the board but provisional", board.some((r) => r.provisional));
-  check("below three ranked callers the teaser stays empty", (await topCallers()).length === 0);
+  const one = await topCallers();
+  // The point of the lowered threshold: one name to beat is a real competition.
+  check("ONE ranked caller is enough to render the teaser", one.length === 1, one.map((r) => r.handle).join(", "));
+  check("the provisional caller is not in it", one.every((r) => !r.provisional));
 
-  for (let i = 0; i < 11; i++) {
-    const slug = await mk(`Third-caller filler ${i}?`, 50);
-    await call(slug, DEV(7), "yes");
-    await resolve(slug, "yes");
+  // Four ranked callers total — the teaser must cap, not grow.
+  for (const d of [6, 7, 10]) {
+    for (let i = 0; i < 11; i++) {
+      const slug = await mk(`Filler for dev ${d}, ${i}?`, 50);
+      await call(slug, DEV(d), "yes");
+      await resolve(slug, "yes");
+    }
   }
+  const ranked = (await leaderboard(20)).filter((r) => !r.provisional);
+  check("four callers are now ranked", ranked.length === 4, String(ranked.length));
   const teaser = await topCallers();
-  check("a third ranked caller opens the teaser", teaser.length === HOME_TOP_CALLERS, teaser.map((r) => r.handle).join(", "));
+  check("the teaser caps at three rows", teaser.length === HOME_TOP_CALLERS_SHOWN, String(teaser.length));
   check("no provisional caller is ever shown in it", teaser.every((r) => !r.provisional));
+}
+
+console.log("\nlive-activity counters");
+{
+  const a = await homeActivity();
+  // Everything above resolved its markets, so there are open markets only from
+  // the one deliberately-unresolved market created near the top of this file.
+  check("open markets counted (resolved ones excluded)", a.marketsOpen === 1, String(a.marketsOpen));
+  check("calls in the last 24h counted", a.callsToday > 0, String(a.callsToday));
+  check("points won in the last 24h counted", a.pointsWonToday > 0, String(a.pointsWonToday));
+  check("every counter is a finite non-negative integer",
+    [a.marketsOpen, a.callsToday, a.pointsWonToday].every((n) => Number.isInteger(n) && n >= 0),
+    JSON.stringify(a));
 }
 
 console.log("\na linked handle names the winner");

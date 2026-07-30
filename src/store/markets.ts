@@ -1533,6 +1533,56 @@ export async function recentlySettled(limit = 3): Promise<SettledMarket[]> {
   });
 }
 
+export interface HomeActivity {
+  /** OPEN community markets. Deliberately not venue markets: those come from a
+   *  live external fetch, so including them would make the home page's counters
+   *  depend on venue uptime, and they aren't markets this product created. Home
+   *  only ever shows community markets, so this counts exactly what it shows. */
+  marketsOpen: number;
+  /** Calls placed in the rolling last 24h, by any identified device. */
+  callsToday: number;
+  /** Points paid out to winners in the rolling last 24h — settlement proceeds
+   *  only, so it means "earned by being right", not "handed out by the faucet". */
+  pointsWonToday: number;
+}
+
+const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The home page's live-activity counters. Three cheap aggregates over rows we
+ * already keep — one round trip on Postgres, no per-row data crossing the wire
+ * (deliberately NOT metricsSummary(), which pulls every call, notice and page
+ * view into memory to compute an admin dashboard and would grow unbounded on a
+ * public page). Zeroes are returned honestly; the client drops any counter that
+ * is zero and hides the strip when none survive.
+ */
+export async function homeActivity(): Promise<HomeActivity> {
+  if (!PERSISTENT) {
+    const cutoff = Date.now() - ACTIVITY_WINDOW_MS;
+    return {
+      marketsOpen: [...memCommunity.values()].filter((m) => !m.resolvedOutcome).length,
+      callsToday: memCalls.filter((c) => c.deviceId && Date.parse(c.at) >= cutoff).length,
+      pointsWonToday: memCalls.reduce(
+        (a, c) => a + (c.closedAt && Date.parse(c.closedAt) >= cutoff && c.proceeds ? c.proceeds : 0), 0),
+    };
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ markets_open: number; calls_today: number; points_won_today: number }>(
+    `SELECT
+       (SELECT count(*)::int FROM community_market WHERE resolved_outcome IS NULL) AS markets_open,
+       (SELECT count(*)::int FROM market_call
+          WHERE device_id IS NOT NULL AND at >= now() - interval '24 hours')      AS calls_today,
+       (SELECT coalesce(sum(proceeds), 0)::int FROM market_call
+          WHERE proceeds > 0 AND closed_at >= now() - interval '24 hours')        AS points_won_today`,
+  );
+  const r = rows[0];
+  return {
+    marketsOpen: Number(r?.markets_open ?? 0),
+    callsToday: Number(r?.calls_today ?? 0),
+    pointsWonToday: Number(r?.points_won_today ?? 0),
+  };
+}
+
 /* ------------------------------------------------------------- identity ------
  * Badges and season rank. The product shows the user exactly TWO numbers:
  * their spendable Oddie Points, and their Oddie Score. Contribution/standing is

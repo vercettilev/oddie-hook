@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -587,35 +587,38 @@ async function resolveFeatured(n = 4): Promise<Array<Record<string, unknown> & {
     };
   });
 }
-/** Home's leaderboard teaser needs at least this many RANKED callers before it
- *  renders at all — two rows is not a competition, and padding it with
- *  provisional players would be showing a standing that hasn't settled yet. */
-const HOME_TOP_CALLERS = 3;
+/** How many ranked callers the teaser lists at most. */
+const HOME_TOP_CALLERS_SHOWN = 3;
+/** How few it will render with. One: at low volume, requiring three hid the
+ *  board entirely, and "here is the person to beat" is a real competition even
+ *  with one name in it. What counts as RANKED is unchanged — the store's
+ *  min-resolved/provisional bar still decides who is eligible at all. */
+const HOME_MIN_RANKED = 1;
 
 app.get("/api/home", async (_req, res) => {
   // Every section degrades to absent on failure, never to a fake: the client
   // renders each one only when its array is non-empty (see renderHome).
-  const [featured, settled, board] = await Promise.all([
+  const [featured, settled, board, activity] = await Promise.all([
     resolveFeatured().catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
     // Two, not three: settled rows look alike, so the third adds repetition
     // rather than proof — and the 175px it costs is what keeps the leaderboard
     // teaser below it inside the first desktop screen.
     recentlySettled(2).catch((e) => { console.error("[home] settled failed:", (e as Error).message); return []; }),
     leaderboard(20).catch((e) => { console.error("[home] leaderboard failed:", (e as Error).message); return []; }),
+    homeActivity().catch((e) => { console.error("[home] activity failed:", (e as Error).message); return null; }),
   ]);
-  // Only RANKED callers count toward the teaser — `provisional` is the store's
-  // existing "sample too small to mean anything" flag, and the full Leaderboard
-  // sorts those below everyone else for the same reason. Below the threshold the
-  // strip is omitted entirely rather than shown short.
+  // Only RANKED callers are eligible — `provisional` is the store's existing
+  // "sample too small to mean anything" flag, and the full Leaderboard sorts
+  // those below everyone else for the same reason.
   const ranked = board.filter((r) => !r.provisional);
-  const topCallers = ranked.length >= HOME_TOP_CALLERS
-    ? ranked.slice(0, HOME_TOP_CALLERS).map((r, i) => ({
+  const topCallers = ranked.length >= HOME_MIN_RANKED
+    ? ranked.slice(0, HOME_TOP_CALLERS_SHOWN).map((r, i) => ({
         rank: i + 1, handle: r.handle, avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed,
       }))
     : [];
   // The tag-CTA's points-incentive line reads this live rather than hardcoding
   // "50" — the two can never drift apart, because there's only one number.
-  res.json({ featured, settled, topCallers, surfaceReward: SEASON_POINTS.surface });
+  res.json({ featured, settled, topCallers, activity, surfaceReward: SEASON_POINTS.surface });
 });
 
 /**
