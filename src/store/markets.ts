@@ -197,6 +197,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS device_balance_handle_key ON device_balance (l
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS last_claim_at timestamptz;
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS claim_streak integer NOT NULL DEFAULT 0;
 
+-- The season leaderboard rank this device last saw (on a Profile or Leaderboard
+-- view) — see rankMovementFor. NULL means "never viewed while ranked", which is
+-- also how a rank move is suppressed the first time a device becomes ranked:
+-- there is nothing to compare against yet, only a baseline to record.
+ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS last_seen_rank integer;
+
 -- Real notifications: one row per thing that actually happened to this device's
 -- stream (a settlement, for now). Append-only; the UI reads, never writes.
 CREATE TABLE IF NOT EXISTS notice (
@@ -516,6 +522,12 @@ interface MemCall {
 const memBalance = new Map<string, { tokens: number; toppedUpAt: number }>();
 const memCalls: MemCall[] = [];
 let memId = 0;
+
+/** Test-only escape hatch, same convention as _memGrant/_memDeviceAccount: lets
+ *  a test backdate a settled call's closedAt so weeklyScoreDeltaFor's 7-day
+ *  window has something real to draw a "before" and "after" boundary through,
+ *  without a test literally waiting a week. */
+export const _memCalls = memCalls;
 
 export interface Wallet {
   tokens: number;
@@ -1279,32 +1291,66 @@ function computeAccuracy(rows: { correct: boolean; category: string; pct: number
   };
 }
 
-export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> {
-  const deviceId = await resolveDevice(rawDeviceId);
+type ResolvedRow = { correct: boolean; category: string; pct: number; closedAt: string };
+
+/** Every resolved, decisively-settled pick for a (already-resolved) device, in
+ *  resolution order — the raw material both accuracyFor and weeklyScoreDeltaFor
+ *  run computeAccuracy over. Pulled into its own function so the two never drift
+ *  on what counts as "resolved" (see the comment above accuracyFor). */
+async function resolvedRowsFor(deviceId: string): Promise<ResolvedRow[]> {
   // pct = the implied probability of the side taken (their price ÷ 100), clamped
   // to (0,1). It is what the calibration score is measured against.
   const prob = (pctAt: number) => clamp(pctAt / 100, 0.01, 0.99);
-  let rows: { correct: boolean; category: string; pct: number }[];
   if (!PERSISTENT) {
-    rows = memCalls
+    return memCalls
       .filter((c) => c.deviceId === deviceId && c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
       .sort((a, b) => (a.closedAt! < b.closedAt! ? -1 : a.closedAt! > b.closedAt! ? 1 : a.id - b.id))
-      .map((c) => ({ correct: c.exitPct === 100, category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question), pct: prob(c.entryPct) }));
-  } else {
-    await ensureSchema();
-    const { rows: qr } = await db().query<{ exit_pct: number; pct_at: number; question: string; comm_cat: string | null }>(
-      `SELECT mc.exit_pct, mc.pct_at, s.question, cm.category AS comm_cat
-         FROM market_call mc
-         JOIN market_slug s ON s.slug = mc.slug
-         LEFT JOIN community_market cm ON cm.slug = mc.slug
-        WHERE mc.device_id = $1 AND mc.closed_at IS NOT NULL
-          AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
-        ORDER BY mc.closed_at ASC, mc.id ASC`,
-      [deviceId],
-    );
-    rows = qr.map((r) => ({ correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question), pct: prob(r.pct_at) }));
+      .map((c) => ({ correct: c.exitPct === 100, category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question), pct: prob(c.entryPct), closedAt: c.closedAt! }));
   }
-  return computeAccuracy(rows);
+  await ensureSchema();
+  const { rows: qr } = await db().query<{ exit_pct: number; pct_at: number; question: string; comm_cat: string | null; closed_at: Date }>(
+    `SELECT mc.exit_pct, mc.pct_at, s.question, cm.category AS comm_cat, mc.closed_at
+       FROM market_call mc
+       JOIN market_slug s ON s.slug = mc.slug
+       LEFT JOIN community_market cm ON cm.slug = mc.slug
+      WHERE mc.device_id = $1 AND mc.closed_at IS NOT NULL
+        AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
+      ORDER BY mc.closed_at ASC, mc.id ASC`,
+    [deviceId],
+  );
+  return qr.map((r) => ({ correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question), pct: prob(r.pct_at), closedAt: r.closed_at.toISOString() }));
+}
+
+export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  return computeAccuracy(await resolvedRowsFor(deviceId));
+}
+
+export interface WeeklyScoreDelta { delta: number; direction: "up" | "down" }
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The Oddie Score's motion this week — "the trophy room has a sense of
+ *  motion" — computed by re-running computeAccuracy on the SAME chronological
+ *  record twice: once over everything, once over everything strictly before
+ *  the 7-day cutoff. The difference is exactly what this week's resolutions
+ *  did to the score, not an approximation. null (hide, never a "▲ +0" from
+ *  thin air) when nothing resolved in the window at all — the UI's cue to omit
+ *  the line entirely rather than show a stale or manufactured number. */
+export async function weeklyScoreDeltaFor(rawDeviceId: string): Promise<WeeklyScoreDelta | null> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const rows = await resolvedRowsFor(deviceId);
+  const cutoff = Date.now() - WEEK_MS;
+  if (!rows.some((r) => Date.parse(r.closedAt) >= cutoff)) return null;
+
+  const now = computeAccuracy(rows);
+  if (now.oddieScore == null) return null; // still short of the accuracy floor even after this week
+  const before = computeAccuracy(rows.filter((r) => Date.parse(r.closedAt) < cutoff));
+  // Same neutral-500 fallback celebrationsFor uses for a baseline that predates
+  // hasEnough — a device that crossed the accuracy floor THIS week started its
+  // week at the neutral score, not at "no score".
+  const baseline = before.hasEnough ? (before.oddieScore as number) : 500;
+  const delta = now.oddieScore - baseline;
+  return { delta, direction: delta >= 0 ? "up" : "down" };
 }
 
 /** Reverse handle → device lookup, for the public profile page at /@{handle}.
@@ -1811,6 +1857,10 @@ function computeStandings(rows: StandingRow[]): Standings {
 let standingsCache: { at: number; val: Standings } | null = null;
 const STANDINGS_TTL_MS = 60_000;
 
+/** Test-only: a rank-movement test needs the standings to reflect a call it
+ *  JUST placed, not whatever was cached up to a minute ago. */
+export function _resetStandingsCache(): void { standingsCache = null; }
+
 async function seasonStandings(): Promise<Standings> {
   const now = Date.now();
   if (standingsCache && now - standingsCache.at < STANDINGS_TTL_MS) return standingsCache.val;
@@ -1848,6 +1898,51 @@ export async function seasonRankFor(rawDeviceId: string): Promise<SeasonRank | n
   if (i < 0 || total === 0) return null;
   const rank = i + 1;
   return { rank, total, topPct: Math.max(1, Math.ceil((rank / total) * 100)) };
+}
+
+const memLastSeenRank = new Map<string, number>();
+
+export interface RankMovement { direction: "up" | "down"; spots: number; rank: number }
+
+/**
+ * "You moved up 2 spots -> #14" — fired ONCE per actual rank change, the
+ * moment it's next observed on a Profile or Leaderboard view (the only two
+ * call sites; deliberately NOT wired into /api/me's background balance-pill
+ * refresh, or every poll would consume it before the user ever saw a
+ * leaderboard or profile screen). Reads the device's last-seen rank, compares
+ * it to the current one, and overwrites the stored value in the same call —
+ * so calling this IS "marking it seen", the same one-shot contract
+ * markCelebrationsSeen uses for the celebration queue, just consumed by the
+ * read itself instead of a separate endpoint.
+ *
+ * Unranked/provisional devices (seasonRankFor -> null) return null and leave
+ * the stored value untouched: there is nothing to compare, and touching it
+ * would make the FIRST time they become ranked look like "moved up from
+ * nowhere" instead of correctly showing nothing until the rank AFTER that
+ * one moves again.
+ */
+export async function rankMovementFor(rawDeviceId: string): Promise<RankMovement | null> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const current = await seasonRankFor(deviceId);
+  if (!current) return null;
+
+  let previous: number | null;
+  if (!PERSISTENT) {
+    previous = memLastSeenRank.get(deviceId) ?? null;
+    memLastSeenRank.set(deviceId, current.rank);
+  } else {
+    await ensureSchema();
+    await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
+    const { rows } = await db().query<{ last_seen_rank: number | null }>(
+      `SELECT last_seen_rank FROM device_balance WHERE device_id = $1`, [deviceId]);
+    previous = rows[0]?.last_seen_rank ?? null;
+    await db().query(`UPDATE device_balance SET last_seen_rank = $1 WHERE device_id = $2`, [current.rank, deviceId]);
+  }
+
+  if (previous == null || previous === current.rank) return null;
+  return previous > current.rank
+    ? { direction: "up", spots: previous - current.rank, rank: current.rank }     // lower rank number = better
+    : { direction: "down", spots: current.rank - previous, rank: current.rank };
 }
 
 /** Is this device inside the founding cohort (one of the first wallets)? */

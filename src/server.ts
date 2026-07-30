@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -282,9 +282,9 @@ app.get("/api/profile/:handle", async (req, res) => {
   const handle = String(req.params.handle).replace(/^@+/, "");
   const deviceId = await deviceForHandle(handle).catch(() => null);
   if (!deviceId) return res.status(404).json({ exists: false });
-  const [acc, recentCalls, hd, rank] = await Promise.all([accuracyFor(deviceId), resolvedCallsFor(deviceId, 20), displayHandle(deviceId), seasonRankFor(deviceId)]);
+  const [acc, recentCalls, hd, rank, weeklyDelta] = await Promise.all([accuracyFor(deviceId), resolvedCallsFor(deviceId, 20), displayHandle(deviceId), seasonRankFor(deviceId), weeklyScoreDeltaFor(deviceId)]);
   const badges = await badgesFor(deviceId, acc);
-  res.json({ exists: true, handle: hd.handle, accuracy: acc, recentCalls, badges, rank });
+  res.json({ exists: true, handle: hd.handle, accuracy: { ...acc, weeklyDelta }, recentCalls, badges, rank });
 });
 
 function positionPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string, share: { token: string; handle: string; side: string; entryPct: number; resolved: string | null }): string {
@@ -893,7 +893,22 @@ app.get("/api/accuracy", async (req, res) => {
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json(await accuracyFor(deviceId));
+  const [acc, weeklyDelta] = await Promise.all([accuracyFor(deviceId), weeklyScoreDeltaFor(deviceId)]);
+  res.json({ ...acc, weeklyDelta });
+});
+
+/**
+ * Rank movement — "you moved up 2 spots -> #14" — consumed exactly once per
+ * change. Called ONLY from the client's Profile and Leaderboard loaders, never
+ * from the balance pill's background /api/me refresh: this read IS the
+ * "mark seen" (see rankMovementFor), so wiring it into a poll would burn the
+ * one showing before the user ever looked at either screen.
+ */
+app.get("/api/rank-movement", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json({ movement: await rankMovementFor(deviceId) });
 });
 
 /**

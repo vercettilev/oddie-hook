@@ -1094,6 +1094,36 @@
     font-family:'Nunito';font-weight:900;font-size:12px;color:#5c4300;background:#fff3d6;
     border-radius:999px;padding:5px 12px 5px 9px;box-shadow:var(--shadow-chip)}
   :root[data-theme="dark"] .rankpill{color:#f5cf6b;background:#3a2c05}
+  /* This week's Oddie Score motion — a quiet status line, not a headline. Same
+     restrained up/down language as the rank-move line below it: an accent tick
+     for a gain, muted for a dip, never alarmist red — a loss here is "not this
+     time", not a penalty (see .cel-badge.loss). */
+  .oscore-weekly{font-family:'Nunito';font-weight:800;font-size:12px}
+  .oscore-weekly.up{color:#4d7a1a}
+  .oscore-weekly.down{color:var(--muted-g)}
+  :root[data-theme="dark"] .oscore-weekly.up{color:var(--accent)}
+  /* "you moved up 2 spots -> #14" — shown once (the server consumes it on this
+     same read), so it needs no fade timer of its own; it simply isn't there on
+     the next view. */
+  .rankmove{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--on-ground);
+    background:var(--wash);border-radius:10px;padding:6px 10px;margin-top:2px}
+  .rankmove.down{color:var(--muted-g);background:transparent;padding:6px 0 0}
+  :root[data-theme="dark"] .rankmove{background:#26330f}
+  /* The in-session score delta chip — "+16"/"−9" pinned to the ring's corner,
+     fading on its own CSS timer. Anchors on .scorering, which is already
+     position:relative (the conic-gradient ring), so no extra wrapper is needed
+     on either the profile ring or the celebration's bigger #celRing. */
+  .score-delta{position:absolute;top:-4px;right:-4px;z-index:2;font-family:'Nunito';font-weight:900;
+    font-size:12px;padding:3px 8px;border-radius:999px;box-shadow:var(--shadow-chip);
+    pointer-events:none;animation:scoreDeltaFade 1.8s ease forwards}
+  .score-delta.up{background:var(--accent);color:#17250a}
+  .score-delta.down{background:var(--muted-g);color:var(--card-surface)}
+  @keyframes scoreDeltaFade{
+    0%{opacity:0;transform:translateY(3px) scale(.92)}
+    12%{opacity:1;transform:translateY(0) scale(1)}
+    65%{opacity:1}
+    100%{opacity:0;transform:translateY(-5px) scale(.96)}
+  }
   /* Oddie Points — the spendable play balance, the OTHER of the two user numbers.
      A quiet strip above the identity block so the profile leads with both. */
   .opoints{display:flex;align-items:baseline;gap:9px;border:2px solid var(--card-line);
@@ -2851,11 +2881,20 @@ function badgesHtml(badges){
 // up on first paint (see the countUp() call right after each profile renders).
 // id="scoreringnum" is safe to reuse across the private/public views — they
 // never coexist in the DOM, same convention as #bal elsewhere in this file.
-function oscoreHtml(score,hasEnough,rank){
+// "+16" / "−12" — a real Unicode minus on the way down, never a bare hyphen,
+// so a negative delta reads as a sign rather than a stray dash.
+function deltaText(n){return n>=0?`+${n}`:`−${Math.abs(n)}`}
+function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove){
   const pct=hasEnough&&score!=null?Math.max(0,Math.min(1,score/1000)):0;
   const rankChip=hasEnough&&rank?`<span class="rankpill">🏆 Top ${rank.topPct}% this season</span>`:"";
+  // Both lines are ephemeral-feeling but for different reasons: weekly is
+  // simply absent with nothing resolved this week (see weeklyScoreDeltaFor);
+  // the rank move is a one-shot the server already marked seen by the time
+  // this response landed, so it just won't be here again next view.
+  const weeklyLine=weeklyDelta?`<div class="oscore-weekly ${weeklyDelta.direction}">${weeklyDelta.direction==="up"?"▲":"▼"} ${deltaText(weeklyDelta.delta)} this week</div>`:"";
+  const rankMoveLine=rankMove?`<div class="rankmove ${rankMove.direction}">${rankMove.direction==="up"?"▲":"▼"} you moved ${rankMove.direction} ${rankMove.spots} spot${rankMove.spots===1?"":"s"} → #${rankMove.rank}</div>`:"";
   return `<div class="oscore">
-      <div class="scorering" style="--score-pct:${pct}">
+      <div class="scorering" style="--score-pct:${pct}" id="scorering">
         <div class="scorering-inner">
           <div class="scorering-num${hasEnough?"":" building"}" id="scoreringnum">${hasEnough?"0":"building"}</div>
           <div class="scorering-lab">${hasEnough?"ODDIE SCORE":"TRACK RECORD"}</div>
@@ -2864,16 +2903,48 @@ function oscoreHtml(score,hasEnough,rank){
       <div class="oscore-side">
         <div class="oscore-title">Oddie Score</div>
         <p class="oscore-desc">calibration-adjusted reputation · 500 = matches the market</p>
+        ${weeklyLine}
         ${rankChip}
+        ${rankMoveLine}
       </div>
     </div>`;
 }
-/** Count the ring's number up to the real score, once, right after the profile
- *  HTML lands in the DOM. A no-op (skipped, not zeroed) below the threshold —
- *  "building" is text, not a number to animate toward. */
-function animateOscore(scroller,score,hasEnough){
+// A brief "+16"/"−9" pill pinned to the score ring's corner, fading on its own
+// CSS timer (see .score-delta). Skipped under reduced motion — same convention
+// as countUp: no motion at all rather than a motionless flash.
+function showScoreDeltaChip(ringEl,delta){
+  if(!ringEl||!delta||REDUCE_MOTION)return;
+  const chip=document.createElement("span");
+  chip.className=`score-delta ${delta>=0?"up":"down"}`;
+  chip.textContent=deltaText(delta);
+  ringEl.appendChild(chip);
+  setTimeout(()=>chip.remove(),1800);
+}
+// The score this browser tab has already SHOWN once this page-load — private
+// profile only (see the isMine guard in animateOscore below; a public profile
+// can show anyone's score, and comparing it against what this tab last showed
+// on ITS OWN profile would be a meaningless, wrong delta). null on a fresh
+// load, and again whenever the celebration takeover reports a fresher score,
+// so a private-profile view right after a celebration renders the settled
+// number plainly instead of re-animating a delta the user just watched happen.
+let sessionSeenScore=null;
+/** Count the ring's number up to the real score, right after the profile HTML
+ *  lands in the DOM. First time this session (or on the public profile, always):
+ *  the plain from-zero reveal, as before. On the private profile, a SECOND
+ *  reading that differs from what this tab already showed animates old→new
+ *  and drops the delta chip — the score visibly moving, not silently updating. */
+function animateOscore(scroller,score,hasEnough,isMine){
   if(!hasEnough||score==null)return;
-  countUp(scroller.querySelector("#scoreringnum"),score,{duration:850});
+  const el=scroller.querySelector("#scoreringnum");
+  if(!isMine||sessionSeenScore==null){
+    countUp(el,score,{duration:850});
+  }else if(sessionSeenScore!==score){
+    countUp(el,score,{duration:850,from:sessionSeenScore});
+    showScoreDeltaChip(scroller.querySelector("#scorering"),score-sessionSeenScore);
+  }else{
+    el.textContent=score;
+  }
+  if(isMine)sessionSeenScore=score;
 }
 // Per-category accuracy — supporting detail BELOW the Oddie Score (the primary
 // number, shown first). The server already withheld any category short of its
@@ -2932,7 +3003,7 @@ async function renderPublicProfile(){
   scroller.innerHTML=`<div class="sheet">
     <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
     <div class="trhead"><p class="psec">Track record</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
-    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank)}
+    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank,acc.weeklyDelta)}
     ${badgesHtml(badges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -2946,7 +3017,7 @@ async function renderPublicProfile(){
     ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
     <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
   </div>`;
-  animateOscore(scroller,acc.oddieScore,acc.hasEnough);
+  animateOscore(scroller,acc.oddieScore,acc.hasEnough,false);
   const sb=scroller.querySelector("#pubshare");
   if(sb)sb.onclick=()=>{
     const text=acc.hasEnough
@@ -3185,6 +3256,10 @@ async function loadLeaderboard(scroller){
     const r=await fetch(`${API}/api/leaderboard?deviceId=${encodeURIComponent(deviceId)}`);
     if(!r.ok)throw new Error("leaderboard "+r.status);
     const data=await r.json();
+    // Same one-shot rank-movement fetch as the private profile — visiting
+    // EITHER counts as "you looked at your standing", so whichever the user
+    // opens first consumes it; the other then correctly shows nothing.
+    try{const rr=await fetch(`${API}/api/rank-movement?deviceId=${encodeURIComponent(deviceId)}`);if(rr.ok)data.rankMove=(await rr.json()).movement;}catch(e){}
     renderLb(scroller,data);
   }catch(e){
     console.error(e);
@@ -3213,7 +3288,10 @@ function renderLb(scroller,data){
       rows:data.winnings,html:(r)=>row(r,`<div class="acc ${cls(r.net)}">${r.net>0?"+":""}${r.net}<small>${r.closed} closed</small></div>`)},
   };
   const b=bodies[lbTab];
+  const rm=data.rankMove;
+  const rankMoveLine=rm?`<div class="rankmove ${rm.direction}" style="margin-bottom:12px">${rm.direction==="up"?"▲":"▼"} you moved ${rm.direction} ${rm.spots} spot${rm.spots===1?"":"s"} → #${rm.rank}</div>`:"";
   scroller.innerHTML=`<div class="sheet">
+    ${rankMoveLine}
     <div class="seg" role="tablist" style="margin-bottom:14px">
       ${[["edge","Edge"],["streak","Streak"],["winnings","Winnings"]].map(([k,l])=>
         `<button class="segb${lbTab===k?" on":""}" data-lbtab="${k}" role="tab">${l}</button>`).join("")}
@@ -3338,6 +3416,11 @@ async function loadProfile(scroller){
   // "building" instead of a misleadingly-precise % off a tiny sample.
   let acc=null;
   try{const ar=await fetch(`${API}/api/accuracy?deviceId=${encodeURIComponent(deviceId)}`);if(ar.ok)acc=await ar.json();}catch(e){}
+  // Rank movement — a one-shot: this fetch IS what marks it seen server-side
+  // (see rankMovementFor), so it must fire only from a real Profile/Leaderboard
+  // view, never from a background poll that could burn it silently.
+  let rankMove=null;
+  try{const rr=await fetch(`${API}/api/rank-movement?deviceId=${encodeURIComponent(deviceId)}`);if(rr.ok)rankMove=(await rr.json()).movement;}catch(e){}
   const accVal=acc?(acc.hasEnough?`${acc.accuracyPct}%`:"building"):"—";
   const streakVal=acc?String(acc.streak):"—";
   const bestTopicVal=acc&&acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
@@ -3369,7 +3452,7 @@ async function loadProfile(scroller){
       <p class="psec">Track record</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
     </div>
-    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank)}
+    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove)}
     ${badgesHtml(myBadges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -3388,7 +3471,7 @@ async function loadProfile(scroller){
     <p class="cnote">Auto follows your system. Shared cards are always the same — your theme never changes the image that goes on X.</p>
     <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
   </div>`;
-  animateOscore(scroller,acc?acc.oddieScore:null,!!(acc&&acc.hasEnough));
+  animateOscore(scroller,acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),true);
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
@@ -3695,11 +3778,17 @@ function renderCelebration(){
  *  hand in one rAF loop instead of half-animating with countUp() alone. */
 function animateCelebrationScore(card,from,to){
   const ring=card.querySelector("#celRing"), numEl=card.querySelector("#celScoreNum");
+  // The celebration is the FIRST place a resolution's score change is ever
+  // shown, so it's also where sessionSeenScore starts — a private-profile view
+  // later this session compares against this, not against a stale pre-resolution
+  // number (see animateOscore).
+  sessionSeenScore=to;
   if(REDUCE_MOTION){
     ring?.style.setProperty("--score-pct",to/1000);
     if(numEl)numEl.textContent=to;
     return;
   }
+  if(ring&&from!==to)showScoreDeltaChip(ring,to-from);
   const dur=900,start=performance.now(),ease=(t)=>1-Math.pow(1-t,3);
   const step=(now)=>{
     const t=Math.min(1,(now-start)/dur), val=from+(to-from)*ease(t);
