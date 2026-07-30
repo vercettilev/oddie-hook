@@ -595,6 +595,15 @@ const HOME_TOP_CALLERS_SHOWN = 3;
  *  min-resolved/provisional bar still decides who is eligible at all. */
 const HOME_MIN_RANKED = 1;
 
+// The client only ever shows HOME_FEATURED_SHOWN cards in the visible "Open
+// markets" section — but it fetches HOME_FEATURED_POOL, and keeps the extras
+// client-side as the continuous-play loop's reserve (see the Home CTA chain:
+// lock a call -> "Next call" -> pull one from the reserve, in place, no nav).
+// One request, one ranking pass, no second endpoint for "more of the same
+// list" — the loop and the visible section are just two slices of it.
+const HOME_FEATURED_SHOWN = 4;
+const HOME_FEATURED_POOL = 12;
+
 app.get("/api/home", async (req, res) => {
   // deviceId is optional here (home renders fine cold, no deviceId at all) —
   // when present it unlocks the one PERSONAL section, openCalls.
@@ -603,7 +612,7 @@ app.get("/api/home", async (req, res) => {
   // Every section degrades to absent on failure, never to a fake: the client
   // renders each one only when its array is non-empty (see renderHome).
   const [featured, settled, board, activity, openCalls, newUser] = await Promise.all([
-    resolveFeatured().catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
+    resolveFeatured(HOME_FEATURED_POOL).catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
     // Two, not three: settled rows look alike, so the third adds repetition
     // rather than proof — and the 175px it costs is what keeps the leaderboard
     // teaser below it inside the first desktop screen.
@@ -630,7 +639,10 @@ app.get("/api/home", async (req, res) => {
     : [];
   // The tag-CTA's points-incentive line reads this live rather than hardcoding
   // "50" — the two can never drift apart, because there's only one number.
-  res.json({ featured, settled, topCallers, activity, openCalls, newUser, surfaceReward: SEASON_POINTS.surface });
+  // Same reasoning for featuredShown: the client slices `featured` into the
+  // visible section vs. the loop's reserve pool using THIS number, not its own
+  // hardcoded 4, so the two can never disagree about where the pool starts.
+  res.json({ featured, settled, topCallers, activity, openCalls, newUser, surfaceReward: SEASON_POINTS.surface, featuredShown: HOME_FEATURED_SHOWN });
 });
 
 /**

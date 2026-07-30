@@ -996,6 +996,27 @@
   .oc-sub{color:var(--muted-g);font-weight:700}
   .oc-arrow{flex:none;color:var(--muted-g);font-weight:800;font-size:14px}
 
+  /* Home's continuous-play loop: the "up next" preview after a locked call's
+     CTAs, and the end-of-chain fallback into Feed. Deliberately NOT full-card
+     weight — this sits right below a share/connect/teach stack that's already
+     asking for attention, so it reads as a quiet next step, not competition. */
+  .nextcall-prev{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;
+    margin-top:12px;padding:12px 14px;border:1.5px solid var(--hair-g);border-radius:var(--r-md);
+    background:var(--card-surface);box-shadow:var(--shadow-chip);cursor:pointer;font:inherit}
+  .ncp-cat{font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--muted-g)}
+  .ncp-q{display:block;font-family:'Fredoka';font-weight:600;font-size:14.5px;
+    color:var(--on-ground);line-height:1.3}
+  .ncp-cta{display:flex;align-items:center;gap:6px;font-family:'Nunito';font-weight:800;
+    font-size:12.5px;color:#4d7a1a;margin-top:2px}
+  :root[data-theme="dark"] .ncp-cta{color:var(--accent)}
+  .ncp-timer{color:var(--muted-g);font-weight:700}
+  .nextcall-fallback{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin-top:12px;padding:12px 14px;border:1.5px solid var(--hair-g);border-radius:var(--r-md);
+    background:var(--card-surface);box-shadow:var(--shadow-chip);text-decoration:none;
+    font-family:'Nunito';font-weight:800;font-size:13px;color:var(--on-ground)}
+  .nextcall-fallback .nc-arrow{flex:none;color:var(--muted-g);font-weight:800}
+
   /* Leaderboard teaser — three ranked callers, so a cold visitor can see a
      competition exists. Same rank/handle/edge shape as the full board it links
      to (no new metric invented for the teaser), just compact rows on the
@@ -2172,7 +2193,64 @@ function metaRowHtml(m,yes){
   const chain=m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:"";
   return `<span class="commtag">community market</span>${stateChip}${clockChip}${chain}`;
 }
-function buildCard(m,i){
+// Home's continuous-play loop: how many markets one chain will auto-serve
+// (the very first card counts as #1) before handing off to "browse more in
+// Feed" instead of pulling another. Keeps Home from trying to replicate an
+// infinite feed — it's a taste of the loop, not a replacement for Feed.
+const HOME_LOOP_CAP=5;
+
+/** Home's continuous-play loop, step 2: the "up next" preview appended after
+ *  a locked call's CTAs (share / connect / tag-teaching — see lockedUI).
+ *  `nextM` is already pulled/reserved from the shared pool by the time this
+ *  renders, so the preview shows the market that's actually coming, not a
+ *  placeholder. Tapping it or letting its countdown reach zero both call the
+ *  same `advance` — "tap now" and "auto-advance" are one mechanism, not two
+ *  competing ones. */
+function renderNextCallPreview(anchor,nextM,homeLoop,chainCount){
+  const SECS=5;
+  const prev=document.createElement("button");
+  prev.type="button";prev.className="nextcall-prev";
+  prev.innerHTML=`<span class="ncp-cat">${esc(nextM.topicCategory||nextM.category)}</span>
+    <span class="ncp-q trunc">${esc(nextM.question)}</span>
+    <span class="ncp-cta">Next call <span class="ncp-timer">in ${SECS}s</span> →</span>`;
+  anchor.after(prev);
+  let secsLeft=SECS,advanced=false;
+  const timerEl=prev.querySelector(".ncp-timer");
+  const advance=()=>{
+    if(advanced)return; advanced=true;
+    clearInterval(tickId);
+    const card=buildCard(nextM,homeLoop.ctx.nextIdx(),{ctx:homeLoop.ctx,chainCount:chainCount+1});
+    // Same non-swipeable-list suppression the initial featured cards get
+    // (see the featured section below) — a loop card is just as static a
+    // slot as they are, never a swipeable one.
+    card.querySelector(".nudge")?.style.setProperty("display","none","important");
+    card.classList.add("enter");
+    prev.replaceWith(card);
+    // The loop's whole point is never hunting for the next one — bring it
+    // into view instead of leaving the user to scroll down and find it.
+    scrollToEl(document.getElementById("scroller"),card,{offset:20});
+  };
+  const tickId=setInterval(()=>{
+    if(!prev.isConnected){clearInterval(tickId);return;} // navigated away mid-countdown
+    secsLeft--;
+    if(secsLeft<=0){advance();return;}
+    if(timerEl)timerEl.textContent=`in ${secsLeft}s`;
+  },1000);
+  prev.onclick=advance;
+}
+
+/** Home's continuous-play loop, end state: the chain hit HOME_LOOP_CAP or the
+ *  reserve pool ran dry — either way there's more to call, it's just not
+ *  auto-served here anymore. Same visual weight as the CTAs above it: a
+ *  next step, not an error or an apology. */
+function renderFeedFallback(anchor){
+  const fb=document.createElement("a");
+  fb.className="nextcall-fallback";fb.href="/feed";
+  fb.innerHTML=`<span>Keep going — browse more in Feed</span><span class="nc-arrow">→</span>`;
+  anchor.after(fb);
+}
+
+function buildCard(m,i,homeLoop){
     const yes=m.yesPct,no=100-yes;
     const card=document.createElement("div");card.className="card";
     card.innerHTML=`
@@ -2376,6 +2454,23 @@ function buildCard(m,i){
           }catch(e){/* the teaching moment just doesn't fire; the call itself already locked */}
         })();
       }
+      // The continuous-play loop — Home only; `homeLoop` is undefined on the
+      // swipe Feed, where "next" already means "swipe", not "tap a preview".
+      // Anchored off `card` itself, NOT `lastCta`: share/connect/teach are all
+      // inserted INSIDE the card's own div (siblings of `soc`, a descendant of
+      // `card`), which is right for them — they're part of this card's locked
+      // state. The next-call preview (and the full card it later swaps into)
+      // must NOT nest inside there too, or the next market renders trapped
+      // inside the previous card's rounded border instead of appearing below
+      // it. `card.after(...)` inserts as a sibling of `card` in the section,
+      // landing right after this whole card — CTAs included — same position
+      // it would occupy if it had simply been the next card in the section.
+      if(homeLoop){
+        const chainCount=homeLoop.chainCount;
+        const nextM=chainCount<homeLoop.ctx.cap?homeLoop.ctx.pull():null;
+        if(nextM)renderNextCallPreview(card,nextM,homeLoop,chainCount);
+        else renderFeedFallback(card);
+      }
       card.querySelector("#nudge"+i).classList.add("show");
       card.querySelector("#nudge"+i).classList.remove("hint");
     };
@@ -2578,19 +2673,24 @@ async function renderHome(){
   // actually sent rows for it — so a fetch failure, a cold database, or a
   // genuinely thin product all degrade to the section being absent. Nothing
   // here has a placeholder or a sample row to fall back to, by design.
-  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50, newUser=false; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
+  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50, newUser=false, featuredShown=4; // 50/4 are only pre-fetch placeholders; the block below always prefers the live values
   try{
     // deviceId unlocks the one PERSONAL section (openCalls) — every other
     // section on Home is aggregate and renders the same for anyone.
     const r=await fetch(`${API}/api/home?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok){const j=await r.json();
+      // `featured` now carries MORE than the visible section shows (see
+      // HOME_FEATURED_POOL server-side) — featuredShown is where the visible
+      // slice ends and the continuous-play loop's reserve begins; see the
+      // featured section below.
       featured=Array.isArray(j.featured)?j.featured:[];
       settled=Array.isArray(j.settled)?j.settled:[];
       topCallers=Array.isArray(j.topCallers)?j.topCallers:[];
       activity=j.activity&&typeof j.activity==="object"?j.activity:null;
       openCalls=j.openCalls&&typeof j.openCalls==="object"?j.openCalls:null;
       newUser=j.newUser===true;
-      if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
+      if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;
+      if(typeof j.featuredShown==="number"&&j.featuredShown>0)featuredShown=j.featuredShown;}
   }catch(e){/* every section degrades to absent, not an error state */}
 
   const wrap=document.createElement("div");wrap.className="homewrap";
@@ -2760,8 +2860,31 @@ async function renderHome(){
     // reorder are never allowed to disagree about who's new.
     // The id is the settled cards' scroll target — see the .stl-cta handler.
     section(featuredFrag,newUser?"Make your first call ↓":"Open markets","openmarkets",newUser?"cue":"");
-    featured.forEach((m,i)=>{
-      const card=buildCard(m,i);
+    // Only the first `featuredShown` are ever VISIBLE as their own cards —
+    // the rest is the continuous-play loop's reserve pool (see
+    // HOME_FEATURED_POOL server-side): lock a call on any visible card and
+    // "Next call" pulls from here instead of sending the user to Feed.
+    const visible=featured.slice(0,featuredShown);
+    const pool=featured.slice(featuredShown);
+    // Shared by reference across every visible card, so whichever one the
+    // user actually locks first draws from ONE pool — a market already
+    // sitting visible elsewhere on the page is pre-marked used, so the loop
+    // can never hand back a duplicate of a card that's still right there.
+    const usedSlugs=new Set(visible.map(x=>x.slug));
+    let poolIdx=0,nextIdxCounter=featuredShown;
+    const loopCtx={
+      cap:HOME_LOOP_CAP,
+      pull(){
+        while(poolIdx<pool.length){
+          const cand=pool[poolIdx++];
+          if(!usedSlugs.has(cand.slug)){usedSlugs.add(cand.slug);return cand;}
+        }
+        return null;
+      },
+      nextIdx(){return nextIdxCounter++;},
+    };
+    visible.forEach((m,i)=>{
+      const card=buildCard(m,i,{ctx:loopCtx,chainCount:1});
       if(newUser&&i===0)card.classList.add("firstcall-cue");
       // "swipe for the next take" doesn't apply — this is a short static list,
       // not a swipeable feed. Suppress it via a permanent inline !important
