@@ -1395,6 +1395,144 @@ export async function callersFor(rawSlug: string, limit = 20): Promise<{ callers
   return { callers, total: Number(countRes.rows[0]?.n ?? callers.length) };
 }
 
+export interface SettledWinner {
+  handle: string | null;  // null -> the client shows "anonymous caller"
+  side: "yes" | "no";
+  pct: number;            // the odds they took at entry — the lower, the better the call
+}
+export interface SettledMarket {
+  slug: string;
+  question: string;
+  outcome: "yes" | "no";
+  settledAt: string;
+  callers: number;             // distinct devices that called it, either side
+  winners: SettledWinner[];    // the ones who called it right, best odds first, capped
+  winnerTotal: number;
+}
+
+/** How many winning callers a settled row names before it says "+N more". Two,
+ *  not more: the best-priced call is the interesting one, the rest is a count,
+ *  and this keeps the settled block short enough that the leaderboard teaser
+ *  below it still lands near the first screen on a desktop viewport. */
+const SETTLED_WINNERS_SHOWN = 2;
+
+/**
+ * Recently settled markets and who called them right — the home page's proof
+ * that "see who was right" actually completes, not a promise.
+ *
+ * Reads the SAME market_call rows everything else reads, so there is nothing to
+ * fabricate: a settled call is one with closed_at set and exit_pct at exactly 0
+ * or 100. (A SOLD position exits at a live 1–99 price, so that filter cleanly
+ * excludes trading — identical convention to computeAccuracy above.) exit_pct
+ * 100 IS the winning side, which is how the outcome is derived for venue
+ * markets too, not just community ones; community_market.resolved_outcome is
+ * the fallback for the case where every caller took the losing side and no
+ * winning row exists to read it off. A market whose outcome cannot be
+ * established either way is skipped rather than guessed at.
+ *
+ * Ordered by when each market actually settled (max closed_at), most recent
+ * first. Winners are ordered by the odds they took, ASCENDING: the caller who
+ * was right at 20% beat worse odds than the one who was right at 80%, and that
+ * is the interesting one to name first.
+ */
+export async function recentlySettled(limit = 3): Promise<SettledMarket[]> {
+  const n = Math.max(1, Math.min(10, Math.floor(limit)));
+
+  if (!PERSISTENT) {
+    const { _memAccounts } = await import("./accounts.js");
+    const twByDevice = new Map<string, string>();
+    for (const a of _memAccounts) if (a.provider === "twitter" && a.handle) twByDevice.set(a.canonicalDevice, a.handle.replace(/^@+/, ""));
+    const nameOf = (deviceId: string) => twByDevice.get(deviceId) ?? memHandle.get(deviceId) ?? null;
+
+    const bySlug = new Map<string, MemCall[]>();
+    for (const c of memCalls) {
+      if (!c.closedAt || (c.exitPct !== 0 && c.exitPct !== 100)) continue;
+      bySlug.set(c.slug, [...(bySlug.get(c.slug) ?? []), c]);
+    }
+    const out: SettledMarket[] = [];
+    for (const [slug, calls] of bySlug) {
+      const outcome = calls.find((c) => c.exitPct === 100)?.side ?? memCommunity.get(slug)?.resolvedOutcome ?? null;
+      if (outcome !== "yes" && outcome !== "no") continue; // outcome unknowable — say nothing
+      const settledAt = calls.reduce((a, c) => (c.closedAt! > a ? c.closedAt! : a), calls[0].closedAt!);
+      // One row per device: a device with several winning calls on the same
+      // market is one person who was right, named once, at their best price.
+      const best = new Map<string, MemCall>();
+      for (const c of calls) {
+        if (c.exitPct !== 100 || !c.deviceId) continue;
+        const prev = best.get(c.deviceId);
+        if (!prev || c.entryPct < prev.entryPct) best.set(c.deviceId, c);
+      }
+      const winners = [...best.values()].sort((a, b) => a.entryPct - b.entryPct);
+      out.push({
+        slug,
+        question: calls[0].question ?? slug,
+        outcome, settledAt,
+        callers: new Set(calls.map((c) => c.deviceId).filter(Boolean)).size,
+        winners: winners.slice(0, SETTLED_WINNERS_SHOWN).map((c) => ({ handle: nameOf(c.deviceId), side: c.side, pct: c.entryPct })),
+        winnerTotal: winners.length,
+      });
+    }
+    return out.sort((a, b) => (a.settledAt < b.settledAt ? 1 : a.settledAt > b.settledAt ? -1 : 0)).slice(0, n);
+  }
+
+  await ensureSchema();
+  const { rows: markets } = await db().query<{
+    slug: string; question: string; settled_at: Date; callers: string;
+    derived_outcome: "yes" | "no" | null; resolved_outcome: "yes" | "no" | null;
+  }>(
+    `SELECT mc.slug, s.question,
+            max(mc.closed_at)                                        AS settled_at,
+            count(DISTINCT mc.device_id)::text                       AS callers,
+            max(CASE WHEN mc.exit_pct = 100 THEN mc.side END)        AS derived_outcome,
+            cm.resolved_outcome
+       FROM market_call mc
+       JOIN market_slug s ON s.slug = mc.slug
+       LEFT JOIN community_market cm ON cm.slug = mc.slug
+      WHERE mc.closed_at IS NOT NULL AND mc.exit_pct IN (0, 100)
+      GROUP BY mc.slug, s.question, cm.resolved_outcome
+      ORDER BY max(mc.closed_at) DESC
+      LIMIT $1`,
+    [n],
+  );
+  const usable = markets
+    .map((m) => ({ ...m, outcome: m.derived_outcome ?? m.resolved_outcome }))
+    .filter((m): m is typeof m & { outcome: "yes" | "no" } => m.outcome === "yes" || m.outcome === "no");
+  if (!usable.length) return [];
+
+  // One row per (market, device) at their best price — see the mem note above.
+  const { rows: wins } = await db().query<{ slug: string; side: "yes" | "no"; pct: number; handle: string | null }>(
+    `SELECT mc.slug, mc.side, min(mc.pct_at) AS pct, COALESCE(tw.handle, db.handle) AS handle
+       FROM market_call mc
+       LEFT JOIN device_balance db ON db.device_id = mc.device_id
+       LEFT JOIN LATERAL (
+         SELECT a.handle FROM account a
+          WHERE a.canonical_device = mc.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
+          ORDER BY a.created_at LIMIT 1
+       ) tw ON true
+      WHERE mc.slug = ANY($1) AND mc.closed_at IS NOT NULL AND mc.exit_pct = 100
+        AND mc.device_id IS NOT NULL AND mc.pct_at IS NOT NULL
+      GROUP BY mc.slug, mc.device_id, mc.side, tw.handle, db.handle
+      ORDER BY min(mc.pct_at) ASC`,
+    [usable.map((m) => m.slug)],
+  );
+  const winnersBySlug = new Map<string, SettledWinner[]>();
+  for (const w of wins) {
+    const list = winnersBySlug.get(w.slug) ?? [];
+    list.push({ handle: w.handle ? w.handle.replace(/^@+/, "") : null, side: w.side, pct: Number(w.pct) });
+    winnersBySlug.set(w.slug, list);
+  }
+  return usable.map((m) => {
+    const winners = winnersBySlug.get(m.slug) ?? [];
+    return {
+      slug: m.slug, question: m.question, outcome: m.outcome,
+      settledAt: m.settled_at.toISOString(),
+      callers: Number(m.callers),
+      winners: winners.slice(0, SETTLED_WINNERS_SHOWN),
+      winnerTotal: winners.length,
+    };
+  });
+}
+
 /* ------------------------------------------------------------- identity ------
  * Badges and season rank. The product shows the user exactly TWO numbers:
  * their spendable Oddie Points, and their Oddie Score. Contribution/standing is

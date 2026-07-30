@@ -9,7 +9,7 @@
     "start": "tsx src/server.ts",
     "smoke": "tsx scripts/smoke.ts",
     "test-matcher": "tsx scripts/test-matcher.ts",
-    "test": "npm run test-matcher && npm run test-economy && npm run test-positions && npm run test-accounts && npm run test-settlement && npm run test-semantic && npm run test-copy && npm run test-card-layout && npm run smoke",
+    "test": "npm run test-matcher && npm run test-economy && npm run test-positions && npm run test-accounts && npm run test-home && npm run test-settlement && npm run test-semantic && npm run test-copy && npm run test-card-layout && npm run smoke",
     "events": "tsx scripts/events.ts",
     "cleanup": "tsx scripts/cleanup-test-rows.ts",
     "audit-feed": "node scripts/audit-feed.mjs",
@@ -23,7 +23,8 @@
     "test-semantic": "tsx scripts/test-semantic.ts",
     "eval-semantic": "tsx scripts/eval-semantic.ts",
     "test-copy": "tsx scripts/test-copy.ts",
-    "test-card-layout": "tsx scripts/test-card-layout.ts"
+    "test-card-layout": "tsx scripts/test-card-layout.ts",
+    "test-home": "tsx scripts/test-home.ts"
   },
   "engines": {
     "node": ">=20"

@@ -790,6 +790,54 @@
   .browselink{display:block;text-align:center;font-family:'Nunito';font-weight:700;font-size:var(--fs-caption);
     color:var(--muted-g);text-decoration:none;margin:var(--sp-4) 0 0;padding:10px;opacity:.75}
   .browselink:active{opacity:.5}
+
+  /* "Recently settled" — the landing's proof that the loop actually completes.
+     Reuses the resolution-receipt language the profile's recent-calls rows and
+     the notification cards already use: a compact card with a coloured left
+     rail for the verdict, question first, then who was right. Never rendered
+     with fabricated rows — the section is absent when nothing has settled. */
+  .stl{display:block;border:2px solid var(--card-line);border-left-width:6px;border-radius:var(--r-md);
+    background:var(--card-surface);padding:12px 14px;margin:0 0 var(--sp-1);text-decoration:none;
+    box-shadow:var(--shadow-chip)}
+  .stl.yes{border-left-color:#0a7d2c}
+  .stl.no{border-left-color:#b00020}
+  .stl-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .stl-out{flex:none;font-family:'Nunito';font-weight:900;font-size:10.5px;letter-spacing:.03em;
+    padding:3px 9px;border-radius:999px}
+  .stl.yes .stl-out{color:#0a5c22;background:#d7f2e0}
+  .stl.no .stl-out{color:#8f1017;background:#fbdfe4}
+  :root[data-theme="dark"] .stl.yes .stl-out{color:#7fe0a4;background:#0f3320}
+  :root[data-theme="dark"] .stl.no .stl-out{color:#f2a3b4;background:#3a1420}
+  .stl-when{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted-g);white-space:nowrap}
+  .stl-q{font-family:'Nunito';font-weight:800;font-size:13.5px;line-height:1.35;color:var(--on-ground)}
+  .stl-wins{margin-top:8px;padding-top:8px;border-top:1px solid var(--hair-g);
+    display:flex;flex-direction:column;gap:4px}
+  .stl-win{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g)}
+  .stl-win b{color:var(--on-ground);font-weight:900}
+  .stl-win .tick{color:#0a7d2c;font-weight:900}
+  :root[data-theme="dark"] .stl-win .tick{color:#7fe0a4}
+  /* Everyone was wrong is a real, and frankly better, outcome to show than a
+     padded row — so it gets said plainly rather than hiding the market. */
+  .stl-none{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g);opacity:.85}
+
+  /* Leaderboard teaser — three ranked callers, so a cold visitor can see a
+     competition exists. Same rank/handle/edge shape as the full board it links
+     to (no new metric invented for the teaser), just compact rows on the
+     ground rather than the board's own white panel. */
+  .topc{display:block;text-decoration:none;border:2px solid var(--card-line);border-radius:var(--r-md);
+    background:var(--card-surface);overflow:hidden;box-shadow:var(--shadow-chip)}
+  .topc-r{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid var(--hair-g)}
+  .topc-r:last-child{border-bottom:0}
+  .topc-rank{flex:none;width:20px;font-family:'Fredoka';font-weight:700;font-size:14px;color:var(--muted-g);text-align:center}
+  .topc-r:first-child .topc-rank{color:var(--acc-deep)}
+  :root[data-theme="dark"] .topc-r:first-child .topc-rank{color:var(--accent)}
+  .topc-who{flex:1;min-width:0;font-family:'Nunito';font-weight:800;font-size:13px;color:var(--on-ground);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topc-edge{flex:none;font-family:'Nunito';font-weight:900;font-size:12.5px;color:var(--on-ground);
+    font-variant-numeric:tabular-nums}
+  .topc-edge small{display:block;font-weight:800;font-size:10px;color:var(--muted-g)}
+  .topc-more{display:block;text-align:center;font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);
+    color:var(--muted-g);text-decoration:none;margin:var(--sp-1) 0 0;padding:6px;opacity:.8}
   /* The points incentive, ABOVE the tag CTA — the loudest thing on the page
      after the headline, per the brief. Wired live to the actual Season Points
      surface-award amount (server), never a hardcoded number that can drift
@@ -2257,11 +2305,19 @@ async function renderHome(){
     const cr=await fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`);
     if(cr.ok)claim=await cr.json();
   }catch(e){/* claim strip just won't render; nothing else depends on it */}
-  let featured=[], surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
+  // Every data-driven section starts EMPTY and is rendered only if the server
+  // actually sent rows for it — so a fetch failure, a cold database, or a
+  // genuinely thin product all degrade to the section being absent. Nothing
+  // here has a placeholder or a sample row to fall back to, by design.
+  let featured=[], settled=[], topCallers=[], surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
   try{
     const r=await fetch(`${API}/api/home`);
-    if(r.ok){const j=await r.json();featured=Array.isArray(j.featured)?j.featured:[];if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
-  }catch(e){/* the featured slots degrade to absent, not an error state */}
+    if(r.ok){const j=await r.json();
+      featured=Array.isArray(j.featured)?j.featured:[];
+      settled=Array.isArray(j.settled)?j.settled:[];
+      topCallers=Array.isArray(j.topCallers)?j.topCallers:[];
+      if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
+  }catch(e){/* every section degrades to absent, not an error state */}
 
   const wrap=document.createElement("div");wrap.className="homewrap";
   wrap.innerHTML=`<div class="hero">
@@ -2277,15 +2333,74 @@ async function renderHome(){
   // NOT reused here: the hero above already carries that exact message.)
   if(claim)wrap.appendChild(claimCard());
 
-  // "Live right now": a handful of live markets, front and centre, tappable
-  // right there — the SAME card + interaction code the feed uses (buildCard),
-  // so YES/NO here behaves identically. Used to be a single "Daily Call" slot,
-  // which read as unfinished (one market, and mislabeled "Community" when its
-  // real topic was Sports) — now up to 4, each with its real topic badge
-  // (buildCard already prefers topicCategory over the flattened category).
+  const section=(text)=>{const p=document.createElement("p");p.className="psec";p.textContent=text;wrap.appendChild(p);};
+
+  // PROOF, before the markets. The hero promises "see who was right"; these two
+  // sections are the only things on the page that actually demonstrate it, so
+  // they go where a cold visitor reaches them without deep scrolling. The
+  // featured markets below are 3-4 full-height cards — putting proof after them
+  // buries it a full screen down, which is exactly the "promise with no
+  // evidence" problem. Both sections render ONLY with real data behind them.
+
+  // 1. Recently settled: the loop completing. Question, verdict, who was right.
+  if(settled.length){
+    section("Recently settled");
+    settled.forEach((s)=>{
+      const a=document.createElement("a");
+      a.className=`stl ${s.outcome}`;
+      a.href=`/m/${encodeURIComponent(s.slug)}`;
+      // Winners are pre-sorted by the odds they took (best call first) and
+      // pre-capped server-side; winnerTotal carries the real count for "+N more".
+      const wins=s.winners.map(w=>
+        `<div class="stl-win">${w.handle?`<b>@${esc(w.handle)}</b>`:"anonymous caller"} called ${w.side.toUpperCase()} at ${Math.round(w.pct)}% <span class="tick">✓</span></div>`).join("");
+      const more=s.winnerTotal>s.winners.length
+        ? `<div class="stl-win">+${s.winnerTotal-s.winners.length} more called it right</div>` : "";
+      // Nobody right is a real outcome and reads better than an empty block.
+      const body=s.winnerTotal
+        ? `<div class="stl-wins">${wins}${more}</div>`
+        : (s.callers?`<div class="stl-wins"><div class="stl-none">nobody called this one right</div></div>`:"");
+      a.innerHTML=`
+        <div class="stl-head">
+          <span class="stl-out">RESOLVED ${s.outcome.toUpperCase()}</span>
+          <span class="stl-when">${agoOf(s.settledAt)}</span>
+        </div>
+        <div class="stl-q">${esc(s.question)}</div>
+        ${body}`;
+      wrap.appendChild(a);
+    });
+  }
+
+  // 2. Top callers: a competition exists. Rank/handle/edge — the same three
+  // columns the full Leaderboard's primary board shows, so the teaser and the
+  // page it links to can never disagree. Server sends [] below the ranked-user
+  // threshold, so there is nothing to pad here.
+  if(topCallers.length){
+    section("Top callers");
+    // Hash route, same as the nav buttons — a real href so it middle-clicks and
+    // right-clicks like a link, no JS interception needed.
+    const box=document.createElement("a");box.className="topc";box.href="#/leaderboard";
+    box.innerHTML=topCallers.map(r=>`
+      <div class="topc-r">
+        <div class="topc-rank">${r.rank}</div>
+        <div class="topc-who">@${esc(r.handle)}</div>
+        <div class="topc-edge">${pts(r.avgEdge)}<small>${r.closed} closed</small></div>
+      </div>`).join("");
+    wrap.appendChild(box);
+    const more=document.createElement("a");more.className="topc-more";more.href="#/leaderboard";
+    more.textContent="see the full leaderboard →";
+    wrap.appendChild(more);
+  }
+
+  // "Open markets": a handful of live markets, tappable right there — the SAME
+  // card + interaction code the feed uses (buildCard), so YES/NO here behaves
+  // identically. Used to be a single "Daily Call" slot, which read as
+  // unfinished (one market, and mislabeled "Community" when its real topic was
+  // Sports) — now up to 4, each with its real topic badge (buildCard already
+  // prefers topicCategory over the flattened category). The label says exactly
+  // what these are: it used to read "Live right now", which promised urgency
+  // that a market closing in five weeks does not have.
   if(featured.length){
-    const label=document.createElement("p");label.className="psec";label.textContent="Live right now";
-    wrap.appendChild(label);
+    section("Open markets");
     featured.forEach((m,i)=>{
       const card=buildCard(m,i);
       // "swipe for the next take" doesn't apply — this is a short static list,
