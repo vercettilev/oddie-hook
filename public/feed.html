@@ -287,25 +287,29 @@
     line-height:1;cursor:pointer;padding:0 2px;font-weight:900;opacity:.6}
   .onbx:hover{opacity:1}
   .onbx:active{transform:scale(.9)}
-  /* Daily claim — the active retention hook. Prominent lime card when claimable;
-     a quiet card with a countdown once claimed. Fixed dark text on the fixed
-     lime accent holds contrast in both themes. */
-  .claimcard{display:flex;align-items:center;gap:12px;border-radius:16px;padding:12px 14px;
-    border:2px solid var(--card-line);box-shadow:var(--card-shadow);font-family:'Nunito'}
-  .claimcard.ready{background:var(--accent);color:#17250a;border-color:#17250a}
+  /* Daily claim — a secondary retention hook, deliberately quieter than the tag
+     CTA (the primary action, with the points incentive, is what should hit the
+     eye first). Used to fill solid --accent at full card size, the same
+     brightness and near the same size as the CTA button — the two competed for
+     "first thing you do here". Now a pale wash card with a small filled pill,
+     not a second bright block. Fixed dark text on the fixed wash surface holds
+     contrast in both themes, same rule as .mchip. */
+  .claimcard{display:flex;align-items:center;gap:12px;border-radius:16px;padding:10px 13px;
+    border:1.5px solid var(--hair-g);font-family:'Nunito'}
+  .claimcard.ready{background:var(--wash);color:#3c4550}
   .claimcard.done{background:var(--card-surface);color:var(--on-ground)}
   .cc-grow{flex:1;min-width:0}
-  .cc-title{font-weight:900;font-size:14px;line-height:1.2}
-  .cc-sub{font-weight:800;font-size:12px;margin-top:3px;opacity:.85}
-  .cc-next{flex:0 0 auto;font-weight:900;font-size:12.5px;color:var(--muted-g);white-space:nowrap}
+  .cc-title{font-weight:900;font-size:13px;line-height:1.2}
+  .cc-sub{font-weight:800;font-size:11.5px;margin-top:3px;opacity:.85}
+  .cc-next{flex:0 0 auto;font-weight:900;font-size:12px;color:var(--muted-g);white-space:nowrap}
   /* The claimed confirmation collapses to a slim line after a few seconds — it's
      a receipt, not a standing CTA, so it shouldn't hold full banner height. */
   .claimcard.done{transition:padding .3s ease}
-  .claimcard.done.cc-mini{padding:7px 13px}
+  .claimcard.done.cc-mini{padding:6px 12px}
   .claimcard.done.cc-mini .cc-sub{display:none}
-  .claimcard.done.cc-mini .cc-title{font-size:12.5px}
-  .claimbtn{flex:0 0 auto;border:1.5px solid rgba(0,0,0,.3);background:#17250a;color:var(--accent);
-    font-family:'Nunito';font-weight:900;font-size:14px;border-radius:999px;padding:9px 16px;cursor:pointer}
+  .claimcard.done.cc-mini .cc-title{font-size:12px}
+  .claimbtn{flex:0 0 auto;border:1.5px solid rgba(0,0,0,.18);background:var(--accent);color:#17250a;
+    font-family:'Nunito';font-weight:900;font-size:12.5px;border-radius:999px;padding:7px 13px;cursor:pointer}
   .claimbtn:active{transform:scale(.96)}
   .claimbtn:disabled{opacity:.6}
 
@@ -702,18 +706,24 @@
   /* ------------------------------------------------------------------ home -- */
   /* homeTop() is a brand-row-only header (no chips, no title row), shorter than
      shellTop()'s — so the top padding here is smaller than .sheet's 104px. */
-  .homewrap{max-width:var(--col);margin:0 auto;
+  /* Matches --feedcol, not --col: the feed's cards scale with the viewport at
+     desktop widths (see the 768px/1024px breakpoints below), and the hero
+     used to stay pinned at the older fixed --col, so Home read as narrower
+     than the feed it sits above — two different "how wide is this page"
+     answers on the same product. */
+  .homewrap{max-width:var(--feedcol);margin:0 auto;
     padding:calc(env(safe-area-inset-top) + 82px) 20px calc(env(safe-area-inset-bottom) + var(--tabh) + 28px)}
-  /* Home is a static page, not a stack of full-screen cards: the Daily Call
-     borrows the feed's card styling but must NOT borrow the feed's near-full-
-     viewport min-height, or the page reads as "one card per screen" (feed-like)
-     even with snap correctly disabled. It hugs its own content — a secondary
-     "try this" slot under the tag CTA, not a takeover. Same reasoning kills
-     scroll-snap-align: harmless without a snap container, but pointless here. */
+  /* Home is a static page, not a stack of full-screen cards: the featured
+     markets borrow the feed's card styling but must NOT borrow the feed's
+     near-full-viewport min-height, or the page reads as "one card per screen"
+     (feed-like) even with snap correctly disabled. Each hugs its own content —
+     a secondary "try this" section under the tag CTA, not a takeover. Same
+     reasoning kills scroll-snap-align: harmless without a snap container, but
+     pointless here. */
   .homewrap .card{min-height:auto;scroll-snap-align:none;scroll-margin-top:0}
   .homewrap .card:first-child{margin-top:0}
-  /* "Daily Call" itself reads as a quiet label over a secondary slot, not a
-     section header competing with the hero above it. */
+  /* The section label reads as a quiet caption over a secondary section, not a
+     header competing with the hero above it. */
   .homewrap .psec{text-align:center;margin:6px 0 10px}
   .hero{position:relative;text-align:center;padding:10px 0 26px}
   /* A soft lime glow seated behind the headline — the one "premium" cue a
@@ -1834,7 +1844,7 @@ function buildCard(m,i){
     const card=document.createElement("div");card.className="card";
     card.innerHTML=`
       <div class="chead">
-        <div class="cat">${esc(m.category)}</div>
+        <div class="cat">${esc(m.topicCategory||m.category)}</div>
         <button class="shareico" aria-label="Share this market">${SHARE_ICON}</button>
       </div>
       ${m.slug===startSlug && m.sourceUrl ? `<a class="srctweet" href="${esc(m.sourceUrl)}" target="_blank" rel="noopener noreferrer">
@@ -2203,11 +2213,11 @@ async function renderHome(){
     const cr=await fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`);
     if(cr.ok)claim=await cr.json();
   }catch(e){/* claim strip just won't render; nothing else depends on it */}
-  let featured=null, surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
+  let featured=[], surfaceReward=50; // 50 is only the pre-fetch placeholder; the line below always prefers the live value
   try{
     const r=await fetch(`${API}/api/home`);
-    if(r.ok){const j=await r.json();featured=j.featured;if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
-  }catch(e){/* the featured slot degrades to absent, not an error state */}
+    if(r.ok){const j=await r.json();featured=Array.isArray(j.featured)?j.featured:[];if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;}
+  }catch(e){/* the featured slots degrade to absent, not an error state */}
 
   const wrap=document.createElement("div");wrap.className="homewrap";
   wrap.innerHTML=`<div class="hero">
@@ -2223,20 +2233,26 @@ async function renderHome(){
   // NOT reused here: the hero above already carries that exact message.)
   if(claim)wrap.appendChild(claimCard());
 
-  // The "Daily Call": one live market, front and center, tappable right there —
-  // the SAME card + interaction code the feed uses (buildCard), so YES/NO here
-  // behaves identically. A cold visitor gets one immediate thing to do.
-  if(featured){
-    const label=document.createElement("p");label.className="psec";label.textContent="Daily Call";
+  // "Live right now": a handful of live markets, front and centre, tappable
+  // right there — the SAME card + interaction code the feed uses (buildCard),
+  // so YES/NO here behaves identically. Used to be a single "Daily Call" slot,
+  // which read as unfinished (one market, and mislabeled "Community" when its
+  // real topic was Sports) — now up to 4, each with its real topic badge
+  // (buildCard already prefers topicCategory over the flattened category).
+  if(featured.length){
+    const label=document.createElement("p");label.className="psec";label.textContent="Live right now";
     wrap.appendChild(label);
-    const card=buildCard(featured,0);
-    // "swipe for the next take" doesn't apply — there's one card. Suppress it
-    // via a permanent inline !important rather than removing the node: lockedUI
-    // unconditionally looks it up by id after a call locks in, and a missing
-    // element there would throw (silently swallowed by the pending-commit catch,
-    // which would then wrongly claim "couldn't reach the server").
-    card.querySelector(".nudge")?.style.setProperty("display","none","important");
-    wrap.appendChild(card);
+    featured.forEach((m,i)=>{
+      const card=buildCard(m,i);
+      // "swipe for the next take" doesn't apply — this is a short static list,
+      // not a swipeable feed. Suppress it via a permanent inline !important
+      // rather than removing the node: lockedUI unconditionally looks it up by
+      // id after a call locks in, and a missing element there would throw
+      // (silently swallowed by the pending-commit catch, which would then
+      // wrongly claim "couldn't reach the server").
+      card.querySelector(".nudge")?.style.setProperty("display","none","important");
+      wrap.appendChild(card);
+    });
   }
 
   // The three-beat "how it works" — icons + a few words each, no paragraphs.

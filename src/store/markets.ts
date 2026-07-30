@@ -348,13 +348,14 @@ CREATE TABLE IF NOT EXISTS season_points_log (
 CREATE INDEX IF NOT EXISTS spl_device_idx ON season_points_log(device_id);
 CREATE INDEX IF NOT EXISTS spl_handle_idx ON season_points_log(handle);
 
--- The home page's "Daily Call" slot — a single admin-picked community market
--- slug. Deliberately ONE row (id fixed at 1): there is only ever one featured
--- market at a time. NULL slug (or no row yet) means "no explicit pick" — the
--- home page then falls back to the most recent community market with activity.
-CREATE TABLE IF NOT EXISTS featured_market (
-  id     integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-  slug   text,
+-- The home page's featured "Live right now" slots — an admin-ordered list of
+-- community market slugs (rank = display order, lowest first). Fewer picks
+-- than the home page wants to show falls back to the most recently active
+-- open community markets not already in this list — that fallback logic
+-- lives in resolveFeatured() in server.ts, where the live market data is.
+CREATE TABLE IF NOT EXISTS featured_markets (
+  slug   text PRIMARY KEY,
+  rank   integer NOT NULL,
   set_at timestamptz NOT NULL DEFAULT now()
 );
 `;
@@ -2280,31 +2281,37 @@ export async function setCommunityOnchain(slug: string, pubkey: string, sig: str
   await db().query(`UPDATE community_market SET onchain_pubkey=$2, onchain_sig=$3 WHERE slug=$1`, [slug, pubkey, sig]);
 }
 
-/* ------------------------------------------------------- featured market -----
- * The home page's "Daily Call" slot — one admin-picked slug. The resolution
- * logic (explicit pick vs. the "most recent community market with activity"
- * fallback) lives in server.ts, where the live market data already is; this is
- * just the raw stored pick.
+/* ------------------------------------------------------ featured markets -----
+ * The home page's "Live right now" slots — an ordered list of admin-picked
+ * slugs. The resolution logic (explicit picks, topped up with the most recent
+ * active community markets when there are fewer than the page wants to show)
+ * lives in server.ts, where the live market data already is; this is just the
+ * raw stored list.
  */
-let memFeaturedSlug: string | null = null;
+let memFeaturedSlugs: string[] = [];
+const MAX_FEATURED = 8; // a sane cap — the home page only ever shows 3-4 of these
 
-/** Set (or, with null, clear) the featured slug. */
-export async function setFeaturedMarket(slug: string | null): Promise<void> {
-  if (!PERSISTENT) { memFeaturedSlug = slug; return; }
+/** Replace the whole featured list, in the given order. An empty array clears
+ *  it (home then falls back entirely to recently-active markets). Dedup'd and
+ *  capped so a fat-fingered admin can't feature the whole catalog. */
+export async function setFeaturedMarkets(slugs: string[]): Promise<void> {
+  const clean = [...new Set(slugs.map((s) => s.trim()).filter(Boolean))].slice(0, MAX_FEATURED);
+  if (!PERSISTENT) { memFeaturedSlugs = clean; return; }
   await ensureSchema();
-  await db().query(
-    `INSERT INTO featured_market (id, slug, set_at) VALUES (1, $1, now())
-       ON CONFLICT (id) DO UPDATE SET slug = $1, set_at = now()`,
-    [slug],
-  );
+  await db().query(`DELETE FROM featured_markets`);
+  if (clean.length) {
+    const values = clean.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(",");
+    const params = clean.flatMap((slug, i) => [slug, i]);
+    await db().query(`INSERT INTO featured_markets (slug, rank) VALUES ${values}`, params);
+  }
 }
 
-/** The raw stored pick, or null if none was ever set (or it was cleared). */
-export async function getFeaturedSlug(): Promise<string | null> {
-  if (!PERSISTENT) return memFeaturedSlug;
+/** The raw ordered picks, or [] if none were ever set (or the list was cleared). */
+export async function getFeaturedSlugs(): Promise<string[]> {
+  if (!PERSISTENT) return memFeaturedSlugs;
   await ensureSchema();
-  const { rows } = await db().query<{ slug: string | null }>(`SELECT slug FROM featured_market WHERE id = 1`);
-  return rows[0]?.slug ?? null;
+  const { rows } = await db().query<{ slug: string }>(`SELECT slug FROM featured_markets ORDER BY rank ASC`);
+  return rows.map((r) => r.slug);
 }
 
 /** Open (unresolved) community markets, Market-shaped + meta. Used for the feed

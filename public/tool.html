@@ -896,9 +896,9 @@ async function createMarket() {
   finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }
 }
 
-// The homepage's "Daily Call" pick — the raw admin choice (null = none set,
-// home falls back to the most recent community market with activity).
-let featuredSlug = null;
+// The homepage's "Live right now" picks — the raw admin choices, in display
+// order ([] = none set, home falls back entirely to recently-active markets).
+let featuredSlugs = [];
 
 async function loadCommunity() {
   const box = $("#rlist"), stat = $("#chainstat");
@@ -911,35 +911,34 @@ async function loadCommunity() {
     if (r.status === 401) { stat.textContent = "admin token missing or wrong."; box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
     const j = await r.json();
     const f = fr && fr.ok ? await fr.json().catch(() => null) : null;
-    featuredSlug = f ? f.slug : null;
+    featuredSlugs = f && Array.isArray(f.slugs) ? f.slugs : [];
     chainEnabled = !!(j.chain && j.chain.enabled);
     const bal = j.chain && j.chain.balanceSol;
     stat.innerHTML = chainEnabled
       ? 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 10)) + '… · <b>balance ' + (bal == null ? '?' : bal.toFixed(3)) + ' SOL</b>'
         + (bal != null && bal < 0.05 ? ' — <b style="color:#b00000">low, top up</b>' : '')
       : 'on-chain: <b>off</b> — parked behind ONCHAIN_ENABLED (set it to true + SOLANA_ADMIN_SECRET_KEY to restore devnet minting)';
-    // The homepage's "Daily Call" status — what's picked (if anything) vs. what's
-    // effectively live right now (the fallback is the most recent active market).
+    // The homepage's "Live right now" status — how many explicit picks vs. what's
+    // effectively live right now (the rest is topped up from recently-active markets).
     const featBox = $("#featstat");
     if (featBox) {
-      featBox.innerHTML = f
-        ? (f.slug
-            ? '<b>Daily Call</b> — explicitly featuring <b>' + esc(f.slug) + '</b>'
-              + (f.resolved && f.resolved.slug === f.slug ? ': "' + esc(f.resolved.question) + '"' : ' (not open right now — home is showing the fallback)')
-            : (f.resolved
-                ? '<b>Daily Call</b> — no explicit pick; showing the fallback: "' + esc(f.resolved.question) + '"'
-                : '<b>Daily Call</b> — no explicit pick, and no community market to fall back to (home\'s featured slot is empty).'))
-        : '<b>Daily Call</b> — status unavailable.';
+      const resolved = f && Array.isArray(f.resolved) ? f.resolved : [];
+      featBox.innerHTML = !f
+        ? '<b>Live right now</b> — status unavailable.'
+        : !resolved.length
+          ? '<b>Live right now</b> — no explicit picks, and no community market to fall back to (home\'s featured section is empty).'
+          : '<b>Live right now</b> — ' + featuredSlugs.length + ' explicit pick' + (featuredSlugs.length === 1 ? '' : 's')
+            + ', showing ' + resolved.length + ': "' + resolved.map((r) => esc(r.question)).join('", "') + '"';
     }
     if (!j.items.length) { box.innerHTML = '<p class="why">no community markets yet.</p>'; return; }
     box.innerHTML = j.items.map((m) => {
       const done = m.resolvedOutcome;
       const minted = m.explorer ? '<a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">minted ✓ ↗</a>' : 'on-chain: skipped';
       const pool = 'YES <b>' + m.yesTokens + '</b> (' + m.yesPlayers + 'p) · NO <b>' + m.noTokens + '</b> (' + m.noPlayers + 'p)';
-      const isFeatured = featuredSlug === m.slug;
-      const featureBtn = done ? '' // a resolved market can't be the Daily Call
+      const isFeatured = featuredSlugs.includes(m.slug);
+      const featureBtn = done ? '' // a resolved market can't be featured
         : isFeatured
-          ? '<button class="ghost unfeature" data-slug="' + esc(m.slug) + '" style="border-color:var(--accent)">★ Daily Call — clear</button>'
+          ? '<button class="ghost unfeature" data-slug="' + esc(m.slug) + '" style="border-color:var(--accent)">★ featured — remove</button>'
           : '<button class="ghost feature" data-slug="' + esc(m.slug) + '">☆ feature this market</button>';
       return '<div class="box mkt" data-slug="' + esc(m.slug) + '" style="margin-bottom:10px' + (isFeatured ? ';border-color:var(--accent)' : '') + '">'
         + '<p class="why" style="color:var(--ink);font-weight:700">' + (isFeatured ? '★ ' : '') + esc(m.question) + (done ? ' · <b>RESOLVED ' + String(done).toUpperCase() + '</b>' : '') + '</p>'
@@ -952,19 +951,20 @@ async function loadCommunity() {
         + '</div>';
     }).join("");
     box.querySelectorAll(".manage").forEach((b) => { b.onclick = () => toggleDetail(b); });
-    box.querySelectorAll(".feature").forEach((b) => { b.onclick = () => setFeatured(b.dataset.slug); });
-    box.querySelectorAll(".unfeature").forEach((b) => { b.onclick = () => setFeatured(null); });
+    box.querySelectorAll(".feature").forEach((b) => { b.onclick = () => setFeatured([...featuredSlugs, b.dataset.slug]); });
+    box.querySelectorAll(".unfeature").forEach((b) => { b.onclick = () => setFeatured(featuredSlugs.filter((s) => s !== b.dataset.slug)); });
   } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
 }
 
-// Set (or, with null, clear) the homepage's featured "Daily Call" market.
-async function setFeatured(slug) {
+// Replace the whole "Live right now" pick list, in order. [] clears every
+// explicit pick (home then falls back entirely to recently-active markets).
+async function setFeatured(slugs) {
   try {
     const r = await fetch("/api/admin/featured", {
-      method: "POST", headers: admHeaders({ "content-type": "application/json" }), body: JSON.stringify({ slug }),
+      method: "POST", headers: admHeaders({ "content-type": "application/json" }), body: JSON.stringify({ slugs }),
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.ok) { alert(j.error || "couldn't update the featured market"); return; }
+    if (!r.ok || !j.ok) { alert(j.error || "couldn't update the featured markets"); return; }
     loadCommunity();
   } catch (e) { alert(String(e)); }
 }

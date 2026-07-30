@@ -13,7 +13,7 @@ import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
-import { setFeaturedMarket, getFeaturedSlug } from "./store/markets.js";
+import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
 import { proceedsFor } from "./store/economy.js";
@@ -517,51 +517,78 @@ app.get("/api/feed", async (req, res) => {
 });
 
 /**
- * The homepage's "Daily Call" slot. Resolution order:
- *   1. the admin's explicit pick (/tool), IF it's still an open community market
- *   2. the most recent open community market WITH at least one position
- *   3. the most recent open community market at all (never leave Daily Call
- *      empty just because a fresh market has zero positions yet)
- * Independent of venue data on purpose — the featured slot is a community
- * market by design, and the home page must render even if venue APIs are down.
+ * The homepage's "Live right now" slots (up to `n`). Resolution order:
+ *   1. the admin's explicit picks (/tool), in the order they were featured,
+ *      each IF it's still an open community market
+ *   2. topped up with the most recent open community markets WITH at least
+ *      one position, not already picked
+ *   3. topped up further with the most recent open community markets at all
+ *      (never leave a slot empty just because a fresh market has zero
+ *      positions yet)
+ * Independent of venue data on purpose — the featured slots are community
+ * markets by design, and the home page must render even if venue APIs are down.
  */
-async function resolveFeatured(): Promise<(Record<string, unknown> & { slug: string }) | null> {
+async function resolveFeatured(n = 4): Promise<Array<Record<string, unknown> & { slug: string }>> {
   let community: CommunityMarket[] = [];
   try { community = await openCommunityMarkets(); }
   catch (e) { console.error("[home] community load failed:", (e as Error).message); }
-  if (!community.length) return null;
+  if (!community.length) return [];
 
   const sorted = [...community].sort((a, b) => b.marketId - a.marketId); // most recent first
   const slugs = sorted.map((m) => slugFor(m));
   const playerCounts = await communityPlayerCounts(slugs).catch(() => ({} as Record<string, number>));
 
-  const explicitSlug = await getFeaturedSlug().catch(() => null);
+  const explicitSlugs = await getFeaturedSlugs().catch(() => [] as string[]);
   const bySlug = new Map(sorted.map((m) => [slugFor(m), m]));
-  let chosen = explicitSlug ? bySlug.get(explicitSlug) : undefined;
-  if (!chosen) {
-    const withActivity = sorted.filter((m) => (playerCounts[slugFor(m)] ?? 0) > 0);
-    chosen = withActivity[0] ?? sorted[0];
+  const chosen: CommunityMarket[] = [];
+  const used = new Set<string>();
+  for (const s of explicitSlugs) {
+    const m = bySlug.get(s);
+    if (m && !used.has(s)) { chosen.push(m); used.add(s); }
+    if (chosen.length >= n) break;
   }
+  if (chosen.length < n) {
+    const withActivity = sorted.filter((m) => !used.has(slugFor(m)) && (playerCounts[slugFor(m)] ?? 0) > 0);
+    for (const m of withActivity) {
+      if (chosen.length >= n) break;
+      chosen.push(m); used.add(slugFor(m));
+    }
+  }
+  if (chosen.length < n) {
+    for (const m of sorted) {
+      if (chosen.length >= n) break;
+      const s = slugFor(m);
+      if (used.has(s)) continue;
+      chosen.push(m); used.add(s);
+    }
+  }
+  if (!chosen.length) return [];
 
-  const slug = slugFor(chosen);
-  const positions = playerCounts[slug] ?? 0;
+  const chosenSlugs = chosen.map((m) => slugFor(m));
   const [crowd, surfacers] = await Promise.all([
-    crowdSplits([slug]),
-    surfacersFor([slug]).catch(() => ({} as Record<string, { handle: string | null; sourceUrl: string | null }>)),
+    crowdSplits(chosenSlugs),
+    surfacersFor(chosenSlugs).catch(() => ({} as Record<string, { handle: string | null; sourceUrl: string | null }>)),
   ]);
-  const surfacer = surfacers[slug];
-  // Home's Daily Call deliberately carries no sourceUrl/callers — those are
-  // permalink-page-only (see /api/feed above, gated on the start slug).
-  return {
-    ...chosen, slug, category: "Community", community: true as const,
-    positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
-    onchain: onchainEnabled() && chosen.onchainPubkey ? explorerUrl(chosen.onchainPubkey) : null,
-    crowd: crowd[slug] ?? { yes: 0, no: 0 },
-    challengeHandle: surfacer?.handle ?? null,
-  };
+  // Home's featured slots deliberately carry no sourceUrl/callers — those are
+  // permalink-page-only (see /api/feed above, gated on the start slug). The
+  // real topical pick (Sports/Crypto/…) is exposed as topicCategory — same
+  // convention as the feed's community cluster — since `category` here stays
+  // the flat "Community" chip value the rest of the client expects.
+  return chosen.map((m) => {
+    const slug = slugFor(m);
+    const positions = playerCounts[slug] ?? 0;
+    const surfacer = surfacers[slug];
+    return {
+      ...m, slug, category: "Community", topicCategory: m.category, community: true as const,
+      positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
+      onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
+      crowd: crowd[slug] ?? { yes: 0, no: 0 },
+      challengeHandle: surfacer?.handle ?? null,
+    };
+  });
 }
 app.get("/api/home", async (_req, res) => {
-  const featured = await resolveFeatured().catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return null; });
+  const featured = await resolveFeatured().catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; });
   // The tag-CTA's points-incentive line reads this live rather than hardcoding
   // "50" — the two can never drift apart, because there's only one number.
   res.json({ featured, surfaceReward: SEASON_POINTS.surface });
@@ -1347,23 +1374,25 @@ app.get("/api/tweet/log", requireAdmin, async (req, res) => {
   res.json({ items });
 });
 
-// The homepage's "Daily Call" toggle. GET shows both the raw admin pick and
-// what's EFFECTIVELY live right now (the same resolution /api/home uses), so
-// /tool can tell the operator "you haven't picked one — this is the fallback."
+// The homepage's "Live right now" toggle. GET shows both the raw admin picks
+// and what's EFFECTIVELY live right now (the same resolution /api/home
+// uses — explicit picks topped up with recently-active markets), so /tool can
+// tell the operator "you've picked 1 of 4 — these 3 others are the fallback."
 app.get("/api/admin/featured", requireAdmin, async (_req, res) => {
-  const slug = await getFeaturedSlug().catch(() => null);
-  const resolved = await resolveFeatured().catch(() => null);
-  res.json({ slug, resolved: resolved ? { slug: resolved.slug, question: resolved.question } : null });
+  const slugs = await getFeaturedSlugs().catch(() => [] as string[]);
+  const resolved = await resolveFeatured().catch(() => []);
+  res.json({ slugs, resolved: resolved.map((m) => ({ slug: m.slug, question: m.question })) });
 });
 app.post("/api/admin/featured", requireAdmin, async (req, res) => {
-  const raw = req.body?.slug;
-  const slug = raw == null || raw === "" ? null : String(raw).trim();
-  if (slug) {
+  const raw = req.body?.slugs;
+  if (!Array.isArray(raw)) return res.status(400).json({ error: "slugs must be an array (may be empty)" });
+  const slugs = raw.map((s) => String(s).trim()).filter(Boolean);
+  for (const slug of slugs) {
     const exists = await communityMarketDetail(slug).catch(() => null);
-    if (!exists) return res.status(404).json({ error: "unknown community market" });
+    if (!exists) return res.status(404).json({ error: `unknown community market: ${slug}` });
   }
-  await setFeaturedMarket(slug);
-  res.json({ ok: true, slug });
+  await setFeaturedMarkets(slugs);
+  res.json({ ok: true, slugs });
 });
 
 // Every device the product has touched + what they've done (read-only, admin).
