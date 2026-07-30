@@ -616,6 +616,86 @@
     background:#fff;color:#000;border:3px solid #000;border-radius:14px;padding:9px 15px;max-width:88vw;
     font-family:'Nunito';font-weight:800;font-size:13px;box-shadow:0 8px 24px rgba(13,60,90,.2)}
 
+  /* ------------------------------------------------- resolution celebration --
+   * The emotional peak: full-screen on mobile, a large centred card from the
+   * tablet breakpoint up — highest z-index in the app, above the toast, because
+   * this is the one thing that must sit on top of literally everything else
+   * that could be on screen when a resolution lands. Win and loss share the
+   * same shell; only the accent, copy, and CTAs differ, per the brief's "keep
+   * the loss state visually calmer, no red-heavy scolding" — loss reuses the
+   * plain card surface, win gets the same lime hero-glow language as the home
+   * page's headline (.hero::before), so a win reads as a sibling of the app's
+   * one other "premium moment", not a one-off effect. */
+  .celebrate-dim{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.55);
+    display:flex;align-items:flex-end;justify-content:center}
+  @media (min-width:600px){ .celebrate-dim{align-items:center;padding:24px} }
+  .celebrate-card{position:relative;width:100%;max-width:460px;max-height:100dvh;overflow-y:auto;
+    background:var(--card-surface);border:2.5px solid var(--card-line);
+    border-radius:var(--r-xl) var(--r-xl) 0 0;
+    padding:calc(env(safe-area-inset-top) + var(--sp-6)) var(--sp-4) calc(env(safe-area-inset-bottom) + var(--sp-4));
+    box-shadow:var(--shadow-pop)}
+  @media (min-width:600px){ .celebrate-card{border-radius:var(--r-xl);max-height:88dvh} }
+  .celebrate-card.win{position:relative;overflow:hidden}
+  .celebrate-card.win::before{content:"";position:absolute;top:-60px;left:50%;width:420px;height:280px;
+    transform:translateX(-50%);background:radial-gradient(ellipse at center, rgba(182,240,95,.4), transparent 70%);
+    filter:blur(2px);pointer-events:none;z-index:0}
+  :root[data-theme="dark"] .celebrate-card.win::before{background:radial-gradient(ellipse at center, rgba(182,240,95,.18), transparent 70%)}
+  .celebrate-card>*{position:relative;z-index:1}
+  .celebrate-x{position:absolute;top:var(--sp-3);right:var(--sp-3);z-index:3;width:34px;height:34px;
+    border-radius:50%;border:1.5px solid var(--hair-g);background:var(--ground-2);color:var(--muted-g);
+    font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .celebrate-x:active{transform:scale(.92)}
+  .celebrate-dots{display:flex;justify-content:center;gap:6px;margin:0 0 var(--sp-3)}
+  .celebrate-dots span{width:6px;height:6px;border-radius:50%;background:var(--hair-g)}
+  .celebrate-dots span.on{background:var(--accent);width:16px;border-radius:999px}
+  /* Confined to the card, not the viewport — "restrained", per the brief, not a
+     screen-wide cannon. overflow:hidden on .celebrate-card.win clips it. */
+  .celebrate-confetti{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+  .confetti-piece{position:absolute;top:-5%;width:7px;height:12px;opacity:0;border-radius:2px;
+    animation-name:confettifall;animation-timing-function:cubic-bezier(.25,.46,.45,.94);animation-fill-mode:forwards}
+  @keyframes confettifall{
+    0%{transform:translateY(0) rotate(0deg);opacity:1}
+    100%{transform:translateY(480px) rotate(var(--rot,540deg));opacity:0}
+  }
+  @media (prefers-reduced-motion:reduce){.confetti-piece{display:none}}
+  .celebrate-body{text-align:center;padding-top:var(--sp-2)}
+  .cel-badge{display:inline-block;font-family:'Fredoka';font-weight:700;font-size:22px;margin:0 0 var(--sp-3)}
+  .cel-badge.win{color:var(--on-ground)}
+  .cel-badge.loss{font-size:19px;color:var(--muted-g)}
+  .cel-q{font-family:'Fredoka';font-weight:600;font-size:17px;line-height:1.3;color:var(--on-ground);
+    margin:0 0 var(--sp-2)}
+  .cel-callrow{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin:0 0 var(--sp-4)}
+  .cel-side{font-family:'Nunito';font-weight:900;font-size:13px;letter-spacing:.02em;
+    padding:5px 12px;border-radius:999px}
+  .cel-side.yes{color:#0a5c22;background:#d7f2e0}
+  .cel-side.no{color:#8f1017;background:#fbdfe4}
+  :root[data-theme="dark"] .cel-side.yes{color:#7fe0a4;background:#0f3320}
+  :root[data-theme="dark"] .cel-side.no{color:#f2a3b4;background:#3a1420}
+  .cel-resolved{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--muted-g)}
+  .cel-payout{margin:0 0 var(--sp-4);font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g)}
+  .cel-payout-n{display:block;font-family:'Fredoka';font-weight:700;font-size:34px;color:var(--acc-deep);
+    line-height:1.3}
+  :root[data-theme="dark"] .cel-payout-n{color:var(--accent)}
+  .cel-oscore{display:inline-flex;justify-content:center;margin:0 0 var(--sp-4)}
+  .scorering.big{width:152px;height:152px}
+  .scorering.big .scorering-num{font-size:36px}
+  .scorering.big .scorering-lab{font-size:10px}
+  .cel-streak{display:inline-flex;align-items:center;gap:6px;font-family:'Nunito';font-weight:900;
+    font-size:13px;color:#7a4a00;background:#ffeec2;border:1.5px solid #e8b34a;
+    border-radius:999px;padding:6px 14px;margin:0 0 var(--sp-4)}
+  :root[data-theme="dark"] .cel-streak{color:#f5cf6b;background:#3a2c05;border-color:#6b5312}
+  .cel-ctas{display:flex;flex-direction:column;gap:var(--sp-2);margin:0 0 var(--sp-2)}
+  .cel-cta{font:inherit;font-family:'Fredoka';font-weight:600;font-size:15px;border-radius:999px;
+    padding:13px 18px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .cel-cta.share{color:#17250a;background:linear-gradient(180deg, #c4f57a, var(--accent) 60%);
+    border:2.5px solid #000;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+  .cel-cta.share:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
+  .cel-cta.challenge{color:var(--on-ground);background:transparent;border:2px solid var(--card-line)}
+  .cel-cta.challenge:active{transform:scale(.98)}
+  .celebrate-next{display:block;width:100%;margin-top:var(--sp-3);font:inherit;font-family:'Nunito';
+    font-weight:800;font-size:13.5px;color:var(--muted-g);background:none;border:0;padding:8px;cursor:pointer}
+  .celebrate-next:active{opacity:.6}
+
   /* the handle: who this stream is called */
   .hrow{display:flex;align-items:center;gap:10px;border:3px solid #000;border-radius:22px;
     background:var(--wash);padding:13px 16px;margin-bottom:12px;color:var(--ink)}
@@ -3433,11 +3513,192 @@ async function checkGate(){
   if(!FULL)TASTE=true;
   return true;
 }
+
+/* -------------------------------------------------- resolution celebration --
+ * The emotional peak: a device that opens (or is already open) with resolved
+ * positions it hasn't been SHOWN the outcome of yet gets a full-screen
+ * takeover instead of learning it only from the flat notice line. Checked
+ * once at boot, independent of hash routing — it layers ON TOP of whatever
+ * render() produces rather than replacing it, so it works from a cold open on
+ * any URL (a notification link into /m/{slug}, /feed, home, anywhere).
+ *
+ * Deliberately NOT gated on sign-in: deviceId already persists calls, notices,
+ * accuracy and streak for every device whether or not it ever links an
+ * account (see Positions/Accuracy/Leaderboard, none of which gate on auth) —
+ * gating the one moment that pays off that whole reputation system behind
+ * sign-in would be the one inconsistent exception, not a safer default.
+ */
+let celebrateQueue=[], celebrateIdx=0;
+// Guards the whole check+render, not just the fetch: boot can legitimately run
+// this more than once in some embedding contexts (e.g. a host page that
+// re-invokes the boot sequence without a real navigation), and without this a
+// second call would fetch a still-unseen batch and stack a duplicate takeover
+// on top of the first. One check per page life is the contract.
+let celebrationsChecked=false;
+
+async function checkCelebrations(){
+  if(celebrationsChecked)return;
+  celebrationsChecked=true;
+  try{
+    const r=await fetch(`${API}/api/celebrations?deviceId=${encodeURIComponent(deviceId)}`);
+    if(!r.ok)return;
+    const j=await r.json();
+    const rows=Array.isArray(j.celebrations)?j.celebrations:[];
+    if(!rows.length)return;
+    // Wins first, per the brief; stable otherwise (Array.sort is stable), so
+    // within each group they stay in the resolution order the server sent.
+    celebrateQueue=rows.slice().sort((a,b)=>(a.won===b.won?0:a.won?-1:1));
+    celebrateIdx=0;
+    renderCelebration();
+  }catch(e){/* the celebration just doesn't fire this load; nothing else depends on it */}
+}
+
+/** The ONLY place unseen celebrations become seen — always a full batch, fired
+ *  from the × or from finishing the sequence, never from fetching. A device
+ *  that closes the tab mid-sequence sees the remainder again next time, which
+ *  is correct: "seen" means shown, not sent. */
+function markCelebrationsSeen(){
+  if(!celebrateQueue.length)return;
+  const noticeIds=celebrateQueue.map(c=>c.noticeId);
+  fetch(`${API}/api/celebrations/seen`,{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({deviceId,noticeIds})}).catch(()=>{});
+}
+function closeCelebration(){
+  document.getElementById("celebrateDim")?.remove();
+  markCelebrationsSeen();
+  celebrateQueue=[];celebrateIdx=0;
+}
+
+function renderCelebration(){
+  document.getElementById("celebrateDim")?.remove();
+  const c=celebrateQueue[celebrateIdx];
+  if(!c){closeCelebration();return;}
+  const n=celebrateQueue.length, isLast=celebrateIdx===n-1;
+  const scoreKnown=c.scoreAfter!=null;
+
+  const dim=document.createElement("div");dim.className="celebrate-dim";dim.id="celebrateDim";
+  const card=document.createElement("div");card.className=`celebrate-card ${c.won?"win":"loss"}`;
+  card.innerHTML=`
+    <button class="celebrate-x" type="button" aria-label="Close">✕</button>
+    ${n>1?`<div class="celebrate-dots">${celebrateQueue.map((_,i)=>`<span class="${i===celebrateIdx?"on":""}"></span>`).join("")}</div>`:""}
+    ${c.won?'<div class="celebrate-confetti" id="celConfetti" aria-hidden="true"></div>':""}
+    <div class="celebrate-body">
+      <div class="cel-badge ${c.won?"win":"loss"}">${c.won?"CALLED IT ✓":"Not this time"}</div>
+      <div class="cel-q">${esc(c.question)}</div>
+      <div class="cel-callrow">
+        <span class="cel-side ${c.side}">${c.side.toUpperCase()} at ${c.oddsPct}%</span>
+        ${!c.won?`<span class="cel-resolved">resolved ${c.outcome.toUpperCase()}</span>`:""}
+      </div>
+      ${c.won?`<div class="cel-payout"><span class="cel-payout-n">+${c.proceeds}</span>points</div>`:""}
+      ${scoreKnown?`
+      <div class="cel-oscore">
+        <div class="scorering big" id="celRing" style="--score-pct:${c.scoreBefore/1000}">
+          <div class="scorering-inner">
+            <div class="scorering-num" id="celScoreNum">${c.scoreBefore}</div>
+            <div class="scorering-lab">ODDIE SCORE</div>
+          </div>
+        </div>
+      </div>`:""}
+      ${c.won&&c.streakExtended?`<div class="cel-streak">🔥 ${c.streakAfter}-call streak</div>`:""}
+      ${c.won?`
+      <div class="cel-ctas">
+        <button class="cel-cta share" type="button">Share your call ✓</button>
+        <button class="cel-cta challenge" type="button">Challenge someone</button>
+      </div>`:""}
+    </div>
+    <button class="celebrate-next" type="button">${isLast?"Done":`Next (${celebrateIdx+2}/${n})`}</button>`;
+  dim.appendChild(card);
+  document.body.appendChild(dim);
+
+  const advance=()=>{
+    if(isLast)closeCelebration();
+    else{celebrateIdx++;renderCelebration();}
+  };
+  card.querySelector(".celebrate-x").onclick=closeCelebration;
+  card.querySelector(".celebrate-next").onclick=advance;
+  // Tap the body (not a button inside it) also advances — the "tap through" the
+  // brief asks for; the explicit button above covers keyboard/screen-reader use.
+  card.querySelector(".celebrate-body").onclick=(e)=>{ if(!e.target.closest("button"))advance(); };
+  // A light left-swipe does the same on touch. Forward-only: the queue has no
+  // "back", so a right-swipe is simply ignored rather than wired to nothing.
+  let touchX=null;
+  card.addEventListener("touchstart",(e)=>{touchX=e.touches[0].clientX;},{passive:true});
+  card.addEventListener("touchend",(e)=>{
+    if(touchX==null)return;
+    const dx=e.changedTouches[0].clientX-touchX; touchX=null;
+    if(dx<-40)advance();
+  },{passive:true});
+
+  // The score moved either way — "show what their score did" is explicit in
+  // the brief for a loss too, not just a win. Runs for both; only the CTAs and
+  // confetti are win-exclusive.
+  if(scoreKnown)animateCelebrationScore(card,c.scoreBefore,c.scoreAfter);
+
+  if(c.won){
+    // Same resolution-receipt language loadNotices already uses for the flat
+    // notice's own share button — one copy convention for "I called it",
+    // whether the tap came from here or from Notifications.
+    card.querySelector(".cel-cta.share").onclick=()=>{
+      const text=`called it at ${c.oddsPct}% → resolved ${c.outcome.toUpperCase()}. +${c.proceeds} points on oddie`;
+      xShare(text, myHandle?`${SHARE_ORIGIN}/@${myHandle}`:`${SHARE_ORIGIN}/m/${c.slug}`, "celebrate_share");
+    };
+    // Same targeting + intent pattern as the permalink's "Challenge the other
+    // side" button — aimed at the market's source tweet author when known.
+    card.querySelector(".cel-cta.challenge").onclick=()=>{
+      const handle=(c.challengeHandle||"").replace(/^@+/,"");
+      const text=(handle?`@${handle} `:"")+`called it at ${c.oddsPct}% — resolved ${c.outcome.toUpperCase()}. Think you can call the next one?`;
+      xShare(text, `${SHARE_ORIGIN}/m/${c.slug}`, "celebrate_challenge");
+      ev("challenge_click",{slug:c.slug,targeted:!!handle,source:"celebrate"});
+    };
+    spawnConfetti(document.getElementById("celConfetti"));
+  }
+}
+
+/** The ring's conic-gradient sweep and the number count up together, same
+ *  easing as countUp() — a --score-pct custom property isn't natively
+ *  animatable via CSS transition without @property, so this drives both by
+ *  hand in one rAF loop instead of half-animating with countUp() alone. */
+function animateCelebrationScore(card,from,to){
+  const ring=card.querySelector("#celRing"), numEl=card.querySelector("#celScoreNum");
+  if(REDUCE_MOTION){
+    ring?.style.setProperty("--score-pct",to/1000);
+    if(numEl)numEl.textContent=to;
+    return;
+  }
+  const dur=900,start=performance.now(),ease=(t)=>1-Math.pow(1-t,3);
+  const step=(now)=>{
+    const t=Math.min(1,(now-start)/dur), val=from+(to-from)*ease(t);
+    ring?.style.setProperty("--score-pct",(val/1000).toFixed(4));
+    if(numEl)numEl.textContent=Math.round(val);
+    if(t<1)requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/** Confined to the card (CSS clips via overflow:hidden on .celebrate-card.win),
+ *  not the viewport — restrained, per the brief, not a screen-wide cannon. */
+function spawnConfetti(container){
+  if(!container||REDUCE_MOTION)return;
+  const colors=["#B6F05F","#f5cf6b","#7fe0a4","#f2a3b4","#ffffff"];
+  for(let i=0;i<28;i++){
+    const p=document.createElement("span");p.className="confetti-piece";
+    const delay=Math.random()*220, dur=900+Math.random()*500, rot=360+Math.random()*360;
+    p.style.left=(Math.random()*100)+"%";
+    p.style.background=colors[i%colors.length];
+    p.style.animationDelay=delay+"ms";
+    p.style.animationDuration=dur+"ms";
+    p.style.setProperty("--rot",rot+"deg");
+    container.appendChild(p);
+    setTimeout(()=>p.remove(),delay+dur+50);
+  }
+}
+
 (async()=>{
   const ok=await checkGate();
   if(ok){
     try{sessionStorage.removeItem("gate_oauth");}catch(e){}
     render();loadAuth().then(loadBalance).then(authReturn);
+    checkCelebrations(); // independent of render()/routing — layers on top, never blocks
   }
 })();
 

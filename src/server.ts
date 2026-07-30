@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -838,6 +838,29 @@ app.get("/api/notices", async (req, res) => {
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   res.json({ notices: await noticesFor(deviceId) });
+});
+
+// The resolution celebration — fetched on every boot alongside the gate check.
+// Empty on almost every load (the whole point: it only has rows when a
+// position resolved since the device was last shown one), so this stays cheap.
+app.get("/api/celebrations", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json({ celebrations: await celebrationsFor(deviceId) });
+});
+// Fired once the client has actually FINISHED showing the batch (dismissed, or
+// swiped past the last card) — see markCelebrationsSeen for why this is never
+// called at fetch time.
+app.post("/api/celebrations/seen", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  const raw = req.body?.noticeIds;
+  if (!Array.isArray(raw) || raw.some((n) => typeof n !== "number")) {
+    return res.status(400).json({ error: "noticeIds must be an array of numbers" });
+  }
+  await markCelebrationsSeen(deviceId, raw);
+  res.json({ ok: true });
 });
 
 /**

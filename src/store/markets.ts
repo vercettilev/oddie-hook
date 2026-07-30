@@ -215,6 +215,13 @@ CREATE INDEX IF NOT EXISTS notice_device_idx ON notice(device_id, created_at DES
 -- alert, not only from the Positions screen.
 ALTER TABLE notice ADD COLUMN IF NOT EXISTS call_id bigint;
 
+-- Whether the device has actually been SHOWN this resolution's celebration
+-- takeover — a separate, richer moment from the flat notice line, so this is
+-- set only once the client finishes displaying it (see markCelebrationsSeen),
+-- never at fetch time. NULL means "not yet celebrated"; settlement notices only,
+-- irrelevant to every other kind.
+ALTER TABLE notice ADD COLUMN IF NOT EXISTS seen_at timestamptz;
+
 -- A call becomes shareable only when its owner mints a token for it. Random,
 -- not the sequential id: calls must not be enumerable from outside, because a
 -- share card names a handle and a side.
@@ -1157,7 +1164,7 @@ export interface Notice {
   outcome?: "yes" | "no" | null;
 }
 
-interface MemNotice extends Notice { deviceId: string }
+interface MemNotice extends Notice { deviceId: string; seenAt: string | null }
 const memNotices: MemNotice[] = [];
 let memNoticeId = 0;
 
@@ -1165,7 +1172,7 @@ export async function noticesFor(rawDeviceId: string, limit = 30): Promise<Notic
   const deviceId = await resolveDevice(rawDeviceId);
   if (!PERSISTENT) {
     return memNotices.filter((n) => n.deviceId === deviceId).slice(0, limit)
-      .map(({ deviceId: _d, ...n }) => n);
+      .map(({ deviceId: _d, seenAt: _s, ...n }) => n);
   }
   await ensureSchema();
   // Join the settled call so a settlement notice carries the odds they took and
@@ -1342,6 +1349,148 @@ export async function resolvedCallsFor(rawDeviceId: string, limit = 20): Promise
     [deviceId, n],
   );
   return rows.map((r) => shape(r.side, r.exit_pct, r.pct_at, r.question, r.closed_at.toISOString()));
+}
+
+/* ------------------------------------------------------ resolution celebration --
+ * The app's one required emotional beat: a device that opens with resolved
+ * positions it hasn't been SHOWN yet gets the full-screen celebration instead
+ * of learning the outcome only from the flat notice line. This reads the exact
+ * same settle_win/settle_loss notices settleMarket already writes — no second
+ * write path — plus the before/after Oddie Score and streak, computed the
+ * same way accuracyFor does (computeAccuracy over the chronological record,
+ * run twice: once excluding the newly-resolved call, once including it).
+ */
+
+export interface Celebration {
+  noticeId: number;
+  callId: number;
+  slug: string;
+  question: string;
+  side: "yes" | "no";
+  outcome: "yes" | "no";
+  won: boolean;
+  oddsPct: number;              // the price they took on their side
+  proceeds: number | null;      // points paid out — null on a loss
+  scoreBefore: number;          // 500 (the neutral baseline) if not hasEnough yet
+  scoreAfter: number | null;    // null only if still short of the accuracy floor
+  streakBefore: number;
+  streakAfter: number;
+  streakExtended: boolean;      // a genuinely new streak worth naming (>= 2)
+  challengeHandle: string | null;
+  settledAt: string;
+}
+
+type CelebrationRow = {
+  callId: number; slug: string; question: string; side: "yes" | "no";
+  entryPct: number; exitPct: number; proceeds: number | null; category: string; closedAt: string;
+};
+
+export async function celebrationsFor(rawDeviceId: string): Promise<Celebration[]> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const prob = (pctAt: number) => clamp(pctAt / 100, 0.01, 0.99);
+
+  let rows: CelebrationRow[];
+  let unseenCallIds: Set<number>;
+  let noticeIdByCall: Map<number, number>;
+
+  if (!PERSISTENT) {
+    const calls = memCalls
+      .filter((c) => c.deviceId === deviceId && c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
+      .sort((a, b) => (a.closedAt! < b.closedAt! ? -1 : a.closedAt! > b.closedAt! ? 1 : a.id - b.id));
+    rows = calls.map((c) => ({
+      callId: c.id, slug: c.slug, question: c.question, side: c.side, entryPct: c.entryPct,
+      exitPct: c.exitPct as number, proceeds: c.proceeds,
+      category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question),
+      closedAt: c.closedAt!,
+    }));
+    const unseen = memNotices.filter((n) =>
+      n.deviceId === deviceId && (n.kind === "settle_win" || n.kind === "settle_loss") && !n.seenAt);
+    unseenCallIds = new Set(unseen.map((n) => n.callId).filter((x): x is number => x != null));
+    noticeIdByCall = new Map(unseen.map((n) => [n.callId as number, n.id]));
+  } else {
+    await ensureSchema();
+    const { rows: qr } = await db().query<{
+      call_id: number; slug: string; question: string; side: "yes" | "no"; pct_at: number;
+      exit_pct: number; proceeds: number | null; comm_cat: string | null; closed_at: Date;
+    }>(
+      `SELECT mc.id AS call_id, mc.slug, s.question, mc.side, mc.pct_at, mc.exit_pct, mc.proceeds,
+              cm.category AS comm_cat, mc.closed_at
+         FROM market_call mc
+         JOIN market_slug s ON s.slug = mc.slug
+         LEFT JOIN community_market cm ON cm.slug = mc.slug
+        WHERE mc.device_id = $1 AND mc.closed_at IS NOT NULL
+          AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
+        ORDER BY mc.closed_at ASC, mc.id ASC`,
+      [deviceId],
+    );
+    rows = qr.map((r) => ({
+      callId: r.call_id, slug: r.slug, question: r.question, side: r.side, entryPct: r.pct_at,
+      exitPct: r.exit_pct, proceeds: r.proceeds, category: r.comm_cat ?? categorizeText(r.question),
+      closedAt: r.closed_at.toISOString(),
+    }));
+    const { rows: nr } = await db().query<{ id: number; call_id: number }>(
+      `SELECT id, call_id FROM notice
+        WHERE device_id = $1 AND kind IN ('settle_win','settle_loss') AND seen_at IS NULL AND call_id IS NOT NULL`,
+      [deviceId],
+    );
+    unseenCallIds = new Set(nr.map((r) => r.call_id));
+    noticeIdByCall = new Map(nr.map((r) => [r.call_id, r.id]));
+  }
+
+  if (unseenCallIds.size === 0) return [];
+
+  const accRow = (r: CelebrationRow) => ({ correct: r.exitPct === 100, category: r.category, pct: prob(r.entryPct) });
+  const out: Celebration[] = [];
+  const slugsNeeded = new Set<string>();
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!unseenCallIds.has(r.callId)) continue;
+    const before = computeAccuracy(rows.slice(0, i).map(accRow));
+    const after = computeAccuracy(rows.slice(0, i + 1).map(accRow));
+    const won = r.exitPct === 100;
+    const outcome = won ? r.side : r.side === "yes" ? "no" : "yes";
+    slugsNeeded.add(r.slug);
+    out.push({
+      noticeId: noticeIdByCall.get(r.callId)!,
+      callId: r.callId, slug: r.slug, question: r.question, side: r.side, outcome, won,
+      oddsPct: Math.max(1, Math.min(99, Math.round(r.entryPct))),
+      proceeds: won ? r.proceeds : null,
+      scoreBefore: before.hasEnough ? (before.oddieScore as number) : 500,
+      scoreAfter: after.hasEnough ? after.oddieScore : null,
+      streakBefore: before.streak, streakAfter: after.streak,
+      streakExtended: after.streak > before.streak && after.streak >= 2,
+      challengeHandle: null, // filled in below, once, batched
+      settledAt: r.closedAt,
+    });
+  }
+
+  const surfacers = await surfacersFor([...slugsNeeded]).catch(() => ({} as Record<string, SurfacerInfo>));
+  for (const c of out) c.challengeHandle = surfacers[c.slug]?.handle ?? null;
+
+  return out;
+}
+
+/**
+ * Mark celebrations as shown — the only write in this flow, and the thing that
+ * makes each resolution fire exactly once. Call this when, and only when, the
+ * client actually FINISHES showing the batch (dismissed, or swiped past the
+ * last card) — never at fetch time. A render crash before anything was shown
+ * leaves the celebration to try again next load instead of silently vanishing.
+ */
+export async function markCelebrationsSeen(rawDeviceId: string, noticeIds: number[]): Promise<void> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const ids = [...new Set(noticeIds)].filter((n) => Number.isInteger(n));
+  if (!ids.length) return;
+  if (!PERSISTENT) {
+    const now = new Date().toISOString();
+    for (const n of memNotices) if (n.deviceId === deviceId && ids.includes(n.id)) n.seenAt = now;
+    return;
+  }
+  await ensureSchema();
+  await db().query(
+    `UPDATE notice SET seen_at = now() WHERE device_id = $1 AND id = ANY($2) AND seen_at IS NULL`,
+    [deviceId, ids],
+  );
 }
 
 export interface MarketCaller {
@@ -2665,6 +2814,7 @@ function pushNoticeMem(deviceId: string, slug: string, question: string, outcome
     body: noticeBody(question, outcome, side, entryPct, proceeds, crowd),
     delta: won ? proceeds : null, slug, callId, at: new Date().toISOString(),
     oddsPct: Math.max(1, Math.min(99, Math.round(entryPct))), outcome,
+    seenAt: null,
   });
 }
 
