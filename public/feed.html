@@ -2636,6 +2636,13 @@ async function renderHome(){
     wrap.appendChild(row);
   }
 
+  // Live activity, Recently settled, Top callers, and the featured/first-call
+  // markets are each built into a DETACHED fragment below (never appended to
+  // `wrap` directly) so the SAME section-building code can be placed in either
+  // order without duplicating a single line of it — only the final append
+  // sequence, right before the how-it-works footer, differs by `newUser`.
+  const section=(target,text,id,cls)=>{const p=document.createElement("p");p.className=cls?`psec ${cls}`:"psec";p.textContent=text;if(id)p.id=id;target.appendChild(p);};
+
   // Live activity — real counters over the rolling last 24h. Any counter that is
   // zero is dropped rather than shown as "0", and if none survive the strip
   // never enters the DOM: at genuinely low volume this shows less, never
@@ -2645,31 +2652,31 @@ async function renderHome(){
     ["callsToday","calls today"],
     ["pointsWonToday","points won today"],
   ].map(([k,label])=>({label,n:Number(activity[k])||0})).filter(c=>c.n>0):[];
+  let livestripEl=null;
   if(counters.length){
-    const strip=document.createElement("div");strip.className="livestrip";
-    strip.innerHTML=counters.map(c=>
+    livestripEl=document.createElement("div");livestripEl.className="livestrip";
+    livestripEl.innerHTML=counters.map(c=>
       `<div class="lsi"><span class="lsi-n" data-to="${c.n}">0</span><span class="lsi-k">${esc(c.label)}</span></div>`).join("");
-    wrap.appendChild(strip);
     // Deferred to after the swap into the document — countUp drives rAF against
     // a live element, and the wrap isn't attached yet at this point.
-    queueMicrotask(()=>strip.querySelectorAll(".lsi-n").forEach(el=>
+    queueMicrotask(()=>livestripEl.querySelectorAll(".lsi-n").forEach(el=>
       countUp(el,Number(el.dataset.to),{duration:800})));
   }
 
-  const section=(text,id,cls)=>{const p=document.createElement("p");p.className=cls?`psec ${cls}`:"psec";p.textContent=text;if(id)p.id=id;wrap.appendChild(p);};
-
-  // PROOF, before the markets. The hero promises "see who was right"; these two
-  // sections are the only things on the page that actually demonstrate it, so
-  // they go where a cold visitor reaches them without deep scrolling. The
-  // featured markets below are 3-4 full-height cards — putting proof after them
-  // buries it a full screen down, which is exactly the "promise with no
-  // evidence" problem. Both sections render ONLY with real data behind them.
+  // PROOF: the loop completing (Recently settled) and a competition existing
+  // (Top callers). For a RETURNING player these lead the page, right after the
+  // stats strip — the hero promises "see who was right", and this is what
+  // actually demonstrates it. For a brand-new visitor (newUser) these move
+  // below the first-call section instead: proof and social layers land better
+  // AFTER a first action, not before it — see the append order below.
 
   // 1. Recently settled: the loop completing. Question, verdict, who was right.
   //    Each card ends with a bridge into playing — the moment the proof lands is
   //    the moment a spectator is most likely to take a side themselves.
+  let settledFrag=null;
   if(settled.length){
-    section("Recently settled");
+    settledFrag=document.createDocumentFragment();
+    section(settledFrag,"Recently settled");
     settled.forEach((s)=>{
       const card=document.createElement("div");
       card.className=`stl ${s.outcome}`;
@@ -2697,12 +2704,15 @@ async function renderHome(){
         ${body}
         <a class="stl-cta" href="/feed">make your own call →</a>`;
       card.querySelector(".stl-cta").onclick=(e)=>{
+        // #openmarkets is looked up on `wrap` (not the now-detached fragment it
+        // was built from) — by click time everything below has already landed
+        // in the document, in whichever order this render chose.
         const target=wrap.querySelector("#openmarkets");
         if(!target)return;           // no open markets on the page — let /feed happen
         e.preventDefault();
         scrollToEl(document.getElementById("scroller"),target);
       };
-      wrap.appendChild(card);
+      settledFrag.appendChild(card);
     });
   }
 
@@ -2711,8 +2721,10 @@ async function renderHome(){
   // page it links to can never disagree. The server sends [] when NO caller is
   // ranked yet; one ranked caller is enough to render, because "here is the
   // person to beat" is a real competition even with a single name in it.
+  let topFrag=null;
   if(topCallers.length){
-    section("Top callers");
+    topFrag=document.createDocumentFragment();
+    section(topFrag,"Top callers");
     // Hash route, same as the nav buttons — a real href so it middle-clicks and
     // right-clicks like a link, no JS interception needed.
     const box=document.createElement("a");box.className="topc";box.href="#/leaderboard";
@@ -2722,10 +2734,10 @@ async function renderHome(){
         <div class="topc-who">@${esc(r.handle)}</div>
         <div class="topc-edge">${pts(r.avgEdge)}<small>${r.closed} closed</small></div>
       </div>`).join("");
-    wrap.appendChild(box);
+    topFrag.appendChild(box);
     const more=document.createElement("a");more.className="topc-more";more.href="#/leaderboard";
     more.textContent="climb the board →";
-    wrap.appendChild(more);
+    topFrag.appendChild(more);
   }
 
   // "Open markets": a handful of live markets, tappable right there — the SAME
@@ -2736,14 +2748,18 @@ async function renderHome(){
   // prefers topicCategory over the flattened category). The label says exactly
   // what these are: it used to read "Live right now", which promised urgency
   // that a market closing in five weeks does not have.
+  let featuredFrag=null;
   if(featured.length){
+    featuredFrag=document.createDocumentFragment();
     // Stage 1 of onboarding: a visitor with zero calls, ever, gets directional
     // emphasis toward the lowest-friction first action — the header names the
     // action instead of the section, and the first card gets a restrained glow
     // (see .firstcall-cue). No modal, nothing blocking; a returning player
-    // (newUser===false) sees the exact same section as always.
+    // (newUser===false) sees the exact same section as always. Placement is
+    // ALSO keyed off this same `newUser` flag, below — the cue and the
+    // reorder are never allowed to disagree about who's new.
     // The id is the settled cards' scroll target — see the .stl-cta handler.
-    section(newUser?"Make your first call ↓":"Open markets","openmarkets",newUser?"cue":"");
+    section(featuredFrag,newUser?"Make your first call ↓":"Open markets","openmarkets",newUser?"cue":"");
     featured.forEach((m,i)=>{
       const card=buildCard(m,i);
       if(newUser&&i===0)card.classList.add("firstcall-cue");
@@ -2754,8 +2770,25 @@ async function renderHome(){
       // (silently swallowed by the pending-commit catch, which would then
       // wrongly claim "couldn't reach the server").
       card.querySelector(".nudge")?.style.setProperty("display","none","important");
-      wrap.appendChild(card);
+      featuredFrag.appendChild(card);
     });
+  }
+
+  // The actual placement decision — everything above just BUILT sections, none
+  // of it has touched `wrap` yet. A brand-new visitor gets the lowest-friction
+  // action (the cued first call) immediately after the hero/claim strip they
+  // already saw; stats/proof/social move below it. A returning player keeps
+  // today's order — proof and social lead, since they already know the loop.
+  if(newUser){
+    if(featuredFrag)wrap.appendChild(featuredFrag);
+    if(livestripEl)wrap.appendChild(livestripEl);
+    if(settledFrag)wrap.appendChild(settledFrag);
+    if(topFrag)wrap.appendChild(topFrag);
+  }else{
+    if(livestripEl)wrap.appendChild(livestripEl);
+    if(settledFrag)wrap.appendChild(settledFrag);
+    if(topFrag)wrap.appendChild(topFrag);
+    if(featuredFrag)wrap.appendChild(featuredFrag);
   }
 
   // The three-beat "how it works" — icons + a few words each, no paragraphs.
