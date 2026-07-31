@@ -35,9 +35,20 @@
     document.documentElement.dataset.theme = dark ? "dark" : "bright";
   })();
 </script>
+<!-- Brand fonts. A real <link>, NOT an @import inside the <style> below, and
+     preconnecting to BOTH hosts. The old form was the slowest possible way to
+     load a webfont: an @import is only discovered after this file's CSS has
+     been fetched and parsed, so the chain was serialised (html -> css -> google
+     css -> woff2) instead of the fetch starting with the document. And only
+     fonts.googleapis.com was preconnected — the font BINARIES come from
+     fonts.gstatic.com, whose connection therefore wasn't opened until the
+     Google stylesheet had already parsed. Both cost real time before the first
+     glyph can paint, and with display=swap every one of those milliseconds is
+     spent showing the fallback face. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
 
   /* Two families of colour, and the whole dark theme is the line between them.
    *
