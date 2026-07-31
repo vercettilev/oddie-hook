@@ -1022,6 +1022,32 @@
      one guaranteed-present element after the hero, so it's the reliable place
      to own that gap even when the claim card and featured markets are both
      absent (a signed-out cold visit with no community markets yet). */
+  /* The earning loop, one glanceable line under the hero. Sized and spaced to
+     be read in about a second and then ignored — it is a label, not a section,
+     so it gets caption-scale type and no card, panel or icons competing with
+     the hero directly above it. Wraps to two lines on very narrow screens
+     rather than shrinking below a readable size. */
+  /* Guest bar — a slim strip under the header, deliberately quiet: a status
+     someone should notice once, not an alert competing with the page. Fixed so
+     it follows across every screen (the scroller is padded by its height in
+     paintGuestBar, so it never covers content). */
+  .guestbar{position:fixed;left:0;right:0;z-index:60;display:flex;align-items:center;gap:10px;
+    padding:8px 14px;background:var(--ground-2);border-bottom:1px solid var(--hair-g)}
+  .gb-text{flex:1;min-width:0;font-family:'Nunito';font-weight:700;font-size:11.5px;
+    line-height:1.35;color:var(--muted-g)}
+  .gb-text b{font-weight:900;color:var(--on-ground)}
+  .gb-go{flex:none;font-family:'Nunito';font-weight:900;font-size:11.5px;color:#17250a;
+    background:var(--accent);border:0;border-radius:999px;padding:5px 12px;cursor:pointer}
+  .gb-x{flex:none;font-size:12px;line-height:1;color:var(--muted-g);background:none;
+    border:0;padding:4px 2px;cursor:pointer}
+  .loop3{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 8px;
+    margin:var(--sp-2) auto 0;max-width:340px}
+  .loop3-step{display:inline-flex;align-items:center;gap:6px;font-family:'Nunito';
+    font-weight:800;font-size:12px;color:var(--muted-g);white-space:nowrap}
+  .loop3-step b{display:inline-flex;align-items:center;justify-content:center;
+    width:17px;height:17px;border-radius:50%;background:var(--accent);color:#17250a;
+    font-size:10.5px;font-weight:900;flex:none}
+  .loop3-sep{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--muted-g);opacity:.5}
   .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:2px;margin:var(--sp-6) 0 0}
   .howstep{display:flex;flex-direction:column;align-items:center;gap:9px;width:84px;
     font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);line-height:1.25;color:var(--muted-g);text-align:center}
@@ -1712,6 +1738,59 @@ async function loadAuth(){
     const r=await fetch(`${API}/api/auth/me?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok)auth=await r.json();
   }catch(e){/* anonymous is the default, not the failure */}
+  paintGuestBar(); // the one place auth is known — so the bar can never go stale
+}
+
+/* --------------------------------------------------------------- guest bar --
+ * An anonymous device keeps its points, calls and score — but only in THIS
+ * browser, and nothing on screen ever said so. Someone who has never linked an
+ * account has no reason to suspect their score is not saved somewhere, which
+ * is the worst possible thing to discover late.
+ *
+ * Dismissible, but not permanently: it comes back once they have played a few
+ * more times, because the cost of losing a record grows with the size of it.
+ * Keyed off a LOCAL call counter rather than anything server-side — this is a
+ * nudge, not an accounting record, and it must work before any account exists.
+ */
+const GUEST_DISMISSED_AT="oddie_guest_dismissed_at";
+const GUEST_CALLS="oddie_guest_calls";
+const GUEST_REAPPEAR_AFTER=3;   // calls placed after a dismissal before it returns
+function guestNum(k){ try{return Number(localStorage.getItem(k))||0;}catch(e){return 0;} }
+function guestSet(k,v){ try{localStorage.setItem(k,String(v));}catch(e){} }
+/** Called once per locked call, so "actions since dismissal" is countable. */
+function bumpGuestCalls(){ guestSet(GUEST_CALLS,guestNum(GUEST_CALLS)+1); paintGuestBar(); }
+function guestBarSuppressed(){
+  let raw=null; try{raw=localStorage.getItem(GUEST_DISMISSED_AT);}catch(e){return true;}
+  if(raw===null)return false;                                   // never dismissed
+  return guestNum(GUEST_CALLS)-Number(raw) < GUEST_REAPPEAR_AFTER;
+}
+
+function paintGuestBar(){
+  const bar=document.getElementById("guestbar");
+  const scroller=document.getElementById("scroller");
+  const show=!auth.accounts.length&&!guestBarSuppressed();
+  if(!show){ bar?.remove(); if(scroller)scroller.style.paddingTop=""; return; }
+  if(bar)return;                                                // already up
+  const el=document.createElement("div");
+  el.id="guestbar";el.className="guestbar";
+  el.innerHTML=`<span class="gb-text">Playing as guest — <b>connect X or Google</b> to save your score permanently.</span>
+    <button class="gb-go" type="button">Connect</button>
+    <button class="gb-x" type="button" aria-label="Dismiss">✕</button>`;
+  document.body.appendChild(el);
+  el.querySelector(".gb-go").onclick=()=>connectSheet("Save your score permanently");
+  el.querySelector(".gb-x").onclick=()=>{
+    guestSet(GUEST_DISMISSED_AT,guestNum(GUEST_CALLS));
+    el.remove(); if(scroller)scroller.style.paddingTop="";
+  };
+  // Sits under the real header, measured rather than assumed — the header is a
+  // different height on home vs the shells — and the scroller is padded by the
+  // same amount so the bar never covers the content it is talking about.
+  const top=document.getElementById("top");
+  const y=top?Math.round(top.getBoundingClientRect().bottom):0;
+  el.style.top=`${y}px`;
+  requestAnimationFrame(()=>{
+    if(scroller&&el.isConnected)scroller.style.paddingTop=`${el.getBoundingClientRect().height}px`;
+  });
 }
 const PROV={twitter:{glyph:"𝕏",label:"Connect X",cls:"x",why:"connect your identity"},
             google:{glyph:"G",label:"Connect Google",cls:"",why:"save across devices"}};
@@ -2679,6 +2758,9 @@ function buildCard(m,i,homeLoop){
         else if(chainCount%HOME_TAG_REMINDER_CADENCE===0)renderTagReminderInterstitial(card,nextM,homeLoop,chainCount);
         else renderNextCallPreview(card,nextM,homeLoop,chainCount);
       }
+      // One more action on the clock for the guest bar's "come back after N
+      // calls" rule — counted here, at the single moment a call truly locks.
+      bumpGuestCalls();
       card.querySelector("#nudge"+i).classList.add("show");
       card.querySelector("#nudge"+i).classList.remove("hint");
     };
@@ -2876,13 +2958,19 @@ function buildCard(m,i,homeLoop){
  * at). A missing target skips its step instead of stranding the tour on an
  * empty spotlight.
  */
+// Copy rule for these three steps specifically: assume the reader has never
+// seen a prediction market, does not know what "a claim" or "a market" is as a
+// noun, and has no idea what "resolves" means. Every step is an instruction or
+// a plain consequence, in words anyone already uses. The rest of the product
+// keeps its own voice — this is the one surface written for someone 5 seconds
+// old, so it is deliberately blunter than everything around it.
 const TOUR_STEPS=[
   { find:()=>document.querySelector(".homewrap .card"),
-    text:"This is a live claim. <b>Pick a side.</b>" },
+    text:"Tap <b>YES</b> or <b>NO</b> on this question." },
   { find:()=>document.getElementById("bal")||document.querySelector(".bal"),
-    text:"Calls cost points. Win them back and more when you're right." },
+    text:"Each tap costs points. Guess right and you get more back." },
   { find:()=>document.querySelector(".herocta"),
-    text:"The real move: tag <b>@oddiefun</b> under any claim on X — <b>+50</b> when it becomes a market." },
+    text:"Seen an argument on X? Reply <b>@oddiefun</b> and get <b>+50</b> points." },
 ];
 
 function runGuidedTour(){
@@ -3035,6 +3123,18 @@ async function renderHome(){
       <p class="incentivebig"><span class="ptsnum">+${surfaceReward}</span> points every time your tag becomes a market</p>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
+    </div>
+    <!-- The earning loop, stated flat out and always on screen. The guided tour
+         explains the same thing better, but it costs three taps to get through
+         and a first-time visitor should not have to interact with anything to
+         find out what this product wants them to do. Deliberately the plainest
+         sentence on the page: no "market", no "claim", no "resolves". -->
+    <div class="loop3" role="list" aria-label="How to earn points">
+      <span class="loop3-step" role="listitem"><b>1</b>Pick YES or NO</span>
+      <span class="loop3-sep" aria-hidden="true">→</span>
+      <span class="loop3-step" role="listitem"><b>2</b>Get it right</span>
+      <span class="loop3-sep" aria-hidden="true">→</span>
+      <span class="loop3-step" role="listitem"><b>3</b>Score goes up</span>
     </div>`;
 
   // An active claim streak, as its own badge above the claim strip. Farmers grind
