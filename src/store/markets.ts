@@ -1064,6 +1064,9 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
     if (!r.handle) r.handle = await ensureHandle(r.device_id).catch(() => `#${r.device_id.slice(0, 4)}`);
   }
 
+  // See excludedLeaderboardDeviceId — the brand's own @oddiefun account never
+  // competes on a public board.
+  const excludedId = await excludedLeaderboardDeviceId();
   return rows
     .map((r) => ({
       deviceId: r.device_id,
@@ -1073,6 +1076,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
       ...reputationOf(r.edges.map(Number)),
     }))
     .filter((r): r is LeaderRow => r.avgEdge !== null)
+    .filter((r) => r.deviceId !== excludedId)
     .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.avgEdge - a.avgEdge)
     .slice(0, limit);
 }
@@ -1689,7 +1693,9 @@ export async function recentlySettled(limit = 3): Promise<SettledMarket[]> {
       // market is one person who was right, named once, at their best price.
       const best = new Map<string, MemCall>();
       for (const c of calls) {
-        if (c.exitPct !== 100 || !c.deviceId) continue;
+        // See EXCLUDED_LEADERBOARD_HANDLE — the brand's own account is never
+        // named as a winner here, even a real one.
+        if (c.exitPct !== 100 || !c.deviceId || isExcludedHandle(nameOf(c.deviceId))) continue;
         const prev = best.get(c.deviceId);
         if (!prev || c.entryPct < prev.entryPct) best.set(c.deviceId, c);
       }
@@ -1748,6 +1754,8 @@ export async function recentlySettled(limit = 3): Promise<SettledMarket[]> {
   );
   const winnersBySlug = new Map<string, SettledWinner[]>();
   for (const w of wins) {
+    // See EXCLUDED_LEADERBOARD_HANDLE — same rule as the mem branch above.
+    if (isExcludedHandle(w.handle)) continue;
     const list = winnersBySlug.get(w.slug) ?? [];
     list.push({ handle: w.handle ? w.handle.replace(/^@+/, "") : null, side: w.side, pct: Number(w.pct) });
     winnersBySlug.set(w.slug, list);
@@ -2297,6 +2305,41 @@ async function deviceForTwitterHandle(handle: string | null): Promise<string | n
     `SELECT device_id FROM device_balance WHERE lower(handle)=$1 LIMIT 1`, [h]);
   return r2[0]?.device_id ?? null;
 }
+
+/**
+ * The brand's own X account (@oddiefun) — used by the team to dogfood the
+ * product and, per public/tool.html, to post settlement replies by hand from
+ * the real account. Real activity, not a bot and not fabricated (21 closed
+ * positions, avgEdge -5.7%, net +234 tokens as of the investigation that
+ * added this exclusion — ordinary trading, not a rigged score) — but a
+ * device answering to this handle must never appear as if the brand is
+ * competing against its own users on a public standings/social surface.
+ *
+ * Keyed by HANDLE, not device id, per the product call: resolved to whichever
+ * device currently answers to it (X-linked wins over chosen, same as
+ * deviceForTwitterHandle everywhere else) so a re-link or a handle change
+ * can't quietly let it back in. Cached briefly — every leaderboard/settled
+ * read would otherwise cost an extra lookup for a value that changes rarely.
+ */
+const EXCLUDED_LEADERBOARD_HANDLE = "oddiefun";
+let excludedHandleCache: { at: number; deviceId: string | null } | null = null;
+const EXCLUDED_HANDLE_CACHE_MS = 60_000;
+async function excludedLeaderboardDeviceId(): Promise<string | null> {
+  const now = Date.now();
+  if (excludedHandleCache && now - excludedHandleCache.at < EXCLUDED_HANDLE_CACHE_MS) return excludedHandleCache.deviceId;
+  const deviceId = await deviceForTwitterHandle(EXCLUDED_LEADERBOARD_HANDLE).catch(() => null);
+  excludedHandleCache = { at: now, deviceId };
+  return deviceId;
+}
+/** Test-only: a test that changes which device answers to "oddiefun" mid-run
+ *  (chosen handle in one block, X-linked in the next) needs the exclusion to
+ *  reflect that immediately, not up to 60s stale. */
+export function _resetExcludedHandleCache(): void { excludedHandleCache = null; }
+/** Text-form check for the same exclusion, for the one call site
+ *  (recentlySettled's named winners) where a resolved handle is already in
+ *  hand and a device id isn't — avoids widening that query just to filter. */
+const isExcludedHandle = (h: string | null | undefined): boolean =>
+  !!h && h.replace(/^@+/, "").toLowerCase() === EXCLUDED_LEADERBOARD_HANDLE;
 
 /** Record who surfaced a market — once per slug (the first writer wins). Safe to
  *  call repeatedly (every reply generation does). Resolves the handle→device at
@@ -3613,7 +3656,11 @@ export async function leaderboardStreaks(limit = 20): Promise<StreakRow[]> {
     if (s.best > 0) out.push({ deviceId, handle: "", current: s.current, best: s.best });
   }
   out.sort((a, b) => b.current - a.current || b.best - a.best);
-  return withHandles(out.slice(0, limit));
+  // See excludedLeaderboardDeviceId — filtered BEFORE the slice so a real
+  // user just outside `limit` correctly backfills the excluded row's spot,
+  // rather than the board quietly returning one row short.
+  const excludedId = await excludedLeaderboardDeviceId();
+  return withHandles(out.filter((r) => r.deviceId !== excludedId).slice(0, limit));
 }
 
 export async function leaderboardWinnings(limit = 20): Promise<WinningsRow[]> {
@@ -3637,7 +3684,10 @@ export async function leaderboardWinnings(limit = 20): Promise<WinningsRow[]> {
   }
   const out = rows.map((r) => ({ deviceId: r.device_id, handle: "", net: Number(r.net), closed: r.closed }));
   out.sort((a, b) => b.net - a.net);
-  return withHandles(out.slice(0, limit));
+  // See excludedLeaderboardDeviceId — filtered before the slice, same
+  // backfill reasoning as leaderboardStreaks above.
+  const excludedId = await excludedLeaderboardDeviceId();
+  return withHandles(out.filter((r) => r.deviceId !== excludedId).slice(0, limit));
 }
 
 /** Names for board rows: X handle, else stored handle (minted on the spot). */
