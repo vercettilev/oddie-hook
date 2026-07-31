@@ -606,9 +606,9 @@
      hiding the share button above it, which stays the loudest thing here.
      A quiet callout (the same pale-wash treatment as .znote), not a second
      hero: this is a lesson, not another ask. */
-  .onboard-teach{margin-top:14px;padding:14px 16px;border:1.5px solid var(--hair-g);
+  .onboard-teach,.loop-tag-reminder{margin-top:14px;padding:14px 16px;border:1.5px solid var(--hair-g);
     border-radius:var(--r-md);background:var(--wash)}
-  :root[data-theme="dark"] .onboard-teach{background:#1c2410;border-color:#2a3318}
+  :root[data-theme="dark"] .onboard-teach,:root[data-theme="dark"] .loop-tag-reminder{background:#1c2410;border-color:#2a3318}
   .onboard-teach-body{font-family:'Nunito';font-weight:700;font-size:13px;line-height:1.5;
     color:var(--on-ground);margin:0 0 10px}
   .onboard-teach-body b{font-weight:900}
@@ -616,6 +616,14 @@
     font-weight:600;font-size:13.5px;color:#fff;background:#000;border-radius:999px;
     padding:9px 16px;text-decoration:none}
   .onboard-teach-cta .glyphx{font-size:14px;line-height:1}
+  /* The loop's cadenced tag reminder (see HOME_TAG_REMINDER_CADENCE) reuses
+     the teaching card's exact body/CTA styling above — same lesson, same
+     visual language — and adds one thing: a way to skip it and keep the
+     chain going, since unlike the one-time teaching moment this one recurs
+     and must never read as blocking play. */
+  .keep-playing-cta{display:block;margin-top:10px;font-family:'Nunito';font-weight:800;
+    font-size:12.5px;color:#4d7a1a;background:none;border:0;padding:0;cursor:pointer}
+  :root[data-theme="dark"] .keep-playing-cta{color:var(--accent)}
 
   /* --- sharing ----------------------------------------------------------------
    * Two entry points. The card icon is discovery ("check this out"); the button
@@ -2198,6 +2206,13 @@ function metaRowHtml(m,yes){
 // Feed" instead of pulling another. Keeps Home from trying to replicate an
 // infinite feed — it's a taste of the loop, not a replacement for Feed.
 const HOME_LOOP_CAP=5;
+// Every Nth advance in the chain, a tag reminder interstitial takes the next
+// preview's place instead (see renderTagReminderInterstitial) — the loop's
+// whole point is bringing attention back to tagging real claims on X, not
+// just chaining in-app taps forever. chainCount%CADENCE===0 fires it after
+// locks 2 and 4 for the default cap of 5, never on the very last slot (the
+// cap check runs first and wins).
+const HOME_TAG_REMINDER_CADENCE=2;
 
 /** Home's continuous-play loop, step 2: the "up next" preview appended after
  *  a locked call's CTAs (share / connect / tag-teaching — see lockedUI).
@@ -2237,6 +2252,31 @@ function renderNextCallPreview(anchor,nextM,homeLoop,chainCount){
     if(timerEl)timerEl.textContent=`in ${secsLeft}s`;
   },1000);
   prev.onclick=advance;
+}
+
+/** Home's continuous-play loop, cadenced step: fires INSTEAD of the normal
+ *  next-call preview every HOME_TAG_REMINDER_CADENCE locks — the loop must
+ *  keep steering attention back to tagging real claims on X, not read as
+ *  pure in-app consumption. `nextM` is the SAME already-reserved market the
+ *  normal preview would have shown; tapping "keep playing" reveals it
+ *  directly (no redundant preview-then-card step). Deliberately NOT
+ *  auto-advancing like the regular preview — this is the one deliberate
+ *  pause in the loop, not another fast beat, so it waits for an explicit tap. */
+function renderTagReminderInterstitial(anchor,nextM,homeLoop,chainCount){
+  const el=document.createElement("div");
+  el.className="loop-tag-reminder";
+  el.innerHTML=`<p class="onboard-teach-body">🔥 On a roll — tag a real claim on X and earn <b>+50</b> when it becomes a market.</p>
+    <a class="onboard-teach-cta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
+      <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
+    <button type="button" class="keep-playing-cta">keep playing →</button>`;
+  anchor.after(el);
+  el.querySelector(".keep-playing-cta").onclick=()=>{
+    const card=buildCard(nextM,homeLoop.ctx.nextIdx(),{ctx:homeLoop.ctx,chainCount:chainCount+1});
+    card.querySelector(".nudge")?.style.setProperty("display","none","important");
+    card.classList.add("enter");
+    el.replaceWith(card);
+    scrollToEl(document.getElementById("scroller"),card,{offset:20});
+  };
 }
 
 /** Home's continuous-play loop, end state: the chain hit HOME_LOOP_CAP or the
@@ -2468,8 +2508,13 @@ function buildCard(m,i,homeLoop){
       if(homeLoop){
         const chainCount=homeLoop.chainCount;
         const nextM=chainCount<homeLoop.ctx.cap?homeLoop.ctx.pull():null;
-        if(nextM)renderNextCallPreview(card,nextM,homeLoop,chainCount);
-        else renderFeedFallback(card);
+        if(!nextM)renderFeedFallback(card);
+        // Cadenced tag reminder instead of the usual preview — see
+        // HOME_TAG_REMINDER_CADENCE. The cap check above always wins: this
+        // never fires on the last slot, where there's nothing left to
+        // "keep playing" into anyway.
+        else if(chainCount%HOME_TAG_REMINDER_CADENCE===0)renderTagReminderInterstitial(card,nextM,homeLoop,chainCount);
+        else renderNextCallPreview(card,nextM,homeLoop,chainCount);
       }
       card.querySelector("#nudge"+i).classList.add("show");
       card.querySelector("#nudge"+i).classList.remove("hint");
