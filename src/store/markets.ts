@@ -209,6 +209,11 @@ ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS last_seen_rank integer;
 -- beat tied to the device, not a replayable event.
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS tag_teaching_seen_at timestamptz;
 
+-- Whether this device has ever been shown the first-visit guided tour (the
+-- 3-step in-page spotlight) — see claimGuidedTour. Same one-shot-ever shape
+-- as tag_teaching_seen_at above; both go through claimOnceFlag.
+ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS tour_seen_at timestamptz;
+
 -- Real notifications: one row per thing that actually happened to this device's
 -- stream (a settlement, for now). Append-only; the UI reads, never writes.
 CREATE TABLE IF NOT EXISTS notice (
@@ -1982,21 +1987,24 @@ export async function rankMovementFor(rawDeviceId: string): Promise<RankMovement
 }
 
 const memTagTeachingSeen = new Set<string>();
+const memTourSeen = new Set<string>();
 
 /**
- * Stage 2 of new-user onboarding: "now the real move — tag @oddiefun on X."
- * Shown once, ever, right after a device's first-ever call locks. The read IS
- * the mark-seen — same one-shot contract as rankMovementFor above — so a
- * client only ever needs to call this once (right after a firstEver:true
- * placeCall) and trust the boolean it gets back, with no separate "mark seen"
- * round trip and no way to accidentally show it twice from a retry or a
- * double-render.
+ * The shared "show this exactly once, ever, per device" primitive behind every
+ * one-shot onboarding beat. The read IS the mark-seen — same contract as
+ * rankMovementFor above — so a client only ever needs to call once and trust
+ * the boolean it gets back, with no separate "mark seen" round trip and no way
+ * to show it twice from a retry, a double-render, or two racing tabs.
+ *
+ * `column` is a caller-supplied literal, never user input — it is interpolated
+ * into the SQL because Postgres cannot parameterise an identifier. Every call
+ * site below passes a hardcoded column name.
  */
-export async function claimTagTeachingMoment(rawDeviceId: string): Promise<boolean> {
+async function claimOnceFlag(rawDeviceId: string, column: string, memSeen: Set<string>): Promise<boolean> {
   const deviceId = await resolveDevice(rawDeviceId);
   if (!PERSISTENT) {
-    if (memTagTeachingSeen.has(deviceId)) return false;
-    memTagTeachingSeen.add(deviceId);
+    if (memSeen.has(deviceId)) return false;
+    memSeen.add(deviceId);
     return true;
   }
   await ensureSchema();
@@ -2005,12 +2013,31 @@ export async function claimTagTeachingMoment(rawDeviceId: string): Promise<boole
   // that's what makes this atomic under a real race, not just single-threaded
   // mem-mode: two concurrent requests can't both win.
   const { rows } = await db().query(
-    `UPDATE device_balance SET tag_teaching_seen_at = now()
-       WHERE device_id = $1 AND tag_teaching_seen_at IS NULL
+    `UPDATE device_balance SET ${column} = now()
+       WHERE device_id = $1 AND ${column} IS NULL
        RETURNING 1`,
     [deviceId],
   );
   return rows.length > 0;
+}
+
+/**
+ * Stage 2 of new-user onboarding: "now the real move — tag @oddiefun on X."
+ * Shown once, ever, right after a device's first-ever call locks.
+ */
+export async function claimTagTeachingMoment(rawDeviceId: string): Promise<boolean> {
+  return claimOnceFlag(rawDeviceId, "tag_teaching_seen_at", memTagTeachingSeen);
+}
+
+/**
+ * The first-visit guided tour (3-step in-page spotlight). Claimed by the
+ * client on a cold Home render when the device is ALSO newUser — this flag
+ * alone decides "already toured", the newUser check decides "worth touring
+ * at all", and both must pass. Once claimed the tour never fires again, even
+ * if the device somehow reads as new later.
+ */
+export async function claimGuidedTour(rawDeviceId: string): Promise<boolean> {
+  return claimOnceFlag(rawDeviceId, "tour_seen_at", memTourSeen);
 }
 
 /** Is this device inside the founding cohort (one of the first wallets)? */

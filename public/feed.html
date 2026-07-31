@@ -392,6 +392,13 @@
   .take{font-size:min(35px,9vw);font-weight:600;line-height:1.07;letter-spacing:-.025em;
     color:var(--on-ground);margin:12px 0 14px}
   .social{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:12px 0 0;min-height:16px}
+  /* The upside, at the moment of decision. This line renders during the 5s
+     undo window — BEFORE the call is final — so it leads with what they stand
+     to win rather than restating what they staked. Full-strength ink and its
+     own line: it's the reason to go through with it, not a caption. */
+  .social .prepay{display:block;color:var(--on-ground);font-size:13.5px;margin-bottom:7px}
+  .social .prepay b{font-weight:900}
+  .social .prepay .prepay-mult{color:var(--muted-g);font-weight:700}
   /* the 5s undo window after a one-tap call: undo is a real button, change-amount a quiet link */
   .social .undo{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--ink);
     background:var(--wash);border:2.5px solid var(--ink);border-radius:999px;
@@ -478,10 +485,28 @@
   @keyframes enterUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
   .enter{animation:enterUp .42s cubic-bezier(.2,.7,.3,1) backwards}
 
+  /* The continuous-play chain's card swap — deliberately NOT .enter. A chain
+     advance is a snap, not an arrival: it travels further (a real slide, not a
+     10px settle), lands faster (.28s vs .42s), and overshoots slightly before
+     settling so it reads as spring-loaded rather than faded-in. Home's chain is
+     the only place this is used; every other entrance stays on .enter so the
+     rest of the product still moves as one system. */
+  @keyframes snapIn{
+    0%{opacity:0;transform:translateY(30px) scale(.98)}
+    55%{opacity:1;transform:translateY(-4px) scale(1.006)}
+    100%{opacity:1;transform:translateY(0) scale(1)}
+  }
+  .snap-in{animation:snapIn .28s cubic-bezier(.22,1.15,.36,1) backwards}
+  /* The swipe-up exit is driven entirely from JS (inline transform/opacity, so
+     it can track the finger frame by frame) — see attachSwipeUp. Nothing to
+     declare here; the class exists only so the gesture is greppable from CSS. */
+  .nextcall-prev{touch-action:pan-y}
+
   @media (prefers-reduced-motion:reduce){
     .orow,.orow::after,.orow::before,.card{transition:none}
     .orow.locked-flash::after{animation:none;display:none}
     .enter{animation:none}
+    .snap-in{animation:none}
   }
 
   /* The balance pill keeps its pale-lime fill (a SURFACE token) in BOTH themes,
@@ -624,6 +649,49 @@
   .keep-playing-cta{display:block;margin-top:10px;font-family:'Nunito';font-weight:800;
     font-size:12.5px;color:#4d7a1a;background:none;border:0;padding:0;cursor:pointer}
   :root[data-theme="dark"] .keep-playing-cta{color:var(--accent)}
+
+  /* --- first-visit guided tour -------------------------------------------------
+   * An IN-PAGE spotlight, not a modal: the real page stays visible and in place
+   * underneath, and each step just dims everything except one element. The dim
+   * is drawn by the spotlight's own giant box-shadow rather than a separate
+   * full-screen panel — that's what cuts a real hole (the highlighted element
+   * shows through at full brightness) instead of laying a translucent sheet
+   * over everything including the thing being pointed at.
+   *
+   * The dim DOES swallow taps on purpose: mid-tour, a stray tap on the
+   * spotlighted market card would place a real call. Only the tooltip's own
+   * buttons are interactive. */
+  /* FOUR dim panels around the target, not one panel with a box-shadow "hole".
+     The box-shadow trick only works if the dim reliably paints above the page,
+     and here it doesn't: the fixed header and the market cards (will-change:
+     transform, so each is its own stacking context) both painted straight
+     through it. Four panels leave a real gap that nothing has to out-stack. */
+  .tour-mask{position:fixed;background:rgba(0,0,0,.72);z-index:9000;pointer-events:none;
+    transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease}
+  .tour-catch{position:fixed;inset:0;z-index:9001}  /* swallows taps, incl. through the gap */
+  .tour-ring{position:fixed;z-index:9002;border-radius:var(--r-md);pointer-events:none;
+    box-shadow:0 0 0 3px var(--accent);
+    transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease}
+  .tour-tip{position:fixed;z-index:9003;max-width:300px;
+    border:2px solid var(--card-line);border-radius:var(--r-md);background:var(--card-surface);
+    box-shadow:var(--card-shadow);padding:14px 16px}
+  .tour-step{font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--muted-g);margin:0 0 6px}
+  .tour-text{font-family:'Nunito';font-weight:700;font-size:13.5px;line-height:1.5;
+    color:var(--on-ground);margin:0 0 12px}
+  .tour-text b{font-weight:900}
+  .tour-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .tour-next{font-family:'Fredoka';font-weight:600;font-size:13.5px;color:#17250a;
+    background:var(--accent);border:2px solid #000;border-radius:999px;
+    padding:8px 16px;cursor:pointer}
+  .tour-skip{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g);
+    background:none;border:0;padding:4px;cursor:pointer}
+  /* A step that also SCROLLS the page must not glide: the ring would animate
+     across the viewport while the content moves under it, and for ~200ms it
+     sits over whatever happens to be passing by. Jump instead, glide only
+     when the page stayed put (a resize, say). */
+  .tour-mask.nojump,.tour-ring.nojump{transition:none}
+  @media (prefers-reduced-motion:reduce){ .tour-mask,.tour-ring{transition:none} }
 
   /* --- sharing ----------------------------------------------------------------
    * Two entry points. The card icon is discovery ("check this out"); the button
@@ -2214,6 +2282,50 @@ const HOME_LOOP_CAP=5;
 // cap check runs first and wins).
 const HOME_TAG_REMINDER_CADENCE=2;
 
+/** Replace a chain element (the preview, or the tag-reminder interstitial)
+ *  with the next real, playable card. The ONE place the chain's card swap
+ *  happens, so tap / auto-advance / swipe / "keep playing" can never drift
+ *  apart on how the next card enters or where the page lands afterwards. */
+function swapToNextCard(el,nextM,homeLoop,chainCount){
+  const card=buildCard(nextM,homeLoop.ctx.nextIdx(),{ctx:homeLoop.ctx,chainCount:chainCount+1});
+  // Same non-swipeable-list suppression the initial featured cards get — a
+  // loop card is just as static a slot as they are, never a swipeable one.
+  card.querySelector(".nudge")?.style.setProperty("display","none","important");
+  card.classList.add("snap-in");
+  el.replaceWith(card);
+  // Scroll duration matched to the snap, not the page's leisurely default:
+  // a 520ms glide under a 280ms card animation reads as two separate motions.
+  scrollToEl(document.getElementById("scroller"),card,{offset:20,duration:260});
+}
+
+/** Swipe-up to advance, for touch. Tracks the finger while the gesture is in
+ *  progress (so it feels attached rather than merely triggered), commits past
+ *  a short threshold, and springs back otherwise. Everything is inline style
+ *  rather than a class: the follow-the-finger transform has to win over any
+ *  stylesheet rule, and mixing the two is how that kind of thing silently
+ *  stops working. Passive listeners throughout — this never blocks scrolling,
+ *  and a downward drag is left alone entirely so the page still scrolls. */
+function attachSwipeUp(el,onCommit){
+  const THRESHOLD=40, MAX_FOLLOW=70;
+  let startY=null,dy=0;
+  el.addEventListener("touchstart",(e)=>{startY=e.touches[0].clientY;dy=0;},{passive:true});
+  el.addEventListener("touchmove",(e)=>{
+    if(startY===null)return;
+    dy=e.touches[0].clientY-startY;
+    if(dy<0)el.style.transform=`translateY(${Math.max(dy,-MAX_FOLLOW)}px)`;
+  },{passive:true});
+  el.addEventListener("touchend",()=>{
+    if(startY===null)return;
+    const committed=dy<-THRESHOLD;
+    startY=null;
+    if(!committed){el.style.transform="";return;}   // spring back
+    if(REDUCE_MOTION){onCommit();return;}
+    el.style.transition="transform .16s ease-in, opacity .16s ease-in";
+    el.style.transform=`translateY(-${MAX_FOLLOW}px)`;el.style.opacity="0";
+    setTimeout(onCommit,140);
+  },{passive:true});
+}
+
 /** Home's continuous-play loop, step 2: the "up next" preview appended after
  *  a locked call's CTAs (share / connect / tag-teaching — see lockedUI).
  *  `nextM` is already pulled/reserved from the shared pool by the time this
@@ -2234,16 +2346,7 @@ function renderNextCallPreview(anchor,nextM,homeLoop,chainCount){
   const advance=()=>{
     if(advanced)return; advanced=true;
     clearInterval(tickId);
-    const card=buildCard(nextM,homeLoop.ctx.nextIdx(),{ctx:homeLoop.ctx,chainCount:chainCount+1});
-    // Same non-swipeable-list suppression the initial featured cards get
-    // (see the featured section below) — a loop card is just as static a
-    // slot as they are, never a swipeable one.
-    card.querySelector(".nudge")?.style.setProperty("display","none","important");
-    card.classList.add("enter");
-    prev.replaceWith(card);
-    // The loop's whole point is never hunting for the next one — bring it
-    // into view instead of leaving the user to scroll down and find it.
-    scrollToEl(document.getElementById("scroller"),card,{offset:20});
+    swapToNextCard(prev,nextM,homeLoop,chainCount);
   };
   const tickId=setInterval(()=>{
     if(!prev.isConnected){clearInterval(tickId);return;} // navigated away mid-countdown
@@ -2252,6 +2355,11 @@ function renderNextCallPreview(anchor,nextM,homeLoop,chainCount){
     if(timerEl)timerEl.textContent=`in ${secsLeft}s`;
   },1000);
   prev.onclick=advance;
+  // Swipe-up as an alternative to tapping — the gesture the feed already
+  // trains, reused for the chain. The preview tracks the finger while the
+  // swipe is in progress so it feels attached rather than triggered, then
+  // hands off to the same `advance` the tap and the timer use.
+  attachSwipeUp(prev,advance);
 }
 
 /** Home's continuous-play loop, cadenced step: fires INSTEAD of the normal
@@ -2270,13 +2378,10 @@ function renderTagReminderInterstitial(anchor,nextM,homeLoop,chainCount){
       <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
     <button type="button" class="keep-playing-cta">keep playing →</button>`;
   anchor.after(el);
-  el.querySelector(".keep-playing-cta").onclick=()=>{
-    const card=buildCard(nextM,homeLoop.ctx.nextIdx(),{ctx:homeLoop.ctx,chainCount:chainCount+1});
-    card.querySelector(".nudge")?.style.setProperty("display","none","important");
-    card.classList.add("enter");
-    el.replaceWith(card);
-    scrollToEl(document.getElementById("scroller"),card,{offset:20});
-  };
+  // Same swap the preview uses, so the card lands identically either way.
+  // Deliberately NOT swipe-enabled: this beat is the loop's one intentional
+  // pause, and a gesture that skips it in a flick would undo the point of it.
+  el.querySelector(".keep-playing-cta").onclick=()=>swapToNextCard(el,nextM,homeLoop,chainCount);
 }
 
 /** Home's continuous-play loop, end state: the chain hit HOME_LOOP_CAP or the
@@ -2639,8 +2744,14 @@ function buildCard(m,i,homeLoop){
     };
     const pendingUI=()=>{
       const {s,stake,left}=pending;
+      // The SAME payout math the locked state uses (stake * 100 / entry price),
+      // shown here — during the undo window, before anything is final — so the
+      // upside is visible at the moment of decision rather than only after it.
+      // This used to open "Locked — …", which read as already-committed even
+      // though the whole point of this window is that it isn't yet.
       const win=Math.round(stake*100/(s==="yes"?yes:no));
-      soc.innerHTML=`Locked — ${stake} on ${s.toUpperCase()}, pays ${win}. `
+      soc.innerHTML=`<span class="prepay"><b>${stake} points → wins ${win}</b> if ${s.toUpperCase()} is right`
+        +` <span class="prepay-mult">(${(win/stake).toFixed(1)}×)</span></span>`
         +`<button class="undo">undo (${left})</button>`
         +`<button class="chgamt">change amount</button>`;
       soc.querySelector(".undo").onclick=()=>{cancelPending();clearPendingUI();};
@@ -2691,6 +2802,127 @@ function buildCard(m,i,homeLoop){
     y.onclick=()=>tap("yes");
     nb.onclick=()=>tap("no");
     return card;
+}
+
+/* ------------------------------------------------- first-visit guided tour --
+ * Three steps, in-page, once ever per device. Each step dims the page and
+ * spotlights ONE real element that is already on screen — no mock UI, no
+ * separate window, and the page underneath never moves except to scroll the
+ * target into view. The server's claimGuidedTour is the only gate that decides
+ * "has this device toured" (see /api/onboarding/tour-seen); this file just
+ * renders whatever that says.
+ *
+ * Each target is resolved lazily, at the moment its step runs, rather than
+ * captured up front: Home renders asynchronously and a step's element may not
+ * exist at all (a cold instance with no featured markets has no card to point
+ * at). A missing target skips its step instead of stranding the tour on an
+ * empty spotlight.
+ */
+const TOUR_STEPS=[
+  { find:()=>document.querySelector(".homewrap .card"),
+    text:"This is a live claim. <b>Pick a side.</b>" },
+  { find:()=>document.getElementById("bal")||document.querySelector(".bal"),
+    text:"Calls cost points. Win them back and more when you're right." },
+  { find:()=>document.querySelector(".herocta"),
+    text:"The real move: tag <b>@oddiefun</b> under any claim on X — <b>+50</b> when it becomes a market." },
+];
+
+function runGuidedTour(){
+  const scroller=document.getElementById("scroller");
+  const catcher=document.createElement("div");catcher.className="tour-catch";
+  const ring=document.createElement("div");ring.className="tour-ring";
+  const tip=document.createElement("div");tip.className="tour-tip";
+  // Four dim panels (top/right/bottom/left of the target) rather than one
+  // panel with a hole punched in it — see .tour-mask for why.
+  const masks=[0,1,2,3].map(()=>{
+    const m=document.createElement("div");m.className="tour-mask";
+    document.body.appendChild(m);return m;
+  });
+  document.body.appendChild(catcher);
+  document.body.appendChild(ring);
+  document.body.appendChild(tip);
+
+  let idx=0, current=null, done=false;
+  const PAD=8;
+  const end=()=>{
+    if(done)return; done=true;
+    window.removeEventListener("resize",reposition);
+    masks.forEach((m)=>m.remove());
+    catcher.remove();ring.remove();tip.remove();
+  };
+  const reposition=()=>{ if(current&&current.isConnected)paint(); };
+  const box=(el,left,top,width,height)=>{
+    el.style.left=`${left}px`;el.style.top=`${top}px`;
+    el.style.width=`${Math.max(0,width)}px`;el.style.height=`${Math.max(0,height)}px`;
+  };
+
+  const paint=()=>{
+    const r=current.getBoundingClientRect();
+    const W=window.innerWidth, H=window.innerHeight;
+    // The gap the four panels leave open, clamped to the viewport so a target
+    // flush against an edge doesn't produce a negative-size panel.
+    const gt=Math.max(0,r.top-PAD), gl=Math.max(0,r.left-PAD);
+    const gb=Math.min(H,r.bottom+PAD), gr=Math.min(W,r.right+PAD);
+    box(masks[0], 0,  0,  W,      gt);        // above
+    box(masks[1], 0,  gb, W,      H-gb);      // below
+    box(masks[2], 0,  gt, gl,     gb-gt);     // left
+    box(masks[3], gr, gt, W-gr,   gb-gt);     // right
+    box(ring, gl, gt, gr-gl, gb-gt);
+    const isLast=idx===TOUR_STEPS.length-1;
+    tip.innerHTML=`<p class="tour-step">Step ${idx+1} of ${TOUR_STEPS.length}</p>
+      <p class="tour-text">${TOUR_STEPS[idx].text}</p>
+      <div class="tour-row">
+        <button class="tour-skip" type="button" aria-label="Skip the tour">✕ skip</button>
+        <button class="tour-next" type="button">${isLast?"start playing →":"next"}</button>
+      </div>`;
+    tip.querySelector(".tour-skip").onclick=end;
+    tip.querySelector(".tour-next").onclick=()=>{ idx++; idx<TOUR_STEPS.length?show():end(); };
+    // Below the spotlight when it fits, else above it — measured AFTER the
+    // innerHTML swap so offsetHeight reflects this step's actual text length.
+    const h=tip.offsetHeight, below=r.bottom+PAD+12;
+    tip.style.top=`${below+h<window.innerHeight-12?below:Math.max(12,r.top-PAD-12-h)}px`;
+    tip.style.left=`${Math.min(Math.max(12,r.left-PAD),Math.max(12,window.innerWidth-tip.offsetWidth-12))}px`;
+  };
+
+  const show=()=>{
+    // Skip past any step whose target isn't on this page.
+    while(idx<TOUR_STEPS.length&&!TOUR_STEPS[idx].find())idx++;
+    if(idx>=TOUR_STEPS.length)return end();
+    current=TOUR_STEPS[idx].find();
+    // Bring it into view before measuring. Instant, not smooth: the spotlight
+    // is positioned from a rect measured one frame later, and a 500ms smooth
+    // scroll would still be moving when that measurement happens.
+    const r=current.getBoundingClientRect();
+    const before=scroller?scroller.scrollTop:0;
+    if(scroller&&scroller.contains(current)&&(r.top<80||r.bottom>window.innerHeight-40)){
+      scroller.scrollTop+=r.top-window.innerHeight*0.3;
+    }
+    // If the page moved, jump the ring rather than gliding it — see .nojump.
+    const moved=scroller&&scroller.scrollTop!==before;
+    const anim=[...masks,ring];
+    if(moved)anim.forEach((el)=>el.classList.add("nojump"));
+    requestAnimationFrame(()=>{
+      paint();
+      // Restore the glide one frame AFTER the jump has been painted, so the
+      // next non-scrolling step still animates between targets.
+      if(moved)requestAnimationFrame(()=>anim.forEach((el)=>el.classList.remove("nojump")));
+    });
+  };
+
+  window.addEventListener("resize",reposition);
+  show();
+}
+
+/** Ask the server whether this device has ever been toured; run it if not.
+ *  Only ever called for a device /api/home already reported as newUser, so the
+ *  two gates are AND-ed: "new enough to tour" and "not toured yet". */
+async function maybeGuidedTour(){
+  try{
+    const r=await fetch(`${API}/api/onboarding/tour-seen`,{method:"POST",
+      headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+    const j=await r.json().catch(()=>({}));
+    if(j.show)runGuidedTour();
+  }catch(e){/* no tour this load; nothing else depends on it */}
 }
 
 /* ------------------------------------------------------------------ home --
@@ -2983,6 +3215,12 @@ async function renderHome(){
   // scroll position mid-layout on some engines, so this is the belt to the
   // suspenders above, not a duplicate of it.
   scroller.scrollTop=0; window.scrollTo(0,0);
+
+  // First-visit guided tour — only for a device the server just told us is
+  // new, and only if it has never been toured (that second gate lives in
+  // claimGuidedTour). Deferred past the entrance stagger above so the
+  // spotlight measures cards at their settled position, not mid-animation.
+  if(newUser)setTimeout(maybeGuidedTour,420);
 }
 
 /**

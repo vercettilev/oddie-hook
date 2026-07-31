@@ -1,6 +1,7 @@
-// Two-stage new-user onboarding — isNewUserFor (stage 1's gate), placeCall's
-// firstEver flag, and claimTagTeachingMoment (stage 2's one-shot gate) —
-// against the real store on the in-memory backend.
+// New-user onboarding — isNewUserFor (stage 1's gate), placeCall's firstEver
+// flag, claimTagTeachingMoment (stage 2's one-shot gate), and claimGuidedTour
+// (the first-visit tour's one-shot gate) — against the real store on the
+// in-memory backend.
 //
 // Run with: npm run test-onboarding
 
@@ -11,6 +12,7 @@ if (process.env.DATABASE_URL) {
 
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, isNewUserFor, claimTagTeachingMoment,
+  claimGuidedTour,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 import type { PlaceResult } from "../src/store/markets.js";
@@ -85,6 +87,29 @@ console.log("\nclaimTagTeachingMoment: shown once, ever, per device");
   // see the block above — but the server-side gate must not depend on the
   // client getting that right), the persisted flag alone must still refuse it.
   check("a stray extra claim call is refused regardless of what the client believed", await claimTagTeachingMoment(seq) === false);
+}
+
+console.log("\nclaimGuidedTour: the first-visit tour fires once, ever, per device");
+{
+  const dev = DEV(7);
+  check("a fresh device gets the tour", await claimGuidedTour(dev) === true);
+  check("a reload (second claim, same device) does NOT re-fire it", await claimGuidedTour(dev) === false);
+  check("...and neither does a third", await claimGuidedTour(dev) === false);
+
+  const other = DEV(8);
+  check("a different device gets its own tour", await claimGuidedTour(other) === true);
+  check("...and is then spent too", await claimGuidedTour(other) === false);
+}
+
+console.log("\nthe two one-shot flags are independent — one never consumes the other");
+{
+  const dev = DEV(9);
+  check("the tour claim succeeds", await claimGuidedTour(dev) === true);
+  // Different column, different flag: taking the tour must not silently spend
+  // this device's (later, unrelated) tag-teaching moment.
+  check("the tag-teaching moment is still available afterwards", await claimTagTeachingMoment(dev) === true);
+  check("...and the tour is still spent", await claimGuidedTour(dev) === false);
+  check("...and the teaching moment is now spent too", await claimTagTeachingMoment(dev) === false);
 }
 
 console.log(failures === 0 ? "\nall onboarding checks passed.\n" : `\n${failures} check(s) FAILED.\n`);
