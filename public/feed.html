@@ -411,9 +411,25 @@
     text-decoration:none;box-shadow:0 3px 0 rgba(0,0,0,.16)}
   /* the post-call belonging line */
   .socline{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--link-g);margin-top:7px}
-  /* The hero: the question commands — dramatically larger + tighter than every
-     supporting element, which all sit at ~11-13px. That gap is the hierarchy. */
-  .take{font-size:min(35px,9vw);font-weight:600;line-height:1.07;letter-spacing:-.025em;
+  /* The hero: the question commands — dramatically larger than every supporting
+     element, which all sit at ~11-13px. That size gap is the hierarchy.
+     Tuned for READING, not just for display. This is the one place in the app
+     where the brand's display treatment (very tight tracking, near-solid
+     leading, heavy weight) met a long, wrapping, multi-line sentence — and a
+     market question routinely runs five lines on a phone. Compressing letters
+     by -.025em and setting 1.07 leading is right for a logo or a "+50", and
+     actively hard to parse here, especially in a rounded face like Fredoka
+     where tight tracking makes adjacent words start to merge. So: tracking
+     relaxed to a whisper (-.005em) instead of a squeeze, leading opened to 1.3
+     so wrapped lines separate, and weight dropped 600 -> 500, which still reads
+     confident at 35px but stops a five-line question reading as a wall.
+     Deliberately scoped to `.take` alone — the logo, short headlines and the
+     stat numbers keep the display treatment that suits them.
+     The breakpoint overrides below (768px / short-phone / short-desktop) set
+     ONLY font-size; because line-height is a unitless ratio and letter-spacing
+     is in em, both scale from that automatically, so these three values apply
+     consistently everywhere without being restated. */
+  .take{font-size:min(35px,9vw);font-weight:500;line-height:1.3;letter-spacing:-.005em;
     color:var(--on-ground);margin:12px 0 14px}
   .social{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:12px 0 0;min-height:16px}
   /* The upside, at the moment of decision. This line renders during the 5s
