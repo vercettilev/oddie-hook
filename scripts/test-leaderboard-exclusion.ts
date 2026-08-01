@@ -25,6 +25,7 @@ import {
   _resetExcludedHandleCache,
 } from "../src/store/markets.js";
 import { linkAccount } from "../src/store/accounts.js";
+import { readFileSync } from "node:fs";
 import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
@@ -130,15 +131,42 @@ console.log("\nrecentlySettled(): a market oddiefun wins ALONE names nobody, not
 console.log("\nleaderboard(): the exclusion is case-insensitive and covers a real X-linked account (run LAST — see file header)");
 {
   const linked = DEV(13);
-  // The realistic shape of the actual account: X-linked with mixed-case
-  // display casing, not a chosen all-lowercase handle. deviceForTwitterHandle
-  // prefers a link over a chosen handle, so this now OUTRANKS oddie's chosen
-  // "oddiefun" for resolution purposes — exactly why this block runs last.
-  await linkAccount(linked, { provider: "twitter", uid: "oddiefun-x-uid", handle: "OddieFun", name: "oddie" });
+  // The REAL shape of a linked X account: mixed case AND carrying the "@" the
+  // provider sent (this test previously used a bare "OddieFun", which is not
+  // what actually gets stored — see the leaderboard() display note about
+  // stripping one "@" before render). deviceForTwitterHandle prefers a link
+  // over a chosen handle, so this now OUTRANKS oddie's chosen "oddiefun" for
+  // resolution purposes — exactly why this block runs last.
+  await linkAccount(linked, { provider: "twitter", uid: "oddiefun-x-uid", handle: "@OddieFun", name: "oddie" });
   _resetExcludedHandleCache();
   for (let i = 0; i < 10; i++) await pick(linked, 10, true);
   const top = await leaderboard(20);
   check("mixed-case X-linked '@OddieFun' is still excluded", !top.some((r) => r.deviceId === linked), JSON.stringify(top.filter((r) => r.deviceId === linked)));
+}
+
+/*
+ * The Postgres path cannot be exercised here — this suite refuses to run with a
+ * DATABASE_URL, so every check above runs against the in-memory store. That is
+ * exactly how the "@" bug reached production: the mem lookup strips "@" from
+ * BOTH the needle and the stored handle, so it matched and these tests passed,
+ * while the SQL stripped only the needle and matched nothing. Behaviour tests
+ * structurally cannot see that divergence, so this asserts it at the source
+ * level instead — the one check that would actually have caught it.
+ */
+console.log("\nSQL/mem parity: Postgres handle lookups must strip '@' on the STORED side too");
+{
+  const src = readFileSync(new URL("../src/store/markets.ts", import.meta.url), "utf8");
+  // Every comparison against account.handle must normalise the stored value,
+  // because a linked X handle is persisted with its "@".
+  const accountCmps = [...src.matchAll(/lower\(\s*(ltrim\(\s*)?(a\.)?handle/g)].map((m) => m[0]);
+  const unstripped = [...src.matchAll(/FROM account[\s\S]{0,200}?lower\(handle\)/g)].map((m) => m[0]);
+  check("no `lower(handle)` compared against a linked X handle without ltrim",
+    unstripped.length === 0, unstripped.join(" || "));
+  check("the account lookup normalises with ltrim(handle,'@')",
+    /provider='twitter' AND lower\(ltrim\(handle,'@'\)\)=\$1/.test(src));
+  check("the season-points handle subquery normalises the same way",
+    /SELECT lower\(ltrim\(handle,'@'\)\) FROM account WHERE provider='twitter'/.test(src));
+  check("sanity: the source was actually read", accountCmps.length > 0, String(accountCmps.length));
 }
 
 console.log(failures === 0 ? "\nall leaderboard-exclusion checks passed.\n" : `\n${failures} check(s) FAILED.\n`);

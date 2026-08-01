@@ -2324,10 +2324,22 @@ async function deviceForTwitterHandle(handle: string | null): Promise<string | n
     return null;
   }
   await ensureSchema();
+  // ltrim(handle,'@') is load-bearing: `h` above has had its "@" stripped, but
+  // a LINKED X handle is stored WITH the "@" it came from the provider with
+  // (that is why leaderboard() strips one before display — see the note there).
+  // Comparing a stripped needle against an unstripped haystack matched nothing,
+  // so every X-linked account was invisible to this lookup in Postgres while
+  // the in-memory path — which strips both sides — worked fine. That divergence
+  // is why the mem-only test suite passed while production silently 404'd every
+  // /@handle profile, dropped surfacer attribution, and let the excluded
+  // @oddiefun account straight back onto the leaderboard.
   const { rows } = await db().query<{ device_id: string }>(
     `SELECT canonical_device AS device_id FROM account
-       WHERE provider='twitter' AND lower(handle)=$1 ORDER BY created_at LIMIT 1`, [h]);
+       WHERE provider='twitter' AND lower(ltrim(handle,'@'))=$1 ORDER BY created_at LIMIT 1`, [h]);
   if (rows[0]) return rows[0].device_id;
+  // device_balance.handle is a CHOSEN handle, which validateHandle restricts to
+  // [a-z0-9_] — it can never carry an "@" — so this side is left as a plain
+  // lower(handle) to keep using the device_balance_handle_key functional index.
   const { rows: r2 } = await db().query<{ device_id: string }>(
     `SELECT device_id FROM device_balance WHERE lower(handle)=$1 LIMIT 1`, [h]);
   return r2[0]?.device_id ?? null;
@@ -2505,8 +2517,13 @@ export async function seasonPointsFor(rawDeviceId: string): Promise<number> {
     `SELECT COALESCE(SUM(amount),0) AS total FROM season_points_log spl
       WHERE spl.device_id = $1
          OR (spl.device_id IS NULL AND spl.handle IN (
-              SELECT lower(handle) FROM account WHERE provider='twitter' AND canonical_device=$1 AND handle IS NOT NULL
-              UNION SELECT lower(handle) FROM device_balance WHERE device_id=$1 AND handle IS NOT NULL))`,
+              -- Same "@" asymmetry as deviceForTwitterHandle, and the same fix:
+              -- season_points_log.handle is written already stripped and lowered
+              -- (see recordSurfacer), so an unstripped "@handle" from account
+              -- could never match it, and points attributed by handle to an
+              -- X-linked user were silently never credited to them.
+              SELECT lower(ltrim(handle,'@')) FROM account WHERE provider='twitter' AND canonical_device=$1 AND handle IS NOT NULL
+              UNION SELECT lower(ltrim(handle,'@')) FROM device_balance WHERE device_id=$1 AND handle IS NOT NULL))`,
     [deviceId]);
   return Number(rows[0]?.total ?? 0);
 }
