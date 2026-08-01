@@ -678,9 +678,20 @@
   .pfoot{margin-top:26px;padding-top:14px;border-top:1px solid var(--card-line);text-align:center}
   .csheet .cnote{color:var(--muted)}   /* inside a white sheet, the surface grey is right */
 
-  /* the one subtle line under a locked call */
-  .upsell{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--link-g);
-    background:none;border:0;padding:6px 0 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  /* Layer 1 — save-your-answer nudge. Same quiet-card weight as .znote/the
+     guest bar (a status, not another ask): copy first, one clear CTA, and an
+     explicit dismiss so "skippable" is a real control, not just something to
+     scroll past. */
+  .save-nudge{margin-top:10px;padding:11px 13px;border-radius:14px;
+    background:var(--wash);border:1.5px solid var(--hair-g)}
+  .save-nudge-body{margin:0 0 9px;font-family:'Nunito';font-weight:700;font-size:12.5px;
+    line-height:1.4;color:var(--muted-g)}
+  .save-nudge-body b{font-weight:900;color:var(--on-ground)}
+  .save-nudge-row{display:flex;align-items:center;gap:8px}
+  .save-nudge-cta{flex:none;font-family:'Nunito';font-weight:900;font-size:12.5px;color:#17250a;
+    background:var(--accent);border:0;border-radius:999px;padding:6px 14px;cursor:pointer}
+  .save-nudge-x{margin-left:auto;flex:none;font-size:13px;line-height:1;color:var(--muted-g);
+    background:none;border:0;padding:4px 2px;cursor:pointer}
 
   /* Stage 2 onboarding: the one-time "now the real move" teaching moment,
      appended after the locked call's existing CTA(s) — never replacing or
@@ -2619,13 +2630,25 @@ function buildCard(m,i,homeLoop){
       // each .after() chains off the last, so none of the three ever displaces
       // another; they're just three rows in order, all reachable by scrolling.
       let lastCta=sb;
-      // One line, once, only to someone who has not connected. An offer, not a gate.
+      // Layer 1 — "save your answer": a soft, explicitly dismissible conversion
+      // nudge, only for someone who has not connected. It rides the same
+      // "see who's right" moment (the locked line above just promised
+      // resolution), converting anonymous prediction -> account-linked
+      // reputation. An offer, not a gate: skipping it never touches the call
+      // that already landed, and no money is involved anywhere in it.
       if(!auth.accounts.length){
-        const up=document.createElement("button");
-        up.className="upsell";up.textContent=`Connect to save your predictions  +${CONNECT_BONUS} more`;
-        up.onclick=()=>connectSheet("Keep this call when you switch devices");
-        sb.after(up);
-        lastCta=up;
+        const nudge=document.createElement("div");
+        nudge.className="save-nudge";
+        nudge.innerHTML=`<p class="save-nudge-body">Want to save this call and build your track record? <b>Connect X or Google.</b></p>
+          <div class="save-nudge-row">
+            <button class="save-nudge-cta" type="button">Connect</button>
+            <button class="save-nudge-x" type="button" aria-label="Dismiss">✕</button>
+          </div>`;
+        nudge.querySelector(".save-nudge-cta").onclick=()=>connectSheet("Keep this call when you switch devices");
+        nudge.querySelector(".save-nudge-x").onclick=()=>{nudge.remove();ev("save_nudge_dismissed",{slug:m.slug});};
+        sb.after(nudge);
+        lastCta=nudge;
+        ev("save_nudge_shown",{slug:m.slug});
       }
       // Stage 2 of onboarding — "now teach them the tag." Only attempted when
       // THIS call was firstEver:true (never on a returning player's calls), and
