@@ -1049,7 +1049,10 @@
     font-size:10.5px;font-weight:900;flex:none}
   .loop3-sep{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--muted-g);opacity:.5}
   .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:2px;margin:var(--sp-6) 0 0}
-  .howstep{display:flex;flex-direction:column;align-items:center;gap:9px;width:84px;
+  /* 84 -> 94px: the labels now name the actual actions ("Reply @oddiefun on X")
+     rather than two-word jargon, and @oddiefun is a single unbreakable token
+     that needs the room. Three steps + two arrows still fit inside 390px. */
+  .howstep{display:flex;flex-direction:column;align-items:center;gap:9px;width:94px;
     font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);line-height:1.25;color:var(--muted-g);text-align:center}
   .howstep .howico{display:flex;align-items:center;justify-content:center;width:52px;height:52px;
     border-radius:50%;background:var(--wash);border:2px solid var(--card-line);
@@ -3351,11 +3354,17 @@ async function renderHome(){
 
   // The three-beat "how it works" — icons + a few words each, no paragraphs.
   const how=document.createElement("div");how.className="howitworks";
-  how.innerHTML=`<div class="howstep"><span class="howico">🏷️</span><span>tag a claim</span></div>
+  // Same plain voice as the guided tour, and deliberately the same words: the
+  // tour says "Reply @oddiefun", "Tap YES or NO" and "guess right", so this row
+  // says exactly that too. It used to read "tag a claim / make the call / see
+  // who was right", which asked a first-time reader to already know what a
+  // "claim" is here and what "making a call" means — the two nouns the rest of
+  // onboarding just stopped using.
+  how.innerHTML=`<div class="howstep"><span class="howico">🏷️</span><span>Reply @oddiefun on X</span></div>
     <div class="howarrow">→</div>
-    <div class="howstep"><span class="howico">☝️</span><span>make the call</span></div>
+    <div class="howstep"><span class="howico">☝️</span><span>Tap YES or NO</span></div>
     <div class="howarrow">→</div>
-    <div class="howstep"><span class="howico">🏆</span><span>see who was right</span></div>`;
+    <div class="howstep"><span class="howico">🏆</span><span>See who guessed right</span></div>`;
   wrap.appendChild(how);
 
   // The feed is a destination now, not the default — one quiet link down.
