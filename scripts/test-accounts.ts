@@ -10,7 +10,7 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-import { createSlug, getWallet, placeCall, positionsFor, sellPosition, slugFor, STARTING_TOKENS } from "../src/store/markets.js";
+import { createSlug, getWallet, placeCall, positionsFor, sellPosition, slugFor, STARTING_PREDICTIONS, CALL_COST } from "../src/store/markets.js";
 import { linkAccount, accountsFor, CONNECT_BONUS } from "../src/store/accounts.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -40,9 +40,9 @@ const BOB_PHONE = "bob-phone-00001";
 
 console.log("\nan anonymous device plays, then signs in");
 {
-  await placeCall(slugFor(btc), "yes", 50, PHONE, [btc]);       // 200 -> 150
+  await placeCall(slugFor(btc), "yes", CALL_COST, PHONE, [btc]);   // 5 -> 4
   const before = (await getWallet(PHONE)).tokens;
-  check("staked 50 of its free 200", before === 150, `${before}`);
+  check("staked its one prediction", before === STARTING_PREDICTIONS - CALL_COST, `${before}`);
 
   const r = await linkAccount(PHONE, ALICE_X);
   check("the first link seeds the account", r.seeded === true);
@@ -61,9 +61,9 @@ console.log("\nan anonymous device plays, then signs in");
 
 console.log("\nthe same identity on a second browser");
 {
-  // The laptop is a brand-new device: it is born with the free starting tokens.
+  // The laptop is a brand-new device: it is born with the free starting predictions.
   const fresh = (await getWallet(LAPTOP)).tokens;
-  check("the laptop starts anonymous at 200", fresh === STARTING_TOKENS, `${fresh}`);
+  check("the laptop starts anonymous with the starting handful", fresh === STARTING_PREDICTIONS, `${fresh}`);
 
   const r = await linkAccount(LAPTOP, ALICE_X);
   check("no second bonus for the same identity", r.bonus === 0, JSON.stringify(r));
@@ -71,11 +71,13 @@ console.log("\nthe same identity on a second browser");
   check("...it points at the phone's stream", r.canonicalDevice === PHONE);
 
   const w = await getWallet(LAPTOP);
-  check("the laptop now reads the ACCOUNT's balance (250)", w.tokens === 250, `${w.tokens}`);
+  const phoneStreamBalance = STARTING_PREDICTIONS - CALL_COST + CONNECT_BONUS; // 5 - 1 + 5 = 9
+  check("the laptop now reads the ACCOUNT's balance", w.tokens === phoneStreamBalance, `${w.tokens}`);
   // The whole anti-farming rule, stated as a number: the laptop's own free
-  // starting tokens did not arrive. 250 = 150 staked-down phone + 100 bonus,
+  // starting predictions did not arrive. It reads staked-down-phone + bonus,
   // NOT the account balance plus the laptop's fresh grant, nor the fresh grant alone.
-  check("...and its own free 200 was NOT added", w.tokens !== 250 + STARTING_TOKENS && w.tokens !== STARTING_TOKENS);
+  check("...and its own free starting predictions were NOT added",
+    w.tokens !== phoneStreamBalance + STARTING_PREDICTIONS && w.tokens !== STARTING_PREDICTIONS);
 
   const pos = await positionsFor(LAPTOP, [btc]);
   check("the laptop sees the phone's open position", pos.open.length === 1, `${pos.open.length}`);
@@ -86,13 +88,18 @@ console.log("\nplay on one device shows up on the other");
   const moved = await move(btc, 44);
   const open = (await positionsFor(LAPTOP, [moved])).open[0];
   const sold = await sellPosition(open.id, LAPTOP, [moved]);   // sell from the laptop
-  check("the laptop can sell a position the phone opened", sold.ok && sold.proceeds === 56, JSON.stringify(sold));
+  // A CALL_COST-sized (1) position cashed out early: round((1/0.39) * 0.44) = 1.
+  // This is the flagged side effect of the fixed-cost redesign — cash-out lost
+  // its granularity along with variable staking (see markets.ts positionsFor's
+  // valueNow comment) — not a bug in sellPosition itself.
+  check("the laptop can sell a position the phone opened", sold.ok && sold.proceeds === 1, JSON.stringify(sold));
 
   const fromPhone = await positionsFor(PHONE, []);
   check("the phone sees it closed", fromPhone.closed.length === 1 && fromPhone.open.length === 0);
   check("...and the edge is on the account's reputation", fromPhone.overall.avgEdge === 5, `${fromPhone.overall.avgEdge}`);
   const bal = (await getWallet(PHONE)).tokens;
-  check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === 250 + 56, `${bal}`);
+  const expected = (STARTING_PREDICTIONS - CALL_COST + CONNECT_BONUS) + 1; // + the 1 just sold for
+  check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === expected, `${bal}`);
 }
 
 console.log("\na second provider on the same person");
@@ -117,7 +124,7 @@ console.log("\nsomeone else is someone else");
   const bob = await positionsFor(BOB_PHONE, []);
   check("Bob sees none of Alice's positions", bob.closed.length === 0 && bob.open.length === 0);
   const bal = (await getWallet(BOB_PHONE)).tokens;
-  check("Bob has his own 200 + 100", bal === STARTING_TOKENS + CONNECT_BONUS, `${bal}`);
+  check("Bob has his own starting handful + the connect bonus", bal === STARTING_PREDICTIONS + CONNECT_BONUS, `${bal}`);
 }
 
 console.log("\nthe bonus cannot be re-claimed by deleting devices");

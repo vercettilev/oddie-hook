@@ -12,6 +12,7 @@ if (process.env.DATABASE_URL) {
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, setHandle,
   noticesFor, notifyClosingSoon, openCallsSummaryFor,
+  _memGrant,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -32,6 +33,7 @@ const soon = (hoursOut: number) => Math.floor(Date.now() / 1000) + Math.round(ho
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const call = async (slug: string, deviceId: string, side: "yes" | "no", tokens = 10): Promise<void> => {
   const live = (await openCommunityMarkets()) as unknown as Market[];
+  _memGrant(deviceId, tokens); // see test-settlement.ts's note: production only ever stakes CALL_COST now
   const r = await placeCall(slug, side, tokens, deviceId, live);
   if (!r.ok) throw new Error(`placeCall ${slug} ${deviceId}: ${JSON.stringify(r)}`);
   await flush();

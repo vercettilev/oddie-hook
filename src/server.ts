@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, claimGuidedTour } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, claimGuidedTour, CALL_COST } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -16,7 +16,7 @@ import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
-import { proceedsFor } from "./store/economy.js";
+import { winBonus } from "./store/economy.js";
 import { mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
@@ -771,9 +771,10 @@ const deviceIdOf = (body: unknown): string | null => {
 };
 
 /**
- * Paper trading, phase 1. Virtual tokens only: every device starts with 100,
- * a call deducts its stake atomically, and nothing anywhere converts tokens to
- * or from money. The device id is the only key — no account, no PII.
+ * Paper trading, phase 1. Virtual predictions only: every device starts with a
+ * small handful (STARTING_PREDICTIONS), each call spends exactly one
+ * (CALL_COST), and nothing anywhere converts a prediction to or from money.
+ * The device id is the only key — no account, no PII.
  */
 /** The wallet: what you have, and when the game gives you more. */
 /**
@@ -927,7 +928,7 @@ app.get("/api/positions", async (req, res) => {
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   const { all } = await getMarketData();
   const [wallet, positions, streak] = await Promise.all([getWallet(deviceId), positionsFor(deviceId, all), streakFor(deviceId)]);
-  res.json({ ...positions, tokens: wallet.tokens, nextTopUpMs: wallet.nextTopUpMs, streak });
+  res.json({ ...positions, tokens: wallet.tokens, streak });
 });
 
 /**
@@ -1110,17 +1111,21 @@ app.get("/api/leaderboard", async (req, res) => {
  */
 app.post("/api/market/:slug/call", async (req, res) => {
   const side = req.body?.side;
-  const tokens = Number(req.body?.tokens ?? 0);
   const deviceId = deviceIdOf(req.body);
   if (side !== "yes" && side !== "no") return res.status(400).json({ error: "side must be yes|no" });
-  if (!Number.isInteger(tokens) || tokens <= 0 || tokens > 1_000_000) return res.status(400).json({ error: "tokens must be a positive integer" });
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   // No rope on voting: any device — anonymous or signed in — may place calls
-  // with its free points. Signing in is optional (it just attaches an identity
-  // that follows you across devices). This is what makes a seeded reply link
-  // playable the instant someone taps it.
+  // with its free predictions. Signing in is optional (it just attaches an
+  // identity that follows you across devices). This is what makes a seeded
+  // reply link playable the instant someone taps it.
+  //
+  // The stake is CALL_COST, always — never whatever the client sends. A call
+  // costs exactly one prediction; there is no picker, no amount to choose, so
+  // there is nothing here to trust the client for. (placeCall itself stays
+  // generic — internal callers and the test suite still stake arbitrary
+  // amounts — this route is the one place production enforces the flat cost.)
   const all = await pricingSet(); // venue markets + open community markets, so a community market can be entered
-  const result = await placeCall(req.params.slug, side, tokens, deviceId, all);
+  const result = await placeCall(req.params.slug, side, CALL_COST, deviceId, all);
   if (!result.ok && result.reason === "unknown-market") return res.status(404).json({ ok: false, reason: "unknown-market", error: "unknown market" });
   if (!result.ok) return res.json(result);
   // The split INCLUDING the call just placed — the post-call line's "you're
@@ -1209,7 +1214,7 @@ app.post("/api/invites/send", async (req, res) => {
     subject: "you're in — Oddie beta",
     html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:520px">
   <p style="font-size:17px;font-weight:700;margin:0 0 12px">you're in.</p>
-  <p style="margin:0 0 16px">Your spot on the Oddie beta just opened. Sign in with this Google account and you're playing — free, virtual tokens, nothing to cash out.</p>
+  <p style="margin:0 0 16px">Your spot on the Oddie beta just opened. Sign in with this Google account and you're playing — free, virtual predictions, nothing to cash out.</p>
   <p style="margin:0 0 20px"><a href="${BASE_URL}/feed?invite=1" style="display:inline-block;background:#68C6FF;color:#000;font-weight:700;border:3px solid #000;border-radius:14px;padding:10px 18px;text-decoration:none">open the feed →</a></p>
   <p style="color:#6B7A88;font-size:12.5px;margin:0">oddie · ${TAGLINE}</p>
 </div>`,
@@ -1225,7 +1230,7 @@ app.get("/api/mentions", async (_req, res) => {
     const token = r.shareToken ?? (await mintShareTokenForMention(r.callId));
     const won = r.side === r.outcome;
     const line = won
-      ? `@${r.handle} called ${r.side.toUpperCase()} at ${r.entryPct}% — resolved ${r.outcome.toUpperCase()} ✓ +${r.proceeds} tokens`
+      ? `@${r.handle} called ${r.side.toUpperCase()} at ${r.entryPct}% — resolved ${r.outcome.toUpperCase()} ✓ +${r.proceeds} predictions`
       : `@${r.handle} called ${r.side.toUpperCase()} at ${r.entryPct}% — resolved ${r.outcome.toUpperCase()}`;
     out.push({
       callId: r.callId, handle: r.handle, won, line,
@@ -1405,7 +1410,7 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   const pYes = new Set<string>(), pNo = new Set<string>();
   const positions = detail.positions.map((p) => {
     const entry = p.entryPct ?? 0;
-    const payoutIfWin = entry > 0 ? proceedsFor(p.tokens, entry, 100) : 0; // round(stake*100/entry)
+    const payoutIfWin = entry > 0 ? winBonus(entry) : 0; // what settlement will actually pay — see economy.winBonus
     if (p.side === "yes") { totalYes += p.tokens; if (p.deviceId) pYes.add(p.deviceId); payoutIfYes += payoutIfWin; if (payoutIfWin > 0) winnersYes++; }
     else { totalNo += p.tokens; if (p.deviceId) pNo.add(p.deviceId); payoutIfNo += payoutIfWin; if (payoutIfWin > 0) winnersNo++; }
     return {
@@ -1614,7 +1619,7 @@ export async function sweepSettlements(): Promise<void> {
       if (!outcome) continue; // closed-not-resolved, unlisted, or a venue hiccup: wait
       const settled = await settleMarket(slug, outcome);
       if (settled.length > 0) {
-        console.log(`[settle] ${slug} -> ${outcome}: ${settled.length} position(s), ${settled.reduce((s, x) => s + x.proceeds, 0)} tokens paid`);
+        console.log(`[settle] ${slug} -> ${outcome}: ${settled.length} position(s), ${settled.reduce((s, x) => s + x.proceeds, 0)} predictions paid`);
         await emailSettled(slug, outcome, settled);
       }
     }

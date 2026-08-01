@@ -11,6 +11,7 @@ if (process.env.DATABASE_URL) {
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, markCommunityResolved, settleMarket,
   weeklyScoreDeltaFor, rankMovementFor, seasonRankFor, _memCalls, _resetStandingsCache,
+  _memGrant,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -25,6 +26,7 @@ const mk = async (question: string, yesPct = 50): Promise<string> =>
   (await createCommunityMarket({ question, category: "Sports", yesPct, closeTime: soon() })).slug;
 async function call(slug: string, deviceId: string, side: "yes" | "no", tokens = 10): Promise<void> {
   const live = (await openCommunityMarkets()) as unknown as Market[];
+  _memGrant(deviceId, tokens); // see test-settlement.ts's note: production only ever stakes CALL_COST now
   const r = await placeCall(slug, side, tokens, deviceId, live);
   if (!r.ok) throw new Error(`placeCall ${slug} ${deviceId}: ${JSON.stringify(r)}`);
 }

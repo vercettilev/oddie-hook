@@ -10,7 +10,7 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-import { createSlug, getWallet, placeCall, positionsFor, sellPosition, leaderboard, slugFor, STARTING_TOKENS } from "../src/store/markets.js";
+import { createSlug, getWallet, placeCall, positionsFor, sellPosition, leaderboard, slugFor, STARTING_PREDICTIONS, _memGrant, winBonus } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
@@ -38,15 +38,24 @@ for (const m of [btc, cup, fed]) await createSlug(m);
 console.log("\na fresh device");
 {
   const w = await getWallet(DEV);
-  check("starts at 200 tokens", w.tokens === STARTING_TOKENS && w.tokens === 200, `${w.tokens}`);
-  check("is at the floor, so no top-up is pending", w.nextTopUpMs === null);
+  check("starts with the starting handful", w.tokens === STARTING_PREDICTIONS, `${w.tokens}`);
 }
+
+// This suite exercises sellPosition/proceedsFor across deliberately varied
+// stake sizes (50, 100, 10, 180) to prove the cash-out math still scales
+// correctly — that primitive is real, live code, unchanged by the predictions
+// redesign (see markets.ts positionsFor's valueNow comment). Production itself
+// only ever stakes CALL_COST (1) now, so no real device can reach these
+// balances; DEV is topped up here, in the test harness, specifically to keep
+// exercising that still-live math at meaningful sizes.
+_memGrant(DEV, 10_000);
 
 console.log("\ncall YES at 39, market rises to 44, sell");
 {
+  const before0 = (await getWallet(DEV)).tokens;
   const r = await placeCall(slugFor(btc), "yes", 50, DEV, [btc]);
   check("the call locks at the live price", r.ok && r.pctAt === 39, JSON.stringify(r));
-  check("the stake leaves the balance", (await getWallet(DEV)).tokens === 150);
+  check("the stake leaves the balance", (await getWallet(DEV)).tokens === before0 - 50);
 
   const moved = await priceAt(btc, 44);
   const pos = await positionsFor(DEV, [moved]);
@@ -54,13 +63,16 @@ console.log("\ncall YES at 39, market rises to 44, sell");
   check("the open position shows entry and today's price", p.entryPct === 39 && p.nowPct === 44, JSON.stringify(p));
   check("...and the edge it is currently running", p.edgeNow === 5);
   check("...and what selling would return", p.valueNow === 56, `${p.valueNow}`);
-  check("...and what holding to a win would return", p.toWin === 128, `${p.toWin}`);
+  // toWin now reads the real settlement payout (winBonus: floored at 1, capped
+  // at 10), not the old proportional share count — it must never promise more
+  // than settlement will actually pay.
+  check("...and what holding to a win would actually pay", p.toWin === winBonus(39), `${p.toWin}`);
   check("no reputation yet: nothing is closed", pos.overall.avgEdge === null);
 
   const sold = await sellPosition(p.id, DEV, [moved]);
   check("selling pays 56 tokens", sold.ok && sold.proceeds === 56, JSON.stringify(sold));
   check("...records a +5 edge", sold.ok && sold.edge === 5);
-  check("the tokens come back", (await getWallet(DEV)).tokens === 150 + 56);
+  check("the tokens come back", (await getWallet(DEV)).tokens === before0 - 50 + 56);
 
   const again = await sellPosition(p.id, DEV, [moved]);
   check("selling twice pays once", !again.ok && again.reason === "already-closed", JSON.stringify(again));
@@ -117,6 +129,7 @@ console.log("\nprovisional clears at ten");
 
 console.log("\nthe leaderboard ranks edge, not tokens");
 {
+  _memGrant(OTHER, 10_000); // same test-harness top-up as DEV, see the note above
   // A whale: its whole bankroll on one call, for a tiny edge. It must lose to the
   // established device above — the board ranks edge, not tokens won.
   const m = mk("WHALE", "Will the whale learn by July?", 40);

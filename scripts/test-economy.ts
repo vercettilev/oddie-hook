@@ -6,8 +6,8 @@
 // Run with: npm run test-economy
 
 import {
-  DAILY_TOPUP, PROVISIONAL_BELOW, STARTING_TOKENS, TOKEN_FLOOR, TOPUP_INTERVAL_MS,
-  applyTopUp, edgePts, nextTopUpIn, proceedsFor, reputationOf, sharesFor, tokenDeltaPct,
+  BONUS_CAP, BONUS_FLOOR, CALL_COST, CONNECT_BONUS, DAILY_CLAIM, PROVISIONAL_BELOW, STARTING_PREDICTIONS,
+  edgePts, proceedsFor, reputationOf, sharesFor, tokenDeltaPct, winBonus,
 } from "../src/store/economy.js";
 
 let failures = 0;
@@ -18,9 +18,12 @@ function check(name: string, ok: boolean, detail = ""): void {
 const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps;
 
 // ---------------------------------------------------------------------------
-// Shares and proceeds. The "win 2.6×" on the card and the payout on exit have
-// to be the same arithmetic, or a position is worth one thing to the feed and
-// another to Positions.
+// Shares and proceeds. This is cash-out math (sellPosition / valueNow): a
+// position priced out at whatever it is worth right now, at ANY stake size.
+// It is untouched by the predictions redesign below — the redesign only
+// changed how a call is STAKED (always CALL_COST) and how settlement PAYS
+// (winBonus, not proportional proceeds) — so this still exercises the general
+// primitive, not the fixed-cost call flow.
 // ---------------------------------------------------------------------------
 console.log("\nshares and proceeds");
 {
@@ -109,70 +112,78 @@ console.log("\nreputation falls when you are wrong");
 }
 
 // ---------------------------------------------------------------------------
-// The top-up. A player who cannot afford a single call has left the product.
+// Predictions: a small handful, spent one at a time. No passive top-up here —
+// the old floor/renewal mechanic is gone; the only ways a balance moves are
+// the fixed call cost, the daily claim, connecting an account, and winning.
 // ---------------------------------------------------------------------------
-console.log("\ntokens are renewable");
+console.log("\nthe spendable-fuel constants");
 {
-  const t0 = 1_000_000_000_000;
-  const day = TOPUP_INTERVAL_MS;
-
-  check("a new device starts at 200", STARTING_TOKENS === 200);
-
-  check("nothing is granted before the window is up", applyTopUp(0, t0, t0 + day - 1).granted === 0);
-  check("a broke device is topped up after a day", applyTopUp(0, t0, t0 + day).tokens === DAILY_TOPUP);
-  check("a device at the floor gets nothing", applyTopUp(TOKEN_FLOOR, t0, t0 + day).granted === 0);
-  check("a device above the floor is never reduced", applyTopUp(1500, t0, t0 + day).tokens === 1500);
-
-  // The window advances even when nothing was granted, so sitting rich does not
-  // bank a free grant for the moment you spend down.
-  const rich = applyTopUp(TOKEN_FLOOR, t0, t0 + day);
-  check("a full device's window still advances", rich.toppedUpAt === t0 + day);
-
-  // Waiting is not a strategy: a month away is still one grant.
-  check("thirty missed days grant 200, not 6000", applyTopUp(0, t0, t0 + 30 * day).tokens === DAILY_TOPUP);
-
-  // The grant never overshoots the floor.
-  check("a top-up is capped at the floor", applyTopUp(TOKEN_FLOOR - 50, t0, t0 + day).tokens === TOKEN_FLOOR);
-  check("...granting only the shortfall", applyTopUp(TOKEN_FLOOR - 50, t0, t0 + day).granted === 50);
-
-  check("a full device is told about no next top-up", nextTopUpIn(TOKEN_FLOOR, t0, t0) === null);
-  check("a broke device counts down a day", nextTopUpIn(0, t0, t0) === day);
-  check("...and never counts below zero", nextTopUpIn(0, t0, t0 + 5 * day) === 0);
+  check("a new device starts with a small handful", STARTING_PREDICTIONS === 5);
+  check("a call costs exactly 1, always — no variable stake", CALL_COST === 1);
+  check("the daily claim grants one full day's play", DAILY_CLAIM === 5);
+  check("connecting an account grants one full day's play, once", CONNECT_BONUS === 5);
 }
 
 // ---------------------------------------------------------------------------
-// The full cycle the product is: stake, watch, exit, be judged.
+// winBonus — the mapping approved for the redesign: bonus = clamp(round(100 /
+// entryPct), 1, 10). It rides directly on the multiplier already shown on the
+// card, so the number a user sees before calling IS the bonus, rounded. This
+// IS the entire return on a win (not a stake refund plus a bonus) — the 1
+// prediction spent to call was already deducted at call time.
 // ---------------------------------------------------------------------------
-console.log("\none device, three positions, one of them wrong");
+console.log("\nwinBonus: card multiplier, rounded, floored at 1, capped at 10");
 {
-  let balance = STARTING_TOKENS;
+  check("90% favorite win (1.1×) -> 1", winBonus(90) === 1);
+  check("77% favorite win (1.3×) -> 1", winBonus(77) === 1);
+  check("50% coin flip win (2.0×) -> 2", winBonus(50) === 2);
+  check("33% win (3.0×) -> 3", winBonus(33) === 3);
+  check("21% longshot win (4.8×) -> 5", winBonus(21) === 5, `${winBonus(21)}`);
+  check("10% true longshot win (10.0×) -> 10, the cap boundary", winBonus(10) === 10);
+  check("5% extreme longshot win (20.0×) -> 10, capped, not 20", winBonus(5) === 10);
+  check("the lowest possible entry (1%, 100×) is still capped at 10", winBonus(1) === 10);
+  check("the highest possible entry (99%) still floors at 1", winBonus(99) === 1);
+  check("BONUS_FLOOR/BONUS_CAP are exactly 1/10 — settleMarket's SQL inlines these literals", BONUS_FLOOR === 1 && BONUS_CAP === 10);
+
+  let threw = false;
+  try { winBonus(0); } catch { threw = true; }
+  check("a zero entry price is refused, not divided by", threw);
+}
+
+// ---------------------------------------------------------------------------
+// The full cycle the product now is: spend 1, watch, be judged, win a bonus
+// or nothing. This replaces the old variable-stake cycle (50/100/10-token
+// calls) — every real call now costs CALL_COST, so this is the path placeCall
+// and settleMarket actually take today.
+// ---------------------------------------------------------------------------
+console.log("\none device, three calls, one of them wrong — the real settlement path");
+{
+  let balance = STARTING_PREDICTIONS;
   const edges: number[] = [];
 
-  // 1. Call YES at 39, market drifts to 44, sell.
-  balance -= 50;
-  const win = proceedsFor(50, 39, 44);
-  balance += win; edges.push(edgePts(39, 44));
-  check("sold into a rise: 50 -> 56 tokens", win === 56, `${win}`);
+  // 1. Call YES at 39, resolves YES. A modest win.
+  balance -= CALL_COST;
+  const bonus1 = winBonus(39);
+  balance += bonus1; edges.push(edgePts(39, 100));
+  check("a 39% win pays a 3-prediction bonus (100/39 rounds to 3)", bonus1 === 3, `${bonus1}`);
 
-  // 2. Call NO at 61 (market 39% yes), market rises to 55% yes, NO now 45. Wrong.
-  balance -= 100;
-  const loss = proceedsFor(100, 61, 45);
-  balance += loss; edges.push(edgePts(61, 45));
-  check("sold into a fall: 100 -> 74 tokens", loss === 74, `${loss}`);
-  check("...and the edge is -16", edges[1] === -16);
+  // 2. Call NO at 61 (market 39% yes), resolves YES. NO loses, pays nothing.
+  balance -= CALL_COST;
+  edges.push(edgePts(61, 0));
+  check("edge on the loss is the full distance to certainty (-61)", edges[1] === -61);
 
-  // 3. Call YES at 20, held, resolves true.
-  balance -= 10;
-  const settled = proceedsFor(10, 20, 100);
-  balance += settled; edges.push(edgePts(20, 100));
-  check("held to a winning settlement: 10 -> 50 tokens", settled === 50, `${settled}`);
+  // 3. Call YES at 20, resolves YES. A longshot win.
+  balance -= CALL_COST;
+  const bonus3 = winBonus(20);
+  balance += bonus3; edges.push(edgePts(20, 100));
+  check("a 20% longshot win pays a 5-prediction bonus", bonus3 === 5, `${bonus3}`);
 
-  check("balance tracks every leg", balance === STARTING_TOKENS - 50 + 56 - 100 + 74 - 10 + 50, `${balance}`);
+  check("balance tracks every leg: 5 - 3(spent) + 3(bonus) + 0 + 5(bonus) = 10",
+    balance === STARTING_PREDICTIONS - 3 * CALL_COST + bonus1 + bonus3, `${balance}`);
 
   const rep = reputationOf(edges);
-  check("reputation averages +23 across the three", near(rep.avgEdge!, (5 - 16 + 80) / 3), `${rep.avgEdge}`);
+  check("reputation is untouched by the redesign — still pure edge, not tokens",
+    near(rep.avgEdge!, (61 - 61 + 80) / 3), `${rep.avgEdge}`);
   check("the losing leg is IN the average", rep.closed === 3);
-  check("...and dragged it below the two winners' mean", rep.avgEdge! < (5 + 80) / 2);
   check("three closed positions is still provisional", rep.provisional);
 }
 

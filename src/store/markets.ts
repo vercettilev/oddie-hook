@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import pg from "pg";
 import {
-  STARTING_TOKENS, TOKEN_FLOOR,
+  STARTING_PREDICTIONS, CALL_COST,
   DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
-  edgePts, proceedsFor, reputationOf, sharesFor,
+  edgePts, proceedsFor, reputationOf, winBonus,
   type Reputation,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
@@ -513,7 +513,7 @@ export async function getSlug(slug: string, liveMarkets: Market[] = []): Promise
 
 // --- Paper trading ----------------------------------------------------------
 
-export { STARTING_TOKENS, TOKEN_FLOOR, PROVISIONAL_BELOW } from "./economy.js";
+export { STARTING_PREDICTIONS, CALL_COST, PROVISIONAL_BELOW, winBonus } from "./economy.js";
 
 /** In-memory backend (no DATABASE_URL): dev and tests, never production. */
 interface MemCall {
@@ -542,11 +542,6 @@ export const _memCalls = memCalls;
 
 export interface Wallet {
   tokens: number;
-  floor: number;
-  /** Milliseconds until the next grant, or null when the device is at the floor. */
-  nextTopUpMs: number | null;
-  /** Tokens handed over by the top-up this very call. Zero on almost every read. */
-  granted: number;
 }
 
 /** The price of a side, right now, or null when nothing can price it. */
@@ -643,29 +638,28 @@ export const _memDeviceAccount = memDeviceAccount;
 
 /** In-memory bonus credit, for the no-DATABASE_URL path. */
 export function _memGrant(deviceId: string, tokens: number): void {
-  const cur = memBalance.get(deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: Date.now() };
+  const cur = memBalance.get(deviceId) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: Date.now() };
   memBalance.set(deviceId, { ...cur, tokens: cur.tokens + tokens });
 }
 
 /**
- * Read a device's wallet. Coins no longer accrue passively here — the daily
- * grant is an ACTIVE claim (claimStatus/claimDaily), so this only ensures the
- * row exists and reports the balance. `nextTopUpMs` stays in the shape (null)
- * so callers/clients that read it don't break; the countdown moved to the claim.
+ * Read a device's wallet. Predictions never accrue passively — the daily grant
+ * is an ACTIVE claim (claimStatus/claimDaily) — so this only ensures the row
+ * exists and reports the balance.
  */
 export async function getWallet(rawDeviceId: string): Promise<Wallet> {
   const deviceId = await resolveDevice(rawDeviceId);
 
   if (!PERSISTENT) {
-    const cur = memBalance.get(deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: Date.now() };
+    const cur = memBalance.get(deviceId) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: Date.now() };
     if (!memBalance.has(deviceId)) memBalance.set(deviceId, cur);
-    return { tokens: cur.tokens, floor: TOKEN_FLOOR, nextTopUpMs: null, granted: 0 };
+    return { tokens: cur.tokens };
   }
 
   await ensureSchema();
   await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
   const { rows } = await db().query<{ tokens: number }>(`SELECT tokens FROM device_balance WHERE device_id = $1`, [deviceId]);
-  return { tokens: rows[0].tokens, floor: TOKEN_FLOOR, nextTopUpMs: null, granted: 0 };
+  return { tokens: rows[0].tokens };
 }
 
 // --- Daily claim: the active retention hook ---------------------------------
@@ -712,7 +706,7 @@ export async function claimDaily(rawDeviceId: string): Promise<ClaimResult> {
   const deviceId = await resolveDevice(rawDeviceId);
   const now = Date.now();
   if (!PERSISTENT) {
-    const bal = memBalance.get(deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: now };
+    const bal = memBalance.get(deviceId) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: now };
     if (!memBalance.has(deviceId)) memBalance.set(deviceId, bal);
     const c = memClaim.get(deviceId) ?? { lastClaimAt: null, streak: 0 };
     const st = computeClaim(c.lastClaimAt, c.streak, now);
@@ -979,8 +973,17 @@ function splitPositions(rows: CallRow[], liveMarkets: Market[]): Positions {
       entryPct: entryPct ?? 0,
       nowPct,
       edgeNow: entryPct !== null && nowPct !== null ? edgePts(entryPct, nowPct) : null,
+      // NOTE (flagged for review, not decided here): valueNow is still the OLD
+      // proportional mark-to-market (proceedsFor), inherited from when a stake
+      // could be any size. Now that every call stakes exactly CALL_COST (1),
+      // this can only ever resolve to 0 or 1 — the live "sell now" price lost
+      // its granularity along with variable staking. toWin below is fixed to
+      // the real payout (winBonus, floor/cap included) so it never overstates
+      // what settlement will actually pay; valueNow's degraded precision is a
+      // separate, pre-existing feature (cash-out / sellPosition) this redesign
+      // did not touch.
       valueNow: entryPct !== null && nowPct !== null ? proceedsFor(r.tokens, entryPct, nowPct) : null,
-      toWin: entryPct ? Math.round(sharesFor(r.tokens, entryPct)) : 0,
+      toWin: entryPct ? winBonus(entryPct) : 0,
       at: iso(r.at),
     });
   }
@@ -2144,11 +2147,14 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
     for (const c of memCalls) {
       if (c.slug !== slug || c.closedAt) continue; // closedAt set = state guard, mem edition
       const exitPct = c.side === outcome ? 100 : 0;
-      const proceeds = proceedsFor(c.tokens, c.entryPct, exitPct);
+      // The bonus IS the entire return (see economy.winBonus) — the 1 prediction
+      // spent to make the call was already deducted at call time and is not
+      // separately refunded here.
+      const proceeds = c.side === outcome ? winBonus(c.entryPct) : 0;
       c.closedAt = new Date().toISOString();
       c.exitPct = exitPct;
       c.proceeds = proceeds;
-      const w = memBalance.get(c.deviceId) ?? { tokens: STARTING_TOKENS, toppedUpAt: Date.now() };
+      const w = memBalance.get(c.deviceId) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: Date.now() };
       memBalance.set(c.deviceId, { ...w, tokens: w.tokens + proceeds });
       pushNoticeMem(c.deviceId, slug, rec?.market.question ?? slug, outcome, c.side, c.entryPct, proceeds, c.id, crowd);
       out.push({ callId: c.id, deviceId: c.deviceId, side: c.side, stake: c.tokens, entryPct: c.entryPct, exitPct, proceeds, edge: edgePts(c.entryPct, exitPct) });
@@ -2166,15 +2172,16 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
   try {
     await client.query("BEGIN");
     // One statement closes every open position on the market. The proceeds
-    // arithmetic mirrors economy.proceedsFor exactly: round(stake * 100 / entry)
-    // for the winning side, 0 for the losing one.
+    // arithmetic mirrors economy.winBonus exactly — GREATEST/LEAST against the
+    // same 1/10 literals as BONUS_FLOOR/BONUS_CAP there — because Postgres can't
+    // call the JS function directly. Change the two together.
     const closed = await client.query<{
       id: number; device_id: string | null; side: "yes" | "no"; tokens: number; pct_at: number; exit_pct: number; proceeds: number;
     }>(
       `UPDATE market_call SET
          closed_at = now(),
          exit_pct  = CASE WHEN side = $2 THEN 100 ELSE 0 END,
-         proceeds  = CASE WHEN side = $2 THEN CAST(round(tokens * 100.0 / pct_at) AS integer) ELSE 0 END
+         proceeds  = CASE WHEN side = $2 THEN GREATEST(1, LEAST(10, ROUND(100.0 / pct_at)))::integer ELSE 0 END
        WHERE slug = $1 AND closed_at IS NULL AND pct_at IS NOT NULL
        RETURNING id, device_id, side, tokens, pct_at, exit_pct, proceeds`,
       [slug, outcome],
@@ -2596,7 +2603,7 @@ export async function usersActivity(): Promise<UserActivity[]> {
       return {
         deviceId,
         createdAt: times[0] ?? new Date().toISOString(), // mem has no signup row; first call stands in
-        tokens: memBalance.get(deviceId)?.tokens ?? STARTING_TOKENS,
+        tokens: memBalance.get(deviceId)?.tokens ?? STARTING_PREDICTIONS,
         chosen: memHandle.get(deviceId) ?? null,
         totalCalls: times.length,
         lastAt: times.length ? times[times.length - 1] : null,
@@ -3053,7 +3060,7 @@ function noticeBody(question: string, outcome: "yes" | "no", side: "yes" | "no",
   const odds = Math.max(1, Math.min(99, Math.round(entryPct)));
   // Resolution-as-content: name the call, their odds, the outcome, and the verdict.
   return won
-    ? `You called “${question}” at ${odds}% — it resolved ${outcome.toUpperCase()}. You were right. +${proceeds} tokens.${crowdClause(outcome, true, crowd)}`
+    ? `You called “${question}” at ${odds}% — it resolved ${outcome.toUpperCase()}. You were right. +${proceeds} predictions.${crowdClause(outcome, true, crowd)}`
     : `You called “${question}” at ${odds}% — it resolved ${outcome.toUpperCase()}. You were wrong.${crowdClause(outcome, false, crowd)}`;
 }
 

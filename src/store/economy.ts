@@ -3,30 +3,29 @@
 // whole cycle (call → odds move → exit → reputation) can be proven offline with
 // injected prices instead of waiting for a real market to move.
 //
-// Virtual tokens only. Nothing here converts to money in either direction, and
-// no function in this file has any idea what a dollar is.
+// Virtual predictions only. Nothing here converts to money in either direction,
+// and no function in this file has any idea what a dollar is.
+//
+// The unit is a "prediction": one flat-cost tap on YES/NO, not a variable-size
+// stake. There is no picker, no "how much do you want to put on this" — the
+// entire economy is a count going up and down by whole numbers, on purpose,
+// so it reads like a casual game's lives/energy meter, not a trading account.
 
-/** A new device's stake in the game — one day's claim (200), i.e. 4 calls at 50. */
-export const STARTING_TOKENS = 200;
+/** A new device's stake in the game — a small handful, enough for a first
+ *  session without feeling like a grant that needs rationing. */
+export const STARTING_PREDICTIONS = 5;
+
+/** What one call costs. Flat, always — there is no larger or smaller call. */
+export const CALL_COST = 1;
 
 /**
- * Tokens are renewable, because a locked-out player is a lost player. A device
- * below the floor collects a grant once every window, until it is back at the
- * floor. Above the floor nothing is granted — the top-up is a safety net, not
- * an income.
+ * The daily claim — an ACTIVE retention hook, not a passive tick. A player taps
+ * once per window to collect, and a streak of consecutive claimed days is the
+ * visible reason to come back tomorrow. A claim within STREAK_WINDOW of the
+ * last continues the streak; a longer gap (a missed day) resets it to 1 — the
+ * streak resets, never the balance.
  */
-export const TOKEN_FLOOR = 1000;
-export const DAILY_TOPUP = 200;
-export const TOPUP_INTERVAL_MS = 24 * 3_600_000;
-
-/**
- * The daily claim — the same coins, but as an ACTIVE retention hook rather than
- * a passive tick. A player taps once per window to collect, and a streak of
- * consecutive claimed days is the visible reason to come back tomorrow. A claim
- * within STREAK_WINDOW of the last continues the streak; a longer gap (a missed
- * day) resets it to 1 — the streak resets, never the balance.
- */
-export const DAILY_CLAIM = 200;
+export const DAILY_CLAIM = 5;
 export const CLAIM_INTERVAL_MS = 24 * 3_600_000;   // one claim per day
 export const STREAK_WINDOW_MS = 48 * 3_600_000;    // claim before this → streak lives
 
@@ -38,9 +37,10 @@ export const PROVISIONAL_BELOW = 10;
  *
  * Once per ACCOUNT, not once per device: the device is a browser, and browsers
  * are free. The account is the thing a person can only have one of per Google
- * `sub` or X user id, so that is where the bonus is spent.
+ * `sub` or X user id, so that is where the bonus is spent. One full day's
+ * refill, handed over the moment identity stops being anonymous.
  */
-export const CONNECT_BONUS = 100;
+export const CONNECT_BONUS = 5;
 
 /**
  * Prices are the SIDE's percentage, not the market's. A market at 39% yes
@@ -93,35 +93,40 @@ export function tokenDeltaPct(entryPct: SidePct, exitPct: SidePct): number {
   return (exitPct / entryPct - 1) * 100;
 }
 
-export interface TopUp {
-  tokens: number;
-  toppedUpAt: number;
-  granted: number;
-}
-
 /**
- * Lazy, idempotent, and safe to call on every balance read.
+ * Bonus predictions on a win — the entire spendable-fuel model's payout, and
+ * the one piece of arithmetic the whole redesign hangs off. It rides directly
+ * on the multiplier already printed on the card (100/entryPct): a longshot win
+ * pays a stack of predictions, a favorite win pays a little, and the user never
+ * has to learn a second number — the one they saw before they called IS the
+ * bonus, rounded.
  *
- * The window advances whether or not tokens were granted. Freezing it while a
- * device sits above the floor would hand it an instant grant the moment it
- * spent down — a rich player would be topped up faster than a poor one, which
- * is precisely backwards.
+ *   90% favorite  (1.1×) wins ->  1
+ *   50% coin flip (2.0×) wins ->  2
+ *   21% longshot  (4.8×) wins ->  5
+ *   10% longshot (10.0×) wins -> 10  (cap)
+ *    5% longshot (20.0×) wins -> 10  (capped, not 20)
  *
- * One grant per window, never more, no matter how many windows were missed. A
- * player who vanishes for a month comes back to 200, not 6000: the top-up
- * exists so you can play today, not so that waiting is a strategy.
+ * This IS the entire return — approved explicitly as "the bonus is the whole
+ * return, not a stake refund plus a bonus": a 2.0× win credits 2 predictions
+ * at settlement, full stop. The 1 prediction spent to make the call is not
+ * separately refunded (it was already spent, at call time, as its own step).
+ *
+ * The floor of 1 falls out of the clamp for free — the lowest multiplier
+ * possible is 100/99 ≈ 1.01×, which always rounds to 1 — but it is written
+ * explicitly rather than relied upon, since that is the honest floor either
+ * way. BONUS_CAP exists so a true extreme-longshot win (100/1 = 100×) still
+ * reads as a jackpot without handing out a month of free play in one resolve.
+ *
+ * settleMarket's SQL branch inlines this exact formula (ROUND + GREATEST/LEAST
+ * against the same 1/10 literals) because Postgres can't call a JS function —
+ * the two must be changed together, and a comment there points back here.
  */
-export function applyTopUp(tokens: number, toppedUpAt: number, now: number): TopUp {
-  if (now - toppedUpAt < TOPUP_INTERVAL_MS) return { tokens, toppedUpAt, granted: 0 };
-  if (tokens >= TOKEN_FLOOR) return { tokens, toppedUpAt: now, granted: 0 };
-  const next = Math.min(TOKEN_FLOOR, tokens + DAILY_TOPUP);
-  return { tokens: next, toppedUpAt: now, granted: next - tokens };
-}
-
-/** Milliseconds until the next grant, or null when there is nothing to grant. */
-export function nextTopUpIn(tokens: number, toppedUpAt: number, now: number): number | null {
-  if (tokens >= TOKEN_FLOOR) return null;
-  return Math.max(0, toppedUpAt + TOPUP_INTERVAL_MS - now);
+export const BONUS_FLOOR = 1;
+export const BONUS_CAP = 10;
+export function winBonus(entryPct: SidePct): number {
+  if (!(entryPct > 0)) throw new Error(`entry price must be positive, got ${entryPct}`);
+  return Math.max(BONUS_FLOOR, Math.min(BONUS_CAP, Math.round(100 / entryPct)));
 }
 
 export interface Reputation {

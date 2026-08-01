@@ -126,8 +126,8 @@
    * its own: a white tile inherited near-white text and its question vanished.
    * Surfaces carry the ink, always, in both themes. If you add a boxed element,
    * add it here — the audit checks contrast on the ones that exist. */
-  .orow,.tile,.stat,.rep,.acct,.picker,.csheet,.seg,.segb,.promo,.lb,.bal,
-  .cbtn,.amt,.amt-in,.confirm,.pcancel,.sellbtn,.avatar{color:var(--ink)}
+  .orow,.tile,.stat,.rep,.acct,.csheet,.seg,.segb,.promo,.lb,.bal,
+  .cbtn,.sellbtn,.avatar{color:var(--ink)}
   .cbtn.x{color:#fff}
 
   :root[data-theme="dark"]{
@@ -247,7 +247,6 @@
   .rby[open]>summary::before{transform:rotate(90deg)}
   .rby-body{margin:8px 0 2px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
     color:var(--muted-g);border-left:2px solid var(--hair-g);padding-left:11px}
-  .card.picking .rby{display:none}   /* stay out of the way once a side is chosen */
   /* Source tweet — permalink-only, sits above the question. Same surface/line
      tokens as the elevated card itself, not a competing block. */
   .srctweet{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:9px 12px;
@@ -289,7 +288,6 @@
     cursor:pointer;transition:transform .1s ease,background .15s ease}
   .challenge:hover{background:var(--ground-2)}
   .challenge:active{transform:scale(.97)}
-  .card.picking .challenge{display:none}
   /* Cold-visitor onboarding. A snap-aligned WRAP is the key: the scroller uses
      scroll-snap mandatory, which otherwise snaps straight to the first card on
      load and hides these above the fold. Making the wrap the first snap point
@@ -573,15 +571,15 @@
   [data-theme="dark"] .topup{color:#8aa63a}
 
   /* In the flow, under the buttons. Floated above them it landed in the same strip
-     as the "You bet 10 → win 32 tokens" line and sat on top of it. Kept in the
-     layout at opacity 0 so nothing reflows when it fades in. */
+     as the prepay line ("+N predictions if right") and sat on top of it. Kept in
+     the layout at opacity 0 so nothing reflows when it fades in. */
   /* balance pill — small and friendly, never a dollar sign anywhere near it */
   .bal{margin-left:8px;font-family:'Nunito';font-weight:800;font-size:13.5px;
     padding:4px 11px;border:2.5px solid var(--ink);border-radius:999px;
     background:var(--wash);white-space:nowrap;font-variant-numeric:tabular-nums}
   .bal.pulse{animation:balpulse .45s ease}
-  /* "Points" label inside the balance pill — makes clear the number is Oddie
-     Points (spendable), distinct from the Oddie Score (reputation). */
+  /* "left" label inside the balance pill — makes clear the number is the
+     spendable predictions balance, distinct from the Oddie Score (reputation). */
   .ptslbl{font-size:9.5px;font-weight:800;opacity:.62;letter-spacing:.03em;text-transform:uppercase}
   /* Pick-streak badge — visible identity beside the balance. Small, warm, fixed
      colours (holds contrast in both themes); only rendered at streak 2+. */
@@ -894,50 +892,6 @@
   .segb:last-child{border-right:0}
   .segb.on{background:var(--accent)}
   @keyframes balpulse{40%{transform:scale(1.12)}}
-
-  /* amount picker: appears under the rows after a side is chosen.
-
-     `display:flex` here beats the UA's `[hidden]{display:none}` on specificity,
-     so the picker rendered on every card, always — 200px of form nobody asked
-     for, sitting in the column before a side was ever tapped. That one line
-     produced every symptom we chased: the card overflowed its own top and slid
-     the question under the sticky chips bar; the presets showed with none
-     selected, because `setAmt` only runs when a side is chosen; the payout line
-     was blank for the same reason; and Confirm sat there enabled, next to no
-     side and no amount. The `[hidden]` rule below is what `hidden` was always
-     supposed to mean. */
-  .picker{display:flex;flex-direction:column;gap:10px;margin-top:12px;
-    padding:12px;border:3px solid var(--ink);border-radius:18px;background:var(--wash)}
-  .picker[hidden]{display:none}
-  .amts{display:flex;gap:7px;flex-wrap:wrap}
-  .amt{font:inherit;font-weight:700;font-size:14.5px;padding:8px 0;flex:1 1 52px;
-    border:2.5px solid var(--ink);border-radius:12px;background:var(--white);cursor:pointer}
-  /* Pressed, not merely tinted: the fill alone read as decoration next to four
-     identical outlines, so the chosen preset also thickens and sinks. */
-  .amt.on{background:var(--accent);border-width:3.5px;box-shadow:inset 0 2px 0 rgba(0,0,0,.18)}
-  .amt-in{font:inherit;font-size:16px;font-weight:700;width:74px;padding:8px 10px;
-    border:2.5px solid var(--ink);border-radius:12px;background:var(--white);text-align:center}
-  .pline{font-family:'Nunito';font-weight:800;font-size:14px;color:var(--acc-deep);min-height:18px}
-  .pbtns{display:flex;gap:8px}
-  .confirm{font:inherit;font-weight:700;font-size:16px;flex:1;padding:11px 0;cursor:pointer;
-    border:3px solid var(--ink);border-radius:14px;background:var(--accent)}
-  .confirm:disabled{opacity:.4;cursor:default}
-  .pcancel{font:inherit;font-weight:700;width:46px;cursor:pointer;
-    border:3px solid var(--ink);border-radius:14px;background:var(--white)}
-  /* While the picker is open the card is a form, not a poster: the rows shrink
-     to make room so nothing escapes the card on a short phone, and the nudge
-     gets out of the way. Everything comes back the moment the picker closes. */
-  .card.picking .opct{font-size:30px;-webkit-text-stroke-width:2px}
-  .card.picking .orow{padding:6px 16px 8px}
-  .card.picking .oside{font-size:17px}
-  .card.picking .nudge{display:none}
-  /* Empty while picking — it only ever holds the locked line, and `picking` is
-     gone by the time that is written. Reserving its strip cost 28px of the one
-     thing the card cannot spare on a 640px-tall phone: room for the question. */
-  .card.picking .social{display:none}
-  /* The last 22px on an SE-sized screen. The numeral is the loudest thing on the
-     card and the least informative once you are choosing a stake. */
-  @media (max-height:680px){ .card.picking .opct{font-size:26px} }
 
   /* The peek of the next card is the scroll affordance now, so the nudge only
      appears on the first card (via .show) and reserves NO space otherwise — every
@@ -1343,7 +1297,7 @@
     65%{opacity:1}
     100%{opacity:0;transform:translateY(-5px) scale(.96)}
   }
-  /* Oddie Points — the spendable play balance, the OTHER of the two user numbers.
+  /* Predictions — the spendable play balance, the OTHER of the two user numbers.
      A quiet strip above the identity block so the profile leads with both. */
   .opoints{display:flex;align-items:baseline;gap:9px;border:2px solid var(--card-line);
     border-radius:16px;background:var(--card-surface);padding:12px 16px;margin-bottom:12px}
@@ -1606,15 +1560,21 @@
 
 <script>
 const API=""; // same origin
+// Mirror economy.ts's STARTING_PREDICTIONS/CALL_COST/DAILY_CLAIM/CONNECT_BONUS
+// exactly — display-only copies, never authoritative (the server enforces the
+// real numbers, and always CALL_COST regardless of what a request sends — see
+// /api/market/:slug/call). Used for the optimistic UI (deduct-before-response)
+// and copy that quotes these amounts before the server has answered.
+const STARTING_PREDICTIONS=5, CALL_COST=1, DAILY_PREDICTIONS=5, CONNECT_BONUS=5;
 
-/* ------------------------------------------------------- token balance -- */
+/* --------------------------------------------------- predictions balance -- */
 /**
- * Virtual tokens, nothing else. Every device starts with 100, server-side; the
- * number in the header is the server's, not a local guess — a second tab or a
- * reload always shows what the database says. `balance` is null until /api/me
- * answers, and the picker treats null as "unknown, let the server enforce".
+ * Virtual predictions, nothing else. Every device starts with a small handful,
+ * server-side; the number in the header is the server's, not a local guess —
+ * a second tab or a reload always shows what the database says. `balance` is
+ * null until /api/me answers.
  */
-let balance=null, nextTopUpMs=null, claim=null, pickStreak=0;
+let balance=null, claim=null, pickStreak=0;
 // Identity extras from /api/me, for the private profile: earned badges and the
 // season rank. Cached from the same call that fills the balance pill.
 let myBadges=[], myRank=null;
@@ -1630,35 +1590,39 @@ function claimWhen(ms){
 async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
-    if(r.ok){const w=await r.json();balance=w.tokens;nextTopUpMs=w.nextTopUpMs;if(w.claim)claim=w.claim;
+    if(r.ok){const w=await r.json();balance=w.tokens;if(w.claim)claim=w.claim;
       if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
       myBadges=w.badges||[];myRank=w.rank||null;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;paintBalance();}
   }catch(e){/* header just shows no pill; the server still enforces */}
 }
-/** "in 7h", "in 40m", "soon" — never a bare number of milliseconds. */
-function topUpIn(ms){
+// The real countdown lives on the daily claim now — there is no more passive
+// top-up to have a separate countdown for. "in 7h", "in 40m", "soon", never a
+// bare number of milliseconds.
+function nextRefillIn(){
+  const ms=claim?.nextClaimMs;
   if(ms===null||ms===undefined)return "";
   const h=Math.floor(ms/3600000);
-  if(h>=1)return `+200 in ${h}h`;
+  if(h>=1)return `+${DAILY_PREDICTIONS} in ${h}h`;
   const m=Math.floor(ms/60000);
-  return m>=1?`+200 in ${m}m`:"+200 soon";
+  return m>=1?`+${DAILY_PREDICTIONS} in ${m}m`:`+${DAILY_PREDICTIONS} soon`;
 }
 // Just the "when", for prose: "21h", "40m", "any minute now".
-function topUpWhen(ms){
+function nextRefillWhen(){
+  const ms=claim?.nextClaimMs;
   if(ms===null||ms===undefined)return "soon";
   const h=Math.floor(ms/3600000);
   if(h>=1)return `${h}h`;
   const m=Math.floor(ms/60000);
   return m>=1?`${m}m`:"any minute now";
 }
-// A device at 0 is not locked out. If it holds open calls it can sell for tokens
-// right now; either way the daily top-up is coming. Say so, gently.
+// A device at 0 is not locked out. If it holds open calls it can sell for
+// whatever they're worth right now; either way the daily refill is coming.
 function zeroNote(d){
   if(d.tokens>0)return "";
   if(d.open.length)
-    return `<div class="znote">Out of free Oddie Points — but not stuck. <b>Sell an open call</b> below at its live price to free some up, or <b>claim your daily Points</b> on the feed.</div>`;
-  return `<div class="znote">Out of Oddie Points for now — <b>claim your daily Points</b> on the feed to top back up, then come back tomorrow for more. Nothing lost but a little time.</div>`;
+    return `<div class="znote">Out of free predictions — but not stuck. <b>Sell an open call</b> below at its live price to free one up, or <b>claim your daily predictions</b> on the feed.</div>`;
+  return `<div class="znote">Out of predictions for now — <b>claim your daily predictions</b> on the feed to top back up, then come back tomorrow for more. Nothing lost but a little time.</div>`;
 }
 function paintBalance(pulse){
   if(balance===null)return;
@@ -1668,15 +1632,15 @@ function paintBalance(pulse){
     if(el.dataset.wired)return;
     el.dataset.wired="1";
     el.setAttribute("role","button");
-    el.setAttribute("aria-label","Save your balance across devices");
+    el.setAttribute("aria-label","Save your predictions across devices");
     el.onclick=()=>connectSheet();
   });
   // Two pills — the mobile header's and the desktop rail's. Same number always.
-  // The top-up line only appears when it can do something for you: at the floor
-  // there is nothing to count down to, and a countdown to nothing is a nag.
-  const tip=topUpIn(nextTopUpMs);
+  // The refill line only appears when it can do something for you: with a full
+  // balance there is nothing to count down to, and a countdown to nothing is a nag.
+  const tip=balance<STARTING_PREDICTIONS?nextRefillIn():"";
   document.querySelectorAll(".bal").forEach(el=>{
-    el.innerHTML=`🪙 ${balance} <span class="ptslbl">Points</span>${tip?` <span class="topup">${tip}</span>`:""}`;
+    el.innerHTML=`🪙 ${balance} <span class="ptslbl">left</span>${tip?` <span class="topup">${tip}</span>`:""}`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
     // Persistent pick-streak badge as visible identity, right beside the balance.
     // Shown only at 2+ (a 1 isn't a streak); it disappears the moment a wrong
@@ -1811,12 +1775,12 @@ function connectSheet(reason){
   const dim=document.createElement("div");
   dim.className="cdim";
   dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Connect an account">
-    <h3>${esc(reason||"Save your balance across devices")}</h3>
-    <p>Connect once and your Oddie Points, calls and reputation follow you to any browser. <b>+100 Oddie Points</b>, once.</p>
+    <h3>${esc(reason||"Save your predictions across devices")}</h3>
+    <p>Connect once and your predictions, calls and reputation follow you to any browser. <b>+${CONNECT_BONUS} predictions</b>, once.</p>
     ${buttons}
     <p class="cnote">We never post anything. Signing in on a browser that already
-      has anonymous Oddie Points will load your account instead — that browser's Points stay with it.</p>
-    <p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p>
+      has anonymous predictions will load your account instead — that browser's predictions stay with it.</p>
+    <p class="disclaimer">Predictions are for entertainment only. No deposits, no cash value, no real-money wagering.</p>
     <button class="cclose">Not now</button>
   </div>`;
   dim.onclick=(e)=>{ if(e.target===dim)dim.remove(); };
@@ -1834,7 +1798,7 @@ function authReturn(){
   if(!connected&&!err)return;
   const bonus=Number(q.get("bonus")||0);
   const msg=err?`Couldn't connect (${err}). Nothing changed.`
-    :bonus>0?`Connected. +${bonus} Oddie Points — your balance now follows you.`
+    :bonus>0?`Connected. +${bonus} predictions — your balance now follows you.`
     :`Connected. Your account is loaded on this browser.`;
   history.replaceState(null,"",location.pathname+location.hash);
   const el=document.createElement("div");
@@ -2014,6 +1978,10 @@ const BRAND_MARK='<a class="brandlink" href="/" aria-label="oddie — home"><div
 
 function money(n){return n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${Math.round(n)}`}
 function fmtMult(p){return (100/p).toFixed(1)+"×"}
+// Mirrors economy.winBonus exactly (floor 1 / cap 10) — the two must be changed
+// together. This is the number a win actually pays: the ENTIRE return, not a
+// stake refund plus a bonus. See src/store/economy.ts for the full rationale.
+function winBonus(pct){return Math.max(1,Math.min(10,Math.round(100/pct)))}
 /* Community-market meta: how long until it closes, in the two largest units.
  * "closes in 12d 4h" beats a timestamp — nobody does date math mid-swipe. */
 function closesIn(iso){
@@ -2279,7 +2247,7 @@ function claimCard(opts={}){
   if(claim.claimable){
     el.className="claimcard ready";
     el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">Claim your daily Oddie Points</div>
+        <div class="cc-title">Claim your daily predictions</div>
         <div class="cc-sub">${sayStreak?`🔥 ${st}-day streak — keep it alive`:st>0?"keep the streak alive":"tap to start your streak"}</div>
       </div>
       <button class="claimbtn" id="claimbtn">Claim +${claim.amount}</button>`;
@@ -2296,13 +2264,13 @@ function claimCard(opts={}){
         // brought into existence / updated, not just this card swapped.
         el.replaceWith(claimCard(opts));  // same context, so the streak isn't double-said
         if(typeof opts.onClaimed==="function")opts.onClaimed(j.streak);
-        if(j.granted>0)toast(`+${j.granted} Points · 🔥 ${j.streak}-day streak`);
+        if(j.granted>0)toast(`+${j.granted} predictions · 🔥 ${j.streak}-day streak`);
       }catch(err){btn.disabled=false;btn.textContent=`Claim +${claim.amount}`;}
     };
   }else{
     el.className="claimcard done";
     el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">✓ Points claimed${sayStreak?` · 🔥 ${st}-day streak`:""}</div>
+        <div class="cc-title">✓ Predictions claimed${sayStreak?` · 🔥 ${st}-day streak`:""}</div>
         <div class="cc-sub">come back for tomorrow's drop to keep the streak</div>
       </div>
       <div class="cc-next">next in ${claimWhen(claim.nextClaimMs)}</div>`;
@@ -2389,7 +2357,7 @@ function renderFeed(items){
 }
 
 /**
- * Build one market card — question, YES/NO, picker, share, challenge, resolution
+ * Build one market card — question, YES/NO, share, challenge, resolution
  * criteria, the whole tap-to-call interaction — and return it UNATTACHED, so a
  * caller can append it to the feed's scroller (the original use) or drop the
  * exact same tappable card into the home page's featured "Daily Call" slot.
@@ -2576,20 +2544,6 @@ function buildCard(m,i,homeLoop){
         ${m.callersTotal>m.callers.length ? `<div class="callers-more">+${m.callersTotal-m.callers.length} more</div>` : ""}
       </div>` : ""}
       ${m.slug===startSlug ? `<button class="challenge" data-challenge type="button">⚔️ Challenge the other side</button>` : ""}
-      <div class="picker" id="pick${i}" hidden>
-        <div class="amts">
-          <button class="amt" data-v="10">10</button>
-          <button class="amt" data-v="25">25</button>
-          <button class="amt" data-v="50">50</button>
-          <button class="amt" data-v="all">All-in</button>
-          <input class="amt-in" type="number" min="1" inputmode="numeric" aria-label="custom amount">
-        </div>
-        <div class="pline" id="pline${i}"></div>
-        <div class="pbtns">
-          <button class="confirm" id="cf${i}">Confirm</button>
-          <button class="pcancel" aria-label="cancel">✕</button>
-        </div>
-      </div>
       <div class="social" id="soc${i}"></div>
       <div class="nudge" id="nudge${i}"><span class="arrow">↑</span><span>${GESTURE} for the next take</span></div>`;
     card.dataset.slug=m.slug;card.dataset.idx=i;
@@ -2607,74 +2561,29 @@ function buildCard(m,i,homeLoop){
       xShare(text, `${SHARE_ORIGIN}/m/${m.slug}`, "challenge");
       ev("challenge_click",{slug:m.slug,targeted:!!handle});};
     const [y,nb]=card.querySelectorAll(".orow");
-    const picker=card.querySelector("#pick"+i), line=card.querySelector("#pline"+i),
-          confirmBtn=card.querySelector("#cf"+i), input=card.querySelector(".amt-in");
-    let side=null, amt=10;
+    const soc=card.querySelector("#soc"+i);
 
     /**
-     * Two taps: a side, then Confirm. Everything between them is one line that
-     * recomputes live, so the payout math never happens in the user's head.
-     * The picker caps at the balance rather than erroring — running out of
-     * tokens should read as a state, not a mistake.
+     * One tap, one prediction, done. There is no amount to choose — every call
+     * costs CALL_COST — so there is nothing left to pick. A tap opens a 5s undo
+     * window (startPending/pendingUI), which either times out into the real
+     * call (commitPending -> placeNow) or is cancelled (cancelPending), never
+     * both.
      */
     const pct=()=>side==="yes"?yes:no;
-    const soc=card.querySelector("#soc"+i);
-    /**
-     * Which control the user actually pressed, not which one happens to equal
-     * the amount. With a balance of 50, `50` and `All-in` are the same number
-     * and both used to light up, so "which amount is selected" had two answers.
-     * A custom amount lights none of them, which is correct: the input shows it.
-     */
-    let chosen="10";
-    const setAmt=(v)=>{
-      let capped=false;
-      chosen=String(v);
-      if(v==="all")v=balance??1;
-      v=Math.max(1,Math.floor(Number(v)||1));
-      if(balance!==null&&v>balance){v=Math.max(1,balance);capped=true;}
-      amt=v;
-      card.querySelectorAll(".amt").forEach(b=>{
-        const on=b.dataset.v===chosen;
-        b.classList.toggle("on",on);
-        b.setAttribute("aria-pressed",String(on));
-      });
-      if(balance===0){
-        line.textContent="Out of tokens — nothing left to put on this one.";
-        confirmBtn.disabled=true;return;
-      }
-      confirmBtn.disabled=false;
-      const win=Math.round(amt*100/pct());
-      line.textContent=`Put ${amt} → win ${win} if you're right (${(win/amt).toFixed(1)}×)`
-        +(capped?" — that's everything you've got":"")
-        +(balance!==null&&amt===balance&&!capped?" — all of it":"");
-    };
-    const openPick=(s,initAmt=10)=>{
-      side=s;card.classList.add("picking");
-      (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
-      picker.hidden=false;input.value="";
-      setAmt(initAmt);
-    };
-    const closePick=()=>{
-      side=null;picker.hidden=true;card.classList.remove("picking");
-      y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
-    };
-    card.querySelectorAll(".amt").forEach(b=>b.onclick=()=>{input.value="";setAmt(b.dataset.v);});
-    input.oninput=()=>{if(input.value)setAmt(input.value);};
-    card.querySelector(".pcancel").onclick=closePick;
+    let side=null;
 
     /** The one true write path: POST the call, then flip the card to its locked
-     *  state. Both doors — the 5s auto-commit and the picker's Confirm — land
-     *  here, so the locked UI cannot drift between them. */
-    const lockedUI=(s,stake,win,crowd,callId,firstEver)=>{
-      y.disabled=nb.disabled=true;picker.hidden=true;card.classList.remove("picking");
+     *  state. This is the single moment a call actually locks in. */
+    const lockedUI=(s,bonus,crowd,callId,firstEver)=>{
+      y.disabled=nb.disabled=true;
       // The confirmation snap: fires exactly once, exactly HERE — the single
-      // moment a call actually locks in (both the 5s auto-commit and the
-      // picker's Confirm funnel through this one function), never on the
-      // earlier optimistic tap that a 5s undo can still cancel.
+      // moment a call actually locks in, never on the earlier optimistic tap
+      // that a 5s undo can still cancel.
       (s==="yes"?y:nb).classList.add("pick","locked-flash");(s==="yes"?nb:y).classList.add("dim");
       // Promise only what happens: the call is recorded; the market, not us,
       // decides when it means anything. No "we'll tell you who was right".
-      soc.textContent=`Locked — ${stake} tokens on ${s.toUpperCase()}, pays ${win}. Settles when the market resolves.`;
+      soc.textContent=`Locked — 1 prediction on ${s.toUpperCase()}, +${bonus} if right. Settles when the market resolves.`;
       // ...and which side of the room they just joined. Solo action, social fact.
       const slText=crowd?socialLine(s,crowd,s==="yes"?yes:no):"";
       if(slText){
@@ -2713,7 +2622,7 @@ function buildCard(m,i,homeLoop){
       // One line, once, only to someone who has not connected. An offer, not a gate.
       if(!auth.accounts.length){
         const up=document.createElement("button");
-        up.className="upsell";up.textContent="Connect to save your balance  +100 Oddie Points";
+        up.className="upsell";up.textContent=`Connect to save your predictions  +${CONNECT_BONUS} more`;
         up.onclick=()=>connectSheet("Keep this call when you switch devices");
         sb.after(up);
         lastCta=up;
@@ -2767,107 +2676,85 @@ function buildCard(m,i,homeLoop){
       card.querySelector("#nudge"+i).classList.add("show");
       card.querySelector("#nudge"+i).classList.remove("hint");
     };
-    const placeNow=async(s,stake,fromPicker)=>{
+    // Out of predictions is not a dead end — it's the trigger for the one
+    // behavior this product wants most (tagging @oddiefun). This is the
+    // baseline honest state for it; the CTA itself is a separate, reviewable
+    // step (out-of-predictions -> tag prompt) built on top of this same slot.
+    const outOfPredictionsLine=()=>
+      `Out of predictions — next free one in ${nextRefillWhen()}.`;
+
+    const placeNow=async(s)=>{
       try{
         const r=await fetch(`${API}/api/market/${m.slug}/call`,{method:"POST",
           headers:{"content-type":"application/json"},
-          body:JSON.stringify({side:s,tokens:stake,deviceId})});
+          body:JSON.stringify({side:s,tokens:CALL_COST,deviceId})});
         const j=await r.json().catch(()=>({}));
-        // Put an honest reason where the user is looking: the picker line if the
-        // picker's open, the social slot for a one-tap. Re-arm the controls so the
-        // person can act on what we just told them.
         const reopen=()=>{
-          if(fromPicker){confirmBtn.disabled=false;confirmBtn.textContent="Confirm";}
-          else{y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");}
-        };
-        const failLine=(txt,keepConfirmOff)=>{
-          reopen();
-          if(fromPicker){line.textContent=txt;if(keepConfirmOff)confirmBtn.disabled=true;}
-          else soc.textContent=txt;
+          y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
         };
         if(!r.ok||!j.ok){
           // The call did not go through. A one-tap optimistically deducted the
           // stake up front; give it back before we render why. (insufficient
           // overwrites this with the server's authoritative balance just below.)
-          if(!fromPicker){balance=(balance??0)+stake;paintBalance();}
+          balance=(balance??0)+CALL_COST;paintBalance();
           // Not on the list / free taste spent — this IS the gate moment. Bring it
           // forward in place, not a picker that quietly fails.
           if(j.reason==="not_allowed"){
-            picker.hidden=true;card.classList.remove("picking");
             y.disabled=nb.disabled=true;
             soc.className="social gatecard";
             soc.innerHTML=terminalGateInner();wireTerminalGate(soc);
             ev("gate_shown",{via:"taste_used",slug:m.slug,reason:GATE.reason});
             return;
           }
-          // Not enough tokens — never "try again" (trying again can't make tokens).
-          // Say the true number and when the next top-up lands.
+          // Out of predictions — never "try again" (trying again can't make more).
           if(j.reason==="insufficient"){
+            reopen();
             balance=j.balance;paintBalance(true);
-            const when=topUpWhen(nextTopUpMs);
-            if(balance>0){
-              if(fromPicker){setAmt(Math.min(stake,balance));confirmBtn.textContent="Confirm";
-                line.textContent=`Only ${balance} left — pick that or less. Next +200 in ${when}.`;
-                confirmBtn.disabled=false;}
-              else failLine(`That left you ${balance}. Tap again to call with what you've got.`);
-            }else{
-              failLine(`Out of tokens — next +200 in ${when}. Sell an open call to free some up now.`,true);
-            }
+            soc.textContent=outOfPredictionsLine();
             return;
           }
           // Structural refusals — the market, not the network. Trying again changes
           // nothing, so don't promise it will.
           if(j.reason==="unpriced"){
-            failLine("This one isn't quoted right now — the odds moved to the edge. Try another market.");
+            reopen();soc.textContent="This one isn't quoted right now — the odds moved to the edge. Try another market.";
             return;
           }
           if(j.reason==="unknown-market"||r.status===404){
-            failLine("This market just closed — it's no longer taking calls.");
+            reopen();soc.textContent="This market just closed — it's no longer taking calls.";
             return;
           }
           // A 5xx or an unreadable body is a server-side hiccup — genuinely
           // transient, the one refusal where "try again" is the honest answer.
           if(r.status>=500||!j.reason){
-            failLine("Something went wrong on our end — give it a moment and try again.");
+            reopen();soc.textContent="Something went wrong on our end — give it a moment and try again.";
             return;
           }
           // Some other named refusal we didn't special-case: surface the server's
           // own words if they're human, else an honest structural note.
-          failLine(j.error&&j.error.length<90?j.error:"Couldn't lock it — the market won't take that call.");
+          reopen();soc.textContent=j.error&&j.error.length<90?j.error:"Couldn't lock it — the market won't take that call.";
           return;
         }
         balance=j.balance;paintBalance(true);loadBalance();
-        lockedUI(s,stake,Math.round(stake*100/j.pctAt),j.crowd,j.id,j.firstEver===true);
+        lockedUI(s,winBonus(j.pctAt),j.crowd,j.id,j.firstEver===true);
         ev("amount_confirm",{slug:m.slug,idx:i,side:s});
       }catch(e){
         // The only genuinely transient failure: we never reached the server or
         // couldn't read it. This is the one place "try again" is the truth.
         console.error(e);
-        if(!fromPicker){balance=(balance??0)+stake;paintBalance();
-          y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
-          soc.textContent="Couldn't reach the server — check your connection and try again.";}
-        else{confirmBtn.disabled=false;confirmBtn.textContent="Confirm";
-          line.textContent="Couldn't reach the server — check your connection and try again.";}
+        balance=(balance??0)+CALL_COST;paintBalance();
+        y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
+        soc.textContent="Couldn't reach the server — check your connection and try again.";
       }
     };
 
-    confirmBtn.onclick=()=>{
-      confirmBtn.disabled=true;confirmBtn.textContent="Locking…";
-      placeNow(side,amt,true);
-    };
-
     /**
-     * ONE TAP, DONE. The data said the picker was losing the most engaged
-     * visitors: two side_taps, zero confirms, both abandoned within seconds —
-     * not deliberating an amount, walking away from a second decision. So the
-     * default path makes the call immediately at a default stake, shows the
-     * result with a 5s undo, and the amount picker becomes opt-in ("change
-     * amount"). Undo is honest by construction: the POST only fires when the
-     * window closes (or the page is left mid-window, via sendBeacon), so an
-     * undone call never existed anywhere.
+     * ONE TAP, DONE. There is no amount to pick — every call costs exactly
+     * CALL_COST — so the tap makes the call immediately and shows the result
+     * with a 5s undo. Undo is honest by construction: the POST only fires when
+     * the window closes (or the page is left mid-window, via sendBeacon), so
+     * an undone call never existed anywhere.
      */
-    const DEFAULT_STAKE=50;
-    let pending=null; // {s, stake, left, timer, beacon}
+    let pending=null; // {s, left, timer, beacon}
     const clearPendingUI=()=>{
       y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
       soc.textContent="";
@@ -2875,44 +2762,36 @@ function buildCard(m,i,homeLoop){
     const cancelPending=(refund=true)=>{
       if(!pending)return;
       clearInterval(pending.timer);PENDING_CALLS.delete(pending.beacon);
-      if(refund){balance=(balance??0)+pending.stake;paintBalance();}
+      if(refund){balance=(balance??0)+CALL_COST;paintBalance();}
       pending=null;
     };
     const commitPending=()=>{
       if(!pending)return;
-      const {s,stake}=pending;
+      const {s}=pending;
       clearInterval(pending.timer);PENDING_CALLS.delete(pending.beacon);
       pending=null;
-      placeNow(s,stake,false);
+      placeNow(s);
     };
     const pendingUI=()=>{
-      const {s,stake,left}=pending;
-      // The SAME payout math the locked state uses (stake * 100 / entry price),
-      // shown here — during the undo window, before anything is final — so the
-      // upside is visible at the moment of decision rather than only after it.
-      // This used to open "Locked — …", which read as already-committed even
-      // though the whole point of this window is that it isn't yet.
-      const win=Math.round(stake*100/(s==="yes"?yes:no));
-      soc.innerHTML=`<span class="prepay"><b>${stake} points → wins ${win}</b> if ${s.toUpperCase()} is right`
-        +` <span class="prepay-mult">(${(win/stake).toFixed(1)}×)</span></span>`
-        +`<button class="undo">undo (${left})</button>`
-        +`<button class="chgamt">change amount</button>`;
+      const {s,left}=pending;
+      // The bonus IS the entire return — the SAME number the locked state will
+      // show — visible here, during the undo window, before anything is final.
+      const bonus=winBonus(s==="yes"?yes:no);
+      soc.innerHTML=`<span class="prepay"><b>+${bonus} predictions</b> if ${s.toUpperCase()} is right`
+        +` <span class="prepay-mult">(${fmtMult(s==="yes"?yes:no)})</span></span>`
+        +`<button class="undo">undo (${left})</button>`;
       soc.querySelector(".undo").onclick=()=>{cancelPending();clearPendingUI();};
-      soc.querySelector(".chgamt").onclick=()=>{
-        const stakeNow=pending.stake;
-        cancelPending();soc.textContent="";
-        openPick(s,stakeNow); // the old flow, now opt-in, seeded with the default
-      };
     };
     const startPending=(s)=>{
-      const stake=Math.min(DEFAULT_STAKE,balance??DEFAULT_STAKE);
-      if(!Number.isFinite(stake)||stake<1){ // out of tokens: the picker explains, honestly
-        ev("side_tap",{slug:m.slug,idx:i,side:s});openPick(s);return;
+      if(!balance){ // 0 (or unresolved): nothing to spend — say so directly, no picker to fall back to
+        ev("side_tap",{slug:m.slug,idx:i,side:s});
+        soc.textContent=outOfPredictionsLine();
+        return;
       }
-      balance-=stake;paintBalance();
+      balance-=CALL_COST;paintBalance();
       (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
-      const beacon={slug:m.slug,side:s,tokens:stake};
-      pending={s,stake,left:5,beacon,timer:null};
+      const beacon={slug:m.slug,side:s,tokens:CALL_COST};
+      pending={s,left:5,beacon,timer:null};
       PENDING_CALLS.add(beacon);
       pendingUI();
       pending.timer=setInterval(()=>{
@@ -2927,14 +2806,8 @@ function buildCard(m,i,homeLoop){
     const tap=(s)=>{
       if(y.disabled)return;
       // No rope: any tap proceeds to a vote. Anonymous visitors play with their
-      // free points; the server never blocks a call. (The waitlist CTA that used
-      // to sit here is gone — a seeded reply link is playable on the first tap.)
-      if(card.classList.contains("picking")){ // picker open: switching sides in place, as before
-        if(side===s)return;
-        const keep=amt;closePick();openPick(s,keep);
-        ev("side_tap",{slug:m.slug,idx:i,side:s});
-        return;
-      }
+      // free predictions; the server never blocks a call. (The waitlist CTA that
+      // used to sit here is gone — a seeded reply link is playable on the first tap.)
       if(pending){
         if(pending.s===s)return;      // same side again: the 5s clock keeps running
         cancelPending();clearPendingUI();
@@ -3542,8 +3415,8 @@ function renderShell(view){
 }
 
 // Identity block bits shared by the public and private profiles — the trophy
-// room. The two-concept model shows the user their Oddie Points and their
-// Oddie Score; badges + rank are IDENTITY and STATUS, never a third number.
+// room. The two-concept model shows the user their predictions balance and
+// their Oddie Score; badges + rank are IDENTITY and STATUS, never a third number.
 const BADGE_ICON={founding:"🏛️",streak:"🔥",category:"🎯",rank:"📈"};
 // Badges as medallions: a circular icon with a lime medal-sheen, caption below
 // — screenshot-friendly the way an achievement screen is, not a flat pill row.
@@ -3691,7 +3564,7 @@ async function renderPublicProfile(){
     ${categoryBreakdownHtml(acc.byCategory)}
     <p class="psec" style="margin-top:22px">Recent calls</p>
     ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
-    <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
+    <div class="pfoot"><p class="disclaimer">Predictions are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
   </div>`;
   animateOscore(scroller,acc.oddieScore,acc.hasEnough,false);
   const sb=scroller.querySelector("#pubshare");
@@ -3724,7 +3597,7 @@ async function loadPositions(scroller){
     const r=await fetch(`${API}/api/positions?deviceId=${encodeURIComponent(deviceId)}`);
     if(!r.ok)throw new Error("positions "+r.status);
     const d=await r.json();
-    balance=d.tokens;nextTopUpMs=d.nextTopUpMs;paintBalance();
+    balance=d.tokens;paintBalance();
     if(!d.open.length && !d.closed.length){
       scroller.innerHTML=`<div class="sheet">
         <p class="sub">Your calls on this device land here.</p>
@@ -3749,7 +3622,7 @@ async function loadPositions(scroller){
       <div class="summary">
         <div class="tile"><div class="v num ${cls(net)}">${netStr}</div><div class="k">NET TOKENS</div></div>
         <div class="tile"><div class="v num">${winRate===null?"—":winRate+"%"}</div><div class="k">${settledArr.length?`WIN RATE · ${wins}/${settledArr.length}`:"WIN RATE"}</div></div>
-        <div class="tile"><div class="v num">🪙 ${d.tokens}</div><div class="k">ODDIE POINTS</div></div>
+        <div class="tile"><div class="v num">🪙 ${d.tokens}</div><div class="k">PREDICTIONS</div></div>
       </div>
       ${d.open.length?`<h2 class="psec">Open · ${d.open.length}</h2>${d.open.map(openHTML).join("")}`:""}
       ${history.length?`<h2 class="psec">History · ${history.length}</h2>${history.map(historyHTML).join("")}`:""}
@@ -3892,7 +3765,7 @@ async function sellPosition(btn,scroller){
 
 /**
  * The close, made visible. Selling used to just silently re-render the screen;
- * now the tap lands on a result — "Sold ✓ 50 → 74 tokens (+48%)", the edge on the
+ * now the tap lands on a result — "Sold ✓ 50 → 74 predictions (+48%)", the edge on the
  * record — the same beat as the one-tap call's locked state. No confirm dialog
  * (the sell already happened); a Done button and a 6s timer both fold it back
  * into History, where the row now lives.
@@ -3906,7 +3779,7 @@ function showSellResult(btn,j,scroller){
   el.innerHTML=`
     <div class="srtop"><span class="srtick">Sold ✓</span>
       <span class="srdelta ${tone}">${delta>0?"+":delta<0?"−":"±"}${Math.abs(delta)}</span></div>
-    <div class="srnums">${stake} → <b>${proceeds}</b> tokens · <b class="${tone}">${pct>0?"+":pct<0?"−":"±"}${Math.abs(pct)}%</b></div>
+    <div class="srnums">${stake} → <b>${proceeds}</b> predictions · <b class="${tone}">${pct>0?"+":pct<0?"−":"±"}${Math.abs(pct)}%</b></div>
     <div class="srsub">edge ${pts(j.edge)} recorded${delta>0?" — nice exit 🎯":delta<0?" — cut it, no shame":""}</div>
     <button class="srdone">Done</button>`;
   btn.replaceWith(el);
@@ -3919,8 +3792,8 @@ function showSellResult(btn,j,scroller){
 
 /**
  * Real standings, ranked by average edge — the same number Positions shows you.
- * Not by tokens: a leaderboard of tokens is a leaderboard of who started
- * earliest and staked hardest, which is a fact about time, not about judgement.
+ * Not by predictions won: a leaderboard of that is a leaderboard of who started
+ * earliest and called most often, which is a fact about time, not about judgement.
  *
  * Provisional players are listed and marked, never hidden. They sort below
  * everyone whose number has settled, so two lucky scalps cannot take the top.
@@ -3953,14 +3826,14 @@ function renderLb(scroller,data){
       ${inner}
     </div>`;
   const bodies={
-    edge:{sub:"Ranked by average edge — points gained per call, not tokens won. 🌱 means fewer than 10 closed positions.",
+    edge:{sub:"Ranked by average edge — points gained per call, not predictions won. 🌱 means fewer than 10 closed positions.",
       empty:"Nobody has closed a position yet. Be first.",
       rows:data.rows,html:(r)=>row({...r,handle:r.handle+(r.provisional?" 🌱":"")},`<div class="acc ${cls(r.avgEdge)}">${pts(r.avgEdge)}<small>${r.closed} closed</small></div>`)},
     streak:{sub:"Consecutive days with at least one call. Show up, stay up.",
       empty:"No streaks yet — day one starts now.",
       rows:data.streaks,html:(r)=>row(r,`<div class="acc ${r.current>0?"up":"flat"}">${r.current}d<small>best ${r.best}d</small></div>`)},
-    winnings:{sub:"Net tokens from settled and sold positions. Volume only counts if you're right.",
-      empty:"No settled tokens yet — make a call and let a market resolve.",
+    winnings:{sub:"Net predictions from settled and sold positions. Volume only counts if you're right.",
+      empty:"No settled predictions yet — make a call and let a market resolve.",
       rows:data.winnings,html:(r)=>row(r,`<div class="acc ${cls(r.net)}">${r.net>0?"+":""}${r.net}<small>${r.closed} closed</small></div>`)},
   };
   const b=bodies[lbTab];
@@ -4115,14 +3988,14 @@ async function loadProfile(scroller){
   scroller.innerHTML=`<div class="sheet">
     ${handleRow}
     <p class="sub">${auth.accounts.length
-      ? "Your Oddie Points, calls and reputation follow this account to any browser."
+      ? "Your predictions, calls and reputation follow this account to any browser."
       : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
     ${linked||`<button class="cbtn x" data-connect="twitter"><span class="glyph">𝕏</span>Connect X</button>
        <button class="cbtn" data-connect="google"><span class="glyph">G</span>Connect Google</button>
-       <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+100 Oddie Points</b>, once.</p>`}
+       <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+${CONNECT_BONUS} predictions</b>, once.</p>`}
     <div class="opoints">
       <span class="v">${balance==null?"—":String(balance).replace(/\B(?=(\d{3})+(?!\d))/g,",")}</span>
-      <span class="k"><b>Oddie Points</b> · your play balance</span>
+      <span class="k"><b>Predictions</b> · your play balance</span>
     </div>
     <div class="trhead">
       <p class="psec">Track record</p>
@@ -4145,7 +4018,7 @@ async function loadProfile(scroller){
         `<button class="segb${themeMode()===v?" on":""}" data-theme-mode="${v}">${l}</button>`).join("")}
     </div>
     <p class="cnote">Auto follows your system. Shared cards are always the same — your theme never changes the image that goes on X.</p>
-    <div class="pfoot"><p class="disclaimer">Oddie Points are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
+    <div class="pfoot"><p class="disclaimer">Predictions are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
   </div>`;
   animateOscore(scroller,acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),true);
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{

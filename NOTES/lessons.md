@@ -55,6 +55,15 @@ Only `scripts/test-wallet-db.ts`, running against a real Postgres and asserting
 that **the row itself** reads 240, fails on the broken version. It was written
 after the fact and confirmed to fail against it.
 
+*(2026-08: the passive top-up feature this bug lived in — `TOKEN_FLOOR`,
+`DAILY_TOPUP`, `applyTopUp` — was removed outright in the predictions-economy
+redesign, along with `scripts/test-wallet-db.ts` and `scripts/backdate-topup.ts`.
+The rule below outlives the feature: `claimDaily`'s SQL — the mechanic that
+replaced it — already applies it correctly, guarding on
+`last_claim_at <= now() - make_interval(...)` rather than a stored timestamp's
+exact value, and letting Postgres supply `now()` itself. That is the live
+example now.)*
+
 ### The rule
 
 Guard a timestamped write on the **window**, never on the timestamp's value, and

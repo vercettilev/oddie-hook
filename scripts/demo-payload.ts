@@ -52,7 +52,7 @@ const w = await getWallet(DEV);
 const board = await leaderboard(20);
 
 console.log(JSON.stringify({
-  positions: { ...pos, tokens: w.tokens, nextTopUpMs: w.nextTopUpMs },
+  positions: { ...pos, tokens: w.tokens },
   leaderboard: {
     rows: board.map((r, i) => ({
       rank: i + 1, handle: `#${r.deviceId.slice(0, 4)}`, you: r.deviceId === DEV,

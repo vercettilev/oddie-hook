@@ -16,7 +16,8 @@ if (process.env.DATABASE_URL) {
 
 import {
   createSlug, placeCall, sellPosition, settleMarket, positionsFor, getWallet,
-  noticesFor, leaderboard, ensureHandle, setHandle, slugFor, STARTING_TOKENS,
+  noticesFor, leaderboard, ensureHandle, setHandle, slugFor, STARTING_PREDICTIONS,
+  _memGrant, winBonus,
 } from "../src/store/markets.js";
 import { validateHandle, randomHandle, HANDLE_RE } from "../src/store/handles.js";
 import type { Market } from "../src/venues/types.js";
@@ -25,6 +26,21 @@ let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
   if (ok) console.log(`  ✓ ${name}`);
   else { failures++; console.error(`  ✗ ${name}`); if (detail) console.error(`      ${detail}`); }
+};
+
+/**
+ * This suite calls placeCall directly at the store layer with deliberately
+ * varied stakes, because settleMarket's payout math must be proven correct for
+ * ANY stake size the store accepts, not just what the current UI happens to
+ * send. Production itself only ever stakes CALL_COST (1) now (the redesign
+ * enforces that at the HTTP route, not in placeCall itself — see
+ * server.ts's /api/market/:slug/call) — no real device could reach these
+ * balances, so every device here is topped up first, in the harness, to
+ * exactly what its own call needs.
+ */
+const call = async (slug: string, side: "yes" | "no", tokens: number, deviceId: string, live: Market[]) => {
+  _memGrant(deviceId, tokens);
+  return placeCall(slug, side, tokens, deviceId, live);
 };
 
 const mk = (id: string, q: string, yesPct: number): Market => ({
@@ -64,8 +80,8 @@ console.log("\na market resolves YES: the holder is paid, the doubter scores his
 {
   const m = mk("SETL", "Will the settlement test pass?", 40);
   await createSlug(m);
-  await placeCall(slugFor(m), "yes", 80, HOLDER, [m]);   // entry 40 (yes terms)
-  await placeCall(slugFor(m), "no", 60, DOUBTER, [m]);   // entry 60 (no terms)
+  await call(slugFor(m), "yes", 80, HOLDER, [m]);   // entry 40 (yes terms)
+  await call(slugFor(m), "no", 60, DOUBTER, [m]);   // entry 60 (no terms)
   const holderBefore = (await getWallet(HOLDER)).tokens;
   const doubterBefore = (await getWallet(DOUBTER)).tokens;
 
@@ -74,14 +90,16 @@ console.log("\na market resolves YES: the holder is paid, the doubter scores his
 
   const win = settled.find((s) => s.deviceId === HOLDER)!;
   check("the winner settles at exit 100", win.exitPct === 100);
-  check("...for round(stake*100/entry) = 200 tokens", win.proceeds === 200, `${win.proceeds}`);
+  // 100/40 = 2.5 -> rounds to 3 (winBonus, not the old proportional payout —
+  // the bonus is the entire return, whatever the stake was staked at 40).
+  check("...for winBonus(40) = 3 predictions", win.proceeds === winBonus(40), `${win.proceeds}`);
   check("...and a +60 edge", win.edge === 60, `${win.edge}`);
 
   const loss = settled.find((s) => s.deviceId === DOUBTER)!;
   check("the loser settles at exit 0, proceeds 0", loss.exitPct === 0 && loss.proceeds === 0);
   check("...and a NEGATIVE edge that will count", loss.edge === -60, `${loss.edge}`);
 
-  check("winner's balance is credited", (await getWallet(HOLDER)).tokens === holderBefore + 200);
+  check("winner's balance is credited", (await getWallet(HOLDER)).tokens === holderBefore + winBonus(40));
   check("loser's balance is untouched by settlement", (await getWallet(DOUBTER)).tokens === doubterBefore);
 
   const hp = await positionsFor(HOLDER, []);
@@ -91,7 +109,7 @@ console.log("\na market resolves YES: the holder is paid, the doubter scores his
   check("the losing hold lowers the loser's reputation", dp.overall.avgEdge === -60, `${dp.overall.avgEdge}`);
 
   const hn = await noticesFor(HOLDER);
-  check("the winner gets a real notification", hn.length === 1 && hn[0].kind === "settle_win" && hn[0].body.includes("+200 tokens"), JSON.stringify(hn[0]));
+  check("the winner gets a real notification", hn.length === 1 && hn[0].kind === "settle_win" && hn[0].body.includes(`+${winBonus(40)} predictions`), JSON.stringify(hn[0]));
   const dn = await noticesFor(DOUBTER);
   check("the loser is told the market resolved", dn.length === 1 && dn[0].kind === "settle_loss" && dn[0].body.includes("resolved YES"), JSON.stringify(dn[0]));
 }
@@ -100,13 +118,14 @@ console.log("\nidempotency: the double-settle pays once, in every costume");
 {
   const m = mk("IDEM", "Will settling twice pay twice?", 50);
   await createSlug(m);
-  await placeCall(slugFor(m), "yes", 50, HOLDER, [m]);
+  await call(slugFor(m), "yes", 50, HOLDER, [m]);
   const before = (await getWallet(HOLDER)).tokens;
 
   const first = await settleMarket(slugFor(m), "yes");
-  check("first settle pays", first.length === 1 && first[0].proceeds === 100);
+  // 100/50 = 2.0 exactly -> winBonus(50) = 2.
+  check("first settle pays winBonus(50) = 2", first.length === 1 && first[0].proceeds === winBonus(50));
   const afterOnce = (await getWallet(HOLDER)).tokens;
-  check("...into the balance", afterOnce === before + 100);
+  check("...into the balance", afterOnce === before + winBonus(50));
 
   // The mutation: the same resolution detected again — a second sweep, a
   // restart, a race. It must find zero open rows.
@@ -124,7 +143,7 @@ console.log("\nsell and settle cannot both pay the same position");
 {
   const m = mk("RACE", "Will a sold position settle again?", 50);
   await createSlug(m);
-  await placeCall(slugFor(m), "yes", 40, SCALPER, [m]);
+  await call(slugFor(m), "yes", 40, SCALPER, [m]);
   const moved = { ...m, yesPct: 55 };
   await createSlug(moved);
   const open = (await positionsFor(SCALPER, [moved])).open[0];
@@ -137,7 +156,7 @@ console.log("\nsell and settle cannot both pay the same position");
   check("...and pays nothing on top", (await getWallet(SCALPER)).tokens === after);
 
   // And the mirror: a settled position cannot then be sold.
-  await placeCall(slugFor(moved), "no", 30, SCALPER, [moved]);
+  await call(slugFor(moved), "no", 30, SCALPER, [moved]);
   await settleMarket(slugFor(m), "yes");
   const pos = await positionsFor(SCALPER, []);
   const settledCall = pos.closed.find((c) => c.side === "no")!;
@@ -151,9 +170,9 @@ console.log("\nresolution says who was right: the crowd clause (floor: 10)");
   await createSlug(m);
   // Twelve poppers: two YES (right), ten NO (wrong). Enough for a percentage.
   for (const d of ["crowd-dev-yes-01", "crowd-dev-yes-02"])
-    await placeCall(slugFor(m), "yes", 10, d, [m]);
+    await call(slugFor(m), "yes", 10, d, [m]);
   for (let i = 1; i <= 10; i++)
-    await placeCall(slugFor(m), "no", 10, `crowd-dev-no-${String(i).padStart(3, "0")}`, [m]);
+    await call(slugFor(m), "no", 10, `crowd-dev-no-${String(i).padStart(3, "0")}`, [m]);
   await settleMarket(slugFor(m), "yes");
 
   const win = (await noticesFor("crowd-dev-yes-01"))[0];
@@ -164,9 +183,9 @@ console.log("\nresolution says who was right: the crowd clause (floor: 10)");
   // Below the floor the clause is OMITTED — not softened, not "be the first".
   const small = mk("CROWD2", "Will a small crowd get a percentage?", 50);
   await createSlug(small);
-  await placeCall(slugFor(small), "yes", 10, "crowd-dev-yes-01", [small]);
+  await call(slugFor(small), "yes", 10, "crowd-dev-yes-01", [small]);
   for (let i = 1; i <= 5; i++)
-    await placeCall(slugFor(small), "no", 10, `crowd-dev-no-${String(i).padStart(3, "0")}`, [small]);
+    await call(slugFor(small), "no", 10, `crowd-dev-no-${String(i).padStart(3, "0")}`, [small]);
   await settleMarket(slugFor(small), "yes");
   const solo = (await noticesFor("crowd-dev-yes-01"))[0];
   check("six poppers (under 10) -> no crowd clause at all", !solo.body.includes("popper"), solo.body);
@@ -177,7 +196,7 @@ console.log("\nshare tokens: owner-minted, stable, resolving");
   const { mintShareToken, getShareCall } = await import("../src/store/markets.js");
   const m = mk("SHARE", "Will the share card behave?", 40);
   await createSlug(m);
-  const r = await placeCall(slugFor(m), "yes", 50, HOLDER, [m]);
+  const r = await call(slugFor(m), "yes", 50, HOLDER, [m]);
   const callId = (r as { id: number }).id;
   check("placeCall returns the call id", Number.isInteger(callId), JSON.stringify(r));
 
