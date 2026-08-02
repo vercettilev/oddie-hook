@@ -117,11 +117,19 @@ CREATE TABLE IF NOT EXISTS device_balance (
   tokens     integer NOT NULL DEFAULT 100 CHECK (tokens >= 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );
--- A new device starts with one day's claim (200 = 4 calls at 50). Only the
--- DEFAULT changes, never the existing rows: ALTER COLUMN … SET DEFAULT changes
--- future inserts only, so a device that spent down to 30 keeps its 30 — the
--- daily claim carries it up.
-ALTER TABLE device_balance ALTER COLUMN tokens SET DEFAULT 200;
+-- A new device starts with STARTING_PREDICTIONS. Only the DEFAULT changes,
+-- never existing rows: ALTER COLUMN … SET DEFAULT changes future inserts
+-- only, so a device that spent down keeps its real balance — the daily claim
+-- carries it up. Interpolated (not a literal) so this can never silently
+-- drift from the constant again the way it did when the predictions economy
+-- shipped: application code changed STARTING_TOKENS(200) to
+-- STARTING_PREDICTIONS(5), but getWallet's INSERT never specifies tokens
+-- for a brand-new row — it relies entirely on this column DEFAULT — and nothing
+-- here updated it. Every dev/test run is in-memory (mem mode reads the JS
+-- constant directly, so it never touches this DEFAULT and could never have
+-- shown the divergence) — only real Postgres exposed it, and did: a
+-- genuinely fresh production device read "200 LEFT", not "5 LEFT".
+ALTER TABLE device_balance ALTER COLUMN tokens SET DEFAULT ${STARTING_PREDICTIONS};
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS topped_up_at timestamptz NOT NULL DEFAULT now();
 
 -- Early exit. A call is OPEN until it is sold (or, one day, settled); closing it
