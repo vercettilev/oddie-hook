@@ -218,7 +218,10 @@ function marketPageHtml(rec: { market: { question: string; yesPct: number; volum
 // The market permalink — every market's canonical landing page. /m/{slug} is
 // the short share path; /market/{slug} (already in the wild) serves the same.
 app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
-  const { all } = await getMarketData();
+  // pricingSet(), not getMarketData() alone: a shared permalink for a
+  // community market must unfurl with its real live odds, not the stored
+  // opening line — getMarketData() only ever knows about Kalshi/Polymarket.
+  const all = await pricingSet();
   const rec = await getSlug(req.params.slug, all).catch(() => null);
   // ?pc=<token>: a PERSONAL share. The unfurl shows their call, not the generic
   // market — that's the whole reason their followers react. Falls back to the
@@ -654,7 +657,10 @@ app.get("/api/home", async (req, res) => {
  * even after the market drifts past 96%.
  */
 app.get("/api/market/:slug", async (req, res) => {
-  const { all } = await getMarketData();
+  // This is what the client renders a permalink page FROM — same reasoning as
+  // the /m/:slug route above: pricingSet(), so a community market's live pool
+  // price actually reaches the page, not just its own card in the feed.
+  const all = await pricingSet();
   const rec = await getSlug(req.params.slug, all);
   if (!rec) return res.status(404).json({ error: "unknown market" });
   const yesTokens = rec.calls.filter((c) => c.side === "yes").reduce((s, c) => s + c.tokens, 0);
@@ -929,7 +935,11 @@ app.get("/api/positions", async (req, res) => {
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const { all } = await getMarketData();
+  // pricingSet(): an open community-market position's nowPct/edgeNow/valueNow
+  // all come from this set (see positionsFor) — venue-only data would make
+  // every open community position read as "the venue isn't quoting this",
+  // permanently, since community markets were never IN getMarketData() at all.
+  const all = await pricingSet();
   const [wallet, positions, streak] = await Promise.all([getWallet(deviceId), positionsFor(deviceId, all), streakFor(deviceId)]);
   res.json({ ...positions, tokens: wallet.tokens, streak });
 });
@@ -983,9 +993,18 @@ app.post("/api/position/:id/sell", async (req, res) => {
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "bad position id" });
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   try {
+    // The staleness gate is a venue-data concern (a Kalshi/Polymarket fetch
+    // failure serving a cached price is exactly when NOT to let someone sell
+    // into it) — checked against getMarketData() alone, on purpose. But the
+    // set actually PRICING the sell has to include community markets too, or
+    // livePctOf never finds the market and every community-market sell fails
+    // as "unpriced" — this was true before today's live-pricing change as
+    // well, since getMarketData() never included community markets at all.
     const data = await getMarketData();
     if (data.stale) return res.status(503).json({ ok: false, reason: "stale-odds" });
-    const result = await sellPosition(id, deviceId, data.all);
+    let community: CommunityMarket[] = [];
+    try { community = await openCommunityMarkets(); } catch (e) { /* best-effort, matches pricingSet's own tolerance */ }
+    const result = await sellPosition(id, deviceId, [...data.all, ...community]);
     if (!result.ok && result.reason === "not-found") return res.status(404).json(result);
     res.json(result);
   } catch (err) {

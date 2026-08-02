@@ -2832,6 +2832,16 @@ function buildCard(m,i,homeLoop){
           return;
         }
         balance=j.balance;paintBalance(true);loadBalance();
+        // Trigger 1 of 2 for the live tote-board (see updateCardOdds). j.pctAt
+        // is the ENTRY price — what the pool looked like right before this
+        // call joined it, deliberately (a fill price has to be quoted from
+        // before your own order, or it isn't a real price) — so it is the
+        // WRONG number to paint on the card afterward: on a thin pool, your
+        // own call can be most of what just moved it. One small follow-up
+        // fetch gets the real post-call split instead of asserting one.
+        fetch(`${API}/api/market/${m.slug}`).then((r)=>r.json()).then((mj)=>{
+          if(typeof mj?.market?.yesPct==="number")updateCardOdds(card,mj.market.yesPct);
+        }).catch(()=>{/* the odds just don't move this tick; next poll catches up */});
         lockedUI(s,winBonus(j.pctAt),j.crowd,j.id,j.firstEver===true);
         ev("amount_confirm",{slug:m.slug,idx:i,side:s});
       }catch(e){
@@ -3365,6 +3375,11 @@ async function renderHome(){
   // scroll position mid-layout on some engines, so this is the belt to the
   // suspenders above, not a duplicate of it.
   scroller.scrollTop=0; window.scrollTo(0,0);
+  // Card-view tracking AND the live tote-board poll (see updateCardOdds) both
+  // ride this one observer. loadFeed already wired it for the swipe Feed;
+  // Home is where community markets — the ones with a real, moving pool —
+  // actually live, so it needs the exact same hookup, not a separate one.
+  watchDepth(scroller);
 
   // First-visit guided tour — only for a device the server just told us is
   // new, and only if it has never been toured (that second gate lives in
@@ -3477,17 +3492,94 @@ function animateOdds(card){
     requestAnimationFrame(tick);
   });
 }
+/**
+ * The tote-board: YES/NO odds are a live parimutuel pool now (see poolPct in
+ * markets.ts), not a number fixed at market creation, so the card has to be
+ * able to move without a reload. Two triggers, no push channel — this app has
+ * none, so these are the two moments that are actually free: the caller's own
+ * action already round-trips to the server (its response is reused, not a
+ * second fetch), and the one card currently on screen is polled for anyone
+ * ELSE's calls while it's the thing being looked at. Every other off-screen
+ * card is deliberately left alone; the next fetch (a fresh render) is what
+ * catches those up, exactly like any other data on this page.
+ *
+ * Never a hard snap: this animates from whatever is CURRENTLY displayed to
+ * the fresh value, sharing animateOdds' easeOutCubic tween — a shift reads as
+ * the market moving, not the UI glitching. A WeakMap token per card means a
+ * second update arriving mid-animation (the poll landing right as the user's
+ * own call resolves, say) supersedes the first cleanly instead of the two
+ * fighting over the same text node.
+ */
+const liveOddsAnim=new WeakMap();
+function updateCardOdds(card,rawYesPct){
+  const yesPct=Math.max(1,Math.min(99,Math.round(rawYesPct)));
+  const yesEl=card.querySelector('.orow[data-side="yes"]'), noEl=card.querySelector('.orow[data-side="no"]');
+  if(!yesEl||!noEl)return;
+  const yesNum=yesEl.querySelector(".opct-num"), noNum=noEl.querySelector(".opct-num");
+  const fromYes=Number(yesNum.textContent);
+  if(!Number.isFinite(fromYes)||fromYes===yesPct)return; // nothing moved — no animation to run, no jitter to cause
+  const paint=(y)=>{
+    const n=Math.max(1,Math.min(99,Math.round(y)));
+    yesNum.textContent=n; noNum.textContent=100-n;
+    yesEl.style.setProperty("--fill",`${n}%`); noEl.style.setProperty("--fill",`${100-n}%`);
+    yesEl.querySelector(".opay").textContent=fmtMult(n); noEl.querySelector(".opay").textContent=fmtMult(100-n);
+    yesEl.setAttribute("aria-label",`Yes, ${n} percent, pays ${fmtMult(n)}`);
+    noEl.setAttribute("aria-label",`No, ${100-n} percent, pays ${fmtMult(100-n)}`);
+  };
+  if(REDUCED_MOTION){paint(yesPct);return;}
+  const token={};liveOddsAnim.set(card,token);
+  const dur=650,t0=performance.now();
+  const tick=(t)=>{
+    if(liveOddsAnim.get(card)!==token)return; // superseded by a newer update mid-flight — stop, don't fight it
+    const p=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-p,3);
+    paint(fromYes+(yesPct-fromYes)*e);
+    if(p<1)requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+// Trigger 2 of 2: poll the ONE card currently in view, so the pool's own
+// motion (someone else's call, not yours) still shows up while you're looking
+// at it. 5s — frequent enough to feel alive, not so tight it reads as
+// hammering the server for a number that mostly doesn't move tick to tick.
+let liveOddsPoll=null; // {card, timer} — at most one card polls at a time
+const LIVE_ODDS_POLL_MS=5000;
+function stopLiveOddsPoll(){
+  if(!liveOddsPoll)return;
+  clearInterval(liveOddsPoll.timer);liveOddsPoll=null;
+}
+function startLiveOddsPoll(card){
+  if(liveOddsPoll){
+    if(liveOddsPoll.card===card)return; // already the active card
+    stopLiveOddsPoll();
+  }
+  const slug=card.dataset.slug;
+  if(!slug)return;
+  const tick=async()=>{
+    if(!card.isConnected){stopLiveOddsPoll();return;} // self-heals if the leave event was missed
+    try{
+      const r=await fetch(`${API}/api/market/${encodeURIComponent(slug)}`);
+      if(!r.ok)return;
+      const j=await r.json();
+      if(typeof j?.market?.yesPct==="number")updateCardOdds(card,j.market.yesPct);
+    }catch(e){/* one missed tick; the next one just tries again */}
+  };
+  liveOddsPoll={card,timer:setInterval(tick,LIVE_ODDS_POLL_MS)};
+}
+
 function watchDepth(scroller){
   if(!("IntersectionObserver" in window))return;   // depth goes unmeasured, feed still works
   const seen=new Set();
   const io=new IntersectionObserver(entries=>{
     for(const e of entries){
-      if(!e.isIntersecting)continue;
+      if(!e.isIntersecting){
+        if(liveOddsPoll&&liveOddsPoll.card===e.target)stopLiveOddsPoll();
+        continue;
+      }
       animateOdds(e.target);                        // count the odds up as the card lands
       const idx=Number(e.target.dataset.idx);
-      if(seen.has(idx))continue;
-      seen.add(idx);
-      ev("card_view",{slug:e.target.dataset.slug,idx});
+      if(!seen.has(idx)){seen.add(idx);ev("card_view",{slug:e.target.dataset.slug,idx});}
+      startLiveOddsPoll(e.target);                   // ...then start watching it for live moves
     }
   },{root:scroller,threshold:.55});
   scroller.querySelectorAll(".card").forEach(c=>io.observe(c));

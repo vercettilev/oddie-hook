@@ -499,7 +499,16 @@ export async function createSlug(market: Market): Promise<SlugRecord> {
 export async function getSlug(slug: string, liveMarkets: Market[] = []): Promise<SlugRecord | undefined> {
   if (!PERSISTENT) {
     const hit = mem.get(slug);
-    if (hit) return hit;
+    if (hit) {
+      // Prefer live odds over the stored snapshot — same reasoning as the
+      // Postgres branch below, and the same bug class this file already has
+      // scars from: mem and Postgres silently disagreeing because a fix only
+      // ever landed on one side. `hit` is a reference INTO the mem Map, not a
+      // copy, so this returns an overridden copy rather than mutating the
+      // stored snapshot in place.
+      const live = liveMarkets.find((m) => m.venue === hit.market.venue && m.venueId === hit.market.venueId);
+      return live ? { ...hit, market: live } : hit;
+    }
     const derived = liveMarkets.find((m) => slugFor(m) === slug);
     return derived ? createSlug(derived) : undefined;
   }
@@ -2922,8 +2931,42 @@ export async function getFeaturedSlugs(): Promise<string[]> {
   return rows.map((r) => r.slug);
 }
 
+/**
+ * Parimutuel price from a pool of OPEN stake: the side's share of the total.
+ * Same formula the payout side already lives by — winBonus is exactly
+ * round(100/entryPct), so a pool-derived entryPct here is a live tote-board
+ * number by construction, not a new concept bolted next to the old one.
+ *
+ * Clamped to 1–99 so a market never goes literally unquotable (sidePctOf
+ * treats exactly 0 or 100 as "settled, not a quote") just because only one
+ * side has taken a position yet — an early lopsided pool should read as
+ * "very likely", not vanish. Null on an empty pool: the caller's job, not
+ * this function's, to decide the fallback (the market's stored opening
+ * price) — this is pure arithmetic with no opinion about markets that have
+ * no stake yet.
+ *
+ * Pool-agnostic on purpose: takes two numbers, not a currency. The same
+ * formula extends cleanly to a real-money pool later (lamports in, lamports
+ * out) — nothing here assumes "prediction" as a unit.
+ */
+export function poolPct(chosenPool: number, oppositePool: number): number | null {
+  const total = chosenPool + oppositePool;
+  if (total <= 0) return null;
+  return Math.max(1, Math.min(99, Math.round((chosenPool / total) * 100)));
+}
+
 /** Open (unresolved) community markets, Market-shaped + meta. Used for the feed
- *  AND to price plays (livePctOf needs the market in the "live" set). */
+ *  AND to price plays (livePctOf needs the market in the "live" set).
+ *
+ *  yesPct here is LIVE, not the stored opening price: as predictions land on
+ *  one side, its pool grows and poolPct compresses that side's price toward
+ *  100 (and its multiplier toward 1×) while the other side's price falls (and
+ *  its multiplier grows) — the classic tote-board feel. Only OPEN stake
+ *  counts (closed_at IS NULL): a position that already exited, early-sold or
+ *  settled, is no longer money at risk and shouldn't move a live price. The
+ *  market's stored yes_pct is untouched in the database either way — it
+ *  stays the admin's true opening line, and is exactly what this falls back
+ *  to for a market nobody has staked into yet. */
 export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
   if (!PERSISTENT) {
     const out: CommunityMarket[] = [];
@@ -2931,7 +2974,14 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
       if (meta.resolvedOutcome) continue;
       const rec = mem.get(meta.slug);
       if (!rec) continue;
-      out.push({ ...rec.market, marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig, resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability });
+      const yes = memCalls.filter((c) => c.slug === meta.slug && c.side === "yes" && !c.closedAt).reduce((a, c) => a + c.tokens, 0);
+      const no = memCalls.filter((c) => c.slug === meta.slug && c.side === "no" && !c.closedAt).reduce((a, c) => a + c.tokens, 0);
+      const live = poolPct(yes, no);
+      out.push({
+        ...rec.market, yesPct: live ?? rec.market.yesPct,
+        marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
+        resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
+      });
     }
     return out;
   }
@@ -2940,14 +2990,20 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
     venue_id: string; question: string; yes_pct: number; closes_at: Date | null; volume_usd: number; venue_url: string;
     market_id: string; category: string; onchain_pubkey: string | null; onchain_sig: string | null;
     resolution_criteria: string | null; resolvability: string | null;
+    yes_pool: number; no_pool: number;
   }>(`
     SELECT s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability
+           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability,
+           COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes' AND mc.closed_at IS NULL), 0)::int AS yes_pool,
+           COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'  AND mc.closed_at IS NULL), 0)::int AS no_pool
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
+      LEFT JOIN market_call mc ON mc.slug = c.slug
      WHERE c.resolved_outcome IS NULL
+     GROUP BY s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
+              c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
-    venue: "community", venueId: r.venue_id, question: r.question, yesPct: r.yes_pct,
+    venue: "community", venueId: r.venue_id, question: r.question, yesPct: poolPct(r.yes_pool, r.no_pool) ?? r.yes_pct,
     closesAt: r.closes_at ? r.closes_at.toISOString() : null, volumeUsd: Number(r.volume_usd),
     venueUrl: r.venue_url, tags: [], marketId: Number(r.market_id), category: r.category,
     onchainPubkey: r.onchain_pubkey, onchainSig: r.onchain_sig,
