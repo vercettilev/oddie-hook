@@ -17,7 +17,10 @@ import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
 import { winBonus } from "./store/economy.js";
-import { mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol } from "./chain/oddieChain.js";
+import {
+  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol,
+  resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
+} from "./chain/oddieChain.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
@@ -1441,8 +1444,93 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
   if (!ok) return res.status(409).json({ error: "unknown or already-resolved community market" });
   const settled = await settleMarket(slug, outcome);
   await emailSettled(slug, outcome, settled);
+  // Real-stakes counterpart: resolve the SAME market on-chain so claim_winnings
+  // has an outcome to pay against. Best-effort and entirely after the response-
+  // determining work above — the real (virtual) economy never waits on devnet.
+  if (isChainEnabled()) {
+    void communityMarketDetail(slug).then((detail) => {
+      if (detail?.onchainPubkey) void resolveMarketOnChain(detail.onchainPubkey, outcome);
+    }).catch(() => {});
+  }
   res.json({ ok: true, slug, outcome, settled: settled.length });
 });
+
+/**
+ * Real-stakes ("skin in the game"), opt-in and ONCHAIN_ENABLED-gated. The flag
+ * is read once at process boot (see oddieChain.ts) and never changes without a
+ * restart, so gating at ROUTE REGISTRATION — not inside each handler — is safe
+ * and is the point: with the flag off, everything below except /status is
+ * simply never added to Express's routing table. A request to any of them 404s
+ * exactly like a path that was never typed, not a custom "disabled" response —
+ * there is nothing here to probe. The client mirrors this: it never renders a
+ * trace of this UI, and never even fetches the other routes, unless /status
+ * said enabled first.
+ *
+ * The server only ASSEMBLES transactions (prepare-position, prepare-claim); it
+ * never holds or signs a user's funds. The user's own wallet signs and
+ * broadcasts client-side. Compare admin-signed resolveMarketOnChain above,
+ * which the SERVER's own authority key does sign — that instruction is
+ * operator-only by the contract itself, not by anything client-controlled.
+ */
+app.get("/api/chain/status", (_req, res) => {
+  res.json({ enabled: onchainEnabled() });
+});
+
+if (onchainEnabled()) {
+  const MIN_STAKE_LAMPORTS = 1_000_000;    // 0.001 SOL — above rent/fee dust
+  const MAX_STAKE_LAMPORTS = 5_000_000_000; // 5 SOL — a sane demo ceiling, not a protocol limit
+
+  app.get("/api/chain/market/:slug", async (req, res) => {
+    const detail = await communityMarketDetail(req.params.slug);
+    if (!detail?.onchainPubkey) return res.json({ ok: false, reason: "not-minted" });
+    const state = await fetchMarketOnChain(detail.onchainPubkey);
+    if (!state) return res.json({ ok: false, reason: "unreachable" });
+    res.json({
+      ok: true, pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey),
+      resolved: state.resolved, winningSide: state.winningSide,
+      totalYesLamports: state.totalYesLamports, totalNoLamports: state.totalNoLamports,
+    });
+  });
+
+  app.get("/api/chain/position", async (req, res) => {
+    const slug = String(req.query.slug ?? "");
+    const userPubkey = String(req.query.userPubkey ?? "");
+    if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
+    const detail = await communityMarketDetail(slug);
+    if (!detail?.onchainPubkey) return res.json({ ok: false, reason: "not-minted" });
+    const position = await fetchPosition(detail.onchainPubkey, userPubkey);
+    res.json({ ok: true, position });
+  });
+
+  app.post("/api/chain/position/prepare", async (req, res) => {
+    const slug = String(req.body?.slug ?? "");
+    const userPubkey = String(req.body?.userPubkey ?? "");
+    const side = req.body?.side;
+    const lamports = Number(req.body?.lamports ?? 0);
+    if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
+    if (side !== "yes" && side !== "no") return res.status(400).json({ error: "side must be yes|no" });
+    if (!Number.isInteger(lamports) || lamports < MIN_STAKE_LAMPORTS || lamports > MAX_STAKE_LAMPORTS) {
+      return res.status(400).json({ error: `lamports must be between ${MIN_STAKE_LAMPORTS} and ${MAX_STAKE_LAMPORTS}` });
+    }
+    const detail = await communityMarketDetail(slug);
+    if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
+    if (detail.resolvedOutcome) return res.status(409).json({ ok: false, reason: "already-resolved" });
+    const txBase64 = await preparePositionTx({ marketPubkey: detail.onchainPubkey, userPubkey, side, lamports });
+    if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
+    res.json({ ok: true, txBase64 });
+  });
+
+  app.post("/api/chain/claim/prepare", async (req, res) => {
+    const slug = String(req.body?.slug ?? "");
+    const userPubkey = String(req.body?.userPubkey ?? "");
+    if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
+    const detail = await communityMarketDetail(slug);
+    if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
+    const txBase64 = await prepareClaimTx({ marketPubkey: detail.onchainPubkey, userPubkey });
+    if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
+    res.json({ ok: true, txBase64 });
+  });
+}
 
 // Tweet mode: given a CONFIRMED market (venue match auto-accepted, closest match
 // approved, or a Community market just created), generate a ready-to-paste X

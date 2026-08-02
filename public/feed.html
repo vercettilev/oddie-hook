@@ -501,6 +501,25 @@
      meter. The number keeps its white-stroke halo so it reads on white AND on the
      accent fill. */
   .duel{display:flex;flex-direction:row;gap:12px;margin-top:6px}
+  /* Real-stakes ("skin in the game") — only ever created by chain.js, which
+     only ever loads when the server's flag is on (see initChainLayer). These
+     rules sit here inert, exactly like any other unused class, whenever the
+     feature is off: nothing about a stylesheet rule is user-facing on its own. */
+  .chain-cta{display:block;margin:8px auto 0;font-family:'Nunito';font-weight:800;font-size:11.5px;
+    color:var(--muted-g);background:none;border:1.5px dashed var(--hair-g);border-radius:999px;
+    padding:5px 12px;cursor:pointer}
+  .chain-wallet{font-family:'Nunito';font-weight:700;font-size:12.5px;color:var(--muted);margin:0 0 10px}
+  .chain-side-row{display:flex;gap:8px;margin-bottom:10px}
+  .chain-side{flex:1;font:inherit;font-weight:800;font-size:14px;padding:9px 0;cursor:pointer;
+    border:2.5px solid var(--ink);border-radius:12px;background:var(--white);color:var(--ink)}
+  .chain-side.on{background:var(--accent);border-width:3.5px}
+  .chain-amt{display:block;width:100%;font:inherit;font-size:16px;font-weight:700;padding:9px 10px;
+    margin-bottom:8px;border:2.5px solid var(--ink);border-radius:12px;background:var(--white);
+    box-sizing:border-box;text-align:center;color:var(--ink)}
+  .chain-line{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--acc-deep);min-height:16px;margin-bottom:8px}
+  .chain-err{font-family:'Nunito';font-weight:700;font-size:12px;color:#c0392b;margin:6px 0 0}
+  .chain-sig{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted);margin:6px 0 14px}
+  .chain-sig a{color:var(--link-g)}
   .orow{--fill:50%;flex:1 1 0;position:relative;overflow:hidden;isolation:isolate;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
     min-height:122px;padding:15px 8px 18px;border-radius:24px;border:3.5px solid #000;background:#fff;
@@ -1578,6 +1597,30 @@ const API=""; // same origin
 // and copy that quotes these amounts before the server has answered.
 const STARTING_PREDICTIONS=5, CALL_COST=1, DAILY_PREDICTIONS=5, CONNECT_BONUS=5;
 
+/* -------------------------------------- real-stakes layer (opt-in, gated) --
+ * "Skin in the game" — an entirely optional, separate layer for putting real
+ * SOL behind a call, built on the same devnet pari-mutuel program the admin
+ * panel already mints markets on. It is OFF by default: this fetch is the
+ * ONLY thing that runs unconditionally, and it does nothing visible — no
+ * button, no wallet prompt, no real-money copy exists anywhere until the
+ * server's own ONCHAIN_ENABLED flag answers true. Off, this page renders
+ * identically to a build that never had this feature at all.
+ */
+let CHAIN_ENABLED=false;
+async function initChainLayer(){
+  try{
+    const r=await fetch(`${API}/api/chain/status`);
+    if(!r.ok)return;
+    const j=await r.json();
+    if(!j.enabled)return;
+    CHAIN_ENABLED=true;
+    const s=document.createElement("script");
+    s.src="/chain.js";
+    s.onload=()=>window.OddieChain&&window.OddieChain.init();
+    document.head.appendChild(s);
+  }catch(e){/* real-stakes is optional; the core product never depends on this */}
+}
+
 /* --------------------------------------------------- predictions balance -- */
 /**
  * Virtual predictions, nothing else. Every device starts with a small handful,
@@ -2558,6 +2601,13 @@ function buildCard(m,i,homeLoop){
       <div class="social" id="soc${i}"></div>
       <div class="nudge" id="nudge${i}"><span class="arrow">↑</span><span>${GESTURE} for the next take</span></div>`;
     card.dataset.slug=m.slug;card.dataset.idx=i;
+    // Inert marker, always present regardless of the real-stakes flag — a plain
+    // boolean, not a button or any real-money language. It's how the (optional,
+    // separately-loaded) chain.js module finds eligible cards via DOM
+    // observation, without buildCard needing to know or import anything about
+    // that layer. When the flag is off, chain.js never loads and this
+    // attribute does precisely nothing.
+    card.dataset.community=m.community?"1":"0";
     // Discovery share: "check this out". The link unfurls to the card, so the
     // text stays light — the question rides along in the preview.
     card.querySelector(".shareico").onclick=(e)=>{e.stopPropagation();
@@ -4395,6 +4445,7 @@ function spawnConfetti(container){
     try{sessionStorage.removeItem("gate_oauth");}catch(e){}
     render();loadAuth().then(loadBalance).then(authReturn);
     checkCelebrations(); // independent of render()/routing — layers on top, never blocks
+    initChainLayer(); // fire-and-forget, opt-in real-stakes layer — see its own doc comment
   }
 })();
 
