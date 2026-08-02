@@ -247,6 +247,10 @@
   .rby[open]>summary::before{transform:rotate(90deg)}
   .rby-body{margin:8px 0 2px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
     color:var(--muted-g);border-left:2px solid var(--hair-g);padding-left:11px}
+  /* Creator fee transparency — a plain, unobtrusive line, not a warning: the
+     fee is disclosed, not apologized for. Sits with the other secondary
+     market metadata, under the YES/NO buttons. */
+  .fee-note{margin:8px 0 0;font-family:'Nunito';font-weight:700;font-size:11px;color:var(--muted-g)}
   /* Source tweet — permalink-only, sits above the question. Same surface/line
      tokens as the elevated card itself, not a competing block. */
   .srctweet{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:9px 12px;
@@ -526,6 +530,7 @@
   .chain-pool-side b{display:block;font-family:'Fredoka';font-weight:700;font-size:18px;color:var(--on-ground);margin:2px 0}
   .chain-pool-side small{color:var(--acc-deep)}
   .chain-pool-empty{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted-g);margin:0 0 12px}
+  .chain-fee-note{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);margin:0 0 12px}
   .orow{--fill:50%;flex:1 1 0;position:relative;overflow:hidden;isolation:isolate;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
     min-height:122px;padding:15px 8px 18px;border-radius:24px;border:3.5px solid #000;background:#fff;
@@ -2617,6 +2622,7 @@ function buildCard(m,i,homeLoop){
         </button>
       </div>
       ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
+      ${m.community && m.creatorFeeBps ? `<div class="fee-note">creator fee ${(m.creatorFeeBps/100).toFixed(0)}% · paid to whoever created this market when it resolves, on top of your winnings</div>` : ""}
       ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">
         <div class="callers-lab">Who called it</div>
         <div class="callers-list">${m.callers.map(c=>`
@@ -4122,7 +4128,7 @@ async function loadNotices(scroller){
 // Icon by kind for the quiet, non-settlement rows — a market resolving is a
 // visually different event from "someone joined against you", so they read at
 // a glance in the same list rather than blurring into one generic ✅.
-const NOTICE_ICON={opposite_side:"⚔️",closing_soon:"⏰"};
+const NOTICE_ICON={opposite_side:"⚔️",closing_soon:"⏰",creator_fee:"💰"};
 function noticeCardHTML(n){
   const win=n.kind==="settle_win", loss=n.kind==="settle_loss";
   if(!win && !loss){

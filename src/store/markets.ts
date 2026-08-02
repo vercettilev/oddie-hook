@@ -4,6 +4,7 @@ import {
   STARTING_PREDICTIONS, CALL_COST,
   DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
   edgePts, proceedsFor, reputationOf, winBonus,
+  CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, creatorFeePlay,
   type Reputation,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
@@ -385,6 +386,28 @@ CREATE TABLE IF NOT EXISTS season_points_log (
 );
 CREATE INDEX IF NOT EXISTS spl_device_idx ON season_points_log(device_id);
 CREATE INDEX IF NOT EXISTS spl_handle_idx ON season_points_log(handle);
+
+-- Every creator/protocol fee, real or merely proposed. One row per fee event:
+-- a play-token settlement writes one 'creator'/'play' row when a fee was
+-- actually credited; a real-money resolve writes 'creator'+'protocol' rows
+-- under 'real', but with enforced=false, since no on-chain deduction happens
+-- yet (see economy.ts's CREATOR_FEE_BPS_REAL doc comment for why). This is
+-- the audit trail for both — "every fee, real or proposed" — so a later pass
+-- adding on-chain enforcement has a ledger of what SHOULD have been charged.
+CREATE TABLE IF NOT EXISTS market_fee_log (
+  id                   bigserial PRIMARY KEY,
+  slug                 text NOT NULL,
+  market_kind          text NOT NULL,          -- 'play' | 'real'
+  fee_kind             text NOT NULL,          -- 'creator' | 'protocol'
+  recipient_device_id  text,                    -- null for the protocol row (no personal recipient)
+  recipient_handle     text,
+  rate_bps             integer NOT NULL,
+  basis_amount         bigint NOT NULL,         -- pool the rate applied to: tokens (play) or lamports (real)
+  fee_amount           bigint NOT NULL,
+  enforced             boolean NOT NULL,        -- true = actually credited; false = logged only, not charged
+  created_at           timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS mfl_slug_idx ON market_fee_log(slug);
 
 -- The home page's featured "Live right now" slots — an admin-ordered list of
 -- community market slugs (rank = display order, lowest first). Fewer picks
@@ -2183,6 +2206,7 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
       out.push({ callId: c.id, deviceId: c.deviceId, side: c.side, stake: c.tokens, entryPct: c.entryPct, exitPct, proceeds, edge: edgePts(c.entryPct, exitPct) });
     }
     void awardCleanResolve(slug); // +50 to the surfacer: clean resolution
+    void creditCreatorFeePlayMem(slug, rec?.market.question ?? slug, out.reduce((a, r) => a + r.stake, 0));
     return out;
   }
 
@@ -2221,9 +2245,38 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
         [r.device_id, won ? "settle_win" : "settle_loss", noticeBody(question, outcome, r.side, r.pct_at, r.proceeds, crowd), won ? r.proceeds : null, slug, r.id],
       );
     }
+
+    // Creator fee: additive bonus off the total pool (both sides), credited
+    // atomically in this same transaction — see economy.ts for why this is a
+    // grant rather than a deduction. A market with no identifiable creator
+    // (surfacerFor is per-slug, populated at ingest — see recordSurfacer)
+    // simply pays no fee; there's no one to credit it to.
+    const totalPoolPlay = closed.rows.reduce((a, r) => a + r.tokens, 0);
+    const creatorFeePlayAmount = creatorFeePlay(totalPoolPlay);
+    let creatorFeeCredited: { deviceId: string; handle: string | null } | null = null;
+    if (creatorFeePlayAmount > 0) {
+      const surfacer = await surfacerFor(slug);
+      if (surfacer?.deviceId) {
+        await client.query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [surfacer.deviceId]);
+        await client.query(`UPDATE device_balance SET tokens = tokens + $1 WHERE device_id = $2`, [creatorFeePlayAmount, surfacer.deviceId]);
+        await client.query(
+          `INSERT INTO notice (device_id, kind, body, delta, slug, call_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [surfacer.deviceId, "creator_fee", `You earned ${creatorFeePlayAmount} prediction${creatorFeePlayAmount === 1 ? "" : "s"} — creator fee for "${question}" resolving.`, creatorFeePlayAmount, slug, null],
+        );
+        creatorFeeCredited = { deviceId: surfacer.deviceId, handle: surfacer.handle };
+      }
+    }
+
     await client.query("COMMIT");
 
     void awardCleanResolve(slug); // +50 to the surfacer: clean resolution (post-commit, best-effort)
+    if (creatorFeeCredited) {
+      void logFee({
+        slug, marketKind: "play", feeKind: "creator",
+        recipientDeviceId: creatorFeeCredited.deviceId, recipientHandle: creatorFeeCredited.handle,
+        rateBps: CREATOR_FEE_BPS_PLAY, basisAmount: totalPoolPlay, feeAmount: creatorFeePlayAmount, enforced: true,
+      }); // audit log write, post-commit best-effort — same pattern as awardCleanResolve above
+    }
     return closed.rows.map((r) => ({
       callId: r.id, deviceId: r.device_id, side: r.side, stake: r.tokens,
       entryPct: r.pct_at, exitPct: r.exit_pct, proceeds: r.proceeds, edge: edgePts(r.pct_at, r.exit_pct),
@@ -2268,6 +2321,92 @@ interface MemSurfacer { handle: string | null; deviceId: string | null; sourceUr
 const memSurfacer = new Map<string, MemSurfacer>();
 interface MemSeasonRow { deviceId: string | null; handle: string | null; event: string; amount: number; slug: string | null; dedupKey: string; createdAt: string }
 const memSeasonLog: MemSeasonRow[] = [];
+
+// In-memory mirror of market_fee_log — same shape as the table, same
+// "creator + protocol fee ledger" role, for the mem backend tests run against.
+interface MemFeeRow {
+  slug: string; marketKind: "play" | "real"; feeKind: "creator" | "protocol";
+  recipientDeviceId: string | null; recipientHandle: string | null;
+  rateBps: number; basisAmount: number; feeAmount: number; enforced: boolean; createdAt: string;
+}
+const memFeeLog: MemFeeRow[] = [];
+
+export interface FeeLogRow {
+  slug: string; marketKind: "play" | "real"; feeKind: "creator" | "protocol";
+  recipientDeviceId: string | null; recipientHandle: string | null;
+  rateBps: number; basisAmount: number; feeAmount: number; enforced: boolean; createdAt: string;
+}
+interface FeeLogInput {
+  slug: string; marketKind: "play" | "real"; feeKind: "creator" | "protocol";
+  recipientDeviceId?: string | null; recipientHandle?: string | null;
+  rateBps: number; basisAmount: number; feeAmount: number; enforced: boolean;
+}
+/** The one write path for every fee event, real or merely proposed — settleMarket
+ *  (play, enforced) and the real-money resolve route (real, NOT enforced — see
+ *  economy.ts) both funnel through this so market_fee_log is a complete ledger. */
+async function logFee(input: FeeLogInput): Promise<void> {
+  const recipientDeviceId = input.recipientDeviceId ?? null;
+  const recipientHandle = input.recipientHandle ?? null;
+  if (!PERSISTENT) {
+    memFeeLog.push({ ...input, recipientDeviceId, recipientHandle, createdAt: new Date().toISOString() });
+    return;
+  }
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO market_fee_log (slug, market_kind, fee_kind, recipient_device_id, recipient_handle, rate_bps, basis_amount, fee_amount, enforced)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [input.slug, input.marketKind, input.feeKind, recipientDeviceId, recipientHandle, input.rateBps, input.basisAmount, input.feeAmount, input.enforced],
+  );
+}
+/**
+ * Real-money creator + protocol fee — logged, never charged. See economy.ts:
+ * the deployed Solana program has no fee-taking instruction, so there is
+ * nothing to actually deduct from the vault yet. This records what WOULD be
+ * taken at the proposed rates, against the vault total at resolution, purely
+ * for transparency and future reconciliation once on-chain support exists.
+ * Best-effort and non-blocking — a logging failure must never affect a
+ * real-money market's resolution. */
+export async function logRealFeeIntent(slug: string, totalVaultLamports: number): Promise<void> {
+  try {
+    if (totalVaultLamports <= 0) return;
+    const surfacer = await surfacerFor(slug);
+    const creatorFeeAmount = Math.floor((totalVaultLamports * CREATOR_FEE_BPS_REAL) / 10000);
+    const protocolFeeAmount = Math.floor((totalVaultLamports * PROTOCOL_FEE_BPS_REAL) / 10000);
+    if (creatorFeeAmount > 0) {
+      await logFee({
+        slug, marketKind: "real", feeKind: "creator",
+        recipientDeviceId: surfacer?.deviceId ?? null, recipientHandle: surfacer?.handle ?? null,
+        rateBps: CREATOR_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: creatorFeeAmount, enforced: false,
+      });
+    }
+    if (protocolFeeAmount > 0) {
+      await logFee({
+        slug, marketKind: "real", feeKind: "protocol",
+        recipientDeviceId: null, recipientHandle: null,
+        rateBps: PROTOCOL_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: protocolFeeAmount, enforced: false,
+      });
+    }
+  } catch (e) { console.error("[fees] real-money fee intent logging failed:", (e as Error).message); }
+}
+
+/** Recent fee events, newest first — the admin audit view over market_fee_log. */
+export async function feeLog(limit = 100): Promise<FeeLogRow[]> {
+  const n = Math.max(1, Math.min(500, Math.floor(limit)));
+  if (!PERSISTENT) return [...memFeeLog].reverse().slice(0, n);
+  await ensureSchema();
+  const { rows } = await db().query<{
+    slug: string; market_kind: "play" | "real"; fee_kind: "creator" | "protocol";
+    recipient_device_id: string | null; recipient_handle: string | null;
+    rate_bps: number; basis_amount: string; fee_amount: string; enforced: boolean; created_at: Date;
+  }>(`SELECT slug, market_kind, fee_kind, recipient_device_id, recipient_handle, rate_bps, basis_amount, fee_amount, enforced, created_at
+        FROM market_fee_log ORDER BY id DESC LIMIT $1`, [n]);
+  return rows.map((r) => ({
+    slug: r.slug, marketKind: r.market_kind, feeKind: r.fee_kind,
+    recipientDeviceId: r.recipient_device_id, recipientHandle: r.recipient_handle,
+    rateBps: r.rate_bps, basisAmount: Number(r.basis_amount), feeAmount: Number(r.fee_amount),
+    enforced: r.enforced, createdAt: r.created_at.toISOString(),
+  }));
+}
 
 /** Create a community market (base slug + community row). Returns its slug and
  *  the numeric id used BOTH as the market's venueId and its on-chain market_id. */
@@ -3142,6 +3281,31 @@ function pushNoticeMem(deviceId: string, slug: string, question: string, outcome
     delta: won ? proceeds : null, slug, callId, at: new Date().toISOString(),
     oddsPct: Math.max(1, Math.min(99, Math.round(entryPct))), outcome,
     seenAt: null, count: null,
+  });
+}
+
+/** Mem-backend counterpart to the pg branch's inline creator-fee crediting in
+ *  settleMarket: additive bonus off the total pool, paid to the market's
+ *  surfacer/creator, logged for audit. A no-op if the fee rounds to 0 tokens
+ *  or the market has no identifiable creator — see economy.ts's doc comment
+ *  on why this is a grant, never a deduction from anyone's payout. */
+async function creditCreatorFeePlayMem(slug: string, question: string, totalPoolTokens: number): Promise<void> {
+  const feeAmount = creatorFeePlay(totalPoolTokens);
+  if (feeAmount <= 0) return;
+  const surfacer = await surfacerFor(slug);
+  if (!surfacer?.deviceId) return;
+  const w = memBalance.get(surfacer.deviceId) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: Date.now() };
+  memBalance.set(surfacer.deviceId, { ...w, tokens: w.tokens + feeAmount });
+  memNotices.unshift({
+    id: ++memNoticeId, deviceId: surfacer.deviceId, kind: "creator_fee",
+    body: `You earned ${feeAmount} prediction${feeAmount === 1 ? "" : "s"} — creator fee for "${question}" resolving.`,
+    delta: feeAmount, slug, callId: null, at: new Date().toISOString(),
+    oddsPct: null, outcome: null, seenAt: null, count: null,
+  });
+  await logFee({
+    slug, marketKind: "play", feeKind: "creator",
+    recipientDeviceId: surfacer.deviceId, recipientHandle: surfacer.handle,
+    rateBps: CREATOR_FEE_BPS_PLAY, basisAmount: totalPoolTokens, feeAmount, enforced: true,
   });
 }
 

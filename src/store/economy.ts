@@ -129,6 +129,42 @@ export function winBonus(entryPct: SidePct): number {
   return Math.max(BONUS_FLOOR, Math.min(BONUS_CAP, Math.round(100 / entryPct)));
 }
 
+/**
+ * The creator fee — the incentive to make markets, not just call them.
+ *
+ * Play-token markets do NOT hold a real, conserved pool: winBonus above pays
+ * each winner off their OWN entry odds, not a share of what losers put in (the
+ * house prints every payout on demand). So a play-token creator fee cannot be
+ * a deduction from anyone's proceeds — there's no real pool to deduct from.
+ * It is instead an ADDITIVE bonus grant to the market's creator, sized off the
+ * pool's total activity (both sides' staked tokens) as a proxy for "how much
+ * this market mattered." Because it never touches the winBonus formula, it
+ * structurally cannot make a payout negative or smaller than it would
+ * otherwise be — see creatorFeePlay below and its call site in settleMarket.
+ *
+ * Real-money community markets DO hold a real, on-chain vault — but the
+ * deployed Solana program (create_market / resolve_market / take_position /
+ * claim_winnings — see oddie_chain_idl.json) has no fee-taking instruction,
+ * and this repo has no program source to add one and redeploy. CREATOR_FEE_
+ * BPS_REAL and PROTOCOL_FEE_BPS_REAL are therefore PROPOSED rates only: shown
+ * to users for transparency and logged as an "intended fee" for future
+ * reconciliation, but never actually deducted from the vault. See
+ * logRealFeeIntent in markets.ts and the "not yet enforced on-chain" copy
+ * next to every place these rates are displayed — do not let a future change
+ * present these as if they were being charged until the on-chain program
+ * actually supports taking them.
+ */
+export const CREATOR_FEE_BPS_PLAY = 300;   // 3% of total pool (both sides), additive bonus to the creator
+export const CREATOR_FEE_BPS_REAL = 200;   // 2% of the vault — proposed, NOT yet enforced on-chain
+export const PROTOCOL_FEE_BPS_REAL = 300;  // 3% of the vault — proposed, NOT yet enforced on-chain
+
+/** Floors to 0 on small pools rather than paying out a fractional token — a
+ *  market needs roughly 34+ total tokens staked before the 3% fee rounds up
+ *  to even 1, which quietly protects against dust/degenerate-pool noise. */
+export function creatorFeePlay(totalPoolTokens: number): number {
+  return Math.floor((totalPoolTokens * CREATOR_FEE_BPS_PLAY) / 10000);
+}
+
 export interface Reputation {
   /** Mean edge in percentage points across closed positions. Null when there are none. */
   avgEdge: number | null;

@@ -13,10 +13,11 @@ import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
+import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
-import { winBonus } from "./store/economy.js";
+import { winBonus, CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
@@ -455,6 +456,7 @@ app.get("/api/feed", async (req, res) => {
       forming: positions < MARKET_FORMING_MIN,
       formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
+      creatorFeeBps: CREATOR_FEE_BPS_PLAY, // transparency: shown on the card, see feed.html's fee-note
     };
   });
 
@@ -484,7 +486,7 @@ app.get("/api/feed", async (req, res) => {
       feedItems.unshift({
         slug: start.slug,
         category: isCommunity ? "Community" : categorize(start.market),
-        ...(isCommunity ? { community: true as const, onchain: null } : {}),
+        ...(isCommunity ? { community: true as const, onchain: null, creatorFeeBps: CREATOR_FEE_BPS_PLAY } : {}),
         ...start.market,
       });
     }
@@ -593,6 +595,7 @@ async function resolveFeatured(n = 4): Promise<Array<Record<string, unknown> & {
       ...m, slug, category: "Community", topicCategory: m.category, community: true as const,
       positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
+      creatorFeeBps: CREATOR_FEE_BPS_PLAY,
       crowd: crowd[slug] ?? { yes: 0, no: 0 },
       challengeHandle: surfacer?.handle ?? null,
     };
@@ -1473,7 +1476,15 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
   // determining work above — the real (virtual) economy never waits on devnet.
   if (isChainEnabled()) {
     void communityMarketDetail(slug).then((detail) => {
-      if (detail?.onchainPubkey) void resolveMarketOnChain(detail.onchainPubkey, outcome);
+      if (!detail?.onchainPubkey) return;
+      void resolveMarketOnChain(detail.onchainPubkey, outcome);
+      // Real-money creator/protocol fee: logged as an audit-trail "intended
+      // fee" only, never actually deducted — the deployed Solana program has
+      // no fee instruction (see economy.ts + logRealFeeIntent). Read the
+      // vault total straight from chain rather than trusting a stale value.
+      void fetchMarketOnChain(detail.onchainPubkey).then((state) => {
+        if (state) void logRealFeeIntent(slug, state.totalYesLamports + state.totalNoLamports);
+      }).catch(() => {});
     }).catch(() => {});
   }
   res.json({ ok: true, slug, outcome, settled: settled.length });
@@ -1519,6 +1530,11 @@ if (onchainEnabled()) {
       ok: true, pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey),
       resolved: state.resolved, winningSide: state.winningSide,
       totalYesLamports: state.totalYesLamports, totalNoLamports: state.totalNoLamports,
+      // Proposed rates only — surfaced for transparency, not yet deducted on
+      // resolution (the deployed program has no fee instruction; see
+      // economy.ts's CREATOR_FEE_BPS_REAL doc comment). realFeesEnforced:false
+      // is what the client keys its "not yet enforced" copy off.
+      realCreatorFeeBps: CREATOR_FEE_BPS_REAL, realProtocolFeeBps: PROTOCOL_FEE_BPS_REAL, realFeesEnforced: false,
     });
   });
 
@@ -1666,6 +1682,18 @@ app.get("/api/admin/season-points", requireAdmin, async (req, res) => {
   } catch (e) {
     console.error("[season-points] failed:", (e as Error).message);
     res.status(500).json({ error: "season points log unavailable" });
+  }
+});
+
+// Every creator/protocol fee — real (credited) and play (logged-only intent)
+// — for auditability. See markets.ts's market_fee_log / feeLog.
+app.get("/api/admin/fees", requireAdmin, async (req, res) => {
+  const limit = Number(req.query.limit ?? 100);
+  try {
+    res.json({ log: await feeLog(Number.isFinite(limit) ? limit : 100) });
+  } catch (e) {
+    console.error("[fees] admin log fetch failed:", (e as Error).message);
+    res.status(500).json({ error: "fee log unavailable" });
   }
 });
 

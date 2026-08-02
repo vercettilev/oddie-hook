@@ -114,11 +114,20 @@
            <span class="chain-pool-side">NO <b>${noOnchainPct}%</b> <small>${fmtMult(noOnchainPct)}</small></span>
          </div>`;
 
+    // Proposed creator + protocol fee rates — disclosed even though neither is
+    // actually deducted yet (the on-chain program has no fee instruction; see
+    // economy.ts). Saying so plainly beats staying silent about a rate we
+    // intend to charge once the program supports it.
+    const feeNoteHTML = (marketState.realCreatorFeeBps || marketState.realProtocolFeeBps)
+      ? `<p class="chain-fee-note">Proposed fees: creator ${((marketState.realCreatorFeeBps||0)/100).toFixed(0)}% · platform ${((marketState.realProtocolFeeBps||0)/100).toFixed(0)}% — not yet deducted on-chain.</p>`
+      : "";
+
     const render = () => {
       body.innerHTML = `
         <h3>Make it real</h3>
         <p class="cnote">Optional. Real SOL on ${CLUSTER_LABEL}, separate from your free predictions above — this never affects them, and it's never required to play.</p>
         ${onchainOddsHTML}
+        ${feeNoteHTML}
         ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>`
           : `<button class="cbtn" id="chainconnect">Connect wallet</button>`}
         ${wallet ? `
