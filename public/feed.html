@@ -1763,7 +1763,7 @@ async function loadAuth(){
 }
 
 /* --------------------------------------------------------------- guest bar --
- * An anonymous device keeps its points, calls and score — but only in THIS
+ * An anonymous device keeps its predictions, calls and score — but only in THIS
  * browser, and nothing on screen ever said so. Someone who has never linked an
  * account has no reason to suspect their score is not saved somewhere, which
  * is the worst possible thing to discover late.
@@ -2941,7 +2941,7 @@ const TOUR_STEPS=[
   { find:()=>document.querySelector(".homewrap .card"),
     text:"Tap <b>YES</b> or <b>NO</b> on this question." },
   { find:()=>document.getElementById("bal")||document.querySelector(".bal"),
-    text:"Each tap costs points. Guess right and you get more back." },
+    text:"Each tap costs a prediction. Guess right and you get more back." },
   { find:()=>document.querySelector(".herocta"),
     text:"Seen an argument on X? Reply <b>@oddiefun</b> and get <b>+50</b> points." },
 ];
@@ -3171,7 +3171,7 @@ async function renderHome(){
   const counters=activity?[
     ["marketsOpen","markets open"],
     ["callsToday","calls today"],
-    ["pointsWonToday","points won today"],
+    ["predictionsWonToday","predictions won today"],
   ].map(([k,label])=>({label,n:Number(activity[k])||0})).filter(c=>c.n>0):[];
   let livestripEl=null;
   if(counters.length){
@@ -3716,7 +3716,7 @@ async function loadPositions(scroller){
       </div>`;
       return;
     }
-    // History newest-first, and the running totals derived from it: net tokens
+    // History newest-first, and the running totals derived from it: net predictions
     // won/lost across every closed position, and a win rate over the ones that
     // actually SETTLED (a sold-early exit is neither a win nor a loss).
     const history=[...d.closed].sort((a,b)=>new Date(b.closedAt)-new Date(a.closedAt));
@@ -3789,19 +3789,19 @@ function openHTML(p){
     <p class="q">${esc(p.question)}</p>
     <div class="pmeta">
       <span class="side-chip ${p.side}">${p.side.toUpperCase()}</span>
-      <span class="num">${p.tokens} tokens</span>
+      <span class="num">${p.tokens} prediction${p.tokens===1?"":"s"}</span>
       <span class="dot"></span><span class="num">holds to ${p.toWin}</span>
       <span class="status">open</span>
     </div>
     <p class="track">${track}</p>
-    ${live?`<button class="sellbtn" data-sell="${p.id}">Sell now → ${p.valueNow} tokens</button>`:""}
+    ${live?`<button class="sellbtn" data-sell="${p.id}">Sell now → ${p.valueNow} prediction${p.valueNow===1?"":"s"}</button>`:""}
   </div>`;
 }
 
 /**
  * One row of history. The verdict is the loud part — a coloured chip and a rail,
  * "called it ✓" / "market said no" / "sold early" — and the ledger (entry→exit,
- * tokens in→out, edge) sits under it for anyone who wants the receipt. Every row
+ * predictions in→out, edge) sits under it for anyone who wants the receipt. Every row
  * is shareable, win OR loss: the defeat card is as much a part of the game as the
  * victory one. exit 100 = your side resolved true, 0 = false, anything between =
  * you sold before it settled; the market's own YES/NO follows from your side.
@@ -3826,7 +3826,7 @@ function historyHTML(p){
       <span>${p.entryPct}% → ${p.exitPct}% · ${how}</span>
     </div>
     <div class="hfoot">
-      <span class="hio">${p.tokens} → ${p.proceeds} tok <b class="${cls(delta)}">${deltaStr}</b></span>
+      <span class="hio">${p.tokens} → ${p.proceeds} predictions <b class="${cls(delta)}">${deltaStr}</b></span>
       <span class="${cls(p.edge)}">edge ${pts(p.edge)}</span>
       <button class="hshare" data-share="${p.id}" data-side="${p.side}" data-entry="${p.entryPct}" data-exit="${p.exitPct}" data-kind="${kind}" aria-label="Share this call">${SHARE_ICON}</button>
     </div>
@@ -4040,7 +4040,7 @@ function noticeCardHTML(n){
       <span class="ncbadge ${win?"win":"loss"}">${win?"🎉 you called it":"🙃 market said no"}</span>
       <span class="ncwhen">${agoOf(n.at)}</span>
     </div>
-    ${win?`<div class="ncpay">+${n.delta} tokens</div>`:""}
+    ${win?`<div class="ncpay">+${n.delta} predictions</div>`:""}
     <p class="ncbody">${esc(n.body)}</p>
     ${share}
   </div>`;
@@ -4205,7 +4205,7 @@ function gateInner(){
       <button class="cbtn x" data-p="twitter"><span class="glyph">𝕏</span>Sign in with X</button>
       <button class="cbtn" data-p="google"><span class="glyph">G</span>Sign in with Google</button>
     </div>
-    <p class="cnote" style="max-width:300px">Free to play. Virtual tokens, nothing to cash out. Your call is saved to this device.</p>`;
+    <p class="cnote" style="max-width:300px">Free to play. Virtual predictions, nothing to cash out. Your call is saved to this device.</p>`;
 }
 function wireGate(root){root.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>startAuth(b.dataset.p));}
 
@@ -4275,7 +4275,7 @@ async function checkGate(){
       <p class="sub" style="font-size:16px">you're invited — sign in to open the feed:</p>
       <button class="cbtn x" data-p="twitter" style="margin:14px auto 0;max-width:320px"><span class="glyph">𝕏</span>Sign in with X</button>
       <button class="cbtn" data-p="google" style="margin:10px auto 0;max-width:320px"><span class="glyph">G</span>Sign in with Google</button>
-      <p class="cnote">Free to play. Virtual tokens, nothing to cash out.</p></div>`;
+      <p class="cnote">Free to play. Virtual predictions, nothing to cash out.</p></div>`;
     scroller.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>startAuth(b.dataset.p));
     return false;
   }
@@ -4337,8 +4337,17 @@ async function checkCelebrations(){
 function markCelebrationsSeen(){
   if(!celebrateQueue.length)return;
   const noticeIds=celebrateQueue.map(c=>c.noticeId);
-  fetch(`${API}/api/celebrations/seen`,{method:"POST",headers:{"content-type":"application/json"},
-    body:JSON.stringify({deviceId,noticeIds})}).catch(()=>{});
+  const body=JSON.stringify({deviceId,noticeIds});
+  // sendBeacon over fetch: this fires from the SAME dismiss action a user might
+  // immediately follow by closing the tab (the celebration is, by design, the
+  // very last thing on screen). The same "must survive page unload" reasoning
+  // PENDING_CALLS' pagehide handler already uses — a fire-and-forget fetch
+  // that gets cancelled mid-flight is indistinguishable from this celebration
+  // replaying forever, since seen_at never gets written either way.
+  try{
+    if(navigator.sendBeacon&&navigator.sendBeacon(`${API}/api/celebrations/seen`,new Blob([body],{type:"application/json"})))return;
+  }catch(e){/* fall through to fetch */}
+  fetch(`${API}/api/celebrations/seen`,{method:"POST",headers:{"content-type":"application/json"},body,keepalive:true}).catch(()=>{});
 }
 function closeCelebration(){
   document.getElementById("celebrateDim")?.remove();
@@ -4366,7 +4375,7 @@ function renderCelebration(){
         <span class="cel-side ${c.side}">${c.side.toUpperCase()} at ${c.oddsPct}%</span>
         ${!c.won?`<span class="cel-resolved">resolved ${c.outcome.toUpperCase()}</span>`:""}
       </div>
-      ${c.won?`<div class="cel-payout"><span class="cel-payout-n">+${c.proceeds}</span>points</div>`:""}
+      ${c.won?`<div class="cel-payout"><span class="cel-payout-n">+${c.proceeds}</span>predictions</div>`:""}
       ${scoreKnown?`
       <div class="cel-oscore">
         <div class="scorering big" id="celRing" style="--score-pct:${c.scoreBefore/1000}">
@@ -4416,7 +4425,7 @@ function renderCelebration(){
     // notice's own share button — one copy convention for "I called it",
     // whether the tap came from here or from Notifications.
     card.querySelector(".cel-cta.share").onclick=()=>{
-      const text=`called it at ${c.oddsPct}% → resolved ${c.outcome.toUpperCase()}. +${c.proceeds} points on oddie`;
+      const text=`called it at ${c.oddsPct}% → resolved ${c.outcome.toUpperCase()}. +${c.proceeds} predictions on oddie`;
       xShare(text, myHandle?`${SHARE_ORIGIN}/@${myHandle}`:`${SHARE_ORIGIN}/m/${c.slug}`, "celebrate_share");
     };
     // Same targeting + intent pattern as the permalink's "Challenge the other

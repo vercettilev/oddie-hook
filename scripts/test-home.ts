@@ -159,9 +159,9 @@ console.log("\nlive-activity counters");
   // the one deliberately-unresolved market created near the top of this file.
   check("open markets counted (resolved ones excluded)", a.marketsOpen === 1, String(a.marketsOpen));
   check("calls in the last 24h counted", a.callsToday > 0, String(a.callsToday));
-  check("points won in the last 24h counted", a.pointsWonToday > 0, String(a.pointsWonToday));
+  check("predictions won in the last 24h counted", a.predictionsWonToday > 0, String(a.predictionsWonToday));
   check("every counter is a finite non-negative integer",
-    [a.marketsOpen, a.callsToday, a.pointsWonToday].every((n) => Number.isInteger(n) && n >= 0),
+    [a.marketsOpen, a.callsToday, a.predictionsWonToday].every((n) => Number.isInteger(n) && n >= 0),
     JSON.stringify(a));
 }
 

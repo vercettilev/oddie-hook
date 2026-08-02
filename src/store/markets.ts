@@ -1589,8 +1589,13 @@ export async function markCelebrationsSeen(rawDeviceId: string, noticeIds: numbe
     return;
   }
   await ensureSchema();
+  // Explicit ::bigint[] — notice.id is bigserial (bigint). Left to inference,
+  // a plain JS number array can bind as int4[], and bigint = ANY(int4[])
+  // leans on an implicit cross-type promotion instead of a guaranteed match;
+  // this is the one write that makes a celebration fire exactly once, so it
+  // gets the unambiguous cast rather than trusting the driver to infer right.
   await db().query(
-    `UPDATE notice SET seen_at = now() WHERE device_id = $1 AND id = ANY($2) AND seen_at IS NULL`,
+    `UPDATE notice SET seen_at = now() WHERE device_id = $1 AND id = ANY($2::bigint[]) AND seen_at IS NULL`,
     [deviceId, ids],
   );
 }
@@ -1796,9 +1801,10 @@ export interface HomeActivity {
   marketsOpen: number;
   /** Calls placed in the rolling last 24h, by any identified device. */
   callsToday: number;
-  /** Points paid out to winners in the rolling last 24h — settlement proceeds
-   *  only, so it means "earned by being right", not "handed out by the faucet". */
-  pointsWonToday: number;
+  /** Predictions paid out to winners in the rolling last 24h — settlement
+   *  proceeds only, so it means "earned by being right", not "handed out by
+   *  the faucet". */
+  predictionsWonToday: number;
 }
 
 const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -1817,24 +1823,24 @@ export async function homeActivity(): Promise<HomeActivity> {
     return {
       marketsOpen: [...memCommunity.values()].filter((m) => !m.resolvedOutcome).length,
       callsToday: memCalls.filter((c) => c.deviceId && Date.parse(c.at) >= cutoff).length,
-      pointsWonToday: memCalls.reduce(
+      predictionsWonToday: memCalls.reduce(
         (a, c) => a + (c.closedAt && Date.parse(c.closedAt) >= cutoff && c.proceeds ? c.proceeds : 0), 0),
     };
   }
   await ensureSchema();
-  const { rows } = await db().query<{ markets_open: number; calls_today: number; points_won_today: number }>(
+  const { rows } = await db().query<{ markets_open: number; calls_today: number; predictions_won_today: number }>(
     `SELECT
        (SELECT count(*)::int FROM community_market WHERE resolved_outcome IS NULL) AS markets_open,
        (SELECT count(*)::int FROM market_call
           WHERE device_id IS NOT NULL AND at >= now() - interval '24 hours')      AS calls_today,
        (SELECT coalesce(sum(proceeds), 0)::int FROM market_call
-          WHERE proceeds > 0 AND closed_at >= now() - interval '24 hours')        AS points_won_today`,
+          WHERE proceeds > 0 AND closed_at >= now() - interval '24 hours')        AS predictions_won_today`,
   );
   const r = rows[0];
   return {
     marketsOpen: Number(r?.markets_open ?? 0),
     callsToday: Number(r?.calls_today ?? 0),
-    pointsWonToday: Number(r?.points_won_today ?? 0),
+    predictionsWonToday: Number(r?.predictions_won_today ?? 0),
   };
 }
 
