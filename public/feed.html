@@ -1510,10 +1510,27 @@
        visible; header and scroller share a 22px inset, so chips and card align to
        the exact same left/right bounds. */
     .top{position:static;background:transparent;border-bottom:none;padding:16px 22px 10px}
-    /* Same edge-to-edge trick as mobile, against THIS breakpoint's .top
-       padding — the negative margins have to cancel whatever the header
-       actually uses, so they're restated here rather than inherited. */
-    .guestbar{margin:10px -22px -10px}
+    /* Desktop drops the edge-to-edge stripe entirely. Full-bleed is right on a
+       phone, where the bar is one line in a narrow column and reads as a
+       status strip under the header. Given a wide viewport that same rule
+       made it the single widest element on screen — 804px at a 1440
+       viewport, 56% of the width and 84px WIDER than the market card it sits
+       above — so the loudest thing on the page was a dismissible notice.
+       Here it collapses to a content-width pill that hugs its own text: same
+       information, same dismiss, a fraction of the presence. width:max-content
+       is what stops it stretching to the column; the max-width keeps a long
+       string from ever out-running the card below it. */
+    .guestbar{margin:2px auto 0;width:max-content;max-width:100%;
+      padding:5px 5px 5px 13px;gap:8px;
+      border:1.5px solid var(--hair-g);border-radius:999px;background:var(--ground-2)}
+    body[data-view="feed"] .guestbar{border-bottom:1.5px solid var(--hair-g)}
+    /* The verbose half of the sentence. On a phone it's the whole point — the
+       bar has a full row to itself and nothing else competes. In a compact
+       pill it's what forces the pill back to stripe-width, and the Connect
+       button beside it already names the action, so desktop keeps the status
+       and drops the explanation (still on the element's title for hover). */
+    .gb-long{display:none}
+    .gb-text{flex:none;font-size:11.5px}
     .top-in{max-width:none;margin:0;padding:0}
     .top .brand{display:flex;justify-content:flex-start;gap:9px;margin:0 0 13px 2px}
     .chips{flex-wrap:wrap;overflow:visible;gap:8px}
@@ -1864,7 +1881,14 @@ function paintGuestBar(){
   if(bar)return;                                                // already up
   const el=document.createElement("div");
   el.id="guestbar";el.className="guestbar";
-  el.innerHTML=`<span class="gb-text">Playing as guest — <b>connect X or Google</b> to save your score permanently.</span>
+  // .gb-long is the explanatory half, hidden at the desktop breakpoint where
+  // the bar becomes a compact pill (see the .guestbar override there). The
+  // title carries the full sentence regardless, so nothing is only-visible on
+  // one breakpoint. aria-label on the wrapper keeps the screen-reader text
+  // complete even when the span is display:none.
+  el.title="Connect X or Google to save your score permanently.";
+  el.innerHTML=`<span class="gb-text" aria-label="Playing as guest — connect X or Google to save your score permanently."
+      >Playing as guest<span class="gb-long"> — <b>connect X or Google</b> to save your score permanently.</span></span>
     <button class="gb-go" type="button">Connect</button>
     <button class="gb-x" type="button" aria-label="Dismiss">✕</button>`;
   // Into the header itself, not the body — see the .guestbar CSS note. The
