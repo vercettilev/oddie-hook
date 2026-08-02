@@ -1786,11 +1786,18 @@ function guestBarSuppressed(){
   return guestNum(GUEST_CALLS)-Number(raw) < GUEST_REAPPEAR_AFTER;
 }
 
+let guestBarObserver=null;
 function paintGuestBar(){
   const bar=document.getElementById("guestbar");
   const scroller=document.getElementById("scroller");
   const show=!auth.accounts.length&&!guestBarSuppressed();
-  if(!show){ bar?.remove(); if(scroller)scroller.style.paddingTop=""; return; }
+  const teardown=()=>{
+    guestBarObserver?.disconnect();guestBarObserver=null;
+    if(guestBarReposition)window.removeEventListener("resize",guestBarReposition);
+    guestBarReposition=null;
+    if(scroller)scroller.style.paddingTop="";
+  };
+  if(!show){ bar?.remove(); teardown(); return; }
   if(bar)return;                                                // already up
   const el=document.createElement("div");
   el.id="guestbar";el.className="guestbar";
@@ -1801,18 +1808,35 @@ function paintGuestBar(){
   el.querySelector(".gb-go").onclick=()=>connectSheet("Save your score permanently");
   el.querySelector(".gb-x").onclick=()=>{
     guestSet(GUEST_DISMISSED_AT,guestNum(GUEST_CALLS));
-    el.remove(); if(scroller)scroller.style.paddingTop="";
+    el.remove(); teardown();
   };
-  // Sits under the real header, measured rather than assumed — the header is a
-  // different height on home vs the shells — and the scroller is padded by the
-  // same amount so the bar never covers the content it is talking about.
+  // Sits under the real header — but the header's actual height can change
+  // AFTER this first runs (a slower self-hosted font swap reflowing the brand
+  // row, the balance pill filling in once /api/me answers, an orientation
+  // change), and a stale one-shot measurement is exactly how this bar ends up
+  // sitting at the wrong height and covering the header instead of clearing
+  // it. Belt AND suspenders, deliberately not just one mechanism: a
+  // ResizeObserver for the general case, PLUS explicit re-checks on the two
+  // specific events most likely to change the header's height (a webfont
+  // finishing its swap, a viewport/orientation change) — each is independently
+  // sufficient, so no single API needs to be the one thing standing between
+  // this bar and covering the header it's supposed to sit under.
   const top=document.getElementById("top");
-  const y=top?Math.round(top.getBoundingClientRect().bottom):0;
-  el.style.top=`${y}px`;
-  requestAnimationFrame(()=>{
-    if(scroller&&el.isConnected)scroller.style.paddingTop=`${el.getBoundingClientRect().height}px`;
-  });
+  const reposition=()=>{
+    if(!el.isConnected)return;
+    const y=top?Math.round(top.getBoundingClientRect().bottom):0;
+    el.style.top=`${y}px`;
+    if(scroller)scroller.style.paddingTop=`${el.getBoundingClientRect().height}px`;
+  };
+  reposition();
+  guestBarObserver=new ResizeObserver(reposition);
+  if(top)guestBarObserver.observe(top);
+  guestBarObserver.observe(el);
+  guestBarReposition=reposition;
+  window.addEventListener("resize",reposition);
+  document.fonts?.ready?.then(reposition).catch(()=>{});
 }
+let guestBarReposition=null;
 const PROV={twitter:{glyph:"𝕏",label:"Connect X",cls:"x",why:"connect your identity"},
             google:{glyph:"G",label:"Connect Google",cls:"",why:"save across devices"}};
 
@@ -2979,10 +3003,23 @@ function runGuidedTour(){
     tip.style.left=`${Math.min(Math.max(12,r.left-PAD),Math.max(12,window.innerWidth-tip.offsetWidth-12))}px`;
   };
 
+  // The server already claimed the one-shot "seen" flag before runGuidedTour
+  // was even called (deliberate — see claimGuidedTour's docstring: abandoning
+  // mid-tour still counts as seen). That makes finding ZERO targets on the
+  // very first attempt a different, worse case than abandoning mid-tour: the
+  // device's one shot is gone and nothing was ever shown. All three targets
+  // are normally already in the DOM by the time this runs (wrap is appended,
+  // synchronously, before the 420ms cosmetic-stagger delay even starts
+  // counting) — but "normally" isn't "always", so retry once, briefly, before
+  // accepting that as final. Only the very first show() gets this grace.
+  let firstAttempt=true;
   const show=()=>{
     // Skip past any step whose target isn't on this page.
     while(idx<TOUR_STEPS.length&&!TOUR_STEPS[idx].find())idx++;
-    if(idx>=TOUR_STEPS.length)return end();
+    if(idx>=TOUR_STEPS.length){
+      if(firstAttempt){firstAttempt=false;idx=0;setTimeout(show,300);return;}
+      return end();
+    }
     current=TOUR_STEPS[idx].find();
     // Bring it into view before measuring. Instant, not smooth: the spotlight
     // is positioned from a rect measured one frame later, and a 500ms smooth
