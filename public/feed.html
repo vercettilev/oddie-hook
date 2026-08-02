@@ -101,7 +101,19 @@
        float on. `--feed-ground` sits behind the card so it reads as liftable. */
     --feed-ground:#E9F2D2; --card-surface:#FBFDF6; --card-line:#101010;
     --card-shadow:0 2px 5px rgba(35,55,15,.05), 0 12px 26px rgba(45,65,20,.11), 0 30px 56px rgba(45,65,20,.08);
-    --feedtop:calc(env(safe-area-inset-top) + 96px);
+    /* The fixed chrome's REAL height — the header PLUS the guest bar when it's
+       showing, because the bar renders INSIDE .top rather than as its own
+       fixed strip. That structure is the actual fix for the bar overlapping
+       the header: in normal flow inside the header it cannot cover it, no
+       matter what either one's height does. measureChrome() overwrites this
+       with the measured px on every layout change; the literal below is only
+       the pre-JS first-paint fallback. Everything that has to clear the
+       chrome derives from this ONE value, so there is a single number to get
+       right instead of three hardcoded guesses drifting apart (this used to
+       be a 96px guess here, an 82px guess on .homewrap, and a separately
+       measured inline `top` on the bar — all for the same ~70px header). */
+    --chromeh:calc(env(safe-area-inset-top) + 70px);
+    --feedtop:calc(var(--chromeh) + 26px);
     /* ---------------------------------------------------------- design system --
        One radius scale, one shadow scale, one type scale — reused across home,
        feed cards, permalink, profile and the og cards so nothing competes for
@@ -966,8 +978,12 @@
      see the note by --sp-1. Adjacent block margins collapse in normal flow,
      so an optional element (the claim card, the featured-markets label) can
      be skipped entirely without leaving a doubled or missing gap behind it. */
+  /* Top padding clears the measured chrome, never a hardcoded guess — and does
+     NOT re-add env(safe-area-inset-top), because --chromeh is a real measured
+     height whose element already includes its own safe-area padding. Adding it
+     again here (as this rule used to) double-counted the notch. */
   .homewrap{max-width:var(--feedcol);margin:0 auto;
-    padding:calc(env(safe-area-inset-top) + 82px) 20px calc(env(safe-area-inset-bottom) + var(--tabh) + 28px)}
+    padding:calc(var(--chromeh) + var(--sp-2)) 20px calc(env(safe-area-inset-bottom) + var(--tabh) + 28px)}
   /* Home is a static page, not a stack of full-screen cards: the featured
      markets borrow the feed's card styling but must NOT borrow the feed's
      near-full-viewport min-height, or the page reads as "one card per screen"
@@ -983,6 +999,12 @@
      (collapses with whatever precedes: the hero, or the claim card when it's
      showing), margin-bottom is the tight "caption to its own list" gap. */
   .homewrap .psec{text-align:center;margin:var(--sp-6) 0 var(--sp-2)}
+  /* That section gap says "a new section starts here" — which is wrong when the
+     label IS the start of the page. For a first-time visitor the markets
+     section leads, so its label is .homewrap's first child, and 48px of empty
+     ground above a four-word label is exactly the dead air the card is
+     supposed to be occupying. */
+  .homewrap>.psec:first-child{margin-top:0}
   .homewrap .claimcard{margin:var(--sp-6) 0 0}
   .hero{position:relative;text-align:center}
   /* A soft lime glow seated behind the headline — the one "premium" cue a
@@ -993,16 +1015,14 @@
     filter:blur(2px);pointer-events:none;z-index:0}
   :root[data-theme="dark"] .hero::before{background:radial-gradient(ellipse at center, rgba(182,240,95,.16), transparent 70%)}
   .hero>*{position:relative;z-index:1}
-  /* Headline → subtext → +50 stat → CTA is ONE tightly-related group (the
-     hero's core pitch, read top to bottom in one breath), so every gap in it
-     is the same small scale step — the +50 stat used to sit with noticeably
-     more air above and below it than its neighbours, which is exactly what
-     made it read as a pasted-in island instead of the next line of the pitch. */
+  /* Headline → CTA → reward caption is ONE tightly-related group (the hero's
+     core pitch, read top to bottom in one breath), so every gap in it is the
+     same small scale step. It used to also carry a .herosub explainer and a
+     44px "+50" stat block between the two — both cut, because the CTA button
+     underneath already says "Tag @oddiefun on X" and the caption below says
+     what that earns, in one line instead of five. */
   .herotitle{font-size:min(36px,9vw);font-weight:700;line-height:1.08;letter-spacing:-.025em;
     color:var(--on-ground);margin:0 0 var(--sp-2)}
-  .herosub{font-family:'Nunito';font-weight:700;font-size:var(--fs-label);line-height:1.5;color:var(--muted-g);
-    max-width:320px;margin:0 auto var(--sp-2)}
-  .herosub b{color:var(--on-ground);font-weight:900}
   .herocta{display:inline-flex;align-items:center;gap:9px;font-family:'Fredoka';font-weight:600;font-size:16px;
     color:#17250a;background:linear-gradient(180deg, #c4f57a, var(--accent) 60%);
     border:2.5px solid #000;border-radius:999px;
@@ -1010,6 +1030,12 @@
     transition:transform .12s ease, box-shadow .12s ease}
   .herocta:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
   .herocta .glyphx{font-size:17px;line-height:1}
+  /* What the tag CTA above actually earns, as a caption on the button rather
+     than the 44px stat block it used to be. Same fact, a quarter of the
+     footprint — it's a reason to tap something already on screen, not a
+     headline in its own right. */
+  .herofoot{font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
+    color:var(--muted-g);max-width:300px;margin:var(--sp-1) auto 0}
   /* Three beats, icon + a few words each — no paragraphs, per the brief. Each
      gets its own medallion (a soft chip circle) instead of a bare emoji
      floating in text, so the row reads as a designed sequence, not a caption.
@@ -1023,11 +1049,25 @@
      the hero directly above it. Wraps to two lines on very narrow screens
      rather than shrinking below a readable size. */
   /* Guest bar — a slim strip under the header, deliberately quiet: a status
-     someone should notice once, not an alert competing with the page. Fixed so
-     it follows across every screen (the scroller is padded by its height in
-     paintGuestBar, so it never covers content). */
-  .guestbar{position:fixed;left:0;right:0;z-index:60;display:flex;align-items:center;gap:10px;
-    padding:8px 14px;background:var(--ground-2);border-bottom:1px solid var(--hair-g)}
+     someone should notice once, not an alert competing with the page.
+     Rendered as the LAST CHILD OF .top, in normal flow, not as its own fixed
+     strip. That is deliberate and load-bearing: as a separate fixed element
+     its `top` had to be re-measured against the header's live height, and any
+     time that measurement went stale (a font swap reflowing the brand row,
+     the balance pill filling in from /api/me, an orientation change) the bar
+     sat at its old offset and covered the logo and points pill it was
+     supposed to sit under. In flow inside the header, overlapping it is not
+     an expressible state. The negative margins cancel .top's own padding so
+     the strip still runs edge to edge. */
+  .guestbar{display:flex;align-items:center;gap:10px;
+    margin:10px -16px -12px;padding:8px 14px;
+    background:var(--ground-2);border-top:1px solid var(--hair-g)}
+  /* No border-bottom by default: on every non-feed view .top already draws a
+     2.5px rule directly beneath the bar, and stacking the bar's own hairline
+     on top of it renders as one too-thick line. The feed is the exception —
+     there .top fades out with a gradient and has no rule of its own, so the
+     bar has to close itself off. */
+  body[data-view="feed"] .guestbar{border-bottom:1px solid var(--hair-g)}
   .gb-text{flex:1;min-width:0;font-family:'Nunito';font-weight:700;font-size:11.5px;
     line-height:1.35;color:var(--muted-g)}
   .gb-text b{font-weight:900;color:var(--on-ground)}
@@ -1035,14 +1075,6 @@
     background:var(--accent);border:0;border-radius:999px;padding:5px 12px;cursor:pointer}
   .gb-x{flex:none;font-size:12px;line-height:1;color:var(--muted-g);background:none;
     border:0;padding:4px 2px;cursor:pointer}
-  .loop3{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 8px;
-    margin:var(--sp-2) auto 0;max-width:340px}
-  .loop3-step{display:inline-flex;align-items:center;gap:6px;font-family:'Nunito';
-    font-weight:800;font-size:12px;color:var(--muted-g);white-space:nowrap}
-  .loop3-step b{display:inline-flex;align-items:center;justify-content:center;
-    width:17px;height:17px;border-radius:50%;background:var(--accent);color:#17250a;
-    font-size:10.5px;font-weight:900;flex:none}
-  .loop3-sep{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--muted-g);opacity:.5}
   .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:2px;margin:var(--sp-6) 0 0}
   /* 84 -> 94px: the labels now name the actual actions ("Reply @oddiefun on X")
      rather than two-word jargon, and @oddiefun is a single unbreakable token
@@ -1193,16 +1225,6 @@
   .topc-edge small{display:block;font-weight:800;font-size:10px;color:var(--muted-g)}
   .topc-more{display:block;text-align:center;font-family:'Nunito';font-weight:800;font-size:var(--fs-caption);
     color:var(--muted-g);text-decoration:none;margin:var(--sp-1) 0 0;padding:6px;opacity:.8}
-  /* The points incentive, ABOVE the tag CTA — the loudest thing on the page
-     after the headline, per the brief. Wired live to the actual Season Points
-     surface-award amount (server), never a hardcoded number that can drift
-     from what the backend actually pays out. */
-  .incentivebig{font-family:'Nunito';font-weight:800;font-size:16px;line-height:1.4;
-    color:var(--on-ground);max-width:300px;margin:0 auto var(--sp-2)}
-  .incentivebig .ptsnum{display:block;font-family:'Fredoka';font-weight:700;font-size:44px;
-    line-height:1.05;color:var(--acc-deep);margin:0 0 2px}
-  :root[data-theme="dark"] .incentivebig .ptsnum{color:var(--accent)}
-
   /* Says what it is, everywhere it is. These screens read as finished on purpose;
      the badge is the only thing standing between "shipped" and "mocked up". */
   .preview{display:inline-flex;align-items:center;gap:5px;flex:none;
@@ -1488,6 +1510,10 @@
        visible; header and scroller share a 22px inset, so chips and card align to
        the exact same left/right bounds. */
     .top{position:static;background:transparent;border-bottom:none;padding:16px 22px 10px}
+    /* Same edge-to-edge trick as mobile, against THIS breakpoint's .top
+       padding — the negative margins have to cancel whatever the header
+       actually uses, so they're restated here rather than inherited. */
+    .guestbar{margin:10px -22px -10px}
     .top-in{max-width:none;margin:0;padding:0}
     .top .brand{display:flex;justify-content:flex-start;gap:9px;margin:0 0 13px 2px}
     .chips{flex-wrap:wrap;overflow:visible;gap:8px}
@@ -1797,57 +1823,62 @@ function guestBarSuppressed(){
   return guestNum(GUEST_CALLS)-Number(raw) < GUEST_REAPPEAR_AFTER;
 }
 
-let guestBarObserver=null;
+/**
+ * The ONE number every "clear the fixed chrome" offset is derived from: the
+ * real, rendered height of #top — which includes the guest bar, since the bar
+ * is a child of it (see the .guestbar CSS note for why). Published as
+ * --chromeh; --feedtop and .homewrap's top padding both calc() off it, so a
+ * header that changes height moves the content offset with it instead of
+ * leaving a hardcoded guess behind.
+ *
+ * Called on every event that can change the header's height. It's cheap (one
+ * getBoundingClientRect + one setProperty) and idempotent, so over-calling it
+ * is free and under-calling it is the only real failure mode — which is why
+ * the observers below are deliberately redundant rather than minimal.
+ */
+function measureChrome(){
+  const hdr=document.getElementById("top");
+  if(!hdr)return;
+  const h=hdr.getBoundingClientRect().height;
+  if(h>0)document.documentElement.style.setProperty("--chromeh",`${Math.round(h)}px`);
+}
+// A resize on the header itself is the general case; the two below are the
+// specific ones a ResizeObserver has been observed to miss or report late (a
+// self-hosted font finishing its swap and reflowing the brand row, and a
+// viewport/orientation change). Each is independently sufficient — no single
+// API is the one thing standing between the chrome and the content under it.
+if(typeof ResizeObserver!=="undefined"){
+  const ro=new ResizeObserver(measureChrome);
+  const startRO=()=>{const hdr=document.getElementById("top");if(hdr)ro.observe(hdr);measureChrome();};
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",startRO);
+  else startRO();
+}
+window.addEventListener("resize",measureChrome);
+window.addEventListener("orientationchange",measureChrome);
+document.fonts?.ready?.then(measureChrome).catch(()=>{});
+
 function paintGuestBar(){
   const bar=document.getElementById("guestbar");
-  const scroller=document.getElementById("scroller");
-  const show=!auth.accounts.length&&!guestBarSuppressed();
-  const teardown=()=>{
-    guestBarObserver?.disconnect();guestBarObserver=null;
-    if(guestBarReposition)window.removeEventListener("resize",guestBarReposition);
-    guestBarReposition=null;
-    if(scroller)scroller.style.paddingTop="";
-  };
-  if(!show){ bar?.remove(); teardown(); return; }
+  const show=!auth.accounts.length&&!guestBarSuppressed()&&guestNum(GUEST_CALLS)>0;
+  if(!show){ bar?.remove(); measureChrome(); return; }
   if(bar)return;                                                // already up
   const el=document.createElement("div");
   el.id="guestbar";el.className="guestbar";
   el.innerHTML=`<span class="gb-text">Playing as guest — <b>connect X or Google</b> to save your score permanently.</span>
     <button class="gb-go" type="button">Connect</button>
     <button class="gb-x" type="button" aria-label="Dismiss">✕</button>`;
-  document.body.appendChild(el);
+  // Into the header itself, not the body — see the .guestbar CSS note. The
+  // header grows by the bar's height, measureChrome picks that up, and every
+  // content offset follows. No second position to keep in sync.
+  const hdr=document.getElementById("top");
+  (hdr||document.body).appendChild(el);
   el.querySelector(".gb-go").onclick=()=>connectSheet("Save your score permanently");
   el.querySelector(".gb-x").onclick=()=>{
     guestSet(GUEST_DISMISSED_AT,guestNum(GUEST_CALLS));
-    el.remove(); teardown();
+    el.remove(); measureChrome();
   };
-  // Sits under the real header — but the header's actual height can change
-  // AFTER this first runs (a slower self-hosted font swap reflowing the brand
-  // row, the balance pill filling in once /api/me answers, an orientation
-  // change), and a stale one-shot measurement is exactly how this bar ends up
-  // sitting at the wrong height and covering the header instead of clearing
-  // it. Belt AND suspenders, deliberately not just one mechanism: a
-  // ResizeObserver for the general case, PLUS explicit re-checks on the two
-  // specific events most likely to change the header's height (a webfont
-  // finishing its swap, a viewport/orientation change) — each is independently
-  // sufficient, so no single API needs to be the one thing standing between
-  // this bar and covering the header it's supposed to sit under.
-  const top=document.getElementById("top");
-  const reposition=()=>{
-    if(!el.isConnected)return;
-    const y=top?Math.round(top.getBoundingClientRect().bottom):0;
-    el.style.top=`${y}px`;
-    if(scroller)scroller.style.paddingTop=`${el.getBoundingClientRect().height}px`;
-  };
-  reposition();
-  guestBarObserver=new ResizeObserver(reposition);
-  if(top)guestBarObserver.observe(top);
-  guestBarObserver.observe(el);
-  guestBarReposition=reposition;
-  window.addEventListener("resize",reposition);
-  document.fonts?.ready?.then(reposition).catch(()=>{});
+  measureChrome();
 }
-let guestBarReposition=null;
 const PROV={twitter:{glyph:"𝕏",label:"Connect X",cls:"x",why:"connect your identity"},
             google:{glyph:"G",label:"Connect Google",cls:"",why:"save across devices"}};
 
@@ -3125,25 +3156,24 @@ async function renderHome(){
   }catch(e){/* every section degrades to absent, not an error state */}
 
   const wrap=document.createElement("div");wrap.className="homewrap";
-  wrap.innerHTML=`<div class="hero">
-      <h1 class="herotitle">Tag it. Make the call.<br>See who was right.</h1>
-      <p class="herosub">tag <b>@oddiefun</b> under any claim on X — it turns into a market that keeps score</p>
-      <p class="incentivebig"><span class="ptsnum">+${surfaceReward}</span> points every time your tag becomes a market</p>
+
+  // The hero is BUILT here but deliberately NOT placed yet — see the append
+  // order further down. For a brand-new visitor it lands UNDER the first
+  // playable card: a hypercasual product opens with the game, not with an
+  // explanation of the game. A returning player still gets it up top, where
+  // the tag CTA (the actual growth loop) is the thing they came back to use.
+  //
+  // What used to live here and no longer does, because all four said the same
+  // thing in four different registers: the .herosub explainer ("tag @oddiefun
+  // under any claim…" — the CTA button below already says exactly that), the
+  // 44px .incentivebig block (now a single caption line under the button), and
+  // the .loop3 "1 Pick YES or NO → 2 Get it right → 3 Score goes up" strip
+  // (word-for-word what .howitworks at the foot of the page already says).
+  const hero=document.createElement("div");hero.className="hero";
+  hero.innerHTML=`<h1 class="herotitle">Tag it. Make the call.<br>See who was right.</h1>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
-    </div>
-    <!-- The earning loop, stated flat out and always on screen. The guided tour
-         explains the same thing better, but it costs three taps to get through
-         and a first-time visitor should not have to interact with anything to
-         find out what this product wants them to do. Deliberately the plainest
-         sentence on the page: no "market", no "claim", no "resolves". -->
-    <div class="loop3" role="list" aria-label="How to earn points">
-      <span class="loop3-step" role="listitem"><b>1</b>Pick YES or NO</span>
-      <span class="loop3-sep" aria-hidden="true">→</span>
-      <span class="loop3-step" role="listitem"><b>2</b>Get it right</span>
-      <span class="loop3-sep" aria-hidden="true">→</span>
-      <span class="loop3-step" role="listitem"><b>3</b>Score goes up</span>
-    </div>`;
+      <p class="herofoot">+${surfaceReward} points every time your tag becomes a market</p>`;
 
   // An active claim streak, as its own badge above the claim strip. Farmers grind
   // streaks, and buried in the claim card's grey sub-line it was easy to miss.
@@ -3156,13 +3186,19 @@ async function renderHome(){
     streakWrap.hidden=!(n>0);
   };
   paintStreak(claim&&claim.streak);
-  if(claim)wrap.appendChild(streakWrap);
 
-  // The daily-claim strip is a retention hook, not onboarding — it belongs on
-  // every screen, home included. (The tag-instruction banner is deliberately
-  // NOT reused here: the hero above already carries that exact message.)
-  // Claiming can start a streak (0 -> 1 day), so the pill repaints on claim.
-  if(claim)wrap.appendChild(claimCard({streakShownAbove:true,onClaimed:paintStreak}));
+  // The daily-claim strip is a RETENTION hook, not onboarding — so like the
+  // hero it's built detached and placed by the append order below. A visitor
+  // who has never made a call has nothing to come back to yet, and handing
+  // them a second pile of predictions before they've spent their first one is
+  // noise on the one screen that should be asking for a single tap. Returning
+  // players keep it up top, which is where a daily claim belongs.
+  const claimFrag=document.createDocumentFragment();
+  if(claim){
+    claimFrag.appendChild(streakWrap);
+    // Claiming can start a streak (0 -> 1 day), so the pill repaints on claim.
+    claimFrag.appendChild(claimCard({streakShownAbove:true,onClaimed:paintStreak}));
+  }
 
   // "Your open calls" — the Zeigarnik hook: an unresolved prediction, visible
   // the moment they land, is a reason to come back that the daily claim isn't.
@@ -3302,7 +3338,13 @@ async function renderHome(){
     // ALSO keyed off this same `newUser` flag, below — the cue and the
     // reorder are never allowed to disagree about who's new.
     // The id is the settled cards' scroll target — see the .stl-cta handler.
-    section(featuredFrag,newUser?"Make your first call ↓":"Open markets","openmarkets",newUser?"cue":"");
+    // For a first-time visitor this label is the ONLY text above the card, so
+    // it carries the whole instruction — and it does that in the same four
+    // words the guided tour uses ("Tap YES or NO"), not in product nouns a
+    // brand-new reader hasn't learned yet. The old "Make your first call ↓"
+    // pointed down at a card that was six text blocks away; the card now sits
+    // directly underneath, so there is nothing left to point at.
+    section(featuredFrag,newUser?"Tap YES or NO":"Open markets","openmarkets",newUser?"cue":"");
     // Only the first `featuredShown` are ever VISIBLE as their own cards —
     // the rest is the continuous-play loop's reserve pool (see
     // HOME_FEATURED_POOL server-side): lock a call on any visible card and
@@ -3346,11 +3388,19 @@ async function renderHome(){
   // already saw; stats/proof/social move below it. A returning player keeps
   // today's order — proof and social lead, since they already know the loop.
   if(newUser){
+    // The whole point of this branch: a fresh visitor's first screen is a
+    // four-word label and a playable card, full stop. Everything that
+    // explains, rewards, proves or cross-sells lands BELOW that card, in the
+    // order it becomes relevant — you play first, then you're told why.
     if(featuredFrag)wrap.appendChild(featuredFrag);
+    wrap.appendChild(hero);
+    wrap.appendChild(claimFrag);
     if(livestripEl)wrap.appendChild(livestripEl);
     if(settledFrag)wrap.appendChild(settledFrag);
     if(topFrag)wrap.appendChild(topFrag);
   }else{
+    wrap.appendChild(hero);
+    wrap.appendChild(claimFrag);
     if(livestripEl)wrap.appendChild(livestripEl);
     if(settledFrag)wrap.appendChild(settledFrag);
     if(topFrag)wrap.appendChild(topFrag);
