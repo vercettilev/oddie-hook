@@ -9,7 +9,7 @@
     "start": "tsx src/server.ts",
     "smoke": "tsx scripts/smoke.ts",
     "test-matcher": "tsx scripts/test-matcher.ts",
-    "test": "npm run test-matcher && npm run test-economy && npm run test-positions && npm run test-accounts && npm run test-home && npm run test-celebrations && npm run test-return-triggers && npm run test-score-motion && npm run test-onboarding && npm run test-leaderboard-exclusion && npm run test-settlement && npm run test-live-odds && npm run test-semantic && npm run test-copy && npm run test-card-layout && npm run smoke",
+    "test": "npm run test-matcher && npm run test-economy && npm run test-positions && npm run test-accounts && npm run test-home && npm run test-celebrations && npm run test-return-triggers && npm run test-score-motion && npm run test-onboarding && npm run test-leaderboard-exclusion && npm run test-settlement && npm run test-live-odds && npm run test-geo && npm run test-semantic && npm run test-copy && npm run test-card-layout && npm run smoke",
     "events": "tsx scripts/events.ts",
     "cleanup": "tsx scripts/cleanup-test-rows.ts",
     "audit-feed": "node scripts/audit-feed.mjs",
@@ -30,7 +30,8 @@
     "test-score-motion": "tsx scripts/test-score-motion.ts",
     "test-onboarding": "tsx scripts/test-onboarding.ts",
     "test-leaderboard-exclusion": "tsx scripts/test-leaderboard-exclusion.ts",
-    "test-live-odds": "tsx scripts/test-live-odds.ts"
+    "test-live-odds": "tsx scripts/test-live-odds.ts",
+    "test-geo": "tsx scripts/test-geo.ts"
   },
   "engines": {
     "node": ">=20"
@@ -40,11 +41,13 @@
     "@resvg/resvg-js": "^2.6.2",
     "bs58": "^6.0.0",
     "express": "^4.19.2",
+    "geoip-lite": "^2.0.3",
     "pg": "^8.22.0",
     "tsx": "^4.16.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
+    "@types/geoip-lite": "^1.4.4",
     "@types/node": "^20.14.0",
     "@types/pg": "^8.20.0",
     "typescript": "^5.5.0"

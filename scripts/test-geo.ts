@@ -1,0 +1,92 @@
+// The real-money geofence: isRestrictedLocation's pure logic, and
+// resolveClientCountry's two-path resolution (CDN header first, geoip-lite
+// fallback) against a minimal fake Express request — no network, no real IP
+// lookups beyond geoip-lite's own bundled offline database.
+//
+// Run with: npm run test-geo
+
+import { isRestrictedLocation, RESTRICTED_COUNTRIES, RESTRICTED_UA_REGIONS } from "../src/geo/restrictedRegions.js";
+import { resolveClientCountry } from "../src/geo/resolveClientCountry.js";
+import type { Request } from "express";
+
+let failures = 0;
+function check(name: string, ok: boolean, detail = ""): void {
+  if (ok) console.log(`  ✓ ${name}`);
+  else { failures++; console.error(`  ✗ ${name}`); if (detail) console.error(`      ${detail}`); }
+}
+
+const fakeReq = (headers: Record<string, string>, ip: string | null): Request =>
+  ({ headers, ip: ip ?? undefined }) as unknown as Request;
+
+console.log("\nisRestrictedLocation: the OFAC-comprehensive baseline, nothing more");
+{
+  check("Cuba is restricted", isRestrictedLocation("CU", null));
+  check("Iran is restricted", isRestrictedLocation("IR", null));
+  check("North Korea is restricted", isRestrictedLocation("KP", null));
+  check("lowercase input still matches (case-insensitive)", isRestrictedLocation("cu", null));
+  check("an ordinary country is not restricted", !isRestrictedLocation("US", null));
+  check("an unresolved (null) country is never restricted — fail open, by design",
+    !isRestrictedLocation(null, null));
+  // The line this whole file exists to get right: comprehensively-embargoed
+  // vs. merely-sanctioned. Confirmed via a live OFAC fetch the same day this
+  // shipped — Syria dropped off the comprehensive list on 2025-07-01; Russia
+  // and Belarus have extensive sectoral sanctions but were NEVER comprehensive.
+  check("Syria is NOT on the list (embargo ended 2025-07-01 — do not regress this)",
+    !isRestrictedLocation("SY", null));
+  check("Russia is NOT on the list (sectoral, not comprehensive)", !isRestrictedLocation("RU", null));
+  check("Belarus is NOT on the list (sectoral, not comprehensive)", !isRestrictedLocation("BY", null));
+  check("exactly 3 comprehensively-embargoed countries", RESTRICTED_COUNTRIES.size === 3, String(RESTRICTED_COUNTRIES.size));
+}
+
+console.log("\nisRestrictedLocation: the Ukraine sub-national carve-out");
+{
+  check("Crimea (region 43) is restricted", isRestrictedLocation("UA", "43"));
+  check("Sevastopol (region 40) is restricted", isRestrictedLocation("UA", "40"));
+  check("Donetsk (region 14) is restricted", isRestrictedLocation("UA", "14"));
+  check("Luhansk (region 09) is restricted", isRestrictedLocation("UA", "09"));
+  check("the rest of Ukraine is NOT restricted (e.g. Kyiv, region 30)", !isRestrictedLocation("UA", "30"));
+  check("Ukraine with no region resolved is NOT restricted — the carve-out needs the region to fire",
+    !isRestrictedLocation("UA", null));
+  check("these region codes only apply under UA — the same code under a different country is not restricted",
+    !isRestrictedLocation("US", "43"));
+  check("exactly 4 restricted UA regions", RESTRICTED_UA_REGIONS.size === 4, String(RESTRICTED_UA_REGIONS.size));
+}
+
+console.log("\nresolveClientCountry: CDN header path (Cloudflare cf-ipcountry)");
+{
+  const cu = resolveClientCountry(fakeReq({ "cf-ipcountry": "CU" }, "203.0.113.1"));
+  check("a restricted CDN header is trusted directly, no geoip-lite lookup needed",
+    cu.source === "cdn-header" && cu.restricted === true, JSON.stringify(cu));
+
+  const us = resolveClientCountry(fakeReq({ "cf-ipcountry": "US" }, "203.0.113.1"));
+  check("an allowed CDN header passes through as not restricted",
+    us.source === "cdn-header" && us.restricted === false, JSON.stringify(us));
+
+  const unknown = resolveClientCountry(fakeReq({ "cf-ipcountry": "XX" }, "8.8.8.8"));
+  check("Cloudflare's own 'unknown' marker (XX) is never treated as a real country — falls through to geoip-lite",
+    unknown.source !== "cdn-header", JSON.stringify(unknown));
+
+  const tor = resolveClientCountry(fakeReq({ "cf-ipcountry": "T1" }, "8.8.8.8"));
+  check("Cloudflare's Tor marker (T1) also falls through, not treated as a country",
+    tor.source !== "cdn-header", JSON.stringify(tor));
+}
+
+console.log("\nresolveClientCountry: geoip-lite fallback (no CDN header present)");
+{
+  // 8.8.8.8 (Google Public DNS) is a stable, well-known US-geolocated IP —
+  // safe to assert on across environments and geoip-lite database updates.
+  const us = resolveClientCountry(fakeReq({}, "8.8.8.8"));
+  check("a real public IP resolves via geoip-lite when no CDN header is present",
+    us.source === "geoip-lite" && us.country === "US" && us.restricted === false, JSON.stringify(us));
+
+  const noIp = resolveClientCountry(fakeReq({}, null));
+  check("no resolvable IP at all -> unresolved, fails open (never restricted)",
+    noIp.source === "unresolved" && noIp.restricted === false, JSON.stringify(noIp));
+
+  const loopback = resolveClientCountry(fakeReq({}, "127.0.0.1"));
+  check("a loopback address (local dev) resolves as unresolved, not restricted — dev never fights this check",
+    loopback.restricted === false, JSON.stringify(loopback));
+}
+
+console.log(failures === 0 ? "\nall geo checks passed.\n" : `\n${failures} geo check(s) FAILED.\n`);
+process.exit(failures === 0 ? 0 : 1);

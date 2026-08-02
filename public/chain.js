@@ -53,6 +53,20 @@
     return s.length > 10 ? s.slice(0, 4) + "…" + s.slice(-4) : s;
   }
 
+  // Mirrors markets.ts's poolPct exactly (same clamp, same rounding) — this
+  // is the REAL-MONEY pool's own odds, computed from on-chain lamports
+  // (Market.total_yes/total_no), entirely separate from the play-token pool
+  // the card's own YES/NO buttons already show live (see updateCardOdds in
+  // feed.html). Two pools, two numbers, on purpose: a user can be "70% on
+  // YES" in predictions and "30% on YES" in real SOL on the very same
+  // market, because they are different people making different bets.
+  function poolPct(chosen, opposite) {
+    const total = chosen + opposite;
+    if (total <= 0) return null;
+    return Math.max(1, Math.min(99, Math.round((chosen / total) * 100)));
+  }
+  function fmtMult(pct) { return (100 / pct).toFixed(1) + "×"; }
+
   function sheetShell() {
     const dim = document.createElement("div");
     dim.className = "cdim chaindim";
@@ -88,10 +102,23 @@
       return;
     }
 
+    // The real-money pool's own odds — live from Solana, not derived from the
+    // free predictions pool the card behind this sheet already shows. Shown
+    // even before a wallet connects, so there's something to decide from.
+    const yesLamports = marketState.totalYesLamports ?? 0, noLamports = marketState.totalNoLamports ?? 0;
+    const yesOnchainPct = poolPct(yesLamports, noLamports), noOnchainPct = yesOnchainPct == null ? null : 100 - yesOnchainPct;
+    const onchainOddsHTML = yesOnchainPct == null
+      ? `<p class="chain-pool-empty">No real stake on this market yet — first in sets the line.</p>`
+      : `<div class="chain-pool-odds">
+           <span class="chain-pool-side">YES <b>${yesOnchainPct}%</b> <small>${fmtMult(yesOnchainPct)}</small></span>
+           <span class="chain-pool-side">NO <b>${noOnchainPct}%</b> <small>${fmtMult(noOnchainPct)}</small></span>
+         </div>`;
+
     const render = () => {
       body.innerHTML = `
         <h3>Make it real</h3>
         <p class="cnote">Optional. Real SOL on ${CLUSTER_LABEL}, separate from your free predictions above — this never affects them, and it's never required to play.</p>
+        ${onchainOddsHTML}
         ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>`
           : `<button class="cbtn" id="chainconnect">Connect wallet</button>`}
         ${wallet ? `
@@ -144,6 +171,7 @@
             body: JSON.stringify({ slug, userPubkey: wallet.publicKey, side, lamports }),
           });
           const pj = await prep.json();
+          if (prep.status === 451) throw new Error("Real-money stakes aren't available in your region.");
           if (!prep.ok || !pj.ok) throw new Error(pj.error || "Couldn't prepare the transaction.");
           const w3 = await loadWeb3();
           const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));

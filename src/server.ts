@@ -21,6 +21,7 @@ import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
 } from "./chain/oddieChain.js";
+import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
@@ -32,6 +33,10 @@ import { linkAccount, accountsFor } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 
 const app = express();
+// Real client IPs, not the reverse proxy's — required for the real-money
+// geofence (see src/geo/resolveClientCountry.ts) to read X-Forwarded-For
+// instead of reporting Railway's own edge address for every request.
+app.set("trust proxy", true);
 app.use(express.json());
 
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
@@ -1491,8 +1496,14 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
  * which the SERVER's own authority key does sign — that instruction is
  * operator-only by the contract itself, not by anything client-controlled.
  */
-app.get("/api/chain/status", (_req, res) => {
-  res.json({ enabled: onchainEnabled() });
+// The single boolean the client gates every trace of this UI behind (see
+// initChainLayer in feed.html) already folds in the real-money geofence, not
+// just the master flag — a restricted-region request gets exactly the same
+// {enabled:false} a flag-off deployment would, so the client needs no
+// separate geo-aware code path. See src/geo/ for the how and why.
+app.get("/api/chain/status", (req, res) => {
+  const enabled = onchainEnabled() && !resolveClientCountry(req).restricted;
+  res.json({ enabled });
 });
 
 if (onchainEnabled()) {
@@ -1522,6 +1533,15 @@ if (onchainEnabled()) {
   });
 
   app.post("/api/chain/position/prepare", async (req, res) => {
+    // Defense in depth: /status already hides the button for a restricted
+    // region, but the button is a hint, not the enforcement — a cached page,
+    // a stale client, or a direct API call must not be able to open a NEW
+    // real-money position from a restricted region regardless. Claiming
+    // WINNINGS (below) is deliberately NOT gated here — this only stops new
+    // stakes, never blocks someone from withdrawing money they already have
+    // a legitimate claim to.
+    const geo = resolveClientCountry(req);
+    if (geo.restricted) return res.status(451).json({ ok: false, reason: "restricted-region" });
     const slug = String(req.body?.slug ?? "");
     const userPubkey = String(req.body?.userPubkey ?? "");
     const side = req.body?.side;
