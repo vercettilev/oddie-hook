@@ -23,6 +23,7 @@ import {
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
+import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
@@ -1491,13 +1492,18 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
 });
 
 /**
- * Real-stakes ("skin in the game"), opt-in and ONCHAIN_ENABLED-gated. The flag
- * is read once at process boot (see oddieChain.ts) and never changes without a
- * restart, so gating at ROUTE REGISTRATION — not inside each handler — is safe
- * and is the point: with the flag off, everything below except /status is
- * simply never added to Express's routing table. A request to any of them 404s
- * exactly like a path that was never typed, not a custom "disabled" response —
- * there is nothing here to probe. The client mirrors this: it never renders a
+ * Real-stakes ("skin in the game"), opt-in and gated on BOTH ONCHAIN_ENABLED
+ * (the env var) AND GEOBLOCK_LIST_VERIFIED (the legal sign-off on the CURRENT
+ * restricted-jurisdictions list — see src/geo/restrictedRegions.ts). Neither
+ * alone is enough: ops flipping the env var must not be able to go live on a
+ * list nobody has actually cleared, and a verified list must not silently
+ * arm the layer before ops has deliberately turned it on. Both flags are read
+ * once at process boot and never change without a restart, so gating at
+ * ROUTE REGISTRATION — not inside each handler — is safe and is the point:
+ * with either flag off, everything below except /status is simply never
+ * added to Express's routing table. A request to any of them 404s exactly
+ * like a path that was never typed, not a custom "disabled" response — there
+ * is nothing here to probe. The client mirrors this: it never renders a
  * trace of this UI, and never even fetches the other routes, unless /status
  * said enabled first.
  *
@@ -1507,17 +1513,30 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
  * which the SERVER's own authority key does sign — that instruction is
  * operator-only by the contract itself, not by anything client-controlled.
  */
+// isChainEnabled() (flag + admin key present), not just onchainEnabled() (flag
+// alone): resolveMarketOnChain — the ONLY way an on-chain market ever gets
+// marked resolved, so claim_winnings has an outcome to pay against — is
+// itself gated on isChainEnabled() at its call site in /api/community/resolve.
+// If ONCHAIN_ENABLED were true but SOLANA_ADMIN_SECRET_KEY were missing, users
+// could still open real-money positions (take_position needs no admin key),
+// but resolution could never propagate on-chain — a real stake with no
+// possible path to a resolved market, and therefore no possible claim. Gating
+// on isChainEnabled() here closes that off before it can happen: real money
+// is never accepted unless the admin key that resolves it is also present.
+const realStakesReady = isChainEnabled() && GEOBLOCK_LIST_VERIFIED;
+
 // The single boolean the client gates every trace of this UI behind (see
 // initChainLayer in feed.html) already folds in the real-money geofence, not
 // just the master flag — a restricted-region request gets exactly the same
-// {enabled:false} a flag-off deployment would, so the client needs no
-// separate geo-aware code path. See src/geo/ for the how and why.
+// {enabled:false} a flag-off (or list-unverified) deployment would, so the
+// client needs no separate geo-aware code path. See src/geo/ for the how and
+// why, and resolveClientCountry's fail-CLOSED policy on an unresolved IP.
 app.get("/api/chain/status", (req, res) => {
-  const enabled = onchainEnabled() && !resolveClientCountry(req).restricted;
+  const enabled = realStakesReady && !resolveClientCountry(req).restricted;
   res.json({ enabled });
 });
 
-if (onchainEnabled()) {
+if (realStakesReady) {
   const MIN_STAKE_LAMPORTS = 1_000_000;    // 0.001 SOL — above rent/fee dust
   const MAX_STAKE_LAMPORTS = 5_000_000_000; // 5 SOL — a sane demo ceiling, not a protocol limit
 

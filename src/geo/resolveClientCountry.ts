@@ -14,13 +14,18 @@
  *      third party ever sees a user's IP address. This is the path that
  *      actually runs today, since (1) was unconfirmed.
  *
- * Fails OPEN on an unresolved IP (private/loopback ranges in local dev, or
+ * Fails CLOSED on an unresolved IP (private/loopback ranges in local dev, or
  * any address the database has no entry for) — an unresolvable location is
- * treated as "not restricted", not "assume the worst". This is a real
- * tradeoff a compliance review should explicitly bless, not something to
- * infer from the code: it means local dev never fights this check, at the
- * cost of a small number of real users with unresolvable IPs also not being
- * blocked. Flagged, not hidden.
+ * treated as RESTRICTED, not "assume it's fine". This was a deliberate
+ * reversal: the layer originally shipped fail-open (unresolvable = allowed),
+ * flagged explicitly as "a real tradeoff a compliance review should bless" —
+ * that review happened, and the call for real money is fail-closed. The
+ * practical cost is the same trade in the other direction: local dev now
+ * needs an explicit cf-ipcountry header (or a real, resolvable public IP) to
+ * exercise the "allowed" path — see scripts/test-geo.ts's fakeReq usage —
+ * and a small number of real users with unresolvable IPs will be blocked
+ * even though they may not actually be in a restricted location. That's the
+ * intended shape for money: default to no, not default to yes.
  */
 import type { Request } from "express";
 import geoip from "geoip-lite";
@@ -60,7 +65,11 @@ export function resolveClientCountry(req: Request): ClientLocation {
 
   const ip = clientIp(req);
   const hit = ip ? geoip.lookup(ip) : null;
-  if (!hit) return { country: null, region: null, source: "unresolved", restricted: false };
+  // Fail CLOSED: no country, no benefit of the doubt — see the file-level
+  // comment above. This is a deliberate policy overlay, not a call to
+  // isRestrictedLocation(null, ...) — that function answers a different,
+  // narrower question (pure set membership) than "is it safe to allow".
+  if (!hit) return { country: null, region: null, source: "unresolved", restricted: true };
 
   const region = hit.region || null;
   return { country: hit.country, region, source: "geoip-lite", restricted: isRestrictedLocation(hit.country, region) };

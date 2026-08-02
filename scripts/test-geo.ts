@@ -25,7 +25,7 @@ console.log("\nisRestrictedLocation: the OFAC-comprehensive baseline, nothing mo
   check("North Korea is restricted", isRestrictedLocation("KP", null));
   check("lowercase input still matches (case-insensitive)", isRestrictedLocation("cu", null));
   check("an ordinary country is not restricted", !isRestrictedLocation("US", null));
-  check("an unresolved (null) country is never restricted — fail open, by design",
+  check("isRestrictedLocation(null,...) is pure set-membership, not policy — a null country simply isn't IN the set; resolveClientCountry (below) is what decides fail-open vs fail-closed for an unresolved IP",
     !isRestrictedLocation(null, null));
   // The line this whole file exists to get right: comprehensively-embargoed
   // vs. merely-sanctioned. Confirmed via a live OFAC fetch the same day this
@@ -80,12 +80,21 @@ console.log("\nresolveClientCountry: geoip-lite fallback (no CDN header present)
     us.source === "geoip-lite" && us.country === "US" && us.restricted === false, JSON.stringify(us));
 
   const noIp = resolveClientCountry(fakeReq({}, null));
-  check("no resolvable IP at all -> unresolved, fails open (never restricted)",
-    noIp.source === "unresolved" && noIp.restricted === false, JSON.stringify(noIp));
+  check("no resolvable IP at all -> unresolved, fails CLOSED (restricted — legal-verified real-money policy)",
+    noIp.source === "unresolved" && noIp.restricted === true, JSON.stringify(noIp));
 
   const loopback = resolveClientCountry(fakeReq({}, "127.0.0.1"));
-  check("a loopback address (local dev) resolves as unresolved, not restricted — dev never fights this check",
-    loopback.restricted === false, JSON.stringify(loopback));
+  check("a loopback address (local dev) resolves as unresolved, and is now RESTRICTED by the fail-closed policy — dev needs an explicit cf-ipcountry header to test the allowed path",
+    loopback.source === "unresolved" && loopback.restricted === true, JSON.stringify(loopback));
+}
+
+console.log("\nGEOBLOCK_LIST_VERIFIED: the legal sign-off gate");
+{
+  check("the list is marked verified (set only after counsel reviewed the exact CU/IR/KP + UA-region contents)",
+    RESTRICTED_COUNTRIES.size === 3 && RESTRICTED_UA_REGIONS.size === 4);
+  const { GEOBLOCK_LIST_VERIFIED } = await import("../src/geo/restrictedRegions.js");
+  check("GEOBLOCK_LIST_VERIFIED is true", GEOBLOCK_LIST_VERIFIED === true);
+  check("the US is not in the restricted set", !isRestrictedLocation("US", null));
 }
 
 console.log(failures === 0 ? "\nall geo checks passed.\n" : `\n${failures} geo check(s) FAILED.\n`);

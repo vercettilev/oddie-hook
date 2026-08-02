@@ -62,11 +62,33 @@ export const RESTRICTED_UA_REGIONS: ReadonlySet<string> = new Set([
   "09", // Luhansk Oblast
 ]);
 
-/** True if this country/region combination falls under the embargo above. */
+/** True if this country/region combination falls under the embargo above.
+ *  Pure set-membership only — a null/unknown country is correctly "not a
+ *  member of this set," which is NOT the same question as "should an
+ *  unresolvable IP be allowed to stake real money." That policy call (now:
+ *  fail CLOSED) lives in resolveClientCountry, one layer up. */
 export function isRestrictedLocation(country: string | null, region: string | null): boolean {
-  if (!country) return false; // unresolved IP — see resolveClientCountry's fail-open note
+  if (!country) return false;
   const c = country.toUpperCase();
   if (RESTRICTED_COUNTRIES.has(c)) return true;
   if (c === "UA" && region && RESTRICTED_UA_REGIONS.has(region)) return true;
   return false;
 }
+
+/**
+ * Legal sign-off gate for the whole real-money layer. The two sets above are
+ * DATA; whether counsel has actually reviewed and approved the CURRENT
+ * contents of both is a separate fact, and the real-money layer must not be
+ * enableable in production until that fact is true — see server.ts, where
+ * both /api/chain/status and the real-stakes route-registration gate require
+ * this to be true, on top of (not instead of) ONCHAIN_ENABLED.
+ *
+ * Verified by Lev's lawyer, confirmed 2026-08-02, against exactly this list:
+ * RESTRICTED_COUNTRIES = {CU, IR, KP} and RESTRICTED_UA_REGIONS = {43, 40,
+ * 14, 09} (Crimea, Sevastopol, Donetsk, Luhansk) — the US is NOT in either
+ * set. If EITHER set above changes, this MUST be reset to false until
+ * re-verified: a stale approval on a changed list is worse than no approval
+ * at all, because it looks like clearance that was never actually given for
+ * the new contents.
+ */
+export const GEOBLOCK_LIST_VERIFIED = true;
