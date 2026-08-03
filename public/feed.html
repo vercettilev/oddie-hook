@@ -221,6 +221,22 @@
      badge keeps the lime tint. */
   .commtag{display:inline-block;font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.02em;
     padding:3px 9px;border-radius:999px;background:var(--bar);color:#48525d}
+  /* "tagged by @someone" — the provenance chip that ties a market back to the
+     person who made it exist. Accent-tinted so it reads as the card's
+     identity rather than another neutral metadata pill: a market ON Oddie is
+     defined by having a tagger, and this is where the grid says so. Sits
+     first in the meta row. */
+  .commtag-by{display:inline-flex;align-items:center;gap:5px;font-size:11px;
+    background:rgba(182,240,95,.18);color:var(--acc-deep);
+    border:1px solid rgba(182,240,95,.55)}
+  :root[data-theme="dark"] .commtag-by{color:var(--accent)}
+  /* Venue markets: a deliberately COOL, low-contrast chip naming the source.
+     They have no tagger, so they must not borrow the accent that means
+     "someone tagged this" — the visual difference is the point, and it's what
+     keeps them secondary to community cards in the same grid. */
+  .mchip-sourced{background:var(--bar);color:#5b6672;box-shadow:none;
+    font-size:11px;letter-spacing:.02em}
+  :root[data-theme="dark"] .mchip-sourced{color:#9aa6b2}
   .chainbadge{display:inline-flex;align-items:center;gap:4px;font-family:'Nunito';font-weight:800;
     font-size:10.5px;letter-spacing:.02em;color:#3c570b;text-decoration:none;white-space:nowrap;
     padding:3px 10px 3px 8px;border-radius:999px;background:var(--wash)}
@@ -281,6 +297,12 @@
   .fee-note b{font-family:'Fredoka';font-weight:700;font-size:15px;color:var(--acc-deep);
     flex:none;letter-spacing:-.01em}
   :root[data-theme="dark"] .fee-note b{color:var(--accent)}
+  /* The RECEIPT variant — a settled market where the tagger was actually
+     paid. Solid accent border and a filled number: this one is a fact, not a
+     promise, and it should look more certain than the forward-looking version
+     it replaces on resolved cards. */
+  .fee-note-paid{border-color:var(--accent);background:rgba(182,240,95,.22)}
+  .fee-note-paid b{font-size:17px}
   /* Source tweet — permalink-only, sits above the question. Same surface/line
      tokens as the elevated card itself, not a competing block. */
   .srctweet{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:9px 12px;
@@ -2696,14 +2718,53 @@ function renderFeed(items){
 // state reads at a glance — a pulsing dot while a community market is still
 // filling up, a clock once there's a real close date, a coin stack for a venue
 // market's actual dollar volume. One function, every card (feed, permalink, home).
+/**
+ * The tag-provenance line on a community card, in two variants.
+ *
+ * The grid used to read as a neutral market list sitting under an unrelated
+ * tag-mechanic hero — two products stacked. Every community card now says out
+ * loud that it EXISTS because a person tagged a claim, and what that person
+ * got for it, so scrolling the grid reinforces the same loop the hero
+ * demonstrates instead of quietly contradicting it.
+ *
+ *  - RECEIPT (creatorFeePaid > 0): the market settled and the tagger was
+ *    actually paid. Concrete and past-tense, because it happened.
+ *  - PROMISE (everything else): the market is still open, so nothing has been
+ *    paid yet and saying otherwise would be a lie on the card. Forward-looking
+ *    "+3% ... tag your own" framing, which is the honest version.
+ *
+ * A tagger with no linked handle renders as "anonymous" — a real person
+ * tagged it, we just don't have a name. Never invent one.
+ */
+function taggerName(m){ return m.taggedBy?`@${esc(m.taggedBy)}`:"anonymous"; }
+function feeNoteHtml(m){
+  const paid=Number(m.creatorFeePaid)||0;
+  if(paid>0){
+    return `<div class="fee-note fee-note-paid"><b>+${paid}</b><span>${
+      taggerName(m)} tagged this market and earned ${paid} prediction${paid===1?"":"s"} when it resolved.</span></div>`;
+  }
+  return `<div class="fee-note"><b>+${(m.creatorFeeBps/100).toFixed(0)}%</b><span>goes to whoever tagged this market. Tag your own and earn it.</span></div>`;
+}
+
 function metaRowHtml(m,yes){
-  if(!m.community)return `<span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>`;
+  // Venue markets carry a SOURCED chip rather than any tagging provenance:
+  // nobody on Oddie created them, and inventing an attribution would be the
+  // exact fake-provenance this section is meant to avoid. Naming the source
+  // is also what keeps them visually and semantically secondary to the
+  // community markets around them.
+  if(!m.community)return `<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span><span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>`;
   const stateChip=m.forming
     ? `<span class="mchip mchip-forming"><span class="pulsedot"></span>forming · ${m.positions} ${m.positions===1?"call":"calls"}</span>`
     : `<span class="mchip">${yes}% yes</span>`;
   const clockChip=m.closesAt?`<span class="mchip mchip-clock">${CLOCK_ICON}${closesIn(m.closesAt)}</span>`:"";
   const chain=m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:"";
-  return `<span class="commtag">community market</span>${stateChip}${clockChip}${chain}`;
+  // Attribution leads the row, ahead of the state/clock chips: WHO made this
+  // market is the thing that distinguishes it from an exchange listing, so it
+  // reads before the market's own mechanics do. It replaces the old flat
+  // "community market" chip — that label said the same thing in the abstract,
+  // this one says it with a person attached.
+  const taggedChip=`<span class="commtag commtag-by">🏷️ tagged by ${taggerName(m)}</span>`;
+  return `${taggedChip}${stateChip}${clockChip}${chain}`;
 }
 // Home's continuous-play loop: how many markets one chain will auto-serve
 // (the very first card counts as #1) before handing off to "browse more in
@@ -2861,7 +2922,7 @@ function buildCard(m,i,homeLoop){
         </button>
       </div>
       ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
-      ${m.community && m.creatorFeeBps ? `<div class="fee-note"><b>+${(m.creatorFeeBps/100).toFixed(0)}%</b><span>goes to whoever tagged this market. Tag your own and earn it.</span></div>` : ""}
+      ${m.community && m.creatorFeeBps ? feeNoteHtml(m) : ""}
       ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">
         <div class="callers-lab">Who called it</div>
         <div class="callers-list">${m.callers.map(c=>`
@@ -3560,7 +3621,12 @@ async function renderHome(){
     // the output of the mechanic rather than as inventory on an exchange.
     // That distinction is the entire difference between this and Polymarket,
     // and it costs four words to make.
-    section(featuredFrag,newUser?"Someone tagged this one — try it":"Open markets","openmarkets",newUser?"cue":"");
+    // "Markets people tagged", not "Open markets". The neutral label let the
+    // grid read as a standalone exchange sitting under an unrelated hero —
+    // two products stacked. Naming the ACTION that produced these markets
+    // makes the section an extension of the tag mechanic instead of a
+    // competing one, and it costs three words.
+    section(featuredFrag,newUser?"Someone tagged this one — try it":"Markets people tagged","openmarkets",newUser?"cue":"");
     // Only the first `featuredShown` are ever VISIBLE as their own cards —
     // the rest is the continuous-play loop's reserve pool (see
     // HOME_FEATURED_POOL server-side): lock a call on any visible card and

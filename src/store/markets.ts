@@ -2486,6 +2486,40 @@ export async function logRealFeeIntent(slug: string, totalVaultLamports: number)
   } catch (e) { console.error("[fees] real-money fee intent logging failed:", (e as Error).message); }
 }
 
+/**
+ * What the TAGGER actually earned on each of these markets — the receipt
+ * behind the "+3% goes to whoever tagged this" promise on a market card.
+ *
+ * Only enforced play-token creator fees count: a `real`/unenforced row is a
+ * logged intent, not money anyone received (see logRealFeeIntent), and
+ * showing it as earnings would be a straightforward lie on the card. Returns
+ * only slugs that actually paid, so a caller can treat "absent" as "nothing
+ * paid yet" without distinguishing zero from missing.
+ */
+export async function creatorFeesPaidFor(slugs: string[]): Promise<Record<string, { amount: number; handle: string | null }>> {
+  const out: Record<string, { amount: number; handle: string | null }> = {};
+  if (!slugs.length) return out;
+  const wanted = new Set(slugs);
+  if (!PERSISTENT) {
+    for (const r of memFeeLog) {
+      if (r.marketKind !== "play" || r.feeKind !== "creator" || !r.enforced) continue;
+      if (!wanted.has(r.slug) || r.feeAmount <= 0) continue;
+      const cur = out[r.slug];
+      out[r.slug] = { amount: (cur?.amount ?? 0) + r.feeAmount, handle: cur?.handle ?? r.recipientHandle };
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; amount: string; handle: string | null }>(
+    `SELECT slug, SUM(fee_amount)::bigint AS amount, MIN(recipient_handle) AS handle
+       FROM market_fee_log
+      WHERE slug = ANY($1) AND market_kind = 'play' AND fee_kind = 'creator'
+        AND enforced = true AND fee_amount > 0
+      GROUP BY slug`, [slugs]);
+  for (const r of rows) out[r.slug] = { amount: Number(r.amount), handle: r.handle };
+  return out;
+}
+
 /** Recent fee events, newest first — the admin audit view over market_fee_log. */
 export async function feeLog(limit = 100): Promise<FeeLogRow[]> {
   const n = Math.max(1, Math.min(500, Math.floor(limit)));

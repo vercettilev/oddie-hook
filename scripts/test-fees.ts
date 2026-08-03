@@ -78,6 +78,28 @@ console.log("\nplay-token creator fee: paid to the surfacer, from the total pool
   check("...and does not write a second log row", logAfter.filter((r) => r.slug === slugFor(m)).length === 1);
 }
 
+console.log("\ncreatorFeesPaidFor: the receipt behind a card's \"earned\" line");
+{
+  const { creatorFeesPaidFor } = await import("../src/store/markets.js");
+  const CREATOR = "fee-receipt-dev-01";
+  const m = mk("FEERCPT", "Will the receipt lookup work?", 50);
+  await createSlug(m);
+  await recordSurfacer(slugFor(m), { deviceId: CREATOR });
+  await call(slugFor(m), "yes", 120, "receipt-caller-a", [m]);
+  await call(slugFor(m), "no", 80, "receipt-caller-b", [m]);
+
+  const before = await creatorFeesPaidFor([slugFor(m)]);
+  check("an UNRESOLVED market has paid nothing — the card must show the promise, not a receipt",
+    before[slugFor(m)] === undefined, JSON.stringify(before));
+
+  await settleMarket(slugFor(m), "yes");
+  const after = await creatorFeesPaidFor([slugFor(m)]);
+  check("once settled, the lookup reports what the tagger actually earned",
+    after[slugFor(m)]?.amount === 6, JSON.stringify(after));
+  check("...and only for the slugs asked for",
+    Object.keys(await creatorFeesPaidFor(["nope-not-a-slug"])).length === 0);
+}
+
 console.log("\nedge cases: fees can never produce a negative or broken payout");
 {
   // A pool too small to clear the fee floor: nobody is charged, nobody logged.

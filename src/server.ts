@@ -15,6 +15,7 @@ import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, admin
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
+import { creatorFeesPaidFor } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -518,13 +519,27 @@ app.get("/api/feed", async (req, res) => {
   // would be an N+1 query across a whole page, so it's scoped to just the
   // pinned start market.
   const callers = start ? await callersFor(start.slug, 20).catch(() => null) : null;
+  // What each market's tagger actually earned, for the cards that can show a
+  // receipt instead of a promise. Only ever non-empty for RESOLVED markets —
+  // the fee is paid at settlement — so in practice this populates the
+  // permalink of a settled market, not the open ones filling the feed.
+  const feesPaid = await creatorFeesPaidFor(feedItems.filter((x) => x.community).map((x) => x.slug))
+    .catch(() => ({} as Record<string, { amount: number; handle: string | null }>));
   const withCrowd = feedItems.map((x) => {
     const surfacer = surfacers[x.slug];
+    const paid = feesPaid[x.slug];
     const extra: Record<string, unknown> = {
       ...x,
       crowd: crowd[x.slug] ?? { yes: 0, no: 0 },
       challengeHandle: surfacer?.handle ?? null,
       sourceUrl: surfacer?.sourceUrl ?? null,
+      // Tagging provenance, sent for every community market: the card exists
+      // because a person tagged a claim, and that has to be visible on the
+      // card itself rather than inferable from the "community market" chip.
+      // null handle = tagged anonymously (real tag, no linked handle) — the
+      // client renders "anonymous", never a fabricated name.
+      taggedBy: x.community ? (surfacer?.handle ?? null) : null,
+      creatorFeePaid: paid ? paid.amount : 0,
     };
     if (callers && start && x.slug === start.slug) {
       extra.callers = callers.callers;
@@ -621,6 +636,12 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       creatorFeeBps: CREATOR_FEE_BPS_PLAY,
       crowd: crowd[slug] ?? { yes: 0, no: 0 },
       challengeHandle: surfacer?.handle ?? null,
+      // See the same fields in /api/feed: every community card carries who
+      // tagged it. These are all OPEN markets (openCommunityMarkets), and the
+      // creator fee only pays at settlement, so creatorFeePaid is 0 here by
+      // construction — the card shows the forward-looking "+3%" framing.
+      taggedBy: surfacer?.handle ?? null,
+      creatorFeePaid: 0,
     };
   });
 }
