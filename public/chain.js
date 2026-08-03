@@ -305,6 +305,103 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  /** USDC on Solana — the mint venue orders are denominated in. */
+  const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const USDC_DECIMALS = 6;
+
+  /**
+   * The venue stake sheet: real money on a POLYMARKET market, routed through
+   * Jupiter's order API. Non-custodial on exactly the same terms as our own
+   * parimutuel — the server asks Jupiter to build the transaction with the
+   * USER's pubkey as owner, and the user's own wallet signs and broadcasts
+   * it. No key of ours is involved and we never hold the funds.
+   *
+   * Deliberately states WHERE the market comes from. A user putting real
+   * money down should know this one is Polymarket's book and not ours, and
+   * that the creator fee they see on community cards does NOT apply here —
+   * nobody tagged this market into existence, so there is no creator to pay.
+   */
+  async function openVenueSheet(marketId, card) {
+    const body = sheetShell();
+    const question = card?.querySelector(".take")?.textContent?.trim() || "this market";
+
+    const render = () => {
+      body.innerHTML = `
+        <h3>Make it real</h3>
+        <p class="cnote">Optional. Real USDC on <b>Polymarket</b>, routed via Jupiter — this is their market, not one someone tagged into Oddie, so there's no creator fee on it. Your free predictions are untouched either way.</p>
+        <p class="chain-fee-note">${esc(question)}</p>
+        ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>`
+          : `<button class="cbtn" id="chainconnect">Connect wallet</button>`}
+        ${wallet ? `
+        <div class="chain-side-row">
+          <button class="chain-side" data-side="yes" type="button">YES</button>
+          <button class="chain-side" data-side="no" type="button">NO</button>
+        </div>
+        <input class="chain-amt" type="number" min="1" step="1" placeholder="USDC amount" inputmode="decimal">
+        <div class="chain-line" id="chainline"></div>
+        <button class="claimbtn" id="chainstake" disabled>Put USDC on it</button>
+        ` : ""}
+        <button class="cclose">Not now</button>`;
+      body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+
+      const connectBtn = body.querySelector("#chainconnect");
+      if (connectBtn) connectBtn.onclick = async () => {
+        connectBtn.disabled = true; connectBtn.textContent = "Connecting…";
+        try { await connectWallet(); render(); }
+        catch (e) {
+          connectBtn.disabled = false; connectBtn.textContent = "Connect wallet";
+          let err = body.querySelector(".chain-err");
+          if (!err) { err = document.createElement("p"); err.className = "chain-err"; connectBtn.after(err); }
+          err.textContent = e.message;
+        }
+      };
+
+      let side = null;
+      const sideBtns = [...body.querySelectorAll(".chain-side")];
+      const amtInput = body.querySelector(".chain-amt");
+      const stakeBtn = body.querySelector("#chainstake");
+      const line = body.querySelector("#chainline");
+      const refresh = () => {
+        const amt = parseFloat(amtInput ? amtInput.value : "");
+        if (stakeBtn) stakeBtn.disabled = !side || !(amt > 0);
+        if (line) line.textContent = side && amt > 0
+          ? `Buying ${side.toUpperCase()} with ${amt} USDC. Your wallet will ask you to confirm.` : "";
+      };
+      sideBtns.forEach((b) => b.onclick = () => {
+        side = b.dataset.side;
+        sideBtns.forEach((x) => x.classList.toggle("on", x === b));
+        refresh();
+      });
+      if (amtInput) amtInput.oninput = refresh;
+      if (stakeBtn) stakeBtn.onclick = async () => {
+        stakeBtn.disabled = true; stakeBtn.textContent = "Preparing…";
+        try {
+          const depositAmount = Math.round(parseFloat(amtInput.value) * 10 ** USDC_DECIMALS);
+          const prep = await fetch("/api/venue/order/prepare", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ marketId, userPubkey: wallet.publicKey, side, depositAmount, depositMint: USDC_MINT }),
+          });
+          const pj = await prep.json();
+          if (prep.status === 451) throw new Error("Real money on Polymarket markets isn't available in your region.");
+          if (!prep.ok || !pj.ok) throw new Error(pj.error || pj.reason || "Couldn't prepare the order.");
+          const w3 = await loadWeb3();
+          const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
+          stakeBtn.textContent = "Confirm in wallet…";
+          const { signature } = await window.solana.signAndSendTransaction(tx);
+          body.innerHTML = `<h3>Order placed ✓</h3>
+            <p class="cnote">${amtInput.value} USDC on ${side.toUpperCase()}, on Polymarket.</p>
+            <p class="chain-sig">tx: <a href="https://explorer.solana.com/tx/${signature}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+            <button class="cclose">Done</button>`;
+          body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+        } catch (e) {
+          stakeBtn.disabled = false; stakeBtn.textContent = "Put USDC on it";
+          if (line) line.textContent = e.message || "Something went wrong — try again.";
+        }
+      };
+    };
+    render();
+  }
+
   function attachButton(card) {
     if (card.querySelector(".chain-cta")) return; // already decorated
     const duel = card.querySelector(".duel");
@@ -317,9 +414,50 @@
     duel.after(btn);
   }
 
-  function scan() {
+  /**
+   * The venue (Polymarket-via-Jupiter) real-money button. Separate from
+   * attachButton above and deliberately NOT merged with it: the two paths
+   * differ in contract, in endpoint, and — the part that actually matters —
+   * in geofence. Our own parimutuel blocks nobody; the venue path blocks 19
+   * countries including the entire US, fails closed on an unresolvable IP,
+   * and additionally requires the master flag. `venueAllowed` is resolved
+   * ONCE per page from /api/venue/status (which applies exactly the same
+   * server-side gate that /api/venue/order/prepare enforces), so a blocked
+   * visitor never sees the control at all — and if a stale page ever did
+   * show it, the prepare call still refuses with 451.
+   */
+  let venueAllowed = null; // null = not yet asked
+  async function venueIsAllowed() {
+    if (venueAllowed !== null) return venueAllowed;
+    try {
+      const r = await fetch("/api/venue/status");
+      const j = await r.json();
+      venueAllowed = !!j.enabled;
+    } catch (e) { venueAllowed = false; }
+    return venueAllowed;
+  }
+
+  function attachVenueButton(card) {
+    if (card.querySelector(".chain-cta")) return;
+    const duel = card.querySelector(".duel");
+    if (!duel) return;
+    const marketId = card.dataset.venueId;
+    if (!marketId) return;
+    const btn = document.createElement("button");
+    btn.className = "chain-cta"; btn.type = "button";
+    btn.textContent = "🔗 Make it real";
+    btn.onclick = (e) => { e.stopPropagation(); openVenueSheet(marketId, card); };
+    duel.after(btn);
+  }
+
+  async function scan() {
     document.querySelectorAll('.card[data-community="1"]').forEach(attachButton);
     mountClaimCheck();
+    // Venue cards are decorated only once the server says this visitor may
+    // use that path at all — no flash of a button that would 451 on tap.
+    if (await venueIsAllowed()) {
+      document.querySelectorAll('.card[data-venue="polymarket"]').forEach(attachVenueButton);
+    }
   }
 
   /**

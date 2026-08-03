@@ -550,13 +550,27 @@ app.get("/api/feed", async (req, res) => {
  * Independent of venue data on purpose — the featured slots are community
  * markets by design, and the home page must render even if venue APIs are down.
  */
-async function resolveFeatured(n = 4): Promise<Array<Record<string, unknown> & { slug: string }>> {
+async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Record<string, unknown> & { slug: string }>> {
   let community: CommunityMarket[] = [];
   try { community = await openCommunityMarkets(); }
   catch (e) { console.error("[home] community load failed:", (e as Error).message); }
   if (!community.length) return [];
 
-  const sorted = [...community].sort((a, b) => b.marketId - a.marketId); // most recent first
+  // Most recent first, but a market in a category the visitor said they have
+  // takes on outranks a newer one they don't care about. This RE-RANKS, it
+  // never filters — someone who picked Crypto still sees Sports below it, the
+  // same "breadth stays visible" rule /api/feed's own `cats` handling follows.
+  // Community markets carry their real topic in `category` (the flattened
+  // "Community" label is a display concern applied later), so this is a
+  // direct comparison, no re-categorisation needed.
+  const pref = new Set(prefCats);
+  const sorted = [...community].sort((a, b) => {
+    if (pref.size) {
+      const ap = pref.has(a.category) ? 0 : 1, bp = pref.has(b.category) ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+    }
+    return b.marketId - a.marketId; // then most recent first
+  });
   const slugs = sorted.map((m) => slugFor(m));
   const playerCounts = await communityPlayerCounts(slugs).catch(() => ({} as Record<string, number>));
 
@@ -632,10 +646,15 @@ app.get("/api/home", async (req, res) => {
   // when present it unlocks the one PERSONAL section, openCalls.
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  // The visitor's picked categories, same shape and same validation as
+  // /api/feed's `cats` — the client sends whatever the taste picker stored.
+  // Used to re-rank (never filter) the community markets below.
+  const prefCats = String(req.query.cats ?? "").split(",").map((x) => x.trim())
+    .filter((x) => (CATEGORIES as readonly string[]).includes(x)).slice(0, 3);
   // Every section degrades to absent on failure, never to a fake: the client
   // renders each one only when its array is non-empty (see renderHome).
   const [featured, settled, board, activity, openCalls, newUser] = await Promise.all([
-    resolveFeatured(HOME_FEATURED_POOL).catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
+    resolveFeatured(HOME_FEATURED_POOL, prefCats).catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
     // Two, not three: settled rows look alike, so the third adds repetition
     // rather than proof — and the 175px it costs is what keeps the leaderboard
     // teaser below it inside the first desktop screen.

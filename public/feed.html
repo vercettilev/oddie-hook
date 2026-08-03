@@ -259,10 +259,28 @@
   .rby[open]>summary::before{transform:rotate(90deg)}
   .rby-body{margin:8px 0 2px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
     color:var(--muted-g);border-left:2px solid var(--hair-g);padding-left:11px}
-  /* Creator fee transparency — a plain, unobtrusive line, not a warning: the
-     fee is disclosed, not apologized for. Sits with the other secondary
-     market metadata, under the YES/NO buttons. */
-  .fee-note{margin:8px 0 0;font-family:'Nunito';font-weight:700;font-size:11px;color:var(--muted-g)}
+  /* Creator fee — an INCENTIVE, not a disclosure. This was 11px muted-grey
+     body text (a footnote apologising for a deduction); reviewed live it read
+     as fine print nobody would ever notice, which is exactly backwards: the
+     fee is the reason to go and tag a market of your own, and it is the one
+     thing on the card that money-motivated users should see. Now an
+     accent-bordered strip with the rate as the loud part. Deliberately not a
+     full accent FILL — that's reserved for the guest bar and the primary CTA,
+     and three accent blocks on one card is noise. */
+  /* A TRANSLUCENT accent tint, not var(--wash): --wash is light in both themes
+     while --on-ground flips to near-white in dark mode, so the first version
+     of this rule rendered near-white text on a near-white chip — a measured
+     1.06 contrast ratio. A translucent fill sits on whatever the card's own
+     background is, so the tint and the text adapt together instead of one
+     flipping without the other. Same trap as the tagdemo pills; different
+     token, identical failure. */
+  .fee-note{display:flex;align-items:center;gap:8px;margin:10px 0 0;
+    padding:8px 11px;border:1.5px solid var(--accent);border-radius:12px;
+    background:rgba(182,240,95,.14);
+    font-family:'Nunito';font-weight:800;font-size:12px;line-height:1.35;color:var(--on-ground)}
+  .fee-note b{font-family:'Fredoka';font-weight:700;font-size:15px;color:var(--acc-deep);
+    flex:none;letter-spacing:-.01em}
+  :root[data-theme="dark"] .fee-note b{color:var(--accent)}
   /* Source tweet — permalink-only, sits above the question. Same surface/line
      tokens as the elevated card itself, not a competing block. */
   .srctweet{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:9px 12px;
@@ -1025,6 +1043,13 @@
      supposed to be occupying. */
   .homewrap>.psec:first-child{margin-top:0}
   .homewrap .claimcard{margin:var(--sp-6) 0 0}
+  /* The market cards' own container. On mobile this is a single column — i.e.
+     exactly the stack it has always been — and it exists so that DESKTOP can
+     lay the same cards out in two columns without touching the card code (see
+     the >=1024 rule). Gap owns the spacing here, so the cards' own
+     margin-bottom is zeroed to avoid doubling it. */
+  .mktgrid{display:grid;gap:var(--sp-2)}
+  .mktgrid .card{margin:0}
   .hero{position:relative;text-align:center}
   /* One screen, one thing on it — for a first-time visitor ONLY (.hero-first,
      added in JS when newUser is true). Real users kept saying the homepage
@@ -1145,8 +1170,16 @@
      so it gets caption-scale type and no card, panel or icons competing with
      the hero directly above it. Wraps to two lines on very narrow screens
      rather than shrinking below a readable size. */
-  /* Guest bar — a slim strip under the header, deliberately quiet: a status
-     someone should notice once, not an alert competing with the page.
+  /* Guest bar — a strip under the header carrying a status a newcomer has to
+     actually register: you're a guest, and connecting is what stops your
+     score evaporating. It used to be deliberately quiet (11.5px muted-grey
+     on the page's own background) and reviewing it live that read as
+     decoration rather than information — people simply didn't see it. Now it
+     sits on the accent colour with ink-black text, which is the loudest
+     treatment in the system SHORT of the CTA button: noticeable at a glance,
+     still one slim row, still dismissible. It is not an alert and must not
+     grow into one — no icon, no animation, no second line.
+
      Rendered as the LAST CHILD OF .top, in normal flow, not as its own fixed
      strip. That is deliberate and load-bearing: as a separate fixed element
      its `top` had to be re-measured against the header's live height, and any
@@ -1156,22 +1189,27 @@
      supposed to sit under. In flow inside the header, overlapping it is not
      an expressible state. The negative margins cancel .top's own padding so
      the strip still runs edge to edge. */
-  .guestbar{display:flex;align-items:center;gap:10px;
-    margin:10px -16px -12px;padding:8px 14px;
-    background:var(--ground-2);border-top:1px solid var(--hair-g)}
-  /* No border-bottom by default: on every non-feed view .top already draws a
-     2.5px rule directly beneath the bar, and stacking the bar's own hairline
-     on top of it renders as one too-thick line. The feed is the exception —
-     there .top fades out with a gradient and has no rule of its own, so the
-     bar has to close itself off. */
-  body[data-view="feed"] .guestbar{border-bottom:1px solid var(--hair-g)}
-  .gb-text{flex:1;min-width:0;font-family:'Nunito';font-weight:700;font-size:11.5px;
-    line-height:1.35;color:var(--muted-g)}
-  .gb-text b{font-weight:900;color:var(--on-ground)}
-  .gb-go{flex:none;font-family:'Nunito';font-weight:900;font-size:11.5px;color:#17250a;
-    background:var(--accent);border:0;border-radius:999px;padding:5px 12px;cursor:pointer}
-  .gb-x{flex:none;font-size:12px;line-height:1;color:var(--muted-g);background:none;
-    border:0;padding:4px 2px;cursor:pointer}
+  .guestbar{display:flex;align-items:center;gap:11px;
+    margin:11px -16px -12px;padding:11px 14px;
+    background:var(--accent);border-top:2px solid #000}
+  /* On the accent background the hairline that used to close this strip is
+     redundant — the colour change already separates it from the page. Kept
+     only on the feed, where .top fades to transparent and the bar would
+     otherwise bleed into the first card. */
+  body[data-view="feed"] .guestbar{border-bottom:2px solid #000}
+  /* Ink on accent in BOTH themes, like every other accent-filled control —
+     var(--on-ground) would flip to near-white in dark mode and vanish. */
+  .gb-text{flex:1;min-width:0;font-family:'Nunito';font-weight:800;font-size:13px;
+    line-height:1.35;color:#17250a}
+  .gb-text b{font-weight:900;color:#101010}
+  /* The button has to stay legible against the accent the bar now uses, so it
+     inverts: ink fill, accent text. Same trick the standing panel's share
+     button uses on its accent background. */
+  .gb-go{flex:none;font-family:'Nunito';font-weight:900;font-size:12.5px;color:var(--accent);
+    background:#101010;border:0;border-radius:999px;padding:7px 15px;cursor:pointer}
+  .gb-x{flex:none;font-size:13px;line-height:1;color:#17250a;background:none;
+    border:0;padding:4px 3px;cursor:pointer;opacity:.65}
+  .gb-x:hover{opacity:1}
   .howitworks{display:flex;align-items:flex-start;justify-content:center;gap:2px;margin:var(--sp-6) 0 0}
   /* 84 -> 94px: the labels now name the actual actions ("Reply @oddiefun on X")
      rather than two-word jargon, and @oddiefun is a single unbreakable token
@@ -1625,7 +1663,7 @@
     /* Materialise the shell into a single centred column. */
     .app{display:flex;justify-content:center;height:100dvh;position:relative;z-index:1}
     .stage{display:contents}
-    .frame{display:flex;flex-direction:column;width:calc(var(--feedcol) + 44px);max-width:100%;height:100dvh}
+    .frame{display:flex;flex-direction:column;width:calc(var(--framecol, var(--feedcol)) + 44px);max-width:100%;height:100dvh}
 
     /* Header in flow at the top of the column. Chips WRAP so every category is
        visible; header and scroller share a 22px inset, so chips and card align to
@@ -1642,16 +1680,16 @@
        is what stops it stretching to the column; the max-width keeps a long
        string from ever out-running the card below it. */
     .guestbar{margin:2px auto 0;width:max-content;max-width:100%;
-      padding:5px 5px 5px 13px;gap:8px;
-      border:1.5px solid var(--hair-g);border-radius:999px;background:var(--ground-2)}
-    body[data-view="feed"] .guestbar{border-bottom:1.5px solid var(--hair-g)}
+      padding:6px 6px 6px 15px;gap:9px;
+      border:2px solid #000;border-radius:999px;background:var(--accent)}
+    body[data-view="feed"] .guestbar{border-bottom:2px solid #000}
     /* The verbose half of the sentence. On a phone it's the whole point — the
        bar has a full row to itself and nothing else competes. In a compact
        pill it's what forces the pill back to stripe-width, and the Connect
        button beside it already names the action, so desktop keeps the status
        and drops the explanation (still on the element's title for hover). */
     .gb-long{display:none}
-    .gb-text{flex:none;font-size:11.5px}
+    .gb-text{flex:none;font-size:12.5px}
     .top-in{max-width:none;margin:0;padding:0}
     .top .brand{display:flex;justify-content:flex-start;gap:9px;margin:0 0 13px 2px}
     .chips{flex-wrap:wrap;overflow:visible;gap:8px}
@@ -1696,6 +1734,31 @@
      560 at 1024 so the column only ever grows crossing a breakpoint.) */
   @media (min-width:1024px){
     body{--feedcol:min(660px, 58vw)}
+    /* HOME only: the column carrying the market cards widens well past
+       --feedcol, because reviewed live at 1440 the page was a 760px strip of
+       content with ~460px of empty ground either side — it read as unused,
+       not as breathing room. --homewide is what the card GRID gets; prose
+       and single-object sections stay at --homenarrow, because a headline or
+       a claim strip stretched to 1100px is worse than one that's centred,
+       not better. So the space gets used by more MARKETS, not by longer
+       lines. .homewrap itself is not touched at other widths, and the feed
+       view keeps --feedcol exactly as before. */
+    /* The frame is hard-sized to --feedcol + 44px, so widening .homewrap alone
+       does nothing — its parent clamps it first. --framecol is the override
+       hook: set on the HOME view only, it widens the shell column; every other
+       view leaves it unset and falls back to --feedcol exactly as before, so
+       the swipe feed keeps its reading-width column untouched. */
+    body[data-view="home"]{--framecol:min(1120px, calc(100vw - 218px - 120px))}
+    .homewrap{--homenarrow:660px;max-width:100%}
+    /* Everything that isn't the card grid stays at reading width and centred.
+       :not(.mktgrid) is what lifts this to (0,2,0) so it beats the earlier
+       `.homewrap .psec` margin shorthand that would otherwise pin section
+       labels to the left edge of the now-much-wider column. */
+    .homewrap>*:not(.mktgrid){max-width:var(--homenarrow);margin-left:auto;margin-right:auto}
+    /* Two columns, not three: at this width three cards would each be ~360px,
+       narrower than the mobile card they're supposed to be the desktop
+       version of, and the question text would wrap worse than it does today. */
+    .homewrap>.mktgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}
     .app{padding-left:218px}
     .rail{display:flex;position:fixed;left:0;top:0;z-index:16;height:100dvh;width:218px;box-sizing:border-box;
       flex-direction:column;gap:26px;padding:26px 18px}
@@ -2798,7 +2861,7 @@ function buildCard(m,i,homeLoop){
         </button>
       </div>
       ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
-      ${m.community && m.creatorFeeBps ? `<div class="fee-note">creator fee ${(m.creatorFeeBps/100).toFixed(0)}% · paid to whoever created this market when it resolves, on top of your winnings</div>` : ""}
+      ${m.community && m.creatorFeeBps ? `<div class="fee-note"><b>+${(m.creatorFeeBps/100).toFixed(0)}%</b><span>goes to whoever tagged this market. Tag your own and earn it.</span></div>` : ""}
       ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">
         <div class="callers-lab">Who called it</div>
         <div class="callers-list">${m.callers.map(c=>`
@@ -2820,6 +2883,16 @@ function buildCard(m,i,homeLoop){
     // that layer. When the flag is off, chain.js never loads and this
     // attribute does precisely nothing.
     card.dataset.community=m.community?"1":"0";
+    // The venue-market equivalent of the marker above, for the SECOND
+    // real-money path: a Polymarket market staked through Jupiter's order API
+    // rather than our own parimutuel. Two attributes rather than one because
+    // the two paths have genuinely different rules — different contract,
+    // different geofence (ours blocks nobody, the venue one blocks 19
+    // countries incl. the US), different prepare endpoint — and chain.js has
+    // to pick per card, not per page. venueId is what the order API keys on;
+    // absent for community markets, which use `slug` against our own program.
+    if(!m.community && m.venue) card.dataset.venue=m.venue;
+    if(!m.community && m.venueId) card.dataset.venueId=m.venueId;
     // Discovery share: "check this out". The link unfurls to the card, so the
     // text stays light — the question rides along in the preview.
     card.querySelector(".shareico").onclick=(e)=>{e.stopPropagation();
@@ -3284,7 +3357,12 @@ async function renderHome(){
   try{
     // deviceId unlocks the one PERSONAL section (openCalls) — every other
     // section on Home is aggregate and renders the same for anyone.
-    const r=await fetch(`${API}/api/home?deviceId=${encodeURIComponent(deviceId)}`);
+    // ?cats= carries the taste picker's answer so the featured community
+    // markets lead with the topics this visitor actually said they care
+    // about. Absent for anyone who hasn't picked — the server then falls back
+    // to its normal recency order.
+    const tc=tasteCats();
+    const r=await fetch(`${API}/api/home?deviceId=${encodeURIComponent(deviceId)}${tc.length?`&cats=${encodeURIComponent(tc.join(","))}`:""}`);
     if(r.ok){const j=await r.json();
       // `featured` now carries MORE than the visible section shows (see
       // HOME_FEATURED_POOL server-side) — featuredShown is where the visible
@@ -3419,80 +3497,21 @@ async function renderHome(){
   // sequence, right before the how-it-works footer, differs by `newUser`.
   const section=(target,text,id,cls)=>{const p=document.createElement("p");p.className=cls?`psec ${cls}`:"psec";p.textContent=text;if(id)p.id=id;target.appendChild(p);};
 
-  // Live activity — real counters over the rolling last 24h. Any counter that is
-  // zero is dropped rather than shown as "0", and if none survive the strip
-  // never enters the DOM: at genuinely low volume this shows less, never
-  // something invented. Numbers count up on first paint.
-  const counters=activity?[
-    ["marketsOpen","markets open"],
-    ["callsToday","calls today"],
-    ["predictionsWonToday","predictions won today"],
-  ].map(([k,label])=>({label,n:Number(activity[k])||0})).filter(c=>c.n>0):[];
-  let livestripEl=null;
-  if(counters.length){
-    livestripEl=document.createElement("div");livestripEl.className="livestrip";
-    livestripEl.innerHTML=counters.map(c=>
-      `<div class="lsi"><span class="lsi-n" data-to="${c.n}">0</span><span class="lsi-k">${esc(c.label)}</span></div>`).join("");
-    // Deferred to after the swap into the document — countUp drives rAF against
-    // a live element, and the wrap isn't attached yet at this point.
-    queueMicrotask(()=>livestripEl.querySelectorAll(".lsi-n").forEach(el=>
-      countUp(el,Number(el.dataset.to),{duration:800})));
-  }
+  // The "N markets open / calls today / predictions won today" counter strip
+  // and the "Recently settled" proof section both used to render here. Both
+  // are CUT — reviewed live and judged dull: the counters were three numbers
+  // with no stake in them for the reader, and the settled cards recapped
+  // other people's finished business at the exact moment the page is trying
+  // to get YOU to make a call. `activity` and `settled` are still fetched
+  // from /api/home (other surfaces read the same payload) — they just no
+  // longer render on Home.
 
-  // PROOF: the loop completing (Recently settled) and a competition existing
-  // (Top callers). For a RETURNING player these lead the page, right after the
-  // stats strip — the hero promises "see who was right", and this is what
-  // actually demonstrates it. For a brand-new visitor (newUser) these move
-  // below the first-call section instead: proof and social layers land better
-  // AFTER a first action, not before it — see the append order below.
+  // PROOF that a competition exists (Top callers). For a RETURNING player this
+  // leads the page; for a brand-new visitor it moves below the first-call
+  // section — the social layer lands better AFTER a first action than before
+  // it. See the append order below.
 
-  // 1. Recently settled: the loop completing. Question, verdict, who was right.
-  //    Each card ends with a bridge into playing — the moment the proof lands is
-  //    the moment a spectator is most likely to take a side themselves.
-  let settledFrag=null;
-  if(settled.length){
-    settledFrag=document.createDocumentFragment();
-    section(settledFrag,"Recently settled");
-    settled.forEach((s)=>{
-      const card=document.createElement("div");
-      card.className=`stl ${s.outcome}`;
-      // Winners are pre-sorted by the odds they took (best call first) and
-      // pre-capped server-side; winnerTotal carries the real count for "+N more".
-      const wins=s.winners.map(w=>
-        `<div class="stl-win">${w.handle?`<b>@${esc(w.handle)}</b>`:"anonymous caller"} called ${w.side.toUpperCase()} at ${Math.round(w.pct)}% <span class="tick">✓</span></div>`).join("");
-      const more=s.winnerTotal>s.winners.length
-        ? `<div class="stl-win">+${s.winnerTotal-s.winners.length} more called it right</div>` : "";
-      // Nobody right is a real outcome and reads better than an empty block.
-      const body=s.winnerTotal
-        ? `<div class="stl-wins">${wins}${more}</div>`
-        : (s.callers?`<div class="stl-wins"><div class="stl-none">nobody called this one right</div></div>`:"");
-      // The bridge goes to the open markets on THIS page when there are any, and
-      // falls through to the feed when there aren't. Its href is always the feed
-      // so it behaves like a real link (middle-click, right-click); the smooth
-      // scroll is a click-time upgrade, never a hash change — the router would
-      // treat a hash as a view and navigate away.
-      card.innerHTML=`
-        <div class="stl-head">
-          <span class="stl-out">RESOLVED ${s.outcome.toUpperCase()}</span>
-          <span class="stl-when">${agoOf(s.settledAt)}</span>
-        </div>
-        <a class="stl-q" href="/m/${encodeURIComponent(s.slug)}">${esc(s.question)}</a>
-        ${body}
-        <a class="stl-cta" href="/feed">make your own call →</a>`;
-      card.querySelector(".stl-cta").onclick=(e)=>{
-        // #openmarkets is looked up on `wrap` (not the now-detached fragment it
-        // was built from) — by click time everything below has already landed
-        // in the document, in whichever order this render chose.
-        const target=wrap.querySelector("#openmarkets");
-        if(!target)return;           // no open markets on the page — let /feed happen
-        e.preventDefault();
-        scrollToEl(document.getElementById("scroller"),target);
-      };
-      settledFrag.appendChild(card);
-    });
-  }
-
-  // 2. Top callers: a competition exists. Rank/handle/edge — the same three
+  // Top callers: a competition exists. Rank/handle/edge — the same three
   // columns the full Leaderboard's primary board shows, so the teaser and the
   // page it links to can never disagree. The server sends [] when NO caller is
   // ranked yet; one ranked caller is enough to render, because "here is the
@@ -3573,6 +3592,13 @@ async function renderHome(){
       },
       nextIdx(){return nextIdxCounter++;},
     };
+    // The cards go in their own container rather than straight into .homewrap
+    // as loose siblings, so desktop can lay them out as a GRID (see .mktgrid).
+    // On a wide viewport a single 760px column of stacked cards left ~460px of
+    // dead margin either side; two columns use that room for actual markets
+    // instead of empty ground. On mobile the grid is a single column, i.e.
+    // exactly the stack it always was.
+    const grid=document.createElement("div");grid.className="mktgrid";
     visible.forEach((m,i)=>{
       const card=buildCard(m,i,{ctx:loopCtx,chainCount:1});
       if(newUser&&i===0)card.classList.add("firstcall-cue");
@@ -3583,8 +3609,9 @@ async function renderHome(){
       // (silently swallowed by the pending-commit catch, which would then
       // wrongly claim "couldn't reach the server").
       card.querySelector(".nudge")?.style.setProperty("display","none","important");
-      featuredFrag.appendChild(card);
+      grid.appendChild(card);
     });
+    featuredFrag.appendChild(grid);
   }
 
   // The actual placement decision — everything above just BUILT sections, none
@@ -3603,14 +3630,10 @@ async function renderHome(){
     wrap.appendChild(hero);
     if(featuredFrag)wrap.appendChild(featuredFrag);
     wrap.appendChild(claimFrag);
-    if(livestripEl)wrap.appendChild(livestripEl);
-    if(settledFrag)wrap.appendChild(settledFrag);
     if(topFrag)wrap.appendChild(topFrag);
   }else{
     wrap.appendChild(hero);
     wrap.appendChild(claimFrag);
-    if(livestripEl)wrap.appendChild(livestripEl);
-    if(settledFrag)wrap.appendChild(settledFrag);
     if(topFrag)wrap.appendChild(topFrag);
     if(featuredFrag)wrap.appendChild(featuredFrag);
   }
@@ -3717,7 +3740,7 @@ function buildPicker(){
   });
   cont.onclick=()=>{
     const cats=[...sel];
-    try{sessionStorage.setItem("taste_cats",cats.join(","));}catch(e){}
+    setTasteCats(cats);   // localStorage-backed, so the answer survives the tab
     ev("taste_pick",{cats:cats.join(",")});
     document.getElementById("scroller").scrollTop=0;
     loadFeed(); // reloads with ?cats= -> 1 re-ranked card, then the gate
@@ -4606,7 +4629,26 @@ async function loadProfile(scroller){
  */
 let GATE={allowed:false,reason:"signed_out"};
 let TASTE=false; // anonymous free-taste mode: card -> picker -> card -> gate (2 free bets)
-const tasteCats=()=>{try{return (sessionStorage.getItem("taste_cats")||"").split(",").filter(Boolean);}catch(e){return [];}};
+/**
+ * The categories this visitor said they have takes on. Persisted in
+ * localStorage, not sessionStorage: a taste is a standing preference, and
+ * storing it per-tab meant every return visit re-ranked the feed from scratch and
+ * the picker's answer was silently thrown away on close. sessionStorage is
+ * still read as a fallback so anyone mid-session when this shipped keeps
+ * their picks.
+ */
+const TASTE_CATS_KEY="oddie_taste_cats";
+const tasteCats=()=>{
+  try{
+    const v=localStorage.getItem(TASTE_CATS_KEY)||sessionStorage.getItem("taste_cats")||"";
+    return v.split(",").filter(Boolean);
+  }catch(e){return [];}
+};
+const setTasteCats=(cats)=>{
+  const v=cats.join(",");
+  try{localStorage.setItem(TASTE_CATS_KEY,v);}catch(e){}
+  try{sessionStorage.setItem("taste_cats",v);}catch(e){}
+};
 // The sign-in redirect, shared by the invite screen, the in-feed gate card and
 // the "free taste spent" moment. `p` is the provider (twitter | google); it is
 // also the gate_signin label, so the funnel can see which button converts.

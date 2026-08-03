@@ -20,12 +20,20 @@ const BASE = "https://api.jup.ag/prediction/v1";
 const TIMEOUT_MS = 8000;
 
 /**
- * Off by default, and gated SEPARATELY from ONCHAIN_ENABLED so the two can
- * never be conflated: this one controls whether we source venue markets at
- * all, the master flag controls whether any real money moves. Turning this on
- * alone gets you Polymarket markets for display; it does not open a wallet.
+ * Gated SEPARATELY from ONCHAIN_ENABLED so the two can never be conflated:
+ * this one controls whether we SOURCE venue markets at all, the master flag
+ * controls whether any real money moves. This flag being on gets you
+ * Polymarket markets for display and free play; it does not open a wallet.
+ *
+ * Default flipped ON (2026-08-03): the feed reviewed live as too empty, and
+ * filling it is the entire reason this module exists. Opt-OUT now — set
+ * ENABLE_JUPITER_PREDICT=0 to go back to venue-free.
+ *
+ * This does NOT enable real money anywhere. Venue real-money additionally
+ * requires ONCHAIN_ENABLED plus the venue geofence (venueRealMoneyReady in
+ * server.ts), and ONCHAIN_ENABLED remains unset in production.
  */
-export const JUPITER_PREDICT_ENABLED = process.env.ENABLE_JUPITER_PREDICT === "1";
+export const JUPITER_PREDICT_ENABLED = process.env.ENABLE_JUPITER_PREDICT !== "0";
 
 /** Jupiter quotes prices in micro-USD (810000 === $0.81), and a binary
  *  contract's USD price IS its implied probability. */

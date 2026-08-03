@@ -2,6 +2,7 @@ import { Market, Venue } from "./types.js";
 import { categorize } from "../matching/categorize.js";
 import { fetchKalshiMarkets, KALSHI_ENABLED } from "./kalshi.js";
 import { fetchPolymarketMarkets } from "./polymarket.js";
+import { fetchJupiterPolymarketMarkets } from "./jupiterPredict.js";
 
 export * from "./types.js";
 
@@ -110,7 +111,16 @@ export async function getMarketData(force = false): Promise<MarketData> {
     return { markets, feed: markets.filter(inFeed), all: cache.markets, venues: cache.venues, stale: false, ageMs: now - cache.at };
   }
 
-  const [k, p] = await Promise.allSettled([fetchKalshiMarkets(), fetchPolymarketMarkets()]);
+  // Polymarket is fetched from TWO independent sources and merged: its own
+  // Gamma API (long-standing) and Jupiter's Prediction API (see
+  // jupiterPredict.ts). They surface different slices of the same venue —
+  // Gamma is event-oriented, Jupiter exposes the individually tradeable
+  // markets — so together they fill a feed that reviewed live as too thin.
+  // Kalshi is NOT part of the Jupiter call: that module filters
+  // `provider === "polymarket"` on the response, not just the request.
+  const [k, p, j] = await Promise.allSettled([
+    fetchKalshiMarkets(), fetchPolymarketMarkets(), fetchJupiterPolymarketMarkets(80),
+  ]);
   const venues: Record<FetchVenue, VenueStatus> = { kalshi: statusOf(k, "kalshi"), polymarket: statusOf(p, "polymarket") };
 
   for (const [name, st] of Object.entries(venues)) {
@@ -120,6 +130,15 @@ export async function getMarketData(force = false): Promise<MarketData> {
   const all: Market[] = [];
   if (k.status === "fulfilled") all.push(...k.value);
   if (p.status === "fulfilled") all.push(...p.value);
+  // Merged last and de-duplicated by venueId, so a market that both sources
+  // return keeps the Gamma copy (it carries the canonical event slug, hence a
+  // better venueUrl) rather than being listed twice.
+  if (j.status === "fulfilled" && j.value.length) {
+    const seen = new Set(all.map((m) => m.venueId));
+    const fresh = j.value.filter((m) => !seen.has(m.venueId));
+    all.push(...fresh);
+    console.log(`[venues] jupiter contributed ${fresh.length} polymarket markets (${j.value.length - fresh.length} dupes dropped)`);
+  }
 
   if (all.length > 0) {
     // Cache the raw set. The bettable filter is a view over it, not a fact about
