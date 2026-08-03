@@ -18,11 +18,11 @@
 <meta name="description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun under any claim.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
-<meta property="og:title" content="Tag it. Make the call. See who was right.">
+<meta property="og:title" content="Someone's wrong on X? Prove you're right.">
 <meta property="og:description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.">
 <meta property="og:image" content="https://oddie.fun/banner.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Tag it. Make the call. See who was right.">
+<meta name="twitter:title" content="Someone's wrong on X? Prove you're right.">
 <meta name="twitter:description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.">
 <meta name="twitter:image" content="https://oddie.fun/banner.png">
 <script>
@@ -2399,7 +2399,7 @@ function maybeFeedTop(scroller){
     const s=document.createElement("div"); s.className="onbstrip";
     // The visible hero: one headline line, integrated into the banner (not a
     // section), shown to a first-time visitor alongside the tag instruction.
-    const heroHtml=showTag ? '<span class="onbhero">Tag it. Make the call. See who was right.</span>' : '';
+    const heroHtml=showTag ? `<span class="onbhero">Someone's wrong on X? Prove you're right.</span>` : '';
     const tagHtml=showTag
       ? '<span class="onbtxt">tag <b>@oddiefun</b> under any claim on X — it turns into a market that keeps score</span>'
       : '<span class="onbtxt">follow to see which calls were right</span>';
@@ -3237,10 +3237,15 @@ async function renderHome(){
   //
   //  - The headline used to end "Turn it into a market." "Market" is the one
   //    word a newcomer cannot decode, and it was the payoff of the sentence.
-  //    "Settle it for good" needs no glossary and states the MOTIVE, which is
+  //    "Prove you're right" needs no glossary and states the MOTIVE, which is
   //    the part a stranger actually has to buy; the demo below then teaches
   //    the mechanic, so the word arrives with a picture attached instead of
-  //    standing on its own.
+  //    standing on its own. That second line is also the ONE piece of copy
+  //    that has to survive future edits: "prove you were right" is the
+  //    emotional hook of the whole product, and it was accidentally dropped
+  //    once already (the original "Someone's wrong on X? Prove you're right."
+  //    lost its third clause when the hero was rewritten tag-first). If this
+  //    line is being reworded again, keep the proving.
   //  - The demo stopped at a question with two percentages on it, which shows
   //    WHAT you make but never WHY it's worth making. The third beat — it
   //    actually resolves, and the people who were right are named — is the
@@ -3251,7 +3256,7 @@ async function renderHome(){
   // The connectors carry the verbs so the flow explains itself with no prose
   // block: this is three small pictures and two short lines, not a paragraph.
   const hero=document.createElement("div");hero.className="hero";
-  hero.innerHTML=`<h1 class="herotitle">Someone's wrong on X?<br>Settle it for good.</h1>
+  hero.innerHTML=`<h1 class="herotitle">Someone's wrong on X?<br>Prove you're right.</h1>
       <div class="tagdemo" aria-label="How it works: someone posts a take on X, you tag @oddiefun, it becomes a question anyone can answer, and when it plays out everyone sees who was right.">
         <div class="tagdemo-post"><span class="tagdemo-av"></span>
           <span class="tagdemo-txt">“No shot the Lakers make the playoffs.”</span></div>
