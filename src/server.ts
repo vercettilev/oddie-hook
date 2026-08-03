@@ -14,6 +14,7 @@ import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, 
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
+import { resolvedOnchainMarkets } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -1548,14 +1549,54 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
 const realStakesReady = isChainEnabled() && GEOBLOCK_LIST_VERIFIED;
 
 // The single boolean the client gates every trace of this UI behind (see
-// initChainLayer in feed.html) already folds in the real-money geofence, not
-// just the master flag — a restricted-region request gets exactly the same
-// {enabled:false} a flag-off (or list-unverified) deployment would, so the
-// client needs no separate geo-aware code path. See src/geo/ for the how and
-// why, and resolveClientCountry's fail-CLOSED policy on an unresolved IP.
+// initChainLayer in feed.html). Under REGIME 1 it is the master flag alone:
+// the community parimutuel is open everywhere, so there is no geo term to
+// fold in here any more. GEOBLOCK_LIST_VERIFIED still gates it — the list is
+// what REGIME 2 will enforce, and shipping a real-money surface on an
+// unreviewed list stays forbidden regardless of which regime uses it.
+/**
+ * GEO REGIMES — counsel splits real-money surfaces into separate regimes
+ * rather than applying one global rule. There are two, and only one exists:
+ *
+ *   REGIME 1 · "community" (our own parimutuel) — OPEN TO ALL. No
+ *     jurisdiction is blocked. Counsel's position is that our own parimutuel
+ *     is fine everywhere, so this surface does not deny anyone. Geo is still
+ *     RESOLVED on every request and logged when it lands on a sanctioned
+ *     location, so the machinery stays live, exercised and observable — the
+ *     safety net is wired, it just isn't pulled. Everything under
+ *     /api/chain/* today is community-only (every route keys off
+ *     communityMarketDetail), which is why removing the gate here is safe.
+ *
+ *   REGIME 2 · "venue" (Polymarket-sourced markets) — NOT IMPLEMENTED, and
+ *     must not be switched on by reusing this regime. It has to satisfy BOTH
+ *     Polymarket's sub-national US blocks AND the source API's own ToU
+ *     jurisdiction list, which are stricter and mutually inconsistent (the
+ *     latter blocks the entire US). See geoRegimeVenueUnavailable below —
+ *     that function exists so a future Polymarket path fails loudly instead
+ *     of silently inheriting "open to all" from the community regime.
+ */
+function noteGeoForCommunity(req: express.Request): void {
+  const geo = resolveClientCountry(req);
+  if (geo.restricted) {
+    // Observed, never enforced on this surface — see REGIME 1 above.
+    console.log(JSON.stringify({ evt: "geo_note", regime: "community", country: geo.country, source: geo.source }));
+  }
+}
+
+/**
+ * The tripwire for REGIME 2. Any Polymarket/venue real-money path must call
+ * this until a real venue geofence exists; it throws rather than returning a
+ * permissive default, so the failure mode of forgetting the gate is a broken
+ * route rather than an unrestricted real-money surface in a blocked country.
+ */
+export function geoRegimeVenueUnavailable(): never {
+  throw new Error("venue real-money geofence not implemented — see REGIME 2");
+}
+
 app.get("/api/chain/status", (req, res) => {
-  const enabled = realStakesReady && !resolveClientCountry(req).restricted;
-  res.json({ enabled });
+  // Community-only surface: the master flag decides, not the geofence.
+  noteGeoForCommunity(req);
+  res.json({ enabled: realStakesReady });
 });
 
 if (realStakesReady) {
@@ -1590,15 +1631,16 @@ if (realStakesReady) {
   });
 
   app.post("/api/chain/position/prepare", async (req, res) => {
-    // Defense in depth: /status already hides the button for a restricted
-    // region, but the button is a hint, not the enforcement — a cached page,
-    // a stale client, or a direct API call must not be able to open a NEW
-    // real-money position from a restricted region regardless. Claiming
-    // WINNINGS (below) is deliberately NOT gated here — this only stops new
-    // stakes, never blocks someone from withdrawing money they already have
-    // a legitimate claim to.
-    const geo = resolveClientCountry(req);
-    if (geo.restricted) return res.status(451).json({ ok: false, reason: "restricted-region" });
+    // REGIME 1 (community): open to all — this route stakes ONLY on our own
+    // parimutuel (see the communityMarketDetail lookup below, which is what
+    // makes that true), and counsel's position is that our own parimutuel is
+    // fine in every jurisdiction. So geo is resolved and logged, never
+    // enforced. The 451 that used to live here was the correct behaviour
+    // while one global rule covered every surface; it is wrong now that the
+    // community regime is explicitly open, and a Polymarket path must bring
+    // its OWN gate (geoRegimeVenueUnavailable) rather than resurrecting this
+    // one, because the venue list is stricter and differently shaped.
+    noteGeoForCommunity(req);
     const slug = String(req.body?.slug ?? "");
     const userPubkey = String(req.body?.userPubkey ?? "");
     const side = req.body?.side;
@@ -1614,6 +1656,30 @@ if (realStakesReady) {
     const txBase64 = await preparePositionTx({ marketPubkey: detail.onchainPubkey, userPubkey, side, lamports });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
     res.json({ ok: true, txBase64 });
+  });
+
+  /**
+   * "Do I have real-money winnings to collect?" — the discoverability half of
+   * the claim flow. A resolved market drops out of the feed, and the server
+   * cannot notify an on-chain staker because it deliberately never stores a
+   * wallet↔device link (see resolvedOnchainMarkets). So the wallet asks, and
+   * we check the chain for it, market by market.
+   *
+   * NOT geofenced, on purpose and consistently with claim/prepare below:
+   * this only ever reveals money the user already owns. Blocking a withdrawal
+   * is a different and worse act than blocking a new wager.
+   */
+  app.get("/api/chain/claimable", async (req, res) => {
+    const userPubkey = String(req.query.userPubkey ?? "");
+    if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
+    const markets = await resolvedOnchainMarkets(40).catch(() => []);
+    const found = await Promise.all(markets.map(async (m) => {
+      const position = await fetchPosition(m.onchainPubkey, userPubkey).catch(() => null);
+      if (!position || position.claimed) return null;
+      if (position.side !== m.resolvedOutcome) return null;   // lost this one
+      return { slug: m.slug, question: m.question, side: position.side, lamports: position.lamports, outcome: m.resolvedOutcome };
+    }));
+    res.json({ ok: true, claimable: found.filter(Boolean) });
   });
 
   app.post("/api/chain/claim/prepare", async (req, res) => {

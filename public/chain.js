@@ -76,6 +76,103 @@
     return dim.querySelector(".chainsheet");
   }
 
+  /**
+   * The claim flow — the collect half of the real-money layer.
+   *
+   * Deliberately walks the user through the only three states that exist after
+   * a market resolves, and never guesses between them: we cannot know whether
+   * someone has a position until their wallet is connected, so the first step
+   * is always "connect to check" rather than a claim button that might do
+   * nothing. Losing and already-claimed are stated plainly instead of being
+   * hidden — a dead end the user understands beats a button that errors.
+   */
+  async function renderClaim(body, slug, marketState) {
+    const won = (marketState.winningSide || "").toUpperCase();
+    const shell = (inner) => {
+      body.innerHTML = `<h3>Market resolved ${won}</h3>${inner}`;
+      const c = body.querySelector(".cclose");
+      if (c) c.onclick = () => body.closest(".cdim").remove();
+    };
+
+    if (!wallet) {
+      shell(`<p class="cnote">This market settled <b>${won}</b> on ${CLUSTER_LABEL}. If you had real SOL on it, connect the wallet you staked with to collect.</p>
+        <button class="cbtn" id="chainconnect">Connect wallet to check</button>
+        <button class="cclose">Not now</button>`);
+      body.querySelector("#chainconnect").onclick = async () => {
+        const b = body.querySelector("#chainconnect");
+        b.disabled = true; b.textContent = "Connecting…";
+        try { await connectWallet(); await renderClaim(body, slug, marketState); }
+        catch (e) {
+          b.disabled = false; b.textContent = "Connect wallet to check";
+          let err = body.querySelector(".chain-err");
+          if (!err) { err = document.createElement("p"); err.className = "chain-err"; b.after(err); }
+          err.textContent = e.message;
+        }
+      };
+      return;
+    }
+
+    shell(`<p class="cnote">Checking your position…</p>`);
+    let position = null, reachable = true;
+    try {
+      const r = await fetch(`/api/chain/position?slug=${encodeURIComponent(slug)}&userPubkey=${encodeURIComponent(wallet.publicKey)}`);
+      const j = await r.json();
+      if (!j.ok) reachable = false; else position = j.position;
+    } catch (e) { reachable = false; }
+
+    if (!reachable) {
+      shell(`<p class="cnote">Couldn't read your position from ${CLUSTER_LABEL} just now. Your funds are unaffected — try again in a moment.</p>
+        <button class="cclose">Close</button>`);
+      return;
+    }
+    if (!position) {
+      shell(`<p class="cnote">This wallet didn't have real SOL on this market. Nothing to collect.</p>
+        <button class="cclose">Close</button>`);
+      return;
+    }
+    if (position.claimed) {
+      shell(`<p class="cnote">Already collected — these winnings are in your wallet.</p>
+        <button class="cclose">Close</button>`);
+      return;
+    }
+    if ((position.side || "").toUpperCase() !== won) {
+      shell(`<p class="cnote">You were on <b>${(position.side || "").toUpperCase()}</b> and it resolved <b>${won}</b>. Nothing to collect on this one.</p>
+        <button class="cclose">Close</button>`);
+      return;
+    }
+
+    const sol = (position.lamports / 1e9).toFixed(3);
+    shell(`<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b> — and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
+      <button class="claimbtn" id="chainclaim">Claim winnings</button>
+      <div class="chain-line" id="chainline"></div>
+      <button class="cclose">Later</button>`);
+
+    const btn = body.querySelector("#chainclaim"), line = body.querySelector("#chainline");
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "Preparing…";
+      try {
+        const prep = await fetch("/api/chain/claim/prepare", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ slug, userPubkey: wallet.publicKey }),
+        });
+        const pj = await prep.json();
+        if (!prep.ok || !pj.ok) throw new Error(pj.error || pj.reason || "Couldn't prepare the claim.");
+        const w3 = await loadWeb3();
+        const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
+        btn.textContent = "Confirm in wallet…";
+        const { signature } = await window.solana.signAndSendTransaction(tx);
+        body.innerHTML = `<h3>Collected ✓</h3>
+          <p class="cnote">Your winnings are on their way to your wallet, on ${CLUSTER_LABEL}.</p>
+          <p class="chain-sig">tx: <a href="https://explorer.solana.com/tx/${signature}?cluster=devnet" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          <button class="cclose">Done</button>`;
+        body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = "Claim winnings";
+        if (line) line.textContent = e.message || "Something went wrong — try again.";
+      }
+    };
+  }
+
   async function openStakeSheet(slug) {
     const body = sheetShell();
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
@@ -94,11 +191,15 @@
       body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       return;
     }
+    // Resolved -> this sheet stops being a place to stake and becomes the place
+    // to COLLECT. Until this existed, a winning on-chain position had no
+    // in-product path to claim_winnings at all: the contract instruction and
+    // the server's prepare route were both there, but nothing in the UI ever
+    // called them, so a winner's SOL simply sat in the vault. Same
+    // non-custodial contract as staking — the server assembles, the user's own
+    // wallet signs and broadcasts, the admin key is never involved.
     if (marketState.resolved) {
-      body.innerHTML = `<h3>Make it real</h3>
-        <p class="cnote">This market already resolved ${(marketState.winningSide || "").toUpperCase()} on-chain.</p>
-        <button class="cclose">Close</button>`;
-      body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+      await renderClaim(body, slug, marketState);
       return;
     }
 
@@ -218,6 +319,60 @@
 
   function scan() {
     document.querySelectorAll('.card[data-community="1"]').forEach(attachButton);
+    mountClaimCheck();
+  }
+
+  /**
+   * The claim entry point, on Positions — where someone goes to look at what
+   * they're holding, and therefore where they'd look for money they're owed.
+   *
+   * It has to be wallet-initiated rather than pushed: a resolved market leaves
+   * the feed, and the server can't tell a staker they won because it never
+   * stores which wallet belongs to which device. So Positions offers the
+   * check, the user connects, and we ask the chain on their behalf. Rendered
+   * only on the Positions view, only once, and silent when there's nothing to
+   * collect — a permanent "no winnings" banner is clutter, not information.
+   */
+  async function mountClaimCheck() {
+    if (document.body.dataset.view !== "positions") return;
+    const host = document.querySelector("#scroller .sheet") || document.getElementById("scroller");
+    if (!host || host.querySelector("#chainclaimcheck")) return;
+
+    const box = document.createElement("div");
+    box.id = "chainclaimcheck"; box.className = "chain-claimcheck";
+    host.prepend(box);
+
+    const paint = (html) => { box.innerHTML = html; };
+    if (!wallet) {
+      paint(`<div class="cc-row"><span class="cc-text">Staked real SOL on a market? Check if you have winnings to collect.</span>
+        <button class="cc-go" type="button">Check</button></div>`);
+      box.querySelector(".cc-go").onclick = async () => {
+        const b = box.querySelector(".cc-go");
+        b.disabled = true; b.textContent = "Connecting…";
+        try { await connectWallet(); await refreshClaimable(box); }
+        catch (e) { b.disabled = false; b.textContent = "Check"; paint(`<div class="cc-row"><span class="cc-text">${esc(e.message)}</span></div>`); }
+      };
+      return;
+    }
+    await refreshClaimable(box);
+  }
+
+  async function refreshClaimable(box) {
+    box.innerHTML = `<div class="cc-row"><span class="cc-text">Checking ${CLUSTER_LABEL} for winnings…</span></div>`;
+    let list = [];
+    try {
+      const r = await fetch(`/api/chain/claimable?userPubkey=${encodeURIComponent(wallet.publicKey)}`);
+      const j = await r.json();
+      list = j.ok ? j.claimable : [];
+    } catch (e) { list = []; }
+    if (!list.length) { box.remove(); return; }   // nothing owed -> say nothing
+    box.innerHTML = `<div class="cc-head">💰 You have winnings to collect</div>` + list.map((c) => `
+      <div class="cc-item">
+        <span class="cc-q">${esc(c.question)}</span>
+        <span class="cc-meta">called ${c.side.toUpperCase()} · ${(c.lamports / 1e9).toFixed(3)} SOL staked</span>
+        <button class="cc-claim" type="button" data-slug="${esc(c.slug)}">Claim</button>
+      </div>`).join("");
+    box.querySelectorAll(".cc-claim").forEach((b) => b.onclick = () => openStakeSheet(b.dataset.slug));
   }
 
   function init() {

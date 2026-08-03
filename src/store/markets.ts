@@ -3254,6 +3254,35 @@ export interface CommunityListItem {
 }
 
 /** Every community market with resolution + on-chain state + pool totals, for the /tool admin panel. */
+/**
+ * Resolved community markets that were minted on-chain — the search space for
+ * "does this wallet have winnings to collect?".
+ *
+ * This exists because of a deliberate architectural choice we are not going to
+ * undo: the server NEVER stores a link between a device and a wallet, so it
+ * cannot know who holds an on-chain position and cannot notify them. The only
+ * honest way to find a winner's claim is to ask the chain, per market, for the
+ * wallet the user just connected. Bounded to the most recent `limit` so that
+ * scan stays a fixed number of RPC reads rather than growing with the market
+ * table forever.
+ */
+export async function resolvedOnchainMarkets(limit = 40): Promise<Array<{ slug: string; question: string; onchainPubkey: string; resolvedOutcome: "yes" | "no" }>> {
+  const n = Math.max(1, Math.min(100, Math.floor(limit)));
+  if (!PERSISTENT) {
+    return [...memCommunity.values()]
+      .filter((m) => m.resolvedOutcome && m.onchainPubkey)
+      .slice(-n).reverse()
+      .map((m) => ({ slug: m.slug, question: mem.get(m.slug)?.market.question ?? m.slug, onchainPubkey: m.onchainPubkey!, resolvedOutcome: m.resolvedOutcome! }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; question: string; onchain_pubkey: string; resolved_outcome: "yes" | "no" }>(
+    `SELECT c.slug, s.question, c.onchain_pubkey, c.resolved_outcome
+       FROM community_market c JOIN market_slug s ON s.slug = c.slug
+      WHERE c.resolved_outcome IS NOT NULL AND c.onchain_pubkey IS NOT NULL
+      ORDER BY c.market_id DESC LIMIT $1`, [n]);
+  return rows.map((r) => ({ slug: r.slug, question: r.question, onchainPubkey: r.onchain_pubkey, resolvedOutcome: r.resolved_outcome }));
+}
+
 export async function adminListCommunity(): Promise<CommunityListItem[]> {
   if (!PERSISTENT) {
     return [...memCommunity.values()].map((meta) => {

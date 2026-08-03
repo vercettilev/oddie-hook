@@ -88,6 +88,52 @@ console.log("\nresolveClientCountry: geoip-lite fallback (no CDN header present)
     loopback.source === "unresolved" && loopback.restricted === true, JSON.stringify(loopback));
 }
 
+console.log("\nREGIME 2 · the venue list (Jupiter ToU §1), and the contractual gate over it");
+{
+  const {
+    VENUE_RESTRICTED_COUNTRIES, VENUE_RESTRICTED_UA_REGIONS,
+    isVenueRestrictedLocation, venueRealMoneyAllowed, VENUE_TERMS_CLEARED,
+  } = await import("../src/geo/restrictedRegions.js");
+
+  // Every jurisdiction named in §1, transcribed. If this drifts from the
+  // quoted clause in restrictedRegions.ts, one of the two is wrong.
+  const named: Array<[string, string]> = [
+    ["US", "United States"], ["TW", "Republic of China (read literally)"], ["CN", "China (read as most terms mean it)"],
+    ["SG", "Singapore"], ["MM", "Myanmar"], ["CI", "Cote d'Ivoire"], ["CU", "Cuba"],
+    ["CD", "DR Congo"], ["IR", "Iran"], ["IQ", "Iraq"], ["LY", "Libya"], ["ML", "Mali"],
+    ["NI", "Nicaragua"], ["KP", "North Korea"], ["SO", "Somalia"], ["SD", "Sudan"],
+    ["SY", "Syria"], ["YE", "Yemen"], ["ZW", "Zimbabwe"],
+  ];
+  for (const [cc, label] of named) {
+    check(`${label} (${cc}) is venue-restricted`, isVenueRestrictedLocation(cc, null));
+  }
+  check("exactly the 19 countries in §1 (incl. both readings of 'Republic of China')",
+    VENUE_RESTRICTED_COUNTRIES.size === 19, String(VENUE_RESTRICTED_COUNTRIES.size));
+  check("Crimea/Sevastopol/Donetsk/Luhansk carried over", VENUE_RESTRICTED_UA_REGIONS.size === 4);
+  check("the rest of Ukraine is not venue-restricted", !isVenueRestrictedLocation("UA", "30"));
+
+  // The US block is what makes Polymarket's state list moot — and it is the
+  // ONLY reason this regime is implementable, since our IP data resolves a US
+  // state for barely 30% of US addresses.
+  check("the US is blocked WHOLESALE, which subsumes Polymarket's 8 state blocks",
+    ["AZ", "IL", "MA", "MD", "MI", "MT", "NV", "OH", "CA", "NY"].every((s) => isVenueRestrictedLocation("US", s)));
+
+  // The two lists answer different questions and must NOT be synced.
+  check("Syria is venue-restricted (source is stricter than the law)…", isVenueRestrictedLocation("SY", null));
+  check("…while staying OFF the OFAC baseline, which is about the law", !isRestrictedLocation("SY", null));
+  check("the US is venue-restricted but NOT on the OFAC baseline",
+    isVenueRestrictedLocation("US", null) && !isRestrictedLocation("US", null));
+
+  // The contractual gate sits ABOVE geography and is currently shut.
+  check("VENUE_TERMS_CLEARED is false — §3.2(d)/§7.3/§7.5 unanswered", VENUE_TERMS_CLEARED === false);
+  check("a perfectly allowed location is STILL refused while the terms are open",
+    venueRealMoneyAllowed({ country: "GB", region: null, restricted: false }) === false);
+  check("an unresolved location is refused too (fail-closed, inherited)",
+    venueRealMoneyAllowed({ country: null, region: null, restricted: true }) === false);
+  check("a restricted location is refused",
+    venueRealMoneyAllowed({ country: "US", region: "CA", restricted: false }) === false);
+}
+
 console.log("\nGEOBLOCK_LIST_VERIFIED: the legal sign-off gate");
 {
   check("the list is marked verified (set only after counsel reviewed the exact CU/IR/KP + UA-region contents)",
