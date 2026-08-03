@@ -1048,10 +1048,21 @@
     border:1.5px solid var(--hair-g);border-radius:14px;padding:10px 12px}
   .tagdemo-av{flex:none;width:22px;height:22px;border-radius:50%;background:var(--hair-g)}
   .tagdemo-txt{font-family:'Nunito';font-weight:700;font-size:12.5px;line-height:1.4;color:var(--on-ground)}
-  .tagdemo-reply{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--acc-deep);margin:6px 0 0 31px}
-  :root[data-theme="dark"] .tagdemo-reply{color:var(--accent)}
-  .tagdemo-arrow{text-align:center;font-family:'Nunito';font-weight:900;font-size:15px;
-    color:var(--muted-g);margin:1px 0 3px}
+  /* The connectors carry the VERBS ("you tag @oddiefun", "the season plays
+     out"), which is what lets the whole flow explain itself without a prose
+     block above it — the arrow says what happens, the box below shows the
+     result. Centred so the three boxes read as one vertical sequence. */
+  .tagdemo-step{text-align:center;font-family:'Nunito';font-weight:800;font-size:11.5px;
+    color:var(--muted-g);margin:5px 0}
+  .tagdemo-step b{color:var(--acc-deep);font-weight:900}
+  :root[data-theme="dark"] .tagdemo-step b{color:var(--accent)}
+  /* The third beat, and the reason the other two matter: it actually settles,
+     and the people who were right are named. Without this the demo shows what
+     you make but never why making it is worth anything. */
+  .tagdemo-done{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--acc-deep);
+    background:var(--ground-2);border:1.5px solid var(--accent);border-radius:12px;
+    padding:9px 12px;text-align:center}
+  :root[data-theme="dark"] .tagdemo-done{color:var(--accent)}
   .tagdemo-card{border:2px solid var(--accent);border-radius:14px;padding:10px 12px;background:var(--ground-2)}
   .tagdemo-q{display:block;font-family:'Fredoka';font-weight:600;font-size:13.5px;
     line-height:1.25;color:var(--on-ground);margin:0 0 8px}
@@ -3220,21 +3231,41 @@ async function renderHome(){
   // sentence about it would — which is also how this stays short. There is
   // deliberately no prose explainer under the headline; the demo is the
   // explainer, and the CTA underneath names the action.
+  // Written for someone who has never used a prediction market and does not
+  // know what "market", "call" or "@oddiefun" mean. Two things that assumed
+  // familiarity are gone:
+  //
+  //  - The headline used to end "Turn it into a market." "Market" is the one
+  //    word a newcomer cannot decode, and it was the payoff of the sentence.
+  //    "Settle it for good" needs no glossary and states the MOTIVE, which is
+  //    the part a stranger actually has to buy; the demo below then teaches
+  //    the mechanic, so the word arrives with a picture attached instead of
+  //    standing on its own.
+  //  - The demo stopped at a question with two percentages on it, which shows
+  //    WHAT you make but never WHY it's worth making. The third beat — it
+  //    actually resolves, and the people who were right are named — is the
+  //    entire point of the product and it was the one step missing. A
+  //    newcomer can now read the whole loop top to bottom without a caption
+  //    explaining it: a take, your tag, a question, a verdict.
+  //
+  // The connectors carry the verbs so the flow explains itself with no prose
+  // block: this is three small pictures and two short lines, not a paragraph.
   const hero=document.createElement("div");hero.className="hero";
-  hero.innerHTML=`<h1 class="herotitle">Someone's wrong on X.<br>Turn it into a market.</h1>
-      <div class="tagdemo" aria-label="Example: replying @oddiefun to a post on X turns it into a market">
+  hero.innerHTML=`<h1 class="herotitle">Someone's wrong on X?<br>Settle it for good.</h1>
+      <div class="tagdemo" aria-label="How it works: someone posts a take on X, you tag @oddiefun, it becomes a question anyone can answer, and when it plays out everyone sees who was right.">
         <div class="tagdemo-post"><span class="tagdemo-av"></span>
           <span class="tagdemo-txt">“No shot the Lakers make the playoffs.”</span></div>
-        <div class="tagdemo-reply">↳ <b>@oddiefun</b></div>
-        <div class="tagdemo-arrow" aria-hidden="true">↓</div>
+        <div class="tagdemo-step">↓ you tag <b>@oddiefun</b></div>
         <div class="tagdemo-card">
           <span class="tagdemo-q">Will the Lakers make the playoffs?</span>
           <span class="tagdemo-odds"><span>YES 54%</span><span>NO 46%</span></span>
         </div>
+        <div class="tagdemo-step">↓ the season plays out</div>
+        <div class="tagdemo-done">✓ Resolved YES — the 54% were right</div>
       </div>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
-      <p class="herofoot">+${surfaceReward} points every time your tag becomes a market</p>`;
+      <p class="herofoot">+${surfaceReward} points every time your tag becomes a question</p>`;
 
   // An active claim streak, as its own badge above the claim strip. Farmers grind
   // streaks, and buried in the claim card's grey sub-line it was easy to miss.
