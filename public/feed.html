@@ -1036,6 +1036,32 @@
      headline in its own right. */
   .herofoot{font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
     color:var(--muted-g);max-width:300px;margin:var(--sp-1) auto 0}
+  /* The differentiator, drawn rather than argued: an X post, the @oddiefun
+     reply, and what comes out the other side. Users kept reading the product
+     as "another prediction market" off a feed of markets — this is the one
+     element that answers "where do these markets come from" before anyone has
+     to read a word of explanation, which is why it sits above the CTA and not
+     in a help page. Left-aligned inside a centred column on purpose: it's a
+     little scene, and centring the post text would stop it reading as a post. */
+  .tagdemo{max-width:328px;margin:var(--sp-2) auto var(--sp-3);text-align:left}
+  .tagdemo-post{display:flex;gap:9px;align-items:flex-start;background:var(--ground-2);
+    border:1.5px solid var(--hair-g);border-radius:14px;padding:10px 12px}
+  .tagdemo-av{flex:none;width:22px;height:22px;border-radius:50%;background:var(--hair-g)}
+  .tagdemo-txt{font-family:'Nunito';font-weight:700;font-size:12.5px;line-height:1.4;color:var(--on-ground)}
+  .tagdemo-reply{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--acc-deep);margin:6px 0 0 31px}
+  :root[data-theme="dark"] .tagdemo-reply{color:var(--accent)}
+  .tagdemo-arrow{text-align:center;font-family:'Nunito';font-weight:900;font-size:15px;
+    color:var(--muted-g);margin:1px 0 3px}
+  .tagdemo-card{border:2px solid var(--accent);border-radius:14px;padding:10px 12px;background:var(--ground-2)}
+  .tagdemo-q{display:block;font-family:'Fredoka';font-weight:600;font-size:13.5px;
+    line-height:1.25;color:var(--on-ground);margin:0 0 8px}
+  .tagdemo-odds{display:flex;gap:7px}
+  /* Literal #fff, not var(--card-surface): that token flips to a dark value in
+     dark mode, which put near-black text on a near-black pill here. The real
+     market card's YES/NO tiles are white in BOTH themes, and this miniature
+     only works if it looks like the thing it's a miniature of. */
+  .tagdemo-odds span{flex:1;text-align:center;font-family:'Nunito';font-weight:900;font-size:11.5px;
+    background:#fff;color:#101010;border:1.5px solid #101010;border-radius:9px;padding:5px 4px}
   /* Three beats, icon + a few words each — no paragraphs, per the brief. Each
      gets its own medallion (a soft chip circle) instead of a bare emoji
      floating in text, so the row reads as a designed sequence, not a caption.
@@ -3181,20 +3207,31 @@ async function renderHome(){
 
   const wrap=document.createElement("div");wrap.className="homewrap";
 
-  // The hero is BUILT here but deliberately NOT placed yet — see the append
-  // order further down. For a brand-new visitor it lands UNDER the first
-  // playable card: a hypercasual product opens with the game, not with an
-  // explanation of the game. A returning player still gets it up top, where
-  // the tag CTA (the actual growth loop) is the thing they came back to use.
+  // The hero leads for EVERYONE, new visitor included. Three separate users
+  // independently read the product as "another Polymarket" because the first
+  // thing on screen was a scrollable list of markets to bet on — which is
+  // precisely what Polymarket is. The markets aren't the differentiator; where
+  // they COME FROM is. So the tag mechanic opens the page and the feed is
+  // demoted to a single sample below it.
   //
-  // What used to live here and no longer does, because all four said the same
-  // thing in four different registers: the .herosub explainer ("tag @oddiefun
-  // under any claim…" — the CTA button below already says exactly that), the
-  // 44px .incentivebig block (now a single caption line under the button), and
-  // the .loop3 "1 Pick YES or NO → 2 Get it right → 3 Score goes up" strip
-  // (word-for-word what .howitworks at the foot of the page already says).
+  // The mechanic is shown, not described: .tagdemo is a miniature of an X
+  // argument becoming a market with live odds. That transformation IS the
+  // answer to "how is this different", and a picture of it lands before a
+  // sentence about it would — which is also how this stays short. There is
+  // deliberately no prose explainer under the headline; the demo is the
+  // explainer, and the CTA underneath names the action.
   const hero=document.createElement("div");hero.className="hero";
-  hero.innerHTML=`<h1 class="herotitle">Tag it. Make the call.<br>See who was right.</h1>
+  hero.innerHTML=`<h1 class="herotitle">Someone's wrong on X.<br>Turn it into a market.</h1>
+      <div class="tagdemo" aria-label="Example: replying @oddiefun to a post on X turns it into a market">
+        <div class="tagdemo-post"><span class="tagdemo-av"></span>
+          <span class="tagdemo-txt">“No shot the Lakers make the playoffs.”</span></div>
+        <div class="tagdemo-reply">↳ <b>@oddiefun</b></div>
+        <div class="tagdemo-arrow" aria-hidden="true">↓</div>
+        <div class="tagdemo-card">
+          <span class="tagdemo-q">Will the Lakers make the playoffs?</span>
+          <span class="tagdemo-odds"><span>YES 54%</span><span>NO 46%</span></span>
+        </div>
+      </div>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
       <p class="herofoot">+${surfaceReward} points every time your tag becomes a market</p>`;
@@ -3362,25 +3399,33 @@ async function renderHome(){
     // ALSO keyed off this same `newUser` flag, below — the cue and the
     // reorder are never allowed to disagree about who's new.
     // The id is the settled cards' scroll target — see the .stl-cta handler.
-    // For a first-time visitor this label is the ONLY text above the card, so
-    // it carries the whole instruction — and it does that in the same four
-    // words the guided tour uses ("Tap YES or NO"), not in product nouns a
-    // brand-new reader hasn't learned yet. The old "Make your first call ↓"
-    // pointed down at a card that was six text blocks away; the card now sits
-    // directly underneath, so there is nothing left to point at.
-    section(featuredFrag,newUser?"Tap YES or NO":"Open markets","openmarkets",newUser?"cue":"");
+    // The label does positioning work, not just navigation. "Someone tagged
+    // this one" says the market below was CREATED by a person tagging an
+    // argument — the same thing the hero just showed — so the sample reads as
+    // the output of the mechanic rather than as inventory on an exchange.
+    // That distinction is the entire difference between this and Polymarket,
+    // and it costs four words to make.
+    section(featuredFrag,newUser?"Someone tagged this one — try it":"Open markets","openmarkets",newUser?"cue":"");
     // Only the first `featuredShown` are ever VISIBLE as their own cards —
     // the rest is the continuous-play loop's reserve pool (see
     // HOME_FEATURED_POOL server-side): lock a call on any visible card and
     // "Next call" pulls from here instead of sending the user to Feed.
-    const visible=featured.slice(0,featuredShown);
-    const pool=featured.slice(featuredShown);
+    // A fresh visitor sees exactly ONE. Four stacked cards is a list of
+    // markets to bet on no matter what the label above it says, and that
+    // impression is the whole problem being fixed here. One is a "try it",
+    // four is an exchange. Nothing is lost: the other three don't disappear,
+    // they fall into the continuous-play pool below, so locking this one
+    // pulls the next straight in. Returning players, who already know what
+    // the product is, keep the full set.
+    const shown=newUser?1:featuredShown;
+    const visible=featured.slice(0,shown);
+    const pool=featured.slice(shown);
     // Shared by reference across every visible card, so whichever one the
     // user actually locks first draws from ONE pool — a market already
     // sitting visible elsewhere on the page is pre-marked used, so the loop
     // can never hand back a duplicate of a card that's still right there.
     const usedSlugs=new Set(visible.map(x=>x.slug));
-    let poolIdx=0,nextIdxCounter=featuredShown;
+    let poolIdx=0,nextIdxCounter=shown;   // `shown`, not featuredShown — see the slice above
     const loopCtx={
       cap:HOME_LOOP_CAP,
       pull(){
@@ -3412,12 +3457,15 @@ async function renderHome(){
   // already saw; stats/proof/social move below it. A returning player keeps
   // today's order — proof and social lead, since they already know the loop.
   if(newUser){
-    // The whole point of this branch: a fresh visitor's first screen is a
-    // four-word label and a playable card, full stop. Everything that
-    // explains, rewards, proves or cross-sells lands BELOW that card, in the
-    // order it becomes relevant — you play first, then you're told why.
-    if(featuredFrag)wrap.appendChild(featuredFrag);
+    // Tag mechanic first, one sample market second, everything else below.
+    // This deliberately reverses the previous card-first order: leading with
+    // playable markets made three separate users read the whole product as a
+    // Polymarket clone, because a list of markets to bet on is exactly what
+    // that is. The card stays — it's still the cheapest possible first action
+    // — but as ONE market underneath the mechanic that produced it, not as
+    // the top of a feed.
     wrap.appendChild(hero);
+    if(featuredFrag)wrap.appendChild(featuredFrag);
     wrap.appendChild(claimFrag);
     if(livestripEl)wrap.appendChild(livestripEl);
     if(settledFrag)wrap.appendChild(settledFrag);
@@ -3446,9 +3494,13 @@ async function renderHome(){
     <div class="howstep"><span class="howico">🏆</span><span>See who guessed right</span></div>`;
   wrap.appendChild(how);
 
-  // The feed is a destination now, not the default — one quiet link down.
+  // The feed is a place to hang out, not what the product IS — so the link to
+  // it stays the quietest thing on the page, and says what's actually down
+  // there: other people's tags. "browse all markets" framed the feed as the
+  // destination and the product as a market list, which is the exact
+  // impression this page is now built to avoid.
   const browse=document.createElement("a");browse.className="browselink";browse.href="/feed";
-  browse.textContent="browse all markets →";
+  browse.textContent="see what else people have tagged →";
   wrap.appendChild(browse);
 
   scroller.innerHTML="";
