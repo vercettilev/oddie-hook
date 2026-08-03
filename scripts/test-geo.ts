@@ -124,14 +124,22 @@ console.log("\nREGIME 2 · the venue list (Jupiter ToU §1), and the contractual
   check("the US is venue-restricted but NOT on the OFAC baseline",
     isVenueRestrictedLocation("US", null) && !isRestrictedLocation("US", null));
 
-  // The contractual gate sits ABOVE geography and is currently shut.
-  check("VENUE_TERMS_CLEARED is false — §3.2(d)/§7.3/§7.5 unanswered", VENUE_TERMS_CLEARED === false);
-  check("a perfectly allowed location is STILL refused while the terms are open",
-    venueRealMoneyAllowed({ country: "GB", region: null, restricted: false }) === false);
-  check("an unresolved location is refused too (fail-closed, inherited)",
-    venueRealMoneyAllowed({ country: null, region: null, restricted: true }) === false);
-  check("a restricted location is refused",
+  // The contractual gate sits ABOVE geography. Counsel cleared §3.2(d)/§7.3/
+  // §7.5 on 2026-08-03, so it is now open and GEOGRAPHY alone decides.
+  check("VENUE_TERMS_CLEARED is true — counsel cleared §3.2(d)/§7.3/§7.5", VENUE_TERMS_CLEARED === true);
+  check("an allowed, resolved location is permitted now the terms are cleared",
+    venueRealMoneyAllowed({ country: "GB", region: null, restricted: false }) === true);
+
+  // The three refusals that must survive the clearance. If a future edit to
+  // VENUE_TERMS_CLEARED ever makes these pass, the geo gate has been lost.
+  check("the US is still refused — wholesale, per Jupiter ToU §1",
     venueRealMoneyAllowed({ country: "US", region: "CA", restricted: false }) === false);
+  check("an UNRESOLVED location is still refused (fail-closed, inherited)",
+    venueRealMoneyAllowed({ country: null, region: null, restricted: true }) === false);
+  check("a sanctioned UA oblast is still refused",
+    venueRealMoneyAllowed({ country: "UA", region: "43", restricted: false }) === false);
+  check("...while the rest of Ukraine is permitted",
+    venueRealMoneyAllowed({ country: "UA", region: "30", restricted: false }) === true);
 }
 
 console.log("\nGEOBLOCK_LIST_VERIFIED: the legal sign-off gate");

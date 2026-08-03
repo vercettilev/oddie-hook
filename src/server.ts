@@ -25,7 +25,8 @@ import {
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
-import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
+import { GEOBLOCK_LIST_VERIFIED, venueRealMoneyAllowed } from "./geo/restrictedRegions.js";
+import { JUPITER_PREDICT_ENABLED, prepareVenueOrderTx, fetchJupiterPolymarketMarkets } from "./venues/jupiterPredict.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
@@ -1584,19 +1585,64 @@ function noteGeoForCommunity(req: express.Request): void {
 }
 
 /**
- * The tripwire for REGIME 2. Any Polymarket/venue real-money path must call
- * this until a real venue geofence exists; it throws rather than returning a
- * permissive default, so the failure mode of forgetting the gate is a broken
- * route rather than an unrestricted real-money surface in a blocked country.
+ * REGIME 2's single gate. Every venue real-money surface goes through this and
+ * nothing else — one function so there is exactly one place to audit, and so
+ * no route can accidentally implement a laxer version of the rule.
+ *
+ * Order matters. The contractual clearance is checked first because it is the
+ * broadest condition (no jurisdiction is allowed while it is open), then the
+ * geo, which inherits resolveClientCountry's fail-CLOSED behaviour: an IP we
+ * cannot place is refused, not waved through. That is the opposite of REGIME
+ * 1's posture and deliberately so — our own parimutuel blocks nobody, a
+ * sourced venue blocks anyone we can't positively clear.
  */
-export function geoRegimeVenueUnavailable(): never {
-  throw new Error("venue real-money geofence not implemented — see REGIME 2");
+function venueRealMoneyReady(req: express.Request): boolean {
+  if (!realStakesReady) return false;             // master flag + verified list
+  if (!JUPITER_PREDICT_ENABLED) return false;     // venue source switched off
+  return venueRealMoneyAllowed(resolveClientCountry(req));
 }
 
 app.get("/api/chain/status", (req, res) => {
   // Community-only surface: the master flag decides, not the geofence.
   noteGeoForCommunity(req);
   res.json({ enabled: realStakesReady });
+});
+
+/**
+ * REGIME 2's client-facing boolean, deliberately SEPARATE from
+ * /api/chain/status. Two surfaces with two different rules need two answers:
+ * a user in the US gets community real-money (enabled) and venue real-money
+ * (blocked) in the same session, and one shared boolean could only lie about
+ * one of them.
+ */
+app.get("/api/venue/status", (req, res) => {
+  res.json({ enabled: venueRealMoneyReady(req) });
+});
+
+/**
+ * Build an unsigned Jupiter order for the user's own wallet to sign. Gated
+ * identically to /api/venue/status — the status boolean hides the UI, this
+ * check is the one that actually stops a stale client or a direct call. Both
+ * read the same venueRealMoneyReady, so they cannot drift apart.
+ */
+app.post("/api/venue/order/prepare", async (req, res) => {
+  if (!venueRealMoneyReady(req)) return res.status(451).json({ ok: false, reason: "venue-unavailable-in-region" });
+  const marketId = String(req.body?.marketId ?? "");
+  const userPubkey = String(req.body?.userPubkey ?? "");
+  const isYes = req.body?.side === "yes";
+  const depositAmount = Number(req.body?.depositAmount ?? 0);
+  const depositMint = String(req.body?.depositMint ?? "");
+  if (!marketId) return res.status(400).json({ error: "marketId required" });
+  if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
+  if (req.body?.side !== "yes" && req.body?.side !== "no") return res.status(400).json({ error: "side must be yes|no" });
+  if (!Number.isFinite(depositAmount) || depositAmount <= 0) return res.status(400).json({ error: "depositAmount must be positive" });
+  if (!isValidPubkeyString(depositMint)) return res.status(400).json({ error: "invalid depositMint" });
+
+  const built = await prepareVenueOrderTx({
+    marketId, ownerPubkey: userPubkey, isYes, isBuy: true, depositAmount, depositMint,
+  });
+  if (!built) return res.status(502).json({ ok: false, reason: "venue-unreachable" });
+  res.json({ ok: true, txBase64: built.txBase64 });
 });
 
 if (realStakesReady) {

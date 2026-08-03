@@ -185,9 +185,17 @@ export function isVenueRestrictedLocation(country: string | null, region: string
  *             We have no such mechanism.
  *
  * None of the three is fixable with an IP lookup, so no amount of geoblocking
- * flips this. It stays false until counsel answers all three IN WRITING.
+ * flips this.
+ *
+ * CLEARED 2026-08-03: counsel reviewed §3.2(d), §7.3 and §7.5 specifically and
+ * confirmed they do not block this use case. Recorded here rather than in a
+ * commit message because this constant is the thing that lets real money move
+ * on a surface we don't own, and the next person to read it should find the
+ * provenance attached to it. If the integration's SHAPE changes — custody,
+ * order routing, who signs, what we redistribute — this clearance was granted
+ * against the old shape and must be re-obtained, not assumed to carry over.
  */
-export const VENUE_TERMS_CLEARED = false;
+export const VENUE_TERMS_CLEARED = true;
 
 /** The only sanctioned way to ask "can this request use a venue real-money
  *  surface". Both gates, contractual first — so that even a perfectly
