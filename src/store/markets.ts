@@ -5,7 +5,8 @@ import {
   DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
   edgePts, proceedsFor, reputationOf, winBonus,
   CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, creatorFeePlay,
-  type Reputation,
+  callerTier,
+  type Reputation, type CallerTier,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
 import { Market } from "../venues/types.js";
@@ -1890,11 +1891,38 @@ export async function homeActivity(): Promise<HomeActivity> {
 export interface Badge {
   id: string;
   kind: "founding" | "streak" | "category" | "rank";
-  label: string;      // the screenshot-friendly line, e.g. "Top 10% · Crypto"
+  label: string;      // the screenshot-friendly line, e.g. "Top 3% · Crypto"
   emoji: string;      // UI only; the PNG card renders text (resvg has no emoji font)
   detail?: string;    // small subtitle under the label
+  /** Category badges only — the real percentile and its category, kept
+   *  structured (not just baked into `label`) so reputationFor can pick the
+   *  best one for the flex line without parsing display strings. */
+  pctile?: number;
+  category?: string;
 }
-export interface SeasonRank { rank: number; total: number; topPct: number; }
+export interface SeasonRank {
+  rank: number;
+  total: number;
+  /** Null when the ranked field is too small for a percentile to mean
+   *  anything — see MIN_RANKED_FOR_PERCENTILE. The rank itself is always
+   *  real; only the percentile is withheld. */
+  topPct: number | null;
+}
+
+/**
+ * A percentile needs a field. rank/total is a fine formula and a terrible
+ * statement about a small one: the very first ranked caller is "#1 of 1",
+ * which the formula renders as "top 100%" — an insult to the person in first
+ * place — and in a field of four, finishing first would read as "top 25%" and
+ * hand out a Sharp Caller tier for beating three people.
+ *
+ * Both failures matter more now that rank IS the status: a tier that a
+ * four-person field can mint is worth nothing, and a status system that
+ * congratulates you with "top 100%" is worse than none. Below this many
+ * ranked callers the percentile is simply not published, and the tier falls
+ * back to the score-based "Proven Caller", which needs no field to be true.
+ */
+const MIN_RANKED_FOR_PERCENTILE = 20;
 
 // The first N devices to ever hold a wallet wear the Founding Caller badge. A
 // rank cutoff (not a date) so it stays correct without knowing the launch day —
@@ -1987,7 +2015,10 @@ export async function seasonRankFor(rawDeviceId: string): Promise<SeasonRank | n
   const i = overall.findIndex((r) => r.deviceId === deviceId);
   if (i < 0 || total === 0) return null;
   const rank = i + 1;
-  return { rank, total, topPct: Math.max(1, Math.ceil((rank / total) * 100)) };
+  const topPct = total >= MIN_RANKED_FOR_PERCENTILE
+    ? Math.max(1, Math.ceil((rank / total) * 100))
+    : null;
+  return { rank, total, topPct };
 }
 
 const memLastSeenRank = new Map<string, number>();
@@ -2120,12 +2151,78 @@ export async function badgesFor(rawDeviceId: string, acc: AccuracyRecord): Promi
     const i = list.findIndex((r) => r.deviceId === deviceId);
     if (i < 0) continue;
     const pctile = Math.ceil(((i + 1) / list.length) * 100);
-    if (pctile <= CATEGORY_TOP_PCT) cat.push({ id: `cat-${category}`, kind: "category", label: `Top ${CATEGORY_TOP_PCT}% · ${category}`, emoji: "🎯", detail: `${list[i].deviceId === deviceId ? Math.round(list[i].pct * 100) : 0}% accuracy` });
+    // The REAL percentile, not the CATEGORY_TOP_PCT cutoff. This used to read
+    // "Top 10% · Crypto" for everyone who qualified, including someone
+    // actually sitting in the top 2% — understating the best records, which
+    // is the exact opposite of what a status badge is for. The cutoff still
+    // decides WHETHER you badge; it no longer decides what the badge claims.
+    if (pctile <= CATEGORY_TOP_PCT) cat.push({ id: `cat-${category}`, kind: "category", label: `Top ${pctile}% · ${category}`, emoji: "🎯", detail: `${Math.round(list[i].pct * 100)}% accuracy`, pctile, category });
   }
-  cat.sort((a, b) => a.label.localeCompare(b.label));
+  cat.sort((a, b) => (a.pctile ?? 100) - (b.pctile ?? 100)); // best standing first
   badges.push(...cat.slice(0, 3));
 
   return badges;
+}
+
+/**
+ * Everything that makes a record STATUS rather than a statistic, in one read:
+ * the numbers, the season standing, the earned tier, and the one-line brag.
+ *
+ * Exists so the profile page, the public profile API, the share PNG and the
+ * leaderboard all describe a person identically — before this, each assembled
+ * its own subset and they could disagree about what someone was.
+ */
+export interface CallerReputation {
+  handle: string;
+  accuracy: AccuracyRecord;
+  rank: SeasonRank | null;
+  tier: CallerTier | null;
+  badges: Badge[];
+  /** Best category standing, for "top 3% in Crypto". Null if none qualifies. */
+  topCategory: { category: string; pctile: number; accuracyPct: number } | null;
+  /** The screenshot line, pre-assembled so every surface shows the same brag. */
+  flexLine: string;
+}
+
+/**
+ * The one-line public brag: "78% accuracy across 40 calls · top 3% in Crypto".
+ * Built from whatever is actually true — the category clause is dropped when
+ * no category qualifies, and a provisional record says so plainly instead of
+ * quoting a percentage that isn't yet meaningful. Never renders a claim the
+ * data doesn't support; an unimpressive record gets an honest short line.
+ */
+export function flexLine(acc: AccuracyRecord, topCategory: { category: string; pctile: number } | null): string {
+  if (!acc.hasEnough || acc.accuracyPct == null) {
+    const n = acc.resolved;
+    return n === 0
+      ? "building a track record"
+      : `${n} call${n === 1 ? "" : "s"} resolved · building a track record`;
+  }
+  const parts = [`${acc.accuracyPct}% accuracy across ${acc.resolved} calls`];
+  if (topCategory) parts.push(`top ${topCategory.pctile}% in ${topCategory.category}`);
+  return parts.join(" · ");
+}
+
+/** One read that every reputation surface shares. */
+export async function reputationFor(rawDeviceId: string): Promise<CallerReputation> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  // displayHandleFor, not ensureHandle: this is a READ path (a profile view, a
+  // share card render), and ensureHandle would mint a handle as a side effect
+  // of merely looking at someone.
+  const [accuracy, hd, rank] = await Promise.all([
+    accuracyFor(deviceId), displayHandleFor(deviceId), seasonRankFor(deviceId),
+  ]);
+  const badges = await badgesFor(deviceId, accuracy);
+  const best = badges
+    .filter((b) => b.kind === "category" && b.pctile != null && b.category)
+    .sort((a, b) => (a.pctile ?? 100) - (b.pctile ?? 100))[0];
+  const topCategory = best
+    ? { category: best.category!, pctile: best.pctile!, accuracyPct: parseInt(best.detail ?? "0", 10) || 0 }
+    : null;
+  const tier = callerTier({
+    hasEnough: accuracy.hasEnough, oddieScore: accuracy.oddieScore, topPct: rank ? rank.topPct : null,
+  });
+  return { handle: hd ?? "caller", accuracy, rank, tier, badges, topCategory, flexLine: flexLine(accuracy, topCategory) };
 }
 
 /**

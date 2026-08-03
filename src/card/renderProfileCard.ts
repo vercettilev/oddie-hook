@@ -40,12 +40,26 @@ export interface ProfileCard {
   badges?: ProfileBadge[];
   /** Season standing as a percentile — 8 renders as "TOP 8%". Null = unranked. */
   rankTopPct?: number | null;
+  /** The earned tier's claimable noun ("Oracle", "Sharp Caller"). Null = none
+   *  earned, and the card then says nothing rather than inventing a label. */
+  tierLabel?: string | null;
+  /** "78% accuracy across 40 calls · top 3% in Crypto" — the line the card
+   *  exists to make screenshottable, sat directly under the handle. */
+  flexLine?: string | null;
 }
+
+// Vertical rhythm, top to bottom, kept here because the flex line squeezed it:
+// handle 178 · flex 212 · ring 235..409 · divider 428 · stats 458/486. The ring
+// was previously r=85 at cy=312 (top edge 217), which the new flex line at 226
+// ran straight through — the arc cut across the text. Shrinking the ring
+// slightly and dropping everything below it buys the line its own band.
+const RING_CX = 165, RING_CY = 322, RING_R = 78, RING_SW = 18;
+const DIVIDER_Y = 428, STAT_VALUE_Y = 458, STAT_LABEL_Y = 486;
 
 /** A small stat block: a value over a label, left-anchored at x. */
 function stat(x: number, value: string, label: string): string {
-  return `<text x="${x}" y="452" font-size="46" font-weight="700" fill="${C.number}">${esc(value)}</text>
-  <text x="${x}" y="482" font-family="${META}" font-size="20" font-weight="800" fill="${C.muted}">${esc(label)}</text>`;
+  return `<text x="${x}" y="${STAT_VALUE_Y}" font-size="46" font-weight="700" fill="${C.number}">${esc(value)}</text>
+  <text x="${x}" y="${STAT_LABEL_Y}" font-family="${META}" font-size="20" font-weight="800" fill="${C.muted}">${esc(label)}</text>`;
 }
 
 /** A regular n-pointed star's outline, as a path `d` — used for the "founding"
@@ -105,7 +119,6 @@ export function renderProfileCard(p: ProfileCard): string {
 
   // The ring/gauge: an SVG stroke-dasharray donut, filled to score/1000 — the
   // direct static equivalent of the live page's CSS conic-gradient ring.
-  const RING_CX = 165, RING_CY = 312, RING_R = 85, RING_SW = 20;
   const circumference = 2 * Math.PI * RING_R;
   const pct = p.hasEnough && p.oddieScore != null ? Math.max(0, Math.min(1, p.oddieScore / 1000)) : 0;
   const heroText = p.hasEnough && p.oddieScore != null ? String(p.oddieScore) : "building";
@@ -121,16 +134,37 @@ export function renderProfileCard(p: ProfileCard): string {
     <text x="${RING_CX}" y="${RING_CY + 34}" text-anchor="middle" font-family="${META}" font-size="15" font-weight="900"
       letter-spacing="0.5" fill="${C.accentDeep}">${kicker}</text>`;
 
-  // Season rank — a status CHIP, top-right, a place rather than a number.
+  // The status CHIP, top-right: the earned tier over the season percentile.
+  // Tier and rank share one chip rather than sitting in two — they are the
+  // same fact at two resolutions ("Oracle" is what "top 3%" MEANS), and
+  // splitting them into competing chips made the card read as a dashboard.
+  // With no tier earned it degrades to the plain SEASON / TOP x% it was.
+  const tierChip = p.tierLabel ? p.tierLabel.toUpperCase() : "SEASON";
   const rank = p.hasEnough && p.rankTopPct != null
     ? (() => {
-        const t1 = "SEASON", t2 = `TOP ${p.rankTopPct}%`;
+        const t1 = tierChip, t2 = `TOP ${p.rankTopPct}%`;
         const w = Math.round(Math.max(textWidth(t1, 20), textWidth(t2, 34)) + 44);
         const x = PAD_R - w;
         return `<rect x="${x}" y="118" width="${w}" height="88" rx="20" fill="${C.pill}" stroke="${C.ink}" stroke-width="3"/>
-          <text x="${PAD_R - 22}" y="150" text-anchor="end" font-family="${META}" font-size="20" font-weight="800" fill="${C.muted}">${t1}</text>
+          <text x="${PAD_R - 22}" y="150" text-anchor="end" font-family="${META}" font-size="20" font-weight="800" fill="${p.tierLabel ? C.accentDeep : C.muted}">${esc(t1)}</text>
           <text x="${PAD_R - 22}" y="188" text-anchor="end" font-size="34" font-weight="700" fill="${C.number}">${t2}</text>`;
       })()
+    // Ranked-but-untiered still deserves the tier line if one was earned
+    // (a Proven Caller outside the top 25% has no percentile worth showing).
+    : p.tierLabel
+      ? (() => {
+          const w = Math.round(textWidth(p.tierLabel!.toUpperCase(), 26) + 44);
+          const x = PAD_R - w;
+          return `<rect x="${x}" y="132" width="${w}" height="60" rx="20" fill="${C.pill}" stroke="${C.ink}" stroke-width="3"/>
+            <text x="${PAD_R - 22}" y="172" text-anchor="end" font-size="26" font-weight="700" fill="${C.accentDeep}">${esc(p.tierLabel!.toUpperCase())}</text>`;
+        })()
+      : "";
+
+  // The brag, directly under the handle — the line this card exists to make
+  // screenshottable. Truncated to the card's usable width rather than wrapped:
+  // it is one line by design, and a two-line version collides with the ring.
+  const flex = p.flexLine
+    ? `<text x="${PAD_L}" y="212" font-family="${META}" font-size="22" font-weight="800" fill="${C.muted}">${esc(wrapToWidth(p.flexLine, PAD_R - PAD_L - 10, 22, 1).lines[0] ?? "")}</text>`
     : "";
 
   // Badges: medallions to the right of the ring, vertically centred on it.
@@ -163,8 +197,9 @@ export function renderProfileCard(p: ProfileCard): string {
   <text x="140" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
   ${rank}
 
-  <!-- the person -->
-  <text x="${PAD_L}" y="192" font-size="52" font-weight="700" fill="${C.ink}">${esc(handle)}</text>
+  <!-- the person, then what they've proven -->
+  <text x="${PAD_L}" y="178" font-size="52" font-weight="700" fill="${C.ink}">${esc(handle)}</text>
+  ${flex}
 
   <!-- hero: Oddie Score ring (or the empty "building" gauge) -->
   ${ring}
@@ -173,7 +208,7 @@ export function renderProfileCard(p: ProfileCard): string {
   ${badgeRow}
 
   <!-- stat row: accuracy · streak · resolved -->
-  <line x1="${PAD_L}" y1="422" x2="${PAD_R}" y2="422" stroke="${C.barBg}" stroke-width="3"/>
+  <line x1="${PAD_L}" y1="${DIVIDER_Y}" x2="${PAD_R}" y2="${DIVIDER_Y}" stroke="${C.barBg}" stroke-width="3"/>
   ${stat(PAD_L, acc, "ACCURACY")}
   ${stat(390, String(p.streak), "STREAK")}
   ${stat(690, String(p.resolved), "RESOLVED")}

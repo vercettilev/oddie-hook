@@ -165,6 +165,63 @@ export function creatorFeePlay(totalPoolTokens: number): number {
   return Math.floor((totalPoolTokens * CREATOR_FEE_BPS_PLAY) / 10000);
 }
 
+/* ------------------------------------------------------------ caller tiers --
+ * The answer to "accuracy accumulates, so what?".
+ *
+ * Before real money, the payoff for being right has to be STATUS, and status
+ * needs a name — "top 8%" is a measurement, "Oracle" is something you tell
+ * people you are. These tiers put a claimable noun on the numbers the product
+ * already computes (oddieScore from economy, topPct from the season
+ * standings), so a good record becomes an identity rather than a statistic.
+ *
+ * Deliberately hard to get and deliberately few. Three tiers, all above the
+ * market: a tier you earn by showing up is not status, and a ladder with a
+ * rung for everybody is a participation trophy. Below "proven" there is no
+ * tier at all — the honest answer to a below-market record is silence, not a
+ * consolation label.
+ */
+export type CallerTierId = "oracle" | "sharp" | "proven";
+
+export interface CallerTier {
+  id: CallerTierId;
+  /** The claimable noun — what a user calls themselves. */
+  label: string;
+  /** One line of "what this means", for the profile and the share card. */
+  blurb: string;
+}
+
+/** Percentile cutoffs. Lower topPct = better standing. */
+export const ORACLE_TOP_PCT = 5;
+export const SHARP_TOP_PCT = 25;
+/** The Oddie Score that means "you beat the odds you took" — see winBonus's
+ *  neighbours above: 500 is exactly market-neutral, so > 500 is real edge. */
+export const PROVEN_MIN_SCORE = 500;
+
+/**
+ * The tier a record earns, or null for "no tier yet" — which is the correct
+ * answer both for a provisional record (not enough resolved calls to mean
+ * anything) and for a settled record that hasn't beaten the market. Never
+ * invents a flattering tier for a weak record: the whole point is that the
+ * label is worth something because it can be withheld.
+ */
+export function callerTier(r: {
+  hasEnough: boolean;
+  oddieScore: number | null;
+  topPct: number | null;
+}): CallerTier | null {
+  if (!r.hasEnough || r.oddieScore == null) return null;
+  if (r.topPct != null && r.topPct <= ORACLE_TOP_PCT) {
+    return { id: "oracle", label: "Oracle", blurb: `top ${ORACLE_TOP_PCT}% of all callers` };
+  }
+  if (r.topPct != null && r.topPct <= SHARP_TOP_PCT) {
+    return { id: "sharp", label: "Sharp Caller", blurb: `top ${SHARP_TOP_PCT}% of all callers` };
+  }
+  if (r.oddieScore >= PROVEN_MIN_SCORE) {
+    return { id: "proven", label: "Proven Caller", blurb: "beats the odds they take" };
+  }
+  return null;
+}
+
 export interface Reputation {
   /** Mean edge in percentage points across closed positions. Null when there are none. */
   avgEdge: number | null;

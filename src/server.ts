@@ -13,6 +13,7 @@ import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
+import { reputationFor } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -295,9 +296,14 @@ app.get("/api/profile/:handle", async (req, res) => {
   const handle = String(req.params.handle).replace(/^@+/, "");
   const deviceId = await deviceForHandle(handle).catch(() => null);
   if (!deviceId) return res.status(404).json({ exists: false });
-  const [acc, recentCalls, hd, rank, weeklyDelta] = await Promise.all([accuracyFor(deviceId), resolvedCallsFor(deviceId, 20), displayHandle(deviceId), seasonRankFor(deviceId), weeklyScoreDeltaFor(deviceId)]);
-  const badges = await badgesFor(deviceId, acc);
-  res.json({ exists: true, handle: hd.handle, accuracy: { ...acc, weeklyDelta }, recentCalls, badges, rank });
+  const [rep, recentCalls, hd, weeklyDelta] = await Promise.all([
+    reputationFor(deviceId), resolvedCallsFor(deviceId, 20), displayHandle(deviceId), weeklyScoreDeltaFor(deviceId),
+  ]);
+  res.json({
+    exists: true, handle: hd.handle, accuracy: { ...rep.accuracy, weeklyDelta },
+    recentCalls, badges: rep.badges, rank: rep.rank,
+    tier: rep.tier, topCategory: rep.topCategory, flexLine: rep.flexLine,
+  });
 });
 
 function positionPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string, share: { token: string; handle: string; side: string; entryPct: number; resolved: string | null }): string {
@@ -765,12 +771,17 @@ app.get("/card/u/:handle.png", async (req, res) => {
   }
   const deviceId = await deviceForHandle(handle).catch(() => null);
   if (!deviceId) return res.status(404).send("unknown profile");
-  const [acc, hd, rank] = await Promise.all([accuracyFor(deviceId), displayHandle(deviceId), seasonRankFor(deviceId)]);
-  const badges = await badgesFor(deviceId, acc);
+  // One read for every reputation surface — see reputationFor. The card, the
+  // profile API and the leaderboard all describe a person from this same
+  // object, so they cannot disagree about what someone is.
+  const [rep, hd] = await Promise.all([reputationFor(deviceId), displayHandle(deviceId)]);
+  const acc = rep.accuracy;
   const png = renderCardPng(renderProfileCard({
     handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
-    badges: badges.map((b) => ({ label: b.label, kind: b.kind })), rankTopPct: rank ? rank.topPct : null,
+    badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
+    rankTopPct: rep.rank ? rep.rank.topPct : null,
+    tierLabel: rep.tier ? rep.tier.label : null, flexLine: rep.flexLine,
   }));
   pngCache.set(key, { png, at: now });
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
@@ -1125,7 +1136,18 @@ app.get("/api/leaderboard", async (req, res) => {
   // Board rows are canonical devices; a signed-in browser's own id is not.
   const me = raw ? await resolveDevice(raw) : null;
   const [edge, streaks, winnings] = await Promise.all([leaderboard(20), leaderboardStreaks(20), leaderboardWinnings(20)]);
+  // The viewer's OWN standing, sent alongside the boards. A leaderboard whose
+  // top 20 you aren't in tells you nothing about yourself, which is exactly
+  // the "accuracy accumulates, so what?" complaint — this is the answer:
+  // where you actually stand, what tier that earns, and what to say about it.
+  const you = me ? await reputationFor(me).catch(() => null) : null;
   res.json({
+    you: you ? {
+      handle: you.handle, rank: you.rank, tier: you.tier,
+      flexLine: you.flexLine, topCategory: you.topCategory,
+      accuracyPct: you.accuracy.accuracyPct, resolved: you.accuracy.resolved,
+      hasEnough: you.accuracy.hasEnough, minResolved: you.accuracy.minResolved,
+    } : null,
     rows: edge.map((r, i) => ({
       rank: i + 1, handle: r.handle, you: r.deviceId === me,
       avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed, provisional: r.provisional,

@@ -1445,6 +1445,30 @@
   .hshare:hover{background:var(--wash)}
   .hshare svg{width:15px;height:15px;fill:none;stroke:#000;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 
+  /* "Your standing" — the leaderboard's answer to "accuracy accumulates, so
+     what?". A board whose top 20 you aren't in says nothing about you; this
+     panel says exactly where you are, what tier it earns, and hands you the
+     one line worth posting. It leads the screen, above the boards. */
+  .standing{border:3px solid #000;border-radius:22px;background:var(--accent);
+    padding:16px 16px 14px;margin:0 0 14px;position:relative;overflow:hidden}
+  .standing-tier{display:inline-flex;align-items:center;gap:7px;font-family:'Fredoka';
+    font-weight:700;font-size:21px;line-height:1.1;color:#101010}
+  .standing-rank{font-family:'Fredoka';font-weight:700;font-size:40px;line-height:1;
+    color:#101010;margin:6px 0 2px}
+  .standing-sub{font-family:'Nunito';font-weight:800;font-size:12.5px;color:#2b3d10;line-height:1.4}
+  .standing-flex{font-family:'Nunito';font-weight:800;font-size:12.5px;color:#101010;
+    background:rgba(255,255,255,.62);border:1.5px solid rgba(0,0,0,.42);border-radius:12px;
+    padding:8px 11px;margin:11px 0 0;line-height:1.4}
+  .standing-share{display:block;width:100%;margin:10px 0 0;font-family:'Nunito';font-weight:900;
+    font-size:13px;color:var(--accent);background:#101010;border:0;border-radius:999px;
+    padding:11px;cursor:pointer}
+  .standing-share:active{opacity:.82}
+  /* Unranked/provisional: the same panel, but honest — a quiet shell that says
+     what's still missing instead of a tier nobody earned. */
+  .standing.pending{background:var(--wash);border-color:var(--hair-g)}
+  .standing.pending .standing-tier,.standing.pending .standing-rank{color:var(--on-ground)}
+  .standing.pending .standing-sub{color:var(--muted-g)}
+
   /* leaderboard */
   .lb{border:3px solid #000;border-radius:22px;overflow:hidden;background:#fff}
   .lb .r{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:2px solid var(--bar)}
@@ -3811,7 +3835,12 @@ function badgesHtml(badges){
 function deltaText(n){return n>=0?`+${n}`:`−${Math.abs(n)}`}
 function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove){
   const pct=hasEnough&&score!=null?Math.max(0,Math.min(1,score/1000)):0;
-  const rankChip=hasEnough&&rank?`<span class="rankpill">🏆 Top ${rank.topPct}% this season</span>`:"";
+  // topPct is null until the ranked field is big enough for a percentile to
+  // mean anything (see MIN_RANKED_FOR_PERCENTILE) — fall back to the raw
+  // standing, which is always true, rather than printing "Top 100%".
+  const rankChip=hasEnough&&rank
+    ?`<span class="rankpill">🏆 ${rank.topPct!=null?`Top ${rank.topPct}% this season`:`#${rank.rank} of ${rank.total} this season`}</span>`
+    :"";
   // Both lines are ephemeral-feeling but for different reasons: weekly is
   // simply absent with nothing resolved this week (see weeklyScoreDeltaFor);
   // the rank move is a one-shot the server already marked seen by the time
@@ -4191,6 +4220,49 @@ async function loadLeaderboard(scroller){
     scroller.innerHTML='<div class="state">couldn’t load the standings — try again in a moment.</div>';
   }
 }
+/**
+ * "Your standing" — where the viewer actually is, what tier that earns, and
+ * the line they'd post. This is the payoff surface for accuracy: the boards
+ * below show who's winning, this shows what being right has made YOU.
+ *
+ * Three honest states, never a flattering fourth:
+ *   - tiered: the claimable noun ("Oracle"), the percentile, the brag, share.
+ *   - ranked but untiered: the rank, and what it takes to reach the next tier.
+ *   - provisional: how many more resolved calls before any of it counts.
+ */
+function standingHtml(you){
+  if(!you) return "";
+  const share=(txt)=>`<button class="standing-share" data-standing-share="${esc(txt)}">Post this to X</button>`;
+  if(!you.hasEnough){
+    const left=Math.max(0,(you.minResolved||10)-(you.resolved||0));
+    return `<div class="standing pending">
+      <div class="standing-tier">Building your track record</div>
+      <div class="standing-sub">${you.resolved||0} call${(you.resolved||0)===1?"":"s"} resolved · <b>${left} more</b> before you get a rank and a tier.</div>
+    </div>`;
+  }
+  const pct=you.rank?you.rank.topPct:null;
+  const tier=you.tier;
+  const line=`${you.flexLine} — oddie.fun/@${you.handle}`;
+  if(tier){
+    return `<div class="standing">
+      <div class="standing-tier">🏆 ${esc(tier.label)}</div>
+      <div class="standing-rank">${pct!=null?`Top ${pct}%`:"Ranked"}</div>
+      <div class="standing-sub">${pct!=null
+        ?`#${you.rank.rank} of ${you.rank.total} ranked callers`
+        :(you.rank?`#${you.rank.rank} of ${you.rank.total} ranked · ${esc(tier.blurb)}`:esc(tier.blurb))}</div>
+      <div class="standing-flex">${esc(you.flexLine)}</div>
+      ${share(line)}
+    </div>`;
+  }
+  // Ranked, no tier yet — name the next rung so the grind has a target.
+  return `<div class="standing pending">
+    <div class="standing-tier">Ranked caller</div>
+    <div class="standing-rank">${pct!=null?`Top ${pct}%`:"—"}</div>
+    <div class="standing-sub">${pct!=null?`#${you.rank.rank} of ${you.rank.total} · `:""}beat the odds you take to earn <b>Proven Caller</b>.</div>
+    <div class="standing-flex">${esc(you.flexLine)}</div>
+  </div>`;
+}
+
 /* Three boards, three virtues: edge = skill, streak = showing up, winnings =
  * playing AND being right. Raw call count is deliberately not a board. */
 function renderLb(scroller,data){
@@ -4216,6 +4288,7 @@ function renderLb(scroller,data){
   const rm=data.rankMove;
   const rankMoveLine=rm?`<div class="rankmove ${rm.direction}" style="margin-bottom:12px">${rm.direction==="up"?"▲":"▼"} you moved ${rm.direction} ${rm.spots} spot${rm.spots===1?"":"s"} → #${rm.rank}</div>`:"";
   scroller.innerHTML=`<div class="sheet">
+    ${standingHtml(data.you)}
     ${rankMoveLine}
     <div class="seg" role="tablist" style="margin-bottom:14px">
       ${[["edge","Edge"],["streak","Streak"],["winnings","Winnings"]].map(([k,l])=>
@@ -4225,6 +4298,13 @@ function renderLb(scroller,data){
     ${b.rows&&b.rows.length?`<div class="lb">${b.rows.map(r=>b.html(r)).join("")}</div>`:`<div class="state">${b.empty}</div>`}
   </div>`;
   scroller.querySelectorAll("[data-lbtab]").forEach(t=>t.onclick=()=>{lbTab=t.dataset.lbtab;renderLb(scroller,data);});
+  // The reputation IS the shareable asset — this is the one-tap path from
+  // "I have a good record" to "everyone can see I have a good record".
+  const sb=scroller.querySelector("[data-standing-share]");
+  if(sb)sb.onclick=()=>{
+    ev("standing_share",{tier:data.you&&data.you.tier?data.you.tier.id:null});
+    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(sb.dataset.standingShare)}`,"_blank","noopener");
+  };
 }
 
 
