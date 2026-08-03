@@ -1026,72 +1026,113 @@
   .homewrap>.psec:first-child{margin-top:0}
   .homewrap .claimcard{margin:var(--sp-6) 0 0}
   .hero{position:relative;text-align:center}
+  /* One screen, one thing on it — for a first-time visitor ONLY (.hero-first,
+     added in JS when newUser is true). Real users kept saying the homepage
+     read as crowded even after the tag-first rewrite — headline, demo, CTA,
+     reward caption, "someone tagged this one", and a full market card were
+     ALL visible at once, competing for a first-time visitor's 3 seconds. The
+     fix isn't smaller type, it's fewer things: min-height floors the hero at
+     (very nearly) the full first screen, so nothing after it can appear
+     until the visitor scrolls. flex+center means short content doesn't hug
+     the top looking unfinished — it sits where a poster's headline sits.
+     The 32px slack is deliberately AFTER the -32 in the calc, not a typo: it
+     keeps the hero just SHORT of the exact viewport so the very top sliver
+     of the next section peeks in as a scroll cue, without reading as a
+     second thing to look at (see the "someone tagged this" section's own
+     margin-top for the matching gap above it).
+     A RETURNING player never gets this class, on purpose: they came back
+     for their streak/claim/livestrip, not to be re-onboarded, and an
+     enforced near-full-viewport hero would bury exactly that content behind
+     a screen they've already seen. Same element, same headline+demo+CTA,
+     just without the "own the whole screen" floor under it. */
+  .hero-first{min-height:calc(100dvh - var(--chromeh) - var(--sp-2) - 32px);
+    display:flex;flex-direction:column;justify-content:center;align-items:center}
+  /* align-items:center above is required, not decorative: a flex column's
+     children default to align-items:STRETCH, which silently pulled .herocta
+     to the container's full width the moment this became a flex box — it
+     has no max-width to clamp it the way .tagdemo does, so it turned into a
+     900px pill on desktop instead of a button. Caught by screenshot, not by
+     reasoning about it — worth remembering as a general flex-column trap. */
   /* A soft lime glow seated behind the headline — the one "premium" cue a
      hackathon build skips. Pure gradient, no image, invisible on load until
-     the hero's own .enter fade brings it in with everything else. */
-  .hero::before{content:"";position:absolute;top:-40px;left:50%;width:340px;height:220px;
-    transform:translateX(-50%);background:radial-gradient(ellipse at center, rgba(182,240,95,.35), transparent 70%);
+     the hero's own .enter fade brings it in with everything else. Sized for
+     the enlarged .hero-first block; a returning player's compact hero just
+     shows the top of the same gradient, which reads fine either way. */
+  .hero::before{content:"";position:absolute;top:-40px;left:50%;width:420px;height:520px;
+    transform:translateX(-50%);background:radial-gradient(ellipse at center, rgba(182,240,95,.32), transparent 70%);
     filter:blur(2px);pointer-events:none;z-index:0}
-  :root[data-theme="dark"] .hero::before{background:radial-gradient(ellipse at center, rgba(182,240,95,.16), transparent 70%)}
+  :root[data-theme="dark"] .hero::before{background:radial-gradient(ellipse at center, rgba(182,240,95,.14), transparent 70%)}
   .hero>*{position:relative;z-index:1}
-  /* Headline → CTA → reward caption is ONE tightly-related group (the hero's
-     core pitch, read top to bottom in one breath), so every gap in it is the
-     same small scale step. It used to also carry a .herosub explainer and a
-     44px "+50" stat block between the two — both cut, because the CTA button
-     underneath already says "Tag @oddiefun on X" and the caption below says
-     what that earns, in one line instead of five. */
-  .herotitle{font-size:min(36px,9vw);font-weight:700;line-height:1.08;letter-spacing:-.025em;
-    color:var(--on-ground);margin:0 0 var(--sp-2)}
-  .herocta{display:inline-flex;align-items:center;gap:9px;font-family:'Fredoka';font-weight:600;font-size:16px;
+  /* Headline → demo → CTA is ONE tightly-related group — the entire pitch,
+     read top to bottom in one breath, sized up so it's unmistakably the
+     ONLY thing on the screen rather than the biggest of several things. The
+     "+50 points" reward caption that used to sit under the CTA is gone: it
+     was one more stacked line competing for the same 3 seconds, and what a
+     tag DOES (the demo, right above) matters more on first sight than what
+     it pays. It still exists — see the guided tour and the reward's own
+     surface elsewhere — this screen just isn't the place for it anymore. */
+  /* Measured, not eyeballed, and the cliff is sharper than it looks: at a
+     400px phone this copy's two clauses ("Someone's wrong on X?" / "Prove
+     you're right.") each fit their own line at EXACTLY 36px and neither
+     does at 36.4px — there is no gentle slope to 3 lines, it is a step
+     function. 38px (tried first) measured 4 lines and left zero gap above
+     the tab bar; even the "safe-looking" 37px still measured 3. So the
+     headline itself is NOT bigger than before — the copy is fixed (see the
+     note above about "prove you're right" surviving edits), and this is
+     already its ceiling for staying 2 lines on a phone. What actually
+     changed the screen's weight is everything downstream of it: the demo
+     roughly 20% larger, the CTA button larger still, sp-4 breathing room
+     under the headline instead of sp-2, and — the biggest lever by far —
+     three fewer things sharing the screen with it. */
+  .herotitle{font-size:min(36px,9vw);font-weight:700;line-height:1.1;letter-spacing:-.025em;
+    color:var(--on-ground);margin:0 0 var(--sp-4)}
+  .herocta{display:inline-flex;align-items:center;gap:10px;font-family:'Fredoka';font-weight:600;font-size:18px;
     color:#17250a;background:linear-gradient(180deg, #c4f57a, var(--accent) 60%);
     border:2.5px solid #000;border-radius:999px;
-    padding:14px 26px;text-decoration:none;box-shadow:0 4px 0 rgba(0,0,0,.18), var(--shadow-pop);
+    padding:17px 32px;text-decoration:none;box-shadow:0 4px 0 rgba(0,0,0,.18), var(--shadow-pop);
     transition:transform .12s ease, box-shadow .12s ease}
   .herocta:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
-  .herocta .glyphx{font-size:17px;line-height:1}
-  /* What the tag CTA above actually earns, as a caption on the button rather
-     than the 44px stat block it used to be. Same fact, a quarter of the
-     footprint — it's a reason to tap something already on screen, not a
-     headline in its own right. */
-  .herofoot{font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
-    color:var(--muted-g);max-width:300px;margin:var(--sp-1) auto 0}
+  .herocta .glyphx{font-size:19px;line-height:1}
   /* The differentiator, drawn rather than argued: an X post, the @oddiefun
      reply, and what comes out the other side. Users kept reading the product
      as "another prediction market" off a feed of markets — this is the one
      element that answers "where do these markets come from" before anyone has
      to read a word of explanation, which is why it sits above the CTA and not
      in a help page. Left-aligned inside a centred column on purpose: it's a
-     little scene, and centring the post text would stop it reading as a post. */
-  .tagdemo{max-width:328px;margin:var(--sp-2) auto var(--sp-3);text-align:left}
-  .tagdemo-post{display:flex;gap:9px;align-items:flex-start;background:var(--ground-2);
-    border:1.5px solid var(--hair-g);border-radius:14px;padding:10px 12px}
-  .tagdemo-av{flex:none;width:22px;height:22px;border-radius:50%;background:var(--hair-g)}
-  .tagdemo-txt{font-family:'Nunito';font-weight:700;font-size:12.5px;line-height:1.4;color:var(--on-ground)}
+     little scene, and centring the post text would stop it reading as a post.
+     Every size below is scaled up from the original demo (a supporting
+     element next to a full headline+CTA+card stack) to a co-lead (half of a
+     two-thing screen) — same content, sized like it matters this much. */
+  .tagdemo{max-width:360px;margin:0 auto var(--sp-4);text-align:left}
+  .tagdemo-post{display:flex;gap:11px;align-items:flex-start;background:var(--ground-2);
+    border:1.5px solid var(--hair-g);border-radius:16px;padding:13px 15px}
+  .tagdemo-av{flex:none;width:27px;height:27px;border-radius:50%;background:var(--hair-g)}
+  .tagdemo-txt{font-family:'Nunito';font-weight:700;font-size:14.5px;line-height:1.4;color:var(--on-ground)}
   /* The connectors carry the VERBS ("you tag @oddiefun", "the season plays
      out"), which is what lets the whole flow explain itself without a prose
      block above it — the arrow says what happens, the box below shows the
      result. Centred so the three boxes read as one vertical sequence. */
-  .tagdemo-step{text-align:center;font-family:'Nunito';font-weight:800;font-size:11.5px;
-    color:var(--muted-g);margin:5px 0}
+  .tagdemo-step{text-align:center;font-family:'Nunito';font-weight:800;font-size:13px;
+    color:var(--muted-g);margin:8px 0}
   .tagdemo-step b{color:var(--acc-deep);font-weight:900}
   :root[data-theme="dark"] .tagdemo-step b{color:var(--accent)}
   /* The third beat, and the reason the other two matter: it actually settles,
      and the people who were right are named. Without this the demo shows what
      you make but never why making it is worth anything. */
-  .tagdemo-done{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--acc-deep);
-    background:var(--ground-2);border:1.5px solid var(--accent);border-radius:12px;
-    padding:9px 12px;text-align:center}
+  .tagdemo-done{font-family:'Nunito';font-weight:900;font-size:14.5px;color:var(--acc-deep);
+    background:var(--ground-2);border:1.5px solid var(--accent);border-radius:14px;
+    padding:12px 14px;text-align:center}
   :root[data-theme="dark"] .tagdemo-done{color:var(--accent)}
-  .tagdemo-card{border:2px solid var(--accent);border-radius:14px;padding:10px 12px;background:var(--ground-2)}
-  .tagdemo-q{display:block;font-family:'Fredoka';font-weight:600;font-size:13.5px;
-    line-height:1.25;color:var(--on-ground);margin:0 0 8px}
-  .tagdemo-odds{display:flex;gap:7px}
+  .tagdemo-card{border:2px solid var(--accent);border-radius:16px;padding:13px 15px;background:var(--ground-2)}
+  .tagdemo-q{display:block;font-family:'Fredoka';font-weight:600;font-size:16px;
+    line-height:1.25;color:var(--on-ground);margin:0 0 10px}
+  .tagdemo-odds{display:flex;gap:8px}
   /* Literal #fff, not var(--card-surface): that token flips to a dark value in
      dark mode, which put near-black text on a near-black pill here. The real
      market card's YES/NO tiles are white in BOTH themes, and this miniature
      only works if it looks like the thing it's a miniature of. */
-  .tagdemo-odds span{flex:1;text-align:center;font-family:'Nunito';font-weight:900;font-size:11.5px;
-    background:#fff;color:#101010;border:1.5px solid #101010;border-radius:9px;padding:5px 4px}
+  .tagdemo-odds span{flex:1;text-align:center;font-family:'Nunito';font-weight:900;font-size:13.5px;
+    background:#fff;color:#101010;border:1.5px solid #101010;border-radius:10px;padding:7px 5px}
   /* Three beats, icon + a few words each — no paragraphs, per the brief. Each
      gets its own medallion (a soft chip circle) instead of a bare emoji
      floating in text, so the row reads as a designed sequence, not a caption.
@@ -3298,7 +3339,15 @@ async function renderHome(){
   //
   // The connectors carry the verbs so the flow explains itself with no prose
   // block: this is three small pictures and two short lines, not a paragraph.
-  const hero=document.createElement("div");hero.className="hero";
+  // .hero-first: the "own the whole first screen" treatment is scoped to a
+  // brand-new visitor ONLY. This element is shared by both branches below,
+  // and giving it an enforced near-full-viewport min-height unconditionally
+  // would ALSO push a returning player's streak/claim/livestrip — the stuff
+  // they actually came back for — behind an oversized hero they don't need
+  // explained to them again. "My grandmother understands it in 3 seconds" is
+  // about someone with zero context; it was never a complaint about the
+  // returning-player view, and this must not become one.
+  const hero=document.createElement("div");hero.className=newUser?"hero hero-first":"hero";
   hero.innerHTML=`<h1 class="herotitle">Someone's wrong on X?<br>Prove you're right.</h1>
       <div class="tagdemo" aria-label="How it works: someone posts a take on X, you tag @oddiefun, it becomes a question anyone can answer, and when it plays out everyone sees who was right.">
         <div class="tagdemo-post"><span class="tagdemo-av"></span>
@@ -3312,8 +3361,16 @@ async function renderHome(){
         <div class="tagdemo-done">✓ Resolved YES — the 54% were right</div>
       </div>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
-        <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
-      <p class="herofoot">+${surfaceReward} points every time your tag becomes a question</p>`;
+        <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>`;
+  // The "+${surfaceReward} points" line that used to close the hero is gone
+  // from THIS screen, not from the product — real users read it as a fifth
+  // stacked thing competing with headline/demo/CTA for the first 3 seconds.
+  // The guided tour's third step still states the exact reward in words
+  // ("Reply @oddiefun and get +50 points" — see TOUR_STEPS), so a first-time
+  // visitor isn't losing the information, only its place on THIS screen.
+  // surfaceReward is left wired here (see the /api/home read above) rather
+  // than deleted, since the natural next home for it is back on this hero —
+  // just not fighting for the same first three seconds as the demo.
 
   // An active claim streak, as its own badge above the claim strip. Farmers grind
   // streaks, and buried in the claim card's grey sub-line it was easy to miss.
