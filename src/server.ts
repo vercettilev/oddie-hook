@@ -17,6 +17,7 @@ import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
 import { creatorStatsFor } from "./store/markets.js";
+import type { SurfacerInfo } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -514,7 +515,7 @@ app.get("/api/feed", async (req, res) => {
   // other side" reply is aimed at, and the permalink's source-tweet card. One
   // query for the whole feed; null where a market has no source.
   const surfacers = await surfacersFor(feedItems.map((x) => x.slug)).catch(
-    () => ({} as Record<string, { handle: string | null; sourceUrl: string | null }>),
+    () => ({} as Record<string, SurfacerInfo>),
   );
   // "Who called what" is permalink-only: fetching it for every card in the feed
   // would be an N+1 query across a whole page, so it's scoped to just the
@@ -534,6 +535,12 @@ app.get("/api/feed", async (req, res) => {
       crowd: crowd[x.slug] ?? { yes: 0, no: 0 },
       challengeHandle: surfacer?.handle ?? null,
       sourceUrl: surfacer?.sourceUrl ?? null,
+      // The source post itself, so a card can SHOW the claim it came from
+      // rather than only linking to it. Null whenever we never got the text
+      // (private/deleted post, or oEmbed unreachable at record time).
+      sourcePost: x.community && surfacer?.sourceText
+        ? { text: surfacer.sourceText, author: surfacer.sourceAuthor, handle: surfacer.handle, url: surfacer.sourceUrl }
+        : null,
       // Tagging provenance, sent for every community market: the card exists
       // because a person tagged a claim, and that has to be visible on the
       // card itself rather than inferable from the "community market" chip.
@@ -619,7 +626,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
   const chosenSlugs = chosen.map((m) => slugFor(m));
   const [crowd, surfacers] = await Promise.all([
     crowdSplits(chosenSlugs),
-    surfacersFor(chosenSlugs).catch(() => ({} as Record<string, { handle: string | null; sourceUrl: string | null }>)),
+    surfacersFor(chosenSlugs).catch(() => ({} as Record<string, SurfacerInfo>)),
   ]);
   // Home's featured slots deliberately carry no sourceUrl/callers — those are
   // permalink-page-only (see /api/feed above, gated on the start slug). The
@@ -643,6 +650,9 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       // construction — the card shows the forward-looking "+3%" framing.
       taggedBy: surfacer?.handle ?? null,
       creatorFeePaid: 0,
+      sourcePost: surfacer?.sourceText
+        ? { text: surfacer.sourceText, author: surfacer.sourceAuthor, handle: surfacer.handle, url: surfacer.sourceUrl }
+        : null,
     };
   });
 }

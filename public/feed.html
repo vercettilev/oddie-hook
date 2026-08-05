@@ -303,6 +303,35 @@
      it replaces on resolved cards. */
   .fee-note-paid{border-color:var(--accent);background:rgba(182,240,95,.22)}
   .fee-note-paid b{font-size:17px}
+  /* -------------------------------------------- the source post, in-card --
+     The claim a market was made from, shown as a post. Sits between the
+     provenance chips and the question so post -> market reads top to bottom
+     as one object: this is the thing being argued about, and directly under
+     it is the question it became. Recessed (inset surface, no shadow) so it
+     reads as quoted context rather than a second card competing with the
+     one it lives inside. */
+  .xpost-link{display:block;text-decoration:none;color:inherit}
+  /* A TRANSLUCENT ink wash, never var(--wash): that token stays light in both
+     themes while the text colour flips near-white in dark, which is a 1.06
+     contrast ratio — invisible. Third time this exact pairing has bitten;
+     scripts/test-contrast.ts now fails the build on it. A translucent fill
+     sits on the card's own background so both adapt together. */
+  .xpost{margin:0 0 11px;padding:10px 12px;border-radius:14px;
+    background:rgba(127,127,127,.10);border:1.5px solid var(--hair-g)}
+  .xpost-link:hover .xpost{border-color:var(--accent)}
+  .xp-head{display:flex;align-items:center;gap:7px;margin:0 0 6px}
+  .xp-av{width:20px;height:20px;border-radius:50%;background:var(--hair-g);flex:none}
+  .xp-who{font-family:'Nunito';font-weight:900;font-size:12px;color:var(--on-ground);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+  .xp-at{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .xp-x{margin-left:auto;font-size:12px;color:var(--muted-g);flex:none}
+  /* Three lines max — this is context for the question below it, never the
+     headline. A long thread-opener must not push the YES/NO off the card. */
+  .xp-text{margin:0;font-family:'Nunito';font-weight:700;font-size:13px;line-height:1.4;
+    color:var(--on-ground);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+    overflow:hidden}
+
   /* Source tweet — permalink-only, sits above the question. Same surface/line
      tokens as the elevated card itself, not a competing block. */
   .srctweet{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:9px 12px;
@@ -577,8 +606,11 @@
   .chain-sig{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted);margin:6px 0 14px}
   .chain-sig a{color:var(--link-g)}
   .chain-pool-odds{display:flex;gap:8px;margin:0 0 12px}
+  /* Translucent fill: --wash stays #F3FBDA in dark mode while --muted-g and
+     the <b> inside (--on-ground) both lighten, which put pale text on a pale
+     chip. Pre-existing, found by scripts/test-contrast.ts. */
   .chain-pool-side{flex:1;font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--muted-g);
-    background:var(--wash);border:1.5px solid var(--hair-g);border-radius:12px;padding:8px 10px;text-align:center}
+    background:rgba(127,127,127,.10);border:1.5px solid var(--hair-g);border-radius:12px;padding:8px 10px;text-align:center}
   .chain-pool-side b{display:block;font-family:'Fredoka';font-weight:700;font-size:18px;color:var(--on-ground);margin:2px 0}
   .chain-pool-side small{color:var(--acc-deep)}
   .chain-pool-empty{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted-g);margin:0 0 12px}
@@ -1097,9 +1129,12 @@
   .cb-paste:hover{border-color:var(--accent)}
 
   /* The paste-a-link sheet's field + error. */
+  /* Translucent, not var(--wash): --wash is #F3FBDA in BOTH themes while
+     --on-ground flips to near-white, so the field's own text would vanish in
+     dark mode. See scripts/test-contrast.ts. */
   .paste-in{width:100%;box-sizing:border-box;font-family:'Nunito';font-weight:700;font-size:14px;
     padding:12px 13px;margin:2px 0 0;border:2px solid var(--hair-g);border-radius:14px;
-    background:var(--wash);color:var(--on-ground)}
+    background:rgba(127,127,127,.10);color:var(--on-ground)}
   .paste-in:focus{outline:none;border-color:var(--accent)}
   .paste-err{font-family:'Nunito';font-weight:800;font-size:12px;color:#b3261e;margin:8px 0 0}
   .paste-go{margin-top:10px}
@@ -2835,6 +2870,35 @@ function renderFeed(items){
  * tagged it, we just don't have a name. Never invent one.
  */
 function taggerName(m){ return m.taggedBy?`@${esc(m.taggedBy)}`:"anonymous"; }
+
+/**
+ * The source post, rendered as a post — the thing the market argues about.
+ *
+ * This is the product's strongest differentiator and it was invisible: a
+ * market on Oddie exists because someone replied @oddiefun under a real
+ * claim, and the card previously showed only "tagged by @x", turning the most
+ * social part of the object into an abstract chip. Showing the post ABOVE the
+ * question, sharing the card's own surface, makes post→market read as one
+ * object instead of two.
+ *
+ * The text is third-party content from X and is escaped like any other
+ * untrusted string. Clamped to three lines: this is context for the question
+ * below it, never the headline itself.
+ */
+function sourcePostHtml(m){
+  const p=m.sourcePost;
+  if(!p||!p.text)return "";
+  const who=p.author?esc(p.author):(p.handle?`@${esc(p.handle)}`:"someone on X");
+  const at=p.handle?`<span class="xp-at">@${esc(p.handle)}</span>`:"";
+  const body=`<div class="xpost">
+      <div class="xp-head"><span class="xp-av"></span><span class="xp-who">${who}</span>${at}<span class="xp-x">𝕏</span></div>
+      <p class="xp-text">${esc(p.text)}</p>
+    </div>`;
+  // A real link when we have the URL — the claim should be checkable at source.
+  return p.url
+    ? `<a class="xpost-link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${body}</a>`
+    : body;
+}
 function feeNoteHtml(m){
   const paid=Number(m.creatorFeePaid)||0;
   if(paid>0){
@@ -3132,6 +3196,7 @@ function buildCard(m,i,homeLoop){
         </span>
       </a>` : ""}
       <div class="meta">${metaRowHtml(m,yes)}</div>
+      ${sourcePostHtml(m)}
       <div class="take">${esc(m.question)}</div>
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">

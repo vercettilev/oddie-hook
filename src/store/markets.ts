@@ -11,6 +11,7 @@ import {
 import { categorizeText } from "../matching/categorize.js";
 import { Market } from "../venues/types.js";
 import { randomHandle, validateHandle } from "./handles.js";
+import { fetchSourcePost } from "../venues/xOembed.js";
 
 // Slugs are the product. One gets tweeted on day 1 and a stranger opens it on
 // day 6, after however many redeploys happened in between. So they have to
@@ -370,6 +371,14 @@ CREATE TABLE IF NOT EXISTS market_surfacer (
   source_url  text,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
+-- The source post's own text and its author's display name, so a market card
+-- can SHOW the claim it came from instead of only linking to it. Fetched
+-- best-effort from X's public oEmbed at record time (see xOembed.ts) and
+-- cached here: the post can be deleted later, and a market that outlives its
+-- source should still be able to say what was claimed. Null whenever the
+-- fetch failed or the post wasn't public — the card degrades to no preview.
+ALTER TABLE market_surfacer ADD COLUMN IF NOT EXISTS source_text text;
+ALTER TABLE market_surfacer ADD COLUMN IF NOT EXISTS source_author text;
 
 -- The Season Points ledger. BACKEND-ONLY (never shown as a standalone number):
 -- it is both the audit trail for every award AND the source of truth for a
@@ -2414,7 +2423,7 @@ const memCommunity = new Map<string, CommunityMeta>();
 
 // In-memory mirrors of market_surfacer and season_points_log (the mem backend
 // tests run against). Same shape as the tables above.
-interface MemSurfacer { handle: string | null; deviceId: string | null; sourceUrl: string | null; createdAt: string }
+interface MemSurfacer { handle: string | null; deviceId: string | null; sourceUrl: string | null; createdAt: string; sourceText?: string | null; sourceAuthor?: string | null }
 const memSurfacer = new Map<string, MemSurfacer>();
 interface MemSeasonRow { deviceId: string | null; handle: string | null; event: string; amount: number; slug: string | null; dedupKey: string; createdAt: string }
 const memSeasonLog: MemSeasonRow[] = [];
@@ -2734,15 +2743,24 @@ export async function recordSurfacer(slug: string, input: { handle?: string | nu
   const sourceUrl = input.sourceUrl ?? null;
   const deviceId = input.deviceId ?? (await deviceForTwitterHandle(handle).catch(() => null));
   if (!handle && !deviceId) return; // no identifiable contributor — nothing to record
+  // The source post's text, cached at record time so a market can still show
+  // the claim it came from after the post is deleted. Awaited rather than
+  // fired off, because this is the one moment we're guaranteed to be holding
+  // the URL — but it can never fail the write: fetchSourcePost returns null on
+  // every error path, and a null simply means the card shows no preview.
+  const post = sourceUrl ? await fetchSourcePost(sourceUrl).catch(() => null) : null;
   if (!PERSISTENT) {
-    if (!memSurfacer.has(slug)) memSurfacer.set(slug, { handle, deviceId, sourceUrl, createdAt: new Date().toISOString() });
+    if (!memSurfacer.has(slug)) memSurfacer.set(slug, {
+      handle, deviceId, sourceUrl, createdAt: new Date().toISOString(),
+      sourceText: post?.text ?? null, sourceAuthor: post?.authorName ?? null,
+    });
     return;
   }
   await ensureSchema();
   await db().query(
-    `INSERT INTO market_surfacer (slug, handle, device_id, source_url)
-     VALUES ($1,$2,$3,$4) ON CONFLICT (slug) DO NOTHING`,
-    [slug, handle, deviceId, sourceUrl],
+    `INSERT INTO market_surfacer (slug, handle, device_id, source_url, source_text, source_author)
+     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (slug) DO NOTHING`,
+    [slug, handle, deviceId, sourceUrl, post?.text ?? null, post?.authorName ?? null],
   );
 }
 
@@ -2755,7 +2773,16 @@ export async function surfacerFor(slug: string): Promise<Surfacer | null> {
   return rows[0] ? { handle: rows[0].handle, deviceId: rows[0].device_id } : null;
 }
 
-export interface SurfacerInfo { handle: string | null; sourceUrl: string | null }
+export interface SurfacerInfo {
+  handle: string | null;
+  sourceUrl: string | null;
+  /** The source post's own text, cached at record time — see xOembed.ts. Null
+   *  when the post wasn't public, was deleted, or the fetch failed; the card
+   *  then shows no preview rather than an empty quote box. */
+  sourceText: string | null;
+  /** The author's display name ("Hoops Analyst"), distinct from the @handle. */
+  sourceAuthor: string | null;
+}
 /** Batch surfacer info for a set of markets — the tweet author a claim came
  *  from (for "challenge the other side") and the tweet's own URL (for the
  *  permalink page's source-tweet card). One query for a whole feed; both
@@ -2766,15 +2793,15 @@ export async function surfacersFor(slugs: string[]): Promise<Record<string, Surf
   if (!PERSISTENT) {
     for (const slug of slugs) {
       const s = memSurfacer.get(slug);
-      out[slug] = { handle: s?.handle ?? null, sourceUrl: s?.sourceUrl ?? null };
+      out[slug] = { handle: s?.handle ?? null, sourceUrl: s?.sourceUrl ?? null, sourceText: s?.sourceText ?? null, sourceAuthor: s?.sourceAuthor ?? null };
     }
     return out;
   }
   await ensureSchema();
-  const { rows } = await db().query<{ slug: string; handle: string | null; source_url: string | null }>(
-    `SELECT slug, handle, source_url FROM market_surfacer WHERE slug = ANY($1)`, [slugs]);
-  for (const r of rows) out[r.slug] = { handle: r.handle, sourceUrl: r.source_url };
-  for (const s of slugs) out[s] ??= { handle: null, sourceUrl: null };
+  const { rows } = await db().query<{ slug: string; handle: string | null; source_url: string | null; source_text: string | null; source_author: string | null }>(
+    `SELECT slug, handle, source_url, source_text, source_author FROM market_surfacer WHERE slug = ANY($1)`, [slugs]);
+  for (const r of rows) out[r.slug] = { handle: r.handle, sourceUrl: r.source_url, sourceText: r.source_text, sourceAuthor: r.source_author };
+  for (const s of slugs) out[s] ??= { handle: null, sourceUrl: null, sourceText: null, sourceAuthor: null };
   return out;
 }
 
