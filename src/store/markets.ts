@@ -2520,6 +2520,52 @@ export async function creatorFeesPaidFor(slugs: string[]): Promise<Record<string
   return out;
 }
 
+/**
+ * The CREATOR half of a user's identity, as distinct from the caller half.
+ *
+ * Two different things are worth being known for here and they must not be
+ * collapsed into one number: `accuracyFor`/`reputationFor` say how good your
+ * CALLS are, this says how good your MARKETS are. Someone can be a mediocre
+ * caller and an excellent market-maker, and the product should be able to say
+ * so — which it cannot while "reputation" only ever means prediction accuracy.
+ */
+export interface CreatorStats {
+  /** Play-token creator fees actually received (enforced rows only). */
+  earnings: number;
+  /** Markets this device tagged into existence. */
+  marketsCreated: number;
+  /** Distinct people who have taken a position on those markets. */
+  tradersReached: number;
+}
+
+export async function creatorStatsFor(rawDeviceId: string): Promise<CreatorStats> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) {
+    const mine = [...memSurfacer.entries()].filter(([, s]) => s.deviceId === deviceId).map(([slug]) => slug);
+    const earnings = memFeeLog
+      .filter((r) => r.recipientDeviceId === deviceId && r.marketKind === "play" && r.feeKind === "creator" && r.enforced)
+      .reduce((a, r) => a + r.feeAmount, 0);
+    const traders = new Set(memCalls.filter((c) => mine.includes(c.slug)).map((c) => c.deviceId));
+    return { earnings, marketsCreated: mine.length, tradersReached: traders.size };
+  }
+  await ensureSchema();
+  const [fees, made, traders] = await Promise.all([
+    db().query<{ sum: string | null }>(
+      `SELECT COALESCE(SUM(fee_amount),0)::bigint AS sum FROM market_fee_log
+        WHERE recipient_device_id = $1 AND market_kind='play' AND fee_kind='creator' AND enforced = true`, [deviceId]),
+    db().query<{ n: string }>(`SELECT COUNT(*)::bigint AS n FROM market_surfacer WHERE device_id = $1`, [deviceId]),
+    db().query<{ n: string }>(
+      `SELECT COUNT(DISTINCT mc.device_id)::bigint AS n FROM market_call mc
+         JOIN market_surfacer ms ON ms.slug = mc.slug
+        WHERE ms.device_id = $1 AND mc.device_id IS NOT NULL`, [deviceId]),
+  ]);
+  return {
+    earnings: Number(fees.rows[0]?.sum ?? 0),
+    marketsCreated: Number(made.rows[0]?.n ?? 0),
+    tradersReached: Number(traders.rows[0]?.n ?? 0),
+  };
+}
+
 /** Recent fee events, newest first — the admin audit view over market_fee_log. */
 export async function feeLog(limit = 100): Promise<FeeLogRow[]> {
   const n = Math.max(1, Math.min(500, Math.floor(limit)));

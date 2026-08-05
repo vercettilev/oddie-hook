@@ -1072,6 +1072,72 @@
      margin-bottom is zeroed to avoid doubling it. */
   .mktgrid{display:grid;gap:var(--sp-2)}
   .mktgrid .card{margin:0}
+
+  /* ---------------------------------------------------- the create bar -----
+     The returning player's opening: ~160px that names the action and offers
+     both ways to take it, then gets out of the way so the live feed starts
+     inside the first screen. It replaces a near-full-viewport hero that
+     explained the mechanic to people who already knew it. */
+  .createbar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;
+    padding:16px 18px;margin:0 0 var(--sp-2);
+    border:2.5px solid #000;border-radius:var(--r-lg);background:var(--ground-2);
+    box-shadow:var(--shadow-chip)}
+  .cb-copy{flex:1 1 240px;min-width:0}
+  .cb-title{font-family:'Fredoka';font-weight:700;font-size:min(23px,5.4vw);line-height:1.15;
+    letter-spacing:-.02em;color:var(--on-ground);margin:0}
+  .cb-sub{font-family:'Nunito';font-weight:700;font-size:12.5px;line-height:1.4;
+    color:var(--muted-g);margin:5px 0 0}
+  .cb-actions{display:flex;align-items:center;gap:9px;flex:none}
+  .cb-tag{display:inline-flex;align-items:center;gap:8px;font-family:'Nunito';font-weight:900;
+    font-size:13px;color:#17250a;background:var(--accent);border:2px solid #000;
+    border-radius:999px;padding:10px 16px;text-decoration:none;white-space:nowrap}
+  .cb-paste{font-family:'Nunito';font-weight:900;font-size:13px;color:var(--on-ground);
+    background:none;border:2px solid var(--hair-g);border-radius:999px;
+    padding:10px 15px;cursor:pointer;white-space:nowrap}
+  .cb-paste:hover{border-color:var(--accent)}
+
+  /* The paste-a-link sheet's field + error. */
+  .paste-in{width:100%;box-sizing:border-box;font-family:'Nunito';font-weight:700;font-size:14px;
+    padding:12px 13px;margin:2px 0 0;border:2px solid var(--hair-g);border-radius:14px;
+    background:var(--wash);color:var(--on-ground)}
+  .paste-in:focus{outline:none;border-color:var(--accent)}
+  .paste-err{font-family:'Nunito';font-weight:800;font-size:12px;color:#b3261e;margin:8px 0 0}
+  .paste-go{margin-top:10px}
+
+  /* ------------------------------------------------------- the right rail --
+     Who YOU are, in two panels — calls and markets. Below the feed on mobile,
+     beside it on desktop (see the >=1024 grid). */
+  .homerail{display:flex;flex-direction:column;gap:var(--sp-2);margin:var(--sp-3) 0 0}
+  .rpanel{border:2.5px solid #000;border-radius:var(--r-lg);background:var(--ground-2);
+    padding:14px 15px;text-decoration:none;display:block;color:inherit}
+  .rp-head{font-family:'Nunito';font-weight:900;font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted-g);margin:0 0 8px}
+  .rp-tier{display:inline-block;font-family:'Nunito';font-weight:900;font-size:12px;
+    color:var(--acc-deep);background:rgba(182,240,95,.18);border:1px solid rgba(182,240,95,.55);
+    border-radius:999px;padding:3px 10px;margin:0 0 8px}
+  :root[data-theme="dark"] .rp-tier{color:var(--accent)}
+  .rp-big{font-family:'Fredoka';font-weight:700;font-size:34px;line-height:1;
+    color:var(--on-ground);display:flex;align-items:baseline;gap:7px}
+  .rp-big-sm{font-size:27px}
+  .rp-big small{font-family:'Nunito';font-weight:800;font-size:11.5px;color:var(--muted-g)}
+  .rp-grid{display:flex;gap:18px;margin:11px 0 0}
+  .rp-grid b{display:block;font-family:'Fredoka';font-weight:700;font-size:17px;color:var(--on-ground)}
+  .rp-grid span{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted-g)}
+  .rp-sub{display:block;font-family:'Nunito';font-weight:700;font-size:11.5px;line-height:1.4;
+    color:var(--muted-g);margin:9px 0 0}
+  .rp-link{display:inline-block;font-family:'Nunito';font-weight:900;font-size:12px;
+    color:var(--acc-deep);text-decoration:none;margin:10px 0 0}
+  :root[data-theme="dark"] .rp-link{color:var(--accent)}
+  /* The creator panel is the one carrying the product's economics, so it gets
+     the accent border — the only panel that does. */
+  .rpanel-creator{border-color:var(--accent)}
+  .rp-create{display:block;width:100%;margin:11px 0 0;font-family:'Nunito';font-weight:900;
+    font-size:13px;color:#17250a;background:var(--accent);border:2px solid #000;
+    border-radius:999px;padding:10px;cursor:pointer}
+  /* The daily claim, demoted into the rail: a helper loop, not the reward
+     loop. Its own card keeps its styling; the panel just holds it. */
+  .rpanel-claim{padding:0;border:0;background:none}
+  .rpanel-claim .claimcard{margin:0}
   .hero{position:relative;text-align:center}
   /* One screen, one thing on it — for a first-time visitor ONLY (.hero-first,
      added in JS when newUser is true). Real users kept saying the homepage
@@ -1781,12 +1847,35 @@
        narrower than the mobile card they're supposed to be the desktop
        version of, and the question text would wrap worse than it does today. */
     .homewrap>.mktgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2)}
+
+    /* RETURNING-player home becomes feed + rail. The create bar spans the top,
+       the feed takes the room, and the viewer's own numbers sit beside it
+       instead of pushing markets below the fold. Scoped to :has(.homerail) so
+       the new-user layout (no rail, single centred column) is untouched. */
+    .homewrap:has(.homerail){display:grid;grid-template-columns:minmax(0,1fr) 300px;
+      gap:0 var(--sp-3);align-items:start}
+    .homewrap:has(.homerail)>.createbar{grid-column:1 / -1;max-width:none}
+    .homewrap:has(.homerail)>.homemain{grid-column:1;min-width:0;max-width:none}
+    .homewrap:has(.homerail)>.homerail{grid-column:2;margin:0;position:sticky;top:var(--sp-2)}
+    /* Anything else still parked directly on .homewrap (how-it-works, the
+       browse link) sits under the feed column, not stretched across both. */
+    .homewrap:has(.homerail)>.howitworks,
+    .homewrap:has(.homerail)>.browselink{grid-column:1;max-width:none}
+    /* Inside the narrower feed column the card grid drops back to one column:
+       two ~250px cards would be worse than one comfortable one. */
+    .homemain>.mktgrid{grid-template-columns:minmax(0,1fr)}
     .app{padding-left:218px}
     .rail{display:flex;position:fixed;left:0;top:0;z-index:16;height:100dvh;width:218px;box-sizing:border-box;
       flex-direction:column;gap:26px;padding:26px 18px}
     .rail .brand{display:flex;justify-content:flex-start;align-items:center;gap:9px;flex-wrap:wrap;row-gap:9px;margin:0 0 0 6px}
     .rail .brand .bal{margin-left:0}
     .railnav{display:flex;flex-direction:column;gap:6px}
+    /* The one filled control in the sidebar — creating is the product's first
+       layer and should look like it, not like a sixth navigation row. */
+    .navcreate{font-family:'Fredoka';font-weight:600;font-size:15px;color:#101010;
+      background:var(--accent);border:2.5px solid #000;border-radius:16px;
+      padding:12px 14px;cursor:pointer;text-align:center;margin:0 0 8px}
+    .navcreate:active{transform:translateY(1px)}
     .navitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:16px;cursor:pointer;
       border:2.5px solid transparent;background:none;font-family:'Fredoka';font-size:15px;font-weight:500;
       color:var(--on-ground);width:100%;text-align:left}
@@ -2415,8 +2504,17 @@ function currentView(){
 }
 
 function paintNav(view){
-  document.getElementById("railnav").innerHTML=NAV.map(([k,label])=>
+  // "Create a market" leads the desktop sidebar, above the nav and styled as
+  // the one filled control there. Creating is the product's first layer and
+  // was previously reachable only by leaving for X from a banner — a nav that
+  // lists Feed/Positions/Leaderboard and nothing about creating describes a
+  // prediction app, not this one. It is an ACTION, not a route, so it opens
+  // the paste sheet rather than setting a hash.
+  document.getElementById("railnav").innerHTML=
+    `<button class="navcreate" type="button" id="navcreate">+ Create a market</button>`
+    +NAV.map(([k,label])=>
     `<button class="navitem${k===view?" on":""}" data-go="${k}">${svg(k)}<span>${label}</span></button>`).join("");
+  document.getElementById("navcreate").onclick=()=>openPasteSheet();
   document.getElementById("tabs").innerHTML=NAV.map(([k,label])=>
     `<button class="tab${k===view?" on":""}" data-go="${k}" aria-label="${label}">
        <span class="ico">${svg(k)}</span><span>${k==="alerts"?"Alerts":label}</span></button>`).join("");
@@ -2744,6 +2842,132 @@ function feeNoteHtml(m){
       taggerName(m)} tagged this market and earned ${paid} prediction${paid===1?"":"s"} when it resolved.</span></div>`;
   }
   return `<div class="fee-note"><b>+${(m.creatorFeeBps/100).toFixed(0)}%</b><span>goes to whoever tagged this market. Tag your own and earn it.</span></div>`;
+}
+
+/**
+ * "Paste X link" — an in-app shortcut into the SAME tag mechanic, not a
+ * second creation path.
+ *
+ * Sending people to X with a bare "Tag @oddiefun" is the highest-friction
+ * version of creating: they leave the product, then have to go find a post.
+ * Pasting the post's URL here and letting us open the reply intent already
+ * pointed at it collapses that to one step. It deliberately does NOT invent
+ * an in-app create endpoint — market creation still happens through the tag,
+ * which is what keeps every market attributable to a real public reply.
+ */
+/**
+ * The right rail: who YOU are on Oddie, in two separate panels.
+ *
+ * Deliberately two, not one merged "stats" block. Oddie has two ways to be
+ * somebody — how good your CALLS are, and how good your MARKETS are — and
+ * collapsing them into a single number would erase the second, which is the
+ * one the product's economics actually run on. A mediocre caller can be an
+ * excellent market-maker and the rail should be able to say so.
+ *
+ * The daily claim lives down here too, not in the feed. It's a helper loop,
+ * not the reward loop: create -> people trade -> you earn is the reward loop,
+ * and a bright "Claim +5" banner above the markets framed the product as a
+ * play-money faucet instead.
+ */
+function buildRail(me,creator,claimFrag,openCalls){
+  const rail=document.createElement("aside");rail.className="homerail";
+
+  // CALLER identity. A provisional record says how far off it is rather than
+  // quoting a percentage that doesn't mean anything yet — same honesty rule
+  // the standing panel and the share card already follow.
+  if(me){
+    const p=document.createElement("div");p.className="rpanel";
+    const tierLine=me.tier?`<span class="rp-tier">🏆 ${esc(me.tier.label)}</span>`:"";
+    const pctLine=me.rank&&me.rank.topPct!=null?`<span class="rp-sub">Top ${me.rank.topPct}% of all callers</span>`:"";
+    p.innerHTML=me.hasEnough
+      ? `<div class="rp-head">Your calls</div>
+         ${tierLine}
+         <div class="rp-big">${me.accuracyPct}%<small>accurate</small></div>
+         <div class="rp-grid">
+           <div><b>${me.resolved}</b><span>resolved</span></div>
+           <div><b>${me.streak||0}</b><span>streak</span></div>
+         </div>
+         ${pctLine}
+         ${me.topCategory?`<span class="rp-sub">Top ${me.topCategory.pctile}% in ${esc(me.topCategory.category)}</span>`:""}
+         <a class="rp-link" href="#/profile">View profile →</a>`
+      : `<div class="rp-head">Your calls</div>
+         <div class="rp-big rp-big-sm">${me.resolved}<small>resolved</small></div>
+         <div class="rp-sub">${Math.max(0,(me.minResolved||10)-(me.resolved||0))} more before you get a score and a rank.</div>
+         <a class="rp-link" href="#/positions">See your positions →</a>`;
+    rail.appendChild(p);
+  }
+
+  // CREATOR identity — the half that didn't exist on screen at all. Rendered
+  // even at zero, because "0 markets created" next to a create button is the
+  // clearest possible statement of what to do next; hiding it would leave a
+  // user who has never created with no idea the axis exists.
+  if(creator){
+    const p=document.createElement("div");p.className="rpanel rpanel-creator";
+    p.innerHTML=`<div class="rp-head">Your markets</div>
+      <div class="rp-big">${creator.earnings}<small>earned in fees</small></div>
+      <div class="rp-grid">
+        <div><b>${creator.marketsCreated}</b><span>created</span></div>
+        <div><b>${creator.tradersReached}</b><span>traders</span></div>
+      </div>
+      ${creator.marketsCreated===0
+        ? `<div class="rp-sub">Tag a post on X and you'll earn 3% every time someone trades your market.</div>`
+        : `<div class="rp-sub">You earn 3% of every market you create, paid when it resolves.</div>`}
+      <button class="rp-create" type="button">+ Create a market</button>`;
+    p.querySelector(".rp-create").onclick=()=>openPasteSheet();
+    rail.appendChild(p);
+  }
+
+  // Open positions, named precisely. "N open calls" was ambiguous between a
+  // position you hold and a market you made — two different things in a
+  // product where you can do both.
+  if(openCalls&&openCalls.count>0){
+    const a=document.createElement("a");a.className="rpanel rpanel-open";a.href="#/positions";
+    a.innerHTML=`<div class="rp-head">Open positions</div>
+      <div class="rp-big rp-big-sm">${openCalls.count}<small>awaiting resolution</small></div>`;
+    rail.appendChild(a);
+  }
+
+  if(claimFrag&&claimFrag.childNodes.length){
+    const p=document.createElement("div");p.className="rpanel rpanel-claim";
+    p.appendChild(claimFrag);
+    rail.appendChild(p);
+  }
+  return rail;
+}
+
+const X_STATUS_RE=/(?:twitter|x)\.com\/[^/]+\/status\/(\d+)/i;
+function openPasteSheet(){
+  const dim=document.createElement("div");dim.className="cdim";
+  dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Create a market from an X post">
+    <h3>Create from an X post</h3>
+    <p class="cnote">Paste the link to any post on X. We'll open a reply with <b>@oddiefun</b> already in it — sending that reply is what creates the market, and it's what makes you its creator.</p>
+    <input class="paste-in" type="url" inputmode="url" placeholder="https://x.com/someone/status/123…" autocomplete="off">
+    <div class="paste-err" hidden></div>
+    <button class="claimbtn paste-go" type="button">Open the reply on X</button>
+    <button class="cclose">Not now</button>
+  </div>`;
+  dim.onclick=(e)=>{if(e.target===dim)dim.remove();};
+  document.body.appendChild(dim);
+  const input=dim.querySelector(".paste-in"), err=dim.querySelector(".paste-err");
+  dim.querySelector(".cclose").onclick=()=>dim.remove();
+  input.focus();
+  const go=()=>{
+    const hit=X_STATUS_RE.exec(input.value.trim());
+    if(!hit){
+      err.hidden=false;
+      err.textContent="That doesn't look like a link to an X post. It should look like x.com/name/status/123…";
+      return;
+    }
+    ev("paste_create",{});
+    // in_reply_to makes the intent a REPLY to that exact post, which is what
+    // the tag pipeline watches for — a plain tweet mentioning @oddiefun with
+    // no parent has no claim attached to it.
+    window.open(`https://x.com/intent/tweet?in_reply_to=${hit[1]}&text=${encodeURIComponent("@oddiefun ")}`,"_blank","noopener");
+    dim.remove();
+  };
+  dim.querySelector(".paste-go").onclick=go;
+  input.onkeydown=(e)=>{if(e.key==="Enter")go();};
+  input.oninput=()=>{err.hidden=true;};
 }
 
 function metaRowHtml(m,yes){
@@ -3414,7 +3638,7 @@ async function renderHome(){
   // actually sent rows for it — so a fetch failure, a cold database, or a
   // genuinely thin product all degrade to the section being absent. Nothing
   // here has a placeholder or a sample row to fall back to, by design.
-  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50, newUser=false, featuredShown=4; // 50/4 are only pre-fetch placeholders; the block below always prefers the live values
+  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50, newUser=false, featuredShown=4, me=null, creator=null; // 50/4 are only pre-fetch placeholders; the block below always prefers the live values
   try{
     // deviceId unlocks the one PERSONAL section (openCalls) — every other
     // section on Home is aggregate and renders the same for anyone.
@@ -3433,6 +3657,11 @@ async function renderHome(){
       settled=Array.isArray(j.settled)?j.settled:[];
       topCallers=Array.isArray(j.topCallers)?j.topCallers:[];
       activity=j.activity&&typeof j.activity==="object"?j.activity:null;
+      // The viewer's two identities for the right rail: caller (accuracy,
+      // rank, tier) and creator (fees earned, markets made). Both null for a
+      // device the server doesn't know yet, and the rail omits the panel.
+      me=j.me&&typeof j.me==="object"?j.me:null;
+      creator=j.creator&&typeof j.creator==="object"?j.creator:null;
       openCalls=j.openCalls&&typeof j.openCalls==="object"?j.openCalls:null;
       newUser=j.newUser===true;
       if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;
@@ -3486,7 +3715,38 @@ async function renderHome(){
   // explained to them again. "My grandmother understands it in 3 seconds" is
   // about someone with zero context; it was never a complaint about the
   // returning-player view, and this must not become one.
-  const hero=document.createElement("div");hero.className=newUser?"hero hero-first":"hero";
+  // TWO different openings, because two different people arrive here.
+  //
+  // A returning player gets a COMPACT CREATE BAR (~160px) and then the live
+  // feed: they know what Oddie is, and the tall explain-the-mechanic hero was
+  // spending the most valuable region of the screen telling them something
+  // they already knew, while the actual product — markets people are making
+  // and trading right now — started below the fold. Pump.fun doesn't explain
+  // token creation on its home page, it shows tokens. Same principle.
+  //
+  // A brand-new visitor still gets the full teaching hero, because for them
+  // the mechanic IS the missing information. That branch is unchanged.
+  //
+  // The headline also widens: "Someone's wrong on X?" frames the whole product
+  // as argument-settling, which is one wedge, not the scope. Markets come from
+  // news, sports, launches, transfers, crypto — "Turn any post on X into a
+  // market" covers all of it, and the sub-line names all three layers (create,
+  // earn, keep score) instead of only the last one.
+  const hero=document.createElement("div");
+  if(!newUser){
+    hero.className="createbar";
+    hero.innerHTML=`
+      <div class="cb-copy">
+        <h1 class="cb-title">Turn any post on X into a market.</h1>
+        <p class="cb-sub">Create the market. Earn when people trade. Keep score when it resolves.</p>
+      </div>
+      <div class="cb-actions">
+        <a class="cb-tag" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener"><span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
+        <button class="cb-paste" type="button">🔗 Paste X link</button>
+      </div>`;
+    hero.querySelector(".cb-paste").onclick=()=>openPasteSheet();
+  }else{
+  hero.className="hero hero-first";
   hero.innerHTML=`<h1 class="herotitle">Someone's wrong on X?<br>Prove you're right.</h1>
       <div class="tagdemo" aria-label="How it works: someone posts a take on X, you tag @oddiefun, it becomes a question anyone can answer, and when it plays out everyone sees who was right.">
         <div class="tagdemo-post"><span class="tagdemo-av"></span>
@@ -3501,6 +3761,7 @@ async function renderHome(){
       </div>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>`;
+  }
   // The "+${surfaceReward} points" line that used to close the hero is gone
   // from THIS screen, not from the product — real users read it as a fifth
   // stacked thing competing with headline/demo/CTA for the first 3 seconds.
@@ -3539,7 +3800,13 @@ async function renderHome(){
   // "Your open calls" — the Zeigarnik hook: an unresolved prediction, visible
   // the moment they land, is a reason to come back that the daily claim isn't.
   // Hidden entirely with zero open positions — never "0 open calls" theatre.
-  if(openCalls&&openCalls.count>0){
+  //
+  // newUser ONLY. A returning player gets this in the right rail instead (see
+  // buildRail), worded as "open positions" rather than "open calls" — in a
+  // product where you can both hold a position and create a market, "calls"
+  // was ambiguous between the two. Appending it here as well would render the
+  // same fact twice on the same screen.
+  if(newUser&&openCalls&&openCalls.count>0){
     const bare=openCalls.nextCloseAt?closesIn(openCalls.nextCloseAt).replace(/^closes in /,""):null;
     // "closing" is closesIn()'s own wording for "past due, not yet swept" — a
     // stale duration reads worse than just omitting the clause here.
@@ -3698,10 +3965,18 @@ async function renderHome(){
     wrap.appendChild(claimFrag);
     if(topFrag)wrap.appendChild(topFrag);
   }else{
+    // RETURNING: create bar, then the live feed, immediately. Everything that
+    // is about the viewer rather than about the markets — their two scores,
+    // their streak, the daily claim — moves into the right rail on desktop
+    // and below the feed on mobile. The claim strip in particular was the
+    // second-loudest object on the page, which framed Oddie as a play-money
+    // faucet; the real reward loop is create -> people trade -> you earn.
     wrap.appendChild(hero);
-    wrap.appendChild(claimFrag);
-    if(topFrag)wrap.appendChild(topFrag);
-    if(featuredFrag)wrap.appendChild(featuredFrag);
+    const mainCol=document.createElement("div");mainCol.className="homemain";
+    if(featuredFrag)mainCol.appendChild(featuredFrag);
+    if(topFrag)mainCol.appendChild(topFrag);
+    wrap.appendChild(mainCol);
+    wrap.appendChild(buildRail(me,creator,claimFrag,openCalls));
   }
 
   // The three-beat "how it works" — icons + a few words each, no paragraphs.

@@ -16,6 +16,7 @@ import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./
 import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
+import { creatorStatsFor } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -691,6 +692,16 @@ app.get("/api/home", async (req, res) => {
       ? isNewUserFor(deviceId).catch((e) => { console.error("[home] newUser failed:", (e as Error).message); return false; })
       : Promise.resolve(false),
   ]);
+  // The viewer's OWN two identities, for the right rail: how good their CALLS
+  // are (reputationFor) and how good their MARKETS are (creatorStatsFor).
+  // Deliberately two objects, not one merged "stats" blob — they answer
+  // different questions and the rail shows them as two separate panels.
+  const [me, creator] = deviceId
+    ? await Promise.all([
+        reputationFor(deviceId).catch(() => null),
+        creatorStatsFor(deviceId).catch(() => null),
+      ])
+    : [null, null];
   // Only RANKED callers are eligible — `provisional` is the store's existing
   // "sample too small to mean anything" flag, and the full Leaderboard sorts
   // those below everyone else for the same reason.
@@ -705,7 +716,20 @@ app.get("/api/home", async (req, res) => {
   // Same reasoning for featuredShown: the client slices `featured` into the
   // visible section vs. the loop's reserve pool using THIS number, not its own
   // hardcoded 4, so the two can never disagree about where the pool starts.
-  res.json({ featured, settled, topCallers, activity, openCalls, newUser, surfaceReward: SEASON_POINTS.surface, featuredShown: HOME_FEATURED_SHOWN });
+  res.json({
+    featured, settled, topCallers, activity, openCalls, newUser,
+    surfaceReward: SEASON_POINTS.surface, featuredShown: HOME_FEATURED_SHOWN,
+    // The right rail's two panels. `me` is the caller identity (accuracy,
+    // rank, tier), `creator` is the market-maker one (fees earned, markets
+    // made, traders reached). Null for a device we don't know yet.
+    me: me ? {
+      handle: me.handle, accuracyPct: me.accuracy.accuracyPct, resolved: me.accuracy.resolved,
+      hasEnough: me.accuracy.hasEnough, minResolved: me.accuracy.minResolved,
+      oddieScore: me.accuracy.oddieScore, rank: me.rank, tier: me.tier,
+      topCategory: me.topCategory, streak: me.accuracy.streak,
+    } : null,
+    creator,
+  });
 });
 
 /**
