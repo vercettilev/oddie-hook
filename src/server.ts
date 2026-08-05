@@ -17,6 +17,7 @@ import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
 import { creatorStatsFor } from "./store/markets.js";
+import { communityPoolSizes } from "./store/markets.js";
 import type { SurfacerInfo } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
@@ -451,6 +452,10 @@ app.get("/api/feed", async (req, res) => {
   // "Market forming": below MARKET_FORMING_MIN distinct players a % is skewable
   // noise, so we show the call count instead until the market has formed.
   const playerCounts = await communityPlayerCounts(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
+  // Predictions staked, not headcount — see communityPoolSizes. The card shows
+  // both because they answer different questions ("how much is riding on this"
+  // vs "how many people care") and diverge the moment anyone doubles down.
+  const poolSizes = await communityPoolSizes(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
   const communityItems = community.map((m) => {
     const slug = slugFor(m);
     const positions = playerCounts[slug] ?? 0;
@@ -469,6 +474,7 @@ app.get("/api/feed", async (req, res) => {
       formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
       creatorFeeBps: CREATOR_FEE_BPS_PLAY, // transparency: shown on the card, see feed.html's fee-note
+      poolTokens: poolSizes[slug] ?? 0,
     };
   });
 
@@ -596,6 +602,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
   });
   const slugs = sorted.map((m) => slugFor(m));
   const playerCounts = await communityPlayerCounts(slugs).catch(() => ({} as Record<string, number>));
+  const poolSizes = await communityPoolSizes(slugs).catch(() => ({} as Record<string, number>));
 
   const explicitSlugs = await getFeaturedSlugs().catch(() => [] as string[]);
   const bySlug = new Map(sorted.map((m) => [slugFor(m), m]));
@@ -642,6 +649,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
       creatorFeeBps: CREATOR_FEE_BPS_PLAY,
+      poolTokens: poolSizes[slug] ?? 0,
       crowd: crowd[slug] ?? { yes: 0, no: 0 },
       challengeHandle: surfacer?.handle ?? null,
       // See the same fields in /api/feed: every community card carries who

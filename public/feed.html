@@ -275,6 +275,25 @@
   .rby[open]>summary::before{transform:rotate(90deg)}
   .rby-body{margin:8px 0 2px;font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.45;
     color:var(--muted-g);border-left:2px solid var(--hair-g);padding-left:11px}
+  /* The activity strip: what's riding on this market, under the YES/NO. Sits
+     on the card's own surface with hairline dividers rather than in a box —
+     it's metadata about the object, not a second object. Only ever renders
+     the figures we actually have (see statsRowHtml); columns are dropped, not
+     zero-filled. */
+  .statsrow{display:flex;align-items:stretch;gap:0;margin:11px 0 0;
+    border-top:1.5px solid var(--hair-g);padding:9px 0 0}
+  .st-cell{flex:1;min-width:0;text-align:center;padding:0 6px;
+    border-left:1.5px solid var(--hair-g)}
+  .st-cell:first-child{border-left:0;text-align:left;padding-left:0}
+  .st-cell b{display:block;font-family:'Fredoka';font-weight:700;font-size:16px;
+    line-height:1.1;color:var(--on-ground)}
+  .st-cell span{font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.02em;
+    color:var(--muted-g)}
+  /* The creator's cut is the one figure here that's money-shaped, so it's the
+     one that gets the accent. */
+  .st-earn b{color:var(--acc-deep)}
+  :root[data-theme="dark"] .st-earn b{color:var(--accent)}
+
   /* Creator fee — an INCENTIVE, not a disclosure. This was 11px muted-grey
      body text (a footnote apologising for a deduction); reviewed live it read
      as fine print nobody would ever notice, which is exactly backwards: the
@@ -2899,6 +2918,38 @@ function sourcePostHtml(m){
     ? `<a class="xpost-link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${body}</a>`
     : body;
 }
+/**
+ * The activity strip — what's actually riding on this market and who made it.
+ *
+ * Deliberately NOT the exchange-style "$24,680 volume · 1,248 traders · 86
+ * comments" row. Three of those four would be fiction here: these markets
+ * settle in predictions, not dollars, and there is no comments feature. Every
+ * figure below is a real stored number, and anything we don't have simply
+ * isn't a column.
+ *
+ * Pool and callers are both shown because they answer different questions —
+ * "how much is riding on this" vs "how many people care" — and they separate
+ * as soon as one person takes several positions. A market nobody has touched
+ * yet renders nothing at all rather than a row of zeros; the "forming" chip
+ * already says that, and repeating it as 0 · 0 makes a new market look dead
+ * rather than new.
+ */
+function statsRowHtml(m){
+  if(!m.community)return "";
+  const pool=Number(m.poolTokens)||0;
+  const callers=Number(m.positions)||0;
+  const earned=Number(m.creatorFeePaid)||0;
+  if(!pool&&!callers&&!earned)return "";
+  const cells=[];
+  if(pool)cells.push(`<div class="st-cell"><b>${pool}</b><span>in play</span></div>`);
+  if(callers)cells.push(`<div class="st-cell"><b>${callers}</b><span>caller${callers===1?"":"s"}</span></div>`);
+  // The creator's cut, shown as a fact once it's been paid. Before that the
+  // fee-note below already makes the forward-looking promise, so repeating it
+  // here as "0 earned" would read as "this market earns nothing".
+  if(earned)cells.push(`<div class="st-cell st-earn"><b>+${earned}</b><span>creator earned</span></div>`);
+  return `<div class="statsrow">${cells.join("")}</div>`;
+}
+
 function feeNoteHtml(m){
   const paid=Number(m.creatorFeePaid)||0;
   if(paid>0){
@@ -3210,6 +3261,7 @@ function buildCard(m,i,homeLoop){
           <span class="opay">${fmtMult(no)}</span>
         </button>
       </div>
+      ${statsRowHtml(m)}
       ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
       ${m.community && m.creatorFeeBps ? feeNoteHtml(m) : ""}
       ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">

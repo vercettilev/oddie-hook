@@ -3795,6 +3795,42 @@ export async function crowdSplits(slugs: string[]): Promise<Record<string, Crowd
 export const MARKET_FORMING_MIN = 5;
 
 /** Distinct-player count per slug (across both sides), for the forming gate. */
+/**
+ * Predictions actually staked on each market — the honest analogue of an
+ * exchange's "volume" for a play-token pool.
+ *
+ * Distinct from communityPlayerCounts below, which counts PEOPLE. The two
+ * diverge as soon as anyone takes more than one position, and a card that
+ * shows only headcount understates a market a handful of people are trading
+ * repeatedly. Counts OPEN calls only: a sold position has left the pool, so
+ * including it would report money that isn't there any more.
+ *
+ * Deliberately not called "volume" in dollars anywhere. These markets settle
+ * in predictions, and dressing that up as currency would be the one thing on
+ * the card that isn't true.
+ */
+export async function communityPoolSizes(slugs: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (slugs.length === 0) return out;
+  if (!PERSISTENT) {
+    for (const slug of slugs) {
+      out[slug] = memCalls
+        .filter((c) => c.slug === slug && !c.closedAt)
+        .reduce((a, c) => a + c.tokens, 0);
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; n: number }>(
+    `SELECT slug, COALESCE(SUM(tokens),0)::int n FROM market_call
+      WHERE slug = ANY($1) AND closed_at IS NULL GROUP BY slug`,
+    [slugs],
+  );
+  for (const r of rows) out[r.slug] = r.n;
+  for (const s of slugs) out[s] ??= 0;
+  return out;
+}
+
 export async function communityPlayerCounts(slugs: string[]): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
   if (slugs.length === 0) return out;
