@@ -18,6 +18,7 @@ import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
 import { creatorStatsFor } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
+import { communityRecentCalls } from "./store/markets.js";
 import type { SurfacerInfo } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
@@ -456,6 +457,8 @@ app.get("/api/feed", async (req, res) => {
   // both because they answer different questions ("how much is riding on this"
   // vs "how many people care") and diverge the moment anyone doubles down.
   const poolSizes = await communityPoolSizes(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
+  // Calls in the last 24h — the "happening now" signal. See communityRecentCalls.
+  const recentCalls = await communityRecentCalls(community.map((m) => slugFor(m)), 24).catch(() => ({} as Record<string, number>));
   const communityItems = community.map((m) => {
     const slug = slugFor(m);
     const positions = playerCounts[slug] ?? 0;
@@ -475,6 +478,7 @@ app.get("/api/feed", async (req, res) => {
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
       creatorFeeBps: CREATOR_FEE_BPS_PLAY, // transparency: shown on the card, see feed.html's fee-note
       poolTokens: poolSizes[slug] ?? 0,
+      callsToday: recentCalls[slug] ?? 0,
     };
   });
 
@@ -603,6 +607,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
   const slugs = sorted.map((m) => slugFor(m));
   const playerCounts = await communityPlayerCounts(slugs).catch(() => ({} as Record<string, number>));
   const poolSizes = await communityPoolSizes(slugs).catch(() => ({} as Record<string, number>));
+  const recentCalls = await communityRecentCalls(slugs, 24).catch(() => ({} as Record<string, number>));
 
   const explicitSlugs = await getFeaturedSlugs().catch(() => [] as string[]);
   const bySlug = new Map(sorted.map((m) => [slugFor(m), m]));
@@ -650,6 +655,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
       creatorFeeBps: CREATOR_FEE_BPS_PLAY,
       poolTokens: poolSizes[slug] ?? 0,
+      callsToday: recentCalls[slug] ?? 0,
       crowd: crowd[slug] ?? { yes: 0, no: 0 },
       challengeHandle: surfacer?.handle ?? null,
       // See the same fields in /api/feed: every community card carries who
@@ -1235,6 +1241,7 @@ app.get("/api/leaderboard", async (req, res) => {
     rows: edge.map((r, i) => ({
       rank: i + 1, handle: r.handle, you: r.deviceId === me,
       avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed, provisional: r.provisional,
+      accuracyPct: r.accuracyPct,
     })),
     streaks: streaks.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, current: r.current, best: r.best })),
     winnings: winnings.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, net: r.net, closed: r.closed })),

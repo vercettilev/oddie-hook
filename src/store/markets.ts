@@ -1076,6 +1076,12 @@ export interface LeaderRow {
   avgEdge: number;
   closed: number;
   provisional: boolean;
+  /** Raw hit rate, 0-100. Null while provisional — the same gate accuracyFor
+   *  applies, because a percentage over three calls is noise wearing a number.
+   *  The board still RANKS by edge; this rides along because accuracy is how
+   *  people describe themselves ("64% accurate"), and a board that shows only
+   *  a calibration metric can't be quoted back by the person on it. */
+  accuracyPct: number | null;
 }
 
 /**
@@ -1085,23 +1091,32 @@ export interface LeaderRow {
  * number has settled, however lucky their first two scalps were.
  */
 export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
-  let rows: { device_id: string; edges: number[]; handle: string | null }[];
+  let rows: { device_id: string; edges: number[]; handle: string | null; correct: number; settled: number }[];
   if (!PERSISTENT) {
     const byDev = new Map<string, number[]>();
+    const correctByDev = new Map<string, number>();
     for (const c of memCalls) {
       if (!c.closedAt || c.exitPct === null) continue;
       byDev.set(c.deviceId, [...(byDev.get(c.deviceId) ?? []), edgePts(c.entryPct, c.exitPct)]);
+      // exit_pct 100 = the side they took happened. A SOLD position exits at
+      // the market price, not 0/100, so it contributes an edge but is not a
+      // right-or-wrong outcome — same rule resolvedRowsFor uses.
+      if (c.exitPct === 100) correctByDev.set(c.deviceId, (correctByDev.get(c.deviceId) ?? 0) + 1);
     }
     rows = [...byDev.entries()].map(([device_id, edges]) => ({
       device_id, edges, handle: memHandle.get(device_id) ?? null,
+      correct: correctByDev.get(device_id) ?? 0,
+      settled: memCalls.filter((c) => c.deviceId === device_id && (c.exitPct === 100 || c.exitPct === 0)).length,
     }));
   } else {
     await ensureSchema();
     // The X handle outranks the chosen one and both outrank the stub, so the
     // board names people the way the rest of the product does.
-    const q = await db().query<{ device_id: string; edges: number[]; handle: string | null }>(
+    const q = await db().query<{ device_id: string; edges: number[]; handle: string | null; correct: number; settled: number }>(
       `SELECT mc.device_id,
               array_agg(mc.exit_pct - mc.pct_at) AS edges,
+              COUNT(*) FILTER (WHERE mc.exit_pct = 100)::int AS correct,
+              COUNT(*) FILTER (WHERE mc.exit_pct IN (0, 100))::int AS settled,
               COALESCE(tw.handle, db.handle) AS handle
          FROM market_call mc
          LEFT JOIN device_balance db ON db.device_id = mc.device_id
@@ -1126,13 +1141,24 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
   // competes on a public board.
   const excludedId = await excludedLeaderboardDeviceId();
   return rows
-    .map((r) => ({
-      deviceId: r.device_id,
-      // Stored X handles carry their own "@"; the UI prefixes one for everybody,
-      // so strip it here or the board reads "@@levvercetti" (it did).
-      handle: (r.handle ?? `#${r.device_id.slice(0, 4)}`).replace(/^@+/, ""),
-      ...reputationOf(r.edges.map(Number)),
-    }))
+    .map((r) => {
+      const rep = reputationOf(r.edges.map(Number));
+      return {
+        deviceId: r.device_id,
+        // Stored X handles carry their own "@"; the UI prefixes one for everybody,
+        // so strip it here or the board reads "@@levvercetti" (it did).
+        handle: (r.handle ?? `#${r.device_id.slice(0, 4)}`).replace(/^@+/, ""),
+        ...rep,
+        // Computed over SETTLED calls only (the 0/100 exits), not over every
+        // closed one — a sold position has an edge but no verdict, so counting
+        // it in the denominator would quietly understate everyone who scalps.
+        // WITHHELD while provisional, matching accuracyFor everywhere else: a
+        // percentage over three calls is noise wearing a number, and the board
+        // is the one place people would quote it from.
+        accuracyPct: !rep.provisional && r.settled > 0
+          ? Math.round((r.correct / r.settled) * 100) : null,
+      };
+    })
     .filter((r): r is LeaderRow => r.avgEdge !== null)
     .filter((r) => r.deviceId !== excludedId)
     .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.avgEdge - a.avgEdge)
@@ -3825,6 +3851,43 @@ export async function communityPoolSizes(slugs: string[]): Promise<Record<string
     `SELECT slug, COALESCE(SUM(tokens),0)::int n FROM market_call
       WHERE slug = ANY($1) AND closed_at IS NULL GROUP BY slug`,
     [slugs],
+  );
+  for (const r of rows) out[r.slug] = r.n;
+  for (const s of slugs) out[s] ??= 0;
+  return out;
+}
+
+/**
+ * Calls placed on each market in the last `hours` — the "is this happening
+ * NOW" signal a live feed needs and a static list doesn't have.
+ *
+ * Pool size and caller count both say how big a market got; neither says
+ * whether it got there this morning or three weeks ago. A market with six
+ * calls in the last day and one with six calls since launch read identically
+ * on the card today, which is exactly the difference between a feed and a
+ * directory.
+ *
+ * Counts calls by when they were PLACED, including ones since sold — the
+ * question is how much attention the market is getting, not what's still
+ * open. Zero (not absent) for a quiet market, so callers can treat it as a
+ * number without a null check.
+ */
+export async function communityRecentCalls(slugs: string[], hours = 24): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (slugs.length === 0) return out;
+  const since = Date.now() - Math.max(1, hours) * 3_600_000;
+  if (!PERSISTENT) {
+    for (const slug of slugs) {
+      out[slug] = memCalls.filter((c) => c.slug === slug && Date.parse(c.at) >= since).length;
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; n: number }>(
+    `SELECT slug, count(*)::int n FROM market_call
+      WHERE slug = ANY($1) AND at >= now() - make_interval(hours => $2)
+      GROUP BY slug`,
+    [slugs, Math.max(1, Math.floor(hours))],
   );
   for (const r of rows) out[r.slug] = r.n;
   for (const s of slugs) out[s] ??= 0;
