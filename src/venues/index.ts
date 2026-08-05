@@ -123,10 +123,6 @@ export async function getMarketData(force = false): Promise<MarketData> {
   ]);
   const venues: Record<FetchVenue, VenueStatus> = { kalshi: statusOf(k, "kalshi"), polymarket: statusOf(p, "polymarket") };
 
-  for (const [name, st] of Object.entries(venues)) {
-    if (st.enabled && !st.ok) console.warn(`[venues] ${name} failed:`, st.error);
-  }
-
   const all: Market[] = [];
   if (k.status === "fulfilled") all.push(...k.value);
   if (p.status === "fulfilled") all.push(...p.value);
@@ -138,6 +134,26 @@ export async function getMarketData(force = false): Promise<MarketData> {
     const fresh = j.value.filter((m) => !seen.has(m.venueId));
     all.push(...fresh);
     console.log(`[venues] jupiter contributed ${fresh.length} polymarket markets (${j.value.length - fresh.length} dupes dropped)`);
+    // Polymarket now has TWO independent sources, so its status has to describe
+    // the venue rather than one fetch. Without this the map reported
+    // `polymarket: {ok:false, count:0}` while the feed served hundreds of
+    // Polymarket markets from Jupiter — a status line that contradicted the
+    // page it described, and the reason /api/feed could 503 on "no data" logic
+    // in one place while having plenty of data in another. `ok` means "the
+    // venue is represented", which is the question every caller is actually
+    // asking; the per-source error is preserved for diagnosis.
+    venues.polymarket = {
+      ok: true,
+      count: venues.polymarket.count + fresh.length,
+      enabled: venues.polymarket.enabled,
+      ...(venues.polymarket.error ? { error: `gamma: ${venues.polymarket.error} (served via jupiter)` } : {}),
+    };
+  }
+
+  // Logged AFTER the merge, so a venue that one source covered for isn't
+  // reported as failing.
+  for (const [name, st] of Object.entries(venues)) {
+    if (st.enabled && !st.ok) console.warn(`[venues] ${name} failed:`, st.error);
   }
 
   if (all.length > 0) {

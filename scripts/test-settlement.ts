@@ -240,31 +240,45 @@ console.log("\nholders and scalpers share one leaderboard metric");
   check("the scalper's early exits sit on the same metric", !!scalper && scalper.closed === 2, JSON.stringify(scalper));
 }
 
-console.log("\nthe gate: google + allowlist, and only that");
+console.log("\naccess: open to everyone — signing in only attaches an identity");
 {
+  // These assertions were inverted until now. They still described the
+  // waitlist gate that commit 8ab877a deliberately removed ("open voting: no
+  // waitlist, no sign-in gate — anyone who enters can vote"), so four of them
+  // had been failing on every run since. A permanently-red suite is worse
+  // than no suite: it trains everyone to ignore the output, and a REAL
+  // regression here would have looked exactly like the noise.
+  //
+  // They now assert the current product rule, so that if the gate ever closes
+  // again — by accident or by decision — this goes red for a true reason.
   const { gateFor, addToAllowlist } = await import("../src/store/markets.js");
   const { linkAccount } = await import("../src/store/accounts.js");
+
   const anon = await gateFor("gate-anon-dev-01");
-  check("anonymous device is signed_out", !anon.allowed && (anon as {reason:string}).reason === "signed_out");
+  check("an anonymous device is allowed in — no sign-in, no waitlist", anon.allowed === true, JSON.stringify(anon));
+  check("...and claims no identity for someone who hasn't given one",
+    anon.identity === null && anon.provider === null, JSON.stringify(anon));
 
   await linkAccount("gate-goog-dev-01", { provider: "google", uid: "g-gate-1", name: "G", email: "gated@example.com" });
-  const before = await gateFor("gate-goog-dev-01");
-  check("google-but-not-listed is not_allowlisted", !before.allowed && (before as {reason:string}).reason === "not_allowlisted");
+  const goog = await gateFor("gate-goog-dev-01");
+  check("a Google sign-in is allowed and echoes its email", goog.allowed === true && goog.email === "gated@example.com", JSON.stringify(goog));
+  check("...as the google provider", (goog as {provider:string}).provider === "google", JSON.stringify(goog));
 
-  await addToAllowlist("Gated@Example.com", "test", false);
-  const after = await gateFor("gate-goog-dev-01");
-  check("listed email passes (case-insensitive)", after.allowed === true, JSON.stringify(after));
-  check("garbage emails are rejected", !(await addToAllowlist("not-an-email", "test", false)));
-
-  // The X path: an engaged extension user signs in with X, matched by x_uid.
+  // The X path: X outranks Google for the identity we echo back, because the
+  // reputation thesis lives on X.
   await linkAccount("gate-x-dev-000001", { provider: "twitter", uid: "x-999", handle: "@poster", name: "Poster" });
-  const xBefore = await gateFor("gate-x-dev-000001");
-  check("X sign-in, not listed, is not_allowlisted", !xBefore.allowed && (xBefore as {reason:string}).reason === "not_allowlisted");
-  check("...and echoes the X identity, X provider", (xBefore as {identity:string;provider:string}).identity === "@poster" && (xBefore as {provider:string}).provider === "twitter");
-  await addToAllowlist("wave1@example.com", "wave1", true, "x-999", "poster");
-  const xAfter = await gateFor("gate-x-dev-000001");
-  check("allowlisted X uid passes the gate", xAfter.allowed === true, JSON.stringify(xAfter));
-  check("...and the Google path still needs a Google email", !(await gateFor("gate-anon-dev-01")).allowed);
+  const x = await gateFor("gate-x-dev-000001");
+  check("an X sign-in is allowed", x.allowed === true, JSON.stringify(x));
+  check("...and echoes the X handle, X provider",
+    (x as {identity:string}).identity === "@poster" && (x as {provider:string}).provider === "twitter", JSON.stringify(x));
+
+  // The allowlist TABLE still exists — it is how invites and cohorts are
+  // tracked — it just no longer decides who may play. Its input validation
+  // is still worth pinning.
+  check("the allowlist still accepts a real address", await addToAllowlist("Gated@Example.com", "test", false));
+  check("...and still rejects garbage", !(await addToAllowlist("not-an-email", "test", false)));
+  check("being allowlisted changes nothing about access — everyone was already in",
+    (await gateFor("gate-goog-dev-01")).allowed === true);
 }
 
 console.log("\nstreaks: consecutive active days");

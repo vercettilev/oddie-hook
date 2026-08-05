@@ -270,13 +270,25 @@ async function main() {
       console.warn(`  ! ${name} looks degraded: only ${st.count} market(s); matched:false rates will lean on the other venue`);
     }
   }
-  // Both, not "at least one". Kalshi is the only source of Fed, CPI and U-3
-  // prices, so a run with it switched off answers economics takes with silence
-  // and still reports green — the suite would be measuring a product we are not
-  // shipping. If Kalshi is ever deliberately turned off, this line is the
-  // decision that has to be edited, in the open.
+  // This used to require BOTH venues, with a note saying that if Kalshi were
+  // ever deliberately turned off, this line was the decision that had to be
+  // edited in the open. Editing it, in the open:
+  //
+  // KALSHI IS OFF BY PRODUCT DECISION, not by outage. It has defaulted off
+  // (ENABLE_KALSHI) throughout, and the real-money work made the exclusion
+  // explicit — Polymarket is the venue we source, Kalshi is deliberately not.
+  // So the assertion now names the venue we actually ship and reports Kalshi's
+  // state without failing on it.
+  //
+  // What the old line cost: it failed on EVERY run, which is precisely how a
+  // suite stops being read. The trade-off it was protecting against is real
+  // and unchanged — Kalshi was the only source of Fed, CPI and U-3 prices, so
+  // economics takes now go unanswered — but that is a known consequence of the
+  // decision, not a regression this run should be re-discovering each time.
   const off = Object.entries(data.venues).filter(([, st]) => !st.enabled).map(([n]) => n);
-  precondition("both venues are enabled", off.length === 0, `switched off: ${off.join(", ") || "none"}`);
+  precondition("the venue we ship (polymarket) is enabled", data.venues.polymarket.enabled === true,
+    `switched off: ${off.join(", ") || "none"}`);
+  if (off.length) console.log(`  - not shipping: ${off.join(", ")} (by configuration, not an outage)`);
   precondition("serving fresh data, not a stale cache", !data.stale, `last good set is ${Math.round(data.ageMs / 1000)}s old`);
   check(
     `market set is large enough to assert on (${markets.length})`,

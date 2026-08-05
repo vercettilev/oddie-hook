@@ -2790,6 +2790,71 @@ export async function recordSurfacer(slug: string, input: { handle?: string | nu
   );
 }
 
+/**
+ * Fill in source-post text for markets recorded BEFORE we started fetching it.
+ *
+ * recordSurfacer now caches the post at write time, but every market created
+ * before that shipped has a source_url and no text — so the card feature that
+ * shows the claim a market came from renders nothing for the entire existing
+ * catalogue. This walks those rows and fills them.
+ *
+ * Deliberately conservative, because it makes N external requests:
+ *  - only rows that have a URL and are missing text are touched
+ *  - bounded by `limit` per run, so it can be run repeatedly and watched
+ *  - sequential with a pause between calls, rather than hammering oEmbed
+ *  - a row that fails is LEFT ALONE, not written as empty — a later run
+ *    retries it, and a permanently-dead post simply never gets a preview
+ *
+ * Returns what it did so a caller can report honestly rather than guess.
+ */
+export async function backfillSourcePosts(
+  limit = 25,
+  opts: { apply?: boolean; pauseMs?: number } = {},
+): Promise<{ candidates: number; fetched: number; written: number; failed: number }> {
+  const apply = opts.apply ?? false;
+  const pauseMs = opts.pauseMs ?? 250;
+  const n = Math.max(1, Math.min(500, Math.floor(limit)));
+
+  let targets: Array<{ slug: string; url: string }>;
+  if (!PERSISTENT) {
+    targets = [...memSurfacer.entries()]
+      .filter(([, s]) => s.sourceUrl && !s.sourceText)
+      .slice(0, n)
+      .map(([slug, s]) => ({ slug, url: s.sourceUrl! }));
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ slug: string; source_url: string }>(
+      `SELECT slug, source_url FROM market_surfacer
+        WHERE source_url IS NOT NULL AND source_text IS NULL
+        ORDER BY created_at DESC LIMIT $1`, [n]);
+    targets = rows.map((r) => ({ slug: r.slug, url: r.source_url }));
+  }
+
+  let fetched = 0, written = 0, failed = 0;
+  for (const t of targets) {
+    const post = await fetchSourcePost(t.url).catch(() => null);
+    if (!post) { failed++; }
+    else {
+      fetched++;
+      if (apply) {
+        if (!PERSISTENT) {
+          const cur = memSurfacer.get(t.slug);
+          if (cur) memSurfacer.set(t.slug, { ...cur, sourceText: post.text, sourceAuthor: post.authorName });
+        } else {
+          await db().query(
+            `UPDATE market_surfacer SET source_text = $2, source_author = $3
+              WHERE slug = $1 AND source_text IS NULL`,
+            [t.slug, post.text, post.authorName],
+          );
+        }
+        written++;
+      }
+    }
+    if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));
+  }
+  return { candidates: targets.length, fetched, written, failed };
+}
+
 export interface Surfacer { handle: string | null; deviceId: string | null }
 export async function surfacerFor(slug: string): Promise<Surfacer | null> {
   if (!PERSISTENT) { const s = memSurfacer.get(slug); return s ? { handle: s.handle, deviceId: s.deviceId } : null; }
