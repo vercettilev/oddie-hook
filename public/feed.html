@@ -2554,7 +2554,11 @@ function authReturn(){
     :`Connected. Your account is loaded on this browser.`;
   history.replaceState(null,"",location.pathname+location.hash);
   const el=document.createElement("div");
-  el.className="state";el.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tabh) + 18px);z-index:70;background:#fff;border:3px solid #000;border-radius:16px;padding:10px 16px;max-width:88vw";
+  el.className="state";// Theme tokens, not #fff/#000. This one lives in an inline style string
+  // rather than the stylesheet, which is why the sweep over <style> did not
+  // reach it — it was the single fixed-white surface left in the app, and it
+  // only ever appears right after a sign-in, so nobody was likely to catch it.
+  el.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tabh) + 18px);z-index:70;background:var(--card-surface);color:var(--on-ground);border:1.5px solid var(--card-line);border-radius:16px;padding:10px 16px;max-width:88vw";
   el.textContent=msg;
   document.body.appendChild(el);
   setTimeout(()=>el.remove(),5200);
