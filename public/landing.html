@@ -26,23 +26,12 @@
 <meta name="twitter:description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score.">
 <meta name="twitter:image" content="https://oddie.fun/banner.png">
 
-<script>
-  /* Anyone whose browser already carries an Oddie device id has been inside the
-     app before, so the pitch is not what they came for: send them straight to
-     the product. Cold traffic (every X in-app browser, every incognito tab, i.e.
-     exactly the audience this page is written for) has no id and stays here.
-
-     ?stay=1 always forces the landing, so this page remains reachable for the
-     people who work on it. Wrapped because private browsing can throw on any
-     localStorage access at all. */
-  (function () {
-    try {
-      if (location.search.indexOf("stay=1") === -1 && localStorage.getItem("oddie_did")) {
-        location.replace("/feed");
-      }
-    } catch (e) {}
-  })();
-</script>
+<!-- This page used to bounce anyone carrying an Oddie device id straight to
+     /feed. Removed: "/" is the front door and it should open the front door,
+     for everyone, every time. Someone who already plays reaches the app from
+     "Live markets" in the nav — one click, and one they chose.
+     ?stay=1 is still accepted anywhere it is linked; it simply has nothing left
+     to override. -->
 
 <!-- Self-hosted brand faces, same files the app serves. No third party in the
      critical path of the page that cold traffic hits first. -->
