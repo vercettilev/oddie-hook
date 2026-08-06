@@ -176,7 +176,7 @@
      the header fades from that same tint (no seam as a card scrolls under it). */
   body[data-view="feed"]{background:var(--feed-ground)}
   body[data-view="feed"] .top{background:linear-gradient(var(--feed-ground) 74%, transparent)}
-  body:not([data-view="feed"]) .top{border-bottom:2.5px solid var(--hair-g)}
+  body:not([data-view="feed"]) .top{border-bottom:1.5px solid var(--hair-g)}
   .top-in{max-width:var(--col);margin:0 auto;padding:0 6px}
   .brand{display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:10px}
   .brand b{font-size:21px;font-weight:600}
@@ -235,9 +235,13 @@
      They have no tagger, so they must not borrow the accent that means
      "someone tagged this" — the visual difference is the point, and it's what
      keeps them secondary to community cards in the same grid. */
-  .mchip-sourced{background:var(--bar);color:#5b6672;box-shadow:none;
+  /* var(--bar) is #E7EDF2 in BOTH themes, and the dark override then put LIGHT
+     ink (#9aa6b2) on it — measured 2.31:1, under the 4.5 floor for text this
+     size. Third variant of the same trap: the first two paired fixed light with
+     an adaptive token, this one paired it with a hardcoded light hex, which is
+     why the guard walked past it. Translucent fill, adaptive ink, one rule. */
+  .mchip-sourced{background:rgba(127,127,127,.16);color:var(--muted-g);box-shadow:none;
     font-size:11px;letter-spacing:.02em}
-  :root[data-theme="dark"] .mchip-sourced{color:#9aa6b2}
   /* Discovery modes — the row above the category chips. Mode answers "show me
      what's happening" (For You / Trending / New / Resolving Soon), category
      answers "about what"; two axes, two rows. The active mode is the one
@@ -300,9 +304,12 @@
      component, three uses. Text stays FIXED dark on a FIXED light chip surface
      (same AA rule as .commtag/.chainbadge — the surface never adapts to theme,
      so the text can't either). */
+  /* Same move for the family: var(--wash) is light in both themes, so every one
+     of these read as a pale tablet stuck on a dark card. A translucent fill sits
+     on whatever surface it lands on and the ink follows the theme with it. */
   .mchip{display:inline-flex;align-items:center;gap:5px;font-family:'Nunito';font-weight:800;
-    font-size:12px;letter-spacing:.01em;color:#3c4550;white-space:nowrap;
-    padding:4px 10px 4px 8px;border-radius:999px;background:var(--wash);box-shadow:var(--shadow-chip)}
+    font-size:12px;letter-spacing:.01em;color:var(--on-ground);white-space:nowrap;
+    padding:4px 10px 4px 8px;border-radius:999px;background:rgba(127,127,127,.16);box-shadow:none}
   .mchip svg{width:13px;height:13px;flex:none;stroke:currentColor;fill:none;stroke-width:2.2;
     stroke-linecap:round;stroke-linejoin:round;opacity:.75}
   /* Forming: a live pulsing dot says "still filling up" without a word doing the
@@ -581,7 +588,7 @@
   .pshare{font-family:'Nunito';font-weight:800;font-size:11.5px;color:#000;background:var(--accent);
     border:2px solid #000;border-radius:999px;padding:3px 12px;margin-left:8px;cursor:pointer;vertical-align:1px}
   .waitcta{display:inline-block;font-family:'Fredoka';font-weight:600;font-size:14px;color:#000;
-    background:var(--accent);border:3px solid #000;border-radius:16px;padding:9px 15px;
+    background:var(--accent);border:1.5px solid #000;border-radius:16px;padding:9px 15px;
     text-decoration:none;box-shadow:0 3px 0 rgba(0,0,0,.16)}
   /* the post-call belonging line */
   .socline{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--link-g);margin-top:7px}
@@ -620,7 +627,7 @@
   .social .prepay .prepay-mult{color:var(--muted-g);font-weight:700}
   /* the 5s undo window after a one-tap call: undo is a real button, change-amount a quiet link */
   .social .undo{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--ink);
-    background:var(--wash);border:2.5px solid var(--ink);border-radius:999px;
+    background:var(--wash);border:1.5px solid var(--ink);border-radius:999px;
     padding:4px 13px;margin-left:8px;cursor:pointer;font-variant-numeric:tabular-nums}
   .social .undo:active{transform:scale(.96)}
   .social .chgamt{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--link-g);
@@ -637,12 +644,12 @@
   .isub{font-family:'Nunito';font-weight:700;font-size:13.5px;color:var(--muted-g);margin:0 0 22px}
   .tchips{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:0 0 26px;max-width:340px}
   .tchip{font-family:'Nunito';font-weight:800;font-size:15px;padding:11px 18px;border-radius:999px;
-    border:2.5px solid var(--chip-bd);background:var(--chip-bg);color:var(--on-ground);cursor:pointer;
+    border:1.5px solid var(--chip-bd);background:var(--chip-bg);color:var(--on-ground);cursor:pointer;
     transition:transform .08s}
   .tchip:active{transform:scale(.96)}
   .tchip.on{color:#000;border-color:var(--accent);background:var(--accent)}
   .icont{font-family:'Fredoka';font-weight:600;font-size:16px;color:#000;background:var(--accent);
-    border:3px solid #000;border-radius:16px;padding:12px 30px;cursor:pointer;
+    border:1.5px solid #000;border-radius:16px;padding:12px 30px;cursor:pointer;
     box-shadow:0 4px 0 rgba(0,0,0,.22)}
   .icont:disabled{opacity:.4;box-shadow:none;cursor:default}
   .gatecard .cbtn{max-width:320px}
@@ -674,10 +681,10 @@
   .chain-wallet{font-family:'Nunito';font-weight:700;font-size:12.5px;color:var(--muted);margin:0 0 10px}
   .chain-side-row{display:flex;gap:8px;margin-bottom:10px}
   .chain-side{flex:1;font:inherit;font-weight:800;font-size:14px;padding:9px 0;cursor:pointer;
-    border:2.5px solid var(--ink);border-radius:12px;background:var(--white);color:var(--ink)}
+    border:1.5px solid var(--ink);border-radius:12px;background:var(--white);color:var(--ink)}
   .chain-side.on{background:var(--accent);border-width:3.5px}
   .chain-amt{display:block;width:100%;font:inherit;font-size:16px;font-weight:700;padding:9px 10px;
-    margin-bottom:8px;border:2.5px solid var(--ink);border-radius:12px;background:var(--white);
+    margin-bottom:8px;border:1.5px solid var(--ink);border-radius:12px;background:var(--white);
     box-sizing:border-box;text-align:center;color:var(--ink)}
   .chain-line{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--acc-deep);min-height:16px;margin-bottom:8px}
   .chain-err{font-family:'Nunito';font-weight:700;font-size:12px;color:#c0392b;margin:6px 0 0}
@@ -697,7 +704,7 @@
      the loudest thing on that screen. Removes itself entirely when there is
      nothing to collect (see refreshClaimable): a standing "no winnings" row
      is clutter, and this must never imply a payout that isn't there. */
-  .chain-claimcheck{border:2.5px solid #000;border-radius:18px;background:var(--accent);
+  .chain-claimcheck{border:1.5px solid #000;border-radius:18px;background:var(--accent);
     padding:12px 13px;margin:0 0 14px}
   .cc-row{display:flex;align-items:center;gap:10px}
   .cc-text{flex:1;font-family:'Nunito';font-weight:800;font-size:12.5px;color:#101010;line-height:1.35}
@@ -788,7 +795,7 @@
      "juice" on the single most important tap in the product. A ring (not a fill
      swap, that already happened) expands and fades once, tasteful not gaudy. */
   .orow.locked-flash::after{content:"";position:absolute;inset:-3px;z-index:3;border-radius:inherit;
-    border:3px solid var(--accent);opacity:0;pointer-events:none;
+    border:1.5px solid var(--accent);opacity:0;pointer-events:none;
     animation:lockring .6s cubic-bezier(.2,.7,.3,1)}
   @keyframes lockring{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.14)}}
 
@@ -832,7 +839,7 @@
      the layout at opacity 0 so nothing reflows when it fades in. */
   /* balance pill — small and friendly, never a dollar sign anywhere near it */
   .bal{margin-left:8px;font-family:'Nunito';font-weight:800;font-size:13.5px;
-    padding:4px 11px;border:2.5px solid var(--ink);border-radius:999px;
+    padding:4px 11px;border:1.5px solid var(--ink);border-radius:999px;
     background:var(--wash);white-space:nowrap;font-variant-numeric:tabular-nums}
   .bal.pulse{animation:balpulse .45s ease}
   /* "left" label inside the balance pill — makes clear the number is the
@@ -849,7 +856,7 @@
      for people who want to follow the system; tapping here just commits a choice. */
   .themetog{width:34px;height:34px;flex:none;margin-left:8px;padding:0;
     display:inline-flex;align-items:center;justify-content:center;
-    border-radius:50%;border:2.5px solid var(--line-g);background:transparent;
+    border-radius:50%;border:1.5px solid var(--line-g);background:transparent;
     color:var(--on-ground);cursor:pointer}
   .themetog svg{width:18px;height:18px;stroke:currentColor;fill:none;
     stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -858,13 +865,13 @@
 
   /* Zero-balance nudge: reframes the wait so a busted device reads as "resting",
      not "locked out". A light wash surface, so it holds in both themes. */
-  .znote{background:var(--wash);border:2.5px solid var(--accent);border-radius:16px;
+  .znote{background:var(--wash);border:1.5px solid var(--accent);border-radius:16px;
     padding:12px 14px;margin-bottom:16px;font-family:'Nunito';font-weight:700;
     font-size:13px;line-height:1.45;color:var(--ink)}
   .znote b{font-weight:800}
 
   /* positions: reputation, live tracking, the sell button */
-  .rep{display:flex;align-items:center;gap:14px;border:3px solid #000;border-radius:22px;
+  .rep{display:flex;align-items:center;gap:14px;border:1.5px solid #000;border-radius:22px;
     background:var(--wash);padding:14px 16px;margin-bottom:16px}
   /* The score is allowed to be red. That is the whole point of measuring it. */
   .repnum{font-size:30px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums;flex:none}
@@ -887,14 +894,14 @@
   .track{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.45}
   .track b{font-weight:800}
   .sellbtn{font:inherit;font-weight:700;font-size:15px;width:100%;margin-top:11px;padding:10px 0;cursor:pointer;
-    border:3px solid var(--ink);border-radius:14px;background:var(--white)}
+    border:1.5px solid var(--ink);border-radius:14px;background:var(--white)}
   .sellbtn:hover{background:var(--wash)}
   .sellbtn:disabled{opacity:.55;cursor:default}
   /* Honest, non-clickable replacement for the Sell button when a retry is pointless. */
   .sellnote{font-family:'Nunito';font-weight:700;font-size:12.5px;line-height:1.4;color:var(--muted-g);margin:11px 0 0}
   /* The sell result — the close made visible, same beat as the locked call state.
      Sits inside a white tile, so text is --ink; a tinted panel carries the tone. */
-  .sellresult{margin-top:12px;border:3px solid #000;border-radius:14px;padding:12px 14px;background:var(--wash);color:var(--ink)}
+  .sellresult{margin-top:12px;border:1.5px solid #000;border-radius:14px;padding:12px 14px;background:var(--wash);color:var(--ink)}
   .sellresult.up{background:#e7f6ec;border-color:#0f7b3d} .sellresult.down{background:#fbe9e7;border-color:#b3261e}
   .srtop{display:flex;align-items:center;justify-content:space-between}
   .srtick{font-family:'Fredoka';font-weight:600;font-size:17px;color:var(--ink)}
@@ -904,7 +911,7 @@
   .srnums .up{color:#0f7b3d} .srnums .down{color:#b3261e} .srnums .flat{color:var(--muted)}
   .srsub{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted);margin-top:5px}
   .srdone{margin-top:10px;font-family:'Nunito';font-weight:800;font-size:13px;color:var(--ink);
-    border:2.5px solid #000;border-radius:999px;background:#fff;padding:6px 18px;cursor:pointer}
+    border:1.5px solid #000;border-radius:999px;background:#fff;padding:6px 18px;cursor:pointer}
   .srdone:active{transform:scale(.97)}
   .tile.closed{background:var(--wash)}
   .status.closed{color:var(--muted)}
@@ -1016,7 +1023,7 @@
   .chead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px}
   .chead .cat{margin-bottom:0}
   .shareico{width:38px;height:38px;flex:none;display:inline-flex;align-items:center;justify-content:center;
-    border-radius:50%;border:2.5px solid var(--line-g);background:var(--ground);
+    border-radius:50%;border:1.5px solid var(--line-g);background:var(--ground);
     color:var(--on-ground);cursor:pointer;padding:0}
   .shareico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .shareico:hover{background:var(--ground-2)}
@@ -1024,14 +1031,14 @@
   /* The strong one: a solid blue call-to-action, on-brand, under the locked line. */
   .sharebig{display:inline-flex;align-items:center;gap:8px;margin-top:10px;
     font-family:'Fredoka';font-weight:600;font-size:14px;color:#000;
-    background:var(--accent);border:3px solid #000;border-radius:16px;padding:9px 15px;cursor:pointer;
+    background:var(--accent);border:1.5px solid #000;border-radius:16px;padding:9px 15px;cursor:pointer;
     box-shadow:0 3px 0 rgba(0,0,0,.16)}
   .sharebig svg{width:17px;height:17px;stroke:#000;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
   .sharebig:active{transform:translateY(1px);box-shadow:0 2px 0 rgba(0,0,0,.16)}
   /* Desktop fallback menu (no native share sheet). */
   .sdim{position:fixed;inset:0;z-index:80}
   .smenu{position:fixed;z-index:81;min-width:190px;background:var(--ground-2);
-    border:3px solid var(--line-g);border-radius:16px;padding:6px;
+    border:1.5px solid var(--line-g);border-radius:16px;padding:6px;
     box-shadow:0 18px 44px rgba(13,60,90,.24)}
   .smenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
     font-family:'Nunito';font-weight:800;font-size:13.5px;color:var(--on-ground);
@@ -1039,7 +1046,7 @@
   .smenu button:hover{background:var(--ground)}
   .smenu svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .toast{position:fixed;left:50%;bottom:calc(var(--tabh) + 22px);transform:translateX(-50%);z-index:90;
-    background:#fff;color:#000;border:3px solid #000;border-radius:14px;padding:9px 15px;max-width:88vw;
+    background:#fff;color:#000;border:1.5px solid #000;border-radius:14px;padding:9px 15px;max-width:88vw;
     font-family:'Nunito';font-weight:800;font-size:13px;box-shadow:0 8px 24px rgba(13,60,90,.2)}
 
   /* ------------------------------------------------- resolution celebration --
@@ -1056,7 +1063,7 @@
     display:flex;align-items:flex-end;justify-content:center}
   @media (min-width:600px){ .celebrate-dim{align-items:center;padding:24px} }
   .celebrate-card{position:relative;width:100%;max-width:460px;max-height:100dvh;overflow-y:auto;
-    background:var(--card-surface);border:2.5px solid var(--card-line);
+    background:var(--card-surface);border:1.5px solid var(--card-line);
     border-radius:var(--r-xl) var(--r-xl) 0 0;
     padding:calc(env(safe-area-inset-top) + var(--sp-6)) var(--sp-4) calc(env(safe-area-inset-bottom) + var(--sp-4));
     box-shadow:var(--shadow-pop)}
@@ -1114,7 +1121,7 @@
   .cel-cta{font:inherit;font-family:'Fredoka';font-weight:600;font-size:15px;border-radius:999px;
     padding:13px 18px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
   .cel-cta.share{color:#17250a;background:linear-gradient(180deg, #c4f57a, var(--accent) 60%);
-    border:2.5px solid #000;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+    border:1.5px solid #000;box-shadow:0 4px 0 rgba(0,0,0,.18)}
   .cel-cta.share:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
   .cel-cta.challenge{color:var(--on-ground);background:transparent;border:2px solid var(--card-line)}
   .cel-cta.challenge:active{transform:scale(.98)}
@@ -1123,7 +1130,7 @@
   .celebrate-next:active{opacity:.6}
 
   /* the handle: who this stream is called */
-  .hrow{display:flex;align-items:center;gap:10px;border:3px solid #000;border-radius:22px;
+  .hrow{display:flex;align-items:center;gap:10px;border:1.5px solid #000;border-radius:22px;
     background:var(--wash);padding:13px 16px;margin-bottom:12px;color:var(--ink)}
   .hname{font-family:'Baloo 2','Nunito',sans-serif;font-weight:700;font-size:18px;flex:1;min-width:0;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1131,25 +1138,28 @@
   .hedit{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--acc-mid);background:none;border:0;
     padding:4px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;flex:none}
   .hin{flex:1;min-width:0;font-family:'Baloo 2','Nunito',sans-serif;font-weight:700;font-size:17px;
-    border:2.5px solid #000;border-radius:12px;padding:7px 11px;background:#fff;color:#000}
+    border:1.5px solid #000;border-radius:12px;padding:7px 11px;background:#fff;color:#000}
   .hsave{font-family:'Fredoka';font-weight:600;font-size:13.5px;color:#000;background:var(--accent);
-    border:2.5px solid #000;border-radius:12px;padding:8px 13px;cursor:pointer;flex:none}
+    border:1.5px solid #000;border-radius:12px;padding:8px 13px;cursor:pointer;flex:none}
   .herr{font-family:'Nunito';font-weight:800;font-size:12px;color:#b3261e;margin:-6px 4px 10px}
 
   /* profile, once it is real */
-  .acct{display:flex;align-items:center;gap:12px;border:3px solid #000;border-radius:22px;
+  .acct{display:flex;align-items:center;gap:12px;border:1.5px solid #000;border-radius:22px;
     background:var(--wash);padding:14px 16px;margin-bottom:12px}
   .acct .glyph{font-size:20px;font-weight:800;width:34px;height:34px;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;border:2.5px solid #000;background:#fff;flex:none}
+    display:flex;align-items:center;justify-content:center;border:1.5px solid #000;background:#fff;flex:none}
   .acct .who{font-weight:700;font-size:15px}
   .acct .kind{font-family:'Nunito';font-weight:800;font-size:11.5px;color:var(--muted)}
 
   /* A three-way switch, built from the same outline the rest of the app is. */
-  .seg{display:flex;gap:0;border:3px solid var(--ink);border-radius:16px;overflow:hidden;background:var(--white);margin-bottom:10px}
+  .seg{display:flex;gap:0;border:1.5px solid var(--ink);border-radius:16px;overflow:hidden;background:var(--white);margin-bottom:10px}
+  /* var(--white)/var(--ink) are fixed in both themes, so this switch stayed a
+     white slab with black type on the dark app. It is the theme's own surface
+     now; the selected segment keeps the accent, which reads on both. */
   .segb{flex:1;font:inherit;font-weight:700;font-size:14.5px;padding:11px 0;cursor:pointer;
-    border:0;border-right:3px solid var(--ink);background:var(--white);color:var(--ink)}
+    border:0;border-right:1.5px solid var(--hair-g);background:var(--card-surface);color:var(--on-ground)}
   .segb:last-child{border-right:0}
-  .segb.on{background:var(--accent)}
+  .segb.on{background:var(--accent);color:#17250a}
   @keyframes balpulse{40%{transform:scale(1.12)}}
 
   /* The peek of the next card is the scroll affordance now, so the nudge only
@@ -1227,7 +1237,7 @@
      explained the mechanic to people who already knew it. */
   .createbar{display:flex;flex-wrap:wrap;align-items:center;gap:14px;
     padding:16px 18px;margin:0 0 var(--sp-2);
-    border:2.5px solid #000;border-radius:var(--r-lg);background:var(--ground-2);
+    border:1.5px solid #000;border-radius:var(--r-lg);background:var(--ground-2);
     box-shadow:var(--shadow-chip)}
   .cb-copy{flex:1 1 240px;min-width:0}
   .cb-title{font-family:'Fredoka';font-weight:700;font-size:min(23px,5.4vw);line-height:1.15;
@@ -1258,7 +1268,7 @@
      Who YOU are, in two panels — calls and markets. Below the feed on mobile,
      beside it on desktop (see the >=1024 grid). */
   .homerail{display:flex;flex-direction:column;gap:var(--sp-2);margin:var(--sp-3) 0 0}
-  .rpanel{border:2.5px solid #000;border-radius:var(--r-lg);background:var(--ground-2);
+  .rpanel{border:1.5px solid #000;border-radius:var(--r-lg);background:var(--ground-2);
     padding:14px 15px;text-decoration:none;display:block;color:inherit}
   .rp-head{font-family:'Nunito';font-weight:900;font-size:11px;letter-spacing:.06em;
     text-transform:uppercase;color:var(--muted-g);margin:0 0 8px}
@@ -1352,7 +1362,7 @@
     color:var(--on-ground);margin:0 0 var(--sp-4)}
   .herocta{display:inline-flex;align-items:center;gap:10px;font-family:'Fredoka';font-weight:600;font-size:18px;
     color:#17250a;background:linear-gradient(180deg, #c4f57a, var(--accent) 60%);
-    border:2.5px solid #000;border-radius:999px;
+    border:1.5px solid #000;border-radius:999px;
     padding:17px 32px;text-decoration:none;box-shadow:0 4px 0 rgba(0,0,0,.18), var(--shadow-pop);
     transition:transform .12s ease, box-shadow .12s ease}
   .herocta:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.18)}
@@ -1606,20 +1616,20 @@
     padding:5px 10px 5px 8px;border-radius:999px;border:2px solid #000;background:var(--accent);color:#000}
   .preview::before{content:"";width:6px;height:6px;border-radius:50%;background:#000}
 
-  .tile{border:3px solid #000;border-radius:22px;background:#fff;padding:16px 16px;margin-bottom:12px}
+  .tile{border:1.5px solid #000;border-radius:22px;background:#fff;padding:16px 16px;margin-bottom:12px}
   .row{display:flex;align-items:center;gap:12px}
   .grow{flex:1;min-width:0}
   .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .num{font-family:'Nunito';font-weight:800;font-variant-numeric:tabular-nums}
 
   /* profile */
-  .avatar{width:84px;height:84px;border-radius:50%;background:var(--accent);border:3px solid #000;position:relative;flex:none}
+  .avatar{width:84px;height:84px;border-radius:50%;background:var(--accent);border:1.5px solid #000;position:relative;flex:none}
   .avatar::before,.avatar::after{content:"";position:absolute;width:15px;height:15px;background:#000;border-radius:50%;top:31px}
   .avatar::before{left:19px}.avatar::after{left:50px}
   .handle{font-size:23px;font-weight:600}
   .joined{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted)}
   .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0 14px}
-  .stat{border:3px solid #000;border-radius:20px;padding:14px 10px;text-align:center;background:#fff}
+  .stat{border:1.5px solid #000;border-radius:20px;padding:14px 10px;text-align:center;background:#fff}
   .stat.hero{background:var(--accent)}
   .stat .v{font-size:29px;font-weight:700;line-height:1}
   .stat .k{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--acc-mid);margin-top:5px}
@@ -1749,7 +1759,7 @@
   .medal{display:flex;flex-direction:column;align-items:center;gap:7px;width:78px;text-align:center}
   .medal-ico{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
     font-size:23px;line-height:1;background:radial-gradient(circle at 32% 26%, #eefccb, var(--accent) 74%);
-    border:2.5px solid var(--card-line);box-shadow:var(--shadow-pop)}
+    border:1.5px solid var(--card-line);box-shadow:var(--shadow-pop)}
   .medal-lab{font-family:'Nunito';font-weight:800;font-size:10.5px;line-height:1.25;color:var(--on-ground)}
   /* Public-profile recent-calls feed: compact rows, a win/loss rail. */
   .pcall{border:2px solid var(--card-line);border-left-width:6px;border-radius:12px;
@@ -1766,18 +1776,18 @@
      Same chunky-outline white surface as every tile; a coloured left rail and an
      outcome chip carry the verdict at a glance, the numbers back it up. Text is
      pinned to --ink because the surface is white in BOTH themes (contrast lesson). */
-  .htile{border:3px solid #000;border-left-width:9px;border-radius:20px;background:#fff;color:var(--ink);
+  .htile{border:1.5px solid #000;border-left-width:9px;border-radius:20px;background:#fff;color:var(--ink);
     padding:13px 15px 12px;margin-bottom:11px}
   .htile.won{border-left-color:#0f7b3d} .htile.lost{border-left-color:#b3261e} .htile.sold{border-left-color:#9aa7b2}
   .hhead{display:flex;align-items:center;gap:8px;margin-bottom:9px}
-  .hbadge{font-family:'Nunito';font-weight:800;font-size:12px;padding:4px 11px;border-radius:999px;border:2.5px solid #000}
+  .hbadge{font-family:'Nunito';font-weight:800;font-size:12px;padding:4px 11px;border-radius:999px;border:1.5px solid #000}
   .hbadge.won{background:#d7f2e0;color:#0b5c2e} .hbadge.lost{background:#f7dbd7;color:#8f1d17} .hbadge.sold{background:#eef3f7;color:#476075}
   .hwhen{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:#7a8894}
   .htile .q{font-size:15px;margin-bottom:9px;color:var(--ink)}
   .hrow2{display:flex;align-items:center;gap:9px;margin-bottom:11px;font-family:'Nunito';font-weight:800;font-size:12.5px;color:#5b6b77}
   .hfoot{display:flex;align-items:center;gap:12px;font-family:'Nunito';font-weight:800;font-size:13px}
   .hio{color:var(--ink);font-variant-numeric:tabular-nums}
-  .hshare{margin-left:auto;width:34px;height:34px;flex:none;border:2.5px solid #000;border-radius:50%;
+  .hshare{margin-left:auto;width:34px;height:34px;flex:none;border:1.5px solid #000;border-radius:50%;
     background:#fff;cursor:pointer;display:grid;place-items:center;padding:0}
   .hshare:hover{background:var(--wash)}
   .hshare svg{width:15px;height:15px;fill:none;stroke:#000;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
@@ -1786,7 +1796,7 @@
      what?". A board whose top 20 you aren't in says nothing about you; this
      panel says exactly where you are, what tier it earns, and hands you the
      one line worth posting. It leads the screen, above the boards. */
-  .standing{border:3px solid #000;border-radius:22px;background:var(--accent);
+  .standing{border:1.5px solid #000;border-radius:22px;background:var(--accent);
     padding:16px 16px 14px;margin:0 0 14px;position:relative;overflow:hidden}
   .standing-tier{display:inline-flex;align-items:center;gap:7px;font-family:'Fredoka';
     font-weight:700;font-size:21px;line-height:1.1;color:#101010}
@@ -1802,12 +1812,26 @@
   .standing-share:active{opacity:.82}
   /* Unranked/provisional: the same panel, but honest — a quiet shell that says
      what's still missing instead of a tier nobody earned. */
-  .standing.pending{background:var(--wash);border-color:var(--hair-g)}
+  /* A TRANSLUCENT fill, not var(--wash). --wash is light in BOTH themes while
+     the tier/rank text below is var(--on-ground), which flips to near-white —
+     so in dark mode the heading was near-white on cream and simply not there.
+     Fourth time this pairing has bitten this file; the first three were caught
+     inside one rule, this one hid across two (background here, colour on a
+     descendant), which is the hole test-contrast now covers. */
+  /* NO fill in bright, a faint one in dark, and the border does the work in both.
+     Any grey wash here darkens the light ground under .standing-sub, and
+     --muted-g was tuned against the UNWASHED ground (4.82:1): at .10 the sub
+     measured 4.31, at .06 it measured 4.49 — still under the 4.5 floor, by a
+     hundredth. Chasing the opacity was the wrong move; removing it puts the
+     text back on the surface its colour was chosen for. Dark has no such
+     problem, so it keeps a panel. */
+  .standing.pending{background:none;border-color:var(--hair-g)}
+  :root[data-theme="dark"] .standing.pending{background:rgba(255,255,255,.06)}
   .standing.pending .standing-tier,.standing.pending .standing-rank{color:var(--on-ground)}
   .standing.pending .standing-sub{color:var(--muted-g)}
 
   /* leaderboard */
-  .lb{border:3px solid #000;border-radius:22px;overflow:hidden;background:#fff}
+  .lb{border:1.5px solid #000;border-radius:22px;overflow:hidden;background:#fff}
   .lb .r{display:flex;align-items:center;gap:12px;padding:13px 14px;border-bottom:2px solid var(--bar)}
   .lb .r:last-child{border-bottom:0}
   .lb .r.you{background:var(--wash)}
@@ -1829,7 +1853,7 @@
   /* notifications */
   .note{display:flex;gap:12px;padding:14px 0;border-bottom:2px solid var(--bar)}
   .note:last-child{border-bottom:0}
-  .nicon{width:38px;height:38px;border-radius:50%;border:2.5px solid #000;background:var(--wash);flex:none;
+  .nicon{width:38px;height:38px;border-radius:50%;border:1.5px solid #000;background:var(--wash);flex:none;
     display:flex;align-items:center;justify-content:center;font-size:17px}
   .nicon.win{background:var(--accent)}
   .ntext{font-family:'Nunito';font-weight:700;font-size:14px;line-height:1.35}
@@ -1840,17 +1864,17 @@
      a coloured rail for the verdict, and a share button that's loud for a win and
      a shrug for a loss — never a token reward (a paid share is spam, and rewards
      are what let the farm in; the win itself is the reason to post). */
-  .ncard{border:3px solid #000;border-left-width:9px;border-radius:18px;background:#fff;color:var(--ink);
+  .ncard{border:1.5px solid #000;border-left-width:9px;border-radius:18px;background:#fff;color:var(--ink);
     padding:14px 15px 15px;margin-bottom:11px}
   .ncard.win{border-left-color:#0f7b3d} .ncard.loss{border-left-color:#b3261e}
   .nctop{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-  .ncbadge{font-family:'Nunito';font-weight:800;font-size:12.5px;padding:4px 11px;border-radius:999px;border:2.5px solid #000}
+  .ncbadge{font-family:'Nunito';font-weight:800;font-size:12.5px;padding:4px 11px;border-radius:999px;border:1.5px solid #000}
   .ncbadge.win{background:#d7f2e0;color:#0b5c2e} .ncbadge.loss{background:#f7dbd7;color:#8f1d17}
   .ncwhen{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:#7a8894}
   .ncpay{font-family:'Fredoka';font-weight:700;font-size:30px;line-height:1;color:#0f7b3d;margin:2px 0 8px;font-variant-numeric:tabular-nums}
   .ncbody{font-family:'Nunito';font-weight:700;font-size:13px;line-height:1.4;color:var(--ink);margin:0 0 13px}
   .ncshare{display:inline-flex;align-items:center;gap:8px;font-family:'Fredoka';font-weight:600;font-size:15px;color:#000;
-    border:3px solid #000;border-radius:14px;padding:9px 17px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.2);transition:transform .08s}
+    border:1.5px solid #000;border-radius:14px;padding:9px 17px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.2);transition:transform .08s}
   .ncshare:active{transform:translateY(1px);box-shadow:0 2px 0 rgba(0,0,0,.2)}
   .ncshare.win{background:var(--accent)} .ncshare.loss{background:#fff}
   .ncshare svg{width:16px;height:16px;fill:none;stroke:#000;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
@@ -1858,7 +1882,7 @@
 
   /* --------------------------------------------------------------- mobile nav -- */
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;
-    background:var(--ground-2);border-top:2.5px solid var(--line-g);
+    background:var(--ground-2);border-top:1.5px solid var(--line-g);
     padding-bottom:env(safe-area-inset-bottom)}
   .tab{flex:1;background:none;border:0;cursor:pointer;height:var(--tabh);
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
@@ -1957,7 +1981,7 @@
     /* Nav: a centred bottom bar aligned to the column, not a full-width stretch. */
     .tabs{display:flex;left:50%;right:auto;transform:translateX(-50%);
       width:var(--feedcol);max-width:calc(100% - 40px);
-      border:2.5px solid var(--line-g);border-bottom:0;border-radius:20px 20px 0 0;overflow:hidden}
+      border:1.5px solid var(--line-g);border-bottom:0;border-radius:20px 20px 0 0;overflow:hidden}
   }
 
   /* Wide screens: the nav becomes a LEFT sidebar (Twitter/X pattern), filling the
@@ -2030,14 +2054,14 @@
     /* The one filled control in the sidebar — creating is the product's first
        layer and should look like it, not like a sixth navigation row. */
     .navcreate{font-family:'Fredoka';font-weight:600;font-size:15px;color:#101010;
-      background:var(--accent);border:2.5px solid #000;border-radius:16px;
+      background:var(--accent);border:1.5px solid #000;border-radius:16px;
       padding:12px 14px;cursor:pointer;text-align:center;margin:0 0 8px}
     .navcreate:active{transform:translateY(1px)}
     .navgroup{margin:16px 0 4px;padding:0 14px;color:var(--muted-g);
       font-family:'Nunito';font-size:10.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
     .navgroup:first-of-type{margin-top:14px}
     .navitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:16px;cursor:pointer;
-      border:2.5px solid transparent;background:none;font-family:'Fredoka';font-size:15px;font-weight:500;
+      border:1.5px solid transparent;background:none;font-family:'Fredoka';font-size:15px;font-weight:500;
       color:var(--on-ground);width:100%;text-align:left}
     .navitem svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:2.1;
       stroke-linecap:round;stroke-linejoin:round;flex:none}
