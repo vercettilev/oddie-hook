@@ -2601,6 +2601,147 @@ export async function creatorStatsFor(rawDeviceId: string): Promise<CreatorStats
   };
 }
 
+/**
+ * The CREATOR leaderboard — who is good at MAKING markets, ranked by what the
+ * product's economics actually pay for: creator fees earned, then markets
+ * created as the tiebreak (and the only signal before any market resolves).
+ *
+ * The caller boards answer "who predicts well"; this answers "whose markets do
+ * people trade". Both are status, they are different skills, and the second
+ * one is the growth loop — so it gets a board of its own instead of being a
+ * footnote on someone's profile.
+ *
+ * Only ENFORCED play-token creator fees count as earnings — logged real-money
+ * intents are not money anyone received (see logRealFeeIntent) and putting
+ * them on a public board would be inventing income. Creators with zero fees
+ * but real markets still chart (ranked below every earner): early on, the
+ * board would otherwise be empty, and "made 3 markets nobody traded yet" is
+ * an honest row.
+ */
+export interface CreatorLeaderRow {
+  deviceId: string;
+  handle: string;
+  earnings: number;        // play-token creator fees actually received
+  marketsCreated: number;
+}
+
+export async function leaderboardCreators(limit = 20): Promise<CreatorLeaderRow[]> {
+  const n = Math.max(1, Math.min(100, Math.floor(limit)));
+
+  // deviceId -> {earnings, created}
+  const agg = new Map<string, { earnings: number; created: number }>();
+  const bump = (id: string, e: number, c: number) => {
+    const cur = agg.get(id) ?? { earnings: 0, created: 0 };
+    agg.set(id, { earnings: cur.earnings + e, created: cur.created + c });
+  };
+
+  if (!PERSISTENT) {
+    for (const [, s] of memSurfacer) if (s.deviceId) bump(s.deviceId, 0, 1);
+    for (const r of memFeeLog) {
+      if (r.marketKind !== "play" || r.feeKind !== "creator" || !r.enforced || !r.recipientDeviceId) continue;
+      bump(r.recipientDeviceId, r.feeAmount, 0);
+    }
+  } else {
+    await ensureSchema();
+    const [made, fees] = await Promise.all([
+      db().query<{ device_id: string; n: string }>(
+        `SELECT device_id, COUNT(*)::bigint n FROM market_surfacer
+          WHERE device_id IS NOT NULL GROUP BY device_id`),
+      db().query<{ device_id: string; sum: string }>(
+        `SELECT recipient_device_id AS device_id, SUM(fee_amount)::bigint sum
+           FROM market_fee_log
+          WHERE market_kind='play' AND fee_kind='creator' AND enforced = true
+            AND recipient_device_id IS NOT NULL
+          GROUP BY recipient_device_id`),
+    ]);
+    for (const r of made.rows) bump(r.device_id, 0, Number(r.n));
+    for (const r of fees.rows) bump(r.device_id, Number(r.sum), 0);
+  }
+
+  // Same rule as every other public board: the brand's own account never
+  // competes against its users.
+  const excludedId = await excludedLeaderboardDeviceId();
+
+  const ranked = [...agg.entries()]
+    .filter(([id, v]) => id !== excludedId && (v.earnings > 0 || v.created > 0))
+    .sort(([, a], [, b]) => b.earnings - a.earnings || b.created - a.created)
+    .slice(0, n);
+
+  // Handles only for the rows that made the cut — this board is small.
+  return Promise.all(ranked.map(async ([deviceId, v]) => ({
+    deviceId,
+    handle: ((await displayHandleFor(deviceId).catch(() => null)) ?? `#${deviceId.slice(0, 4)}`).replace(/^@+/, ""),
+    earnings: v.earnings,
+    marketsCreated: v.created,
+  })));
+}
+
+/**
+ * The creator's own dashboard: every market THIS device tagged, with the
+ * numbers that tell them how each one is doing. This is "My Markets" — the
+ * page that answers "did making that market pay off?", which nothing else in
+ * the product answered per-market.
+ */
+export interface MyMarketRow {
+  slug: string;
+  question: string;
+  closesAt: string | null;
+  resolvedOutcome: "yes" | "no" | null;
+  poolTokens: number;
+  callers: number;
+  feesEarned: number;
+}
+
+export async function marketsSurfacedBy(rawDeviceId: string, limit = 50): Promise<MyMarketRow[]> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const n = Math.max(1, Math.min(200, Math.floor(limit)));
+
+  let base: Array<{ slug: string; question: string; closesAt: string | null; resolvedOutcome: "yes" | "no" | null }>;
+  if (!PERSISTENT) {
+    base = [...memSurfacer.entries()]
+      .filter(([, s]) => s.deviceId === deviceId)
+      .map(([slug]) => {
+        const rec = mem.get(slug);
+        const meta = memCommunity.get(slug);
+        return {
+          slug,
+          question: rec?.market.question ?? slug,
+          closesAt: rec?.market.closesAt ?? null,
+          resolvedOutcome: meta?.resolvedOutcome ?? null,
+        };
+      })
+      .slice(-n).reverse(); // newest tag first
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ slug: string; question: string; closes_at: Date | null; resolved_outcome: "yes" | "no" | null }>(
+      `SELECT ms.slug, s.question, s.closes_at, cm.resolved_outcome
+         FROM market_surfacer ms
+         JOIN market_slug s ON s.slug = ms.slug
+         LEFT JOIN community_market cm ON cm.slug = ms.slug
+        WHERE ms.device_id = $1
+        ORDER BY ms.created_at DESC LIMIT $2`, [deviceId, n]);
+    base = rows.map((r) => ({
+      slug: r.slug, question: r.question,
+      closesAt: r.closes_at ? r.closes_at.toISOString() : null,
+      resolvedOutcome: r.resolved_outcome,
+    }));
+  }
+  if (!base.length) return [];
+
+  const slugs = base.map((b) => b.slug);
+  const [pools, players, fees] = await Promise.all([
+    communityPoolSizes(slugs).catch(() => ({} as Record<string, number>)),
+    communityPlayerCounts(slugs).catch(() => ({} as Record<string, number>)),
+    creatorFeesPaidFor(slugs).catch(() => ({} as Record<string, { amount: number; handle: string | null }>)),
+  ]);
+  return base.map((b) => ({
+    ...b,
+    poolTokens: pools[b.slug] ?? 0,
+    callers: players[b.slug] ?? 0,
+    feesEarned: fees[b.slug]?.amount ?? 0,
+  }));
+}
+
 /** Recent fee events, newest first — the admin audit view over market_fee_log. */
 export async function feeLog(limit = 100): Promise<FeeLogRow[]> {
   const n = Math.max(1, Math.min(500, Math.floor(limit)));

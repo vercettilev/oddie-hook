@@ -19,6 +19,8 @@ import { creatorFeesPaidFor } from "./store/markets.js";
 import { creatorStatsFor } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
+import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
+import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
@@ -380,6 +382,11 @@ function personalizeByHistory<T extends { cat: string; m: { volumeUsd: number } 
 app.get("/api/feed", async (req, res) => {
   const startSlug = String(req.query.start ?? "");
   const cat = String(req.query.cat ?? "");
+  // Discovery mode — For You / Trending / New / Resolving Soon. A lens over
+  // the same set, never a filter; see feedSort.ts for each mode's rule and
+  // the honesty constraints behind it.
+  const sortRaw = String(req.query.sort ?? "foryou");
+  const sort = isFeedSort(sortRaw) ? sortRaw : "foryou";
   // Personalization: 1-3 picked categories rank FIRST (not filter — breadth
   // stays visible), each block still volume-sorted.
   const cats = String(req.query.cats ?? "").split(",").map((x) => x.trim()).filter((x) => (CATEGORIES as readonly string[]).includes(x)).slice(0, 3);
@@ -495,6 +502,10 @@ app.get("/api/feed", async (req, res) => {
     feedItems = start ? [...communityItems, ...items] : [...items, ...communityItems];
   }
 
+  // Discovery-mode ordering, applied over the assembled list. "foryou" is a
+  // no-op by design — the source-aware order above IS the For You ranking.
+  feedItems = sortFeedItems(feedItems, sort);
+
   // A start slug (a /m/ permalink landing) pins ITS market to the very top —
   // above even the community block: the shared market is the page's headline,
   // the rest of the feed is "related" below it.
@@ -568,7 +579,7 @@ app.get("/api/feed", async (req, res) => {
 
   const chips: string[] = CATEGORIES.filter((c) => c !== "Other");
   if (community.length) chips.push("Community");
-  res.json({ categories: ["For you", ...chips], items: withCrowd });
+  res.json({ categories: ["For you", ...chips], items: withCrowd, sort });
 });
 
 /**
@@ -726,6 +737,10 @@ app.get("/api/home", async (req, res) => {
         creatorStatsFor(deviceId).catch(() => null),
       ])
     : [null, null];
+  // The rail's "Top creators" teaser — same rows the Leaderboard's creator
+  // board shows, so the teaser and the page it links to can never disagree.
+  const topCreators = (await leaderboardCreators(3).catch(() => []))
+    .map((r, i) => ({ rank: i + 1, handle: r.handle, earnings: r.earnings, marketsCreated: r.marketsCreated }));
   // Only RANKED callers are eligible — `provisional` is the store's existing
   // "sample too small to mean anything" flag, and the full Leaderboard sorts
   // those below everyone else for the same reason.
@@ -746,6 +761,7 @@ app.get("/api/home", async (req, res) => {
     // The right rail's two panels. `me` is the caller identity (accuracy,
     // rank, tier), `creator` is the market-maker one (fees earned, markets
     // made, traders reached). Null for a device we don't know yet.
+    topCreators,
     me: me ? {
       handle: me.handle, accuracyPct: me.accuracy.accuracyPct, resolved: me.accuracy.resolved,
       hasEnough: me.accuracy.hasEnough, minResolved: me.accuracy.minResolved,
@@ -754,6 +770,20 @@ app.get("/api/home", async (req, res) => {
     } : null,
     creator,
   });
+});
+
+/**
+ * The creator's own dashboard — every market this device tagged, with pool,
+ * callers and fees earned per market. Device-scoped, not admin: it only ever
+ * reveals markets the asking device created and numbers that are public on
+ * the cards anyway.
+ */
+app.get("/api/my-markets", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  const markets = await marketsSurfacedBy(deviceId, 50).catch(() => []);
+  res.json({ markets });
 });
 
 /**
@@ -1225,7 +1255,7 @@ app.get("/api/leaderboard", async (req, res) => {
   const raw = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   // Board rows are canonical devices; a signed-in browser's own id is not.
   const me = raw ? await resolveDevice(raw) : null;
-  const [edge, streaks, winnings] = await Promise.all([leaderboard(20), leaderboardStreaks(20), leaderboardWinnings(20)]);
+  const [edge, streaks, winnings, creators] = await Promise.all([leaderboard(20), leaderboardStreaks(20), leaderboardWinnings(20), leaderboardCreators(20).catch(() => [])]);
   // The viewer's OWN standing, sent alongside the boards. A leaderboard whose
   // top 20 you aren't in tells you nothing about yourself, which is exactly
   // the "accuracy accumulates, so what?" complaint — this is the answer:
@@ -1245,6 +1275,8 @@ app.get("/api/leaderboard", async (req, res) => {
     })),
     streaks: streaks.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, current: r.current, best: r.best })),
     winnings: winnings.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, net: r.net, closed: r.closed })),
+    // The creator board — who is good at MAKING markets. See leaderboardCreators.
+    creators: creators.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, earnings: r.earnings, marketsCreated: r.marketsCreated })),
   });
 });
 

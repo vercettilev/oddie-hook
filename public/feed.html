@@ -237,6 +237,50 @@
   .mchip-sourced{background:var(--bar);color:#5b6672;box-shadow:none;
     font-size:11px;letter-spacing:.02em}
   :root[data-theme="dark"] .mchip-sourced{color:#9aa6b2}
+  /* Discovery modes — the row above the category chips. Mode answers "show me
+     what's happening" (For You / Trending / New / Resolving Soon), category
+     answers "about what"; two axes, two rows. The active mode is the one
+     accent-filled control in the header, same treatment as every selected
+     state in the system. */
+  .sortrow{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;
+    margin:0 0 8px;padding:2px 2px}
+  .sortrow::-webkit-scrollbar{display:none}
+  .sortb{flex:none;font-family:'Nunito';font-weight:900;font-size:12px;
+    color:var(--muted-g);background:none;border:1.5px solid var(--hair-g);
+    border-radius:999px;padding:6px 13px;cursor:pointer;white-space:nowrap}
+  .sortb.on{color:#17250a;background:var(--accent);border-color:#000}
+
+  /* Sidebar discovery links — same .navitem chassis, a small dot instead of an
+     icon so they read as one family of lenses rather than five more sections. */
+  .navsort-dot{width:7px;height:7px;border-radius:50%;background:var(--hair-g);flex:none;margin:0 7px}
+  .navsort.on .navsort-dot{background:#000}
+
+  /* Top creators — the rail's ranked teaser. */
+  .rp-toplist{display:flex;flex-direction:column;gap:8px;margin:2px 0 0}
+  .rp-toprow{display:flex;align-items:center;gap:9px}
+  .rp-toprow b{flex:none;width:16px;font-family:'Fredoka';font-weight:700;font-size:13px;color:var(--muted-g)}
+  .rp-topwho{flex:1;min-width:0;font-family:'Nunito';font-weight:800;font-size:13px;
+    color:var(--on-ground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rp-topval{flex:none;text-align:right;font-family:'Nunito';font-weight:900;font-size:12.5px;color:var(--acc-deep)}
+  :root[data-theme="dark"] .rp-topval{color:var(--accent)}
+  .rp-topval small{display:block;font-weight:700;font-size:10px;color:var(--muted-g)}
+
+  /* My Markets — the creator dashboard. */
+  .mm-total{font-family:'Nunito';font-weight:800;font-size:13px;color:var(--muted-g);margin:0 0 12px}
+  .mm-total b{font-family:'Fredoka';font-weight:700;font-size:17px;color:var(--acc-deep)}
+  :root[data-theme="dark"] .mm-total b{color:var(--accent)}
+  .mm-list{display:flex;flex-direction:column;gap:9px}
+  .mm-row{display:block;padding:12px 14px;border:2px solid var(--hair-g);border-radius:16px;
+    text-decoration:none;background:var(--ground-2)}
+  .mm-row:hover{border-color:var(--accent)}
+  .mm-q{display:block;font-family:'Fredoka';font-weight:600;font-size:15px;line-height:1.3;
+    color:var(--on-ground);margin:0 0 4px}
+  .mm-meta{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g)}
+  .mm-empty{text-align:center;padding:26px 8px}
+  .mm-empty-big{font-family:'Fredoka';font-weight:600;font-size:19px;color:var(--on-ground);margin:0 0 8px}
+  .mm-empty-sub{font-family:'Nunito';font-weight:700;font-size:13px;line-height:1.5;
+    color:var(--muted-g);max-width:340px;margin:0 auto 14px}
+
   /* The velocity chip. Warm, not lime — lime already means "tagged by" on this
      same row, and two accent chips side by side would flatten the distinction
      between provenance and activity. Only rendered when the count is > 0. */
@@ -2541,7 +2585,10 @@ function scrollToEl(container,el,{duration=520,offset=8}={}){
    Hash routes, not paths. oddie.fun points straight at this one service, so real
    paths would work too — but the hash keeps client views (positions, leaderboard,
    profile) purely in the browser, no server round-trip. The hash never leaves it. */
-const VIEWS=NAV.map(([k])=>k);
+// mymarkets is a real view WITHOUT being a mobile tab — five tabs is already
+// the width budget at 400px, and the creator dashboard is reachable from the
+// desktop sidebar, the rail's creator panel, and any #/mymarkets link.
+const VIEWS=[...NAV.map(([k])=>k),"mymarkets"];
 // Both permalink shapes: /m/{slug} is canonical, /market/{slug} lives on in old links.
 const startSlug=(location.pathname.match(/^\/(?:m|market)\/([^/]+)/)||[])[1]||"";
 // Public profile page: /@{handle}. A path route, like the market permalink.
@@ -2550,6 +2597,11 @@ const profileHandle=(location.pathname.match(/^\/@([^/?#]+)/)||[])[1]||"";
 // right) instead of showing the feed — oddie.fun is no longer a redirect to it.
 const isHomePath=location.pathname==="/";
 let activeCat=new URLSearchParams(location.search).get("cat")||"For you";
+// The feed's discovery mode — For You / Trending / New / Resolving Soon.
+// Session state, not a route: switching modes is re-lensing the same feed,
+// and the sidebar's discovery links set this then open the feed.
+let feedSort="foryou";
+const FEED_SORT_LABELS=[["foryou","For You"],["trending","Trending"],["new","New"],["resolving","Resolving Soon"]];
 
 // Permalink landing → log one device-attributed page view for the wedge metrics
 // (click→pick). Fire-and-forget; a failure never affects the page.
@@ -2570,11 +2622,21 @@ function paintNav(view){
   // lists Feed/Positions/Leaderboard and nothing about creating describes a
   // prediction app, not this one. It is an ACTION, not a route, so it opens
   // the paste sheet rather than setting a hash.
+  // Desktop sidebar = create, then DISCOVERY (how you browse), then the app
+  // sections. Discovery modes are feed lenses, not routes — each sets the
+  // sort and opens the feed. Mobile keeps its five tabs; modes live in the
+  // feed's own sort row there.
   document.getElementById("railnav").innerHTML=
     `<button class="navcreate" type="button" id="navcreate">+ Create a market</button>`
+    +FEED_SORT_LABELS.map(([k,label])=>
+      `<button class="navitem navsort${view==="feed"&&feedSort===k?" on":""}" data-sort="${k}"><span class="navsort-dot"></span><span>${label}</span></button>`).join("")
+    +`<button class="navitem${view==="mymarkets"?" on":""}" data-go="mymarkets">${svg("positions")}<span>My markets</span></button>`
     +NAV.map(([k,label])=>
     `<button class="navitem${k===view?" on":""}" data-go="${k}">${svg(k)}<span>${label}</span></button>`).join("");
   document.getElementById("navcreate").onclick=()=>openPasteSheet();
+  document.querySelectorAll("#railnav [data-sort]").forEach(b=>{
+    b.onclick=()=>{feedSort=b.dataset.sort;location.hash="#/feed";render();};
+  });
   document.getElementById("tabs").innerHTML=NAV.map(([k,label])=>
     `<button class="tab${k===view?" on":""}" data-go="${k}" aria-label="${label}">
        <span class="ico">${svg(k)}</span><span>${k==="alerts"?"Alerts":label}</span></button>`).join("");
@@ -2604,9 +2666,21 @@ function feedTop(cats){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
        <div class="brand">${BRAND_MARK}<span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+       <div class="sortrow" id="sortrow"></div>
        <div class="chipswrap"><div class="chips" id="chips"></div></div>
      </div>`;
   paintBalance();paintThemeToggle();
+  // Discovery modes ABOVE the category chips: mode answers "show me what's
+  // happening", category answers "about what" — two independent axes, and
+  // collapsing them into one chip row made every mode compete with every
+  // topic for the same tap.
+  const sr=document.getElementById("sortrow");
+  FEED_SORT_LABELS.forEach(([k,label])=>{
+    const b=document.createElement("button");
+    b.className="sortb"+(k===feedSort?" on":"");b.textContent=label;
+    b.onclick=()=>{if(k!==feedSort){feedSort=k;ev("cat_change",{cat:"sort:"+k});paintNav("feed");loadFeed();}};
+    sr.appendChild(b);
+  });
   const el=document.getElementById("chips");
   (cats||[]).forEach(c=>{
     const b=document.createElement("button");
@@ -2655,6 +2729,7 @@ async function loadFeed(){
     const q=new URLSearchParams();
     if(startSlug && activeCat==="For you")q.set("start",startSlug);
     if(activeCat!=="For you")q.set("cat",activeCat);
+    if(feedSort!=="foryou")q.set("sort",feedSort);
     // Sent so the server can bias "For you" toward this device's play history
     // (signed-in users with positions). Cold devices with no history are unaffected.
     q.set("deviceId",deviceId);
@@ -2990,7 +3065,7 @@ function feeNoteHtml(m){
  * and a bright "Claim +5" banner above the markets framed the product as a
  * play-money faucet instead.
  */
-function buildRail(me,creator,claimFrag,openCalls){
+function buildRail(me,creator,claimFrag,openCalls,topCreators){
   const rail=document.createElement("aside");rail.className="homerail";
 
   // CALLER identity. A provisional record says how far off it is rather than
@@ -3033,8 +3108,22 @@ function buildRail(me,creator,claimFrag,openCalls){
       ${creator.marketsCreated===0
         ? `<div class="rp-sub">Tag a post on X and you'll earn 3% every time someone trades your market.</div>`
         : `<div class="rp-sub">You earn 3% of every market you create, paid when it resolves.</div>`}
-      <button class="rp-create" type="button">+ Create a market</button>`;
+      <button class="rp-create" type="button">+ Create a market</button>
+      ${creator.marketsCreated>0?`<a class="rp-link" href="#/mymarkets">My markets →</a>`:""}`;
     p.querySelector(".rp-create").onclick=()=>openPasteSheet();
+    rail.appendChild(p);
+  }
+
+  // Top creators — the growth loop as status. Same rows the Leaderboard's
+  // creator board shows (same source), so teaser and board can't disagree.
+  // Earnings are PREDICTIONS, deliberately never dressed as currency.
+  if(Array.isArray(topCreators)&&topCreators.length){
+    const p=document.createElement("div");p.className="rpanel";
+    p.innerHTML=`<div class="rp-head">Top creators</div>
+      <div class="rp-toplist">${topCreators.map(r=>`
+        <div class="rp-toprow"><b>${r.rank}</b><span class="rp-topwho">@${esc(r.handle)}</span>
+          <span class="rp-topval">+${r.earnings}<small>${r.marketsCreated} market${r.marketsCreated===1?"":"s"}</small></span></div>`).join("")}</div>
+      <a class="rp-link" href="#/leaderboard">Explore leaderboard →</a>`;
     rail.appendChild(p);
   }
 
@@ -3259,8 +3348,8 @@ function buildCard(m,i,homeLoop){
           <div class="srctweet-link">View the original post on X ↗</div>
         </span>
       </a>` : ""}
-      <div class="meta">${metaRowHtml(m,yes)}</div>
       ${sourcePostHtml(m)}
+      <div class="meta">${metaRowHtml(m,yes)}</div>
       <div class="take">${esc(m.question)}</div>
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">
@@ -3768,7 +3857,7 @@ async function renderHome(){
   // actually sent rows for it — so a fetch failure, a cold database, or a
   // genuinely thin product all degrade to the section being absent. Nothing
   // here has a placeholder or a sample row to fall back to, by design.
-  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50, newUser=false, featuredShown=4, me=null, creator=null; // 50/4 are only pre-fetch placeholders; the block below always prefers the live values
+  let featured=[], settled=[], topCallers=[], activity=null, openCalls=null, surfaceReward=50, newUser=false, featuredShown=4, me=null, creator=null, topCreators=[]; // 50/4 are only pre-fetch placeholders; the block below always prefers the live values
   try{
     // deviceId unlocks the one PERSONAL section (openCalls) — every other
     // section on Home is aggregate and renders the same for anyone.
@@ -3792,6 +3881,7 @@ async function renderHome(){
       // device the server doesn't know yet, and the rail omits the panel.
       me=j.me&&typeof j.me==="object"?j.me:null;
       creator=j.creator&&typeof j.creator==="object"?j.creator:null;
+      topCreators=Array.isArray(j.topCreators)?j.topCreators:[];
       openCalls=j.openCalls&&typeof j.openCalls==="object"?j.openCalls:null;
       newUser=j.newUser===true;
       if(typeof j.surfaceReward==="number")surfaceReward=j.surfaceReward;
@@ -3868,7 +3958,7 @@ async function renderHome(){
     hero.innerHTML=`
       <div class="cb-copy">
         <h1 class="cb-title">Turn any post on X into a market.</h1>
-        <p class="cb-sub">Create the market. Earn when people trade. Keep score when it resolves.</p>
+        <p class="cb-sub">Tag <b>@oddiefun</b> under any post and we'll create the market for you — you earn <b>3%</b> when it resolves with people on it.</p>
       </div>
       <div class="cb-actions">
         <a class="cb-tag" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener"><span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
@@ -4106,7 +4196,7 @@ async function renderHome(){
     if(featuredFrag)mainCol.appendChild(featuredFrag);
     if(topFrag)mainCol.appendChild(topFrag);
     wrap.appendChild(mainCol);
-    wrap.appendChild(buildRail(me,creator,claimFrag,openCalls));
+    wrap.appendChild(buildRail(me,creator,claimFrag,openCalls,topCreators));
   }
 
   // The three-beat "how it works" — icons + a few words each, no paragraphs.
@@ -4382,6 +4472,45 @@ function renderShell(view){
   if(view==="leaderboard"){shellTop("Leaderboard",false);loadLeaderboard(scroller);}
   if(view==="alerts"){shellTop("Notifications",false);loadNotices(scroller);}
   if(view==="profile"){shellTop("Profile",false);loadProfile(scroller);}
+  if(view==="mymarkets"){shellTop("My markets",false);loadMyMarkets(scroller);}
+}
+
+/**
+ * The creator dashboard: every market this device tagged, with the per-market
+ * numbers that answer "did making that one pay off?". Rows link to the market.
+ * The empty state TEACHES rather than apologises — the whole reason a
+ * zero-market creator lands here is to find out how to have markets.
+ */
+async function loadMyMarkets(scroller){
+  scroller.innerHTML='<div class="state">checking your markets…</div>';
+  try{
+    const r=await fetch(`${API}/api/my-markets?deviceId=${encodeURIComponent(deviceId)}`);
+    if(!r.ok)throw new Error("my-markets "+r.status);
+    const {markets}=await r.json();
+    if(!markets.length){
+      scroller.innerHTML=`<div class="sheet"><div class="mm-empty">
+        <p class="mm-empty-big">You haven't tagged a market yet.</p>
+        <p class="mm-empty-sub">Reply <b>@oddiefun</b> under any post on X — the market it becomes is yours, and you earn <b>3%</b> when it resolves with people on it.</p>
+        <button class="rp-create" type="button">+ Create a market</button>
+      </div></div>`;
+      scroller.querySelector(".rp-create").onclick=()=>openPasteSheet();
+      return;
+    }
+    const totalFees=markets.reduce((a,m)=>a+(m.feesEarned||0),0);
+    scroller.innerHTML=`<div class="sheet">
+      <div class="mm-total"><b>+${totalFees}</b> earned in creator fees · ${markets.length} market${markets.length===1?"":"s"}</div>
+      <div class="mm-list">${markets.map(m=>`
+        <a class="mm-row" href="/m/${encodeURIComponent(m.slug)}">
+          <span class="mm-q">${esc(m.question)}</span>
+          <span class="mm-meta">${m.resolvedOutcome
+            ?`resolved ${m.resolvedOutcome.toUpperCase()}${m.feesEarned?` · you earned +${m.feesEarned}`:""}`
+            :`${m.poolTokens} in play · ${m.callers} caller${m.callers===1?"":"s"}${m.closesAt?` · ${closesIn(m.closesAt)}`:""}`}</span>
+        </a>`).join("")}</div>
+    </div>`;
+  }catch(e){
+    console.error(e);
+    scroller.innerHTML='<div class="state">couldn’t load your markets — try again in a moment.</div>';
+  }
 }
 
 // Identity block bits shared by the public and private profiles — the trophy
@@ -4858,6 +4987,9 @@ function renderLb(scroller,data){
     winnings:{sub:"Net predictions from settled and sold positions. Volume only counts if you're right.",
       empty:"No settled predictions yet — make a call and let a market resolve.",
       rows:data.winnings,html:(r)=>row(r,`<div class="acc ${cls(r.net)}">${r.net>0?"+":""}${r.net}<small>${r.closed} closed</small></div>`)},
+    creators:{sub:"Ranked by creator fees earned — 3% of every market you tag, paid when it resolves. Markets created breaks ties.",
+      empty:"Nobody has created a market yet. Tag a post on X and this board is yours.",
+      rows:data.creators,html:(r)=>row(r,`<div class="acc ${r.earnings>0?"up":"flat"}">+${r.earnings}<small>${r.marketsCreated} market${r.marketsCreated===1?"":"s"}</small></div>`)},
   };
   const b=bodies[lbTab];
   const rm=data.rankMove;
@@ -4866,7 +4998,7 @@ function renderLb(scroller,data){
     ${standingHtml(data.you)}
     ${rankMoveLine}
     <div class="seg" role="tablist" style="margin-bottom:14px">
-      ${[["edge","Edge"],["streak","Streak"],["winnings","Winnings"]].map(([k,l])=>
+      ${[["edge","Edge"],["streak","Streak"],["winnings","Winnings"],["creators","Creators"]].map(([k,l])=>
         `<button class="segb${lbTab===k?" on":""}" data-lbtab="${k}" role="tab">${l}</button>`).join("")}
     </div>
     <p class="sub">${b.sub}</p>
