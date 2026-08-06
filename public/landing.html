@@ -11,7 +11,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
-<meta name="theme-color" content="#B6F05F">
+<meta name="theme-color" content="#D4E017">
 <!-- Share preview. X is the distribution channel, so the card this page throws
      when someone posts oddie.fun matters at least as much as the page itself. -->
 <meta name="description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score.">
@@ -60,14 +60,16 @@
     src:url('/fonts/nunito-latin.woff2') format('woff2');
     unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 
-  /* ONE brand token. This is the app's real accent (#B6F05F), not a landing-only
-     green, so the page and the product one click away are the same brand. The
-     reference comp reads slightly more yellow; swapping this single line is the
-     whole change if that hue is wanted instead. */
+  /* The brand chartreuse, sampled off the Oddie mark itself: a YELLOW-green, not
+     the mint-lime the app currently ships (#B6F05F). The comp, the logo tile and
+     the portal all sit in this family, and the mint read as a different product
+     next to them. --lime-hot is the blown-out core of the doorway, --lime-dim
+     its falloff, --lime-deep the olive the rock catches at the arch rim. */
   :root{
-    --lime:#B6F05F;
-    --lime-dim:#8FC72E;
-    --lime-hot:#E4FFAE;
+    --lime:#D4E017;
+    --lime-dim:#9BA810;
+    --lime-hot:#F4FF8A;
+    --lime-deep:#5C6608;
     --no:#FF6B5A;
     --bg:#050505;
     --card:#0C0D0B;
@@ -127,7 +129,7 @@
      empty background. */
   .hero::before{content:"";position:absolute;right:-160px;top:40px;width:1000px;height:780px;
     pointer-events:none;z-index:0;
-    background:radial-gradient(ellipse at 50% 50%,rgba(182,240,95,.10) 0,rgba(182,240,95,.03) 45%,transparent 72%)}
+    background:radial-gradient(ellipse at 50% 50%,rgba(212,224,23,.13) 0,rgba(212,224,23,.04) 45%,transparent 72%)}
   /* The copy column is capped rather than fluid: the stage needs enough width to
      seat two cards side by side WITHOUT either of them landing on the mascot,
      and every pixel the headline does not need is worth more over there. */
@@ -147,7 +149,7 @@
      line break in the markup is the design; letting the type outgrow the column
      turns it into a three-line ragged block and the break stops meaning
      anything. */
-  h1{margin:26px 0 0;font-family:'Fredoka';font-weight:600;color:var(--fg);
+  h1{margin:26px 0 0;font-family:'Fredoka';font-weight:700;color:var(--fg);
     font-size:clamp(38px,5.6vw,63px);line-height:1.02;letter-spacing:-.035em}
   h1 em{font-style:normal;color:var(--lime)}
 
@@ -183,44 +185,23 @@
   /* The art sits CENTRED in its column and the cards hang off both edges of the
      stage, so the doorway is framed rather than crowded. As the column narrows
      the cards close in on it and start to overlap, which is the depth the comp
-     has — it is the same layout getting tighter, not a different one. */
-  .stage__art{position:absolute;left:50%;transform:translateX(-50%);bottom:32px;
-    width:300px;height:440px;z-index:1}
-  .stage__bloom{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:660px;height:660px;border-radius:50%;pointer-events:none;
-    background:radial-gradient(circle,rgba(182,240,95,.30) 0,rgba(182,240,95,.09) 34%,transparent 66%)}
-  /* A lit doorway, not a lime slab: the flat gradient carries the body of the
-     light and the radial hot-spot low in the arch is where it is brightest,
-     which is exactly where the mascot stands and why it reads as backlit. */
-  .stage__arch{position:absolute;left:50%;bottom:56px;transform:translateX(-50%);
-    width:186px;height:330px;border-radius:93px 93px 10px 10px;
-    background:
-      radial-gradient(ellipse at 50% 76%,rgba(255,255,255,.92) 0,rgba(255,255,255,0) 48%),
-      radial-gradient(ellipse at 50% 62%,var(--lime-hot) 0,var(--lime) 44%,var(--lime-dim) 88%);
-    box-shadow:0 0 130px 34px rgba(182,240,95,.42),inset 0 0 46px rgba(255,255,255,.26);
-    /* The base dissolves instead of stopping on a hard line. A doorway made of
-       light does not have a bottom edge; it has a floor it spills onto, and the
-       pool below picks the shape back up. */
-    -webkit-mask-image:linear-gradient(180deg,#000 66%,transparent 99%);
-    mask-image:linear-gradient(180deg,#000 66%,transparent 99%)}
-  /* The floor: light pooling out of the doorway. Centred inside its own box so
-     the ellipse fades out well before the box edges — an off-centre focal point
-     gets clipped by the top edge and draws a hard horizontal seam across the
-     whole page, which is exactly what it did. */
-  .stage__floor{position:absolute;left:50%;bottom:-30px;transform:translateX(-50%);
-    width:700px;height:300px;pointer-events:none;
-    background:radial-gradient(ellipse at 50% 50%,rgba(182,240,95,.30) 0,rgba(182,240,95,.07) 38%,transparent 68%)}
-  .stage__mascot{position:absolute;left:50%;bottom:54px;transform:translateX(-50%);
-    width:146px;height:auto;z-index:2;
-    /* The cutout ships white on transparent; brightness(0) makes it the backlit
-       silhouette the composition needs, and the drop-shadow gives it the rim of
-       light an object standing in a doorway would actually catch. */
-    filter:brightness(0) drop-shadow(0 0 20px rgba(182,240,95,.5))}
+     has — it is the same layout getting tighter, not a different one.
+     The scene itself is one inline SVG (see .scene) rather than a stack of
+     absolutely positioned gradient boxes: a cave has rock, a floor, haze and a
+     lit rim, and none of that survives being expressed as three divs. As an SVG
+     it is also one object that scales, so the phone gets the same picture. */
+  /* The scene FILLS the stage rather than sitting in it as a 360px picture. Its
+     back layer is a rock face, and a rock face confined to a narrow box reads as
+     exactly that: a lighter rectangle pasted onto the page. Edge-to-edge, with
+     the vignette mask inside the SVG dissolving its borders into the page black,
+     it reads as a room the cards are floating in. */
+  .stage__art{position:absolute;inset:0;z-index:1}
+  .scene{display:block;width:100%;height:100%}
 
   .qcard{position:absolute;z-index:3;width:248px;padding:15px 16px 14px;
     border:1px solid var(--line);border-radius:13px;background:rgba(12,13,11,.94);
     backdrop-filter:blur(7px);box-shadow:0 18px 44px rgba(0,0,0,.6)}
-  .qcard:hover{border-color:rgba(182,240,95,.4)}
+  .qcard:hover{border-color:rgba(212,224,23,.45)}
   .qcard__top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
     color:var(--fg-3);font-size:9px;font-weight:900;letter-spacing:.13em;text-transform:uppercase}
   .qcard__live{display:inline-flex;align-items:center;gap:5px;color:var(--lime)}
@@ -318,8 +299,7 @@
   @media (max-width:1080px){
     .hero__in{grid-template-columns:1fr;row-gap:8px;padding-bottom:56px}
     .lede{max-width:none}
-    .stage{height:540px;margin-top:16px}
-    .stage__art{left:50%;right:auto;transform:translateX(-50%)}
+    .stage{height:560px;margin-top:16px}
     .qcard--a{left:0;top:40px}
     .qcard--b{right:0;top:96px}
     .qcard--c{left:0;top:300px}
@@ -347,14 +327,13 @@
     .cta{gap:10px;margin-top:26px}
     .cta__go,.cta__alt{flex:1 1 100%;justify-content:center;padding:15px 20px}
 
-    .stage{height:auto;margin-top:26px}
-    .stage__art{position:relative;right:auto;left:auto;transform:none;margin:0 auto;
-      width:210px;height:290px}
-    .stage__bloom{width:420px;height:420px}
-    .stage__arch{width:124px;height:222px;border-radius:62px 62px 8px 8px;bottom:34px;
-      box-shadow:0 0 62px 18px rgba(182,240,95,.40)}
-    .stage__floor{width:420px;height:130px}
-    .stage__mascot{width:120px;bottom:30px}
+    /* The scene is one SVG, so the phone gets the SAME picture rather than a
+       reduced one: it just occupies the full column width and the card row
+       moves below it. */
+    /* The scene stops filling the stage and becomes a block of its own, so the
+       card row can flow underneath it instead of on top of it. */
+    .stage{height:auto;margin-top:22px}
+    .stage__art{position:relative;inset:auto;height:300px}
 
     /* Full-bleed so the row can run off both edges of the phone the way a real
        carousel does, instead of stopping inside the page gutter. */
@@ -439,11 +418,155 @@
     <!-- The stage. `aria-hidden` on the art alone: the market cards below it are
          real links to real markets and stay in the accessibility tree. -->
     <div class="stage">
+      <!-- The doorway, drawn rather than photographed. Every colour resolves from
+           the --lime tokens above, so the whole scene re-tints from one line.
+           Layer order is back to front: bloom, the light itself, the rock face
+           the arch is cut into, rock jutting into the opening, the rim the light
+           catches, the spill across the floor, foreground rock, haze, and the
+           mascot last, standing on the threshold. -->
       <div class="stage__art" aria-hidden="true">
-        <span class="stage__bloom"></span>
-        <span class="stage__arch"></span>
-        <span class="stage__floor"></span>
-        <img class="stage__mascot" src="/mascot-cutout.png" alt="">
+        <!-- `meet`, not `slice`: the vignette that dissolves this scene into the
+             page lives at the OUTER edge of the viewBox, and slice crops exactly
+             that away, so the rock stopped on four visible straight edges again.
+             Fitting the whole viewBox keeps the fade, and the letterbox it costs
+             is invisible because those edges are transparent by then. -->
+        <svg class="scene" viewBox="0 0 660 540" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <!-- Brightest low and centre, where the source is, falling off toward
+                 the crown. That gradient IS the backlight the mascot stands in. -->
+            <radialGradient id="od-portal" cx="50%" cy="88%" r="86%">
+              <stop offset="0%" stop-color="#FFFFF4"/>
+              <stop offset="11%" stop-color="var(--lime-hot)"/>
+              <stop offset="42%" stop-color="var(--lime)"/>
+              <stop offset="100%" stop-color="var(--lime-dim)"/>
+            </radialGradient>
+            <radialGradient id="od-bloom" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="var(--lime)" stop-opacity=".34"/>
+              <stop offset="40%" stop-color="var(--lime)" stop-opacity=".09"/>
+              <stop offset="100%" stop-color="var(--lime)" stop-opacity="0"/>
+            </radialGradient>
+            <radialGradient id="od-pool" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="var(--lime-hot)" stop-opacity=".6"/>
+              <stop offset="34%" stop-color="var(--lime)" stop-opacity=".18"/>
+              <stop offset="100%" stop-color="var(--lime)" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="od-spill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--lime-hot)" stop-opacity=".5"/>
+              <stop offset="48%" stop-color="var(--lime)" stop-opacity=".12"/>
+              <stop offset="100%" stop-color="var(--lime)" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="od-rock" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#1C2011"/>
+              <stop offset="62%" stop-color="#101408"/>
+              <stop offset="100%" stop-color="#080903"/>
+            </linearGradient>
+            <!-- What the doorway throws ONTO the surrounding stone. Without this
+                 the rock sat at nearly the page's own black and the cave simply
+                 was not there: an arch glowing in a void, not a way out of a
+                 room. It is painted with the same arch-shaped hole as the rock
+                 so it can never wash over the opening itself. -->
+            <radialGradient id="od-rocklight" cx="50%" cy="74%" r="62%">
+              <stop offset="0%" stop-color="var(--lime)" stop-opacity=".26"/>
+              <stop offset="38%" stop-color="var(--lime)" stop-opacity=".085"/>
+              <stop offset="100%" stop-color="var(--lime)" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="od-floor" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#141709"/>
+              <stop offset="100%" stop-color="#060703"/>
+            </linearGradient>
+            <filter id="od-soft" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="13"/>
+            </filter>
+            <filter id="od-softer" x="-70%" y="-70%" width="240%" height="240%">
+              <feGaussianBlur stdDeviation="24"/>
+            </filter>
+            <filter id="od-rim" x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation="5"/>
+            </filter>
+            <!-- Flattens the white-on-transparent cutout to a pure silhouette:
+                 RGB forced to zero, alpha untouched. -->
+            <filter id="od-sil" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+              <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+            </filter>
+            <!-- The same cutout recoloured to the hot lime and blurred, sat behind
+                 the silhouette so the mascot catches a rim off the doorway. -->
+            <filter id="od-glow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">
+              <feColorMatrix type="matrix" values="0 0 0 0 .96  0 0 0 0 1  0 0 0 0 .54  0 0 0 1 0"/>
+              <feGaussianBlur stdDeviation="9"/>
+            </filter>
+            <!-- Dissolves the scene's own rectangle into the page. Without it the
+                 rock face stops on four straight edges and the whole thing reads
+                 as a pasted-in picture rather than as a room. -->
+            <radialGradient id="od-fade" cx="50%" cy="56%" r="72%">
+              <stop offset="0%" stop-color="#fff"/>
+              <stop offset="52%" stop-color="#fff"/>
+              <stop offset="100%" stop-color="#000"/>
+            </radialGradient>
+            <mask id="od-vig"><rect width="660" height="540" fill="url(#od-fade)"/></mask>
+          </defs>
+
+          <g mask="url(#od-vig)">
+            <ellipse cx="330" cy="300" rx="300" ry="270" fill="url(#od-bloom)"/>
+
+            <!-- the light, drawn oversized so the rock cut below trims it clean -->
+            <path d="M262 440 L262 210 A68 68 0 0 1 398 210 L398 440 Z" fill="url(#od-portal)"/>
+
+            <!-- the rock face, with the arch cut THROUGH it (evenodd): the opening
+                 is a hole in stone, not a shape laid on top of a wall -->
+            <path fill-rule="evenodd" fill="url(#od-rock)"
+                  d="M0 0 H660 V540 H0 Z
+                     M268 430 L268 212 A62 62 0 0 1 392 212 L392 430 Z"/>
+
+            <!-- the doorway lighting the stone around it, same cut as the wall -->
+            <path fill-rule="evenodd" fill="url(#od-rocklight)"
+                  d="M0 0 H660 V540 H0 Z
+                     M268 430 L268 212 A62 62 0 0 1 392 212 L392 430 Z"/>
+
+            <!-- faces of stone turned toward the light, brightest nearest the
+                 opening: this is what gives the wall depth rather than grain -->
+            <g fill="var(--lime)" filter="url(#od-softer)">
+              <path d="M268 212 A62 62 0 0 0 206 274 L206 430 L236 430 L236 266 Z" opacity=".10"/>
+              <path d="M392 212 A62 62 0 0 1 454 274 L454 430 L424 430 L424 266 Z" opacity=".075"/>
+              <path d="M206 282 L150 308 L146 430 L206 430 Z" opacity=".05"/>
+              <path d="M454 282 L512 310 L516 430 L454 430 Z" opacity=".035"/>
+            </g>
+
+
+            <!-- the rim the light catches all the way round the opening -->
+            <path d="M268 430 L268 212 A62 62 0 0 1 392 212 L392 430"
+                  stroke="var(--lime-hot)" stroke-width="2.4" opacity=".65" filter="url(#od-rim)"/>
+
+            <!-- the floor, then the light thrown out across it -->
+            <path d="M0 430 H660 V540 H0 Z" fill="url(#od-floor)"/>
+            <path d="M268 430 L392 430 L556 540 L104 540 Z" fill="url(#od-spill)" filter="url(#od-soft)"/>
+            <ellipse cx="330" cy="436" rx="196" ry="50" fill="url(#od-pool)" filter="url(#od-soft)"/>
+
+            <!-- foreground stone: dark slabs with lit top edges, so the floor has
+                 relief instead of being one flat wash of light -->
+            <g fill="#0E1207">
+              <path d="M0 540 L40 496 L112 510 L146 540 Z"/>
+              <path d="M508 540 L544 500 L616 492 L660 528 L660 540 Z"/>
+              <path d="M148 540 L184 514 L238 524 L252 540 Z"/>
+              <path d="M404 540 L442 518 L494 528 L506 540 Z"/>
+            </g>
+            <g stroke="var(--lime)" stroke-width="2" opacity=".2" stroke-linecap="round" filter="url(#od-rim)">
+              <path d="M40 496 L112 510"/>
+              <path d="M544 500 L616 492"/>
+              <path d="M184 514 L238 524"/>
+              <path d="M442 518 L494 528"/>
+            </g>
+
+            <!-- haze drifting across the threshold -->
+            <g filter="url(#od-softer)">
+              <ellipse cx="330" cy="416" rx="112" ry="28" fill="var(--lime)" opacity=".36"/>
+              <ellipse cx="330" cy="266" rx="60" ry="96" fill="var(--lime-hot)" opacity=".13"/>
+            </g>
+
+            <!-- the mascot, on the threshold, backlit -->
+            <image href="/mascot-cutout.png" x="283" y="334" width="94" height="94" filter="url(#od-glow)"/>
+            <image href="/mascot-cutout.png" x="283" y="334" width="94" height="94" filter="url(#od-sil)"/>
+          </g>
+        </svg>
       </div>
       <div class="qcards"><!--MARKET_CARDS--></div>
     </div>
