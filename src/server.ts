@@ -114,12 +114,12 @@ async function renderLanding(): Promise<string> {
   // Both degrade rather than erroring: the front door has to render even when
   // everything behind it is down. A failed community read counts as zero real
   // markets, which shows the teaching state — the safe way to be wrong.
-  const [data, community] = await Promise.all([
-    getMarketData().catch(() => null),
+  const [community, activity] = await Promise.all([
     openCommunityMarkets().catch((e) => {
       console.error("[landing] community load failed:", (e as Error).message);
       return [] as Awaited<ReturnType<typeof openCommunityMarkets>>;
     }),
+    homeActivity().catch(() => null),
   ]);
 
   const liveMode = community.length >= LANDING_LIVE_MIN ? "1" : "0";
@@ -138,12 +138,26 @@ async function renderLanding(): Promise<string> {
     </a>`;
     }).join("");
 
-  // The whole clause or none of it. A count of zero is not a smaller number to
-  // print, it is the absence of an answer: the venue cache is empty for the
-  // first seconds after a boot, and "0 markets live right now" is a worse thing
-  // to say on the front door than saying nothing.
-  const n = data ? data.markets.length : 0;
-  const proof = n > 0 ? `<b>${n.toLocaleString("en-US")}</b> markets live right now.` : "";
+  // ODDIE'S OWN NUMBERS, not the venue catalogue's.
+  //
+  // This line used to read "<N> markets live right now" off getMarketData(),
+  // which counts every bettable Polymarket market we can see — a real number,
+  // but next to Oddie's name it claims Oddie has hundreds of markets when it has
+  // the ones people actually tagged. A true number answering a question nobody
+  // asked is still the page overstating itself.
+  //
+  // So: markets people tagged here, and calls placed here. Both are Oddie's,
+  // both are checkable by clicking through to the feed. Same rule as everywhere
+  // else on this page — a fact is printed whole or not at all, and a zero is the
+  // absence of an answer rather than a smaller number to boast.
+  const parts: string[] = [];
+  if (community.length > 0) {
+    parts.push(`<b>${community.length.toLocaleString("en-US")}</b> market${community.length === 1 ? "" : "s"} tagged so far`);
+  }
+  if (activity && activity.callsToday > 0) {
+    parts.push(`<b>${activity.callsToday.toLocaleString("en-US")}</b> call${activity.callsToday === 1 ? "" : "s"} today`);
+  }
+  const proof = parts.join(" · ");
   // The hero art. public/portal.png is the painted scene; when it is absent the
   // landing falls back to the vector one drawn inline in the page, so a missing
   // file degrades to a different picture rather than to a broken image icon.
@@ -160,7 +174,10 @@ async function renderLanding(): Promise<string> {
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
   // minute; leaving it uncached means the very next request repairs it.
-  if (n > 0) landingCache = { html, at: Date.now() };
+  // A render is complete enough to cache once the market read succeeded. The
+  // proof line being empty is a legitimate answer (a brand-new install has
+  // nothing to report), so it is not a reason to keep re-rendering.
+  if (community.length > 0) landingCache = { html, at: Date.now() };
   return html;
 }
 

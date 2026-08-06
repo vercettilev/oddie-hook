@@ -2385,6 +2385,33 @@ function connectSheet(reason){
 }
 
 /** Coming back from a provider: say what happened, once, then clean the URL. */
+/**
+ * ?connect=<provider> — an invitation handed over from the landing page.
+ *
+ * The landing has no device id (it deliberately never mints one) so it cannot
+ * start a sign-in itself; it links here instead and the app performs. X and
+ * Google are a redirect we can fire immediately; Phantom needs a click of its
+ * own, because a wallet popup that opens without one is indistinguishable from
+ * a drive-by prompt — so that case opens the sheet with the reason showing.
+ */
+function connectInvite(){
+  const q=new URLSearchParams(location.search);
+  const want=q.get("connect");
+  if(!want)return false;
+  // Clean the URL first: whatever happens next, a reload must not re-fire this.
+  history.replaceState(null,"",location.pathname+location.hash);
+  if(auth.accounts.some(a=>a.provider===want))return false;   // already connected
+  if(want==="twitter"||want==="google"){
+    const avail=auth.providers.find(p=>p.provider===want);
+    if(avail&&avail.available===false)return false;           // not configured: fall through quietly
+    location.href=`${API}/api/auth/${want}/start?deviceId=${encodeURIComponent(deviceId)}`;
+    return true;
+  }
+  if(want==="phantom"){ connectSheet("Connect your wallet to keep your record"); return true; }
+  connectSheet();
+  return true;
+}
+
 function authReturn(){
   const q=new URLSearchParams(location.search);
   const connected=q.get("connected"), err=q.get("auth_error");
@@ -5485,7 +5512,7 @@ function spawnConfetti(container){
   const ok=await checkGate();
   if(ok){
     try{sessionStorage.removeItem("gate_oauth");}catch(e){}
-    render();loadAuth().then(loadBalance).then(authReturn);
+    render();loadAuth().then(loadBalance).then(()=>{ if(!connectInvite())authReturn(); });
     checkCelebrations(); // independent of render()/routing — layers on top, never blocks
     initChainLayer(); // fire-and-forget, opt-in real-stakes layer — see its own doc comment
   }
