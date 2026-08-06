@@ -331,7 +331,9 @@
   .prof__b{margin:16px 0 0;color:var(--fg-2);font-size:15.5px;font-weight:600;line-height:1.65;max-width:46ch}
   .prof__opts{display:grid;gap:10px}
   .pbtn{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:12px;
-    padding:15px 18px;font-size:15px;font-weight:800;background:var(--card)}
+    padding:15px 18px;font-size:15px;font-weight:800;background:var(--card);
+    width:100%;color:inherit;font-family:inherit;text-align:left;cursor:pointer}
+  .pbtn:disabled{opacity:.55;cursor:default}
   .pbtn:hover{border-color:rgba(215,220,31,.5)}
   .pbtn__g{width:22px;display:inline-flex;align-items:center;justify-content:center;font-size:15px}
   .pbtn--x .pbtn__g{font-size:17px}
@@ -595,31 +597,31 @@
           instead of living in this one.</p>
       </div>
       <div class="prof__opts">
-        <a class="pbtn pbtn--x" href="/feed?connect=twitter">
-          <span class="pbtn__g">𝕏</span> Continue with X</a>
+        <button class="pbtn pbtn--x" type="button" data-connect="twitter">
+          <span class="pbtn__g">𝕏</span> Continue with X</button>
 
         <!-- Google's own four-colour mark, drawn to its published geometry.
              A sign-in button carrying a home-made approximation of it reads as
              a phishing page, which is the one thing this button must not. -->
-        <a class="pbtn" href="/feed?connect=google">
+        <button class="pbtn" type="button" data-connect="google">
           <span class="pbtn__g"><svg viewBox="0 0 48 48" width="19" height="19" aria-hidden="true">
             <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
             <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
             <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/>
             <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
-          </svg></span> Continue with Google</a>
+          </svg></span> Continue with Google</button>
 
         <!-- Phantom's ghost, in its brand violet. Hand-drawn to the silhouette
              rather than copied from their asset kit — close enough to be
              recognised, and labelled here so nobody mistakes it for official
              artwork if the real SVG turns up later. -->
-        <a class="pbtn" href="/feed?connect=phantom">
+        <button class="pbtn" type="button" data-connect="phantom">
           <span class="pbtn__g"><svg viewBox="0 0 32 32" width="19" height="19" aria-hidden="true">
             <rect width="32" height="32" rx="9" fill="#AB9FF2"/>
             <path fill="#fff" d="M25.2 16.2c0 4.9-3.9 8.9-8.7 8.9-4.4 0-8-3.3-8.6-7.5-.1-.6.4-1.1 1-1.1h3.1c.5 0 .9.3 1 .8.3 1.4 1.5 2.4 3 2.4h.4c-.2-.4-.3-.9-.3-1.4 0-1.7 1.3-3 3-3s3 1.3 3 3c0 .5-.1 1-.3 1.4h.4c.4 0 .7-.3.7-.7v-3.4c0-3.8-3.1-6.9-6.9-6.9h-1.2c-3.8 0-6.9 3.1-6.9 6.9 0 .4-.3.7-.7.7s-.7-.3-.7-.7c0-4.6 3.7-8.3 8.3-8.3h1.2c4.6 0 8.3 3.7 8.3 8.3v.6z"/>
             <circle cx="13" cy="15" r="1.3" fill="#AB9FF2"/>
             <circle cx="19.4" cy="15" r="1.3" fill="#AB9FF2"/>
-          </svg></span> Continue with Phantom</a>
+          </svg></span> Continue with Phantom</button>
         <p class="prof__note">A wallet signs a message to prove it is yours. It never approves
           a transaction, and there is nothing to deposit: predictions are play money.</p>
       </div>
@@ -649,6 +651,111 @@
     <span class="sp">Play money. For entertainment.</span>
   </div>
 </footer>
+<script>
+  /* SIGN-IN, HERE, FOR REAL.
+     These buttons used to be links to /feed?connect=<provider>, which handed
+     the job to the app because only the app had a device id. That reads as
+     "you pressed Continue with X and landed in a feed" — the button did not do
+     what it said.
+
+     There is no longer a reason for the detour: the redirect that used to bounce
+     "/" to /feed is gone, so the landing minting the SAME oddie_did the app
+     mints costs nothing. X and Google go straight to the OAuth start; Phantom
+     signs in place, exactly as it does inside the app.
+
+     The id is minted LAZILY — on the first click, never on page view. A visitor
+     who only reads the page still has no id, which keeps the nav CTA honest:
+     "Back to your feed" is for people who have actually been there. */
+  (function () {
+    var DID = "oddie_did";
+
+    function deviceId() {
+      var mint = function () {
+        return (crypto.randomUUID ? crypto.randomUUID()
+          : String(Math.random()).slice(2) + Date.now().toString(36));
+      };
+      try {
+        var hit = localStorage.getItem(DID);
+        if (hit) return hit;
+        var id = mint(); localStorage.setItem(DID, id); return id;
+      } catch (e) {}
+      // Same cookie fallback the app uses, so a browser with storage blocked
+      // still gets ONE identity across both documents rather than two.
+      try {
+        var c = document.cookie.match(/(?:^|;\s*)oddie_did=([^;]+)/);
+        if (c) return decodeURIComponent(c[1]);
+        var id2 = mint();
+        document.cookie = DID + "=" + encodeURIComponent(id2) + ";path=/;max-age=31536000;samesite=lax";
+        return id2;
+      } catch (e2) {}
+      return mint();
+    }
+
+    function fail(btn, label, msg) {
+      btn.disabled = false; btn.textContent = label;
+      if (msg) { btn.disabled = true; btn.textContent = msg; }
+    }
+
+    async function phantom(btn, label) {
+      var p = window.solana;
+      if (!p || !p.isPhantom) return fail(btn, label, "Phantom not found");
+      btn.disabled = true; btn.textContent = "Check your wallet…";
+      try {
+        var dev = deviceId();
+        var pk = (await p.connect()).publicKey.toString();
+        var r = await fetch("/api/auth/wallet/challenge?deviceId=" + encodeURIComponent(dev) +
+                            "&address=" + encodeURIComponent(pk));
+        if (!r.ok) throw new Error("challenge");
+        var ch = await r.json();
+        var signed = await p.signMessage(new TextEncoder().encode(ch.message), "utf8");
+        var sig = Array.from(new Uint8Array(signed.signature))
+          .map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+        var v = await fetch("/api/auth/wallet/verify", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ deviceId: dev, address: pk, nonce: ch.nonce, signature: sig }),
+        });
+        var out = await v.json().catch(function () { return {}; });
+        if (!v.ok) throw new Error(out.error || "verify");
+        location.href = "/feed?connected=phantom&bonus=" + (out.bonus || 0) + "#/profile";
+      } catch (e) {
+        // Closing the wallet popup is a decision, not a failure.
+        var rejected = e && (e.code === 4001 || /reject|denied|cancel/i.test(e.message || ""));
+        fail(btn, label, rejected ? null : "Couldn't connect. Nothing changed.");
+        if (!rejected) setTimeout(function () { fail(btn, label); }, 2600);
+      }
+    }
+
+    /* Ask which providers are actually usable BEFORE anyone presses one.
+       /api/auth/config needs no device id, so this costs a cold visitor one
+       small request and nothing else. A provider without its secret is marked
+       unavailable here rather than found out by pressing it — the redirect in
+       the start route is the safety net, not the plan. Phantom is never in
+       that list (it has nothing to configure); whether it works is a question
+       only the browser can answer, and its own handler answers it. */
+    fetch("/api/auth/config").then(function (r) { return r.ok ? r.json() : null; }).then(function (cfg) {
+      if (!cfg || !cfg.providers) return;
+      cfg.providers.forEach(function (p) {
+        if (p.configured) return;
+        var btn = document.querySelector('[data-connect="' + p.provider + '"]');
+        if (!btn) return;
+        btn.disabled = true;
+        btn.textContent = btn.textContent.trim() + " — unavailable";
+      });
+    }).catch(function () { /* the start route still bails to a page */ });
+
+    document.querySelectorAll("[data-connect]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var which = btn.getAttribute("data-connect");
+        var label = btn.innerHTML;
+        if (which === "phantom") return phantom(btn, label);
+        // return=/feed so the round trip ends in the product, not back here.
+        location.href = "/api/auth/" + which + "/start?deviceId=" +
+          encodeURIComponent(deviceId()) + "&return=" + encodeURIComponent("/feed");
+      });
+    });
+  })();
+</script>
+
 <script>
   /* THE WAY BACK, without a redirect.
      "/" used to bounce anyone with a device id straight to /feed, which made

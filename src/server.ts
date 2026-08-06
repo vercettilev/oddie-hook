@@ -1391,12 +1391,24 @@ app.post("/api/auth/wallet/verify", async (req, res) => {
 });
 
 app.get("/api/auth/:provider/start", (req, res) => {
+  // This route is only ever reached by a TOP-LEVEL NAVIGATION — the landing and
+  // the app both set location.href — so every failure here is a page a person
+  // is looking at, not a response some code will parse. Returning JSON meant
+  // that pressing "Continue with X" against a misconfigured provider printed
+  // {"error":"provider not configured"} in the viewport, which is the worst
+  // possible thing for a sign-in button to do. They redirect now, into the
+  // app's existing ?auth_error= handling, which says "nothing changed" and
+  // leaves the person somewhere they can use.
+  const bail = (why: string) => res.redirect(`${BASE_URL}/feed?auth_error=${encodeURIComponent(why)}`);
   const p = req.params.provider;
-  if (!isProvider(p)) return res.status(404).json({ error: "unknown provider" });
-  if (!isConfigured(p)) return res.status(503).json({ error: "provider not configured", missing: missingSecretEnv(p) });
+  if (!isProvider(p)) return bail("unknown_provider");
+  if (!isConfigured(p)) {
+    console.error(`[auth] ${p} start refused: ${missingSecretEnv(p)} is not set`);
+    return bail("provider_unavailable");
+  }
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  if (!deviceId) return bail("missing_device");
 
   // Optional post-auth destination (e.g. the /m/{slug} permalink the tap came
   // from). Strictly a LOCAL path — anything else (absolute URLs, protocol-

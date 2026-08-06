@@ -68,10 +68,20 @@ console.log("\nno screen writes a provider name into its markup by hand");
     literals.length === 0,
     literals.length ? `hardcoded: ${[...new Set(literals)].join(", ")} — build these from PROV instead` : "");
 
-  // The same drift, one level up: the landing links into the app with a
-  // provider per button, and those ARE literal (it is static HTML). So instead
-  // of banning them, require the full set.
-  const linked = [...landing.matchAll(/\/feed\?connect=([a-z]+)/g)].map((m) => m[1]);
+  // The same drift, one level up. The landing names its providers literally
+  // (it is static HTML with no PROV to read), so instead of banning literals
+  // there, require the full set.
+  //
+  // Two forms are accepted because the landing changed shape once already: it
+  // used to LINK to /feed?connect=<p> and now it has data-connect buttons that
+  // start the sign-in in place. The invariant being guarded is "the landing
+  // offers every provider", not "offers them as links" — this check failing
+  // when only the mechanism changed would be the test measuring the wrong
+  // thing, and a test people have to placate is a test people delete.
+  const linked = [
+    ...[...landing.matchAll(/\/feed\?connect=([a-z]+)/g)].map((m) => m[1]),
+    ...[...landing.matchAll(/data-connect="([a-z]+)"/g)].map((m) => m[1]),
+  ];
   for (const p of PROVIDERS) {
     check(`the landing offers "${p}"`, linked.includes(p),
       `landing offers: ${[...new Set(linked)].join(", ")}`);
