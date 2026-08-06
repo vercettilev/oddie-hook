@@ -1,5 +1,5 @@
 import express from "express";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -86,49 +86,22 @@ app.use(express.static(path.join(__dirname, "../public"), { index: false, maxAge
  * carries a device id is bounced there by the landing's own first script, so a
  * returning player never has to read the pitch again.
  *
- * The four floating market cards in the hero art are REAL markets, injected
- * here. They are the product's actual inventory, not decoration, so they are
- * never faked: if the lookup fails or the database is cold, the slot renders
- * empty and the composition carries the art alone. Same rule the app's home
- * has always followed for every data-driven section.
+ * The hero used to float four real market cards around the art. They are gone:
+ * the painting reads as one picture and the cards were sitting on top of it.
+ * The only live figure left on the page is the market count beside the CTAs,
+ * and that follows the same rule every data-driven surface here follows — the
+ * whole clause is printed or none of it, never a placeholder.
  */
-const LANDING_CARDS = 4;
 const LANDING_TTL_MS = 60_000;
 let landingCache: { html: string; at: number } | null = null;
-
-/** Escapes text for HTML TEXT position and for a double-quoted attribute. */
-const escHtml = (s: string): string =>
-  s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]!));
 
 async function renderLanding(): Promise<string> {
   const fresh = landingCache && Date.now() - landingCache.at < LANDING_TTL_MS;
   if (fresh) return landingCache!.html;
 
-  // Both lookups degrade to "no number, no cards" rather than to an error page.
-  // The front door has to render even when everything behind it is down.
-  const [featured, data] = await Promise.all([
-    resolveFeatured(LANDING_CARDS).catch((e) => {
-      console.error("[landing] featured failed:", (e as Error).message);
-      return [] as Array<Record<string, unknown> & { slug: string }>;
-    }),
-    getMarketData().catch(() => null),
-  ]);
-
-  const slots = ["a", "b", "c", "d"];
-  const cards = featured.slice(0, LANDING_CARDS).map((m, i) => {
-    const q = String(m.question ?? "");
-    const cat = String(m.topicCategory ?? m.category ?? "Market");
-    // yesPct is the only number on the card, and it is the live one. The bar
-    // under the question is its width — a picture of the same fact, not a
-    // second, invented one (we store no odds history to draw a sparkline from).
-    const yes = Math.max(0, Math.min(100, Math.round(Number(m.yesPct ?? 0))));
-    return `<a class="qcard qcard--${slots[i]}" href="/m/${escHtml(m.slug)}">
-      <div class="qcard__top"><span>${escHtml(cat)}</span><span class="qcard__live">Live</span></div>
-      <p class="qcard__q">${escHtml(q)}</p>
-      <div class="qcard__bar"><i style="width:${yes}%"></i></div>
-      <div class="qcard__odds"><span class="qcard__yes">${yes}% YES</span><span class="qcard__no">${100 - yes}% NO</span></div>
-    </a>`;
-  }).join("");
+  // Degrades to "no number" rather than to an error page. The front door has to
+  // render even when everything behind it is down.
+  const data = await getMarketData().catch(() => null);
 
   // The whole clause or none of it. A count of zero is not a smaller number to
   // print, it is the absence of an answer: the venue cache is empty for the
@@ -136,14 +109,21 @@ async function renderLanding(): Promise<string> {
   // to say on the front door than saying nothing.
   const n = data ? data.markets.length : 0;
   const proof = n > 0 ? `<b>${n.toLocaleString("en-US")}</b> markets live right now.` : "";
+  // The hero art. public/portal.png is the painted scene; when it is absent the
+  // landing falls back to the vector one drawn inline in the page, so a missing
+  // file degrades to a different picture rather than to a broken image icon.
+  // Checked per render rather than at boot, so dropping the file in takes effect
+  // once the 60s render cache below rolls over — no restart needed.
+  const hasArt = existsSync(path.join(__dirname, "../public/portal.png")) ? "1" : "0";
+
   const html = LANDING_HTML
-    .replace("<!--MARKET_CARDS-->", cards)
-    .replace("<!--PROOF-->", proof);
+    .replace("<!--PROOF-->", proof)
+    .replace("<!--HAS_ART-->", hasArt);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
   // minute; leaving it uncached means the very next request repairs it.
-  if (n > 0 && featured.length) landingCache = { html, at: Date.now() };
+  if (n > 0) landingCache = { html, at: Date.now() };
   return html;
 }
 
