@@ -55,6 +55,7 @@ const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
 const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf8");
+const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html"), "utf8");
 
 // Static assets — favicons, touch/PWA icons, the manifest, the raw logos. The two
 // HTML documents keep their own routes (/feed, /tool), and /card, /market are
@@ -63,13 +64,98 @@ const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf
 // allow-list to keep in sync, so the whole /api/ev class of rewrite gaps is gone.
 app.use(express.static(path.join(__dirname, "../public"), { index: false, maxAge: "7d" }));
 
-// The homepage. Positioning-first: it sells the chain (claim -> tag -> call ->
-// opponent -> resolution -> receipt -> reputation), not a market catalog. Same
-// SPA shell as /feed (deviceId, theme boot, header, nav, daily-claim strip all
-// come along for free) — the client renders a "home" view instead of loading
-// the feed when the path is bare "/". /feed is unchanged: a real destination,
-// not the default.
-app.get("/", (_req, res) => res.type("html").send(FEED_HTML));
+/**
+ * The public landing page, served at "/".
+ *
+ * It is a SEPARATE DOCUMENT from the app, not a view inside it. The two have
+ * different jobs and the split is deliberate:
+ *
+ *  - Cold traffic arrives here from X, overwhelmingly on a phone, and pays for
+ *    whatever the front door weighs. The app shell is ~335KB of markup, CSS and
+ *    JS that exists to render a logged-in feed; none of it is needed to show a
+ *    headline. Landing at "/" used to mean downloading the entire app to read
+ *    one sentence.
+ *  - The landing commits to one dark, marketing-typography look with no app
+ *    chrome. Expressing that inside the app shell means overlaying the shell's
+ *    own header, tab bar, guest bar and balance pill, which is a fight that is
+ *    won only with position:fixed and z-index, and lost again on every phone.
+ *  - The share card, title and description that oddie.fun throws on X belong to
+ *    the landing; the app's belong to the app.
+ *
+ * The app is unchanged and still lives at /feed. Anyone whose browser already
+ * carries a device id is bounced there by the landing's own first script, so a
+ * returning player never has to read the pitch again.
+ *
+ * The four floating market cards in the hero art are REAL markets, injected
+ * here. They are the product's actual inventory, not decoration, so they are
+ * never faked: if the lookup fails or the database is cold, the slot renders
+ * empty and the composition carries the art alone. Same rule the app's home
+ * has always followed for every data-driven section.
+ */
+const LANDING_CARDS = 4;
+const LANDING_TTL_MS = 60_000;
+let landingCache: { html: string; at: number } | null = null;
+
+/** Escapes text for HTML TEXT position and for a double-quoted attribute. */
+const escHtml = (s: string): string =>
+  s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]!));
+
+async function renderLanding(): Promise<string> {
+  const fresh = landingCache && Date.now() - landingCache.at < LANDING_TTL_MS;
+  if (fresh) return landingCache!.html;
+
+  // Both lookups degrade to "no number, no cards" rather than to an error page.
+  // The front door has to render even when everything behind it is down.
+  const [featured, data] = await Promise.all([
+    resolveFeatured(LANDING_CARDS).catch((e) => {
+      console.error("[landing] featured failed:", (e as Error).message);
+      return [] as Array<Record<string, unknown> & { slug: string }>;
+    }),
+    getMarketData().catch(() => null),
+  ]);
+
+  const slots = ["a", "b", "c", "d"];
+  const cards = featured.slice(0, LANDING_CARDS).map((m, i) => {
+    const q = String(m.question ?? "");
+    const cat = String(m.topicCategory ?? m.category ?? "Market");
+    // yesPct is the only number on the card, and it is the live one. The bar
+    // under the question is its width — a picture of the same fact, not a
+    // second, invented one (we store no odds history to draw a sparkline from).
+    const yes = Math.max(0, Math.min(100, Math.round(Number(m.yesPct ?? 0))));
+    return `<a class="qcard qcard--${slots[i]}" href="/m/${escHtml(m.slug)}">
+      <div class="qcard__top"><span>${escHtml(cat)}</span><span class="qcard__live">Live</span></div>
+      <p class="qcard__q">${escHtml(q)}</p>
+      <div class="qcard__bar"><i style="width:${yes}%"></i></div>
+      <div class="qcard__odds"><span class="qcard__yes">${yes}% YES</span><span class="qcard__no">${100 - yes}% NO</span></div>
+    </a>`;
+  }).join("");
+
+  // The whole clause or none of it. A count of zero is not a smaller number to
+  // print, it is the absence of an answer: the venue cache is empty for the
+  // first seconds after a boot, and "0 markets live right now" is a worse thing
+  // to say on the front door than saying nothing.
+  const n = data ? data.markets.length : 0;
+  const proof = n > 0 ? `<b>${n.toLocaleString("en-US")}</b> markets live right now.` : "";
+  const html = LANDING_HTML
+    .replace("<!--MARKET_CARDS-->", cards)
+    .replace("<!--PROOF-->", proof);
+
+  // Only a COMPLETE render earns a place in the cache. Caching a degraded one
+  // pins whatever was missing at boot to the front door for the next full
+  // minute; leaving it uncached means the very next request repairs it.
+  if (n > 0 && featured.length) landingCache = { html, at: Date.now() };
+  return html;
+}
+
+app.get("/", async (_req, res) => {
+  try {
+    res.type("html").send(await renderLanding());
+  } catch (e) {
+    // Absolute last resort: serve the shell unsubstituted rather than a 500.
+    console.error("[landing] render failed:", (e as Error).message);
+    res.type("html").send(LANDING_HTML);
+  }
+});
 
 /**
  * The hook. Tweet text in -> best market, slug, card URL, landing URL out.
