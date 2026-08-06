@@ -2390,6 +2390,20 @@ const PMARK='<svg class="pmark" viewBox="0 0 32 32" aria-hidden="true"><rect wid
 const PROV={twitter:{glyph:"𝕏",label:"Continue with X",cls:"x",why:"connect your identity"},
             google:{glyph:GMARK,label:"Continue with Google",cls:"",why:"save across devices"},
             phantom:{glyph:PMARK,label:"Continue with Phantom",cls:"",why:"sign in with your wallet"}};
+/** The GATE's provider buttons. Same list, same marks, different verb: a gate
+ *  says "sign in with", a settings sheet says "continue with". Unavailable
+ *  providers are dropped here rather than shown disabled — a gate is asking for
+ *  a decision, and a dead option is not one. */
+function gateButtons(){
+  const NAME={twitter:"X",google:"Google",phantom:"Phantom"};
+  return (auth.providers.length?auth.providers:[{provider:"twitter",available:true},{provider:"google",available:true},{provider:"phantom",available:true}])
+    .filter(({available})=>available!==false)
+    .map(({provider})=>{
+      const pr=PROV[provider]; if(!pr)return "";
+      return `<button class="cbtn ${pr.cls}" data-p="${provider}"><span class="glyph">${pr.glyph}</span>Sign in with ${NAME[provider]||provider}</button>`;
+    }).join("");
+}
+
 /** The provider buttons, built once and used by every surface that offers them. */
 function provButtons(){
   const linked=new Set(auth.accounts.map(a=>a.provider));
@@ -5360,12 +5374,7 @@ function gateInner(){
   //
   // The verbs differ from the sheet on purpose — this is a gate, not a settings
   // screen, so it says "sign in with" rather than "continue with".
-  const btns=(auth.providers.length?auth.providers:[{provider:"twitter",available:true},{provider:"google",available:true},{provider:"phantom",available:true}])
-    .filter(({available})=>available!==false)
-    .map(({provider})=>{
-      const pr=PROV[provider]; if(!pr)return "";
-      return `<button class="cbtn ${pr.cls}" data-p="${provider}"><span class="glyph">${pr.glyph}</span>Sign in with ${provider==="twitter"?"X":provider==="google"?"Google":"Phantom"}</button>`;
-    }).join("");
+  const btns=gateButtons();
   return `<div class="gmark"></div>
     <div class="ititle">keep calling — sign in</div>
     <div class="gatecard-btns" style="width:100%;max-width:320px;margin-top:4px">${btns}</div>
@@ -5440,12 +5449,14 @@ async function checkGate(){
   // we explicitly invited (and who is signed out) gets the sign-in step directly
   // rather than being re-teased with a taste they were already promised through.
   if(IS_INVITE && GATE.reason==="signed_out"){
+    // Built from PROV like every other sign-in surface. This one was the FOURTH
+    // screen to list providers by hand, and the guard in test-providers.ts found
+    // it while being written — which is the whole reason that test exists.
     scroller.innerHTML=`<div class="sheet" style="text-align:center;padding-top:56px">
       <p class="sub" style="font-size:16px">you're invited — sign in to open the feed:</p>
-      <button class="cbtn x" data-p="twitter" style="margin:14px auto 0;max-width:320px"><span class="glyph">𝕏</span>Sign in with X</button>
-      <button class="cbtn" data-p="google" style="margin:10px auto 0;max-width:320px"><span class="glyph">G</span>Sign in with Google</button>
+      <div class="gatecard-btns" style="width:100%;max-width:320px;margin:14px auto 0">${gateButtons()}</div>
       <p class="cnote">Free to play. Virtual predictions, nothing to cash out.</p></div>`;
-    scroller.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>startAuth(b.dataset.p));
+    wireGate(scroller);
     return false;
   }
 
