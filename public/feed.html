@@ -2004,6 +2004,9 @@
       background:var(--accent);border:2.5px solid #000;border-radius:16px;
       padding:12px 14px;cursor:pointer;text-align:center;margin:0 0 8px}
     .navcreate:active{transform:translateY(1px)}
+    .navgroup{margin:16px 0 4px;padding:0 14px;color:var(--muted-g);
+      font-family:'Nunito';font-size:10.5px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+    .navgroup:first-of-type{margin-top:14px}
     .navitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:16px;cursor:pointer;
       border:2.5px solid transparent;background:none;font-family:'Fredoka';font-size:15px;font-weight:500;
       color:var(--on-ground);width:100%;text-align:left}
@@ -2750,13 +2753,33 @@ function paintNav(view){
   // sections. Discovery modes are feed lenses, not routes — each sets the
   // sort and opens the feed. Mobile keeps its five tabs; modes live in the
   // feed's own sort row there.
+  // TWO GROUPS, and one item fewer than there were.
+  //
+  // "Feed" is dropped from the RAIL only. The four lenses directly above it all
+  // open the feed, so it was an eleventh item that went exactly where "For You"
+  // already goes — and it sat BELOW its own sort modes, which read as if the
+  // modes belonged to whatever was above them. The mobile tab bar keeps it (it
+  // has no lenses, so there it is the only way back to the feed).
+  //
+  // The rest is grouped rather than listed: everything about browsing under one
+  // label, everything about the viewer under another. Nine labelled items scan
+  // faster than eleven unlabelled ones, and nothing was taken away.
+  // The icon key is carried EXPLICITLY, because it is not always the route key:
+  // ICONS has no "mymarkets" entry and never did — that item has always
+  // borrowed the positions glyph. Deriving the icon from the route would have
+  // rendered `undefined` inside an <svg>.
+  const railBtn=(route,icon,label,on)=>
+    `<button class="navitem${on?" on":""}" data-go="${route}">${svg(icon)}<span>${label}</span></button>`;
+  const MINE=[["positions","positions","Positions"],["mymarkets","positions","My markets"],
+              ["alerts","alerts","Notifications"],["profile","profile","Profile"]];
   document.getElementById("railnav").innerHTML=
     `<button class="navcreate" type="button" id="navcreate">+ Create a market</button>`
+    +`<p class="navgroup">Discover</p>`
     +FEED_SORT_LABELS.map(([k,label])=>
       `<button class="navitem navsort${view==="feed"&&feedSort===k?" on":""}" data-sort="${k}"><span class="navsort-dot"></span><span>${label}</span></button>`).join("")
-    +`<button class="navitem${view==="mymarkets"?" on":""}" data-go="mymarkets">${svg("positions")}<span>My markets</span></button>`
-    +NAV.map(([k,label])=>
-    `<button class="navitem${k===view?" on":""}" data-go="${k}">${svg(k)}<span>${label}</span></button>`).join("");
+    +railBtn("leaderboard","leaderboard","Leaderboard",view==="leaderboard")
+    +`<p class="navgroup">Yours</p>`
+    +MINE.map(([route,icon,label])=>railBtn(route,icon,label,view===route)).join("");
   document.getElementById("navcreate").onclick=()=>openPasteSheet();
   document.querySelectorAll("#railnav [data-sort]").forEach(b=>{
     b.onclick=()=>{feedSort=b.dataset.sort;location.hash="#/feed";render();};
