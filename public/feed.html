@@ -914,16 +914,28 @@
   .bal{cursor:pointer}
   .cdim{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:60;
     display:flex;align-items:flex-end;justify-content:center}
-  .csheet{width:100%;max-width:var(--col);background:var(--white);
-    border:3px solid #000;border-radius:24px 24px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom) + 20px)}
-  @media (min-width:721px){ .cdim{align-items:center} .csheet{border-radius:24px} }
-  .csheet h3{font-size:22px;margin:0 0 6px;font-weight:700}
-  .csheet p{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.45}
-  .cbtn{font:inherit;font-weight:700;font-size:16px;width:100%;padding:13px 0;margin-bottom:10px;cursor:pointer;
-    border:3px solid var(--ink);border-radius:16px;background:var(--white);display:flex;align-items:center;justify-content:center;gap:9px}
-  .cbtn.x{background:#000;color:#fff}
+  /* THE SIGN-UP SURFACE, in the landing's language.
+     The sheet used to be var(--white) with a 3px black border — fixed white in
+     BOTH themes, which on the new dark app was a slab of paper thrown over the
+     page, and nothing like the band the landing asks the same question in. It
+     is now the theme's own card with a hairline, and the buttons are the
+     landing's .pbtn: left-aligned, the mark in a fixed slot, one hairline each.
+     Both surfaces now ask in the same voice. */
+  .csheet{width:100%;max-width:var(--col);background:var(--card-surface);color:var(--on-ground);
+    border:1.5px solid var(--card-line);border-radius:22px 22px 0 0;
+    padding:22px 20px calc(env(safe-area-inset-bottom) + 20px)}
+  @media (min-width:721px){ .cdim{align-items:center} .csheet{border-radius:22px} }
+  .csheet h3{font-family:'Fredoka';font-size:22px;margin:0 0 6px;font-weight:600;color:var(--on-ground)}
+  .csheet p{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:0 0 16px;line-height:1.45}
+  .cbtn{font:inherit;font-weight:800;font-size:15px;width:100%;padding:14px 16px;margin-bottom:10px;cursor:pointer;
+    border:1.5px solid var(--card-line);border-radius:12px;background:var(--ground-2);color:var(--on-ground);
+    display:flex;align-items:center;justify-content:flex-start;gap:11px;text-align:left}
+  .cbtn:hover:not(:disabled){border-color:var(--accent)}
+  .cbtn.x .glyph{font-size:17px}
   .cbtn:disabled{opacity:.45;cursor:default}
-  .cbtn .glyph{font-weight:800;font-size:17px}
+  .cbtn .glyph{flex:none;width:22px;display:inline-flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:16px}
+  .pmark{width:19px;height:19px;display:block}
   .cclose{font:inherit;font-weight:700;font-size:14px;width:100%;padding:9px 0;cursor:pointer;
     border:0;background:none;color:var(--muted)}
   .cnote{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);margin:2px 0 12px;line-height:1.4}
@@ -932,7 +944,10 @@
   .disclaimer{font-family:'Nunito';font-weight:700;font-size:10.5px;line-height:1.45;
     color:var(--muted-g);opacity:.8;margin:12px 0 0}
   .pfoot{margin-top:26px;padding-top:14px;border-top:1px solid var(--card-line);text-align:center}
-  .csheet .cnote{color:var(--muted)}   /* inside a white sheet, the surface grey is right */
+  /* Was var(--muted), justified as "inside a white sheet, the surface grey is
+     right". The sheet is no longer white in either theme, so the note follows
+     the theme's own muted ink instead. */
+  .csheet .cnote{color:var(--muted-g)}
 
   /* Layer 1 — save-your-answer nudge. Same quiet-card weight as .znote/the
      guest bar (a status, not another ask): copy first, one clear CTA, and an
@@ -2360,9 +2375,31 @@ function paintGuestBar(){
   };
   measureChrome();
 }
-const PROV={twitter:{glyph:"𝕏",label:"Connect X",cls:"x",why:"connect your identity"},
-            google:{glyph:"G",label:"Connect Google",cls:"",why:"save across devices"},
-            phantom:{glyph:"👻",label:"Connect Phantom",cls:"",why:"sign in with your wallet"}};
+/* The provider marks, in ONE place, matching the landing's sign-up band exactly.
+   Google's is its published four-colour geometry — a sign-in button carrying a
+   home-made approximation of that mark reads as a phishing page. Phantom's ghost
+   is hand-drawn to the silhouette in its brand violet, not taken from their asset
+   kit, and is labelled as such here so nobody later mistakes it for official art.
+   X keeps the glyph: it is a typographic mark and renders correctly at this size.
+   Everything that offers a provider reads from this object — the sheet, the gate
+   card and the profile — so the three can no longer drift apart, which is exactly
+   how the profile ended up offering two providers when the product had three. */
+const GMARK='<svg class="pmark" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>';
+const PMARK='<svg class="pmark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#AB9FF2"/><path fill="#fff" d="M25.2 16.2c0 4.9-3.9 8.9-8.7 8.9-4.4 0-8-3.3-8.6-7.5-.1-.6.4-1.1 1-1.1h3.1c.5 0 .9.3 1 .8.3 1.4 1.5 2.4 3 2.4h.4c-.2-.4-.3-.9-.3-1.4 0-1.7 1.3-3 3-3s3 1.3 3 3c0 .5-.1 1-.3 1.4h.4c.4 0 .7-.3.7-.7v-3.4c0-3.8-3.1-6.9-6.9-6.9h-1.2c-3.8 0-6.9 3.1-6.9 6.9 0 .4-.3.7-.7.7s-.7-.3-.7-.7c0-4.6 3.7-8.3 8.3-8.3h1.2c4.6 0 8.3 3.7 8.3 8.3v.6z"/><circle cx="13" cy="15" r="1.3" fill="#AB9FF2"/><circle cx="19.4" cy="15" r="1.3" fill="#AB9FF2"/></svg>';
+const PROV={twitter:{glyph:"𝕏",label:"Continue with X",cls:"x",why:"connect your identity"},
+            google:{glyph:GMARK,label:"Continue with Google",cls:"",why:"save across devices"},
+            phantom:{glyph:PMARK,label:"Continue with Phantom",cls:"",why:"sign in with your wallet"}};
+/** The provider buttons, built once and used by every surface that offers them. */
+function provButtons(){
+  const linked=new Set(auth.accounts.map(a=>a.provider));
+  return (auth.providers.length?auth.providers:[{provider:"twitter",available:false},{provider:"google",available:false},{provider:"phantom",available:true}])
+    .map(({provider,available})=>{
+      const p=PROV[provider]; if(!p)return "";
+      if(linked.has(provider))return `<button class="cbtn" disabled><span class="glyph">${p.glyph}</span>Connected</button>`;
+      if(!available)return `<button class="cbtn" disabled title="not configured"><span class="glyph">${p.glyph}</span>${p.label} — unavailable</button>`;
+      return `<button class="cbtn ${p.cls}" data-connect="${provider}"><span class="glyph">${p.glyph}</span>${p.label}</button>`;
+    }).join("");
+}
 
 /**
  * Phantom sign-in. A SIGNATURE, not a transaction.
@@ -2418,14 +2455,7 @@ async function connectPhantom(btn){
 
 /** X first: it is the identity. Google second: it is the backup. */
 function connectSheet(reason){
-  const linked=new Set(auth.accounts.map(a=>a.provider));
-  const buttons=(auth.providers.length?auth.providers:[{provider:"twitter",available:false},{provider:"google",available:false},{provider:"phantom",available:true}])
-    .map(({provider,available})=>{
-      const p=PROV[provider];
-      if(linked.has(provider))return `<button class="cbtn" disabled><span class="glyph">${p.glyph}</span>Connected</button>`;
-      if(!available)return `<button class="cbtn" disabled title="not configured"><span class="glyph">${p.glyph}</span>${p.label} — unavailable</button>`;
-      return `<button class="cbtn ${p.cls}" data-connect="${provider}"><span class="glyph">${p.glyph}</span>${p.label}</button>`;
-    }).join("");
+  const buttons=provButtons();
   const dim=document.createElement("div");
   dim.className="cdim";
   dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Connect an account">
@@ -5203,9 +5233,10 @@ async function loadProfile(scroller){
     <p class="sub">${auth.accounts.length
       ? "Your predictions, calls and reputation follow this account to any browser."
       : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
-    ${linked||`<button class="cbtn x" data-connect="twitter"><span class="glyph">𝕏</span>Connect X</button>
-       <button class="cbtn" data-connect="google"><span class="glyph">G</span>Connect Google</button>
-       <p class="cnote">X connects your identity. Google saves your balance across devices. Either grants <b>+${CONNECT_BONUS} predictions</b>, once.</p>`}
+    ${linked||`${provButtons()}
+       <p class="cnote">X connects your identity. Google saves your balance across devices. A wallet signs a
+         message to prove it is yours — it never approves a transaction. Any of them grants
+         <b>+${CONNECT_BONUS} predictions</b>, once.</p>`}
     <div class="opoints">
       <span class="v">${balance==null?"—":String(balance).replace(/\B(?=(\d{3})+(?!\d))/g,",")}</span>
       <span class="k"><b>Predictions</b> · your play balance</span>
