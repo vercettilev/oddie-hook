@@ -919,48 +919,24 @@
     font-size:12.5px;color:#4d7a1a;background:none;border:0;padding:0;cursor:pointer}
   :root[data-theme="dark"] .keep-playing-cta{color:var(--accent)}
 
-  /* --- first-visit guided tour -------------------------------------------------
-   * An IN-PAGE spotlight, not a modal: the real page stays visible and in place
-   * underneath, and each step just dims everything except one element. The dim
-   * is drawn by the spotlight's own giant box-shadow rather than a separate
-   * full-screen panel — that's what cuts a real hole (the highlighted element
-   * shows through at full brightness) instead of laying a translucent sheet
-   * over everything including the thing being pointed at.
-   *
-   * The dim DOES swallow taps on purpose: mid-tour, a stray tap on the
-   * spotlighted market card would place a real call. Only the tooltip's own
-   * buttons are interactive. */
-  /* FOUR dim panels around the target, not one panel with a box-shadow "hole".
-     The box-shadow trick only works if the dim reliably paints above the page,
-     and here it doesn't: the fixed header and the market cards (will-change:
-     transform, so each is its own stacking context) both painted straight
-     through it. Four panels leave a real gap that nothing has to out-stack. */
-  .tour-mask{position:fixed;background:rgba(0,0,0,.72);z-index:9000;pointer-events:none;
-    transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease}
-  .tour-catch{position:fixed;inset:0;z-index:9001}  /* swallows taps, incl. through the gap */
-  .tour-ring{position:fixed;z-index:9002;border-radius:var(--r-md);pointer-events:none;
-    box-shadow:0 0 0 3px var(--accent);
-    transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease}
-  .tour-tip{position:fixed;z-index:9003;max-width:300px;
-    border:2px solid var(--card-line);border-radius:var(--r-md);background:var(--card-surface);
-    box-shadow:var(--card-shadow);padding:14px 16px}
-  .tour-step{font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.05em;
-    text-transform:uppercase;color:var(--muted-g);margin:0 0 6px}
-  .tour-text{font-family:'Nunito';font-weight:700;font-size:13.5px;line-height:1.5;
-    color:var(--on-ground);margin:0 0 12px}
-  .tour-text b{font-weight:900}
-  .tour-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .tour-next{font-family:'Fredoka';font-weight:600;font-size:13.5px;color:#17250a;
-    background:var(--accent);border:2px solid #000;border-radius:999px;
-    padding:8px 16px;cursor:pointer}
-  .tour-skip{font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g);
-    background:none;border:0;padding:4px;cursor:pointer}
-  /* A step that also SCROLLS the page must not glide: the ring would animate
-     across the viewport while the content moves under it, and for ~200ms it
-     sits over whatever happens to be passing by. Jump instead, glide only
-     when the page stayed put (a resize, say). */
-  .tour-mask.nojump,.tour-ring.nojump{transition:none}
-  @media (prefers-reduced-motion:reduce){ .tour-mask,.tour-ring{transition:none} }
+  /* The 3-step guided tour's CSS lived here. Removed with the tour itself:
+     a read-first walkthrough is the opposite of hypercasual, it double-taught
+     what the hero demo already shows, and its step-2 spotlight targeted the
+     mobile balance pill — display:none on desktop — so the ring collapsed to
+     a dot at the viewport corner. Onboarding is now the first action itself;
+     the economy teaches at the moment of spend (see .balspend below). */
+
+  /* The moment-of-spend receipt: a "−1" that floats off the balance pill the
+     instant a call is placed. This replaces the tour's "each tap costs a
+     prediction" sentence — the cost is SHOWN, at the exact moment it happens,
+     instead of narrated in advance as a warning. */
+  .bal{position:relative}
+  .balspend{position:absolute;right:6px;top:-2px;pointer-events:none;
+    font-family:'Fredoka';font-weight:700;font-size:14px;color:var(--acc-deep);
+    animation:balspend .9s ease-out forwards}
+  :root[data-theme="dark"] .balspend{color:var(--accent)}
+  @keyframes balspend{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-16px)}}
+  @media (prefers-reduced-motion:reduce){.balspend{animation:none;opacity:0}}
 
   /* --- sharing ----------------------------------------------------------------
    * Two entry points. The card icon is discovery ("check this out"); the button
@@ -1286,8 +1262,9 @@
      "+50 points" reward caption that used to sit under the CTA is gone: it
      was one more stacked line competing for the same 3 seconds, and what a
      tag DOES (the demo, right above) matters more on first sight than what
-     it pays. It still exists — see the guided tour and the reward's own
-     surface elsewhere — this screen just isn't the place for it anymore. */
+     it pays. The reward still surfaces elsewhere (the fee note on every
+     community card, the tag-reminder interstitial) — this screen just isn't
+     the place for it anymore. */
   /* Measured, not eyeballed, and the cliff is sharper than it looks: at a
      400px phone this copy's two clauses ("Someone's wrong on X?" / "Prove
      you're right.") each fit their own line at EXACTLY 36px and neither
@@ -2147,7 +2124,11 @@ function paintBalance(pulse){
   // balance there is nothing to count down to, and a countdown to nothing is a nag.
   const tip=balance<STARTING_PREDICTIONS?nextRefillIn():"";
   document.querySelectorAll(".bal").forEach(el=>{
-    el.innerHTML=`🪙 ${balance} <span class="ptslbl">left</span>${tip?` <span class="topup">${tip}</span>`:""}`;
+    // The unit is NAMED, not implied: "5 LEFT" made a newcomer ask "5 what?"
+    // as their first question. One visible unit everywhere pre-first-win —
+    // predictions — per the single-unit rule (Season Points stay backstage
+    // until something has actually been won).
+    el.innerHTML=`🪙 ${balance} <span class="ptslbl">${balance===1?"prediction":"predictions"}</span>${tip?` <span class="topup">${tip}</span>`:""}`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
     // Persistent pick-streak badge as visible identity, right beside the balance.
     // Shown only at 2+ (a 1 isn't a streak); it disappears the moment a wrong
@@ -2158,6 +2139,20 @@ function paintBalance(pulse){
     }
     if(pickStreak>=2){badge.textContent=`🔥 ${pickStreak}`;badge.title=`${pickStreak}-pick streak`;badge.style.display="";}
     else{badge.style.display="none";}
+  });
+}
+
+/** The spend receipt: float a "−1" off every visible balance pill. Fire-and-
+ *  forget; the span removes itself when its animation ends (or via the
+ *  timeout under reduced motion, where the CSS hides it instantly). */
+function flashBalanceSpend(){
+  document.querySelectorAll(".bal").forEach(el=>{
+    if(!el.offsetParent)return;                 // hidden pill (other breakpoint)
+    const f=document.createElement("span");
+    f.className="balspend";f.textContent="−1";
+    f.addEventListener("animationend",()=>f.remove());
+    el.appendChild(f);
+    setTimeout(()=>f.remove(),1200);            // reduced-motion fallback cleanup
   });
 }
 /* ------------------------------------------------------------------- theme --
@@ -3660,7 +3655,10 @@ function buildCard(m,i,homeLoop){
         soc.textContent=outOfPredictionsLine();
         return;
       }
-      balance-=CALL_COST;paintBalance();
+      // Deduct AND show the deduction: the pill pulses and a "−1" floats off
+      // it. This is where the economy is taught — at the moment of spend,
+      // not by a tour sentence in advance.
+      balance-=CALL_COST;paintBalance(true);flashBalanceSpend();
       (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
       const beacon={slug:m.slug,side:s,tokens:CALL_COST};
       pending={s,left:5,beacon,timer:null};
@@ -3692,145 +3690,20 @@ function buildCard(m,i,homeLoop){
     return card;
 }
 
-/* ------------------------------------------------- first-visit guided tour --
- * Three steps, in-page, once ever per device. Each step dims the page and
- * spotlights ONE real element that is already on screen — no mock UI, no
- * separate window, and the page underneath never moves except to scroll the
- * target into view. The server's claimGuidedTour is the only gate that decides
- * "has this device toured" (see /api/onboarding/tour-seen); this file just
- * renders whatever that says.
- *
- * Each target is resolved lazily, at the moment its step runs, rather than
- * captured up front: Home renders asynchronously and a step's element may not
- * exist at all (a cold instance with no featured markets has no card to point
- * at). A missing target skips its step instead of stranding the tour on an
- * empty spotlight.
- */
-// Copy rule for these three steps specifically: assume the reader has never
-// seen a prediction market, does not know what "a claim" or "a market" is as a
-// noun, and has no idea what "resolves" means. Every step is an instruction or
-// a plain consequence, in words anyone already uses. The rest of the product
-// keeps its own voice — this is the one surface written for someone 5 seconds
-// old, so it is deliberately blunter than everything around it.
-const TOUR_STEPS=[
-  { find:()=>document.querySelector(".homewrap .card"),
-    text:"Tap <b>YES</b> or <b>NO</b> on this question." },
-  { find:()=>document.getElementById("bal")||document.querySelector(".bal"),
-    text:"Each tap costs a prediction. Guess right and you get more back." },
-  { find:()=>document.querySelector(".herocta"),
-    text:"Seen an argument on X? Reply <b>@oddiefun</b> and get <b>+50</b> points." },
-];
-
-function runGuidedTour(){
-  const scroller=document.getElementById("scroller");
-  const catcher=document.createElement("div");catcher.className="tour-catch";
-  const ring=document.createElement("div");ring.className="tour-ring";
-  const tip=document.createElement("div");tip.className="tour-tip";
-  // Four dim panels (top/right/bottom/left of the target) rather than one
-  // panel with a hole punched in it — see .tour-mask for why.
-  const masks=[0,1,2,3].map(()=>{
-    const m=document.createElement("div");m.className="tour-mask";
-    document.body.appendChild(m);return m;
-  });
-  document.body.appendChild(catcher);
-  document.body.appendChild(ring);
-  document.body.appendChild(tip);
-
-  let idx=0, current=null, done=false;
-  const PAD=8;
-  const end=()=>{
-    if(done)return; done=true;
-    window.removeEventListener("resize",reposition);
-    masks.forEach((m)=>m.remove());
-    catcher.remove();ring.remove();tip.remove();
-  };
-  const reposition=()=>{ if(current&&current.isConnected)paint(); };
-  const box=(el,left,top,width,height)=>{
-    el.style.left=`${left}px`;el.style.top=`${top}px`;
-    el.style.width=`${Math.max(0,width)}px`;el.style.height=`${Math.max(0,height)}px`;
-  };
-
-  const paint=()=>{
-    const r=current.getBoundingClientRect();
-    const W=window.innerWidth, H=window.innerHeight;
-    // The gap the four panels leave open, clamped to the viewport so a target
-    // flush against an edge doesn't produce a negative-size panel.
-    const gt=Math.max(0,r.top-PAD), gl=Math.max(0,r.left-PAD);
-    const gb=Math.min(H,r.bottom+PAD), gr=Math.min(W,r.right+PAD);
-    box(masks[0], 0,  0,  W,      gt);        // above
-    box(masks[1], 0,  gb, W,      H-gb);      // below
-    box(masks[2], 0,  gt, gl,     gb-gt);     // left
-    box(masks[3], gr, gt, W-gr,   gb-gt);     // right
-    box(ring, gl, gt, gr-gl, gb-gt);
-    const isLast=idx===TOUR_STEPS.length-1;
-    tip.innerHTML=`<p class="tour-step">Step ${idx+1} of ${TOUR_STEPS.length}</p>
-      <p class="tour-text">${TOUR_STEPS[idx].text}</p>
-      <div class="tour-row">
-        <button class="tour-skip" type="button" aria-label="Skip the tour">✕ skip</button>
-        <button class="tour-next" type="button">${isLast?"start playing →":"next"}</button>
-      </div>`;
-    tip.querySelector(".tour-skip").onclick=end;
-    tip.querySelector(".tour-next").onclick=()=>{ idx++; idx<TOUR_STEPS.length?show():end(); };
-    // Below the spotlight when it fits, else above it — measured AFTER the
-    // innerHTML swap so offsetHeight reflects this step's actual text length.
-    const h=tip.offsetHeight, below=r.bottom+PAD+12;
-    tip.style.top=`${below+h<window.innerHeight-12?below:Math.max(12,r.top-PAD-12-h)}px`;
-    tip.style.left=`${Math.min(Math.max(12,r.left-PAD),Math.max(12,window.innerWidth-tip.offsetWidth-12))}px`;
-  };
-
-  // The server already claimed the one-shot "seen" flag before runGuidedTour
-  // was even called (deliberate — see claimGuidedTour's docstring: abandoning
-  // mid-tour still counts as seen). That makes finding ZERO targets on the
-  // very first attempt a different, worse case than abandoning mid-tour: the
-  // device's one shot is gone and nothing was ever shown. All three targets
-  // are normally already in the DOM by the time this runs (wrap is appended,
-  // synchronously, before the 420ms cosmetic-stagger delay even starts
-  // counting) — but "normally" isn't "always", so retry once, briefly, before
-  // accepting that as final. Only the very first show() gets this grace.
-  let firstAttempt=true;
-  const show=()=>{
-    // Skip past any step whose target isn't on this page.
-    while(idx<TOUR_STEPS.length&&!TOUR_STEPS[idx].find())idx++;
-    if(idx>=TOUR_STEPS.length){
-      if(firstAttempt){firstAttempt=false;idx=0;setTimeout(show,300);return;}
-      return end();
-    }
-    current=TOUR_STEPS[idx].find();
-    // Bring it into view before measuring. Instant, not smooth: the spotlight
-    // is positioned from a rect measured one frame later, and a 500ms smooth
-    // scroll would still be moving when that measurement happens.
-    const r=current.getBoundingClientRect();
-    const before=scroller?scroller.scrollTop:0;
-    if(scroller&&scroller.contains(current)&&(r.top<80||r.bottom>window.innerHeight-40)){
-      scroller.scrollTop+=r.top-window.innerHeight*0.3;
-    }
-    // If the page moved, jump the ring rather than gliding it — see .nojump.
-    const moved=scroller&&scroller.scrollTop!==before;
-    const anim=[...masks,ring];
-    if(moved)anim.forEach((el)=>el.classList.add("nojump"));
-    requestAnimationFrame(()=>{
-      paint();
-      // Restore the glide one frame AFTER the jump has been painted, so the
-      // next non-scrolling step still animates between targets.
-      if(moved)requestAnimationFrame(()=>anim.forEach((el)=>el.classList.remove("nojump")));
-    });
-  };
-
-  window.addEventListener("resize",reposition);
-  show();
-}
-
-/** Ask the server whether this device has ever been toured; run it if not.
- *  Only ever called for a device /api/home already reported as newUser, so the
- *  two gates are AND-ed: "new enough to tour" and "not toured yet". */
-async function maybeGuidedTour(){
-  try{
-    const r=await fetch(`${API}/api/onboarding/tour-seen`,{method:"POST",
-      headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
-    const j=await r.json().catch(()=>({}));
-    if(j.show)runGuidedTour();
-  }catch(e){/* no tour this load; nothing else depends on it */}
-}
+/* The first-visit guided tour (3 steps: TOUR_STEPS, runGuidedTour,
+ * maybeGuidedTour) was removed here, deliberately and entirely:
+ *  - It taught by READING before allowing DOING — the opposite of the
+ *    hypercasual bar this product is built to ("content plays before you act").
+ *  - It double-onboarded: the hero's tagdemo was built to make a tour
+ *    unnecessary, and the tour's own step 3 spotlighted the hero's button.
+ *  - Its step 2 targeted #bal, which is display:none on desktop (the rail
+ *    carries a separate pill), so the spotlight ring collapsed to a dot.
+ *  - X in-app browsers and private windows mint fresh device ids, so the
+ *    heaviest onboarding hit the coldest traffic repeatedly.
+ * What replaced it: the cued first card (firstcall-cue), the hero demo, the
+ * moment-of-spend "−1" flash (flashBalanceSpend), and the win celebrations
+ * that already existed. If a one-shot hint is ever needed again, follow
+ * claimTagTeachingMoment's pattern — do not resurrect a multi-step tour. */
 
 /* ------------------------------------------------------------------ home --
  * The new default at "/". Sells the product's actual chain — claim -> tag ->
@@ -3974,10 +3847,10 @@ async function renderHome(){
         <div class="tagdemo-step">↓ you tag <b>@oddiefun</b></div>
         <div class="tagdemo-card">
           <span class="tagdemo-q">Will the Lakers make the playoffs?</span>
-          <span class="tagdemo-odds"><span>YES 54%</span><span>NO 46%</span></span>
+          <span class="tagdemo-odds"><span>YES 38%</span><span>NO 62%</span></span>
         </div>
         <div class="tagdemo-step">↓ the season plays out</div>
-        <div class="tagdemo-done">✓ Resolved YES — the 54% were right</div>
+        <div class="tagdemo-done">✓ Resolved YES — the 38% called it</div>
       </div>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>`;
@@ -3985,12 +3858,10 @@ async function renderHome(){
   // The "+${surfaceReward} points" line that used to close the hero is gone
   // from THIS screen, not from the product — real users read it as a fifth
   // stacked thing competing with headline/demo/CTA for the first 3 seconds.
-  // The guided tour's third step still states the exact reward in words
-  // ("Reply @oddiefun and get +50 points" — see TOUR_STEPS), so a first-time
-  // visitor isn't losing the information, only its place on THIS screen.
-  // surfaceReward is left wired here (see the /api/home read above) rather
-  // than deleted, since the natural next home for it is back on this hero —
-  // just not fighting for the same first three seconds as the demo.
+  // The reward now surfaces where it has context: the fee note on every
+  // community card and the tag-reminder interstitial. surfaceReward stays
+  // wired here (see the /api/home read above) for whichever surface needs
+  // the live number next.
 
   // An active claim streak, as its own badge above the claim strip. Farmers grind
   // streaks, and buried in the claim card's grey sub-line it was easy to miss.
@@ -4239,11 +4110,9 @@ async function renderHome(){
   // actually live, so it needs the exact same hookup, not a separate one.
   watchDepth(scroller);
 
-  // First-visit guided tour — only for a device the server just told us is
-  // new, and only if it has never been toured (that second gate lives in
-  // claimGuidedTour). Deferred past the entrance stagger above so the
-  // spotlight measures cards at their settled position, not mid-animation.
-  if(newUser)setTimeout(maybeGuidedTour,420);
+  // The guided tour used to fire here for new devices. Removed — see the
+  // tombstone comment where its code lived. A new visitor's onboarding is
+  // the page itself: hero demo, cued card, and moment-of-spend feedback.
 }
 
 /**

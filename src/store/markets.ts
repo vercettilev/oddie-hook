@@ -2102,7 +2102,6 @@ export async function rankMovementFor(rawDeviceId: string): Promise<RankMovement
 }
 
 const memTagTeachingSeen = new Set<string>();
-const memTourSeen = new Set<string>();
 
 /**
  * The shared "show this exactly once, ever, per device" primitive behind every
@@ -2151,9 +2150,9 @@ export async function claimTagTeachingMoment(rawDeviceId: string): Promise<boole
  * at all", and both must pass. Once claimed the tour never fires again, even
  * if the device somehow reads as new later.
  */
-export async function claimGuidedTour(rawDeviceId: string): Promise<boolean> {
-  return claimOnceFlag(rawDeviceId, "tour_seen_at", memTourSeen);
-}
+// claimGuidedTour lived here (one-shot over tour_seen_at). Removed with the
+// guided tour; the tour_seen_at column stays — dropping columns over a
+// removed feature is churn, and existing rows are harmless history.
 
 /** Is this device inside the founding cohort (one of the first wallets)? */
 async function isFounding(deviceId: string): Promise<boolean> {

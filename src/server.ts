@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, claimGuidedTour, CALL_COST } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -651,6 +651,29 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
     crowdSplits(chosenSlugs),
     surfacersFor(chosenSlugs).catch(() => ({} as Record<string, SurfacerInfo>)),
   ]);
+
+  // THE FIRST-TRY SLOT RULE. Slot 0 is a brand-new visitor's entire first
+  // impression (the cued "try it" card), and recency/activity order was
+  // choosing it by accident — live it served a 93/7 niche transfer market
+  // "tagged by anonymous": a consensus, not an argument, paying 1.1x on the
+  // side the cue points at. When the admin hasn't pinned an explicit order,
+  // promote ONE card into slot 0 by argument quality: odds inside 40-60
+  // (both sides genuinely worth arguing, either pick pays ~2x) scores
+  // highest, a NAMED tagger (the provenance story on its feet) breaks ties.
+  // Everything else keeps its activity/recency order — this is a promotion,
+  // not a re-sort — and explicit admin picks are never touched.
+  if (!explicitSlugs.length && chosen.length > 1) {
+    const tryScore = (m: CommunityMarket): number => {
+      const inBand = m.yesPct >= 40 && m.yesPct <= 60 ? 2 : 0;
+      const named = surfacers[slugFor(m)]?.handle ? 1 : 0;
+      return inBand + named;
+    };
+    let best = 0;
+    for (let i = 1; i < chosen.length; i++) if (tryScore(chosen[i]) > tryScore(chosen[best])) best = i;
+    if (best > 0 && tryScore(chosen[best]) > tryScore(chosen[0])) {
+      chosen.unshift(chosen.splice(best, 1)[0]);
+    }
+  }
   // Home's featured slots deliberately carry no sourceUrl/callers — those are
   // permalink-page-only (see /api/feed above, gated on the start slug). The
   // real topical pick (Sports/Crypto/…) is exposed as topicCategory — same
@@ -1051,20 +1074,9 @@ app.post("/api/onboarding/tag-teaching-seen", async (req, res) => {
   res.json({ show: await claimTagTeachingMoment(deviceId) });
 });
 
-/**
- * The first-visit guided tour (3-step in-page spotlight). Same one-shot
- * contract as the teaching moment above: the client calls this ONCE, on a
- * cold Home render for a device /api/home already reported as newUser, and
- * `show:true` comes back at most once per device, ever. Claiming here rather
- * than after the tour finishes is deliberate — a device that opens Home and
- * abandons mid-tour has still SEEN it, and re-running a tour on someone who
- * bounced past it is worse than not running one.
- */
-app.post("/api/onboarding/tour-seen", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json({ show: await claimGuidedTour(deviceId) });
-});
+// The /api/onboarding/tour-seen endpoint lived here. Removed with the guided
+// tour itself (see the tombstone in feed.html) — nothing calls it, and a
+// dead one-shot endpoint invites someone to resurrect the tour through it.
 
 /**
  * Open positions carry today's price so the hold-or-sell decision can be made
