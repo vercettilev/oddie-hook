@@ -93,7 +93,8 @@
   /* Keyboard users get a visible ring; the design is dark so the ring is lime. */
   a:focus-visible,button:focus-visible{outline:2px solid var(--lime);outline-offset:3px;border-radius:6px}
 
-  .eyebrow{color:var(--lime);font-size:11px;font-weight:800;letter-spacing:.20em;text-transform:uppercase}
+  .eyebrow{color:var(--lime);font-family:'Fredoka';font-size:13px;font-weight:600;
+    letter-spacing:.16em;text-transform:uppercase}
 
   /* Line icons, drawn rather than typed. The emoji these replace fell back to a
      monochrome glyph at 12-15px on this platform and rendered as grey boxes, so
@@ -108,7 +109,7 @@
   .nav__in{display:flex;align-items:center;gap:32px;width:100%}
   .brand{display:flex;align-items:center;gap:10px;margin-right:auto}
   .brand img{width:34px;height:34px;border-radius:9px}
-  .brand span{font-family:'Fredoka';font-size:22px;font-weight:600;color:var(--lime);
+  .brand span{font-family:'Fredoka';font-size:23px;font-weight:600;color:var(--lime);
     letter-spacing:.14em;text-transform:uppercase}
   .nav__links{display:flex;align-items:center;gap:34px}
   .nav__links a{color:var(--fg-2);font-size:14px;font-weight:700}
@@ -140,15 +141,6 @@
   .hero__in{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr);
     column-gap:52px;align-items:center;padding-top:36px;padding-bottom:60px}
 
-  .badges{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-  .badge-beta{border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:5px 13px;
-    font-size:11px;font-weight:800;letter-spacing:.14em}
-  .badges small{color:var(--fg-3);font-size:11px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}
-
-  /* Capped so "Turn arguments" stays on ONE line inside the copy column. The
-     line break in the markup is the design; letting the type outgrow the column
-     turns it into a three-line ragged block and the break stops meaning
-     anything. */
   h1{margin:26px 0 0;font-family:'Fredoka';font-weight:700;color:var(--fg);
     font-size:clamp(38px,5.6vw,63px);line-height:1.02;letter-spacing:-.035em}
   h1 em{font-style:normal;color:var(--lime)}
@@ -221,15 +213,66 @@
 
 
   /* -------------------------------------------------------------- section -- */
+  /* THE BELOW-FOLD BAND HAS TWO STATES, and the server picks which one by
+     counting real markets. Below the threshold the page teaches the mechanic
+     ("see how a post becomes a market"); at or above it, the same slot becomes
+     proof ("live on oddie") and shows actual markets. This is not dead markup
+     on either side — both states are reachable states of the same product, and
+     the switch is a single number in the server. Launching with an empty "live"
+     grid would be the page claiming more than the product has. */
+  .band--live,.sec[data-live="0"] .band--live{display:none}
+  .sec[data-live="1"] .band--live{display:block}
+  .sec[data-live="1"] .band--how{display:none}
+
+  .livegrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:26px}
+  .lcard{display:block;padding:16px 17px 15px;border:1px solid var(--line);
+    border-radius:14px;background:var(--card)}
+  .lcard:hover{border-color:rgba(215,220,31,.45)}
+  .lcard__top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
+    color:var(--fg-3);font-size:9px;font-weight:900;letter-spacing:.13em;text-transform:uppercase}
+  .lcard__live{display:inline-flex;align-items:center;gap:5px;color:var(--lime)}
+  .lcard__live::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--lime)}
+  .lcard__q{margin:0;color:rgba(255,255,255,.92);font-size:14px;font-weight:800;line-height:1.4;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .lcard__bar{position:relative;height:4px;border-radius:2px;margin:13px 0 9px;
+    background:rgba(255,107,90,.55);overflow:hidden}
+  .lcard__bar i{position:absolute;left:0;top:0;bottom:0;background:var(--lime);border-radius:2px}
+  .lcard__odds{display:flex;align-items:center;justify-content:space-between;
+    font-size:11px;font-weight:900;letter-spacing:.03em}
+  .livemore{display:inline-flex;align-items:center;gap:8px;margin-top:22px;border:1px solid var(--line);border-radius:999px;
+    padding:12px 22px;font-size:14px;font-weight:800}
+  .livemore:hover{border-color:rgba(255,255,255,.5)}
+
+  /* Step 3 of the flow: a market being called. */
+  .callq{font-size:13px;font-weight:800;color:rgba(255,255,255,.92);line-height:1.4}
+  .callrow{display:flex;gap:8px;margin-top:12px}
+  .callbtn{flex:1;text-align:center;border-radius:9px;padding:9px 6px;
+    font-size:11.5px;font-weight:900;letter-spacing:.04em}
+  .callbtn b{display:block;font-family:'Fredoka';font-size:16px;font-weight:600;letter-spacing:0}
+  .callbtn--yes{background:rgba(215,220,31,.14);border:1px solid rgba(215,220,31,.45);color:var(--lime)}
+  .callbtn--no{background:rgba(255,107,90,.10);border:1px solid rgba(255,107,90,.35);color:var(--no)}
+  .callmeta{display:flex;justify-content:space-between;margin-top:12px;
+    color:var(--fg-3);font-size:11.5px;font-weight:700}
+
+  /* Step 4: the receipt. This is the beat the old three-step version was
+     missing, and it is the one that separates Oddie from a market list. */
+  .rcp__top{display:flex;align-items:center;gap:7px;color:var(--lime);
+    font-size:11.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}
+  .rcp__big{margin-top:12px;font-family:'Fredoka';font-size:42px;font-weight:600;
+    line-height:1;color:var(--lime)}
+  .rcp__cap{margin-top:4px;color:var(--fg-2);font-size:13px;font-weight:800}
+  .rcp__note{margin-top:12px;padding-top:11px;border-top:1px solid var(--line-soft);
+    color:var(--fg-3);font-size:12px;font-weight:600;line-height:1.5}
+
   .sec{padding-top:78px;border-top:1px solid var(--line-soft)}   /* longhand: .sec also carries .shell */
-  .steps{display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr;align-items:start;gap:0;margin-top:34px}
+  .steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:22px;margin-top:30px}
   .step{min-width:0}
   .step__hd{display:flex;align-items:flex-start;gap:13px}
   .step__n{flex:none;width:29px;height:29px;border-radius:50%;background:var(--lime);color:#0B1400;
     display:grid;place-items:center;font-family:'Fredoka';font-size:14px;font-weight:600}
-  .step__t{margin:0;font-size:17px;font-weight:800;color:var(--fg);line-height:1.25}
+  .step__t{margin:0;font-family:'Fredoka';font-size:19px;font-weight:600;color:var(--fg);
+    line-height:1.2;letter-spacing:-.01em}
   .step__b{margin:7px 0 0;color:var(--fg-2);font-size:13.5px;font-weight:600;line-height:1.55}
-  .step__arrow{align-self:center;color:var(--lime);font-size:19px;text-align:center;padding-top:64px}
   .mock{margin-top:20px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:15px}
 
   /* The three mockups are a DIAGRAM of the mechanic, in the same spirit as the
@@ -259,7 +302,7 @@
     background:var(--lime);color:#0B1400;padding:9px 12px;font-size:12.5px;font-weight:800}
 
   .rec__hd{display:flex;align-items:center;justify-content:space-between}
-  .rec__t{font-size:13.5px;font-weight:800}
+  .rec__t{font-family:'Fredoka';font-size:14.5px;font-weight:600}
   .rec__pill{border:1px solid var(--line);border-radius:999px;padding:5px 11px;
     color:var(--fg-2);font-size:11px;font-weight:700}
   .rec__body{display:flex;align-items:center;gap:18px;margin-top:16px}
@@ -301,7 +344,6 @@
   @media (max-width:900px){
     .nav__links{display:none}
     .steps{grid-template-columns:1fr;gap:30px}
-    .step__arrow{display:none}
   }
   /* Phone. This is the shape most X traffic actually arrives in, so the stage is
      rebuilt rather than merely scaled: the floating cards leave their absolute
@@ -330,6 +372,7 @@
        carousel does, instead of stopping inside the page gutter. */
 
     .sec{padding-top:56px}
+    .livegrid{grid-template-columns:1fr}
     .strip{margin-top:56px}
     .feats{gap:12px 24px}
     .feat{font-size:13px}
@@ -352,7 +395,7 @@
       <a href="/feed#/leaderboard">Leaderboard</a>
       <a href="#built">About</a>
     </div>
-    <a class="btn-launch" href="/feed">Launch Oddie <span aria-hidden="true">›</span></a>
+    <a class="btn-launch" href="/feed">Explore markets <span aria-hidden="true">›</span></a>
   </div>
 </nav>
 
@@ -360,10 +403,6 @@
   <div class="shell hero__in">
 
     <div class="hero__copy">
-      <div class="badges">
-        <span class="badge-beta">BETA</span>
-        <small>100% free. No wallet. No app.</small>
-      </div>
 
       <h1>Turn arguments<br><em>into markets.</em></h1>
 
@@ -375,8 +414,8 @@
 
       <div class="cta">
         <a class="cta__go" href="https://x.com/intent/tweet?text=%40oddiefun%20" target="_blank" rel="noopener">
-          Try Oddie on X <span aria-hidden="true">↗</span></a>
-        <a class="cta__alt" href="/feed">Explore live markets</a>
+          Create a market on X <span aria-hidden="true">↗</span></a>
+        <a class="cta__alt" href="#how">See how it works</a>
       </div>
 
       <div class="proof">
@@ -414,114 +453,119 @@
 </header>
 
 <main>
-  <section class="sec shell" id="how">
-    <p class="eyebrow">How it works</p>
+  <section class="sec shell" id="how" data-live="<!--LIVE_MODE-->">
 
-    <div class="steps">
+    <!-- STATE A: not enough real markets yet. Teach the loop instead of
+         showing an empty shelf. Four beats, because the fourth one (the tagger
+         gets paid) is the part that makes this different from a market list,
+         and the old three-step version stopped one beat short of it. Every
+         card here is an EXAMPLE and says so to a screen reader. -->
+    <div class="band band--how">
+      <p class="eyebrow">See how a post becomes a market</p>
+      <div class="steps">
 
-      <div class="step">
-        <div class="step__hd">
-          <span class="step__n">1</span>
-          <div>
-            <h2 class="step__t">Tag Oddie</h2>
-            <p class="step__b">Tag @oddiefun under any argument on X.</p>
+        <div class="step">
+          <div class="step__hd">
+            <span class="step__n">1</span>
+            <div><h2 class="step__t">Someone posts a take</h2>
+              <p class="step__b">Any argument on X, from anyone.</p></div>
           </div>
-        </div>
-        <div class="mock" role="img" aria-label="Example: a post on X reading 'Bitcoin will never hit $200k', with a reply tagging @oddiefun.">
-          <div class="xp__hd">
-            <span class="av"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="9" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg></span>
-            <div>
-              <div class="xp__name">CryptoNate <span class="tick">✓</span></div>
-              <div class="xp__meta">@CryptoNate · 2h</div>
-            </div>
-          </div>
-          <p class="xp__txt">Bitcoin will never hit $200k.</p>
-          <div class="xp__eng">
-            <span><svg class="ico" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"/></svg>32</span>
-            <span><svg class="ico" viewBox="0 0 24 24"><path d="M4 9V7a3 3 0 0 1 3-3h10M4 9l3-3M4 9 1 6M20 15v2a3 3 0 0 1-3 3H7m13-5-3 3m3-3 3 3"/></svg>12</span>
-            <span><svg class="ico" viewBox="0 0 24 24"><path d="M12 20s-7-4.6-7-9.4A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.6C19 15.4 12 20 12 20Z"/></svg>118</span>
-          </div>
-          <div class="xp__reply">@oddiefun</div>
-        </div>
-      </div>
-
-      <div class="step__arrow" aria-hidden="true">→</div>
-
-      <div class="step">
-        <div class="step__hd">
-          <span class="step__n">2</span>
-          <div>
-            <h2 class="step__t">We find or create</h2>
-            <p class="step__b">We find the closest live market. If none exists, we create one.</p>
-          </div>
-        </div>
-        <div class="mock" role="img" aria-label="Example: Oddie replies with a market asking 'Will Bitcoin hit $200k before 2026?' at 71% yes, 29% no, and a Play market button.">
-          <div class="xp__hd">
-            <span class="av"><img src="/logo-mark-96.png" alt=""></span>
-            <div>
-              <div class="xp__name">Oddie <span class="tick">✓</span></div>
-              <div class="xp__meta">@oddiefun · 1m</div>
-            </div>
-          </div>
-          <p class="xp__txt">Found a market for this argument 👇</p>
-          <div class="inner">
-            <div class="inner__row">
-              <span class="inner__spark"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/></svg></span>
+          <div class="mock" role="img" aria-label="Example: a post on X reading 'Bitcoin will never hit $200k', with a reply tagging @oddiefun.">
+            <div class="xp__hd">
+              <span class="av"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="9" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg></span>
               <div>
-                <div class="inner__q">Will Bitcoin hit $200k before 2026?</div>
-                <div class="inner__odds"><span class="qcard__yes">71% YES</span> <span class="qcard__no">29% NO</span></div>
+                <div class="xp__name">CryptoNate <span class="tick">✓</span></div>
+                <div class="xp__meta">@CryptoNate · 2h</div>
               </div>
             </div>
-            <div class="inner__play"><span>Play market</span><span aria-hidden="true">›</span></div>
-          </div>
-          <div class="xp__eng">
-            <span><svg class="ico" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"/></svg>8</span>
-            <span><svg class="ico" viewBox="0 0 24 24"><path d="M4 9V7a3 3 0 0 1 3-3h10M4 9l3-3M4 9 1 6M20 15v2a3 3 0 0 1-3 3H7m13-5-3 3m3-3 3 3"/></svg>6</span>
-            <span><svg class="ico" viewBox="0 0 24 24"><path d="M12 20s-7-4.6-7-9.4A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.6C19 15.4 12 20 12 20Z"/></svg>24</span>
-            <span><svg class="ico" viewBox="0 0 24 24"><path d="M4 20V12M10 20V5M16 20v-6M22 20V9"/></svg>4.2K</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="step__arrow" aria-hidden="true">→</div>
-
-      <div class="step">
-        <div class="step__hd">
-          <span class="step__n">3</span>
-          <div>
-            <h2 class="step__t">You play. We keep score.</h2>
-            <p class="step__b">One tap to play. We track your accuracy by topic.</p>
-          </div>
-        </div>
-        <div class="mock" role="img" aria-label="Example of the record screen: 67% accuracy overall, with per-topic accuracy for Crypto, Markets and Politics.">
-          <div class="rec__hd">
-            <span class="rec__t">Your record</span>
-            <span class="rec__pill">All topics ⌄</span>
-          </div>
-          <div class="rec__body">
-            <div>
-              <div class="rec__big">67%</div>
-              <div class="rec__cap">accuracy</div>
+            <p class="xp__txt">Bitcoin will never hit $200k.</p>
+            <div class="xp__eng">
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"/></svg>32</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M4 9V7a3 3 0 0 1 3-3h10M4 9l3-3M4 9 1 6M20 15v2a3 3 0 0 1-3 3H7m13-5-3 3m3-3 3 3"/></svg>12</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M12 20s-7-4.6-7-9.4A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.6C19 15.4 12 20 12 20Z"/></svg>118</span>
             </div>
-            <div class="rec__rows">
-              <div class="rec__row"><span>Crypto</span><b>72%</b><span class="rec__mini"><i style="width:72%"></i></span></div>
-              <div class="rec__row"><span>Markets</span><b>61%</b><span class="rec__mini"><i style="width:61%"></i></span></div>
-              <div class="rec__row"><span>Politics</span><b>58%</b><span class="rec__mini"><i style="width:58%"></i></span></div>
+            <div class="xp__reply">@oddiefun</div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step__hd">
+            <span class="step__n">2</span>
+            <div><h2 class="step__t">Oddie makes it a market</h2>
+              <p class="step__b">We find the closest live market, or create one.</p></div>
+          </div>
+          <div class="mock" role="img" aria-label="Example: Oddie replies with a market asking 'Will Bitcoin hit $200k before 2026?' at 71% yes, 29% no, and a Play market button.">
+            <div class="xp__hd">
+              <span class="av"><img src="/logo-mark-96.png" alt=""></span>
+              <div>
+                <div class="xp__name">Oddie <span class="tick">✓</span></div>
+                <div class="xp__meta">@oddiefun · 1m</div>
+              </div>
+            </div>
+            <p class="xp__txt">Found a market for this argument 👇</p>
+            <div class="inner">
+              <div class="inner__row">
+                <span class="inner__spark"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/></svg></span>
+                <div>
+                  <div class="inner__q">Will Bitcoin hit $200k before 2026?</div>
+                  <div class="inner__odds"><span class="qcard__yes">71% YES</span> <span class="qcard__no">29% NO</span></div>
+                </div>
+              </div>
+              <div class="inner__play"><span>Play market</span><span aria-hidden="true">›</span></div>
             </div>
           </div>
-          <div class="rec__cta"><span>View leaderboard</span><span aria-hidden="true">›</span></div>
         </div>
-      </div>
 
+        <div class="step">
+          <div class="step__hd">
+            <span class="step__n">3</span>
+            <div><h2 class="step__t">People call it</h2>
+              <p class="step__b">One tap picks a side. No wallet, no money.</p></div>
+          </div>
+          <div class="mock" role="img" aria-label="Example of a market being played: 71% called yes, 29% called no, five callers so far.">
+            <div class="callq">Will Bitcoin hit $200k before 2026?</div>
+            <div class="callrow">
+              <span class="callbtn callbtn--yes">YES <b>71%</b></span>
+              <span class="callbtn callbtn--no">NO <b>29%</b></span>
+            </div>
+            <div class="callmeta"><span>5 callers</span><span>253 in play</span></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step__hd">
+            <span class="step__n">4</span>
+            <div><h2 class="step__t">The tagger gets paid</h2>
+              <p class="step__b">3% of the market you created, when it resolves.</p></div>
+          </div>
+          <div class="mock" role="img" aria-label="Example receipt: the market resolved yes, and the person who tagged it earned six predictions, three percent of everything staked.">
+            <div class="rcp__top"><span aria-hidden="true">✓</span> Resolved YES</div>
+            <div class="rcp__big">+6</div>
+            <div class="rcp__cap">to whoever tagged it</div>
+            <div class="rcp__note">3% of everything staked on a market you started. Paid at resolution, every time.</div>
+          </div>
+        </div>
+
+      </div>
     </div>
+
+    <!-- STATE B: enough real markets to stand on their own. Server-rendered
+         from the same rows the app serves, so this can never show a market the
+         product does not actually have. -->
+    <div class="band band--live">
+      <p class="eyebrow">Live on Oddie</p>
+      <div class="livegrid"><!--LIVE_CARDS--></div>
+      <a class="livemore" href="/feed">See every market <span aria-hidden="true">›</span></a>
+    </div>
+
   </section>
 
   <section class="strip" id="built">
     <div class="shell">
       <p class="eyebrow">Built for the internet's arguments</p>
       <div class="feats">
-        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.9 18.1 18.1 5.9"/></svg> No wallet</span>
-        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M11 18.2h2"/></svg> No app</span>
+        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.9 18.1 18.1 5.9"/></svg> No wallet needed</span>
+        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M11 18.2h2"/></svg> Nothing to install</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M13 2 5 14h6l-1 8 8-12h-6l1-8Z"/></svg> 100% free</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/></svg> Play with points</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 6-8"/><path d="M15 6h3.5v3.5"/></svg> Real-time markets</span>

@@ -86,22 +86,56 @@ app.use(express.static(path.join(__dirname, "../public"), { index: false, maxAge
  * carries a device id is bounced there by the landing's own first script, so a
  * returning player never has to read the pitch again.
  *
- * The hero used to float four real market cards around the art. They are gone:
- * the painting reads as one picture and the cards were sitting on top of it.
- * The only live figure left on the page is the market count beside the CTAs,
- * and that follows the same rule every data-driven surface here follows — the
- * whole clause is printed or none of it, never a placeholder.
+ * The hero art carries no cards: the painting reads as one picture and they
+ * were sitting on top of it. Real markets live in the band BELOW the fold, and
+ * that band has two states.
+ *
+ * A launch-day landing with a "Live on Oddie" shelf holding two markets claims
+ * more than the product has, and an empty one claims it and fails. So the band
+ * counts what actually exists: under LANDING_LIVE_MIN real markets it teaches
+ * the loop instead ("see how a post becomes a market"), and at or above it the
+ * same slot becomes proof. One number decides, and nothing about the page has
+ * to be edited when it flips.
  */
 const LANDING_TTL_MS = 60_000;
+const LANDING_LIVE_MIN = 15;    // real markets before the band becomes a shelf
+const LANDING_LIVE_CARDS = 6;
 let landingCache: { html: string; at: number } | null = null;
+
+/** Escapes text for HTML TEXT position and for a double-quoted attribute. */
+const escHtml = (s: string): string =>
+  s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]!));
 
 async function renderLanding(): Promise<string> {
   const fresh = landingCache && Date.now() - landingCache.at < LANDING_TTL_MS;
   if (fresh) return landingCache!.html;
 
-  // Degrades to "no number" rather than to an error page. The front door has to
-  // render even when everything behind it is down.
-  const data = await getMarketData().catch(() => null);
+  // Both degrade rather than erroring: the front door has to render even when
+  // everything behind it is down. A failed community read counts as zero real
+  // markets, which shows the teaching state — the safe way to be wrong.
+  const [data, community] = await Promise.all([
+    getMarketData().catch(() => null),
+    openCommunityMarkets().catch((e) => {
+      console.error("[landing] community load failed:", (e as Error).message);
+      return [] as Awaited<ReturnType<typeof openCommunityMarkets>>;
+    }),
+  ]);
+
+  const liveMode = community.length >= LANDING_LIVE_MIN ? "1" : "0";
+  // Only built when it will actually be shown. Newest first, same ordering the
+  // app's own feed uses for community markets.
+  const liveCards = liveMode === "0" ? "" : [...community]
+    .sort((a, b) => b.marketId - a.marketId)
+    .slice(0, LANDING_LIVE_CARDS)
+    .map((m) => {
+      const yes = Math.max(0, Math.min(100, Math.round(Number(m.yesPct ?? 0))));
+      return `<a class="lcard" href="/m/${escHtml(slugFor(m))}">
+      <div class="lcard__top"><span>${escHtml(String(m.category ?? "Market"))}</span><span class="lcard__live">Live</span></div>
+      <p class="lcard__q">${escHtml(String(m.question ?? ""))}</p>
+      <div class="lcard__bar"><i style="width:${yes}%"></i></div>
+      <div class="lcard__odds"><span class="qcard__yes">${yes}% YES</span><span class="qcard__no">${100 - yes}% NO</span></div>
+    </a>`;
+    }).join("");
 
   // The whole clause or none of it. A count of zero is not a smaller number to
   // print, it is the absence of an answer: the venue cache is empty for the
@@ -118,7 +152,9 @@ async function renderLanding(): Promise<string> {
 
   const html = LANDING_HTML
     .replace("<!--PROOF-->", proof)
-    .replace("<!--HAS_ART-->", hasArt);
+    .replace("<!--HAS_ART-->", hasArt)
+    .replace("<!--LIVE_MODE-->", liveMode)
+    .replace("<!--LIVE_CARDS-->", liveCards);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
