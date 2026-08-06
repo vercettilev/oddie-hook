@@ -414,7 +414,7 @@
       <a href="/feed">Live markets</a>
       <a href="/feed#/leaderboard">Leaderboard</a>
     </div>
-    <a class="btn-launch" href="#profile">Join early <span aria-hidden="true">›</span></a>
+    <a class="btn-launch" id="navcta" href="#profile">Join early <span aria-hidden="true">›</span></a>
   </div>
 </nav>
 
@@ -649,6 +649,28 @@
     <span class="sp">Play money. For entertainment.</span>
   </div>
 </footer>
+<script>
+  /* THE WAY BACK, without a redirect.
+     "/" used to bounce anyone with a device id straight to /feed, which made
+     the front door unreachable for the people who own the site. That is gone —
+     but a returning player still lost something: they now land on a pitch they
+     have already read and have to find "Live markets" to get on with it.
+     So the nav CTA changes its mind instead of the page changing its
+     destination. Someone the app already knows is offered their feed; everyone
+     else is offered the sign-up band. One button, two audiences, and the choice
+     stays with the person either way.
+     Wrapped because private browsing can throw on any localStorage access. */
+  (function () {
+    var known = false;
+    try { known = !!localStorage.getItem("oddie_did"); } catch (e) {}
+    if (!known) return;
+    var cta = document.getElementById("navcta");
+    if (!cta) return;
+    cta.setAttribute("href", "/feed");
+    cta.innerHTML = 'Back to your feed <span aria-hidden="true">\u203A</span>';
+  })();
+</script>
+
 <script>
   /* Smooth travel to a section, and a staged arrival once there.
      Three rules this obeys:

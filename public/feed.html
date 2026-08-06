@@ -100,7 +100,7 @@
     --tabh:62px;      /* mobile bottom tab bar */
     /* Feed depth: the card is an elevated GROUND panel the white SURFACE tiles
        float on. `--feed-ground` sits behind the card so it reads as liftable. */
-    --feed-ground:#ECEFD6; --card-surface:#FBFCF4; --card-line:#101010;
+    --feed-ground:#ECEFD6; --card-surface:#FBFCF4; --card-line:#D3D8BE;
     --card-shadow:0 2px 5px rgba(35,55,15,.05), 0 12px 26px rgba(45,65,20,.11), 0 30px 56px rgba(45,65,20,.08);
     /* The fixed chrome's REAL height — the header PLUS the guest bar when it's
        showing, because the bar renders INSIDE .top rather than as its own
@@ -202,7 +202,7 @@
     background:linear-gradient(to right, rgba(0,0,0,0), var(--ground-2));opacity:1;transition:opacity .18s ease}
   .chipswrap.at-end::after{opacity:0}
   .chip{flex:none;font-family:'Nunito';font-weight:800;font-size:12px;padding:7px 13px;border-radius:999px;
-    border:2px solid var(--chip-bd);background:var(--chip-bg);color:var(--muted-g);cursor:pointer;white-space:nowrap;
+    border:1.5px solid var(--chip-bd);background:var(--chip-bg);color:var(--muted-g);cursor:pointer;white-space:nowrap;
     transition:transform .16s cubic-bezier(.34,1.56,.64,1), background .18s ease, color .18s ease, border-color .18s ease}
   .chip:active{transform:scale(.93)}
   /* Category header above each cluster of community markets in the grouped
@@ -249,7 +249,7 @@
   .sortb{flex:none;font-family:'Nunito';font-weight:900;font-size:12px;
     color:var(--muted-g);background:none;border:1.5px solid var(--hair-g);
     border-radius:999px;padding:6px 13px;cursor:pointer;white-space:nowrap}
-  .sortb.on{color:#17250a;background:var(--accent);border-color:#000}
+  .sortb.on{color:#17250a;background:var(--accent);border-color:var(--accent)}
 
   /* Sidebar discovery links — same .navitem chassis, a small dot instead of an
      icon so they read as one family of lenses rather than five more sections. */
@@ -535,7 +535,7 @@
        browser chrome as it grows/shrinks. */
     min-height:calc(100dvh - var(--feedtop) - var(--tabh) - env(safe-area-inset-bottom) - 30px);
     display:flex;flex-direction:column;justify-content:center;justify-content:safe center;gap:0;
-    background:var(--card-surface);border:2px solid var(--card-line);border-radius:var(--r-xl);
+    background:var(--card-surface);border:1.5px solid var(--card-line);border-radius:var(--r-xl);
     box-shadow:var(--card-shadow);padding:24px 22px 22px;overflow:hidden;
     transform-origin:center center;will-change:transform,opacity;
     /* Scroll-driven depth (scale+fade) is set inline by the scroll handler; the
@@ -5353,15 +5353,30 @@ function startAuth(p){
 // Reused verbatim by the interstitial card and the free-taste-spent handler so
 // the two never drift. gate_shown fires once, at the caller, with its `via`.
 function gateInner(){
+  // The THIRD place that listed providers by hand, and the third to fall behind:
+  // it offered X and Google while the product had three, exactly as the profile
+  // did. It reads from PROV now, so the marks, the wording and the SET of
+  // providers are the same here as on the sheet, the profile and the landing.
+  //
+  // The verbs differ from the sheet on purpose — this is a gate, not a settings
+  // screen, so it says "sign in with" rather than "continue with".
+  const btns=(auth.providers.length?auth.providers:[{provider:"twitter",available:true},{provider:"google",available:true},{provider:"phantom",available:true}])
+    .filter(({available})=>available!==false)
+    .map(({provider})=>{
+      const pr=PROV[provider]; if(!pr)return "";
+      return `<button class="cbtn ${pr.cls}" data-p="${provider}"><span class="glyph">${pr.glyph}</span>Sign in with ${provider==="twitter"?"X":provider==="google"?"Google":"Phantom"}</button>`;
+    }).join("");
   return `<div class="gmark"></div>
     <div class="ititle">keep calling — sign in</div>
-    <div class="gatecard-btns" style="width:100%;max-width:320px;margin-top:4px">
-      <button class="cbtn x" data-p="twitter"><span class="glyph">𝕏</span>Sign in with X</button>
-      <button class="cbtn" data-p="google"><span class="glyph">G</span>Sign in with Google</button>
-    </div>
+    <div class="gatecard-btns" style="width:100%;max-width:320px;margin-top:4px">${btns}</div>
     <p class="cnote" style="max-width:300px">Free to play. Virtual predictions, nothing to cash out. Your call is saved to this device.</p>`;
 }
-function wireGate(root){root.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>startAuth(b.dataset.p));}
+function wireGate(root){root.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
+  // Phantom is not a redirect: it signs in place, so it cannot go through
+  // startAuth's OAuth hand-off. Everything else does.
+  if(b.dataset.p==="phantom")return connectPhantom(b);
+  startAuth(b.dataset.p);
+});}
 
 // The OTHER terminal gate: signed in, but the identity isn't on the list yet.
 // Same position in the flow (the last card, after the taste) — the honest room,
