@@ -176,7 +176,7 @@ CREATE INDEX IF NOT EXISTS event_name_at_idx ON event(name, at);
 -- devices a person signs in from.
 CREATE TABLE IF NOT EXISTS account (
   id               bigserial PRIMARY KEY,
-  provider         text NOT NULL CHECK (provider IN ('google','twitter')),
+  provider         text NOT NULL CHECK (provider IN ('google','twitter','phantom')),
   provider_uid     text NOT NULL,
   handle           text,
   display_name     text,
@@ -187,6 +187,14 @@ CREATE TABLE IF NOT EXISTS account (
   created_at       timestamptz NOT NULL DEFAULT now(),
   UNIQUE (provider, provider_uid)
 );
+-- Wallet sign-in added a third provider. The CHECK above is only applied when
+-- the table is created, so a database that predates phantom would reject every
+-- wallet link with a constraint violation. Dropped and re-added rather than
+-- guarded: the statement is then correct whatever state the constraint is in,
+-- and the account table is small enough that revalidating it on boot is free.
+ALTER TABLE account DROP CONSTRAINT IF EXISTS account_provider_check;
+ALTER TABLE account ADD CONSTRAINT account_provider_check CHECK (provider IN ('google','twitter','phantom'));
+
 CREATE TABLE IF NOT EXISTS device_account (
   device_id  text PRIMARY KEY,
   account_id bigint NOT NULL REFERENCES account(id) ON DELETE CASCADE,

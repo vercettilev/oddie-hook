@@ -15,11 +15,18 @@ import { getWallet } from "./markets.js";
 
 export { CONNECT_BONUS };
 
-export type Provider = "google" | "twitter";
+// "phantom" is a wallet, not an OAuth provider — there is no redirect, no
+// client secret and no token. It reaches linkAccount through the same door as
+// the other two because everything below this line is provider-agnostic: an
+// account is a (provider, uid) pair pointing at a canonical device, and a
+// wallet address is as good a uid as Google's `sub`. See src/auth/wallet.ts for
+// how the identity is proved before it gets here.
+export type Provider = "google" | "twitter" | "phantom";
 
 export interface Identity {
   provider: Provider;
-  /** The provider's opaque id: Google's `sub`, X's numeric user id. */
+  /** The provider's opaque id: Google's `sub`, X's numeric user id, or a
+   *  wallet's base58 address. */
   uid: string;
   handle?: string | null;
   name?: string | null;

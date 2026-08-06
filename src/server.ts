@@ -43,6 +43,7 @@ import { renderPositionCard } from "./card/renderPositionCard.js";
 import { tweetCopy } from "./card/tweetCopy.js";
 import { linkAccount, accountsFor } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
+import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
 
 const app = express();
 // Real client IPs, not the reverse proxy's — required for the real-money
@@ -1280,7 +1281,14 @@ app.post("/api/position/:id/sell", async (req, res) => {
 app.get("/api/auth/me", async (req, res) => {
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  const providers = PROVIDERS.map((p) => ({ provider: p, available: isConfigured(p) }));
+  // Phantom is appended, not added to PROVIDERS: that list drives the OAuth
+  // routes, and a wallet has no client id to configure. Whether it is usable is
+  // a question only the browser can answer (is the extension installed?), so
+  // the server reports it as available and the client decides what to render.
+  const providers = [
+    ...PROVIDERS.map((p) => ({ provider: p as string, available: isConfigured(p) })),
+    { provider: "phantom", available: true },
+  ];
   if (!deviceId) return res.json({ accounts: [], providers });
   res.json({ accounts: await accountsFor(deviceId), providers });
 });
@@ -1290,6 +1298,81 @@ app.get("/api/auth/me", async (req, res) => {
  * redirect_uri — the provider matches that URI byte for byte against what is
  * registered in its console, and a query string on it is a mismatch.
  */
+/**
+ * Wallet sign-in, part 1: hand out something to sign.
+ *
+ * Unauthenticated by necessity — proving who you are is the point — so it does
+ * the smallest amount of work possible and mints a bounded, expiring, one-shot
+ * nonce. Nothing is written to the database here; a challenge nobody redeems
+ * simply ages out of memory.
+ */
+app.get("/api/auth/wallet/challenge", (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+
+  const address = String(req.query.address ?? "");
+  if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
+
+  // The domain in the signed text is OURS, from config — never the Host header.
+  // It is the only thing telling a reader which site they are signing into, and
+  // a caller-controlled value there is how a phishing page borrows our wording.
+  const domain = new URL(BASE_URL).host;
+  const { nonce, message } = issueChallenge(deviceId, address, domain);
+  res.json({ nonce, message });
+});
+
+/**
+ * Wallet sign-in, part 2: check the signature and link the account.
+ *
+ * The message that gets verified is the one the SERVER issued and stored, never
+ * the one the client sends back — the client does not send one. That is what
+ * stops a caller pairing a signature over text of their choosing with different
+ * text here. The nonce is consumed before the signature is checked, so a failed
+ * attempt burns it too and there is nothing to retry with.
+ *
+ * On success this goes through the exact same linkAccount() as X and Google:
+ * same account row, same canonical-device adoption, same one-time bonus, same
+ * anti-farming rules. A wallet is a third way to be somebody here, not a
+ * parallel identity system — and it is still not a way to move money. Nothing
+ * in this path signs or sends a transaction.
+ */
+app.post("/api/auth/wallet/verify", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+
+  const address = String(req.body?.address ?? "");
+  const nonce = String(req.body?.nonce ?? "");
+  const sigHex = String(req.body?.signature ?? "");
+  if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
+  if (!/^[0-9a-fA-F]{128}$/.test(sigHex)) return res.status(400).json({ error: "bad signature" });
+
+  const challenge = consumeChallenge(nonce, deviceId);
+  if (!challenge) return res.status(400).json({ error: "challenge expired" });
+  // The address is pinned at challenge time and signed into the message, so a
+  // different one arriving now means this is not the exchange we started.
+  if (!challenge.message.includes(address)) return res.status(400).json({ error: "address mismatch" });
+
+  if (!verifyWalletSignature(address, challenge.message, Buffer.from(sigHex, "hex"))) {
+    console.log(JSON.stringify({ evt: "auth_wallet", ok: false, reason: "bad_signature" }));
+    return res.status(401).json({ error: "signature did not verify" });
+  }
+
+  try {
+    const result = await linkAccount(deviceId, {
+      provider: "phantom",
+      uid: address,               // the address IS the identity
+      handle: shortAddress(address),
+      name: null,
+    });
+    console.log(JSON.stringify({ evt: "auth_wallet", ok: true, seeded: result.seeded, bonus: result.bonus }));
+    res.json({ connected: "phantom", bonus: result.bonus, handle: shortAddress(address) });
+  } catch (err) {
+    console.error("[auth] wallet link failed:", (err as Error).message);
+    res.status(500).json({ error: "link_failed" });
+  }
+});
+
 app.get("/api/auth/:provider/start", (req, res) => {
   const p = req.params.provider;
   if (!isProvider(p)) return res.status(404).json({ error: "unknown provider" });

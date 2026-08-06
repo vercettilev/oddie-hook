@@ -2298,12 +2298,65 @@ function paintGuestBar(){
   measureChrome();
 }
 const PROV={twitter:{glyph:"𝕏",label:"Connect X",cls:"x",why:"connect your identity"},
-            google:{glyph:"G",label:"Connect Google",cls:"",why:"save across devices"}};
+            google:{glyph:"G",label:"Connect Google",cls:"",why:"save across devices"},
+            phantom:{glyph:"👻",label:"Connect Phantom",cls:"",why:"sign in with your wallet"}};
+
+/**
+ * Phantom sign-in. A SIGNATURE, not a transaction.
+ *
+ * The wallet is asked to sign a sentence the server issued; that sentence says
+ * in its own text that it authorises nothing, and signMessage cannot move funds
+ * even if it did. Nothing here touches the real-money layer in chain.js — this
+ * is the same identity slot X and Google fill.
+ *
+ * The message is never sent back. The server verifies against the copy it
+ * stored, so there is no version of this exchange where the browser gets to
+ * choose what was signed.
+ */
+async function connectPhantom(btn){
+  const p=window.solana;
+  if(!p||!p.isPhantom){
+    // Not an error state worth a modal: they simply do not have it.
+    btn.textContent="Phantom not found";btn.disabled=true;
+    return;
+  }
+  const label=btn.textContent;
+  btn.disabled=true;btn.textContent="Check your wallet…";
+  try{
+    const {publicKey}=await p.connect();
+    const address=publicKey.toString();
+
+    const cr=await fetch(`${API}/api/auth/wallet/challenge?deviceId=${encodeURIComponent(deviceId)}&address=${encodeURIComponent(address)}`);
+    if(!cr.ok)throw new Error("challenge");
+    const {nonce,message}=await cr.json();
+
+    const signed=await p.signMessage(new TextEncoder().encode(message),"utf8");
+    // Phantom hands back raw bytes; hex keeps it ASCII-safe over JSON without
+    // pulling a base58 encoder into the page for one call.
+    const sig=[...new Uint8Array(signed.signature)].map(b=>b.toString(16).padStart(2,"0")).join("");
+
+    const vr=await fetch(`${API}/api/auth/wallet/verify`,{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({deviceId,address,nonce,signature:sig}),
+    });
+    const out=await vr.json().catch(()=>({}));
+    if(!vr.ok)throw new Error(out.error||"verify");
+
+    // Same landing as the OAuth return, so all three paths say the same thing.
+    location.href=`/feed?connected=phantom&bonus=${out.bonus||0}#/profile`;
+  }catch(e){
+    // A user closing Phantom's popup lands here too, and that is not a failure
+    // worth shouting about — put the button back and let them try again.
+    btn.disabled=false;btn.textContent=label;
+    const rejected=e&&(e.code===4001||/reject|denied|cancel/i.test(e.message||""));
+    if(!rejected)toast("Couldn't connect that wallet. Nothing changed.");
+  }
+}
 
 /** X first: it is the identity. Google second: it is the backup. */
 function connectSheet(reason){
   const linked=new Set(auth.accounts.map(a=>a.provider));
-  const buttons=(auth.providers.length?auth.providers:[{provider:"twitter",available:false},{provider:"google",available:false}])
+  const buttons=(auth.providers.length?auth.providers:[{provider:"twitter",available:false},{provider:"google",available:false},{provider:"phantom",available:true}])
     .map(({provider,available})=>{
       const p=PROV[provider];
       if(linked.has(provider))return `<button class="cbtn" disabled><span class="glyph">${p.glyph}</span>Connected</button>`;
@@ -2324,6 +2377,8 @@ function connectSheet(reason){
   dim.onclick=(e)=>{ if(e.target===dim)dim.remove(); };
   dim.querySelector(".cclose").onclick=()=>dim.remove();
   dim.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
+    // Phantom signs in place; the OAuth providers leave the page.
+    if(b.dataset.connect==="phantom")return connectPhantom(b);
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
   document.body.appendChild(dim);
