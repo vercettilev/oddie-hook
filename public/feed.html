@@ -5513,6 +5513,10 @@ async function checkGate(){
  * sign-in would be the one inconsistent exception, not a safer default.
  */
 let celebrateQueue=[], celebrateIdx=0;
+/** Above this many unseen resolutions, one digest replaces the sequence. Three
+ *  is about where tapping through stops feeling like a reward and starts
+ *  feeling like clearing a queue. */
+const CELEBRATE_MAX_SEQUENCE=3;
 // Guards the whole check+render, not just the fetch: boot can legitimately run
 // this more than once in some embedding contexts (e.g. a host page that
 // re-invokes the boot sequence without a real navigation), and without this a
@@ -5533,7 +5537,21 @@ async function checkCelebrations(){
     // within each group they stay in the resolution order the server sent.
     celebrateQueue=rows.slice().sort((a,b)=>(a.won===b.won?0:a.won?-1:1));
     celebrateIdx=0;
-    renderCelebration();
+    // A BACKLOG IS NOT A CELEBRATION.
+    //
+    // The takeover is built for the emotional peak of a call landing, and it
+    // marks the batch seen only when someone reaches the end or presses the ×.
+    // That is right for one or two. It is hostile for twenty-two: closing the
+    // tab partway through is the normal thing to do, "seen means shown" then
+    // keeps the whole batch unseen, and the modal returns on every single load
+    // until somebody clicks through the lot. Which is what happened.
+    //
+    // So past a handful it stops being a sequence and becomes one receipt: what
+    // resolved, how much of it you got right, and a way to the detail. Same
+    // information, one dismissal, and the peak is preserved for the case it was
+    // designed for.
+    if(celebrateQueue.length>CELEBRATE_MAX_SEQUENCE)renderCelebrationDigest();
+    else renderCelebration();
   }catch(e){/* the celebration just doesn't fire this load; nothing else depends on it */}
 }
 
@@ -5560,6 +5578,38 @@ function closeCelebration(){
   document.getElementById("celebrateDim")?.remove();
   markCelebrationsSeen();
   celebrateQueue=[];celebrateIdx=0;
+}
+
+/** The backlog case: one card, everything in it, gone in one tap. */
+function renderCelebrationDigest(){
+  document.getElementById("celebrateDim")?.remove();
+  const rows=celebrateQueue, n=rows.length;
+  const won=rows.filter(c=>c.won).length;
+  const gained=rows.reduce((a,c)=>a+(c.won?(c.proceeds||0):0),0);
+
+  const dim=document.createElement("div");dim.className="celebrate-dim";dim.id="celebrateDim";
+  const card=document.createElement("div");card.className=`celebrate-card ${won>0?"win":"loss"}`;
+  card.innerHTML=`
+    <button class="celebrate-x" type="button" aria-label="Close">✕</button>
+    <div class="celebrate-body">
+      <div class="cel-badge ${won>0?"win":"loss"}">While you were away</div>
+      <div class="cel-q">${n} of your calls resolved</div>
+      <div class="cel-callrow">
+        <span class="cel-side yes">${won} right</span>
+        <span class="cel-resolved">${n-won} wrong</span>
+      </div>
+      ${gained>0?`<div class="cel-payout"><span class="cel-payout-n">+${gained}</span>predictions</div>`:""}
+      <div class="cel-ctas">
+        <button class="cel-cta share" type="button" id="celDigestGo">See them all</button>
+      </div>
+    </div>
+    <button class="celebrate-next" type="button">Done</button>`;
+  dim.appendChild(card);
+  document.body.appendChild(dim);
+  card.querySelector(".celebrate-x").onclick=closeCelebration;
+  card.querySelector(".celebrate-next").onclick=closeCelebration;
+  card.querySelector("#celDigestGo").onclick=()=>{closeCelebration();location.hash="#/positions";};
+  ev("celebrate_digest",{count:n,won:won});
 }
 
 function renderCelebration(){
