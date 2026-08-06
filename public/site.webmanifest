@@ -4,11 +4,26 @@
   "description": "Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F3FBDA",
-  "theme_color": "#B6F05F",
+  "background_color": "#050505",
+  "theme_color": "#D7DC1F",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
