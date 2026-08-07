@@ -1146,7 +1146,10 @@
   .hname{font-family:'Baloo 2','Nunito',sans-serif;font-weight:700;font-size:18px;flex:1;min-width:0;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hkind{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted);flex:none}
-  .hedit{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--acc-mid);background:none;border:0;
+  /* .hrow is var(--wash) — light in BOTH themes — so this label needs a FIXED
+     dark ink. var(--acc-mid) flips to a light lime in dark mode and measured
+     1.38:1 on that cream row. */
+  .hedit{font-family:'Nunito';font-weight:800;font-size:12.5px;color:#4d5a12;background:none;border:0;
     padding:4px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;flex:none}
   .hin{flex:1;min-width:0;font-family:'Baloo 2','Nunito',sans-serif;font-weight:700;font-size:17px;
     border:1.5px solid #000;border-radius:12px;padding:7px 11px;background:#fff;color:#000}
@@ -1627,7 +1630,11 @@
     padding:5px 10px 5px 8px;border-radius:999px;border:2px solid #000;background:var(--accent);color:#000}
   .preview::before{content:"";width:6px;height:6px;border-radius:50%;background:#000}
 
-  .tile{border:1.5px solid #000;border-radius:22px;background:#fff;padding:16px 16px;margin-bottom:12px}
+  /* Was a fixed #fff panel with a black border — four white slabs on the dark
+     profile. Same shape as every other one of these: a surface pinned to one
+     theme while the page moved. Theme tokens, like the cards and the sheet. */
+  .tile{border:1.5px solid var(--card-line);border-radius:18px;background:var(--card-surface);
+    color:var(--on-ground);padding:16px 16px;margin-bottom:12px}
   .row{display:flex;align-items:center;gap:12px}
   .grow{flex:1;min-width:0}
   .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1661,8 +1668,12 @@
   .q{font-size:16px;font-weight:500;line-height:1.25;margin:0 0 10px}
   .pmeta{display:flex;align-items:center;gap:8px;font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--muted)}
   .dot{width:4px;height:4px;border-radius:50%;background:#C7D3DC;flex:none}
+  /* Translucent fill + adaptive ink, so the two move together. Was var(--wash)
+     (light in both themes) under var(--acc-mid) (a light lime in dark) — the
+     same pairing as .hedit, found by the guard the moment the accent tokens
+     were added to its adaptive list. */
   .status{margin-left:auto;font-family:'Nunito';font-weight:800;font-size:11px;color:var(--acc-mid);
-    background:var(--wash);border-radius:999px;padding:5px 10px}
+    background:rgba(127,127,127,.16);border-radius:999px;padding:5px 10px}
   .summary{display:flex;gap:10px;margin-bottom:16px}
   .summary .tile{flex:1;margin:0;text-align:center;padding:13px 8px}
   .summary .v{font-size:22px;font-weight:700;line-height:1}
@@ -5355,22 +5366,19 @@ async function loadProfile(scroller){
 
   scroller.innerHTML=`<div class="sheet">
     ${handleRow}
-    <p class="sub">${auth.accounts.length
-      ? "Your predictions, calls and reputation follow this account to any browser."
-      : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
-    ${linked||`${provButtons()}
-       <p class="cnote">X connects your identity. Google saves your balance across devices. A wallet signs a
-         message to prove it is yours — it never approves a transaction. Any of them grants
-         <b>+${CONNECT_BONUS} predictions</b>, once.</p>`}
-    <div class="opoints">
-      <span class="v">${balance==null?"—":String(balance).replace(/\B(?=(\d{3})+(?!\d))/g,",")}</span>
-      <span class="k"><b>Predictions</b> · your play balance</span>
-    </div>
+
+    <!-- THE SCORE AND THE RANK LEAD.
+         This screen used to open with identity plumbing — the handle, a line of
+         copy about it, every linked account, then the balance — and only reach
+         the score four blocks down. But nobody opens their own profile to read
+         which accounts are connected; they open it to see where they stand. So
+         the standing is first and the plumbing is underneath it, in the order
+         someone would actually go looking for it. -->
+    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove)}
     <div class="trhead">
       <p class="psec">Track record</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
     </div>
-    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove)}
     ${badgesHtml(myBadges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -5381,6 +5389,20 @@ async function loadProfile(scroller){
     ${acc&&!acc.hasEnough
       ? `<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Accuracy shows at ${acc.minResolved}.</p>`:""}
     ${categoryBreakdownHtml(acc&&acc.byCategory)}
+
+    <!-- Account and balance: the plumbing, kept and reachable, just not first. -->
+    <p class="psec">Account</p>
+    <div class="opoints">
+      <span class="v">${balance==null?"—":String(balance).replace(/\B(?=(\d{3})+(?!\d))/g,",")}</span>
+      <span class="k"><b>Predictions</b> · your play balance</span>
+    </div>
+    <p class="sub">${auth.accounts.length
+      ? "Your predictions, calls and reputation follow this account to any browser."
+      : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
+    ${linked||`${provButtons()}
+       <p class="cnote">X connects your identity. Google saves your balance across devices. A wallet signs a
+         message to prove it is yours — it never approves a transaction. Any of them grants
+         <b>+${CONNECT_BONUS} predictions</b>, once.</p>`}
     <p class="psec" style="margin-top:24px">Appearance</p>
     <div class="seg" role="group" aria-label="Theme">
       ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>

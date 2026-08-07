@@ -38,8 +38,12 @@ check("the stylesheet was found and read", style.length > 1000, `${style.length}
  * Its own trap is the opposite one, covered by the second check below.
  */
 const FIXED_BG = ["--wash", "--bar"];
-/** Foregrounds that DO change: --on-ground #000 -> #F3EFF6, --muted-g likewise. */
-const ADAPTIVE_FG = ["--on-ground", "--muted-g"];
+/** Foregrounds that DO change between themes. The accent trio belongs here as
+ *  much as the greys: --acc-mid is a deep olive in bright and a light lime in
+ *  dark, and it slipped past this list once already — .hedit sat on the
+ *  fixed-light handle row at a measured 1.38:1 because only the two greys
+ *  were being looked for. */
+const ADAPTIVE_FG = ["--on-ground", "--muted-g", "--acc-deep", "--acc-mid", "--acc-deeper", "--link-g"];
 
 // Split into individual rules so a background in one rule and a colour in an
 // unrelated one can't produce a false positive.
