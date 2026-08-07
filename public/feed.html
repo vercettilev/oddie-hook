@@ -493,6 +493,17 @@
      "first thing you do here". Now a pale wash card with a small filled pill,
      not a second bright block. Fixed dark text on the fixed wash surface holds
      contrast in both themes, same rule as .mchip. */
+  /* The status strip. Deliberately quieter than a card: it is a read, not an
+     ask, and it sits above the first market without competing with it. */
+  .ystrip{display:flex;gap:8px;margin:0 0 10px}
+  .ystrip-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;
+    border:1.5px solid var(--card-line);border-radius:14px;background:var(--card-surface);
+    padding:9px 12px;text-decoration:none}
+  .ystrip-b:hover{border-color:var(--accent)}
+  .ystrip-n{font-family:'Fredoka';font-weight:600;font-size:19px;line-height:1;color:var(--accent)}
+  .ystrip-k{font-family:'Nunito';font-weight:800;font-size:10.5px;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--muted-g);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
   .claimcard{display:flex;align-items:center;gap:12px;border-radius:16px;padding:10px 13px;
     border:1.5px solid var(--hair-g);font-family:'Nunito'}
   .claimcard.ready{background:var(--wash);color:#3c4550}
@@ -1996,6 +2007,22 @@
      left of this breakpoint, a visible dip right at the boundary. 58vw clears
      560 at 1024 so the column only ever grows crossing a breakpoint.) */
   @media (min-width:1024px){
+    /* DESKTOP READS AS A LIST, NOT A DECK.
+       The card fills the viewport by design — that is the swipe mechanic, and on
+       a phone it is right: one take, one decision, thumb at the bottom. On a
+       1440px screen the same rule puts ONE 500px-wide card in the middle of an
+       otherwise empty page, which is the "confusing / too much space" complaint.
+       Here the card is as tall as its content, several fit at once, and the page
+       reads as markets you can scan. Nothing about the mobile feed changes. */
+    .card{min-height:0;padding:20px 22px 18px;margin-bottom:14px}
+    .card:first-child{margin-top:calc(var(--feedtop) - 6px)}
+    /* Snap belongs to the swipe. Without the full-height card there is nothing
+       to snap TO, and keeping it makes a mouse wheel jump between cards. */
+    .scroller.snap{scroll-snap-type:none}
+    .card{scroll-snap-align:none}
+    /* The nudge is swipe language too. `.nudge.show` is what the script sets, and
+       two classes beat one — matching the specificity is the whole fix. */
+    .nudge,.nudge.show{display:none}
     /* The sort row duplicates the rail one-for-one at this width: For You,
        Trending, New, Resolving Soon are already the rail's first four items and
        highlight in step with it. Two identical controls stacked is not a choice,
@@ -2174,15 +2201,71 @@ function claimWhen(ms){
   const m=Math.floor(ms/60000);
   return m>=1?`${m}m`:"any moment";
 }
+let myOpenCalls=null, myCreator=null;
 async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok){const w=await r.json();balance=w.tokens;if(w.claim)claim=w.claim;
       if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
       myBadges=w.badges||[];myRank=w.rank||null;
-      myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;paintBalance();}
+      myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;
+      myOpenCalls=w.openCalls||null;myCreator=w.creator||null;
+      paintBalance();paintStatusStrip();}
   }catch(e){/* header just shows no pill; the server still enforces */}
 }
+/**
+ * YOUR STATUS, at the top of the feed.
+ *
+ * The three facts a returning player opens the app to check were spread across
+ * three different destinations: open positions on Positions, fees earned on My
+ * markets, resolutions in Notifications. None of them were on the screen the
+ * app actually opens on, so the feed answered "what is happening in the world"
+ * and never "what is happening to me".
+ *
+ * One line, three numbers, each a link to the page that owns it. Every number
+ * is REAL and each is omitted when it has nothing to say — a strip of zeroes on
+ * a fresh device is noise, and it is also the loudest possible way to tell
+ * someone they have done nothing yet.
+ */
+/**
+ * Paint (or repaint) the strip wherever the feed's top block is.
+ *
+ * /api/me resolves after the first render — boot is render(), then
+ * loadAuth().then(loadBalance) — so the strip cannot be built during the render
+ * that puts the feed on screen. It is inserted when its data arrives instead,
+ * and re-inserted on every later paint so a balance refresh keeps it current.
+ */
+function paintStatusStrip(){
+  const scroller=document.getElementById("scroller");
+  if(!scroller||document.body.dataset.view!=="feed")return;
+  scroller.querySelector(".ystrip")?.remove();
+  const strip=statusStrip();
+  if(!strip)return;
+  let wrap=scroller.querySelector(".onbwrap");
+  if(!wrap){
+    // Nothing else wanted the slot this load; the strip gets it on its own.
+    wrap=document.createElement("div");wrap.className="onbwrap";
+    scroller.prepend(wrap);
+  }
+  wrap.prepend(strip);
+}
+
+function statusStrip(){
+  const bits=[];
+  const open=myOpenCalls&&myOpenCalls.count>0?myOpenCalls.count:0;
+  const made=myCreator&&myCreator.marketsCreated>0?myCreator.marketsCreated:0;
+  const fees=myCreator&&myCreator.earnings>0?myCreator.earnings:0;
+  if(open)bits.push({go:"#/positions",n:open,k:open===1?"open call":"open calls"});
+  if(made)bits.push({go:"#/mymarkets",n:made,k:made===1?"market you made":"markets you made"});
+  if(fees)bits.push({go:"#/mymarkets",n:fees,k:"earned in fees"});
+  if(!bits.length)return null;
+  const el=document.createElement("div");el.className="ystrip";
+  el.innerHTML=bits.map(b=>
+    `<a class="ystrip-b" href="${b.go}"><span class="ystrip-n">${b.n}</span><span class="ystrip-k">${b.k}</span></a>`
+  ).join("");
+  return el;
+}
+
 // The real countdown lives on the daily claim now — there is no more passive
 // top-up to have a separate countdown for. "in 7h", "in 40m", "soon", never a
 // bare number of milliseconds.
@@ -3037,10 +3120,10 @@ function maybeFeedTop(scroller){
   const showClaim=claimable;
   const showTag=cold && !lsGet(ONB_KEY) && !claimable;
   const showFollow=cold && !lsGet(FOLLOW_KEY) && !claimable;
-  if(!showClaim && !showTag && !showFollow)return;
+  if(!showClaim && !showTag && !showFollow)return;   // the strip inserts itself later, see paintStatusStrip
   const wrap=document.createElement("div"); wrap.className="onbwrap";
   if(showClaim)wrap.appendChild(claimCard());
-  const prune=()=>{ if(!wrap.querySelector(".onbstrip,.claimcard"))wrap.remove(); };
+  const prune=()=>{ if(!wrap.querySelector(".onbstrip,.claimcard,.ystrip"))wrap.remove(); };
   // ONE consolidated onboarding banner: the tag instruction is the primary CTA;
   // the follow prompt rides inline as a secondary pill on the same strip (not a
   // second full banner). A single × dismisses both. A visitor who already

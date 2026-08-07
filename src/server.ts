@@ -1096,10 +1096,19 @@ app.get("/api/me", async (req, res) => {
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const [wallet, handle, claim, acc, rank] = await Promise.all([getWallet(deviceId), displayHandle(deviceId), claimStatus(deviceId), accuracyFor(deviceId), seasonRankFor(deviceId)]);
+  // openCalls and creator ride along here rather than getting their own request:
+  // the feed already fetches /api/me at boot, and the status strip at the top of
+  // it needs exactly these two. Both degrade to null — the strip omits whatever
+  // did not arrive rather than showing a zero it cannot stand behind.
+  const [wallet, handle, claim, acc, rank, openCalls, creator] = await Promise.all([
+    getWallet(deviceId), displayHandle(deviceId), claimStatus(deviceId),
+    accuracyFor(deviceId), seasonRankFor(deviceId),
+    openCallsSummaryFor(deviceId).catch(() => null),
+    creatorStatsFor(deviceId).catch(() => null),
+  ]);
   const badges = await badgesFor(deviceId, acc);
   // pickStreak drives the persistent streak badge near the balance (2+ only).
-  res.json({ ...wallet, ...handle, claim, pickStreak: acc.streak, badges, rank });
+  res.json({ ...wallet, ...handle, claim, pickStreak: acc.streak, badges, rank, openCalls, creator });
 });
 
 // The daily claim — the active retention hook. GET reports status (claimable,
