@@ -5,7 +5,7 @@ import {
   DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
   edgePts, proceedsFor, reputationOf, winBonus,
   CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, creatorFeePlay,
-  callerTier,
+  callerTier, oddieScoreFrom,
   type Reputation, type CallerTier,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
@@ -1356,10 +1356,11 @@ export interface AccuracyRecord {
   resolved: number;
   correct: number;
   accuracyPct: number | null; // raw hit rate — null until resolved >= minResolved
-  // Calibration-adjusted reputation. meanEdge = mean(outcome − impliedProb): how
-  // much the user beat the odds they took. Rewards correct low-prob calls, and
-  // neutralises a safe favourite-only bettor to ~500. oddieScore = 500 + 1000·edge.
-  oddieScore: number | null;  // 0..1000, 500 = matches the market; null until hasEnough
+  // The one score. Activity sets the magnitude (resolved calls, markets you
+  // created, contribution points); meanEdge — mean(outcome − impliedProb), how
+  // much you beat the odds you took — scales it between 0.5x and 1.5x. The
+  // formula lives in economy.ts's oddieScoreFrom, which is its only definition.
+  oddieScore: number | null;  // >= 0, unbounded; null until hasEnough
   meanEdge: number | null;    // −1..1, the raw signal behind the score
   hasEnough: boolean;
   minResolved: number;
@@ -1379,7 +1380,13 @@ const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n
 
 /** Pure: resolved picks in RESOLUTION order (oldest first) → the record. Each
  *  row carries `pct` = the implied probability of the side they took (0..1). */
-function computeAccuracy(rows: { correct: boolean; category: string; pct: number }[]): AccuracyRecord {
+function computeAccuracy(
+  rows: { correct: boolean; category: string; pct: number }[],
+  /** Activity terms. Defaulted so every existing caller and test keeps working
+   *  and gets the accuracy-only half of the score; accuracyFor supplies the
+   *  real numbers. */
+  activity: { marketsCreated?: number; contributionPoints?: number } = {},
+): AccuracyRecord {
   const resolved = rows.length;
   const correct = rows.filter((r) => r.correct).length;
   const hasEnough = resolved >= MIN_RESOLVED_FOR_ACCURACY;
@@ -1389,7 +1396,15 @@ function computeAccuracy(rows: { correct: boolean; category: string; pct: number
 
   // Calibration-adjusted score: per pick, edge = outcome(1|0) − impliedProb.
   const meanEdge = resolved ? rows.reduce((a, r) => a + ((r.correct ? 1 : 0) - r.pct), 0) / resolved : 0;
-  const oddieScore = clamp(Math.round(500 + 1000 * meanEdge), 0, 1000);
+  // The score is now activity-led — see oddieScoreFrom in economy.ts for the
+  // formula and for why it is weighted that way. This file no longer decides
+  // what a score is; it supplies the inputs.
+  const oddieScore = oddieScoreFrom({
+    resolvedCalls: resolved,
+    marketsCreated: activity.marketsCreated ?? 0,
+    contributionPoints: activity.contributionPoints ?? 0,
+    meanEdge: resolved ? meanEdge : null,
+  });
 
   const m = new Map<string, { resolved: number; correct: number }>();
   for (const r of rows) { const e = m.get(r.category) ?? { resolved: 0, correct: 0 }; e.resolved++; if (r.correct) e.correct++; m.set(r.category, e); }
@@ -1406,7 +1421,14 @@ function computeAccuracy(rows: { correct: boolean; category: string; pct: number
   return {
     resolved, correct,
     accuracyPct: hasEnough ? Math.round((100 * correct) / resolved) : null,
-    oddieScore: hasEnough ? oddieScore : null,
+    // NOT gated on hasEnough. That gate exists so a hit-rate is never quoted off
+    // two picks — a sample-size problem, and the right call for accuracyPct. The
+    // score is activity-led now, and activity is not a sample: someone who has
+    // tagged ten markets has genuinely earned something, and holding their score
+    // at null until five of their CALLS resolve would hide the half of the
+    // formula that is supposed to dominate. Null only when there is no activity
+    // at all, which is the honest "nothing yet".
+    oddieScore: oddieScore > 0 ? oddieScore : null,
     meanEdge: hasEnough ? Math.round(meanEdge * 1000) / 1000 : null,
     hasEnough, minResolved: MIN_RESOLVED_FOR_ACCURACY,
     streak: cur, bestStreak: best,
@@ -1447,7 +1469,17 @@ async function resolvedRowsFor(deviceId: string): Promise<ResolvedRow[]> {
 
 export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> {
   const deviceId = await resolveDevice(rawDeviceId);
-  return computeAccuracy(await resolvedRowsFor(deviceId));
+  const [rows, creator, contribution] = await Promise.all([
+    resolvedRowsFor(deviceId),
+    // Both degrade to zero rather than throwing: a score missing its activity
+    // half is wrong, but a profile that will not load at all is worse.
+    creatorStatsFor(deviceId).catch(() => null),
+    seasonPointsFor(deviceId).catch(() => 0),
+  ]);
+  return computeAccuracy(rows, {
+    marketsCreated: creator?.marketsCreated ?? 0,
+    contributionPoints: contribution,
+  });
 }
 
 export interface WeeklyScoreDelta { delta: number; direction: "up" | "down" }
@@ -1469,10 +1501,13 @@ export async function weeklyScoreDeltaFor(rawDeviceId: string): Promise<WeeklySc
   const now = computeAccuracy(rows);
   if (now.oddieScore == null) return null; // still short of the accuracy floor even after this week
   const before = computeAccuracy(rows.filter((r) => Date.parse(r.closedAt) < cutoff));
-  // Same neutral-500 fallback celebrationsFor uses for a baseline that predates
-  // hasEnough — a device that crossed the accuracy floor THIS week started its
-  // week at the neutral score, not at "no score".
-  const baseline = before.hasEnough ? (before.oddieScore as number) : 500;
+  // A device that crossed the accuracy floor THIS week has no score to compare
+  // against, so its baseline is the score its PRE-WEEK activity would have had
+  // at market-neutral edge — not a literal 500, which meant "neutral" only
+  // while the score was 500 + 1000·edge and now means nothing at all.
+  const baseline = before.hasEnough
+    ? (before.oddieScore as number)
+    : oddieScoreFrom({ resolvedCalls: before.resolved, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 });
   const delta = now.oddieScore - baseline;
   return { delta, direction: delta >= 0 ? "up" : "down" };
 }
@@ -1633,7 +1668,8 @@ export async function celebrationsFor(rawDeviceId: string): Promise<Celebration[
       callId: r.callId, slug: r.slug, question: r.question, side: r.side, outcome, won,
       oddsPct: Math.max(1, Math.min(99, Math.round(r.entryPct))),
       proceeds: won ? r.proceeds : null,
-      scoreBefore: before.hasEnough ? (before.oddieScore as number) : 500,
+      scoreBefore: before.hasEnough ? (before.oddieScore as number)
+        : oddieScoreFrom({ resolvedCalls: before.resolved, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 }),
       scoreAfter: after.hasEnough ? after.oddieScore : null,
       streakBefore: before.streak, streakAfter: after.streak,
       streakExtended: after.streak > before.streak && after.streak >= 2,
@@ -2262,7 +2298,11 @@ export async function reputationFor(rawDeviceId: string): Promise<CallerReputati
     ? { category: best.category!, pctile: best.pctile!, accuracyPct: parseInt(best.detail ?? "0", 10) || 0 }
     : null;
   const tier = callerTier({
-    hasEnough: accuracy.hasEnough, oddieScore: accuracy.oddieScore, topPct: rank ? rank.topPct : null,
+    // meanEdge is load-bearing now: "Proven Caller" is judged on edge, not on an
+    // absolute score, so omitting it here would silently retire that tier —
+    // undefined fails the > 0 test and nobody would ever earn it again.
+    hasEnough: accuracy.hasEnough, oddieScore: accuracy.oddieScore,
+    meanEdge: accuracy.meanEdge, topPct: rank ? rank.topPct : null,
   });
   return { handle: hd ?? "caller", accuracy, rank, tier, badges, topCategory, flexLine: flexLine(accuracy, topCategory) };
 }

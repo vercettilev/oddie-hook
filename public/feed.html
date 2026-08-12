@@ -4748,8 +4748,17 @@ function badgesHtml(badges){
 // "+16" / "−12" — a real Unicode minus on the way down, never a bare hyphen,
 // so a negative delta reads as a sign rather than a stray dash.
 function deltaText(n){return n>=0?`+${n}`:`−${Math.abs(n)}`}
-function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove){
-  const pct=hasEnough&&score!=null?Math.max(0,Math.min(1,score/1000)):0;
+function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge){
+  // The ring shows the QUALITY multiplier, not the score.
+  //
+  // It used to fill to score/1000, which worked while the score was capped at
+  // 1000. The score is activity-led and unbounded now, so that ring would sit
+  // pegged full for anyone who plays regularly — a gauge that reads the same
+  // for every active player measures nothing. Edge is the half of the score
+  // that IS bounded (the multiplier runs 0.5x..1.5x), so the ring shows where
+  // you sit in that band: half full is market-neutral, fuller is beating it.
+  const q=Math.max(0.5,Math.min(1.5,1+2*(meanEdge??0)));
+  const pct=hasEnough&&score!=null?(q-0.5):0;
   // topPct is null until the ranked field is big enough for a percentile to
   // mean anything (see MIN_RANKED_FOR_PERCENTILE) — fall back to the raw
   // standing, which is always true, rather than printing "Top 100%".
@@ -4771,7 +4780,7 @@ function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove){
       </div>
       <div class="oscore-side">
         <div class="oscore-title">Oddie Score</div>
-        <p class="oscore-desc">calibration-adjusted reputation · 500 = matches the market</p>
+        <p class="oscore-desc">how much you play, scaled by how right you are</p>
         ${weeklyLine}
         ${rankChip}
         ${rankMoveLine}
@@ -4872,7 +4881,7 @@ async function renderPublicProfile(){
   scroller.innerHTML=`<div class="sheet">
     <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
     <div class="trhead"><p class="psec">Track record</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
-    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank,acc.weeklyDelta)}
+    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank,acc.weeklyDelta,null,acc.meanEdge)}
     ${badgesHtml(badges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -5374,7 +5383,7 @@ async function loadProfile(scroller){
          which accounts are connected; they open it to see where they stand. So
          the standing is first and the plumbing is underneath it, in the order
          someone would actually go looking for it. -->
-    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove)}
+    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove,acc?acc.meanEdge:null)}
     <div class="trhead">
       <p class="psec">Track record</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>

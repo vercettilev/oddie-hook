@@ -9,7 +9,7 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-import { callerTier, ORACLE_TOP_PCT, SHARP_TOP_PCT, PROVEN_MIN_SCORE } from "../src/store/economy.js";
+import { callerTier, oddieScoreFrom, ORACLE_TOP_PCT, SHARP_TOP_PCT } from "../src/store/economy.js";
 import { flexLine, reputationFor } from "../src/store/markets.js";
 import type { AccuracyRecord } from "../src/store/markets.js";
 
@@ -32,21 +32,48 @@ console.log("\ncallerTier: the ladder is short, and every rung is above the mark
   check("top 25% earns Sharp Caller",
     callerTier({ hasEnough: true, oddieScore: 600, topPct: SHARP_TOP_PCT })?.id === "sharp");
   check("beating the market outside the top 25% earns Proven Caller",
-    callerTier({ hasEnough: true, oddieScore: PROVEN_MIN_SCORE, topPct: 60 })?.id === "proven");
+    callerTier({ hasEnough: true, oddieScore: 600, meanEdge: 0.04, topPct: 60 })?.id === "proven");
   check("the best qualifying tier wins, not the last one checked",
     callerTier({ hasEnough: true, oddieScore: 999, topPct: 2 })?.id === "oracle");
 
   // The point of a status label is that it can be WITHHELD.
   check("a below-market record earns NO tier, not a consolation one",
-    callerTier({ hasEnough: true, oddieScore: PROVEN_MIN_SCORE - 1, topPct: 60 }) === null);
+    callerTier({ hasEnough: true, oddieScore: 9000, meanEdge: -0.02, topPct: 60 }) === null,
+    "a huge score off pure activity must not buy a tier that claims edge");
   check("a provisional record earns no tier however good it looks",
     callerTier({ hasEnough: false, oddieScore: 950, topPct: 1 }) === null);
   check("no score at all earns no tier",
     callerTier({ hasEnough: true, oddieScore: null, topPct: 1 }) === null);
   check("unranked but market-beating still earns Proven (rank is optional)",
-    callerTier({ hasEnough: true, oddieScore: 700, topPct: null })?.id === "proven");
+    callerTier({ hasEnough: true, oddieScore: 700, meanEdge: 0.1, topPct: null })?.id === "proven");
   check("unranked and below market earns nothing",
-    callerTier({ hasEnough: true, oddieScore: 300, topPct: null }) === null);
+    callerTier({ hasEnough: true, oddieScore: 300, meanEdge: -0.1, topPct: null }) === null);
+}
+
+console.log("\noddieScoreFrom: activity sets the size, accuracy scales it");
+{
+  const busyAverage = oddieScoreFrom({ resolvedCalls: 40, marketsCreated: 2, contributionPoints: 100, meanEdge: 0 });
+  const sharpRare   = oddieScoreFrom({ resolvedCalls: 5,  marketsCreated: 0, contributionPoints: 0,   meanEdge: 0.2 });
+  check("a busy average caller outranks a sharp rare one — the whole point of the reweighting",
+    busyAverage > sharpRare, `busy ${busyAverage} vs sharp ${sharpRare}`);
+
+  const base = { resolvedCalls: 20, marketsCreated: 0, contributionPoints: 0 };
+  const neutral = oddieScoreFrom({ ...base, meanEdge: 0 });
+  const good    = oddieScoreFrom({ ...base, meanEdge: 0.2 });
+  const bad     = oddieScoreFrom({ ...base, meanEdge: -0.2 });
+  check("being right raises the same activity", good > neutral, `${good} > ${neutral}`);
+  check("being wrong LOWERS it — a big base must be shrinkable, or accuracy is decorative",
+    bad < neutral, `${bad} < ${neutral}`);
+  check("...but accuracy never swings it more than half either way",
+    good <= neutral * 1.5 + 1 && bad >= neutral * 0.5 - 1, `${bad}..${good} around ${neutral}`);
+
+  check("no activity is no score, however good the edge",
+    oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: 0.9 }) === 0);
+  check("creating markets counts even with nothing resolved",
+    oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 4, contributionPoints: 0, meanEdge: null }) > 0);
+  check("a null edge is treated as market-neutral, not as a penalty",
+    oddieScoreFrom({ resolvedCalls: 10, marketsCreated: 0, contributionPoints: 0, meanEdge: null }) ===
+    oddieScoreFrom({ resolvedCalls: 10, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 }));
 }
 
 console.log("\nflexLine: the postable brag, and only claims the data supports");
@@ -73,11 +100,11 @@ console.log("\nsmall fields cannot mint status");
   // tiny field is not. #1 of 1 is "top 100%" arithmetically, and a field of
   // four would hand first place a Sharp Caller tier for beating three people.
   check("a percentile is withheld until the field is big enough — the tier falls back to score",
-    callerTier({ hasEnough: true, oddieScore: 918, topPct: null })?.id === "proven");
+    callerTier({ hasEnough: true, oddieScore: 918, meanEdge: 0.08, topPct: null })?.id === "proven");
   check("...and never reads as 'top 100%' by leaking a degenerate percentile through",
-    callerTier({ hasEnough: true, oddieScore: 918, topPct: 100 })?.id === "proven");
+    callerTier({ hasEnough: true, oddieScore: 918, meanEdge: 0.08, topPct: 100 })?.id === "proven");
   check("a real top-5% field still earns Oracle",
-    callerTier({ hasEnough: true, oddieScore: 918, topPct: 4 })?.id === "oracle");
+    callerTier({ hasEnough: true, oddieScore: 918, meanEdge: 0.08, topPct: 4 })?.id === "oracle");
 }
 
 console.log("\nreputationFor: one read, consistent across every surface");

@@ -66,41 +66,59 @@ console.log("\nweeklyScoreDeltaFor: hidden with nothing to show");
 
   const notEnoughYet = DEV(3);
   await pick(notEnoughYet, 50, true);
-  await pick(notEnoughYet, 50, true); // 2 resolved this week, still short of the accuracy floor (5)
-  check("resolutions THIS week but still below the accuracy floor -> null, not a score from thin air",
-    (await weeklyScoreDeltaFor(notEnoughYet)) === null);
+  await pick(notEnoughYet, 50, true);
+  // Two resolutions this week, still short of the ACCURACY floor of 5 — but the
+  // score is activity-led and no longer waits on that floor, so there IS motion
+  // to report. The old expectation (null) belonged to a score that was pure
+  // accuracy; keeping it would have meant hiding real activity from the one
+  // person it happened to.
+  check("resolutions this week report motion even below the accuracy floor",
+    ((await weeklyScoreDeltaFor(notEnoughYet))?.delta ?? 0) > 0);
 }
 
 console.log("\nweeklyScoreDeltaFor: a real delta from resolved history vs. this week");
 {
   const dev = DEV(4);
-  // 5 historical wins at pct 50 (edge +0.5 each), backdated -> baseline oddieScore 1000.
+  // THE TRADE-OFF, PINNED SO IT CANNOT DRIFT SILENTLY.
+  //
+  // Under the activity-led score a single loss on top of a strong record can
+  // still move the week UP, because playing once more adds base while the
+  // quality multiplier barely moves (and here does not move at all — an edge of
+  // +0.5 pins it at the 1.5x ceiling, so the loss costs nothing on that axis).
+  //
+  // That is not a bug, it is the weighting Lev asked for stated in numbers:
+  // showing up counts for more than being right. It is asserted rather than
+  // merely tolerated so that nobody later "fixes" it without deciding to.
   for (let i = 0; i < 5; i++) { await pick(dev, 50, true); backdateLastCallFor(dev, 10); }
-  // One loss THIS week at pct 50 (edge -0.5) -> meanEdge over 6 = (2.5-0.5)/6 = 0.3333 -> score 833.
   await pick(dev, 50, false);
   const wd = await weeklyScoreDeltaFor(dev);
-  check("direction is down", wd?.direction === "down", JSON.stringify(wd));
-  check("delta is exactly -167 (1000 -> 833)", wd?.delta === -167, JSON.stringify(wd));
+  check("one loss on a saturated record still nets UP — activity outweighs accuracy, by design",
+    (wd?.delta ?? 0) > 0, JSON.stringify(wd));
 }
 {
   const dev = DEV(5);
-  // 5 historical losses at pct 50, backdated -> baseline oddieScore 0.
   for (let i = 0; i < 5; i++) { await pick(dev, 50, false); backdateLastCallFor(dev, 10); }
-  // One win THIS week -> meanEdge over 6 = (-2.5+0.5)/6 = -0.3333 -> score 167.
   await pick(dev, 50, true);
   const wd = await weeklyScoreDeltaFor(dev);
   check("direction is up", wd?.direction === "up", JSON.stringify(wd));
-  check("delta is exactly +167 (0 -> 167)", wd?.delta === 167, JSON.stringify(wd));
+  check("a winning week moves the score up by a real amount", (wd?.delta ?? 0) > 0, JSON.stringify(wd));
 }
 {
   const dev = DEV(6);
   // 4 historical wins, backdated -> still short of the accuracy floor (before.hasEnough === false).
   for (let i = 0; i < 4; i++) { await pick(dev, 50, true); backdateLastCallFor(dev, 10); }
-  // The 5th win, THIS week, crosses the floor -> before falls back to the neutral 500, not null.
+  // The 5th win, THIS week, crosses the floor -> the baseline is what the
+  // pre-week activity would score at market-neutral edge, not null and not a
+  // literal 500 (which only ever meant "neutral" under the old formula).
   await pick(dev, 50, true);
   const wd = await weeklyScoreDeltaFor(dev);
-  check("crossing the floor this week: baseline is the neutral 500, not a missing score",
-    wd?.delta === 500 && wd?.direction === "up", JSON.stringify(wd));
+  // 4 pre-week calls at neutral edge = 40 base; the 5th win takes it to 5 calls
+  // at a saturated 1.5x = 75. The delta is the 35 between them. Asserted as a
+  // real positive rather than a pinned figure, since the weights are allowed to
+  // move: what must hold is that crossing the floor reports motion instead of
+  // the "no score" it would have reported before.
+  check("crossing the floor this week still produces a delta, not a missing score",
+    (wd?.delta ?? 0) > 0 && wd?.direction === "up", JSON.stringify(wd));
 }
 
 console.log("\nrankMovementFor: unranked/provisional devices are skipped entirely");

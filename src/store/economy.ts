@@ -193,9 +193,58 @@ export interface CallerTier {
 /** Percentile cutoffs. Lower topPct = better standing. */
 export const ORACLE_TOP_PCT = 5;
 export const SHARP_TOP_PCT = 25;
-/** The Oddie Score that means "you beat the odds you took" — see winBonus's
- *  neighbours above: 500 is exactly market-neutral, so > 500 is real edge. */
-export const PROVEN_MIN_SCORE = 500;
+
+/* ------------------------------------------------------------ the score -----
+ * ONE number, and it rewards SHOWING UP more than being right.
+ *
+ * It used to be two. The visible Oddie Score was 500 + 1000·edge — pure
+ * calibration, nothing else — and a second, invisible "Season Points" ledger
+ * counted contribution (surfacing a market, reaching players, resolving
+ * cleanly) but was documented as never shown and never used for rank. So the
+ * product had a working activity economy that no player could see and that
+ * changed nothing.
+ *
+ * Now: activity sets the MAGNITUDE, accuracy scales it.
+ *
+ *     base    = 10·resolved calls + 25·markets created + contribution points
+ *     quality = 1 + 2·meanEdge, clamped to 0.5 … 1.5
+ *     score   = base × quality
+ *
+ * The weighting is deliberate and worth stating plainly: someone who plays a
+ * lot and reads the market averagely will outrank someone who is sharper but
+ * barely plays. That is the ask. The guard against it being farmable is that
+ * base only counts things that COST something — a call costs a prediction and
+ * predictions are rate-limited by the daily claim, a market needs a real post
+ * on X — and that quality goes BELOW 1, so being consistently wrong actively
+ * shrinks a big base rather than merely failing to grow it.
+ */
+export const SCORE_WEIGHTS = {
+  resolvedCall: 10,     // a call you made that actually resolved
+  marketCreated: 25,    // a market that exists because you tagged something
+  contribution: 1,      // season points, 1:1 — the ledger that was already there
+} as const;
+/** How far accuracy can move the base, either way. */
+export const SCORE_QUALITY_MIN = 0.5;
+export const SCORE_QUALITY_MAX = 1.5;
+
+export interface ScoreInputs {
+  resolvedCalls: number;
+  marketsCreated: number;
+  contributionPoints: number;
+  /** −1..1, mean(outcome − impliedProb). null when nothing has resolved. */
+  meanEdge: number | null;
+}
+
+/** Pure. The single definition of the score — every surface reads this one. */
+export function oddieScoreFrom(a: ScoreInputs): number {
+  const base =
+    Math.max(0, a.resolvedCalls) * SCORE_WEIGHTS.resolvedCall +
+    Math.max(0, a.marketsCreated) * SCORE_WEIGHTS.marketCreated +
+    Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution;
+  const raw = 1 + 2 * (a.meanEdge ?? 0);
+  const quality = Math.max(SCORE_QUALITY_MIN, Math.min(SCORE_QUALITY_MAX, raw));
+  return Math.max(0, Math.round(base * quality));
+}
 
 /**
  * The tier a record earns, or null for "no tier yet" — which is the correct
@@ -207,6 +256,7 @@ export const PROVEN_MIN_SCORE = 500;
 export function callerTier(r: {
   hasEnough: boolean;
   oddieScore: number | null;
+  meanEdge?: number | null;
   topPct: number | null;
 }): CallerTier | null {
   if (!r.hasEnough || r.oddieScore == null) return null;
@@ -216,7 +266,12 @@ export function callerTier(r: {
   if (r.topPct != null && r.topPct <= SHARP_TOP_PCT) {
     return { id: "sharp", label: "Sharp Caller", blurb: `top ${SHARP_TOP_PCT}% of all callers` };
   }
-  if (r.oddieScore >= PROVEN_MIN_SCORE) {
+  // "Beats the odds they take" is a statement about EDGE, so it is checked
+  // against edge. It used to compare the score to a literal 500, which worked
+  // only while the score WAS 500 + 1000·edge; now that activity sets the
+  // magnitude, a big score can belong to a busy average caller and a small one
+  // to a sharp rare caller, and an absolute threshold would mislabel both.
+  if (r.meanEdge != null && r.meanEdge > 0) {
     return { id: "proven", label: "Proven Caller", blurb: "beats the odds they take" };
   }
   return null;
