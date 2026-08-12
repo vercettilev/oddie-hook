@@ -76,6 +76,27 @@ console.log("\noddieScoreFrom: activity sets the size, accuracy scales it");
     oddieScoreFrom({ resolvedCalls: 10, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 }));
 }
 
+console.log("\nthe farm is pointed at volume and at X, on purpose");
+{
+  // The growth bet, pinned. Loudness is meant to be the cheapest way up, so
+  // these orderings are load-bearing product decisions and not incidental
+  // arithmetic — if a re-weighting ever inverts one, that should fail here
+  // rather than be discovered from a leaderboard nobody recognises.
+  const farmer = oddieScoreFrom({ callsMade: 60, resolvedCalls: 0, marketsCreated: 5, contributionPoints: 490, meanEdge: null });
+  const sharp  = oddieScoreFrom({ callsMade: 8,  resolvedCalls: 8, marketsCreated: 0, contributionPoints: 0,   meanEdge: 0.25 });
+  check("a loud farmer outranks a sharp lurker by a wide margin", farmer > sharp * 5, `${farmer} vs ${sharp}`);
+
+  const oneMarket = oddieScoreFrom({ callsMade: 0, resolvedCalls: 0, marketsCreated: 1, contributionPoints: 0, meanEdge: null });
+  const calls     = oddieScoreFrom({ callsMade: 15, resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: null });
+  check("tagging ONE market on X beats fifteen calls — X is the loud axis",
+    oneMarket > calls, `${oneMarket} vs ${calls}`);
+
+  const before = oddieScoreFrom({ callsMade: 10, resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: null });
+  const after  = oddieScoreFrom({ callsMade: 11, resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: null });
+  check("a call pays THE MOMENT it is made, before anything resolves",
+    after > before, `${before} -> ${after}`);
+}
+
 console.log("\nflexLine: the postable brag, and only claims the data supports");
 {
   check("full line with a qualifying category",

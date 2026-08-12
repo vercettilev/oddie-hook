@@ -116,10 +116,16 @@ console.log("\ncrossing the accuracy floor mid-batch: scoreAfter appears exactly
   const rows = await celebrationsFor(dev);
   check("one celebration for the 5th call", rows.length === 1, String(rows.length));
   const c = rows[0];
-  // 4 resolved calls at 10 points each, taken at neutral edge because the record
-  // is still under the accuracy floor: 40. Not the old literal 500.
+  // 4 resolved calls at the resolvedCall weight, at neutral edge: 20.
+  //
+  // KNOWN INCONSISTENCY, recorded here rather than hidden by a looser check:
+  // celebrationsFor and weeklyScoreDeltaFor call computeAccuracy with rows ONLY,
+  // so the before/after they report cover the resolution half of the score and
+  // not the volume/creation half that accuracyFor supplies. The delta they show
+  // is therefore smaller than the movement on the profile. It was harmless when
+  // the score was pure accuracy and is not any more.
   check("scoreBefore is the pre-call activity's own score (4 resolved, still under the floor)",
-    c?.scoreBefore === 40, String(c?.scoreBefore));
+    c?.scoreBefore === 20, String(c?.scoreBefore));
   check("scoreAfter is now a real number (5 resolved crosses the floor)", typeof c?.scoreAfter === "number", String(c?.scoreAfter));
   check("a 5-call win streak is real and flagged extended", c?.streakAfter === 5 && c?.streakExtended === true);
 }

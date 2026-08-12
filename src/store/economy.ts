@@ -219,15 +219,31 @@ export const SHARP_TOP_PCT = 25;
  * shrinks a big base rather than merely failing to grow it.
  */
 export const SCORE_WEIGHTS = {
-  resolvedCall: 10,     // a call you made that actually resolved
-  marketCreated: 25,    // a market that exists because you tagged something
-  contribution: 1,      // season points, 1:1 — the ledger that was already there
+  // VOLUME, paid the moment it happens. Only resolved calls used to count, which
+  // made the score useless as a farming target: a call made today showed nothing
+  // until the market closed, sometimes months out. Nobody farms a scoreboard
+  // that does not move. It pays on the call and again on the resolution, so
+  // playing through still beats abandoning positions.
+  callMade: 5,
+  resolvedCall: 5,
+  // X ACTIVITY, and it is deliberately the loud one. A market only exists
+  // because somebody tagged @oddiefun under a post, so this is the axis that
+  // buys reach: one created market outweighs twenty calls before its surfacing
+  // award is even counted.
+  marketCreated: 100,
+  // Season points doubled. Every event in that ledger is a growth event —
+  // surfacing a market, it reaching three players, it bringing somebody's
+  // first-ever call, it resolving cleanly — so it is the closest thing the
+  // product has to a measure of noise made on X.
+  contribution: 2,
 } as const;
 /** How far accuracy can move the base, either way. */
 export const SCORE_QUALITY_MIN = 0.5;
 export const SCORE_QUALITY_MAX = 1.5;
 
 export interface ScoreInputs {
+  /** Every call taken, counted immediately. */
+  callsMade?: number;
   resolvedCalls: number;
   marketsCreated: number;
   contributionPoints: number;
@@ -238,6 +254,7 @@ export interface ScoreInputs {
 /** Pure. The single definition of the score — every surface reads this one. */
 export function oddieScoreFrom(a: ScoreInputs): number {
   const base =
+    Math.max(0, a.callsMade ?? 0) * SCORE_WEIGHTS.callMade +
     Math.max(0, a.resolvedCalls) * SCORE_WEIGHTS.resolvedCall +
     Math.max(0, a.marketsCreated) * SCORE_WEIGHTS.marketCreated +
     Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution;

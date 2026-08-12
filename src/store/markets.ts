@@ -1385,7 +1385,7 @@ function computeAccuracy(
   /** Activity terms. Defaulted so every existing caller and test keeps working
    *  and gets the accuracy-only half of the score; accuracyFor supplies the
    *  real numbers. */
-  activity: { marketsCreated?: number; contributionPoints?: number } = {},
+  activity: { marketsCreated?: number; contributionPoints?: number; callsMade?: number } = {},
 ): AccuracyRecord {
   const resolved = rows.length;
   const correct = rows.filter((r) => r.correct).length;
@@ -1400,6 +1400,7 @@ function computeAccuracy(
   // formula and for why it is weighted that way. This file no longer decides
   // what a score is; it supplies the inputs.
   const oddieScore = oddieScoreFrom({
+    callsMade: activity.callsMade ?? 0,
     resolvedCalls: resolved,
     marketsCreated: activity.marketsCreated ?? 0,
     contributionPoints: activity.contributionPoints ?? 0,
@@ -1467,18 +1468,31 @@ async function resolvedRowsFor(deviceId: string): Promise<ResolvedRow[]> {
   return qr.map((r) => ({ correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question), pct: prob(r.pct_at), closedAt: r.closed_at.toISOString() }));
 }
 
+/** Every call this device has taken, open or closed. The volume half of the
+ *  score — counted the moment a call is made, not when it resolves. */
+export async function callsMadeFor(rawDeviceId: string): Promise<number> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) return memCalls.filter((c) => c.deviceId === deviceId).length;
+  await ensureSchema();
+  const { rows } = await db().query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM market_call WHERE device_id = $1`, [deviceId]);
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const [rows, creator, contribution] = await Promise.all([
+  const [rows, creator, contribution, callsMade] = await Promise.all([
     resolvedRowsFor(deviceId),
-    // Both degrade to zero rather than throwing: a score missing its activity
-    // half is wrong, but a profile that will not load at all is worse.
+    // All three degrade to zero rather than throwing: a score missing its
+    // activity half is wrong, but a profile that will not load at all is worse.
     creatorStatsFor(deviceId).catch(() => null),
     seasonPointsFor(deviceId).catch(() => 0),
+    callsMadeFor(deviceId).catch(() => 0),
   ]);
   return computeAccuracy(rows, {
     marketsCreated: creator?.marketsCreated ?? 0,
     contributionPoints: contribution,
+    callsMade,
   });
 }
 
@@ -2865,6 +2879,12 @@ export const SEASON_POINTS = {
   three_players: 100, // that market reached 3 distinct participants
   first_timer: 100,   // a brand-new player took their first-ever call on it
   clean_resolve: 50,  // it resolved cleanly (no manual override)
+  // Posting a call to X. Deduped per (device, call), so it pays for putting a
+  // DIFFERENT position in front of people, not for pressing the button twice.
+  // This is the one event a player can trigger directly and deliberately, which
+  // is exactly the point: the cheapest way to raise your score should be to say
+  // something on X.
+  shared: 40,
 } as const;
 export type SeasonEvent = keyof typeof SEASON_POINTS;
 
@@ -3089,13 +3109,24 @@ export async function surfacersFor(slugs: string[]): Promise<Record<string, Surf
  *  attributed to their device). No surfacer, or an amount already logged under
  *  the dedup key, is a silent no-op. Best-effort: never throws into the caller.
  *  Returns whether a new award landed. */
-async function awardSeasonPoints(event: SeasonEvent, slug: string, dedupKey: string): Promise<boolean> {
+async function awardSeasonPoints(
+  event: SeasonEvent, slug: string, dedupKey: string,
+  /** Credit THIS device instead of the market's surfacer. Sharing is the one
+   *  event where the earner is the person who acted, not the person whose
+   *  market it is — and it must work for a market somebody else surfaced,
+   *  which is most of them. */
+  creditDevice?: string,
+): Promise<boolean> {
   try {
-    const surfacer = await surfacerFor(slug);
-    if (!surfacer) return false; // nobody to credit
+    let handle: string | null = null;
+    let deviceId: string | null = creditDevice ?? null;
+    if (!deviceId) {
+      const surfacer = await surfacerFor(slug);
+      if (!surfacer) return false; // nobody to credit
+      handle = surfacer.handle;
+      deviceId = surfacer.deviceId ?? (await deviceForTwitterHandle(handle).catch(() => null));
+    }
     const amount = SEASON_POINTS[event];
-    const handle = surfacer.handle;
-    const deviceId = surfacer.deviceId ?? (await deviceForTwitterHandle(handle).catch(() => null));
     if (!handle && !deviceId) return false;
     if (!PERSISTENT) {
       if (memSeasonLog.some((r) => r.dedupKey === dedupKey)) return false;
@@ -3118,6 +3149,13 @@ async function awardSeasonPoints(event: SeasonEvent, slug: string, dedupKey: str
 /** +50: a tagged claim cleared the gate and became a live market. Once per market. */
 export async function awardSurface(slug: string): Promise<boolean> {
   return awardSeasonPoints("surface", slug, `surface:${slug}`);
+}
+/** +40: this device put one of its calls on X. Deduped per (device, call), so
+ *  it pays once for each position shared, not once per press of the button.
+ *  Unlike the other four this one credits the SHARER rather than the market's
+ *  surfacer — it is their post. */
+export async function awardShare(slug: string, deviceId: string, callId: number): Promise<boolean> {
+  return awardSeasonPoints("shared", slug, `shared:${callId}`, deviceId);
 }
 /** +100: `slug` just reached 3 distinct participants. Once per market. */
 export async function awardThreePlayers(slug: string): Promise<boolean> {
