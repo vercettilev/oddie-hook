@@ -1046,7 +1046,7 @@ app.get("/card/u/:handle.png", async (req, res) => {
   const [rep, hd] = await Promise.all([reputationFor(deviceId), displayHandle(deviceId)]);
   const acc = rep.accuracy;
   const png = renderCardPng(renderProfileCard({
-    handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
+    handle: hd.handle, oddieScore: acc.oddieScore, meanEdge: acc.meanEdge, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
     badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
     rankTopPct: rep.rank ? rep.rank.topPct : null,

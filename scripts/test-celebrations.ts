@@ -62,12 +62,11 @@ console.log("\none fresh win, before the accuracy floor (fewer than 5 resolved)"
   check("it's a win", c?.won === true);
   check("outcome matches", c?.outcome === "yes");
   check("payout is the real proceeds, not null", typeof c?.proceeds === "number" && c.proceeds > 0, String(c?.proceeds));
-  // The literal 500 meant "market-neutral" only while the score was
-  // 500 + 1000*edge. Under the activity-led score a device below the accuracy
-  // floor gets the score its activity alone would earn at neutral edge — for a
-  // first-ever resolved call that is 0, which is honest: no play, no score.
+  // One call taken and none resolved before it: 1 x callMade = 5. Not the old
+  // literal 500, and not 0 either — the call itself is worth something the
+  // moment it is made, which is the whole point of the volume weighting.
   check("score baseline is what the activity alone earns, not a legacy 500",
-    c?.scoreBefore === 0, String(c?.scoreBefore));
+    c?.scoreBefore === 5, String(c?.scoreBefore));
   check("scoreAfter is still null below the accuracy floor", c?.scoreAfter === null, String(c?.scoreAfter));
   check("streak starts at 1, not flagged as 'extended' (threshold is >= 2)", c?.streakAfter === 1 && c?.streakExtended === false);
 }
@@ -116,16 +115,12 @@ console.log("\ncrossing the accuracy floor mid-batch: scoreAfter appears exactly
   const rows = await celebrationsFor(dev);
   check("one celebration for the 5th call", rows.length === 1, String(rows.length));
   const c = rows[0];
-  // 4 resolved calls at the resolvedCall weight, at neutral edge: 20.
-  //
-  // KNOWN INCONSISTENCY, recorded here rather than hidden by a looser check:
-  // celebrationsFor and weeklyScoreDeltaFor call computeAccuracy with rows ONLY,
-  // so the before/after they report cover the resolution half of the score and
-  // not the volume/creation half that accuracyFor supplies. The delta they show
-  // is therefore smaller than the movement on the profile. It was harmless when
-  // the score was pure accuracy and is not any more.
+  // 5 calls made (25) + 4 of them resolved (20) at neutral edge = 45. This is
+  // the number the PROFILE would show for the same device, which is the fix:
+  // these two used to run on the resolution half alone and quote a smaller
+  // movement than the profile did for the same event.
   check("scoreBefore is the pre-call activity's own score (4 resolved, still under the floor)",
-    c?.scoreBefore === 20, String(c?.scoreBefore));
+    c?.scoreBefore === 45, String(c?.scoreBefore));
   check("scoreAfter is now a real number (5 resolved crosses the floor)", typeof c?.scoreAfter === "number", String(c?.scoreAfter));
   check("a 5-call win streak is real and flagged extended", c?.streakAfter === 5 && c?.streakExtended === true);
 }

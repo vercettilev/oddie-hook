@@ -1468,6 +1468,19 @@ async function resolvedRowsFor(deviceId: string): Promise<ResolvedRow[]> {
   return qr.map((r) => ({ correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question), pct: prob(r.pct_at), closedAt: r.closed_at.toISOString() }));
 }
 
+/** The activity half of the score, read once. Every surface that recomputes a
+ *  score for a device needs the same three numbers, and reading them in one
+ *  place is what stops the app quoting two different scores for one person. */
+export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCreated: number; contributionPoints: number; callsMade: number }> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const [creator, contributionPoints, callsMade] = await Promise.all([
+    creatorStatsFor(deviceId).catch(() => null),
+    seasonPointsFor(deviceId).catch(() => 0),
+    callsMadeFor(deviceId).catch(() => 0),
+  ]);
+  return { marketsCreated: creator?.marketsCreated ?? 0, contributionPoints, callsMade };
+}
+
 /** Every call this device has taken, open or closed. The volume half of the
  *  score — counted the moment a call is made, not when it resolves. */
 export async function callsMadeFor(rawDeviceId: string): Promise<number> {
@@ -1481,19 +1494,11 @@ export async function callsMadeFor(rawDeviceId: string): Promise<number> {
 
 export async function accuracyFor(rawDeviceId: string): Promise<AccuracyRecord> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const [rows, creator, contribution, callsMade] = await Promise.all([
+  const [rows, activity] = await Promise.all([
     resolvedRowsFor(deviceId),
-    // All three degrade to zero rather than throwing: a score missing its
-    // activity half is wrong, but a profile that will not load at all is worse.
-    creatorStatsFor(deviceId).catch(() => null),
-    seasonPointsFor(deviceId).catch(() => 0),
-    callsMadeFor(deviceId).catch(() => 0),
+    scoreActivityFor(deviceId),
   ]);
-  return computeAccuracy(rows, {
-    marketsCreated: creator?.marketsCreated ?? 0,
-    contributionPoints: contribution,
-    callsMade,
-  });
+  return computeAccuracy(rows, activity);
 }
 
 export interface WeeklyScoreDelta { delta: number; direction: "up" | "down" }
@@ -1512,16 +1517,24 @@ export async function weeklyScoreDeltaFor(rawDeviceId: string): Promise<WeeklySc
   const cutoff = Date.now() - WEEK_MS;
   if (!rows.some((r) => Date.parse(r.closedAt) >= cutoff)) return null;
 
-  const now = computeAccuracy(rows);
+  // The SAME activity terms on both sides. Without them these two ran on the
+  // resolution half of the score alone, so the movement reported here was
+  // smaller than the movement on the profile — the app quoting two different
+  // numbers for one thing. Holding activity constant across the pair is
+  // deliberate and is what makes this "what THIS WEEK'S RESOLUTIONS did":
+  // markets created and calls taken move the score too, but they are not what
+  // this line claims to measure.
+  const activity = await scoreActivityFor(deviceId);
+  const now = computeAccuracy(rows, activity);
   if (now.oddieScore == null) return null; // still short of the accuracy floor even after this week
-  const before = computeAccuracy(rows.filter((r) => Date.parse(r.closedAt) < cutoff));
+  const before = computeAccuracy(rows.filter((r) => Date.parse(r.closedAt) < cutoff), activity);
   // A device that crossed the accuracy floor THIS week has no score to compare
   // against, so its baseline is the score its PRE-WEEK activity would have had
   // at market-neutral edge — not a literal 500, which meant "neutral" only
   // while the score was 500 + 1000·edge and now means nothing at all.
   const baseline = before.hasEnough
     ? (before.oddieScore as number)
-    : oddieScoreFrom({ resolvedCalls: before.resolved, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 });
+    : oddieScoreFrom({ ...activity, resolvedCalls: before.resolved, meanEdge: 0 });
   const delta = now.oddieScore - baseline;
   return { delta, direction: delta >= 0 ? "up" : "down" };
 }
@@ -1666,14 +1679,19 @@ export async function celebrationsFor(rawDeviceId: string): Promise<Celebration[
 
   if (unseenCallIds.size === 0) return [];
 
+  // Read once, used for every before/after in the loop below — the same numbers
+  // the profile scores with, so the movement a celebration claims matches the
+  // movement the profile shows. Fetched only after the early return, since a
+  // device with nothing to celebrate should not pay for it.
+  const activity = await scoreActivityFor(deviceId);
   const accRow = (r: CelebrationRow) => ({ correct: r.exitPct === 100, category: r.category, pct: prob(r.entryPct) });
   const out: Celebration[] = [];
   const slugsNeeded = new Set<string>();
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (!unseenCallIds.has(r.callId)) continue;
-    const before = computeAccuracy(rows.slice(0, i).map(accRow));
-    const after = computeAccuracy(rows.slice(0, i + 1).map(accRow));
+    const before = computeAccuracy(rows.slice(0, i).map(accRow), activity);
+    const after = computeAccuracy(rows.slice(0, i + 1).map(accRow), activity);
     const won = r.exitPct === 100;
     const outcome = won ? r.side : r.side === "yes" ? "no" : "yes";
     slugsNeeded.add(r.slug);
@@ -1683,7 +1701,7 @@ export async function celebrationsFor(rawDeviceId: string): Promise<Celebration[
       oddsPct: Math.max(1, Math.min(99, Math.round(r.entryPct))),
       proceeds: won ? r.proceeds : null,
       scoreBefore: before.hasEnough ? (before.oddieScore as number)
-        : oddieScoreFrom({ resolvedCalls: before.resolved, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 }),
+        : oddieScoreFrom({ ...activity, resolvedCalls: before.resolved, meanEdge: 0 }),
       scoreAfter: after.hasEnough ? after.oddieScore : null,
       streakBefore: before.streak, streakAfter: after.streak,
       streakExtended: after.streak > before.streak && after.streak >= 2,

@@ -32,6 +32,10 @@ export interface ProfileBadge {
 export interface ProfileCard {
   handle: string;
   oddieScore: number | null;
+  /** −1..1, mean(outcome − impliedProb). Drives the ring; the score drives the
+   *  number. Optional so a caller that has not got it renders an empty ring
+   *  rather than a full one. */
+  meanEdge?: number | null;
   accuracyPct: number | null;
   streak: number;
   resolved: number;
@@ -117,10 +121,16 @@ export function renderProfileCard(p: ProfileCard): string {
   const handle = "@" + p.handle.replace(/^@+/, "");
   const acc = p.accuracyPct == null ? "—" : `${p.accuracyPct}%`;
 
-  // The ring/gauge: an SVG stroke-dasharray donut, filled to score/1000 — the
-  // direct static equivalent of the live page's CSS conic-gradient ring.
+  // The ring shows the QUALITY multiplier, not the score — the same fix the live
+  // profile got, and it matters more here because this is the image that goes to
+  // X. score/1000 worked while the score was capped at 1000; the score is
+  // activity-led and unbounded now, so that ring sat pegged full for anyone who
+  // plays regularly, and a gauge that reads identical for every active player is
+  // decoration. meanEdge is the half that IS bounded (the multiplier runs
+  // 0.5x..1.5x), so half full is market-neutral and fuller is beating it.
   const circumference = 2 * Math.PI * RING_R;
-  const pct = p.hasEnough && p.oddieScore != null ? Math.max(0, Math.min(1, p.oddieScore / 1000)) : 0;
+  const quality = Math.max(0.5, Math.min(1.5, 1 + 2 * (p.meanEdge ?? 0)));
+  const pct = p.hasEnough && p.oddieScore != null ? quality - 0.5 : 0;
   const heroText = p.hasEnough && p.oddieScore != null ? String(p.oddieScore) : "building";
   const heroFS = p.hasEnough ? 62 : 32;
   const kicker = p.hasEnough ? "ODDIE SCORE" : "TRACK RECORD";
