@@ -23,7 +23,29 @@ import { getMarketData } from "../src/venues/index.js";
 import { matchTweet, tokenize } from "../src/matching/matcher.js";
 import { renderCard } from "../src/card/renderCard.js";
 import type { Market } from "../src/venues/types.js";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
+
+/* ------------------------------------------------------ two jobs, split -----
+ * This script did two different things under one exit code: it checked the
+ * MATCHER against real questions, and it checked that the venues were up. The
+ * second is monitoring, not a test, and folding it in made the whole suite
+ * non-deterministic — Polymarket returned zero markets on several runs across
+ * two days, each time failing `npm test` for a reason that had nothing to do
+ * with the code being tested. A suite that cries wolf is a suite that stops
+ * being read, which is exactly what happened: three separate false alarms in
+ * one session, each needing a manual re-run to dismiss.
+ *
+ *   npm test  -> --fixture, a committed snapshot. Deterministic. Tests the
+ *                matcher, which is the part that can actually regress.
+ *   npm run smoke -> live. Still checks venue health, still fails on an
+ *                outage, but it is not gating every other suite any more.
+ *
+ * Refresh the snapshot with `npm run smoke -- --write-fixture` when the
+ * question mix has drifted enough that the cases stop being representative.
+ */
+const FIXTURE = new URL("./fixtures/markets.json", import.meta.url);
+const USE_FIXTURE = process.argv.includes("--fixture");
+const WRITE_FIXTURE = process.argv.includes("--write-fixture");
 
 let failures = 0;
 let envFailures = 0;
@@ -78,6 +100,35 @@ const RE_RATE = /\b(fed|fomc|interest rates?)\b/i;
 const RE_DOWN = /\b(cut|cuts|decrease|decreases|lower|lowers)\b/i;
 const RE_UP = /\b(increase|increases|hike|hikes|raise|raises)\b/i;
 const RE_FLAT = /\bno change\b|\bunchanged\b/i;
+/**
+ * A "how many cuts" market split into per-count outcomes is NOT a rate-cut
+ * market for every one of its outcomes. Polymarket lists them as
+ *
+ *   How many Fed rate cuts in 2026? — 0 (0 bps)
+ *   How many Fed rate cuts in 2026? — 1 (25 bps)
+ *
+ * and the first is a market about the Fed cutting NOTHING. RE_DOWN matches it
+ * on the word "cuts" in the stem, so the expectation counted it as a suitable
+ * answer to "the fed is 100% cutting rates" — a tweet it asserts the opposite
+ * of. That is what made this case fail: not the matcher declining to match,
+ * which was right, but the test insisting it should.
+ *
+ * The "— 1 (25 bps)" sibling is a different question again: a count for the
+ * whole of 2026 against a tweet about the next meeting.
+ */
+const RE_ZERO_CUTS = /—\s*0\b|\b0\s*\(0\s*bps\)/i;
+/**
+ * And the whole "how many cuts" family is the wrong QUESTION, not just the
+ * wrong outcome. "How many Fed rate cuts in 2026? — 1 (25 bps)" prices a count
+ * for a calendar year; the tweet is about the next meeting. Answering one with
+ * the other is the mistake this case exists to catch, so the market that would
+ * have been offered as the right answer is excluded too, and the expectation
+ * becomes "no match" — which is what the matcher has been saying all along.
+ *
+ * Net: the matcher was never wrong here. The test was, in two ways, and it had
+ * been failing on and off for long enough to be treated as background noise.
+ */
+const RE_COUNT_SPLIT = /\bhow many\b/i;
 const RE_POPVOTE = /\bpopular vote\b/i;
 
 type Expectation =
@@ -108,7 +159,10 @@ const CASES: Case[] = [
     // The direction filter's live counterpart.
     tweet: "the fed is 100% cutting rates next meeting, book it",
     expect(markets) {
-      const set = markets.filter((m) => RE_RATE.test(m.question) && RE_DOWN.test(m.question) && !RE_FLAT.test(m.question));
+      const set = markets.filter((m) =>
+        RE_RATE.test(m.question) && RE_DOWN.test(m.question) &&
+        !RE_FLAT.test(m.question) && !RE_ZERO_CUTS.test(m.question) &&
+        !RE_COUNT_SPLIT.test(m.question));
       return set.length
         ? { kind: "one-of", set, why: `${set.length} live Fed rate-cut market(s)` }
         : { kind: "null", why: "no live Fed cut market; a no-change or hike market would misread the take" };
@@ -244,10 +298,31 @@ function paraphrase(question: string): string {
 }
 
 async function main() {
-  console.log("Fetching live markets from Kalshi + Polymarket…");
-  const data = await getMarketData(true);
+  let data: Awaited<ReturnType<typeof getMarketData>>;
+  if (USE_FIXTURE) {
+    if (!existsSync(FIXTURE)) {
+      console.error("no fixture at scripts/fixtures/markets.json — run: npm run smoke -- --write-fixture");
+      process.exit(1);
+    }
+    const snap = JSON.parse(readFileSync(FIXTURE, "utf8")) as { capturedAt: string; markets: Market[] };
+    console.log(`Using the committed market snapshot (${snap.markets.length} markets, captured ${snap.capturedAt}).`);
+    // The venue block is skipped wholesale below: a snapshot cannot tell you
+    // whether Polymarket is up, and pretending otherwise is the exact confusion
+    // this split exists to remove.
+    data = { markets: snap.markets, feed: snap.markets, all: snap.markets,
+             venues: {} as typeof data.venues, stale: false, ageMs: 0 };
+  } else {
+    console.log("Fetching live markets from Kalshi + Polymarket…");
+    data = await getMarketData(true);
+  }
   const markets = data.markets;
   console.log(`Got ${markets.length} markets.\n`);
+
+  if (WRITE_FIXTURE) {
+    writeFileSync(new URL("./fixtures/", import.meta.url).pathname + "markets.json",
+      JSON.stringify({ capturedAt: new Date().toISOString(), markets }, null, 0));
+    console.log(`Wrote scripts/fixtures/markets.json (${markets.length} markets).`);
+  }
 
   // Without these, an empty (or half-empty) market list makes every "expect
   // null" case below pass and the suite reports green while a venue is down.
@@ -257,7 +332,8 @@ async function main() {
   // to run is not a failure, and a venue we did turn on returning nothing is —
   // even if the other one carries the total past any threshold.
   console.log("preconditions");
-  for (const [name, st] of Object.entries(data.venues)) {
+  if (USE_FIXTURE) console.log("  - venue health not checked: this run is against a snapshot (see npm run smoke)");
+  for (const [name, st] of Object.entries(USE_FIXTURE ? {} : data.venues)) {
     if (!st.enabled) {
       console.log(`  - ${name} disabled by configuration (not expected to contribute)`);
       continue;
@@ -285,11 +361,13 @@ async function main() {
   // and unchanged — Kalshi was the only source of Fed, CPI and U-3 prices, so
   // economics takes now go unanswered — but that is a known consequence of the
   // decision, not a regression this run should be re-discovering each time.
-  const off = Object.entries(data.venues).filter(([, st]) => !st.enabled).map(([n]) => n);
-  precondition("the venue we ship (polymarket) is enabled", data.venues.polymarket.enabled === true,
-    `switched off: ${off.join(", ") || "none"}`);
-  if (off.length) console.log(`  - not shipping: ${off.join(", ")} (by configuration, not an outage)`);
-  precondition("serving fresh data, not a stale cache", !data.stale, `last good set is ${Math.round(data.ageMs / 1000)}s old`);
+  if (!USE_FIXTURE) {
+    const off = Object.entries(data.venues).filter(([, st]) => !st.enabled).map(([n]) => n);
+    precondition("the venue we ship (polymarket) is enabled", data.venues.polymarket.enabled === true,
+      `switched off: ${off.join(", ") || "none"}`);
+    if (off.length) console.log(`  - not shipping: ${off.join(", ")} (by configuration, not an outage)`);
+    precondition("serving fresh data, not a stale cache", !data.stale, `last good set is ${Math.round(data.ageMs / 1000)}s old`);
+  }
   check(
     `market set is large enough to assert on (${markets.length})`,
     markets.length >= 20,
