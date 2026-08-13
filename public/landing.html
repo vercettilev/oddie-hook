@@ -16,16 +16,16 @@
 <meta name="theme-color" content="#D7DC1F">
 <!-- Share preview. X is the distribution channel, so the card this page throws
      when someone posts oddie.fun matters at least as much as the page itself. -->
-<meta name="description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score.">
+<meta name="description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score. Being loud pays.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/">
 <meta property="og:title" content="Turn arguments into markets.">
-<meta property="og:description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score.">
+<meta property="og:description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score. Being loud pays.">
 <meta property="og:image" content="https://oddie.fun/banner.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Turn arguments into markets.">
-<meta name="twitter:description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score.">
+<meta name="twitter:description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score. Being loud pays.">
 <meta name="twitter:image" content="https://oddie.fun/banner.png">
 
 <!-- This page used to bounce anyone carrying an Oddie device id straight to
@@ -346,6 +346,18 @@
   .feat{display:inline-flex;align-items:center;gap:9px;color:var(--fg-2);font-size:14px;font-weight:700}
   .feat svg{color:var(--lime)}
 
+  /* --------------------------------------------------------------- loud -- */
+  /* The page taught the mechanic and never the incentive: everything above
+     explains how a tag becomes a market, and nothing said that being loud
+     about it is the thing that pays. Three rungs, stated as numbers, because
+     a reward described in adjectives is not a reward. */
+  .loud{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:26px}
+  .loudc{border:1px solid var(--line-soft);border-radius:16px;padding:20px 18px;background:var(--card)}
+  .loudc__n{font-family:'Fredoka';font-size:34px;font-weight:600;color:var(--lime);line-height:1}
+  .loudc__t{margin-top:8px;font-size:14.5px;font-weight:800;color:var(--fg)}
+  .loudc__b{margin-top:5px;font-size:13px;line-height:1.5;color:var(--fg-2);font-weight:700}
+  @media (max-width:760px){ .loud{grid-template-columns:1fr;gap:12px} }
+
   footer{border-top:1px solid var(--line-soft);padding:26px 0 40px;
     display:flex;align-items:center;gap:18px;flex-wrap:wrap;color:var(--fg-3);font-size:12.5px;font-weight:700}
   footer a:hover{color:var(--fg)}
@@ -431,7 +443,7 @@
       <p class="lede">
         Tag <b>@oddiefun</b> under any argument on X.<br>
         We find a market or create one instantly.<br>
-        You play. We keep score.
+        You play. We keep score. Being loud pays.
       </p>
 
       <div class="cta">
@@ -558,16 +570,42 @@
           <div class="step__hd">
             <span class="step__n">4</span>
             <div><h2 class="step__t">The tagger gets paid</h2>
-              <p class="step__b">3% of the market you created, when it resolves.</p></div>
+              <p class="step__b">The more people your market pulls in, the more it pays you.</p></div>
           </div>
-          <div class="mock" role="img" aria-label="Example receipt: the market resolved yes, and the person who tagged it earned six predictions, three percent of everything staked.">
-            <div class="rcp__top"><span aria-hidden="true">✓</span> Resolved YES</div>
-            <div class="rcp__big">+6</div>
-            <div class="rcp__cap">to whoever tagged it</div>
-            <div class="rcp__note">3% of everything staked on a market you started. Paid at resolution, every time.</div>
+          <div class="mock" role="img" aria-label="Example receipt: a market you tagged reached twenty-five players and paid its tagger one thousand five hundred oddies, on a ladder that pays again at ten, twenty-five and a hundred players.">
+            <div class="rcp__top"><span aria-hidden="true">✓</span> Your market hit 25 players</div>
+            <div class="rcp__big">+1,500</div>
+            <div class="rcp__cap">oddies, to whoever tagged it</div>
+            <div class="rcp__note">It pays again at 10, 25 and 100 players, plus 3% of everything staked when it resolves.</div>
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- The incentive, stated in numbers. Everything above is the mechanic;
+         this is the reason to run it loudly. Every figure here is the shipped
+         one — the ladder in SEASON_POINTS, doubled into oddies by
+         SCORE_WEIGHTS.contribution, and LOUD_MULT_MAX for the multiplier — so
+         the page can never promise more than the product pays. -->
+    <div class="band">
+      <p class="eyebrow reveal">Being loud is the point</p>
+      <div class="loud">
+        <div class="loudc reveal">
+          <div class="loudc__n">+150</div>
+          <div class="loudc__t">Post about oddie</div>
+          <div class="loudc__b">Paste the link to your post. Once it clears review, the oddies are yours.</div>
+        </div>
+        <div class="loudc reveal">
+          <div class="loudc__n">+300</div>
+          <div class="loudc__t">Be the week's loudest</div>
+          <div class="loudc__b">The best posts each week earn again, on top of what they already earned.</div>
+        </div>
+        <div class="loudc reveal">
+          <div class="loudc__n">2×</div>
+          <div class="loudc__t">Everything you play</div>
+          <div class="loudc__b">Keep posting and your calls, markets and wins earn up to double.</div>
+        </div>
       </div>
     </div>
 
@@ -631,7 +669,7 @@
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.9 18.1 18.1 5.9"/></svg> No wallet needed</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M11 18.2h2"/></svg> Nothing to install</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M13 2 5 14h6l-1 8 8-12h-6l1-8Z"/></svg> 100% free</span>
-        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/></svg> Play with points</span>
+        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/></svg> Everything pays oddies</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 6-8"/><path d="M15 6h3.5v3.5"/></svg> Real-time markets</span>
       </div>
     </div>

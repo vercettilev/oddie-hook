@@ -763,7 +763,7 @@ app.get("/api/feed", async (req, res) => {
       withCrowd.splice(at, 0, {
         slug: "__wider",
         sectionHeader: "the wider market",
-        sectionNote: "nobody's tagged these yet — tag one on X and it lands above, with your name on it",
+        sectionNote: "nobody's tagged these yet. Tag one on X and it lands above, with your name on it.",
       });
     }
   }
