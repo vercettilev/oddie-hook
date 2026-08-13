@@ -2741,6 +2741,8 @@ function shareMenu({url,text,slug,source,anchor}){
     window.open(`https://wa.me/?text=${encodeURIComponent(text+" "+url)}`,"_blank","noopener");
     ev("share_done",{slug,source,via:"whatsapp"});
   }));
+  const loudIcon='<svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6l-5 4H4a1 1 0 0 0-1 1z"/><path d="M15 9a3.5 3.5 0 0 1 0 6"/><path d="M17.5 6.5a7 7 0 0 1 0 11"/></svg>';
+  menu.appendChild(item("Claim Loud points",loudIcon,()=>loudClaim(source)));
   function close(){dim.remove();menu.remove();document.removeEventListener("keydown",onKey);}
   function onKey(e){if(e.key==="Escape")close();}
   dim.onclick=close;document.addEventListener("keydown",onKey);
@@ -2752,6 +2754,71 @@ function shareMenu({url,text,slug,source,anchor}){
   let top=r.bottom+8; if(top+mh>innerHeight-8)top=Math.max(8,r.top-mh-8);
   menu.style.left=left+"px";menu.style.top=top+"px";
 }
+/* ---------------------------------------------------- loud points claim -- */
+// "I posted about oddie — here's the link." The post goes into a review queue;
+// approval pays +75 Season Points, the week's best +150 on top. Requires a
+// linked X account and the post must be the submitter's own — the server
+// enforces both; this sheet just carries the answer back.
+function loudClaim(source){
+  ev("loud_claim_open",{source});
+  document.querySelectorAll(".sdim,.lsheet").forEach(n=>n.remove());
+  const dim=document.createElement("div");dim.className="sdim";
+  const sh=document.createElement("div");sh.className="lsheet";
+  sh.style.cssText="position:fixed;z-index:81;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,92vw);background:var(--ground-2);border:1.5px solid var(--line-g);border-radius:16px;padding:16px;box-shadow:0 18px 44px rgba(13,60,90,.24)";
+  sh.innerHTML=`
+    <div style="font-family:'Nunito';font-weight:900;font-size:15px;color:var(--on-ground)">Loud points</div>
+    <div style="font-family:'Nunito';font-weight:700;font-size:12.5px;color:var(--muted-g);line-height:1.45;margin:6px 0 10px">
+      Posted about oddie on X? Paste the post's link. Cleared posts earn <b>+75</b> Season Points,
+      and the week's best earn <b>+150</b> on top.</div>
+    <input id="loudurl" type="url" inputmode="url" autocapitalize="off" spellcheck="false"
+      placeholder="https://x.com/you/status/…"
+      style="width:100%;box-sizing:border-box;font-family:'Nunito';font-weight:700;font-size:16px;color:var(--on-ground);background:var(--ground);border:1.5px solid var(--line-g);border-radius:10px;padding:10px 12px">
+    <button id="loudsend"
+      style="width:100%;margin-top:8px;font-family:'Nunito';font-weight:900;font-size:14px;color:#000;background:var(--accent);border:1.5px solid var(--line-g);border-radius:10px;padding:11px;cursor:pointer">Submit for review</button>
+    <div id="loudmsg" style="font-family:'Nunito';font-weight:700;font-size:12px;line-height:1.4;margin-top:8px;color:var(--muted-g)"></div>
+    <div id="loudmine" style="margin-top:4px"></div>`;
+  const close=()=>{dim.remove();sh.remove();document.removeEventListener("keydown",onKey);};
+  const onKey=(e)=>{if(e.key==="Escape")close();};
+  dim.onclick=close;document.addEventListener("keydown",onKey);
+  document.body.appendChild(dim);document.body.appendChild(sh);
+
+  const mine=async()=>{
+    try{
+      const r=await fetch(`/api/loud/mine?deviceId=${encodeURIComponent(deviceId)}`);
+      const j=await r.json();
+      const posts=(j.posts||[]).slice(0,5);
+      if(!posts.length)return;
+      const label={pending:"in review",approved:"+75 ✓",rejected:"not counted"};
+      sh.querySelector("#loudmine").innerHTML=posts.map(p=>`
+        <div style="display:flex;justify-content:space-between;gap:10px;font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);padding:4px 0">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.url.replace(/^https:\/\//,"")}</span>
+          <span style="flex:none;${p.status==="approved"?"color:var(--acc-deep)":""}">${label[p.status]||p.status}</span>
+        </div>`).join("");
+    }catch(e){}
+  };
+  mine();
+
+  sh.querySelector("#loudsend").onclick=async()=>{
+    const inp=sh.querySelector("#loudurl"),msg=sh.querySelector("#loudmsg"),btn=sh.querySelector("#loudsend");
+    const url=inp.value.trim();
+    if(!url){inp.focus();return;}
+    btn.disabled=true;btn.textContent="Sending…";
+    try{
+      const r=await fetch("/api/loud/submit",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({deviceId,url})});
+      const j=await r.json().catch(()=>({}));
+      if(j.ok){
+        ev("loud_submit",{source});
+        inp.value="";msg.textContent="";
+        toast("Sent — +75 lands when it clears review");
+        mine();
+      }else{
+        msg.textContent=j.error||"couldn't submit that link.";
+      }
+    }catch(e){msg.textContent="couldn't submit — try again.";}
+    finally{btn.disabled=false;btn.textContent="Submit for review";}
+  };
+}
+
 // The first-load hint fires once per session, not once per category switch.
 let hintRetired=false;
 

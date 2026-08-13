@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
-import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf } from "./store/markets.js";
+import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
@@ -1670,6 +1670,47 @@ app.post("/api/mentions/:id/sent", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ ok: false });
   res.json({ ok: await markMentioned(id) });
+});
+
+// Loud submissions — phase 1 of the loudness flywheel. A player who posted
+// about oddie pastes their link; it lands in a review queue. Approval (the
+// operator today, an X API read once credits exist) pays SEASON_POINTS.loud_post.
+app.post("/api/loud/submit", async (req, res) => {
+  const deviceId = typeof req.body?.deviceId === "string" && DEVICE_ID.test(req.body.deviceId) ? req.body.deviceId : null;
+  const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  if (!url) return res.status(400).json({ error: "url required" });
+  const r = await submitLoudPost(deviceId, url);
+  if (r.ok) return res.json({ ok: true, status: r.status, dailyCap: LOUD_DAILY_CAP });
+  const message: Record<string, string> = {
+    bad_url: "that's not an X post link — paste the full x.com/…/status/… URL",
+    no_x_account: "connect your X account first — loud points need a real author",
+    not_your_account: "that post isn't from your connected X account",
+    already_submitted: "that post was already submitted",
+    daily_cap: `that's ${LOUD_DAILY_CAP} submissions in 24h — save the next one for tomorrow`,
+  };
+  res.status(400).json({ ok: false, reason: r.reason, error: message[r.reason] ?? r.reason });
+});
+
+app.get("/api/loud/mine", async (req, res) => {
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  res.json({ posts: await loudPostsFor(deviceId) });
+});
+
+app.get("/api/admin/loud/queue", requireAdmin, async (_req, res) => {
+  res.json({ queue: await loudQueue() });
+});
+
+app.post("/api/admin/loud/decide", requireAdmin, async (req, res) => {
+  const id = Number(req.body?.id);
+  const approve = req.body?.approve === true;
+  const note = typeof req.body?.note === "string" && req.body.note.trim() ? req.body.note.trim().slice(0, 200) : null;
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "id required" });
+  const r = await decideLoudPost(id, approve, note);
+  if (!r.ok) return res.status(r.reason === "not_found" ? 404 : 409).json({ ok: false, reason: r.reason });
+  res.json({ ok: true, status: r.status, points: r.status === "approved" ? SEASON_POINTS.loud_post : 0 });
 });
 
 // Weekly Loudest Callers — phase 0 of the loudness flywheel, human all the way

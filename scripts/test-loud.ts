@@ -8,7 +8,10 @@
 // Run with: npm run test-loud
 
 import { linkAccount } from "../src/store/accounts.js";
-import { SEASON_POINTS, awardLoud, isoWeekOf, seasonPointsFor } from "../src/store/markets.js";
+import {
+  SEASON_POINTS, awardLoud, isoWeekOf, seasonPointsFor,
+  parseTweetUrl, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP,
+} from "../src/store/markets.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -54,6 +57,86 @@ console.log("\nawardLoud: once per person per week, to the right person");
   check("a new week is a new award", (await awardLoud("loudest", "2026-W34")).ok === true);
   check("...and the balance shows both", (await seasonPointsFor(DEV)) === 2 * SEASON_POINTS.loud,
     String(await seasonPointsFor(DEV)));
+}
+
+console.log("\nparseTweetUrl: only a real status URL is a submission");
+{
+  const good = [
+    "https://x.com/somebody/status/1234567890",
+    "https://twitter.com/somebody/status/1234567890",
+    "https://www.x.com/somebody/status/1234567890",
+    "https://mobile.twitter.com/somebody/statuses/1234567890",
+    "https://x.com/somebody/status/1234567890?s=20&t=abc",
+  ];
+  for (const u of good) check(`accepts ${u.slice(8, 40)}…`, parseTweetUrl(u)?.tweetId === "1234567890");
+  check("...and reads the author handle", parseTweetUrl(good[0])?.handle === "somebody");
+  const bad = [
+    "https://x.com/somebody",                         // a profile, not a post
+    "https://x.com/somebody/likes",                   // not a status
+    "https://example.com/somebody/status/1234567890", // wrong site
+    "x.com/somebody/status/1234567890",               // no scheme
+    "https://x.com/way-too-long-for-a-handle-x/status/1234567890",
+    "not a url at all",
+  ];
+  for (const u of bad) check(`refuses ${u.slice(0, 40)}`, parseTweetUrl(u) === null);
+}
+
+console.log("\nsubmitLoudPost: your own post, once, capped");
+{
+  const DEV = "device-loudpost00001";
+  const tweet = (n: number) => `https://x.com/Poster/status/90000000${n}`;
+
+  check("no linked X account is refused, with the reason named",
+    JSON.stringify(await submitLoudPost(DEV, tweet(1))) === '{"ok":false,"reason":"no_x_account"}');
+
+  await linkAccount(DEV, { provider: "twitter", uid: "9002", handle: "@Poster" });
+
+  check("garbage is bad_url, not a throw",
+    (await submitLoudPost(DEV, "hello") as { reason?: string }).reason === "bad_url");
+  check("someone else's post is refused",
+    (await submitLoudPost(DEV, "https://x.com/NotMe/status/900000001") as { reason?: string }).reason === "not_your_account");
+
+  const first = await submitLoudPost(DEV, tweet(1));
+  check("their own post lands as pending", first.ok === true && first.status === "pending", JSON.stringify(first));
+  check("the handle check is case-insensitive",
+    (await submitLoudPost(DEV, "https://x.com/pOSTER/status/900000002")).ok === true);
+  check("the same tweet cannot be submitted twice",
+    (await submitLoudPost(DEV, tweet(1)) as { reason?: string }).reason === "already_submitted");
+
+  for (let n = 3; n <= LOUD_DAILY_CAP; n++) await submitLoudPost(DEV, tweet(n));
+  check(`submission ${LOUD_DAILY_CAP + 1} in 24h hits the cap`,
+    (await submitLoudPost(DEV, tweet(LOUD_DAILY_CAP + 1)) as { reason?: string }).reason === "daily_cap");
+
+  const mine = await loudPostsFor(DEV);
+  check("their own list shows every submission, newest first",
+    mine.length === LOUD_DAILY_CAP && mine[0].url.endsWith(`90000000${LOUD_DAILY_CAP}`), JSON.stringify(mine.map((p) => p.url)));
+  check("...all pending", mine.every((p) => p.status === "pending"));
+
+  const queue = await loudQueue();
+  check("the operator queue carries them with the author handle",
+    queue.length >= LOUD_DAILY_CAP && queue.some((q) => q.handle === "Poster"), JSON.stringify(queue[0] ?? null));
+
+  console.log("\ndecideLoudPost: once, and only approve pays");
+  const before = await seasonPointsFor(DEV);
+  const target = queue.find((q) => q.handle === "Poster")!;
+  const ok = await decideLoudPost(target.id, true);
+  check("approve settles the row", ok.ok === true && (ok as { status?: string }).status === "approved");
+  check("...and pays SEASON_POINTS.loud_post",
+    (await seasonPointsFor(DEV)) === before + SEASON_POINTS.loud_post, String(await seasonPointsFor(DEV)));
+  check("a decided row never flips",
+    (await decideLoudPost(target.id, false) as { reason?: string }).reason === "already_decided");
+  check("...and the points did not move", (await seasonPointsFor(DEV)) === before + SEASON_POINTS.loud_post);
+  check("an unknown id is not_found",
+    (await decideLoudPost(999_999, true) as { reason?: string }).reason === "not_found");
+
+  const second = (await loudQueue()).find((q) => q.handle === "Poster")!;
+  const rej = await decideLoudPost(second.id, false, "off-topic");
+  check("reject settles without paying",
+    rej.ok === true && (await seasonPointsFor(DEV)) === before + SEASON_POINTS.loud_post);
+  check("...and the note lands on the row",
+    (await loudPostsFor(DEV)).some((p) => p.status === "rejected" && p.note === "off-topic"));
+  check("the queue shrinks as rows are decided",
+    (await loudQueue()).filter((q) => q.handle === "Poster").length === LOUD_DAILY_CAP - 2);
 }
 
 console.log(failures === 0 ? "\nall loud checks passed.\n" : `\n${failures} loud check(s) FAILED.\n`);

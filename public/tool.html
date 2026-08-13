@@ -191,10 +191,17 @@
        server dedups per (person, ISO week), so a resubmitted list cannot
        double-pay. -->
   <div class="box" id="loudbox" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">3 · loud awards — weekly, the best posts about oddie (+150 each)</p>
+    <p class="verdict" style="font-size:17px">3 · loud awards — posts about oddie, reviewed and paid</p>
+    <p class="why" style="margin:0 0 8px">Players submit their post links from the app. Open each,
+      approve the real ones (<b>+75</b>), reject the rest. Sunday: pick the week's best for <b>+150</b>.</p>
+
+    <p class="vhead" style="margin:2px 0 6px">review queue — submitted links, oldest first</p>
+    <div id="loudq"><p class="why">enter the admin token above, then this loads…</p></div>
+
+    <p class="vhead" style="margin:14px 0 6px">weekly picks — the best of the week, +150 each</p>
     <p class="why" style="margin:0 0 8px">
-      Sunday: search X for <b>oddie.fun</b> / <b>@oddiefun</b>, pick the top posts by hand, paste the
-      authors below (comma, space or newline separated). One award per person per week —
+      Paste the authors below (comma, space or newline separated) — from the approved queue, or found
+      by searching X for <b>oddie.fun</b> / <b>@oddiefun</b>. One award per person per week —
       resubmitting the same list is safe.
     </p>
     <textarea id="loudh" placeholder="@handle, @handle, …" autocapitalize="off" spellcheck="false"
@@ -371,9 +378,42 @@ const ADMKEY = "oddie_admin_token";
 const admInput = $("#admtok");
 admInput.value = localStorage.getItem(ADMKEY) || "";
 const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getItem(ADMKEY) || "" }, extra || {});
-$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); loadUsers(); loadMentions(); };
+$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); loadUsers(); loadMentions(); loadLoudQueue(); };
 
 // ---- loud awards (admin) ----------------------------------------------------
+// The review queue: players' submitted post links. Open the post, then decide —
+// approve pays SEASON_POINTS.loud_post via the same path a future API verifier
+// will use, so nothing here changes when verification automates.
+async function loadLoudQueue() {
+  const box = $("#loudq");
+  try {
+    const r = await fetch("/api/admin/loud/queue", { headers: admHeaders() });
+    if (r.status === 401) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
+    const { queue } = await r.json();
+    if (!queue.length) { box.innerHTML = '<p class="why">queue empty — submissions land here from the app\'s share flow.</p>'; return; }
+    box.innerHTML = queue.map((q) => `
+      <div class="variant" style="flex-direction:column;align-items:stretch">
+        <span class="vtext"><b>@${esc(q.handle || "?")}</b> · ${esc(q.week)}
+          · <a href="${esc(q.url)}" target="_blank" rel="noopener">open the post ↗</a></span>
+        <span class="row" style="margin:0">
+          <button class="ghost lapp" data-id="${q.id}" style="padding:7px 14px;font-size:13px">approve +75</button>
+          <button class="ghost lrej" data-id="${q.id}" style="padding:7px 14px;font-size:13px">reject</button>
+        </span>
+      </div>`).join("");
+    const decide = async (id, approve, btn) => {
+      btn.disabled = true;
+      try {
+        await fetch("/api/admin/loud/decide", {
+          method: "POST", headers: admHeaders({ "content-type": "application/json" }),
+          body: JSON.stringify({ id: Number(id), approve }),
+        });
+      } finally { loadLoudQueue(); }
+    };
+    box.querySelectorAll(".lapp").forEach((b) => b.onclick = () => decide(b.dataset.id, true, b));
+    box.querySelectorAll(".lrej").forEach((b) => b.onclick = () => decide(b.dataset.id, false, b));
+  } catch (e) { box.innerHTML = '<p class="why">could not load the queue.</p>'; }
+}
+
 $("#loudgo").onclick = async () => {
   const out = $("#loudout"), btn = $("#loudgo");
   const handles = $("#loudh").value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
@@ -974,6 +1014,7 @@ loadTweetLog();
 loadMetrics();
 loadUsers();
 loadMentions();
+loadLoudQueue();
 </script>
 </body>
 </html>

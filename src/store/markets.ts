@@ -405,6 +405,23 @@ CREATE TABLE IF NOT EXISTS season_points_log (
 CREATE INDEX IF NOT EXISTS spl_device_idx ON season_points_log(device_id);
 CREATE INDEX IF NOT EXISTS spl_handle_idx ON season_points_log(handle);
 
+-- Loud submissions: "I posted about oddie — here's the link." One row per
+-- tweet, forever (tweet_id UNIQUE is the dedup), reviewed by the operator
+-- today and by an X API read when credits exist. Approval pays loud_post.
+CREATE TABLE IF NOT EXISTS loud_post (
+  id          bigserial PRIMARY KEY,
+  device_id   text NOT NULL,
+  tweet_id    text NOT NULL UNIQUE,
+  url         text NOT NULL,
+  status      text NOT NULL DEFAULT 'pending',  -- pending|approved|rejected
+  week        text NOT NULL,                    -- ISO week at submission
+  note        text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  decided_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS loud_post_device_idx ON loud_post(device_id);
+CREATE INDEX IF NOT EXISTS loud_post_status_idx ON loud_post(status);
+
 -- Every creator/protocol fee, real or merely proposed. One row per fee event:
 -- a play-token settlement writes one 'creator'/'play' row when a fee was
 -- actually credited; a real-money resolve writes 'creator'+'protocol' rows
@@ -1176,7 +1193,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
 // --- Week-1 events ----------------------------------------------------------
 
 /** The only names that are ever written. An unknown name is dropped, not stored. */
-export const EVENT_NAMES = ["feed_view", "card_view", "side_tap", "amount_confirm", "cat_change", "sell", "share_open", "share_done", "alerts_view", "notice_view", "allowlist_denied", "invite_sent", "invite_accepted", "taste_pick", "gate_shown", "gate_signin", "challenge_click", "save_nudge_shown", "save_nudge_dismissed"] as const;
+export const EVENT_NAMES = ["feed_view", "card_view", "side_tap", "amount_confirm", "cat_change", "sell", "share_open", "share_done", "alerts_view", "notice_view", "allowlist_denied", "invite_sent", "invite_accepted", "taste_pick", "gate_shown", "gate_signin", "challenge_click", "save_nudge_shown", "save_nudge_dismissed", "loud_claim_open", "loud_submit"] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
 export interface EventInput {
@@ -2533,6 +2550,15 @@ const memSurfacer = new Map<string, MemSurfacer>();
 interface MemSeasonRow { deviceId: string | null; handle: string | null; event: string; amount: number; slug: string | null; dedupKey: string; createdAt: string }
 const memSeasonLog: MemSeasonRow[] = [];
 
+// In-memory mirror of loud_post. Same shape as the table.
+interface MemLoudPost {
+  id: number; deviceId: string; tweetId: string; url: string;
+  status: "pending" | "approved" | "rejected"; week: string;
+  note: string | null; createdAt: string; decidedAt: string | null;
+}
+const memLoudPosts: MemLoudPost[] = [];
+let memLoudPostId = 0;
+
 // In-memory mirror of market_fee_log — same shape as the table, same
 // "creator + protocol fee ledger" role, for the mem backend tests run against.
 interface MemFeeRow {
@@ -2909,6 +2935,11 @@ export const SEASON_POINTS = {
   // anyone can repeat), and deduped per (person, ISO week) so a resubmitted
   // list cannot double-pay.
   loud: 150,
+  // A submitted post link that passed review. Between shared and loud on
+  // purpose — the ladder is: pressed share (+40, optimistic), the post really
+  // exists and holds up (+75, verified), among the week's best (+150, picked).
+  // Deduped per tweet, so one post pays once no matter who resubmits it.
+  loud_post: 75,
 } as const;
 export type SeasonEvent = keyof typeof SEASON_POINTS;
 
@@ -3223,6 +3254,158 @@ export async function awardLoud(
   if (!deviceId) return { ok: false, reason: "no_account" };
   const ok = await awardSeasonPoints("loud", `loud-${week}`, `loud:${week}:${handle}`, deviceId);
   return ok ? { ok } : { ok: false, reason: "already" };
+}
+
+/* ---------------------------------------------------------- loud posts --
+ * Phase 1 of the loudness flywheel: instead of the operator hunting X for
+ * posts, players bring their own link. Submitting requires a linked X
+ * account; the credit only lands after review — the operator's eyeballs
+ * today, an X API read (author + content) once API credits exist. Both
+ * paths settle through decideLoudPost, so switching to the API changes
+ * nothing else.
+ */
+
+/** An x.com / twitter.com status URL → its parts. Accepts www./mobile. hosts
+ *  and the old /statuses/ form; refuses everything else. */
+export function parseTweetUrl(raw: string): { handle: string; tweetId: string } | null {
+  const m = String(raw).trim().match(
+    /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d{5,25})\b/,
+  );
+  return m ? { handle: m[1], tweetId: m[2] } : null;
+}
+
+/** The device's LINKED X handle (@-less), or null. The chosen display handle
+ *  deliberately does not count — a loud post must come from a real account. */
+async function linkedXHandleFor(deviceId: string): Promise<string | null> {
+  if (!PERSISTENT) {
+    const { _memAccounts } = await import("./accounts.js");
+    const a = _memAccounts.find((x) => x.canonicalDevice === deviceId && x.provider === "twitter" && x.handle);
+    return a?.handle?.replace(/^@+/, "") ?? null;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ handle: string | null }>(
+    `SELECT handle FROM account
+      WHERE canonical_device = $1 AND provider = 'twitter' AND handle IS NOT NULL
+      ORDER BY created_at LIMIT 1`, [deviceId]);
+  return rows[0]?.handle?.replace(/^@+/, "") ?? null;
+}
+
+/** Submissions per device per rolling 24h. High enough for a real poster,
+ *  low enough that the review queue cannot be flooded from one account. */
+export const LOUD_DAILY_CAP = 5;
+
+export interface LoudPostRow {
+  id: number; url: string; status: "pending" | "approved" | "rejected";
+  week: string; note: string | null; createdAt: string;
+}
+
+export type LoudSubmit =
+  | { ok: true; status: "pending" }
+  | { ok: false; reason: "no_x_account" | "bad_url" | "not_your_account" | "already_submitted" | "daily_cap" };
+
+export async function submitLoudPost(rawDeviceId: string, url: string, now = new Date()): Promise<LoudSubmit> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const parsed = parseTweetUrl(url);
+  if (!parsed) return { ok: false, reason: "bad_url" };
+  const linked = await linkedXHandleFor(deviceId);
+  if (!linked) return { ok: false, reason: "no_x_account" };
+  // Authorship, checked for free: the handle in a canonical status URL is the
+  // author's. X ignores that segment when resolving, so a crafted URL can lie —
+  // review is what actually settles authorship; this refuses the honest-mistake
+  // case (pasting someone else's post) without spending a read.
+  if (parsed.handle.toLowerCase() !== linked.toLowerCase()) return { ok: false, reason: "not_your_account" };
+  const week = isoWeekOf(now);
+  const canonical = `https://x.com/${parsed.handle}/status/${parsed.tweetId}`;
+
+  if (!PERSISTENT) {
+    if (memLoudPosts.some((p) => p.tweetId === parsed.tweetId)) return { ok: false, reason: "already_submitted" };
+    const since = now.getTime() - 86_400_000;
+    if (memLoudPosts.filter((p) => p.deviceId === deviceId && Date.parse(p.createdAt) > since).length >= LOUD_DAILY_CAP)
+      return { ok: false, reason: "daily_cap" };
+    memLoudPosts.push({
+      id: ++memLoudPostId, deviceId, tweetId: parsed.tweetId, url: canonical,
+      status: "pending", week, note: null, createdAt: now.toISOString(), decidedAt: null,
+    });
+    return { ok: true, status: "pending" };
+  }
+  await ensureSchema();
+  const { rows: cap } = await db().query<{ n: string }>(
+    `SELECT count(*) AS n FROM loud_post WHERE device_id = $1 AND created_at > now() - interval '24 hours'`, [deviceId]);
+  if (Number(cap[0].n) >= LOUD_DAILY_CAP) return { ok: false, reason: "daily_cap" };
+  const { rowCount } = await db().query(
+    `INSERT INTO loud_post (device_id, tweet_id, url, week) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (tweet_id) DO NOTHING`, [deviceId, parsed.tweetId, canonical, week]);
+  return (rowCount ?? 0) > 0 ? { ok: true, status: "pending" } : { ok: false, reason: "already_submitted" };
+}
+
+/** A device's own submissions, newest first — the "where's my credit" view. */
+export async function loudPostsFor(rawDeviceId: string, limit = 20): Promise<LoudPostRow[]> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) {
+    return memLoudPosts.filter((p) => p.deviceId === deviceId).slice(-limit).reverse()
+      .map((p) => ({ id: p.id, url: p.url, status: p.status, week: p.week, note: p.note, createdAt: p.createdAt }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ id: string; url: string; status: LoudPostRow["status"]; week: string; note: string | null; created_at: Date }>(
+    `SELECT id, url, status, week, note, created_at FROM loud_post
+      WHERE device_id = $1 ORDER BY id DESC LIMIT $2`, [deviceId, Math.max(1, Math.min(50, limit))]);
+  return rows.map((r) => ({ id: Number(r.id), url: r.url, status: r.status, week: r.week, note: r.note, createdAt: r.created_at.toISOString() }));
+}
+
+export interface LoudQueueRow { id: number; url: string; handle: string | null; week: string; createdAt: string }
+
+/** Pending submissions, oldest first — the operator's review queue. */
+export async function loudQueue(limit = 50): Promise<LoudQueueRow[]> {
+  if (!PERSISTENT) {
+    const out: LoudQueueRow[] = [];
+    for (const p of memLoudPosts.filter((x) => x.status === "pending").slice(0, limit)) {
+      out.push({ id: p.id, url: p.url, handle: await linkedXHandleFor(p.deviceId), week: p.week, createdAt: p.createdAt });
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ id: string; url: string; handle: string | null; week: string; created_at: Date }>(
+    `SELECT lp.id, lp.url, lp.week, lp.created_at,
+            (SELECT a.handle FROM account a
+              WHERE a.canonical_device = lp.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
+              ORDER BY a.created_at LIMIT 1) AS handle
+       FROM loud_post lp WHERE lp.status = 'pending' ORDER BY lp.id LIMIT $1`, [limit]);
+  return rows.map((r) => ({
+    id: Number(r.id), url: r.url, handle: r.handle ? r.handle.replace(/^@+/, "") : null,
+    week: r.week, createdAt: r.created_at.toISOString(),
+  }));
+}
+
+export type LoudDecision =
+  | { ok: true; status: "approved" | "rejected" }
+  | { ok: false; reason: "not_found" | "already_decided" };
+
+/** Settle one submission, once — a decided row never flips, so approve cannot
+ *  double-pay (the award's tweet-keyed dedup backs that up anyway). The
+ *  operator calls this from /tool today; the API verifier will call the same
+ *  function when credits exist. */
+export async function decideLoudPost(id: number, approve: boolean, note?: string | null): Promise<LoudDecision> {
+  const status = approve ? ("approved" as const) : ("rejected" as const);
+  let deviceId: string, tweetId: string;
+  if (!PERSISTENT) {
+    const p = memLoudPosts.find((x) => x.id === id);
+    if (!p) return { ok: false, reason: "not_found" };
+    if (p.status !== "pending") return { ok: false, reason: "already_decided" };
+    p.status = status; p.note = note ?? null; p.decidedAt = new Date().toISOString();
+    deviceId = p.deviceId; tweetId = p.tweetId;
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ device_id: string; tweet_id: string }>(
+      `UPDATE loud_post SET status = $2, note = $3, decided_at = now()
+        WHERE id = $1 AND status = 'pending' RETURNING device_id, tweet_id`, [id, status, note ?? null]);
+    if (!rows.length) {
+      const { rows: exists } = await db().query(`SELECT 1 FROM loud_post WHERE id = $1`, [id]);
+      return exists.length ? { ok: false, reason: "already_decided" } : { ok: false, reason: "not_found" };
+    }
+    deviceId = rows[0].device_id; tweetId = rows[0].tweet_id;
+  }
+  if (approve) await awardSeasonPoints("loud_post", "loud-post", `loud_post:${tweetId}`, deviceId);
+  return { ok: true, status };
 }
 
 /** The two placeCall-driven awards, fired best-effort after a call lands: the
