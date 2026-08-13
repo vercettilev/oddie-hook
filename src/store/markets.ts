@@ -3185,6 +3185,22 @@ export async function surfacersFor(slugs: string[]): Promise<Record<string, Surf
   return out;
 }
 
+/**
+ * Which of these slugs have a surfacer at all — i.e. which markets are on
+ * Oddie because a person tagged them. Distinct from surfacersFor, which
+ * describes the tagger and cannot tell "no row" apart from "a row with an
+ * anonymous tagger and no source URL". The feed's tagged/untagged partition
+ * needs that distinction exactly, so it gets its own membership query.
+ */
+export async function surfacedSlugs(slugs: string[]): Promise<Set<string>> {
+  if (slugs.length === 0) return new Set();
+  if (!PERSISTENT) return new Set(slugs.filter((s) => memSurfacer.has(s)));
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string }>(
+    `SELECT slug FROM market_surfacer WHERE slug = ANY($1)`, [slugs]);
+  return new Set(rows.map((r) => r.slug));
+}
+
 /** The one idempotent write. Credits `slug`'s surfacer (resolving handle→device
  *  freshly, so a contributor who signed up AFTER surfacing still gets the row
  *  attributed to their device). No surfacer, or an amount already logged under

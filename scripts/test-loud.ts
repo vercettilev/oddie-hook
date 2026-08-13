@@ -12,7 +12,7 @@ import { loudMultiplierOf, oddieScoreFrom } from "../src/store/economy.js";
 import {
   SEASON_POINTS, awardLoud, isoWeekOf, seasonPointsFor,
   parseTweetUrl, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP,
-  loudWinners, loudStatusFor,
+  loudWinners, loudStatusFor, surfacedSlugs,
   createCommunityMarket, openCommunityMarkets, placeCall, recordSurfacer, _memGrant,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
@@ -218,6 +218,25 @@ console.log("\nthe crowd ladder: geometric rungs, once per market, to the surfac
   const atTwentyFive = await seasonPointsFor(SURFACER);
   check("25 players adds the 750 rung (+ the new first-timers)",
     atTwentyFive - atTen === 750 + 15 * 100, `delta ${atTwentyFive - atTen}`);
+}
+
+console.log("\nsurfacedSlugs: the membership the tagged feed partitions on");
+{
+  // The distinction this exists for: an ANONYMOUS tag (a real surfacer row with
+  // no handle and no source URL) is still tagged. surfacersFor cannot say so —
+  // it returns the same all-null shape for "no row" — which is why the feed
+  // asks this instead.
+  await recordSurfacer("venue-tagged-anon", { deviceId: "device-anontagger01" });
+  await recordSurfacer("venue-tagged-named", { handle: "@someone" });
+
+  const hit = await surfacedSlugs(["venue-tagged-anon", "venue-tagged-named", "venue-untouched"]);
+  check("a named tag is a member", hit.has("venue-tagged-named"));
+  check("an ANONYMOUS tag is a member too — the whole point of this function",
+    hit.has("venue-tagged-anon"));
+  check("an untagged slug is not", !hit.has("venue-untouched"));
+  check("...and nothing else sneaks in", hit.size === 2, [...hit].join(", "));
+  check("an empty ask is an empty answer, with no query",
+    (await surfacedSlugs([])).size === 0);
 }
 
 console.log(failures === 0 ? "\nall loud checks passed.\n" : `\n${failures} loud check(s) FAILED.\n`);

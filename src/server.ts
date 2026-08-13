@@ -13,7 +13,7 @@ import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, 
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
-import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
+import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
@@ -568,7 +568,27 @@ app.get("/api/feed", async (req, res) => {
     console.log(JSON.stringify({ evt: "feed_rank", signal: rankSignal, device: feedDevice ? feedDevice.slice(0, 8) : null }));
   }
 
-  const items = list.slice(0, 40).map((e) => ({ slug: slugFor(e.m), category: e.cat, ...e.m }));
+  const scored = list.map((e) => ({ slug: slugFor(e.m), category: e.cat, ...e.m }));
+  const items = scored.slice(0, 40);
+
+  /* --------------------------------------------------- the tagged-only rule --
+   * Everything in For You is there because a person tagged it. A venue market
+   * qualifies the same way a community market does — by having a surfacer —
+   * not by being big.
+   *
+   * This reverses the old cold-visitor rule (broad-appeal venue markets first,
+   * community below). That rule optimised for a trustworthy front door and it
+   * worked, but it made the product read as a market list with a tagging
+   * feature attached. The tag IS the product, so the tag leads.
+   *
+   * Membership is looked up across EVERY candidate, not the top 40: a tagged
+   * market must never be invisible because it is small. Venue markets nobody
+   * tagged still appear, below a divider, as the wider market to tag from.
+   */
+  const taggedFeed = !cat || cat === "For you";
+  const surfaced = taggedFeed
+    ? await surfacedSlugs(scored.map((x) => x.slug)).catch(() => new Set<string>())
+    : new Set<string>();
 
   // Community markets are the product, but they are NOT the right first thing a
   // cold, organic visitor sees: a niche insider question with zero context is a
@@ -614,18 +634,20 @@ app.get("/api/feed", async (req, res) => {
   if (cat === "Community") {
     // The Community tab is Community markets' correct home — they rank normally here.
     feedItems = communityItems;
-  } else if (!cat || cat === "For you") {
-    // Source-aware ordering for the default feed:
-    //  - permalink landing (start set): UNCHANGED — community-first, and the
-    //    shared market is pinned above it anyway (that market IS the context).
-    //  - cold/organic visit (no start): broad-appeal venue markets lead; community
-    //    still appears, just not auto-ranked to the top with no context to frame it.
-    feedItems = start ? [...communityItems, ...items] : [...items, ...communityItems];
+  } else if (taggedFeed) {
+    // Tagged first, the wider market after. Each block is sorted on its own so
+    // the discovery lenses (Trending / New / Resolving Soon) re-rank WITHIN the
+    // partition instead of dissolving it — a lens should change the order of
+    // the tagged markets, never bury them under untagged ones.
+    const tagged = [...communityItems, ...scored.filter((x) => surfaced.has(x.slug))];
+    const untagged = items.filter((x) => !surfaced.has(x.slug));
+    feedItems = [...sortFeedItems(tagged, sort), ...sortFeedItems(untagged, sort)];
   }
 
   // Discovery-mode ordering, applied over the assembled list. "foryou" is a
-  // no-op by design — the source-aware order above IS the For You ranking.
-  feedItems = sortFeedItems(feedItems, sort);
+  // no-op by design — the ranking above IS the For You ranking. Skipped in the
+  // tagged feed, which has already sorted each side of its partition.
+  if (!taggedFeed) feedItems = sortFeedItems(feedItems, sort);
 
   // A start slug (a /m/ permalink landing) pins ITS market to the very top —
   // above even the community block: the shared market is the page's headline,
@@ -652,6 +674,14 @@ app.get("/api/feed", async (req, res) => {
   // the fetch to all tags made it a promise the feed cannot keep.
   // The social layer, read from the same rows every screen reads: what the
   // POPPERS said, alongside what the market prices. One query for the page.
+  // Tag membership for the cards actually being sent. The For You feed already
+  // has it (the wide lookup it partitioned on is a superset); every other tab
+  // asks now, because being tagged is a property of the MARKET, not of the tab
+  // it happens to be shown in — a card that leads with "tagged by @x" in For
+  // You must say the same thing under the Politics chip.
+  const taggedSet = taggedFeed
+    ? surfaced
+    : await surfacedSlugs(feedItems.map((x) => x.slug)).catch(() => new Set<string>());
   const crowd = await crowdSplits(feedItems.map((x) => x.slug));
   // The surfacer handle + source tweet per market — the party a "challenge the
   // other side" reply is aimed at, and the permalink's source-tweet card. One
@@ -683,12 +713,17 @@ app.get("/api/feed", async (req, res) => {
       sourcePost: x.community && surfacer?.sourceText
         ? { text: surfacer.sourceText, author: surfacer.sourceAuthor, handle: surfacer.handle, url: surfacer.sourceUrl }
         : null,
-      // Tagging provenance, sent for every community market: the card exists
-      // because a person tagged a claim, and that has to be visible on the
-      // card itself rather than inferable from the "community market" chip.
-      // null handle = tagged anonymously (real tag, no linked handle) — the
-      // client renders "anonymous", never a fabricated name.
-      taggedBy: x.community ? (surfacer?.handle ?? null) : null,
+      // Tagging provenance, for EVERY tagged market — community by definition,
+      // and a venue market once somebody tagged it. The card exists because a
+      // person tagged a claim, and that has to be visible on the card itself
+      // rather than inferable from a "community market" chip.
+      //
+      // `tagged` is the flag the client renders from; taggedBy is the name, and
+      // a null name on a tagged market means tagged ANONYMOUSLY (a real tag, no
+      // linked handle) — the client says "anonymous", never a fabricated name.
+      // An untagged market sends tagged:false and no name at all.
+      tagged: x.community === true || taggedSet.has(x.slug),
+      taggedBy: x.community === true || taggedSet.has(x.slug) ? (surfacer?.handle ?? null) : null,
       creatorFeePaid: paid ? paid.amount : 0,
     };
     if (callers && start && x.slug === start.slug) {
@@ -697,6 +732,23 @@ app.get("/api/feed", async (req, res) => {
     }
     return extra;
   });
+
+  // The divider between the two halves of the tagged feed, inserted by finding
+  // the first untagged card rather than by index — the start-slug pin can
+  // reorder the list after the partition was built, and a boundary index would
+  // silently drift. Absent when the feed is all one kind (nothing tagged yet,
+  // or nothing untagged left), because a divider with nothing above it teaches
+  // nothing and a divider with nothing below it is a dead end.
+  if (taggedFeed) {
+    const at = withCrowd.findIndex((x) => x.tagged !== true);
+    if (at > 0) {
+      withCrowd.splice(at, 0, {
+        slug: "__wider",
+        sectionHeader: "the wider market",
+        sectionNote: "nobody's tagged these yet — tag one on X and it lands above, with your name on it",
+      });
+    }
+  }
 
   const chips: string[] = CATEGORIES.filter((c) => c !== "Other");
   if (community.length) chips.push("Community");

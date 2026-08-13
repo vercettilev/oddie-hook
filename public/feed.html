@@ -212,6 +212,17 @@
      the first card of its cluster. */
   .catgroup-header{font-family:'Nunito';font-weight:800;font-size:13px;text-transform:uppercase;
     letter-spacing:.06em;color:var(--muted-g);margin:22px 2px 10px;scroll-snap-align:none}
+  /* The line between "someone tagged this" and "nobody has yet". It has to read
+     as a boundary rather than a label, so it carries a rule and a sentence —
+     the sentence is where the feed says what the product is FOR. */
+  /* Same column geometry as .card — a divider that starts at the viewport edge
+     while every card is centred reads as a broken row rather than a boundary. */
+  .feedsplit{width:min(var(--feedcol), calc(100% - 24px));margin:26px auto 12px;scroll-snap-align:none}
+  .feedsplit hr{border:0;border-top:1.5px dashed var(--hair-g);margin:0 0 10px}
+  .feedsplit b{display:block;font-family:'Nunito';font-weight:900;font-size:13px;
+    text-transform:uppercase;letter-spacing:.06em;color:var(--muted-g)}
+  .feedsplit span{display:block;font-family:'Nunito';font-weight:700;font-size:12.5px;
+    line-height:1.45;color:var(--muted-g);margin-top:3px}
   /* Satisfying switch: the active chip fills solid accent and gives a little pop. */
   .chip.on{color:#000;border-color:var(--accent);background:var(--accent);transform:scale(1.05);
     box-shadow:0 2px 8px rgba(120,165,40,.35)}
@@ -3326,38 +3337,6 @@ function claimCard(opts={}){
   return el;
 }
 
-/**
- * Community markets, grouped by category with a header above each cluster —
- * previously they rendered as one flat run (a football claim next to a crypto
- * claim next to a politics claim, in whatever order calls came in). Venue
- * items keep their existing order untouched; the server already appends the
- * community block as one contiguous run in the default "For you" feed, so
- * only that run gets re-sliced into per-category clusters here.
- *
- * Ordering choice: most markets first (not most-recently-active) — simple,
- * deterministic, and doesn't require tracking a per-category last-activity
- * timestamp the server doesn't currently expose. Ties keep the server's
- * original relative order (stable sort + Map insertion order).
- */
-function groupCommunityByCategory(items){
-  const firstCommunityIdx=items.findIndex(m=>m.community);
-  if(firstCommunityIdx===-1)return items;
-  const before=items.slice(0,firstCommunityIdx);
-  const communityRun=items.filter(m=>m.community);
-  const after=items.slice(firstCommunityIdx).filter(m=>!m.community);
-  const groups=new Map();
-  communityRun.forEach(m=>{
-    const k=m.topicCategory||"Other";
-    if(!groups.has(k))groups.set(k,[]);
-    groups.get(k).push(m);
-  });
-  const grouped=[];
-  [...groups.entries()].sort((a,b)=>b[1].length-a[1].length).forEach(([cat,ms])=>{
-    grouped.push({__catHeader:cat});
-    grouped.push(...ms);
-  });
-  return [...before,...grouped,...after];
-}
 
 function renderFeed(items){
   const scroller=document.getElementById("scroller");
@@ -3367,7 +3346,13 @@ function renderFeed(items){
   // Grouping is a "For you"/all-markets thing — a single-category chip view is
   // already one category, and a permalink landing (startSlug) pins its own
   // market up top, a different flow this shouldn't disturb.
-  const ordered=(activeCat==="For you" && !startSlug) ? groupCommunityByCategory(items) : items;
+  //
+  // No client-side regrouping: the server ships For You already partitioned
+  // into tagged markets and the wider market, with its own divider row. The
+  // old groupCommunityByCategory existed to pull the community cluster out of
+  // a venue-led list — the partition does that job now, and re-sorting on top
+  // of it would only scatter the tagged block it just built.
+  const ordered=items;
   // TikTok-web taste flow. An anonymous visitor gets the feed metered so the
   // personalization investment lands BEFORE the gate:
   //   no categories picked yet -> 1 free card, then the category picker
@@ -3390,6 +3375,15 @@ function renderFeed(items){
       const h=document.createElement("div");
       h.className="catgroup-header";
       h.textContent=m.__catHeader;
+      scroller.appendChild(h);
+      return;
+    }
+    // The tagged / wider-market divider. Not a card and not tappable: it is
+    // the one place the feed states its own rule in a sentence.
+    if(m.sectionHeader){
+      const h=document.createElement("div");
+      h.className="feedsplit";
+      h.innerHTML=`<hr><b>${esc(m.sectionHeader)}</b>${m.sectionNote?`<span>${esc(m.sectionNote)}</span>`:""}`;
       scroller.appendChild(h);
       return;
     }
@@ -3445,6 +3439,12 @@ function renderFeed(items){
  * tagged it, we just don't have a name. Never invent one.
  */
 function taggerName(m){ return m.taggedBy?`@${esc(m.taggedBy)}`:"anonymous"; }
+// The provenance chip, for every tagged market — community by definition, and
+// a venue market once somebody tagged it in. It leads the meta row because
+// "a person put this here" is what makes a card ours rather than a listing.
+function taggedChipHtml(m){
+  return (m.tagged||m.community)?`<span class="commtag commtag-by">🏷️ tagged by ${taggerName(m)}</span>`:"";
+}
 
 /**
  * The source post, rendered as a post — the thing the market argues about.
@@ -3673,7 +3673,9 @@ function metaRowHtml(m,yes){
   // exact fake-provenance this section is meant to avoid. Naming the source
   // is also what keeps them visually and semantically secondary to the
   // community markets around them.
-  if(!m.community)return `<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span><span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>${crowdChip(m)}`;
+  // A tagged venue market leads with WHO tagged it; the venue name drops to a
+  // secondary credit behind it. An untagged one keeps the plain sourced row.
+  if(!m.community)return `${taggedChipHtml(m)}<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span><span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>${crowdChip(m)}`;
   const stateChip=m.forming
     ? `<span class="mchip mchip-forming"><span class="pulsedot"></span>forming · ${m.positions} ${m.positions===1?"call":"calls"}</span>`
     : `<span class="mchip">${yes}% yes</span>`;
@@ -3684,7 +3686,7 @@ function metaRowHtml(m,yes){
   // reads before the market's own mechanics do. It replaces the old flat
   // "community market" chip — that label said the same thing in the abstract,
   // this one says it with a person attached.
-  const taggedChip=`<span class="commtag commtag-by">🏷️ tagged by ${taggerName(m)}</span>`;
+  const taggedChip=taggedChipHtml(m);
   // Velocity — only when there IS some. Pool size and caller count say how big
   // a market got; neither says whether that happened today. A chip that reads
   // "0 calls today" on every quiet market is noise, and worse, it makes a
