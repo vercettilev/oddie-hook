@@ -9,8 +9,7 @@
 // chose to make it one.
 
 import type { ShareCall } from "../store/markets.js";
-import { C, FONT, META, esc, layoutQuestion, textWidth, volumePill } from "./renderCard.js";
-import { logoMark } from "./logoMark.js";
+import { C, FONT, META, brandLockup, esc, layoutQuestion, textWidth, volumePill } from "./renderCard.js";
 
 const W = 1000;
 const H = 524;
@@ -81,8 +80,7 @@ export function renderPositionCard(s: ShareCall): string {
   <rect width="${W}" height="${H}" fill="${C.white}"/>
   <rect x="26" y="26" width="948" height="472" rx="46" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
 
-  ${logoMark(52, 62, 68)}
-  <text x="140" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
+  ${brandLockup()}
 
   <rect x="${pillX}" y="72" width="${pillW}" height="48" rx="24" fill="${pillBg}" ${isResolved && won ? `stroke="${C.ink}" stroke-width="3"` : ""}/>
   <text x="${pillX + (pillW - markW) / 2}" y="103" font-family="${META}" font-size="21" font-weight="700"

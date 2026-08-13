@@ -1,5 +1,4 @@
-import { C, FONT, META, esc, textWidth, wrapToWidth } from "./renderCard.js";
-import { logoMark } from "./logoMark.js";
+import { C, FONT, META, brandLockup, esc, textWidth, wrapToWidth } from "./renderCard.js";
 
 // The public-profile share card — same brand shell as the market card, but the
 // hero is the person: their handle and their Oddie Score (or "building track
@@ -203,8 +202,7 @@ export function renderProfileCard(p: ProfileCard): string {
   <rect x="26" y="26" width="948" height="472" rx="46" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
 
   <!-- brand lockup -->
-  ${logoMark(52, 62, 68)}
-  <text x="140" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
+  ${brandLockup()}
   ${rank}
 
   <!-- the person, then what they've proven -->

@@ -6,8 +6,12 @@
 //
 // Run with: npm run test-card-layout
 
-import { renderCard, textWidth, layoutQuestion } from "../src/card/renderCard.js";
+import { renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT } from "../src/card/renderCard.js";
+import { renderPositionCard } from "../src/card/renderPositionCard.js";
+import { renderProfileCard } from "../src/card/renderProfileCard.js";
+import { X_HANDLE } from "../src/brand.js";
 import type { Market } from "../src/venues/types.js";
+import type { ShareCall } from "../src/store/markets.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -75,6 +79,40 @@ for (const q of QUESTIONS) {
 }
 check(`600 renders, no collisions (worst gap ${Math.round(worstGap)}px at ${worstAt})`, worstGap >= GAP);
 check("badge appears exactly on 40-60%", failures === 0 || true);
+
+// --- The lockup carries the handle on EVERY card ----------------------------
+//
+// A screenshotted card loses every URL around it; the handle in the pixels is
+// the only address that survives. So all three renderers must ship it — via
+// the shared brandLockup(), so this can only fail if someone re-inlines a
+// bespoke lockup, which is exactly the drift this section is for.
+console.log("\nevery card is self-addressing");
+{
+  const call: ShareCall = {
+    token: "t", slug: "s", question: "Will X win?", side: "yes", entryPct: 38,
+    volumeUsd: 4_600_000, venue: "polymarket", closesAt: "2026-12-31T00:00:00Z",
+    resolved: null, handle: "somebody",
+  };
+  const cards: [string, string][] = [
+    ["market card", renderCard(mk("Will X win?", 38))],
+    ["position card (open)", renderPositionCard(call)],
+    ["position card (resolved)", renderPositionCard({ ...call, resolved: "yes" })],
+    ["profile card", renderProfileCard({
+      handle: "somebody", oddieScore: 240, meanEdge: 0.1, accuracyPct: 71,
+      streak: 4, resolved: 12, hasEnough: true, rankTopPct: 8, tierLabel: "Sharp Caller",
+    })],
+  ];
+  for (const [name, svg] of cards) {
+    check(`${name} carries ${X_HANDLE}`, svg.includes(X_HANDLE));
+  }
+
+  // And the top line still has daylight: the volume pill's collision budget is
+  // the LOCKUP's right edge (wordmark + handle), so the widest pill a market
+  // can produce must start clear of it.
+  const pill = volumePill({ venue: "polymarket", closesAt: "2026-12-31T00:00:00Z", volumeUsd: 4_600_000 });
+  check("volume pill clears the extended lockup", pill.x >= LOCKUP_RIGHT + 24,
+    `pill.x=${Math.round(pill.x)} lockup right=${Math.round(LOCKUP_RIGHT)}`);
+}
 
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

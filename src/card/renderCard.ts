@@ -1,4 +1,5 @@
 import { Market } from "../venues/types.js";
+import { X_HANDLE } from "../brand.js";
 import { logoMark } from "./logoMark.js";
 
 // The card IS Oddie talking. Logo language: chunky black rounded outline,
@@ -186,10 +187,29 @@ export function eye(cx: number, cy: number, r: number): string {
     <circle cx="${cx - r * 0.32}" cy="${cy - r * 0.34}" r="${r * 0.32}" fill="${C.white}"/>`;
 }
 
-const WORDMARK_RIGHT = 140 + textWidth("oddie", 46);
+// --- Brand lockup -----------------------------------------------------------
+//
+// Mark + wordmark + the X handle, shared by all three cards (market, position,
+// profile) so they can never drift apart. The handle is ON the image because
+// the image outlives its link: the moment a card is screenshotted and reposted
+// — the best thing that can happen to it — every URL around it is gone, and
+// the pixels are the only address it still carries.
+
+const HANDLE_FS = 26;
+const HANDLE_GAP = 16;
+const WORDMARK_END = 140 + textWidth("oddie", 46);
+/** Right edge of the whole lockup — the collision budget for anything that
+ *  sits on the top line (the volume pill). */
+export const LOCKUP_RIGHT = WORDMARK_END + HANDLE_GAP + textWidth(X_HANDLE, HANDLE_FS);
+
+export function brandLockup(): string {
+  return `${logoMark(52, 62, 68)}
+  <text x="140" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
+  <text x="${Math.round(WORDMARK_END + HANDLE_GAP)}" y="112" font-family="${META}" font-size="${HANDLE_FS}" font-weight="700" fill="${C.muted}">${X_HANDLE}</text>`;
+}
 
 /** Volume pill, dropped down to just the money if the full string would reach
- *  the wordmark. Community markets have no venue volume — their pill speaks
+ *  the lockup. Community markets have no venue volume — their pill speaks
  *  "% yes" language: the countdown (and "community" if it fits).
  *
  *  Exported: the personal call card (renderPositionCard.ts) shares this EXACT
@@ -207,7 +227,7 @@ export function volumePill(m: { venue: Market["venue"]; closesAt: string | null;
   for (const text of candidates) {
     const w = Math.round(textWidth(text, 21) + 44);
     const x = PAD_R - w;
-    if (x >= WORDMARK_RIGHT + 24) return { text, w, x };
+    if (x >= LOCKUP_RIGHT + 24) return { text, w, x };
   }
   const text = m.venue === "community" ? "community" : money(m.volumeUsd);
   const w = Math.round(textWidth(text, 21) + 44);
@@ -264,9 +284,8 @@ export function renderCard(m: Market): string {
   <!-- the speech-bubble card: chunky rounded black outline, like the logo -->
   <rect x="26" y="26" width="948" height="472" rx="46" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
 
-  <!-- oddie mark + wordmark, as a lockup -->
-  ${logoMark(52, 62, 68)}
-  <text x="140" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
+  <!-- oddie mark + wordmark + handle, as a lockup -->
+  ${brandLockup()}
 
   <!-- volume pill (no venue named) -->
   <rect x="${pill.x}" y="72" width="${pill.w}" height="48" rx="24" fill="${C.pill}"/>
