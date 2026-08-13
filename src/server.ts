@@ -474,6 +474,13 @@ app.get("/feed", (_req, res) => {
 // default. Below this, one or two picks is noise, not a taste.
 const FEED_HISTORY_MIN = 3;
 
+// How many tagged markets For You needs before it stops padding itself with
+// untagged ones. Roughly a session's worth of full-screen cards: below it a
+// tagged-only feed would dead-end in a few swipes, which teaches a new visitor
+// that the product is empty rather than that it is tag-driven. Above it the
+// padding is gone and every card in the feed is one somebody tagged.
+const FEED_TAGGED_FLOOR = 12;
+
 /**
  * Re-rank venue cards toward a device's most-played categories, while injecting
  * up to two markets from OTHER categories into the head — engagement bias, not
@@ -640,7 +647,14 @@ app.get("/api/feed", async (req, res) => {
     // partition instead of dissolving it — a lens should change the order of
     // the tagged markets, never bury them under untagged ones.
     const tagged = [...communityItems, ...scored.filter((x) => surfaced.has(x.slug))];
-    const untagged = items.filter((x) => !surfaced.has(x.slug));
+    // The wider market is SCAFFOLDING, not a section. It exists only while
+    // there are too few tagged markets to be a feed on their own, and it
+    // removes itself the moment there are — no flag to flip, no date to
+    // remember, and it comes back by itself if tagged supply ever thins out
+    // again. Above the floor the feed is nothing but markets people tagged,
+    // which is the thing the product is actually for.
+    const untagged = tagged.length >= FEED_TAGGED_FLOOR ? [] : items.filter((x) => !surfaced.has(x.slug));
+    console.log(JSON.stringify({ evt: "feed_tagged", tagged: tagged.length, floor: FEED_TAGGED_FLOOR, scaffolding: untagged.length > 0 }));
     feedItems = [...sortFeedItems(tagged, sort), ...sortFeedItems(untagged, sort)];
   }
 

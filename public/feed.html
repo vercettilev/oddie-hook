@@ -218,6 +218,17 @@
   /* Same column geometry as .card — a divider that starts at the viewport edge
      while every card is centred reads as a broken row rather than a boundary. */
   .feedsplit{width:min(var(--feedcol), calc(100% - 24px));margin:26px auto 12px;scroll-snap-align:none}
+  /* The last slide. A feed made of tags has to END in the act that fills it,
+     or running out reads as "there is nothing here" instead of "your turn". */
+  .endcard{display:grid;place-content:safe center;text-align:center;padding:28px 22px}
+  .endhero{font-family:'Fredoka';font-weight:600;font-size:27px;line-height:1.2;color:var(--on-ground)}
+  .endsub{font-family:'Nunito';font-weight:700;font-size:14px;line-height:1.5;
+    color:var(--muted-g);margin:12px 0 20px;max-width:34ch;margin-inline:auto}
+  .endbtn{display:inline-block;font-family:'Nunito';font-weight:900;font-size:15px;
+    color:#000;background:var(--accent);border:1.5px solid var(--line-g);border-radius:999px;
+    padding:13px 24px;text-decoration:none}
+  .endbtn:active{transform:translateY(1px)}
+  .endnote{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted-g);margin-top:14px}
   .feedsplit hr{border:0;border-top:1.5px dashed var(--hair-g);margin:0 0 10px}
   .feedsplit b{display:block;font-family:'Nunito';font-weight:900;font-size:13px;
     text-transform:uppercase;letter-spacing:.06em;color:var(--muted-g)}
@@ -2866,6 +2877,24 @@ function loudPromoCard(){
   return el;
 }
 
+// The feed's last slide. Reaching the end of a tag-made feed is the one moment
+// a visitor has seen the whole product and has nothing left to swipe — which
+// makes it the best place, not the worst, to ask for the act that refills it.
+// It states the rule ("the feed is made of tags"), the reward, and hands over
+// a prefilled X compose in one tap.
+function feedEndCard(){
+  const el=document.createElement("div");
+  el.className="card endcard";
+  el.innerHTML=`<div>
+      <div class="endhero">That's every claim anyone's tagged.</div>
+      <div class="endsub">This feed is made of tags. Put <b>@oddiefun</b> under any claim on X and yours lands at the top of it, with your name on the card.</div>
+      <a class="endbtn" href="https://x.com/intent/tweet?text=%40oddiefun%20" target="_blank" rel="noopener">Tag a claim on X ↗</a>
+      <div class="endnote">posting about oddie pays too · +150 oddies a cleared post</div>
+    </div>`;
+  el.querySelector(".endbtn").onclick=()=>ev("feed_end_tag",{});
+  return el;
+}
+
 // The first-load hint fires once per session, not once per category switch.
 let hintRetired=false;
 
@@ -3403,6 +3432,11 @@ function renderFeed(items){
   if(showLoudPromo && !loudPromoPlaced && cardsPlaced>0)scroller.appendChild(loudPromoCard());
   if(tail==="picker")scroller.appendChild(buildPicker());
   else if(tail==="gate")scroller.appendChild(buildGate());
+  // The loop-closer, last. Only where "that's everything tagged" is TRUE: the
+  // organic For You feed, not a category chip (which is one slice of it), not
+  // a permalink landing, and not the metered taste flow — the picker and the
+  // gate are that flow's ending and there can only be one.
+  else if(activeCat==="For you" && !startSlug && cardsPlaced>0)scroller.appendChild(feedEndCard());
   watchDepth(scroller);
   bindDepth(scroller);
   hintFirstCard(scroller);
@@ -4625,6 +4659,12 @@ function applyDepth(scroller){
   const pad=parseFloat(getComputedStyle(scroller).scrollPaddingTop)||0;
   const activeLine=scroller.getBoundingClientRect().top+pad;
   cards.forEach(card=>{
+    // The end card is exempt. Depth exists to say WHICH market you are on among
+    // many; the last slide is not a market and has no next one to defer to.
+    // It also sits last, so it can never reach the snap line (nothing follows
+    // it to scroll against) and would otherwise be permanently dimmed — the one
+    // card in the feed that should land at full strength.
+    if(card.classList.contains("endcard")){card.style.transform="";card.style.opacity="";return;}
     const d=card.getBoundingClientRect().top-activeLine;    // 0 at the snap line
     let scale=1, op=1;
     if(d>0){const t=Math.min(1,d/(vh*0.55)); scale=1-0.06*t; op=1-0.5*t;}      // peeking below

@@ -1193,7 +1193,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
 // --- Week-1 events ----------------------------------------------------------
 
 /** The only names that are ever written. An unknown name is dropped, not stored. */
-export const EVENT_NAMES = ["feed_view", "card_view", "side_tap", "amount_confirm", "cat_change", "sell", "share_open", "share_done", "alerts_view", "notice_view", "allowlist_denied", "invite_sent", "invite_accepted", "taste_pick", "gate_shown", "gate_signin", "challenge_click", "save_nudge_shown", "save_nudge_dismissed", "loud_claim_open", "loud_submit"] as const;
+export const EVENT_NAMES = ["feed_view", "card_view", "side_tap", "amount_confirm", "cat_change", "sell", "share_open", "share_done", "alerts_view", "notice_view", "allowlist_denied", "invite_sent", "invite_accepted", "taste_pick", "gate_shown", "gate_signin", "challenge_click", "save_nudge_shown", "save_nudge_dismissed", "loud_claim_open", "loud_submit", "feed_end_tag"] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
 export interface EventInput {
