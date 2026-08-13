@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
-import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings } from "./store/markets.js";
+import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
@@ -1640,7 +1640,12 @@ app.post("/api/invites/send", async (req, res) => {
   res.json({ ok: true, mail: sent });
 });
 
-app.get("/api/mentions", async (_req, res) => {
+// Admin-gated (requireAdmin is a hoisted declaration, so referencing it above
+// its definition is fine): this is an operator worklist, and reading it MINTS
+// share tokens for other people's calls — the one path allowed to bypass the
+// "nobody's call becomes an image unless they chose to" rule. Open, that meant
+// anyone could mint a stranger's position card by GETting a public URL.
+app.get("/api/mentions", requireAdmin, async (_req, res) => {
   const rows = await mentionCandidates();
   const out = [];
   for (const r of rows) {
@@ -1652,16 +1657,38 @@ app.get("/api/mentions", async (_req, res) => {
     out.push({
       callId: r.callId, handle: r.handle, won, line,
       url: token ? `${BASE_URL}/market/${r.slug}?pc=${token}` : `${BASE_URL}/market/${r.slug}`,
+      // The image to attach to the post itself — the personal card as a PNG,
+      // so the tweet carries the visual natively instead of leaning on unfurl.
+      cardPng: token ? `${BASE_URL}/card/pc/${token}.png` : null,
       question: r.question, mentionedAt: r.mentionedAt, returned24h: r.returned24h,
     });
   }
   res.json({ mentions: out });
 });
 
-app.post("/api/mentions/:id/sent", async (req, res) => {
+app.post("/api/mentions/:id/sent", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ ok: false });
   res.json({ ok: await markMentioned(id) });
+});
+
+// Weekly Loudest Callers — phase 0 of the loudness flywheel, human all the way
+// through: the operator searches X for the week's best posts about oddie, then
+// names the authors here. +150 season points each (SEASON_POINTS.loud), one
+// award per (person, ISO week) by dedup, so resubmitting a list is safe.
+app.post("/api/admin/loud", requireAdmin, async (req, res) => {
+  const week = typeof req.body?.week === "string" && /^\d{4}-W\d{2}$/.test(req.body.week)
+    ? req.body.week
+    : isoWeekOf(new Date());
+  const handles = Array.isArray(req.body?.handles) ? req.body.handles.map(String).filter(Boolean) : [];
+  if (handles.length < 1 || handles.length > 25) {
+    return res.status(400).json({ error: "handles: 1-25 X handles required" });
+  }
+  const results = [];
+  for (const h of handles) {
+    results.push({ handle: h.replace(/^@+/, ""), ...(await awardLoud(h, week)) });
+  }
+  res.json({ week, points: SEASON_POINTS.loud, results });
 });
 
 app.get("/tool", (_req, res) => {

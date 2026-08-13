@@ -2903,6 +2903,12 @@ export const SEASON_POINTS = {
   // is exactly the point: the cheapest way to raise your score should be to say
   // something on X.
   shared: 40,
+  // A weekly Loudest Callers pick — the operator's judgment on the week's best
+  // posts about oddie, awarded by hand from /tool. Priced above first_timer
+  // because it is competitive (a handful of winners a week, not an action
+  // anyone can repeat), and deduped per (person, ISO week) so a resubmitted
+  // list cannot double-pay.
+  loud: 150,
 } as const;
 export type SeasonEvent = keyof typeof SEASON_POINTS;
 
@@ -3191,6 +3197,32 @@ export async function awardFirstTimer(slug: string, newDeviceId: string): Promis
 /** +50: `slug` resolved cleanly (no manual override — the only kind today). Once. */
 export async function awardCleanResolve(slug: string): Promise<boolean> {
   return awardSeasonPoints("clean_resolve", slug, `clean_resolve:${slug}`);
+}
+
+/** The ISO-8601 week a date falls in, as "2026-W33" — the loud award's dedup
+ *  unit. UTC throughout, so the week does not flip with the server's timezone. */
+export function isoWeekOf(d: Date): string {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7)); // to this week's Thursday
+  const y = t.getUTCFullYear();
+  const week = Math.ceil(((t.getTime() - Date.UTC(y, 0, 1)) / 86_400_000 + 1) / 7);
+  return `${y}-W${String(week).padStart(2, "0")}`;
+}
+
+/** +150: a weekly Loudest Callers pick. The operator chooses the week's best
+ *  posts about oddie by hand (X search, human judgment) and names the authors;
+ *  this credits each one directly — like `shared`, the earner is the person
+ *  who posted, and there is no market to attribute, so the slug is the
+ *  synthetic `loud-<week>`. One award per (person, week) via the dedup key,
+ *  which makes resubmitting a list safe. */
+export async function awardLoud(
+  rawHandle: string, week: string,
+): Promise<{ ok: true } | { ok: false; reason: "no_account" | "already" }> {
+  const handle = rawHandle.replace(/^@+/, "").trim().toLowerCase();
+  const deviceId = handle ? await deviceForHandle(handle) : null;
+  if (!deviceId) return { ok: false, reason: "no_account" };
+  const ok = await awardSeasonPoints("loud", `loud-${week}`, `loud:${week}:${handle}`, deviceId);
+  return ok ? { ok } : { ok: false, reason: "already" };
 }
 
 /** The two placeCall-driven awards, fired best-effort after a call lands: the

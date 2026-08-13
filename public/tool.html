@@ -200,7 +200,28 @@
 
   <div class="box" id="mentions" style="margin-top:22px">
     <p class="verdict" style="font-size:17px">settled positions with a connected X — post by hand from @oddiefun</p>
-    <div id="mlist"><p class="why">loading…</p></div>
+    <p class="why" style="margin:0 0 8px">post on X opens a prefilled compose · card ↓ saves the PNG to attach · mark sent stamps the row.</p>
+    <div id="mlist"><p class="why">enter the admin token above, then this loads…</p></div>
+  </div>
+
+  <!-- Loudest Callers, phase 0: fully human. Search X for the week's best posts
+       about oddie, pick the top handful, paste the authors here. The server
+       dedups per (person, ISO week), so a resubmitted list cannot double-pay. -->
+  <div class="box" id="loudbox" style="margin-top:22px">
+    <p class="verdict" style="font-size:17px">loud awards — the week's best posts about oddie, +150 season points each</p>
+    <p class="why" style="margin:0 0 8px">
+      Search X for <b>oddie.fun</b> / <b>@oddiefun</b>, pick the top posts by hand, paste the
+      authors below (comma, space or newline separated). One award per person per week —
+      resubmitting the same list is safe.
+    </p>
+    <textarea id="loudh" placeholder="@handle, @handle, …" autocapitalize="off" spellcheck="false"
+      style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:54px;resize:vertical"></textarea>
+    <div class="row" style="margin-top:8px">
+      <input id="loudw" type="text" placeholder="week — blank = current (e.g. 2026-W33)"
+        style="flex:1 1 220px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
+      <button class="ghost" id="loudgo" style="flex:0 0 auto;padding:9px 18px;font-size:14px">Award</button>
+    </div>
+    <div id="loudout" style="margin-top:10px"></div>
   </div>
 </div>
 
@@ -373,33 +394,65 @@ function renderError(status, body, raw) {
 // Invites/waitlist panel removed: Oddie's model is viral, not gated. Anyone who
 // signs in with X or Google is in — there is no allowlist to manage.
 
+// The one-tap cockpit for manual mentions: for each settled X-connected call,
+// [post on X] opens a compose window with the text prefilled, [card ↓] saves
+// the personal card PNG to attach to it, and [mark sent] stamps the row. The
+// only manual steps left are attaching the image and pressing Post — the two X
+// gives no API-free way around.
 async function loadMentions() {
   const box = document.getElementById("mlist");
   try {
-    const r = await fetch("/api/mentions");
+    const r = await fetch("/api/mentions", { headers: admHeaders() });
+    if (r.status === 401) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
     const { mentions } = await r.json();
     if (!mentions.length) { box.innerHTML = '<p class="why">none yet — they appear when an X-connected popper\'s position settles.</p>'; return; }
-    box.innerHTML = mentions.map((m) => `
-      <div class="variant" style="align-items:flex-start">
+    box.innerHTML = mentions.map((m, i) => `
+      <div class="variant" style="flex-direction:column;align-items:stretch">
         <span class="vtext">
           <b>${esc(m.line)}</b><br>
-          <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span><br>
-          <span style="font-size:12px;word-break:break-all">${esc(m.url)}</span>
+          <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span>
           ${m.mentionedAt ? `<br><span style="font-size:12px;color:var(--muted)">sent ${esc(m.mentionedAt.slice(0,16))} · returned in 24h: <b>${m.returned24h ? "YES" : "no"}</b></span>` : ""}
         </span>
-        <span style="display:flex;flex-direction:column;gap:6px">
-          <button class="ghost mcopy" data-line="${esc(m.line)}" data-url="${esc(m.url)}">copy</button>
-          ${m.mentionedAt ? "" : `<button class="ghost msent" data-id="${m.callId}">mark sent</button>`}
+        <span class="row" style="margin:0">
+          <button class="ghost mpost" data-i="${i}" style="padding:7px 14px;font-size:13px">post on X</button>
+          ${m.cardPng ? `<button class="ghost mcard" data-i="${i}" style="padding:7px 14px;font-size:13px">card ↓</button>` : ""}
+          <button class="ghost mcopy" data-i="${i}" style="padding:7px 14px;font-size:13px">copy</button>
+          ${m.mentionedAt ? "" : `<button class="ghost msent" data-id="${m.callId}" style="padding:7px 14px;font-size:13px">mark sent</button>`}
         </span>
       </div>`).join("");
-    box.querySelectorAll(".mcopy").forEach((b) => b.onclick = (e) => copy(`${b.dataset.line} ${b.dataset.url}`, e.target));
-    box.querySelectorAll(".msent").forEach((b) => b.onclick = async (e) => {
-      await fetch(`/api/mentions/${b.dataset.id}/sent`, { method: "POST" });
+    const text = (i) => `${mentions[i].line} ${mentions[i].url}`;
+    box.querySelectorAll(".mpost").forEach((b) => b.onclick = () =>
+      window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text(b.dataset.i))}`, "_blank", "noopener"));
+    box.querySelectorAll(".mcard").forEach((b) => b.onclick = (e) => {
+      const m = mentions[b.dataset.i];
+      saveCard(m.cardPng, `${m.handle}-card.png`, e.target);
+    });
+    box.querySelectorAll(".mcopy").forEach((b) => b.onclick = (e) => copy(text(b.dataset.i), e.target));
+    box.querySelectorAll(".msent").forEach((b) => b.onclick = async () => {
+      await fetch(`/api/mentions/${b.dataset.id}/sent`, { method: "POST", headers: admHeaders() });
       loadMentions();
     });
   } catch (err) { box.innerHTML = '<p class="why">could not load mentions.</p>'; }
 }
-loadMentions();
+
+/** Fetch a same-origin PNG and hand it to the browser as a download. */
+async function saveCard(url, name, btn) {
+  const was = btn.textContent;
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const blob = await (await fetch(url)).blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    btn.textContent = "Saved";
+  } catch {
+    btn.textContent = "Failed";
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => (btn.textContent = was), 1400);
+  }
+}
 
 async function copy(text, btn) {
   const was = btn.textContent;
@@ -462,7 +515,31 @@ const ADMKEY = "oddie_admin_token";
 const admInput = $("#admtok");
 admInput.value = localStorage.getItem(ADMKEY) || "";
 const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getItem(ADMKEY) || "" }, extra || {});
-$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); loadUsers(); };
+$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); loadUsers(); loadMentions(); };
+
+// ---- loud awards (admin) ----------------------------------------------------
+$("#loudgo").onclick = async () => {
+  const out = $("#loudout"), btn = $("#loudgo");
+  const handles = $("#loudh").value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+  const week = $("#loudw").value.trim();
+  if (!handles.length) { out.innerHTML = '<p class="why">paste at least one handle.</p>'; return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/admin/loud", {
+      method: "POST",
+      headers: admHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ handles, ...(week ? { week } : {}) }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { out.innerHTML = `<p class="why">${esc(j.error || `failed (${r.status})`)}</p>`; return; }
+    out.innerHTML = `<p class="why" style="font-weight:800;margin:0 0 6px">${esc(j.week)}</p>`
+      + '<div class="meta" style="margin:0">'
+      + j.results.map((x) => `<span class="chip"${x.ok ? "" : ' style="background:var(--bar)"'}>@${esc(x.handle)} ${
+          x.ok ? `✓ +${j.points}` : x.reason === "no_account" ? "no account" : "already this week"}</span>`).join("")
+      + "</div>";
+  } catch { out.innerHTML = '<p class="why">failed.</p>'; }
+  finally { btn.disabled = false; }
+};
 
 let chainEnabled = false;
 
@@ -1028,6 +1105,7 @@ loadCommunity();
 loadTweetLog();
 loadMetrics();
 loadUsers();
+loadMentions();
 </script>
 </body>
 </html>
