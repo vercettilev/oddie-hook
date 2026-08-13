@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#B6F05F">
-<title>oddie · seed tool</title>
+<title>oddie · operator console</title>
 <style>
   :root{
     /* Oddie brand — lime accent + pale-lime wash, matching feed/gate/cards. */
@@ -26,12 +26,15 @@
   .tag{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.06em}
   .lede{font-size:13.5px; color:var(--muted); margin:6px 0 16px; line-height:1.45}
 
-  textarea{
-    width:100%; min-height:132px; resize:vertical; padding:14px;
-    font:inherit; font-size:16px; /* 16px: anything less zooms iOS on focus */
-    border:3px solid var(--ink); border-radius:18px; background:var(--white);
-  }
   textarea:focus{outline:3px solid var(--accent); outline-offset:2px}
+
+  /* The jump bar: five stops, in the order the job runs. Sticky so "where am I"
+     is never a scroll away — the whole point of the console being one page. */
+  .quicknav{position:sticky; top:0; z-index:6; display:flex; gap:6px; flex-wrap:wrap;
+    background:var(--wash); padding:10px 0 8px; margin:0 0 4px}
+  .quicknav a{font-size:12.5px; font-weight:700; color:var(--ink); text-decoration:none;
+    border:2px solid var(--ink); border-radius:999px; padding:5px 12px; background:var(--white)}
+  .quicknav a:hover{background:var(--accent)}
 
   .row{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap}
   button{
@@ -49,18 +52,20 @@
   .box .row button{flex:1 1 138px; padding:12px 10px}
 
   .out{margin-top:20px}
-  .box{border:3px solid var(--ink); border-radius:20px; padding:16px; background:var(--white)}
+  /* scroll-margin keeps an anchored box's title clear of the sticky jump bar. */
+  .box{border:3px solid var(--ink); border-radius:20px; padding:16px; background:var(--white); scroll-margin-top:58px}
   .box.hit{background:var(--white)}
-  .box.miss{background:var(--bar)}
-  .box.down{background:var(--bad)}
   .box.error{background:var(--warn)}
+
+  /* Collapsed record panels: present when needed, silent otherwise. */
+  details.rec{border-top:2px dashed var(--bar); padding:10px 0 6px}
+  details.rec:first-of-type{border-top:none; padding-top:0}
+  details.rec summary{cursor:pointer; font-weight:700; font-size:14.5px}
+  details.rec summary:hover{color:var(--accentDeep, #4d6e10)}
 
   .verdict{font-size:20px; font-weight:700; line-height:1.3; margin:0 0 6px}
   .why{font-size:13.5px; color:var(--muted); line-height:1.5; margin:0}
   .why + .why{margin-top:6px}
-
-  /* The card is the thing being inspected. Give it room and a real border. */
-  .card{width:100%; height:auto; display:block; border-radius:14px; margin:2px 0 14px}
 
   .q{font-size:15px; font-weight:600; line-height:1.4; margin:0 0 10px}
   .meta{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px}
@@ -86,12 +91,6 @@
     border:2px solid var(--ink); border-radius:12px; padding:9px 12px; background:var(--wash)}
   .vtext{flex:1; min-width:0; font-size:14px; font-weight:600; line-height:1.35}
   .vcopy{flex:none; padding:7px 14px; font-size:13px}
-  /* The twin warning has to survive being ignored: it is the only thing standing
-     between a wrong-date card and a posted tweet. */
-  .warn{font-size:13.5px; line-height:1.5; margin:0 0 8px; padding:10px 12px;
-        background:var(--warn); border:2px solid var(--ink); border-radius:12px}
-  .twins{margin:0 0 14px; padding-left:20px; font-size:13px; color:var(--muted); line-height:1.5}
-  .twins li{margin:2px 0}
   .hidden{display:none !important}
 
   @media (min-width:560px){
@@ -103,39 +102,44 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>oddie</h1><span class="tag">seed tool · internal</span>
+    <h1>oddie</h1><span class="tag">operator console · internal</span>
   </header>
   <p class="lede">
-    Paste a tweet's text, get the slug, card and link. Nothing is posted anywhere —
-    you post manually from @oddiefun. Read the market it picked before you reply.
+    How oddie is run, top to bottom. Someone tags @oddiefun → <b>1</b>&nbsp;paste the
+    tweet, get a market and a ready reply. Positions settle → <b>2</b>&nbsp;post the
+    results. Sunday → <b>3</b>&nbsp;award the loudest. <b>4</b> is the markets
+    themselves, <b>5</b> the numbers. Nothing here posts on its own — every tweet
+    leaves from @oddiefun, by hand.
   </p>
 
-  <textarea id="ta" placeholder="Paste the tweet text here…" autocapitalize="off" spellcheck="false"></textarea>
+  <nav class="quicknav">
+    <a href="#community">1 · reply</a>
+    <a href="#mentions">2 · results</a>
+    <a href="#loudbox">3 · loud</a>
+    <a href="#resolve">4 · markets</a>
+    <a href="#records">5 · records</a>
+  </nav>
 
-  <div class="row">
-    <button class="primary" id="go">Generate</button>
-    <button class="ghost" id="clear">Clear</button>
-  </div>
-
-  <div class="out" id="out" aria-live="polite"></div>
-
-  <!-- Community markets: create (virtual product + devnet proof) and resolve.
-       Admin-only; every call carries the ODDIE_ADMIN_TOKEN saved below. -->
-  <div class="box" id="community" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">community markets — create on the product + mint on Solana devnet</p>
-    <div class="row" style="margin:0 0 8px">
+  <!-- One token unlocks everything. It lives up here because every panel below
+       is admin-gated — the server fails closed without it. -->
+  <div class="box">
+    <div class="row" style="margin:0">
       <input id="admtok" type="password" placeholder="admin token (ODDIE_ADMIN_TOKEN)"
         style="flex:1 1 240px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
       <button class="ghost" id="admsave" style="flex:0 0 auto;padding:9px 16px;font-size:14px">save</button>
     </div>
-    <p class="why" id="chainstat">—</p>
-    <p class="why" id="featstat" style="margin-top:2px">—</p>
+    <p class="hint" style="margin-top:8px">one token unlocks every panel below · saving reloads them all.</p>
+  </div>
 
-    <!-- Claim-extraction engine: paste an argument (a tweet, or a few tweets of
-         a disagreement); the engine drafts a clean YES/NO market below, or
-         refuses when there's nothing verifiable to settle. Precision over recall. -->
+  <!-- 1 · The daily move: a tagged tweet in, a market + ready reply out. Venue
+       markets are checked first so nothing gets duplicated; only a claim nothing
+       covers becomes a new Community market. -->
+  <div class="box" id="community" style="margin-top:22px">
+    <p class="verdict" style="font-size:17px">1 · answer a mention — tweet in, market + ready reply out</p>
+    <p class="why" style="margin:0 0 10px">Paste the tweet. It finds a live venue market first (no duplicates),
+      drafts a new Community market when nothing covers the claim, and hands back reply + quote copy to post.</p>
+
     <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
-      <p class="why" style="margin:0 0 6px;font-weight:800">tweet mode — mention in, ready-to-paste reply out</p>
       <textarea id="cx" placeholder="paste the tagged tweet (+ optional thread context)…"
         style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:66px;resize:vertical"></textarea>
       <input id="csrc" type="url" placeholder="source tweet URL (optional — logged so we know what triggered this)"
@@ -148,6 +152,7 @@
       <div id="creply" style="margin-top:8px"></div>
     </div>
 
+    <p class="vhead" style="margin:12px 0 6px">the draft — extract fills these; edit anything, then Create. (Or write one from scratch.)</p>
     <input id="cq" type="text" maxlength="180" placeholder="question (≤180 chars, e.g. Will oddie hit 1k users by Aug 1?)"
       style="width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:2px solid var(--ink);border-radius:12px;padding:10px 12px;margin:6px 0">
     <textarea id="ccrit" placeholder="resolution criteria — exactly what evidence settles YES vs NO, and the source to check"
@@ -172,45 +177,23 @@
     <div class="out" id="cout" aria-live="polite"></div>
   </div>
 
-  <div class="box" id="resolve" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">community market admin — pool, positions, payout preview, resolve</p>
-    <div id="rlist"><p class="why">enter the admin token above, then this loads…</p></div>
-  </div>
-
-  <div class="box" id="metricsbox" style="margin-top:22px">
-    <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px">
-      <p class="verdict" style="font-size:17px;margin:0">wedge metrics — internal, read-only (all-time)</p>
-      <button class="ghost" id="mrefresh" style="padding:7px 14px;font-size:13px">refresh</button>
-    </div>
-    <div id="metrics"><p class="why">enter the admin token above, then this loads…</p></div>
-  </div>
-
-  <div class="box" id="usersbox" style="margin-top:22px">
-    <div class="row" style="justify-content:space-between;align-items:center;margin:0 0 6px">
-      <p class="verdict" style="font-size:17px;margin:0">users — every device, most recent activity first (internal, read-only)</p>
-      <button class="ghost" id="urefresh" style="padding:7px 14px;font-size:13px">refresh</button>
-    </div>
-    <div id="users"><p class="why">enter the admin token above, then this loads…</p></div>
-  </div>
-
-  <div class="box" id="tweetlogbox" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">generated X replies — newest first (what to post, and a record of it)</p>
-    <div id="tweetlog"><p class="why">enter the admin token above, then this loads…</p></div>
-  </div>
-
+  <!-- 2 · The result loop: every settled call whose owner connected X, ready to
+       announce. This is where the "returned in 24h" signal accumulates. -->
   <div class="box" id="mentions" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">settled positions with a connected X — post by hand from @oddiefun</p>
-    <p class="why" style="margin:0 0 8px">post on X opens a prefilled compose · card ↓ saves the PNG to attach · mark sent stamps the row.</p>
+    <p class="verdict" style="font-size:17px">2 · announce results — settled calls, posted from @oddiefun</p>
+    <p class="why" style="margin:0 0 8px"><b>post on X</b> opens a prefilled compose · <b>card ↓</b> saves the
+      PNG to attach · <b>mark sent</b> stamps the row so it stops nagging.</p>
     <div id="mlist"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
-  <!-- Loudest Callers, phase 0: fully human. Search X for the week's best posts
-       about oddie, pick the top handful, paste the authors here. The server
-       dedups per (person, ISO week), so a resubmitted list cannot double-pay. -->
+  <!-- 3 · Loudest Callers, phase 0: fully human. Search X for the week's best
+       posts about oddie, pick the top handful, paste the authors here. The
+       server dedups per (person, ISO week), so a resubmitted list cannot
+       double-pay. -->
   <div class="box" id="loudbox" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">loud awards — the week's best posts about oddie, +150 season points each</p>
+    <p class="verdict" style="font-size:17px">3 · loud awards — weekly, the best posts about oddie (+150 each)</p>
     <p class="why" style="margin:0 0 8px">
-      Search X for <b>oddie.fun</b> / <b>@oddiefun</b>, pick the top posts by hand, paste the
+      Sunday: search X for <b>oddie.fun</b> / <b>@oddiefun</b>, pick the top posts by hand, paste the
       authors below (comma, space or newline separated). One award per person per week —
       resubmitting the same list is safe.
     </p>
@@ -223,176 +206,49 @@
     </div>
     <div id="loudout" style="margin-top:10px"></div>
   </div>
+
+  <!-- 4 · The markets themselves: feature onto the homepage, inspect positions,
+       resolve with a payout preview. Resolve settles real user positions. -->
+  <div class="box" id="resolve" style="margin-top:22px">
+    <p class="verdict" style="font-size:17px">4 · live markets — feature · positions · resolve</p>
+    <p class="why" id="chainstat">—</p>
+    <p class="why" id="featstat" style="margin-top:2px">—</p>
+    <div id="rlist" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
+  </div>
+
+  <!-- 5 · Read-only records, collapsed so the working sections stay in reach.
+       Open one when you need the number; nothing here changes anything. -->
+  <div class="box" id="records" style="margin-top:22px">
+    <p class="verdict" style="font-size:17px">5 · records — read-only</p>
+    <details class="rec">
+      <summary>wedge metrics — the funnel, all-time</summary>
+      <div class="row" style="justify-content:flex-end;margin:6px 0 0">
+        <button class="ghost" id="mrefresh" style="padding:7px 14px;font-size:13px">refresh</button>
+      </div>
+      <div id="metrics"><p class="why">enter the admin token above, then this loads…</p></div>
+    </details>
+    <details class="rec">
+      <summary>users — every device, most recent activity first</summary>
+      <div class="row" style="justify-content:flex-end;margin:6px 0 0">
+        <button class="ghost" id="urefresh" style="padding:7px 14px;font-size:13px">refresh</button>
+      </div>
+      <div id="users"><p class="why">enter the admin token above, then this loads…</p></div>
+    </details>
+    <details class="rec">
+      <summary>reply log — everything generated by 1, newest first</summary>
+      <div id="tweetlog" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
+    </details>
+  </div>
 </div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const ta = $("#ta"), go = $("#go"), out = $("#out");
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // The card SVG's natural size, used when a browser reports naturalWidth 0 for
 // an SVG <img> (Safari does, intermittently).
 const CARD_W = 1000, CARD_H = 524;
 
-$("#clear").onclick = () => { ta.value = ""; out.innerHTML = ""; ta.focus(); };
-go.onclick = generate;
-// Cmd/Ctrl+Enter from inside the textarea, since the button is below the fold on a phone.
-ta.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") generate(); });
-
-async function generate() {
-  const tweetText = ta.value.trim();
-  if (!tweetText) { ta.focus(); return; }
-
-  go.disabled = true; go.textContent = "Matching…";
-  out.innerHTML = `<div class="box"><p class="verdict">Matching…</p></div>`;
-
-  try {
-    const res = await fetch("/hook", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tweetText }),
-    });
-
-    // /hook answers JSON on every path it controls — but a malformed request is
-    // rejected by express's body parser first, which replies with an HTML error
-    // page. Parsing defensively keeps that from surfacing as "unexpected token <".
-    const raw = await res.text();
-    let body = null;
-    try { body = JSON.parse(raw); } catch { /* left null on purpose */ }
-
-    if (res.status === 503) return renderDown(body);
-    if (!res.ok || !body) return renderError(res.status, body, raw);
-    body.matched ? renderHit(body) : renderMiss(body);
-  } catch (err) {
-    renderError(0, null, err.message);
-  } finally {
-    go.disabled = false; go.textContent = "Generate";
-  }
-}
-
-function renderHit(b) {
-  const m = b.market;
-  const pct = m.yesPct;
-  const vol = m.volumeUsd >= 1e6 ? `$${(m.volumeUsd / 1e6).toFixed(2)}M` : `$${Math.round(m.volumeUsd / 1e3)}K`;
-  // A thin score means the take and the market shared very few words. It is
-  // exactly where a near-identical sibling market can win on volume, so it is
-  // worth a second look before this goes out under the brand.
-  const thin = b.score < 0.30;
-  // Markets the matcher cannot tell apart from this one. Volume broke the tie,
-  // so a human has to break it properly. See NOTES/known-gaps.md.
-  const twins = Array.isArray(b.nearTwins) ? b.nearTwins : [];
-
-  out.innerHTML = `
-    <div class="box hit">
-      <p class="verdict">Matched — check the market, then post</p>
-      <p class="q">${esc(m.question)}</p>
-      <div class="meta">
-        <span class="chip">YES ${pct}% · NO ${100 - pct}%</span>
-        <span class="chip">${vol} vol</span>
-        <span class="chip ${thin ? "thin" : ""}">score ${b.score.toFixed(3)}</span>
-        <span class="chip">${esc(m.venue)}</span>
-        ${b.stale ? '<span class="chip thin">stale odds</span>' : ""}
-      </div>
-      ${thin ? `<p class="why">Thin overlap. Sports and election markets come in families of
-        near-identical questions ("Will <em>X</em> win…"), and on a thin score the winner is
-        decided by volume, not by the take. Make sure this is the market the tweet is about.</p>` : ""}
-      ${twins.length ? `<p class="warn">⚠ ${twins.length} near-twin market${twins.length > 1 ? "s" : ""} —
-        check the date/details before posting. The matcher reads these as the same question (it drops
-        words under three letters, which is where dates and scores live), so <strong>volume</strong>
-        picked this one, not the tweet.</p>
-        <ul class="twins">${twins.slice(0, 4).map((t) => `<li>${esc(t)}</li>`).join("")}
-        ${twins.length > 4 ? `<li>…and ${twins.length - 4} more</li>` : ""}</ul>` : ""}
-
-      <img class="card" id="cardimg" alt="odds card for ${esc(m.question)}"
-           src="/card/${encodeURIComponent(b.slug)}.svg" width="${CARD_W}" height="${CARD_H}">
-
-      ${Array.isArray(b.tweetCopy) && b.tweetCopy.length ? `
-      <p class="vhead" id="vhead">writing thread-aware replies… <span class="vspin">·</span> (generic lines below meanwhile)</p>
-      <div class="variants" id="variants">
-        ${b.tweetCopy.map((t, i) => `
-        <div class="variant">
-          <span class="vtext">${esc(t)}</span>
-          <button class="ghost vcopy" data-v="${i}">copy</button>
-        </div>`).join("")}
-      </div>
-      <p class="hint" style="margin:-6px 0 12px">copy = the line + the link, ready to paste as a reply.</p>` : ""}
-
-      <a class="link" href="${esc(b.landingUrl)}" target="_blank" rel="noopener">${esc(b.landingUrl)}</a>
-
-      <div class="row">
-        <button class="primary" id="copy">Copy link</button>
-        <button class="ghost" id="png">Download card</button>
-      </div>
-      <p class="hint">The card downloads as PNG, not SVG — X rejects SVG uploads.
-        On iOS you can also long-press the card above and “Save to Photos”.
-        The copy buttons copy the LINE only — the link is separate, compose as you like.</p>
-    </div>`;
-
-  $("#copy").onclick = (e) => copy(b.landingUrl, e.target);
-  $("#png").onclick = (e) => downloadPng(b.slug, e.target);
-  let copyLines = b.tweetCopy || [];
-  const wireCopy = () => document.querySelectorAll(".vcopy").forEach((btn) => {
-    btn.onclick = (e) => copy(`${copyLines[Number(btn.dataset.v)]} ${b.landingUrl}`, e.target);
-  });
-  wireCopy();
-  // The thread-aware lines are a second, slower round trip: swap them in when
-  // they arrive, keep the generic ones (honestly labelled) if they don't.
-  if (b.slug) fetch("/api/replycopy", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tweetText: document.querySelector("textarea").value, slug: b.slug }),
-  }).then((r) => r.json()).then((j) => {
-    const head = $("#vhead"), wrap = $("#variants");
-    if (!head || !wrap) return;
-    if (j && Array.isArray(j.tweetCopy) && j.tweetCopy.length) {
-      copyLines = j.tweetCopy;
-      head.textContent = "reply copy — answers this tweet, market numbers as evidence";
-      wrap.innerHTML = j.tweetCopy.map((t, i) => `
-        <div class="variant"><span class="vtext">${esc(t)}</span>
-          <button class="ghost vcopy" data-v="${i}">copy</button></div>`).join("");
-      wireCopy();
-    } else {
-      head.textContent = "tweet copy — from the market's numbers (reply model unavailable)";
-    }
-  }).catch(() => { const h = $("#vhead"); if (h) h.textContent = "tweet copy — from the market's numbers (reply model unavailable)"; });
-}
-
-function renderMiss(b) {
-  out.innerHTML = `
-    <div class="box miss">
-      <p class="verdict">No confident market for this take — skip this thread</p>
-      <p class="why">We looked at a real, live market set and nothing fit. This is a genuine
-        miss, not an outage. Move on to the next thread.</p>
-      ${b.feedUrl ? `<a class="link" href="${esc(b.feedUrl)}" target="_blank" rel="noopener">${esc(b.feedUrl)}</a>
-        <div class="row"><button class="ghost" id="copyfeed">Copy feed link</button></div>
-        <p class="hint">${b.category ? `Scoped to ${esc(b.category)}.` : "Unscoped — the take didn't land in a category."}</p>` : ""}
-    </div>`;
-  const c = $("#copyfeed");
-  if (c) c.onclick = (e) => copy(b.feedUrl, e.target);
-}
-
-function renderDown(b) {
-  const v = b && b.venues ? Object.entries(b.venues).map(([k, s]) => `${k}: ${s.ok ? "ok" : "down"}`).join(" · ") : "";
-  out.innerHTML = `
-    <div class="box down">
-      <p class="verdict">Venues down — try again</p>
-      <p class="why">This is <strong>not</strong> a miss. We couldn't read any markets at all, so
-        we don't know whether this take has one. Don't skip the thread — retry in a minute.</p>
-      ${v ? `<p class="why">${esc(v)}</p>` : ""}
-    </div>`;
-}
-
-function renderError(status, body, raw) {
-  const detail = body && body.error ? body.error : (status ? `HTTP ${status}, non-JSON body` : raw);
-  out.innerHTML = `
-    <div class="box error">
-      <p class="verdict">Request failed</p>
-      <p class="why">${esc(detail || "unknown error")}</p>
-      <p class="why">Neither a miss nor an outage — the request itself didn't go through.</p>
-    </div>`;
-}
-
-// Invites/waitlist panel removed: Oddie's model is viral, not gated. Anyone who
-// signs in with X or Google is in — there is no allowlist to manage.
 
 // The one-tap cockpit for manual mentions: for each settled X-connected call,
 // [post on X] opens a compose window with the text prefilled, [card ↓] saves
@@ -655,16 +511,23 @@ function renderOutcome(x, match, venuesAvailable) {
   lastMatch = match;
   lastHook = x.hook || ""; // the extraction's teaser — reused across all three outcomes
   $("#creply").innerHTML = ""; // clear any reply from a previous run
+  // The card button rides on both match panels: the PNG is what gets attached
+  // to the post, so it belongs wherever a postable market appears.
+  const wireCards = () => document.querySelectorAll("#cxout .cardl").forEach((b) => {
+    b.onclick = (e) => downloadPng(b.dataset.slug, e.target);
+  });
   let html = matchPanel(match, venuesAvailable);
   if (match.path === "venue") {
     clearCreateForm(); // no new market — leave nothing for Create to submit
     $("#cxout").innerHTML = html;
+    wireCards();
     // venue match is auto-accepted — generate the ready-to-post reply now
     generateReply({ slug: match.market.slug, question: match.market.question, marketId: match.market.id, matchType: "venue", hook: lastHook });
     return;
   }
   html += fillFromExtraction(x); // closest & none both allow minting a new one
   $("#cxout").innerHTML = html;
+  wireCards();
   if (match.path === "closest") {
     // Medium confidence: nothing auto-fires. The operator approves first.
     const btn = document.getElementById("approveClosest");
@@ -687,8 +550,10 @@ function matchPanel(match, venuesAvailable) {
       + '<a href="/m/' + esc(m.slug) + '" target="_blank" rel="noopener">preview on oddie ↗</a></p>'
       + (match.path === "venue"
         ? '<p class="why" style="color:var(--muted)">this claim is already covered — nothing was created.</p>'
+          + '<div class="row" style="margin-top:8px"><button class="ghost cardl" data-slug="' + esc(m.slug) + '" style="padding:8px 14px;font-size:13px">card ↓ — PNG to attach to the post</button></div>'
         : '<p class="why" style="color:var(--muted)">eyeball it: if this is the same market, approve it for a reply. If not, edit the draft below and Create a new one.</p>'
-          + '<div class="row" style="margin-top:8px"><button class="ghost" id="approveClosest" style="padding:8px 14px;font-size:13px">✓ approve this match &amp; generate reply</button></div>')
+          + '<div class="row" style="margin-top:8px"><button class="ghost" id="approveClosest" style="padding:8px 14px;font-size:13px">✓ approve this match &amp; generate reply</button>'
+          + '<button class="ghost cardl" data-slug="' + esc(m.slug) + '" style="padding:8px 14px;font-size:13px">card ↓</button></div>')
       + '</div>';
   }
   // no match
@@ -962,7 +827,10 @@ async function createMarket() {
     cout.innerHTML = '<div class="box hit"><p class="verdict" style="font-size:16px">created ✓</p>'
       + '<p class="why"><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.url) + '</a></p>'
       + '<p class="why">' + badge + '</p>'
-      + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p></div>';
+      + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p>'
+      + '<div class="row" style="margin-top:8px"><button class="ghost" id="newcard" style="padding:8px 14px;font-size:13px">card ↓ — PNG to attach to the post</button></div></div>';
+    const nc = $("#newcard");
+    if (nc) nc.onclick = (e) => downloadPng(j.slug, e.target);
     // The market is confirmed (just created) — generate its ready-to-post reply.
     // Read the source URL + market details BEFORE clearing the form below.
     generateReply({ slug: j.slug, question: q, marketId: String(j.marketId), matchType: "new", hook: lastHook });
