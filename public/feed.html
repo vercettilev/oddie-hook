@@ -2788,6 +2788,14 @@ function loudClaim(source){
     try{
       const r=await fetch(`/api/loud/mine?deviceId=${encodeURIComponent(deviceId)}`);
       const j=await r.json();
+      // The multiplier line: where "posting upgrades the printer" is TAUGHT.
+      // Always present — at 1× it names the next rung, above 1× it brags.
+      const msg=sh.querySelector("#loudmsg");
+      if(msg&&!msg.textContent&&typeof j.multiplier==="number"){
+        msg.innerHTML=j.multiplier>1
+          ?`🔥 your play earns <b>${j.multiplier}×</b> oddies right now (${j.weeklyWinIn30d?"weekly loudest win":`${j.clearedIn30d} cleared post${j.clearedIn30d===1?"":"s"} in 30d`})`
+          :`cleared posts also multiply your play earnings: 1 post → 1.25× · 3 → 1.5× · weekly loudest → 2×`;
+      }
       const posts=(j.posts||[]).slice(0,5);
       if(!posts.length)return;
       const label={pending:"in review",approved:"+150 ✓",rejected:"not counted"};
@@ -4889,7 +4897,7 @@ function badgesHtml(badges){
 // "+16" / "−12" — a real Unicode minus on the way down, never a bare hyphen,
 // so a negative delta reads as a sign rather than a stray dash.
 function deltaText(n){return n>=0?`+${n}`:`−${Math.abs(n)}`}
-function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge){
+function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge,loudMult){
   // The ring shows the QUALITY multiplier, not the score.
   //
   // It used to fill to score/1000, which worked while the score was capped at
@@ -4906,6 +4914,10 @@ function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge){
   const rankChip=hasEnough&&rank
     ?`<span class="rankpill">🏆 ${rank.topPct!=null?`Top ${rank.topPct}% this season`:`#${rank.rank} of ${rank.total} this season`}</span>`
     :"";
+  // The loud multiplier, worn as status. Only when it's earned (>1x) — at 1x
+  // the loud sheet does the teaching; a permanent "1x" chip would read as a
+  // penalty, not an invitation.
+  const multChip=loudMult>1?`<span class="rankpill">🔥 ${loudMult}× loud multiplier</span>`:"";
   // Both lines are ephemeral-feeling but for different reasons: weekly is
   // simply absent with nothing resolved this week (see weeklyScoreDeltaFor);
   // the rank move is a one-shot the server already marked seen by the time
@@ -4924,6 +4936,7 @@ function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge){
         <p class="oscore-desc">every call, market and post pays here · play is scaled by how right you are</p>
         ${weeklyLine}
         ${rankChip}
+        ${multChip}
         ${rankMoveLine}
       </div>
     </div>`;
@@ -5022,7 +5035,7 @@ async function renderPublicProfile(){
   scroller.innerHTML=`<div class="sheet">
     <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
     <div class="trhead"><p class="psec">Track record</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
-    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank,acc.weeklyDelta,null,acc.meanEdge)}
+    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank,acc.weeklyDelta,null,acc.meanEdge,acc.loudMultiplier||1)}
     ${badgesHtml(badges)}
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
@@ -5524,7 +5537,7 @@ async function loadProfile(scroller){
          which accounts are connected; they open it to see where they stand. So
          the standing is first and the plumbing is underneath it, in the order
          someone would actually go looking for it. -->
-    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove,acc?acc.meanEdge:null)}
+    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove,acc?acc.meanEdge:null,acc?(acc.loudMultiplier||1):1)}
     <div class="trhead">
       <p class="psec">Track record</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>

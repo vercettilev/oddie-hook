@@ -5,7 +5,7 @@ import {
   DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
   edgePts, proceedsFor, reputationOf, winBonus,
   CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, creatorFeePlay,
-  callerTier, oddieScoreFrom, SCORE_WEIGHTS,
+  callerTier, oddieScoreFrom, SCORE_WEIGHTS, loudMultiplierOf,
   type Reputation, type CallerTier,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
@@ -1378,6 +1378,8 @@ export interface AccuracyRecord {
   // much you beat the odds you took — scales it between 0.5x and 1.5x. The
   // formula lives in economy.ts's oddieScoreFrom, which is its only definition.
   oddieScore: number | null;  // >= 0, unbounded; null until hasEnough
+  /** ≥1 — the loud multiplier applied to the play half (see economy.ts). */
+  loudMultiplier: number;
   meanEdge: number | null;    // −1..1, the raw signal behind the score
   hasEnough: boolean;
   minResolved: number;
@@ -1402,7 +1404,7 @@ function computeAccuracy(
   /** Activity terms. Defaulted so every existing caller and test keeps working
    *  and gets the accuracy-only half of the score; accuracyFor supplies the
    *  real numbers. */
-  activity: { marketsCreated?: number; contributionPoints?: number; callsMade?: number } = {},
+  activity: { marketsCreated?: number; contributionPoints?: number; callsMade?: number; loudMultiplier?: number } = {},
 ): AccuracyRecord {
   const resolved = rows.length;
   const correct = rows.filter((r) => r.correct).length;
@@ -1422,6 +1424,7 @@ function computeAccuracy(
     marketsCreated: activity.marketsCreated ?? 0,
     contributionPoints: activity.contributionPoints ?? 0,
     meanEdge: resolved ? meanEdge : null,
+    loudMultiplier: activity.loudMultiplier ?? 1,
   });
 
   const m = new Map<string, { resolved: number; correct: number }>();
@@ -1447,6 +1450,7 @@ function computeAccuracy(
     // formula that is supposed to dominate. Null only when there is no activity
     // at all, which is the honest "nothing yet".
     oddieScore: oddieScore > 0 ? oddieScore : null,
+    loudMultiplier: activity.loudMultiplier ?? 1,
     meanEdge: hasEnough ? Math.round(meanEdge * 1000) / 1000 : null,
     hasEnough, minResolved: MIN_RESOLVED_FOR_ACCURACY,
     streak: cur, bestStreak: best,
@@ -1488,14 +1492,15 @@ async function resolvedRowsFor(deviceId: string): Promise<ResolvedRow[]> {
 /** The activity half of the score, read once. Every surface that recomputes a
  *  score for a device needs the same three numbers, and reading them in one
  *  place is what stops the app quoting two different scores for one person. */
-export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCreated: number; contributionPoints: number; callsMade: number }> {
+export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCreated: number; contributionPoints: number; callsMade: number; loudMultiplier: number }> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const [creator, contributionPoints, callsMade] = await Promise.all([
+  const [creator, contributionPoints, callsMade, loud] = await Promise.all([
     creatorStatsFor(deviceId).catch(() => null),
     seasonPointsFor(deviceId).catch(() => 0),
     callsMadeFor(deviceId).catch(() => 0),
+    loudStatusFor(deviceId).catch(() => ({ multiplier: 1 })),
   ]);
-  return { marketsCreated: creator?.marketsCreated ?? 0, contributionPoints, callsMade };
+  return { marketsCreated: creator?.marketsCreated ?? 0, contributionPoints, callsMade, loudMultiplier: loud.multiplier };
 }
 
 /** Every call this device has taken, open or closed. The volume half of the
@@ -2929,6 +2934,15 @@ export const SEASON_POINTS = {
   // is exactly the point: the cheapest way to raise your score should be to say
   // something on X.
   shared: 40,
+  // The crowd ladder, continuing three_players: the market you surfaced keeps
+  // paying as it fills. Steps are GEOMETRIC on purpose (face oddies 200 → 500
+  // → 1500 → 5000) — "a bigger market is disproportionately better" — but the
+  // curve lives in tier JUMPS, never in a per-call exponent: between tiers a
+  // marginal (sybil) call earns the surfacer exactly nothing, and each rung is
+  // a shareable moment ("my market just hit 25 players").
+  ten_players: 250,
+  twentyfive_players: 750,
+  hundred_players: 2500,
   // A weekly Loudest Callers pick — the operator's judgment on the week's best
   // posts about oddie, awarded by hand from /tool. Priced above first_timer
   // because it is competitive (a handful of winners a week, not an action
@@ -3420,6 +3434,33 @@ export async function decideLoudPost(id: number, approve: boolean, note?: string
   return { ok: true, status };
 }
 
+/** The loud multiplier's inputs and answer for one device: cleared posts and
+ *  weekly-Loudest wins in the trailing 30 days. Feeds scoreActivityFor (so
+ *  every score read applies it) and /api/loud/mine (so the sheet can SAY it). */
+export async function loudStatusFor(rawDeviceId: string): Promise<{ clearedIn30d: number; weeklyWinIn30d: boolean; multiplier: number }> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const since = Date.now() - 30 * 86_400_000;
+  let clearedIn30d = 0, weeklyWinIn30d = false;
+  if (!PERSISTENT) {
+    clearedIn30d = memLoudPosts.filter((p) => p.deviceId === deviceId && p.status === "approved"
+      && p.decidedAt && Date.parse(p.decidedAt) > since).length;
+    weeklyWinIn30d = memSeasonLog.some((r) => r.deviceId === deviceId && r.event === "loud" && Date.parse(r.createdAt) > since);
+  } else {
+    await ensureSchema();
+    const [posts, wins] = await Promise.all([
+      db().query<{ n: string }>(
+        `SELECT count(*) AS n FROM loud_post
+          WHERE device_id = $1 AND status = 'approved' AND decided_at > now() - interval '30 days'`, [deviceId]),
+      db().query<{ n: string }>(
+        `SELECT count(*) AS n FROM season_points_log
+          WHERE device_id = $1 AND event = 'loud' AND created_at > now() - interval '30 days'`, [deviceId]),
+    ]);
+    clearedIn30d = Number(posts.rows[0].n);
+    weeklyWinIn30d = Number(wins.rows[0].n) > 0;
+  }
+  return { clearedIn30d, weeklyWinIn30d, multiplier: loudMultiplierOf(clearedIn30d, weeklyWinIn30d) };
+}
+
 export interface LoudWinner { handle: string; week: string }
 
 /** The most recent weekly Loudest Callers picks, newest first, one entry per
@@ -3470,6 +3511,11 @@ export async function loudWinners(limit = 5): Promise<LoudWinner[]> {
 async function awardParticipation(slug: string, deviceId: string, firstEver: boolean, distinct: number): Promise<void> {
   try {
     if (distinct === 3) await awardThreePlayers(slug);
+    // The crowd ladder's upper rungs. Same shape as three_players — credited
+    // to the surfacer, once per (rung, market) — and equality is safe because
+    // `distinct` grows by exactly one when a new player's first call lands.
+    const rung = distinct === 10 ? "ten_players" : distinct === 25 ? "twentyfive_players" : distinct === 100 ? "hundred_players" : null;
+    if (rung) await awardSeasonPoints(rung, slug, `${rung}:${slug}`);
     if (firstEver) await awardFirstTimer(slug, deviceId);
   } catch { /* best-effort */ }
 }

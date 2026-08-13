@@ -254,6 +254,24 @@ export interface ScoreInputs {
   contributionPoints: number;
   /** −1..1, mean(outcome − impliedProb). null when nothing has resolved. */
   meanEdge: number | null;
+  /** ≥1, from loudMultiplierOf. Scales PLAY earnings only — see the formula. */
+  loudMultiplier?: number;
+}
+
+/**
+ * The loud multiplier: being loud upgrades the printer, not just the payout.
+ * Cleared posts (loud_post approvals) in the trailing 30 days set a multiplier
+ * on PLAY earnings — a weekly Loudest pick tops the ladder. Flat ledger
+ * payments are never multiplied (no compounding: a post cannot raise the
+ * price of the next post), and the ladder is capped — "louder is better"
+ * scales the honest way, by tiers, not by an unbounded exponent.
+ */
+export const LOUD_MULT_MAX = 2;
+export function loudMultiplierOf(clearedIn30d: number, weeklyWinIn30d: boolean): number {
+  if (weeklyWinIn30d) return LOUD_MULT_MAX; // 2× — won a weekly Loudest pick
+  if (clearedIn30d >= 3) return 1.5;
+  if (clearedIn30d >= 1) return 1.25;
+  return 1;
 }
 
 /**
@@ -276,7 +294,8 @@ export function oddieScoreFrom(a: ScoreInputs): number {
     Math.max(0, a.marketsCreated) * SCORE_WEIGHTS.marketCreated;
   const raw = 1 + 2 * (a.meanEdge ?? 0);
   const quality = Math.max(SCORE_QUALITY_MIN, Math.min(SCORE_QUALITY_MAX, raw));
-  return Math.max(0, Math.round(played * quality) + Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution);
+  const mult = Math.max(1, Math.min(LOUD_MULT_MAX, a.loudMultiplier ?? 1));
+  return Math.max(0, Math.round(played * quality * mult) + Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution);
 }
 
 /**

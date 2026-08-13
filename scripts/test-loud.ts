@@ -8,11 +8,14 @@
 // Run with: npm run test-loud
 
 import { linkAccount } from "../src/store/accounts.js";
+import { loudMultiplierOf, oddieScoreFrom } from "../src/store/economy.js";
 import {
   SEASON_POINTS, awardLoud, isoWeekOf, seasonPointsFor,
   parseTweetUrl, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP,
-  loudWinners,
+  loudWinners, loudStatusFor,
+  createCommunityMarket, openCommunityMarkets, placeCall, recordSurfacer, _memGrant,
 } from "../src/store/markets.js";
+import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -148,6 +151,73 @@ console.log("\nsubmitLoudPost: your own post, once, capped");
     (await loudPostsFor(DEV)).some((p) => p.status === "rejected" && p.note === "off-topic"));
   check("the queue shrinks as rows are decided",
     (await loudQueue()).filter((q) => q.handle === "Poster").length === LOUD_DAILY_CAP - 2);
+}
+
+console.log("\nthe loud multiplier: posting upgrades the printer, never itself");
+{
+  check("no posts is 1×", loudMultiplierOf(0, false) === 1);
+  check("one cleared post is 1.25×", loudMultiplierOf(1, false) === 1.25);
+  check("three is 1.5×", loudMultiplierOf(3, false) === 1.5);
+  check("a weekly Loudest win tops the ladder at 2×", loudMultiplierOf(0, true) === 2);
+
+  // The formula: play is multiplied, the flat ledger never is — a post cannot
+  // raise the price of the next post.
+  const base = { callsMade: 10, resolvedCalls: 0, marketsCreated: 0, meanEdge: 0 as number | null };
+  check("2× doubles play earnings (50 → 100)",
+    oddieScoreFrom({ ...base, contributionPoints: 0, loudMultiplier: 2 }) === 100);
+  check("...but a ledger event still pays exactly its face value on top",
+    oddieScoreFrom({ ...base, contributionPoints: 75, loudMultiplier: 2 }) === 100 + 150);
+  check("an absent multiplier is 1×",
+    oddieScoreFrom({ ...base, contributionPoints: 0 }) === 50);
+  check("a rogue multiplier clamps to the cap",
+    oddieScoreFrom({ ...base, contributionPoints: 0, loudMultiplier: 99 }) ===
+    oddieScoreFrom({ ...base, contributionPoints: 0, loudMultiplier: 2 }));
+
+  // Wired through the store: the approved post from the decide section above
+  // puts its device on 1.25×; @Loudest's weekly wins put theirs on 2×.
+  const poster = await loudStatusFor("device-loudpost00001");
+  check("one approval in 30d reads 1.25× from the store",
+    poster.clearedIn30d === 1 && poster.multiplier === 1.25, JSON.stringify(poster));
+  const winner = await loudStatusFor("device-loudloudloud1");
+  check("a weekly win in 30d reads 2×",
+    winner.weeklyWinIn30d === true && winner.multiplier === 2, JSON.stringify(winner));
+}
+
+console.log("\nthe crowd ladder: geometric rungs, once per market, to the surfacer");
+{
+  const SURFACER = "device-laddersurface1";
+  const { slug } = await createCommunityMarket({
+    question: "Will the ladder market fill up?",
+    closeTime: Math.floor(Date.now() / 1000) + 86_400,
+  });
+  await recordSurfacer(slug, { deviceId: SURFACER });
+  const live = (await openCommunityMarkets()) as unknown as Market[];
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const caller = (n: number) => `device-laddercall-${String(n).padStart(3, "0")}`;
+  const call = async (n: number) => {
+    _memGrant(caller(n), 10);
+    const r = await placeCall(slug, n % 2 ? "yes" : "no", 5, caller(n), live);
+    if (!r.ok) throw new Error(JSON.stringify(r));
+    await flush();
+  };
+
+  const before = await seasonPointsFor(SURFACER);
+  for (let n = 1; n <= 10; n++) await call(n);
+  // 10 fresh players: the 3-player rung (100) + the 10-player rung (250) +
+  // ten first-timer awards (10 × 100), all credited to the surfacer.
+  const atTen = await seasonPointsFor(SURFACER);
+  check("10 players pays three_players + ten_players + the first-timers",
+    atTen - before === 100 + 250 + 10 * 100, `delta ${atTen - before}`);
+
+  _memGrant(caller(1), 10);
+  await placeCall(slug, "yes", 5, caller(1), live); await flush();
+  check("a repeat caller moves nothing — rungs are distinct-player rungs",
+    (await seasonPointsFor(SURFACER)) === atTen);
+
+  for (let n = 11; n <= 25; n++) await call(n);
+  const atTwentyFive = await seasonPointsFor(SURFACER);
+  check("25 players adds the 750 rung (+ the new first-timers)",
+    atTwentyFive - atTen === 750 + 15 * 100, `delta ${atTwentyFive - atTen}`);
 }
 
 console.log(failures === 0 ? "\nall loud checks passed.\n" : `\n${failures} loud check(s) FAILED.\n`);
