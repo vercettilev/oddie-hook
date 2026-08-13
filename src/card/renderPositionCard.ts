@@ -9,6 +9,7 @@
 // chose to make it one.
 
 import type { ShareCall } from "../store/markets.js";
+import { displayTitle } from "../title.js";
 import { C, FONT, META, brandLockup, esc, layoutQuestion, textWidth, volumePill } from "./renderCard.js";
 
 const W = 1000;
@@ -21,7 +22,7 @@ const HERO_BASE = 462;
 const KICKER_FS = 34;
 
 export function renderPositionCard(s: ShareCall): string {
-  const q = layoutQuestion(s.question);
+  const q = layoutQuestion(displayTitle(s.question));
   const firstBaseline = Q_TOP + CAP * q.fs;
   const questionTspans = q.lines
     .map((l, i) => `<tspan x="${PAD_L}" y="${Math.round(firstBaseline + i * q.lineH)}">${esc(l)}</tspan>`)

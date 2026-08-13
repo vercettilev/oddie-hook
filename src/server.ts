@@ -1,4 +1,5 @@
 import express from "express";
+import { displayTitle } from "./title.js";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -321,7 +322,7 @@ function moneyShort(n: number): string {
 function marketPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number; venue?: string } }, slug: string, forming?: { positions: number } | null): string {
   const m = rec.market;
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
-  const title = m.question;
+  const title = displayTitle(m.question);
   // Community markets speak "% yes", never venue volume ("$0 in play" would be
   // venue framing on a community share); venue markets keep their liquidity line.
   // A market still FORMING has no meaningful %, so it shows the call count.

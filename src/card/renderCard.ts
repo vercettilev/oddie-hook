@@ -1,5 +1,6 @@
 import { Market } from "../venues/types.js";
 import { X_HANDLE } from "../brand.js";
+import { displayTitle } from "../title.js";
 import { logoMark } from "./logoMark.js";
 
 // The card IS Oddie talking. Logo language: chunky black rounded outline,
@@ -240,7 +241,7 @@ export function renderCard(m: Market): string {
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const no = 100 - yes;
 
-  const q = layoutQuestion(m.question);
+  const q = layoutQuestion(displayTitle(m.question));
   const firstBaseline = Q_TOP + CAP * q.fs;
   const questionTspans = q.lines
     .map((l, i) => `<tspan x="${PAD_L}" y="${Math.round(firstBaseline + i * q.lineH)}">${esc(l)}</tspan>`)

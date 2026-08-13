@@ -2144,7 +2144,7 @@
     <div class="brand"><a class="brandlink" href="/" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
     <nav class="railnav" id="railnav"></nav>
     <div class="railfoot">
-      Preview build.
+      predict, don't argue
     </div>
   </aside>
 
@@ -3179,6 +3179,23 @@ async function loadFeed(){
  * floor the line is simply absent, because "67% of poppers" meaning 2-of-3 is
  * noise dressed up as precision, and the locked state reads fine without it. */
 const MIN_CROWD=10;
+// Display-time title normalization for grouped/outcome markets — the client
+// copy of src/title.ts's displayTitle, same three rules: "— Yes" is redundant
+// with the YES button and drops; "— No" is LEFT ALONE (yesPct prices the NO
+// outcome as this market's yes side, stripping would flip the meaning);
+// "Title — Outcome" becomes "Title: Outcome?" so it reads as a question.
+// Display only: slugs, matching and share URLs all keep the raw question.
+function displayTitle(q){
+  const i=q.lastIndexOf(" — ");
+  if(i<0)return q;
+  const title=q.slice(0,i).trim(), outcome=q.slice(i+3).trim();
+  if(!title||!outcome)return q;
+  const low=outcome.toLowerCase();
+  if(low==="yes")return title;
+  if(low==="no")return q;
+  return `${title.endsWith("?")?title.slice(0,-1).trimEnd():title}: ${outcome}?`;
+}
+
 function socialLine(side,crowd,marketSidePct){
   const yes=crowd?.yes??0, no=crowd?.no??0, total=yes+no;
   if(total<MIN_CROWD)return "";
@@ -3812,7 +3829,7 @@ function buildCard(m,i,homeLoop){
       </a>` : ""}
       ${sourcePostHtml(m)}
       <div class="meta">${metaRowHtml(m,yes)}</div>
-      <div class="take">${esc(m.question)}</div>
+      <div class="take">${esc(displayTitle(m.question))}</div>
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">
           <span class="oside">YES</span>
@@ -3862,7 +3879,7 @@ function buildCard(m,i,homeLoop){
     // Discovery share: "check this out". The link unfurls to the card, so the
     // text stays light — the question rides along in the preview.
     card.querySelector(".shareico").onclick=(e)=>{e.stopPropagation();
-      shareMarket({slug:m.slug,text:`${m.question} · call it 👇`,source:"card",anchor:e.currentTarget});};
+      shareMarket({slug:m.slug,text:`${displayTitle(m.question)} · call it 👇`,source:"card",anchor:e.currentTarget});};
     // Challenge the other side: a pre-filled X intent aimed at the party the
     // claim came from (the tweet author, if we know them), else generically
     // framed. Nothing is posted — the compose window opens, they choose to send.
@@ -3906,8 +3923,12 @@ function buildCard(m,i,homeLoop){
       }
       // The strong entry point: "I called it — what do you say?" is bet-don't-
       // argue itself. The text names their side; the link carries the market.
+      // The reward is ON the button — making the product loud must read as
+      // paid work, not a favor. Honest here specifically: the share award
+      // dedups per call, and this button only exists right after a fresh
+      // call, so its first press really does pay.
       const sb=document.createElement("button");
-      sb.className="sharebig";sb.innerHTML=`${SHARE_ICON}<span>Share your call 🔥</span>`;
+      sb.className="sharebig";sb.innerHTML=`${SHARE_ICON}<span>Share your call · +80 oddies</span>`;
       // The personal card: mint the owner-only share link, then hand it to the
       // OS sheet. It lands on THEIR timeline — the social layer lives on X.
       sb.onclick=async(e)=>{
@@ -4837,7 +4858,7 @@ async function loadMyMarkets(scroller){
       <div class="mm-total"><b>+${totalFees}</b> earned in creator fees · ${markets.length} market${markets.length===1?"":"s"}</div>
       <div class="mm-list">${markets.map(m=>`
         <a class="mm-row" href="/m/${encodeURIComponent(m.slug)}">
-          <span class="mm-q">${esc(m.question)}</span>
+          <span class="mm-q">${esc(displayTitle(m.question))}</span>
           <span class="mm-meta">${m.resolvedOutcome
             ?`resolved ${m.resolvedOutcome.toUpperCase()}${m.feesEarned?` · you earned +${m.feesEarned}`:""}`
             :`${m.poolTokens} in play · ${m.callers} caller${m.callers===1?"":"s"}${m.closesAt?` · ${closesIn(m.closesAt)}`:""}`}</span>

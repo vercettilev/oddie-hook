@@ -9,6 +9,7 @@
 import { renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT } from "../src/card/renderCard.js";
 import { renderPositionCard } from "../src/card/renderPositionCard.js";
 import { renderProfileCard } from "../src/card/renderProfileCard.js";
+import { displayTitle } from "../src/title.js";
 import { X_HANDLE } from "../src/brand.js";
 import type { Market } from "../src/venues/types.js";
 import type { ShareCall } from "../src/store/markets.js";
@@ -112,6 +113,31 @@ console.log("\nevery card is self-addressing");
   const pill = volumePill({ venue: "polymarket", closesAt: "2026-12-31T00:00:00Z", volumeUsd: 4_600_000 });
   check("volume pill clears the extended lockup", pill.x >= LOCKUP_RIGHT + 24,
     `pill.x=${Math.round(pill.x)} lockup right=${Math.round(LOCKUP_RIGHT)}`);
+}
+
+// --- displayTitle: outcome-market titles read as questions --------------------
+console.log("\ndisplayTitle: the card's title is the tweet");
+{
+  check('"— Yes" is redundant with the YES button and drops',
+    displayTitle("Will the U.S. invade Iran before 2027? — Yes") === "Will the U.S. invade Iran before 2027?");
+  check('"— No" is LEFT ALONE — yesPct prices the NO outcome, stripping flips the meaning',
+    displayTitle("Will the U.S. invade Iran before 2027? — No") === "Will the U.S. invade Iran before 2027? — No");
+  check("a named outcome becomes a question without needing a verb",
+    displayTitle("F1 Drivers' Champion — Lewis Hamilton") === "F1 Drivers' Champion: Lewis Hamilton?");
+  check("...and a question-titled event folds its own ? in",
+    displayTitle("How many Fed cuts in 2026? — 3") === "How many Fed cuts in 2026: 3?");
+  check("a plain question passes through untouched",
+    displayTitle("Will X win?") === "Will X win?");
+  check("an em dash INSIDE a sentence (no separator spacing) is not a split",
+    displayTitle("Tie—breaker rules apply") === "Tie—breaker rules apply");
+  // Wrap-proof assertions: the question is broken into tspans, so a long
+  // contiguous substring can straddle a line break — check fragments that
+  // survive wrapping instead.
+  const f1 = renderCard(mk("F1 Drivers' Champion — Lewis Hamilton", 38));
+  check("the card renders the normalized form", f1.includes("Hamilton?") && f1.includes("Champion:"));
+  check("...and never the raw dash form", !f1.includes("— Lewis"));
+  check("...and never a raw yes suffix",
+    !renderCard(mk("Will it rain tomorrow? — Yes", 38)).includes("— Yes"));
 }
 
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);
