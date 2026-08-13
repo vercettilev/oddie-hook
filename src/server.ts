@@ -724,7 +724,11 @@ app.get("/api/feed", async (req, res) => {
       // The source post itself, so a card can SHOW the claim it came from
       // rather than only linking to it. Null whenever we never got the text
       // (private/deleted post, or oEmbed unreachable at record time).
-      sourcePost: x.community && surfacer?.sourceText
+      // Any TAGGED market can show the post it came from, not just a community
+      // one. A venue market somebody tagged has the same story — "this argument
+      // on X is now a market" — and gating the post on `community` was an
+      // artefact of the days when only community markets could be tagged.
+      sourcePost: (x.community === true || taggedSet.has(x.slug)) && surfacer?.sourceText
         ? { text: surfacer.sourceText, author: surfacer.sourceAuthor, handle: surfacer.handle, url: surfacer.sourceUrl }
         : null,
       // Tagging provenance, for EVERY tagged market — community by definition,
@@ -1928,6 +1932,20 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
   const { slug, marketId } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability });
   // The published record, incl. any operator edits — the other half of the tuning log.
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
+
+  // Provenance is recorded HERE, when the market is born, rather than only as a
+  // side effect of generating a reply for it. Every community market on
+  // production was created without one — the reply step was the only writer,
+  // its source URL was optional, and a market whose source was never recorded
+  // can never show a name or the post it came from. Best-effort: a market must
+  // still be created if the tweet lookup fails.
+  const createSourceUrl = req.body?.source_url != null ? String(req.body.source_url).trim() || null : null;
+  if (createSourceUrl) {
+    void (async () => {
+      await recordSurfacer(slug, { sourceUrl: createSourceUrl });
+      await awardSurface(slug);
+    })().catch(() => {});
+  }
 
   // Layer 2 — devnet proof. Soft by design: a failure here never blocks Layer 1.
   let onchain: { pubkey: string; explorer: string; signature: string } | null = null;

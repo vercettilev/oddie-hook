@@ -142,8 +142,11 @@
     <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
       <textarea id="cx" placeholder="paste the tagged tweet (+ optional thread context)…"
         style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:66px;resize:vertical"></textarea>
-      <input id="csrc" type="url" placeholder="source tweet URL (optional — logged so we know what triggered this)"
+      <input id="csrc" type="url" required placeholder="source tweet URL — REQUIRED (x.com/…/status/…)"
         style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:2px solid var(--ink);border-radius:10px;padding:8px 11px;margin:6px 0 0">
+      <p class="hint" style="margin:5px 0 0">This URL is what puts a <b>name</b> and the <b>original post</b> on the card.
+        Without it the market ships as "tagged by anonymous" with nothing to show — which is the one thing the feed
+        exists to avoid. Every community market created before this was required has exactly that problem.</p>
       <div class="row" style="margin:8px 0 0">
         <button class="ghost" id="cxgo" style="padding:9px 16px;font-size:14px">Extract market →</button>
         <span class="why" id="cxstat" style="align-self:center;margin:0"></span>
@@ -522,10 +525,22 @@ function toLocalInput(iso) {
   return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
 }
 $("#cxgo").onclick = extractMarket;
+// The source URL is checked at the FRONT of the flow, not at Create. Everything
+// downstream (the draft, the reply, the market) is built from a tweet, so a
+// missing URL is a fact about this run that is better known before three
+// minutes of work than after.
+const SOURCE_URL_RE = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/[A-Za-z0-9_]{1,15}\/status(?:es)?\/\d{5,25}/;
+
 async function extractMarket() {
   const text = $("#cx").value.trim();
   const stat = $("#cxstat"), out = $("#cxout");
   if (!text) { stat.textContent = "paste an argument first."; return; }
+  const src = $("#csrc").value.trim();
+  if (!SOURCE_URL_RE.test(src)) {
+    stat.textContent = src ? "that isn't an x.com/…/status/… link." : "paste the source tweet URL first — it's what names the card.";
+    $("#csrc").focus();
+    return;
+  }
   $("#cxgo").disabled = true; stat.textContent = "checking venue markets + extracting… (a few seconds)"; out.innerHTML = "";
   try {
     const r = await fetch("/api/community/extract", {
@@ -856,7 +871,9 @@ async function createMarket() {
   try {
     const r = await fetch("/api/community/create", {
       method: "POST", headers: admHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ question: q, close_time: new Date(closeLocal).toISOString(), category, yesPct, resolution_criteria: criteria || null, resolvability: lastResolvability }),
+      // source_url rides along so provenance is recorded when the market is
+      // BORN, not only if the reply step that follows happens to succeed.
+      body: JSON.stringify({ question: q, close_time: new Date(closeLocal).toISOString(), category, yesPct, resolution_criteria: criteria || null, resolvability: lastResolvability, source_url: $("#csrc").value.trim() || null }),
     });
     const j = await r.json().catch(() => ({}));
     if (r.status === 401) { cout.innerHTML = '<div class="box error"><p class="why">admin token missing or wrong — save it above.</p></div>'; return; }
