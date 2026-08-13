@@ -182,8 +182,14 @@
   .brand b{font-size:21px;font-weight:600}
   /* The logo+wordmark, now a real link home — grouped so the two keep their own
      8px gap (matching the old flat layout) while acting as one tap target. */
-  .brandlink{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit}
-  .brandlink:active{opacity:.82}
+  /* The mark has always linked home; it just never LOOKED like it did, so
+     nobody tried it. A hover lift is the whole fix — the destination was
+     already there, only the affordance was missing. */
+  .brandlink{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit;
+    cursor:pointer;transition:opacity .14s ease, transform .14s ease}
+  .brandlink:hover{opacity:.78;transform:translateY(-1px)}
+  .brandlink:active{opacity:.82;transform:none}
+  @media (prefers-reduced-motion:reduce){ .brandlink{transition:opacity .14s ease} .brandlink:hover{transform:none} }
 
   /* The mark IS the logo — the Oddie ghost on its lime tile, baked into the art.
      A rounded square (app-icon shape), not a circle, so it reads as the same tile
@@ -2163,7 +2169,7 @@
 
 <div class="app">
   <aside class="rail">
-    <div class="brand"><a class="brandlink" href="/" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+    <div class="brand"><a class="brandlink" href="/" title="Home" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
     <nav class="railnav" id="railnav"></nav>
     <div class="railfoot">
       predict, don't argue
@@ -2861,7 +2867,7 @@ function loudPromoCard(){
   const el=document.createElement("div");
   el.className="claimcard ready loudpromo";
   el.innerHTML=`<div class="cc-grow">
-      <div class="cc-title">Post about oddie. Get paid in oddies.</div>
+      <div class="cc-title">Post about oddie. Earn oddies.</div>
       <div class="cc-sub">+150 oddies per cleared post · +300 for the week's loudest<span id="loudwin"></span></div>
     </div>
     <button class="claimbtn" id="loudpromobtn">Claim oddies</button>
@@ -2966,7 +2972,7 @@ const svg=(k)=>`<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[k]}</svg>`;
 // The logo + wordmark, a real link home from every screen (it used to do
 // nothing). Balance pill and theme toggle ride alongside it, outside this mark,
 // in each header — they're not part of "going home".
-const BRAND_MARK='<a class="brandlink" href="/" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a>';
+const BRAND_MARK='<a class="brandlink" href="/" title="Home" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a>';
 
 function money(n){return n>=1e6?`$${(n/1e6).toFixed(1)}M`:n>=1e3?`$${(n/1e3).toFixed(0)}K`:`$${Math.round(n)}`}
 function fmtMult(p){return (100/p).toFixed(1)+"×"}
