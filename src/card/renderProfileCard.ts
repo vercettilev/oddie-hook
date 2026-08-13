@@ -132,7 +132,7 @@ export function renderProfileCard(p: ProfileCard): string {
   const pct = p.hasEnough && p.oddieScore != null ? quality - 0.5 : 0;
   const heroText = p.hasEnough && p.oddieScore != null ? String(p.oddieScore) : "building";
   const heroFS = p.hasEnough ? 62 : 32;
-  const kicker = p.hasEnough ? "ODDIE SCORE" : "TRACK RECORD";
+  const kicker = p.hasEnough ? "ODDIES" : "TRACK RECORD";
   const ring = `<circle cx="${RING_CX}" cy="${RING_CY}" r="${RING_R}" fill="none" stroke="${C.barBg}" stroke-width="${RING_SW}"/>
     ${pct > 0 ? `<circle cx="${RING_CX}" cy="${RING_CY}" r="${RING_R}" fill="none" stroke="${C.accent}" stroke-width="${RING_SW}"
       stroke-linecap="round" stroke-dasharray="${circumference.toFixed(1)}"

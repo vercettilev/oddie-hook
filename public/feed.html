@@ -2322,9 +2322,9 @@ function paintBalance(pulse){
   const tip=balance<STARTING_PREDICTIONS?nextRefillIn():"";
   document.querySelectorAll(".bal").forEach(el=>{
     // The unit is NAMED, not implied: "5 LEFT" made a newcomer ask "5 what?"
-    // as their first question. One visible unit everywhere pre-first-win —
-    // predictions — per the single-unit rule (Season Points stay backstage
-    // until something has actually been won).
+    // as their first question. Two units exist in the whole product and no
+    // more: PREDICTIONS (spendable, this pill) and ODDIES (reputation —
+    // every award lands there, under that one name).
     el.innerHTML=`🪙 ${balance} <span class="ptslbl">${balance===1?"prediction":"predictions"}</span>${tip?` <span class="topup">${tip}</span>`:""}`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
     // Persistent pick-streak badge as visible identity, right beside the balance.
@@ -2477,9 +2477,9 @@ function paintGuestBar(){
   // title carries the full sentence regardless, so nothing is only-visible on
   // one breakpoint. aria-label on the wrapper keeps the screen-reader text
   // complete even when the span is display:none.
-  el.title="Connect X or Google to save your score permanently.";
-  el.innerHTML=`<span class="gb-text" aria-label="Playing as guest — connect X or Google to save your score permanently."
-      >Playing as guest<span class="gb-long"> — <b>connect X or Google</b> to save your score permanently.</span></span>
+  el.title="Connect X or Google to save your oddies permanently.";
+  el.innerHTML=`<span class="gb-text" aria-label="Playing as guest — connect X or Google to save your oddies permanently."
+      >Playing as guest<span class="gb-long"> — <b>connect X or Google</b> to save your oddies permanently.</span></span>
     <button class="gb-go" type="button">Connect</button>
     <button class="gb-x" type="button" aria-label="Dismiss">✕</button>`;
   // Into the header itself, not the body — see the .guestbar CSS note. The
@@ -2487,7 +2487,7 @@ function paintGuestBar(){
   // content offset follows. No second position to keep in sync.
   const hdr=document.getElementById("top");
   (hdr||document.body).appendChild(el);
-  el.querySelector(".gb-go").onclick=()=>connectSheet("Save your score permanently");
+  el.querySelector(".gb-go").onclick=()=>connectSheet("Save your oddies permanently");
   el.querySelector(".gb-x").onclick=()=>{
     guestSet(GUEST_DISMISSED_AT,guestNum(GUEST_CALLS));
     el.remove(); measureChrome();
@@ -2743,7 +2743,7 @@ function shareMenu({url,text,slug,source,anchor}){
     ev("share_done",{slug,source,via:"whatsapp"});
   }));
   const loudIcon='<svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6l-5 4H4a1 1 0 0 0-1 1z"/><path d="M15 9a3.5 3.5 0 0 1 0 6"/><path d="M17.5 6.5a7 7 0 0 1 0 11"/></svg>';
-  menu.appendChild(item("Claim Loud points",loudIcon,()=>loudClaim(source)));
+  menu.appendChild(item("Claim oddies",loudIcon,()=>loudClaim(source)));
   function close(){dim.remove();menu.remove();document.removeEventListener("keydown",onKey);}
   function onKey(e){if(e.key==="Escape")close();}
   dim.onclick=close;document.addEventListener("keydown",onKey);
@@ -2755,11 +2755,12 @@ function shareMenu({url,text,slug,source,anchor}){
   let top=r.bottom+8; if(top+mh>innerHeight-8)top=Math.max(8,r.top-mh-8);
   menu.style.left=left+"px";menu.style.top=top+"px";
 }
-/* ---------------------------------------------------- loud points claim -- */
+/* --------------------------------------------------------- oddies claim -- */
 // "I posted about oddie — here's the link." The post goes into a review queue;
-// approval pays +75 Season Points, the week's best +150 on top. Requires a
-// linked X account and the post must be the submitter's own — the server
-// enforces both; this sheet just carries the answer back.
+// approval pays +150 oddies, the week's best +300 on top. ONE currency, one
+// name: everything the product pays lands in oddies, and no UI string may
+// name a second unit. Requires a linked X account and the post must be the
+// submitter's own — the server enforces both; this sheet carries the answer.
 function loudClaim(source){
   ev("loud_claim_open",{source});
   document.querySelectorAll(".sdim,.lsheet").forEach(n=>n.remove());
@@ -2767,10 +2768,10 @@ function loudClaim(source){
   const sh=document.createElement("div");sh.className="lsheet";
   sh.style.cssText="position:fixed;z-index:81;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,92vw);background:var(--ground-2);border:1.5px solid var(--line-g);border-radius:16px;padding:16px;box-shadow:0 18px 44px rgba(13,60,90,.24)";
   sh.innerHTML=`
-    <div style="font-family:'Nunito';font-weight:900;font-size:15px;color:var(--on-ground)">Loud points</div>
+    <div style="font-family:'Nunito';font-weight:900;font-size:15px;color:var(--on-ground)">Earn oddies for posting</div>
     <div style="font-family:'Nunito';font-weight:700;font-size:12.5px;color:var(--muted-g);line-height:1.45;margin:6px 0 10px">
-      Posted about oddie on X? Paste the post's link. Cleared posts earn <b>+75</b> Season Points,
-      and the week's best earn <b>+150</b> on top.</div>
+      Posted about oddie on X? Paste the post's link. A cleared post earns <b>+150 oddies</b>,
+      and the week's best earn <b>+300</b> on top.</div>
     <input id="loudurl" type="url" inputmode="url" autocapitalize="off" spellcheck="false"
       placeholder="https://x.com/you/status/…"
       style="width:100%;box-sizing:border-box;font-family:'Nunito';font-weight:700;font-size:16px;color:var(--on-ground);background:var(--ground);border:1.5px solid var(--line-g);border-radius:10px;padding:10px 12px">
@@ -2789,7 +2790,7 @@ function loudClaim(source){
       const j=await r.json();
       const posts=(j.posts||[]).slice(0,5);
       if(!posts.length)return;
-      const label={pending:"in review",approved:"+75 ✓",rejected:"not counted"};
+      const label={pending:"in review",approved:"+150 ✓",rejected:"not counted"};
       sh.querySelector("#loudmine").innerHTML=posts.map(p=>`
         <div style="display:flex;justify-content:space-between;gap:10px;font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);padding:4px 0">
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.url.replace(/^https:\/\//,"")}</span>
@@ -2810,7 +2811,7 @@ function loudClaim(source){
       if(j.ok){
         ev("loud_submit",{source});
         inp.value="";msg.textContent="";
-        toast("Sent — +75 lands when it clears review");
+        toast("Sent · +150 oddies when it clears review");
         mine();
       }else{
         msg.textContent=j.error||"couldn't submit that link.";
@@ -2830,10 +2831,10 @@ function loudPromoCard(){
   const el=document.createElement("div");
   el.className="claimcard ready loudpromo";
   el.innerHTML=`<div class="cc-grow">
-      <div class="cc-title">Post about oddie. Get paid in points.</div>
-      <div class="cc-sub">+75 Season Points per cleared post · +150 for the week's loudest<span id="loudwin"></span></div>
+      <div class="cc-title">Post about oddie. Get paid in oddies.</div>
+      <div class="cc-sub">+150 oddies per cleared post · +300 for the week's loudest<span id="loudwin"></span></div>
     </div>
-    <button class="claimbtn" id="loudpromobtn">Claim Loud points</button>
+    <button class="claimbtn" id="loudpromobtn">Claim oddies</button>
     <button class="onbx" type="button" aria-label="Dismiss">×</button>`;
   el.querySelector("#loudpromobtn").onclick=()=>loudClaim("feed_promo");
   el.querySelector(".onbx").onclick=()=>{lsSet(LOUD_PROMO_KEY);el.remove();};
@@ -4894,12 +4895,12 @@ function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge){
       <div class="scorering" style="--score-pct:${pct}" id="scorering">
         <div class="scorering-inner">
           <div class="scorering-num${hasEnough?"":" building"}" id="scoreringnum">${hasEnough?"0":"building"}</div>
-          <div class="scorering-lab">${hasEnough?"ODDIE SCORE":"TRACK RECORD"}</div>
+          <div class="scorering-lab">${hasEnough?"ODDIES":"TRACK RECORD"}</div>
         </div>
       </div>
       <div class="oscore-side">
-        <div class="oscore-title">Oddie Score</div>
-        <p class="oscore-desc">how much you play, scaled by how right you are</p>
+        <div class="oscore-title">Oddies</div>
+        <p class="oscore-desc">every call, market and post pays here · play is scaled by how right you are</p>
         ${weeklyLine}
         ${rankChip}
         ${rankMoveLine}
@@ -5008,7 +5009,7 @@ async function renderPublicProfile(){
       <div class="tile"><div class="v topic">${esc(bestTopicVal)}</div><div class="k">BEST TOPIC</div></div>
       <div class="tile"><div class="v">${acc.resolved}</div><div class="k">RESOLVED PICKS</div></div>
     </div>
-    ${!acc.hasEnough?`<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Oddie Score shows at ${acc.minResolved}.</p>`:''}
+    ${!acc.hasEnough?`<p class="cnote">🌱 building track record · ${acc.resolved} of ${acc.minResolved} resolved picks. Oddies show at ${acc.minResolved}.</p>`:''}
     ${categoryBreakdownHtml(acc.byCategory)}
     <p class="psec" style="margin-top:22px">Recent calls</p>
     ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
@@ -5018,7 +5019,7 @@ async function renderPublicProfile(){
   const sb=scroller.querySelector("#pubshare");
   if(sb)sb.onclick=()=>{
     const text=acc.hasEnough
-      ?`@${data.handle} — Oddie Score ${acc.oddieScore}, ${acc.accuracyPct}% accuracy on oddie`
+      ?`@${data.handle}: ${acc.oddieScore} oddies, ${acc.accuracyPct}% accuracy on oddie`
       :`@${data.handle} is building a track record on oddie`;
     xShare(text, `${SHARE_ORIGIN}/@${data.handle}`, "public_profile");
   };
@@ -5871,7 +5872,7 @@ function renderCelebration(){
         <div class="scorering big" id="celRing" style="--score-pct:${c.scoreBefore/1000}">
           <div class="scorering-inner">
             <div class="scorering-num" id="celScoreNum">${c.scoreBefore}</div>
-            <div class="scorering-lab">ODDIE SCORE</div>
+            <div class="scorering-lab">ODDIES</div>
           </div>
         </div>
       </div>`:""}

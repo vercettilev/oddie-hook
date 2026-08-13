@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare } from "./store/markets.js";
 import { fetchResolution } from "./venues/resolution.js";
-import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners } from "./store/markets.js";
+import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
@@ -387,8 +387,8 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
 function profilePageHtml(handle: string, acc: { oddieScore: number | null; accuracyPct: number | null; streak: number; resolved: number; hasEnough: boolean }): string {
   const title = `@${handle} on oddie`;
   const desc = acc.hasEnough
-    ? `Oddie Score ${acc.oddieScore} · ${acc.accuracyPct}% accuracy · ${acc.resolved} resolved picks`
-    : `building a track record — ${acc.resolved} resolved picks so far`;
+    ? `${acc.oddieScore} oddies · ${acc.accuracyPct}% accuracy · ${acc.resolved} resolved picks`
+    : `building a track record · ${acc.resolved} resolved picks so far`;
   const img = `${BASE_URL}/card/u/${encodeURIComponent(handle)}.png`;
   const url = `${BASE_URL}/@${handle}`;
   const tags = [
@@ -1716,13 +1716,13 @@ app.post("/api/admin/loud/decide", requireAdmin, async (req, res) => {
   if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "id required" });
   const r = await decideLoudPost(id, approve, note);
   if (!r.ok) return res.status(r.reason === "not_found" ? 404 : 409).json({ ok: false, reason: r.reason });
-  res.json({ ok: true, status: r.status, points: r.status === "approved" ? SEASON_POINTS.loud_post : 0 });
+  res.json({ ok: true, status: r.status, points: r.status === "approved" ? ODDIES_PER.loud_post : 0 });
 });
 
 // Weekly Loudest Callers — phase 0 of the loudness flywheel, human all the way
 // through: the operator searches X for the week's best posts about oddie, then
-// names the authors here. +150 season points each (SEASON_POINTS.loud), one
-// award per (person, ISO week) by dedup, so resubmitting a list is safe.
+// names the authors here. +300 oddies each (ODDIES_PER.loud), one award per
+// (person, ISO week) by dedup, so resubmitting a list is safe.
 app.post("/api/admin/loud", requireAdmin, async (req, res) => {
   const week = typeof req.body?.week === "string" && /^\d{4}-W\d{2}$/.test(req.body.week)
     ? req.body.week
@@ -1735,7 +1735,7 @@ app.post("/api/admin/loud", requireAdmin, async (req, res) => {
   for (const h of handles) {
     results.push({ handle: h.replace(/^@+/, ""), ...(await awardLoud(h, week)) });
   }
-  res.json({ week, points: SEASON_POINTS.loud, results });
+  res.json({ week, points: ODDIES_PER.loud, results });
 });
 
 app.get("/tool", (_req, res) => {

@@ -231,10 +231,15 @@ export const SCORE_WEIGHTS = {
   // buys reach: one created market outweighs twenty calls before its surfacing
   // award is even counted.
   marketCreated: 100,
-  // Season points doubled. Every event in that ledger is a growth event —
-  // surfacing a market, it reaching three players, it bringing somebody's
-  // first-ever call, it resolving cleanly — so it is the closest thing the
-  // product has to a measure of noise made on X.
+  // Growth-ledger points doubled into oddies. Every event in that ledger is a
+  // growth event — surfacing a market, it reaching three players, it bringing
+  // somebody's first-ever call, a post about oddie clearing review — so it is
+  // the closest thing the product has to a measure of noise made on X.
+  //
+  // Applied OUTSIDE the quality multiplier (see oddieScoreFrom): these are the
+  // amounts the product PROMISES ("+150 oddies when your post clears"), and a
+  // promise the multiplier could quietly rescale to +75 or +225 is not a
+  // promise. Play is multiplied by skill; noise pays face value.
   contribution: 2,
 } as const;
 /** How far accuracy can move the base, either way. */
@@ -251,16 +256,27 @@ export interface ScoreInputs {
   meanEdge: number | null;
 }
 
-/** Pure. The single definition of the score — every surface reads this one. */
+/**
+ * Pure. The single definition of the one currency — ODDIES — and every surface
+ * reads this one. (Function and field names keep the oddieScore identifier;
+ * only the user-facing label changed when the point systems were unified.)
+ *
+ * Two halves, deliberately treated differently:
+ *   - PLAY (calls, resolutions, created markets) is multiplied by quality —
+ *     skill amplifies what you did in the markets.
+ *   - NOISE (the growth ledger: shares, cleared posts, weekly loudest) is
+ *     flat-added at face value, outside the multiplier. These amounts are
+ *     PROMISED in the UI as exact numbers, and a promise the multiplier could
+ *     quietly turn +150 into +75 is not a promise.
+ */
 export function oddieScoreFrom(a: ScoreInputs): number {
-  const base =
+  const played =
     Math.max(0, a.callsMade ?? 0) * SCORE_WEIGHTS.callMade +
     Math.max(0, a.resolvedCalls) * SCORE_WEIGHTS.resolvedCall +
-    Math.max(0, a.marketsCreated) * SCORE_WEIGHTS.marketCreated +
-    Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution;
+    Math.max(0, a.marketsCreated) * SCORE_WEIGHTS.marketCreated;
   const raw = 1 + 2 * (a.meanEdge ?? 0);
   const quality = Math.max(SCORE_QUALITY_MIN, Math.min(SCORE_QUALITY_MAX, raw));
-  return Math.max(0, Math.round(base * quality));
+  return Math.max(0, Math.round(played * quality) + Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution);
 }
 
 /**

@@ -191,14 +191,14 @@
        server dedups per (person, ISO week), so a resubmitted list cannot
        double-pay. -->
   <div class="box" id="loudbox" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">3 · loud awards — posts about oddie, reviewed and paid</p>
+    <p class="verdict" style="font-size:17px">3 · loud awards — posts about oddie, reviewed and paid in oddies</p>
     <p class="why" style="margin:0 0 8px">Players submit their post links from the app. Open each,
-      approve the real ones (<b>+75</b>), reject the rest. Sunday: pick the week's best for <b>+150</b>.</p>
+      approve the real ones (<b>+150 oddies</b>), reject the rest. Sunday: pick the week's best for <b>+300</b>.</p>
 
     <p class="vhead" style="margin:2px 0 6px">review queue — submitted links, oldest first</p>
     <div id="loudq"><p class="why">enter the admin token above, then this loads…</p></div>
 
-    <p class="vhead" style="margin:14px 0 6px">weekly picks — the best of the week, +150 each</p>
+    <p class="vhead" style="margin:14px 0 6px">weekly picks — the best of the week, +300 oddies each</p>
     <p class="why" style="margin:0 0 8px">
       Paste the authors below (comma, space or newline separated) — from the approved queue, or found
       by searching X for <b>oddie.fun</b> / <b>@oddiefun</b>. One award per person per week —
@@ -396,7 +396,7 @@ async function loadLoudQueue() {
         <span class="vtext"><b>@${esc(q.handle || "?")}</b> · ${esc(q.week)}
           · <a href="${esc(q.url)}" target="_blank" rel="noopener">open the post ↗</a></span>
         <span class="row" style="margin:0">
-          <button class="ghost lapp" data-id="${q.id}" style="padding:7px 14px;font-size:13px">approve +75</button>
+          <button class="ghost lapp" data-id="${q.id}" style="padding:7px 14px;font-size:13px">approve +150</button>
           <button class="ghost lrej" data-id="${q.id}" style="padding:7px 14px;font-size:13px">reject</button>
         </span>
       </div>`).join("");
@@ -805,10 +805,10 @@ function renderUsersTable() {
 
   box.innerHTML = summary
     + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:660px">`
-    + `<tr>${th("User")}${th("First seen", 1)}${th("Points", 1)}${th("Calls", 1)}${th("Resolved", 1)}${th("Acc%", 1)}${th("Oddie", 1)}${th("Surfaced", 1)}${th("Season", 1)}</tr>`
+    + `<tr>${th("User")}${th("First seen", 1)}${th("Points", 1)}${th("Calls", 1)}${th("Resolved", 1)}${th("Acc%", 1)}${th("Oddies", 1)}${th("Surfaced", 1)}${th("Ledger", 1)}</tr>`
     + rows
     + "</table></div>"
-    + `<p class="why" style="color:var(--muted);margin-top:8px">"real" = did something (call / surfaced market / resolved pick) and isn't a known test device. Season Points is a backend value, never shown to users. (Founding Caller is hidden here — at this volume every device qualifies, so it's not yet a useful signal.)</p>`;
+    + `<p class="why" style="color:var(--muted);margin-top:8px">"real" = did something (call / surfaced market / resolved pick) and isn't a known test device. Ledger is the growth ledger's internal amounts — oddies pay 2× that face value, and players only ever see oddies. (Founding Caller is hidden here — at this volume every device qualifies, so it's not yet a useful signal.)</p>`;
 
   const cb = box.querySelector("#ushowall");
   if (cb) cb.onchange = () => { usersShowAll = cb.checked; renderUsersTable(); };

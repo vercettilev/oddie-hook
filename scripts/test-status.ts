@@ -74,6 +74,19 @@ console.log("\noddieScoreFrom: activity sets the size, accuracy scales it");
   check("a null edge is treated as market-neutral, not as a penalty",
     oddieScoreFrom({ resolvedCalls: 10, marketsCreated: 0, contributionPoints: 0, meanEdge: null }) ===
     oddieScoreFrom({ resolvedCalls: 10, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 }));
+
+  // The one-currency promise: ledger events are quoted in the UI as exact
+  // oddies ("+150 when your post clears" = 75 ledger × the contribution
+  // weight), so the quality multiplier must never touch them. Play scales
+  // with skill; noise pays face value — at the floor, at the ceiling, always.
+  const noise = { callsMade: 10, resolvedCalls: 0, marketsCreated: 0 };
+  const floorQ   = oddieScoreFrom({ ...noise, contributionPoints: 75, meanEdge: -0.9 });
+  const ceilingQ = oddieScoreFrom({ ...noise, contributionPoints: 75, meanEdge: 0.9 });
+  check("noise pays face value at floor quality (play 50×0.5 + 150)", floorQ === 175, String(floorQ));
+  check("...and is not amplified at ceiling quality (play 50×1.5 + 150)", ceilingQ === 225, String(ceilingQ));
+  check("the promised delta is exact: +150 oddies for a 75-point ledger event, any quality",
+    ceilingQ - oddieScoreFrom({ ...noise, contributionPoints: 0, meanEdge: 0.9 }) === 150 &&
+    floorQ - oddieScoreFrom({ ...noise, contributionPoints: 0, meanEdge: -0.9 }) === 150);
 }
 
 console.log("\nthe farm is pointed at volume and at X, on purpose");

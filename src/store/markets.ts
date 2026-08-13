@@ -5,7 +5,7 @@ import {
   DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
   edgePts, proceedsFor, reputationOf, winBonus,
   CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, creatorFeePlay,
-  callerTier, oddieScoreFrom,
+  callerTier, oddieScoreFrom, SCORE_WEIGHTS,
   type Reputation, type CallerTier,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
@@ -2936,12 +2936,24 @@ export const SEASON_POINTS = {
   // list cannot double-pay.
   loud: 150,
   // A submitted post link that passed review. Between shared and loud on
-  // purpose — the ladder is: pressed share (+40, optimistic), the post really
-  // exists and holds up (+75, verified), among the week's best (+150, picked).
-  // Deduped per tweet, so one post pays once no matter who resubmits it.
+  // purpose — the ladder, in oddies face value: pressed share (+80,
+  // optimistic), the post really exists and holds up (+150, verified), among
+  // the week's best (+300, picked). Deduped per tweet, so one post pays once
+  // no matter who resubmits it.
   loud_post: 75,
 } as const;
 export type SeasonEvent = keyof typeof SEASON_POINTS;
+
+/**
+ * What each ledger event is WORTH in oddies — the only unit any user-facing
+ * surface may name. SEASON_POINTS above are internal ledger amounts (kept
+ * as-is so historical season_points_log rows stay comparable); the score
+ * doubles them in (SCORE_WEIGHTS.contribution, flat-added), so face value =
+ * ledger × 2. Every "+N" the UI promises must come from THIS table.
+ */
+export const ODDIES_PER = Object.fromEntries(
+  (Object.keys(SEASON_POINTS) as SeasonEvent[]).map((k) => [k, SEASON_POINTS[k] * SCORE_WEIGHTS.contribution]),
+) as Record<SeasonEvent, number>;
 
 /** Pull the tweet author's handle out of a status URL (x.com / twitter.com).
  *  Lowercased, no "@". Null when the URL isn't a recognisable tweet permalink —
