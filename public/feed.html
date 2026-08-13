@@ -2687,6 +2687,7 @@ const X_ICON='<svg viewBox="0 0 24 24"><path d="M18.9 2H22l-7.6 8.7L23.3 22H16.9
 // .mchip svg. CLOCK_ICON = close time; COIN_ICON = real venue volume.
 const CLOCK_ICON='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
 const COIN_ICON='<svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>';
+const PEOPLE_ICON='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.2 19c.6-3 3-4.6 5.8-4.6s5.2 1.6 5.8 4.6"/><circle cx="17" cy="9" r="2.6"/><path d="M16.4 14.6c2.4.2 4 1.6 4.4 3.9"/></svg>';
 
 let toastT=null;
 function toast(msg){
@@ -2817,6 +2818,32 @@ function loudClaim(source){
     }catch(e){msg.textContent="couldn't submit — try again.";}
     finally{btn.disabled=false;btn.textContent="Submit for review";}
   };
+}
+
+// The in-feed advertisement for the loud economy. The mechanics shipped before
+// any pixel announced them — a farmer landing in the feed had no way to learn
+// that posting pays. One card, a few positions deep (never the top slot: that
+// belongs to claim/onboarding, one thing at a time), dismissible for good.
+// Winners are real handles from the season log — proof beats promise.
+const LOUD_PROMO_KEY="oddie_loud_promo_dismissed";
+function loudPromoCard(){
+  const el=document.createElement("div");
+  el.className="claimcard ready loudpromo";
+  el.innerHTML=`<div class="cc-grow">
+      <div class="cc-title">Post about oddie. Get paid in points.</div>
+      <div class="cc-sub">+75 Season Points per cleared post · +150 for the week's loudest<span id="loudwin"></span></div>
+    </div>
+    <button class="claimbtn" id="loudpromobtn">Claim Loud points</button>
+    <button class="onbx" type="button" aria-label="Dismiss">×</button>`;
+  el.querySelector("#loudpromobtn").onclick=()=>loudClaim("feed_promo");
+  el.querySelector(".onbx").onclick=()=>{lsSet(LOUD_PROMO_KEY);el.remove();};
+  fetch(`${API}/api/loud/winners`).then(r=>r.json()).then(j=>{
+    const w=(j.winners||[]).slice(0,3);
+    if(!w.length)return;
+    const s=el.querySelector("#loudwin");
+    if(s)s.innerHTML=` · loudest: ${w.map(x=>`<b>@${esc(x.handle)}</b>`).join(" · ")}`;
+  }).catch(()=>{});
+  return el;
 }
 
 // The first-load hint fires once per session, not once per category switch.
@@ -3326,6 +3353,12 @@ function renderFeed(items){
     if(!tasteCats().length){list=ordered.slice(0,1);tail="picker";}
     else{list=ordered.slice(0,1);tail="gate";}
   }
+  // The loud promo rides two cards deep in the organic For-You feed only:
+  // never on a permalink landing (the shared market is the page's story),
+  // never inside the metered taste flow (one thing at a time), and never
+  // again once dismissed.
+  const showLoudPromo=activeCat==="For you" && !startSlug && !TASTE && !lsGet(LOUD_PROMO_KEY);
+  let loudPromoPlaced=false, cardsPlaced=0;
   list.forEach((m,i)=>{
     if(m.__catHeader){
       const h=document.createElement("div");
@@ -3340,7 +3373,14 @@ function renderFeed(items){
     // the feed has long finished animating by the time a swipe reaches it.
     card.classList.add("enter");card.style.animationDelay=`${Math.min(i*55,220)}ms`;
     scroller.appendChild(card);
+    cardsPlaced++;
+    if(showLoudPromo && !loudPromoPlaced && cardsPlaced===2){
+      loudPromoPlaced=true;
+      scroller.appendChild(loudPromoCard());
+    }
   });
+  // A feed of one card still gets the promo — after it, not instead of it.
+  if(showLoudPromo && !loudPromoPlaced && cardsPlaced>0)scroller.appendChild(loudPromoCard());
   if(tail==="picker")scroller.appendChild(buildPicker());
   else if(tail==="gate")scroller.appendChild(buildGate());
   watchDepth(scroller);
@@ -3589,13 +3629,25 @@ function openPasteSheet(){
   input.oninput=()=>{err.hidden=true;};
 }
 
+// The crowd chip: WHO is in this market, as a raw split — the one social fact
+// a screenshot can carry. Raw counts, never a percentage (that job belongs to
+// the odds), and nothing below two bodies: "0 in" anti-sells, and a single
+// caller isn't a crowd. On a forming community card it stays hidden — the
+// forming gate exists to keep skewable early splits off the card, and this
+// chip must not leak what that gate hides.
+function crowdChip(m){
+  const y=m.crowd?.yes??0, n=m.crowd?.no??0;
+  if(y+n<2 || (m.community&&m.forming))return "";
+  return `<span class="mchip mchip-crowd">${PEOPLE_ICON}${y} yes · ${n} no</span>`;
+}
+
 function metaRowHtml(m,yes){
   // Venue markets carry a SOURCED chip rather than any tagging provenance:
   // nobody on Oddie created them, and inventing an attribution would be the
   // exact fake-provenance this section is meant to avoid. Naming the source
   // is also what keeps them visually and semantically secondary to the
   // community markets around them.
-  if(!m.community)return `<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span><span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>`;
+  if(!m.community)return `<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span><span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>${crowdChip(m)}`;
   const stateChip=m.forming
     ? `<span class="mchip mchip-forming"><span class="pulsedot"></span>forming · ${m.positions} ${m.positions===1?"call":"calls"}</span>`
     : `<span class="mchip">${yes}% yes</span>`;
@@ -3614,7 +3666,7 @@ function metaRowHtml(m,yes){
   // get one and keeps the chips it already earned.
   const hot=Number(m.callsToday)||0;
   const hotChip=hot>0?`<span class="mchip mchip-hot">🔥 ${hot} today</span>`:"";
-  return `${taggedChip}${hotChip}${stateChip}${clockChip}${chain}`;
+  return `${taggedChip}${hotChip}${stateChip}${crowdChip(m)}${clockChip}${chain}`;
 }
 // Home's continuous-play loop: how many markets one chain will auto-serve
 // (the very first card counts as #1) before handing off to "browse more in

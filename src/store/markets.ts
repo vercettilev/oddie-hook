@@ -3408,6 +3408,49 @@ export async function decideLoudPost(id: number, approve: boolean, note?: string
   return { ok: true, status };
 }
 
+export interface LoudWinner { handle: string; week: string }
+
+/** The most recent weekly Loudest Callers picks, newest first, one entry per
+ *  person — the feed's public proof that the program is real and pays real
+ *  people. Handle resolution mirrors the profile's: the linked X account
+ *  first, the chosen display handle as fallback; a winner with neither is
+ *  skipped rather than shown as a device id. */
+export async function loudWinners(limit = 5): Promise<LoudWinner[]> {
+  const weekOf = (slug: string | null) => (slug ?? "").replace(/^loud-/, "");
+  const out: LoudWinner[] = [];
+  const seen = new Set<string>();
+  if (!PERSISTENT) {
+    for (const r of [...memSeasonLog].reverse()) {
+      if (r.event !== "loud" || !r.deviceId) continue;
+      const handle = (await linkedXHandleFor(r.deviceId)) ?? memHandle.get(r.deviceId)?.replace(/^@+/, "") ?? null;
+      if (!handle || seen.has(handle.toLowerCase())) continue;
+      seen.add(handle.toLowerCase());
+      out.push({ handle, week: weekOf(r.slug) });
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ handle: string | null; slug: string | null }>(
+    `SELECT COALESCE(
+        (SELECT a.handle FROM account a
+          WHERE a.canonical_device = spl.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
+          ORDER BY a.created_at LIMIT 1),
+        (SELECT b.handle FROM device_balance b WHERE b.device_id = spl.device_id)
+      ) AS handle, spl.slug
+       FROM season_points_log spl
+      WHERE spl.event = 'loud' AND spl.device_id IS NOT NULL
+      ORDER BY spl.id DESC LIMIT 40`);
+  for (const r of rows) {
+    const handle = r.handle?.replace(/^@+/, "");
+    if (!handle || seen.has(handle.toLowerCase())) continue;
+    seen.add(handle.toLowerCase());
+    out.push({ handle, week: weekOf(r.slug) });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 /** The two placeCall-driven awards, fired best-effort after a call lands: the
  *  3-distinct-participants milestone and the newcomer's first-ever call. Both
  *  credit the market's surfacer; both are idempotent, so firing on every call is

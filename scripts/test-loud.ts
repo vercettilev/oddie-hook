@@ -11,6 +11,7 @@ import { linkAccount } from "../src/store/accounts.js";
 import {
   SEASON_POINTS, awardLoud, isoWeekOf, seasonPointsFor,
   parseTweetUrl, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP,
+  loudWinners,
 } from "../src/store/markets.js";
 
 let failures = 0;
@@ -57,6 +58,16 @@ console.log("\nawardLoud: once per person per week, to the right person");
   check("a new week is a new award", (await awardLoud("loudest", "2026-W34")).ok === true);
   check("...and the balance shows both", (await seasonPointsFor(DEV)) === 2 * SEASON_POINTS.loud,
     String(await seasonPointsFor(DEV)));
+}
+
+console.log("\nloudWinners: real handles, newest week first, one row per person");
+{
+  // @Loudest won W33 and W34 above. The list must carry the person once —
+  // with the newest week — and never invent an entry for an unnamed device.
+  const w = await loudWinners();
+  check("the winner appears", w.some((x) => x.handle === "Loudest"), JSON.stringify(w));
+  check("...once, despite two weekly wins", w.filter((x) => x.handle.toLowerCase() === "loudest").length === 1);
+  check("...with the newest week", w.find((x) => x.handle === "Loudest")?.week === "2026-W34");
 }
 
 console.log("\nparseTweetUrl: only a real status URL is a submission");
