@@ -5397,7 +5397,10 @@ function standingHtml(you){
   </div>`;
 }
 
-/* Three boards, three virtues: edge = skill, streak = showing up, winnings =
+/* Four boards, four virtues: oddies = loudness and play, accurate = skill,
+   streak = showing up, creators = the markets you brought. The old comment
+   below describes the pre-oddies shape and is kept for the parts still true.
+   Three boards, three virtues: edge = skill, streak = showing up, winnings =
  * playing AND being right. Raw call count is deliberately not a board. */
 function renderLb(scroller,data){
   const row=(r,inner)=>`
@@ -5420,9 +5423,20 @@ function renderLb(scroller,data){
     streak:{sub:"Consecutive days with at least one call. Show up, stay up.",
       empty:"No streaks yet — day one starts now.",
       rows:data.streaks,html:(r)=>row(r,`<div class="acc ${r.current>0?"up":"flat"}">${r.current}d<small>best ${r.best}d</small></div>`)},
-    winnings:{sub:"Net predictions from settled and sold positions. Volume only counts if you're right.",
-      empty:"No settled predictions yet — make a call and let a market resolve.",
-      rows:data.winnings,html:(r)=>row(r,`<div class="acc ${cls(r.net)}">${r.net>0?"+":""}${r.net}<small>${r.closed} closed</small></div>`)},
+    // ACCURACY, in place of the old Winnings board.
+    //
+    // Two reasons for the swap rather than a fifth tab. Winnings ranked net
+    // predictions, and predictions stopped being something the product shows
+    // anywhere once calling became free — a board sorting a currency with no
+    // surface is a mechanic nobody can follow. And the main board moving to
+    // oddies meant "who is actually right" had lost its own home; that is the
+    // product's founding question and it deserves a board, not a column.
+    //
+    // Ranked among the same candidates the main board scores, so the two can
+    // never contradict each other about a person's numbers.
+    accurate:{sub:"Who is actually right. Hit rate across resolved calls, once there are enough of them to mean anything.",
+      empty:"No settled records yet — make a call and let a market resolve.",
+      rows:data.accurate,html:(r)=>row(r,`<div class="acc ${r.accuracyPct>=50?"up":"flat"}">${r.accuracyPct}%<small>${r.closed} resolved</small></div>`)},
     creators:{sub:"Ranked by creator fees earned — 3% of every market you tag, paid when it resolves. Markets created breaks ties.",
       empty:"Nobody has created a market yet. Tag a post on X and this board is yours.",
       rows:data.creators,html:(r)=>row(r,`<div class="acc ${r.earnings>0?"up":"flat"}">+${r.earnings}<small>${r.marketsCreated} market${r.marketsCreated===1?"":"s"}</small></div>`)},
@@ -5434,7 +5448,7 @@ function renderLb(scroller,data){
     ${standingHtml(data.you)}
     ${rankMoveLine}
     <div class="seg" role="tablist" style="margin-bottom:14px">
-      ${[["edge","Edge"],["streak","Streak"],["winnings","Winnings"],["creators","Creators"]].map(([k,l])=>
+      ${[["edge","Oddies"],["accurate","Accurate"],["streak","Streak"],["creators","Creators"]].map(([k,l])=>
         `<button class="segb${lbTab===k?" on":""}" data-lbtab="${k}" role="tab">${l}</button>`).join("")}
     </div>
     <p class="sub">${b.sub}</p>

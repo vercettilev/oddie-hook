@@ -1164,8 +1164,12 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
       // right-or-wrong outcome — same rule resolvedRowsFor uses.
       if (c.exitPct === 100) correctByDev.set(c.deviceId, (correctByDev.get(c.deviceId) ?? 0) + 1);
     }
-    rows = [...byDev.entries()].map(([device_id, edges]) => ({
-      device_id, edges, handle: memHandle.get(device_id) ?? null,
+    // Every device that has CALLED anything, not only those with something
+    // closed. Edges stay empty until a market resolves; the row exists from
+    // the first call.
+    const called = new Set(memCalls.filter((c) => c.deviceId).map((c) => c.deviceId));
+    rows = [...called].map((device_id) => ({
+      device_id, edges: byDev.get(device_id) ?? [], handle: memHandle.get(device_id) ?? null,
       correct: correctByDev.get(device_id) ?? 0,
       settled: memCalls.filter((c) => c.deviceId === device_id && (c.exitPct === 100 || c.exitPct === 0)).length,
     }));
@@ -1175,7 +1179,9 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
     // board names people the way the rest of the product does.
     const q = await db().query<{ device_id: string; edges: number[]; handle: string | null; correct: number; settled: number }>(
       `SELECT mc.device_id,
-              array_agg(mc.exit_pct - mc.pct_at) AS edges,
+              COALESCE(array_agg(mc.exit_pct - mc.pct_at)
+                       FILTER (WHERE mc.closed_at IS NOT NULL AND mc.pct_at IS NOT NULL AND mc.exit_pct IS NOT NULL),
+                       '{}') AS edges,
               COUNT(*) FILTER (WHERE mc.exit_pct = 100)::int AS correct,
               COUNT(*) FILTER (WHERE mc.exit_pct IN (0, 100))::int AS settled,
               COALESCE(tw.handle, db.handle) AS handle
@@ -1186,7 +1192,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
             WHERE a.canonical_device = mc.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
             ORDER BY a.created_at LIMIT 1
          ) tw ON true
-        WHERE mc.device_id IS NOT NULL AND mc.closed_at IS NOT NULL AND mc.pct_at IS NOT NULL AND mc.exit_pct IS NOT NULL
+        WHERE mc.device_id IS NOT NULL
         GROUP BY mc.device_id, tw.handle, db.handle`,
     );
     rows = q.rows;
@@ -1210,6 +1216,16 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
         // so strip it here or the board reads "@@levvercetti" (it did).
         handle: (r.handle ?? `#${r.device_id.slice(0, 4)}`).replace(/^@+/, ""),
         ...rep,
+        // A caller with nothing resolved yet has no edge to average. They are
+        // still on the board — the behaviour the product pays most for (tag a
+        // market, bring a crowd, post about it) earns oddies the same day,
+        // while a resolution can be weeks out, and a board that hides its
+        // newest loud player until then gives the flywheel's freshest fuel no
+        // recognition at all. They read as provisional and sort below every
+        // settled record, so appearing costs credibility nothing: you can be
+        // seen without ever outranking somebody who has actually been right.
+        avgEdge: rep.avgEdge ?? 0,
+        provisional: rep.avgEdge === null ? true : rep.provisional,
         // Computed over SETTLED calls only (the 0/100 exits), not over every
         // closed one — a sold position has an edge but no verdict, so counting
         // it in the denominator would quietly understate everyone who scalps.
@@ -1220,7 +1236,6 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
           ? Math.round((r.correct / r.settled) * 100) : null,
       };
     })
-    .filter((r): r is LeaderRow => r.avgEdge !== null)
     .filter((r) => r.deviceId !== excludedId)
     .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.avgEdge - a.avgEdge);
 

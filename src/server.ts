@@ -1572,7 +1572,10 @@ app.get("/api/leaderboard", async (req, res) => {
   const raw = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   // Board rows are canonical devices; a signed-in browser's own id is not.
   const me = raw ? await resolveDevice(raw) : null;
-  const [edge, streaks, winnings, creators] = await Promise.all([leaderboard(20), leaderboardStreaks(20), leaderboardWinnings(20), leaderboardCreators(20).catch(() => [])]);
+  // 40, not 20: two boards are drawn from this one pool and each shows 20, so
+  // the pool has to be wider than either. It is also the scoring cap, so this
+  // asks for exactly what leaderboard() is willing to score and no more.
+  const [edge, streaks, creators] = await Promise.all([leaderboard(40), leaderboardStreaks(20), leaderboardCreators(20).catch(() => [])]);
   // The viewer's OWN standing, sent alongside the boards. A leaderboard whose
   // top 20 you aren't in tells you nothing about yourself, which is exactly
   // the "accuracy accumulates, so what?" complaint — this is the answer:
@@ -1588,13 +1591,23 @@ app.get("/api/leaderboard", async (req, res) => {
     // oddies is what the board RANKS by now, and loudMultiplier is how it
     // says so on the row — both have to survive this reshaping or the client
     // renders a board that sorts by a number it never received.
-    rows: edge.map((r, i) => ({
+    // Same scored pool, sorted a second way. "Who is loudest" and "who is
+    // right" are different questions and each gets a board; drawing both from
+    // one call keeps their numbers identical and the reads bounded.
+    accurate: edge
+      .filter((r) => r.accuracyPct != null)
+      .sort((a, b) => (b.accuracyPct ?? 0) - (a.accuracyPct ?? 0) || b.closed - a.closed)
+      .slice(0, 20)
+      .map((r, i) => ({
+        rank: i + 1, handle: r.handle, you: r.deviceId === me,
+        accuracyPct: r.accuracyPct, closed: r.closed,
+      })),
+    rows: edge.slice(0, 20).map((r, i) => ({
       rank: i + 1, handle: r.handle, you: r.deviceId === me,
       avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed, provisional: r.provisional,
       accuracyPct: r.accuracyPct, oddies: r.oddies, loudMultiplier: r.loudMultiplier,
     })),
     streaks: streaks.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, current: r.current, best: r.best })),
-    winnings: winnings.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, net: r.net, closed: r.closed })),
     // The creator board — who is good at MAKING markets. See leaderboardCreators.
     creators: creators.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, earnings: r.earnings, marketsCreated: r.marketsCreated })),
   });
