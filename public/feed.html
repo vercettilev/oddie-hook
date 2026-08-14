@@ -219,7 +219,15 @@
      the sentence is where the feed says what the product is FOR. */
   /* Same column geometry as .card — a divider that starts at the viewport edge
      while every card is centred reads as a broken row rather than a boundary. */
-  .feedsplit{width:min(var(--feedcol), calc(100% - 24px));margin:26px auto 12px;scroll-snap-align:none}
+  /* A snap stop of its own. It used to be align:none, which was harmless while
+     cards left room to spare — the header rode along in the slack at the bottom
+     of a card's screen. Now that a card fills its band exactly, mandatory snap
+     jumps straight from card to card and a non-snapping element between them is
+     never landed on: the two section labels, which are the whole reason a
+     visitor can tell an oddie market from a venue listing, would scroll past
+     unread. Two extra stops in a fifty-card feed is the right price for that. */
+  .feedsplit{width:min(var(--feedcol), calc(100% - 24px));margin:26px auto 12px;
+    scroll-snap-align:start;scroll-margin-top:var(--feedtop)}
   /* The last slide. A feed made of tags has to END in the act that fills it,
      or running out reads as "there is nothing here" instead of "your turn". */
   .endcard{display:grid;place-content:safe center;text-align:center;padding:28px 22px}
@@ -555,10 +563,15 @@
     font-family:'Nunito';font-weight:800;color:var(--muted-g);text-align:center;padding:24px}
 
   /* ------------------------------------------------------------------ feed -- */
-  /* The card is now a physical object: an elevated panel inset from the ground,
-     with a soft layered shadow, refined corners and a hairline outline. It sizes
-     to leave the next card's edge peeking below (feed, not single screen), and
-     centres its own content so there is no dead space. */
+  /* The card is a physical object: an elevated panel inset from the ground, with
+     a soft layered shadow, refined corners and a hairline outline. It fills the
+     visible band and centres its content, so one card is one screen and a swipe
+     moves to the next.
+     (This comment used to say the card sized itself "to leave the next card's
+     edge peeking below (feed, not single screen)" — the opposite of the rule
+     directly under it. The min-height had already been changed to fill the band;
+     only the sentence was left behind. The peek is gone on purpose: .nudge is
+     what says there is more below.) */
   .card{scroll-snap-align:start;scroll-margin-top:var(--feedtop);position:relative;
     width:min(var(--feedcol), calc(100% - 24px));margin:0 auto 18px;
     /* Fill the visible band — the viewport minus the fixed header and the bottom
@@ -645,6 +658,19 @@
      itself tight. Same total: the margins were rebalanced, not added to. */
   .take{font-size:min(35px,9vw);font-weight:500;line-height:1.3;letter-spacing:-.005em;
     color:var(--on-ground);margin:0 0 20px}
+  /* The question is the ONLY part of a card whose height varies. Everything else
+     — chips, the YES/NO duel, the footers — is fixed at ~366px, and the card's
+     min-height gives the content roughly 230px to put the question in. A short
+     question uses 3 lines of that; the 110-character venue questions this feed
+     carries ("Will the Federal Reserve decrease interest rates by 25 bps after
+     the September 2026 meeting?") used 6, overflowed the band by ~90px, and were
+     the reason a card did not fit its own screen.
+     So the type steps down with length, exactly as renderCard.ts steps the PNG's
+     question size down until the block fits its band. Set from the question's
+     length in buildCard rather than by breakpoint, because the thing that varies
+     is the sentence, not the phone. */
+  .take-m{font-size:min(29px,7.6vw)}
+  .take-s{font-size:min(24px,6.3vw);line-height:1.28}
   .social{font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g);margin:12px 0 0;min-height:16px}
   /* The upside, at the moment of decision. This line renders during the 5s
      undo window — BEFORE the call is final — so it leads with what they stand
@@ -3493,6 +3519,17 @@ function renderFeed(items){
 // up, next to markets a named person tagged in. Server-side source_url is now
 // a birth requirement, so the nameless branch only ever describes the markets
 // created before that rule existed.
+/* Step the question's type down with its length so the card fits the one screen
+ * it is snapped to. The thresholds are where a 375px-wide card gains a line:
+ * under ~68 characters the question sets in 3 lines at full size, and past ~104
+ * it needs 6, which is the overflow that pushed the YES/NO buttons under the tab
+ * bar. Character count rather than measured text because it runs for every card
+ * on every render, and one line of slack is cheaper than a layout pass. */
+function takeSizeClass(q){
+  const n=(q||"").length;
+  return n>104?" take-s":n>68?" take-m":"";
+}
+
 function taggedChipHtml(m){
   if(!(m.tagged||m.community))return "";
   return m.taggedBy
@@ -3902,7 +3939,7 @@ function buildCard(m,i,homeLoop){
       </a>` : ""}
       ${sourcePostHtml(m)}
       <div class="meta">${metaRowHtml(m,yes)}</div>
-      <div class="take">${esc(displayTitle(m.question))}</div>
+      <div class="take${takeSizeClass(displayTitle(m.question))}">${esc(displayTitle(m.question))}</div>
       <div class="duel">
         <button class="orow" data-side="yes" style="--fill:${yes}%" aria-label="Yes, ${yes} percent, pays ${fmtMult(yes)}">
           <span class="oside">YES</span>
