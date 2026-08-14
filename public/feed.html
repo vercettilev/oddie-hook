@@ -2180,10 +2180,22 @@
      height. Shrink the type, never the top padding: the header is ~98px tall on
      mobile and the stack is measured from the card's top edge, so trimming that
      padding walks the category chip straight under the chips row. */
+  /* The whole length ladder steps down together, not a blanket .take.
+     A single `.take{font-size:…}` here has the same specificity as .take-m and
+     .take-s and sits LATER in the sheet, so it silently overrode both: on a
+     short screen every question rendered at one size again, which is the height
+     where fitting matters most. Measured at 375x660 (about what X's in-app
+     browser leaves): 9 of 51 cards were still taller than their band.
+     Padding and the question's bottom margin come in too — on a short screen
+     the air is what there is least of, and trimming it costs nothing that a
+     clipped YES/NO button does not cost more. */
   @media (max-height:680px) and (max-width:767px){
     .opct{font-size:min(44px,12vw)}
-    .take{font-size:min(26px,6.5vw)}
+    .take{font-size:min(28px,7vw);margin-bottom:12px}
+    .take-m{font-size:min(24px,6.2vw)}
+    .take-s{font-size:min(20px,5.3vw);line-height:1.26}
     .duel{gap:9px}
+    .card{padding:16px 18px 16px}
   }
   @media (max-height:760px) and (min-width:768px){
     .opct{font-size:40px}
