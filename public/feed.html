@@ -12,7 +12,7 @@
 <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png?v=2">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
 <link rel="manifest" href="/site.webmanifest?v=2">
-<meta name="theme-color" content="#B6F05F">
+<meta name="theme-color" content="#D7DC1F">
 <!-- Share preview for the bare oddie.fun / feed link. /market/[slug] pages get
      their own per-market card og tags injected server-side right after <title>,
      which precede these, so the card wins there and the banner is the root's. -->
@@ -21,11 +21,11 @@
 <meta property="og:site_name" content="oddie">
 <meta property="og:title" content="Someone's wrong on X? Prove you're right.">
 <meta property="og:description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.">
-<meta property="og:image" content="https://oddie.fun/banner.png">
+<meta property="og:image" content="https://oddie.fun/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Someone's wrong on X? Prove you're right.">
 <meta name="twitter:description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.">
-<meta name="twitter:image" content="https://oddie.fun/banner.png">
+<meta name="twitter:image" content="https://oddie.fun/og.png">
 <script>
   /* Before any CSS is applied, so the page never flashes the wrong theme at
      someone who chose dark. A stored choice wins; otherwise follow the system.
@@ -6114,7 +6114,7 @@ function animateCelebrationScore(card,from,to){
  *  not the viewport — restrained, per the brief, not a screen-wide cannon. */
 function spawnConfetti(container){
   if(!container||REDUCE_MOTION)return;
-  const colors=["#B6F05F","#f5cf6b","#7fe0a4","#f2a3b4","#ffffff"];
+  const colors=["#D7DC1F","#f5cf6b","#7fe0a4","#f2a3b4","#ffffff"];
   for(let i=0;i<28;i++){
     const p=document.createElement("span");p.className="confetti-piece";
     const delay=Math.random()*220, dur=900+Math.random()*500, rot=360+Math.random()*360;

@@ -4,7 +4,7 @@ import { displayTitle } from "../title.js";
 import { logoMark } from "./logoMark.js";
 
 // The card IS Oddie talking. Logo language: chunky black rounded outline,
-// white fill, brand lime (#B6F05F), the two ghost eyes as the one playful
+// white fill, brand chartreuse (#D7DC1F), the two ghost eyes as the one playful
 // signature. Super simple: one hero number, one colour, lots of air.
 // No venue named — just Oddie brand + normalized volume as the trust signal.
 //
@@ -16,18 +16,27 @@ import { logoMark } from "./logoMark.js";
 // block fits its band, and the hero number, its kicker and the yes/no bar are
 // positioned relative to each other rather than to magic numbers.
 
+// These are the LIVE APP's tokens, deliberately: the card is the app's face on
+// X, and for a while it was not wearing the app's colours. The landing and the
+// feed moved to the chartreuse sampled off the Oddie mark (--accent #D7DC1F, a
+// yellow-green); the cards stayed on the mint-lime that shipped before it
+// (#B6F05F) because the value lived here as a literal with nothing tying it to
+// the stylesheets. The two greens are close enough to survive a glance and far
+// enough apart to read as two products when a share card and the page it opens
+// sit on one screen. Every value below now matches a token in feed.html by
+// name; keep them in step.
 export const C = {
-  accent: "#B6F05F", // brand lime (the var kept its name; the value is Oddie green)
+  accent: "#D7DC1F", // --accent: brand chartreuse, sampled off the mark
   ink: "#000000",
-  number: "#141414", // the hero number's fill; near-black so it reads on lime and white alike
+  number: "#141414", // the hero number's fill; near-black so it reads on accent and white alike
   white: "#FFFFFF",
   muted: "#6B7A88",
-  pill: "#F3FBDA",
+  pill: "#F7F9DC", // --wash
   barBg: "#E7EDF2",
-  // The darker olive the live app falls back to for small lime-on-white text
-  // (its --acc-deep token) — bare accent lime reads fine as a big hero fill or
-  // a large kicker, but loses contrast at caption sizes.
-  accentDeep: "#4d6e10",
+  // The darker olive the live app falls back to for small accent-on-white text
+  // (its --acc-deep token) — bare accent reads fine as a big hero fill or a
+  // large kicker, but loses contrast at caption sizes.
+  accentDeep: "#5A6109",
 };
 
 export const FONT = "'Fredoka', 'Trebuchet MS', sans-serif";

@@ -6,7 +6,9 @@
 //
 // Run with: npm run test-card-layout
 
-import { renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT } from "../src/card/renderCard.js";
+import { readFileSync, existsSync } from "node:fs";
+import { renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT, C } from "../src/card/renderCard.js";
+import { renderBanner } from "../src/card/renderBanner.js";
 import { renderPositionCard } from "../src/card/renderPositionCard.js";
 import { renderProfileCard } from "../src/card/renderProfileCard.js";
 import { displayTitle } from "../src/title.js";
@@ -138,6 +140,61 @@ console.log("\ndisplayTitle: the card's title is the tweet");
   check("...and never the raw dash form", !f1.includes("— Lewis"));
   check("...and never a raw yes suffix",
     !renderCard(mk("Will it rain tomorrow? — Yes", 38)).includes("— Yes"));
+}
+
+// --- the outbound brand cannot drift from the app's brand ---------------------
+//
+// A static guard against a bug that shipped and sat unnoticed for weeks. The
+// landing and the feed moved to the chartreuse sampled off the Oddie mark; the
+// cards, and a hand-drawn public/banner.png serving as the site's og:image,
+// stayed on the mint-lime that preceded it. Nobody caught it, because the card
+// palette is a TypeScript literal and the stylesheet is CSS, and nothing has
+// ever compared the two. Meanwhile every one of those pixels is what X shows.
+//
+// So: the card's accent is read against the feed's --accent token, and the
+// og:image tags are read against the routes that actually answer. This cannot
+// catch a bad colour choice; it catches the two surfaces disagreeing, which is
+// the failure that actually happened.
+console.log("\nthe images we post match the app people land in");
+{
+  const feedCss = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
+  const token = (name: string) => feedCss.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`))?.[1]?.toUpperCase() ?? null;
+
+  check("the feed still declares an --accent to be measured against", token("accent") !== null);
+  check("the card's accent IS the app's accent", C.accent.toUpperCase() === token("accent"),
+    `card ${C.accent} vs feed --accent ${token("accent")}`);
+  check("...and its deep variant is the app's --acc-deep", C.accentDeep.toUpperCase() === token("acc-deep"),
+    `card ${C.accentDeep} vs feed --acc-deep ${token("acc-deep")}`);
+  check("...and its pale wash is the app's --wash", C.pill.toUpperCase() === token("wash"),
+    `card ${C.pill} vs feed --wash ${token("wash")}`);
+
+  // The banner is drawn, not stored. A checked-in public/banner.png is exactly
+  // how the last one went stale, so its absence is part of the contract.
+  check("no static banner has crept back into public/",
+    !existsSync(new URL("../public/banner.png", import.meta.url)));
+
+  const banner = renderBanner();
+  check("the banner is painted in the brand accent", banner.includes(`fill="${C.accent}"`));
+  check("...and carries the handle as an instruction", banner.includes(`tag ${X_HANDLE} on X.`));
+  // The mark is an inlined base64 PNG, and base64's alphabet spells "NaN" by
+  // chance often enough that scanning the raw string for it is meaningless.
+  const geom = banner.replace(/href="data:[^"]*"/g, 'href="…"');
+  check("...and no unmeasurable coordinate reached the SVG", !geom.includes("NaN"));
+
+  // The headline is auto-sized to its column; re-measure the shipped size the
+  // way the renderer did and prove it stops short of the leftmost chip.
+  const headFS = Number(geom.match(/<text font-size="(\d+)" font-weight="700"/)?.[1] ?? 0);
+  const headRight = 70 + Math.max(...["turn arguments", "into markets."].map((l) => textWidth(l, headFS)));
+  check("...and the headline clears the yes/no chips", headFS > 0 && headRight <= 618 - 24,
+    `headline right edge ${Math.round(headRight)} at ${headFS}px vs chips at 618`);
+
+  // Both share surfaces must point at a route this server answers, not a file.
+  for (const page of ["landing", "feed"] as const) {
+    const html = readFileSync(new URL(`../public/${page}.html`, import.meta.url), "utf8");
+    const imgs = [...html.matchAll(/(?:og:image|twitter:image)" content="([^"]+)"/g)].map((m) => m[1]);
+    check(`${page}.html ships both image tags`, imgs.length === 2, JSON.stringify(imgs));
+    check(`...and both are the rendered banner`, imgs.every((u) => u.endsWith("/og.png")), JSON.stringify(imgs));
+  }
 }
 
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);

@@ -39,6 +39,7 @@ import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
 import { renderCardPng } from "./card/renderPng.js";
+import { renderBanner } from "./card/renderBanner.js";
 import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { tweetCopy } from "./card/tweetCopy.js";
@@ -1022,6 +1023,33 @@ app.get("/api/market/:slug", async (req, res) => {
  * a tweet, so it must still render long after the market left the live set — it
  * falls back to the stored snapshot.
  */
+/**
+ * The site's own unfurl image, drawn rather than stored. See renderBanner.ts for
+ * why: the hand-made public/banner.png it replaces was cut before the rebrand
+ * and kept serving the retired palette and retired copy on every share of the
+ * root link, with nothing in the codebase able to notice.
+ *
+ * It lives at a NEW path on purpose. X caches unfurl images by URL for about a
+ * week and retired the Card Validator that used to force a re-fetch, so the only
+ * reliable way to stop showing a stale card is to stop asking for that URL.
+ *
+ * Rendered once per process: it takes no arguments, so every request would
+ * otherwise rasterise identical pixels.
+ *
+ * /banner.png is kept alive and pointed at the SAME renderer rather than 404ed.
+ * Tweets posted before today already carry that URL, and an unfurler that comes
+ * back to refresh one should find the current brand there, not a missing image.
+ */
+let bannerPng: Buffer | null = null;
+const sendBanner = (_req: express.Request, res: express.Response) => {
+  bannerPng ??= renderCardPng(renderBanner());
+  res.type("image/png").set("Cache-Control", "public, max-age=86400").send(bannerPng);
+};
+app.get("/og.png", sendBanner);
+app.get("/banner.png", sendBanner);
+
+app.get("/og.svg", (_req, res) => res.type("image/svg+xml").send(renderBanner()));
+
 app.get("/card/:slug.svg", async (req, res) => {
   const { all } = await getMarketData();
   const rec = await getSlug(req.params.slug, all);
