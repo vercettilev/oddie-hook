@@ -109,7 +109,18 @@ console.log("\na market resolves YES: the holder is paid, the doubter scores his
   check("the losing hold lowers the loser's reputation", dp.overall.avgEdge === -60, `${dp.overall.avgEdge}`);
 
   const hn = await noticesFor(HOLDER);
-  check("the winner gets a real notification", hn.length === 1 && hn[0].kind === "settle_win" && hn[0].body.includes(`+${winBonus(40)} predictions`), JSON.stringify(hn[0]));
+  // Looked up by kind, not by being the ONLY notice. The holder legitimately
+  // also has an "opposite_side" notice — the doubter called NO against their
+  // YES, which is exactly what that notice is for. This asserted hn.length===1
+  // and passed only because that notice was still in flight: settleMarket used
+  // to reach its end without a real await, so nothing pending had flushed by
+  // the time the test read the list. Making the creator fee awaited (mem/pg
+  // parity) removed the race and the notice arrived on time, as it always
+  // should have.
+  const win = hn.find((n) => n.kind === "settle_win");
+  check("the winner gets a real notification",
+    !!win && win.body.includes(`+${winBonus(40)} predictions`), JSON.stringify(hn));
+  check("...exactly one of them", hn.filter((n) => n.kind === "settle_win").length === 1);
   const dn = await noticesFor(DOUBTER);
   check("the loser is told the market resolved", dn.length === 1 && dn[0].kind === "settle_loss" && dn[0].body.includes("resolved YES"), JSON.stringify(dn[0]));
 }

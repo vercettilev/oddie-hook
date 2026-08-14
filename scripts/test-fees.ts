@@ -15,6 +15,7 @@ import {
   recordSurfacer, feeLog, logRealFeeIntent, _memGrant,
 } from "../src/store/markets.js";
 import { creatorFeePlay, CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "../src/store/economy.js";
+import { linkAccount } from "../src/store/accounts.js";
 import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
@@ -171,6 +172,56 @@ console.log("\nreal-money fee: logged as intent only, never enforced — see eco
   const emptySlug = "fee-real-market-empty";
   await logRealFeeIntent(emptySlug, 0);
   check("a zero-lamport vault logs nothing", (await feeLog(300)).every((r) => r.slug !== emptySlug));
+}
+
+// --- the tagger signs up AFTER their market exists ---------------------------
+//
+// The shape of the whole funnel, and the one the fee used to fail on. Somebody
+// on X tags @oddiefun under an argument. They have no Oddie account, so
+// recordSurfacer stores their handle with a NULL device — there is no device to
+// store yet. They sign in some days later, which is the point of the fee. Then
+// the market resolves.
+//
+// Settlement used to read the surfacer row as written and pay only if it
+// already held a device, so the 3% was skipped for exactly the people it exists
+// to recruit, on the markets they brought in themselves. It now re-resolves the
+// handle at settlement, the way awardSeasonPoints always has.
+console.log("\nthe 3% finds a tagger who signed up after the fact");
+{
+  const m: Market = {
+    venue: "community", venueId: "LATE", question: "Will the late signup get paid?", yesPct: 50,
+    closesAt: "2026-12-31T00:00:00Z", volumeUsd: 0, venueUrl: "", tags: [],
+  };
+  await createSlug(m);
+  const slug = slugFor(m);
+
+  // Tagged by someone with no account yet: handle known, device unknown.
+  await recordSurfacer(slug, { handle: "@latecomer" });
+
+  await call(slug, "yes", 100, "player-a-0001", [m]);
+  await call(slug, "no", 100, "player-b-0001", [m]);
+
+  // ...and NOW they sign in. This is the only step that changes anything.
+  const LATE_DEVICE = "latecomer-device-1";
+  await linkAccount(LATE_DEVICE, { provider: "twitter", uid: "late-1", handle: "@latecomer" });
+  const before = (await getWallet(LATE_DEVICE)).tokens;
+
+  await settleMarket(slug, "yes");
+
+  const after = (await getWallet(LATE_DEVICE)).tokens;
+  const expected = creatorFeePlay(200);
+  check("the fee is greater than zero, so this test can fail", expected > 0, `${expected}`);
+  check("the late signup is credited the creator fee", after - before === expected, `${before} -> ${after}, wanted +${expected}`);
+
+  const notice = (await noticesFor(LATE_DEVICE)).find((n) => n.kind === "creator_fee");
+  check("...and told about it", !!notice, JSON.stringify(notice ?? null));
+
+  // The audit log must name who was actually paid, not the null the row held.
+  const logged = (await feeLog()).find((f) => f.slug === slug && f.feeKind === "creator");
+  check("...and the audit log names the device that was paid",
+    logged?.recipientDeviceId === LATE_DEVICE, JSON.stringify(logged ?? null));
+  check("...and still carries the handle it was tagged by",
+    (logged?.recipientHandle ?? "").replace(/^@+/, "") === "latecomer", JSON.stringify(logged?.recipientHandle));
 }
 
 console.log(failures === 0 ? "\nall fee checks passed.\n" : `\n${failures} fee check(s) FAILED.\n`);

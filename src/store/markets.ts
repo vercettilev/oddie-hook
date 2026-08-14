@@ -2543,7 +2543,14 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
       out.push({ callId: c.id, deviceId: c.deviceId, side: c.side, stake: c.tokens, entryPct: c.entryPct, exitPct, proceeds, edge: edgePts(c.entryPct, exitPct) });
     }
     void awardCleanResolve(slug); // +50 to the surfacer: clean resolution
-    void creditCreatorFeePlayMem(slug, rec?.market.question ?? slug, out.reduce((a, r) => a + r.stake, 0));
+    // AWAITED, matching the pg branch where this is part of the settlement
+    // transaction. It used to be fire-and-forget, which happened to work only
+    // because the old code path reached memBalance within a microtask of
+    // settleMarket returning. Re-resolving the surfacer's handle adds a real
+    // async boundary (a dynamic import), so the credit started landing AFTER
+    // callers had already read the balance — a race that made a correct fee
+    // look like an unpaid one. Determinism here is worth more than the tick.
+    await creditCreatorFeePlayMem(slug, rec?.market.question ?? slug, out.reduce((a, r) => a + r.stake, 0));
     return out;
   }
 
@@ -2593,14 +2600,25 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
     let creatorFeeCredited: { deviceId: string; handle: string | null } | null = null;
     if (creatorFeePlayAmount > 0) {
       const surfacer = await surfacerFor(slug);
-      if (surfacer?.deviceId) {
-        await client.query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [surfacer.deviceId]);
-        await client.query(`UPDATE device_balance SET tokens = tokens + $1 WHERE device_id = $2`, [creatorFeePlayAmount, surfacer.deviceId]);
+      // Re-resolve the handle when no device was known at record time.
+      //
+      // This is the normal case, not the edge case. A market is tagged into
+      // existence by someone on X who has no Oddie account yet — that is the
+      // entire funnel — so recordSurfacer writes the handle and a null device,
+      // and the device only comes into being when they sign in later.
+      // awardSeasonPoints has always re-resolved here; the fee did not, so the
+      // 3% went silently unpaid for precisely the people it exists to recruit,
+      // on the markets they brought in themselves.
+      const payee = surfacer?.deviceId
+        ?? (surfacer?.handle ? await deviceForTwitterHandle(surfacer.handle).catch(() => null) : null);
+      if (payee) {
+        await client.query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [payee]);
+        await client.query(`UPDATE device_balance SET tokens = tokens + $1 WHERE device_id = $2`, [creatorFeePlayAmount, payee]);
         await client.query(
           `INSERT INTO notice (device_id, kind, body, delta, slug, call_id) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [surfacer.deviceId, "creator_fee", `You earned ${creatorFeePlayAmount} prediction${creatorFeePlayAmount === 1 ? "" : "s"} — creator fee for "${question}" resolving.`, creatorFeePlayAmount, slug, null],
+          [payee, "creator_fee", `You earned ${creatorFeePlayAmount} prediction${creatorFeePlayAmount === 1 ? "" : "s"} — creator fee for "${question}" resolving.`, creatorFeePlayAmount, slug, null],
         );
-        creatorFeeCredited = { deviceId: surfacer.deviceId, handle: surfacer.handle };
+        creatorFeeCredited = { deviceId: payee, handle: surfacer?.handle ?? null };
       }
     }
 
@@ -4344,18 +4362,26 @@ async function creditCreatorFeePlayMem(slug: string, question: string, totalPool
   const feeAmount = creatorFeePlay(totalPoolTokens);
   if (feeAmount <= 0) return;
   const surfacer = await surfacerFor(slug);
-  if (!surfacer?.deviceId) return;
-  const w = memBalance.get(surfacer.deviceId) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: Date.now() };
-  memBalance.set(surfacer.deviceId, { ...w, tokens: w.tokens + feeAmount });
+  // Same re-resolution as the pg branch: the tagger usually has no account when
+  // the market is recorded, so a null device here is the common case and not a
+  // reason to skip the fee. Kept in step deliberately — this is the branch the
+  // test suite exercises.
+  const payee = surfacer?.deviceId
+    ?? (surfacer?.handle ? await deviceForTwitterHandle(surfacer.handle).catch(() => null) : null);
+  if (!payee) return;
+  const w = memBalance.get(payee) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: Date.now() };
+  memBalance.set(payee, { ...w, tokens: w.tokens + feeAmount });
   memNotices.unshift({
-    id: ++memNoticeId, deviceId: surfacer.deviceId, kind: "creator_fee",
+    id: ++memNoticeId, deviceId: payee, kind: "creator_fee",
     body: `You earned ${feeAmount} prediction${feeAmount === 1 ? "" : "s"} — creator fee for "${question}" resolving.`,
     delta: feeAmount, slug, callId: null, at: new Date().toISOString(),
     oddsPct: null, outcome: null, seenAt: null, count: null,
   });
   await logFee({
     slug, marketKind: "play", feeKind: "creator",
-    recipientDeviceId: surfacer.deviceId, recipientHandle: surfacer.handle,
+    // The device actually credited, which is the re-resolved one — the audit log
+    // must name who was paid, not what the surfacer row happened to hold.
+    recipientDeviceId: payee, recipientHandle: surfacer?.handle ?? null,
     rateBps: CREATOR_FEE_BPS_PLAY, basisAmount: totalPoolTokens, feeAmount, enforced: true,
   });
 }

@@ -579,9 +579,20 @@
        tap targets always land fully visible around the middle of the screen, with
        no scrolling or guessing. `safe center` falls back to top-alignment if the
        content is ever taller than the band (tiny phone + long question), so the
-       question can never be clipped under the header. dvh tracks X's in-app
-       browser chrome as it grows/shrinks. */
-    min-height:calc(100dvh - var(--feedtop) - var(--tabh) - env(safe-area-inset-bottom) - 30px);
+       question can never be clipped under the header.
+
+       svh, NOT dvh. This said "dvh tracks X's in-app browser chrome as it
+       grows/shrinks", which is true and is exactly the problem: dvh is the
+       viewport RIGHT NOW, so a card laid out while X's toolbar was hidden is
+       sized to the tall viewport, and the moment the toolbar slides back in
+       that card is taller than the screen it is snapped to — the YES/NO buttons
+       end up under the tab bar. Reported from an iPhone in the X in-app
+       browser, where the card fit in mobile Safari.
+       svh is the SMALL viewport: the height with all browser chrome showing. It
+       is the only one of the three that answers "will this always fit", which is
+       the question a snapped full-screen card is asking. It also keeps the snap
+       geometry still: dvh moves every snap point while the user is scrolling. */
+    min-height:calc(100svh - var(--feedtop) - var(--tabh) - env(safe-area-inset-bottom) - 30px);
     display:flex;flex-direction:column;justify-content:center;justify-content:safe center;gap:0;
     background:var(--card-surface);border:1.5px solid var(--card-line);border-radius:var(--r-xl);
     box-shadow:var(--card-shadow);padding:24px 22px 22px;overflow:hidden;
