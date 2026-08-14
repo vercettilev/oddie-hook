@@ -227,7 +227,7 @@
      visitor can tell an oddie market from a venue listing, would scroll past
      unread. Two extra stops in a fifty-card feed is the right price for that. */
   .feedsplit{width:min(var(--feedcol), calc(100% - 24px));margin:26px auto 12px;
-    scroll-snap-align:start;scroll-margin-top:var(--feedtop)}
+    scroll-snap-align:start}
   /* The last slide. A feed made of tags has to END in the act that fills it,
      or running out reads as "there is nothing here" instead of "your turn". */
   .endcard{display:grid;place-content:safe center;text-align:center;padding:28px 22px}
@@ -478,13 +478,13 @@
   /* Cold-visitor onboarding. A snap-aligned WRAP is the key: the scroller uses
      scroll-snap mandatory, which otherwise snaps straight to the first card on
      load and hides these above the fold. Making the wrap the first snap point
-     (scroll-snap-align:start + matching scroll-margin-top) lands the viewport ON
+     (scroll-snap-align:start, inset by the scroller's scroll-padding-top) lands the viewport ON
      it at load — visible with no scroll. Carries the header clearance while
      present; when both rows are dismissed, .card:first-child reclaims it.
      Two distinct rows, dismissed independently. */
   .onbwrap{width:min(var(--feedcol), calc(100% - 24px));margin:var(--feedtop) auto 12px;
     display:flex;flex-direction:column;gap:8px;
-    scroll-snap-align:start;scroll-margin-top:var(--feedtop)}
+    scroll-snap-align:start}
   /* tag instruction — fixed dark text on the fixed pale-lime wash (AA in both
      themes, same rule as .rby / .chainbadge). */
   /* One consolidated strip: primary tag instruction, with the follow pill riding
@@ -559,6 +559,18 @@
     scroll-padding-top:var(--feedtop);scrollbar-width:none}
   .scroller::-webkit-scrollbar{display:none}
   .scroller.snap{scroll-snap-type:y mandatory}
+  /* scroll-padding-top above is the ONLY header inset, deliberately.
+     Every snap target — .card, .onbwrap, .feedsplit — also carried
+     scroll-margin-top:var(--feedtop), and the two ADD: the container insets the
+     snapport by 94px and the target outsets itself by another 94, so a snapped
+     card came to rest 188px down instead of 94. That is the "cards aren't
+     centred" report: every card sat one --feedtop too low, which left the
+     previous card's tail visible above it and pushed its own footer toward the
+     tab bar. Measured on production before the fix — scrollTop forced to 700,
+     snap settled it at 572.5, card top 186px inside the scrollport.
+     Container-level is the right single mechanism here: one fixed header
+     overlays the scrollport, so one declaration should describe it for every
+     kind of target rather than each target restating it. */
   .state{height:100%;display:flex;align-items:center;justify-content:center;
     font-family:'Nunito';font-weight:800;color:var(--muted-g);text-align:center;padding:24px}
 
@@ -572,7 +584,7 @@
      directly under it. The min-height had already been changed to fill the band;
      only the sentence was left behind. The peek is gone on purpose: .nudge is
      what says there is more below.) */
-  .card{scroll-snap-align:start;scroll-margin-top:var(--feedtop);position:relative;
+  .card{scroll-snap-align:start;position:relative;
     width:min(var(--feedcol), calc(100% - 24px));margin:0 auto 18px;
     /* Fill the visible band — the viewport minus the fixed header and the bottom
        tab bar — and CENTER the content within it, so the question and the YES/NO
