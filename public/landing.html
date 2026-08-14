@@ -47,6 +47,12 @@
   @font-face{font-family:'Nunito';font-style:normal;font-weight:400 800;font-display:swap;
     src:url('/fonts/nunito-latin-ext.woff2') format('woff2');
     unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+  @font-face{font-family:'Instrument Serif';font-style:italic;font-weight:400;font-display:swap;
+    src:url('/fonts/instrumentserif-italic-latin-ext.woff2') format('woff2');
+    unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+  @font-face{font-family:'Instrument Serif';font-style:italic;font-weight:400;font-display:swap;
+    src:url('/fonts/instrumentserif-italic-latin.woff2') format('woff2');
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
   @font-face{font-family:'Nunito';font-style:normal;font-weight:400 800;font-display:swap;
     src:url('/fonts/nunito-latin.woff2') format('woff2');
     unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
@@ -96,9 +102,28 @@
   .ico--lg{width:17px;height:17px;vertical-align:-3px}
 
   /* ------------------------------------------------------------------ nav -- */
-  .nav{position:relative;z-index:20;height:88px;display:flex;align-items:center}
-  .nav__in{display:flex;align-items:center;gap:32px;width:100%}
-  .brand{display:flex;align-items:center;gap:10px;margin-right:auto}
+  /* A floating pill rather than a bar across the top. The hero is an image
+     with a lit room in it; a full-width bar cuts a hard line through that and
+     a pill sits ON it instead, which is the difference between chrome and an
+     object. STICKY, not fixed: it scrolls with the page for the hero's height
+     and then holds, so the way back is always one reach away without the pill
+     covering the top of every section on the way down. */
+  .nav{position:sticky;top:14px;z-index:20;height:88px;display:flex;align-items:center;
+    pointer-events:none}
+  .nav__in{display:flex;align-items:center;gap:24px;width:auto;margin:0 auto;pointer-events:auto;
+    background:rgba(12,13,11,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:999px;padding:9px 9px 9px 20px;
+    box-shadow:0 10px 34px rgba(0,0,0,.45)}
+  /* The pill is only as wide as its contents, so the shell's page gutter would
+     centre a narrower box inside a wider one. Drop it here and let the margin
+     do the centring. */
+  .nav .shell{padding:0;max-width:none}
+  @media (max-width:560px){
+    .nav__in{gap:14px;padding:8px 8px 8px 16px}
+  }
+  /* No margin-right:auto any more — the pill hugs its contents, so pushing the
+     links to a far edge that no longer exists would only add dead space. */
+  .brand{display:flex;align-items:center;gap:10px}
   .brand img{width:34px;height:34px;border-radius:9px}
   .brand span{font-family:'Fredoka';font-size:23px;font-weight:600;color:var(--lime);
     letter-spacing:.14em;text-transform:uppercase}
@@ -134,7 +159,16 @@
 
   h1{margin:26px 0 0;font-family:'Fredoka';font-weight:700;color:var(--fg);
     font-size:clamp(38px,5.6vw,63px);line-height:1.02;letter-spacing:-.035em}
-  h1 em{font-style:normal;color:var(--lime)}
+  /* The accent word, set in a serif italic against the rounded sans around it.
+     Two typefaces meeting inside one line is the cheapest way a headline gets
+     a voice, and the contrast is what makes the eye stop exactly on the word
+     that carries the promise. Self-hosted like every other face here: the page
+     cold traffic from X lands on keeps no third party in its critical path,
+     and the two files are 24KB together. Weight drops to 400 and the tight
+     tracking loosens, because a serif set at the sans's letter-spacing sets
+     its own italics touching. */
+  h1 em{font-family:'Instrument Serif',Georgia,serif;font-style:italic;font-weight:400;
+    color:var(--lime);letter-spacing:-.005em}
 
   .lede{margin:26px 0 0;color:var(--fg-2);font-size:17px;font-weight:600;line-height:1.68;max-width:430px}
   .lede b{color:var(--lime);font-weight:800}
@@ -256,8 +290,25 @@
     color:var(--fg-3);font-size:12px;font-weight:600;line-height:1.5}
 
   .sec{padding-top:78px;border-top:1px solid var(--line-soft)}   /* longhand: .sec also carries .shell */
-  .steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:22px;margin-top:30px}
-  .step{min-width:0}
+  /* Four beats read as four columns of small print. They are a SEQUENCE — a
+     post becomes a market becomes a call becomes a receipt — and a row makes
+     the reader scan sideways across a story that only works in order.
+     A sticky left column holds the frame while the beats come past it one at a
+     time, so each one gets the whole screen and its own moment, and the header
+     never leaves. Below the breakpoint it collapses to a single stack, which
+     is the same sequence with no column at all. */
+  .how{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:56px;margin-top:30px;align-items:start}
+  .how__side{position:sticky;top:120px}
+  .how__t{margin:14px 0 0;font-family:'Fredoka';font-size:34px;font-weight:600;line-height:1.14;
+    letter-spacing:-.02em;color:var(--fg);max-width:12ch}
+  .how__b{margin:14px 0 0;color:var(--fg-2);font-size:15px;font-weight:600;line-height:1.6;max-width:34ch}
+  .steps{display:grid;grid-template-columns:minmax(0,1fr);gap:22px;margin:0}
+  .step{min-width:0;border:1px solid var(--line-soft);border-radius:20px;padding:22px;background:var(--card)}
+  @media (max-width:1080px){
+    .how{grid-template-columns:1fr;gap:26px}
+    .how__side{position:static}
+    .how__t{font-size:28px;max-width:none}
+  }
   .step__hd{display:flex;align-items:flex-start;gap:13px}
   .step__n{flex:none;width:29px;height:29px;border-radius:50%;background:var(--lime);color:#0B1400;
     display:grid;place-items:center;font-family:'Fredoka';font-size:14px;font-weight:600}
@@ -438,7 +489,7 @@
 
     <div class="hero__copy">
 
-      <h1>Turn arguments<br><em>into markets.</em></h1>
+      <h1>Turn arguments<br>into <em>markets.</em></h1>
 
       <p class="lede">
         Tag <b>@oddiefun</b> under any argument on X.<br>
@@ -495,7 +546,13 @@
          and the old three-step version stopped one beat short of it. Every
          card here is an EXAMPLE and says so to a screen reader. -->
     <div class="band band--how">
-      <p class="eyebrow reveal">See how a post becomes a market</p>
+      <div class="how">
+      <div class="how__side">
+        <p class="eyebrow reveal">See how a post becomes a market</p>
+        <h2 class="how__t reveal">An argument, all the way to a receipt.</h2>
+        <p class="how__b reveal">Four beats, in order. The last one is the part a market
+          list cannot do: somebody's name on a call, and what it earned them.</p>
+      </div>
       <div class="steps">
 
         <div class="step reveal">
@@ -580,6 +637,7 @@
           </div>
         </div>
 
+      </div>
       </div>
     </div>
 
