@@ -1,0 +1,20 @@
+[package]
+name = "oddie_chain"
+version = "0.2.0"
+description = "Oddie pari-mutuel markets with a payable creator fee"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "oddie_chain"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
