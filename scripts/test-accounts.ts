@@ -88,17 +88,23 @@ console.log("\nplay on one device shows up on the other");
   const moved = await move(btc, 44);
   const open = (await positionsFor(LAPTOP, [moved])).open[0];
   const sold = await sellPosition(open.id, LAPTOP, [moved]);   // sell from the laptop
-  // A CALL_COST-sized (1) position cashed out early: round((1/0.39) * 0.44) = 1.
-  // This is the flagged side effect of the fixed-cost redesign — cash-out lost
-  // its granularity along with variable staking (see markets.ts positionsFor's
-  // valueNow comment) — not a bug in sellPosition itself.
-  check("the laptop can sell a position the phone opened", sold.ok && sold.proceeds === 1, JSON.stringify(sold));
+  // Closing still WORKS across devices, which is what this section is about.
+  // What it no longer returns is money: a free call stakes nothing, so there
+  // is nothing to cash out — `round((0/0.39) * 0.44) = 0`. That is the honest
+  // arithmetic of a free position rather than a regression, and it is the
+  // argument for retiring the sell affordance from the UI: an early exit that
+  // can only ever return zero is a button that cannot do anything for anyone.
+  // The reputation half is untouched, and the next two checks prove it.
+  check("the laptop can close a position the phone opened", sold.ok, JSON.stringify(sold));
+  check("...and a free position cashes out for nothing", sold.ok && sold.proceeds === 0, JSON.stringify(sold));
 
   const fromPhone = await positionsFor(PHONE, []);
   check("the phone sees it closed", fromPhone.closed.length === 1 && fromPhone.open.length === 0);
   check("...and the edge is on the account's reputation", fromPhone.overall.avgEdge === 5, `${fromPhone.overall.avgEdge}`);
   const bal = (await getWallet(PHONE)).tokens;
-  const expected = (STARTING_PREDICTIONS - CALL_COST + CONNECT_BONUS) + 1; // + the 1 just sold for
+  // Nothing was spent to call and nothing came back from closing, so the
+  // balance is exactly what the grants put there.
+  const expected = STARTING_PREDICTIONS + CONNECT_BONUS;
   check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === expected, `${bal}`);
 }
 

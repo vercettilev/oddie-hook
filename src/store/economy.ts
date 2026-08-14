@@ -15,8 +15,27 @@
  *  session without feeling like a grant that needs rationing. */
 export const STARTING_PREDICTIONS = 5;
 
-/** What one call costs. Flat, always — there is no larger or smaller call. */
-export const CALL_COST = 1;
+/**
+ * What one call costs: NOTHING.
+ *
+ * It was 1, against a starting balance of 5, which made a wall in exactly the
+ * wrong place. What the product needs more of is people with a resolved call
+ * and their name on it, because that is the only thing a verdict post can be
+ * made out of, and reach on X comes from those original posts. Charging for a
+ * call throttled the one input that produces distributable content, and it hit
+ * the most engaged arrival hardest: five taps in, a stranger who came from a
+ * tweet met a "come back tomorrow".
+ *
+ * Participation is now unlimited. The reward is what gets bounded instead —
+ * see DAILY_EARNING_MARKETS in markets.ts, which caps the oddies a day's
+ * calling can earn without ever capping the calling itself.
+ *
+ * Kept as a named constant at 0 rather than deleted: the settlement and
+ * position code still stakes and pays through it, and a zero flows through
+ * that arithmetic correctly while a removed constant would mean touching every
+ * one of those paths at once.
+ */
+export const CALL_COST = 0;
 
 /**
  * The daily claim — an ACTIVE retention hook, not a passive tick. A player taps

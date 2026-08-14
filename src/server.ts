@@ -1185,7 +1185,12 @@ app.get("/api/me", async (req, res) => {
   ]);
   const badges = await badgesFor(deviceId, acc);
   // pickStreak drives the persistent streak badge near the balance (2+ only).
-  res.json({ ...wallet, ...handle, claim, pickStreak: acc.streak, badges, rank, openCalls, creator });
+  // `oddies` rides along from the accuracy read this route already performs.
+  // The header pill used to count predictions, which stopped meaning anything
+  // the moment a call became free: a number nobody can spend is not a balance,
+  // it is decoration in the most prominent slot on the screen. The pill now
+  // carries the one number the product has.
+  res.json({ ...wallet, ...handle, claim, pickStreak: acc.streak, oddies: acc.oddieScore ?? 0, badges, rank, openCalls, creator });
 });
 
 // The daily claim — the active retention hook. GET reports status (claimable,

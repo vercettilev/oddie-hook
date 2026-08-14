@@ -112,16 +112,23 @@ console.log("\nreputation falls when you are wrong");
 }
 
 // ---------------------------------------------------------------------------
-// Predictions: a small handful, spent one at a time. No passive top-up here —
-// the old floor/renewal mechanic is gone; the only ways a balance moves are
-// the fixed call cost, the daily claim, connecting an account, and winning.
+// Calling is FREE. The balance constants survive because settlement still
+// stakes and pays through them, but nothing gates a call any more: what the
+// product needs more of is people holding a resolved call with their name on
+// it, and charging for one throttled exactly that.
 // ---------------------------------------------------------------------------
-console.log("\nthe spendable-fuel constants");
+console.log("\ncalling costs nothing, and the wall is gone with it");
 {
-  check("a new device starts with a small handful", STARTING_PREDICTIONS === 5);
-  check("a call costs exactly 1, always — no variable stake", CALL_COST === 1);
-  check("the daily claim grants one full day's play", DAILY_CLAIM === 5);
-  check("connecting an account grants one full day's play, once", CONNECT_BONUS === 5);
+  check("a call is free", CALL_COST === 0);
+  // The property that actually matters, asserted rather than assumed: with a
+  // zero cost NO balance can ever be too small to call, including an empty
+  // one. This is the wall's absence, stated as arithmetic.
+  for (const balance of [0, 1, 5, 999]) {
+    check(`a balance of ${balance} can still call`, balance >= CALL_COST);
+  }
+  check("a new device still starts with a handful (the ledger keeps working)", STARTING_PREDICTIONS === 5);
+  check("the daily claim still grants", DAILY_CLAIM === 5);
+  check("connecting an account still grants, once", CONNECT_BONUS === 5);
 }
 
 // ---------------------------------------------------------------------------

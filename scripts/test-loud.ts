@@ -14,7 +14,9 @@ import {
   parseTweetUrl, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP,
   loudWinners, loudStatusFor, surfacedSlugs,
   createCommunityMarket, openCommunityMarkets, placeCall, recordSurfacer, _memGrant,
+  callsMadeFor, DAILY_EARNING_MARKETS, positionsFor,
 } from "../src/store/markets.js";
+import { CALL_COST } from "../src/store/economy.js";
 import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
@@ -237,6 +239,44 @@ console.log("\nsurfacedSlugs: the membership the tagged feed partitions on");
   check("...and nothing else sneaks in", hit.size === 2, [...hit].join(", "));
   check("an empty ask is an empty answer, with no query",
     (await surfacedSlugs([])).size === 0);
+}
+
+console.log("\nthe daily earning cap: bounds the reward, never the playing");
+{
+  const DEV = "device-dailycap000001";
+  const live = (await openCommunityMarkets()) as unknown as Market[];
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  // More distinct markets in one day than the cap allows.
+  const slugs: string[] = [];
+  for (let i = 0; i < DAILY_EARNING_MARKETS + 6; i++) {
+    const { slug } = await createCommunityMarket({
+      question: `Cap market ${i}?`, closeTime: Math.floor(Date.now() / 1000) + 86_400,
+    });
+    slugs.push(slug);
+  }
+  const fresh = (await openCommunityMarkets()) as unknown as Market[];
+  for (const slug of slugs) {
+    _memGrant(DEV, 10);
+    const r = await placeCall(slug, "yes", 0, DEV, fresh);
+    check(`call on ${slug.slice(0, 12)} is accepted`, r.ok === true, JSON.stringify(r));
+    if (!r.ok) break;
+    await flush();
+  }
+  check("every call was accepted — the cap never blocks playing",
+    (await positionsFor(DEV, fresh)).open.length === slugs.length,
+    String((await positionsFor(DEV, fresh)).open.length));
+  check(`...but only ${DAILY_EARNING_MARKETS} of them earn`,
+    (await callsMadeFor(DEV)) === DAILY_EARNING_MARKETS, String(await callsMadeFor(DEV)));
+
+  // The same market twice is not twice the volume.
+  const before = await callsMadeFor(DEV);
+  _memGrant(DEV, 10);
+  await placeCall(slugs[0], "no", 0, DEV, fresh); await flush();
+  check("a repeat call on a market already counted adds nothing",
+    (await callsMadeFor(DEV)) === before, String(await callsMadeFor(DEV)));
+
+  check("a device that never called earns nothing", (await callsMadeFor("device-nevercalled01")) === 0);
+  check("...and calling is free, so an empty balance is not a wall", CALL_COST === 0);
 }
 
 console.log(failures === 0 ? "\nall loud checks passed.\n" : `\n${failures} loud check(s) FAILED.\n`);

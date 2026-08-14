@@ -1505,12 +1505,48 @@ export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCr
 
 /** Every call this device has taken, open or closed. The volume half of the
  *  score — counted the moment a call is made, not when it resolves. */
+/**
+ * How many DISTINCT markets a day, at most, can earn a device its per-call
+ * oddies. Calls themselves are free and unlimited — the cap is on the reward,
+ * never on playing — so somebody can swipe through a hundred markets in a
+ * sitting and every one of them still becomes a position, a resolution and a
+ * verdict post. What it stops is the printer: with calls costing nothing, an
+ * uncapped per-call award would mint oddies for hammering a button.
+ *
+ * Set where a real session lands and an abuser does not: full-screen cards
+ * make ten to twenty swipes an engaged sitting, so a genuine player finishes
+ * theirs without ever meeting the cap and only deliberate grinding hits it.
+ */
+export const DAILY_EARNING_MARKETS = 20;
+
+/**
+ * The volume half of the score: distinct markets called, counted per day and
+ * capped at DAILY_EARNING_MARKETS each, then summed across days.
+ *
+ * Per DAY and per MARKET, both deliberately. Per market, because the same
+ * market called twice is not twice the volume. Per day, because the cap has to
+ * bound a rate rather than a lifetime — a lifetime cap would punish the
+ * regular who has been here a year, which is exactly backwards.
+ */
 export async function callsMadeFor(rawDeviceId: string): Promise<number> {
   const deviceId = await resolveDevice(rawDeviceId);
-  if (!PERSISTENT) return memCalls.filter((c) => c.deviceId === deviceId).length;
+  if (!PERSISTENT) {
+    const perDay = new Map<string, Set<string>>();
+    for (const c of memCalls) {
+      if (c.deviceId !== deviceId) continue;
+      const day = c.at.slice(0, 10);
+      (perDay.get(day) ?? perDay.set(day, new Set()).get(day)!).add(c.slug);
+    }
+    let n = 0;
+    for (const slugs of perDay.values()) n += Math.min(slugs.size, DAILY_EARNING_MARKETS);
+    return n;
+  }
   await ensureSchema();
   const { rows } = await db().query<{ n: string }>(
-    `SELECT count(*)::text AS n FROM market_call WHERE device_id = $1`, [deviceId]);
+    `SELECT COALESCE(SUM(LEAST(d.n, $2)), 0)::text AS n
+       FROM (SELECT count(DISTINCT slug) AS n
+               FROM market_call WHERE device_id = $1
+              GROUP BY date_trunc('day', at)) d`, [deviceId, DAILY_EARNING_MARKETS]);
   return Number(rows[0]?.n ?? 0);
 }
 

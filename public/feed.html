@@ -2227,7 +2227,7 @@ async function initChainLayer(){
  * a second tab or a reload always shows what the database says. `balance` is
  * null until /api/me answers.
  */
-let balance=null, claim=null, pickStreak=0;
+let balance=null, oddies=0, claim=null, pickStreak=0;
 // Identity extras from /api/me, for the private profile: earned badges and the
 // season rank. Cached from the same call that fills the balance pill.
 let myBadges=[], myRank=null;
@@ -2244,7 +2244,7 @@ let myOpenCalls=null, myCreator=null;
 async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
-    if(r.ok){const w=await r.json();balance=w.tokens;if(w.claim)claim=w.claim;
+    if(r.ok){const w=await r.json();balance=w.tokens;if(typeof w.oddies==="number")oddies=w.oddies;if(w.claim)claim=w.claim;
       if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
       myBadges=w.badges||[];myRank=w.rank||null;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;
@@ -2341,19 +2341,21 @@ function paintBalance(pulse){
     if(el.dataset.wired)return;
     el.dataset.wired="1";
     el.setAttribute("role","button");
-    el.setAttribute("aria-label","Save your predictions across devices");
+    el.setAttribute("aria-label","Save your oddies across devices");
     el.onclick=()=>connectSheet();
   });
   // Two pills — the mobile header's and the desktop rail's. Same number always.
   // The refill line only appears when it can do something for you: with a full
   // balance there is nothing to count down to, and a countdown to nothing is a nag.
-  const tip=balance<STARTING_PREDICTIONS?nextRefillIn():"";
   document.querySelectorAll(".bal").forEach(el=>{
     // The unit is NAMED, not implied: "5 LEFT" made a newcomer ask "5 what?"
-    // as their first question. Two units exist in the whole product and no
-    // more: PREDICTIONS (spendable, this pill) and ODDIES (reputation —
-    // every award lands there, under that one name).
-    el.innerHTML=`🪙 ${balance} <span class="ptslbl">${balance===1?"prediction":"predictions"}</span>${tip?` <span class="topup">${tip}</span>`:""}`;
+    // as their first question. ONE unit now: oddies. The pill used to count
+    // predictions, which was honest while a call cost one; a call is free, so
+    // that number can only go up and buys nothing, and a figure nobody spends
+    // does not deserve the most prominent slot on the screen. It shows what
+    // the player is actually building instead, and reads 0 for a newcomer,
+    // which is a true and inviting number rather than a fake allowance.
+    el.innerHTML=`🪙 ${oddies} <span class="ptslbl">${oddies===1?"oddie":"oddies"}</span>`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
     // Persistent pick-streak badge as visible identity, right beside the balance.
     // Shown only at 2+ (a 1 isn't a streak); it disappears the moment a wrong
@@ -5207,16 +5209,20 @@ function openHTML(p){
     ? `Called ${p.side.toUpperCase()} at ${p.entryPct}% · now ${p.nowPct}% ${p.edgeNow>0?"↑":p.edgeNow<0?"↓":"→"} <b class="${cls(p.edgeNow)}">${pts(p.edgeNow)}</b>`
     : `Called ${p.side.toUpperCase()} at ${p.entryPct}% · the venue isn't quoting this right now`;
   return `<div class="tile">
-    <p class="q">${esc(p.question)}</p>
+    <p class="q">${esc(displayTitle(p.question))}</p>
     <div class="pmeta">
       <span class="side-chip ${p.side}">${p.side.toUpperCase()}</span>
-      <span class="num">${p.tokens} prediction${p.tokens===1?"":"s"}</span>
-      <span class="dot"></span><span class="num">holds to ${p.toWin}</span>
+      <span class="num">called at ${p.entryPct}%</span>
       <span class="status">open</span>
     </div>
     <p class="track">${track}</p>
-    ${live?`<button class="sellbtn" data-sell="${p.id}">Sell now → ${p.valueNow} prediction${p.valueNow===1?"":"s"}</button>`:""}
   </div>`;
+  // The stake line and the Sell button are gone with the cost of a call. A
+  // free position stakes nothing, so "1 prediction" described nothing and
+  // selling could only ever return zero — a button that cannot do anything
+  // for anyone. What an open call has instead is the thing that always
+  // mattered: the price it was taken at, which is what the record is scored
+  // against. Closing still exists server-side for old positions.
 }
 
 /**
