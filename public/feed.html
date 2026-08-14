@@ -3105,8 +3105,14 @@ function paintNav(view){
   document.getElementById("railnav").innerHTML=
     `<button class="navcreate" type="button" id="navcreate">+ Create a market</button>`
     +`<p class="navgroup">Discover</p>`
-    +FEED_SORT_LABELS.map(([k,label])=>
-      `<button class="navitem navsort${view==="feed"&&feedSort===k?" on":""}" data-sort="${k}"><span class="navsort-dot"></span><span>${label}</span></button>`).join("")
+    // ONE feed, not four lenses over it. Trending / New / Resolving Soon were
+    // three ways to re-sort a list that is now only the markets somebody
+    // tagged — at that size the lenses return near-identical orders and their
+    // only reliable effect is asking a newcomer to choose between four words
+    // before they have seen a single question. The sorts themselves are kept
+    // (sortFeedItems, the ?sort= param, the tagged partition's per-block
+    // ordering) so this is a navigation cut, not a capability one.
+    +`<button class="navitem navsort${view==="feed"?" on":""}" data-sort="foryou"><span class="navsort-dot"></span><span>For You</span></button>`
     +railBtn("leaderboard","leaderboard","Leaderboard",view==="leaderboard")
     +`<p class="navgroup">Yours</p>`
     +MINE.map(([route,icon,label])=>railBtn(route,icon,label,view===route)).join("");
@@ -3340,7 +3346,7 @@ function claimCard(opts={}){
   if(claim.claimable){
     el.className="claimcard ready";
     el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">Claim your daily predictions</div>
+        <div class="cc-title">Claim your daily oddies</div>
         <div class="cc-sub">${sayStreak?`🔥 ${st}-day streak — keep it alive`:st>0?"keep the streak alive":"tap to start your streak"}</div>
       </div>
       <button class="claimbtn" id="claimbtn">Claim +${claim.amount}</button>`;
@@ -3534,19 +3540,18 @@ function sourcePostHtml(m){
  * rather than new.
  */
 function statsRowHtml(m){
-  if(!m.community)return "";
-  const pool=Number(m.poolTokens)||0;
-  const callers=Number(m.positions)||0;
-  const earned=Number(m.creatorFeePaid)||0;
-  if(!pool&&!callers&&!earned)return "";
-  const cells=[];
-  if(pool)cells.push(`<div class="st-cell"><b>${pool}</b><span>in play</span></div>`);
-  if(callers)cells.push(`<div class="st-cell"><b>${callers}</b><span>caller${callers===1?"":"s"}</span></div>`);
-  // The creator's cut, shown as a fact once it's been paid. Before that the
-  // fee-note below already makes the forward-looking promise, so repeating it
-  // here as "0 earned" would read as "this market earns nothing".
-  if(earned)cells.push(`<div class="st-cell st-earn"><b>+${earned}</b><span>creator earned</span></div>`);
-  return `<div class="statsrow">${cells.join("")}</div>`;
+  // Deliberately empty, kept as a seam rather than deleted so the call sites
+  // stay put if a stat ever earns its place back.
+  //
+  // It carried three figures and all three had stopped working. "N in play"
+  // counted staked predictions, and a call stakes nothing now, so it was a
+  // frozen number from before the change that could never grow again. "N
+  // callers" counted a different set from the crowd chip two inches above it
+  // — one filters to open calls, the other does not — so a card could and did
+  // show "12 yes · 1 no" beside "12 callers" and ask the reader to work out
+  // which was true. "creator earned" is a fact about the tagger, shown to
+  // people who are not the tagger.
+  return "";
 }
 
 function feeNoteHtml(m){
@@ -3719,9 +3724,12 @@ function metaRowHtml(m,yes){
   // A tagged venue market leads with WHO tagged it; the venue name drops to a
   // secondary credit behind it. An untagged one keeps the plain sourced row.
   if(!m.community)return `${taggedChipHtml(m)}<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span><span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>${crowdChip(m)}`;
+  // No "N% yes" chip: the YES button below shows that exact number in the
+  // largest type on the card. A market still FORMING has no meaningful % yet,
+  // so that one state does get a chip, and it says what it is instead.
   const stateChip=m.forming
     ? `<span class="mchip mchip-forming"><span class="pulsedot"></span>forming · ${m.positions} ${m.positions===1?"call":"calls"}</span>`
-    : `<span class="mchip">${yes}% yes</span>`;
+    : "";
   const clockChip=m.closesAt?`<span class="mchip mchip-clock">${CLOCK_ICON}${closesIn(m.closesAt)}</span>`:"";
   const chain=m.onchain?`<a class="chainbadge" href="${esc(m.onchain)}" target="_blank" rel="noopener">on-chain on Solana ↗</a>`:"";
   // Attribution leads the row, ahead of the state/clock chips: WHO made this
@@ -3897,7 +3905,13 @@ function buildCard(m,i,homeLoop){
       </div>
       ${statsRowHtml(m)}
       ${m.community && m.resolutionCriteria ? `<details class="rby"><summary>resolution criteria</summary><p class="rby-body">${esc(m.resolutionCriteria)}</p></details>` : ""}
-      ${m.community && m.creatorFeeBps ? feeNoteHtml(m) : ""}
+      <!-- The creator-fee note used to sit here, on every card, explaining a
+           mechanic to the one person on screen it does not apply to: the
+           reader. A market's card is where you pick a side. The reason to
+           TAG one belongs where tagging happens (the landing's step 4, the
+           feed's end card), not stapled to every question you scroll past.
+           feeNoteHtml survives for the PAID variant on a settled market,
+           which is a receipt rather than a promise. -->
       ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">
         <div class="callers-lab">Who called it</div>
         <div class="callers-list">${m.callers.map(c=>`
