@@ -31,7 +31,7 @@
 <!-- This page used to bounce anyone carrying an Oddie device id straight to
      /feed. Removed: "/" is the front door and it should open the front door,
      for everyone, every time. Someone who already plays reaches the app from
-     the nav button, which rewrites itself to "Back to your feed" for them.
+     the nav button, which says "Open oddie" for everybody.
      ?stay=1 is still accepted anywhere it is linked; it simply has nothing left
      to override. -->
 
@@ -475,7 +475,7 @@
     <a class="brand" href="/?stay=1" aria-label="Oddie home">
       <img src="/logo-mark-96.png" alt=""><span>Oddie</span>
     </a>
-    <a class="btn-launch" id="navcta" href="#profile">Join early <span aria-hidden="true">›</span></a>
+    <a class="btn-launch" id="navcta" href="/feed">Open oddie <span aria-hidden="true">›</span></a>
   </div>
 </nav>
 
@@ -740,9 +740,11 @@
      mints costs nothing. X and Google go straight to the OAuth start; Phantom
      signs in place, exactly as it does inside the app.
 
-     The id is minted LAZILY — on the first click, never on page view. A visitor
-     who only reads the page still has no id, which keeps the nav CTA honest:
-     "Back to your feed" is for people who have actually been there. */
+     The id is minted LAZILY — on the first click, never on page view, so a
+     visitor who only reads the page carries nothing away. (That laziness used
+     to also keep the nav CTA honest, back when the CTA read the id to choose
+     its wording; it no longer does, and the reason to mint late stands on its
+     own.) */
   (function () {
     var DID = "oddie_did";
 
@@ -846,27 +848,19 @@
   })();
 </script>
 
-<script>
-  /* THE WAY BACK, without a redirect.
-     "/" used to bounce anyone with a device id straight to /feed, which made
-     the front door unreachable for the people who own the site. That is gone —
-     but a returning player still lost something: they now land on a pitch they
-     have already read and have to find "Live markets" to get on with it.
-     So the nav CTA changes its mind instead of the page changing its
-     destination. Someone the app already knows is offered their feed; everyone
-     else is offered the sign-up band. One button, two audiences, and the choice
-     stays with the person either way.
-     Wrapped because private browsing can throw on any localStorage access. */
-  (function () {
-    var known = false;
-    try { known = !!localStorage.getItem("oddie_did"); } catch (e) {}
-    if (!known) return;
-    var cta = document.getElementById("navcta");
-    if (!cta) return;
-    cta.setAttribute("href", "/feed");
-    cta.innerHTML = 'Back to your feed <span aria-hidden="true">\u203A</span>';
-  })();
-</script>
+<!-- The nav CTA used to say one of two things and both were wrong.
+
+     "Join early" is waitlist language for a product with no waitlist: the
+     allowlist was removed, anyone can sign in, and the app is playable with
+     no account at all — so it gated something that is not gated, and pointed
+     at a sign-up band instead of the thing being pitched.
+
+     "Back to your feed", shown to anyone carrying a device id, assumed that
+     id meant a feed of their own. It only means a page was loaded once. Some
+     of the people told to go "back" had never picked a side in their lives.
+
+     One label for everyone now, and it says what the button does. No branch,
+     no state to read, nothing to get wrong on either side of it. -->
 
 <script>
   /* Smooth travel to a section, and a staged arrival once there.
