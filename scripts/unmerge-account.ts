@@ -7,6 +7,18 @@
 // name, hid the human from the leaderboard (the board excludes the brand by
 // device, so it took both), and credited one person's calls to the other.
 //
+// THAT CASE IS CLOSED, and this script did not close it. Once the linkAccount
+// fix was live, the next sign-in on the shared browser handed @Oddiefun a
+// fresh empty device and left the history where it belonged: /@levvercetti now
+// answers with the human's name and 22 resolved calls, @Oddiefun reads empty,
+// and the human is back on the leaderboard. Run with no --apply, this reports
+// "already on separate devices" and exits.
+//
+// It is kept because the repair and the prevention are different problems: the
+// fix stops two identities from ever sharing a stream again, and cannot undo a
+// pair that already does. If one is ever found — restored from an old backup,
+// or made by hand — this is the tool.
+//
 // WHAT THIS DOES, and what it deliberately does not:
 //
 //   - the KEEP account stays exactly where it is, with the whole shared
@@ -61,7 +73,9 @@ try {
       WHERE provider = 'twitter' AND ${norm} IN ($1, $2) ORDER BY created_at`, [keep, detach]);
 
   console.log("\naccounts found:");
-  for (const a of accounts) console.log(`  #${a.id} @${a.handle} -> ${a.canonical_device}`);
+  // Handles are stored WITH their leading @, so print the stored value as-is
+  // rather than prefixing a second one.
+  for (const a of accounts) console.log(`  #${a.id} ${a.handle} -> ${a.canonical_device}`);
 
   const k = accounts.find((a) => a.handle.replace(/^@+/, "").toLowerCase() === keep);
   const d = accounts.find((a) => a.handle.replace(/^@+/, "").toLowerCase() === detach);
