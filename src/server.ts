@@ -13,7 +13,7 @@ import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, 
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
-import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs } from "./store/markets.js";
+import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
@@ -765,6 +765,16 @@ app.get("/api/feed", async (req, res) => {
         slug: "__wider",
         sectionHeader: "the wider market",
         sectionNote: "nobody's tagged these yet. Tag one on X and it lands above, with your name on it.",
+      });
+      // The top half had no header at all, so the feed opened on markets that
+      // were made for an argument and markets listed from a venue with nothing
+      // saying which was which. A first reader's honest conclusion was that
+      // oddie runs all of them — that it is another venue. One line, because
+      // the per-card chips carry the specific attribution.
+      withCrowd.unshift({
+        slug: "__made",
+        sectionHeader: "made for an argument",
+        sectionNote: "these started as a claim on X. Tag @oddiefun under one and yours lands here.",
       });
     }
   }
@@ -1991,23 +2001,39 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
   if (!(closeTime > Math.floor(Date.now() / 1000))) return res.status(400).json({ error: "close_time must be in the future" });
   if (!Number.isFinite(yesPct) || yesPct < 1 || yesPct > 99) return res.status(400).json({ error: "starting odds must be 1–99" });
 
+  // Provenance is a birth requirement, enforced here and not only in the tool.
+  // The tool already refuses to extract without a source URL, but the client is
+  // not where a rule lives: every community market on production predates that
+  // check and every one of them renders "tagged by anonymous", with no post to
+  // show and — because the creator fee is credited to the surfacer — no one who
+  // can ever be paid the 3% the market advertises. A visitor reading that feed
+  // reasonably concludes oddie runs these markets itself, which is the single
+  // most expensive misunderstanding this product can create.
+  //
+  // Same shape as the resolvability gate above: a claim with no source is never
+  // a market, no matter what the client posts. The handle is parsed from the
+  // URL, so requiring a parseable URL is what guarantees a name on the card.
+  const createSourceUrl = req.body?.source_url != null ? String(req.body.source_url).trim() || null : null;
+  if (!createSourceUrl) return res.status(400).json({ error: "source_url required — a market with no source can never show who it came from" });
+  if (!handleFromSourceUrl(createSourceUrl)) {
+    return res.status(400).json({ error: "source_url must be an x.com/…/status/… link — the handle in it is what names the card" });
+  }
+
   const { slug, marketId } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability });
   // The published record, incl. any operator edits — the other half of the tuning log.
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
-  // Provenance is recorded HERE, when the market is born, rather than only as a
-  // side effect of generating a reply for it. Every community market on
-  // production was created without one — the reply step was the only writer,
-  // its source URL was optional, and a market whose source was never recorded
-  // can never show a name or the post it came from. Best-effort: a market must
-  // still be created if the tweet lookup fails.
-  const createSourceUrl = req.body?.source_url != null ? String(req.body.source_url).trim() || null : null;
-  if (createSourceUrl) {
-    void (async () => {
-      await recordSurfacer(slug, { sourceUrl: createSourceUrl });
-      await awardSurface(slug);
-    })().catch(() => {});
-  }
+  // Recorded HERE, when the market is born, rather than only as a side effect of
+  // generating a reply for it — the reply step used to be the only writer, so a
+  // market whose reply was never generated lost its provenance permanently.
+  //
+  // AWAITED, unlike before. Fire-and-forget was survivable while the URL was
+  // optional; now that it is the thing being guaranteed, a market must not be
+  // able to report success while its surfacer row silently failed to land.
+  // recordSurfacer swallows its own oEmbed failures (a null preview is fine),
+  // so this waits on the write and not on X.
+  await recordSurfacer(slug, { sourceUrl: createSourceUrl });
+  void awardSurface(slug).catch(() => {}); // points are best-effort; the row is not
 
   // Layer 2 — devnet proof. Soft by design: a failure here never blocks Layer 1.
   let onchain: { pubkey: string; explorer: string; signature: string } | null = null;

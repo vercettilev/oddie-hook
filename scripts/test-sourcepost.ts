@@ -9,7 +9,9 @@
 //
 // Run with: npm run test-sourcepost
 
+import { readFileSync } from "node:fs";
 import { extractPostText } from "../src/venues/xOembed.js";
+import { handleFromSourceUrl } from "../src/store/markets.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -64,6 +66,55 @@ console.log("\nonly the FIRST paragraph is the post");
   // belongs to someone else and must not be concatenated into this one.
   eq("a second paragraph is not appended",
     extractPostText("<p>mine</p><p>someone else's</p>"), "mine");
+}
+
+// --- the handle in the URL is now load-bearing --------------------------------
+//
+// handleFromSourceUrl went untested while it was a convenience. It is now the
+// gate on /api/community/create: a market is refused unless its source URL
+// yields a handle, because that handle is what puts a name on the card and a
+// payee on the creator fee. Everything it wrongly accepts becomes a market
+// that renders with no attribution; everything it wrongly rejects is a market
+// the operator cannot publish at all.
+console.log("\nthe handle a market is named after");
+{
+  const h = handleFromSourceUrl;
+  check("a plain x.com status URL yields the author", h("https://x.com/levvercetti/status/1234567890") === "levvercetti");
+  check("...twitter.com too", h("https://twitter.com/levvercetti/status/123") === "levvercetti");
+  check("...and the embed mirrors people actually paste", h("https://fixupx.com/Someone/status/9") === "someone");
+  check("...case is normalised, since it keys the device lookup",
+    h("https://x.com/LevVercetti/status/1") === "levvercetti");
+  check("...www and query strings do not defeat it",
+    h("https://www.x.com/levvercetti/status/1?s=20&t=abc") === "levvercetti");
+
+  // The rejections matter as much: each of these would previously have created
+  // a market with no name on it.
+  check("a profile URL is refused — no post means no claim", h("https://x.com/levvercetti") === null);
+  check("...the bare host is refused", h("https://x.com/") === null);
+  check("...another site's status path is refused", h("https://example.com/levvercetti/status/1") === null);
+  check("...empty and null are refused", h("") === null && h(null) === null && h(undefined) === null);
+}
+
+// --- no card may claim a person chose to be anonymous -------------------------
+//
+// The feed rendered "tagged by anonymous" for every market with no surfacer,
+// which was every community market in production. It was untrue (nobody chose
+// anonymity; the source was simply never recorded) and it read to a first-time
+// visitor as though oddie lists these markets itself.
+console.log("\nthe feed never invents an anonymous person");
+{
+  const feed = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
+  // Scoped to the chip FUNCTION's body, not the file. "anonymous caller"
+  // elsewhere is a different and honest statement (a player who really has
+  // linked no handle), and the comments above this function have to be free to
+  // describe the bug they exist to explain.
+  const from = feed.indexOf("function taggedChipHtml");
+  const body = from < 0 ? "" : feed.slice(from, feed.indexOf("\n}", from) + 2);
+  check("the chip function is where the test thinks it is", from > 0);
+  check("the provenance chip never asserts an anonymous tagger",
+    body.length > 0 && !/anonymous/i.test(body), body.slice(0, 240));
+  check("the nameless case names oddie instead", feed.includes("opened by oddie"));
+  check("...and the named case still shows the handle", feed.includes("tagged by @${esc(m.taggedBy)}"));
 }
 
 console.log(failures === 0 ? "\nall source-post checks passed.\n" : `\n${failures} source-post check(s) FAILED.\n`);

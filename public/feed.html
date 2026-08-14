@@ -3411,7 +3411,11 @@ function renderFeed(items){
     if(m.sectionHeader){
       const h=document.createElement("div");
       h.className="feedsplit";
-      h.innerHTML=`<hr><b>${esc(m.sectionHeader)}</b>${m.sectionNote?`<span>${esc(m.sectionNote)}</span>`:""}`;
+      // The rule is drawn only BETWEEN sections. The feed now opens on a header
+      // too, and a rule above the first thing on the page separates it from
+      // nothing.
+      const lead=scroller.children.length===0;
+      h.innerHTML=`${lead?"":"<hr>"}<b>${esc(m.sectionHeader)}</b>${m.sectionNote?`<span>${esc(m.sectionNote)}</span>`:""}`;
       scroller.appendChild(h);
       return;
     }
@@ -3468,15 +3472,32 @@ function renderFeed(items){
  *    paid yet and saying otherwise would be a lie on the card. Forward-looking
  *    "+3% ... tag your own" framing, which is the honest version.
  *
- * A tagger with no linked handle renders as "anonymous" — a real person
- * tagged it, we just don't have a name. Never invent one.
+ * A market with no surfacer on record is NOT rendered as an anonymous person.
+ * That framing assumed a real tagger we simply couldn't name; the actual cause
+ * was that provenance was never recorded at all, so the card asserted a person
+ * who may not exist. It names oddie instead — see taggedChipHtml below. Never
+ * invent a tagger.
  */
-function taggerName(m){ return m.taggedBy?`@${esc(m.taggedBy)}`:"anonymous"; }
 // The provenance chip, for every tagged market — community by definition, and
 // a venue market once somebody tagged it in. It leads the meta row because
 // "a person put this here" is what makes a card ours rather than a listing.
+//
+// It used to say "tagged by anonymous" whenever no surfacer was on record,
+// which was every community market in production. A visitor read a feed of
+// unattributed markets and asked, reasonably, whether oddie is just another
+// venue — the one conclusion this product cannot afford. "anonymous" was also
+// simply untrue: nobody chose anonymity, the source was never recorded.
+//
+// So the nameless case now says what actually happened — oddie opened it —
+// and the two chips together teach the model at a glance: markets oddie put
+// up, next to markets a named person tagged in. Server-side source_url is now
+// a birth requirement, so the nameless branch only ever describes the markets
+// created before that rule existed.
 function taggedChipHtml(m){
-  return (m.tagged||m.community)?`<span class="commtag commtag-by">🏷️ tagged by ${taggerName(m)}</span>`:"";
+  if(!(m.tagged||m.community))return "";
+  return m.taggedBy
+    ? `<span class="commtag commtag-by">🏷️ tagged by @${esc(m.taggedBy)}</span>`
+    : `<span class="commtag commtag-by">opened by oddie</span>`;
 }
 
 /**
@@ -3541,8 +3562,12 @@ function statsRowHtml(m){
 function feeNoteHtml(m){
   const paid=Number(m.creatorFeePaid)||0;
   if(paid>0){
+    // A fee is only ever credited to a surfacer, so taggedBy is set whenever
+    // this branch runs. The fallback names the market rather than a person, so
+    // an unnamed receipt can never read as "anonymous earned something".
     return `<div class="fee-note fee-note-paid"><b>+${paid}</b><span>${
-      taggerName(m)} tagged this market and earned ${paid} prediction${paid===1?"":"s"} when it resolved.</span></div>`;
+      m.taggedBy?`@${esc(m.taggedBy)} tagged this market and earned`:"the tagger earned"
+    } ${paid} prediction${paid===1?"":"s"} when it resolved.</span></div>`;
   }
   // Unreachable by construction: the only call site is gated on a fee having
   // been PAID. Kept as the honest zero rather than a promise, so that if this
