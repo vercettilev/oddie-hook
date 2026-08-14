@@ -1785,11 +1785,6 @@
   }
   /* Predictions — the spendable play balance, the OTHER of the two user numbers.
      A quiet strip above the identity block so the profile leads with both. */
-  .opoints{display:flex;align-items:baseline;gap:9px;border:2px solid var(--card-line);
-    border-radius:16px;background:var(--card-surface);padding:12px 16px;margin-bottom:12px}
-  .opoints .v{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:var(--on-ground)}
-  .opoints .k{font-family:'Nunito';font-size:12px;font-weight:800;color:var(--muted-g)}
-  .opoints .k b{font-weight:900;color:var(--on-ground)}
   /* Badges — earned identity as MEDALLIONS, not flat pills: a circular icon with
      a lime medal-sheen + real shadow, caption below. Same visual language as
      home's how-it-works steps (a circle behind an icon), but with more presence
@@ -1845,6 +1840,13 @@
   .standing-flex{font-family:'Nunito';font-weight:800;font-size:12.5px;color:#101010;
     background:rgba(255,255,255,.62);border:1.5px solid rgba(0,0,0,.42);border-radius:12px;
     padding:8px 11px;margin:11px 0 0;line-height:1.4}
+  /* Your best call: a claim, so it gets a card of its own rather than a row in
+     a list of statistics. */
+  .bestcall{border:1.5px solid var(--hair-g);border-radius:16px;padding:14px 15px;background:var(--card-surface)}
+  .bestcall-q{font-family:'Fredoka';font-weight:600;font-size:16px;line-height:1.25;color:var(--on-ground)}
+  .bestcall-line{margin-top:7px;font-family:'Nunito';font-weight:700;font-size:13px;color:var(--muted-g)}
+  .bestcall-line b{color:var(--on-ground)}
+
   .standing-share{display:block;width:100%;margin:10px 0 0;font-family:'Nunito';font-weight:900;
     font-size:13px;color:var(--accent);background:#101010;border:0;border-radius:999px;
     padding:11px;cursor:pointer}
@@ -5050,6 +5052,49 @@ function categoryBreakdownHtml(byCategory){
 // --- Public profile page (/@{handle}) — read-only, works fully logged out ----
 // Reuses the private Profile's Oddie Score / stats styling, plus a feed of the
 // handle's recent resolved calls. Nav navigates absolutely so it escapes /@.
+/**
+ * YOUR BEST CALL — the single row on this page that is a claim rather than a
+ * statistic.
+ *
+ * Everything else here answers "how are you doing"; this answers "what have
+ * you got". It picks the correct call taken at the LONGEST odds, because that
+ * is the one nobody else believed, which is the only kind of call worth
+ * repeating to anyone. A win at 80% is a fact; a win at 12% is a story.
+ *
+ * Shown only where it earns the space: a correct call priced under even money.
+ * Somebody whose only wins were favourites gets nothing here rather than a
+ * limp "you were right about the obvious thing".
+ */
+function bestCallHtml(calls, handle){
+  const wins=(calls||[]).filter(c=>c.correct && c.oddsPct<50);
+  if(!wins.length)return "";
+  const best=wins.reduce((a,c)=>c.oddsPct<a.oddsPct?c:a);
+  const mult=Math.round(100/Math.max(1,best.oddsPct));
+  const line=`called ${best.side.toUpperCase()} at ${best.oddsPct}% and it hit.`;
+  const share=`I ${line} ${handle?`oddie.fun/@${handle}`:"oddie.fun"}`;
+  return `<p class="psec" style="margin-top:22px">Your best call</p>
+    <div class="bestcall">
+      <div class="bestcall-q">${esc(displayTitle(best.question))}</div>
+      <div class="bestcall-line"><b>${best.side.toUpperCase()} at ${best.oddsPct}%</b> · the market said no · <b>${mult}× against you</b></div>
+      <button class="standing-share" data-standing-share="${esc(share)}">Post this to X</button>
+    </div>`;
+}
+
+/**
+ * What the loud multiplier is, and what moves it.
+ *
+ * A badge that only appears once earned tells the people who have it something
+ * they already know and the people who do not nothing at all. The rung ABOVE
+ * where you stand is the part that changes behaviour, so this line always
+ * names it.
+ */
+function loudNextHtml(mult){
+  const m=Number(mult)||1;
+  if(m>=2)return `<p class="cnote">🔥 Your play earns <b>2×</b> — the top of the ladder, held by winning a week.</p>`;
+  const next=m>=1.5?["2×","win a week's loudest"]:m>=1.25?["1.5×","three cleared posts in 30 days"]:["1.25×","one cleared post"];
+  return `<p class="cnote">🔥 Your play earns <b>${m}×</b> right now. ${next[1][0].toUpperCase()+next[1].slice(1)} makes it <b>${next[0]}</b>.</p>`;
+}
+
 function pubCallRow(c){
   const win=c.correct;
   return `<div class="pcall ${win?'win':'loss'}">
@@ -5096,6 +5141,7 @@ async function renderPublicProfile(){
       <div class="tile"><div class="v">${acc.resolved}</div><div class="k">RESOLVED PICKS</div></div>
     </div>
     ${!acc.hasEnough?`<p class="cnote">🌱 building track record · ${acc.resolved} of ${acc.minResolved} resolved picks. Oddies show at ${acc.minResolved}.</p>`:''}
+    ${bestCallHtml(calls, data.handle)}
     ${categoryBreakdownHtml(acc.byCategory)}
     <p class="psec" style="margin-top:22px">Recent calls</p>
     ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
@@ -5622,14 +5668,15 @@ async function loadProfile(scroller){
     </div>
     ${acc&&!acc.hasEnough
       ? `<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Accuracy shows at ${acc.minResolved}.</p>`:""}
+    ${acc?loudNextHtml(acc.loudMultiplier):""}
     ${categoryBreakdownHtml(acc&&acc.byCategory)}
 
-    <!-- Account and balance: the plumbing, kept and reachable, just not first. -->
+    <!-- Account. The predictions balance used to headline this section as
+         "your play balance"; a call is free now, so that number buys nothing
+         and cannot go down. It was the single largest figure on the page and
+         it measured a currency the product no longer has a use for. The
+         section is about WHO you are signed in as, which is what it shows. -->
     <p class="psec">Account</p>
-    <div class="opoints">
-      <span class="v">${balance==null?"—":String(balance).replace(/\B(?=(\d{3})+(?!\d))/g,",")}</span>
-      <span class="k"><b>Predictions</b> · your play balance</span>
-    </div>
     <p class="sub">${auth.accounts.length
       ? "Your predictions, calls and reputation follow this account to any browser."
       : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
