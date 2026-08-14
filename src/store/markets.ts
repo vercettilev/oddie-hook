@@ -747,7 +747,9 @@ export interface ClaimStatus {
   amount: number;             // what a claim grants
   lastClaimAt: string | null;
 }
-export interface ClaimResult extends ClaimStatus { granted: number; balance: number }
+/** `granted`/`balance` are the dormant prediction ledger; `oddies` is what the
+ *  player is actually paid and the only figure any surface should quote. */
+export interface ClaimResult extends ClaimStatus { granted: number; balance: number; oddies: number }
 
 /** Pure: from the last-claim time + stored streak, what the client should see. */
 function computeClaim(lastMs: number | null, streak: number, now: number): Omit<ClaimStatus, "lastClaimAt"> {
@@ -756,7 +758,9 @@ function computeClaim(lastMs: number | null, streak: number, now: number): Omit<
   // A missed day (no claim within the streak window) reads as a broken streak,
   // even before the next claim formally resets it to 1.
   const effStreak = lastMs !== null && now - lastMs < STREAK_WINDOW_MS ? streak : 0;
-  return { claimable, nextClaimMs, streak: effStreak, amount: DAILY_CLAIM };
+  // `amount` is what the button offers, so it is quoted in oddies — the only
+  // unit a player sees. DAILY_CLAIM stays the dormant prediction grant.
+  return { claimable, nextClaimMs, streak: effStreak, amount: ODDIES_PER.daily };
 }
 
 export async function claimStatus(rawDeviceId: string): Promise<ClaimStatus> {
@@ -777,6 +781,14 @@ export async function claimStatus(rawDeviceId: string): Promise<ClaimStatus> {
 /** Collect the daily grant. Idempotent within a window (a double-tap grants
  *  once); continues the streak if within the window, else resets it to 1. The
  *  balance is never reset — only the streak. */
+/** Pay the day's oddies into the growth ledger. Deduped per (device, UTC day)
+ *  as a second lock behind claimDaily's own atomic window, so a race that
+ *  somehow granted twice still cannot pay twice. */
+async function awardDaily(deviceId: string, now: number): Promise<void> {
+  const day = new Date(now).toISOString().slice(0, 10);
+  await awardSeasonPoints("daily", `daily-${day}`, `daily:${day}:${deviceId}`, deviceId).catch(() => false);
+}
+
 export async function claimDaily(rawDeviceId: string): Promise<ClaimResult> {
   const deviceId = await resolveDevice(rawDeviceId);
   const now = Date.now();
@@ -785,11 +797,12 @@ export async function claimDaily(rawDeviceId: string): Promise<ClaimResult> {
     if (!memBalance.has(deviceId)) memBalance.set(deviceId, bal);
     const c = memClaim.get(deviceId) ?? { lastClaimAt: null, streak: 0 };
     const st = computeClaim(c.lastClaimAt, c.streak, now);
-    if (!st.claimable) return { ...st, lastClaimAt: c.lastClaimAt ? new Date(c.lastClaimAt).toISOString() : null, granted: 0, balance: bal.tokens };
+    if (!st.claimable) return { ...st, lastClaimAt: c.lastClaimAt ? new Date(c.lastClaimAt).toISOString() : null, granted: 0, balance: bal.tokens, oddies: 0 };
     const newStreak = c.lastClaimAt !== null && now - c.lastClaimAt < STREAK_WINDOW_MS ? c.streak + 1 : 1;
     bal.tokens += DAILY_CLAIM;
     memClaim.set(deviceId, { lastClaimAt: now, streak: newStreak });
-    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: newStreak, amount: DAILY_CLAIM, lastClaimAt: new Date(now).toISOString(), granted: DAILY_CLAIM, balance: bal.tokens };
+    await awardDaily(deviceId, now);
+    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: newStreak, amount: ODDIES_PER.daily, lastClaimAt: new Date(now).toISOString(), granted: DAILY_CLAIM, balance: bal.tokens, oddies: ODDIES_PER.daily };
   }
   await ensureSchema();
   await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
@@ -808,11 +821,12 @@ export async function claimDaily(rawDeviceId: string): Promise<ClaimResult> {
   );
   if (rows.length === 1) {
     const r = rows[0];
-    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: r.claim_streak, amount: DAILY_CLAIM, lastClaimAt: r.last_claim_at.toISOString(), granted: DAILY_CLAIM, balance: r.tokens };
+    await awardDaily(deviceId, now);
+    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: r.claim_streak, amount: ODDIES_PER.daily, lastClaimAt: r.last_claim_at.toISOString(), granted: DAILY_CLAIM, balance: r.tokens, oddies: ODDIES_PER.daily };
   }
   // Already claimed within the window — report current state, no grant.
   const [st, w] = await Promise.all([claimStatus(deviceId), getWallet(deviceId)]);
-  return { ...st, granted: 0, balance: w.tokens };
+  return { ...st, granted: 0, balance: w.tokens, oddies: 0 };
 }
 
 /** Tokens only. Kept for callers that do not care about the top-up. */
@@ -2991,6 +3005,12 @@ export const SEASON_POINTS = {
   // the week's best (+300, picked). Deduped per tweet, so one post pays once
   // no matter who resubmits it.
   loud_post: 75,
+  // Showing up. The daily tap used to hand out predictions, which stopped
+  // being worth anything the moment calling became free — a button granting a
+  // currency nobody spends is a ritual with no reward inside it. It pays the
+  // one unit there is instead. Small on purpose: the streak is the reason to
+  // come back, not the payout, and a tap should never out-earn a post.
+  daily: 5,
 } as const;
 export type SeasonEvent = keyof typeof SEASON_POINTS;
 
@@ -4001,6 +4021,45 @@ export function poolPct(chosenPool: number, oppositePool: number): number | null
   return Math.max(1, Math.min(99, Math.round((chosenPool / total) * 100)));
 }
 
+/**
+ * How heavily the opening price is weighted before the crowd outvotes it,
+ * expressed in people. Matched to MARKET_FORMING_MIN so the anchor has been
+ * fully outweighed at roughly the moment a market stops reading "forming".
+ */
+export const PRICE_ANCHOR_WEIGHT = 5;
+
+/**
+ * A community market's live price, from PEOPLE rather than money.
+ *
+ * It used to come from staked tokens, which worked while a call cost one and
+ * broke the moment calling became free: every call now stakes zero, so the
+ * pool is always empty and the price would sit frozen at whatever the market
+ * opened on. Counting bodies is the honest replacement — nothing else is being
+ * risked, so nothing else is available to weigh.
+ *
+ * The naive ratio is unusable at the start: the first caller alone would print
+ * 100%, and the second would be quoted a price invented by one tap. So the
+ * OPENING price is carried as a prior worth PRICE_ANCHOR_WEIGHT people and the
+ * crowd moves it from there:
+ *
+ *     price = (anchor × k + yes) / (k + yes + no)
+ *
+ * With a 50% open and k=5 that runs 50 → 58 (1 yes) → 63 (7y/3n) → 69 (70y/30n),
+ * converging on the crowd's true split while the operator's guess fades out.
+ *
+ * The known weakness, stated rather than hidden: a price made of opinions
+ * herds. In a money market a contrarian is paid to correct it; here the only
+ * counterweight is that oddies pay more for being right against the crowd,
+ * which is real but not as strong. Venue markets are untouched and keep
+ * carrying prices that real money made.
+ */
+export function crowdPct(anchorPct: number, yesPeople: number, noPeople: number): number {
+  const k = PRICE_ANCHOR_WEIGHT;
+  const anchor = Math.max(1, Math.min(99, anchorPct)) / 100;
+  const p = (anchor * k + Math.max(0, yesPeople)) / (k + Math.max(0, yesPeople) + Math.max(0, noPeople));
+  return Math.max(1, Math.min(99, Math.round(p * 100)));
+}
+
 /** Open (unresolved) community markets, Market-shaped + meta. Used for the feed
  *  AND to price plays (livePctOf needs the market in the "live" set).
  *
@@ -4020,11 +4079,13 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
       if (meta.resolvedOutcome) continue;
       const rec = mem.get(meta.slug);
       if (!rec) continue;
-      const yes = memCalls.filter((c) => c.slug === meta.slug && c.side === "yes" && !c.closedAt).reduce((a, c) => a + c.tokens, 0);
-      const no = memCalls.filter((c) => c.slug === meta.slug && c.side === "no" && !c.closedAt).reduce((a, c) => a + c.tokens, 0);
-      const live = poolPct(yes, no);
+      // DISTINCT devices per side, not staked tokens: a free call stakes
+      // nothing, so people are the only thing left to count. Open calls only —
+      // somebody who closed out has left the market and stopped voting in it.
+      const yes = new Set(memCalls.filter((c) => c.slug === meta.slug && c.side === "yes" && !c.closedAt && c.deviceId).map((c) => c.deviceId)).size;
+      const no = new Set(memCalls.filter((c) => c.slug === meta.slug && c.side === "no" && !c.closedAt && c.deviceId).map((c) => c.deviceId)).size;
       out.push({
-        ...rec.market, yesPct: live ?? rec.market.yesPct,
+        ...rec.market, yesPct: crowdPct(rec.market.yesPct, yes, no),
         marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
         resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
       });
@@ -4040,8 +4101,8 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
   }>(`
     SELECT s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
            c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability,
-           COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes' AND mc.closed_at IS NULL), 0)::int AS yes_pool,
-           COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'  AND mc.closed_at IS NULL), 0)::int AS no_pool
+           count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes' AND mc.closed_at IS NULL)::int AS yes_pool,
+           count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no'  AND mc.closed_at IS NULL)::int AS no_pool
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
      WHERE c.resolved_outcome IS NULL
@@ -4049,7 +4110,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
               c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
-    venue: "community", venueId: r.venue_id, question: r.question, yesPct: poolPct(r.yes_pool, r.no_pool) ?? r.yes_pct,
+    venue: "community", venueId: r.venue_id, question: r.question, yesPct: crowdPct(r.yes_pct, r.yes_pool, r.no_pool),
     closesAt: r.closes_at ? r.closes_at.toISOString() : null, volumeUsd: Number(r.volume_usd),
     venueUrl: r.venue_url, tags: [], marketId: Number(r.market_id), category: r.category,
     onchainPubkey: r.onchain_pubkey, onchainSig: r.onchain_sig,
