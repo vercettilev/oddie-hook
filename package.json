@@ -16,6 +16,7 @@
     "peek": "tsx scripts/peek.ts",
     "test-economy": "tsx scripts/test-economy.ts",
     "test-loud": "tsx scripts/test-loud.ts",
+    "unmerge": "tsx scripts/unmerge-account.ts",
     "test-positions": "tsx scripts/test-positions.ts",
     "demo-payload": "tsx scripts/demo-payload.ts",
     "test-accounts": "tsx scripts/test-accounts.ts",
