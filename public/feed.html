@@ -274,6 +274,21 @@
      why the guard walked past it. Translucent fill, adaptive ink, one rule. */
   .mchip-sourced{background:rgba(127,127,127,.16);color:var(--muted-g);box-shadow:none;
     font-size:11px;letter-spacing:.02em}
+  /* Movement. Same translucent-fill construction as .mchip-sourced above, and
+     for the same reason: a fill that is semi-transparent composites over
+     whichever ground it lands on, so it cannot become the theme-FIXED
+     background the contrast guard exists to catch. The inks are the duel's own
+     yes/no colours, and they are stated per theme rather than adaptively — the
+     light values (#5A6109 / #B23B2B) are the ones .orow uses, and the dark ones
+     lift to stay legible on the dark card without going neon. Reusing the
+     buttons' palette is what makes "the line moved up" and "YES" read as the
+     same direction without a legend. */
+  .mchip-delta{background:rgba(127,127,127,.14);box-shadow:none;font-size:11px;
+    letter-spacing:.02em;font-variant-numeric:tabular-nums}
+  .mchip-delta.up{color:#5A6109;background:rgba(215,220,31,.20)}
+  .mchip-delta.down{color:#B23B2B;background:rgba(255,107,90,.14)}
+  :root[data-theme="dark"] .mchip-delta.up{color:#D7DC1F;background:rgba(215,220,31,.12)}
+  :root[data-theme="dark"] .mchip-delta.down{color:#FF8B78;background:rgba(255,107,90,.12)}
   /* Discovery modes — the row above the category chips. Mode answers "show me
      what's happening" (For You / Trending / New / Resolving Soon), category
      answers "about what"; two axes, two rows. The active mode is the one
@@ -3809,6 +3824,25 @@ function crowdChip(m){
   return `<span class="mchip mchip-crowd">${PEOPLE_ICON}${y} yes · ${n} no</span>`;
 }
 
+/* Which way the line has moved since yesterday's reading.
+ *
+ * A percentage on its own says what the crowd thinks; a percentage that MOVED
+ * says something is happening, and that is the difference between a listing and
+ * a live market. It is also the one number on the card that can change while
+ * you are not looking, which is the honest reason to come back.
+ *
+ * The server sends pctDelta only when it has something true to say — a prior
+ * reading exists, it is recent enough to call "today", and the line actually
+ * moved. So this renders on presence, never on a computed zero, and no chip
+ * means "nothing to report" rather than "flat". Community markets never carry
+ * one; see pctDeltasFor for why. */
+function deltaChip(m){
+  const d=Number(m.pctDelta);
+  if(!Number.isFinite(d)||d===0)return "";
+  const up=d>0;
+  return `<span class="mchip mchip-delta ${up?"up":"down"}">${up?"▲":"▼"}${Math.abs(d)} today</span>`;
+}
+
 function metaRowHtml(m,yes){
   // Venue markets carry a SOURCED chip rather than any tagging provenance:
   // nobody on Oddie created them, and inventing an attribution would be the
@@ -3817,7 +3851,11 @@ function metaRowHtml(m,yes){
   // community markets around them.
   // A tagged venue market leads with WHO tagged it; the venue name drops to a
   // secondary credit behind it. An untagged one keeps the plain sourced row.
-  if(!m.community)return `${taggedChipHtml(m)}<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span><span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>${crowdChip(m)}`;
+  // The movement chip sits directly after the venue credit, ahead of volume and
+  // the crowd split: of everything in this row it is the only part that changed
+  // since the last visit, and a row that leads with what is new reads faster
+  // than one ordered by how the object was built.
+  if(!m.community)return `${taggedChipHtml(m)}<span class="mchip mchip-sourced">sourced · ${esc(m.venue==="polymarket"?"Polymarket":m.venue||"venue")}</span>${deltaChip(m)}<span class="mchip mchip-volume">${COIN_ICON}${money(m.volumeUsd)} in play</span>${crowdChip(m)}`;
   // No "N% yes" chip: the YES button below shows that exact number in the
   // largest type on the card. A market still FORMING has no meaningful % yet,
   // so that one state does get a chip, and it says what it is instead.
@@ -5195,6 +5233,41 @@ function bestCallHtml(calls, handle){
  * where you stand is the part that changes behaviour, so this line always
  * names it.
  */
+/* WHAT YOU BROUGHT IN — the loud half of a profile, which had no place on it.
+ *
+ * Everything above this on the page measures how well you PREDICT. Nothing
+ * measured what the product actually runs on: markets you put here, and the
+ * people who showed up to play them. That axis existed on the home rail and on
+ * the creator board, which are the two places you look at everyone else, and
+ * was missing from the one page you open to look at yourself.
+ *
+ * "People reached" is the number worth returning for, and it is the only one on
+ * the profile that moves while you are away: your accuracy changes when YOU
+ * call, your reach changes when OTHER people do. That is the honest version of
+ * a reason to come back, and it is the same number the 3% is paid on, so the
+ * incentive and the metric are the same object rather than two claims that have
+ * to agree.
+ *
+ * Rendered at zero rather than hidden. A zero next to a sentence describing the
+ * payoff is the clearest statement of what to do next; hiding the block would
+ * leave someone who has never tagged with no idea the axis exists. Same
+ * reasoning the creator panel on the home rail already follows. */
+function reachHtml(creator){
+  const made=Number(creator?.marketsCreated)||0;
+  const reached=Number(creator?.tradersReached)||0;
+  const earned=Number(creator?.earnings)||0;
+  if(!made)return `<p class="psec">What you've brought in</p>
+    <p class="cnote">🏷️ Tag <b>@oddiefun</b> under an argument on X. The market lands in the feed with your name on it, and you earn <b>3%</b> of everything played on it.</p>`;
+  return `<p class="psec">What you've brought in</p>
+    <div class="trstats">
+      <div class="tile"><div class="v">${made}</div><div class="k">MARKETS TAGGED</div></div>
+      <div class="tile"><div class="v">${reached}</div><div class="k">PEOPLE REACHED</div></div>
+    </div>
+    <p class="cnote">${earned>0
+      ? `🔥 Your markets have paid you <b>+${earned}</b> in creator fees so far.`
+      : `🔥 You earn <b>3%</b> of every market you tagged, paid when it resolves.`}</p>`;
+}
+
 function loudNextHtml(mult){
   const m=Number(mult)||1;
   if(m>=2)return `<p class="cnote">🔥 Your play earns <b>2×</b> — the top of the ladder, held by winning a week.</p>`;
@@ -5234,7 +5307,12 @@ async function renderPublicProfile(){
   }
   const acc=data.accuracy, calls=data.recentCalls||[], badges=data.badges||[], rank=data.rank||null;
   const accVal=acc.hasEnough?`${acc.accuracyPct}%`:"building";
-  const bestTopicVal=acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
+  // Identical construction to your own profile's tile, deliberately: the same
+  // person must not describe themselves one way on their page and another way
+  // on the page other people read.
+  const bestTopicVal=acc.bestTopic
+    ? `${esc(acc.bestTopic.category)}<span class="best"> · ${acc.bestTopic.pct}% of ${acc.bestTopic.resolved}</span>`
+    : "—";
   const isMe=myHandle&&myHandle.toLowerCase()===String(data.handle).toLowerCase();
   scroller.innerHTML=`<div class="sheet">
     <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
@@ -5244,7 +5322,7 @@ async function renderPublicProfile(){
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
       <div class="tile"><div class="v">${acc.streak}${acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:''}</div><div class="k">STREAK</div></div>
-      <div class="tile"><div class="v topic">${esc(bestTopicVal)}</div><div class="k">BEST TOPIC</div></div>
+      <div class="tile"><div class="v topic">${bestTopicVal}</div><div class="k">YOUR TOPIC</div></div>
       <div class="tile"><div class="v">${acc.resolved}</div><div class="k">RESOLVED PICKS</div></div>
     </div>
     ${!acc.hasEnough?`<p class="cnote">🌱 building track record · ${acc.resolved} of ${acc.minResolved} resolved picks. Oddies show at ${acc.minResolved}.</p>`:''}
@@ -5738,7 +5816,15 @@ async function loadProfile(scroller){
   try{const rr=await fetch(`${API}/api/rank-movement?deviceId=${encodeURIComponent(deviceId)}`);if(rr.ok)rankMove=(await rr.json()).movement;}catch(e){}
   const accVal=acc?(acc.hasEnough?`${acc.accuracyPct}%`:"building"):"—";
   const streakVal=acc?String(acc.streak):"—";
-  const bestTopicVal=acc&&acc.bestTopic?`${acc.bestTopic.pct}% ${acc.bestTopic.category}`:"—";
+  // The category LEADS and the number follows it, instead of "50% Sports".
+  // A tile whose largest text is a percentage answers "how am I doing"; the
+  // page already answers that four times above. This one is here to answer
+  // "what am I", so the subject comes first and the accuracy becomes the
+  // supporting fact — and it carries its denominator now, because 50% reads as
+  // a coin flip until you can see it was over 20 resolved calls.
+  const bestTopicVal=acc&&acc.bestTopic
+    ? `${esc(acc.bestTopic.category)}<span class="best"> · ${acc.bestTopic.pct}% of ${acc.bestTopic.resolved}</span>`
+    : "—";
   const resolvedVal=acc?String(acc.resolved):"—";
 
   await loadBalance(); // the handle rides on /api/me
@@ -5770,12 +5856,13 @@ async function loadProfile(scroller){
     <div class="trstats">
       <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
       <div class="tile"><div class="v">${esc(streakVal)}${acc&&acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:""}</div><div class="k">STREAK</div></div>
-      <div class="tile"><div class="v topic">${esc(bestTopicVal)}</div><div class="k">BEST TOPIC</div></div>
+      <div class="tile"><div class="v topic">${bestTopicVal}</div><div class="k">YOUR TOPIC</div></div>
       <div class="tile"><div class="v">${esc(resolvedVal)}</div><div class="k">RESOLVED PICKS</div></div>
     </div>
     ${acc&&!acc.hasEnough
       ? `<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Accuracy shows at ${acc.minResolved}.</p>`:""}
     ${acc?loudNextHtml(acc.loudMultiplier):""}
+    ${reachHtml(myCreator)}
     ${categoryBreakdownHtml(acc&&acc.byCategory)}
 
     <!-- Account. The predictions balance used to headline this section as

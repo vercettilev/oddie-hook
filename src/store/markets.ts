@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS market_slug (
   created_at  timestamptz NOT NULL DEFAULT now(),
   UNIQUE (venue, venue_id)
 );
+-- The previous odds reading, so a card can say which way a market has moved.
+-- Rolled forward at most once per ~20h by createSlug's upsert (see there), NOT
+-- on every refresh: the feed re-reads venues every few minutes, and a delta
+-- against the last refresh is always zero. Null until a market has been seen
+-- across two windows, which is the honest state for one we just met.
+ALTER TABLE market_slug ADD COLUMN IF NOT EXISTS prev_pct    integer;
+ALTER TABLE market_slug ADD COLUMN IF NOT EXISTS prev_pct_at timestamptz;
+
 CREATE TABLE IF NOT EXISTS market_call (
   id      bigserial PRIMARY KEY,
   slug    text NOT NULL REFERENCES market_slug(slug) ON DELETE CASCADE,
@@ -539,6 +547,19 @@ export async function createSlug(market: Market): Promise<SlugRecord> {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (venue, venue_id) DO UPDATE
        SET question = EXCLUDED.question,
+           -- Roll the reading the delta is measured against, at most once per
+           -- window. market_slug.yes_pct on the right-hand side is the row as
+           -- it was BEFORE this update, which is exactly the reading we want to
+           -- keep; every right-hand side in a DO UPDATE sees the old row, so it
+           -- does not matter that yes_pct is being reassigned two lines down.
+           -- Without the window this would compare against the last refresh,
+           -- which is minutes old and always reads zero.
+           prev_pct = CASE WHEN market_slug.prev_pct_at IS NULL
+                             OR market_slug.prev_pct_at < now() - interval '20 hours'
+                           THEN market_slug.yes_pct ELSE market_slug.prev_pct END,
+           prev_pct_at = CASE WHEN market_slug.prev_pct_at IS NULL
+                                OR market_slug.prev_pct_at < now() - interval '20 hours'
+                              THEN now() ELSE market_slug.prev_pct_at END,
            yes_pct = EXCLUDED.yes_pct,
            closes_at = EXCLUDED.closes_at,
            volume_usd = EXCLUDED.volume_usd,
@@ -3327,6 +3348,41 @@ export async function surfacedSlugs(slugs: string[]): Promise<Set<string>> {
   const { rows } = await db().query<{ slug: string }>(
     `SELECT slug FROM market_surfacer WHERE slug = ANY($1)`, [slugs]);
   return new Set(rows.map((r) => r.slug));
+}
+
+/** How far a market's line has moved since the last stored reading, per slug.
+ *
+ *  Only for markets whose stored yes_pct is the live one — that is, venue
+ *  markets. A community market's displayed percentage is computed at read time
+ *  by crowdPct from the calls on it, while its market_slug row keeps the
+ *  opening line forever, so a delta taken from that row would be measuring a
+ *  number nobody is shown. Those slugs are simply absent here and their cards
+ *  carry no chip, which is the honest answer rather than a confident zero.
+ *
+ *  Absent too: a market seen for the first time (no previous reading yet), one
+ *  that has not moved, and one whose reading has gone stale enough that "today"
+ *  would be a lie — a market that stopped being refreshed keeps its last
+ *  reading indefinitely, and a day-old label on a week-old number is worse than
+ *  no label. MAX_AGE_H is deliberately a little over the 20h roll window so a
+ *  live market is never briefly chipless while waiting to roll. */
+export async function pctDeltasFor(slugs: string[]): Promise<Record<string, number>> {
+  const MAX_AGE_H = 30;
+  if (slugs.length === 0) return {};
+  if (!PERSISTENT) return {}; // mem keeps no reading history; see createSlug
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; delta: number }>(
+    `SELECT slug, (yes_pct - prev_pct) AS delta
+       FROM market_slug
+      WHERE slug = ANY($1)
+        AND venue <> 'community'
+        AND prev_pct IS NOT NULL
+        AND prev_pct_at > now() - ($2 || ' hours')::interval
+        AND yes_pct <> prev_pct`,
+    [slugs, String(MAX_AGE_H)],
+  );
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.slug] = Number(r.delta);
+  return out;
 }
 
 /** The one idempotent write. Credits `slug`'s surfacer (resolving handle→device

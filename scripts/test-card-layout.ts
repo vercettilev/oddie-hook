@@ -197,5 +197,35 @@ console.log("\nthe images we post match the app people land in");
   }
 }
 
+// --- the movement chip speaks only when it has something true to say --------
+//
+// pctDelta is sent ONLY when a prior reading exists, is recent enough to call
+// "today", and the line actually moved. The client must therefore render on
+// presence and never compute a zero: a card that says "▲0 today" claims a
+// measurement was taken, and one that says "today" about a week-old reading is
+// worse than saying nothing. The function is lifted out of the page and run,
+// rather than grepped, because the failure being guarded is behavioural.
+console.log("\nthe movement chip renders on presence, not on a number");
+{
+  const feed = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
+  const from = feed.indexOf("function deltaChip");
+  const body = from < 0 ? "" : feed.slice(from, feed.indexOf("\n}", from) + 2);
+  check("deltaChip is where the test thinks it is", from > 0);
+
+  const deltaChip = new Function(`${body}; return deltaChip;`)() as (m: unknown) => string;
+  check("a rise renders with an up arrow", /▲9 today/.test(deltaChip({ pctDelta: 9 })), deltaChip({ pctDelta: 9 }));
+  check("...and carries the up class", /mchip-delta up/.test(deltaChip({ pctDelta: 9 })));
+  check("a fall renders the magnitude, not a minus sign",
+    /▼4 today/.test(deltaChip({ pctDelta: -4 })) && !deltaChip({ pctDelta: -4 }).includes("-4"),
+    deltaChip({ pctDelta: -4 }));
+  check("...and carries the down class", /mchip-delta down/.test(deltaChip({ pctDelta: -4 })));
+
+  // The four silences. Each of these would be a claim the server never made.
+  check("an explicit zero renders nothing", deltaChip({ pctDelta: 0 }) === "");
+  check("an absent field renders nothing", deltaChip({}) === "");
+  check("a null renders nothing", deltaChip({ pctDelta: null }) === "");
+  check("a non-number renders nothing", deltaChip({ pctDelta: "abc" }) === "");
+}
+
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

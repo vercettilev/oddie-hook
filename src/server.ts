@@ -13,7 +13,7 @@ import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, 
 import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
-import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl } from "./store/markets.js";
+import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, pctDeltasFor } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
@@ -698,6 +698,12 @@ app.get("/api/feed", async (req, res) => {
     ? surfaced
     : await surfacedSlugs(feedItems.map((x) => x.slug)).catch(() => new Set<string>());
   const crowd = await crowdSplits(feedItems.map((x) => x.slug));
+  // How far each line has moved since yesterday's reading. One query for the
+  // page; absent for markets with no prior reading, no movement, or a stale
+  // one, so a missing entry means "nothing to say" rather than "flat".
+  const pctDeltas = await pctDeltasFor(feedItems.map((x) => x.slug)).catch(
+    () => ({} as Record<string, number>),
+  );
   // The surfacer handle + source tweet per market — the party a "challenge the
   // other side" reply is aimed at, and the permalink's source-tweet card. One
   // query for the whole feed; null where a market has no source.
@@ -737,13 +743,17 @@ app.get("/api/feed", async (req, res) => {
       // person tagged a claim, and that has to be visible on the card itself
       // rather than inferable from a "community market" chip.
       //
-      // `tagged` is the flag the client renders from; taggedBy is the name, and
-      // a null name on a tagged market means tagged ANONYMOUSLY (a real tag, no
-      // linked handle) — the client says "anonymous", never a fabricated name.
-      // An untagged market sends tagged:false and no name at all.
+      // `tagged` is the flag the client renders from; taggedBy is the name. A
+      // null name means no surfacer was ever recorded, which the client renders
+      // as "opened by oddie" — never a fabricated person, and no longer the
+      // "anonymous" this comment used to promise (that framing asserted a real
+      // tagger we merely couldn't name). An untagged market sends tagged:false
+      // and no name at all.
       tagged: x.community === true || taggedSet.has(x.slug),
       taggedBy: x.community === true || taggedSet.has(x.slug) ? (surfacer?.handle ?? null) : null,
       creatorFeePaid: paid ? paid.amount : 0,
+      // Absent, not zero, when there is nothing honest to say — see pctDeltasFor.
+      ...(pctDeltas[x.slug] != null ? { pctDelta: pctDeltas[x.slug] } : {}),
     };
     if (callers && start && x.slug === start.slug) {
       extra.callers = callers.callers;

@@ -117,9 +117,9 @@ console.log("\na market resolves YES: the holder is paid, the doubter scores his
   // the time the test read the list. Making the creator fee awaited (mem/pg
   // parity) removed the race and the notice arrived on time, as it always
   // should have.
-  const win = hn.find((n) => n.kind === "settle_win");
+  const winNotice = hn.find((n) => n.kind === "settle_win");
   check("the winner gets a real notification",
-    !!win && win.body.includes(`+${winBonus(40)} predictions`), JSON.stringify(hn));
+    !!winNotice && winNotice.body.includes(`+${winBonus(40)} predictions`), JSON.stringify(hn));
   check("...exactly one of them", hn.filter((n) => n.kind === "settle_win").length === 1);
   const dn = await noticesFor(DOUBTER);
   check("the loser is told the market resolved", dn.length === 1 && dn[0].kind === "settle_loss" && dn[0].body.includes("resolved YES"), JSON.stringify(dn[0]));
