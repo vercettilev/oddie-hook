@@ -31,7 +31,7 @@
 <!-- This page used to bounce anyone carrying an Oddie device id straight to
      /feed. Removed: "/" is the front door and it should open the front door,
      for everyone, every time. Someone who already plays reaches the app from
-     "Live markets" in the nav — one click, and one they chose.
+     the nav button, which rewrites itself to "Back to your feed" for them.
      ?stay=1 is still accepted anywhere it is linked; it simply has nothing left
      to override. -->
 
@@ -475,11 +475,6 @@
     <a class="brand" href="/?stay=1" aria-label="Oddie home">
       <img src="/logo-mark-96.png" alt=""><span>Oddie</span>
     </a>
-    <div class="nav__links">
-      <a href="#how">How it works</a>
-      <a href="/feed">Live markets</a>
-      <a href="/feed#/leaderboard">Leaderboard</a>
-    </div>
     <a class="btn-launch" id="navcta" href="#profile">Join early <span aria-hidden="true">›</span></a>
   </div>
 </nav>
@@ -493,14 +488,12 @@
 
       <p class="lede">
         Tag <b>@oddiefun</b> under any argument on X.<br>
-        We find a market or create one instantly.<br>
-        You play. We keep score. Being loud pays.
+        It becomes a market. Being loud pays.
       </p>
 
       <div class="cta">
         <a class="cta__go" href="https://x.com/intent/tweet?text=%40oddiefun%20" target="_blank" rel="noopener">
           Create a market on X <span aria-hidden="true">↗</span></a>
-        <a class="cta__alt" href="#how">See how it works</a>
       </div>
 
       <div class="proof">
@@ -516,7 +509,6 @@
              words "0 markets live right now" on the front door. The server sends
              the entire clause or nothing at all. -->
         <span class="proof__txt"><!--PROOF--></span>
-        <a class="proof__join" href="#profile">Join early.</a>
       </div>
     </div>
 
@@ -550,8 +542,6 @@
       <div class="how__side">
         <p class="eyebrow reveal">See how a post becomes a market</p>
         <h2 class="how__t reveal">An argument, all the way to a receipt.</h2>
-        <p class="how__b reveal">Four beats, in order. The last one is the part a market
-          list cannot do: somebody's name on a call, and what it earned them.</p>
       </div>
       <div class="steps">
 
@@ -689,9 +679,8 @@
     <div class="prof">
       <div class="prof__copy">
         <h2 class="prof__t">Play as a guest. Become somebody when you want to.</h2>
-        <p class="prof__b">Every call you make is scored either way. Connecting just means the
-          score, the streak and the markets you tagged follow you to any browser
-          instead of living in this one.</p>
+        <p class="prof__b">Every call is scored either way. Connecting just means your record
+          follows you off this browser.</p>
       </div>
       <div class="prof__opts">
         <button class="pbtn pbtn--x" type="button" data-connect="twitter">
@@ -714,8 +703,8 @@
              so the corner rounding is ours. -->
         <button class="pbtn" type="button" data-connect="phantom">
           <span class="pbtn__g"><img class="pmark" src="/phantomlogo.png" alt="" width="19" height="19"></span> Continue with Phantom</button>
-        <p class="prof__note">A wallet signs a message to prove it is yours. It never approves
-          a transaction, and there is nothing to deposit: predictions are play money.</p>
+        <p class="prof__note">Signing proves the wallet is yours. It approves no transaction, and
+          there is nothing to deposit.</p>
       </div>
     </div>
   </section>
@@ -726,9 +715,7 @@
       <div class="feats">
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.9 18.1 18.1 5.9"/></svg> No wallet needed</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M11 18.2h2"/></svg> Nothing to install</span>
-        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M13 2 5 14h6l-1 8 8-12h-6l1-8Z"/></svg> 100% free</span>
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/></svg> Everything pays oddies</span>
-        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 6-8"/><path d="M15 6h3.5v3.5"/></svg> Real-time markets</span>
       </div>
     </div>
   </section>
@@ -737,8 +724,6 @@
 <footer>
   <div class="shell nav__in" style="gap:18px;flex-wrap:wrap">
     <span>© Oddie</span>
-    <a href="/feed">Live markets</a>
-    <a href="/feed#/leaderboard">Leaderboard</a>
     <a href="https://x.com/oddiefun" target="_blank" rel="noopener">@oddiefun on X</a>
     <span class="sp">Play money. For entertainment.</span>
   </div>
