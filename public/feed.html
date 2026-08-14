@@ -203,10 +203,6 @@
   /* Scroll affordance: a fade on the right edge hints the row keeps going. It
      fades out (.at-end) once there's nothing left to reveal, so it never sits on
      top of the final chip. Matches the header surface (--ground-2). */
-  .chipswrap{position:relative}
-  .chipswrap::after{content:"";position:absolute;top:0;right:0;bottom:0;width:34px;pointer-events:none;
-    background:linear-gradient(to right, rgba(0,0,0,0), var(--ground-2));opacity:1;transition:opacity .18s ease}
-  .chipswrap.at-end::after{opacity:0}
   .chip{flex:none;font-family:'Nunito';font-weight:800;font-size:12px;padding:7px 13px;border-radius:999px;
     border:1.5px solid var(--chip-bd);background:var(--chip-bg);color:var(--muted-g);cursor:pointer;white-space:nowrap;
     transition:transform .16s cubic-bezier(.34,1.56,.64,1), background .18s ease, color .18s ease, border-color .18s ease}
@@ -275,13 +271,6 @@
      answers "about what"; two axes, two rows. The active mode is the one
      accent-filled control in the header, same treatment as every selected
      state in the system. */
-  .sortrow{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;
-    margin:0 0 8px;padding:2px 2px}
-  .sortrow::-webkit-scrollbar{display:none}
-  .sortb{flex:none;font-family:'Nunito';font-weight:900;font-size:12px;
-    color:var(--muted-g);background:none;border:1.5px solid var(--hair-g);
-    border-radius:999px;padding:6px 13px;cursor:pointer;white-space:nowrap}
-  .sortb.on{color:#17250a;background:var(--accent);border-color:var(--accent)}
 
   /* Sidebar discovery links — same .navitem chassis, a small dot instead of an
      icon so they read as one family of lenses rather than five more sections. */
@@ -2067,7 +2056,6 @@
        highlight in step with it. Two identical controls stacked is not a choice,
        it is noise — so the chips are hidden where the rail exists, and kept
        below this breakpoint where they are the ONLY way to switch. */
-    .sortrow{display:none}
     body{--feedcol:min(660px, 58vw)}
     /* HOME only: the column carrying the market cards widens well past
        --feedcol, because reviewed live at 1440 the page was a 760px strip of
@@ -3149,41 +3137,35 @@ function feedTop(cats){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
        <div class="brand">${BRAND_MARK}<span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
-       <div class="sortrow" id="sortrow"></div>
-       <div class="chipswrap"><div class="chips" id="chips"></div></div>
      </div>`;
   paintBalance();paintThemeToggle();
-  // Discovery modes ABOVE the category chips: mode answers "show me what's
-  // happening", category answers "about what" — two independent axes, and
-  // collapsing them into one chip row made every mode compete with every
-  // topic for the same tap.
-  const sr=document.getElementById("sortrow");
-  FEED_SORT_LABELS.forEach(([k,label])=>{
-    const b=document.createElement("button");
-    b.className="sortb"+(k===feedSort?" on":"");b.textContent=label;
-    b.onclick=()=>{if(k!==feedSort){feedSort=k;ev("cat_change",{cat:"sort:"+k});paintNav("feed");loadFeed();}};
-    sr.appendChild(b);
-  });
-  const el=document.getElementById("chips");
-  (cats||[]).forEach(c=>{
-    const b=document.createElement("button");
-    b.className="chip"+(c===activeCat?" on":"");b.textContent=c;
-    b.onclick=()=>{if(c!==activeCat)ev("cat_change",{cat:c});activeCat=c;loadFeed();};
-    el.appendChild(b);
-  });
-  // Right-edge fade affordance: the category row scrolls horizontally on mobile
-  // (it was clipping "Cult…" at the edge with no hint). Show the fade only while
-  // there's more to reveal, so it never obscures the last chip once fully swiped.
-  // The scroll listener rides on #chips (rebuilt each render, so no leak); the
-  // resize listener is registered once against whatever #chips is current.
-  el.addEventListener("scroll",syncChipFade,{passive:true});
-  requestAnimationFrame(syncChipFade);
+  // The discovery-mode row went with the chips, and for the same reason the
+  // rail's copy of it did: four ways to re-sort a dozen tagged markets return
+  // near-identical orders, and the row's reliable effect was making a first
+  // visitor choose a word before reading a question. feedSort still exists and
+  // still defaults to foryou, so ?sort= keeps working for anything that wants
+  // it — what is gone is asking every arrival to operate it.
+  // NO CATEGORY CHIPS.
+  //
+  // They were a browsing affordance, and this stopped being a browsing
+  // product: the feed is only the markets somebody tagged. Two concrete
+  // problems, the second decisive.
+  //
+  //   1. Six buckets over a tagged feed of a dozen markets is mostly empty
+  //      tabs, and seven chips pushed the first question below the fold to
+  //      offer them.
+  //   2. The server's rule is `taggedFeed = !cat || cat === "For you"`, so
+  //      ANY other chip left the tagged partition entirely and returned a
+  //      plain venue list ranked by volume. One tap from the front door
+  //      landed a visitor in exactly the market-list product the tagged feed
+  //      exists to replace. A hole in your own thesis, sitting above the
+  //      content, is worse than no navigation at all.
+  //
+  // Categorisation itself is untouched: it still labels each card, still
+  // ranks the For You feed toward what a device plays, and ?cat= still works
+  // for anything that links it. Only the row of buttons is gone.
 }
-function syncChipFade(){
-  const el=document.getElementById("chips"); if(!el||!el.parentElement)return;
-  el.parentElement.classList.toggle("at-end", el.scrollLeft + el.clientWidth >= el.scrollWidth - 2);
-}
-window.addEventListener("resize",syncChipFade,{passive:true});
+
 function shellTop(title,preview=true){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
