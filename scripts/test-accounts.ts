@@ -141,5 +141,39 @@ console.log("\nthe bonus cannot be re-claimed by deleting devices");
   check("...and still lands on the same stream", r.canonicalDevice === PHONE);
 }
 
+console.log("\na second X account switches you, it does not merge you");
+{
+  // The production bug this prevents: two X identities sharing one canonical
+  // device merged two people into one record — the public profile answered
+  // with the wrong name, the leaderboard's brand exclusion took the human's
+  // row with it, and one person's resolved calls were credited to the other.
+  const BROWSER = "switch-browser-0001";
+  const FIRST = { provider: "twitter" as const, uid: "sw-1", handle: "@first_identity" };
+  const SECOND = { provider: "twitter" as const, uid: "sw-2", handle: "@second_identity" };
+
+  const a = await linkAccount(BROWSER, FIRST);
+  check("the first X account takes this browser's stream", a.canonicalDevice === BROWSER, a.canonicalDevice);
+
+  const b = await linkAccount(BROWSER, SECOND);
+  check("a SECOND X account gets a stream of its own", b.canonicalDevice !== BROWSER, b.canonicalDevice);
+  check("...and it is a real, separate id", !!b.canonicalDevice && b.canonicalDevice !== a.canonicalDevice);
+
+  // The browser now acts as the second identity, and only that one.
+  const held = await accountsFor(BROWSER);
+  check("the browser now holds exactly one X identity", held.filter((x) => x.provider === "twitter").length === 1,
+    held.map((x) => x.handle).join(", "));
+  check("...and it is the one just signed in", held.some((x) => x.handle === "@second_identity"));
+
+  // Switching back is just signing in again — no new stream, no second bonus.
+  const back = await linkAccount(BROWSER, FIRST);
+  check("signing back in returns to the first stream", back.canonicalDevice === a.canonicalDevice, back.canonicalDevice);
+  check("...and pays no second bonus", back.bonus === 0);
+
+  // A DIFFERENT provider still shares, because that is one person proving
+  // themselves twice rather than two people.
+  const g = await linkAccount(BROWSER, { provider: "google" as const, uid: "sw-g", email: "sw@example.com" });
+  check("Google still joins the stream it signed in from", g.canonicalDevice === a.canonicalDevice, g.canonicalDevice);
+}
+
 console.log(failures === 0 ? "\nall account checks passed.\n" : `\n${failures} account check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -9,6 +9,7 @@
 // exactly one row per position however many phones a person signs in from, and
 // "does reputation follow the account" is not a feature we had to build.
 
+import { randomUUID } from "node:crypto";
 import { CONNECT_BONUS } from "./economy.js";
 import { storeDb, storeSchema, STORE_PERSISTENT, resolveDevice, _memDeviceAccount } from "./markets.js";
 import { getWallet } from "./markets.js";
@@ -86,10 +87,34 @@ let memAcctId = 0;
  * at creation and never re-read for a grant. Deleting every device that ever
  * linked to an account does not make it claimable again.
  */
+/**
+ * SIGNING IN AS SOMEBODY ELSE SWITCHES YOU, IT DOES NOT ADD YOU.
+ *
+ * Connecting X and then Google from the same phone shares a canonical device,
+ * which is right: it is one person proving themselves twice. Connecting a
+ * SECOND X account is the opposite claim, and sharing a device for it merged
+ * two people into one record. On production that had already happened, with
+ * three visible consequences: /@levvercetti answered with the brand's name,
+ * the leaderboard's exclusion of @oddiefun took the human's row down with it,
+ * and one person's resolved calls were credited to the other.
+ *
+ * So a new identity for a provider this stream already has starts its own
+ * canonical device instead of inheriting the current one. The browser then
+ * follows the new account (device_account is repointed either way), the
+ * previous identity keeps its history intact under its own device, and
+ * switching back is just signing in again — the branch above finds that
+ * account and repoints to it, unchanged.
+ *
+ * Refusing the second link was the alternative and it is worse: somebody who
+ * wants to change accounts is left with no way to do it at all.
+ */
+async function canonicalDeviceFor(rawDeviceId: string, deviceId: string, id: Identity): Promise<string> {
+  const held = await accountsFor(rawDeviceId).catch(() => [] as Account[]);
+  const clash = held.some((a) => a.provider === id.provider);
+  return clash ? randomUUID() : deviceId;
+}
+
 export async function linkAccount(rawDeviceId: string, id: Identity): Promise<LinkResult> {
-  // A browser that is already signed in links its ACCOUNT's stream, not itself.
-  // Connecting X and then Google from the same phone gives both accounts the
-  // same canonical device, which is exactly right: it is one person's play.
   const deviceId = await resolveDevice(rawDeviceId);
 
   if (!STORE_PERSISTENT) {
@@ -98,16 +123,17 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
       _memDeviceAccount.set(rawDeviceId, existing.canonicalDevice);
       return { account: pub(existing), bonus: 0, seeded: false, canonicalDevice: existing.canonicalDevice };
     }
-    await getWallet(deviceId); // materialise the balance we are about to top up
+    const canon = await canonicalDeviceFor(rawDeviceId, deviceId, id);
+    await getWallet(canon); // materialise the balance we are about to top up
     const acct: MemAccount = {
       id: ++memAcctId, provider: id.provider, uid: id.uid,
       handle: id.handle ?? null, name: id.name ?? null, email: id.email ?? null,
-      bonusGranted: true, canonicalDevice: deviceId,
+      bonusGranted: true, canonicalDevice: canon,
     };
     memAccounts.push(acct);
-    _memDeviceAccount.set(rawDeviceId, deviceId);
-    await grantBonusMem(deviceId);
-    return { account: pub(acct), bonus: CONNECT_BONUS, seeded: true, canonicalDevice: deviceId };
+    _memDeviceAccount.set(rawDeviceId, canon);
+    await grantBonusMem(canon);
+    return { account: pub(acct), bonus: CONNECT_BONUS, seeded: true, canonicalDevice: canon };
   }
 
   await storeSchema();
@@ -140,11 +166,12 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
 
     // First time this identity has been seen. The device it arrived on becomes
     // the account's stream, and the bonus is paid into it.
-    await client.query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
+    const canon = await canonicalDeviceFor(rawDeviceId, deviceId, id);
+    await client.query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [canon]);
     const created = await client.query<AcctRow>(
       `INSERT INTO account (provider, provider_uid, handle, display_name, canonical_device, bonus_granted_at, email)
        VALUES ($1,$2,$3,$4,$5, now(), $6) RETURNING *`,
-      [id.provider, id.uid, id.handle ?? null, id.name ?? null, deviceId, id.email ?? null],
+      [id.provider, id.uid, id.handle ?? null, id.name ?? null, canon, id.email ?? null],
     );
     await client.query(
       `INSERT INTO device_account (device_id, account_id) VALUES ($1, $2)
@@ -152,13 +179,13 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
       [rawDeviceId, created.rows[0].id],
     );
     // The one and only place tokens are created out of nothing.
-    await client.query(`UPDATE device_balance SET tokens = tokens + $1 WHERE device_id = $2`, [CONNECT_BONUS, deviceId]);
+    await client.query(`UPDATE device_balance SET tokens = tokens + $1 WHERE device_id = $2`, [CONNECT_BONUS, canon]);
     await client.query("COMMIT");
 
     const a = created.rows[0];
     return {
       account: { provider: a.provider, handle: a.handle, name: a.display_name, bonusGranted: true },
-      bonus: CONNECT_BONUS, seeded: true, canonicalDevice: deviceId,
+      bonus: CONNECT_BONUS, seeded: true, canonicalDevice: canon,
     };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
