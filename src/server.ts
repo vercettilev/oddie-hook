@@ -26,7 +26,7 @@ import type { SurfacerInfo } from "./store/markets.js";
 import { logRealFeeIntent, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
-import { buildTweetReply, buildTweetQuote } from "./matching/tweetReply.js";
+import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol,
@@ -1718,16 +1718,29 @@ app.post("/api/invites/send", async (req, res) => {
 // anyone could mint a stranger's position card by GETting a public URL.
 app.get("/api/mentions", requireAdmin, async (_req, res) => {
   const rows = await mentionCandidates();
+  // The post that started each market, so a verdict can QUOTE the claim rather
+  // than describe it. One query for the page.
+  const srcs = await surfacersFor(rows.map((r) => r.slug)).catch(
+    () => ({} as Record<string, SurfacerInfo>),
+  );
   const out = [];
   for (const r of rows) {
     const token = r.shareToken ?? (await mintShareTokenForMention(r.callId));
-    const won = r.side === r.outcome;
-    const line = won
-      ? `@${r.handle} called ${r.side.toUpperCase()} at ${r.entryPct}% — resolved ${r.outcome.toUpperCase()} ✓ +${r.proceeds} predictions`
-      : `@${r.handle} called ${r.side.toUpperCase()} at ${r.entryPct}% — resolved ${r.outcome.toUpperCase()}`;
+    const url = token ? `${BASE_URL}/market/${r.slug}?pc=${token}` : `${BASE_URL}/market/${r.slug}`;
+    // Voice and shape both come from buildVerdict: loud on a win, dry on a
+    // loss, and never a jab at the person who got it wrong — see the rule
+    // above it for why that is arithmetic rather than manners.
+    const v = buildVerdict({
+      handle: r.handle, side: r.side, entryPct: r.entryPct, outcome: r.outcome,
+      question: r.question, permalink: url, sourceUrl: srcs[r.slug]?.sourceUrl ?? null,
+    });
     out.push({
-      callId: r.callId, handle: r.handle, won, line,
-      url: token ? `${BASE_URL}/market/${r.slug}?pc=${token}` : `${BASE_URL}/market/${r.slug}`,
+      callId: r.callId, handle: r.handle, won: v.won, longshot: v.longshot,
+      line: v.primary, fallback: v.fallback, url,
+      // The claim this market came from. With it the operator posts a QUOTE —
+      // an original post as far as ranking is concerned, so it clears the
+      // reply filter and is boost-eligible. Without it, a plain post.
+      sourceUrl: srcs[r.slug]?.sourceUrl ?? null,
       // The image to attach to the post itself — the personal card as a PNG,
       // so the tweet carries the visual natively instead of leaning on unfurl.
       cardPng: token ? `${BASE_URL}/card/pc/${token}.png` : null,

@@ -1,7 +1,30 @@
-// The reply generator for "tweet mode": once a market is confirmed (a venue
-// match auto-accepted, a closest match the operator approved, or a Community
-// market just created), turn it into one ready-to-paste X reply, under the
-// 280-char limit, plus an ASCII fallback.
+// The post generators for "tweet mode" and for resolutions.
+//
+// WHICH SHAPE TO POST, AND WHY — read from X's published For You code
+// (13 Aug 2026 release), because the three shapes are not interchangeable:
+//
+//   REPLY   penalised three separate ways. `OONRetweetReplyFilter` drops
+//           replies outright for any viewer who does not follow the author;
+//           `EnableOonRescoreForInNetworkRepliesRetweets` discounts them by
+//           0.75 even for viewers who DO; and the +15 mutual-follow reply
+//           boost is explicitly gated on `in_reply_to_tweet_id.is_none()`, so
+//           a reply can never earn it. A reply therefore cannot travel. Its
+//           only audience is the people already reading that thread, which
+//           means it has to be worth reading WITHOUT a click — the question
+//           and the number belong in the text, not behind the link.
+//
+//   QUOTE   is an original post as far as ranking is concerned: it passes the
+//           reply filter, takes no reply discount, and IS boost-eligible. This
+//           is the shape to reach for when reach is the goal.
+//
+//   VERDICT the same as a quote, plus the one thing the other two lack: an
+//           outcome. Posted against the claim that started it, it carries a
+//           protagonist, a number and a result.
+//
+// The 280-char limit and the ASCII fallback apply to all three.
+//
+// These are pure functions with no I/O: the manual workflow calls them today,
+// and the same functions drop into an automated listener later.
 //
 // This is deliberately a pure function with no I/O: the manual-post workflow
 // calls it today, and the same function drops straight into an automated
@@ -13,11 +36,16 @@
 // match and a freshly-created Community market — no "found it" / "made it"
 // prefix, no "% yes · % no".
 
+import { STARTING_PREDICTIONS } from "../store/economy.js";
+
 export const TWEET_LIMIT = 280;
 
-// The "N free points" figure in the copy — a stake-sized number (one call costs
-// 50). A single constant so the copy has one source of truth to change later.
-export const FREE_POINTS = 50;
+// What a new arrival actually gets, read from the economy rather than restated.
+// It used to be a local 50 with a comment claiming "one call costs 50"; the
+// real numbers are 5 predictions to start and 1 per call, so every reply and
+// quote the product has ever posted promised ten times what it hands over.
+// A number in public copy has to come from the place that pays it.
+export const FREE_POINTS = STARTING_PREDICTIONS;
 
 export interface TweetReplyInput {
   question: string;
@@ -50,7 +78,16 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
 export function buildTweetReply(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
   const cta = `Pick a side with ${FREE_POINTS} free points`;
-  const suffix = `\n\n${cta} ↓\n${link}`;
+  // The odds go IN the reply now. A reply cannot reach anyone who does not
+  // already follow us (see the header), so its readers are the people in this
+  // thread and its whole job is to be worth reading where it stands. The old
+  // copy left the number to the link's card on the grounds that the card shows
+  // it — true, but only for the fraction who click, and a reply that needs a
+  // click to make its point is a reply that made no point. Omitted when the
+  // caller has no live price rather than invented.
+  const yes = Number.isFinite(input.yesPct) ? Math.max(1, Math.min(99, Math.round(input.yesPct as number))) : null;
+  const odds = yes === null ? "" : `\n\nmarket says ${yes}% yes. you?`;
+  const suffix = `${odds}\n\n${cta} ↓\n${link}`;
   const hook = (input.hook ?? "").trim();
 
   // The hook rides on top ONLY if the whole reply — hook + the FULL (untruncated)
@@ -82,6 +119,101 @@ const QUOTE_LEAD = "this deserves a market.";
  * market.") instead of diving straight into the question. Lowercase, casual —
  * the voice of someone sharing, not answering.
  */
+/* ------------------------------------------------------------- verdicts --
+ * Resolution as content: the post you can only make because the call was
+ * recorded when nobody knew the answer. It has what an open market never has —
+ * a protagonist, a number, and an outcome — and it is posted as an ORIGINAL
+ * post (quoting the claim that started it), so it is boost-eligible rather
+ * than filtered.
+ *
+ * THE ONE VOICE RULE, and it is a safety rule before it is a style one:
+ *
+ *   Sarcasm is aimed at the CERTAINTY, never at the person.
+ *
+ * The published weights make this arithmetic, not manners. A reply is worth
+ * +5; a mute is −58.8 and a report is −234. One person who feels mocked costs
+ * more than eleven people who reply. So a WIN is loud and names its hero, and
+ * a LOSS is dry, factual and jab-free: the tone that makes people want to be
+ * featured is also the tone that does not get the account muted. Nobody is
+ * ever the punchline of their own losing call.
+ */
+
+export interface VerdictInput {
+  /** The caller, @-less. */
+  handle: string;
+  side: "yes" | "no";
+  /** The price they took, 1-99. */
+  entryPct: number;
+  /** How it actually settled. */
+  outcome: "yes" | "no";
+  question: string;
+  permalink: string;
+  /** The post that started it. When present the operator quotes it, and the
+   *  claim shows above the verdict instead of being described in it. */
+  sourceUrl?: string | null;
+}
+
+/** How unlikely their side looked when they took it. 4× or better is where a
+ *  call stops being an opinion and starts being a story. */
+const LONGSHOT_MULT = 4;
+
+export interface Verdict extends TweetReply {
+  won: boolean;
+  /** True when the call was a genuine longshot — the operator's cue that this
+   *  one is worth a post at all on a quiet day. */
+  longshot: boolean;
+}
+
+export function buildVerdict(v: VerdictInput): Verdict {
+  const won = v.side === v.outcome;
+  const pct = Math.max(1, Math.min(99, Math.round(v.entryPct)));
+  const mult = 100 / pct;
+  const longshot = won && mult >= LONGSHOT_MULT;
+  const side = v.side.toUpperCase();
+  const at = `@${v.handle.replace(/^@+/, "")}`;
+
+  // The lead, in three registers, because a win is not one story. What the
+  // sarcasm is aimed at is the market's certainty — a number — in every case.
+  //
+  //   longshot   they took a price almost nobody took, and it landed
+  //   contrarian they were against the crowd but not wildly so
+  //   favourite  they were WITH the crowd; the odds are no story, so the line
+  //              credits the only thing that was actually hard (calling it
+  //              before the fact) rather than inflating a 70% shot into drama
+  //
+  // A loss gets one plain register and no adjective about the caller.
+  const lead = !won
+    ? `${at} called ${side} at ${pct}%. it resolved ${v.outcome.toUpperCase()}.`
+    : longshot
+      ? `the market gave it ${pct}%. ${at} took it anyway.`
+      : pct < 50
+        ? `${at} took ${side} at ${pct}%. the market disagreed. the market was wrong.`
+        : `${at} called ${side} at ${pct}% and it landed. before the fact, which is the only part that counts.`;
+
+  // The claim itself. When the operator is quoting the source tweet, the claim
+  // is already sitting above this post and repeating it wastes the 280; with
+  // no source there is nothing on screen saying what was called, so the
+  // question goes in.
+  const claim = v.sourceUrl ? "" : `\n\n${v.question}`;
+
+  // The close. On a win it states the receipt; on a loss it says the only
+  // honest thing that is also kind — the call is on the record either way,
+  // which is the product's whole promise and costs the loser nothing.
+  const close = won
+    ? "receipts, not takes."
+    : "called it in public, scored in public. that's the deal.";
+
+  const suffix = `${claim}\n\n${close}\n${v.permalink}`;
+  const primary = fit("", lead, suffix, TWEET_LIMIT);
+
+  return {
+    primary,
+    fallback: fit("", lead, ` ${close} ${v.permalink}`, TWEET_LIMIT),
+    won,
+    longshot,
+  };
+}
+
 export function buildTweetQuote(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
   const cta = `pick a side with ${FREE_POINTS} free points`;

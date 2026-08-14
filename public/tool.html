@@ -183,9 +183,14 @@
   <!-- 2 · The result loop: every settled call whose owner connected X, ready to
        announce. This is where the "returned in 24h" signal accumulates. -->
   <div class="box" id="mentions" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">2 · announce results — settled calls, posted from @oddiefun</p>
-    <p class="why" style="margin:0 0 8px"><b>post on X</b> opens a prefilled compose · <b>card ↓</b> saves the
-      PNG to attach · <b>mark sent</b> stamps the row so it stops nagging.</p>
+    <p class="verdict" style="font-size:17px">2 · verdicts — the post only a resolved call can make</p>
+    <p class="why" style="margin:0 0 8px">A settled call has what an open market never has: a person, a number
+      and an outcome. Where we recorded the source tweet, the button <b>quotes the original claim</b> so the post
+      ranks as an original and carries the claim above the verdict. <b>card ↓</b> saves the PNG to attach ·
+      <b>mark sent</b> stamps the row.</p>
+    <p class="why" style="margin:0 0 8px">Wins are written loud, losses are written flat and never mock the
+      caller. That's the rule: a reply is worth +5 to us and a mute is worth −58.8, so one person who feels
+      laughed at costs more than eleven who answer.</p>
     <div id="mlist"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
@@ -275,20 +280,32 @@ async function loadMentions() {
     box.innerHTML = mentions.map((m, i) => `
       <div class="variant" style="flex-direction:column;align-items:stretch">
         <span class="vtext">
-          <b>${esc(m.line)}</b><br>
-          <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span>
+          ${m.longshot ? '<span class="chip" style="background:var(--accent);margin:0 0 5px">🔥 longshot — post this one</span><br>' : ""}
+          <b style="white-space:pre-wrap">${esc(m.line)}</b><br>
+          <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span><br>
+          <span style="font-size:12px;color:var(--muted)">
+            <a href="https://x.com/${esc(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)} ↗</a>
+            — follow back if you haven't: a mutual follow is worth 4× on every post of ours they see.
+          </span>
           ${m.mentionedAt ? `<br><span style="font-size:12px;color:var(--muted)">sent ${esc(m.mentionedAt.slice(0,16))} · returned in 24h: <b>${m.returned24h ? "YES" : "no"}</b></span>` : ""}
         </span>
         <span class="row" style="margin:0">
-          <button class="ghost mpost" data-i="${i}" style="padding:7px 14px;font-size:13px">post on X</button>
+          <button class="ghost mpost" data-i="${i}" style="padding:7px 14px;font-size:13px">${m.sourceUrl ? "quote the claim on X" : "post on X"}</button>
           ${m.cardPng ? `<button class="ghost mcard" data-i="${i}" style="padding:7px 14px;font-size:13px">card ↓</button>` : ""}
           <button class="ghost mcopy" data-i="${i}" style="padding:7px 14px;font-size:13px">copy</button>
           ${m.mentionedAt ? "" : `<button class="ghost msent" data-id="${m.callId}" style="padding:7px 14px;font-size:13px">mark sent</button>`}
         </span>
       </div>`).join("");
-    const text = (i) => `${mentions[i].line} ${mentions[i].url}`;
-    box.querySelectorAll(".mpost").forEach((b) => b.onclick = () =>
-      window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text(b.dataset.i))}`, "_blank", "noopener"));
+    const text = (i) => mentions[i].line;
+    // With a source tweet this composes a QUOTE of the original claim: an
+    // original post as far as ranking goes, so it clears the reply filter and
+    // is boost-eligible, and it carries the claim above the verdict instead of
+    // describing it. Without one it stays a plain post.
+    box.querySelectorAll(".mpost").forEach((b) => b.onclick = () => {
+      const m = mentions[b.dataset.i];
+      const q = m.sourceUrl ? `&url=${encodeURIComponent(m.sourceUrl)}` : "";
+      window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text(b.dataset.i))}${q}`, "_blank", "noopener");
+    });
     box.querySelectorAll(".mcard").forEach((b) => b.onclick = (e) => {
       const m = mentions[b.dataset.i];
       saveCard(m.cardPng, `${m.handle}-card.png`, e.target);
@@ -676,24 +693,30 @@ loadMetrics();
 }
 
 function renderReply(j) {
-  // Two variants off the same market: REPLY (post under the tweet) and QUOTE
-  // (quote-post on your own timeline — more visible, less spammy). Each has its
-  // own copy button + a plain-text fallback, so the operator picks per situation.
+  // QUOTE LEADS, and the order is not a preference. In X's published ranking
+  // code a reply is dropped outright for anyone who does not follow us, is
+  // discounted 0.75 even for those who do, and is barred from the +15
+  // mutual-follow boost; a quote is an original post on all three counts. So
+  // the quote is the post that can travel and the reply is the one that talks
+  // to the thread — both are useful, in that order.
   const hasQuote = typeof j.quote === "string" && j.quote.length;
   $("#creply").innerHTML =
-    '<div class="box hit"><p class="verdict" style="font-size:15px">📋 reply — post under the tweet</p>'
-    + replyRow("cprimary", j.primary)
-    + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
-    + replyRow("cfallback", j.fallback)
-    + '<p class="why" style="margin-top:8px"><b>' + j.primary.length + '</b>/280 chars</p>'
+    '<div class="box hit">'
     + (hasQuote
-        ? '<hr style="border:none;border-top:2px dashed var(--line);margin:16px 0">'
-          + '<p class="verdict" style="font-size:15px">🔁 quote — quote-post on your timeline</p>'
+        ? '<p class="verdict" style="font-size:15px">🔁 quote — post this one</p>'
+          + '<p class="why" style="margin:0 0 6px">Quote the tweet from @oddiefun. It ranks as an original post: it reaches people who don\'t follow us, a reply does not.</p>'
           + replyRow("cquote", j.quote)
           + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
           + replyRow("cquotefb", j.quoteFallback)
           + '<p class="why" style="margin-top:8px"><b>' + j.quote.length + '</b>/280 chars</p>'
+          + '<hr style="border:none;border-top:2px dashed var(--line);margin:16px 0">'
         : "")
+    + '<p class="verdict" style="font-size:15px">📋 reply — for the thread itself</p>'
+    + '<p class="why" style="margin:0 0 6px">Only the people already reading that thread will see it, so it carries the question and the number in the text.</p>'
+    + replyRow("cprimary", j.primary)
+    + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
+    + replyRow("cfallback", j.fallback)
+    + '<p class="why" style="margin-top:8px"><b>' + j.primary.length + '</b>/280 chars</p>'
     + '<p class="why" style="margin-top:8px">market · <a href="' + esc(j.permalink) + '" target="_blank" rel="noopener">' + esc(j.permalink) + '</a></p></div>';
   wireCopy("cprimary", j.primary);
   wireCopy("cfallback", j.fallback);

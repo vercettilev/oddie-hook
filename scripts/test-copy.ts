@@ -4,6 +4,8 @@
 // Run with: npm run test-copy
 
 import { tweetCopy } from "../src/card/tweetCopy.js";
+import { buildVerdict, buildTweetReply } from "../src/matching/tweetReply.js";
+import { STARTING_PREDICTIONS } from "../src/store/economy.js";
 import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
@@ -101,6 +103,69 @@ console.log("\ndeterminism: same market, same lines");
   const a = tweetCopy(mk(48, 4_600_000, 10)).join("|");
   const b = tweetCopy(mk(48, 4_600_000, 10)).join("|");
   check("byte-identical across calls", a === b);
+}
+
+// ---------------------------------------------------------------------------
+// Verdicts: the voice rule, enforced. Wins are loud; losses are flat and never
+// mock the caller. This is a safety property before a style one — X's weights
+// put a reply at +5 and a mute at −58.8, so the tone that gets an account muted
+// costs more than eleven answers earn.
+// ---------------------------------------------------------------------------
+console.log("\nverdicts: loud on a win, never a jab on a loss");
+{
+  const V = (side: "yes" | "no", entryPct: number, outcome: "yes" | "no") =>
+    buildVerdict({ handle: "someone", side, entryPct, outcome,
+      question: "Will the copy generator behave?", permalink: "https://oddie.fun/m/x-abc123" });
+
+  const wonLong = V("yes", 12, "yes");   // 8.3x — a longshot
+  const wonEven = V("yes", 55, "yes");
+  const lost = V("yes", 38, "no");
+
+  check("a win is flagged, a loss is not", wonEven.won && !lost.won);
+  check("a long-odds win is flagged as one", wonLong.longshot, String(wonLong.longshot));
+  check("...and an even-odds win is not", !wonEven.longshot);
+  check("a loss is never a longshot, however long the odds", !V("yes", 5, "no").longshot);
+
+  // The jab test. A losing verdict may state what happened and nothing more:
+  // no adjective about the caller, no gloating, no "told you".
+  const MOCKING = /\b(lol|oops|nice one|told you|obviously|of course|genius|clown|cope|rekt|wrong again|embarrassing|😂|🤡|💀)/i;
+  for (const v of [lost, V("no", 91, "yes"), V("yes", 3, "no")]) {
+    check(`a losing verdict carries no jab: "${v.primary.split("\n")[0]}"`, !MOCKING.test(v.primary));
+  }
+  check("a loss names the outcome plainly", lost.primary.includes("resolved NO"));
+  check("...and still gives the caller their due", lost.primary.includes("in public"));
+
+  check("a win names the caller", wonEven.primary.includes("@someone"));
+  check("a longshot win puts the market's number in the lead, not the person",
+    wonLong.primary.startsWith("the market gave it 12%"), wonLong.primary.split("\n")[0]);
+
+  // Every verdict is postable and carries the link.
+  for (const [name, v] of [["won long", wonLong], ["won even", wonEven], ["lost", lost]] as const) {
+    check(`${name} fits 280 (${v.primary.length})`, v.primary.length <= 280);
+    check(`${name} carries the permalink`, v.primary.includes("https://oddie.fun/m/x-abc123"));
+    check(`${name} fallback is ASCII-safe`, !/[^\x00-\x7F]/.test(v.fallback), v.fallback);
+  }
+
+  // Odds are clamped, not trusted: a bad entry price must not produce "0%" or
+  // a division by zero in the multiplier.
+  check("an out-of-range entry clamps rather than printing 0%",
+    V("yes", 0, "yes").primary.includes("1%"));
+  check("...at the top end too", V("yes", 140, "yes").primary.includes("99%"));
+}
+
+console.log("\nthe reply carries its own number");
+{
+  // A reply cannot reach anyone who does not follow us, so it has to make its
+  // point where it stands rather than behind the link.
+  const r = buildTweetReply({ question: "Will it behave?", permalink: "https://oddie.fun/m/x-abc123", yesPct: 38 });
+  check("the odds are in the reply text", r.primary.includes("38% yes"), r.primary);
+  check("...and the reply still fits", r.primary.length <= 280);
+  const noOdds = buildTweetReply({ question: "Will it behave?", permalink: "https://oddie.fun/m/x-abc123" });
+  check("no price means no invented price", !/\d+% yes/.test(noOdds.primary), noOdds.primary);
+
+  // The free-points figure is the one the product actually grants.
+  check(`the CTA promises what the economy pays (${STARTING_PREDICTIONS})`,
+    r.primary.includes(`${STARTING_PREDICTIONS} free points`), r.primary);
 }
 
 console.log(failures === 0 ? "\nall copy checks passed.\n" : `\n${failures} copy check(s) FAILED.\n`);
