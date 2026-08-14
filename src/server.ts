@@ -1585,10 +1585,13 @@ app.get("/api/leaderboard", async (req, res) => {
       accuracyPct: you.accuracy.accuracyPct, resolved: you.accuracy.resolved,
       hasEnough: you.accuracy.hasEnough, minResolved: you.accuracy.minResolved,
     } : null,
+    // oddies is what the board RANKS by now, and loudMultiplier is how it
+    // says so on the row — both have to survive this reshaping or the client
+    // renders a board that sorts by a number it never received.
     rows: edge.map((r, i) => ({
       rank: i + 1, handle: r.handle, you: r.deviceId === me,
       avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed, provisional: r.provisional,
-      accuracyPct: r.accuracyPct,
+      accuracyPct: r.accuracyPct, oddies: r.oddies, loudMultiplier: r.loudMultiplier,
     })),
     streaks: streaks.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, current: r.current, best: r.best })),
     winnings: winnings.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, net: r.net, closed: r.closed })),

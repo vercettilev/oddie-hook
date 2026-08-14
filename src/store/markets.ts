@@ -1121,14 +1121,36 @@ export interface LeaderRow {
    *  people describe themselves ("64% accurate"), and a board that shows only
    *  a calibration metric can't be quoted back by the person on it. */
   accuracyPct: number | null;
+  /** What the board RANKS by — the same figure the profile shows. */
+  oddies: number;
+  /** >=1. Shown as a badge where earned, so the board says out loud that
+   *  posting is what moves it. */
+  loudMultiplier: number;
 }
 
 /**
- * Ranked by average edge, not by tokens. Provisional players are listed and
- * marked rather than hidden — a leaderboard that only shows finished players
- * gives a new one nothing to climb toward — but they sort below everyone whose
- * number has settled, however lucky their first two scalps were.
+ * Ranked by ODDIES — the same number the profile shows, the cards print and
+ * every award pays into.
+ *
+ * It used to rank by average edge alone, and that quietly made the scoreboard
+ * measure something different from the economy. Tagging a market, bringing a
+ * crowd to it, posting about oddie and earning the loud multiplier all move a
+ * player\'s oddies and moved this board not at all — so the one surface that
+ * says "here is who is winning" was answering a question nobody was being
+ * paid to win. Ranking by oddies makes it a loudness board by construction,
+ * because loudness is already inside the number.
+ *
+ * Accuracy is not lost: it is the quality multiplier inside oddies, and
+ * accuracyPct still rides along as the column people quote themselves with.
+ *
+ * Provisional players are listed and marked rather than hidden — a board that
+ * only shows finished players gives a new one nothing to climb toward — but
+ * they sort below everyone whose number has settled.
  */
+/** How many edge-ranked candidates get their oddies computed. See the bound
+ *  note in leaderboard() for when this stops being the right shape. */
+const LEADERBOARD_SCORE_CANDIDATES = 40;
+
 export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
   let rows: { device_id: string; edges: number[]; handle: string | null; correct: number; settled: number }[];
   if (!PERSISTENT) {
@@ -1179,7 +1201,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
   // See excludedLeaderboardDeviceId — the brand's own @oddiefun account never
   // competes on a public board.
   const excludedId = await excludedLeaderboardDeviceId();
-  return rows
+  const ranked = rows
     .map((r) => {
       const rep = reputationOf(r.edges.map(Number));
       return {
@@ -1200,7 +1222,24 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
     })
     .filter((r): r is LeaderRow => r.avgEdge !== null)
     .filter((r) => r.deviceId !== excludedId)
-    .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.avgEdge - a.avgEdge)
+    .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.avgEdge - a.avgEdge);
+
+  // Oddies for the rows that could plausibly place. accuracyFor is reused
+  // rather than reimplemented so the board can never disagree with the profile
+  // about a person\'s number.
+  //
+  // KNOWN BOUND, stated rather than hidden: this is one accuracyFor per
+  // candidate, and it is capped at LEADERBOARD_SCORE_CANDIDATES. At today\'s
+  // handful of players that is a few reads on a page nobody loads in a loop.
+  // It stops being acceptable the moment the candidate list is long — the fix
+  // then is set-based aggregates keyed by device, not a bigger cap.
+  const candidates = ranked.slice(0, LEADERBOARD_SCORE_CANDIDATES);
+  const scored = await Promise.all(candidates.map(async (r) => {
+    const acc = await accuracyFor(r.deviceId).catch(() => null);
+    return { ...r, oddies: acc?.oddieScore ?? 0, loudMultiplier: acc?.loudMultiplier ?? 1 };
+  }));
+  return scored
+    .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.oddies - a.oddies || b.avgEdge - a.avgEdge)
     .slice(0, limit);
 }
 

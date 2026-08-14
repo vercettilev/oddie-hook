@@ -2857,7 +2857,7 @@ function loudPromoCard(){
   const el=document.createElement("div");
   el.className="claimcard ready loudpromo";
   el.innerHTML=`<div class="cc-grow">
-      <div class="cc-title">Post about oddie. Earn oddies.</div>
+      <div class="cc-title">Call it loud. Get paid for it.</div>
       <div class="cc-sub">+150 oddies per cleared post · +300 for the week's loudest<span id="loudwin"></span></div>
     </div>
     <button class="claimbtn" id="loudpromobtn">Claim oddies</button>
@@ -5408,14 +5408,15 @@ function renderLb(scroller,data){
       ${inner}
     </div>`;
   const bodies={
-    edge:{sub:"Ranked by average edge — points gained per call, not predictions won. 🌱 means fewer than 10 closed positions.",
-      empty:"Nobody has closed a position yet. Be first.",
-      // The board RANKS by edge, but the sub-line now leads with accuracy:
-      // "64% accurate" is how a person describes themselves, and a board that
-      // shows only a calibration metric can't be quoted back by the person on
-      // it. Withheld while provisional (the server sends null), where the row
-      // falls back to the closed count it always showed.
-      rows:data.rows,html:(r)=>row({...r,handle:r.handle+(r.provisional?" 🌱":"")},`<div class="acc ${cls(r.avgEdge)}">${pts(r.avgEdge)}<small>${r.accuracyPct!=null?`${r.accuracyPct}% accurate · ${r.closed} closed`:`${r.closed} closed`}</small></div>`)},
+    // Ranked by ODDIES, which is what makes this a loudness board rather than
+    // an accuracy one: calling, tagging, the crowd your market pulls in and
+    // the posts you make about oddie all land in that number. The sub-line
+    // says so plainly, because a board that pays for something without naming
+    // it is a board nobody plays toward. The 🔥 badge appears only where a
+    // multiplier has been EARNED — a permanent "1×" would read as a penalty.
+    edge:{sub:"Call it loud. Ranked by oddies — every call, market and post you make lands here, scaled by how right you are. 🌱 means fewer than 10 closed positions.",
+      empty:"Nobody has called anything yet. Be first.",
+      rows:data.rows,html:(r)=>row({...r,handle:r.handle+(r.provisional?" 🌱":"")},`<div class="acc ${cls(r.avgEdge)}">${r.oddies??0}<small>${r.loudMultiplier>1?`🔥 ${r.loudMultiplier}× loud · `:""}${r.accuracyPct!=null?`${r.accuracyPct}% accurate`:`${r.closed} closed`}</small></div>`)},
     streak:{sub:"Consecutive days with at least one call. Show up, stay up.",
       empty:"No streaks yet — day one starts now.",
       rows:data.streaks,html:(r)=>row(r,`<div class="acc ${r.current>0?"up":"flat"}">${r.current}d<small>best ${r.best}d</small></div>`)},
