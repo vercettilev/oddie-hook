@@ -3560,7 +3560,10 @@ function feeNoteHtml(m){
     return `<div class="fee-note fee-note-paid"><b>+${paid}</b><span>${
       taggerName(m)} tagged this market and earned ${paid} prediction${paid===1?"":"s"} when it resolved.</span></div>`;
   }
-  return `<div class="fee-note"><b>+${(m.creatorFeeBps/100).toFixed(0)}%</b><span>goes to whoever tagged this market. Tag your own and earn it.</span></div>`;
+  // Unreachable by construction: the only call site is gated on a fee having
+  // been PAID. Kept as the honest zero rather than a promise, so that if this
+  // is ever called without one it renders nothing instead of an advert.
+  return "";
 }
 
 /**
@@ -3910,8 +3913,10 @@ function buildCard(m,i,homeLoop){
            reader. A market's card is where you pick a side. The reason to
            TAG one belongs where tagging happens (the landing's step 4, the
            feed's end card), not stapled to every question you scroll past.
-           feeNoteHtml survives for the PAID variant on a settled market,
-           which is a receipt rather than a promise. -->
+           What survives is the RECEIPT: once a market has actually paid its
+           tagger, that is proof rather than a pitch, it names a person, and
+           it is exactly the kind of thing worth screenshotting. -->
+      ${Number(m.creatorFeePaid) > 0 ? feeNoteHtml(m) : ""}
       ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">
         <div class="callers-lab">Who called it</div>
         <div class="callers-list">${m.callers.map(c=>`
