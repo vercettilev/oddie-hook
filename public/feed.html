@@ -2192,10 +2192,20 @@
   @media (max-height:680px) and (max-width:767px){
     .opct{font-size:min(44px,12vw)}
     .take{font-size:min(28px,7vw);margin-bottom:12px}
-    .take-m{font-size:min(24px,6.2vw)}
+    /* take-m is pulled down near take-s here rather than kept a step above it.
+       The thresholds are tuned for a tall screen, where a 100-character
+       question at the middle size is comfortable; on a short one it was the
+       single remaining overflow. */
+    .take-m{font-size:min(21px,5.5vw)}
     .take-s{font-size:min(20px,5.3vw);line-height:1.26}
     .duel{gap:9px}
     .card{padding:16px 18px 16px}
+    /* Out of flow. The nudge is a hint that another card is below, and on a
+       short screen its own 44px was what pushed that card past the bottom of
+       the screen — the affordance for the next card was hiding the current
+       one's buttons. It overlays the card's bottom edge instead of taking a
+       row, so it still points down without costing height. */
+    .nudge{position:absolute;left:0;right:0;bottom:6px;margin:0;pointer-events:none}
   }
   @media (max-height:760px) and (min-width:768px){
     .opct{font-size:40px}
