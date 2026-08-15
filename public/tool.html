@@ -128,13 +128,11 @@
   <header>
     <h1>oddie</h1><span class="tag">operator console · internal</span>
   </header>
-  <p class="lede">
-    How oddie is run, top to bottom. Someone tags @oddiefun → <b>1</b>&nbsp;paste the
-    tweet, get a market and a ready reply. Positions settle → <b>2</b>&nbsp;post the
-    results. Sunday → <b>3</b>&nbsp;award the loudest. <b>4</b> is the markets
-    themselves, <b>5</b> the numbers. Nothing here posts on its own — every tweet
-    leaves from @oddiefun, by hand.
-  </p>
+  <!-- The five-line flow narration this used to open with is now just this one
+       fact: the one thing not already said by the nav pills and the five
+       section headers below. Run daily by one person, this page doesn't need
+       to re-teach its own shape every time it's opened. -->
+  <p class="lede">Nothing here posts itself. Every tweet leaves from @oddiefun, by hand.</p>
 
   <nav class="quicknav">
     <a href="#community">1 · reply</a>
@@ -159,18 +157,19 @@
        markets are checked first so nothing gets duplicated; only a claim nothing
        covers becomes a new Community market. -->
   <div class="box" id="community" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">1 · answer a mention — tweet in, market + ready reply out</p>
-    <p class="why" style="margin:0 0 10px">Paste the tweet. It finds a live venue market first (no duplicates),
-      drafts a new Community market when nothing covers the claim, and hands back reply + quote copy to post.</p>
+    <p class="verdict" style="font-size:17px">1 · answer a mention</p>
+    <p class="why" style="margin:0 0 10px">Paste the tweet. Matches a live venue market first, or drafts a new one.</p>
 
     <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
       <textarea id="cx" placeholder="paste the tagged tweet (+ optional thread context)…"
         style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:66px;resize:vertical"></textarea>
       <input id="csrc" type="url" required placeholder="source tweet URL — REQUIRED (x.com/…/status/…)"
         style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:2px solid var(--ink);border-radius:10px;padding:8px 11px;margin:6px 0 0">
-      <p class="hint" style="margin:5px 0 0">This URL is what puts a <b>name</b> and the <b>original post</b> on the card,
-        and it is who the 3% creator fee gets paid to. <b>The server refuses a market without it</b> — not just this form.
-        Markets published before that rule have no name on record and ship as "opened by oddie" instead.</p>
+      <!-- Kept visible, not moved into a comment: this is error prevention, not
+           background theory, and it needs to be read BEFORE the mistake. The
+           historical footnote it used to carry ("markets published before this
+           rule…") was theory. Cut. -->
+      <p class="hint" style="margin:5px 0 0">Required. Names the card and decides who gets the 3% creator fee. <b>The server refuses a market without it.</b></p>
       <div class="row" style="margin:8px 0 0">
         <button class="ghost" id="cxgo" style="padding:9px 16px;font-size:14px">Extract market →</button>
         <span class="why" id="cxstat" style="align-self:center;margin:0"></span>
@@ -179,7 +178,7 @@
       <div id="creply" style="margin-top:8px"></div>
     </div>
 
-    <p class="vhead" style="margin:12px 0 6px">the draft — extract fills these; edit anything, then Create. (Or write one from scratch.)</p>
+    <p class="vhead" style="margin:12px 0 6px">the draft: edit or fill from scratch, then Create</p>
     <input id="cq" type="text" maxlength="180" placeholder="question (≤180 chars, e.g. Will oddie hit 1k users by Aug 1?)"
       style="width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:2px solid var(--ink);border-radius:12px;padding:10px 12px;margin:6px 0">
     <textarea id="ccrit" placeholder="resolution criteria — exactly what evidence settles YES vs NO, and the source to check"
@@ -207,10 +206,13 @@
   <!-- 2 · The result loop: every settled call whose owner connected X, ready to
        announce. This is where the "returned in 24h" signal accumulates. -->
   <div class="box" id="mentions" style="margin-top:22px">
+    <!-- The voice rule (loud win, flat loss, never mocking) and the X-algorithm
+         weights behind it (a reply is worth +5, a mute −58.8) used to live here
+         as a paragraph re-read on every visit. buildVerdict() already bakes the
+         rule into the generated text itself (see tweetReply.ts); this page
+         only needed to say what the buttons do. -->
     <p class="verdict" style="font-size:17px">2 · verdicts <span id="mcount" class="count"></span></p>
-    <p class="why" style="margin:0 0 8px">Every settled call, ready to post. <b>card ↓</b> saves the PNG ·
-      <b>mark sent</b> stamps it done. Wins are written loud, losses flat and never mocking — a reply is
-      worth +5 to us, a mute is worth −58.8, so one person who feels laughed at costs more than eleven who answer.</p>
+    <p class="why" style="margin:0 0 8px">Ready to post. <b>card ↓</b> saves the PNG · <b>mark sent</b> stamps it done.</p>
     <div id="mlist"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
@@ -219,19 +221,14 @@
        server dedups per (person, ISO week), so a resubmitted list cannot
        double-pay. -->
   <div class="box" id="loudbox" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">3 · loud awards — posts about oddie, reviewed and paid in oddies</p>
-    <p class="why" style="margin:0 0 8px">Players submit their post links from the app. Open each,
-      approve the real ones (<b>+150 oddies</b>), reject the rest. Sunday: pick the week's best for <b>+300</b>.</p>
+    <p class="verdict" style="font-size:17px">3 · loud awards</p>
+    <p class="why" style="margin:0 0 8px">Approve real posts (<b>+150</b>), reject the rest. Sunday: best of the week gets <b>+300</b>.</p>
 
     <p class="vhead" style="margin:2px 0 6px">review queue — submitted links, oldest first</p>
     <div id="loudq"><p class="why">enter the admin token above, then this loads…</p></div>
 
-    <p class="vhead" style="margin:14px 0 6px">weekly picks — the best of the week, +300 oddies each</p>
-    <p class="why" style="margin:0 0 8px">
-      Paste the authors below (comma, space or newline separated) — from the approved queue, or found
-      by searching X for <b>oddie.fun</b> / <b>@oddiefun</b>. One award per person per week —
-      resubmitting the same list is safe.
-    </p>
+    <p class="vhead" style="margin:14px 0 6px">weekly picks</p>
+    <p class="why" style="margin:0 0 8px">From the approved queue, or found by searching X. One per person per week, safe to resubmit.</p>
     <textarea id="loudh" placeholder="@handle, @handle, …" autocapitalize="off" spellcheck="false"
       style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:54px;resize:vertical"></textarea>
     <div class="row" style="margin-top:8px">
@@ -994,21 +991,26 @@ async function loadCommunity() {
     featuredSlugs = f && Array.isArray(f.slugs) ? f.slugs : [];
     chainEnabled = !!(j.chain && j.chain.enabled);
     const bal = j.chain && j.chain.balanceSol;
-    stat.innerHTML = chainEnabled
-      ? 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 10)) + '… · <b>balance ' + (bal == null ? '?' : bal.toFixed(3)) + ' SOL</b>'
-        + (bal != null && bal < 0.05 ? ' — <b style="color:#b00000">low, top up</b>' : '')
-      : 'on-chain: <b>off</b> — parked behind ONCHAIN_ENABLED (set it to true + SOLANA_ADMIN_SECRET_KEY to restore devnet minting)';
-    // The homepage's "Live right now" status — how many explicit picks vs. what's
-    // effectively live right now (the rest is topped up from recently-active markets).
+    // Hidden entirely when off, which is the long-standing default (the whole
+    // onchain/ program is explicitly not wired yet; see onchain/README.md).
+    // A line confirming "yep, still off" on every visit is not worth a row;
+    // the config steps to turn it on live in that README, not repeated here.
+    stat.style.display = chainEnabled ? "" : "none";
+    if (chainEnabled) {
+      stat.innerHTML = 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 10)) + '… · <b>balance ' + (bal == null ? '?' : bal.toFixed(3)) + ' SOL</b>'
+        + (bal != null && bal < 0.05 ? ' · <b style="color:#b00000">low, top up</b>' : '');
+    }
     const featBox = $("#featstat");
     if (featBox) {
+      // Counts only. This used to concatenate every featured question's full
+      // text inline, all of them on one line, which is exactly what the
+      // ★-marked rows in the list right below already show.
       const resolved = f && Array.isArray(f.resolved) ? f.resolved : [];
       featBox.innerHTML = !f
-        ? '<b>Live right now</b> — status unavailable.'
+        ? '<b>Live picks:</b> unavailable.'
         : !resolved.length
-          ? '<b>Live right now</b> — no explicit picks, and no community market to fall back to (home\'s featured section is empty).'
-          : '<b>Live right now</b> — ' + featuredSlugs.length + ' explicit pick' + (featuredSlugs.length === 1 ? '' : 's')
-            + ', showing ' + resolved.length + ': "' + resolved.map((r) => esc(r.question)).join('", "') + '"';
+          ? '<b>Live picks:</b> none set (falls back to recent activity).'
+          : '<b>Live picks:</b> ' + featuredSlugs.length + ' featured, ' + resolved.length + ' showing (★ below).';
     }
     if (!j.items.length) { box.innerHTML = '<p class="why">no community markets yet.</p>'; count.textContent = ""; return; }
 
