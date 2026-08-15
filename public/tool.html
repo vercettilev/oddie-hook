@@ -93,6 +93,30 @@
   .vcopy{flex:none; padding:7px 14px; font-size:13px}
   .hidden{display:none !important}
 
+  /* The at-a-glance count in a section title. Answers "is there anything to do
+     here" without opening the section — the thing an operator scanning five
+     stacked panels needs first, and the thing the panels never said. */
+  .count{font-size:13px; font-weight:700; color:var(--muted)}
+  .count.due{color:var(--ink); background:var(--accent); border-radius:8px; padding:1px 8px}
+
+  /* A settled call or a resolved market that needs nothing further — one line,
+     not the full working card. The working section above stays the size of the
+     actual worklist instead of growing forever with everything ever finished;
+     this is where "finished" goes to be checkable, not to compete for room. */
+  .donelist{display:flex; flex-direction:column; gap:6px; margin-top:8px}
+  .donerow{display:flex; align-items:center; gap:8px; font-size:13px; padding:4px 0;
+    border-bottom:1px solid var(--bar)}
+  .donerow:last-child{border-bottom:none}
+  .donewho{flex:none; font-weight:700; color:var(--muted); max-width:120px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .donewhat{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    color:var(--ink); text-decoration:none}
+  a.donewhat:hover{text-decoration:underline}
+  .donebadge{flex:none; font-weight:800; font-size:11px}
+  .donebadge.won{color:var(--accentDeep, #4d6e10)}
+  .donebadge.lost{color:var(--muted)}
+  .donewhen{flex:none; color:var(--muted); font-size:12px}
+
   @media (min-width:560px){
     body{padding-top:32px}
     h1{font-size:30px}
@@ -183,14 +207,10 @@
   <!-- 2 · The result loop: every settled call whose owner connected X, ready to
        announce. This is where the "returned in 24h" signal accumulates. -->
   <div class="box" id="mentions" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">2 · verdicts — the post only a resolved call can make</p>
-    <p class="why" style="margin:0 0 8px">A settled call has what an open market never has: a person, a number
-      and an outcome. Where we recorded the source tweet, the button <b>quotes the original claim</b> so the post
-      ranks as an original and carries the claim above the verdict. <b>card ↓</b> saves the PNG to attach ·
-      <b>mark sent</b> stamps the row.</p>
-    <p class="why" style="margin:0 0 8px">Wins are written loud, losses are written flat and never mock the
-      caller. That's the rule: a reply is worth +5 to us and a mute is worth −58.8, so one person who feels
-      laughed at costs more than eleven who answer.</p>
+    <p class="verdict" style="font-size:17px">2 · verdicts <span id="mcount" class="count"></span></p>
+    <p class="why" style="margin:0 0 8px">Every settled call, ready to post. <b>card ↓</b> saves the PNG ·
+      <b>mark sent</b> stamps it done. Wins are written loud, losses flat and never mocking — a reply is
+      worth +5 to us, a mute is worth −58.8, so one person who feels laughed at costs more than eleven who answer.</p>
     <div id="mlist"><p class="why">enter the admin token above, then this loads…</p></div>
   </div>
 
@@ -225,7 +245,7 @@
   <!-- 4 · The markets themselves: feature onto the homepage, inspect positions,
        resolve with a payout preview. Resolve settles real user positions. -->
   <div class="box" id="resolve" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">4 · live markets — feature · positions · resolve</p>
+    <p class="verdict" style="font-size:17px">4 · live markets <span id="rcount" class="count"></span></p>
     <p class="why" id="chainstat">—</p>
     <p class="why" id="featstat" style="margin-top:2px">—</p>
     <div id="rlist" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
@@ -270,32 +290,67 @@ const CARD_W = 1000, CARD_H = 524;
 // the personal card PNG to attach to it, and [mark sent] stamps the row. The
 // only manual steps left are attaching the image and pressing Post — the two X
 // gives no API-free way around.
+//
+// PENDING vs SENT are two different objects, rendered two different sizes.
+// /api/mentions returns up to 30 rows ordered pending-first, but once a day's
+// pending queue is small the remaining slots fill with history — every past
+// verdict, full card, forever. That history is exactly what made this section
+// unmanageable: the actual worklist (a handful of items) was buried in a
+// scroll of finished ones repeating the same follow-back sentence. Sent items
+// still render — the sent date and the 24h-return signal are real information
+// — just as one line each, in a collapsed list that starts closed.
 async function loadMentions() {
   const box = document.getElementById("mlist");
+  const count = document.getElementById("mcount");
   try {
     const r = await fetch("/api/mentions", { headers: admHeaders() });
     if (r.status === 401) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
     const { mentions } = await r.json();
-    if (!mentions.length) { box.innerHTML = '<p class="why">none yet — they appear when an X-connected popper\'s position settles.</p>'; return; }
-    box.innerHTML = mentions.map((m, i) => `
-      <div class="variant" style="flex-direction:column;align-items:stretch">
-        <span class="vtext">
-          ${m.longshot ? '<span class="chip" style="background:var(--accent);margin:0 0 5px">🔥 longshot — post this one</span><br>' : ""}
-          <b style="white-space:pre-wrap">${esc(m.line)}</b><br>
-          <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span><br>
-          <span style="font-size:12px;color:var(--muted)">
-            <a href="https://x.com/${esc(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)} ↗</a>
-            — follow back if you haven't: a mutual follow is worth 4× on every post of ours they see.
-          </span>
-          ${m.mentionedAt ? `<br><span style="font-size:12px;color:var(--muted)">sent ${esc(m.mentionedAt.slice(0,16))} · returned in 24h: <b>${m.returned24h ? "YES" : "no"}</b></span>` : ""}
-        </span>
-        <span class="row" style="margin:0">
-          <button class="ghost mpost" data-i="${i}" style="padding:7px 14px;font-size:13px">${m.sourceUrl ? "quote the claim on X" : "post on X"}</button>
-          ${m.cardPng ? `<button class="ghost mcard" data-i="${i}" style="padding:7px 14px;font-size:13px">card ↓</button>` : ""}
-          <button class="ghost mcopy" data-i="${i}" style="padding:7px 14px;font-size:13px">copy</button>
-          ${m.mentionedAt ? "" : `<button class="ghost msent" data-id="${m.callId}" style="padding:7px 14px;font-size:13px">mark sent</button>`}
-        </span>
-      </div>`).join("");
+    if (!mentions.length) { box.innerHTML = '<p class="why">none yet — they appear when an X-connected popper\'s position settles.</p>'; count.textContent = ""; return; }
+
+    const pending = [], sentHtml = [];
+    mentions.forEach((m, i) => {
+      if (!m.mentionedAt) {
+        pending.push(`
+          <div class="variant" style="flex-direction:column;align-items:stretch">
+            <span class="vtext">
+              ${m.longshot ? '<span class="chip" style="background:var(--accent);margin:0 0 5px">🔥 longshot — post this one</span><br>' : ""}
+              <b style="white-space:pre-wrap">${esc(m.line)}</b><br>
+              <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span><br>
+              <span style="font-size:12px;color:var(--muted)">
+                <a href="https://x.com/${esc(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)} ↗</a>
+                — follow back if you haven't: a mutual follow is worth 4× on every post of ours they see.
+              </span>
+            </span>
+            <span class="row" style="margin:0">
+              <button class="ghost mpost" data-i="${i}" style="padding:7px 14px;font-size:13px">${m.sourceUrl ? "quote the claim on X" : "post on X"}</button>
+              ${m.cardPng ? `<button class="ghost mcard" data-i="${i}" style="padding:7px 14px;font-size:13px">card ↓</button>` : ""}
+              <button class="ghost mcopy" data-i="${i}" style="padding:7px 14px;font-size:13px">copy</button>
+              <button class="ghost msent" data-id="${m.callId}" style="padding:7px 14px;font-size:13px">mark sent</button>
+            </span>
+          </div>`);
+      } else {
+        sentHtml.push(`
+          <div class="donerow">
+            <span class="donewho">@${esc(m.handle)}</span>
+            <span class="donewhat" title="${esc(m.question)}">${esc(m.question)}</span>
+            <span class="donebadge ${m.won ? "won" : "lost"}">${m.won ? "WON" : "lost"}</span>
+            <span class="donewhen">${esc(m.mentionedAt.slice(5, 16).replace("T", " "))} · returned ${m.returned24h ? "✓" : "—"}</span>
+            <button class="ghost mpost" data-i="${i}" style="padding:3px 10px;font-size:12px">post ↗</button>
+          </div>`);
+      }
+    });
+
+    count.textContent = pending.length ? `· ${pending.length} to post` : "· nothing pending";
+    count.className = pending.length ? "count due" : "count";
+
+    box.innerHTML = (pending.length ? pending.join("") : '<p class="why">nothing pending — every settled call has been posted.</p>')
+      + (sentHtml.length
+        ? `<details class="rec" style="margin-top:14px">
+             <summary>already posted — ${sentHtml.length}</summary>
+             <div class="donelist">${sentHtml.join("")}</div>
+           </details>`
+        : "");
     const text = (i) => mentions[i].line;
     // With a source tweet this composes a QUOTE of the original claim: an
     // original post as far as ranking goes, so it clears the reply filter and
@@ -926,7 +981,7 @@ async function createMarket() {
 let featuredSlugs = [];
 
 async function loadCommunity() {
-  const box = $("#rlist"), stat = $("#chainstat");
+  const box = $("#rlist"), stat = $("#chainstat"), count = $("#rcount");
   if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
   try {
     const [r, fr] = await Promise.all([
@@ -955,26 +1010,53 @@ async function loadCommunity() {
           : '<b>Live right now</b> — ' + featuredSlugs.length + ' explicit pick' + (featuredSlugs.length === 1 ? '' : 's')
             + ', showing ' + resolved.length + ': "' + resolved.map((r) => esc(r.question)).join('", "') + '"';
     }
-    if (!j.items.length) { box.innerHTML = '<p class="why">no community markets yet.</p>'; return; }
-    box.innerHTML = j.items.map((m) => {
-      const done = m.resolvedOutcome;
-      const minted = m.explorer ? '<a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">minted ✓ ↗</a>' : 'on-chain: skipped';
+    if (!j.items.length) { box.innerHTML = '<p class="why">no community markets yet.</p>'; count.textContent = ""; return; }
+
+    // RESOLVED markets have nothing left to manage — no feature toggle (a
+    // settled market can't go on the homepage), no position management that
+    // changes an outcome already locked in. They used to stay in this list
+    // forever, at full size, so "live markets" grew into an archive of every
+    // market ever run, resolved or not, TEST rows included. Live keeps the
+    // working list working-sized; resolved goes to a closed history below it,
+    // one line each, with a link out rather than a rebuilt admin view.
+    const live = j.items.filter((m) => !m.resolvedOutcome);
+    const resolved = j.items.filter((m) => m.resolvedOutcome);
+    count.textContent = `· ${live.length} live` + (resolved.length ? ` · ${resolved.length} resolved` : "");
+
+    box.innerHTML = (live.length ? live.map((m) => {
+      // Per-row on-chain status is only informative when chain is ENABLED —
+      // that's the one case where it can differ row to row. Off, it is the
+      // same word repeated on every card, already said once in the banner
+      // above; this used to print "on-chain: skipped" on every single row.
+      const minted = !chainEnabled ? "" : m.explorer
+        ? ' · <a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">minted ✓ ↗</a>'
+        : ' · on-chain: skipped';
       const pool = 'YES <b>' + m.yesTokens + '</b> (' + m.yesPlayers + 'p) · NO <b>' + m.noTokens + '</b> (' + m.noPlayers + 'p)';
       const isFeatured = featuredSlugs.includes(m.slug);
-      const featureBtn = done ? '' // a resolved market can't be featured
-        : isFeatured
-          ? '<button class="ghost unfeature" data-slug="' + esc(m.slug) + '" style="border-color:var(--accent)">★ featured — remove</button>'
-          : '<button class="ghost feature" data-slug="' + esc(m.slug) + '">☆ feature this market</button>';
+      const featureBtn = isFeatured
+        ? '<button class="ghost unfeature" data-slug="' + esc(m.slug) + '" style="border-color:var(--accent)">★ featured — remove</button>'
+        : '<button class="ghost feature" data-slug="' + esc(m.slug) + '">☆ feature this market</button>';
       return '<div class="box mkt" data-slug="' + esc(m.slug) + '" style="margin-bottom:10px' + (isFeatured ? ';border-color:var(--accent)' : '') + '">'
-        + '<p class="why" style="color:var(--ink);font-weight:700">' + (isFeatured ? '★ ' : '') + esc(m.question) + (done ? ' · <b>RESOLVED ' + String(done).toUpperCase() + '</b>' : '') + '</p>'
-        + '<p class="why">' + pool + ' · ' + minted + '</p>'
+        + '<p class="why" style="color:var(--ink);font-weight:700">' + (isFeatured ? '★ ' : '') + esc(m.question) + '</p>'
+        + '<p class="why">' + pool + minted + '</p>'
         + '<div class="row" style="margin-top:6px">'
         + '<button class="ghost manage" data-slug="' + esc(m.slug) + '">manage / view positions ▾</button>'
         + featureBtn
         + '</div>'
         + '<div class="mktdetail" style="margin-top:10px"></div>'
         + '</div>';
-    }).join("");
+    }).join("") : '<p class="why">no live markets — everything so far has resolved.</p>')
+      + (resolved.length
+        ? `<details class="rec" style="margin-top:14px">
+             <summary>resolved — ${resolved.length}</summary>
+             <div class="donelist">${resolved.map((m) => `
+               <div class="donerow">
+                 <a class="donewhat" href="/market/${esc(m.slug)}" target="_blank" rel="noopener" title="${esc(m.question)}">${esc(m.question)}</a>
+                 <span class="donebadge ${String(m.resolvedOutcome).toLowerCase() === "yes" ? "won" : "lost"}">${esc(String(m.resolvedOutcome).toUpperCase())}</span>
+                 <span class="donewhen">${m.yesTokens + m.noTokens} played · ${m.yesPlayers + m.noPlayers}p</span>
+               </div>`).join("")}</div>
+           </details>`
+        : "");
     box.querySelectorAll(".manage").forEach((b) => { b.onclick = () => toggleDetail(b); });
     box.querySelectorAll(".feature").forEach((b) => { b.onclick = () => setFeatured([...featuredSlugs, b.dataset.slug]); });
     box.querySelectorAll(".unfeature").forEach((b) => { b.onclick = () => setFeatured(featuredSlugs.filter((s) => s !== b.dataset.slug)); });
