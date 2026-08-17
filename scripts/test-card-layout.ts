@@ -254,6 +254,64 @@ console.log("\nthe images we post match the app people land in");
   }
 }
 
+// --- a shared reply's unfurl is not a competition between two og:image tags --
+//
+// Trigger: a reply's permalink unfurled on X as the generic root banner
+// (placeholder odds, no question) instead of the market's own card. The cause
+// was never a missing tag: marketPageHtml() has always injected its own
+// og:image right after <title>. It was an EXTRA one: feed.html's own static
+// share-preview block, further down the same document, was never removed, so
+// the served page carried two competing og:image tags (and eight other
+// duplicated properties) and X evidently did not honor the first one, which
+// is the assumption the old code silently depended on.
+//
+// server.ts can't be imported here to call marketPageHtml() directly: it
+// calls app.listen() at module scope with no guard, so importing it would
+// try to bind a real port as a side effect of running this test. Both halves
+// of the actual fix are checkable without that: the marker-stripped HTML
+// (the same transform server.ts applies at load) and server.ts's OWN SOURCE
+// (grepped as text, the pattern this suite already uses for tool.html) prove
+// the wiring is correct without executing the server.
+console.log("\na market page ships one og:image, not a competition between two");
+{
+  const feed = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
+  const starts = (feed.match(/SHARE-PREVIEW-BLOCK-START/g) ?? []).length;
+  const ends = (feed.match(/SHARE-PREVIEW-BLOCK-END/g) ?? []).length;
+  check("feed.html has exactly one share-preview block to strip", starts === 1 && ends === 1, `start=${starts} end=${ends}`);
+  check("...opening before closing", feed.indexOf("SHARE-PREVIEW-BLOCK-START") < feed.indexOf("SHARE-PREVIEW-BLOCK-END"));
+
+  // The exact transform server.ts applies, run here on the same source.
+  const stripped = feed.replace(/<!-- SHARE-PREVIEW-BLOCK-START[\s\S]*?SHARE-PREVIEW-BLOCK-END -->\n?/, "");
+  check("stripping actually removes something", stripped.length < feed.length, `${feed.length} -> ${stripped.length}`);
+
+  // Every property a market page's own injected tags would collide with.
+  const DUPLICATE_PRONE = [
+    "og:type", "og:site_name", "og:title", "og:description", "og:image",
+    "twitter:card", "twitter:title", "twitter:description", "twitter:image",
+  ];
+  for (const prop of DUPLICATE_PRONE) {
+    const n = (stripped.match(new RegExp(`(?:property|name)="${prop}"`, "g")) ?? []).length;
+    check(`after stripping, "${prop}" appears zero times in the base (a market page adds its own)`, n === 0, `${n} left`);
+  }
+  // And the strip must be surgical: the plain SEO description (a different
+  // tag from og:description, unrelated to card unfurls) is not this bug and
+  // must survive untouched.
+  check('the plain <meta name="description"> is NOT part of the stripped block',
+    stripped.includes('<meta name="description" content="Oddie turns any claim on X into a market'));
+
+  // The other half: are the three page builders actually wired to the
+  // stripped base? Grepped as source text for the same reason server.ts
+  // can't be imported above.
+  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  for (const fn of ["marketPageHtml", "profilePageHtml", "positionPageHtml"]) {
+    const from = server.indexOf(`function ${fn}(`);
+    const body = from < 0 ? "" : server.slice(from, server.indexOf("\n}", from) + 2);
+    check(`${fn} exists`, body.length > 0);
+    check(`${fn} builds on FEED_HTML_NO_SHARE_BLOCK, not raw FEED_HTML`,
+      body.includes("FEED_HTML_NO_SHARE_BLOCK") && !/[^_]FEED_HTML\./.test(body), body.match(/FEED_HTML\w*\.replace/)?.[0]);
+  }
+}
+
 // --- the movement chip speaks only when it has something true to say --------
 //
 // pctDelta is sent ONLY when a prior reading exists, is recent enough to call

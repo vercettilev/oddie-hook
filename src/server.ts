@@ -57,6 +57,13 @@ app.use(express.json());
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
+// A market page's own og/twitter tags replace this block rather than merely
+// outranking it: see the SHARE-PREVIEW-BLOCK comment in feed.html for why
+// "inject ours first and assume it wins" turned out not to hold for X.
+// Computed once at load, not per-request: this route sees real crawler
+// traffic every time a card gets shared.
+const FEED_HTML_NO_SHARE_BLOCK = FEED_HTML.replace(
+  /<!-- SHARE-PREVIEW-BLOCK-START[\s\S]*?SHARE-PREVIEW-BLOCK-END -->\n?/, "");
 const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf8");
 const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html"), "utf8");
 
@@ -351,7 +358,7 @@ function marketPageHtml(rec: { market: { question: string; yesPct: number; volum
     `<meta name="twitter:description" content="${ogEsc(desc)}">`,
     `<meta name="twitter:image" content="${ogEsc(img)}">`,
   ].join("\n");
-  return FEED_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+  return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
 }
 
 // The market permalink — every market's canonical landing page. /m/{slug} is
@@ -410,7 +417,7 @@ function profilePageHtml(handle: string, acc: { oddieScore: number | null; accur
     `<meta name="twitter:description" content="${ogEsc(desc)}">`,
     `<meta name="twitter:image" content="${ogEsc(img)}">`,
   ].join("\n");
-  return FEED_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+  return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
 }
 
 app.get("/@:handle", async (req, res) => {
@@ -461,7 +468,7 @@ function positionPageHtml(rec: { market: { question: string; yesPct: number; vol
     `<meta name="twitter:description" content="${ogEsc(desc)}">`,
     `<meta name="twitter:image" content="${ogEsc(img)}">`,
   ].join("\n");
-  return FEED_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+  return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
 }
 app.get("/feed", (_req, res) => {
   res.type("html").send(FEED_HTML); // feed without a start market also works

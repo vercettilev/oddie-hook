@@ -13,10 +13,24 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
 <link rel="manifest" href="/site.webmanifest?v=2">
 <meta name="theme-color" content="#D7DC1F">
-<!-- Share preview for the bare oddie.fun / feed link. /market/[slug] pages get
-     their own per-market card og tags injected server-side right after <title>,
-     which precede these, so the card wins there and the banner is the root's. -->
 <meta name="description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun under any claim.">
+<!-- SHARE-PREVIEW-BLOCK-START
+     The bare oddie.fun / feed link's card. A market permalink (/m/[slug],
+     /market/[slug]) needs this GONE, not merely outranked: marketPageHtml()
+     (src/server.ts) used to just inject its own og/twitter tags right after
+     <title> and leave this block sitting further down, on the assumption
+     that "the per-market ones come first, so they win." That assumption was
+     never checked against X and was wrong there. A real reply's card
+     unfurled as this generic banner (68%/32% placeholder odds, no question)
+     instead of the market's own card. Nine properties end up duplicated
+     with conflicting values (og:type/site_name/title/description/image,
+     twitter:card/title/description/image) whenever both blocks are present,
+     and which one a given crawler honors isn't something this file can
+     assume. marketPageHtml() now regex-strips everything between these two
+     markers before injecting its own tags, so a market page ships exactly
+     one value per property, never two competing ones. Keep this whole
+     comment-to-comment span as one contiguous block: the strip is a single
+     regex across these exact marker strings. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:title" content="Someone's wrong on X? Prove you're right.">
@@ -26,6 +40,7 @@
 <meta name="twitter:title" content="Someone's wrong on X? Prove you're right.">
 <meta name="twitter:description" content="Oddie turns any claim on X into a market and keeps score of who's actually right. Tag @oddiefun.">
 <meta name="twitter:image" content="https://oddie.fun/og.png">
+<!-- SHARE-PREVIEW-BLOCK-END -->
 <script>
   /* Before any CSS is applied, so the page never flashes the wrong theme at
      someone who chose dark. A stored choice wins; otherwise follow the system.
