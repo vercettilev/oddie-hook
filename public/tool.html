@@ -328,6 +328,21 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// The five sections became <details>, closed by default (see the top of this
+// file). Left alone, a nav-pill click still scrolls to the right place.
+// Browsers position a fragment link at the ELEMENT with that id whether or
+// not it's visible, but a closed <details> has almost no height, so it
+// scrolls you to a title bar sitting on a section you still have to open by
+// hand. Opening it here, synchronously, before the browser's own scroll runs,
+// means the scroll lands on the section already expanded, in one motion
+// instead of two.
+document.querySelectorAll(".quicknav a[href^='#']").forEach((a) => {
+  a.addEventListener("click", () => {
+    const target = document.querySelector(a.getAttribute("href"));
+    if (target && target.tagName === "DETAILS") target.open = true;
+  });
+});
+
 // The card SVG's natural size, used when a browser reports naturalWidth 0 for
 // an SVG <img> (Safari does, intermittently).
 const CARD_W = 1000, CARD_H = 524;
