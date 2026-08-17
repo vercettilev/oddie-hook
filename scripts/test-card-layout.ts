@@ -7,7 +7,10 @@
 // Run with: npm run test-card-layout
 
 import { readFileSync, existsSync } from "node:fs";
-import { renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT, C } from "../src/card/renderCard.js";
+import {
+  renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT, C,
+  pick, INVITE_POOL, BADGE_POOL,
+} from "../src/card/renderCard.js";
 import { renderBanner } from "../src/card/renderBanner.js";
 import { renderPositionCard } from "../src/card/renderPositionCard.js";
 import { renderProfileCard } from "../src/card/renderProfileCard.js";
@@ -24,6 +27,16 @@ const check = (name: string, ok: boolean, detail = "") => {
 
 const PAD_L = 70, PAD_R = 932, Q_BOTTOM = 305, HERO_BASE = 462, CAP = 0.72;
 const GAP = 24; // minimum daylight between the hero and the right zone
+
+// The invite/badge text is no longer one fixed string (see renderCard.ts's
+// INVITE_POOL/BADGE_POOL). Every synthetic market this sweep builds shares
+// one venueId, so it would only ever exercise whichever single pool entry
+// that ONE seed happens to hash to, leaving the other four unchecked. The
+// collision budget below is measured against the WIDEST entry in each pool
+// instead, so the audit still guarantees no real market (any venueId, any
+// resulting pick) can ever collide, not just the one this loop happens to hit.
+const INVITE_W_MAX = Math.max(...INVITE_POOL.map((s) => textWidth(s, 23)));
+const BADGE_W_MAX = Math.max(...BADGE_POOL.map((s) => textWidth(s, 20))) + 40;
 
 const QUESTIONS = [
   "Will X win?",                                                              // 12
@@ -57,8 +70,8 @@ for (const q of QUESTIONS) {
     const mult = mRaw >= 10 ? Math.round(mRaw) : Math.round(mRaw * 10) / 10;
     const offerText = `${yes <= 50 ? "yes" : "no"} pays ${mult}×`;
     const offerLeft = PAD_R - textWidth(offerText, 40);
-    const inviteLeft = PAD_R - 42 - 12 - textWidth("call it", 23); // arrow block + gap + text
-    const badgeLeft = PAD_R - (textWidth("too close to call", 20) + 40);
+    const inviteLeft = PAD_R - 42 - 12 - INVITE_W_MAX; // arrow block + gap + widest possible text
+    const badgeLeft = PAD_R - BADGE_W_MAX;
 
     const gaps = [offerLeft - heroRight, inviteLeft - heroRight];
     if (yes >= 40 && yes <= 60) gaps.push(badgeLeft - heroRight);
@@ -71,17 +84,61 @@ for (const q of QUESTIONS) {
     const qBottomActual = 156 + CAP * lay.fs + (lay.lines.length - 1) * lay.lineH + 0.22 * lay.fs;
     if (qBottomActual > Q_BOTTOM + 1) { failures++; console.error(`  ✗ question band overflow: ${Math.round(qBottomActual)} > ${Q_BOTTOM} q="${q.slice(0, 40)}"`); }
 
-    // And the SVG itself must carry the three new pieces (offer, invite, arrow).
-    if (!svg.includes("pays") || !svg.includes("call it") || !svg.includes("<path d=\"M ")) {
+    // And the SVG itself must carry the three new pieces (offer, invite,
+    // arrow), checked against pool MEMBERSHIP now, not one fixed string,
+    // since the actual rendered text is whichever entry this market's own
+    // venue+venueId hashed to.
+    const hasInvite = INVITE_POOL.some((s) => svg.includes(s));
+    if (!svg.includes("pays") || !hasInvite || !svg.includes("<path d=\"M ")) {
       failures++; console.error(`  ✗ missing click-trigger pieces at ${yes}%`);
     }
-    if ((yes >= 40 && yes <= 60) !== svg.includes("too close to call")) {
+    const hasBadge = BADGE_POOL.some((s) => svg.includes(s));
+    if ((yes >= 40 && yes <= 60) !== hasBadge) {
       failures++; console.error(`  ✗ badge presence wrong at ${yes}%`);
     }
   }
 }
 check(`600 renders, no collisions (worst gap ${Math.round(worstGap)}px at ${worstAt})`, worstGap >= GAP);
 check("badge appears exactly on 40-60%", failures === 0 || true);
+
+// --- the card's voice: real variety, but never for the same market -----------
+//
+// Same shape as tweetReply.ts's pick(), same reason for a second local test:
+// this is a genuinely separate copy of the function, kept that way on purpose
+// (see the comment above it in renderCard.ts), which means it can drift from
+// its sibling without either file's own tests noticing. Covered here in its
+// own right rather than assumed identical.
+console.log("\nthe card's invite/badge: deterministic per market, varied across markets");
+{
+  const pool = ["a", "b", "c", "d", "e"] as const;
+  const first = pick(pool, "fixed-seed");
+  let stable = true;
+  for (let i = 0; i < 50; i++) if (pick(pool, "fixed-seed") !== first) stable = false;
+  check("the same seed always picks the same entry", stable);
+
+  const seen = new Set(Array.from({ length: 30 }, (_, i) => pick(pool, `seed-${i}`)));
+  check("different seeds actually reach different entries", seen.size > 1, [...seen].join(","));
+
+  // The market identity is venue+venueId, NOT the question text: re-running
+  // extraction on the same market with slightly different question wording
+  // (a re-normalisation, a retry) must not flip which card voice it gets.
+  const a = renderCard({ venue: "polymarket", venueId: "amzn-ai", question: "Will Amazon have a #1 AI model by December 31, 2026?", yesPct: 41, closesAt: "2026-12-31T00:00:00Z", volumeUsd: 4_600_000, venueUrl: "x", tags: [] });
+  const b = renderCard({ venue: "polymarket", venueId: "amzn-ai", question: "Will Amazon ship the #1 AI model by Dec 31 2026?", yesPct: 41, closesAt: "2026-12-31T00:00:00Z", volumeUsd: 4_600_000, venueUrl: "x", tags: [] });
+  const inviteIn = (svg: string) => INVITE_POOL.find((s) => svg.includes(s));
+  check("re-wording the question does not change the card's invite line",
+    inviteIn(a) === inviteIn(b) && !!inviteIn(a), `${inviteIn(a)} vs ${inviteIn(b)}`);
+
+  // And across genuinely different markets, the pool actually gets used:
+  // this is the check the fixed-venueId sweep above structurally cannot make.
+  const invitesSeen = new Set<string>();
+  for (let i = 0; i < 20; i++) {
+    const svg = renderCard({ venue: "polymarket", venueId: `sample-${i}`, question: "Will X happen?", yesPct: 50, closesAt: "2026-12-31T00:00:00Z", volumeUsd: 100_000, venueUrl: "x", tags: [] });
+    const found = inviteIn(svg);
+    if (found) invitesSeen.add(found);
+  }
+  check("20 different markets are not all reading the identical invite line",
+    invitesSeen.size > 1, [...invitesSeen].join(" | "));
+}
 
 // --- The lockup carries the handle on EVERY card ----------------------------
 //

@@ -244,6 +244,45 @@ export function volumePill(m: { venue: Market["venue"]; closesAt: string | null;
   return { text, w, x: PAD_R - w };
 }
 
+// --- Voice: the dare ---------------------------------------------------------
+//
+// "the dare" was already this corner's name in the comment above where it's
+// drawn (see the invitation/offer/badge block below). The intent was always
+// there, the words weren't: "call it" and "too close to call" were two fixed
+// literals baked into every single card, forever, the exact shape src/matching/
+// tweetReply.ts's QUOTE_LEAD/CTA were in before they became pools. Same fix,
+// same rule: needle the market's uncertainty, never a person, never a side.
+// Pre-resolution we do not yet know who's right, and a card mocking a claim
+// that turns out true reads worse than a flat one.
+//
+// pick() is deliberately a small local copy of tweetReply.ts's, not an import
+// from it: renderCard.ts has no dependency on src/matching/ today and one
+// five-line hash function isn't reason enough to start one. Same contract
+// either way (deterministic, no Math.random()), because this card is
+// re-rendered from scratch on every request (see the /card/:slug.svg route)
+// and has to draw identically each time or a re-share of the same market
+// would look like a different market.
+export function pick<T>(pool: readonly T[], seed: string): T {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return pool[h % pool.length];
+}
+
+// Right-anchored against a fixed arrow position (see arrowX below), so length
+// has real headroom to its left before it could ever crowd the hero number,
+// but these stay in "call it"'s weight class on purpose: three words, card-
+// button register, not a sentence.
+export const INVITE_POOL = ["call it", "prove it", "your move", "pick a side", "make it real"] as const;
+
+// The badge only ever appears on a genuinely split market (40-60%), which is
+// the one moment the card can be honestly uncertain rather than performing it.
+// Self-sizing pill (badgeW is computed from the chosen text), so length is
+// freer here than the invite line.
+export const BADGE_POOL = [
+  "too close to call", "dead even. pick a side", "nobody's sure. are you?",
+  "50/50 isn't an opinion", "coin flip. break the tie",
+] as const;
+
 // --- The card ---------------------------------------------------------------
 
 export function renderCard(m: Market): string {
@@ -272,9 +311,11 @@ export function renderCard(m: Market): string {
   // The right zone is the CLICK TRIGGER, not a second infographic. The old
   // mini-bar duplicated the giant number and did no work; in its place:
   //   - the OFFER: what being right on the underdog side pays ("no pays 4.5x")
-  //   - the INVITATION: "call it" + a drawn arrow (drawn, not typed — the
-  //     bundled fonts have no U+2192 and resvg renders missing glyphs as tofu)
-  //   - a tension badge when the market is genuinely split (40-60%)
+  //   - the INVITATION: one of INVITE_POOL + a drawn arrow (drawn, not typed:
+  //     the bundled fonts have no U+2192 and resvg renders missing glyphs as
+  //     tofu)
+  //   - a tension badge, from BADGE_POOL, when the market is genuinely split
+  //     (40-60%)
   const udSide = yes <= 50 ? "yes" : "no";
   const udPct = udSide === "yes" ? yes : no;
   const mRaw = 100 / Math.max(1, udPct);
@@ -282,9 +323,14 @@ export function renderCard(m: Market): string {
   const offerText = `${udSide} pays ${mult}\u00d7`;
   const OFFER_FS = 40;
   const balanced = yes >= 40 && yes <= 60;
-  const badgeText = "too close to call";
+  // One seed per market (venue + the venue's own id), NOT the question text:
+  // the question can be re-normalised by displayTitle or re-extracted with
+  // slightly different wording without this becoming a different market, and
+  // the card's voice shouldn't flicker when that happens.
+  const voiceSeed = `${m.venue}:${m.venueId}`;
+  const badgeText = pick(BADGE_POOL, voiceSeed);
   const badgeW = Math.round(textWidth(badgeText, 20) + 40);
-  const inviteText = "call it";
+  const inviteText = pick(INVITE_POOL, `${voiceSeed}:invite`);
   const inviteW = Math.round(textWidth(inviteText, 23));
   const arrowX = PAD_R - 30; // drawn arrow sits right of the invite text
 
