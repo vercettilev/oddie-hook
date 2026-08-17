@@ -81,5 +81,34 @@ console.log("\nlive markets: resolved history is not the live worklist");
     /chainEnabled/.test(stmt), stmt.replace(/\s+/g, " "));
 }
 
+console.log("\nverdicts: dismiss is a real third state, not \"mark sent\" in disguise");
+{
+  // Trigger: 18 pending verdicts turned out to be the operator's own repeated
+  // test calls from weeks earlier (the same market called 5 times while
+  // dogfooding), sitting in the "N to post" count forever because
+  // mentionCandidates had no way to remove a row except mentioned_at, which
+  // means "this actually went out on X" and feeds the 24h-return read. Using
+  // it to mean "I'm not posting this" would have logged a post that never
+  // happened.
+  const fn = bodyOf(tool, "async function loadMentions");
+  check("the pending card renders a dismiss control, separate from mark sent",
+    /mdismiss/.test(fn));
+  check("dismiss is styled below button weight (class=\"quiet\", not \"ghost\")",
+    /class="quiet mdismiss"/.test(fn), (fn.match(/.{0,40}mdismiss.{0,10}/g) ?? []).join(" | "));
+  check("dismiss calls its own endpoint, not /sent",
+    /\/api\/mentions\/\$\{b\.dataset\.id\}\/dismiss/.test(fn));
+
+  const srv = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  check("the server exposes a distinct /dismiss route", /"\/api\/mentions\/:id\/dismiss"/.test(srv));
+
+  const store = readFileSync(new URL("../src/store/markets.ts", import.meta.url), "utf8");
+  const dismissFn = bodyOf(store, "export async function dismissMention");
+  check("dismissMention is where the test thinks it is", dismissFn.length > 0);
+  check("...and refuses to touch a row that already went out (guards on mentioned_at IS NULL)",
+    /mentioned_at\s+IS\s+NULL/i.test(dismissFn), dismissFn);
+  check("dismissed rows are excluded from the worklist query",
+    /dismissed_at\s+IS\s+NULL/i.test(bodyOf(store, "export async function mentionCandidates")));
+}
+
 console.log(failures === 0 ? "\nall tool checks passed.\n" : `\n${failures} tool check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -47,6 +47,12 @@
   button:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
   .primary{background:var(--accent); flex:1 1 190px}
   .ghost{background:var(--white)}
+  /* A one-way action deliberately styled BELOW button weight: no border, no
+     fill, small and muted. It sits next to buttons that matter more (post,
+     mark sent) and should never be the thing the eye lands on first. */
+  .quiet{border:none;background:none;font-weight:600;font-size:12.5px;
+    color:var(--muted);padding:6px 4px;border-radius:8px}
+  .quiet:hover{color:var(--ink);text-decoration:underline}
   /* Inside a result box the two actions are peers; let them share the row
      rather than dropping "Download card" onto a line of its own. */
   .box .row button{flex:1 1 138px; padding:12px 10px}
@@ -315,15 +321,20 @@ async function loadMentions() {
               <b style="white-space:pre-wrap">${esc(m.line)}</b><br>
               <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span><br>
               <span style="font-size:12px;color:var(--muted)">
-                <a href="https://x.com/${esc(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)} ↗</a>
-                — follow back if you haven't: a mutual follow is worth 4× on every post of ours they see.
+                <a href="https://x.com/${esc(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)} ↗</a>,
+                follow back if you haven't: a mutual follow is worth 4× on every post of ours they see.
               </span>
             </span>
-            <span class="row" style="margin:0">
+            <span class="row" style="margin:0;align-items:center">
               <button class="ghost mpost" data-i="${i}" style="padding:7px 14px;font-size:13px">${m.sourceUrl ? "quote the claim on X" : "post on X"}</button>
               ${m.cardPng ? `<button class="ghost mcard" data-i="${i}" style="padding:7px 14px;font-size:13px">card ↓</button>` : ""}
               <button class="ghost mcopy" data-i="${i}" style="padding:7px 14px;font-size:13px">copy</button>
               <button class="ghost msent" data-id="${m.callId}" style="padding:7px 14px;font-size:13px">mark sent</button>
+              <!-- Deliberately NOT a .ghost button: same weight as "mark sent"
+                   would invite mixing up "posted" and "never posting this",
+                   and the 24h-return read trusts mentioned_at to mean the
+                   first one. Plain text, muted, pushed to the row's far end. -->
+              <button class="quiet mdismiss" data-id="${m.callId}" style="margin-left:auto">dismiss</button>
             </span>
           </div>`);
       } else {
@@ -365,6 +376,10 @@ async function loadMentions() {
     box.querySelectorAll(".mcopy").forEach((b) => b.onclick = (e) => copy(text(b.dataset.i), e.target));
     box.querySelectorAll(".msent").forEach((b) => b.onclick = async () => {
       await fetch(`/api/mentions/${b.dataset.id}/sent`, { method: "POST", headers: admHeaders() });
+      loadMentions();
+    });
+    box.querySelectorAll(".mdismiss").forEach((b) => b.onclick = async () => {
+      await fetch(`/api/mentions/${b.dataset.id}/dismiss`, { method: "POST", headers: admHeaders() });
       loadMentions();
     });
   } catch (err) { box.innerHTML = '<p class="why">could not load mentions.</p>'; }

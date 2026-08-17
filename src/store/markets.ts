@@ -283,6 +283,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS market_call_share_token_key ON market_call(sha
 -- 24h-return measurement reads events against this timestamp.
 ALTER TABLE market_call ADD COLUMN IF NOT EXISTS mentioned_at timestamptz;
 
+-- A verdict the operator decided NOT to post, distinct from mentioned_at on
+-- purpose: mentioned_at means "this actually went out on X" and the 24h-return
+-- read trusts it for that. mentionCandidates() had no cutoff on age, so an
+-- unposted row sat in the worklist forever. A burst of the operator's own
+-- test calls (repeated identical markets, obviously not real player activity)
+-- occupied the "N to post" count indefinitely with nothing to actually post.
+-- The only way to clear a row like that was "mark sent" on something never
+-- sent, which would have made the 24h-return signal measure a post that never
+-- happened. dismissed_at removes a row from the worklist without lying about
+-- what happened to it.
+ALTER TABLE market_call ADD COLUMN IF NOT EXISTS dismissed_at timestamptz;
+
 -- Email arrived with a purpose (settlement notifications), so the Google scope
 -- now asks for it and it lands here. Nullable: X accounts and pre-email Google
 -- links simply have none.
@@ -4940,6 +4952,7 @@ export async function mentionCandidates(limit = 30): Promise<MentionCandidate[]>
        JOIN market_slug ms ON ms.slug = mc.slug
        JOIN account a ON a.canonical_device = mc.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
       WHERE mc.closed_at IS NOT NULL AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
+        AND mc.dismissed_at IS NULL
       ORDER BY mc.mentioned_at NULLS FIRST, mc.closed_at DESC
       LIMIT $1`, [limit]);
   return rows.map((r) => ({
@@ -4956,6 +4969,19 @@ export async function markMentioned(callId: number): Promise<boolean> {
   await ensureSchema();
   const { rowCount } = await db().query(
     `UPDATE market_call SET mentioned_at = now() WHERE id = $1 AND mentioned_at IS NULL`, [callId]);
+  return rowCount === 1;
+}
+
+/** Operator decides NOT to post this one. Guarded against BOTH directions:
+ *  a row already mentioned has already had its 24h-return measured against
+ *  mentioned_at, and dismissing it afterward would not undo that measurement.
+ *  So this refuses to touch a row that already went out, the same way
+ *  markMentioned refuses to re-stamp one that already did. */
+export async function dismissMention(callId: number): Promise<boolean> {
+  if (!PERSISTENT) return false;
+  await ensureSchema();
+  const { rowCount } = await db().query(
+    `UPDATE market_call SET dismissed_at = now() WHERE id = $1 AND mentioned_at IS NULL AND dismissed_at IS NULL`, [callId]);
   return rowCount === 1;
 }
 
