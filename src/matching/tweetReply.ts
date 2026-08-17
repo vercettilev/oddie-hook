@@ -47,6 +47,47 @@ export const TWEET_LIMIT = 280;
 // A number in public copy has to come from the place that pays it.
 export const FREE_POINTS = STARTING_PREDICTIONS;
 
+// Deterministic, not random. This module's own header calls these "pure
+// functions with no I/O": the same input has to keep producing the same
+// tweet, today and inside whatever automated listener eventually calls them,
+// or a retry silently rewrites what was already posted and a test can't pin
+// an exact string. Math.random() would work exactly once and then break both
+// of those. Hashing the permalink instead means the variety is real (two
+// different markets read differently) without giving up determinism (the
+// SAME market always reads the same way, forever).
+export function pick<T>(pool: readonly T[], seed: string): T {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return pool[h % pool.length];
+}
+
+// The pre-market voice: a dare, not a joke at anyone's expense. The one rule
+// buildVerdict() below earns the hard way ("sarcasm targets the certainty,
+// never the person") applies HERE with an extra edge, because pre-market we
+// do not yet know who is right. Mocking a claim that turns out to be correct
+// reads worse than mocking nothing at all, so every line below needles the
+// CONFIDENCE of an unproven claim ("you sound sure", "we'll see"), never the
+// person who made it and never a specific side.
+export const QUOTE_LEAD_POOL = [
+  "this deserves a market.",
+  "prove it, then.",
+  "talk is cheap. odds aren't.",
+  "confident? let's see.",
+  "someone's about to be wrong.",
+] as const;
+
+// Same voice, same rule, for the line that actually asks someone to play.
+// Each still has to say the one thing that cannot get softer with the
+// wordplay: HOW MANY free points, because that is a real number the economy
+// pays (see FREE_POINTS above) and not just a tone.
+export const CTA_POOL: readonly ((n: number) => string)[] = [
+  (n) => `pick a side with ${n} free points`,
+  (n) => `put your ${n} free points where your mouth is`,
+  (n) => `${n} free points say you know something we don't`,
+  (n) => `no catch, ${n} free points: pick a side`,
+  (n) => `${n} free points. easy to say, harder to bet`,
+];
+
 export interface TweetReplyInput {
   question: string;
   permalink: string; // canonical /m/{slug} URL
@@ -77,7 +118,11 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
 
 export function buildTweetReply(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
-  const cta = `Pick a side with ${FREE_POINTS} free points`;
+  // Same voice and the same pool as the quote builder below, capitalised: a
+  // reply's CTA is the start of its own line with nothing above it, where the
+  // quote's sits under a lowercase framing line and stays lowercase to match.
+  const rawCta = pick(CTA_POOL, input.permalink)(FREE_POINTS);
+  const cta = rawCta.charAt(0).toUpperCase() + rawCta.slice(1);
   // The odds go IN the reply now. A reply cannot reach anyone who does not
   // already follow us (see the header), so its readers are the people in this
   // thread and its whole job is to be worth reading where it stands. The old
@@ -106,18 +151,13 @@ export function buildTweetReply(input: TweetReplyInput): TweetReply {
   };
 }
 
-// The default framing line for a quote — used when no hook is supplied. It has to
-// stand on its own in the poster's timeline (there's no tweet above it to answer),
-// so it states WHY this is being posted rather than answering anything.
-const QUOTE_LEAD = "this deserves a market.";
-
 /**
  * The QUOTE-tweet variant: same market, same rules, but written to be posted as
  * a quote of the original rather than buried in a reply. Because it shows up in
  * the poster's own timeline with no parent tweet visible, it opens with a
- * standalone framing line (the hook when one fits, else "this deserves a
- * market.") instead of diving straight into the question. Lowercase, casual —
- * the voice of someone sharing, not answering.
+ * standalone framing line (the hook when one fits, else one picked from
+ * QUOTE_LEAD_POOL) instead of diving straight into the question. Lowercase,
+ * casual: the voice of someone sharing, not answering.
  */
 /* ------------------------------------------------------------- verdicts --
  * Resolution as content: the post you can only make because the call was
@@ -216,29 +256,32 @@ export function buildVerdict(v: VerdictInput): Verdict {
 
 export function buildTweetQuote(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
-  const cta = `pick a side with ${FREE_POINTS} free points`;
+  // Two picks, two pools, seeded off the same permalink with different
+  // suffixes so a market's lead and CTA don't trivially move together.
+  const lead = pick(QUOTE_LEAD_POOL, input.permalink);
+  const cta = pick(CTA_POOL, `${input.permalink}:cta`)(FREE_POINTS);
   const suffix = `\n\n${cta} ↓\n${link}`;
   const hook = (input.hook ?? "").trim();
 
-  // The framing line is ALWAYS present — it is what makes the quote stand on its
+  // The framing line is ALWAYS present: it is what makes the quote stand on its
   // own (the reply, by contrast, dives straight into the question). The hook, when
   // one is supplied and the whole quote still fits, rides one line above the
-  // framing as a tight two-beat opener ("Argentina's year? / this deserves a
-  // market."). If it wouldn't fit, drop the hook; the framing stays.
-  const base = `${QUOTE_LEAD}\n\n${input.question}${suffix}`;
-  const withHook = hook ? `${hook}\n${QUOTE_LEAD}\n\n${input.question}${suffix}` : "";
+  // framing as a tight two-beat opener ("Argentina's year? / prove it, then.").
+  // If it wouldn't fit, drop the hook; the framing stays.
+  const base = `${lead}\n\n${input.question}${suffix}`;
+  const withHook = hook ? `${hook}\n${lead}\n\n${input.question}${suffix}` : "";
   const primary = hook && withHook.length <= TWEET_LIMIT
     ? withHook
     : base.length <= TWEET_LIMIT
       ? base
       // Only a very long question reaches here; keep the framing + CTA + link and
       // trim the QUESTION to fit, exactly as the reply builder does.
-      : fit(`${QUOTE_LEAD}\n\n`, input.question, suffix, TWEET_LIMIT);
+      : fit(`${lead}\n\n`, input.question, suffix, TWEET_LIMIT);
 
   return {
     primary,
     // Plain-text fallback: the framing line + question + CTA on one ASCII line,
-    // no hook, no arrows — for when the formatted quote looks off.
-    fallback: fit(`${QUOTE_LEAD} `, input.question, ` ${cta}: ${link}`, TWEET_LIMIT),
+    // no hook, no arrows: the barest version for when the formatted quote looks off.
+    fallback: fit(`${lead} `, input.question, ` ${cta}: ${link}`, TWEET_LIMIT),
   };
 }

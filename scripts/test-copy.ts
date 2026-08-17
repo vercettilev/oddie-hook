@@ -4,7 +4,10 @@
 // Run with: npm run test-copy
 
 import { tweetCopy } from "../src/card/tweetCopy.js";
-import { buildVerdict, buildTweetReply } from "../src/matching/tweetReply.js";
+import {
+  buildVerdict, buildTweetReply, buildTweetQuote,
+  pick, QUOTE_LEAD_POOL, CTA_POOL, FREE_POINTS,
+} from "../src/matching/tweetReply.js";
 import { STARTING_PREDICTIONS } from "../src/store/economy.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -166,6 +169,63 @@ console.log("\nthe reply carries its own number");
   // The free-points figure is the one the product actually grants.
   check(`the CTA promises what the economy pays (${STARTING_PREDICTIONS})`,
     r.primary.includes(`${STARTING_PREDICTIONS} free points`), r.primary);
+}
+
+console.log("\npick(): deterministic variety, not randomness wearing a disguise");
+{
+  // The whole point of hashing instead of Math.random(): call it 50 times on
+  // the SAME seed and every single call has to agree. If this is flaky, the
+  // module's own "pure functions with no I/O" claim is false.
+  const pool = ["a", "b", "c", "d", "e"] as const;
+  const first = pick(pool, "a-fixed-seed");
+  let stable = true;
+  for (let i = 0; i < 50; i++) if (pick(pool, "a-fixed-seed") !== first) stable = false;
+  check("the same seed always picks the same entry, every time", stable);
+
+  // And the reverse failure mode: a hash that silently collapses to one index
+  // regardless of input would make "variety" a lie too.
+  const seen = new Set(Array.from({ length: 30 }, (_, i) => pick(pool, `seed-${i}`)));
+  check("different seeds actually reach different entries", seen.size > 1, [...seen].join(","));
+}
+
+console.log("\nCTA_POOL: every entry keeps the one promise that can't be wordplay");
+{
+  // The voice can vary; the number the economy actually pays cannot. Checked
+  // against EVERY pool entry, not just whichever one a sample call happens to
+  // hash to. A future addition that drops the number would pass every other
+  // test here and still be a lie the day it gets picked.
+  for (const [i, cta] of CTA_POOL.entries()) {
+    check(`CTA_POOL[${i}] states the real point count`, cta(FREE_POINTS).includes(String(FREE_POINTS)), cta(FREE_POINTS));
+  }
+}
+
+console.log("\nthe quote's lead and CTA come from the pools, and travel with the market");
+{
+  const q1 = buildTweetQuote({ question: "Will Amazon have a #1 AI model by December 31, 2026?", permalink: "https://oddie.fun/m/amazon-ai-1" });
+  const leadText = QUOTE_LEAD_POOL.find((l) => q1.primary.startsWith(l) || q1.primary.includes(`\n${l}\n`));
+  check("the primary opens with a real QUOTE_LEAD_POOL entry", !!leadText, q1.primary);
+  check("the CTA states the real point count", q1.primary.includes(String(FREE_POINTS)), q1.primary);
+  check("still fits the limit", q1.primary.length <= 280, `${q1.primary.length}`);
+
+  // Same market, called again: must read exactly the same both times. This is
+  // the property a retry (or an operator re-extracting the same tweet) leans on:
+  // two different tweets pointing at the SAME market should not post two
+  // different-sounding announcements of it.
+  const q2 = buildTweetQuote({ question: "Will Amazon have a #1 AI model by December 31, 2026?", permalink: "https://oddie.fun/m/amazon-ai-1" });
+  check("the same market reads identically on a second call", q1.primary === q2.primary);
+
+  // A different market should not be guaranteed the same lead/CTA pairing,
+  // sampled across enough permalinks that a coincidental match is implausible
+  // (1/5 lead * 1/5 cta = 1/25 per pair) but the check only fails if EVERY
+  // sample happens to collide, not on one unlucky draw.
+  const leadsSeen = new Set<string>(), ctasSeen = new Set<string>();
+  for (let i = 0; i < 20; i++) {
+    const r = buildTweetQuote({ question: "Will X happen?", permalink: `https://oddie.fun/m/sample-${i}` });
+    for (const l of QUOTE_LEAD_POOL) if (r.primary.includes(l)) leadsSeen.add(l);
+    for (const c of CTA_POOL) if (r.primary.includes(c(FREE_POINTS))) ctasSeen.add(c(FREE_POINTS));
+  }
+  check("20 different markets are not all reading the identical lead", leadsSeen.size > 1, [...leadsSeen].join(" | "));
+  check("...nor the identical CTA", ctasSeen.size > 1, [...ctasSeen].join(" | "));
 }
 
 console.log(failures === 0 ? "\nall copy checks passed.\n" : `\n${failures} copy check(s) FAILED.\n`);
