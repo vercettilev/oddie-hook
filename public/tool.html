@@ -4,13 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#D7DC1F">
+<meta name="theme-color" content="#0B0B0B">
 <title>oddie · operator console</title>
 <style>
   :root{
-    /* Oddie brand — lime accent + pale-lime wash, matching feed/gate/cards. */
-    --accent:#D7DC1F; --ink:#000; --white:#fff; --muted:#6B7A88;
-    --wash:#F3FBDA; --bar:#E7EDF2; --bad:#FFE2E2; --warn:#FFF3D6;
+    /* Dark, permanently. This is the tool's own request, not a toggle. Values
+       match feed.html's dark-mode tokens exactly (--ground, --card-surface,
+       --on-ground, --muted-g, --line-g, --acc-deep) rather than inventing a
+       second dark palette for the same brand. --white and --wash KEPT THEIR
+       NAMES but not their literal colors, the same move src/card/renderCard.ts
+       already made for its accent token ("the var kept its name; the value is
+       Oddie green"). Renaming ~15 call sites across this file for a token
+       that only ever meant "the elevated surface" / "the page ground" buys
+       nothing a comment doesn't already say. There is no light variant to
+       keep in sync: this is the only palette the file has.
+       color-scheme:dark below is what keeps native controls (the date/time
+       picker, form-field chrome) from rendering a stray white box. */
+    --accent:#D7DC1F;      /* unchanged, already legible on near-black */
+    --accentDeep:#C6CE45;  /* feed's dark-mode --acc-deep. Two call sites used
+                               to read var(--accentDeep, #4d6e10), a variable
+                               this file never defined, so they ALWAYS ran on
+                               that fallback. #4d6e10 is a dark olive tuned for
+                               white/pale-lime backgrounds; on near-black it is
+                               close to invisible. Defining the variable for
+                               real is the fix, not a new bug. */
+    --ink:#F4F4F1; --white:#141513; --muted:#9A9A92;
+    --wash:#0B0B0B; --bar:#2C2C2A; --bad:#3A1414; --warn:#3A2C05;
+    color-scheme: dark;
   }
   *{box-sizing:border-box}
   body{
@@ -19,6 +39,12 @@
     font-family:'Fredoka','Trebuchet MS',system-ui,-apple-system,sans-serif;
     -webkit-text-size-adjust:100%;
   }
+  /* Every text input/textarea/select in this file sets its own border via an
+     inline style, but none set a background: they inherited the browser's
+     default white field regardless of the page. Invisible on the old
+     pale-lime ground; a glaring white rectangle on this one. One rule catches
+     every field, present and future, instead of touching each inline style. */
+  input, textarea, select{background:var(--white); color:var(--ink)}
   .wrap{max-width:660px; margin:0 auto}
 
   header{display:flex; align-items:baseline; gap:10px; margin-bottom:4px}
@@ -67,9 +93,17 @@
   details.rec{border-top:2px dashed var(--bar); padding:10px 0 6px}
   details.rec:first-of-type{border-top:none; padding-top:0}
   details.rec summary{cursor:pointer; font-weight:700; font-size:14.5px}
-  details.rec summary:hover{color:var(--accentDeep, #4d6e10)}
+  details.rec summary:hover{color:var(--accentDeep)}
 
   .verdict{font-size:20px; font-weight:700; line-height:1.3; margin:0 0 6px}
+  /* All five top-level sections are <details>, .verdict doubling as their
+     <summary>. Native marker kept (no reason to rebuild a disclosure
+     triangle this file already gets for free); the outline on focus and the
+     hover colour are the same signal .rec summary already gives the nested
+     panels in section 5, one size up since this is the primary toggle. */
+  summary.verdict{cursor:pointer; list-style-position:outside}
+  summary.verdict:hover{color:var(--accentDeep)}
+  summary.verdict:focus-visible{outline:3px solid var(--accent); outline-offset:3px}
   .why{font-size:13.5px; color:var(--muted); line-height:1.5; margin:0}
   .why + .why{margin-top:6px}
 
@@ -119,7 +153,7 @@
     color:var(--ink); text-decoration:none}
   a.donewhat:hover{text-decoration:underline}
   .donebadge{flex:none; font-weight:800; font-size:11px}
-  .donebadge.won{color:var(--accentDeep, #4d6e10)}
+  .donebadge.won{color:var(--accentDeep)}
   .donebadge.lost{color:var(--muted)}
   .donewhen{flex:none; color:var(--muted); font-size:12px}
 
@@ -162,8 +196,13 @@
   <!-- 1 · The daily move: a tagged tweet in, a market + ready reply out. Venue
        markets are checked first so nothing gets duplicated; only a claim nothing
        covers becomes a new Community market. -->
-  <div class="box" id="community" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">1 · answer a mention</p>
+  <!-- Open by default; the other four are not. This is the one section used on
+       EVERY visit (paste a tweet, get a market), and it is already short after
+       the earlier trim, so the friction of a closed-by-default section falls
+       on the four that were actually the source of the crowding: long lists,
+       not this form. -->
+  <details class="box" id="community" style="margin-top:22px" open>
+    <summary class="verdict" style="font-size:17px">1 · answer a mention</summary>
     <p class="why" style="margin:0 0 10px">Paste the tweet. Matches a live venue market first, or drafts a new one.</p>
 
     <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
@@ -207,27 +246,30 @@
       <button class="primary" id="cgo">Create market</button>
     </div>
     <div class="out" id="cout" aria-live="polite"></div>
-  </div>
+  </details>
 
   <!-- 2 · The result loop: every settled call whose owner connected X, ready to
-       announce. This is where the "returned in 24h" signal accumulates. -->
-  <div class="box" id="mentions" style="margin-top:22px">
+       announce. This is where the "returned in 24h" signal accumulates.
+       Closed by default: this is the section that was 18 cards deep before
+       dismiss existed, and the count in the summary already says whether
+       there's anything to open it FOR. -->
+  <details class="box" id="mentions" style="margin-top:22px">
+    <summary class="verdict" style="font-size:17px">2 · verdicts <span id="mcount" class="count"></span></summary>
     <!-- The voice rule (loud win, flat loss, never mocking) and the X-algorithm
          weights behind it (a reply is worth +5, a mute −58.8) used to live here
          as a paragraph re-read on every visit. buildVerdict() already bakes the
          rule into the generated text itself (see tweetReply.ts); this page
          only needed to say what the buttons do. -->
-    <p class="verdict" style="font-size:17px">2 · verdicts <span id="mcount" class="count"></span></p>
     <p class="why" style="margin:0 0 8px">Ready to post. <b>card ↓</b> saves the PNG · <b>mark sent</b> stamps it done.</p>
     <div id="mlist"><p class="why">enter the admin token above, then this loads…</p></div>
-  </div>
+  </details>
 
   <!-- 3 · Loudest Callers, phase 0: fully human. Search X for the week's best
        posts about oddie, pick the top handful, paste the authors here. The
        server dedups per (person, ISO week), so a resubmitted list cannot
-       double-pay. -->
-  <div class="box" id="loudbox" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">3 · loud awards</p>
+       double-pay. Closed by default: weekly cadence, not a daily one. -->
+  <details class="box" id="loudbox" style="margin-top:22px">
+    <summary class="verdict" style="font-size:17px">3 · loud awards</summary>
     <p class="why" style="margin:0 0 8px">Approve real posts (<b>+150</b>), reject the rest. Sunday: best of the week gets <b>+300</b>.</p>
 
     <p class="vhead" style="margin:2px 0 6px">review queue — submitted links, oldest first</p>
@@ -243,21 +285,24 @@
       <button class="ghost" id="loudgo" style="flex:0 0 auto;padding:9px 18px;font-size:14px">Award</button>
     </div>
     <div id="loudout" style="margin-top:10px"></div>
-  </div>
+  </details>
 
   <!-- 4 · The markets themselves: feature onto the homepage, inspect positions,
-       resolve with a payout preview. Resolve settles real user positions. -->
-  <div class="box" id="resolve" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">4 · live markets <span id="rcount" class="count"></span></p>
+       resolve with a payout preview. Resolve settles real user positions.
+       Closed by default; the summary's own count says whether it's worth
+       opening. -->
+  <details class="box" id="resolve" style="margin-top:22px">
+    <summary class="verdict" style="font-size:17px">4 · live markets <span id="rcount" class="count"></span></summary>
     <p class="why" id="chainstat">—</p>
     <p class="why" id="featstat" style="margin-top:2px">—</p>
     <div id="rlist" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
-  </div>
+  </details>
 
-  <!-- 5 · Read-only records, collapsed so the working sections stay in reach.
-       Open one when you need the number; nothing here changes anything. -->
-  <div class="box" id="records" style="margin-top:22px">
-    <p class="verdict" style="font-size:17px">5 · records — read-only</p>
+  <!-- 5 · Read-only records: now closed two levels deep, the section AND each
+       panel inside it. Open one when you need the number; nothing here
+       changes anything. -->
+  <details class="box" id="records" style="margin-top:22px">
+    <summary class="verdict" style="font-size:17px">5 · records: read-only</summary>
     <details class="rec">
       <summary>wedge metrics — the funnel, all-time</summary>
       <div class="row" style="justify-content:flex-end;margin:6px 0 0">
@@ -276,7 +321,7 @@
       <summary>reply log — everything generated by 1, newest first</summary>
       <div id="tweetlog" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
     </details>
-  </div>
+  </details>
 </div>
 
 <script>
@@ -678,9 +723,16 @@ function matchPanel(match, venuesAvailable) {
   if (match.path === "venue" || match.path === "closest") {
     const m = match.market, conf = match.confidence;
     const venue = m.venue.charAt(0).toUpperCase() + m.venue.slice(1);
+    // Status-badge colours are a traffic-light trio (green/amber/red) rather
+    // than the brand's own lime, on purpose: these need to read as a SYSTEM
+    // signal at a glance, distinguishable from the accent lime used
+    // everywhere else on the page for ordinary emphasis. All three are tuned
+    // for contrast against this file's near-black ground. The originals
+    // (#0a7d2c forest, #a56a00 brown, #3c570b olive) were tuned for white and
+    // were close to unreadable here.
     const header = match.path === "venue"
-      ? ['#0a7d2c', '✅ VENUE MATCH — already live, no new market']
-      : ['#a56a00', '🟡 CLOSEST MATCH — needs review, not auto-published'];
+      ? ['#4ADE80', '✅ VENUE MATCH: already live, no new market']
+      : ['#FBBF24', '🟡 CLOSEST MATCH: needs review, not auto-published'];
     return '<div class="box" style="border-color:' + header[0] + '"><p class="verdict" style="font-size:15px;color:' + header[0] + '">' + esc(header[1]) + '</p>'
       + '<p class="why" style="color:var(--ink);font-weight:700">' + esc(m.question) + '</p>'
       + '<p class="why"><b>' + esc(venue) + '</b> · ' + m.yesPct + '% yes · confidence <b>' + conf + '/100</b> · <code>' + esc(m.id) + '</code></p>'
@@ -702,12 +754,13 @@ function matchPanel(match, venuesAvailable) {
 
 // Fill the create form from the extraction and return the gate-badge HTML.
 function fillFromExtraction(x) {
-  const badge = { clean: ["#0a7d2c", "CLEAN — eligible to publish"], fuzzy: ["#a56a00", "FUZZY — review before posting"], unresolvable: ["#b00020", "UNRESOLVABLE — cannot be a market"] }[x.resolvability] || ["#555", x.resolvability];
+  // Same traffic-light trio as matchPanel above, tuned for near-black.
+  const badge = { clean: ["#4ADE80", "CLEAN: eligible to publish"], fuzzy: ["#FBBF24", "FUZZY: review before posting"], unresolvable: ["#FF8B78", "UNRESOLVABLE: cannot be a market"] }[x.resolvability] || ["var(--muted)", x.resolvability];
   // Appropriateness block takes precedence over resolvability — the subject is
   // off-limits regardless of whether it could be settled.
   if (x.appropriate === false) {
     clearCreateForm();
-    return '<div class="box error"><p class="verdict" style="font-size:15px;color:#b00020">🚫 BLOCKED — inappropriate subject</p>'
+    return '<div class="box error"><p class="verdict" style="font-size:15px;color:#FF8B78">🚫 BLOCKED: inappropriate subject</p>'
       + '<p class="why">' + esc(x.reason) + '</p>'
       + '<p class="why" style="color:var(--muted)">no market was drafted — this subject isn\'t allowed (private individual, real-person harm/health, or harassment).</p></div>';
   }
@@ -929,7 +982,10 @@ async function loadTweetLog() {
     const items = j.items || [];
     if (!items.length) { box.innerHTML = '<p class="why">nothing generated yet — extract a tweet above.</p>'; return; }
     box.innerHTML = items.map((it) => {
-      const tag = { venue: ["#0a7d2c", "venue"], closest: ["#a56a00", "closest"], new: ["#3c570b", "new"] }[it.matchType] || ["#555", it.matchType];
+      // "new" isn't a judgment call like the other two (a market was simply
+      // created), so it borrows the brand's own accent rather than the
+      // traffic-light green/amber.
+      const tag = { venue: ["#4ADE80", "venue"], closest: ["#FBBF24", "closest"], new: ["var(--accentDeep)", "new"] }[it.matchType] || ["var(--muted)", it.matchType];
       const when = new Date(it.createdAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
       return '<div class="box" style="margin:0 0 8px;padding:10px 12px">'
         + '<p class="why" style="margin:0"><b style="color:' + tag[0] + '">' + esc(tag[1]) + '</b> · ' + esc(when)
@@ -1013,7 +1069,7 @@ async function loadCommunity() {
     stat.style.display = chainEnabled ? "" : "none";
     if (chainEnabled) {
       stat.innerHTML = 'on-chain: <b>enabled</b> · admin ' + esc((j.chain.admin || "").slice(0, 10)) + '… · <b>balance ' + (bal == null ? '?' : bal.toFixed(3)) + ' SOL</b>'
-        + (bal != null && bal < 0.05 ? ' · <b style="color:#b00000">low, top up</b>' : '');
+        + (bal != null && bal < 0.05 ? ' · <b style="color:#FF8B78">low, top up</b>' : '');
     }
     const featBox = $("#featstat");
     if (featBox) {
