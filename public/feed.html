@@ -4397,6 +4397,23 @@ function buildCard(m,i,homeLoop){
 
     const tap=(s)=>{
       if(y.disabled)return;
+      /* A community market is our own parimutuel, and its only money is real
+         SOL in the vault. So the tap opens the bet sheet with this side
+         already chosen, instead of spending a free prediction on a pool that
+         no longer settles anything.
+         The side travels with it deliberately: the tap IS the decision, and
+         asking for it again inside the sheet would make these buttons
+         decorative. Everything after it (amount, wallet, signature) is
+         confirming a choice already made.
+         Falls through to the play path when the chain layer is not loaded,
+         which is the case on a build with ONCHAIN_ENABLED off. That is a
+         development state, not a user-facing one. */
+      if(m.community&&window.OddieChain&&window.OddieChain.openStake){
+        try{navigator.vibrate&&navigator.vibrate(12);}catch(e){}
+        ev("side_tap",{slug:m.slug,idx:i,side:s});
+        window.OddieChain.openStake(m.slug,s);
+        return;
+      }
       // No rope: any tap proceeds to a vote. Anonymous visitors play with their
       // free predictions; the server never blocks a call. (The waitlist CTA that
       // used to sit here is gone — a seeded reply link is playable on the first tap.)

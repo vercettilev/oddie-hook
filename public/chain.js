@@ -233,7 +233,13 @@
     };
   }
 
-  async function openStakeSheet(slug) {
+  /**
+   * @param presetSide "yes" | "no" | null. Set when the sheet was opened by
+   * tapping a side on the card itself, which is the normal path: that tap IS
+   * the decision, and asking for it again inside the sheet would make the
+   * card's buttons decorative.
+   */
+  async function openStakeSheet(slug, presetSide) {
     const body = sheetShell();
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
 
@@ -317,8 +323,9 @@
         <button class="cclose">Not now</button>`;
       body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
 
-      let side = null, sol = 0;
+      let side = presetSide === "yes" || presetSide === "no" ? presetSide : null, sol = 0;
       const sideBtns = [...body.querySelectorAll(".chain-side")];
+      if (side) sideBtns.forEach((b) => b.classList.toggle("on", b.dataset.side === side));
       const chips = [...body.querySelectorAll(".chain-chip")];
       const amtInput = body.querySelector(".chain-amt");
       const stakeBtn = body.querySelector("#chainstake");
@@ -360,6 +367,12 @@
         refresh();
       });
       amtInput.oninput = () => { sol = parseFloat(amtInput.value) || 0; refresh(); };
+
+      // Run once now, not only on the next interaction. The button ships from
+      // innerHTML reading "Pick a side", which is right when nothing is chosen
+      // and wrong the moment a side arrives pre-picked from the card: it asked
+      // for a decision the user had already made one tap earlier.
+      refresh();
 
       stakeBtn.onclick = async () => {
         // The connect step is folded into the same button rather than being a
@@ -508,16 +521,83 @@
     render();
   }
 
+  /**
+   * Community cards get no extra button any more.
+   *
+   * This used to inject a "🔗 Make it real" CTA under the duel, which was
+   * right while the card's own YES/NO spent play tokens and real SOL was a
+   * separate opt-in. Under one economy it leaves two ways to bet on one card,
+   * and labels one of them as though the other were pretend. The card's
+   * buttons are the entry point; feed.html routes them to openStake.
+   *
+   * Kept as a function so scan() keeps a place to decorate community cards
+   * from, which is where the live pool odds get written in.
+   */
   function attachButton(card) {
-    if (card.querySelector(".chain-cta")) return; // already decorated
-    const duel = card.querySelector(".duel");
-    if (!duel) return;
+    const old = card.querySelector(".chain-cta");
+    if (old) old.remove();   // clears the button from a cached earlier build
+    paintPoolOdds(card);
+  }
+
+  /**
+   * Put the VAULT's odds on the card, over the play pool's.
+   *
+   * The percentages and the multiplier a community card ships are computed
+   * from the free-predictions crowd. That was fine when those predictions were
+   * the game. Now the only money on the market is in the vault, so the card
+   * was advertising one set of odds and the bet sheet quoting another, for the
+   * same question, a tap apart. The vault's number is the one somebody is
+   * about to be paid from, so it wins.
+   *
+   * Written per card as it is decorated, and silent on failure: a card whose
+   * chain read did not come back keeps the numbers it rendered with rather
+   * than blanking, because a card with no odds at all is worse than a card
+   * with stale ones, and the sheet reads the chain again before any money
+   * moves regardless.
+   *
+   * An empty vault is marked rather than left showing 50/50. Nobody has priced
+   * this yet, and a made-up midpoint is the one number here that could not
+   * possibly be right.
+   */
+  async function paintPoolOdds(card) {
+    if (card.dataset.chainOdds === "done") return;
+    card.dataset.chainOdds = "done";
     const slug = card.dataset.slug;
-    const btn = document.createElement("button");
-    btn.className = "chain-cta"; btn.type = "button";
-    btn.textContent = "🔗 Make it real";
-    btn.onclick = (e) => { e.stopPropagation(); openStakeSheet(slug); };
-    duel.after(btn);
+    if (!slug) return;
+    let s;
+    try {
+      const r = await fetch(`/api/chain/market/${encodeURIComponent(slug)}`);
+      s = await r.json();
+      if (!s.ok) return;
+    } catch (e) { return; }
+
+    const yes = s.totalYesLamports || 0, no = s.totalNoLamports || 0;
+    const rows = card.querySelectorAll(".duel .orow");
+    if (rows.length !== 2) return;
+    const pct = poolPct(yes, no);
+
+    if (pct == null) {
+      // No stake either side. Say so once, on the card, instead of letting the
+      // play pool's 50/50 pass for a price.
+      rows.forEach((row) => {
+        const pay = row.querySelector(".opay");
+        if (pay) pay.textContent = "first in";
+      });
+      card.dataset.chainPool = "empty";
+      return;
+    }
+    const vals = { yes: pct, no: 100 - pct };
+    rows.forEach((row) => {
+      const side = row.dataset.side;
+      const v = vals[side];
+      if (v == null) return;
+      const num = row.querySelector(".opct-num");
+      if (num) { num.textContent = String(v); num.dataset.to = String(v); }
+      const pay = row.querySelector(".opay");
+      if (pay) pay.textContent = fmtMult(v);
+      row.style.setProperty("--fill", v + "%");
+    });
+    card.dataset.chainPool = "live";
   }
 
   /**
@@ -559,6 +639,7 @@
   async function scan() {
     document.querySelectorAll('.card[data-community="1"]').forEach(attachButton);
     mountClaimCheck();
+    mountCreatorFees();
     // Venue cards are decorated only once the server says this visitor may
     // use that path at all — no flash of a button that would 451 on tap.
     if (await venueIsAllowed()) {
@@ -619,6 +700,98 @@
     box.querySelectorAll(".cc-claim").forEach((b) => b.onclick = () => openStakeSheet(b.dataset.slug));
   }
 
+  /**
+   * The creator fee, collected. The half of the economy oddie advertises.
+   *
+   * "Tag an argument and you earn when it resolves" has been on the landing
+   * page, on every market card and in every reply oddie posts, and until now
+   * there was no screen anywhere in the product where that money could be
+   * taken. The program held it, the routes returned it, nothing asked for it.
+   *
+   * Lives on My markets, which is where somebody goes to look at the markets
+   * they started, and therefore where they would look for what those markets
+   * paid. Wallet-initiated for the same reason the winnings check is: the fee
+   * is owed to an on-chain address, the server never learns which wallet
+   * belongs to which device, so it has to be asked on the user's behalf after
+   * they connect.
+   *
+   * Connecting is also what NAMES them on chain. A market minted before its
+   * tagger had a wallet carries the program's unnamed creator, and
+   * /api/auth/wallet/verify writes the real address the moment one is linked.
+   * So a first connect here can legitimately return nothing and a later visit
+   * return money, which is why the empty state does not say "you have earned
+   * nothing".
+   */
+  async function mountCreatorFees() {
+    if (document.body.dataset.view !== "mymarkets") return;
+    const host = document.querySelector("#scroller .sheet") || document.getElementById("scroller");
+    if (!host || host.querySelector("#chaincreatorfees")) return;
+
+    const box = document.createElement("div");
+    box.id = "chaincreatorfees"; box.className = "chain-claimcheck";
+    host.prepend(box);
+
+    if (!wallet) {
+      box.innerHTML = `<div class="cc-row"><span class="cc-text">Markets you started pay you 3% when they resolve. Connect the wallet you want paid to.</span>
+        <button class="cc-go" type="button">Connect</button></div>`;
+      box.querySelector(".cc-go").onclick = async () => {
+        const b = box.querySelector(".cc-go");
+        b.disabled = true; b.textContent = "Connecting…";
+        try { await connectWallet(); await refreshCreatorFees(box); }
+        catch (e) {
+          b.disabled = false; b.textContent = "Connect";
+          box.innerHTML = `<div class="cc-row"><span class="cc-text">${esc(e.message)}</span></div>`;
+        }
+      };
+      return;
+    }
+    await refreshCreatorFees(box);
+  }
+
+  async function refreshCreatorFees(box) {
+    box.innerHTML = `<div class="cc-row"><span class="cc-text">Checking what your markets earned…</span></div>`;
+    let list = [];
+    try {
+      const r = await fetch(`/api/chain/creator-fees?creatorPubkey=${encodeURIComponent(wallet.publicKey)}`);
+      const j = await r.json();
+      list = j.ok ? j.fees : [];
+    } catch (e) { list = []; }
+    // Nothing owed says nothing. A permanent "no fees yet" panel on a screen
+    // full of markets that have not resolved is clutter, not information.
+    if (!list.length) { box.remove(); return; }
+
+    const total = list.reduce((a, f) => a + f.lamports, 0) / 1e9;
+    box.innerHTML = `<div class="cc-head">🏷️ ${total.toFixed(3)} SOL earned from markets you started</div>` + list.map((f) => `
+      <div class="cc-item">
+        <span class="cc-q">${esc(f.question)}</span>
+        <span class="cc-meta">${(f.feeBps / 100).toFixed(0)}% of the pool · ${(f.lamports / 1e9).toFixed(3)} SOL</span>
+        <button class="cc-claim" type="button" data-slug="${esc(f.slug)}">Collect</button>
+      </div>`).join("");
+
+    box.querySelectorAll(".cc-claim").forEach((b) => b.onclick = async () => {
+      b.disabled = true; b.textContent = "Preparing…";
+      try {
+        const prep = await fetch("/api/chain/creator-fee/prepare", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ slug: b.dataset.slug, creatorPubkey: wallet.publicKey }),
+        });
+        const pj = await prep.json();
+        if (!prep.ok || !pj.ok) throw new Error(pj.error || "Couldn't prepare the transaction.");
+        const w3 = await loadWeb3();
+        const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
+        b.textContent = "Confirm…";
+        const { signature } = await window.solana.signAndSendTransaction(tx);
+        const row = b.closest(".cc-item");
+        row.innerHTML = `<span class="cc-q">Collected ✓</span>
+          <span class="cc-meta"><a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></span>`;
+      } catch (e) {
+        b.disabled = false; b.textContent = "Collect";
+        const meta = b.closest(".cc-item").querySelector(".cc-meta");
+        if (meta) meta.textContent = e.message || "Something went wrong, try again.";
+      }
+    });
+  }
+
   /** `cluster` comes from the same /api/chain/status response that decided to
    *  load this file at all, so the network named in the copy and the network
    *  the server is actually on cannot disagree. */
@@ -629,5 +802,10 @@
     if (scroller) new MutationObserver(scan).observe(scroller, { childList: true, subtree: true });
   }
 
-  window.OddieChain = { init };
+  // openStake is what feed.html's card buttons call. Exposed rather than left
+  // to the injected "Make it real" button, because that button was the entry
+  // point back when real money was an optional layer beside the card's own
+  // YES/NO. With one economy there is one pair of buttons, and they are the
+  // ones already on the card.
+  window.OddieChain = { init, openStake: openStakeSheet };
 })();
