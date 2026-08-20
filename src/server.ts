@@ -23,7 +23,7 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { logRealFee, feeLog } from "./store/markets.js";
+import { logRealFee, feeLog, onchainMarketsSurfacedBy } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
@@ -1500,6 +1500,37 @@ app.get("/api/auth/wallet/challenge", (req, res) => {
  * parallel identity system — and it is still not a way to move money. Nothing
  * in this path signs or sends a transaction.
  */
+/**
+ * Point every market this person tagged at the wallet they just connected.
+ *
+ * The gap this closes: a market is minted the instant an argument is tagged on
+ * X, and the tagger has no wallet at that instant, so it goes on-chain with the
+ * program's unnamed-creator sentinel. The fee still accrues to it at resolve.
+ * It just accrues to an address nobody holds the key to, and stays in the vault
+ * forever. Connecting a wallet is the moment we finally know where the money
+ * should go, so it is the moment to write it down.
+ *
+ * Entirely best-effort. It runs off the response, never blocks a sign-in, and
+ * a market that fails to name here is not lost: naming is idempotent in one
+ * direction, so the next connect from the same person tries again. Markets
+ * already named are skipped before spending a transaction, and the program
+ * refuses a rename anyway, so the failure mode is a wasted RPC read.
+ */
+async function nameCreatorOnTaggedMarkets(deviceId: string, address: string): Promise<void> {
+  try {
+    const mine = await onchainMarketsSurfacedBy(deviceId);
+    let named = 0;
+    for (const m of mine) {
+      const state = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
+      if (!state || state.creator) continue; // unreachable, or somebody already named it
+      if (await nameCreator(m.onchainPubkey, address)) named++;
+    }
+    if (named) console.log(JSON.stringify({ evt: "creator_named", count: named, address }));
+  } catch (e) {
+    console.error("[chain] naming creator on tagged markets failed:", (e as Error).message);
+  }
+}
+
 app.post("/api/auth/wallet/verify", async (req, res) => {
   const deviceId = deviceIdOf(req.body);
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
@@ -1530,6 +1561,9 @@ app.post("/api/auth/wallet/verify", async (req, res) => {
     });
     console.log(JSON.stringify({ evt: "auth_wallet", ok: true, seeded: result.seeded, bonus: result.bonus }));
     res.json({ connected: "phantom", bonus: result.bonus, handle: shortAddress(address) });
+    // After the response, never in front of it: the sign-in is done and this is
+    // bookkeeping on markets that may not resolve for weeks.
+    void nameCreatorOnTaggedMarkets(deviceId, address);
   } catch (err) {
     console.error("[auth] wallet link failed:", (err as Error).message);
     res.status(500).json({ error: "link_failed" });
@@ -2318,11 +2352,20 @@ if (realStakesReady) {
       ok: true, pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey),
       resolved: state.resolved, winningSide: state.winningSide,
       totalYesLamports: state.totalYesLamports, totalNoLamports: state.totalNoLamports,
-      // Proposed rates only — surfaced for transparency, not yet deducted on
-      // resolution (the deployed program has no fee instruction; see
-      // economy.ts's CREATOR_FEE_BPS_REAL doc comment). realFeesEnforced:false
-      // is what the client keys its "not yet enforced" copy off.
-      realCreatorFeeBps: CREATOR_FEE_BPS_REAL, realProtocolFeeBps: PROTOCOL_FEE_BPS_REAL, realFeesEnforced: false,
+      // Real and charged, where these used to be proposals the client had to
+      // caption "not yet enforced". oddie_chain deducts the creator fee from
+      // the pool at resolve and pays it on the creator's own signature, so
+      // realFeesEnforced is true and the copy keyed off it should now state
+      // the fee plainly instead of hedging. The house fee is 0 because the
+      // program has no instruction that could take one.
+      realCreatorFeeBps: CREATOR_FEE_BPS_REAL, realProtocolFeeBps: PROTOCOL_FEE_BPS_REAL, realFeesEnforced: true,
+      // Who the fee is owed to, and whether it is still waiting. Null creator
+      // means the tagger has not connected a wallet yet, which the UI should
+      // read as "unclaimed and claimable by the right person", not as "nobody
+      // earned this".
+      creator: state.creator, creatorFeeLamports: state.creatorFeeLamports,
+      creatorFeeClaimed: state.creatorFeeClaimed,
+      cluster: cluster(),
     });
   });
 
@@ -2395,6 +2438,45 @@ if (realStakesReady) {
     const detail = await communityMarketDetail(slug);
     if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
     const txBase64 = await prepareClaimTx({ marketPubkey: detail.onchainPubkey, userPubkey });
+    if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
+    res.json({ ok: true, txBase64 });
+  });
+
+  /**
+   * What a tagger is owed, across every market they started.
+   *
+   * The other side of /api/chain/claimable: that one answers "what did I win",
+   * this one answers "what did being loud earn me". They are separate reads
+   * because they are separate people as often as not, and because the fee is
+   * the half of the economy the product actually advertises.
+   *
+   * Reports markets that are resolved, owe a fee, have not been claimed, and
+   * name THIS wallet as the creator. A market still carrying the unnamed
+   * sentinel is invisible here by construction: it belongs to somebody who has
+   * not connected a wallet, and nameCreatorOnTaggedMarkets is what moves it
+   * into this list when they do.
+   */
+  app.get("/api/chain/creator-fees", async (req, res) => {
+    const creatorPubkey = String(req.query.creatorPubkey ?? "");
+    if (!isValidPubkeyString(creatorPubkey)) return res.status(400).json({ error: "invalid creatorPubkey" });
+    const markets = await resolvedOnchainMarkets(40).catch(() => []);
+    const owed = await Promise.all(markets.map(async (m) => {
+      const state = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
+      if (!state || state.creatorFeeClaimed) return null;
+      if (state.creatorFeeLamports <= 0) return null;      // nobody backed the winner
+      if (state.creator !== creatorPubkey) return null;    // not theirs, or nobody's yet
+      return { slug: m.slug, question: m.question, lamports: state.creatorFeeLamports, feeBps: state.creatorFeeBps };
+    }));
+    res.json({ ok: true, fees: owed.filter(Boolean) });
+  });
+
+  app.post("/api/chain/creator-fee/prepare", async (req, res) => {
+    const slug = String(req.body?.slug ?? "");
+    const creatorPubkey = String(req.body?.creatorPubkey ?? "");
+    if (!isValidPubkeyString(creatorPubkey)) return res.status(400).json({ error: "invalid creatorPubkey" });
+    const detail = await communityMarketDetail(slug);
+    if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
+    const txBase64 = await prepareCreatorFeeTx({ marketPubkey: detail.onchainPubkey, creatorPubkey });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
     res.json({ ok: true, txBase64 });
   });

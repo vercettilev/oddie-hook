@@ -3321,6 +3321,46 @@ export async function backfillSourcePosts(
   return { candidates: targets.length, fetched, written, failed };
 }
 
+/**
+ * Every on-chain market this device tagged, so their creator fee can be
+ * pointed at a wallet the moment they connect one.
+ *
+ * A market is minted the second the argument is tagged, and the tagger almost
+ * never has a wallet then, so it goes on-chain with the program's unnamed
+ * creator sentinel. Nothing about that repairs itself: the fee accrues at
+ * resolve to an address with no private key and sits in the vault forever
+ * unless something goes back and names them. This is the query that finds
+ * what to go back to.
+ *
+ * Deliberately NOT filtered to "still unnamed", because that fact lives on
+ * chain and this file has no chain dependency and should not grow one. The
+ * caller reads each market and skips the ones already named; naming twice is
+ * refused by the program anyway, so the worst case is a wasted lookup rather
+ * than a wrong write. Ordered newest first so a cap bites the oldest markets,
+ * which are the ones most likely to be named already.
+ */
+export async function onchainMarketsSurfacedBy(rawDeviceId: string, limit = 50): Promise<Array<{ slug: string; onchainPubkey: string }>> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const n = Math.max(1, Math.min(200, Math.floor(limit)));
+  if (!PERSISTENT) {
+    const out: Array<{ slug: string; onchainPubkey: string }> = [];
+    for (const [slug, s] of memSurfacer) {
+      if (s.deviceId !== deviceId) continue;
+      const pk = memCommunity.get(slug)?.onchainPubkey;
+      if (pk) out.push({ slug, onchainPubkey: pk });
+    }
+    return out.slice(0, n);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; onchain_pubkey: string }>(
+    `SELECT ms.slug, cm.onchain_pubkey
+       FROM market_surfacer ms
+       JOIN community_market cm ON cm.slug = ms.slug
+      WHERE ms.device_id = $1 AND cm.onchain_pubkey IS NOT NULL
+      ORDER BY ms.created_at DESC LIMIT $2`, [deviceId, n]);
+  return rows.map((r) => ({ slug: r.slug, onchainPubkey: r.onchain_pubkey }));
+}
+
 export interface Surfacer { handle: string | null; deviceId: string | null }
 export async function surfacerFor(slug: string): Promise<Surfacer | null> {
   if (!PERSISTENT) { const s = memSurfacer.get(slug); return s ? { handle: s.handle, deviceId: s.deviceId } : null; }

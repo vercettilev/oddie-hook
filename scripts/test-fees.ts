@@ -240,5 +240,49 @@ console.log("\nthe 3% finds a tagger who signed up after the fact");
     (logged?.recipientHandle ?? "").replace(/^@+/, "") === "latecomer", JSON.stringify(logged?.recipientHandle));
 }
 
+// --- finding the markets whose creator fee has nowhere to go ----------------
+//
+// Under real money the fee is paid on chain to an address fixed when the market
+// was minted, and at that moment the tagger has no wallet, so it is minted with
+// the program's unnamed sentinel. Nothing repairs that on its own: the fee
+// accrues at resolve to an address nobody holds a key to and sits in the vault.
+// onchainMarketsSurfacedBy is what a wallet connection uses to go back and
+// name them, so its job is to find every on-chain market a device tagged and
+// to leave out the ones there is nothing to name.
+
+console.log("\nonchainMarketsSurfacedBy: what to point at a freshly connected wallet");
+{
+  const { onchainMarketsSurfacedBy, setCommunityOnchain, createCommunityMarket } =
+    await import("../src/store/markets.js");
+  const TAGGER = "onchain-surfacer-dev-1";
+  const OTHER = "onchain-surfacer-dev-2";
+
+  const minted = await createCommunityMarket({ question: "Minted on chain?", closeTime: 4102444800 });
+  await recordSurfacer(minted.slug, { deviceId: TAGGER });
+  await setCommunityOnchain(minted.slug, "MintedPubkey1111111111111111111111111111111", "sig1");
+
+  // Same tagger, but the mint failed, so there is no account to name anybody on.
+  const unminted = await createCommunityMarket({ question: "Never reached the chain?", closeTime: 4102444800 });
+  await recordSurfacer(unminted.slug, { deviceId: TAGGER });
+
+  // Somebody else's market, minted. The classic leak: paying a fee to the
+  // wrong wallet because the query forgot whose markets it was asked for.
+  const theirs = await createCommunityMarket({ question: "Somebody else's market?", closeTime: 4102444800 });
+  await recordSurfacer(theirs.slug, { deviceId: OTHER });
+  await setCommunityOnchain(theirs.slug, "MintedPubkey2222222222222222222222222222222", "sig2");
+
+  const found = await onchainMarketsSurfacedBy(TAGGER);
+  const slugs = found.map((f) => f.slug);
+  check("the tagger's minted market is returned", slugs.includes(minted.slug), JSON.stringify(slugs));
+  check("a market that never reached the chain is left out", !slugs.includes(unminted.slug), JSON.stringify(slugs));
+  check("somebody else's market is never returned", !slugs.includes(theirs.slug), JSON.stringify(slugs));
+  check("the on-chain address comes back with it, so the caller can name on it",
+    found.find((f) => f.slug === minted.slug)?.onchainPubkey === "MintedPubkey1111111111111111111111111111111",
+    JSON.stringify(found));
+
+  const none = await onchainMarketsSurfacedBy("device-that-tagged-nothing");
+  check("a device that tagged nothing gets an empty list, not everything", none.length === 0, JSON.stringify(none));
+}
+
 console.log(failures === 0 ? "\nall fee checks passed.\n" : `\n${failures} fee check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);
