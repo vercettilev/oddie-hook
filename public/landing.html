@@ -16,16 +16,16 @@
 <meta name="theme-color" content="#D7DC1F">
 <!-- Share preview. X is the distribution channel, so the card this page throws
      when someone posts oddie.fun matters at least as much as the page itself. -->
-<meta name="description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score. Being loud pays.">
+<meta name="description" content="Tag @oddiefun under any argument on X. It becomes a real-money market on Solana, and 3% of the pool goes to whoever started the argument.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/">
 <meta property="og:title" content="Start markets. Earn when they spread.">
-<meta property="og:description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score. Being loud pays.">
+<meta property="og:description" content="Tag @oddiefun under any argument on X. It becomes a real-money market on Solana, and 3% of the pool goes to whoever started the argument.">
 <meta property="og:image" content="https://oddie.fun/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Start markets. Earn when they spread.">
-<meta name="twitter:description" content="Tag @oddiefun under any argument on X. We find a market or create one instantly. You play. We keep score. Being loud pays.">
+<meta name="twitter:description" content="Tag @oddiefun under any argument on X. It becomes a real-money market on Solana, and 3% of the pool goes to whoever started the argument.">
 <meta name="twitter:image" content="https://oddie.fun/og.png">
 
 <!-- This page used to bounce anyone carrying an Oddie device id straight to
@@ -579,9 +579,9 @@
           <div class="step__hd">
             <span class="step__n">2</span>
             <div><h2 class="step__t">Oddie makes it a market</h2>
-              <p class="step__b">We find the closest live market, or create one.</p></div>
+              <p class="step__b">A market opens on Solana with its own vault.</p></div>
           </div>
-          <div class="mock" role="img" aria-label="Example: Oddie replies with a market asking 'Will Bitcoin hit $200k before 2026?' at 71% yes, 29% no, and a Play market button.">
+          <div class="mock" role="img" aria-label="Example: Oddie replies with a market asking 'Will Bitcoin hit $200k before 2026?' at 71% yes, 29% no, and a Pick a side button.">
             <div class="xp__hd">
               <span class="av"><img src="/logo-mark-96.png" alt=""></span>
               <div>
@@ -589,7 +589,12 @@
                 <div class="xp__meta">@oddiefun · 1m</div>
               </div>
             </div>
-            <p class="xp__txt">Found a market for this argument 👇</p>
+            <!-- The mock reply should read like the reply buildTweetReply actually
+                 produces. This said "Found a market for this argument", from when
+                 the product's first move was to search Polymarket for something
+                 close. It opens one now, and the real copy leads with the
+                 question and the live price. -->
+            <p class="xp__txt">market says 71% yes. you? 👇</p>
             <div class="inner">
               <div class="inner__row">
                 <span class="inner__spark"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/></svg></span>
@@ -598,7 +603,7 @@
                   <div class="inner__odds"><span class="qcard__yes">71% YES</span> <span class="qcard__no">29% NO</span></div>
                 </div>
               </div>
-              <div class="inner__play"><span>Play market</span><span aria-hidden="true">›</span></div>
+              <div class="inner__play"><span>Pick a side</span><span aria-hidden="true">›</span></div>
             </div>
           </div>
         </div>
@@ -607,15 +612,15 @@
           <div class="step__hd">
             <span class="step__n">3</span>
             <div><h2 class="step__t">People call it</h2>
-              <p class="step__b">One tap picks a side.</p></div>
+              <p class="step__b">One tap opens it. Your wallet signs.</p></div>
           </div>
-          <div class="mock" role="img" aria-label="Example of a market being played: 71% called yes, 29% called no, five callers so far.">
+          <div class="mock" role="img" aria-label="Example of a market being played: 71% called yes, 29% called no, five callers so far, one point four SOL in the pool.">
             <div class="callq">Will Bitcoin hit $200k before 2026?</div>
             <div class="callrow">
               <span class="callbtn callbtn--yes">YES <b>71%</b></span>
               <span class="callbtn callbtn--no">NO <b>29%</b></span>
             </div>
-            <div class="callmeta"><span>5 callers</span><span>253 in play</span></div>
+            <div class="callmeta"><span>5 callers</span><span>1.4 SOL in the pool</span></div>
           </div>
         </div>
 
@@ -664,7 +669,7 @@
         </div>
         <div class="loudc reveal">
           <div class="loudc__n">2×</div>
-          <div class="loudc__t">Everything you play</div>
+          <div class="loudc__t">Every call you make</div>
           <div class="loudc__b">Keep posting and your calls, markets and wins earn up to double.</div>
         </div>
       </div>
@@ -691,7 +696,7 @@
     <p class="eyebrow">Keep your record</p>
     <div class="prof">
       <div class="prof__copy">
-        <h2 class="prof__t">Play as a guest. Become somebody when you want to.</h2>
+        <h2 class="prof__t">Look around as a guest. Become somebody when you want to.</h2>
         <p class="prof__b">Every call is scored either way. Connecting just means your record
           follows you off this browser.</p>
       </div>
@@ -716,8 +721,8 @@
              so the corner rounding is ours. -->
         <button class="pbtn" type="button" data-connect="phantom">
           <span class="pbtn__g"><img class="pmark" src="/phantomlogo.png" alt="" width="19" height="19"></span> Continue with Phantom</button>
-        <p class="prof__note">Signing proves the wallet is yours. It approves no transaction, and
-          there is nothing to deposit.</p>
+        <p class="prof__note">Signing proves the wallet is yours. It approves no transaction and
+          moves nothing. Taking a side is a separate signature, and that one spends.</p>
       </div>
     </div>
   </section>
