@@ -6,9 +6,8 @@
 import { tweetCopy } from "../src/card/tweetCopy.js";
 import {
   buildVerdict, buildTweetReply, buildTweetQuote,
-  pick, QUOTE_LEAD_POOL, CTA_POOL, FREE_POINTS,
+  pick, QUOTE_LEAD_POOL, CTA_POOL,
 } from "../src/matching/tweetReply.js";
-import { STARTING_PREDICTIONS } from "../src/store/economy.js";
 import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
@@ -166,9 +165,11 @@ console.log("\nthe reply carries its own number");
   const noOdds = buildTweetReply({ question: "Will it behave?", permalink: "https://oddie.fun/m/x-abc123" });
   check("no price means no invented price", !/\d+% yes/.test(noOdds.primary), noOdds.primary);
 
-  // The free-points figure is the one the product actually grants.
-  check(`the CTA promises what the economy pays (${STARTING_PREDICTIONS})`,
-    r.primary.includes(`${STARTING_PREDICTIONS} free points`), r.primary);
+  // The reply must not promise a grant. It used to be checked the other way
+  // round, pinning that the CTA named the exact number of free points the
+  // economy handed out, which was the right test while there were any.
+  check("the reply promises no free grant",
+    !/\bfree (points?|predictions?)\b/.test(r.primary), r.primary);
 }
 
 console.log("\npick(): deterministic variety, not randomness wearing a disguise");
@@ -195,7 +196,7 @@ console.log("\nCTA_POOL: every entry keeps the one promise that can't be wordpla
   // hash to. A future addition that drops the number would pass every other
   // test here and still be a lie the day it gets picked.
   for (const [i, cta] of CTA_POOL.entries()) {
-    check(`CTA_POOL[${i}] states the real point count`, cta(FREE_POINTS).includes(String(FREE_POINTS)), cta(FREE_POINTS));
+    check(`CTA_POOL[${i}] promises no free grant`, !/\bfree (points?|predictions?)\b|\d/.test(cta()), cta());
   }
 }
 
@@ -204,7 +205,7 @@ console.log("\nthe quote's lead and CTA come from the pools, and travel with the
   const q1 = buildTweetQuote({ question: "Will Amazon have a #1 AI model by December 31, 2026?", permalink: "https://oddie.fun/m/amazon-ai-1" });
   const leadText = QUOTE_LEAD_POOL.find((l) => q1.primary.startsWith(l) || q1.primary.includes(`\n${l}\n`));
   check("the primary opens with a real QUOTE_LEAD_POOL entry", !!leadText, q1.primary);
-  check("the CTA states the real point count", q1.primary.includes(String(FREE_POINTS)), q1.primary);
+  check("the CTA promises no free grant", !/\bfree points?\b/.test(q1.primary), q1.primary);
   check("still fits the limit", q1.primary.length <= 280, `${q1.primary.length}`);
 
   // Same market, called again: must read exactly the same both times. This is
@@ -222,7 +223,7 @@ console.log("\nthe quote's lead and CTA come from the pools, and travel with the
   for (let i = 0; i < 20; i++) {
     const r = buildTweetQuote({ question: "Will X happen?", permalink: `https://oddie.fun/m/sample-${i}` });
     for (const l of QUOTE_LEAD_POOL) if (r.primary.includes(l)) leadsSeen.add(l);
-    for (const c of CTA_POOL) if (r.primary.includes(c(FREE_POINTS))) ctasSeen.add(c(FREE_POINTS));
+    for (const c of CTA_POOL) if (r.primary.includes(c())) ctasSeen.add(c());
   }
   check("20 different markets are not all reading the identical lead", leadsSeen.size > 1, [...leadsSeen].join(" | "));
   check("...nor the identical CTA", ctasSeen.size > 1, [...ctasSeen].join(" | "));

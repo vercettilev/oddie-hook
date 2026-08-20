@@ -36,16 +36,7 @@
 // match and a freshly-created Community market — no "found it" / "made it"
 // prefix, no "% yes · % no".
 
-import { STARTING_PREDICTIONS } from "../store/economy.js";
-
 export const TWEET_LIMIT = 280;
-
-// What a new arrival actually gets, read from the economy rather than restated.
-// It used to be a local 50 with a comment claiming "one call costs 50"; the
-// real numbers are 5 predictions to start and 1 per call, so every reply and
-// quote the product has ever posted promised ten times what it hands over.
-// A number in public copy has to come from the place that pays it.
-export const FREE_POINTS = STARTING_PREDICTIONS;
 
 // Deterministic, not random. This module's own header calls these "pure
 // functions with no I/O": the same input has to keep producing the same
@@ -76,16 +67,28 @@ export const QUOTE_LEAD_POOL = [
   "someone's about to be wrong.",
 ] as const;
 
-// Same voice, same rule, for the line that actually asks someone to play.
-// Each still has to say the one thing that cannot get softer with the
-// wordplay: HOW MANY free points, because that is a real number the economy
-// pays (see FREE_POINTS above) and not just a tone.
-export const CTA_POOL: readonly ((n: number) => string)[] = [
-  (n) => `pick a side with ${n} free points`,
-  (n) => `put your ${n} free points where your mouth is`,
-  (n) => `${n} free points say you know something we don't`,
-  (n) => `no catch, ${n} free points: pick a side`,
-  (n) => `${n} free points. easy to say, harder to bet`,
+/**
+ * Same voice, same rule, for the line that actually asks someone in.
+ *
+ * Every one of these used to promise free points, which the product handed out
+ * and which cost nothing to spend. It is real SOL now, so all five lines were
+ * advertising something that no longer exists, on the single most-seen surface
+ * oddie has: they go out under somebody else's tweet, to people who have never
+ * heard of us, and the first thing they said was a lie.
+ *
+ * The replacement rule is the mirror of the old one. The old CTAs had to name a
+ * number because a free grant is only real if you say how much. These must NOT
+ * name one, because the amount is the reader's own and any figure here would
+ * either anchor them or read as a minimum we do not charge. What cannot get
+ * softer with the wordplay now is that the money is theirs and the market is
+ * real.
+ */
+export const CTA_POOL: readonly (() => string)[] = [
+  () => `pick a side, real SOL on it`,
+  () => `put SOL behind that`,
+  () => `talk is free. the market isn't`,
+  () => `back it, or watch someone else`,
+  () => `pick a side. winners split the pool`,
 ];
 
 export interface TweetReplyInput {
@@ -121,7 +124,7 @@ export function buildTweetReply(input: TweetReplyInput): TweetReply {
   // Same voice and the same pool as the quote builder below, capitalised: a
   // reply's CTA is the start of its own line with nothing above it, where the
   // quote's sits under a lowercase framing line and stays lowercase to match.
-  const rawCta = pick(CTA_POOL, input.permalink)(FREE_POINTS);
+  const rawCta = pick(CTA_POOL, input.permalink)();
   const cta = rawCta.charAt(0).toUpperCase() + rawCta.slice(1);
   // The odds go IN the reply now. A reply cannot reach anyone who does not
   // already follow us (see the header), so its readers are the people in this
@@ -259,7 +262,7 @@ export function buildTweetQuote(input: TweetReplyInput): TweetReply {
   // Two picks, two pools, seeded off the same permalink with different
   // suffixes so a market's lead and CTA don't trivially move together.
   const lead = pick(QUOTE_LEAD_POOL, input.permalink);
-  const cta = pick(CTA_POOL, `${input.permalink}:cta`)(FREE_POINTS);
+  const cta = pick(CTA_POOL, `${input.permalink}:cta`)();
   const suffix = `\n\n${cta} ↓\n${link}`;
   const hook = (input.hook ?? "").trim();
 
