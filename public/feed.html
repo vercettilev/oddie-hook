@@ -790,9 +790,23 @@
   .chain-side{flex:1;font:inherit;font-weight:800;font-size:14px;padding:9px 0;cursor:pointer;
     border:1.5px solid var(--ink);border-radius:12px;background:var(--white);color:var(--ink)}
   .chain-side.on{background:var(--accent);border-width:3.5px}
+  /* Preset stakes. A number pad between deciding and betting is the slowest
+     part of the flow and the one place people reconsider, so the common
+     amounts are one tap and typing is the fallback, not the default. */
+  .chain-amt-row{display:flex;gap:6px;margin-bottom:8px}
+  .chain-chip{flex:1;font:inherit;font-weight:800;font-size:13px;padding:8px 0;cursor:pointer;
+    border:1.5px solid var(--hair-g);border-radius:999px;background:var(--white);color:var(--ink)}
+  .chain-chip.on{background:var(--accent);border-color:var(--ink);border-width:2.5px}
   .chain-amt{display:block;width:100%;font:inherit;font-size:16px;font-weight:700;padding:9px 10px;
     margin-bottom:8px;border:1.5px solid var(--ink);border-radius:12px;background:var(--white);
     box-sizing:border-box;text-align:center;color:var(--ink)}
+  .chain-amt[hidden]{display:none}
+  /* The one button that commits money, sized like it. .claimbtn is shaped for
+     a flex row on a card, where flex:0 0 auto is right; dropped into the sheet
+     it renders as a small left-aligned control competing with "Not now" for
+     attention. Full width, and it goes last so nothing sits between deciding
+     and doing. */
+  .chainsheet #chainstake{display:block;width:100%;flex:none;margin-top:2px}
   .chain-line{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--acc-deep);min-height:16px;margin-bottom:8px}
   .chain-err{font-family:'Nunito';font-weight:700;font-size:12px;color:#c0392b;margin:6px 0 0}
   .chain-sig{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted);margin:6px 0 14px}
@@ -2306,7 +2320,11 @@ async function initChainLayer(){
     CHAIN_ENABLED=true;
     const s=document.createElement("script");
     s.src="/chain.js";
-    s.onload=()=>window.OddieChain&&window.OddieChain.init();
+    // The cluster travels with the flag that turned this on, so chain.js never
+    // has to name a network itself. It used to hardcode "Solana devnet", which
+    // would tell somebody spending real money they were on a test net the day
+    // the server moved.
+    s.onload=()=>window.OddieChain&&window.OddieChain.init(j.cluster);
     document.head.appendChild(s);
   }catch(e){/* real-stakes is optional; the core product never depends on this */}
 }

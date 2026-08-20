@@ -1,21 +1,51 @@
-// Real-stakes ("skin in the game") — opt-in, loaded ONLY when the server's
-// ONCHAIN_ENABLED flag is on (see initChainLayer() in feed.html: it fetches
-// /api/chain/status first and injects this file's <script> tag only when the
-// response says enabled). This file existing in a page load already means the
-// flag is on; there is no further flag check inside it, and nothing in here
-// runs unless feed.html decided to load it.
+// Betting, with real SOL. Loaded only when /api/chain/status says the server
+// can reach the chain (see initChainLayer() in feed.html, which injects this
+// file's script tag and hands it the cluster). This file existing in a page
+// load already means that answered yes; there is no further flag check inside
+// it.
 //
-// Architecture: the server ASSEMBLES take_position/claim_winnings
-// transactions (see the /api/chain/* routes in server.ts) but never signs or
-// holds a user's funds — the user's own wallet (Phantom) signs and broadcasts
-// client-side. This file only talks to window.solana (Phantom's injected
-// provider) and this app's own same-origin /api/chain/* routes. The one piece
-// of real client-side Solana code it needs — deserializing the server-built
-// transaction bytes so Phantom can sign them — is loaded from a CDN lazily, on
-// first actual stake attempt, not merely when this file loads: seeing the
-// "make it real" button costs nothing extra.
+// It was written as an optional extra called "skin in the game", sitting
+// beside a free play-token game that was the actual product, and much of the
+// copy in here still needs reading with that in mind. It is not an extra any
+// more. This is how a position is taken, the only way, and the sheets below
+// should read like the main path rather than an upsell off one.
+//
+// Architecture, unchanged and worth keeping: the server ASSEMBLES
+// take_position / claim_winnings / claim_creator_fee transactions (the
+// /api/chain/* routes in server.ts) but never signs them and never holds a
+// user's funds. The user's own wallet signs and broadcasts, client-side. This
+// file talks to window.solana and to this app's own same-origin routes, and to
+// nothing else. The one piece of real client-side Solana code it needs, for
+// deserializing the server-built transaction bytes so the wallet can sign
+// them, loads from a CDN lazily on the first actual bet rather than on page
+// load: looking at odds should not cost a library fetch.
 (function () {
-  const CLUSTER_LABEL = "Solana devnet";
+  /** Stake sizes, in SOL. Small enough that the first one is not a decision. */
+  const PRESETS = [0.05, 0.1, 0.25];
+
+  /**
+   * The network, from the server, never guessed here.
+   *
+   * This was the string "Solana devnet", written into the copy and again into
+   * every explorer link. Hardcoding it survives exactly until the day the
+   * server points at mainnet, and then it does the worst thing a label can do:
+   * it tells somebody spending real money that they are on a test network, and
+   * links them to an explorer page that shows nothing. The server reports its
+   * own cluster on every market read; this only formats it.
+   */
+  function clusterLabel(c) {
+    return c === "mainnet-beta" ? "Solana" : c === "testnet" ? "Solana testnet" : "Solana devnet";
+  }
+  function txUrl(sig, c) {
+    const q = (c || "devnet") === "mainnet-beta" ? "" : `?cluster=${c || "devnet"}`;
+    return `https://explorer.solana.com/tx/${sig}${q}`;
+  }
+
+  /** Set once from /api/chain/status before init() runs. Defaults to the
+   *  safest wrong answer: mislabelling mainnet as devnet would be far worse
+   *  than the reverse, so the default is the one that cannot understate risk. */
+  let CLUSTER = "devnet";
+
   let web3 = null; // @solana/web3.js, lazy-loaded on first real use
   let wallet = null; // {publicKey: string} once connected, shared across sheets in this session
 
@@ -53,19 +83,49 @@
     return s.length > 10 ? s.slice(0, 4) + "…" + s.slice(-4) : s;
   }
 
-  // Mirrors markets.ts's poolPct exactly (same clamp, same rounding) — this
-  // is the REAL-MONEY pool's own odds, computed from on-chain lamports
-  // (Market.total_yes/total_no), entirely separate from the play-token pool
-  // the card's own YES/NO buttons already show live (see updateCardOdds in
-  // feed.html). Two pools, two numbers, on purpose: a user can be "70% on
-  // YES" in predictions and "30% on YES" in real SOL on the very same
-  // market, because they are different people making different bets.
+  // Mirrors markets.ts's poolPct exactly (same clamp, same rounding), over the
+  // vault's own lamports (Market.total_yes/total_no).
+  //
+  // This used to be one of two numbers. A market carried a play-token pool and
+  // a real-SOL pool at once, and the comment here defended showing both: the
+  // same market could read 70% YES in predictions and 30% YES in SOL, because
+  // they were different people betting different things. That stopped being a
+  // feature the moment real money became the only money. Two odds for one
+  // question is now just a wrong number next to a right one, and the play
+  // figure is the wrong one. This is the line.
   function poolPct(chosen, opposite) {
     const total = chosen + opposite;
     if (total <= 0) return null;
     return Math.max(1, Math.min(99, Math.round((chosen / total) * 100)));
   }
   function fmtMult(pct) { return (100 / pct).toFixed(1) + "×"; }
+
+  /**
+   * What this bet pays if it wins, at the odds as they stand right now.
+   *
+   * Mirrors the program's arithmetic (resolve_market then claim_winnings): the
+   * fee comes off the whole pool first, and the rest is split across the
+   * winning side in proportion to stake. Your own money is inside both of
+   * those totals, which is the part people get wrong when they estimate it
+   * themselves, and it is why the number moves as others join.
+   *
+   * A live estimate, not a promise, and it says so. Every later bet on the
+   * other side raises it and every later bet on yours lowers it, so quoting it
+   * as a fixed payout would be the one number in this sheet that is reliably
+   * wrong by the time the market resolves.
+   */
+  function payoutHint(side, sol, yesLamports, noLamports, feeBps) {
+    const mine = sol * 1e9;
+    const same = (side === "yes" ? yesLamports : noLamports) + mine;
+    const other = side === "yes" ? noLamports : yesLamports;
+    const pool = same + other;
+    const distributable = pool - Math.floor((pool * (feeBps || 0)) / 10000);
+    const take = (mine / same) * distributable / 1e9;
+    // A market with nothing on the other side pays you back your own stake
+    // minus the fee, which is not a win and should not be dressed as one.
+    if (other <= 0) return `Nothing on the other side yet, so this only pays if someone takes it.`;
+    return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
+  }
 
   function sheetShell() {
     const dim = document.createElement("div");
@@ -95,7 +155,7 @@
     };
 
     if (!wallet) {
-      shell(`<p class="cnote">This market settled <b>${won}</b> on ${CLUSTER_LABEL}. If you had real SOL on it, connect the wallet you staked with to collect.</p>
+      shell(`<p class="cnote">This market settled <b>${won}</b> on ${clusterLabel(CLUSTER)}. If you had real SOL on it, connect the wallet you staked with to collect.</p>
         <button class="cbtn" id="chainconnect">Connect wallet to check</button>
         <button class="cclose">Not now</button>`);
       body.querySelector("#chainconnect").onclick = async () => {
@@ -121,7 +181,7 @@
     } catch (e) { reachable = false; }
 
     if (!reachable) {
-      shell(`<p class="cnote">Couldn't read your position from ${CLUSTER_LABEL} just now. Your funds are unaffected — try again in a moment.</p>
+      shell(`<p class="cnote">Couldn't read your position from ${clusterLabel(CLUSTER)} just now. Your funds are unaffected, try again in a moment.</p>
         <button class="cclose">Close</button>`);
       return;
     }
@@ -162,8 +222,8 @@
         btn.textContent = "Confirm in wallet…";
         const { signature } = await window.solana.signAndSendTransaction(tx);
         body.innerHTML = `<h3>Collected ✓</h3>
-          <p class="cnote">Your winnings are on their way to your wallet, on ${CLUSTER_LABEL}.</p>
-          <p class="chain-sig">tx: <a href="https://explorer.solana.com/tx/${signature}?cluster=devnet" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          <p class="cnote">Your winnings are on their way to your wallet, on ${clusterLabel(CLUSTER)}.</p>
+          <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       } catch (e) {
@@ -209,73 +269,119 @@
     const yesLamports = marketState.totalYesLamports ?? 0, noLamports = marketState.totalNoLamports ?? 0;
     const yesOnchainPct = poolPct(yesLamports, noLamports), noOnchainPct = yesOnchainPct == null ? null : 100 - yesOnchainPct;
     const onchainOddsHTML = yesOnchainPct == null
-      ? `<p class="chain-pool-empty">No real stake on this market yet — first in sets the line.</p>`
+      ? `<p class="chain-pool-empty">No real stake on this market yet. First in sets the line.</p>`
       : `<div class="chain-pool-odds">
            <span class="chain-pool-side">YES <b>${yesOnchainPct}%</b> <small>${fmtMult(yesOnchainPct)}</small></span>
            <span class="chain-pool-side">NO <b>${noOnchainPct}%</b> <small>${fmtMult(noOnchainPct)}</small></span>
          </div>`;
 
-    // Proposed creator + protocol fee rates — disclosed even though neither is
-    // actually deducted yet (the on-chain program has no fee instruction; see
-    // economy.ts). Saying so plainly beats staying silent about a rate we
-    // intend to charge once the program supports it.
-    const feeNoteHTML = (marketState.realCreatorFeeBps || marketState.realProtocolFeeBps)
-      ? `<p class="chain-fee-note">Proposed fees: creator ${((marketState.realCreatorFeeBps||0)/100).toFixed(0)}% · platform ${((marketState.realProtocolFeeBps||0)/100).toFixed(0)}% — not yet deducted on-chain.</p>`
+    // The fee, stated as the fact it now is. This used to read "proposed …
+    // not yet deducted on-chain", which was honest while the deployed program
+    // had no fee instruction. resolve_market takes it out of the pool now, so
+    // hedging about it would be the lie in the other direction. The platform
+    // rate is gone rather than printed as 0%: a line saying we charge nothing
+    // invites the question of when we will start.
+    const feeBps = marketState.realCreatorFeeBps || 0;
+    const feeNoteHTML = feeBps
+      ? `<p class="chain-fee-note">${(feeBps / 100).toFixed(0)}% of the pool goes to whoever started this market. Nothing goes to oddie.</p>`
       : "";
 
+    const label = clusterLabel(CLUSTER);
+    const testnet = CLUSTER !== "mainnet-beta";
+
     const render = () => {
+      // ORDER MATTERS, and it is the opposite of what this sheet used to do.
+      // Sides only appeared after connecting a wallet, which asked people to
+      // hand over a wallet before they were shown the thing they came to
+      // decide. Deciding is free and reversible; connecting is neither. So the
+      // sides are always here, the amount is always here, and the wallet is
+      // asked for at the last possible moment, by the same button that places
+      // the bet.
       body.innerHTML = `
-        <h3>Make it real</h3>
-        <p class="cnote">Optional. Real SOL on ${CLUSTER_LABEL}, separate from your free predictions above — this never affects them, and it's never required to play.</p>
+        <h3>Pick a side</h3>
+        <p class="cnote">Real SOL${testnet ? ` on ${label}` : ""}. Winners split the pool.</p>
         ${onchainOddsHTML}
         ${feeNoteHTML}
-        ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>`
-          : `<button class="cbtn" id="chainconnect">Connect wallet</button>`}
-        ${wallet ? `
         <div class="chain-side-row">
           <button class="chain-side" data-side="yes" type="button">YES</button>
           <button class="chain-side" data-side="no" type="button">NO</button>
         </div>
-        <input class="chain-amt" type="number" min="0.001" step="0.001" placeholder="SOL amount" inputmode="decimal">
+        <div class="chain-amt-row">
+          ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p}</button>`).join("")}
+          <button class="chain-chip" data-sol="custom" type="button">…</button>
+        </div>
+        <input class="chain-amt" type="number" min="0.001" step="0.001" placeholder="SOL amount" inputmode="decimal" hidden>
         <div class="chain-line" id="chainline"></div>
-        <button class="claimbtn" id="chainstake" disabled>Put SOL on it</button>
-        ` : ""}
+        <button class="claimbtn" id="chainstake" disabled>Pick a side</button>
+        ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>` : ""}
         <button class="cclose">Not now</button>`;
       body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
 
-      const connectBtn = body.querySelector("#chainconnect");
-      if (connectBtn) connectBtn.onclick = async () => {
-        connectBtn.disabled = true; connectBtn.textContent = "Connecting…";
-        try { await connectWallet(); render(); }
-        catch (e) {
-          connectBtn.disabled = false; connectBtn.textContent = "Connect wallet";
-          let err = body.querySelector(".chain-err");
-          if (!err) { err = document.createElement("p"); err.className = "chain-err"; connectBtn.after(err); }
-          err.textContent = e.message;
-        }
-      };
-
-      let side = null;
+      let side = null, sol = 0;
       const sideBtns = [...body.querySelectorAll(".chain-side")];
+      const chips = [...body.querySelectorAll(".chain-chip")];
       const amtInput = body.querySelector(".chain-amt");
       const stakeBtn = body.querySelector("#chainstake");
       const line = body.querySelector("#chainline");
+
+      // ONE button, and it never dead-ends. Whatever is missing is what it
+      // asks for next, so there is never a disabled control with no
+      // explanation of what would enable it.
       const refresh = () => {
-        const amt = parseFloat(amtInput ? amtInput.value : "");
-        if (stakeBtn) stakeBtn.disabled = !side || !(amt > 0);
-        if (line) line.textContent = side && amt > 0
-          ? `Staking ${amt} SOL on ${side.toUpperCase()}. Your wallet will ask you to confirm.` : "";
+        if (!side) { stakeBtn.disabled = true; stakeBtn.textContent = "Pick a side"; }
+        else if (!(sol > 0)) { stakeBtn.disabled = true; stakeBtn.textContent = "Choose an amount"; }
+        else if (!wallet) { stakeBtn.disabled = false; stakeBtn.textContent = "Connect wallet to bet"; }
+        else { stakeBtn.disabled = false; stakeBtn.textContent = `${side.toUpperCase()} · ${sol} SOL`; }
+        // Ternary, not `a && b && f()`. That short-circuits to the boolean
+        // `false` when either test fails, and textContent renders it as the
+        // word "false" sitting under the odds. Caught in the browser; it is
+        // invisible to every check that does not actually look at the sheet.
+        if (line) {
+          line.textContent = (side && sol > 0)
+            ? payoutHint(side, sol, yesLamports, noLamports, feeBps)
+            : "";
+        }
       };
+
       sideBtns.forEach((b) => b.onclick = () => {
         side = b.dataset.side;
         sideBtns.forEach((x) => x.classList.toggle("on", x === b));
         refresh();
       });
-      if (amtInput) amtInput.oninput = refresh;
-      if (stakeBtn) stakeBtn.onclick = async () => {
+      chips.forEach((c) => c.onclick = () => {
+        chips.forEach((x) => x.classList.toggle("on", x === c));
+        if (c.dataset.sol === "custom") {
+          amtInput.hidden = false; amtInput.focus();
+          sol = parseFloat(amtInput.value) || 0;
+        } else {
+          amtInput.hidden = true;
+          sol = parseFloat(c.dataset.sol);
+        }
+        refresh();
+      });
+      amtInput.oninput = () => { sol = parseFloat(amtInput.value) || 0; refresh(); };
+
+      stakeBtn.onclick = async () => {
+        // The connect step is folded into the same button rather than being a
+        // separate one earlier: someone who has already picked YES and 0.1 SOL
+        // has decided, and the wallet prompt is now a confirmation of that
+        // decision instead of a toll gate in front of it.
+        if (!wallet) {
+          stakeBtn.disabled = true; stakeBtn.textContent = "Check your wallet…";
+          try { await connectWallet(); }
+          catch (e) {
+            stakeBtn.disabled = false; refresh();
+            if (line) line.textContent = e.message;
+            return;
+          }
+          const w = body.querySelector(".chain-wallet");
+          if (!w) stakeBtn.insertAdjacentHTML("afterend", `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>`);
+          refresh();
+          return; // one more tap to bet, so a wallet popup never becomes a spend
+        }
         stakeBtn.disabled = true; stakeBtn.textContent = "Preparing…";
         try {
-          const lamports = Math.round(parseFloat(amtInput.value) * 1e9);
+          const lamports = Math.round(sol * 1e9);
           const prep = await fetch("/api/chain/position/prepare", {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ slug, userPubkey: wallet.publicKey, side, lamports }),
@@ -287,14 +393,14 @@
           const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
           stakeBtn.textContent = "Confirm in wallet…";
           const { signature } = await window.solana.signAndSendTransaction(tx);
-          body.innerHTML = `<h3>Staked ✓</h3>
-            <p class="cnote">${amtInput.value} SOL on ${side.toUpperCase()}, on ${CLUSTER_LABEL}.</p>
-            <p class="chain-sig">tx: <a href="https://explorer.solana.com/tx/${signature}?cluster=devnet" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          body.innerHTML = `<h3>You're in ✓</h3>
+            <p class="cnote">${sol} SOL on ${side.toUpperCase()}${testnet ? `, on ${label}` : ""}.</p>
+            <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
             <button class="cclose">Done</button>`;
           body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
         } catch (e) {
-          stakeBtn.disabled = false; stakeBtn.textContent = "Put SOL on it";
-          if (line) line.textContent = e.message || "Something went wrong — try again.";
+          stakeBtn.disabled = false; refresh();
+          if (line) line.textContent = e.message || "Something went wrong, try again.";
         }
       };
     };
@@ -496,7 +602,7 @@
   }
 
   async function refreshClaimable(box) {
-    box.innerHTML = `<div class="cc-row"><span class="cc-text">Checking ${CLUSTER_LABEL} for winnings…</span></div>`;
+    box.innerHTML = `<div class="cc-row"><span class="cc-text">Checking ${clusterLabel(CLUSTER)} for winnings…</span></div>`;
     let list = [];
     try {
       const r = await fetch(`/api/chain/claimable?userPubkey=${encodeURIComponent(wallet.publicKey)}`);
@@ -513,7 +619,11 @@
     box.querySelectorAll(".cc-claim").forEach((b) => b.onclick = () => openStakeSheet(b.dataset.slug));
   }
 
-  function init() {
+  /** `cluster` comes from the same /api/chain/status response that decided to
+   *  load this file at all, so the network named in the copy and the network
+   *  the server is actually on cannot disagree. */
+  function init(cluster) {
+    if (cluster) CLUSTER = cluster;
     scan();
     const scroller = document.getElementById("scroller");
     if (scroller) new MutationObserver(scan).observe(scroller, { childList: true, subtree: true });

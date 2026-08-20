@@ -72,7 +72,35 @@ const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html")
 // dynamic, so this only ever answers for real files. oddie.fun points straight at
 // this service, so these are served here from ./public — one origin, no proxy
 // allow-list to keep in sync, so the whole /api/ev class of rewrite gaps is gone.
-app.use(express.static(path.join(__dirname, "../public"), { index: false, maxAge: "7d" }));
+/**
+ * chain.js is exempt from the week, and it is the one file that has to be.
+ *
+ * It is the money surface: it names the network someone is spending on, states
+ * the fee, and builds the flow that ends in a wallet signature. A seven-day
+ * max-age means a returning browser does not even ASK whether it changed, so a
+ * deploy that moves the app to mainnet leaves people staring at "Solana
+ * devnet" over real SOL for a week, and a corrected fee line takes a week to
+ * reach the people it was corrected for. Nothing else in public/ can be wrong
+ * in a way that costs money.
+ *
+ * no-cache is not no-store: the file is still cached, the browser just has to
+ * revalidate, and express.static's own ETag turns almost every one of those
+ * into a 304. The cost is one conditional request per load; the alternative is
+ * a stale betting UI with no way to invalidate it.
+ *
+ * Set through `setHeaders` rather than a middleware in front of this one.
+ * express.static writes its own Cache-Control from `maxAge` when it serves the
+ * file, so anything set earlier is silently overwritten and the exemption
+ * looks applied while doing nothing. setHeaders runs last, right before the
+ * send, which is the only hook that wins.
+ */
+app.use(express.static(path.join(__dirname, "../public"), {
+  index: false,
+  maxAge: "7d",
+  setHeaders: (res, filePath) => {
+    if (path.basename(filePath) === "chain.js") res.setHeader("Cache-Control", "no-cache");
+  },
+}));
 
 /**
  * The public landing page, served at "/".
@@ -2299,7 +2327,12 @@ function venueRealMoneyReady(req: express.Request): boolean {
 app.get("/api/chain/status", (req, res) => {
   // Community-only surface: the master flag decides, not the geofence.
   noteGeoForCommunity(req);
-  res.json({ enabled: realStakesReady });
+  // The cluster ships with the flag so the client has ONE source for it. It
+  // used to be a string typed into chain.js, which survives exactly until the
+  // server points at mainnet and then tells somebody spending real money that
+  // they are on a test network, and links them to an explorer page showing
+  // nothing.
+  res.json({ enabled: realStakesReady, cluster: cluster() });
 });
 
 /**
