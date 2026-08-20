@@ -92,6 +92,12 @@
 
   .eyebrow{color:var(--lime);font-family:'Fredoka';font-size:13px;font-weight:600;
     letter-spacing:.16em;text-transform:uppercase}
+  /* Under the loud band's eyebrow. Quiet on purpose: it is a disclaimer, and a
+     loud disclaimer next to three big numbers reads as an apology for them.
+     It exists because the step above this band pays SOL and this band pays
+     score, one screen apart, and without a line saying which is which the page
+     invents a second currency. */
+  .bandnote{margin:7px 0 0;font-family:'Nunito';font-size:13.5px;font-weight:600;color:var(--fg-2)}
 
   /* Line icons, drawn rather than typed. The emoji these replace fell back to a
      monochrome glyph at 12-15px on this platform and rendered as grey boxes, so
@@ -619,11 +625,11 @@
             <div><h2 class="step__t">The tagger earns</h2>
               <p class="step__b">The more people your market pulls in, the more it pays you.</p></div>
           </div>
-          <div class="mock" role="img" aria-label="Example receipt: a market you tagged reached twenty-five players and paid its tagger one thousand five hundred oddies, on a ladder that pays again at ten, twenty-five and a hundred players.">
-            <div class="rcp__top"><span aria-hidden="true">✓</span> Your market hit 25 players</div>
-            <div class="rcp__big">+1,500</div>
-            <div class="rcp__cap">oddies, to whoever tagged it</div>
-            <div class="rcp__note">It pays again at 10, 25 and 100 players, plus 3% of everything staked when it resolves.</div>
+          <div class="mock" role="img" aria-label="Example receipt: a market you tagged held four SOL and paid its tagger three per cent of the pool, zero point one two SOL, when it resolved.">
+            <div class="rcp__top"><span aria-hidden="true">✓</span> Your market resolved with 4 SOL in it</div>
+            <div class="rcp__big">+0.12</div>
+            <div class="rcp__cap">SOL, to whoever tagged it</div>
+            <div class="rcp__note">3% of the pool, taken before winners are paid, claimed with your own wallet. Nothing goes to oddie.</div>
           </div>
         </div>
 
@@ -633,16 +639,23 @@
 
     <!-- The incentive, stated in numbers. Everything above is the mechanic;
          this is the reason to run it loudly. Every figure here is the shipped
-         one — the ladder in SEASON_POINTS, doubled into oddies by
-         SCORE_WEIGHTS.contribution, and LOUD_MULT_MAX for the multiplier — so
-         the page can never promise more than the product pays. -->
+         one: the ladder in SEASON_POINTS, doubled by SCORE_WEIGHTS.contribution,
+         and LOUD_MULT_MAX for the multiplier, so the page can never promise
+         more than the product pays.
+
+         These are SCORE, not money, and the copy has to keep saying so. Step 4
+         above pays SOL and this band pays points, one screen apart, so any
+         wording that lets them blur reads as a second currency the product
+         does not have. The rule for editing this band: the money is upstairs,
+         these are the standings. -->
     <div class="band">
       <p class="eyebrow reveal">Call it loud</p>
+      <p class="bandnote reveal">Points, not payouts. The money is the 3% above.</p>
       <div class="loud">
         <div class="loudc reveal">
           <div class="loudc__n">+150</div>
           <div class="loudc__t">Share your call</div>
-          <div class="loudc__b">Paste the link to your post. Once it clears review, the oddies are yours.</div>
+          <div class="loudc__b">Paste the link to your post. Once it clears review, the points are yours.</div>
         </div>
         <div class="loudc reveal">
           <div class="loudc__n">+300</div>
@@ -714,7 +727,7 @@
       <p class="eyebrow">Built for the internet's arguments</p>
       <div class="feats">
         <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M11 18.2h2"/></svg> Nothing to install</span>
-        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/></svg> Everything pays oddies</span>
+        <span class="feat"><svg class="ico ico--lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/></svg> Winners split the pool</span>
       </div>
     </div>
   </section>

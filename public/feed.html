@@ -958,13 +958,18 @@
   /* In the flow, under the buttons. Floated above them it landed in the same strip
      as the prepay line ("+N predictions if right") and sat on top of it. Kept in
      the layout at opacity 0 so nothing reflows when it fades in. */
-  /* balance pill — small and friendly, never a dollar sign anywhere near it */
+  /* The score pill. Class name says .bal for the same reason renderCard's
+     --white does: renaming it would touch every call site and every stylesheet
+     rule for no behaviour change, and the comment is cheaper than the churn.
+     It is a score, not a balance, and it must never look like money: the only
+     money in oddie is SOL in a wallet this app never holds. */
   .bal{margin-left:8px;font-family:'Nunito';font-weight:800;font-size:13.5px;
     padding:4px 11px;border:1.5px solid var(--ink);border-radius:999px;
     background:var(--wash);white-space:nowrap;font-variant-numeric:tabular-nums}
   .bal.pulse{animation:balpulse .45s ease}
-  /* "left" label inside the balance pill — makes clear the number is the
-     spendable predictions balance, distinct from the Oddie Score (reputation). */
+  /* The unit label under the number. It read "left", from when the pill counted
+     a spendable allowance; it reads "score" now, because nothing here is spent
+     and an allowance nobody draws down is just a number wearing a costume. */
   .ptslbl{font-size:9.5px;font-weight:800;opacity:.62;letter-spacing:.03em;text-transform:uppercase}
   /* Pick-streak badge — visible identity beside the balance. Small, warm, fixed
      colours (holds contrast in both themes); only rendered at streak 2+. */
@@ -1876,8 +1881,10 @@
     65%{opacity:1}
     100%{opacity:0;transform:translateY(-5px) scale(.96)}
   }
-  /* Predictions — the spendable play balance, the OTHER of the two user numbers.
-     A quiet strip above the identity block so the profile leads with both. */
+  /* The score strip above the identity block. Called "the spendable play
+     balance" here while there were two user numbers and one of them was spent.
+     Neither is true now: calls are free, bets are SOL, and this is the single
+     number the profile leads with. */
   /* Badges — earned identity as MEDALLIONS, not flat pills: a circular icon with
      a lime medal-sheen + real shadow, caption below. Same visual language as
      home's how-it-works steps (a circle behind an icon), but with more presence
@@ -2450,21 +2457,28 @@ function paintBalance(pulse){
     if(el.dataset.wired)return;
     el.dataset.wired="1";
     el.setAttribute("role","button");
-    el.setAttribute("aria-label","Save your oddies across devices");
+    el.setAttribute("aria-label","Your oddie score. Sign in to keep it across devices.");
     el.onclick=()=>connectSheet();
   });
   // Two pills — the mobile header's and the desktop rail's. Same number always.
   // The refill line only appears when it can do something for you: with a full
   // balance there is nothing to count down to, and a countdown to nothing is a nag.
   document.querySelectorAll(".bal").forEach(el=>{
+    // A SCORE, and it has to read as one now.
+    //
     // The unit is NAMED, not implied: "5 LEFT" made a newcomer ask "5 what?"
-    // as their first question. ONE unit now: oddies. The pill used to count
-    // predictions, which was honest while a call cost one; a call is free, so
-    // that number can only go up and buys nothing, and a figure nobody spends
-    // does not deserve the most prominent slot on the screen. It shows what
-    // the player is actually building instead, and reads 0 for a newcomer,
-    // which is a true and inviting number rather than a fake allowance.
-    el.innerHTML=`🪙 ${oddies} <span class="ptslbl">${oddies===1?"oddie":"oddies"}</span>`;
+    // as their first question. It counted predictions once, honest while a
+    // call cost one. A call became free, so the number could only go up and
+    // bought nothing, and it was already closer to a score than a balance.
+    //
+    // Real money finished the argument. The only spendable thing in oddie is
+    // SOL in a wallet oddie never touches, so a coin glyph and a count in the
+    // top-left corner of a betting app reads as "here is your money" and is
+    // wrong twice: it is not money, and the number beside it is not what you
+    // could bet. The trophy and the word "score" are doing load-bearing work,
+    // not decoration. 0 for a newcomer stays right: an honest starting score,
+    // where a fake allowance would have been an IOU nobody owed.
+    el.innerHTML=`🏆 ${oddies} <span class="ptslbl">score</span>`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
     // Persistent pick-streak badge as visible identity, right beside the balance.
     // Shown only at 2+ (a 1 isn't a streak); it disappears the moment a wrong
