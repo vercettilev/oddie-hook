@@ -2108,15 +2108,28 @@ app.post("/api/community/extract", requireAdmin, async (req, res) => {
  * real rent on Solana, so the create route is metered.
  */
 
-/** Naive fixed-window limiter, in memory. Resets on deploy, which is fine for
- *  what it defends: the cost of an abusive burst is SOL rent, not data. */
+/**
+ * Naive fixed-window limiter, in memory. Resets on deploy, which is fine for
+ * what it defends: the cost of an abusive burst is SOL rent, not data.
+ *
+ * CHECKING and RECORDING are separate calls, and that split is the whole
+ * point. The first version counted every request, so five malformed bodies in
+ * a row locked a client out for an hour despite creating nothing and spending
+ * nothing. The meter exists to protect rent, and a request rejected for a bad
+ * source_url never reached the mint. Only a market that actually got minted
+ * costs us anything, so only that is recorded.
+ */
 const v1Hits = new Map<string, { n: number; resetAt: number }>();
-function overLimit(key: string, max: number, windowMs: number): boolean {
+function overLimit(key: string, max: number): boolean {
+  const cur = v1Hits.get(key);
+  if (!cur || Date.now() > cur.resetAt) return false;
+  return cur.n >= max;
+}
+function recordHit(key: string, windowMs: number): void {
   const now = Date.now();
   const cur = v1Hits.get(key);
-  if (!cur || now > cur.resetAt) { v1Hits.set(key, { n: 1, resetAt: now + windowMs }); return false; }
+  if (!cur || now > cur.resetAt) { v1Hits.set(key, { n: 1, resetAt: now + windowMs }); return; }
   cur.n++;
-  return cur.n > max;
 }
 
 type OpenMarketResult =
@@ -2269,10 +2282,10 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
  */
 app.post("/api/v1/markets", async (req, res) => {
   const ip = String(req.ip ?? req.socket.remoteAddress ?? "unknown");
-  if (overLimit(`v1create:${ip}`, 5, 3600_000)) {
+  if (overLimit(`v1create:${ip}`, 5)) {
     return res.status(429).json({ ok: false, error: "rate limit: 5 markets per hour per client" });
   }
-  if (overLimit("v1create:global", 100, 86_400_000)) {
+  if (overLimit("v1create:global", 100)) {
     return res.status(429).json({ ok: false, error: "rate limit: the shared daily ceiling is full, try tomorrow" });
   }
   const out = await openMarketFromClaim({
@@ -2284,6 +2297,9 @@ app.post("/api/v1/markets", async (req, res) => {
     resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
   });
   if (!out.ok) return res.status(out.status).json({ ok: false, error: out.error });
+  // Recorded here and nowhere else: the market exists, so it cost us rent.
+  recordHit(`v1create:${ip}`, 3600_000);
+  recordHit("v1create:global", 86_400_000);
   res.json({
     ok: true, slug: out.slug, url: `${BASE_URL}/m/${out.slug}`,
     onchain: out.onchain, cluster: cluster(),
