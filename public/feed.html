@@ -1670,9 +1670,10 @@
   @keyframes livedot{0%{box-shadow:0 0 0 0 rgba(182,240,95,.6)}70%{box-shadow:0 0 0 7px rgba(182,240,95,0)}100%{box-shadow:0 0 0 0 rgba(182,240,95,0)}}
   @media (prefers-reduced-motion:reduce){.lsi:first-child .lsi-n::after{animation:none}}
 
-  /* Claim streak — the grind, made visible where a returning farmer lands. Sits
-     directly above the claim strip; the claim card drops its own duplicate
-     mention of the streak whenever this pill is rendering (see claimCard). */
+  /* The streak pill. It described the CLAIM streak: consecutive days somebody
+     turned up and pressed a button. What it renders now is the PICK streak,
+     consecutive calls that turned out right, which is the one worth showing
+     because it cannot be farmed by showing up. */
   .streakpill{display:inline-flex;align-items:center;gap:6px;font-family:'Nunito';font-weight:900;
     font-size:12px;color:#7a4a00;background:#ffeec2;border:1.5px solid #e8b34a;
     border-radius:999px;padding:5px 12px}
@@ -2301,12 +2302,12 @@
 
 <script>
 const API=""; // same origin
-// Mirror economy.ts's STARTING_PREDICTIONS/CALL_COST/DAILY_CLAIM/CONNECT_BONUS
-// exactly — display-only copies, never authoritative (the server enforces the
-// real numbers, and always CALL_COST regardless of what a request sends — see
-// /api/market/:slug/call). Used for the optimistic UI (deduct-before-response)
-// and copy that quotes these amounts before the server has answered.
-const STARTING_PREDICTIONS=5, CALL_COST=1, DAILY_PREDICTIONS=5, CONNECT_BONUS=5;
+/* The mirrored economy constants are gone with the economy they described.
+   They existed for an optimistic UI that deducted before the server answered,
+   and the comment above them promised they mirrored economy.ts exactly. They
+   did not: CALL_COST sat at 1 here against 0 on the server, so a tap drew the
+   balance down by one and the next /api/me snapped it back. Nothing reads them
+   now, which is the only reason that drift never cost anybody anything. */
 
 /* -------------------------------------- real-stakes layer (opt-in, gated) --
  * "Skin in the game" — an entirely optional, separate layer for putting real
@@ -2343,24 +2344,17 @@ async function initChainLayer(){
  * a second tab or a reload always shows what the database says. `balance` is
  * null until /api/me answers.
  */
-let balance=null, oddies=0, claim=null, pickStreak=0;
+let balance=null, oddies=0, pickStreak=0;
 // Identity extras from /api/me, for the private profile: earned badges and the
 // season rank. Cached from the same call that fills the balance pill.
 let myBadges=[], myRank=null;
 let myHandle=null, myHandleEditable=true;
 // "14h", "40m", "any moment" — the wait until the next daily claim opens.
-function claimWhen(ms){
-  if(ms===null||ms===undefined)return "soon";
-  const h=Math.floor(ms/3600000);
-  if(h>=1)return `${h}h`;
-  const m=Math.floor(ms/60000);
-  return m>=1?`${m}m`:"any moment";
-}
 let myOpenCalls=null, myCreator=null;
 async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
-    if(r.ok){const w=await r.json();balance=w.tokens;if(typeof w.oddies==="number")oddies=w.oddies;if(w.claim)claim=w.claim;
+    if(r.ok){const w=await r.json();balance=w.tokens;if(typeof w.oddies==="number")oddies=w.oddies;
       if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
       myBadges=w.badges||[];myRank=w.rank||null;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;
@@ -2422,25 +2416,7 @@ function statusStrip(){
 }
 
 // The real countdown lives on the daily claim now — there is no more passive
-// top-up to have a separate countdown for. "in 7h", "in 40m", "soon", never a
-// bare number of milliseconds.
-function nextRefillIn(){
-  const ms=claim?.nextClaimMs;
-  if(ms===null||ms===undefined)return "";
-  const h=Math.floor(ms/3600000);
-  if(h>=1)return `+${DAILY_PREDICTIONS} in ${h}h`;
-  const m=Math.floor(ms/60000);
-  return m>=1?`+${DAILY_PREDICTIONS} in ${m}m`:`+${DAILY_PREDICTIONS} soon`;
-}
 // Just the "when", for prose: "21h", "40m", "any minute now".
-function nextRefillWhen(){
-  const ms=claim?.nextClaimMs;
-  if(ms===null||ms===undefined)return "soon";
-  const h=Math.floor(ms/3600000);
-  if(h>=1)return `${h}h`;
-  const m=Math.floor(ms/60000);
-  return m>=1?`${m}m`:"any minute now";
-}
 // A device at 0 is not locked out. If it holds open calls it can sell for
 // whatever they're worth right now; either way the daily refill is coming.
 function zeroNote(d){
@@ -3340,10 +3316,8 @@ async function loadFeed(){
     // to render at the top on first paint (the retention hook, not a later pop-in).
     const [r,cr]=await Promise.all([
       fetch(`${API}/api/feed?${q}`),
-      fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`).catch(()=>null),
     ]);
     if(!r.ok)throw new Error("feed "+r.status);
-    if(cr&&cr.ok)claim=await cr.json();
     const data=await r.json();
     feedTop(data.categories);
     renderFeed(data.items);
@@ -3406,25 +3380,14 @@ function maybeFeedTop(scroller){
   //
   // ONE PROMPT AT A TIME, NOT TWO STACKED.
   //
-  // The claim card and the tag banner were both rendering, one under the other,
-  // and both say "do something" — two competing asks above the first market is
-  // the crowding, not either of them individually. So:
-  //
-  //  - claimable: the claim leads, alone. It is a two-second action with an
-  //    immediate reward and it EXPIRES, so it has the better claim on the slot.
-  //  - already claimed: the card is only a countdown, which is information
-  //    nobody came to the feed for. It is dropped here entirely (home still
-  //    renders it — that is where a retention surface belongs) and the tag
-  //    banner takes the slot instead.
-  //
-  // Net: the top of the feed holds at most one thing, ever.
-  const claimable=!!claim && claim.claimable && !startSlug;
-  const showClaim=claimable;
-  const showTag=cold && !lsGet(ONB_KEY) && !claimable;
-  const showFollow=cold && !lsGet(FOLLOW_KEY) && !claimable;
-  if(!showClaim && !showTag && !showFollow)return;   // the strip inserts itself later, see paintStatusStrip
+  // The tag banner has this slot to itself. It used to share it with the daily
+  // claim card, and the rule was that the claim led when claimable because it
+  // expired and the banner did not. Nothing expires here any more, so the
+  // arbitration went with the claim.
+  const showTag=cold && !lsGet(ONB_KEY);
+  const showFollow=cold && !lsGet(FOLLOW_KEY);
+  if(!showTag && !showFollow)return;   // the strip inserts itself later, see paintStatusStrip
   const wrap=document.createElement("div"); wrap.className="onbwrap";
-  if(showClaim)wrap.appendChild(claimCard());
   const prune=()=>{ if(!wrap.querySelector(".onbstrip,.claimcard,.ystrip"))wrap.remove(); };
   // ONE consolidated onboarding banner: the tag instruction is the primary CTA;
   // the follow prompt rides inline as a secondary pill on the same strip (not a
@@ -3449,54 +3412,10 @@ function maybeFeedTop(scroller){
   scroller.appendChild(wrap);
 }
 
-// The daily-claim card. Prominent (lime, a Claim button) when claimable; quiet
-// (a countdown) once claimed. The streak line is the reason to come back.
-// `streakShownAbove` is set by home, which renders the streak as its own pill
-// directly above this card — without it the same "🔥 N-day streak" would appear
-// twice, a few pixels apart.
-function claimCard(opts={}){
-  const {streakShownAbove=false}=opts;
-  const el=document.createElement("div");
-  const st=claim.streak||0;
-  // Say the streak here only when nothing else on the page is already saying it.
-  const sayStreak=st>0 && !streakShownAbove;
-  if(claim.claimable){
-    el.className="claimcard ready";
-    el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">Claim your daily oddies</div>
-        <div class="cc-sub">${sayStreak?`🔥 ${st}-day streak — keep it alive`:st>0?"keep the streak alive":"tap to start your streak"}</div>
-      </div>
-      <button class="claimbtn" id="claimbtn">Claim +${claim.amount}</button>`;
-    el.querySelector("#claimbtn").onclick=async(e)=>{
-      const btn=e.currentTarget; btn.disabled=true; btn.textContent="…";
-      try{
-        const r=await fetch(`${API}/api/claim`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
-        const j=await r.json();
-        if(!r.ok)throw new Error("claim "+r.status);
-        claim={claimable:false,nextClaimMs:j.nextClaimMs,streak:j.streak,amount:j.amount,lastClaimAt:j.lastClaimAt};
-        if(typeof j.oddies==="number")oddies+=j.oddies;
-        if(typeof j.balance==="number"){balance=j.balance;paintBalance(true);}
-        ev("claim_daily",{streak:j.streak,granted:j.oddies});
-        // Claiming can START a streak (0 -> 1), so the pill above has to be
-        // brought into existence / updated, not just this card swapped.
-        el.replaceWith(claimCard(opts));  // same context, so the streak isn't double-said
-        if(typeof opts.onClaimed==="function")opts.onClaimed(j.streak);
-        if(j.oddies>0)toast(`+${j.oddies} oddies · 🔥 ${j.streak}-day streak`);
-      }catch(err){btn.disabled=false;btn.textContent=`Claim +${claim.amount}`;}
-    };
-  }else{
-    el.className="claimcard done";
-    el.innerHTML=`<div class="cc-grow">
-        <div class="cc-title">✓ Predictions claimed${sayStreak?` · 🔥 ${st}-day streak`:""}</div>
-        <div class="cc-sub">come back for tomorrow's drop to keep the streak</div>
-      </div>
-      <div class="cc-next">next in ${claimWhen(claim.nextClaimMs)}</div>`;
-    // A confirmation, not a standing CTA: collapse to a slim one-line pill after a
-    // few seconds so it stops competing with the tag banner for space on mobile.
-    setTimeout(()=>el.classList.add("cc-mini"),4000);
-  }
-  return el;
-}
+/* The daily claim card is gone with the claim. It offered "+5" once a day on
+   a streak, into a balance that only the play-token call could spend, and that
+   call is gone too. A button that increments a number for its own sake is not
+   a retention loop, it is a chore with a reward animation. */
 
 
 function renderFeed(items){
@@ -4141,11 +4060,12 @@ function buildCard(m,i,homeLoop){
     const soc=card.querySelector("#soc"+i);
 
     /**
-     * One tap, one prediction, done. There is no amount to choose — every call
-     * costs CALL_COST — so there is nothing left to pick. A tap opens a 5s undo
-     * window (startPending/pendingUI), which either times out into the real
-     * call (commitPending -> placeNow) or is cancelled (cancelPending), never
-     * both.
+     * One tap picks a side and opens the bet sheet on it.
+     *
+     * It used to be the whole transaction: every call cost the same, so there
+     * was nothing to choose and a tap placed it behind a five-second undo. An
+     * amount and a signature exist now, so the tap is the first of three steps
+     * rather than all of them, and the sheet carries the rest.
      */
     const pct=()=>side==="yes"?yes:no;
     let side=null;
@@ -4269,145 +4189,18 @@ function buildCard(m,i,homeLoop){
       card.querySelector("#nudge"+i).classList.add("show");
       card.querySelector("#nudge"+i).classList.remove("hint");
     };
-    // Out of predictions is not a dead end — it's the trigger for the one
-    // behavior this product wants most (tagging @oddiefun). This is the
-    // baseline honest state for it; the CTA itself is a separate, reviewable
-    // step (out-of-predictions -> tag prompt) built on top of this same slot.
-    const outOfPredictionsLine=()=>
-      `Out of predictions — next free one in ${nextRefillWhen()}.`;
-
-    const placeNow=async(s)=>{
-      try{
-        const r=await fetch(`${API}/api/market/${m.slug}/call`,{method:"POST",
-          headers:{"content-type":"application/json"},
-          body:JSON.stringify({side:s,tokens:CALL_COST,deviceId})});
-        const j=await r.json().catch(()=>({}));
-        const reopen=()=>{
-          y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
-        };
-        if(!r.ok||!j.ok){
-          // The call did not go through. A one-tap optimistically deducted the
-          // stake up front; give it back before we render why. (insufficient
-          // overwrites this with the server's authoritative balance just below.)
-          balance=(balance??0)+CALL_COST;paintBalance();
-          // Not on the list / free taste spent — this IS the gate moment. Bring it
-          // forward in place, not a picker that quietly fails.
-          if(j.reason==="not_allowed"){
-            y.disabled=nb.disabled=true;
-            soc.className="social gatecard";
-            soc.innerHTML=terminalGateInner();wireTerminalGate(soc);
-            ev("gate_shown",{via:"taste_used",slug:m.slug,reason:GATE.reason});
-            return;
-          }
-          // Out of predictions — never "try again" (trying again can't make more).
-          if(j.reason==="insufficient"){
-            reopen();
-            balance=j.balance;paintBalance(true);
-            soc.textContent=outOfPredictionsLine();
-            return;
-          }
-          // Structural refusals — the market, not the network. Trying again changes
-          // nothing, so don't promise it will.
-          if(j.reason==="unpriced"){
-            reopen();soc.textContent="This one isn't quoted right now — the odds moved to the edge. Try another market.";
-            return;
-          }
-          if(j.reason==="unknown-market"||r.status===404){
-            reopen();soc.textContent="This market just closed — it's no longer taking calls.";
-            return;
-          }
-          // A 5xx or an unreadable body is a server-side hiccup — genuinely
-          // transient, the one refusal where "try again" is the honest answer.
-          if(r.status>=500||!j.reason){
-            reopen();soc.textContent="Something went wrong on our end — give it a moment and try again.";
-            return;
-          }
-          // Some other named refusal we didn't special-case: surface the server's
-          // own words if they're human, else an honest structural note.
-          reopen();soc.textContent=j.error&&j.error.length<90?j.error:"Couldn't lock it — the market won't take that call.";
-          return;
-        }
-        balance=j.balance;paintBalance(true);loadBalance();
-        // Trigger 1 of 2 for the live tote-board (see updateCardOdds). j.pctAt
-        // is the ENTRY price — what the pool looked like right before this
-        // call joined it, deliberately (a fill price has to be quoted from
-        // before your own order, or it isn't a real price) — so it is the
-        // WRONG number to paint on the card afterward: on a thin pool, your
-        // own call can be most of what just moved it. One small follow-up
-        // fetch gets the real post-call split instead of asserting one.
-        fetch(`${API}/api/market/${m.slug}`).then((r)=>r.json()).then((mj)=>{
-          if(typeof mj?.market?.yesPct==="number")updateCardOdds(card,mj.market.yesPct);
-        }).catch(()=>{/* the odds just don't move this tick; next poll catches up */});
-        lockedUI(s,winBonus(j.pctAt),j.crowd,j.id,j.firstEver===true);
-        ev("amount_confirm",{slug:m.slug,idx:i,side:s});
-      }catch(e){
-        // The only genuinely transient failure: we never reached the server or
-        // couldn't read it. This is the one place "try again" is the truth.
-        console.error(e);
-        balance=(balance??0)+CALL_COST;paintBalance();
-        y.disabled=nb.disabled=false;y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
-        soc.textContent="Couldn't reach the server — check your connection and try again.";
-      }
-    };
-
-    /**
-     * ONE TAP, DONE. There is no amount to pick — every call costs exactly
-     * CALL_COST — so the tap makes the call immediately and shows the result
-     * with a 5s undo. Undo is honest by construction: the POST only fires when
-     * the window closes (or the page is left mid-window, via sendBeacon), so
-     * an undone call never existed anywhere.
-     */
-    let pending=null; // {s, left, timer, beacon}
-    const clearPendingUI=()=>{
-      y.classList.remove("pick","dim");nb.classList.remove("pick","dim");
-      soc.textContent="";
-    };
-    const cancelPending=(refund=true)=>{
-      if(!pending)return;
-      clearInterval(pending.timer);PENDING_CALLS.delete(pending.beacon);
-      if(refund){balance=(balance??0)+CALL_COST;paintBalance();}
-      pending=null;
-    };
-    const commitPending=()=>{
-      if(!pending)return;
-      const {s}=pending;
-      clearInterval(pending.timer);PENDING_CALLS.delete(pending.beacon);
-      pending=null;
-      placeNow(s);
-    };
-    const pendingUI=()=>{
-      const {s,left}=pending;
-      // The bonus IS the entire return — the SAME number the locked state will
-      // show — visible here, during the undo window, before anything is final.
-      const bonus=winBonus(s==="yes"?yes:no);
-      soc.innerHTML=`<span class="prepay"><b>+${bonus} predictions</b> if ${s.toUpperCase()} is right`
-        +` <span class="prepay-mult">(${fmtMult(s==="yes"?yes:no)})</span></span>`
-        +`<button class="undo">undo (${left})</button>`;
-      soc.querySelector(".undo").onclick=()=>{cancelPending();clearPendingUI();};
-    };
-    const startPending=(s)=>{
-      if(!balance){ // 0 (or unresolved): nothing to spend — say so directly, no picker to fall back to
-        ev("side_tap",{slug:m.slug,idx:i,side:s});
-        soc.textContent=outOfPredictionsLine();
-        return;
-      }
-      // Deduct AND show the deduction: the pill pulses and a "−1" floats off
-      // it. This is where the economy is taught — at the moment of spend,
-      // not by a tour sentence in advance.
-      balance-=CALL_COST;paintBalance(true);flashBalanceSpend();
-      (s==="yes"?y:nb).classList.add("pick");(s==="yes"?nb:y).classList.add("dim");
-      const beacon={slug:m.slug,side:s,tokens:CALL_COST};
-      pending={s,left:5,beacon,timer:null};
-      PENDING_CALLS.add(beacon);
-      pendingUI();
-      pending.timer=setInterval(()=>{
-        if(!pending)return;
-        pending.left--;
-        if(pending.left<=0)commitPending();
-        else pendingUI();
-      },1000);
-      ev("side_tap",{slug:m.slug,idx:i,side:s});
-    };
+    /* The optimistic-call machinery is gone with the call it wrapped.
+       placeNow, startPending, pendingUI, commitPending and cancelPending
+       implemented a five-second undo: a tap deducted the stake immediately,
+       showed what it would win, and only POSTed when the window closed, so an
+       undone call had never existed anywhere. Good design for a one-tap spend
+       of a free token.
+       A position is a wallet signature now. There is nothing to deduct
+       optimistically, nothing to undo locally once it is signed, and the
+       confirmation people need comes from their own wallet rather than from a
+       countdown we drew. Nothing called into any of it after the card's YES/NO
+       started opening the bet sheet, and dead machinery this size is the kind
+       that gets accidentally revived. */
 
     const tap=(s)=>{
       if(y.disabled)return;
@@ -4422,21 +4215,22 @@ function buildCard(m,i,homeLoop){
          Falls through to the play path when the chain layer is not loaded,
          which is the case on a build with ONCHAIN_ENABLED off. That is a
          development state, not a user-facing one. */
-      if(m.community&&window.OddieChain&&window.OddieChain.openStake){
+      if(window.OddieChain&&window.OddieChain.openStake){
         try{navigator.vibrate&&navigator.vibrate(12);}catch(e){}
         ev("side_tap",{slug:m.slug,idx:i,side:s});
         window.OddieChain.openStake(m.slug,s);
         return;
       }
-      // No rope: any tap proceeds to a vote. Anonymous visitors play with their
-      // free predictions; the server never blocks a call. (The waitlist CTA that
-      // used to sit here is gone — a seeded reply link is playable on the first tap.)
-      if(pending){
-        if(pending.s===s)return;      // same side again: the 5s clock keeps running
-        cancelPending();clearPendingUI();
-      }
-      try{navigator.vibrate&&navigator.vibrate(12);}catch(e){}   // tactile confirm on select
-      startPending(s);
+      /* The chain layer did not load, so there is no way to take a side. Say so.
+         This used to fall through to a play-token call, which was correct while
+         that call bought a position in a pool that settled. It does not any
+         more: the tap would have spent a number from a balance nothing refills,
+         on a market that pays in SOL, and looked like it worked.
+         Reachable only with ONCHAIN_ENABLED off (a development server with no
+         admin key) or if /chain.js failed to load. Both are states where the
+         honest answer is that trading is unavailable, not a silent no-op
+         wearing the costume of a bet. */
+      soc.textContent="Can't take a side right now. Reload in a moment.";
     };
     y.onclick=()=>tap("yes");
     nb.onclick=()=>tap("no");
@@ -4477,7 +4271,6 @@ async function renderHome(){
   await loadBalance().catch(()=>{}); // balance pill + streak badge, same as everywhere
   try{
     const cr=await fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`);
-    if(cr.ok)claim=await cr.json();
   }catch(e){/* claim strip just won't render; nothing else depends on it */}
   // Every data-driven section starts EMPTY and is rendered only if the server
   // actually sent rows for it — so a fetch failure, a cold database, or a
@@ -4635,11 +4428,7 @@ async function renderHome(){
   // noise on the one screen that should be asking for a single tap. Returning
   // players keep it up top, which is where a daily claim belongs.
   const claimFrag=document.createDocumentFragment();
-  if(claim){
-    claimFrag.appendChild(streakWrap);
-    // Claiming can start a streak (0 -> 1 day), so the pill repaints on claim.
-    claimFrag.appendChild(claimCard({streakShownAbove:true,onClaimed:paintStreak}));
-  }
+  claimFrag.appendChild(streakWrap);
 
   // "Your open calls" — the Zeigarnik hook: an unresolved prediction, visible
   // the moment they land, is a reason to come back that the daily claim isn't.

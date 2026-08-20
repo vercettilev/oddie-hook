@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare } from "./store/markets.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, pctDeltasFor } from "./store/markets.js";
@@ -1255,8 +1255,8 @@ app.get("/api/me", async (req, res) => {
   // the feed already fetches /api/me at boot, and the status strip at the top of
   // it needs exactly these two. Both degrade to null — the strip omits whatever
   // did not arrive rather than showing a zero it cannot stand behind.
-  const [wallet, handle, claim, acc, rank, openCalls, creator] = await Promise.all([
-    getWallet(deviceId), displayHandle(deviceId), claimStatus(deviceId),
+  const [wallet, handle, acc, rank, openCalls, creator] = await Promise.all([
+    getWallet(deviceId), displayHandle(deviceId),
     accuracyFor(deviceId), seasonRankFor(deviceId),
     openCallsSummaryFor(deviceId).catch(() => null),
     creatorStatsFor(deviceId).catch(() => null),
@@ -1268,22 +1268,23 @@ app.get("/api/me", async (req, res) => {
   // the moment a call became free: a number nobody can spend is not a balance,
   // it is decoration in the most prominent slot on the screen. The pill now
   // carries the one number the product has.
-  res.json({ ...wallet, ...handle, claim, pickStreak: acc.streak, oddies: acc.oddieScore ?? 0, badges, rank, openCalls, creator });
+  res.json({ ...wallet, ...handle, pickStreak: acc.streak, oddies: acc.oddieScore ?? 0, badges, rank, openCalls, creator });
 });
 
-// The daily claim — the active retention hook. GET reports status (claimable,
-// streak, countdown); POST collects it (idempotent within the window).
-app.get("/api/claim", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json(await claimStatus(deviceId));
-});
-app.post("/api/claim", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json(await claimDaily(deviceId));
-});
+/**
+ * The daily claim is gone, and so is the balance it topped up.
+ *
+ * It handed a device five predictions a day, on a streak, to spend on calls.
+ * That was a real retention loop while calls cost something and the pool they
+ * fed settled in the same currency. Neither is true any more: a position is
+ * real SOL from the user's own wallet, so the balance had nothing left to buy
+ * and the claim was a button that incremented a number for its own sake.
+ *
+ * Removing the claim on its own would have been worse than leaving it: the
+ * grant and the spend are two halves of one economy, and keeping the half that
+ * only goes down is how you end up with a counter people ask about and nobody
+ * can explain. Both halves go together, here and in /api/market/:slug/call.
+ */
 
 // A permalink landing (fired by the SPA when it opens on a /m/{slug} page), so
 // the wedge metrics can measure click→pick. Device-attributed; bots that fetch
@@ -1726,34 +1727,21 @@ app.get("/api/leaderboard", async (req, res) => {
 });
 
 /**
- * Place a call. Insufficient balance is a 200 with ok:false rather than an
- * error status: the client caps the picker at the balance, so hitting this
- * means two tabs raced — a state to render, not a failure to throw.
+ * Placing a play-token call is gone. Settling and selling one is not.
+ *
+ * This route opened a new position in the virtual economy. With the venues
+ * removed every market in the product is our own parimutuel, and a position in
+ * one is real SOL through the user's own wallet, so a route that opened a
+ * play-token position could only ever add to a pool that pays in a currency
+ * nothing spends.
+ *
+ * /api/position/:id/sell and the settlement path deliberately survive. There
+ * are markets that were open before this changed, people hold positions in
+ * them, and freezing an economy means letting it finish, not confiscating what
+ * is in it. Nothing new enters; what is already there still resolves and can
+ * still be exited.
  */
-app.post("/api/market/:slug/call", async (req, res) => {
-  const side = req.body?.side;
-  const deviceId = deviceIdOf(req.body);
-  if (side !== "yes" && side !== "no") return res.status(400).json({ error: "side must be yes|no" });
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  // No rope on voting: any device — anonymous or signed in — may place calls
-  // with its free predictions. Signing in is optional (it just attaches an
-  // identity that follows you across devices). This is what makes a seeded
-  // reply link playable the instant someone taps it.
-  //
-  // The stake is CALL_COST, always — never whatever the client sends. A call
-  // costs exactly one prediction; there is no picker, no amount to choose, so
-  // there is nothing here to trust the client for. (placeCall itself stays
-  // generic — internal callers and the test suite still stake arbitrary
-  // amounts — this route is the one place production enforces the flat cost.)
-  const all = await pricingSet(); // venue markets + open community markets, so a community market can be entered
-  const result = await placeCall(req.params.slug, side, CALL_COST, deviceId, all);
-  if (!result.ok && result.reason === "unknown-market") return res.status(404).json({ ok: false, reason: "unknown-market", error: "unknown market" });
-  if (!result.ok) return res.json(result);
-  // The split INCLUDING the call just placed — the post-call line's "you're
-  // with 67% of poppers" is computed from what the table now says, not a guess.
-  const crowd = (await crowdSplits([req.params.slug]))[req.params.slug] ?? { yes: 0, no: 0 };
-  res.json({ ...result, crowd });
-});
+
 
 /**
  * Week-1 telemetry. Four names, nothing else accepted; an unknown name is a 400
