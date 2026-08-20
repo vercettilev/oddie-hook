@@ -28,7 +28,7 @@ const PAD_L = 70;
 const COL_R = 566;
 const CONTENT_W = COL_R - PAD_L;
 
-const HEAD = ["turn arguments", "into markets."];
+const HEAD = ["start markets.", "earn when they spread."];
 const HEAD_FS_MAX = 82;
 const CAP = 0.72;
 
