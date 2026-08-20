@@ -284,4 +284,90 @@ describe("oddie_chain", () => {
     const rent = await provider.connection.getMinimumBalanceForRentExemption(info!.data.length);
     assert.isAtLeast(info!.lamports, rent, "the vault fell below rent exemption");
   });
+
+  // set_creator exists because the person who tags an argument on X has no
+  // wallet at the moment their market is minted. The fee has to wait for them.
+  // What follows pins the two ways that waiting could cost somebody money:
+  // a fee that can be redirected after it is promised, and a fee that becomes
+  // unreachable because the market settled before its creator turned up.
+
+  it("pays a creator who only connects a wallet after the market settled", async () => {
+    const a = await funded();
+    const b = await funded();
+    const { market, vault } = await openMarket(PublicKey.default);
+
+    await stake(market, vault, a, SIDE_YES, 2);
+    await stake(market, vault, b, SIDE_NO, 2);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    // The fee is fixed at resolve whether or not anyone can receive it yet.
+    const owed = (await program.account.market.fetch(market)).creatorFeeLamports.toNumber();
+    assert.isAbove(owed, 0, "a resolved market with a winning side owes a fee");
+
+    // Now the tagger shows up, a wallet in hand, after settlement.
+    const latecomer = await funded();
+    await program.methods.setCreator(latecomer.publicKey)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    const before = await provider.connection.getBalance(latecomer.publicKey);
+    await program.methods.claimCreatorFee()
+      .accounts({ creator: latecomer.publicKey, market, vault }).signers([latecomer]).rpc();
+    const after = await provider.connection.getBalance(latecomer.publicKey);
+
+    assert.equal(after - before, owed, "the late creator was paid exactly what the market owed");
+  });
+
+  it("will not let a named creator be swapped for another", async () => {
+    const named = await funded();
+    const thief = await funded();
+    const { market } = await openMarket(named.publicKey);
+
+    await failsWith(
+      program.methods.setCreator(thief.publicKey)
+        .accounts({ authority: authority.publicKey, market }).rpc(),
+      "CreatorAlreadySet",
+    );
+
+    const m = await program.account.market.fetch(market);
+    assert.equal(m.creator.toBase58(), named.publicKey.toBase58(), "the creator moved");
+  });
+
+  it("lets nobody but the authority name a creator", async () => {
+    const outsider = await funded();
+    const { market } = await openMarket(PublicKey.default);
+
+    await failsWith(
+      program.methods.setCreator(outsider.publicKey)
+        .accounts({ authority: outsider.publicKey, market }).signers([outsider]).rpc(),
+      "WrongAuthority",
+    );
+  });
+
+  it("refuses to name the unnamed address, which would lock the fee forever", async () => {
+    const { market } = await openMarket(PublicKey.default);
+    await failsWith(
+      program.methods.setCreator(PublicKey.default)
+        .accounts({ authority: authority.publicKey, market }).rpc(),
+      "CreatorNotNamed",
+    );
+  });
+
+  it("pays no fee to a stranger while the creator is still unnamed", async () => {
+    const a = await funded();
+    const b = await funded();
+    const stranger = await funded();
+    const { market, vault } = await openMarket(PublicKey.default);
+
+    await stake(market, vault, a, SIDE_YES, 1);
+    await stake(market, vault, b, SIDE_NO, 1);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    await failsWith(
+      program.methods.claimCreatorFee()
+        .accounts({ creator: stranger.publicKey, market, vault }).signers([stranger]).rpc(),
+      "WrongCreator",
+    );
+  });
 });

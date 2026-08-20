@@ -69,6 +69,11 @@ pub mod oddie_chain {
     /// has no wallet yet. Recording them here is what makes the fee payable to
     /// them later, and it is the on-chain half of `market_surfacer`.
     ///
+    /// Pass `Pubkey::default()` when the tagger has no wallet yet, which is the
+    /// normal case at tag time, and name them later with `set_creator`. That is
+    /// a one-way fill, so an unnamed market stays claimable by the right person
+    /// whenever they turn up, while a named one can never be redirected.
+    ///
     /// A creator who never connects a wallet simply never claims; the fee stays
     /// in the vault as dust rather than being redirected to the house, because
     /// silently rerouting someone's fee to ourselves is worse than leaving it
@@ -105,6 +110,35 @@ pub mod oddie_chain {
         let v = &mut ctx.accounts.vault;
         v.market = m.key();
         v.bump = ctx.bumps.vault;
+        Ok(())
+    }
+
+    /// Name the creator of a market that was opened without one.
+    ///
+    /// Markets are minted the moment someone tags the argument on X, and that
+    /// person usually has no wallet at that moment. `create_market` therefore
+    /// accepts `Pubkey::default()` as "not named yet", and this fills it in
+    /// once they connect one. Without this the fee has no payable address and
+    /// "being loud pays" is not true in real money, which is the whole point.
+    ///
+    /// ONE WAY, and that is the only security property here. A creator can be
+    /// named, never renamed and never cleared, so a fee already promised to
+    /// somebody cannot be redirected. It deliberately does NOT require the
+    /// market to be unresolved: a tagger who connects a wallet a week after
+    /// their market settled should still get paid, and gating on resolution
+    /// would only strand them. That costs nothing in trust, because the
+    /// authority can already name any creator at create time and can already
+    /// resolve any market. This adds no power it did not have; it only moves
+    /// when the name can be supplied.
+    ///
+    /// The unset sentinel is safe to leave in place indefinitely: no private
+    /// key exists for the all-zero pubkey, so `claim_creator_fee`'s
+    /// `has_one = creator` on a Signer can never be satisfied while unset.
+    pub fn set_creator(ctx: Context<SetCreator>, creator: Pubkey) -> Result<()> {
+        let m = &mut ctx.accounts.market;
+        require!(m.creator == Pubkey::default(), OddieError::CreatorAlreadySet);
+        require!(creator != Pubkey::default(), OddieError::CreatorNotNamed);
+        m.creator = creator;
         Ok(())
     }
 
@@ -324,6 +358,20 @@ pub struct CreateMarket<'info> {
 }
 
 #[derive(Accounts)]
+pub struct SetCreator<'info> {
+    /// `has_one = authority` is what keeps this instruction the house's own:
+    /// nobody but the key that opened the market can name its creator.
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"market", market.market_id.to_le_bytes().as_ref()],
+        bump = market.bump,
+        has_one = authority @ OddieError::WrongAuthority
+    )]
+    pub market: Account<'info, Market>,
+}
+
+#[derive(Accounts)]
 pub struct TakePosition<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
@@ -470,6 +518,10 @@ pub enum OddieError {
     WrongOwner,
     #[msg("signer is not this market's creator")]
     WrongCreator,
+    #[msg("this market's creator is already named and cannot be changed")]
+    CreatorAlreadySet,
+    #[msg("creator cannot be set to the unnamed address")]
+    CreatorNotNamed,
     #[msg("arithmetic overflow")]
     MathOverflow,
 }
