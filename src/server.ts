@@ -23,7 +23,7 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { logRealFee, feeLog, onchainMarketsSurfacedBy } from "./store/markets.js";
+import { logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
@@ -2066,98 +2066,222 @@ app.post("/api/community/extract", requireAdmin, async (req, res) => {
 });
 
 // Create a Community market: virtual first (always), then mint on devnet (soft).
-app.post("/api/community/create", requireAdmin, async (req, res) => {
-  const question = String(req.body?.question ?? "").trim();
-  const category = (String(req.body?.category ?? "Community").trim()) || "Community";
-  const yesPct = Number(req.body?.yesPct ?? 50);
-  const closeInput = req.body?.close_time ?? req.body?.closeTime;
-  const resolutionCriteria = req.body?.resolution_criteria != null ? String(req.body.resolution_criteria).trim() : null;
-  const resolvability = req.body?.resolvability != null ? String(req.body.resolvability).trim() : null;
+/* ------------------------------------------------- the agent surface (v1) --
+ * A small, stable, documented API for other people's agents, kept separate
+ * from the routes this app's own client uses.
+ *
+ * The separation is the point. /api/feed and /api/market/:slug are shaped for
+ * a screen: device-scoped, feed-ranked, and they hand back the whole internal
+ * record including every call ever placed. An agent reading those would break
+ * the next time the feed changed, and would be parsing a shape nobody promised
+ * it. /api/v1 is the shape that is promised, so it can change on its own clock.
+ *
+ * Reads are keyless on purpose. Odds and open markets are public facts, and a
+ * key in front of them buys nothing except a reason for an agent not to
+ * bother. Writing is different: every market minted costs the admin wallet
+ * real rent on Solana, so the create route is metered.
+ */
 
-  if (!question) return res.status(400).json({ error: "question required" });
-  if (question.length > 180) return res.status(400).json({ error: "question must be ≤180 characters (on-chain limit)" });
-  // The gate is enforced server-side too: an unresolvable claim is never a market,
-  // no matter what the client posts.
-  if (resolvability === "unresolvable") return res.status(422).json({ error: "unresolvable claims cannot become markets" });
-  if (resolutionCriteria && resolutionCriteria.length > 600) return res.status(400).json({ error: "resolution criteria must be ≤600 characters" });
+/** Naive fixed-window limiter, in memory. Resets on deploy, which is fine for
+ *  what it defends: the cost of an abusive burst is SOL rent, not data. */
+const v1Hits = new Map<string, { n: number; resetAt: number }>();
+function overLimit(key: string, max: number, windowMs: number): boolean {
+  const now = Date.now();
+  const cur = v1Hits.get(key);
+  if (!cur || now > cur.resetAt) { v1Hits.set(key, { n: 1, resetAt: now + windowMs }); return false; }
+  cur.n++;
+  return cur.n > max;
+}
+
+type OpenMarketResult =
+  | { ok: true; slug: string; marketId: number; onchain: { pubkey: string; explorer: string; signature: string } }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Open a market from a claim. The one path, for every caller.
+ *
+ * Extracted when the agent API arrived, because the alternative was a second
+ * copy of the rules a market is born under, and those rules are not
+ * decoration: provenance is required so a card can name who it came from, the
+ * question is capped at the program's own 180 bytes, and the on-chain mint is
+ * a hard failure because a market with no vault is a table nobody can sit at.
+ * A caller that skipped any one of those would produce a market this product
+ * cannot honour, and the second copy is always the one that drifts.
+ *
+ * Returns a result rather than writing a response, so callers own their own
+ * status codes and shapes. Never throws for input problems.
+ */
+async function openMarketFromClaim(input: {
+  question: string;
+  closeInput: unknown;
+  sourceUrl: string | null;
+  category?: string;
+  yesPct?: number;
+  resolutionCriteria?: string | null;
+  resolvability?: string | null;
+}): Promise<OpenMarketResult> {
+  const bad = (status: number, error: string): OpenMarketResult => ({ ok: false, status, error });
+  const question = input.question.trim();
+  const category = (input.category ?? "Community").trim() || "Community";
+  const yesPct = Number(input.yesPct ?? 50);
+  const resolutionCriteria = input.resolutionCriteria != null ? String(input.resolutionCriteria).trim() : null;
+  const resolvability = input.resolvability != null ? String(input.resolvability).trim() : null;
+
+  if (!question) return bad(400, "question required");
+  if (question.length > 180) return bad(400, "question must be 180 characters or fewer (the program's own limit)");
+  if (resolvability === "unresolvable") return bad(422, "unresolvable claims cannot become markets");
+  if (resolutionCriteria && resolutionCriteria.length > 600) return bad(400, "resolution criteria must be 600 characters or fewer");
+
   let closeTime: number;
-  if (typeof closeInput === "number") closeTime = Math.floor(closeInput);
+  if (typeof input.closeInput === "number") closeTime = Math.floor(input.closeInput);
   else {
-    const t = Date.parse(String(closeInput));
-    if (Number.isNaN(t)) return res.status(400).json({ error: "invalid close_time" });
+    const t = Date.parse(String(input.closeInput));
+    if (Number.isNaN(t)) return bad(400, "invalid close_time");
     closeTime = Math.floor(t / 1000);
   }
-  if (!(closeTime > Math.floor(Date.now() / 1000))) return res.status(400).json({ error: "close_time must be in the future" });
-  if (!Number.isFinite(yesPct) || yesPct < 1 || yesPct > 99) return res.status(400).json({ error: "starting odds must be 1–99" });
+  if (!(closeTime > Math.floor(Date.now() / 1000))) return bad(400, "close_time must be in the future");
+  if (!Number.isFinite(yesPct) || yesPct < 1 || yesPct > 99) return bad(400, "starting odds must be between 1 and 99");
 
-  // Provenance is a birth requirement, enforced here and not only in the tool.
-  // The tool already refuses to extract without a source URL, but the client is
-  // not where a rule lives: every community market on production predates that
-  // check and every one of them renders "tagged by anonymous", with no post to
-  // show and — because the creator fee is credited to the surfacer — no one who
-  // can ever be paid the 3% the market advertises. A visitor reading that feed
-  // reasonably concludes oddie runs these markets itself, which is the single
-  // most expensive misunderstanding this product can create.
-  //
-  // Same shape as the resolvability gate above: a claim with no source is never
-  // a market, no matter what the client posts. The handle is parsed from the
-  // URL, so requiring a parseable URL is what guarantees a name on the card.
-  const createSourceUrl = req.body?.source_url != null ? String(req.body.source_url).trim() || null : null;
-  if (!createSourceUrl) return res.status(400).json({ error: "source_url required — a market with no source can never show who it came from" });
-  if (!handleFromSourceUrl(createSourceUrl)) {
-    return res.status(400).json({ error: "source_url must be an x.com/…/status/… link — the handle in it is what names the card" });
+  const sourceUrl = input.sourceUrl?.trim() || null;
+  if (!sourceUrl) return bad(400, "source_url required: a market with no source can never show who it came from");
+  if (!handleFromSourceUrl(sourceUrl)) {
+    return bad(400, "source_url must be an x.com/…/status/… link, because the handle in it is what names the card");
   }
 
   const { slug, marketId } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability });
-  // The published record, incl. any operator edits — the other half of the tuning log.
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
-  // Recorded HERE, when the market is born, rather than only as a side effect of
-  // generating a reply for it — the reply step used to be the only writer, so a
-  // market whose reply was never generated lost its provenance permanently.
-  //
-  // AWAITED, unlike before. Fire-and-forget was survivable while the URL was
-  // optional; now that it is the thing being guaranteed, a market must not be
-  // able to report success while its surfacer row silently failed to land.
-  // recordSurfacer swallows its own oEmbed failures (a null preview is fine),
-  // so this waits on the write and not on X.
-  await recordSurfacer(slug, { sourceUrl: createSourceUrl });
+  // Awaited, not fire-and-forget: this row is the thing being guaranteed, so a
+  // market must not report success while its provenance silently failed to
+  // land. recordSurfacer swallows its own oEmbed failures, so this waits on the
+  // write and not on X.
+  await recordSurfacer(slug, { sourceUrl });
   void awardSurface(slug).catch(() => {}); // points are best-effort; the row is not
 
-  // The vault, and therefore the market. HARD, where this used to be soft.
-  //
-  // While markets were played in virtual tokens this mint was a badge: it
-  // failed, you lost an explorer link, the market went on being perfectly
-  // playable. Under real money there is no off-chain pool behind it. A market
-  // with no vault is a market nobody can stake into, and publishing one
-  // invites people to a table that does not exist, from a reply oddie posted
-  // under someone else's tweet.
-  //
-  // `creator: null` is correct and not a gap: the market is minted the moment
-  // the argument is tagged, and the tagger usually has no wallet yet. The
-  // program stores its unnamed sentinel and set_creator fills in the real
-  // address when they connect one, which is what keeps their 3% claimable
-  // instead of stranded. See nameCreator.
-  const minted = await mintMarket({
-    marketId, question, closeTime,
-    creator: null,
-    creatorFeeBps: CREATOR_FEE_BPS_REAL,
-  });
+  const minted = await mintMarket({ marketId, question, closeTime, creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL });
   if (!minted) {
-    // The row stays behind with a null onchain_pubkey, which the schema
-    // already defines as "the mint was skipped or failed". Reporting the
-    // failure is what stops it being treated as live; see the read path.
-    return res.status(502).json({
-      error: "market could not be opened on Solana, so it has no vault and was not published",
-      slug, marketId, chainEnabled: isChainEnabled(),
-    });
+    return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
   await setCommunityOnchain(slug, minted.pubkey, minted.signature);
-  const onchain = { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature };
+  return { ok: true, slug, marketId, onchain: { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature } };
+}
 
+/**
+ * Open markets, newest first, with the odds that actually matter: the vault's.
+ *
+ * `oddsSource` is reported rather than assumed. A market minted seconds ago
+ * has an empty vault and therefore no price at all, and an agent that read a
+ * missing number as 50/50 would be trading against a figure nobody set. Null
+ * odds mean unpriced, and the field says which it is.
+ */
+app.get("/api/v1/markets", async (req, res) => {
+  const limit = Math.max(1, Math.min(50, Number(req.query.limit ?? 20) || 20));
+  // adminListCommunity despite the name: it is a store query, not a permission,
+  // and it is the only one that carries slug + on-chain pubkey + outcome
+  // together. openCommunityMarkets returns the pricing shape, which has none of
+  // those.
+  const all = await adminListCommunity().catch(() => []);
+  const items = await Promise.all(all.filter((m) => !m.resolvedOutcome).slice(0, limit).map(async (m) => {
+    const state = m.onchainPubkey ? await fetchMarketOnChain(m.onchainPubkey).catch(() => null) : null;
+    const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
+    const total = yes + no;
+    return {
+      slug: m.slug,
+      question: m.question,
+      url: `${BASE_URL}/m/${m.slug}`,
+      closesAt: m.closesAt,
+      resolved: Boolean(m.resolvedOutcome),
+      outcome: m.resolvedOutcome ?? null,
+      pool: { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
+      yesPct: total > 0 ? Math.max(1, Math.min(99, Math.round((yes / total) * 100))) : null,
+      oddsSource: total > 0 ? "vault" : "unpriced",
+      onchain: m.onchainPubkey ? { pubkey: m.onchainPubkey, explorer: explorerUrl(m.onchainPubkey) } : null,
+    };
+  }));
+  res.json({ ok: true, cluster: cluster(), creatorFeeBps: CREATOR_FEE_BPS_REAL, markets: items });
+});
+
+/** One market, including who its creator fee is owed to. */
+app.get("/api/v1/markets/:slug", async (req, res) => {
+  const detail = await communityMarketDetail(req.params.slug);
+  if (!detail) return res.status(404).json({ ok: false, error: "unknown market" });
+  const state = detail.onchainPubkey ? await fetchMarketOnChain(detail.onchainPubkey).catch(() => null) : null;
+  const surfacer = await surfacerFor(req.params.slug).catch(() => null);
+  const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
+  const total = yes + no;
   res.json({
-    ok: true, slug, marketId, url: `${BASE_URL}/m/${slug}`,
-    onchain, chainEnabled: isChainEnabled(), cluster: cluster(),
+    ok: true,
+    slug: detail.slug,
+    question: detail.question,
+    url: `${BASE_URL}/m/${detail.slug}`,
+    closesAt: detail.closesAt,
+    resolutionCriteria: detail.resolutionCriteria ?? null,
+    resolved: Boolean(state?.resolved ?? detail.resolvedOutcome),
+    outcome: state?.winningSide ?? detail.resolvedOutcome ?? null,
+    pool: { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
+    yesPct: total > 0 ? Math.max(1, Math.min(99, Math.round((yes / total) * 100))) : null,
+    oddsSource: total > 0 ? "vault" : "unpriced",
+    taggedBy: surfacer?.handle ?? null,
+    creatorFeeBps: state?.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+    onchain: detail.onchainPubkey ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey) } : null,
+    cluster: cluster(),
+  });
+});
+
+/**
+ * Turn a claim into a market. The instruction no other agent platform has.
+ *
+ * Metered, and the meter is not about traffic: every market here mints a real
+ * account on Solana and the rent comes out of oddie's own wallet, so an
+ * unbounded create route is a way to spend our SOL from a script. Per-IP and
+ * global caps, both deliberately low while this is new.
+ *
+ * source_url stays required for agents exactly as it is for the operator
+ * console. It is what puts a name on the card and what makes the 3% payable to
+ * a person rather than to nobody, and an agent-opened market with no source
+ * would be the "tagged by anonymous" problem returning through a new door.
+ */
+app.post("/api/v1/markets", async (req, res) => {
+  const ip = String(req.ip ?? req.socket.remoteAddress ?? "unknown");
+  if (overLimit(`v1create:${ip}`, 5, 3600_000)) {
+    return res.status(429).json({ ok: false, error: "rate limit: 5 markets per hour per client" });
+  }
+  if (overLimit("v1create:global", 100, 86_400_000)) {
+    return res.status(429).json({ ok: false, error: "rate limit: the shared daily ceiling is full, try tomorrow" });
+  }
+  const out = await openMarketFromClaim({
+    question: String(req.body?.question ?? ""),
+    closeInput: req.body?.close_time ?? req.body?.closeTime,
+    sourceUrl: req.body?.source_url != null ? String(req.body.source_url) : null,
+    category: req.body?.category != null ? String(req.body.category) : undefined,
+    yesPct: req.body?.yesPct != null ? Number(req.body.yesPct) : undefined,
+    resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
+  });
+  if (!out.ok) return res.status(out.status).json({ ok: false, error: out.error });
+  res.json({
+    ok: true, slug: out.slug, url: `${BASE_URL}/m/${out.slug}`,
+    onchain: out.onchain, cluster: cluster(),
+    note: `Anyone can now take a side with real SOL. ${(CREATOR_FEE_BPS_REAL / 100).toFixed(0)}% of the pool goes to the handle in source_url.`,
+  });
+});
+
+app.post("/api/community/create", requireAdmin, async (req, res) => {
+  // Thin now. Every rule a market is born under lives in openMarketFromClaim,
+  // which the agent API calls too, so the two callers cannot drift apart on
+  // what provenance is required or on whether a failed mint is fatal.
+  const out = await openMarketFromClaim({
+    question: String(req.body?.question ?? ""),
+    closeInput: req.body?.close_time ?? req.body?.closeTime,
+    sourceUrl: req.body?.source_url != null ? String(req.body.source_url) : null,
+    category: req.body?.category != null ? String(req.body.category) : undefined,
+    yesPct: req.body?.yesPct != null ? Number(req.body.yesPct) : undefined,
+    resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
+    resolvability: req.body?.resolvability != null ? String(req.body.resolvability) : null,
+  });
+  if (!out.ok) return res.status(out.status).json({ error: out.error, chainEnabled: isChainEnabled() });
+  res.json({
+    ok: true, slug: out.slug, marketId: out.marketId, url: `${BASE_URL}/m/${out.slug}`,
+    onchain: out.onchain, chainEnabled: isChainEnabled(), cluster: cluster(),
   });
 });
 
