@@ -1,5 +1,20 @@
-// End-to-end check against LIVE Kalshi + Polymarket data. Needs network, no keys.
-// Run with: npm run smoke
+// The matcher's regression corpus. Offline, deterministic, no network.
+// Run with: npm run smoke-fixture (it is part of npm test).
+//
+// This was an end-to-end check against live Kalshi and Polymarket data, with
+// the snapshot as its offline twin. The venues are gone, so the live half went
+// with them and the snapshot is now the whole thing: 254 frozen market objects
+// that the matcher is run against.
+//
+// They are still worth keeping, and their venue label is irrelevant. What this
+// exercises is the matcher's own logic (threshold parsing, direction, and above
+// all its refusal to match something merely nearby), and that logic is what now
+// answers "does an existing oddie market already cover this claim?" A corpus
+// this size is hard to rebuild and deleting it to make a refactor compile would
+// be trading real coverage for a green run.
+//
+// The fixture is frozen: --write-fixture regenerated it from the venues and has
+// no source to read any more.
 //
 // This asserts and exits non-zero on mismatch. It used to only print.
 //
@@ -19,7 +34,6 @@
 // the matcher's parsers to check the matcher would make a broken parser agree
 // with itself.
 
-import { getMarketData } from "../src/venues/index.js";
 import { matchTweet, tokenize } from "../src/matching/matcher.js";
 import { renderCard } from "../src/card/renderCard.js";
 import type { Market } from "../src/venues/types.js";
@@ -298,24 +312,13 @@ function paraphrase(question: string): string {
 }
 
 async function main() {
-  let data: Awaited<ReturnType<typeof getMarketData>>;
-  if (USE_FIXTURE) {
-    if (!existsSync(FIXTURE)) {
-      console.error("no fixture at scripts/fixtures/markets.json — run: npm run smoke -- --write-fixture");
-      process.exit(1);
-    }
-    const snap = JSON.parse(readFileSync(FIXTURE, "utf8")) as { capturedAt: string; markets: Market[] };
-    console.log(`Using the committed market snapshot (${snap.markets.length} markets, captured ${snap.capturedAt}).`);
-    // The venue block is skipped wholesale below: a snapshot cannot tell you
-    // whether Polymarket is up, and pretending otherwise is the exact confusion
-    // this split exists to remove.
-    data = { markets: snap.markets, feed: snap.markets, all: snap.markets,
-             venues: {} as typeof data.venues, stale: false, ageMs: 0 };
-  } else {
-    console.log("Fetching live markets from Kalshi + Polymarket…");
-    data = await getMarketData(true);
+  if (!existsSync(FIXTURE)) {
+    console.error("no fixture at scripts/fixtures/markets.json");
+    process.exit(1);
   }
-  const markets = data.markets;
+  const snap = JSON.parse(readFileSync(FIXTURE, "utf8")) as { capturedAt: string; markets: Market[] };
+  console.log(`Matcher corpus: ${snap.markets.length} markets, captured ${snap.capturedAt}.`);
+  const markets = snap.markets;
   console.log(`Got ${markets.length} markets.\n`);
 
   if (WRITE_FIXTURE) {
@@ -326,48 +329,14 @@ async function main() {
 
   // Without these, an empty (or half-empty) market list makes every "expect
   // null" case below pass and the suite reports green while a venue is down.
-  // A total-count check is not enough: Polymarket alone clears any total
-  // threshold, so a Kalshi outage would sail straight through it.
-  // Green must mean "every venue I turned on is healthy". A venue we chose not
-  // to run is not a failure, and a venue we did turn on returning nothing is —
-  // even if the other one carries the total past any threshold.
+  // The venue-health preconditions that stood here are gone with the venues.
+  // They asked whether Kalshi and Polymarket were each up and returning enough
+  // markets, so that a green run could never mean "one venue carried the total
+  // while the other was down". A frozen corpus has no health to check: it is
+  // either on disk or it is not, and the line above already failed if it were
+  // not.
   console.log("preconditions");
-  if (USE_FIXTURE) console.log("  - venue health not checked: this run is against a snapshot (see npm run smoke)");
-  for (const [name, st] of Object.entries(USE_FIXTURE ? {} : data.venues)) {
-    if (!st.enabled) {
-      console.log(`  - ${name} disabled by configuration (not expected to contribute)`);
-      continue;
-    }
-    precondition(`${name} returned markets (${st.count})`, st.count > 0, st.error ?? "fetch succeeded but returned 0 markets");
-    // A venue that answers with a handful of markets is up but not healthy, and
-    // `count > 0` will happily call that green. Not a failure — venues legitimately
-    // thin out — but it must be visible, because it skews the matched:false rate.
-    if (st.ok && st.count > 0 && st.count < 5) {
-      console.warn(`  ! ${name} looks degraded: only ${st.count} market(s); matched:false rates will lean on the other venue`);
-    }
-  }
-  // This used to require BOTH venues, with a note saying that if Kalshi were
-  // ever deliberately turned off, this line was the decision that had to be
-  // edited in the open. Editing it, in the open:
-  //
-  // KALSHI IS OFF BY PRODUCT DECISION, not by outage. It has defaulted off
-  // (ENABLE_KALSHI) throughout, and the real-money work made the exclusion
-  // explicit — Polymarket is the venue we source, Kalshi is deliberately not.
-  // So the assertion now names the venue we actually ship and reports Kalshi's
-  // state without failing on it.
-  //
-  // What the old line cost: it failed on EVERY run, which is precisely how a
-  // suite stops being read. The trade-off it was protecting against is real
-  // and unchanged — Kalshi was the only source of Fed, CPI and U-3 prices, so
-  // economics takes now go unanswered — but that is a known consequence of the
-  // decision, not a regression this run should be re-discovering each time.
-  if (!USE_FIXTURE) {
-    const off = Object.entries(data.venues).filter(([, st]) => !st.enabled).map(([n]) => n);
-    precondition("the venue we ship (polymarket) is enabled", data.venues.polymarket.enabled === true,
-      `switched off: ${off.join(", ") || "none"}`);
-    if (off.length) console.log(`  - not shipping: ${off.join(", ")} (by configuration, not an outage)`);
-    precondition("serving fresh data, not a stale cache", !data.stale, `last good set is ${Math.round(data.ageMs / 1000)}s old`);
-  }
+  precondition(`corpus loaded (${markets.length} markets)`, markets.length > 0, "the fixture is empty");
   check(
     `market set is large enough to assert on (${markets.length})`,
     markets.length >= 20,
@@ -475,11 +444,11 @@ async function main() {
   if (failures > 0) console.error(`${failures} assertion(s) failed — this is a code problem.`);
   if (envFailures > 0)
     console.error(
-      `${envFailures} precondition(s) failed — a venue is down, not a matcher regression. ` +
-        `Re-run with SMOKE_ALLOW_DEGRADED=1 to test against whatever is up.`,
+      `${envFailures} precondition(s) failed: the corpus could not be loaded, ` +
+        `which is not a matcher regression.`,
     );
   if (failures > 0 || envFailures > 0) process.exit(1);
-  console.log("all live checks passed.");
+  console.log("all corpus checks passed.");
 }
 
 main().catch((e) => {

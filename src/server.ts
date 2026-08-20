@@ -4,13 +4,11 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { getMarketData } from "./venues/index.js";
 import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, claimStatus, claimDaily, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare } from "./store/markets.js";
-import { fetchResolution } from "./venues/resolution.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, pctDeltasFor } from "./store/markets.js";
@@ -33,8 +31,7 @@ import {
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
-import { GEOBLOCK_LIST_VERIFIED, venueRealMoneyAllowed } from "./geo/restrictedRegions.js";
-import { JUPITER_PREDICT_ENABLED, prepareVenueOrderTx, fetchJupiterPolymarketMarkets } from "./venues/jupiterPredict.js";
+import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
@@ -249,19 +246,17 @@ app.post("/hook", async (req, res) => {
   const tweetText: string = req.body?.tweetText ?? "";
   if (!tweetText.trim()) return res.status(400).json({ error: "tweetText required" });
 
-  const data = await getMarketData();
+  const data = await liveMarketData();
 
   // One line per call, so the Week-1 matched:false rate can be segmented by which
-  // venues were actually healthy at the time. A miss recorded while a venue was
-  // serving nothing says something about the venue, not about the matcher.
-  const venueCounts = { kalshi: data.venues.kalshi.count, polymarket: data.venues.polymarket.count };
-
-  // Keyed on the raw set, not the bettable one. "Every market is lopsided today"
-  // is a confident miss; "we have no markets" is an outage. They are not the same
-  // answer and the Week-1 numbers must not conflate them.
+  // This used to separate "every market is lopsided today" from "the venues are
+  // down", because conflating them would have made an upstream outage look like
+  // a matcher that could not find anything. With one local source that
+  // distinction is gone: an empty set means nobody has opened a market yet,
+  // which is a true and ordinary state on a young install rather than a fault.
   if (data.all.length === 0) {
-    console.log(JSON.stringify({ evt: "hook", matched: null, reason: "data_unavailable", venues: venueCounts, stale: data.stale }));
-    return res.status(503).json({ error: "data_unavailable", venues: data.venues });
+    console.log(JSON.stringify({ evt: "hook", matched: null, reason: "no_markets_yet" }));
+    return res.status(503).json({ error: "no_markets_yet" });
   }
 
   const match = await matchSemantic(tweetText, data.markets);
@@ -277,7 +272,6 @@ app.post("/hook", async (req, res) => {
       why: match?.reason ?? null,
       tweet: tweetText.slice(0, 140),
       semantic: semanticEnabled(),
-      venues: venueCounts,
       bettable: data.markets.length,
       fetched: data.all.length,
       stale: data.stale,
@@ -330,7 +324,7 @@ app.post("/hook", async (req, res) => {
 app.post("/api/replycopy", async (req, res) => {
   const { tweetText, slug } = req.body as { tweetText?: string; slug?: string };
   if (!tweetText?.trim() || !slug) return res.status(400).json({ error: "tweetText and slug required" });
-  const { all } = await getMarketData();
+  const { all } = await liveMarketData();
   const rec = await getSlug(slug, all);
   if (!rec) return res.status(404).json({ error: "unknown market" });
   const lines = await replyCopy(tweetText, rec.market);
@@ -555,12 +549,13 @@ app.get("/api/feed", async (req, res) => {
   // stays visible), each block still volume-sorted.
   const cats = String(req.query.cats ?? "").split(",").map((x) => x.trim()).filter((x) => (CATEGORIES as readonly string[]).includes(x)).slice(0, 3);
   const feedDevice = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
-  const data = await getMarketData();
+  const data = await liveMarketData();
 
-  // The feed is where a miss sends people. Serving it empty would turn a venue
-  // outage into a landing page that looks like we simply have no markets.
+  // An empty feed is now a real state rather than an outage: it means nobody
+  // has tagged an argument yet. Still a 503 so the client keeps its existing
+  // retry, but named for what it is.
   if (data.all.length === 0) {
-    return res.status(503).json({ error: "data_unavailable", venues: data.venues });
+    return res.status(503).json({ error: "no_markets_yet" });
   }
 
   // Cards come from the CURATED set: bettable, and in one of the five chips. The
@@ -1106,7 +1101,7 @@ app.get("/banner.png", sendBanner);
 app.get("/og.svg", (_req, res) => res.type("image/svg+xml").send(renderBanner()));
 
 app.get("/card/:slug.svg", async (req, res) => {
-  const { all } = await getMarketData();
+  const { all } = await liveMarketData();
   const rec = await getSlug(req.params.slug, all);
   if (!rec) return res.status(404).send("unknown market");
   res.type("image/svg+xml").send(renderCard(rec.market));
@@ -1174,7 +1169,7 @@ app.get("/card/:slug.png", async (req, res) => {
   if (hit && now - hit.at < PNG_TTL_MS) {
     return res.type("image/png").set("Cache-Control", "public, max-age=300").send(hit.png);
   }
-  const { all } = await getMarketData();
+  const { all } = await liveMarketData();
   const rec = await getSlug(slug, all);
   if (!rec) return res.status(404).send("unknown market");
   const png = renderCardPng(renderCard(rec.market));
@@ -1237,8 +1232,8 @@ const deviceIdOf = (body: unknown): string | null => {
 /** Honest social proof for the landing: how many markets are live right now.
  *  Counts, no user numbers, no invention. */
 app.get("/api/stats", async (_req, res) => {
-  const data = await getMarketData();
-  res.json({ liveMarkets: data.markets.length, venues: Object.values(data.venues).filter((v) => v.enabled).length });
+  const data = await liveMarketData();
+  res.json({ liveMarkets: data.markets.length });
 });
 
 app.get("/api/gate", async (req, res) => {
@@ -1446,7 +1441,7 @@ app.post("/api/position/:id/sell", async (req, res) => {
     // livePctOf never finds the market and every community-market sell fails
     // as "unpriced" — this was true before today's live-pricing change as
     // well, since getMarketData() never included community markets at all.
-    const data = await getMarketData();
+    const data = await liveMarketData();
     if (data.stale) return res.status(503).json({ ok: false, reason: "stale-odds" });
     let community: CommunityMarket[] = [];
     try { community = await openCommunityMarkets(); } catch (e) { /* best-effort, matches pricingSet's own tolerance */ }
@@ -2000,12 +1995,55 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 
 /** Venue markets plus open community markets — the set used to PRICE plays, so a
  *  community market (which no venue feed knows about) can still be entered. */
-async function pricingSet(): Promise<Market[]> {
-  const data = await getMarketData();
+/**
+ * The live market set. Community markets, and nothing else.
+ *
+ * This replaces getMarketData(), which fetched Kalshi and Polymarket and made
+ * them the bulk of everything: the feed served forty venue cards to one of
+ * ours, the matcher tried to answer every tagged claim with somebody else's
+ * market first, and a tap on any of those forty spent a play token against a
+ * pool that settles nowhere.
+ *
+ * Removing them is not a feature cut, it is the product finally being one
+ * thing. Oddie's markets are real money in a vault we settle; a venue market
+ * is a link to a venue that does not know we exist. Carrying both meant every
+ * screen had to explain which kind of market you were looking at, and the
+ * honest answer for most of them was "the kind you cannot actually win".
+ *
+ * The shape is kept identical to what getMarketData returned so the sixteen
+ * call sites did not each need rewriting: `markets` was the matcher's wider
+ * universe, `feed` the curated subset, `all` everything including markets too
+ * lopsided to offer. With one source those three are the same list, and
+ * saying so here is cheaper than pretending the distinction survived.
+ */
+interface LiveMarketData {
+  /** The matcher's universe, the feed's, and everything: one source, one list. */
+  markets: Market[];
+  feed: Market[];
+  all: Market[];
+  /** Kept because callers branch on it. A local source cannot fall behind. */
+  stale: boolean;
+  ageMs: number;
+}
+
+async function liveMarketData(): Promise<LiveMarketData> {
   let community: CommunityMarket[] = [];
   try { community = await openCommunityMarkets(); }
-  catch (e) { console.error("[community] pricing load failed (venue-only):", (e as Error).message); }
-  return [...data.all, ...community];
+  catch (e) { console.error("[markets] community load failed:", (e as Error).message); }
+  return {
+    markets: community, feed: community, all: community,
+    // No venues field at all. Faking one so the old shape still typechecked
+    // would leave four call sites reporting the health of something that no
+    // longer exists.
+    stale: false, ageMs: 0,
+  };
+}
+
+async function pricingSet(): Promise<Market[]> {
+  // Was venue markets plus community ones. One source now, so this and
+  // liveMarketData().all are the same list; kept as a name because the call
+  // sites read better saying what they want it FOR.
+  return (await liveMarketData()).all;
 }
 
 // The claim-extraction engine, now front-run by a DEDUP check: before we ever
@@ -2027,7 +2065,7 @@ app.post("/api/community/extract", requireAdmin, async (req, res) => {
     // Match on the extracted question when we have one; otherwise on the raw
     // argument (an unresolvable-to-mint claim can still already exist on a venue).
     const matchText = extraction.question || text;
-    const data = await getMarketData();
+    const data = await liveMarketData();
     const venuesAvailable = data.markets.length > 0;
     let match: Record<string, unknown> = { path: "none" };
     if (venuesAvailable) {
@@ -2430,72 +2468,6 @@ function noteGeoForCommunity(req: express.Request): void {
   }
 }
 
-/**
- * REGIME 2's single gate. Every venue real-money surface goes through this and
- * nothing else — one function so there is exactly one place to audit, and so
- * no route can accidentally implement a laxer version of the rule.
- *
- * Order matters. The contractual clearance is checked first because it is the
- * broadest condition (no jurisdiction is allowed while it is open), then the
- * geo, which inherits resolveClientCountry's fail-CLOSED behaviour: an IP we
- * cannot place is refused, not waved through. That is the opposite of REGIME
- * 1's posture and deliberately so — our own parimutuel blocks nobody, a
- * sourced venue blocks anyone we can't positively clear.
- */
-function venueRealMoneyReady(req: express.Request): boolean {
-  if (!realStakesReady) return false;             // master flag + verified list
-  if (!JUPITER_PREDICT_ENABLED) return false;     // venue source switched off
-  return venueRealMoneyAllowed(resolveClientCountry(req));
-}
-
-app.get("/api/chain/status", (req, res) => {
-  // Community-only surface: the master flag decides, not the geofence.
-  noteGeoForCommunity(req);
-  // The cluster ships with the flag so the client has ONE source for it. It
-  // used to be a string typed into chain.js, which survives exactly until the
-  // server points at mainnet and then tells somebody spending real money that
-  // they are on a test network, and links them to an explorer page showing
-  // nothing.
-  res.json({ enabled: realStakesReady, cluster: cluster() });
-});
-
-/**
- * REGIME 2's client-facing boolean, deliberately SEPARATE from
- * /api/chain/status. Two surfaces with two different rules need two answers:
- * a user in the US gets community real-money (enabled) and venue real-money
- * (blocked) in the same session, and one shared boolean could only lie about
- * one of them.
- */
-app.get("/api/venue/status", (req, res) => {
-  res.json({ enabled: venueRealMoneyReady(req) });
-});
-
-/**
- * Build an unsigned Jupiter order for the user's own wallet to sign. Gated
- * identically to /api/venue/status — the status boolean hides the UI, this
- * check is the one that actually stops a stale client or a direct call. Both
- * read the same venueRealMoneyReady, so they cannot drift apart.
- */
-app.post("/api/venue/order/prepare", async (req, res) => {
-  if (!venueRealMoneyReady(req)) return res.status(451).json({ ok: false, reason: "venue-unavailable-in-region" });
-  const marketId = String(req.body?.marketId ?? "");
-  const userPubkey = String(req.body?.userPubkey ?? "");
-  const isYes = req.body?.side === "yes";
-  const depositAmount = Number(req.body?.depositAmount ?? 0);
-  const depositMint = String(req.body?.depositMint ?? "");
-  if (!marketId) return res.status(400).json({ error: "marketId required" });
-  if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
-  if (req.body?.side !== "yes" && req.body?.side !== "no") return res.status(400).json({ error: "side must be yes|no" });
-  if (!Number.isFinite(depositAmount) || depositAmount <= 0) return res.status(400).json({ error: "depositAmount must be positive" });
-  if (!isValidPubkeyString(depositMint)) return res.status(400).json({ error: "invalid depositMint" });
-
-  const built = await prepareVenueOrderTx({
-    marketId, ownerPubkey: userPubkey, isYes, isBuy: true, depositAmount, depositMint,
-  });
-  if (!built) return res.status(502).json({ ok: false, reason: "venue-unreachable" });
-  res.json({ ok: true, txBase64: built.txBase64 });
-});
-
 if (realStakesReady) {
   const MIN_STAKE_LAMPORTS = 1_000_000;    // 0.001 SOL — above rent/fee dust
   const MAX_STAKE_LAMPORTS = 5_000_000_000; // 5 SOL — a sane demo ceiling, not a protocol limit
@@ -2807,37 +2779,21 @@ async function emailSettled(slug: string, outcome: "yes" | "no", settled: { devi
   }
 }
 
-const SWEEP_EVERY_MS = 10 * 60_000;
-let sweeping = false;
+/**
+ * The venue auto-settle sweep is gone with the venues.
+ *
+ * It polled Kalshi and Polymarket every ten minutes asking whether a market
+ * someone still held had resolved, and settled it when the venue said so. That
+ * was the only way a venue market could ever pay out, because nobody here
+ * decides what happened in somebody else's market.
+ *
+ * Oddie's own markets do not work that way and never did: an operator resolves
+ * them through /api/community/resolve, which settles positions off-chain and
+ * calls resolve_market on-chain in the same step. There is nothing left for a
+ * sweep to ask, and leaving one running would have meant a cron quietly
+ * hitting two APIs for markets the product no longer carries.
+ */
 
-export async function sweepSettlements(): Promise<void> {
-  if (sweeping) return; // one sweep at a time; the next tick catches anything missed
-  sweeping = true;
-  try {
-    const slugs = await openSlugs();
-    if (slugs.length === 0) return;
-    const { all } = await getMarketData();
-    for (const slug of slugs) {
-      const rec = await getSlug(slug, all);
-      if (!rec) continue;
-      const live = all.find((m) => m.venue === rec.market.venue && m.venueId === rec.market.venueId);
-      if (live && live.yesPct > 0 && live.yesPct < 100) continue; // still trading
-      const outcome = await fetchResolution(rec.market.venue, rec.market.venueId);
-      if (!outcome) continue; // closed-not-resolved, unlisted, or a venue hiccup: wait
-      const settled = await settleMarket(slug, outcome);
-      if (settled.length > 0) {
-        console.log(`[settle] ${slug} -> ${outcome}: ${settled.length} position(s), ${settled.reduce((s, x) => s + x.proceeds, 0)} predictions paid`);
-        await emailSettled(slug, outcome, settled);
-      }
-    }
-  } catch (err) {
-    console.error("[settle] sweep failed:", (err as Error).message);
-  } finally {
-    sweeping = false;
-  }
-}
-setInterval(sweepSettlements, SWEEP_EVERY_MS).unref();
-setTimeout(sweepSettlements, 45_000).unref(); // first pass shortly after boot, once venues are warm
 
 // "Your market closes soon" — a return trigger driven by the passage of time,
 // not an event, so it needs its own clock rather than a hook in placeCall.
