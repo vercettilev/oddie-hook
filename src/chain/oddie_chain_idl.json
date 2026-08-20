@@ -1,17 +1,108 @@
 {
-  "address": "Ao8tBMVCUMMYAm8cbq2qehP78RCK5xNAPyaXv9TH5FZT",
+  "address": "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu",
   "metadata": {
     "name": "oddie_chain",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "spec": "0.1.0",
-    "description": "Created with Anchor"
+    "description": "Oddie pari-mutuel markets with a payable creator fee"
   },
   "instructions": [
     {
+      "name": "claim_creator_fee",
+      "docs": [
+        "The 3%, pulled by the person it belongs to.",
+        "",
+        "PULL, NOT PUSH, and that is the substantive design choice here. Pushing",
+        "at resolve would mean the market cannot settle until the creator has a",
+        "funded, rent-exempt account to receive into, which makes settlement for",
+        "everybody else depend on a third party who may never have opened a",
+        "wallet. It would also hand the resolve transaction a lamport transfer to",
+        "an address the resolver does not control. A claim the creator signs",
+        "themselves keeps settlement independent of them and proves ownership of",
+        "the wallet at the moment of payment."
+      ],
+      "discriminator": [
+        26,
+        97,
+        138,
+        203,
+        132,
+        171,
+        141,
+        252
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "The creator recorded at create time, signing for themselves. `has_one`",
+            "is what makes the fee unstealable: no other key can satisfy it."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim_winnings",
       "docs": [
-        "Claim a winning position's pro-rata share of the pot. Losing and",
-        "already-claimed positions are rejected."
+        "Take what you are owed: a share of the pool if you were right, or your",
+        "stake back if nobody was.",
+        "",
+        "The refund branch is not a courtesy. A pari-mutuel pool with no winners",
+        "has no formula, and the alternatives are keeping the money or inventing",
+        "a rule; returning it is the only one of the three that is not a",
+        "confiscation."
       ],
       "discriminator": [
         161,
@@ -49,19 +140,11 @@
               },
               {
                 "kind": "account",
-                "path": "market.authority",
-                "account": "Market"
-              },
-              {
-                "kind": "account",
                 "path": "market.market_id",
                 "account": "Market"
               }
             ]
-          },
-          "relations": [
-            "position"
-          ]
+          }
         },
         {
           "name": "vault",
@@ -120,8 +203,21 @@
     {
       "name": "create_market",
       "docs": [
-        "Create a binary YES/NO pari-mutuel market. `authority` becomes the fixed",
-        "admin allowed to resolve it. Positions are accepted until `close_time`."
+        "Open a market. `creator` is passed explicitly rather than taken from the",
+        "signer: markets are minted by Oddie's admin key on behalf of whoever",
+        "tagged the argument on X, and that person is very often not present and",
+        "has no wallet yet. Recording them here is what makes the fee payable to",
+        "them later, and it is the on-chain half of `market_surfacer`.",
+        "",
+        "Pass `Pubkey::default()` when the tagger has no wallet yet, which is the",
+        "normal case at tag time, and name them later with `set_creator`. That is",
+        "a one-way fill, so an unnamed market stays claimable by the right person",
+        "whenever they turn up, while a named one can never be redirected.",
+        "",
+        "A creator who never connects a wallet simply never claims; the fee stays",
+        "in the vault as dust rather than being redirected to the house, because",
+        "silently rerouting someone's fee to ourselves is worse than leaving it",
+        "unclaimed."
       ],
       "discriminator": [
         103,
@@ -136,10 +232,6 @@
       "accounts": [
         {
           "name": "authority",
-          "docs": [
-            "The admin authority; pays for both accounts and becomes the fixed",
-            "resolver for this market."
-          ],
           "writable": true,
           "signer": true
         },
@@ -160,10 +252,6 @@
                 ]
               },
               {
-                "kind": "account",
-                "path": "authority"
-              },
-              {
                 "kind": "arg",
                 "path": "market_id"
               }
@@ -172,9 +260,6 @@
         },
         {
           "name": "vault",
-          "docs": [
-            "Native SOL escrow, program-owned, one per market."
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -212,14 +297,32 @@
         {
           "name": "close_time",
           "type": "i64"
+        },
+        {
+          "name": "creator",
+          "type": "pubkey"
+        },
+        {
+          "name": "creator_fee_bps",
+          "type": "u16"
         }
       ]
     },
     {
       "name": "resolve_market",
       "docs": [
-        "Resolve the market to a winning side. Callable only by the fixed",
-        "authority, only after `close_time`."
+        "Settle, and fix the creator fee for good.",
+        "",
+        "The fee is computed HERE and stored, not recomputed per claim. If each",
+        "claim recomputed it from live totals it would be a moving number, and",
+        "the last claimant would be the one who absorbs the drift. Fixing it once",
+        "at resolve makes every subsequent payout a pure function of numbers that",
+        "can no longer change.",
+        "",
+        "NO FEE WHEN THERE ARE NO WINNERS. If nobody backed the winning side the",
+        "market pays refunds instead of winnings (see claim_winnings), and taking",
+        "a cut of a refund would mean charging people to be given their own money",
+        "back."
       ],
       "discriminator": [
         155,
@@ -235,7 +338,9 @@
         {
           "name": "authority",
           "docs": [
-            "Must match `market.authority` (fixed admin), enforced by `has_one`."
+            "Only the key that opened the market can settle it. This is the oracle",
+            "and it is a human decision; see the note in the repo about what putting",
+            "a market on chain does and does not prove."
           ],
           "signer": true,
           "relations": [
@@ -260,11 +365,6 @@
               },
               {
                 "kind": "account",
-                "path": "market.authority",
-                "account": "Market"
-              },
-              {
-                "kind": "account",
                 "path": "market.market_id",
                 "account": "Market"
               }
@@ -280,10 +380,96 @@
       ]
     },
     {
+      "name": "set_creator",
+      "docs": [
+        "Name the creator of a market that was opened without one.",
+        "",
+        "Markets are minted the moment someone tags the argument on X, and that",
+        "person usually has no wallet at that moment. `create_market` therefore",
+        "accepts `Pubkey::default()` as \"not named yet\", and this fills it in",
+        "once they connect one. Without this the fee has no payable address and",
+        "\"being loud pays\" is not true in real money, which is the whole point.",
+        "",
+        "ONE WAY, and that is the only security property here. A creator can be",
+        "named, never renamed and never cleared, so a fee already promised to",
+        "somebody cannot be redirected. It deliberately does NOT require the",
+        "market to be unresolved: a tagger who connects a wallet a week after",
+        "their market settled should still get paid, and gating on resolution",
+        "would only strand them. That costs nothing in trust, because the",
+        "authority can already name any creator at create time and can already",
+        "resolve any market. This adds no power it did not have; it only moves",
+        "when the name can be supplied.",
+        "",
+        "The unset sentinel is safe to leave in place indefinitely: no private",
+        "key exists for the all-zero pubkey, so `claim_creator_fee`'s",
+        "`has_one = creator` on a Signer can never be satisfied while unset."
+      ],
+      "discriminator": [
+        254,
+        148,
+        255,
+        112,
+        207,
+        142,
+        170,
+        165
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "`has_one = authority` is what keeps this instruction the house's own:",
+            "nobody but the key that opened the market can name its creator."
+          ],
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "creator",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "take_position",
       "docs": [
-        "Stake native SOL on a side (0 = YES, 1 = NO). Lamports are escrowed in",
-        "the market vault. Repeated calls accumulate on the same side."
+        "Stake on a side. One position account per (market, user), so a second",
+        "call from the same wallet ADDS to the existing stake rather than opening",
+        "a rival one: two positions for one person on one market would make the",
+        "payout maths ambiguous and the UI worse.",
+        "",
+        "Switching sides is refused rather than silently re-staking. Someone who",
+        "wants the other side of their own call is asking for something this",
+        "program does not do, and quietly moving their money is the wrong answer",
+        "to that."
       ],
       "discriminator": [
         33,
@@ -319,11 +505,6 @@
               },
               {
                 "kind": "account",
-                "path": "market.authority",
-                "account": "Market"
-              },
-              {
-                "kind": "account",
                 "path": "market.market_id",
                 "account": "Market"
               }
@@ -354,9 +535,6 @@
         },
         {
           "name": "position",
-          "docs": [
-            "One position per (market, user). Created on first stake, reused after."
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -446,155 +624,165 @@
     {
       "code": 6000,
       "name": "QuestionTooLong",
-      "msg": "Question exceeds the maximum allowed length"
+      "msg": "question exceeds the 180-character limit"
     },
     {
       "code": 6001,
-      "name": "InvalidCloseTime",
-      "msg": "Close time must be in the future"
+      "name": "FeeTooHigh",
+      "msg": "creator fee exceeds the maximum allowed"
     },
     {
       "code": 6002,
-      "name": "InvalidSide",
-      "msg": "Side must be 0 (YES) or 1 (NO)"
+      "name": "CloseTimeInPast",
+      "msg": "close time must be in the future"
     },
     {
       "code": 6003,
-      "name": "ZeroAmount",
-      "msg": "Stake amount must be greater than zero"
+      "name": "BadSide",
+      "msg": "side must be 0 (yes) or 1 (no)"
     },
     {
       "code": 6004,
-      "name": "MarketClosed",
-      "msg": "Market is closed for new positions"
+      "name": "ZeroAmount",
+      "msg": "amount must be greater than zero"
     },
     {
       "code": 6005,
-      "name": "MarketAlreadyResolved",
-      "msg": "Market has already been resolved"
+      "name": "AlreadyResolved",
+      "msg": "market is already resolved"
     },
     {
       "code": 6006,
-      "name": "MarketNotResolved",
-      "msg": "Market has not been resolved yet"
+      "name": "NotResolved",
+      "msg": "market is not resolved yet"
     },
     {
       "code": 6007,
-      "name": "BettingStillOpen",
-      "msg": "Betting window is still open; cannot resolve yet"
+      "name": "MarketClosed",
+      "msg": "market is closed to new positions"
     },
     {
       "code": 6008,
-      "name": "Unauthorized",
-      "msg": "Only the market authority may perform this action"
+      "name": "SideAlreadyTaken",
+      "msg": "this wallet already holds the other side of this market"
     },
     {
       "code": 6009,
-      "name": "SideMismatch",
-      "msg": "Position already exists on the opposite side"
+      "name": "AlreadyClaimed",
+      "msg": "already claimed"
     },
     {
       "code": 6010,
-      "name": "AlreadyClaimed",
-      "msg": "Winnings for this position have already been claimed"
+      "name": "NoFeeOwed",
+      "msg": "no creator fee is owed on this market"
     },
     {
       "code": 6011,
-      "name": "NotWinningSide",
-      "msg": "This position is not on the winning side"
+      "name": "VaultUnderfunded",
+      "msg": "vault cannot cover this payout without breaking rent exemption"
     },
     {
       "code": 6012,
-      "name": "NoWinningStakes",
-      "msg": "No stakes exist on the winning side"
+      "name": "WrongAuthority",
+      "msg": "signer is not this market's authority"
     },
     {
       "code": 6013,
+      "name": "WrongOwner",
+      "msg": "signer is not this position's owner"
+    },
+    {
+      "code": 6014,
+      "name": "WrongCreator",
+      "msg": "signer is not this market's creator"
+    },
+    {
+      "code": 6015,
+      "name": "CreatorAlreadySet",
+      "msg": "this market's creator is already named and cannot be changed"
+    },
+    {
+      "code": 6016,
+      "name": "CreatorNotNamed",
+      "msg": "creator cannot be set to the unnamed address"
+    },
+    {
+      "code": 6017,
       "name": "MathOverflow",
-      "msg": "Arithmetic overflow"
+      "msg": "arithmetic overflow"
     }
   ],
   "types": [
     {
       "name": "Market",
-      "docs": [
-        "A single binary (YES/NO) pari-mutuel prediction market.",
-        "",
-        "All staked SOL lives in the associated [`Vault`] PDA, not in this account.",
-        "`total_yes` / `total_no` track the escrowed pools so payouts can be computed",
-        "without iterating positions."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
             "docs": [
-              "Admin authority fixed at creation; the only key allowed to resolve."
+              "Who the creator fee is owed to. The field the deployed program does not",
+              "have, and the reason this one exists."
             ],
             "type": "pubkey"
           },
           {
             "name": "market_id",
-            "docs": [
-              "Caller-supplied nonce making the market PDA unique per authority."
-            ],
             "type": "u64"
           },
           {
             "name": "question",
-            "docs": [
-              "Human-readable question, e.g. \"Will SOL close above $200 on 2026-08-01?\"."
-            ],
             "type": "string"
           },
           {
             "name": "close_time",
-            "docs": [
-              "Unix timestamp after which no new positions are accepted."
-            ],
             "type": "i64"
           },
           {
             "name": "resolved",
-            "docs": [
-              "True once the authority has resolved the outcome."
-            ],
             "type": "bool"
           },
           {
             "name": "winning_side",
-            "docs": [
-              "Winning side (0 = YES, 1 = NO); only meaningful when `resolved`."
-            ],
             "type": "u8"
           },
           {
             "name": "total_yes",
-            "docs": [
-              "Total lamports staked on YES."
-            ],
             "type": "u64"
           },
           {
             "name": "total_no",
+            "type": "u64"
+          },
+          {
+            "name": "creator_fee_bps",
             "docs": [
-              "Total lamports staked on NO."
+              "Stored per market, so changing the rate later cannot reprice a market",
+              "people have already staked into."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "creator_fee_lamports",
+            "docs": [
+              "Fixed at resolve. Zero until then, and zero forever if nobody won."
             ],
             "type": "u64"
           },
           {
+            "name": "creator_fee_claimed",
+            "type": "bool"
+          },
+          {
             "name": "bump",
-            "docs": [
-              "Bump for the market PDA."
-            ],
             "type": "u8"
           },
           {
             "name": "vault_bump",
-            "docs": [
-              "Bump for the vault PDA."
-            ],
             "type": "u8"
           }
         ]
@@ -602,53 +790,31 @@
     },
     {
       "name": "Position",
-      "docs": [
-        "One bettor's stake in one market. A wallet holds at most one position per",
-        "market; repeated `take_position` calls accumulate on the same side."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "market",
-            "docs": [
-              "The market this position belongs to."
-            ],
             "type": "pubkey"
           },
           {
             "name": "owner",
-            "docs": [
-              "The wallet that owns (and can claim) this position."
-            ],
             "type": "pubkey"
           },
           {
             "name": "side",
-            "docs": [
-              "Chosen side (0 = YES, 1 = NO)."
-            ],
             "type": "u8"
           },
           {
             "name": "amount",
-            "docs": [
-              "Total lamports this wallet has staked."
-            ],
             "type": "u64"
           },
           {
             "name": "claimed",
-            "docs": [
-              "True once winnings have been claimed."
-            ],
             "type": "bool"
           },
           {
             "name": "bump",
-            "docs": [
-              "Bump for the position PDA."
-            ],
             "type": "u8"
           }
         ]
@@ -656,58 +822,19 @@
     },
     {
       "name": "Vault",
-      "docs": [
-        "Program-owned native SOL escrow for a single market.",
-        "",
-        "Holds its own rent-exempt reserve plus every lamport staked via",
-        "`take_position`. Payouts are debited directly (the program owns it), so no",
-        "`invoke_signed` is required on the withdrawal path."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "market",
-            "docs": [
-              "The market this vault escrows for."
-            ],
             "type": "pubkey"
           },
           {
             "name": "bump",
-            "docs": [
-              "Bump for the vault PDA."
-            ],
             "type": "u8"
           }
         ]
       }
-    }
-  ],
-  "constants": [
-    {
-      "name": "MARKET_SEED",
-      "docs": [
-        "PDA seed for a `Market` account: [MARKET_SEED, authority, market_id_le]."
-      ],
-      "type": "bytes",
-      "value": "[109, 97, 114, 107, 101, 116]"
-    },
-    {
-      "name": "POSITION_SEED",
-      "docs": [
-        "PDA seed for a `Position` account: [POSITION_SEED, market, owner]."
-      ],
-      "type": "bytes",
-      "value": "[112, 111, 115, 105, 116, 105, 111, 110]"
-    },
-    {
-      "name": "VAULT_SEED",
-      "docs": [
-        "PDA seed for a `Vault` account (native SOL escrow): [VAULT_SEED, market]."
-      ],
-      "type": "bytes",
-      "value": "[118, 97, 117, 108, 116]"
     }
   ]
 }

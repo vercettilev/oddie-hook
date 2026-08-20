@@ -1,7 +1,15 @@
-// The creator fee — play-token (additive bonus, actually credited) and
-// real-money (proposed rate, logged but never deducted — see economy.ts for
-// why the on-chain program can't be charged from this repo). Against the
-// in-memory store.
+// The creator fee, in both economies it has lived in:
+//
+//   · play-token: an additive bonus credited by the house, still here because
+//     the markets opened before the pivot settle out under the rules they were
+//     opened under.
+//   · real-money: 3% deducted from the vault by oddie_chain at resolve, then
+//     claimed by the creator's own signature. This half used to be a proposed
+//     rate that was logged and never charged, because the deployed program had
+//     no fee instruction and this repo had no source to add one. Both of those
+//     stopped being true, and the tests below are what pin that.
+//
+// Against the in-memory store.
 //
 // Run with: npm run test-fees
 
@@ -12,7 +20,7 @@ if (process.env.DATABASE_URL) {
 
 import {
   createSlug, placeCall, settleMarket, getWallet, noticesFor, slugFor,
-  recordSurfacer, feeLog, logRealFeeIntent, _memGrant,
+  recordSurfacer, feeLog, logRealFee, _memGrant,
 } from "../src/store/markets.js";
 import { creatorFeePlay, CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "../src/store/economy.js";
 import { linkAccount } from "../src/store/accounts.js";
@@ -143,7 +151,7 @@ console.log("\nedge cases: fees can never produce a negative or broken payout");
     soloAfter === soloBefore + settled[0].proceeds + 1, `expected ${soloBefore + settled[0].proceeds + 1}, got ${soloAfter}`);
 }
 
-console.log("\nreal-money fee: logged as intent only, never enforced — see economy.ts");
+console.log("\nreal-money fee: the creator fee, deducted on-chain at resolve");
 {
   const CREATOR = "fee-creator-dev-real";
   const m = mk("FEEREAL", "Will the real-money fee intent log correctly?", 50);
@@ -152,25 +160,33 @@ console.log("\nreal-money fee: logged as intent only, never enforced — see eco
   await recordSurfacer(realSlug, { deviceId: CREATOR });
 
   const TOTAL_LAMPORTS = 10_000_000_000; // 10 SOL
-  await logRealFeeIntent(realSlug, TOTAL_LAMPORTS);
+  await logRealFee(realSlug, TOTAL_LAMPORTS);
   const log = (await feeLog(200)).filter((r) => r.slug === realSlug);
-  check("exactly two rows: creator + protocol", log.length === 2, JSON.stringify(log));
+
+  // ONE row, not two. There is no house fee any more: oddie_chain takes a
+  // creator fee and nothing else, PROTOCOL_FEE_BPS_REAL is 0, and logRealFee
+  // skips a zero amount rather than writing a row claiming nobody was charged
+  // nothing. A second row appearing here means a protocol fee came back
+  // without the program instruction that would let anyone actually collect it.
+  check("one row: the creator fee, and no house fee beside it", log.length === 1, JSON.stringify(log));
 
   const creatorRow = log.find((r) => r.feeKind === "creator");
-  check("creator row: 2% of the vault, attributed, NOT enforced", !!creatorRow &&
+  // enforced: true, because resolve_market really does take this out of the
+  // pool before winners are paid. It is not yet COLLECTED (that needs the
+  // creator's own claim_creator_fee signature), which is a different fact and
+  // is why creatorFeesPaidFor still refuses to count real rows as earnings.
+  check("creator row: 3% of the vault, attributed, and genuinely enforced", !!creatorRow &&
     creatorRow.marketKind === "real" && creatorRow.rateBps === CREATOR_FEE_BPS_REAL &&
-    creatorRow.feeAmount === 200_000_000 && creatorRow.recipientDeviceId === CREATOR && creatorRow.enforced === false,
+    creatorRow.feeAmount === 300_000_000 && creatorRow.recipientDeviceId === CREATOR && creatorRow.enforced === true,
     JSON.stringify(creatorRow));
 
-  const protocolRow = log.find((r) => r.feeKind === "protocol");
-  check("protocol row: 3% of the vault, no personal recipient, NOT enforced", !!protocolRow &&
-    protocolRow.marketKind === "real" && protocolRow.rateBps === PROTOCOL_FEE_BPS_REAL &&
-    protocolRow.feeAmount === 300_000_000 && protocolRow.recipientDeviceId === null && protocolRow.enforced === false,
-    JSON.stringify(protocolRow));
+  check("the rate matches what the program is told to charge", CREATOR_FEE_BPS_REAL === 300);
+  check("no house fee is charged, and the constant says so", PROTOCOL_FEE_BPS_REAL === 0);
+  check("no protocol row was written", !log.some((r) => r.feeKind === "protocol"), JSON.stringify(log));
 
-  // An empty vault (nobody staked real money) logs nothing — there's no fee to propose.
+  // An empty vault (nobody staked real money) logs nothing: there is no fee.
   const emptySlug = "fee-real-market-empty";
-  await logRealFeeIntent(emptySlug, 0);
+  await logRealFee(emptySlug, 0);
   check("a zero-lamport vault logs nothing", (await feeLog(300)).every((r) => r.slug !== emptySlug));
 }
 

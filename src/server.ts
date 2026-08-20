@@ -23,13 +23,13 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { logRealFeeIntent, feeLog } from "./store/markets.js";
+import { logRealFee, feeLog } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
-  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol,
+  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
@@ -2062,17 +2062,40 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
   await recordSurfacer(slug, { sourceUrl: createSourceUrl });
   void awardSurface(slug).catch(() => {}); // points are best-effort; the row is not
 
-  // Layer 2 — devnet proof. Soft by design: a failure here never blocks Layer 1.
-  let onchain: { pubkey: string; explorer: string; signature: string } | null = null;
-  const minted = await mintMarket({ marketId, question, closeTime });
-  if (minted) {
-    await setCommunityOnchain(slug, minted.pubkey, minted.signature);
-    onchain = { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature };
+  // The vault, and therefore the market. HARD, where this used to be soft.
+  //
+  // While markets were played in virtual tokens this mint was a badge: it
+  // failed, you lost an explorer link, the market went on being perfectly
+  // playable. Under real money there is no off-chain pool behind it. A market
+  // with no vault is a market nobody can stake into, and publishing one
+  // invites people to a table that does not exist, from a reply oddie posted
+  // under someone else's tweet.
+  //
+  // `creator: null` is correct and not a gap: the market is minted the moment
+  // the argument is tagged, and the tagger usually has no wallet yet. The
+  // program stores its unnamed sentinel and set_creator fills in the real
+  // address when they connect one, which is what keeps their 3% claimable
+  // instead of stranded. See nameCreator.
+  const minted = await mintMarket({
+    marketId, question, closeTime,
+    creator: null,
+    creatorFeeBps: CREATOR_FEE_BPS_REAL,
+  });
+  if (!minted) {
+    // The row stays behind with a null onchain_pubkey, which the schema
+    // already defines as "the mint was skipped or failed". Reporting the
+    // failure is what stops it being treated as live; see the read path.
+    return res.status(502).json({
+      error: "market could not be opened on Solana, so it has no vault and was not published",
+      slug, marketId, chainEnabled: isChainEnabled(),
+    });
   }
+  await setCommunityOnchain(slug, minted.pubkey, minted.signature);
+  const onchain = { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature };
 
   res.json({
     ok: true, slug, marketId, url: `${BASE_URL}/m/${slug}`,
-    onchain, chainEnabled: isChainEnabled(),
+    onchain, chainEnabled: isChainEnabled(), cluster: cluster(),
   });
 });
 
@@ -2142,10 +2165,10 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
       void resolveMarketOnChain(detail.onchainPubkey, outcome);
       // Real-money creator/protocol fee: logged as an audit-trail "intended
       // fee" only, never actually deducted — the deployed Solana program has
-      // no fee instruction (see economy.ts + logRealFeeIntent). Read the
+      // no fee instruction (see economy.ts + logRealFee). Read the
       // vault total straight from chain rather than trusting a stale value.
       void fetchMarketOnChain(detail.onchainPubkey).then((state) => {
-        if (state) void logRealFeeIntent(slug, state.totalYesLamports + state.totalNoLamports);
+        if (state) void logRealFee(slug, state.totalYesLamports + state.totalNoLamports);
       }).catch(() => {});
     }).catch(() => {});
   }

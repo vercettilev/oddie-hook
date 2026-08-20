@@ -2756,14 +2756,26 @@ async function logFee(input: FeeLogInput): Promise<void> {
   );
 }
 /**
- * Real-money creator + protocol fee — logged, never charged. See economy.ts:
- * the deployed Solana program has no fee-taking instruction, so there is
- * nothing to actually deduct from the vault yet. This records what WOULD be
- * taken at the proposed rates, against the vault total at resolution, purely
- * for transparency and future reconciliation once on-chain support exists.
- * Best-effort and non-blocking — a logging failure must never affect a
- * real-money market's resolution. */
-export async function logRealFeeIntent(slug: string, totalVaultLamports: number): Promise<void> {
+ * The real-money creator fee, as it was actually taken.
+ *
+ * This was `logRealFee` and it logged a hypothetical: the deployed
+ * program had no fee instruction, so the rate was a proposal and every row
+ * carried `enforced: false`. oddie_chain changed that. resolve_market fixes
+ * creator_fee_lamports out of the pool before any winner is paid, so by the
+ * time this runs the money is already deducted and the rows are a record, not
+ * a plan. Hence the rename: a function called "intent" writing enforced rows
+ * is the drift that makes a log untrustworthy.
+ *
+ * `enforced: true` means DEDUCTED, not COLLECTED. The program holds the fee in
+ * the vault until the creator signs claim_creator_fee for it, and a creator
+ * who never connects a wallet never claims. Anything rendering these rows has
+ * to say "yours to claim" rather than "paid to you" until the claim lands.
+ *
+ * The protocol branch is dead at PROTOCOL_FEE_BPS_REAL = 0 and kept for the
+ * day a house fee exists in the program. Best-effort and non-blocking: a
+ * logging failure must never affect a real-money market's resolution.
+ */
+export async function logRealFee(slug: string, totalVaultLamports: number): Promise<void> {
   try {
     if (totalVaultLamports <= 0) return;
     const surfacer = await surfacerFor(slug);
@@ -2773,7 +2785,7 @@ export async function logRealFeeIntent(slug: string, totalVaultLamports: number)
       await logFee({
         slug, marketKind: "real", feeKind: "creator",
         recipientDeviceId: surfacer?.deviceId ?? null, recipientHandle: surfacer?.handle ?? null,
-        rateBps: CREATOR_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: creatorFeeAmount, enforced: false,
+        rateBps: CREATOR_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: creatorFeeAmount, enforced: true,
       });
     }
     if (protocolFeeAmount > 0) {
@@ -2783,16 +2795,20 @@ export async function logRealFeeIntent(slug: string, totalVaultLamports: number)
         rateBps: PROTOCOL_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: protocolFeeAmount, enforced: false,
       });
     }
-  } catch (e) { console.error("[fees] real-money fee intent logging failed:", (e as Error).message); }
+  } catch (e) { console.error("[fees] real-money fee logging failed:", (e as Error).message); }
 }
 
 /**
  * What the TAGGER actually earned on each of these markets — the receipt
  * behind the "+3% goes to whoever tagged this" promise on a market card.
  *
- * Only enforced play-token creator fees count: a `real`/unenforced row is a
- * logged intent, not money anyone received (see logRealFeeIntent), and
- * showing it as earnings would be a straightforward lie on the card. Returns
+ * Play rows only, and the reason changed. It used to be that a `real` row was
+ * an unenforced hypothetical. Now a real row IS deducted on-chain, but the
+ * lamports sit in the vault until the creator signs claim_creator_fee, so it
+ * is money owed rather than money received, and this function answers "what
+ * arrived". Mixing the two would put "earned" on a card next to a balance
+ * that never moved. A real market's owed-and-unclaimed fee belongs in its own
+ * read, against the chain, not in this one. Returns
  * only slugs that actually paid, so a caller can treat "absent" as "nothing
  * paid yet" without distinguishing zero from missing.
  */
@@ -2877,7 +2893,7 @@ export async function creatorStatsFor(rawDeviceId: string): Promise<CreatorStats
  * footnote on someone's profile.
  *
  * Only ENFORCED play-token creator fees count as earnings — logged real-money
- * intents are not money anyone received (see logRealFeeIntent) and putting
+ * intents are not money anyone received (see logRealFee) and putting
  * them on a public board would be inventing income. Creators with zero fees
  * but real markets still chart (ranked below every earner): early on, the
  * board would otherwise be empty, and "made 3 markets nobody traded yet" is

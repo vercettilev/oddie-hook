@@ -161,21 +161,44 @@ export function winBonus(entryPct: SidePct): number {
  * structurally cannot make a payout negative or smaller than it would
  * otherwise be — see creatorFeePlay below and its call site in settleMarket.
  *
- * Real-money community markets DO hold a real, on-chain vault — but the
- * deployed Solana program (create_market / resolve_market / take_position /
- * claim_winnings — see oddie_chain_idl.json) has no fee-taking instruction,
- * and this repo has no program source to add one and redeploy. CREATOR_FEE_
- * BPS_REAL and PROTOCOL_FEE_BPS_REAL are therefore PROPOSED rates only: shown
- * to users for transparency and logged as an "intended fee" for future
- * reconciliation, but never actually deducted from the vault. See
- * logRealFeeIntent in markets.ts and the "not yet enforced on-chain" copy
- * next to every place these rates are displayed — do not let a future change
- * present these as if they were being charged until the on-chain program
- * actually supports taking them.
+ * The creator fee is now REAL and ENFORCED ON-CHAIN. This paragraph used to
+ * say the opposite, and it was true when written: the deployed program had no
+ * fee-taking instruction and the repo had no source to add one. Both facts
+ * changed. oddie_chain now stores creator_fee_bps per market, fixes the amount
+ * out of the pool at resolve, and pays it through claim_creator_fee, which is
+ * what turns "being loud pays" from a slogan into a transaction.
+ *
+ * The PROTOCOL fee did NOT survive that change and is zeroed below. The
+ * program takes a creator fee and nothing else, so oddie's own cut is really
+ * zero, and a displayed 3% house fee would be a number nobody charges. That is
+ * the exact failure this comment used to warn about, pointed the other way.
+ *
+ * Zeroed rather than deleted on purpose. The fee-intent logging in markets.ts
+ * and its test still describe the shape of a house fee, and keeping the
+ * constant means the day one is introduced it goes back to being a rate
+ * change rather than a re-plumbing. Reintroducing it is a program change
+ * first, this constant second, copy last, in that order.
  */
 export const CREATOR_FEE_BPS_PLAY = 300;   // 3% of total pool (both sides), additive bonus to the creator
-export const CREATOR_FEE_BPS_REAL = 200;   // 2% of the vault — proposed, NOT yet enforced on-chain
-export const PROTOCOL_FEE_BPS_REAL = 300;  // 3% of the vault — proposed, NOT yet enforced on-chain
+
+/**
+ * 3% of the vault to whoever tagged the argument, deducted at resolve before
+ * winners are paid, claimed by them with their own signature.
+ *
+ * It was 200 (2%) while it was only a proposal. Raised to match the 3% already
+ * printed on every market card, in every reply oddie posts and on the landing
+ * page: the number people were promised is the number that should arrive, and
+ * quietly shipping a smaller one the moment it became real money is the worst
+ * possible first impression for a fee.
+ *
+ * The program caps this at 1000 (10%) and mintMarket rejects anything outside
+ * 0..1000 before spending a transaction fee to find out.
+ */
+export const CREATOR_FEE_BPS_REAL = 300;
+
+/** Zero, and the program has no instruction that could charge it anyway.
+ *  See the note above before changing this to something nonzero. */
+export const PROTOCOL_FEE_BPS_REAL = 0;
 
 /** Floors to 0 on small pools rather than paying out a fractional token — a
  *  market needs roughly 34+ total tokens staked before the 3% fee rounds up

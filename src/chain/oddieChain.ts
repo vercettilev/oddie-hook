@@ -1,14 +1,29 @@
 /**
- * Layer 2 — the on-chain proof. When an admin creates a Community market we ALSO
- * mint it on the oddie-chain pari-mutuel program on Solana devnet, as a provable
- * "this market really exists on Solana" artifact. Create-only: users still play
- * with virtual tokens off-chain.
+ * The market itself. Not a badge on one.
  *
- * ISOLATION IS THE CONTRACT: this module has NO top-level runtime dependency on
- * @coral-xyz/anchor (or anything that can throw). The heavy libs load lazily via
- * dynamic import() inside a guarded init, so ANY failure here — a bad import, a
- * missing/broken key, an RPC outage — degrades to "no on-chain badge" and NEVER
- * crashes server boot or blocks the product. On-chain is a bonus, not a boot dep.
+ * This module used to be Layer 2: markets were played in virtual tokens and
+ * ALSO minted on Solana as a provable "this really exists" artifact, so a
+ * failed mint cost nothing but a missing explorer link. That inverted when
+ * oddie went real-money-only. The pari-mutuel vault on this program IS the
+ * market now. There is no off-chain pool behind it to fall back to, and a
+ * market that failed to mint is not a market with a missing badge, it is a
+ * market nobody can stake into.
+ *
+ * So the failure policy splits, and the split is the thing to keep straight:
+ *
+ *   · MINTING must fail loudly. mintMarket returning null has to abort the
+ *     create, because publishing a tradeable market with no vault invites
+ *     people to a table that does not exist. Its caller is what enforces
+ *     that, and the route contract says so.
+ *   · BOOT must still never fail. The lazy-import guard below stays exactly
+ *     as it was: a bad @coral-xyz/anchor import, an unparseable admin key or
+ *     a dead RPC degrades to "cannot mint right now" and is reported as such,
+ *     rather than taking the process down and with it every already-open
+ *     market, every settled claim and the whole read path.
+ *
+ * Read that as: on-chain is no longer optional to the PRODUCT, but it is
+ * still optional to the PROCESS STARTING. Those are different promises and
+ * only the first one changed.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,18 +32,34 @@ import path from "node:path";
 import type * as Anchor from "@coral-xyz/anchor";
 
 /**
- * ONCHAIN_ENABLED — master switch for the whole on-chain layer, default OFF.
- * Oddie's repositioning (2026-07) makes community markets the product and parks
- * the Solana layer: with the flag off, no devnet create_market is attempted and
- * no badge/explorer link is emitted anywhere. Everything below — the Anchor
- * client, admin keypair wiring, minting — is intact and tested; it is PRESERVED
- * for a future grant demo. Set ONCHAIN_ENABLED=true to restore the full
- * behavior with zero code changes.
+ * ONCHAIN_ENABLED: the master switch, now default ON.
+ *
+ * It defaulted OFF through the play-token era, when the Solana layer was a
+ * parked grant demo and the honest default for a parked feature is off. Under
+ * real money that default would ship a product with no markets in it, so the
+ * polarity flips with the business model.
+ *
+ * Setting it to false is now a DEVELOPMENT switch, not a product state: it is
+ * how the test suite and a laptop with no admin key run the rest of the server
+ * without reaching for an RPC. Anything user-facing that reads it should treat
+ * false as "this environment cannot trade", not as "trading is off today".
  */
-const ONCHAIN = (process.env.ONCHAIN_ENABLED ?? "false").toLowerCase() === "true";
+const ONCHAIN = (process.env.ONCHAIN_ENABLED ?? "true").toLowerCase() === "true";
 
 const RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
-const CLUSTER = "devnet";
+
+/**
+ * Which cluster the explorer links point at. Derived from the RPC URL rather
+ * than set beside it, because these two drifting apart is the exact bug that
+ * ships mainnet markets with devnet explorer links on them, and nobody notices
+ * until someone clicks one and sees "account not found" under their own money.
+ * SOLANA_CLUSTER overrides it for the RPC hosts whose names say nothing (a
+ * Helius or QuickNode endpoint looks the same on either network).
+ */
+const CLUSTER: "devnet" | "testnet" | "mainnet-beta" =
+  (process.env.SOLANA_CLUSTER as "devnet" | "testnet" | "mainnet-beta" | undefined) ??
+  (/\bdevnet\b/.test(RPC_URL) ? "devnet" : /\btestnet\b/.test(RPC_URL) ? "testnet" : "mainnet-beta");
+
 const SECRET = process.env.SOLANA_ADMIN_SECRET_KEY;
 const IDL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "oddie_chain_idl.json");
 
@@ -36,6 +67,14 @@ const IDL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "oddie_
 // buffer so we fail fast+soft rather than eating a doomed tx fee.
 const MIN_LAMPORTS = 10_000_000; // 0.01 SOL
 const LAMPORTS_PER_SOL = 1_000_000_000;
+
+/**
+ * The program's "creator not named yet" sentinel, base58 of the all-zero
+ * pubkey. Written as a literal rather than derived from web3, because every
+ * pure helper in this file has to stay import-safe (see the isolation note at
+ * the top) and PublicKey.default costs an anchor import to read.
+ */
+const UNNAMED_CREATOR = "11111111111111111111111111111111";
 
 export type MintResult = { pubkey: string; signature: string };
 
@@ -62,9 +101,18 @@ export function isChainEnabled(): boolean {
   return ONCHAIN && Boolean(SECRET);
 }
 
-/** Solana Explorer link for a market account on devnet. */
+/** Solana Explorer link for a market account. Mainnet is the explorer's own
+ *  default and takes no query param, so it is left off there. */
 export function explorerUrl(pubkey: string): string {
-  return `https://explorer.solana.com/address/${pubkey}?cluster=${CLUSTER}`;
+  const q = CLUSTER === "mainnet-beta" ? "" : `?cluster=${CLUSTER}`;
+  return `https://explorer.solana.com/address/${pubkey}${q}`;
+}
+
+/** Which network this process is actually trading on. The UI needs it to say
+ *  so out loud: "you are about to send real SOL" and "this is devnet play"
+ *  must never look identical to somebody about to sign. */
+export function cluster(): "devnet" | "testnet" | "mainnet-beta" {
+  return CLUSTER;
 }
 
 // --- lazy client (all runtime anchor usage lives behind this) ----------------
@@ -144,12 +192,31 @@ export async function mintMarket(args: {
   marketId: number;
   question: string;
   closeTime: number;
+  /**
+   * The wallet the creator fee is owed to, or null when the tagger has no
+   * wallet yet, which is the normal case: a market is minted the second
+   * someone tags an argument on X and that person is usually not even present.
+   * Null mints the market with the program's unnamed sentinel, and
+   * `nameCreator` fills it in later. See set_creator in the program.
+   */
+  creator: string | null;
+  creatorFeeBps: number;
 }): Promise<MintResult | null> {
   const c = await load();
   if (!c) return null;
   try {
     if (args.question.length > 180) {
       console.error("[chain] question exceeds 180 bytes; skipping on-chain mint");
+      return null;
+    }
+    if (args.creator !== null && !isValidPubkeyString(args.creator)) {
+      console.error("[chain] creator is not a valid pubkey; refusing to mint");
+      return null;
+    }
+    // The program caps this at 1000. Catching it here turns a wasted tx fee and
+    // an opaque FeeTooHigh into a log line that names the actual number.
+    if (!Number.isInteger(args.creatorFeeBps) || args.creatorFeeBps < 0 || args.creatorFeeBps > 1000) {
+      console.error(`[chain] creatorFeeBps ${args.creatorFeeBps} outside 0..1000; refusing to mint`);
       return null;
     }
     const bal = await c.connection.getBalance(c.admin.publicKey);
@@ -162,29 +229,56 @@ export async function mintMarket(args: {
     }
 
     const marketIdBn = new c.BN(args.marketId);
-    const [marketPda] = c.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("market"), c.admin.publicKey.toBuffer(), marketIdBn.toArrayLike(Buffer, "le", 8)],
-      c.programId,
-    );
-    const [vaultPda] = c.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("vault"), marketPda.toBuffer()],
-      c.programId,
-    );
+    const market = marketPda(c, marketIdBn);
+    const vault = vaultPda(c, market);
+    const creatorPk = args.creator
+      ? new c.web3.PublicKey(args.creator)
+      : c.web3.PublicKey.default; // the program's "not named yet" sentinel
 
     const signature = await c.program.methods
-      .createMarket(marketIdBn, args.question, new c.BN(args.closeTime))
+      .createMarket(marketIdBn, args.question, new c.BN(args.closeTime), creatorPk, args.creatorFeeBps)
       .accountsStrict({
         authority: c.admin.publicKey,
-        market: marketPda,
-        vault: vaultPda,
+        market,
+        vault,
         systemProgram: c.web3.SystemProgram.programId,
       })
       .rpc();
 
-    console.log(`[chain] minted market ${marketPda.toBase58()} (sig ${signature.slice(0, 8)}…)`);
-    return { pubkey: marketPda.toBase58(), signature };
+    console.log(
+      `[chain] minted market ${market.toBase58()} (sig ${signature.slice(0, 8)}…)` +
+        (args.creator ? ` creator ${args.creator}` : " creator unnamed"),
+    );
+    return { pubkey: market.toBase58(), signature };
   } catch (e) {
-    console.error("[chain] mintMarket failed (virtual market still created):", (e as Error).message);
+    console.error("[chain] mintMarket failed; the market has no vault and must not be published:", (e as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Name the creator of a market minted before they had a wallet. Admin-signed,
+ * because set_creator is authority-only.
+ *
+ * One way in the program: this can name an unnamed market and can never rename
+ * a named one, so calling it twice is not a corruption risk, only a wasted fee.
+ * Returns the signature, or null on any failure including "already named",
+ * which the caller should treat as "fine, somebody got there first" rather
+ * than as an error worth surfacing.
+ */
+export async function nameCreator(marketPubkey: string, creator: string): Promise<string | null> {
+  const c = await load();
+  if (!c) return null;
+  if (!isValidPubkeyString(creator)) return null;
+  try {
+    const signature = await c.program.methods
+      .setCreator(new c.web3.PublicKey(creator))
+      .accountsStrict({ authority: c.admin.publicKey, market: new c.web3.PublicKey(marketPubkey) })
+      .rpc();
+    console.log(`[chain] named creator ${creator} on ${marketPubkey} (sig ${signature.slice(0, 8)}…)`);
+    return signature;
+  } catch (e) {
+    console.error("[chain] nameCreator failed:", (e as Error).message);
     return null;
   }
 }
@@ -197,6 +291,23 @@ export async function mintMarket(args: {
 // the SERVER only ASSEMBLES; the user's own wallet signs and broadcasts them.
 // Same isolation contract as the rest of this file: any failure degrades to
 // null, never throws past this module.
+
+/**
+ * The market PDA. Seeded by market_id ALONE.
+ *
+ * This used to mix the admin pubkey into the seeds, matching the older
+ * deployed program. Ours does not, and a derivation that disagrees with the
+ * program does not fail loudly: it computes a perfectly valid address that
+ * simply holds nothing, so a create lands somewhere nobody reads and a
+ * position is taken against an account that does not exist. Deriving it in one
+ * place is what keeps that from being re-introduced a fourth time.
+ */
+function marketPda(c: ChainClient, marketId: InstanceType<ChainClient["BN"]>) {
+  return c.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("market"), marketId.toArrayLike(Buffer, "le", 8)],
+    c.programId,
+  )[0];
+}
 
 function vaultPda(c: ChainClient, market: InstanceType<typeof c.web3.PublicKey>) {
   return c.web3.PublicKey.findProgramAddressSync([Buffer.from("vault"), market.toBuffer()], c.programId)[0];
@@ -231,6 +342,13 @@ export interface OnChainMarketState {
   winningSide: "yes" | "no" | null;
   totalYesLamports: number;
   totalNoLamports: number;
+  /** Null while the tagger has no wallet yet. The UI reads this to decide
+   *  between "claim your 3%" and "connect a wallet to claim your 3%". */
+  creator: string | null;
+  creatorFeeBps: number;
+  /** Zero until resolve, and zero forever if nobody backed the winning side. */
+  creatorFeeLamports: number;
+  creatorFeeClaimed: boolean;
 }
 
 /** Read a market's live on-chain state — pool sizes and (once resolved) the
@@ -249,11 +367,19 @@ export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainM
     const a = acct as Record<string, unknown>;
     const resolved = Boolean(a.resolved);
     const side = Number(a.winningSide ?? a.winning_side ?? 0);
+    // The unnamed sentinel is the all-zero pubkey. Reporting it as a real
+    // address would have the UI offer a claim button to nobody.
+    const rawCreator = String(a.creator ?? "");
+    const creator = rawCreator && rawCreator !== UNNAMED_CREATOR ? rawCreator : null;
     return {
       resolved,
       winningSide: resolved ? (side === 0 ? "yes" : "no") : null,
       totalYesLamports: Number(a.totalYes ?? a.total_yes ?? 0),
       totalNoLamports: Number(a.totalNo ?? a.total_no ?? 0),
+      creator,
+      creatorFeeBps: Number(a.creatorFeeBps ?? a.creator_fee_bps ?? 0),
+      creatorFeeLamports: Number(a.creatorFeeLamports ?? a.creator_fee_lamports ?? 0),
+      creatorFeeClaimed: Boolean(a.creatorFeeClaimed ?? a.creator_fee_claimed),
     };
   } catch (e) {
     console.error("[chain] fetchMarketOnChain failed:", (e as Error).message);
@@ -332,6 +458,37 @@ export async function prepareClaimTx(args: { marketPubkey: string; userPubkey: s
     return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
   } catch (e) {
     console.error("[chain] prepareClaimTx failed:", (e as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Same shape again, for claim_creator_fee: the payout to whoever tagged the
+ * argument that became this market. This is the transaction that makes "being
+ * loud pays" a fact rather than a slogan, so it is worth naming as such.
+ *
+ * The creator signs for themselves. The program's `has_one = creator` over a
+ * Signer is what makes the fee unstealable, and the server assembling the
+ * transaction does not weaken that: a tx built for the wrong wallet is simply
+ * one the program rejects.
+ */
+export async function prepareCreatorFeeTx(args: {
+  marketPubkey: string; creatorPubkey: string;
+}): Promise<string | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    const marketPk = new c.web3.PublicKey(args.marketPubkey);
+    const creatorPk = new c.web3.PublicKey(args.creatorPubkey);
+    const ix = await c.program.methods
+      .claimCreatorFee()
+      .accountsStrict({ creator: creatorPk, market: marketPk, vault: vaultPda(c, marketPk) })
+      .instruction();
+    const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
+    const tx = new c.web3.Transaction({ feePayer: creatorPk, recentBlockhash: blockhash }).add(ix);
+    return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+  } catch (e) {
+    console.error("[chain] prepareCreatorFeeTx failed:", (e as Error).message);
     return null;
   }
 }
