@@ -1392,6 +1392,10 @@
   .paste-in:focus{outline:none;border-color:var(--accent)}
   .paste-err{font-family:'Nunito';font-weight:800;font-size:12px;color:#b3261e;margin:8px 0 0}
   .paste-go{margin-top:10px}
+  /* The sheet's second door: present, legible, and visibly not the main path. */
+  .paste-own{display:block;width:100%;border:none;background:none;font-family:'Nunito';
+    font-weight:700;font-size:12.5px;color:var(--muted-g);padding:10px 4px 0;cursor:pointer}
+  .paste-own:hover{color:var(--on-ground);text-decoration:underline}
 
   /* ------------------------------------------------------- the right rail --
      Who YOU are, in two panels — calls and markets. Below the feed on mobile,
@@ -2606,9 +2610,9 @@ function paintGuestBar(){
   // title carries the full sentence regardless, so nothing is only-visible on
   // one breakpoint. aria-label on the wrapper keeps the screen-reader text
   // complete even when the span is display:none.
-  el.title="Connect X or Google to save your oddies permanently.";
-  el.innerHTML=`<span class="gb-text" aria-label="Playing as guest — connect X or Google to save your oddies permanently."
-      >Playing as guest<span class="gb-long"> — <b>connect X or Google</b> to save your oddies permanently.</span></span>
+  el.title="Connect X or Google to keep your score.";
+  el.innerHTML=`<span class="gb-text" aria-label="Browsing as guest. Connect X or Google to keep your score."
+      >Browsing as guest<span class="gb-long">. <b>Connect X or Google</b> to keep your score.</span></span>
     <button class="gb-go" type="button">Connect</button>
     <button class="gb-x" type="button" aria-label="Dismiss">✕</button>`;
   // Into the header itself, not the body — see the .guestbar CSS note. The
@@ -2616,7 +2620,7 @@ function paintGuestBar(){
   // content offset follows. No second position to keep in sync.
   const hdr=document.getElementById("top");
   (hdr||document.body).appendChild(el);
-  el.querySelector(".gb-go").onclick=()=>connectSheet("Save your oddies permanently");
+  el.querySelector(".gb-go").onclick=()=>connectSheet("Keep your score");
   el.querySelector(".gb-x").onclick=()=>{
     guestSet(GUEST_DISMISSED_AT,guestNum(GUEST_CALLS));
     el.remove(); measureChrome();
@@ -2714,19 +2718,35 @@ async function connectPhantom(btn){
   }
 }
 
-/** X first: it is the identity. Google second: it is the backup. */
-function connectSheet(reason){
+/** X first: it is the identity. Google second: it is the backup.
+ *  opts.welcome is the first-visit variant: same buttons, but it introduces
+ *  the product instead of assuming you know it, and its dismiss says
+ *  "I'll do this later" because skipping is a first-class outcome, not a
+ *  failure to convert.
+ *
+ *  The old body promised "+5 predictions" for connecting and closed on a
+ *  disclaimer that there was no real-money wagering. Both were written for the
+ *  play-token era and both are false now: nothing is granted for signing in,
+ *  and a position is real SOL. Worse, the bonus line kept reading a constant
+ *  the economy cleanup deleted, so opening this sheet threw a ReferenceError:
+ *  the code that says "nothing reads them now" was wrong about this one
+ *  surface, and no test executes this file to notice. A sheet that asks for
+ *  trust is the last place copy gets to be stale.
+ */
+function connectSheet(reason,opts){
+  const welcome=!!(opts&&opts.welcome);
   const buttons=provButtons();
   const dim=document.createElement("div");
   dim.className="cdim";
   dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Connect an account">
-    <h3>${esc(reason||"Save your predictions across devices")}</h3>
-    <p>Connect once and your predictions, calls and reputation follow you to any browser. <b>+${CONNECT_BONUS} predictions</b>, once.</p>
+    <h3>${esc(welcome?"Prove you're right.":(reason||"Keep your record"))}</h3>
+    <p>${welcome
+      ?"Arguments on X become real-money markets here. Connect once and your calls, your markets and what they earn you follow you to any browser."
+      :"Connect once and your record, your markets and your fees follow you to any browser."}</p>
     ${buttons}
     <p class="cnote">We never post anything. Signing in on a browser that already
-      has anonymous predictions will load your account instead — that browser's predictions stay with it.</p>
-    <p class="disclaimer">Predictions are for entertainment only. No deposits, no cash value, no real-money wagering.</p>
-    <button class="cclose">Not now</button>
+      has an anonymous record loads your account instead; that record stays with this browser.</p>
+    <button class="cclose">${welcome?"I'll do this later":"Not now"}</button>
   </div>`;
   dim.onclick=(e)=>{ if(e.target===dim)dim.remove(); };
   dim.querySelector(".cclose").onclick=()=>dim.remove();
@@ -2769,11 +2789,9 @@ function connectInvite(){
 function authReturn(){
   const q=new URLSearchParams(location.search);
   const connected=q.get("connected"), err=q.get("auth_error");
-  if(!connected&&!err)return;
-  const bonus=Number(q.get("bonus")||0);
+  if(!connected&&!err)return false;
   const msg=err?`Couldn't connect (${err}). Nothing changed.`
-    :bonus>0?`Connected. +${bonus} predictions — your balance now follows you.`
-    :`Connected. Your account is loaded on this browser.`;
+    :`Connected. Your record follows you now.`;
   history.replaceState(null,"",location.pathname+location.hash);
   const el=document.createElement("div");
   el.className="state";// Theme tokens, not #fff/#000. This one lives in an inline style string
@@ -2784,6 +2802,7 @@ function authReturn(){
   el.textContent=msg;
   document.body.appendChild(el);
   setTimeout(()=>el.remove(),5200);
+  return true;
 }
 
 // Pointer type, not screen width: nobody swipes a laptop, and a phone plugged
@@ -3748,10 +3767,11 @@ function openPasteSheet(){
   const dim=document.createElement("div");dim.className="cdim";
   dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Create a market from an X post">
     <h3>Create from an X post</h3>
-    <p class="cnote">Paste the link to any post on X. We'll open a reply with <b>@oddiefun</b> already in it — sending that reply is what creates the market, and it's what makes you its creator.</p>
+    <p class="cnote">Paste the link to any post on X. We'll open a reply with <b>@oddiefun</b> already in it. Sending that reply is what creates the market, and it makes you its creator.</p>
     <input class="paste-in" type="url" inputmode="url" placeholder="https://x.com/someone/status/123…" autocomplete="off">
     <div class="paste-err" hidden></div>
     <button class="claimbtn paste-go" type="button">Open the reply on X</button>
+    <button class="quiet paste-own" type="button">No post to reply to? State your claim, tag @oddiefun</button>
     <button class="cclose">Not now</button>
   </div>`;
   dim.onclick=(e)=>{if(e.target===dim)dim.remove();};
@@ -3774,6 +3794,16 @@ function openPasteSheet(){
     dim.remove();
   };
   dim.querySelector(".paste-go").onclick=go;
+  // The second door: an original claim, composed fresh with the tag already
+  // in it. Deliberately the quiet option. The reply path is the product's own
+  // loop (the market lands under an argument that already has an audience),
+  // and a bare mention with no parent is the weakest thing the tag pipeline
+  // can receive, so it is offered rather than led with.
+  dim.querySelector(".paste-own").onclick=()=>{
+    ev("compose_create",{});
+    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}`,"_blank","noopener");
+    dim.remove();
+  };
   input.onkeydown=(e)=>{if(e.key==="Enter")go();};
   input.oninput=()=>{err.hidden=true;};
 }
@@ -5183,7 +5213,7 @@ async function renderPublicProfile(){
     ${categoryBreakdownHtml(acc.byCategory)}
     <p class="psec" style="margin-top:22px">Recent calls</p>
     ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
-    <div class="pfoot"><p class="disclaimer">Predictions are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
+    <div class="pfoot"><p class="disclaimer">Markets settle in SOL on Solana. Positions are staked from your own wallet, and oddie never holds your funds.</p></div>
   </div>`;
   animateOscore(scroller,acc.oddieScore,acc.hasEnough,false);
   const sb=scroller.querySelector("#pubshare");
@@ -5725,19 +5755,18 @@ async function loadProfile(scroller){
          section is about WHO you are signed in as, which is what it shows. -->
     <p class="psec">Account</p>
     <p class="sub">${auth.accounts.length
-      ? "Your predictions, calls and reputation follow this account to any browser."
-      : "You are playing anonymously. Nothing is lost — but nothing follows you to another browser either."}</p>
+      ? "Your record, your markets and your fees follow this account to any browser."
+      : "You are browsing anonymously. Nothing follows you to another browser yet."}</p>
     ${linked||`${provButtons()}
-       <p class="cnote">X connects your identity. Google saves your balance across devices. A wallet signs a
-         message to prove it is yours — it never approves a transaction. Any of them grants
-         <b>+${CONNECT_BONUS} predictions</b>, once.</p>`}
+       <p class="cnote">X connects your identity. Google keeps your record across devices. A wallet signs a
+         message to prove it is yours, and is where your winnings and your 3% arrive.</p>`}
     <p class="psec" style="margin-top:24px">Appearance</p>
     <div class="seg" role="group" aria-label="Theme">
       ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>
         `<button class="segb${themeMode()===v?" on":""}" data-theme-mode="${v}">${l}</button>`).join("")}
     </div>
     <p class="cnote">Auto follows your system. Shared cards are always the same — your theme never changes the image that goes on X.</p>
-    <div class="pfoot"><p class="disclaimer">Predictions are for entertainment only. No deposits, no cash value, no real-money wagering.</p></div>
+    <div class="pfoot"><p class="disclaimer">Markets settle in SOL on Solana. Positions are staked from your own wallet, and oddie never holds your funds.</p></div>
   </div>`;
   animateOscore(scroller,acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),true);
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
@@ -6175,11 +6204,35 @@ function spawnConfetti(container){
   }
 }
 
+/* ------------------------------------------------------ first-visit welcome --
+ * FOMO's onboarding rule, borrowed deliberately: ask for identity up front,
+ * never require it. Shown once per browser, and only at the app's own front
+ * door (/feed, no hash). Every other arrival is somebody mid-errand: /m/{slug}
+ * and /@handle came from a shared link and must land on the thing that was
+ * shared, /feed#/... is a deep link into a view, and a connected account has
+ * nothing to be welcomed into. It also defers to connectInvite and authReturn,
+ * which handle someone who arrived already mid-sign-in.
+ *
+ * The seen flag is written when the sheet is SHOWN, not when it is dismissed:
+ * a welcome that re-arms itself until you comply is a nag wearing a greeting's
+ * clothes. In private browsing, where the flag cannot be written, it never
+ * shows at all, because showing it on every visit is the same nag.
+ */
+function maybeWelcome(){
+  if(location.pathname!=="/feed"||location.hash)return;
+  if(auth.accounts.length)return;
+  try{
+    if(localStorage.getItem("oddie_welcomed"))return;
+    localStorage.setItem("oddie_welcomed","1");
+  }catch(e){return;}
+  connectSheet(null,{welcome:true});
+}
+
 (async()=>{
   const ok=await checkGate();
   if(ok){
     try{sessionStorage.removeItem("gate_oauth");}catch(e){}
-    render();loadAuth().then(loadBalance).then(()=>{ if(!connectInvite())authReturn(); });
+    render();loadAuth().then(loadBalance).then(()=>{ if(!connectInvite()&&!authReturn())maybeWelcome(); });
     checkCelebrations(); // independent of render()/routing — layers on top, never blocks
     initChainLayer(); // fire-and-forget, opt-in real-stakes layer — see its own doc comment
   }

@@ -474,6 +474,29 @@
   @media (prefers-reduced-motion:no-preference){
     .cta__go,.btn-launch{transition:background .18s ease}
   }
+
+  /* The create sheet, copied from the app's paste sheet so the two doors are
+     one door. Same copy, same order, same second option. lp- prefix keeps it
+     out of the way of everything else on this page. */
+  .lp-dim{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.62);display:flex;
+    align-items:center;justify-content:center;padding:22px}
+  .lp-sheet{width:100%;max-width:480px;background:var(--card);border:1.5px solid var(--line);
+    border-radius:22px;padding:26px 24px}
+  .lp-sheet h3{margin:0 0 10px;font-family:'Fredoka';font-weight:700;font-size:24px}
+  .lp-sheet .lp-note{margin:0 0 14px;font-size:14px;line-height:1.55;color:var(--fg-2)}
+  .lp-in{width:100%;box-sizing:border-box;font:inherit;font-weight:700;font-size:14px;
+    padding:12px 13px;border:1.5px solid var(--line);border-radius:12px;background:var(--bg);
+    color:var(--fg)}
+  .lp-in:focus{outline:none;border-color:var(--lime)}
+  .lp-err{font-size:12px;font-weight:800;color:var(--no);margin:8px 0 0}
+  .lp-go{display:block;width:100%;margin-top:12px;background:var(--lime);color:#0B1400;
+    border:none;border-radius:999px;padding:14px 0;font:inherit;font-weight:800;font-size:15px;
+    cursor:pointer}
+  .lp-own{display:block;width:100%;border:none;background:none;font:inherit;font-weight:700;
+    font-size:12.5px;color:var(--fg-3);padding:12px 4px 0;cursor:pointer}
+  .lp-own:hover{color:var(--fg);text-decoration:underline}
+  .lp-close{display:block;width:100%;border:none;background:none;font:inherit;font-weight:800;
+    font-size:14px;color:var(--fg-2);padding:14px 4px 2px;cursor:pointer}
 </style>
 
 <nav class="nav">
@@ -498,8 +521,15 @@
       </p>
 
       <div class="cta">
-        <a class="cta__go" href="https://x.com/intent/tweet?text=%40oddiefun%20" target="_blank" rel="noopener">
-          Create a market on X <span aria-hidden="true">↗</span></a>
+        <!-- Was a direct x.com/intent link that opened an EMPTY compose with the
+             tag prefilled. The app's create button opens a paste-a-post sheet
+             instead, and the app had it right: a bare mention with no parent is
+             the weakest input the tag pipeline can receive (no claim attached),
+             and a blank compose box hands a cold visitor the hardest possible
+             first step. Both doors now open the same sheet; composing fresh
+             survives inside it as the quiet second option. -->
+        <button class="cta__go" id="ctacreate" type="button">
+          Create a market on X <span aria-hidden="true">↗</span></button>
       </div>
 
       <div class="proof">
@@ -863,6 +893,48 @@
       });
     });
   })();
+
+/* The create sheet. Kept byte-for-byte in step with the app's openPasteSheet:
+   if the copy or the order of options drifts between the two, the front door
+   and the app teach different products. */
+(function(){
+  var btn=document.getElementById("ctacreate");
+  if(!btn)return;
+  var RE=/(?:twitter|x)\.com\/[^/]+\/status\/(\d+)/i;
+  btn.addEventListener("click",function(){
+    var dim=document.createElement("div");dim.className="lp-dim";
+    dim.innerHTML='<div class="lp-sheet" role="dialog" aria-label="Create a market from an X post">'
+      +'<h3>Create from an X post</h3>'
+      +'<p class="lp-note">Paste the link to any post on X. We\'ll open a reply with <b>@oddiefun</b> already in it. Sending that reply is what creates the market, and it makes you its creator.</p>'
+      +'<input class="lp-in" type="url" inputmode="url" placeholder="https://x.com/someone/status/123…" autocomplete="off">'
+      +'<div class="lp-err" hidden></div>'
+      +'<button class="lp-go" type="button">Open the reply on X</button>'
+      +'<button class="lp-own" type="button">No post to reply to? State your claim, tag @oddiefun</button>'
+      +'<button class="lp-close" type="button">Not now</button>';
+    dim.addEventListener("click",function(e){if(e.target===dim)dim.remove();});
+    document.body.appendChild(dim);
+    var input=dim.querySelector(".lp-in"),err=dim.querySelector(".lp-err");
+    dim.querySelector(".lp-close").onclick=function(){dim.remove();};
+    input.focus();
+    var go=function(){
+      var hit=RE.exec(input.value.trim());
+      if(!hit){
+        err.hidden=false;
+        err.textContent="That doesn't look like a link to an X post. It should look like x.com/name/status/123…";
+        return;
+      }
+      window.open("https://x.com/intent/tweet?in_reply_to="+hit[1]+"&text="+encodeURIComponent("@oddiefun "),"_blank","noopener");
+      dim.remove();
+    };
+    dim.querySelector(".lp-go").onclick=go;
+    dim.querySelector(".lp-own").onclick=function(){
+      window.open("https://x.com/intent/tweet?text="+encodeURIComponent("@oddiefun "),"_blank","noopener");
+      dim.remove();
+    };
+    input.addEventListener("keydown",function(e){if(e.key==="Enter")go();});
+    input.addEventListener("input",function(){err.hidden=true;});
+  });
+})();
 </script>
 
 <!-- The nav CTA used to say one of two things and both were wrong.
