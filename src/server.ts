@@ -1583,8 +1583,8 @@ app.post("/api/auth/wallet/verify", async (req, res) => {
       handle: shortAddress(address),
       name: null,
     });
-    console.log(JSON.stringify({ evt: "auth_wallet", ok: true, seeded: result.seeded, bonus: result.bonus }));
-    res.json({ connected: "phantom", bonus: result.bonus, handle: shortAddress(address) });
+    console.log(JSON.stringify({ evt: "auth_wallet", ok: true, seeded: result.seeded }));
+    res.json({ connected: "phantom", handle: shortAddress(address) });
     // After the response, never in front of it: the sign-in is done and this is
     // bookkeeping on markets that may not resolve for weeks.
     void nameCreatorOnTaggedMarkets(deviceId, address);
@@ -1649,14 +1649,14 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
   try {
     const identity = await identify(p, code, pendingAuth.verifier, BASE_URL);
     const result = await linkAccount(pendingAuth.deviceId, identity);
-    console.log(JSON.stringify({ evt: "auth_link", provider: p, seeded: result.seeded, bonus: result.bonus }));
+    console.log(JSON.stringify({ evt: "auth_link", provider: p, seeded: result.seeded }));
     // A sign-in that began on a market permalink returns TO that market — the
     // person came to play this one, not to meet the generic feed.
     if (pendingAuth.returnTo) {
       const sep = pendingAuth.returnTo.includes("?") ? "&" : "?";
-      return res.redirect(`${BASE_URL}${pendingAuth.returnTo}${sep}connected=${p}&bonus=${result.bonus}`);
+      return res.redirect(`${BASE_URL}${pendingAuth.returnTo}${sep}connected=${p}`);
     }
-    return back(`connected=${p}&bonus=${result.bonus}`);
+    return back(`connected=${p}`);
   } catch (err) {
     console.error(`[auth] ${p} failed:`, (err as Error).message);
     return back("auth_error=link_failed");

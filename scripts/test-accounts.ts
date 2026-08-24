@@ -11,7 +11,8 @@ if (process.env.DATABASE_URL) {
 }
 
 import { createSlug, getWallet, placeCall, positionsFor, sellPosition, slugFor, STARTING_PREDICTIONS, CALL_COST } from "../src/store/markets.js";
-import { linkAccount, accountsFor, CONNECT_BONUS } from "../src/store/accounts.js";
+import { linkAccount, accountsFor } from "../src/store/accounts.js";
+import { _memGrant } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
 let failures = 0;
@@ -46,11 +47,16 @@ console.log("\nan anonymous device plays, then signs in");
 
   const r = await linkAccount(PHONE, ALICE_X);
   check("the first link seeds the account", r.seeded === true);
-  check("...pays the bonus once", r.bonus === CONNECT_BONUS);
+  // Linking pays NOTHING. It used to grant a connect bonus, once per account,
+  // and these two checks pinned that grant. The score is earned by tagging
+  // markets into existence and being loud about them; an account is how it
+  // follows you, not a way to be handed some. A bonus reappearing here should
+  // fail this test until somebody argues for it in the open.
+  check("...and pays nothing for it", !("bonus" in r));
   check("...and makes this device the account's stream", r.canonicalDevice === PHONE);
 
   const after = (await getWallet(PHONE)).tokens;
-  check("the bonus lands in the balance", after === before + CONNECT_BONUS, `${after}`);
+  check("the balance did not move on sign-in", after === before, `${before} -> ${after}`);
 
   const pos = await positionsFor(PHONE, [btc]);
   check("the open position survived the link", pos.open.length === 1, `${pos.open.length}`);
@@ -61,20 +67,25 @@ console.log("\nan anonymous device plays, then signs in");
 
 console.log("\nthe same identity on a second browser");
 {
+  // Deliberately shift the account's stream first. The connect bonus used to
+  // make the stream's balance differ from a fresh device's handful on its own;
+  // with linking paying nothing, both sit at the same number and the
+  // anti-farming assertion below cannot tell "read the account" from "got a
+  // fresh grant". Three test-granted tokens restore the distinction.
+  _memGrant(PHONE, 3);
   // The laptop is a brand-new device: it is born with the free starting predictions.
   const fresh = (await getWallet(LAPTOP)).tokens;
   check("the laptop starts anonymous with the starting handful", fresh === STARTING_PREDICTIONS, `${fresh}`);
 
   const r = await linkAccount(LAPTOP, ALICE_X);
-  check("no second bonus for the same identity", r.bonus === 0, JSON.stringify(r));
-  check("...and it did not seed a new account", r.seeded === false);
+  check("...it did not seed a new account", r.seeded === false);
   check("...it points at the phone's stream", r.canonicalDevice === PHONE);
 
   const w = await getWallet(LAPTOP);
-  const phoneStreamBalance = STARTING_PREDICTIONS - CALL_COST + CONNECT_BONUS; // 5 - 1 + 5 = 9
+  const phoneStreamBalance = STARTING_PREDICTIONS - CALL_COST + 3; // the phone's ledger incl. the 3 granted above; linking added nothing
   check("the laptop now reads the ACCOUNT's balance", w.tokens === phoneStreamBalance, `${w.tokens}`);
   // The whole anti-farming rule, stated as a number: the laptop's own free
-  // starting predictions did not arrive. It reads staked-down-phone + bonus,
+  // starting predictions did not arrive. It reads the phone's stream as-is,
   // NOT the account balance plus the laptop's fresh grant, nor the fresh grant alone.
   check("...and its own free starting predictions were NOT added",
     w.tokens !== phoneStreamBalance + STARTING_PREDICTIONS && w.tokens !== STARTING_PREDICTIONS);
@@ -104,7 +115,7 @@ console.log("\nplay on one device shows up on the other");
   const bal = (await getWallet(PHONE)).tokens;
   // Nothing was spent to call and nothing came back from closing, so the
   // balance is exactly what the grants put there.
-  const expected = STARTING_PREDICTIONS + CONNECT_BONUS;
+  const expected = STARTING_PREDICTIONS + 3; // the starting handful plus this test's own 3; sign-in contributed nothing
   check("one balance, both browsers", bal === (await getWallet(LAPTOP)).tokens && bal === expected, `${bal}`);
 }
 
@@ -112,33 +123,32 @@ console.log("\na second provider on the same person");
 {
   const r = await linkAccount(PHONE, ALICE_G);
   check("Google creates its own account row", r.seeded === true);
-  check("...pays its own bonus (once per identity, as specified)", r.bonus === CONNECT_BONUS);
+  check("...and pays nothing either", !("bonus" in r));
   check("...on the SAME canonical device", r.canonicalDevice === PHONE);
 
   const accts = await accountsFor(LAPTOP);
   check("Profile shows both connections from either browser", accts.length === 2, JSON.stringify(accts.map((a) => a.provider)));
 
   const again = await linkAccount(LAPTOP, ALICE_G);
-  check("re-connecting Google grants nothing", again.bonus === 0);
+  check("re-connecting Google is a no-op for the ledger", !("bonus" in again));
 }
 
 console.log("\nsomeone else is someone else");
 {
   const r = await linkAccount(BOB_PHONE, BOB_X);
-  check("a different X id seeds its own account", r.seeded && r.bonus === CONNECT_BONUS);
+  check("a different X id seeds its own account", r.seeded === true);
   check("...with its own stream", r.canonicalDevice === BOB_PHONE);
   const bob = await positionsFor(BOB_PHONE, []);
   check("Bob sees none of Alice's positions", bob.closed.length === 0 && bob.open.length === 0);
   const bal = (await getWallet(BOB_PHONE)).tokens;
-  check("Bob has his own starting handful + the connect bonus", bal === STARTING_PREDICTIONS + CONNECT_BONUS, `${bal}`);
+  check("Bob has exactly his own starting handful, nothing for signing in", bal === STARTING_PREDICTIONS, `${bal}`);
 }
 
-console.log("\nthe bonus cannot be re-claimed by deleting devices");
+console.log("\na third browser just lands on the same stream");
 {
-  // Re-linking the original identity from a third, unseen browser.
   const r = await linkAccount("alice-tablet-001", ALICE_X);
-  check("a third browser gets no bonus", r.bonus === 0, JSON.stringify(r));
-  check("...and still lands on the same stream", r.canonicalDevice === PHONE);
+  check("nothing is granted, nothing is seeded", !("bonus" in r) && r.seeded === false, JSON.stringify(r));
+  check("...and it lands on the same stream", r.canonicalDevice === PHONE);
 }
 
 console.log("\na second X account switches you, it does not merge you");
@@ -167,7 +177,7 @@ console.log("\na second X account switches you, it does not merge you");
   // Switching back is just signing in again — no new stream, no second bonus.
   const back = await linkAccount(BROWSER, FIRST);
   check("signing back in returns to the first stream", back.canonicalDevice === a.canonicalDevice, back.canonicalDevice);
-  check("...and pays no second bonus", back.bonus === 0);
+  check("...and hands over nothing for doing so", !("bonus" in back));
 
   // A DIFFERENT provider still shares, because that is one person proving
   // themselves twice rather than two people.

@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import pg from "pg";
 import {
   STARTING_PREDICTIONS, CALL_COST,
-  DAILY_CLAIM, CLAIM_INTERVAL_MS, STREAK_WINDOW_MS,
   edgePts, proceedsFor, reputationOf, winBonus,
   CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, creatorFeePlay,
   callerTier, oddieScoreFrom, SCORE_WEIGHTS, loudMultiplierOf,
@@ -770,97 +769,11 @@ export async function getWallet(rawDeviceId: string): Promise<Wallet> {
   return { tokens: rows[0].tokens };
 }
 
-// --- Daily claim: the active retention hook ---------------------------------
-const memClaim = new Map<string, { lastClaimAt: number | null; streak: number }>();
-
-export interface ClaimStatus {
-  claimable: boolean;
-  nextClaimMs: number | null; // until the next claim opens; null when claimable now
-  streak: number;             // EFFECTIVE streak (0 if a day was missed)
-  amount: number;             // what a claim grants
-  lastClaimAt: string | null;
-}
-/** `granted`/`balance` are the dormant prediction ledger; `oddies` is what the
- *  player is actually paid and the only figure any surface should quote. */
-export interface ClaimResult extends ClaimStatus { granted: number; balance: number; oddies: number }
-
-/** Pure: from the last-claim time + stored streak, what the client should see. */
-function computeClaim(lastMs: number | null, streak: number, now: number): Omit<ClaimStatus, "lastClaimAt"> {
-  const claimable = lastMs === null || now - lastMs >= CLAIM_INTERVAL_MS;
-  const nextClaimMs = claimable ? null : Math.max(0, lastMs! + CLAIM_INTERVAL_MS - now);
-  // A missed day (no claim within the streak window) reads as a broken streak,
-  // even before the next claim formally resets it to 1.
-  const effStreak = lastMs !== null && now - lastMs < STREAK_WINDOW_MS ? streak : 0;
-  // `amount` is what the button offers, so it is quoted in oddies — the only
-  // unit a player sees. DAILY_CLAIM stays the dormant prediction grant.
-  return { claimable, nextClaimMs, streak: effStreak, amount: ODDIES_PER.daily };
-}
-
-export async function claimStatus(rawDeviceId: string): Promise<ClaimStatus> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const now = Date.now();
-  if (!PERSISTENT) {
-    const c = memClaim.get(deviceId) ?? { lastClaimAt: null, streak: 0 };
-    return { ...computeClaim(c.lastClaimAt, c.streak, now), lastClaimAt: c.lastClaimAt ? new Date(c.lastClaimAt).toISOString() : null };
-  }
-  await ensureSchema();
-  await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
-  const { rows } = await db().query<{ last_claim_at: Date | null; claim_streak: number }>(
-    `SELECT last_claim_at, claim_streak FROM device_balance WHERE device_id = $1`, [deviceId]);
-  const last = rows[0]?.last_claim_at ? rows[0].last_claim_at.getTime() : null;
-  return { ...computeClaim(last, rows[0]?.claim_streak ?? 0, now), lastClaimAt: last ? new Date(last).toISOString() : null };
-}
-
-/** Collect the daily grant. Idempotent within a window (a double-tap grants
- *  once); continues the streak if within the window, else resets it to 1. The
- *  balance is never reset — only the streak. */
-/** Pay the day's oddies into the growth ledger. Deduped per (device, UTC day)
- *  as a second lock behind claimDaily's own atomic window, so a race that
- *  somehow granted twice still cannot pay twice. */
-async function awardDaily(deviceId: string, now: number): Promise<void> {
-  const day = new Date(now).toISOString().slice(0, 10);
-  await awardSeasonPoints("daily", `daily-${day}`, `daily:${day}:${deviceId}`, deviceId).catch(() => false);
-}
-
-export async function claimDaily(rawDeviceId: string): Promise<ClaimResult> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const now = Date.now();
-  if (!PERSISTENT) {
-    const bal = memBalance.get(deviceId) ?? { tokens: STARTING_PREDICTIONS, toppedUpAt: now };
-    if (!memBalance.has(deviceId)) memBalance.set(deviceId, bal);
-    const c = memClaim.get(deviceId) ?? { lastClaimAt: null, streak: 0 };
-    const st = computeClaim(c.lastClaimAt, c.streak, now);
-    if (!st.claimable) return { ...st, lastClaimAt: c.lastClaimAt ? new Date(c.lastClaimAt).toISOString() : null, granted: 0, balance: bal.tokens, oddies: 0 };
-    const newStreak = c.lastClaimAt !== null && now - c.lastClaimAt < STREAK_WINDOW_MS ? c.streak + 1 : 1;
-    bal.tokens += DAILY_CLAIM;
-    memClaim.set(deviceId, { lastClaimAt: now, streak: newStreak });
-    await awardDaily(deviceId, now);
-    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: newStreak, amount: ODDIES_PER.daily, lastClaimAt: new Date(now).toISOString(), granted: DAILY_CLAIM, balance: bal.tokens, oddies: ODDIES_PER.daily };
-  }
-  await ensureSchema();
-  await db().query(`INSERT INTO device_balance (device_id) VALUES ($1) ON CONFLICT (device_id) DO NOTHING`, [deviceId]);
-  // Atomic: grant + streak bump only if the window has elapsed. A concurrent
-  // double-tap fails the WHERE on the second and grants nothing.
-  const { rows } = await db().query<{ tokens: number; claim_streak: number; last_claim_at: Date }>(
-    `UPDATE device_balance SET
-        tokens = tokens + $2,
-        claim_streak = CASE WHEN last_claim_at IS NOT NULL AND last_claim_at > now() - make_interval(secs => $3)
-                            THEN claim_streak + 1 ELSE 1 END,
-        last_claim_at = now()
-      WHERE device_id = $1
-        AND (last_claim_at IS NULL OR last_claim_at <= now() - make_interval(secs => $4))
-      RETURNING tokens, claim_streak, last_claim_at`,
-    [deviceId, DAILY_CLAIM, STREAK_WINDOW_MS / 1000, CLAIM_INTERVAL_MS / 1000],
-  );
-  if (rows.length === 1) {
-    const r = rows[0];
-    await awardDaily(deviceId, now);
-    return { claimable: false, nextClaimMs: CLAIM_INTERVAL_MS, streak: r.claim_streak, amount: ODDIES_PER.daily, lastClaimAt: r.last_claim_at.toISOString(), granted: DAILY_CLAIM, balance: r.tokens, oddies: ODDIES_PER.daily };
-  }
-  // Already claimed within the window — report current state, no grant.
-  const [st, w] = await Promise.all([claimStatus(deviceId), getWallet(deviceId)]);
-  return { ...st, granted: 0, balance: w.tokens, oddies: 0 };
-}
+/* The daily claim lived here: a per-device streak, a 24h window, and a grant
+ * of both dormant tokens and live score for tapping a button once a day. The
+ * routes went first; these were the store halves they called, unreachable
+ * since. The claim_streak and last_claim_at columns stay in the schema as
+ * dormant history rather than being dropped out from under people's rows. */
 
 /** Tokens only. Kept for callers that do not care about the top-up. */
 export async function getBalance(deviceId: string): Promise<number> {
@@ -3126,12 +3039,6 @@ export const SEASON_POINTS = {
   // the week's best (+300, picked). Deduped per tweet, so one post pays once
   // no matter who resubmits it.
   loud_post: 75,
-  // Showing up. The daily tap used to hand out predictions, which stopped
-  // being worth anything the moment calling became free — a button granting a
-  // currency nobody spends is a ritual with no reward inside it. It pays the
-  // one unit there is instead. Small on purpose: the streak is the reason to
-  // come back, not the payout, and a tap should never out-earn a post.
-  daily: 5,
 } as const;
 export type SeasonEvent = keyof typeof SEASON_POINTS;
 

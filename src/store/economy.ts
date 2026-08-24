@@ -37,29 +37,16 @@ export const STARTING_PREDICTIONS = 5;
  */
 export const CALL_COST = 0;
 
-/**
- * The daily claim — an ACTIVE retention hook, not a passive tick. A player taps
- * once per window to collect, and a streak of consecutive claimed days is the
- * visible reason to come back tomorrow. A claim within STREAK_WINDOW of the
- * last continues the streak; a longer gap (a missed day) resets it to 1 — the
- * streak resets, never the balance.
- */
-export const DAILY_CLAIM = 5;
-export const CLAIM_INTERVAL_MS = 24 * 3_600_000;   // one claim per day
-export const STREAK_WINDOW_MS = 48 * 3_600_000;    // claim before this → streak lives
+/* The daily claim and its streak are gone, together with the sign-in bonus
+ * below. Both were grants: score handed over for showing up or for creating an
+ * account. The score is earned now, and only by the loop the product is about,
+ * so every path into it goes through SEASON_POINTS in markets.ts: tagging a
+ * market into existence, that market growing, it resolving cleanly, and being
+ * loud about it. Nothing pays for merely arriving. */
 
 /** Below this many closed positions, a reputation is noise wearing a number. */
 export const PROVISIONAL_BELOW = 10;
 
-/**
- * Granted once when an account is created, never again.
- *
- * Once per ACCOUNT, not once per device: the device is a browser, and browsers
- * are free. The account is the thing a person can only have one of per Google
- * `sub` or X user id, so that is where the bonus is spent. One full day's
- * refill, handed over the moment identity stops being anonymous.
- */
-export const CONNECT_BONUS = 5;
 
 /**
  * Prices are the SIDE's percentage, not the market's. A market at 39% yes

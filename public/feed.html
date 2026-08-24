@@ -2708,7 +2708,7 @@ async function connectPhantom(btn){
     if(!vr.ok)throw new Error(out.error||"verify");
 
     // Same landing as the OAuth return, so all three paths say the same thing.
-    location.href=`/feed?connected=phantom&bonus=${out.bonus||0}#/profile`;
+    location.href=`/feed?connected=phantom#/profile`;
   }catch(e){
     // A user closing Phantom's popup lands here too, and that is not a failure
     // worth shouting about — put the button back and let them try again.
@@ -4299,9 +4299,6 @@ async function renderHome(){
   scroller.scrollTop=0; window.scrollTo(0,0);
   scroller.innerHTML='<div class="state">loading…</div>';
   await loadBalance().catch(()=>{}); // balance pill + streak badge, same as everywhere
-  try{
-    const cr=await fetch(`${API}/api/claim?deviceId=${encodeURIComponent(deviceId)}`);
-  }catch(e){/* claim strip just won't render; nothing else depends on it */}
   // Every data-driven section starts EMPTY and is rendered only if the server
   // actually sent rows for it — so a fetch failure, a cold database, or a
   // genuinely thin product all degrade to the section being absent. Nothing

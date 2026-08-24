@@ -10,11 +10,9 @@
 // "does reputation follow the account" is not a feature we had to build.
 
 import { randomUUID } from "node:crypto";
-import { CONNECT_BONUS } from "./economy.js";
 import { storeDb, storeSchema, STORE_PERSISTENT, resolveDevice, _memDeviceAccount } from "./markets.js";
 import { getWallet } from "./markets.js";
 
-export { CONNECT_BONUS };
 
 // "phantom" is a wallet, not an OAuth provider — there is no redirect, no
 // client secret and no token. It reaches linkAccount through the same door as
@@ -44,9 +42,10 @@ export interface Account {
 
 export type LinkResult = {
   account: Account;
-  /** Tokens actually paid out by this link. 100 exactly once per account, 0 forever after. */
-  bonus: number;
-  /** True when this link created the account and adopted the device's play. */
+  /** True when this link created the account and adopted the device's play.
+   *  There is no bonus field any more: linking pays nothing. The score is
+   *  earned by tagging markets into existence and being loud about them, and
+   *  an account is how that score follows you, not a way to be handed some. */
   seeded: boolean;
   canonicalDevice: string;
 };
@@ -121,10 +120,10 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
     const existing = memAccounts.find((a) => a.provider === id.provider && a.uid === id.uid);
     if (existing) {
       _memDeviceAccount.set(rawDeviceId, existing.canonicalDevice);
-      return { account: pub(existing), bonus: 0, seeded: false, canonicalDevice: existing.canonicalDevice };
+      return { account: pub(existing), seeded: false, canonicalDevice: existing.canonicalDevice };
     }
     const canon = await canonicalDeviceFor(rawDeviceId, deviceId, id);
-    await getWallet(canon); // materialise the balance we are about to top up
+    await getWallet(canon); // materialise the balance row for the new stream
     const acct: MemAccount = {
       id: ++memAcctId, provider: id.provider, uid: id.uid,
       handle: id.handle ?? null, name: id.name ?? null, email: id.email ?? null,
@@ -132,8 +131,7 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
     };
     memAccounts.push(acct);
     _memDeviceAccount.set(rawDeviceId, canon);
-    await grantBonusMem(canon);
-    return { account: pub(acct), bonus: CONNECT_BONUS, seeded: true, canonicalDevice: canon };
+    return { account: pub(acct), seeded: true, canonicalDevice: canon };
   }
 
   await storeSchema();
@@ -160,7 +158,7 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
       await client.query("COMMIT");
       return {
         account: { provider: a.provider, handle: id.handle ?? a.handle, name: id.name ?? a.display_name, bonusGranted: a.bonus_granted_at !== null },
-        bonus: 0, seeded: false, canonicalDevice: a.canonical_device,
+        seeded: false, canonicalDevice: a.canonical_device,
       };
     }
 
@@ -178,14 +176,17 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
        ON CONFLICT (device_id) DO UPDATE SET account_id = EXCLUDED.account_id, linked_at = now()`,
       [rawDeviceId, created.rows[0].id],
     );
-    // The one and only place tokens are created out of nothing.
-    await client.query(`UPDATE device_balance SET tokens = tokens + $1 WHERE device_id = $2`, [CONNECT_BONUS, canon]);
+    // No grant here any more. This UPDATE was "the one and only place tokens
+    // are created out of nothing", which is exactly why it went: the score is
+    // earned, and an account is how it follows you, not a way to be handed
+    // some. bonus_granted_at still gets stamped above, so an account that WAS
+    // paid in the grant era can never be paid again should one ever return.
     await client.query("COMMIT");
 
     const a = created.rows[0];
     return {
       account: { provider: a.provider, handle: a.handle, name: a.display_name, bonusGranted: true },
-      bonus: CONNECT_BONUS, seeded: true, canonicalDevice: canon,
+      seeded: true, canonicalDevice: canon,
     };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -222,8 +223,3 @@ interface AcctRow {
 }
 
 const pub = (a: MemAccount): Account => ({ provider: a.provider, handle: a.handle, name: a.name, bonusGranted: a.bonusGranted });
-
-async function grantBonusMem(deviceId: string): Promise<void> {
-  const { _memGrant } = await import("./markets.js");
-  _memGrant(deviceId, CONNECT_BONUS);
-}

@@ -6,7 +6,7 @@
 // Run with: npm run test-economy
 
 import {
-  BONUS_CAP, BONUS_FLOOR, CALL_COST, CONNECT_BONUS, DAILY_CLAIM, PROVISIONAL_BELOW, STARTING_PREDICTIONS,
+  BONUS_CAP, BONUS_FLOOR, CALL_COST, PROVISIONAL_BELOW, STARTING_PREDICTIONS,
   edgePts, proceedsFor, reputationOf, sharesFor, tokenDeltaPct, winBonus,
 } from "../src/store/economy.js";
 
@@ -127,8 +127,13 @@ console.log("\ncalling costs nothing, and the wall is gone with it");
     check(`a balance of ${balance} can still call`, balance >= CALL_COST);
   }
   check("a new device still starts with a handful (the ledger keeps working)", STARTING_PREDICTIONS === 5);
-  check("the daily claim still grants", DAILY_CLAIM === 5);
-  check("connecting an account still grants, once", CONNECT_BONUS === 5);
+  // The daily claim and the connect bonus are gone, and their constants went
+  // with them. Score is earned through SEASON_POINTS (tag a market into
+  // existence, grow it, resolve it cleanly, be loud about it) and granted for
+  // nothing else. These pins keep either from quietly coming back.
+  const economy = await import("../src/store/economy.js") as Record<string, unknown>;
+  check("the daily claim is gone", !("DAILY_CLAIM" in economy));
+  check("the sign-in bonus is gone", !("CONNECT_BONUS" in economy));
 }
 
 // ---------------------------------------------------------------------------
