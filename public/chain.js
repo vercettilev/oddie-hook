@@ -305,7 +305,7 @@
       // the bet.
       body.innerHTML = `
         <h3>Pick a side</h3>
-        <p class="cnote">Real SOL${testnet ? ` on ${label}` : ""}. Winners split the pool.</p>
+        <p class="cnote">${testnet ? `Test SOL on ${label}` : "Real SOL"}. Winners split the pool.</p>
         ${onchainOddsHTML}
         ${feeNoteHTML}
         <div class="chain-side-row">

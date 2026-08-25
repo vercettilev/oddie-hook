@@ -199,11 +199,20 @@ async function renderLanding(): Promise<string> {
   // once the 60s render cache below rolls over — no restart needed.
   const hasArt = existsSync(path.join(__dirname, "../public/portal.png")) ? "1" : "0";
 
+  // The one hard status claim on the page, rendered per cluster so it cannot
+  // lie. "Real SOL" is only written where the SOL is real; on devnet the chip
+  // says devnet, because a landing that calls test money real is the exact
+  // kind of page this product must never be.
+  const netChip = cluster() === "mainnet-beta"
+    ? '<span class="livechip"><i></i>Real SOL · live on Solana</span>'
+    : '<span class="livechip"><i></i>Live on Solana devnet · mainnet next</span>';
+
   const html = LANDING_HTML
     .replace("<!--PROOF-->", proof)
     .replace("<!--HAS_ART-->", hasArt)
     .replace("<!--LIVE_MODE-->", liveMode)
-    .replace("<!--LIVE_CARDS-->", liveCards);
+    .replace("<!--LIVE_CARDS-->", liveCards)
+    .replace("<!--NET_CHIP-->", netChip);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
