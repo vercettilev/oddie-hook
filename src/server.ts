@@ -1114,11 +1114,21 @@ app.get("/banner.png", sendBanner);
 
 app.get("/og.svg", (_req, res) => res.type("image/svg+xml").send(renderBanner()));
 
+/** Whether a market's vault is empty, which is not the same as 50/50. A chain
+ *  that will not answer degrades to "unpriced", the safe direction: the card
+ *  invites the first stake instead of quoting odds nobody set. */
+async function marketIsUnpriced(slug: string): Promise<boolean> {
+  const detail = await communityMarketDetail(slug).catch(() => null);
+  if (!detail?.onchainPubkey) return true;
+  const state = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
+  return ((state?.totalYesLamports ?? 0) + (state?.totalNoLamports ?? 0)) <= 0;
+}
+
 app.get("/card/:slug.svg", async (req, res) => {
   const { all } = await liveMarketData();
   const rec = await getSlug(req.params.slug, all);
   if (!rec) return res.status(404).send("unknown market");
-  res.type("image/svg+xml").send(renderCard(rec.market));
+  res.type("image/svg+xml").send(renderCard(rec.market, { unpriced: await marketIsUnpriced(req.params.slug) }));
 });
 
 /**
@@ -1191,10 +1201,7 @@ app.get("/card/:slug.png", async (req, res) => {
   // somebody had staked it. A chain that will not answer degrades to the
   // unpriced card, which is the safe direction to be wrong in: it invites a
   // stake instead of quoting odds nobody set.
-  const detail = await communityMarketDetail(slug).catch(() => null);
-  const state = detail?.onchainPubkey ? await fetchMarketOnChain(detail.onchainPubkey).catch(() => null) : null;
-  const staked = (state?.totalYesLamports ?? 0) + (state?.totalNoLamports ?? 0);
-  const png = renderCardPng(renderCard(rec.market, { unpriced: staked <= 0 }));
+  const png = renderCardPng(renderCard(rec.market, { unpriced: await marketIsUnpriced(slug) }));
   pngCache.set(slug, { png, at: now });
   if (pngCache.size > 300) for (const [k, v] of pngCache) if (now - v.at > PNG_TTL_MS) pngCache.delete(k);
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
