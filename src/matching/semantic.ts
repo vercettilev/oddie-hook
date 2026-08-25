@@ -21,18 +21,22 @@ import { Market } from "../venues/types.js";
 import { candidateMarkets, disqualified, matchTweet, MatchResult } from "./matcher.js";
 import { categorize, categorizeText } from "./categorize.js";
 import { validReplyLine } from "../card/tweetCopy.js";
+import { messagesUrl, authHeaders, inferenceEnabled, API_KEY_ENV } from "../inference.js";
 
 // Entity linking over ~18 short candidates is small-model work. Haiku 4.5 is
 // the cheapest current Claude and comfortably reliable at it; at roughly
 // 1.2k input + 60 output tokens a call it costs ~$0.0015 and answers in about
 // a second. The key comes from the environment and only the environment.
-const MODEL = "claude-haiku-4-5-20251001";
-const API_KEY_ENV = "ANTHROPIC_API_KEY";
+// Deliberately NOT the extractor's model. This one runs inside a request with a
+// six-second budget, where opus-class latency would blow the hook's deadline;
+// the extractor is an offline-ish quality gate and can afford to be slow. So it
+// takes its own override rather than INFERENCE_MODEL.
+const MODEL = process.env.INFERENCE_FAST_MODEL ?? "claude-haiku-4-5-20251001";
 const TIMEOUT_MS = 6_000; // /hook's budget is 1-3s typical; this is the hard stop
 const CANDIDATES_MAX = 18;
 const LEXICAL_SLOTS = 12; // scored candidates; the rest is category/volume fill
 
-export const semanticEnabled = (): boolean => Boolean(process.env[API_KEY_ENV]);
+export const semanticEnabled = (): boolean => inferenceEnabled();
 export const SEMANTIC_KEY_ENV = API_KEY_ENV;
 
 export interface SemanticMatch {
@@ -104,13 +108,9 @@ function candidateLines(cands: MatchResult[]): string {
 /** One round trip to the referee. Throws on anything unusable; the caller
  *  treats every throw identically — as silence. */
 export async function referee(tweetText: string, cands: MatchResult[]): Promise<Verdict> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch(messagesUrl(), {
     method: "POST",
-    headers: {
-      "x-api-key": process.env[API_KEY_ENV]!,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
+    headers: authHeaders(),
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 150,
@@ -204,13 +204,9 @@ async function replyCopyOnce(tweetText: string, m: Market): Promise<string[] | n
     `volume: ${m.volumeUsd >= 1e6 ? `$${(m.volumeUsd / 1e6).toFixed(1)}M` : `$${Math.round(m.volumeUsd / 1e3)}K`}`,
   ].join("\n");
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch(messagesUrl(), {
       method: "POST",
-      headers: {
-        "x-api-key": process.env[API_KEY_ENV]!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 300,

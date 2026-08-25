@@ -342,5 +342,41 @@ console.log("\nthe movement chip renders on presence, not on a number");
   check("a non-number renders nothing", deltaChip({ pctDelta: "abc" }) === "");
 }
 
+/* ------------------------------------------------------------- ligatures --
+ * The bug this guards: the bundled Fredoka subsets carry the GSUB ligature
+ * table without the ligature glyphs, so resvg shaped "fi"/"fl"/"ff" into a
+ * glyph that is not there and dropped the second letter. Cards shipped
+ * "fnal fxes flght proft" for as long as the renderer existed, on the exact
+ * image that goes on X, and nothing here noticed because nothing here looked
+ * at the rendered pixels or at the text as the shaper would see it.
+ *
+ * The fix is a U+200C after every f that could start one. This asserts the
+ * character is present in the SVG, which is the thing resvg reads, for BOTH
+ * user text (the question) and the card's own hardcoded lines. */
+console.log("\nligature suppression: the shaper must not be allowed to eat letters");
+{
+  const ZWNJ = "\u200C";
+  const q = "Will inflation confirm a profit flip before the first filing?";
+  const svg = renderCard(mk(q, 62));
+  // Every f-before-[fil] in the question must be followed by the joiner.
+  const pairs = [...q.matchAll(/f(?=[fil])/g)].length;
+  check(`the question has ${pairs} ligature pairs to defuse`, pairs >= 6);
+  const defused = [...svg.matchAll(new RegExp(`f${ZWNJ}`, "g"))].length;
+  check("every one of them carries the joiner in the SVG", defused >= pairs, `found ${defused}`);
+  check("no bare f-before-i survives in the question tspans",
+    !/<tspan[^>]*>[^<]*f[fil]/.test(svg), svg.match(/<tspan[^>]*>[^<]*f[fil][^<]*<\/tspan>/)?.[0] ?? "");
+
+  // The card's own copy goes through the same funnel. "first in sets the line"
+  // is the unpriced offer and shipped as "frst in sets the line" once.
+  const unpriced = renderCard(mk("Will it happen?", 50), { unpriced: true });
+  check("the unpriced offer line is defused too", unpriced.includes(`f${ZWNJ}irst`), 
+    unpriced.match(/f\u200C?irst[^<]*/)?.[0] ?? "no 'first' on the card");
+
+  // And the unpriced card must not quote a price nobody set.
+  check("an unpriced card shows no percentage", !/>\d+%</.test(unpriced));
+  check("...and says so", unpriced.includes("no price yet") && unpriced.includes("open"));
+  check("a priced card still shows its number", /62%/.test(svg));
+}
+
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

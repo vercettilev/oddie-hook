@@ -172,8 +172,31 @@ export function layoutQuestion(question: string): { fs: number; lineH: number; l
 
 // --- Small pieces -----------------------------------------------------------
 
+/**
+ * A zero-width non-joiner after every f that could start a ligature.
+ *
+ * The bundled Fredoka subsets carry the GSUB ligature table but not the
+ * ligature glyphs, so resvg substitutes fi/fl/ff into a glyph that is not
+ * there and the second letter simply disappears. Cards were shipping "fnal
+ * fxes flght proft" and had been for as long as the renderer has existed. It
+ * hides well: the words stay readable-ish at a glance, and it only bites the
+ * subset of questions containing an f before an i or an l, which is most of
+ * them ("first", "final", "confirm", "profit", "inflation", "flip").
+ *
+ * Every SVG-level fix was tried and resvg ignores all of them:
+ * font-variant-ligatures as an attribute and as a style, font-feature-settings
+ * both ways, and a nonzero letter-spacing. U+200C is what the shaper actually
+ * honours, and it is the standard character for exactly this. It is invisible,
+ * has zero advance width (so textWidth's per-character estimate stays right),
+ * and browsers rendering /card/*.svg treat it the same way.
+ */
+function noLigatures(s: string): string {
+  return s.replace(/f(?=[fil])/g, "f\u200C");
+}
+
+/** Escape for SVG text, and suppress the ligatures the bundled fonts cannot draw. */
 export function esc(s: string): string {
-  return s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
+  return noLigatures(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
 }
 
 export function money(n: number): string {
@@ -285,7 +308,19 @@ export const BADGE_POOL = [
 
 // --- The card ---------------------------------------------------------------
 
-export function renderCard(m: Market): string {
+/**
+ * The share card. `unpriced` is the honest state of a market nobody has staked
+ * in yet.
+ *
+ * Without it the card drew the seeded 50 as a hero number with "yes pays 2x"
+ * beside it, which reads as a price. It is not one: an empty vault has no
+ * price at all, and a card posted to X the second a market opens was
+ * announcing even odds that nobody set, on the one surface where we cannot
+ * take it back. Unpriced markets now say so and invite the first stake, which
+ * is also the better ask.
+ */
+export function renderCard(m: Market, opts: { unpriced?: boolean } = {}): string {
+  const unpriced = opts.unpriced === true;
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const no = 100 - yes;
 
@@ -299,7 +334,7 @@ export function renderCard(m: Market): string {
 
   // Hero number. It only shrinks if three digits would crowd the bar; at the
   // sizes we ship (1%..100%) it never does, so the brand size is stable.
-  const heroText = `${yes}%`;
+  const heroText = unpriced ? "open" : `${yes}%`;
   let heroFS = HERO_FS_MAX;
   while (heroFS > 96 && PAD_L + textWidth(heroText, heroFS) > HERO_RIGHT_LIMIT) heroFS -= 6;
 
@@ -320,9 +355,11 @@ export function renderCard(m: Market): string {
   const udPct = udSide === "yes" ? yes : no;
   const mRaw = 100 / Math.max(1, udPct);
   const mult = mRaw >= 10 ? Math.round(mRaw) : Math.round(mRaw * 10) / 10;
-  const offerText = `${udSide} pays ${mult}\u00d7`;
-  const OFFER_FS = 40;
-  const balanced = yes >= 40 && yes <= 60;
+  // An unpriced market has no underdog and therefore no multiple to quote.
+  // What it has is a vacancy, so the offer becomes the ask.
+  const offerText = unpriced ? "first in sets the line" : `${udSide} pays ${mult}\u00d7`;
+  const OFFER_FS = unpriced ? 30 : 40;
+  const balanced = !unpriced && yes >= 40 && yes <= 60;
   // One seed per market (venue + the venue's own id), NOT the question text:
   // the question can be re-normalised by displayTitle or re-extracted with
   // slightly different wording without this becoming a different market, and
@@ -354,19 +391,19 @@ export function renderCard(m: Market): string {
   <!-- hero number: near-black with a thin white outline, matching the feed. On the
        card's white ground the outline is invisible, so it reads as a solid black
        number; the same treatment over the feed's blue fill shows the white halo. -->
-  <text x="${PAD_L}" y="${kickerBaseline}" font-size="${KICKER_FS}" font-weight="600" fill="${C.accent}">yes</text>
+  <text x="${PAD_L}" y="${kickerBaseline}" font-size="${KICKER_FS}" font-weight="600" fill="${C.accent}">${unpriced ? "no price yet" : "yes"}</text>
   <text x="${PAD_L}" y="${HERO_BASE}" font-size="${heroFS}" font-weight="700" fill="${C.number}"
         stroke="${C.white}" stroke-width="9" paint-order="stroke" stroke-linejoin="round">${heroText}</text>
 
   <!-- the dare: badge (when split), the offer, and the invitation -->
   ${balanced ? `<rect x="${PAD_R - badgeW}" y="346" width="${badgeW}" height="40" rx="20" fill="${C.white}" stroke="${C.ink}" stroke-width="3"/>
   <text x="${PAD_R - badgeW / 2}" y="372" font-family="${META}" font-size="20" font-weight="800"
-        fill="${C.ink}" text-anchor="middle">${badgeText}</text>` : ""}
+        fill="${C.ink}" text-anchor="middle">${esc(badgeText)}</text>` : ""}
   <text x="${PAD_R}" y="${OFFER_BASE}" font-size="${OFFER_FS}" font-weight="600" fill="${C.accent}"
         stroke="${C.ink}" stroke-width="2.5" paint-order="stroke" stroke-linejoin="round"
-        text-anchor="end">${offerText}</text>
+        text-anchor="end">${esc(offerText)}</text>
   <text x="${arrowX - 12}" y="${HERO_BASE}" font-family="${META}" font-size="23" font-weight="800"
-        fill="${C.ink}" text-anchor="end">${inviteText}</text>
+        fill="${C.ink}" text-anchor="end">${esc(inviteText)}</text>
   <path d="M ${arrowX - 2} ${HERO_BASE - 8} h 24 m -9 -9 l 9 9 l -9 9" stroke="${C.ink}" stroke-width="4"
         fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;

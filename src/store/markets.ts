@@ -473,6 +473,39 @@ CREATE TABLE IF NOT EXISTS featured_markets (
   rank   integer NOT NULL,
   set_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- The bot's own durable state, as key/value. Two things live here and both
+-- MUST survive a restart or the loop misbehaves in a way nobody notices:
+--
+--  1. x_since_id: the newest mention already looked at. Lose it and the bot
+--     re-reads the whole mention window on boot, which is how a redeploy
+--     turns into a burst of duplicate replies.
+--  2. x_refresh_token: X ROTATES the refresh token on every refresh and
+--     invalidates the old one. Keeping it only in an env var means the value
+--     in Railway is stale the moment the first refresh succeeds, and the next
+--     cold start cannot authenticate at all. The env var is the SEED; this
+--     row is the truth from the first refresh onward.
+CREATE TABLE IF NOT EXISTS bot_state (
+  k       text PRIMARY KEY,
+  v       text NOT NULL,
+  at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Every mention the bot has decided about, so a decision is made exactly once.
+-- since_id alone is not enough: X can return a mention twice around a window
+-- boundary, and a crash between "replied" and "advanced since_id" would
+-- otherwise repost. The row is written BEFORE the reply is attempted, so a
+-- crash mid-post leaves a claimed row and skips rather than double-posts.
+-- Under-posting is recoverable by hand; double-posting is not.
+CREATE TABLE IF NOT EXISTS x_mention (
+  tweet_id   text PRIMARY KEY,
+  author     text,
+  outcome    text NOT NULL,          -- claimed | replied | skipped | failed
+  reason     text,
+  slug       text,
+  reply_id   text,
+  at         timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 let pool: pg.Pool | null = null;
@@ -5206,4 +5239,88 @@ export async function openSlugs(): Promise<string[]> {
   await ensureSchema();
   const { rows } = await db().query<{ slug: string }>(`SELECT DISTINCT slug FROM market_call WHERE closed_at IS NULL`);
   return rows.map((r) => r.slug);
+}
+
+/* ------------------------------------------------------------- bot state -----
+ * The X bot's durable memory. Deliberately a tiny KV rather than columns on a
+ * config row: the two values it holds have nothing to do with each other, and
+ * the alternative is a one-row table that grows a column every time the loop
+ * learns to remember something else.
+ *
+ * In-memory fallback exists so tests and local dry-runs work, and is exactly
+ * as durable as it sounds. `PERSISTENT` is what the loop checks before it is
+ * allowed to post for real.
+ */
+const memBotState = new Map<string, string>();
+
+export async function botStateGet(key: string): Promise<string | null> {
+  if (!PERSISTENT) return memBotState.get(key) ?? null;
+  await ensureSchema();
+  const { rows } = await db().query<{ v: string }>(`SELECT v FROM bot_state WHERE k=$1`, [key]);
+  return rows[0]?.v ?? null;
+}
+
+export async function botStateSet(key: string, value: string): Promise<void> {
+  if (!PERSISTENT) { memBotState.set(key, value); return; }
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO bot_state (k, v, at) VALUES ($1,$2,now())
+     ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v, at=now()`,
+    [key, value],
+  );
+}
+
+export type MentionOutcome = "claimed" | "replied" | "skipped" | "failed";
+
+interface MentionRow { tweetId: string; outcome: MentionOutcome; reason: string | null; slug: string | null }
+const memMentions = new Map<string, MentionRow>();
+
+/**
+ * Claim a mention for processing, exactly once, ever.
+ *
+ * Returns false when this tweet already has a row, whatever that row says. A
+ * previous FAILURE is deliberately not retried: the failure modes here are
+ * "the model returned nonsense" and "Solana was down", and a loop that retries
+ * the first one forever burns money on every poll. Requeue by hand.
+ */
+export async function claimMention(tweetId: string, author: string | null): Promise<boolean> {
+  if (!PERSISTENT) {
+    if (memMentions.has(tweetId)) return false;
+    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null });
+    return true;
+  }
+  await ensureSchema();
+  const { rowCount } = await db().query(
+    `INSERT INTO x_mention (tweet_id, author, outcome) VALUES ($1,$2,'claimed')
+     ON CONFLICT (tweet_id) DO NOTHING`,
+    [tweetId, author],
+  );
+  return rowCount === 1;
+}
+
+export async function settleMention(
+  tweetId: string,
+  outcome: Exclude<MentionOutcome, "claimed">,
+  extra: { reason?: string | null; slug?: string | null; replyId?: string | null } = {},
+): Promise<void> {
+  if (!PERSISTENT) {
+    memMentions.set(tweetId, { tweetId, outcome, reason: extra.reason ?? null, slug: extra.slug ?? null });
+    return;
+  }
+  await ensureSchema();
+  await db().query(
+    `UPDATE x_mention SET outcome=$2, reason=$3, slug=$4, reply_id=$5, at=now() WHERE tweet_id=$1`,
+    [tweetId, outcome, extra.reason ?? null, extra.slug ?? null, extra.replyId ?? null],
+  );
+}
+
+/** Test seam: the in-memory ledger, so a test can assert on it without a database. */
+export function _memMentionOutcome(tweetId: string): MentionOutcome | null {
+  return memMentions.get(tweetId)?.outcome ?? null;
+}
+
+/** Test seam: forget everything the in-memory bot layer knows. */
+export function _resetBotState(): void {
+  memBotState.clear();
+  memMentions.clear();
 }

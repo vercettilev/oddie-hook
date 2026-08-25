@@ -15,11 +15,10 @@
 // than hoped for. The key comes from the environment and only the environment;
 // with no key the engine is simply unavailable (the /tool UI says so).
 
-const MODEL = "claude-opus-4-8";
-const API_KEY_ENV = "ANTHROPIC_API_KEY";
+import { messagesUrl, authHeaders, inferenceEnabled, API_KEY_ENV, MODEL } from "../inference.js";
 const TIMEOUT_MS = 45_000; // interactive admin paste; opus + thinking is slow but not latency-critical
 
-export const extractEnabled = (): boolean => Boolean(process.env[API_KEY_ENV]);
+export const extractEnabled = (): boolean => inferenceEnabled();
 export const EXTRACT_KEY_ENV = API_KEY_ENV;
 
 /** The five real chips a market can land in. "Other" is deliberately excluded —
@@ -120,13 +119,9 @@ const SCHEMA = {
  *  malformed reply — so the caller can report a single clean "unavailable". */
 export async function extractClaim(text: string): Promise<Extraction> {
   if (!extractEnabled()) throw new Error(`extraction unavailable — set ${API_KEY_ENV}`);
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch(messagesUrl(), {
     method: "POST",
-    headers: {
-      "x-api-key": process.env[API_KEY_ENV]!,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
+    headers: authHeaders(),
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2500,

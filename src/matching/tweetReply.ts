@@ -83,12 +83,19 @@ export const QUOTE_LEAD_POOL = [
  * softer with the wordplay now is that the money is theirs and the market is
  * real.
  */
+// ONE CLAUSE PER ENTRY, no internal full stop.
+//
+// buildTweetReply capitalises the first character (a reply's CTA starts its own
+// line) and nothing else, so an entry with a sentence break inside it ships as
+// "Talk is free. the market isn't" and reads as a typo in every reply that
+// draws it. Two entries did exactly that in production. Commas instead; the
+// test below refuses a period.
 export const CTA_POOL: readonly (() => string)[] = [
   () => `pick a side, real SOL on it`,
   () => `put SOL behind that`,
-  () => `talk is free. the market isn't`,
+  () => `talk is free, the market isn't`,
   () => `back it, or watch someone else`,
-  () => `pick a side. winners split the pool`,
+  () => `pick a side, winners split the pool`,
 ];
 
 export interface TweetReplyInput {

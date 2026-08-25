@@ -8,7 +8,8 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare } from "./store/markets.js";
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT,
+} from "./store/markets.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, pctDeltasFor } from "./store/markets.js";
@@ -24,6 +25,7 @@ import type { SurfacerInfo } from "./store/markets.js";
 import { logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
+import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
@@ -35,6 +37,9 @@ import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard } from "./card/renderCard.js";
+import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
+import type { SweepDeps, SweepResult } from "./x/mentionLoop.js";
+import * as X from "./x/client.js";
 import { renderCardPng } from "./card/renderPng.js";
 import { renderBanner } from "./card/renderBanner.js";
 import { renderProfileCard } from "./card/renderProfileCard.js";
@@ -1181,7 +1186,15 @@ app.get("/card/:slug.png", async (req, res) => {
   const { all } = await liveMarketData();
   const rec = await getSlug(slug, all);
   if (!rec) return res.status(404).send("unknown market");
-  const png = renderCardPng(renderCard(rec.market));
+  // Ask the vault whether this market has a price at all. The card is what
+  // goes on X, so it is the last place that should draw the seeded 50 as if
+  // somebody had staked it. A chain that will not answer degrades to the
+  // unpriced card, which is the safe direction to be wrong in: it invites a
+  // stake instead of quoting odds nobody set.
+  const detail = await communityMarketDetail(slug).catch(() => null);
+  const state = detail?.onchainPubkey ? await fetchMarketOnChain(detail.onchainPubkey).catch(() => null) : null;
+  const staked = (state?.totalYesLamports ?? 0) + (state?.totalNoLamports ?? 0);
+  const png = renderCardPng(renderCard(rec.market, { unpriced: staked <= 0 }));
   pngCache.set(slug, { png, at: now });
   if (pngCache.size > 300) for (const [k, v] of pngCache) if (now - v.at > PNG_TTL_MS) pngCache.delete(k);
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
@@ -2861,9 +2874,127 @@ async function sweepClosingSoon(): Promise<void> {
 setInterval(sweepClosingSoon, CLOSING_SOON_SWEEP_MS).unref();
 setTimeout(sweepClosingSoon, 60_000).unref(); // first pass shortly after boot
 
+/* --------------------------------------------------------- the X bot loop ---
+ * The autonomous half. Everything the sweep needs is wired here because this
+ * is the only file that already has all of it: the market path, the card
+ * renderer, and the live market list the card is drawn from.
+ *
+ * THREE SWITCHES, and they are deliberately separate:
+ *
+ *   X_BOT_ENABLED   the timer runs at all. Off by default, so a deploy that
+ *                   happens to carry credentials does not start posting.
+ *   X_BOT_DRY_RUN   defaults to TRUE. Everything runs (read mentions, grade
+ *                   the claim, MINT THE MARKET) except the two calls that
+ *                   touch X. Turning the bot on and leaving this alone gives
+ *                   a real transcript of what it would have said, at the cost
+ *                   of real rent, which is the honest way to watch it before
+ *                   trusting it.
+ *   DATABASE_URL    enforced inside the sweep: no durable ledger, no posting.
+ *
+ * The dry run is not a mock. It really opens the market, because the part
+ * worth reviewing is the JUDGEMENT (is this claim priceable, is this question
+ * neutral, is this the right close time) and a mocked mint would review none
+ * of it.
+ */
+const X_BOT_ENABLED = (process.env.X_BOT_ENABLED ?? "false").toLowerCase() === "true";
+const X_BOT_DRY_RUN = (process.env.X_BOT_DRY_RUN ?? "true").toLowerCase() !== "false";
+const X_POLL_MS = Math.max(60_000, Number(process.env.X_POLL_MS ?? 120_000));
+
+function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
+  return {
+    mentions: (since, max) => X.mentions(since, max),
+    tweet: (id) => X.tweet(id),
+    extract: (text) => runExtract(text),
+    openMarket: async (input) => {
+      const out = await openMarketFromClaim({
+        question: input.question,
+        closeInput: input.closeInput,
+        sourceUrl: input.sourceUrl,
+        category: input.category,
+        resolutionCriteria: input.resolutionCriteria,
+        resolvability: input.resolvability,
+      });
+      return out.ok ? { ok: true, slug: out.slug } : { ok: false, status: out.status, error: out.error };
+    },
+    cardPng: async (slug) => {
+      const { all } = await liveMarketData();
+      const rec = await getSlug(slug, all);
+      return rec ? renderCardPng(renderCard(rec.market)) : null;
+    },
+    uploadMedia: (png) => X.uploadMedia(png),
+    postReply: (o) => X.postReply(o),
+    baseUrl: BASE_URL,
+    botUserId: process.env.X_BOT_USER_ID ?? "",
+    dryRun: X_BOT_DRY_RUN,
+    log: (line, extra) => console.log(JSON.stringify({ evt: "x_bot", line, ...extra })),
+    ...overrides,
+  };
+}
+
+let sweeping = false;
+async function sweepMentions(overrides: Partial<SweepDeps> = {}): Promise<SweepResult | null> {
+  if (sweeping) return null;
+  sweeping = true;
+  try {
+    const r = await runMentionSweep(sweepDeps(overrides));
+    if (r.looked > 0) {
+      console.log(JSON.stringify({ evt: "x_sweep", ...r, decisions: undefined, dryRun: sweepDeps(overrides).dryRun }));
+    }
+    return r;
+  } catch (err) {
+    console.error("[x] sweep failed:", (err as Error).message);
+    return null;
+  } finally {
+    sweeping = false;
+  }
+}
+
+/**
+ * Run one sweep on demand. Admin-gated, and it forces a DRY RUN whatever the
+ * environment says: this is the "show me what you would do" button, and a
+ * version of it that could post would be a way to make the bot tweet by
+ * guessing a token.
+ */
+app.post("/api/admin/x/sweep", requireAdmin, async (_req, res) => {
+  if (!X.xConfigured()) {
+    return res.status(503).json({ ok: false, error: "x not configured", missing: X.xMissing() });
+  }
+  const r = await runMentionSweep(sweepDeps({ dryRun: true })).catch((e) => {
+    res.status(502).json({ ok: false, error: (e as Error).message });
+    return null;
+  });
+  if (r) res.json({ ok: true, dryRun: true, ...r });
+});
+
+/** What the bot is, without touching X. Safe to curl while debugging a deploy. */
+app.get("/api/admin/x/status", requireAdmin, async (_req, res) => {
+  res.json({
+    ok: true,
+    enabled: X_BOT_ENABLED,
+    dryRun: X_BOT_DRY_RUN,
+    configured: X.xConfigured(),
+    missing: X.xMissing(),
+    durable: PERSISTENT,
+    inference: inferenceProvider(),
+    pollMs: X_POLL_MS,
+    sweepCap: SWEEP_CAP,
+    sinceId: await botStateGet(X.SINCE_KEY),
+  });
+});
+
+if (X_BOT_ENABLED) {
+  if (!X.xConfigured()) {
+    console.error(`[x] X_BOT_ENABLED is set but credentials are missing: ${X.xMissing().join(", ")}. The loop will not start.`);
+  } else {
+    setInterval(sweepMentions, X_POLL_MS).unref();
+    setTimeout(sweepMentions, 20_000).unref();
+    console.log(`[x] mention loop ON, every ${Math.round(X_POLL_MS / 1000)}s, ${X_BOT_DRY_RUN ? "DRY RUN (nothing is posted)" : "POSTING FOR REAL"}`);
+  }
+}
+
 const PORT = Number(process.env.PORT ?? 3000);
 app.listen(PORT, () =>
   console.log(
-    `oddie on ${BASE_URL} (port ${PORT}) — semantic matching ${semanticEnabled() ? "ON" : `OFF (set ${SEMANTIC_KEY_ENV} to enable)`}; claim extraction ${extractEnabled() ? "ON" : `OFF (set ${EXTRACT_KEY_ENV} to enable)`}; settle mail ${mailEnabled() ? "ON" : `DRY-RUN (set ${MAIL_KEY_ENV} to send)`}`,
+    `oddie on ${BASE_URL} (port ${PORT}) — inference ${inferenceProvider().anthropic ? "anthropic" : inferenceProvider().host} (${inferenceProvider().model}) — semantic matching ${semanticEnabled() ? "ON" : `OFF (set ${SEMANTIC_KEY_ENV} to enable)`}; claim extraction ${extractEnabled() ? "ON" : `OFF (set ${EXTRACT_KEY_ENV} to enable)`}; settle mail ${mailEnabled() ? "ON" : `DRY-RUN (set ${MAIL_KEY_ENV} to send)`}`,
   ),
 );

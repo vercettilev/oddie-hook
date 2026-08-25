@@ -197,6 +197,11 @@ console.log("\nCTA_POOL: every entry keeps the one promise that can't be wordpla
   // test here and still be a lie the day it gets picked.
   for (const [i, cta] of CTA_POOL.entries()) {
     check(`CTA_POOL[${i}] promises no free grant`, !/\bfree (points?|predictions?)\b|\d/.test(cta()), cta());
+    // buildTweetReply uppercases the FIRST character and nothing else, so a
+    // sentence break inside an entry ships as "Talk is free. the market isn't".
+    // Two entries did this in production. One clause per entry.
+    check(`CTA_POOL[${i}] is one clause, so capitalising it cannot make a typo`,
+      !/[.!?]\s/.test(cta()), cta());
   }
 }
 
