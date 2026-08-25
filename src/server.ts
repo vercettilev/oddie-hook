@@ -2472,6 +2472,28 @@ function noteGeoForCommunity(req: express.Request): void {
   }
 }
 
+/**
+ * The switch the whole client-side chain layer hangs off: initChainLayer in
+ * feed.html probes this before injecting chain.js, so if this route is absent
+ * the betting UI silently never exists.
+ *
+ * RESTORED. The venue removal deleted a span that ran from venueRealMoneyReady
+ * to the realStakesReady block, and this route lived inside it despite having
+ * nothing to do with venues. Nothing caught it for a while because the
+ * verification loop probing it used curl -sf, which treats a 404 as "keep
+ * waiting", and then echoed ready unconditionally when the loop ran out. Two
+ * layers of masking on the one probe that mattered.
+ *
+ * Deliberately OUTSIDE the realStakesReady block below: this route answering
+ * "enabled: false" is how a client learns trading is off. Inside the block,
+ * off would mean 404, and the client cannot tell a disabled layer from a
+ * broken one.
+ */
+app.get("/api/chain/status", (req, res) => {
+  noteGeoForCommunity(req);
+  res.json({ enabled: realStakesReady, cluster: cluster() });
+});
+
 if (realStakesReady) {
   const MIN_STAKE_LAMPORTS = 1_000_000;    // 0.001 SOL — above rent/fee dust
   const MAX_STAKE_LAMPORTS = 5_000_000_000; // 5 SOL — a sane demo ceiling, not a protocol limit
