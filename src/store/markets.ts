@@ -2964,8 +2964,12 @@ export async function createCommunityMarket(input: {
   yesPct?: number; // starting odds; default 50
   resolutionCriteria?: string | null; // the "Resolves by: …" rules bettors see
   resolvability?: string | null; // gate grade: clean | fuzzy | unresolvable
+  // Supplied by callers that must mint on-chain BEFORE they are willing to
+  // publish a row, since the same id has to address both. Defaults to the
+  // clock, which is what every other caller wants.
+  marketId?: number;
 }): Promise<{ slug: string; marketId: number; market: Market }> {
-  const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
+  const marketId = input.marketId ?? Date.now(); // unique-per-ms; also the on-chain market_id (u64)
   const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
   const category = input.category?.trim() || "Community";
   const resolutionCriteria = input.resolutionCriteria?.trim() || null;

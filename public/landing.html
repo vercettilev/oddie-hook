@@ -67,7 +67,8 @@
     --lime-dim:#9AA015;
     --lime-hot:#F2F87A;
     --lime-deep:#5B600C;
-    --no:#FF6B5A;
+    --no:#FF2D78;
+    --no-hot:#FF6FA5;
     --bg:#020302;
     --card:#0A0B08;
     --line:rgba(255,255,255,.11);
@@ -100,6 +101,7 @@
   a:focus-visible,button:focus-visible{outline:2px solid var(--lime);outline-offset:3px;border-radius:6px}
 
   .eyebrow{color:var(--lime);font-family:'Fredoka';font-size:13px;font-weight:600;
+    text-shadow:0 0 18px rgba(215,220,31,.45);
     letter-spacing:.16em;text-transform:uppercase}
   /* Under the loud band's eyebrow. Quiet on purpose: it is a disclaimer, and a
      loud disclaimer next to three big numbers reads as an apology for them.
@@ -176,8 +178,12 @@
      leave the horizontal padding alone: a `padding: a b c` shorthand here sets
      left/right to zero and silently deletes the page gutter, which is precisely
      what it did on phones — the headline ran edge to edge. */
-  .hero__in{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr);
-    column-gap:52px;align-items:center;padding-top:36px;padding-bottom:60px}
+  /* One centred column. It was two (copy left, art right), which is the right
+     shape when the art is the point; the demonstration is the point now, and
+     it wants the full width and the middle of the screen. */
+  .hero__in{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;
+    padding-top:52px;padding-bottom:64px}
+  .hero__copy{display:flex;flex-direction:column;align-items:center;text-align:center;width:100%}
 
   h1{margin:26px 0 0;font-family:'Fredoka';font-weight:700;color:var(--fg);
     font-size:clamp(38px,5.6vw,63px);line-height:1.02;letter-spacing:-.035em}
@@ -223,6 +229,9 @@
      No image asset can go missing and no art file has to be re-exported when the
      brand colour moves. */
   .stage{position:relative;height:590px;min-width:0}
+  /* Atmosphere, not content: behind the demo, dimmed, and out of the flow so
+     it cannot push the thing people are meant to read down the page. */
+  .stage--bg{position:absolute;inset:-6% -10% auto;height:118%;z-index:0;opacity:.34;pointer-events:none}
   /* The art sits CENTRED in its column and the cards hang off both edges of the
      stage, so the doorway is framed rather than crowded. As the column narrows
      the cards close in on it and start to overlap, which is the depth the comp
@@ -259,6 +268,54 @@
     object-fit:cover;object-position:50% 40%;filter:saturate(1.15) contrast(1.06);
     -webkit-mask-image:radial-gradient(ellipse 60% 56% at 50% 54%,#000 30%,rgba(0,0,0,.62) 62%,transparent 86%);
     mask-image:radial-gradient(ellipse 60% 56% at 50% 54%,#000 30%,rgba(0,0,0,.62) 62%,transparent 86%)}
+
+  /* ------------------------------------------------ the one-second hero -- */
+  h1 .h1a{color:#fff;text-shadow:0 0 44px rgba(255,255,255,.2)}
+  h1 .h1b{color:var(--lime);
+    text-shadow:0 0 38px rgba(215,220,31,.7), 0 0 100px rgba(215,220,31,.28)}
+
+  /* The neon floor. This is the whole cyberpunk budget: one perspective grid
+     receding to a horizon, no glitch text, no scanlines, no mono type. The
+     genre's usual devices all cost legibility, and legibility is the brief. */
+  .hero::after{content:"";position:absolute;left:-30%;right:-30%;bottom:-14%;height:58%;z-index:0;
+    pointer-events:none;
+    background:linear-gradient(rgba(215,220,31,.26) 1.5px,transparent 1.5px),
+               linear-gradient(90deg,rgba(215,220,31,.26) 1.5px,transparent 1.5px);
+    background-size:58px 58px;
+    transform:perspective(420px) rotateX(70deg);
+    -webkit-mask-image:linear-gradient(transparent,#000 34%,#000);
+    mask-image:linear-gradient(transparent,#000 34%,#000)}
+
+  /* before / after, side by side. Stacks on narrow screens, where the arrow
+     turns to point down rather than being rotated text nobody can parse. */
+  .demo{display:flex;align-items:center;justify-content:center;gap:26px;margin-top:34px;
+    width:100%;max-width:900px}
+  .dtw{flex:1 1 0;min-width:0;background:var(--card);border:1.5px solid rgba(255,255,255,.13);
+    border-radius:16px;padding:14px 16px;text-align:left}
+  .dtw__who{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--fg-3)}
+  .dtw__who i{width:22px;height:22px;border-radius:50%;flex:none;
+    background:linear-gradient(135deg,#3a3a3a,#1a1a1a)}
+  .dtw__who b{color:#fff;font-weight:800;font-size:13px}
+  .dtw__txt{margin-top:10px;font-size:18px;line-height:1.4;color:#fff;font-weight:700}
+  .dtw__tag{margin-top:9px;font-size:14px;color:var(--lime);font-weight:800;
+    text-shadow:0 0 14px rgba(215,220,31,.5)}
+
+  .darrow{display:flex;flex-direction:column;align-items:center;gap:5px;flex:none}
+  .darrow__ln{font-size:42px;line-height:1;color:var(--lime);text-shadow:0 0 20px rgba(215,220,31,.8)}
+  .darrow__cap{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--fg-3);white-space:nowrap}
+
+  .dmk{flex:1.15 1 0;min-width:0;background:var(--card);border:1.5px solid rgba(215,220,31,.4);
+    border-radius:16px;padding:15px 16px 16px;text-align:left;box-shadow:0 0 46px rgba(215,220,31,.15)}
+  .dmk__q{font-family:'Fredoka';font-weight:700;font-size:21px;line-height:1.2}
+  .dmk__row{display:flex;gap:9px;margin-top:13px}
+  .dmk__side{flex:1;border-radius:11px;padding:13px 0;text-align:center;
+    font-family:'Fredoka';font-weight:700;font-size:17px}
+  .dmk__side small{display:block;font-size:12px;font-weight:800;opacity:.85;margin-top:1px}
+  .dmk__yes{background:var(--lime);color:#0B1400;box-shadow:0 0 26px rgba(215,220,31,.42)}
+  .dmk__no{color:var(--no-hot);border:1.5px solid rgba(255,45,120,.5);
+    box-shadow:0 0 20px rgba(255,45,120,.18)}
+  .dmk__foot{margin-top:11px;font-size:11.5px;color:var(--fg-3);letter-spacing:.04em}
+  .dmk__foot b{color:var(--lime)}
 
   .qcard__yes{color:var(--lime)}
   .qcard__no{color:var(--no);opacity:.85}
@@ -446,9 +503,21 @@
      shrink gracefully (it is an absolutely positioned composition), so it drops
      under the copy at full width instead of being squeezed. */
   @media (max-width:1080px){
-    .hero__in{grid-template-columns:1fr;row-gap:8px;padding-bottom:56px}
+    .hero__in{padding-bottom:56px}
     .lede{max-width:none}
     .stage{height:560px;margin-top:16px}
+    .demo{gap:16px}
+  }
+  /* The demo is a sentence read left to right, so it may not silently squeeze:
+     below this width it becomes the same sentence read top to bottom, and the
+     arrow turns to keep pointing at the thing it points at. */
+  @media (max-width:860px){
+    /* The headline is two clauses. Left to wrap on its own it broke mid-clause
+       ("Bet it. Get / paid."), which is the one break that costs the joke. */
+    h1 .h1a,h1 .h1b{display:block}
+    .demo{flex-direction:column;gap:14px;max-width:440px}
+    .dtw,.dmk{width:100%;flex:none}
+    .darrow__ln{transform:rotate(90deg)}
   }
   /* Tablet: three steps side by side stop being readable, and the arrows between
      them stop pointing anywhere useful once the columns stack. */
@@ -478,6 +547,10 @@
        card row can flow underneath it instead of on top of it. */
     .stage{height:auto;margin-top:22px}
     .stage__art{position:relative;inset:auto;height:300px}
+    /* The portal stays a backdrop on phones too, where the card row below it
+       would otherwise reflow it into the middle of the reading order. */
+    .stage--bg{position:absolute;height:100%;opacity:.26}
+    .hero::after{height:44%}
 
     /* Full-bleed so the row can run off both edges of the phone the way a real
        carousel does, instead of stopping inside the page gutter. */
@@ -534,12 +607,38 @@
 
     <div class="hero__copy">
 
-      <h1>Start markets.<br>Earn when they <em>spread.</em></h1>
+      <!-- The hero's job is one second of comprehension, so it SHOWS the
+           product instead of describing it. The old headline ("Start markets.
+           Earn when they spread.") stated a claim and left the demonstration
+           below the fold, where a cold visitor from a tweet never reaches it.
+           Three imperatives and a before/after do the same work without being
+           read. -->
+      <h1><span class="h1a">Tag it. Bet it.</span> <span class="h1b">Get paid.</span></h1>
 
       <p class="lede">
-        Tag <b>@oddiefun</b> under any argument on X.<br>
-        It becomes a market. Being loud pays.
+        Tag <b>@oddiefun</b> under any argument on X and it turns into a market
+        anyone can bet on.
       </p>
+
+      <!-- The whole product, left to right. An example, and it says so to a
+           screen reader; the numbers are illustrative, which is why none of
+           them claim to be live. -->
+      <div class="demo" role="img" aria-label="Example: a post saying Bitcoin will never hit 200 thousand dollars, tagged with @oddiefun, becomes a market asking whether Bitcoin hits 200 thousand before 2027, at 71 percent yes and 29 percent no, with 3 percent of the pool going to the person who was tagged.">
+        <div class="dtw">
+          <div class="dtw__who"><i aria-hidden="true"></i><b>CryptoNate</b> <span>@CryptoNate</span></div>
+          <div class="dtw__txt">Bitcoin will never hit $200k.</div>
+          <div class="dtw__tag">@oddiefun</div>
+        </div>
+        <div class="darrow" aria-hidden="true"><span class="darrow__ln">&rarr;</span><span class="darrow__cap">oddie replies</span></div>
+        <div class="dmk">
+          <div class="dmk__q">Will Bitcoin hit $200k before 2027?</div>
+          <div class="dmk__row">
+            <span class="dmk__side dmk__yes">YES <small>71%</small></span>
+            <span class="dmk__side dmk__no">NO <small>29%</small></span>
+          </div>
+          <div class="dmk__foot">1.4 SOL in the pool &middot; <b>3% to CryptoNate</b></div>
+        </div>
+      </div>
 
       <div class="cta">
         <!-- Was a direct x.com/intent link that opened an EMPTY compose with the
@@ -572,7 +671,10 @@
 
     <!-- The stage. `aria-hidden` on the art alone: the market cards below it are
          real links to real markets and stay in the accessibility tree. -->
-    <div class="stage">
+    <!-- The portal stays, behind everything now. It is the brand's world and
+         worth keeping, but it does not explain the product, so it stopped
+         competing with the thing that does. -->
+    <div class="stage stage--bg">
       <div class="stage__art" data-art="<!--HAS_ART-->" aria-hidden="true">
         <img class="scene-photo" src="/portal.png" alt="">
         <!-- `meet`, not `slice`: the vignette that dissolves this scene into the
@@ -598,8 +700,8 @@
     <div class="band band--how">
       <div class="how">
       <div class="how__side">
-        <p class="eyebrow reveal">See how a post becomes a market</p>
-        <h2 class="how__t reveal">An argument, all the way to a receipt.</h2>
+        <p class="eyebrow reveal">How it works</p>
+        <h2 class="how__t reveal">Four steps. The fourth one pays you.</h2>
       </div>
       <div class="steps">
 
@@ -633,7 +735,7 @@
             <div><h2 class="step__t">Oddie makes it a market</h2>
               <p class="step__b">A market opens on Solana with its own vault.</p></div>
           </div>
-          <div class="mock" role="img" aria-label="Example: Oddie replies with a market asking 'Will Bitcoin hit $200k before 2026?' at 71% yes, 29% no, and a Pick a side button.">
+          <div class="mock" role="img" aria-label="Example: Oddie replies with a market asking 'Will Bitcoin hit $200k before 2027?' at 71% yes, 29% no, and a Pick a side button.">
             <div class="xp__hd">
               <span class="av"><img src="/logo-mark-96.png" alt=""></span>
               <div>
@@ -651,7 +753,7 @@
               <div class="inner__row">
                 <span class="inner__spark"><svg class="ico ico--lg" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/></svg></span>
                 <div>
-                  <div class="inner__q">Will Bitcoin hit $200k before 2026?</div>
+                  <div class="inner__q">Will Bitcoin hit $200k before 2027?</div>
                   <div class="inner__odds"><span class="qcard__yes">71% YES</span> <span class="qcard__no">29% NO</span></div>
                 </div>
               </div>
@@ -667,7 +769,7 @@
               <p class="step__b">One tap opens it. Your wallet signs.</p></div>
           </div>
           <div class="mock" role="img" aria-label="Example of a market being played: 71% called yes, 29% called no, five callers so far, one point four SOL in the pool.">
-            <div class="callq">Will Bitcoin hit $200k before 2026?</div>
+            <div class="callq">Will Bitcoin hit $200k before 2027?</div>
             <div class="callrow">
               <span class="callbtn callbtn--yes">YES <b>71%</b></span>
               <span class="callbtn callbtn--no">NO <b>29%</b></span>
@@ -706,7 +808,7 @@
          does not have. The rule for editing this band: the money is upstairs,
          these are the standings. -->
     <div class="band">
-      <p class="eyebrow reveal">Call it loud</p>
+      <p class="eyebrow reveal">Be loud, climb the board</p>
       <p class="bandnote reveal">Points, not payouts. The money is the 3% above.</p>
       <div class="loud">
         <div class="loudc reveal">
@@ -794,7 +896,7 @@
   <div class="shell nav__in" style="gap:18px;flex-wrap:wrap">
     <span>© Oddie</span>
     <a href="https://x.com/oddiefun" target="_blank" rel="noopener">@oddiefun on X</a>
-    <span class="sp">Play money. For entertainment.</span>
+    <span class="sp">Markets settle in SOL on Solana. Oddie never holds your funds.</span>
   </div>
 </footer>
 <script>
@@ -899,8 +1001,8 @@
         // X's glyph collapsed to a bare letter. The label is the last text node,
         // so this edits that and leaves the icon alone.
         var last = btn.lastChild;
-        if (last && last.nodeType === 3) last.nodeValue = last.nodeValue.replace(/\s+$/, "") + " — unavailable";
-        else btn.appendChild(document.createTextNode(" — unavailable"));
+        if (last && last.nodeType === 3) last.nodeValue = last.nodeValue.replace(/\s+$/, "") + " (coming soon)";
+        else btn.appendChild(document.createTextNode(" (coming soon)"));
       });
     }).catch(function () { /* the start route still bails to a page */ });
 

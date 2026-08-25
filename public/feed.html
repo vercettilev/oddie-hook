@@ -793,17 +793,49 @@
     color:var(--muted-g);background:none;border:1.5px dashed var(--hair-g);border-radius:999px;
     padding:5px 12px;cursor:pointer}
   .chain-wallet{font-family:'Nunito';font-weight:700;font-size:12.5px;color:var(--muted);margin:0 0 10px}
-  .chain-side-row{display:flex;gap:8px;margin-bottom:10px}
-  .chain-side{flex:1;font:inherit;font-weight:800;font-size:14px;padding:9px 0;cursor:pointer;
+  /* The question the stake is going on, at the top of the sheet where a title
+     belongs. Clamped: a long market question must not push YES/NO off a phone
+     screen, which is the one thing this sheet exists to show. */
+  .chain-q{font-family:'Fredoka';font-weight:700;font-size:19px;line-height:1.22;
+    letter-spacing:-.015em;margin:0 0 6px;display:-webkit-box;-webkit-line-clamp:3;
+    -webkit-box-orient:vertical;overflow:hidden}
+
+  .chain-side-row{display:flex;gap:8px;margin-bottom:12px}
+  .chain-side{flex:1;font:inherit;font-weight:800;font-size:15px;padding:13px 0;cursor:pointer;
     border:1.5px solid var(--ink);border-radius:12px;background:var(--white);color:var(--ink)}
   .chain-side.on{background:var(--accent);border-width:3.5px}
+  /* YES and NO are the same two words, in the same two colours, as the buttons
+     on the card behind this sheet and the demo card on the landing page. They
+     were both plain white here, so the one control that decides the direction
+     of the bet was the only place in the product where the sides looked alike. */
+  :root[data-theme="dark"] .chain-side{background:var(--ground-2);color:var(--on-ground);
+    border-color:var(--line-g)}
+  :root[data-theme="dark"] .chain-side[data-side="yes"]{color:#D7DC1F;
+    background:rgba(215,220,31,.08);border-color:rgba(215,220,31,.34)}
+  :root[data-theme="dark"] .chain-side[data-side="no"]{color:#FF6FA5;
+    background:rgba(255,45,120,.07);border-color:rgba(255,45,120,.34)}
+  :root[data-theme="dark"] .chain-side[data-side="yes"].on{background:#D7DC1F;color:#0B1400;
+    border-color:#D7DC1F;box-shadow:0 0 26px rgba(215,220,31,.45)}
+  :root[data-theme="dark"] .chain-side[data-side="no"].on{background:#FF2D78;color:#150008;
+    border-color:#FF2D78;box-shadow:0 0 26px rgba(255,45,120,.42)}
+
+  /* The amount step, labelled. Unlabelled pills reading "0.05 0.1 0.25 …" next
+     to YES/NO read as a second row of choices rather than as a quantity. */
+  .chain-amt-lab{font-family:'Nunito';font-weight:800;font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted-g);margin:0 0 6px}
   /* Preset stakes. A number pad between deciding and betting is the slowest
      part of the flow and the one place people reconsider, so the common
      amounts are one tap and typing is the fallback, not the default. */
   .chain-amt-row{display:flex;gap:6px;margin-bottom:8px}
-  .chain-chip{flex:1;font:inherit;font-weight:800;font-size:13px;padding:8px 0;cursor:pointer;
-    border:1.5px solid var(--hair-g);border-radius:999px;background:var(--white);color:var(--ink)}
+  .chain-chip{flex:1;font:inherit;font-weight:800;font-size:12.5px;padding:9px 0;cursor:pointer;
+    border:1.5px solid var(--hair-g);border-radius:999px;background:var(--white);color:var(--ink);
+    white-space:nowrap}
   .chain-chip.on{background:var(--accent);border-color:var(--ink);border-width:2.5px}
+  .chain-chip--other{flex:0 0 auto;padding-left:14px;padding-right:14px}
+  :root[data-theme="dark"] .chain-chip{background:transparent;color:var(--on-ground);
+    border-color:var(--line-g)}
+  :root[data-theme="dark"] .chain-chip.on{background:rgba(215,220,31,.14);color:#D7DC1F;
+    border-color:rgba(215,220,31,.55)}
   .chain-amt{display:block;width:100%;font:inherit;font-size:16px;font-weight:700;padding:9px 10px;
     margin-bottom:8px;border:1.5px solid var(--ink);border-radius:12px;background:var(--white);
     box-sizing:border-box;text-align:center;color:var(--ink)}
@@ -827,7 +859,8 @@
   .chain-pool-side b{display:block;font-family:'Fredoka';font-weight:700;font-size:18px;color:var(--on-ground);margin:2px 0}
   .chain-pool-side small{color:var(--acc-deep)}
   .chain-pool-empty{font-family:'Nunito';font-weight:700;font-size:12px;color:var(--muted-g);margin:0 0 12px}
-  .chain-fee-note{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);margin:0 0 12px}
+  .chain-fee-note{font-family:'Nunito';font-weight:700;font-size:11.5px;color:var(--muted-g);
+    margin:10px 0 4px;text-align:center;line-height:1.45}
   /* The claim prompt on Positions — money you're owed, so it's allowed to be
      the loudest thing on that screen. Removes itself entirely when there is
      nothing to collect (see refreshClaimable): a standing "no winnings" row
@@ -901,9 +934,9 @@
   :root[data-theme="dark"] .orow[data-side="yes"]{
     background:rgba(215,220,31,.07);border-color:rgba(215,220,31,.30)}
   :root[data-theme="dark"] .orow[data-side="no"]{
-    background:rgba(255,107,90,.06);border-color:rgba(255,107,90,.26)}
+    background:rgba(255,45,120,.06);border-color:rgba(255,45,120,.30)}
   :root[data-theme="dark"] .orow[data-side="yes"] .oside{color:#D7DC1F}
-  :root[data-theme="dark"] .orow[data-side="no"] .oside{color:#FF6B5A}
+  :root[data-theme="dark"] .orow[data-side="no"] .oside{color:#FF6FA5}
   :root[data-theme="dark"] .orow:active{box-shadow:none}
   /* The numbers and their fixed ink. .opct is #141414 with a WHITE 2.5px stroke
      — near-black type outlined in white, which is legible on the light theme's
@@ -1153,7 +1186,16 @@
    * after a call locks is the wedge itself ("I called it — what do you say?").  */
   /* cat chip on the left, share icon on the right; this row carries the
      margin-bottom:auto that used to live on .cat, so the take still drops down. */
-  .chead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:2px}
+  /* The money line under the duel. Small, wide, and lit only on the part that
+     is a promise to a person: the fee credit names someone who gets paid. */
+  .stakeline{margin-top:10px;font-size:12.5px;font-weight:700;line-height:1.45;
+    color:var(--muted-g);letter-spacing:.01em}
+  .stakeline b{color:var(--acc-mid);font-weight:800}
+  :root[data-theme="dark"] .stakeline b{text-shadow:0 0 14px rgba(215,220,31,.45)}
+  .stakeline-pool{white-space:nowrap}
+
+  .chead{display:flex;align-items:center;gap:12px;margin-bottom:2px}
+  .chead .shareico{margin-left:auto}
   .chead .cat{margin-bottom:0}
   .shareico{width:38px;height:38px;flex:none;display:inline-flex;align-items:center;justify-content:center;
     border-radius:50%;border:1.5px solid var(--line-g);background:var(--ground);
@@ -2296,7 +2338,7 @@
     <div class="brand"><a class="brandlink" href="/" title="Home" aria-label="oddie — home"><div class="ghost"></div><b>oddie</b></a><span class="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
     <nav class="railnav" id="railnav"></nav>
     <div class="railfoot">
-      predict, don't argue
+      tag it. bet it. get paid.
     </div>
   </aside>
 
@@ -2426,16 +2468,6 @@ function statusStrip(){
   return el;
 }
 
-// The real countdown lives on the daily claim now — there is no more passive
-// Just the "when", for prose: "21h", "40m", "any minute now".
-// A device at 0 is not locked out. If it holds open calls it can sell for
-// whatever they're worth right now; either way the daily refill is coming.
-function zeroNote(d){
-  if(d.tokens>0)return "";
-  if(d.open.length)
-    return `<div class="znote">Out of free predictions — but not stuck. <b>Sell an open call</b> below at its live price to free one up, or <b>claim your daily predictions</b> on the feed.</div>`;
-  return `<div class="znote">Out of predictions for now — <b>claim your daily predictions</b> on the feed to top back up, then come back tomorrow for more. Nothing lost but a little time.</div>`;
-}
 function paintBalance(pulse){
   if(balance===null)return;
   // The pill is the only permanent door to sign-in. It opens a sheet; it never
@@ -2668,7 +2700,7 @@ function provButtons(){
     .map(({provider,available})=>{
       const p=PROV[provider]; if(!p)return "";
       if(linked.has(provider))return `<button class="cbtn" disabled><span class="glyph">${p.glyph}</span>Connected</button>`;
-      if(!available)return `<button class="cbtn" disabled title="not configured"><span class="glyph">${p.glyph}</span>${p.label} — unavailable</button>`;
+      if(!available)return `<button class="cbtn" disabled title="not configured"><span class="glyph">${p.glyph}</span>${p.label} (coming soon)</button>`;
       return `<button class="cbtn ${p.cls}" data-connect="${provider}"><span class="glyph">${p.glyph}</span>${p.label}</button>`;
     }).join("");
 }
@@ -2979,7 +3011,7 @@ function loudClaim(source){
       }else{
         msg.textContent=j.error||"couldn't submit that link.";
       }
-    }catch(e){msg.textContent="couldn't submit — try again.";}
+    }catch(e){msg.textContent="couldn't submit. Try again.";}
     finally{btn.disabled=false;btn.textContent="Submit for review";}
   };
 }
@@ -3348,7 +3380,7 @@ async function loadFeed(){
     feedTop(data.categories);
     renderFeed(data.items);
   }catch(e){
-    scroller.innerHTML='<div class="state">couldn’t load the odds — pull to retry or check the server.</div>';
+    scroller.innerHTML='<div class="state">couldn’t load the odds. Pull to retry, or check the server.</div>';
     console.error(e);
   }
 }
@@ -3425,7 +3457,7 @@ function maybeFeedTop(scroller){
     // section), shown to a first-time visitor alongside the tag instruction.
     const heroHtml=showTag ? `<span class="onbhero">Someone's wrong on X? Prove you're right.</span>` : '';
     const tagHtml=showTag
-      ? '<span class="onbtxt">tag <b>@oddiefun</b> under any claim on X — it turns into a market that keeps score</span>'
+      ? '<span class="onbtxt">tag <b>@oddiefun</b> under any claim on X and it turns into a market anyone can bet on</span>'
       : '<span class="onbtxt">follow to see which calls were right</span>';
     const followHtml=showFollow
       ? '<a class="fbtn" href="https://x.com/intent/follow?screen_name=oddiefun" target="_blank" rel="noopener">follow @oddiefun ↗</a>'
@@ -3447,7 +3479,7 @@ function maybeFeedTop(scroller){
 function renderFeed(items){
   const scroller=document.getElementById("scroller");
   scroller.innerHTML="";
-  if(!items.length){scroller.innerHTML='<div class="state">no live markets here right now — try another category.</div>';return;}
+  if(!items.length){scroller.innerHTML='<div class="state">no live markets here right now. Try another category.</div>';return;}
   maybeFeedTop(scroller); // claim card + onboarding, pinned first so cards flow beneath
   // Grouping is a "For you"/all-markets thing — a single-category chip view is
   // already one category, and a permalink landing (startSlug) pins its own
@@ -3544,11 +3576,11 @@ function renderFeed(items){
  * got for it, so scrolling the grid reinforces the same loop the hero
  * demonstrates instead of quietly contradicting it.
  *
- *  - RECEIPT (creatorFeePaid > 0): the market settled and the tagger was
- *    actually paid. Concrete and past-tense, because it happened.
- *  - PROMISE (everything else): the market is still open, so nothing has been
- *    paid yet and saying otherwise would be a lie on the card. Forward-looking
- *    "+3% ... tag your own" framing, which is the honest version.
+ * The card no longer carries a settled-fee receipt. The one it had counted
+ * play tokens, an economy nothing can add to any more, and printing "earned 3
+ * predictions" beside a stake line denominated in SOL invented a second
+ * currency. A real fee is owed in lamports until the creator signs for it, so
+ * its honest surface is the claim flow in chain.js, not a card.
  *
  * A market with no surfacer on record is NOT rendered as an anonymous person.
  * That framing assumed a real tagger we simply couldn't name; the actual cause
@@ -3633,35 +3665,37 @@ function sourcePostHtml(m){
  * already says that, and repeating it as 0 · 0 makes a new market look dead
  * rather than new.
  */
-function statsRowHtml(m){
-  // Deliberately empty, kept as a seam rather than deleted so the call sites
-  // stay put if a stat ever earns its place back.
-  //
-  // It carried three figures and all three had stopped working. "N in play"
-  // counted staked predictions, and a call stakes nothing now, so it was a
-  // frozen number from before the change that could never grow again. "N
-  // callers" counted a different set from the crowd chip two inches above it
-  // — one filters to open calls, the other does not — so a card could and did
-  // show "12 yes · 1 no" beside "12 callers" and ask the reader to work out
-  // which was true. "creator earned" is a fact about the tagger, shown to
-  // people who are not the tagger.
-  return "";
+/** The topic chip, when there is a topic. "Community" is not one: it is true
+ *  of every market on the page, so as the first thing on the card it spends
+ *  the best line on the screen saying nothing. A real topic (Crypto, Sports)
+ *  still earns it. */
+function catChipHtml(m){
+  const c=String(m.topicCategory||m.category||"").trim();
+  if(!c||c.toLowerCase()==="community")return "";
+  return `<div class="cat">${esc(c)}</div>`;
 }
 
-function feeNoteHtml(m){
-  const paid=Number(m.creatorFeePaid)||0;
-  if(paid>0){
-    // A fee is only ever credited to a surfacer, so taggedBy is set whenever
-    // this branch runs. The fallback names the market rather than a person, so
-    // an unnamed receipt can never read as "anonymous earned something".
-    return `<div class="fee-note fee-note-paid"><b>+${paid}</b><span>${
-      m.taggedBy?`@${esc(m.taggedBy)} tagged this market and earned`:"the tagger earned"
-    } ${paid} prediction${paid===1?"":"s"} when it resolved.</span></div>`;
-  }
-  // Unreachable by construction: the only call site is gated on a fee having
-  // been PAID. Kept as the honest zero rather than a promise, so that if this
-  // is ever called without one it renders nothing instead of an advert.
-  return "";
+function statsRowHtml(m){
+  // The money, in one line, on every card.
+  //
+  // This slot was empty for a while, and empty was right when the three stats
+  // it used to carry were all counting play tokens. It is wrong now: the card
+  // showed two percentages and a multiplier and never once said that a tap
+  // puts SOL down, so the single most important fact about the product was the
+  // one thing a first-timer could not learn from its main screen.
+  //
+  // It is deliberately the SAME sentence as the demo card on the landing page
+  // ("1.4 SOL in the pool · 3% to CryptoNate"). Someone who arrives from the
+  // landing should recognise the thing they were shown, word for word.
+  //
+  // The pool half is a slot, not a number: only Solana knows the vault total,
+  // and chain.js fills it in per card from the fetch it already makes for the
+  // odds. Until then it reads as the honest empty state rather than "0 SOL",
+  // which looks like a broken market instead of a new one.
+  if(!m.community)return "";
+  const fee=Number(m.creatorFeeBps)||0;
+  const credit=fee>0&&m.taggedBy?` · <b>${(fee/100)}% to @${esc(m.taggedBy)}</b>`:"";
+  return `<div class="stakeline"><span class="stakeline-pool">real SOL, winners split the pool</span>${credit}</div>`;
 }
 
 /**
@@ -3986,7 +4020,7 @@ function renderNextCallPreview(anchor,nextM,homeLoop,chainCount){
 function renderTagReminderInterstitial(anchor,nextM,homeLoop,chainCount){
   const el=document.createElement("div");
   el.className="loop-tag-reminder";
-  el.innerHTML=`<p class="onboard-teach-body">🔥 On a roll — tag a real claim on X and earn <b>+50</b> when it becomes a market.</p>
+  el.innerHTML=`<p class="onboard-teach-body">🔥 On a roll. Tag a real claim on X and earn <b>+50</b> when it becomes a market.</p>
     <a class="onboard-teach-cta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
       <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
     <button type="button" class="keep-playing-cta">keep playing →</button>`;
@@ -4004,7 +4038,7 @@ function renderTagReminderInterstitial(anchor,nextM,homeLoop,chainCount){
 function renderFeedFallback(anchor){
   const fb=document.createElement("a");
   fb.className="nextcall-fallback";fb.href="/feed";
-  fb.innerHTML=`<span>Keep going — browse more in Feed</span><span class="nc-arrow">→</span>`;
+  fb.innerHTML=`<span>Keep going. Browse more in Feed</span><span class="nc-arrow">→</span>`;
   anchor.after(fb);
 }
 
@@ -4013,7 +4047,7 @@ function buildCard(m,i,homeLoop){
     const card=document.createElement("div");card.className="card";
     card.innerHTML=`
       <div class="chead">
-        <div class="cat">${esc(m.topicCategory||m.category)}</div>
+        ${catChipHtml(m)}
         <button class="shareico" aria-label="Share this market">${SHARE_ICON}</button>
       </div>
       ${m.slug===startSlug && m.sourceUrl ? `<a class="srctweet" href="${esc(m.sourceUrl)}" target="_blank" rel="noopener noreferrer">
@@ -4048,7 +4082,6 @@ function buildCard(m,i,homeLoop){
            What survives is the RECEIPT: once a market has actually paid its
            tagger, that is proof rather than a pitch, it names a person, and
            it is exactly the kind of thing worth screenshotting. -->
-      ${Number(m.creatorFeePaid) > 0 ? feeNoteHtml(m) : ""}
       ${m.slug===startSlug && m.callers && m.callers.length ? `<div class="callers">
         <div class="callers-lab">Who called it</div>
         <div class="callers-list">${m.callers.map(c=>`
@@ -4191,7 +4224,7 @@ function buildCard(m,i,homeLoop){
             if(!j.show)return;
             const teach=document.createElement("div");
             teach.className="onboard-teach";
-            teach.innerHTML=`<p class="onboard-teach-body">🎉 First call locked. Now the real move: markets here are born from X — tag <b>@oddiefun</b> under any claim and earn <b>+50</b> when it becomes a market.</p>
+            teach.innerHTML=`<p class="onboard-teach-body">🎉 First call locked. Now the real move: markets here are born from X. Tag <b>@oddiefun</b> under any claim and earn <b>+50</b> when it becomes a market.</p>
               <a class="onboard-teach-cta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
                 <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>`;
             lastCta.after(teach);
@@ -4411,7 +4444,7 @@ async function renderHome(){
     hero.innerHTML=`
       <div class="cb-copy">
         <h1 class="cb-title">Turn any post on X into a market.</h1>
-        <p class="cb-sub">Tag <b>@oddiefun</b> under any post and we'll create the market for you — you earn <b>3%</b> when it resolves with people on it.</p>
+        <p class="cb-sub">Tag <b>@oddiefun</b> under any post and we'll create the market for you, and you earn <b>3%</b> when it resolves with people on it.</p>
       </div>
       <div class="cb-actions">
         <a class="cb-tag" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener"><span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
@@ -4430,7 +4463,7 @@ async function renderHome(){
           <span class="tagdemo-odds"><span>YES 38%</span><span>NO 62%</span></span>
         </div>
         <div class="tagdemo-step">↓ the season plays out</div>
-        <div class="tagdemo-done">✓ Resolved YES — the 38% called it</div>
+        <div class="tagdemo-done">✓ Resolved YES. The 38% called it</div>
       </div>
       <a class="herocta" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener">
         <span class="glyphx">𝕏</span> Tag @oddiefun on X</a>`;
@@ -4560,7 +4593,7 @@ async function renderHome(){
     // two products stacked. Naming the ACTION that produced these markets
     // makes the section an extension of the tag mechanic instead of a
     // competing one, and it costs three words.
-    section(featuredFrag,newUser?"Someone tagged this one — try it":"Markets people tagged","openmarkets",newUser?"cue":"");
+    section(featuredFrag,newUser?"Someone tagged this one, try it":"Markets people tagged","openmarkets",newUser?"cue":"");
     // Only the first `featuredShown` are ever VISIBLE as their own cards —
     // the rest is the continuous-play loop's reserve pool (see
     // HOME_FEATURED_POOL server-side): lock a call on any visible card and
@@ -4739,7 +4772,7 @@ function buildPicker(){
   el.className="card intercard pickcard";
   el.innerHTML=`
     <div class="ititle">what do you have<br>takes on?</div>
-    <div class="isub">pick up to 3 — we'll tune your feed</div>
+    <div class="isub">pick up to 3 and we'll tune your feed</div>
     <div class="tchips">${CATS.map(c=>`<button class="tchip" data-c="${esc(c)}">${esc(c)}</button>`).join("")}</div>
     <button class="icont" disabled>Continue</button>`;
   const sel=new Set(), cont=el.querySelector(".icont");
@@ -4941,7 +4974,7 @@ async function loadMyMarkets(scroller){
     if(!markets.length){
       scroller.innerHTML=`<div class="sheet"><div class="mm-empty">
         <p class="mm-empty-big">You haven't tagged a market yet.</p>
-        <p class="mm-empty-sub">Reply <b>@oddiefun</b> under any post on X — the market it becomes is yours, and you earn <b>3%</b> when it resolves with people on it.</p>
+        <p class="mm-empty-sub">Reply <b>@oddiefun</b> under any post on X. The market it becomes is yours, and you earn <b>3%</b> when it resolves with people on it.</p>
         <button class="rp-create" type="button">+ Create a market</button>
       </div></div>`;
       scroller.querySelector(".rp-create").onclick=()=>openPasteSheet();
@@ -4960,7 +4993,7 @@ async function loadMyMarkets(scroller){
     </div>`;
   }catch(e){
     console.error(e);
-    scroller.innerHTML='<div class="state">couldn’t load your markets — try again in a moment.</div>';
+    scroller.innerHTML='<div class="state">couldn’t load your markets. Try again in a moment.</div>';
   }
 }
 
@@ -5254,8 +5287,7 @@ async function loadPositions(scroller){
     if(!d.open.length && !d.closed.length){
       scroller.innerHTML=`<div class="sheet">
         <p class="sub">Your calls on this device land here.</p>
-        ${zeroNote(d)}
-        <div class="state">Nothing yet — open the feed and call one.</div>
+        <div class="state">Nothing yet. Open the feed and put SOL on one.</div>
       </div>`;
       return;
     }
@@ -5270,12 +5302,10 @@ async function loadPositions(scroller){
     const netStr=`${net>0?"+":net<0?"−":"±"}${Math.abs(net)}`;
     scroller.innerHTML=`<div class="sheet">
       <p class="sub">Your calls on this device. Sell any time at the market's current odds, or hold to resolution.</p>
-      ${zeroNote(d)}
       ${repHTML(d.overall,d.byCategory)}
       <div class="summary">
         <div class="tile"><div class="v num ${cls(net)}">${netStr}</div><div class="k">NET TOKENS</div></div>
         <div class="tile"><div class="v num">${winRate===null?"—":winRate+"%"}</div><div class="k">${settledArr.length?`WIN RATE · ${wins}/${settledArr.length}`:"WIN RATE"}</div></div>
-        <div class="tile"><div class="v num">🪙 ${d.tokens}</div><div class="k">PREDICTIONS</div></div>
       </div>
       ${d.open.length?`<h2 class="psec">Open · ${d.open.length}</h2>${d.open.map(openHTML).join("")}`:""}
       ${history.length?`<h2 class="psec">History · ${history.length}</h2>${history.map(historyHTML).join("")}`:""}
@@ -5297,7 +5327,7 @@ async function loadPositions(scroller){
     });
   }catch(e){
     console.error(e);
-    scroller.innerHTML='<div class="state">couldn’t load your calls — try again in a moment.</div>';
+    scroller.innerHTML='<div class="state">couldn’t load your calls. Try again in a moment.</div>';
   }
 }
 
@@ -5405,11 +5435,11 @@ async function sellPosition(btn,scroller){
   // so. STRUCTURAL ones (the market isn't trading, the row is already gone) will
   // NOT change on a retry — inviting one is the lie we're removing — so they
   // replace the button with an honest, non-clickable note.
-  const TRANSIENT={"stale-odds":"Odds are refreshing — tap to try again.",
-    "server-error":"Something went wrong — tap to try again.",
-    "network":"Couldn't reach the server — tap to try again."};
+  const TRANSIENT={"stale-odds":"Odds are refreshing. Tap to try again.",
+    "server-error":"Something went wrong. Tap to try again.",
+    "network":"Couldn't reach the server. Tap to try again."};
   const STRUCTURAL={
-    "unpriced":"This market isn't quoted right now — you can't sell until it's trading again.",
+    "unpriced":"This market isn't quoted right now, so you can't sell until it's trading again.",
     "no-entry-price":"No entry price on record for this one, so it can't be priced to sell.",
     "already-closed":"Already sold.","not-found":"That position is gone.",
     "not_allowed":"Selling isn't available on this account yet."};
@@ -5469,7 +5499,7 @@ async function loadLeaderboard(scroller){
     renderLb(scroller,data);
   }catch(e){
     console.error(e);
-    scroller.innerHTML='<div class="state">couldn’t load the standings — try again in a moment.</div>';
+    scroller.innerHTML='<div class="state">couldn’t load the standings. Try again in a moment.</div>';
   }
 }
 /**
@@ -5539,7 +5569,7 @@ function renderLb(scroller,data){
       empty:"Nobody has called anything yet. Be first.",
       rows:data.rows,html:(r)=>row({...r,handle:r.handle+(r.provisional?" 🌱":"")},`<div class="acc ${cls(r.avgEdge)}">${r.oddies??0}<small>${r.loudMultiplier>1?`🔥 ${r.loudMultiplier}× loud · `:""}${r.accuracyPct!=null?`${r.accuracyPct}% accurate`:`${r.closed} closed`}</small></div>`)},
     streak:{sub:"Consecutive days with at least one call. Show up, stay up.",
-      empty:"No streaks yet — day one starts now.",
+      empty:"No streaks yet. Day one starts now.",
       rows:data.streaks,html:(r)=>row(r,`<div class="acc ${r.current>0?"up":"flat"}">${r.current}d<small>best ${r.best}d</small></div>`)},
     // ACCURACY, in place of the old Winnings board.
     //
@@ -5553,7 +5583,7 @@ function renderLb(scroller,data){
     // Ranked among the same candidates the main board scores, so the two can
     // never contradict each other about a person's numbers.
     accurate:{sub:"Who is actually right. Hit rate across resolved calls, once there are enough of them to mean anything.",
-      empty:"No settled records yet — make a call and let a market resolve.",
+      empty:"No settled records yet. Make a call and let a market resolve.",
       rows:data.accurate,html:(r)=>row(r,`<div class="acc ${r.accuracyPct>=50?"up":"flat"}">${r.accuracyPct}%<small>${r.closed} resolved</small></div>`)},
     creators:{sub:"Ranked by creator fees earned — 3% of every market you tag, paid when it resolves. Markets created breaks ties.",
       empty:"Nobody has created a market yet. Tag a post on X and this board is yours.",
@@ -5608,7 +5638,7 @@ async function loadNotices(scroller){
     if(!notices.length){
       scroller.innerHTML=`<div class="sheet">
         <p class="sub">When a market you hold resolves, it lands here.</p>
-        <div class="state">Nothing yet — your open calls are still live.</div>
+        <div class="state">Nothing yet. Your open calls are still live.</div>
       </div>`;
       return;
     }
@@ -5630,7 +5660,7 @@ async function loadNotices(scroller){
     });
   }catch(e){
     console.error(e);
-    scroller.innerHTML='<div class="state">couldn’t load notifications — try again in a moment.</div>';
+    scroller.innerHTML='<div class="state">couldn’t load notifications. Try again in a moment.</div>';
   }
 }
 
@@ -5809,7 +5839,7 @@ async function loadProfile(scroller){
         if(!j.ok){err.textContent=j.reason;err.hidden=false;return;}
         myHandle=j.handle;
         loadProfile(scroller);
-      }catch(e){err.textContent="couldn't save — try again";err.hidden=false;}
+      }catch(e){err.textContent="couldn't save. Try again";err.hidden=false;}
     };
     input.onkeydown=(e)=>{if(e.key==="Enter")row.querySelector("#hsave").click();};
   };
@@ -5869,7 +5899,7 @@ function gateInner(){
   // screen, so it says "sign in with" rather than "continue with".
   const btns=gateButtons();
   return `<div class="gmark"></div>
-    <div class="ititle">keep calling — sign in</div>
+    <div class="ititle">keep calling, sign in</div>
     <div class="gatecard-btns" style="width:100%;max-width:320px;margin-top:4px">${btns}</div>
     <p class="cnote" style="max-width:300px">Free to play. Virtual predictions, nothing to cash out. Your call is saved to this device.</p>`;
 }
@@ -5906,10 +5936,10 @@ function wireNotListed(root){
       const j=await r.json().catch(()=>({}));
       msg.innerHTML=r.ok
         ? `You're on the list${j.position?` — <b>#${j.position}</b> in line`:""}. We'll email <b>${esc(GATE.email)}</b> the moment a spot opens.`
-        : "Couldn't save — try again in a moment.";
+        : "Couldn't save. Try again in a moment.";
       b.textContent=r.ok?"Spot held ✓":"Hold my spot on the waitlist";
       if(!r.ok)b.disabled=false;
-    }catch(err){msg.textContent="Couldn't reach the waitlist — try again.";b.disabled=false;b.textContent="Hold my spot on the waitlist";}
+    }catch(err){msg.textContent="Couldn't reach the waitlist. Try again.";b.disabled=false;b.textContent="Hold my spot on the waitlist";}
   };
 }
 // One dispatcher for the terminal gate, so the interstitial card and the
@@ -5946,7 +5976,7 @@ async function checkGate(){
     // screen to list providers by hand, and the guard in test-providers.ts found
     // it while being written — which is the whole reason that test exists.
     scroller.innerHTML=`<div class="sheet" style="text-align:center;padding-top:56px">
-      <p class="sub" style="font-size:16px">you're invited — sign in to open the feed:</p>
+      <p class="sub" style="font-size:16px">you're invited. sign in to open the feed:</p>
       <div class="gatecard-btns" style="width:100%;max-width:320px;margin:14px auto 0">${gateButtons()}</div>
       <p class="cnote">Free to play. Virtual predictions, nothing to cash out.</p></div>`;
     wireGate(scroller);

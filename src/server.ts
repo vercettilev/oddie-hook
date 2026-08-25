@@ -25,7 +25,7 @@ import { logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./sto
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
-import { winBonus, CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
+import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
@@ -671,7 +671,7 @@ app.get("/api/feed", async (req, res) => {
       forming: positions < MARKET_FORMING_MIN,
       formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-      creatorFeeBps: CREATOR_FEE_BPS_PLAY, // transparency: shown on the card, see feed.html's fee-note
+      creatorFeeBps: CREATOR_FEE_BPS_REAL, // the rate the program deducts; shown on the card's stake line
       poolTokens: poolSizes[slug] ?? 0,
       callsToday: recentCalls[slug] ?? 0,
     };
@@ -716,7 +716,7 @@ app.get("/api/feed", async (req, res) => {
       feedItems.unshift({
         slug: start.slug,
         category: isCommunity ? "Community" : categorize(start.market),
-        ...(isCommunity ? { community: true as const, onchain: null, creatorFeeBps: CREATOR_FEE_BPS_PLAY } : {}),
+        ...(isCommunity ? { community: true as const, onchain: null, creatorFeeBps: CREATOR_FEE_BPS_REAL } : {}),
         ...start.market,
       });
     }
@@ -938,7 +938,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       ...m, slug, category: "Community", topicCategory: m.category, community: true as const,
       positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-      creatorFeeBps: CREATOR_FEE_BPS_PLAY,
+      creatorFeeBps: CREATOR_FEE_BPS_REAL,
       poolTokens: poolSizes[slug] ?? 0,
       callsToday: recentCalls[slug] ?? 0,
       crowd: crowd[slug] ?? { yes: 0, no: 0 },
@@ -2196,7 +2196,19 @@ async function openMarketFromClaim(input: {
     return bad(400, "source_url must be an x.com/…/status/… link, because the handle in it is what names the card");
   }
 
-  const { slug, marketId } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability });
+  // The vault comes first. Written the other way round, a Solana failure
+  // returned "was not published" to the caller while the row it had already
+  // created went on being served by the feed: a market nobody could ever take a
+  // side in, because the account the bet needs does not exist. Minting first
+  // means the failure path writes nothing, so there is no orphan to clean up.
+  const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
+  const minted = await mintMarket({ marketId, question, closeTime, creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL });
+  if (!minted) {
+    return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
+  }
+
+  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability, marketId });
+  await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
   // Awaited, not fire-and-forget: this row is the thing being guaranteed, so a
@@ -2206,11 +2218,6 @@ async function openMarketFromClaim(input: {
   await recordSurfacer(slug, { sourceUrl });
   void awardSurface(slug).catch(() => {}); // points are best-effort; the row is not
 
-  const minted = await mintMarket({ marketId, question, closeTime, creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL });
-  if (!minted) {
-    return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
-  }
-  await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   return { ok: true, slug, marketId, onchain: { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature } };
 }
 

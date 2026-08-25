@@ -55,7 +55,7 @@
       const s = document.createElement("script");
       s.src = "https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.js";
       s.onload = resolve;
-      s.onerror = () => reject(new Error("Couldn't load the Solana library — check your connection and try again."));
+      s.onerror = () => reject(new Error("Couldn't load the Solana library. Check your connection and try again."));
       document.head.appendChild(s);
     });
     web3 = window.solanaWeb3;
@@ -72,7 +72,7 @@
   async function connectWallet() {
     const provider = window.solana;
     if (!provider || !provider.isPhantom) {
-      throw new Error("No Solana wallet found — install Phantom to put real stake behind a call.");
+      throw new Error("No Solana wallet found. Install Phantom to put real stake behind a call.");
     }
     const resp = await provider.connect();
     wallet = { publicKey: resp.publicKey.toString() };
@@ -191,7 +191,7 @@
       return;
     }
     if (position.claimed) {
-      shell(`<p class="cnote">Already collected — these winnings are in your wallet.</p>
+      shell(`<p class="cnote">Already collected. These winnings are in your wallet.</p>
         <button class="cclose">Close</button>`);
       return;
     }
@@ -202,7 +202,7 @@
     }
 
     const sol = (position.lamports / 1e9).toFixed(3);
-    shell(`<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b> — and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
+    shell(`<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>, and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
       <button class="claimbtn" id="chainclaim">Claim winnings</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`);
@@ -228,7 +228,7 @@
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       } catch (e) {
         btn.disabled = false; btn.textContent = "Claim winnings";
-        if (line) line.textContent = e.message || "Something went wrong — try again.";
+        if (line) line.textContent = e.message || "Something went wrong. Try again.";
       }
     };
   }
@@ -241,6 +241,13 @@
    */
   async function openStakeSheet(slug, presetSide) {
     const body = sheetShell();
+    // The question the money is going on. The sheet covers the card that was
+    // just tapped, so without this the screen that takes a stake never states
+    // what the stake is about: a swipe feed makes it genuinely easy to bet on
+    // the market you scrolled past rather than the one you meant.
+    const qEl = document.querySelector(`.card[data-slug="${slug}"] .take`);
+    const question = qEl ? qEl.textContent.trim() : "";
+    const titleHTML = question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
 
     let marketState;
@@ -275,7 +282,7 @@
     const yesLamports = marketState.totalYesLamports ?? 0, noLamports = marketState.totalNoLamports ?? 0;
     const yesOnchainPct = poolPct(yesLamports, noLamports), noOnchainPct = yesOnchainPct == null ? null : 100 - yesOnchainPct;
     const onchainOddsHTML = yesOnchainPct == null
-      ? `<p class="chain-pool-empty">No real stake on this market yet. First in sets the line.</p>`
+      ? `<p class="chain-pool-empty">Nothing staked yet. First in sets the line.</p>`
       : `<div class="chain-pool-odds">
            <span class="chain-pool-side">YES <b>${yesOnchainPct}%</b> <small>${fmtMult(yesOnchainPct)}</small></span>
            <span class="chain-pool-side">NO <b>${noOnchainPct}%</b> <small>${fmtMult(noOnchainPct)}</small></span>
@@ -288,6 +295,9 @@
     // rate is gone rather than printed as 0%: a line saying we charge nothing
     // invites the question of when we will start.
     const feeBps = marketState.realCreatorFeeBps || 0;
+    // Demoted to a footnote under the button. It is true and worth saying, but
+    // it is a fact about somebody else's earnings, and it was sitting in the
+    // third of three paragraphs a person had to read before reaching YES.
     const feeNoteHTML = feeBps
       ? `<p class="chain-fee-note">${(feeBps / 100).toFixed(0)}% of the pool goes to whoever started this market. Nothing goes to oddie.</p>`
       : "";
@@ -304,21 +314,22 @@
       // asked for at the last possible moment, by the same button that places
       // the bet.
       body.innerHTML = `
-        <h3>Pick a side</h3>
+        ${titleHTML}
         <p class="cnote">${testnet ? `Test SOL on ${label}` : "Real SOL"}. Winners split the pool.</p>
         ${onchainOddsHTML}
-        ${feeNoteHTML}
         <div class="chain-side-row">
           <button class="chain-side" data-side="yes" type="button">YES</button>
           <button class="chain-side" data-side="no" type="button">NO</button>
         </div>
+        <div class="chain-amt-lab">How much?</div>
         <div class="chain-amt-row">
-          ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p}</button>`).join("")}
-          <button class="chain-chip" data-sol="custom" type="button">…</button>
+          ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p} SOL</button>`).join("")}
+          <button class="chain-chip chain-chip--other" data-sol="custom" type="button">Other</button>
         </div>
         <input class="chain-amt" type="number" min="0.001" step="0.001" placeholder="SOL amount" inputmode="decimal" hidden>
         <div class="chain-line" id="chainline"></div>
         <button class="claimbtn" id="chainstake" disabled>Pick a side</button>
+        ${feeNoteHTML}
         ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>` : ""}
         <button class="cclose">Not now</button>`;
       body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
@@ -424,103 +435,6 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  /** USDC on Solana — the mint venue orders are denominated in. */
-  const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-  const USDC_DECIMALS = 6;
-
-  /**
-   * The venue stake sheet: real money on a POLYMARKET market, routed through
-   * Jupiter's order API. Non-custodial on exactly the same terms as our own
-   * parimutuel — the server asks Jupiter to build the transaction with the
-   * USER's pubkey as owner, and the user's own wallet signs and broadcasts
-   * it. No key of ours is involved and we never hold the funds.
-   *
-   * Deliberately states WHERE the market comes from. A user putting real
-   * money down should know this one is Polymarket's book and not ours, and
-   * that the creator fee they see on community cards does NOT apply here —
-   * nobody tagged this market into existence, so there is no creator to pay.
-   */
-  async function openVenueSheet(marketId, card) {
-    const body = sheetShell();
-    const question = card?.querySelector(".take")?.textContent?.trim() || "this market";
-
-    const render = () => {
-      body.innerHTML = `
-        <h3>Make it real</h3>
-        <p class="cnote">Optional. Real USDC on <b>Polymarket</b>, routed via Jupiter — this is their market, not one someone tagged into Oddie, so there's no creator fee on it. Your free predictions are untouched either way.</p>
-        <p class="chain-fee-note">${esc(question)}</p>
-        ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>`
-          : `<button class="cbtn" id="chainconnect">Connect wallet</button>`}
-        ${wallet ? `
-        <div class="chain-side-row">
-          <button class="chain-side" data-side="yes" type="button">YES</button>
-          <button class="chain-side" data-side="no" type="button">NO</button>
-        </div>
-        <input class="chain-amt" type="number" min="1" step="1" placeholder="USDC amount" inputmode="decimal">
-        <div class="chain-line" id="chainline"></div>
-        <button class="claimbtn" id="chainstake" disabled>Put USDC on it</button>
-        ` : ""}
-        <button class="cclose">Not now</button>`;
-      body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
-
-      const connectBtn = body.querySelector("#chainconnect");
-      if (connectBtn) connectBtn.onclick = async () => {
-        connectBtn.disabled = true; connectBtn.textContent = "Connecting…";
-        try { await connectWallet(); render(); }
-        catch (e) {
-          connectBtn.disabled = false; connectBtn.textContent = "Connect wallet";
-          let err = body.querySelector(".chain-err");
-          if (!err) { err = document.createElement("p"); err.className = "chain-err"; connectBtn.after(err); }
-          err.textContent = e.message;
-        }
-      };
-
-      let side = null;
-      const sideBtns = [...body.querySelectorAll(".chain-side")];
-      const amtInput = body.querySelector(".chain-amt");
-      const stakeBtn = body.querySelector("#chainstake");
-      const line = body.querySelector("#chainline");
-      const refresh = () => {
-        const amt = parseFloat(amtInput ? amtInput.value : "");
-        if (stakeBtn) stakeBtn.disabled = !side || !(amt > 0);
-        if (line) line.textContent = side && amt > 0
-          ? `Buying ${side.toUpperCase()} with ${amt} USDC. Your wallet will ask you to confirm.` : "";
-      };
-      sideBtns.forEach((b) => b.onclick = () => {
-        side = b.dataset.side;
-        sideBtns.forEach((x) => x.classList.toggle("on", x === b));
-        refresh();
-      });
-      if (amtInput) amtInput.oninput = refresh;
-      if (stakeBtn) stakeBtn.onclick = async () => {
-        stakeBtn.disabled = true; stakeBtn.textContent = "Preparing…";
-        try {
-          const depositAmount = Math.round(parseFloat(amtInput.value) * 10 ** USDC_DECIMALS);
-          const prep = await fetch("/api/venue/order/prepare", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ marketId, userPubkey: wallet.publicKey, side, depositAmount, depositMint: USDC_MINT }),
-          });
-          const pj = await prep.json();
-          if (prep.status === 451) throw new Error("Real money on Polymarket markets isn't available in your region.");
-          if (!prep.ok || !pj.ok) throw new Error(pj.error || pj.reason || "Couldn't prepare the order.");
-          const w3 = await loadWeb3();
-          const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
-          stakeBtn.textContent = "Confirm in wallet…";
-          const { signature } = await window.solana.signAndSendTransaction(tx);
-          body.innerHTML = `<h3>Order placed ✓</h3>
-            <p class="cnote">${amtInput.value} USDC on ${side.toUpperCase()}, on Polymarket.</p>
-            <p class="chain-sig">tx: <a href="https://explorer.solana.com/tx/${signature}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
-            <button class="cclose">Done</button>`;
-          body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
-        } catch (e) {
-          stakeBtn.disabled = false; stakeBtn.textContent = "Put USDC on it";
-          if (line) line.textContent = e.message || "Something went wrong — try again.";
-        }
-      };
-    };
-    render();
-  }
-
   /**
    * Community cards get no extra button any more.
    *
@@ -572,6 +486,18 @@
     } catch (e) { return; }
 
     const yes = s.totalYesLamports || 0, no = s.totalNoLamports || 0;
+
+    // The card ships a stake line whose pool half is a placeholder, because
+    // only the vault knows the total. This is the one fetch that already has
+    // it, so it fills it in rather than costing a second round trip.
+    const poolEl = card.querySelector(".stakeline-pool");
+    if (poolEl) {
+      const total = (yes + no) / 1e9;
+      poolEl.textContent = total > 0
+        ? `${total.toFixed(total < 1 ? 3 : 2)} SOL in the pool`
+        : "real SOL, winners split the pool";
+    }
+
     const rows = card.querySelectorAll(".duel .orow");
     if (rows.length !== 2) return;
     const pct = poolPct(yes, no);
@@ -600,51 +526,10 @@
     card.dataset.chainPool = "live";
   }
 
-  /**
-   * The venue (Polymarket-via-Jupiter) real-money button. Separate from
-   * attachButton above and deliberately NOT merged with it: the two paths
-   * differ in contract, in endpoint, and — the part that actually matters —
-   * in geofence. Our own parimutuel blocks nobody; the venue path blocks 19
-   * countries including the entire US, fails closed on an unresolvable IP,
-   * and additionally requires the master flag. `venueAllowed` is resolved
-   * ONCE per page from /api/venue/status (which applies exactly the same
-   * server-side gate that /api/venue/order/prepare enforces), so a blocked
-   * visitor never sees the control at all — and if a stale page ever did
-   * show it, the prepare call still refuses with 451.
-   */
-  let venueAllowed = null; // null = not yet asked
-  async function venueIsAllowed() {
-    if (venueAllowed !== null) return venueAllowed;
-    try {
-      const r = await fetch("/api/venue/status");
-      const j = await r.json();
-      venueAllowed = !!j.enabled;
-    } catch (e) { venueAllowed = false; }
-    return venueAllowed;
-  }
-
-  function attachVenueButton(card) {
-    if (card.querySelector(".chain-cta")) return;
-    const duel = card.querySelector(".duel");
-    if (!duel) return;
-    const marketId = card.dataset.venueId;
-    if (!marketId) return;
-    const btn = document.createElement("button");
-    btn.className = "chain-cta"; btn.type = "button";
-    btn.textContent = "🔗 Make it real";
-    btn.onclick = (e) => { e.stopPropagation(); openVenueSheet(marketId, card); };
-    duel.after(btn);
-  }
-
-  async function scan() {
+  function scan() {
     document.querySelectorAll('.card[data-community="1"]').forEach(attachButton);
     mountClaimCheck();
     mountCreatorFees();
-    // Venue cards are decorated only once the server says this visitor may
-    // use that path at all — no flash of a button that would 451 on tap.
-    if (await venueIsAllowed()) {
-      document.querySelectorAll('.card[data-venue="polymarket"]').forEach(attachVenueButton);
-    }
   }
 
   /**
