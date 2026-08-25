@@ -159,14 +159,14 @@
   .cbtn.x{color:#fff}
 
   :root[data-theme="dark"]{
-    --ground:#0B0B0B; --ground-wide:#070707; --ground-2:#141414; --fade:#0B0B0B;
+    --ground:#050605; --ground-wide:#030403; --ground-2:#101110; --fade:#050605;
     --on-ground:#F4F4F1; --muted-g:#9A9A92; --line-g:#2C2C2A; --hair-g:#232322;
     --chip-bg:transparent; --chip-bd:#545A12; --link-g:#DDE45F;
     /* On near-black the deep olives go invisible; the ground-level accent text
        (balance top-up, payout lines, stat keys) lifts to a light lime instead. */
     --acc-deep:#C6CE45; --acc-mid:#D7DC1F; --acc-deeper:#E4EA7B;
     /* Elevated card panel sits above the deeper feed ground; heavier shadow. */
-    --feed-ground:#050505; --card-surface:#141513; --card-line:#2A2B27;
+    --feed-ground:#020302; --card-surface:#121310; --card-line:#2A2B27;
     --card-shadow:0 3px 10px rgba(0,0,0,.5), 0 22px 50px rgba(0,0,0,.62);
     --shadow-chip:0 1px 2px rgba(0,0,0,.35), 0 3px 8px rgba(0,0,0,.3);
     --shadow-pop:0 2px 8px rgba(0,0,0,.4), 0 12px 28px rgba(0,0,0,.5);
@@ -278,6 +278,13 @@
     background:rgba(182,240,95,.18);color:var(--acc-deep);
     border:1px solid rgba(182,240,95,.55)}
   :root[data-theme="dark"] .commtag-by{color:var(--accent)}
+  /* Acid noir: the lit things are the ones that move money. Restrained on
+     purpose; a working surface with glow on everything is a working surface
+     with glow on nothing. */
+  :root[data-theme="dark"] .claimbtn{box-shadow:0 0 26px rgba(215,220,31,.35)}
+  :root[data-theme="dark"] .orow.pick{box-shadow:0 6px 0 rgba(0,0,0,.22), 0 0 30px rgba(215,220,31,.4)}
+  :root[data-theme="dark"] .bal{box-shadow:0 0 18px rgba(215,220,31,.14)}
+  :root[data-theme="dark"] .chain-side.on{box-shadow:0 0 24px rgba(215,220,31,.35)}
   /* Venue markets: a deliberately COOL, low-contrast chip naming the source.
      They have no tagger, so they must not borrow the accent that means
      "someone tagged this" — the visual difference is the point, and it's what
