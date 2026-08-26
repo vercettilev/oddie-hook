@@ -2929,10 +2929,18 @@ function gateButtons(){
 /** The provider buttons, built once and used by every surface that offers them. */
 function provButtons(){
   const linked=new Set(auth.accounts.map(a=>a.provider));
-  return (auth.providers.length?auth.providers:[{provider:"twitter",available:false},{provider:"google",available:false},{provider:"phantom",available:true}])
+  // "(coming soon)" is a statement about the SERVER's configuration, so it may
+  // only be made when the server has actually answered. The fallback used to
+  // claim twitter and google were unavailable whenever auth.providers was
+  // empty, which is also true while /api/auth/me is still in flight and when
+  // that fetch fails. Both are live, so a slow network made two working
+  // sign-ins read as unbuilt features.
+  const known=auth.providers.length>0;
+  return (known?auth.providers:[{provider:"twitter"},{provider:"google"},{provider:"phantom"}])
     .map(({provider,available})=>{
       const p=PROV[provider]; if(!p)return "";
       if(linked.has(provider))return `<button class="cbtn" disabled><span class="glyph">${p.glyph}</span>Connected</button>`;
+      if(!known)return `<button class="cbtn" disabled><span class="glyph">${p.glyph}</span>${p.label}</button>`;
       if(!available)return `<button class="cbtn" disabled title="not configured"><span class="glyph">${p.glyph}</span>${p.label} (coming soon)</button>`;
       return `<button class="cbtn ${p.cls}" data-connect="${provider}"><span class="glyph">${p.glyph}</span>${p.label}</button>`;
     }).join("");
@@ -2950,6 +2958,28 @@ function provButtons(){
  * stored, so there is no version of this exchange where the browser gets to
  * choose what was signed.
  */
+/**
+ * Wire a set of sign-in buttons. THE ONE PLACE that knows Phantom is different.
+ *
+ * There were three hand-copied versions of this, and the copy on the Profile
+ * screen had lost its Phantom branch: it sent "phantom" to
+ * /api/auth/phantom/start, which is not an OAuth provider, so the server
+ * bounced it to auth_error=unknown_provider and the button did nothing but
+ * throw you back to the feed. It has been dead since the first commit, and it
+ * is the ONLY wallet button a signed-out visitor can reach from Profile.
+ *
+ * Both ends were valid code, which is why nothing caught it. So the branch now
+ * lives in one function and the call sites cannot drift apart again.
+ */
+function wireConnect(root, attr, go){
+  root.querySelectorAll(`[${attr}]`).forEach(b=>b.onclick=()=>{
+    // Phantom signs IN PLACE. It has no redirect to hand off to, so it can
+    // never go down the OAuth path the others take.
+    if(b.dataset[attr==="data-p"?"p":"connect"]==="phantom")return connectPhantom(b);
+    go(b);
+  });
+}
+
 async function connectPhantom(btn){
   const p=window.solana;
   if(!p||!p.isPhantom){
@@ -3022,9 +3052,7 @@ function connectSheet(reason,opts){
   </div>`;
   dim.onclick=(e)=>{ if(e.target===dim)dim.remove(); };
   dim.querySelector(".cclose").onclick=()=>dim.remove();
-  dim.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
-    // Phantom signs in place; the OAuth providers leave the page.
-    if(b.dataset.connect==="phantom")return connectPhantom(b);
+  wireConnect(dim,"data-connect",b=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
   document.body.appendChild(dim);
@@ -6197,7 +6225,7 @@ async function loadProfile(scroller){
     <div class="pfoot"><p class="disclaimer">Markets settle in SOL on Solana. Positions are staked from your own wallet, and oddie never holds your funds.</p></div>
   </div>`;
   animateOscore(scroller,acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),true);
-  scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
+  wireConnect(scroller,"data-connect",b=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
   // THE one button on this screen. It opens the same paste sheet the feed uses,
@@ -6311,12 +6339,7 @@ function gateInner(){
     <div class="gatecard-btns" style="width:100%;max-width:320px;margin-top:4px">${btns}</div>
     <p class="cnote" style="max-width:300px">Free to play. Virtual predictions, nothing to cash out. Your call is saved to this device.</p>`;
 }
-function wireGate(root){root.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{
-  // Phantom is not a redirect: it signs in place, so it cannot go through
-  // startAuth's OAuth hand-off. Everything else does.
-  if(b.dataset.p==="phantom")return connectPhantom(b);
-  startAuth(b.dataset.p);
-});}
+function wireGate(root){ wireConnect(root,"data-p",b=>startAuth(b.dataset.p)); }
 
 // The OTHER terminal gate: signed in, but the identity isn't on the list yet.
 // Same position in the flow (the last card, after the taste) — the honest room,
