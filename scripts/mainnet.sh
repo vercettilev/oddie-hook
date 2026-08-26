@@ -170,6 +170,9 @@ case "${1:-check}" in
     say "Use a paid RPC if you have one: the public endpoint rate-limits under"
     say "any real traffic, and every card render reads a vault."
     say ""
+    say "Then, BEFORE anyone reloads the feed:"
+    say "  npm run mainnet-backfill -- replay          (dry run)"
+    say "  npm run mainnet-backfill -- replay --apply  (re-mint every market at its own address)"
     say "Then: ./scripts/mainnet.sh verify"
     ;;
 
@@ -193,6 +196,21 @@ case "${1:-check}" in
     if [ -n "$slug" ]; then
       code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/card/$slug.png")
       [ "$code" = "200" ] && good "cards still render ($slug)" || bad "card render returned $code"
+    fi
+
+    # The board is not moved until every existing market answers on the new
+    # cluster. The API reporting mainnet says the env took; it says nothing
+    # about whether the markets came with it, and a feed of unreachable cards
+    # looks completely healthy from here.
+    if [ -f mainnet-backfill.json ]; then
+      head_ "every existing market, on the new cluster"
+      if npm run --silent mainnet-backfill -- verify; then
+        good "every snapshotted market is live with identical terms"
+      else
+        bad "markets are missing or changed. See above, then: npm run mainnet-backfill -- replay --apply"
+      fi
+    else
+      bad "no mainnet-backfill.json. The markets were never snapshotted, so nothing re-minted them and the whole board is unreachable"
     fi
 
     head_ "$ok passed, $fail failing"

@@ -44,7 +44,8 @@
     "test-wallet": "tsx scripts/test-wallet.ts",
     "test-providers": "tsx scripts/test-providers.ts",
     "test-tool": "tsx scripts/test-tool.ts",
-    "smoke-fixture": "tsx scripts/smoke.ts --fixture"
+    "smoke-fixture": "tsx scripts/smoke.ts --fixture",
+    "mainnet-backfill": "tsx scripts/mainnet-backfill.ts"
   },
   "engines": {
     "node": ">=20"

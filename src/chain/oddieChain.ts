@@ -165,6 +165,13 @@ async function load(): Promise<ChainClient | null> {
   }
 }
 
+/** The program this build mints into. The PDA derives from it, so a backfill
+ *  must refuse to replay a snapshot taken against a different one. */
+export async function programIdString(): Promise<string | null> {
+  const c = await load();
+  return c ? c.programId.toBase58() : null;
+}
+
 /** The admin (market authority) address, or null if unconfigured/broken. */
 export async function adminAddress(): Promise<string | null> {
   const c = await load();
@@ -350,6 +357,10 @@ export async function resolveMarketOnChain(marketPubkey: string, outcome: "yes" 
 
 export interface OnChainMarketState {
   resolved: boolean;
+  /** The market's authority. A backfill has to prove the key it is minting
+   *  with is the key the markets already answer to, or it recreates the board
+   *  under a signer that cannot resolve any of it. */
+  authority: string | null;
   /** Unix seconds. The program refuses a stake at or after this
    *  (`require!(clock < close_time, MarketClosed)`), and our own database's
    *  close time is a separate value that can disagree with it, so anything
@@ -410,6 +421,7 @@ export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainM
     const creator = rawCreator && rawCreator !== UNNAMED_CREATOR ? rawCreator : null;
     return {
       resolved,
+      authority: a.authority ? String(a.authority) : null,
       closeTime: Number(a.closeTime ?? a.close_time ?? 0),
       winningSide: resolved ? (side === 0 ? "yes" : "no") : null,
       totalYesLamports: Number(a.totalYes ?? a.total_yes ?? 0),

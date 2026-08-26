@@ -2586,6 +2586,44 @@ export interface ChainFacts { pooledLamports: number; earnedLamports: number; cl
 
 const ONE_SOL = 1_000_000_000;
 
+/**
+ * Every market that was ever minted on chain, with the id its PDA is derived
+ * from. The input to scripts/mainnet-backfill.ts.
+ *
+ * market_id is a bigint, so pg hands it back as a STRING and it stays one all
+ * the way to the mint call. Reading it as a number here would be the same
+ * unchecked lie that has bitten this file before.
+ */
+export async function mintedMarketsForBackfill(): Promise<{
+  rows: { slug: string; marketId: string; question: string; onchainPubkey: string; resolvedOutcome: string | null }[];
+  /** Community markets that were never minted. Not this script's problem, but a
+   *  denominator the operator needs: they answer not-minted before the move and
+   *  they answer not-minted after it, and that is not a regression. */
+  neverMinted: number;
+}> {
+  if (!PERSISTENT) return { rows: [], neverMinted: 0 };
+  await ensureSchema();
+  const { rows } = await db().query<{
+    slug: string; market_id: string; question: string; onchain_pubkey: string; resolved_outcome: string | null;
+  }>(
+    `SELECT cm.slug, cm.market_id::text AS market_id, s.question, cm.onchain_pubkey, cm.resolved_outcome
+       FROM community_market cm
+       JOIN market_slug s ON s.slug = cm.slug
+      WHERE cm.onchain_pubkey IS NOT NULL
+      ORDER BY cm.market_id`,
+  );
+  const { rows: n } = await db().query<{ n: string }>(
+    `SELECT COUNT(*)::bigint AS n FROM community_market WHERE onchain_pubkey IS NULL`,
+  );
+  return {
+    rows: rows.map((r) => ({
+      slug: r.slug, marketId: r.market_id, question: r.question,
+      onchainPubkey: r.onchain_pubkey, resolvedOutcome: r.resolved_outcome,
+    })),
+    neverMinted: Number(n[0]?.n ?? 0),
+  };
+}
+
 export async function achievementsFor(
   rawDeviceId: string,
   acc: AccuracyRecord,
