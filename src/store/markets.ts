@@ -2621,7 +2621,11 @@ export async function achievementsFor(
     S("triple",     "Triple Clear", "Three approved posts inside thirty days.",             loud.clearedIn30d >= 3),
     S("big_pool",   "Full Sol",     "A whole SOL riding on markets you started.",           pooled >= ONE_SOL, true),
     S("top_ten",    "Top Ten",      "Reach the top 10% of the season.",                     rank?.topPct != null && rank.topPct <= 10),
-    S("loudest",    "Loudest",      "Win a week's Loudest.",                                weeklyWins >= 1 || loud.weeklyWinIn30d),
+    // NOT "Loudest": that is the name of the TIER for the top 5% of the board
+    // (callerTier in economy.ts), and both are worn on the same screen. One
+    // word cannot mean two different achievements in one product, so the stamp
+    // is named after what you actually did.
+    S("loudest",    "Week Won",     "Win a week's Loudest.",                                weeklyWins >= 1 || loud.weeklyWinIn30d),
     S("founding",   "Day One",      "Be one of the first thousand here.",                   founding),
   ];
 }

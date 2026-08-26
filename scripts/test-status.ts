@@ -110,6 +110,29 @@ console.log("\nthe farm is pointed at X, on purpose");
     after > before, `${before} -> ${after}`);
 }
 
+/**
+ * Two naming systems now sit on one screen: the worn TIER (callerTier) and the
+ * collected STAMPS (achievementsFor). They are different mechanics, so both can
+ * exist, but a word that means two different achievements in one product is a
+ * bug. "Loudest" was briefly both the top 5% of the board and a weekly win.
+ */
+console.log("\nno tier name and stamp name mean two different things");
+{
+  const { achievementsFor, accuracyFor } = await import("../src/store/markets.js");
+  const tierNames = [ORACLE_TOP_PCT, SHARP_TOP_PCT, 60]
+    .map((topPct) => callerTier({ hasEnough: true, oddieScore: 900, marketsCreated: 3, topPct }))
+    .filter(Boolean)
+    .map((t) => t!.label);
+  const stamps = await achievementsFor("dev-name-collision", await accuracyFor("dev-name-collision"), null, null);
+  const clash = stamps.map((a) => a.name).filter((n) => tierNames.includes(n));
+  check("every tier is named", tierNames.length === 3, tierNames.join(", "));
+  check("the sheet is full", stamps.length >= 12, String(stamps.length));
+  check("...and no stamp borrows a tier's name", clash.length === 0, clash.join(", "));
+  check("...nor does any stamp name repeat another", 
+    new Set(stamps.map((a) => a.name)).size === stamps.length,
+    stamps.map((a) => a.name).join(", "));
+}
+
 console.log("\nflexLine: the postable brag, and only claims the data supports");
 {
   const loud = (o: Partial<AccuracyRecord>) => flexLine(acc(o), { category: "Crypto", pctile: 3 });
