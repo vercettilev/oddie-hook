@@ -2274,7 +2274,11 @@ app.get("/api/v1/markets", async (req, res) => {
       onchain: m.onchainPubkey ? { pubkey: m.onchainPubkey, explorer: explorerUrl(m.onchainPubkey) } : null,
     };
   }));
-  res.json({ ok: true, cluster: cluster(), creatorFeeBps: CREATOR_FEE_BPS_REAL, markets: items });
+  res.json({
+    ok: true, cluster: cluster(),
+    creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+    markets: items,
+  });
 });
 
 /** One market, including who its creator fee is owed to. */
@@ -2298,7 +2302,11 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     yesPct: total > 0 ? Math.max(1, Math.min(99, Math.round((yes / total) * 100))) : null,
     oddsSource: total > 0 ? "vault" : "unpriced",
     taggedBy: surfacer?.handle ?? null,
+    // Read off the market, not from our constants. A market minted under a
+    // different rate keeps it, and an agent that assumed today's numbers would
+    // quote the wrong takeout for exactly the pools where it matters.
     creatorFeeBps: state?.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+    protocolFeeBps: state?.protocolFeeBps ?? 0,
     onchain: detail.onchainPubkey ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey) } : null,
     cluster: cluster(),
   });
