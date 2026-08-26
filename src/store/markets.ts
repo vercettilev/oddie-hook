@@ -1828,13 +1828,22 @@ export async function celebrationsFor(rawDeviceId: string): Promise<Celebration[
  * last card) — never at fetch time. A render crash before anything was shown
  * leaves the celebration to try again next load instead of silently vanishing.
  */
-export async function markCelebrationsSeen(rawDeviceId: string, noticeIds: number[]): Promise<void> {
+/**
+ * Ids arrive as STRINGS and stay strings all the way to Postgres.
+ *
+ * notice.id is a bigserial, and node-postgres returns int8 as a string rather
+ * than risk a JS number past 2^53. So the id a client hands back is the string
+ * it was given, and any step that insisted on `number` silently dropped it.
+ * `$2::bigint[]` binds a string array without complaint, so there is nothing to
+ * convert; the in-memory path compares as strings for the same reason.
+ */
+export async function markCelebrationsSeen(rawDeviceId: string, noticeIds: Array<number | string>): Promise<void> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const ids = [...new Set(noticeIds)].filter((n) => Number.isInteger(n));
+  const ids = [...new Set(noticeIds.map(String))].filter((n) => /^\d+$/.test(n));
   if (!ids.length) return;
   if (!PERSISTENT) {
     const now = new Date().toISOString();
-    for (const n of memNotices) if (n.deviceId === deviceId && ids.includes(n.id)) n.seenAt = now;
+    for (const n of memNotices) if (n.deviceId === deviceId && ids.includes(String(n.id))) n.seenAt = now;
     return;
   }
   await ensureSchema();

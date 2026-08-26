@@ -1363,11 +1363,19 @@ app.get("/api/celebrations", async (req, res) => {
 app.post("/api/celebrations/seen", async (req, res) => {
   const deviceId = deviceIdOf(req.body);
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  // Numbers OR numeric strings, because notice.id is a bigserial and
+  // node-postgres hands int8 back as a STRING to avoid losing precision past
+  // 2^53. This route only accepted numbers, so every real client sent the ids
+  // it had been given, got a 400, and nothing was ever marked seen: the
+  // celebration modal came back on every single load, forever. The TypeScript
+  // annotation on the query said `number` and was simply wrong about runtime.
   const raw = req.body?.noticeIds;
-  if (!Array.isArray(raw) || raw.some((n) => typeof n !== "number")) {
-    return res.status(400).json({ error: "noticeIds must be an array of numbers" });
+  const isId = (n: unknown) =>
+    (typeof n === "number" && Number.isInteger(n)) || (typeof n === "string" && /^\d+$/.test(n));
+  if (!Array.isArray(raw) || !raw.every(isId)) {
+    return res.status(400).json({ error: "noticeIds must be an array of ids" });
   }
-  await markCelebrationsSeen(deviceId, raw);
+  await markCelebrationsSeen(deviceId, raw.map(String));
   res.json({ ok: true });
 });
 

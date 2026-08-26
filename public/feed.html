@@ -1371,10 +1371,6 @@
   :root[data-theme="dark"] .cel-side.yes{color:#7fe0a4;background:#0f3320}
   :root[data-theme="dark"] .cel-side.no{color:#f2a3b4;background:#3a1420}
   .cel-resolved{font-family:'Nunito';font-weight:800;font-size:12.5px;color:var(--muted-g)}
-  .cel-payout{margin:0 0 var(--sp-4);font-family:'Nunito';font-weight:800;font-size:12px;color:var(--muted-g)}
-  .cel-payout-n{display:block;font-family:'Fredoka';font-weight:700;font-size:34px;color:var(--acc-deep);
-    line-height:1.3}
-  :root[data-theme="dark"] .cel-payout-n{color:var(--accent)}
   .cel-oscore{display:inline-flex;justify-content:center;margin:0 0 var(--sp-4)}
   .scorering.big{width:152px;height:152px}
   .scorering.big .scorering-num{font-size:36px}
@@ -6207,7 +6203,6 @@ function renderCelebrationDigest(){
   document.getElementById("celebrateDim")?.remove();
   const rows=celebrateQueue, n=rows.length;
   const won=rows.filter(c=>c.won).length;
-  const gained=rows.reduce((a,c)=>a+(c.won?(c.proceeds||0):0),0);
 
   const dim=document.createElement("div");dim.className="celebrate-dim";dim.id="celebrateDim";
   const card=document.createElement("div");card.className=`celebrate-card ${won>0?"win":"loss"}`;
@@ -6220,7 +6215,7 @@ function renderCelebrationDigest(){
         <span class="cel-side yes">${won} right</span>
         <span class="cel-resolved">${n-won} wrong</span>
       </div>
-      ${gained>0?`<div class="cel-payout"><span class="cel-payout-n">+${gained}</span>predictions</div>`:""}
+
       <div class="cel-ctas">
         <button class="cel-cta share" type="button" id="celDigestGo">See them all</button>
       </div>
@@ -6254,7 +6249,7 @@ function renderCelebration(){
         <span class="cel-side ${c.side}">${c.side.toUpperCase()} at ${c.oddsPct}%</span>
         ${!c.won?`<span class="cel-resolved">resolved ${c.outcome.toUpperCase()}</span>`:""}
       </div>
-      ${c.won?`<div class="cel-payout"><span class="cel-payout-n">+${c.proceeds}</span>predictions</div>`:""}
+
       ${scoreKnown?`
       <div class="cel-oscore">
         <div class="scorering big" id="celRing" style="--score-pct:${c.scoreBefore/1000}">

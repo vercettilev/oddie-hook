@@ -181,5 +181,50 @@ console.log("\nmarking seen is scoped to the device — cannot clear someone els
     (await celebrationsFor(theirs)).length === 1);
 }
 
+/* ---------------------------------------------- ids survive the wire ------
+ * THE BUG THIS EXISTS FOR. notice.id is a bigserial, and node-postgres returns
+ * int8 as a STRING rather than risk a JS number past 2^53. The query's
+ * TypeScript annotation said `number` and was simply wrong about runtime, so a
+ * real client handed back the ids it had been given, the route rejected them
+ * for not being numbers, nothing was ever marked seen, and the celebration
+ * modal returned on every single load until somebody reported it.
+ *
+ * Nothing in the suite caught it because the in-memory backend really does use
+ * numbers: the type only diverges against Postgres. So the contract is pinned
+ * as "whatever a client echoes back must work", both shapes, rather than as
+ * the type one backend happens to produce.
+ */
+console.log("\nseen-marking takes an id back in the shape a client would echo it");
+{
+  const dev = DEV(10);
+  const slug = await mk("Does a string id still clear a celebration?", 50);
+  await call(slug, dev, "yes", 10);
+  await resolve(slug, "yes");
+  const rows = await celebrationsFor(dev);
+  check("there is something to clear", rows.length === 1);
+  // A browser that received {"noticeId":"1234"} sends "1234" straight back.
+  await markCelebrationsSeen(dev, rows.map((c) => String(c.noticeId)));
+  check("a STRING id clears it, which is what Postgres hands the client",
+    (await celebrationsFor(dev)).length === 0);
+}
+{
+  const dev = DEV(11);
+  const slug = await mk("And a number id still works?", 50);
+  await call(slug, dev, "yes", 10);
+  await resolve(slug, "yes");
+  const rows = await celebrationsFor(dev);
+  await markCelebrationsSeen(dev, rows.map((c) => Number(c.noticeId)));
+  check("a NUMBER id still clears it, so the in-memory path did not regress",
+    (await celebrationsFor(dev)).length === 0);
+}
+{
+  const dev = DEV(12);
+  const slug = await mk("Junk must not clear anything", 50);
+  await call(slug, dev, "yes", 10);
+  await resolve(slug, "yes");
+  await markCelebrationsSeen(dev, ["not-an-id", "12x", ""] as unknown as string[]);
+  check("a non-numeric id clears nothing", (await celebrationsFor(dev)).length === 1);
+}
+
 console.log(failures === 0 ? "\nall celebration checks passed.\n" : `\n${failures} celebration check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);
