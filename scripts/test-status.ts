@@ -113,17 +113,18 @@ console.log("\nthe farm is pointed at X, on purpose");
 console.log("\nflexLine: the postable brag, and only claims the data supports");
 {
   const loud = (o: Partial<AccuracyRecord>) => flexLine(acc(o), { category: "Crypto", pctile: 3 });
-  check("what you brought, and who turned up for it",
-    loud({ marketsCreated: 4, tradersReached: 12 }) === "4 markets tagged · 12 players in them",
-    loud({ marketsCreated: 4, tradersReached: 12 }));
-  check("nobody in them yet drops the clause rather than saying zero",
-    loud({ marketsCreated: 4, tradersReached: 0 }) === "4 markets tagged",
-    loud({ marketsCreated: 4, tradersReached: 0 }));
-  check("singular at exactly one of each",
-    loud({ marketsCreated: 1, tradersReached: 1 }) === "1 market tagged · 1 player in them",
-    loud({ marketsCreated: 1, tradersReached: 1 }));
+  check("what you brought",
+    loud({ marketsCreated: 4 }) === "4 markets tagged", loud({ marketsCreated: 4 }));
+  check("singular at exactly one",
+    loud({ marketsCreated: 1 }) === "1 market tagged", loud({ marketsCreated: 1 }));
   check("an earned multiplier is worn",
-    loud({ marketsCreated: 2, tradersReached: 5, loudMultiplier: 1.5 }) === "2 markets tagged · 5 players in them · 1.5x loud");
+    loud({ marketsCreated: 2, loudMultiplier: 1.5 }) === "2 markets tagged · 1.5x loud",
+    loud({ marketsCreated: 2, loudMultiplier: 1.5 }));
+  // tradersReached is permanently 0 (it counts rows in the dead play-token
+  // table), so a brag that quoted it could never say what it looked like it said.
+  check("the dead reach count can never leak into the brag",
+    !loud({ marketsCreated: 4, tradersReached: 12 }).includes("player"),
+    loud({ marketsCreated: 4, tradersReached: 12 }));
   check("points without a market still say something true",
     loud({ marketsCreated: 0, oddieScore: 300 }) === "300 oddies earned");
   check("a brand-new device is honest about it",

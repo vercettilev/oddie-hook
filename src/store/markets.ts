@@ -1490,7 +1490,17 @@ export interface AccuracyRecord {
   marketsCreated: number;
   /** Points credited to the growth ledger, the score's other half. */
   contributionPoints: number;
-  /** Distinct people who have taken a position on markets this device tagged. */
+  /**
+   * ALWAYS 0. DO NOT DISPLAY.
+   *
+   * creatorStatsFor computes it with COUNT(DISTINCT market_call.device_id), and
+   * market_call is the dead play-token table. Real positions are per-user PDAs
+   * on chain with no index, so there is no cheap count of "people in your
+   * markets" and this cannot be revived by fixing a query. The honest reach
+   * figure is pooledLamports, which /api/me/earnings sums off chain.
+   *
+   * Kept only so scoreActivityFor's shape does not change under its callers.
+   */
   tradersReached: number;
   meanEdge: number | null;    // −1..1, the raw signal behind the score
   hasEnough: boolean;
@@ -2544,6 +2554,108 @@ async function isFounding(deviceId: string): Promise<boolean> {
 
 /** The badges a device has earned, most identity-defining first. `acc` is passed
  *  in (the caller already has it) so this adds at most two cheap lookups. */
+/**
+ * THE SHELF. Fourteen stamps, and every one of them awardable today.
+ *
+ * badgesFor could award three kinds and TWO WERE UNEARNABLE: `streak` reads
+ * acc.bestStreak and `category` reads catRank, both computed from resolved rows
+ * in market_call, which nothing writes any more. The client drew a fourth slot
+ * ("rank") that badgesFor never produced at all. So the shelf read "1 of 4"
+ * forever, and the only thing anybody could earn was being early.
+ *
+ * The rule for this table is one sentence: a stamp exists only if a live query
+ * returns it. Each entry names the field it reads, and none of them touch
+ * market_call. `tradersReached` is deliberately absent for exactly that reason.
+ *
+ * FOIL marks the four where real SOL moved. It is the only visual tier, and it
+ * is auditable rather than decorative.
+ */
+export interface Achievement {
+  id: string;
+  name: string;
+  /** How you get it, one short line, shown under the shelf on tap. */
+  how: string;
+  earned: boolean;
+  /** Real SOL moved. Renders lime instead of quiet. */
+  foil: boolean;
+}
+
+/** What the chain knows about the markets a device tagged. Null when it could
+ *  not be read, which reads as "not yet" rather than throwing a shelf away. */
+export interface ChainFacts { pooledLamports: number; earnedLamports: number; claimed: boolean; resolved: number }
+
+const ONE_SOL = 1_000_000_000;
+
+export async function achievementsFor(
+  rawDeviceId: string,
+  acc: AccuracyRecord,
+  rank: SeasonRank | null,
+  chain: ChainFacts | null,
+): Promise<Achievement[]> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  const [founding, loud, cats, weeklyWins] = await Promise.all([
+    isFounding(deviceId).catch(() => false),
+    loudStatusFor(deviceId).catch(() => ({ clearedIn30d: 0, weeklyWinIn30d: false, multiplier: 1 })),
+    categoriesTaggedBy(deviceId).catch(() => 0),
+    loudWinsFor(deviceId).catch(() => 0),
+  ]);
+  const made = acc.marketsCreated;
+  const pooled = chain?.pooledLamports ?? 0;
+  const earned = chain?.earnedLamports ?? 0;
+
+  const S = (id: string, name: string, how: string, earnedFlag: boolean, foil = false): Achievement =>
+    ({ id, name, how, earned: earnedFlag, foil });
+
+  // Ordered the way they are realistically earned, so the sheet fills roughly
+  // left to right and the first gap is always the nearest thing to go and get.
+  return [
+    S("first_tag",  "First Tag",    "Tag @oddiefun on X and a market opens.",              made >= 1),
+    S("ranked",     "On the Board", "Earn any oddies and you hold a place in the season.",  rank != null),
+    S("first_pool", "First Pool",   "Somebody stakes real SOL in a market you started.",    pooled > 0, true),
+    S("cleared",    "Cleared",      "Get one post about oddie approved.",                   loud.clearedIn30d >= 1),
+    S("resolved",   "Verdict In",   "A market you tagged reaches its outcome.",             (chain?.resolved ?? 0) >= 1),
+    S("first_fee",  "First Fee",    "Your 2% becomes real SOL at a resolve.",               earned > 0, true),
+    S("range",      "Three Ways",   "Tag markets across three different topics.",           cats >= 3),
+    S("collected",  "Collected",    "Claim a creator fee into your own wallet.",            !!chain?.claimed, true),
+    S("ten_tags",   "Ten Up",       "Put ten markets on the board.",                        made >= 10),
+    S("triple",     "Triple Clear", "Three approved posts inside thirty days.",             loud.clearedIn30d >= 3),
+    S("big_pool",   "Full Sol",     "A whole SOL riding on markets you started.",           pooled >= ONE_SOL, true),
+    S("top_ten",    "Top Ten",      "Reach the top 10% of the season.",                     rank?.topPct != null && rank.topPct <= 10),
+    S("loudest",    "Loudest",      "Win a week's Loudest.",                                weeklyWins >= 1 || loud.weeklyWinIn30d),
+    S("founding",   "Day One",      "Be one of the first thousand here.",                   founding),
+  ];
+}
+
+/** Distinct topics across the markets a device tagged. Reads market_surfacer
+ *  joined to the market rows, never market_call. */
+async function categoriesTaggedBy(deviceId: string): Promise<number> {
+  if (!PERSISTENT) {
+    const cats = new Set<string>();
+    for (const [slug, sf] of memSurfacer) {
+      if (sf.deviceId !== deviceId) continue;
+      const c = memCommunity.get(slug)?.category;
+      if (c) cats.add(c);
+    }
+    return cats.size;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ n: string }>(
+    `SELECT COUNT(DISTINCT cm.category)::bigint AS n
+       FROM market_surfacer ms JOIN community_market cm ON cm.slug = ms.slug
+      WHERE ms.device_id = $1 AND cm.category IS NOT NULL`, [deviceId]);
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** Weekly Loudest wins, ever. The ledger keeps them, so the badge outlives the
+ *  30-day window the multiplier uses. */
+async function loudWinsFor(deviceId: string): Promise<number> {
+  if (!PERSISTENT) return memSeasonLog.filter((r) => r.deviceId === deviceId && r.event === "loud").length;
+  await ensureSchema();
+  const { rows } = await db().query<{ n: string }>(
+    `SELECT COUNT(*)::bigint AS n FROM season_points_log WHERE device_id = $1 AND event = 'loud'`, [deviceId]);
+  return Number(rows[0]?.n ?? 0);
+}
+
 export async function badgesFor(rawDeviceId: string, acc: AccuracyRecord): Promise<Badge[]> {
   const deviceId = await resolveDevice(rawDeviceId);
   const badges: Badge[] = [];
@@ -2619,9 +2731,9 @@ export function flexLine(acc: AccuracyRecord, _topCategory: { category: string; 
   const made = acc.marketsCreated;
   if (made > 0) {
     const parts = [`${made} market${made === 1 ? "" : "s"} tagged`];
-    if (acc.tradersReached > 0) {
-      parts.push(`${acc.tradersReached} player${acc.tradersReached === 1 ? "" : "s"} in them`);
-    }
+    // NOT tradersReached: see the field's own comment. It is permanently 0, so
+    // the clause could never appear and the brag would have been silently
+    // shorter than intended forever.
     if (acc.loudMultiplier > 1) parts.push(`${acc.loudMultiplier}x loud`);
     return parts.join(" · ");
   }

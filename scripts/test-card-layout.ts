@@ -403,7 +403,7 @@ console.log("\nthe profile card is postable for a post-pivot user");
   const svg = renderProfileCard({
     handle: "cardproof", oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
-    marketsCreated: acc.marketsCreated, tradersReached: acc.tradersReached,
+    marketsCreated: acc.marketsCreated, pooledLamports: 2_870_000_000,
     loudMultiplier: acc.loudMultiplier,
     badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
     rankTopPct: rep.rank ? rep.rank.topPct : null,
@@ -423,9 +423,14 @@ console.log("\nthe profile card is postable for a post-pivot user");
     texts.includes(String(acc.oddieScore)) && !texts.some((t) => /building/i.test(t)),
     String(acc.oddieScore));
   check("the stat row reports the ladder, not the dead play record",
-    texts.includes("MARKETS") && texts.includes("PLAYERS") && texts.includes("LOUD")
-    && !texts.includes("ACCURACY") && !texts.includes("RESOLVED") && !texts.includes("STREAK"),
+    texts.includes("MARKETS") && texts.includes("SOL POOLED") && texts.includes("LOUD")
+    && !texts.includes("ACCURACY") && !texts.includes("RESOLVED") && !texts.includes("STREAK")
+    && !texts.includes("PLAYERS"),
     texts.join(" | "));
+  // PLAYERS was tradersReached, which counts rows in the dead play-token table.
+  // Every card ever shared would have read "0 PLAYERS" under a real score.
+  check("...and the pooled figure is the real one it was handed",
+    texts.includes("2.87"), texts.join(" | "));
   check("the brag says what was brought", rep.flexLine === "3 markets tagged", rep.flexLine);
 }
 

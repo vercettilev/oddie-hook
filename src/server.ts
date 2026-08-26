@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT, setDeviceAvatar, clearDeviceAvatar, deviceAvatarImage, deviceAvatarStamp, parseAvatarDataUrl, avatarStampsForHandles, deviceForHandlePublic,
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, achievementsFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT, setDeviceAvatar, clearDeviceAvatar, deviceAvatarImage, deviceAvatarStamp, parseAvatarDataUrl, avatarStampsForHandles, deviceForHandlePublic,
 } from "./store/markets.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -421,7 +421,7 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
 // SPA shell with per-handle og tags (image = the profile card), so a shared
 // /@{handle} link unfurls on X showing the Oddie Score. Fully viewable logged
 // out; the SPA renders the public view from /api/profile/{handle}.
-function profilePageHtml(handle: string, acc: { oddieScore: number | null; hasEnough: boolean; marketsCreated: number; tradersReached: number }): string {
+function profilePageHtml(handle: string, acc: { oddieScore: number | null; hasEnough: boolean; marketsCreated: number }): string {
   const title = `@${handle} on oddie`;
   // What unfurls on X. It used to quote accuracy over resolved picks, which is
   // frozen at zero for everyone post-pivot, and once the score gate moved to
@@ -430,7 +430,6 @@ function profilePageHtml(handle: string, acc: { oddieScore: number | null; hasEn
   const desc = acc.hasEnough
     ? [`${acc.oddieScore} oddies`,
        made > 0 ? `${made} market${made === 1 ? "" : "s"} tagged` : null,
-       acc.tradersReached > 0 ? `${acc.tradersReached} player${acc.tradersReached === 1 ? "" : "s"} reached` : null,
       ].filter(Boolean).join(" · ")
     : `not on the board yet`;
   const img = `${BASE_URL}/card/u/${encodeURIComponent(handle)}.png`;
@@ -1051,7 +1050,7 @@ app.get("/api/home", async (req, res) => {
     me: me ? {
       handle: me.handle, hasEnough: me.accuracy.hasEnough,
       oddieScore: me.accuracy.oddieScore, rank: me.rank, tier: me.tier,
-      marketsCreated: me.accuracy.marketsCreated, tradersReached: me.accuracy.tradersReached,
+      marketsCreated: me.accuracy.marketsCreated,
       loudMultiplier: me.accuracy.loudMultiplier,
     } : null,
     creator,
@@ -1228,12 +1227,17 @@ app.get("/card/u/:handle.png", async (req, res) => {
   // One read for every reputation surface — see reputationFor. The card, the
   // profile API and the leaderboard all describe a person from this same
   // object, so they cannot disagree about what someone is.
-  const [rep, hd] = await Promise.all([reputationFor(deviceId), displayHandle(deviceId)]);
+  // The chain read is best-effort and shared with the money strip's cache: this
+  // card is the image X unfurls, so a slow RPC must cost one stat, never the
+  // card.
+  const [rep, hd, chain] = await Promise.all([
+    reputationFor(deviceId), displayHandle(deviceId), chainMineFor(deviceId).catch(() => null),
+  ]);
   const acc = rep.accuracy;
   const png = renderCardPng(renderProfileCard({
     handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
-    marketsCreated: acc.marketsCreated, tradersReached: acc.tradersReached,
+    marketsCreated: acc.marketsCreated, pooledLamports: chain?.pooledLamports ?? 0,
     loudMultiplier: acc.loudMultiplier,
     badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
     rankTopPct: rep.rank ? rep.rank.topPct : null,
@@ -1371,20 +1375,40 @@ async function displayHandle(deviceId: string): Promise<{ handle: string; handle
 // lines earlier, Express matches in order, and it would capture "earnings" as
 // a handle and answer 404 exists:false. Anything device-scoped lives under
 // /api/me, which has no wildcard sibling.
+/**
+ * Everything the chain knows about one device's markets, in one read.
+ *
+ * Two surfaces need it now (the money strip and the achievement shelf) and it
+ * costs one RPC round trip per market, so it is cached briefly rather than
+ * fetched twice per profile load. Cached by device, short enough that a fee
+ * claimed in another tab shows up on the next visit.
+ */
+interface ChainMine { markets: number; live: number; settled: number; pooledLamports: number; earnedLamports: number; claimed: boolean }
+const chainMineCache = new Map<string, { at: number; val: ChainMine }>();
+const CHAIN_MINE_TTL_MS = 30_000;
+
+async function chainMineFor(deviceId: string): Promise<ChainMine> {
+  const hit = chainMineCache.get(deviceId);
+  if (hit && Date.now() - hit.at < CHAIN_MINE_TTL_MS) return hit.val;
+  const mine = await onchainMarketsSurfacedBy(deviceId, 50);
+  let pooledLamports = 0, earnedLamports = 0, live = 0, settled = 0, claimed = false;
+  for (const m of mine) {
+    const st = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
+    if (!st) continue;
+    pooledLamports += st.totalYesLamports + st.totalNoLamports;
+    if (st.resolved) { settled++; earnedLamports += st.creatorFeeLamports; if (st.creatorFeeClaimed) claimed = true; }
+    else live++;
+  }
+  const val: ChainMine = { markets: mine.length, live, settled, pooledLamports, earnedLamports, claimed };
+  chainMineCache.set(deviceId, { at: Date.now(), val });
+  return val;
+}
+
 app.get("/api/me/earnings", async (req, res) => {
   const deviceId = deviceIdOf(req.query);
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   try {
-    const mine = await onchainMarketsSurfacedBy(deviceId, 50);
-    let pooledLamports = 0, earnedLamports = 0, live = 0, settled = 0;
-    for (const m of mine) {
-      const st = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
-      if (!st) continue;
-      pooledLamports += st.totalYesLamports + st.totalNoLamports;
-      if (st.resolved) { settled++; earnedLamports += st.creatorFeeLamports; }
-      else live++;
-    }
-    res.json({ ok: true, markets: mine.length, live, settled, pooledLamports, earnedLamports, cluster: cluster() });
+    res.json({ ok: true, ...(await chainMineFor(deviceId)), cluster: cluster() });
   } catch (e) {
     console.error("[earnings] failed:", (e as Error).message);
     res.status(502).json({ ok: false, error: "chain unreachable" });
@@ -1528,7 +1552,17 @@ app.get("/api/accuracy", async (req, res) => {
   // typed into the client, where a re-weighting would quietly make it a lie.
   const firstTagPays = SCORE_WEIGHTS.marketCreated
     + SEASON_POINTS.surface * SCORE_WEIGHTS.contribution;
-  res.json({ ...acc, weeklyDelta, firstTagPays });
+  // The shelf ships with the record, so the profile paints it in one fetch. The
+  // chain half is best-effort: a slow or unreachable RPC costs the four foil
+  // stamps, not the whole screen, and they read as not-yet rather than as an
+  // error the user has to understand.
+  const [rank, chain] = await Promise.all([
+    seasonRankFor(deviceId).catch(() => null),
+    chainMineFor(deviceId).catch(() => null),
+  ]);
+  const achievements = await achievementsFor(deviceId, acc, rank,
+    chain ? { ...chain, resolved: chain.settled } : null).catch(() => []);
+  res.json({ ...acc, weeklyDelta, firstTagPays, achievements });
 });
 
 /**

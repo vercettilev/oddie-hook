@@ -39,7 +39,11 @@ export interface ProfileCard {
   resolved: number;
   /** The ladder, which is what this card is now made of. */
   marketsCreated?: number;
-  tradersReached?: number;
+  /** Real SOL staked in the markets this person started. The reach figure that
+   *  is actually countable: a per-user position index does not exist on chain,
+   *  and the old tradersReached counted rows in the dead play-token table, so
+   *  the card printed "0 PLAYERS" for everybody. */
+  pooledLamports?: number;
   /** >=1. Fills the ring, because it is the one bounded number left. */
   loudMultiplier?: number;
   hasEnough: boolean;
@@ -123,7 +127,8 @@ function medallion(x: number, cy: number, badge: ProfileBadge): string {
 export function renderProfileCard(p: ProfileCard): string {
   const handle = "@" + p.handle.replace(/^@+/, "");
   const made = p.marketsCreated ?? 0;
-  const reached = p.tradersReached ?? 0;
+  const pooledSol = ((p.pooledLamports ?? 0) / 1e9);
+  const pooledText = pooledSol >= 1 ? pooledSol.toFixed(2) : pooledSol.toFixed(3);
   const mult = Math.max(1, Number(p.loudMultiplier) || 1);
 
   // The ring shows the LOUD MULTIPLIER. It matters more here than anywhere else
@@ -223,7 +228,7 @@ export function renderProfileCard(p: ProfileCard): string {
   <!-- stat row: what they brought, who turned up, how loud they have been -->
   <line x1="${PAD_L}" y1="${DIVIDER_Y}" x2="${PAD_R}" y2="${DIVIDER_Y}" stroke="${C.barBg}" stroke-width="3"/>
   ${stat(PAD_L, String(made), "MARKETS")}
-  ${stat(390, String(reached), "PLAYERS")}
+  ${stat(390, pooledText, "SOL POOLED")}
   ${stat(690, `${mult}x`, "LOUD")}
 </svg>`;
 }
