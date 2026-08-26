@@ -405,7 +405,7 @@ console.log("\nthe profile card is postable for a post-pivot user");
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
     marketsCreated: acc.marketsCreated, pooledLamports: 2_870_000_000,
     loudMultiplier: acc.loudMultiplier,
-    badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
+    badges: [{ label: "First Tag", id: "first_tag" }, { label: "First Pool", id: "first_pool" }],
     rankTopPct: rep.rank ? rep.rank.topPct : null,
     tierLabel: rep.tier ? rep.tier.label : null, flexLine: rep.flexLine,
   });

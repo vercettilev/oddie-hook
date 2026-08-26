@@ -25,7 +25,10 @@ const PAD_R = 932;
 
 export interface ProfileBadge {
   label: string;
-  kind: "founding" | "streak" | "category" | "rank";
+  /** An achievement id from achievementsFor. It used to be one of four "kinds",
+   *  three of which were computed from the dead play-token table, so the card
+   *  could only ever draw one medallion however much somebody had earned. */
+  id: string;
 }
 
 export interface ProfileCard {
@@ -88,24 +91,37 @@ function starPath(rOuter: number, rInner: number, points = 5): string {
   return d + "Z";
 }
 
-/** The medallion glyph, DRAWN (never emoji — resvg has no colour-emoji font),
- *  local coordinates centred on the medallion, solid ink so it reads clearly
- *  at 64px. One shape per badge kind; "rank" isn't produced today but is kept
- *  so the card never breaks if that changes. */
-function medalGlyph(kind: ProfileBadge["kind"]): string {
-  switch (kind) {
-    case "streak": // a flame
-      return `<path d="M0,-15 C4,-10 4,-3 1,1 C3,-2 5,0 5,4 C5,10 1,14 -1,14 C-6,14 -8,9 -7,4 C-8,7 -10,4 -9,0 C-8,-4 -5,-8 -2,-11 C-1,-12.5 -0.5,-14 0,-15 Z" fill="${C.ink}"/>`;
-    case "category": // a target
-      return `<circle r="13" fill="none" stroke="${C.ink}" stroke-width="2.6"/>
-        <circle r="8" fill="none" stroke="${C.ink}" stroke-width="2.6"/>
-        <circle r="3.2" fill="${C.ink}"/>`;
-    case "rank": // an upward chevron
-      return `<path d="M-10,7 L0,-9 L10,7" fill="none" stroke="${C.ink}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`;
-    case "founding": // a star
-    default:
-      return `<path d="${starPath(14, 6)}" fill="${C.ink}"/>`;
-  }
+/**
+ * The medallion glyph, DRAWN (never emoji: resvg has no colour-emoji font, and
+ * a colour emoji renders differently on every platform anyway).
+ *
+ * These are the SAME fourteen shapes the app's stamp sheet draws, on the same
+ * 24x24 grid, so what you collect on screen is what people see on the image you
+ * post. They are wrapped in a transform that recentres the box on the origin,
+ * because the medallion draws in coordinates centred on itself.
+ */
+const CARD_GLYPH: Record<string, string> = {
+  first_tag: '<path fill="INK" fill-rule="evenodd" d="M12 2.2c3.5 0 6.3 2.8 6.3 6.3 0 4.4-6.3 13.3-6.3 13.3S5.7 12.9 5.7 8.5C5.7 5 8.5 2.2 12 2.2Zm-2.2 4.2v4.4h4.4V6.4z"/>',
+  ranked: '<g stroke="INK" stroke-width="2.4" fill="none"><rect x="4" y="4.4" width="16" height="4" rx="2"/><rect x="4" y="15.6" width="16" height="4" rx="2"/></g><rect x="2.8" y="10" width="18.4" height="4" rx="2" fill="INK"/>',
+  first_pool: '<g fill="INK"><rect x="2.4" y="7.6" width="19.2" height="3" rx="1.5"/><path d="M4.2 12.2h15.6a7.8 7.8 0 0 1-15.6 0Z"/></g>',
+  cleared: '<rect x="2.6" y="3.8" width="15.2" height="13.2" rx="3" stroke="INK" stroke-width="2.4" fill="none"/><circle cx="17.8" cy="17.2" r="4.2" fill="INK"/>',
+  resolved: '<circle cx="12" cy="12" r="8.8" stroke="INK" stroke-width="2.4" fill="none"/><path fill="INK" d="M12 3.2a8.8 8.8 0 0 0 0 17.6z"/>',
+  first_fee: '<path fill="INK" fill-rule="evenodd" d="M12 2.6a9.4 9.4 0 1 0 0 18.8 9.4 9.4 0 0 0 0-18.8Zm0 3.4v6h6a6 6 0 0 0-6-6Z"/>',
+  range: '<g fill="INK"><circle cx="4.4" cy="12" r="3.2"/><rect x="9" y="8.8" width="6.4" height="6.4" rx="1.4"/><path d="M19.9 8.4 22.9 15.4h-6z"/></g>',
+  collected: '<g fill="INK"><rect x="8.4" y="2.6" width="7.2" height="7.6" rx="1.6"/><path d="M3 12.2h3.8v5h10.4v-5H21v7.4a1.8 1.8 0 0 1-1.8 1.8H4.8A1.8 1.8 0 0 1 3 19.6z"/></g>',
+  ten_tags: '<g fill="INK"><circle cx="3.6" cy="8.8" r="1.4"/><circle cx="7.8" cy="8.8" r="1.4"/><circle cx="12" cy="8.8" r="1.4"/><circle cx="16.2" cy="8.8" r="1.4"/><circle cx="20.4" cy="8.8" r="1.4"/><circle cx="3.6" cy="15.2" r="1.4"/><circle cx="7.8" cy="15.2" r="1.4"/><circle cx="12" cy="15.2" r="1.4"/><circle cx="16.2" cy="15.2" r="1.4"/><circle cx="20.4" cy="15.2" r="1.4"/></g>',
+  triple: '<g stroke="INK" stroke-width="2.8" stroke-linecap="square" fill="none"><path d="m4.6 8.2 7.4-4.8 7.4 4.8"/><path d="m4.6 13.8 7.4-4.8 7.4 4.8"/><path d="m4.6 19.4 7.4-4.8 7.4 4.8"/></g>',
+  big_pool: '<g fill="INK"><rect x="3.6" y="2.8" width="16.8" height="3.6" rx="1.8"/><rect x="7.4" y="8.4" width="9.2" height="12.8" rx="2.2"/></g>',
+  top_ten: '<g fill="INK"><path d="M12 2.6 21.6 15H2.4z"/><rect x="3.2" y="17.4" width="17.6" height="3.8" rx="1.9"/></g>',
+  loudest: '<rect x="2.4" y="8.4" width="7.2" height="7.2" rx="1.8" fill="INK"/><g fill="none" stroke="INK" stroke-width="2.6" stroke-linecap="round"><path d="M13.2 8.6a5.2 5.2 0 0 1 0 6.8"/><path d="M17.6 5.4a10.4 10.4 0 0 1 0 13.2"/></g>',
+  founding: '<path fill="INK" fill-rule="evenodd" d="M7.6 3.4h8.8l3.7 17.2H3.9zM9.8 9.4h4.4v5.2H9.8z"/>',
+};
+
+function medalGlyph(id: string): string {
+  // A 24x24 box scaled to about 30px and recentred, so it fills the 64px
+  // medallion the way the stamp fills its plate in the app.
+  const body = (CARD_GLYPH[id] ?? CARD_GLYPH.first_tag).replace(/INK/g, C.ink);
+  return `<g transform="scale(1.25) translate(-12,-12)">${body}</g>`;
 }
 
 /** One badge medallion: a circular icon on a lime medal-sheen (a radial
@@ -119,7 +135,7 @@ function medallion(x: number, cy: number, badge: ProfileBadge): string {
     .join("");
   return `<g>
     <circle cx="${x}" cy="${cy}" r="${R}" fill="url(#medalGrad)" stroke="${C.ink}" stroke-width="3"/>
-    <g transform="translate(${x},${cy})">${medalGlyph(badge.kind)}</g>
+    <g transform="translate(${x},${cy})">${medalGlyph(badge.id)}</g>
     <text text-anchor="middle" font-family="${META}" font-size="18" font-weight="800" fill="${C.ink}">${labelText}</text>
   </g>`;
 }

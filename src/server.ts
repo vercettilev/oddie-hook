@@ -1234,12 +1234,18 @@ app.get("/card/u/:handle.png", async (req, res) => {
     reputationFor(deviceId), displayHandle(deviceId), chainMineFor(deviceId).catch(() => null),
   ]);
   const acc = rep.accuracy;
+  // The card wears the same stamps the app's sheet does. It used to be fed by
+  // badgesFor, which can only produce one earnable kind, so someone holding
+  // eight achievements shared a card carrying one medallion.
+  const earnedStamps = (await achievementsFor(deviceId, acc, rep.rank,
+    chain ? { ...chain, resolved: chain.settled } : null).catch(() => []))
+    .filter((a) => a.earned);
   const png = renderCardPng(renderProfileCard({
     handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
     marketsCreated: acc.marketsCreated, pooledLamports: chain?.pooledLamports ?? 0,
     loudMultiplier: acc.loudMultiplier,
-    badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
+    badges: earnedStamps.map((a) => ({ label: a.name, id: a.id })),
     rankTopPct: rep.rank ? rep.rank.topPct : null,
     tierLabel: rep.tier ? rep.tier.label : null, flexLine: rep.flexLine,
   }));
