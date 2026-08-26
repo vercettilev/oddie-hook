@@ -162,15 +162,15 @@ console.log("\nthe loud multiplier: posting upgrades the printer, never itself")
   check("three is 1.5×", loudMultiplierOf(3, false) === 1.5);
   check("a weekly Loudest win tops the ladder at 2×", loudMultiplierOf(0, true) === 2);
 
-  // The formula: play is multiplied, the flat ledger never is — a post cannot
-  // raise the price of the next post.
-  const base = { callsMade: 10, resolvedCalls: 0, marketsCreated: 0, meanEdge: 0 as number | null };
-  check("2× doubles play earnings (50 → 100)",
-    oddieScoreFrom({ ...base, contributionPoints: 0, loudMultiplier: 2 }) === 100);
+  // The formula: the markets you surfaced are multiplied, the flat ledger never
+  // is. A post cannot raise the price of the next post.
+  const base = { resolvedCalls: 0, marketsCreated: 2, meanEdge: 0 as number | null };
+  check("2x doubles what your markets earned (200 to 400)",
+    oddieScoreFrom({ ...base, contributionPoints: 0, loudMultiplier: 2 }) === 400);
   check("...but a ledger event still pays exactly its face value on top",
-    oddieScoreFrom({ ...base, contributionPoints: 75, loudMultiplier: 2 }) === 100 + 150);
-  check("an absent multiplier is 1×",
-    oddieScoreFrom({ ...base, contributionPoints: 0 }) === 50);
+    oddieScoreFrom({ ...base, contributionPoints: 75, loudMultiplier: 2 }) === 400 + 150);
+  check("an absent multiplier is 1x",
+    oddieScoreFrom({ ...base, contributionPoints: 0 }) === 200);
   check("a rogue multiplier clamps to the cap",
     oddieScoreFrom({ ...base, contributionPoints: 0, loudMultiplier: 99 }) ===
     oddieScoreFrom({ ...base, contributionPoints: 0, loudMultiplier: 2 }));

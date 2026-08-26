@@ -272,8 +272,11 @@ export const SCORE_WEIGHTS = {
   // until the market closed, sometimes months out. Nobody farms a scoreboard
   // that does not move. It pays on the call and again on the resolution, so
   // playing through still beats abandoning positions.
-  callMade: 5,
-  resolvedCall: 5,
+  // Both frozen: nothing writes a play call any more, and a real position never
+  // reaches this database. Kept at zero rather than deleted so the shape of the
+  // ledger, and the reason these stopped counting, stays visible.
+  callMade: 0,
+  resolvedCall: 0,
   // X ACTIVITY, and it is deliberately the loud one. A market only exists
   // because somebody tagged @oddiefun under a post, so this is the axis that
   // buys reach: one created market outweighs twenty calls before its surfacing
@@ -335,15 +338,30 @@ export function loudMultiplierOf(clearedIn30d: number, weeklyWinIn30d: boolean):
  *     PROMISED in the UI as exact numbers, and a promise the multiplier could
  *     quietly turn +150 into +75 is not a promise.
  */
+/**
+ * THE LOUDNESS LADDER, and now it is only that.
+ *
+ * It used to add a term for every call taken and every call resolved, and then
+ * scale the whole base by accuracy. All three of those read the play-token
+ * positions table, and nothing writes to that table any more: a call costs
+ * nothing to make because there is no such thing as a play call, and a real
+ * position is a wallet signing a transaction that never touches this database.
+ * So the two volume terms were frozen at whatever a device happened to have
+ * before the pivot, and the accuracy multiplier scaled everyone's score by a
+ * constant derived from a game that stopped existing.
+ *
+ * A score that pretends to reward playing and cannot is worse than one that
+ * does not claim to. What moves it now is what the product actually wants:
+ * markets tagged, and the growth ledger behind being loud about them.
+ *
+ * Real-money betting deliberately earns NOTHING here. It has its own reward and
+ * that reward is money. Mixing the two would make the leaderboard a function of
+ * how much SOL somebody has, which is the opposite of what it is for.
+ */
 export function oddieScoreFrom(a: ScoreInputs): number {
-  const played =
-    Math.max(0, a.callsMade ?? 0) * SCORE_WEIGHTS.callMade +
-    Math.max(0, a.resolvedCalls) * SCORE_WEIGHTS.resolvedCall +
-    Math.max(0, a.marketsCreated) * SCORE_WEIGHTS.marketCreated;
-  const raw = 1 + 2 * (a.meanEdge ?? 0);
-  const quality = Math.max(SCORE_QUALITY_MIN, Math.min(SCORE_QUALITY_MAX, raw));
+  const tagged = Math.max(0, a.marketsCreated) * SCORE_WEIGHTS.marketCreated;
   const mult = Math.max(1, Math.min(LOUD_MULT_MAX, a.loudMultiplier ?? 1));
-  return Math.max(0, Math.round(played * quality * mult) + Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution);
+  return Math.max(0, Math.round(tagged * mult) + Math.max(0, a.contributionPoints) * SCORE_WEIGHTS.contribution);
 }
 
 /**
@@ -356,23 +374,25 @@ export function oddieScoreFrom(a: ScoreInputs): number {
 export function callerTier(r: {
   hasEnough: boolean;
   oddieScore: number | null;
+  /** Kept so old callers still type-check; no tier reads it any more. */
   meanEdge?: number | null;
+  marketsCreated?: number | null;
   topPct: number | null;
 }): CallerTier | null {
   if (!r.hasEnough || r.oddieScore == null) return null;
   if (r.topPct != null && r.topPct <= ORACLE_TOP_PCT) {
-    return { id: "oracle", label: "Oracle", blurb: `top ${ORACLE_TOP_PCT}% of all callers` };
+    return { id: "oracle", label: "Loudest", blurb: `top ${ORACLE_TOP_PCT}% on the board` };
   }
   if (r.topPct != null && r.topPct <= SHARP_TOP_PCT) {
-    return { id: "sharp", label: "Sharp Caller", blurb: `top ${SHARP_TOP_PCT}% of all callers` };
+    return { id: "sharp", label: "Loud", blurb: `top ${SHARP_TOP_PCT}% on the board` };
   }
-  // "Beats the odds they take" is a statement about EDGE, so it is checked
-  // against edge. It used to compare the score to a literal 500, which worked
-  // only while the score WAS 500 + 1000·edge; now that activity sets the
-  // magnitude, a big score can belong to a busy average caller and a small one
-  // to a sharp rare caller, and an absolute threshold would mislabel both.
-  if (r.meanEdge != null && r.meanEdge > 0) {
-    return { id: "proven", label: "Proven Caller", blurb: "beats the odds they take" };
+  // The third rung used to be "beats the odds they take", checked against edge.
+  // Edge is no longer part of the score, so that badge could only ever have
+  // labelled people by a number the app had stopped believing in. The rung a
+  // loudness ladder actually has underneath its ranked tiers is the entry one:
+  // you put a market on the board, so you are on it.
+  if (r.marketsCreated != null && r.marketsCreated > 0) {
+    return { id: "proven", label: "Tagger", blurb: "put a market on the board" };
   }
   return null;
 }

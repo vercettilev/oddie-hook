@@ -1462,8 +1462,15 @@ export interface AccuracyRecord {
   // much you beat the odds you took — scales it between 0.5x and 1.5x. The
   // formula lives in economy.ts's oddieScoreFrom, which is its only definition.
   oddieScore: number | null;  // >= 0, unbounded; null until hasEnough
-  /** ≥1 — the loud multiplier applied to the play half (see economy.ts). */
+  /** >=1, the loud multiplier applied to the markets half (see economy.ts). */
   loudMultiplier: number;
+  /** Markets this device put on the board. The score's biggest rung, and what
+   *  the entry badge is judged on, so every surface reads it from here. */
+  marketsCreated: number;
+  /** Points credited to the growth ledger, the score's other half. */
+  contributionPoints: number;
+  /** Distinct people who have taken a position on markets this device tagged. */
+  tradersReached: number;
   meanEdge: number | null;    // −1..1, the raw signal behind the score
   hasEnough: boolean;
   minResolved: number;
@@ -1488,11 +1495,10 @@ function computeAccuracy(
   /** Activity terms. Defaulted so every existing caller and test keeps working
    *  and gets the accuracy-only half of the score; accuracyFor supplies the
    *  real numbers. */
-  activity: { marketsCreated?: number; contributionPoints?: number; callsMade?: number; loudMultiplier?: number } = {},
+  activity: { marketsCreated?: number; contributionPoints?: number; callsMade?: number; loudMultiplier?: number; tradersReached?: number } = {},
 ): AccuracyRecord {
   const resolved = rows.length;
   const correct = rows.filter((r) => r.correct).length;
-  const hasEnough = resolved >= MIN_RESOLVED_FOR_ACCURACY;
 
   let cur = 0, best = 0;
   for (const r of rows) { if (r.correct) { cur++; if (cur > best) best = cur; } else cur = 0; }
@@ -1502,14 +1508,29 @@ function computeAccuracy(
   // The score is now activity-led — see oddieScoreFrom in economy.ts for the
   // formula and for why it is weighted that way. This file no longer decides
   // what a score is; it supplies the inputs.
+  const marketsCreated = activity.marketsCreated ?? 0;
   const oddieScore = oddieScoreFrom({
     callsMade: activity.callsMade ?? 0,
     resolvedCalls: resolved,
-    marketsCreated: activity.marketsCreated ?? 0,
+    marketsCreated,
     contributionPoints: activity.contributionPoints ?? 0,
     meanEdge: resolved ? meanEdge : null,
     loudMultiplier: activity.loudMultiplier ?? 1,
   });
+
+  /**
+   * Whether there is a record here worth showing a number for.
+   *
+   * This used to be `resolved >= MIN_RESOLVED_FOR_ACCURACY`: ten settled play
+   * positions. Nothing settles play positions any more, so that gate had
+   * quietly become permanently false, and with it went the score, the rank and
+   * every badge. The whole trophy room was invisible to everyone who arrived
+   * after the pivot.
+   *
+   * The ladder answers the same question directly: you have a record once you
+   * have earned something on it.
+   */
+  const hasEnough = oddieScore > 0;
 
   const m = new Map<string, { resolved: number; correct: number }>();
   for (const r of rows) { const e = m.get(r.category) ?? { resolved: 0, correct: 0 }; e.resolved++; if (r.correct) e.correct++; m.set(r.category, e); }
@@ -1535,7 +1556,10 @@ function computeAccuracy(
     // at all, which is the honest "nothing yet".
     oddieScore: oddieScore > 0 ? oddieScore : null,
     loudMultiplier: activity.loudMultiplier ?? 1,
-    meanEdge: hasEnough ? Math.round(meanEdge * 1000) / 1000 : null,
+    marketsCreated,
+    contributionPoints: activity.contributionPoints ?? 0,
+    tradersReached: activity.tradersReached ?? 0,
+    meanEdge: resolved >= MIN_RESOLVED_FOR_ACCURACY ? Math.round(meanEdge * 1000) / 1000 : null,
     hasEnough, minResolved: MIN_RESOLVED_FOR_ACCURACY,
     streak: cur, bestStreak: best,
     bestTopic: topPick ? { category: topPick.category, pct: topPick.pct, resolved: topPick.resolved } : null,
@@ -1576,7 +1600,7 @@ async function resolvedRowsFor(deviceId: string): Promise<ResolvedRow[]> {
 /** The activity half of the score, read once. Every surface that recomputes a
  *  score for a device needs the same three numbers, and reading them in one
  *  place is what stops the app quoting two different scores for one person. */
-export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCreated: number; contributionPoints: number; callsMade: number; loudMultiplier: number }> {
+export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCreated: number; contributionPoints: number; callsMade: number; loudMultiplier: number; tradersReached: number }> {
   const deviceId = await resolveDevice(rawDeviceId);
   const [creator, contributionPoints, callsMade, loud] = await Promise.all([
     creatorStatsFor(deviceId).catch(() => null),
@@ -1584,7 +1608,7 @@ export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCr
     callsMadeFor(deviceId).catch(() => 0),
     loudStatusFor(deviceId).catch(() => ({ multiplier: 1 })),
   ]);
-  return { marketsCreated: creator?.marketsCreated ?? 0, contributionPoints, callsMade, loudMultiplier: loud.multiplier };
+  return { marketsCreated: creator?.marketsCreated ?? 0, tradersReached: creator?.tradersReached ?? 0, contributionPoints, callsMade, loudMultiplier: loud.multiplier };
 }
 
 /** Every call this device has taken, open or closed. The volume half of the
@@ -1653,31 +1677,42 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
  *  did to the score, not an approximation. null (hide, never a "▲ +0" from
  *  thin air) when nothing resolved in the window at all — the UI's cue to omit
  *  the line entirely rather than show a stale or manufactured number. */
+/**
+ * What this week actually added, on the ladder the score is now made of.
+ *
+ * It used to measure the week's RESOLUTIONS: it recomputed accuracy with and
+ * without them and reported the difference. That reading is gone with the play
+ * economy, because resolutions no longer move the score at all and the answer
+ * became a permanent null.
+ *
+ * So it measures the same thing the score does: points credited to the growth
+ * ledger in the last seven days, doubled by the same weight the total uses.
+ * Markets tagged already pay into that ledger on surfacing, so a week spent
+ * tagging shows up here without counting the same act twice.
+ */
 export async function weeklyScoreDeltaFor(rawDeviceId: string): Promise<WeeklyScoreDelta | null> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const rows = await resolvedRowsFor(deviceId);
   const cutoff = Date.now() - WEEK_MS;
-  if (!rows.some((r) => Date.parse(r.closedAt) >= cutoff)) return null;
+  let earned = 0;
 
-  // The SAME activity terms on both sides. Without them these two ran on the
-  // resolution half of the score alone, so the movement reported here was
-  // smaller than the movement on the profile — the app quoting two different
-  // numbers for one thing. Holding activity constant across the pair is
-  // deliberate and is what makes this "what THIS WEEK'S RESOLUTIONS did":
-  // markets created and calls taken move the score too, but they are not what
-  // this line claims to measure.
-  const activity = await scoreActivityFor(deviceId);
-  const now = computeAccuracy(rows, activity);
-  if (now.oddieScore == null) return null; // still short of the accuracy floor even after this week
-  const before = computeAccuracy(rows.filter((r) => Date.parse(r.closedAt) < cutoff), activity);
-  // A device that crossed the accuracy floor THIS week has no score to compare
-  // against, so its baseline is the score its PRE-WEEK activity would have had
-  // at market-neutral edge — not a literal 500, which meant "neutral" only
-  // while the score was 500 + 1000·edge and now means nothing at all.
-  const baseline = before.hasEnough
-    ? (before.oddieScore as number)
-    : oddieScoreFrom({ ...activity, resolvedCalls: before.resolved, meanEdge: 0 });
-  const delta = now.oddieScore - baseline;
+  if (!PERSISTENT) {
+    for (const r of memSeasonLog) {
+      if (r.deviceId !== deviceId) continue;
+      if (Date.parse(r.createdAt) < cutoff) continue;
+      earned += r.amount;
+    }
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ total: string | null }>(
+      `SELECT SUM(amount)::bigint AS total FROM season_points_log
+        WHERE device_id = $1 AND created_at >= now() - interval '7 days'`,
+      [deviceId],
+    );
+    earned = Number(rows[0]?.total ?? 0);
+  }
+
+  if (!earned) return null;   // a quiet week says nothing rather than "+0"
+  const delta = earned * SCORE_WEIGHTS.contribution;
   return { delta, direction: delta >= 0 ? "up" : "down" };
 }
 
@@ -2241,6 +2276,50 @@ const STANDINGS_TTL_MS = 60_000;
  *  JUST placed, not whatever was cached up to a minute ago. */
 export function _resetStandingsCache(): void { standingsCache = null; }
 
+/**
+ * Every device that has earned anything on the loudness ladder, best first.
+ *
+ * The standings used to be built entirely from resolved play positions, which
+ * means that after the pivot NOBODY NEW COULD EVER BE RANKED: the table was
+ * frozen at whoever happened to hold positions before the play economy was
+ * removed, while the landing page promised "be loud, climb the board". The
+ * board was unclimbable.
+ *
+ * It ranks by the same number the score reports, from the same two sources:
+ * markets surfaced, and the growth ledger.
+ */
+async function loudnessRanking(): Promise<{ deviceId: string; score: number }[]> {
+  const points = new Map<string, number>();
+  if (!PERSISTENT) {
+    for (const r of memSeasonLog) {
+      if (!r.deviceId) continue;
+      points.set(r.deviceId, (points.get(r.deviceId) ?? 0) + r.amount);
+    }
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ device_id: string; total: string }>(
+      `SELECT device_id, SUM(amount)::bigint AS total FROM season_points_log
+        WHERE device_id IS NOT NULL GROUP BY device_id`,
+    );
+    for (const r of rows) points.set(r.device_id, Number(r.total));
+  }
+
+  const out: { deviceId: string; score: number }[] = [];
+  for (const [deviceId, contributionPoints] of points) {
+    const creator = await creatorStatsFor(deviceId).catch(() => null);
+    const loud = await loudStatusFor(deviceId).catch(() => ({ multiplier: 1 }));
+    const score = oddieScoreFrom({
+      marketsCreated: creator?.marketsCreated ?? 0,
+      contributionPoints,
+      resolvedCalls: 0,
+      meanEdge: null,
+      loudMultiplier: loud.multiplier,
+    });
+    if (score > 0) out.push({ deviceId, score });
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
 async function seasonStandings(): Promise<Standings> {
   const now = Date.now();
   if (standingsCache && now - standingsCache.at < STANDINGS_TTL_MS) return standingsCache.val;
@@ -2262,7 +2341,11 @@ async function seasonStandings(): Promise<Standings> {
     );
     rows = qr.map((r) => ({ deviceId: r.device_id, correct: r.exit_pct === 100, category: r.comm_cat ?? categorizeText(r.question), pct: prob(r.pct_at) }));
   }
+  // catRank stays on resolved picks: it is a per-category ACCURACY ranking and
+  // it is honest about what it measures. `overall` is the one that decides a
+  // rank number, so it moves to the ladder the score is actually made of.
   const val = computeStandings(rows);
+  val.overall = await loudnessRanking();
   standingsCache = { at: now, val };
   return val;
 }
@@ -2481,11 +2564,11 @@ export async function reputationFor(rawDeviceId: string): Promise<CallerReputati
     ? { category: best.category!, pctile: best.pctile!, accuracyPct: parseInt(best.detail ?? "0", 10) || 0 }
     : null;
   const tier = callerTier({
-    // meanEdge is load-bearing now: "Proven Caller" is judged on edge, not on an
-    // absolute score, so omitting it here would silently retire that tier —
-    // undefined fails the > 0 test and nobody would ever earn it again.
+    // marketsCreated is load-bearing: the entry badge is judged on it, so
+    // omitting it here would silently retire that tier and nobody below the
+    // ranked cutoff would ever earn anything.
     hasEnough: accuracy.hasEnough, oddieScore: accuracy.oddieScore,
-    meanEdge: accuracy.meanEdge, topPct: rank ? rank.topPct : null,
+    marketsCreated: accuracy.marketsCreated, topPct: rank ? rank.topPct : null,
   });
   return { handle: hd ?? "caller", accuracy, rank, tier, badges, topCategory, flexLine: flexLine(accuracy, topCategory) };
 }
@@ -5362,6 +5445,16 @@ export async function settleMention(
 }
 
 /** Test seam: the in-memory ledger, so a test can assert on it without a database. */
+/** Test seam: the in-memory growth ledger, so a test can credit points and
+ *  backdate them without going through every award path. */
+export function _memSeasonCredit(deviceId: string, amount: number, daysAgo = 0): void {
+  memSeasonLog.push({
+    deviceId, handle: null, event: "test", amount, slug: null,
+    dedupKey: `test-${deviceId}-${memSeasonLog.length}`,
+    createdAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
+  });
+}
+
 export function _memMentionOutcome(tweetId: string): MentionOutcome | null {
   return memMentions.get(tweetId)?.outcome ?? null;
 }

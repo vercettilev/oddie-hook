@@ -25,88 +25,84 @@ const acc = (o: Partial<AccuracyRecord>): AccuracyRecord => ({
   ...o,
 } as AccuracyRecord);
 
-console.log("\ncallerTier: the ladder is short, and every rung is above the market");
+console.log("\ncallerTier: the ladder is short, and every rung is loudness");
 {
-  check("top 5% earns Oracle",
+  check("top 5% earns Loudest",
     callerTier({ hasEnough: true, oddieScore: 700, topPct: ORACLE_TOP_PCT })?.id === "oracle");
-  check("top 25% earns Sharp Caller",
+  check("top 25% earns Loud",
     callerTier({ hasEnough: true, oddieScore: 600, topPct: SHARP_TOP_PCT })?.id === "sharp");
-  check("beating the market outside the top 25% earns Proven Caller",
-    callerTier({ hasEnough: true, oddieScore: 600, meanEdge: 0.04, topPct: 60 })?.id === "proven");
+  check("tagging a market outside the top 25% still earns the entry rung",
+    callerTier({ hasEnough: true, oddieScore: 600, marketsCreated: 2, topPct: 60 })?.id === "proven");
   check("the best qualifying tier wins, not the last one checked",
-    callerTier({ hasEnough: true, oddieScore: 999, topPct: 2 })?.id === "oracle");
+    callerTier({ hasEnough: true, oddieScore: 999, marketsCreated: 9, topPct: 2 })?.id === "oracle");
 
   // The point of a status label is that it can be WITHHELD.
-  check("a below-market record earns NO tier, not a consolation one",
-    callerTier({ hasEnough: true, oddieScore: 9000, meanEdge: -0.02, topPct: 60 }) === null,
-    "a huge score off pure activity must not buy a tier that claims edge");
-  check("a provisional record earns no tier however good it looks",
+  check("points alone earn no tier: the entry rung is for putting markets up",
+    callerTier({ hasEnough: true, oddieScore: 9000, marketsCreated: 0, topPct: 60 }) === null,
+    "a big score off shares and posts must not read as having tagged anything");
+  check("an empty record earns no tier however good it looks",
     callerTier({ hasEnough: false, oddieScore: 950, topPct: 1 }) === null);
   check("no score at all earns no tier",
     callerTier({ hasEnough: true, oddieScore: null, topPct: 1 }) === null);
-  check("unranked but market-beating still earns Proven (rank is optional)",
-    callerTier({ hasEnough: true, oddieScore: 700, meanEdge: 0.1, topPct: null })?.id === "proven");
-  check("unranked and below market earns nothing",
-    callerTier({ hasEnough: true, oddieScore: 300, meanEdge: -0.1, topPct: null }) === null);
+  check("unranked but tagging still earns the entry rung (rank is optional)",
+    callerTier({ hasEnough: true, oddieScore: 700, marketsCreated: 1, topPct: null })?.id === "proven");
+  check("unranked with nothing tagged earns nothing",
+    callerTier({ hasEnough: true, oddieScore: 300, marketsCreated: 0, topPct: null }) === null);
+  check("edge is ignored entirely now, whatever it says",
+    callerTier({ hasEnough: true, oddieScore: 600, meanEdge: 0.9, marketsCreated: 0, topPct: 60 }) === null);
 }
 
-console.log("\noddieScoreFrom: activity sets the size, accuracy scales it");
+console.log("\noddieScoreFrom: the score is a loudness ladder");
 {
-  const busyAverage = oddieScoreFrom({ resolvedCalls: 40, marketsCreated: 2, contributionPoints: 100, meanEdge: 0 });
-  const sharpRare   = oddieScoreFrom({ resolvedCalls: 5,  marketsCreated: 0, contributionPoints: 0,   meanEdge: 0.2 });
-  check("a busy average caller outranks a sharp rare one — the whole point of the reweighting",
-    busyAverage > sharpRare, `busy ${busyAverage} vs sharp ${sharpRare}`);
+  // Score measures how much you brought oddie, not how right you were. Two
+  // sources, and only two: markets you put on the board, and the growth ledger.
+  const loud  = oddieScoreFrom({ marketsCreated: 4, contributionPoints: 0, resolvedCalls: 0, meanEdge: null });
+  const quiet = oddieScoreFrom({ marketsCreated: 0, contributionPoints: 0, resolvedCalls: 40, meanEdge: 0.9 });
+  check("surfacing four markets outranks forty perfectly-called positions",
+    loud > quiet, `loud ${loud} vs quiet ${quiet}`);
+  check("...because taking a position pays nothing at all", quiet === 0, String(quiet));
 
-  const base = { resolvedCalls: 20, marketsCreated: 0, contributionPoints: 0 };
-  const neutral = oddieScoreFrom({ ...base, meanEdge: 0 });
-  const good    = oddieScoreFrom({ ...base, meanEdge: 0.2 });
-  const bad     = oddieScoreFrom({ ...base, meanEdge: -0.2 });
-  check("being right raises the same activity", good > neutral, `${good} > ${neutral}`);
-  check("being wrong LOWERS it — a big base must be shrinkable, or accuracy is decorative",
-    bad < neutral, `${bad} < ${neutral}`);
-  check("...but accuracy never swings it more than half either way",
-    good <= neutral * 1.5 + 1 && bad >= neutral * 0.5 - 1, `${bad}..${good} around ${neutral}`);
+  const base = { marketsCreated: 5, contributionPoints: 0, resolvedCalls: 20 };
+  check("being right no longer moves the score",
+    oddieScoreFrom({ ...base, meanEdge: 0.9 }) === oddieScoreFrom({ ...base, meanEdge: -0.9 }));
+  check("...and neither does a missing edge",
+    oddieScoreFrom({ ...base, meanEdge: null }) === oddieScoreFrom({ ...base, meanEdge: 0 }));
 
-  check("no activity is no score, however good the edge",
-    oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: 0.9 }) === 0);
-  check("creating markets counts even with nothing resolved",
-    oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 4, contributionPoints: 0, meanEdge: null }) > 0);
-  check("a null edge is treated as market-neutral, not as a penalty",
-    oddieScoreFrom({ resolvedCalls: 10, marketsCreated: 0, contributionPoints: 0, meanEdge: null }) ===
-    oddieScoreFrom({ resolvedCalls: 10, marketsCreated: 0, contributionPoints: 0, meanEdge: 0 }));
+  check("doing nothing is no score", oddieScoreFrom({ marketsCreated: 0, contributionPoints: 0, resolvedCalls: 0, meanEdge: null }) === 0);
+  check("creating markets is the ladder's big rung",
+    oddieScoreFrom({ marketsCreated: 1, contributionPoints: 0, resolvedCalls: 0, meanEdge: null }) === 100);
 
-  // The one-currency promise: ledger events are quoted in the UI as exact
-  // oddies ("+150 when your post clears" = 75 ledger × the contribution
-  // weight), so the quality multiplier must never touch them. Play scales
-  // with skill; noise pays face value — at the floor, at the ceiling, always.
-  const noise = { callsMade: 10, resolvedCalls: 0, marketsCreated: 0 };
-  const floorQ   = oddieScoreFrom({ ...noise, contributionPoints: 75, meanEdge: -0.9 });
-  const ceilingQ = oddieScoreFrom({ ...noise, contributionPoints: 75, meanEdge: 0.9 });
-  check("noise pays face value at floor quality (play 50×0.5 + 150)", floorQ === 175, String(floorQ));
-  check("...and is not amplified at ceiling quality (play 50×1.5 + 150)", ceilingQ === 225, String(ceilingQ));
-  check("the promised delta is exact: +150 oddies for a 75-point ledger event, any quality",
-    ceilingQ - oddieScoreFrom({ ...noise, contributionPoints: 0, meanEdge: 0.9 }) === 150 &&
-    floorQ - oddieScoreFrom({ ...noise, contributionPoints: 0, meanEdge: -0.9 }) === 150);
+  // The multiplier is the reward for being loud CONSISTENTLY, so it lifts the
+  // markets you surfaced. It must not touch ledger points, because those are
+  // quoted to the user as exact oddies ("+150 when your post clears").
+  const withMult = oddieScoreFrom({ marketsCreated: 3, contributionPoints: 75, resolvedCalls: 0, meanEdge: null, loudMultiplier: 2 });
+  const noMult   = oddieScoreFrom({ marketsCreated: 3, contributionPoints: 75, resolvedCalls: 0, meanEdge: null });
+  check("a loud streak doubles the markets half", withMult - 150 === (noMult - 150) * 2, `${withMult} vs ${noMult}`);
+  check("...and leaves the ledger half at face value", withMult - noMult === 300, String(withMult - noMult));
+  check("the promised delta is exact: +150 oddies for a 75-point ledger event",
+    oddieScoreFrom({ marketsCreated: 0, contributionPoints: 75, resolvedCalls: 0, meanEdge: null }) === 150);
+  check("a multiplier below 1 can never shrink a score", 
+    oddieScoreFrom({ marketsCreated: 3, contributionPoints: 0, resolvedCalls: 0, meanEdge: null, loudMultiplier: 0 }) === 300);
 }
 
-console.log("\nthe farm is pointed at volume and at X, on purpose");
+console.log("\nthe farm is pointed at X, on purpose");
 {
   // The growth bet, pinned. Loudness is meant to be the cheapest way up, so
   // these orderings are load-bearing product decisions and not incidental
-  // arithmetic — if a re-weighting ever inverts one, that should fail here
+  // arithmetic: if a re-weighting ever inverts one, that should fail here
   // rather than be discovered from a leaderboard nobody recognises.
-  const farmer = oddieScoreFrom({ callsMade: 60, resolvedCalls: 0, marketsCreated: 5, contributionPoints: 490, meanEdge: null });
-  const sharp  = oddieScoreFrom({ callsMade: 8,  resolvedCalls: 8, marketsCreated: 0, contributionPoints: 0,   meanEdge: 0.25 });
+  const farmer = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 5, contributionPoints: 490, meanEdge: null });
+  const sharp  = oddieScoreFrom({ resolvedCalls: 8, marketsCreated: 0, contributionPoints: 0,   meanEdge: 0.25 });
   check("a loud farmer outranks a sharp lurker by a wide margin", farmer > sharp * 5, `${farmer} vs ${sharp}`);
 
-  const oneMarket = oddieScoreFrom({ callsMade: 0, resolvedCalls: 0, marketsCreated: 1, contributionPoints: 0, meanEdge: null });
-  const calls     = oddieScoreFrom({ callsMade: 15, resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: null });
-  check("tagging ONE market on X beats fifteen calls — X is the loud axis",
-    oneMarket > calls, `${oneMarket} vs ${calls}`);
+  const oneMarket = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 1, contributionPoints: 0, meanEdge: null });
+  const oneShare  = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 0, contributionPoints: 40, meanEdge: null });
+  check("tagging a market outranks sharing one: the tag is the loud axis",
+    oneMarket > oneShare, `${oneMarket} vs ${oneShare}`);
 
-  const before = oddieScoreFrom({ callsMade: 10, resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: null });
-  const after  = oddieScoreFrom({ callsMade: 11, resolvedCalls: 0, marketsCreated: 0, contributionPoints: 0, meanEdge: null });
-  check("a call pays THE MOMENT it is made, before anything resolves",
+  const before = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 3, contributionPoints: 0, meanEdge: null });
+  const after  = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 4, contributionPoints: 0, meanEdge: null });
+  check("a market pays THE MOMENT it is minted, before anyone plays it",
     after > before, `${before} -> ${after}`);
 }
 
@@ -132,13 +128,13 @@ console.log("\nsmall fields cannot mint status");
 {
   // The formula that produced these is fine; the STATEMENT it makes about a
   // tiny field is not. #1 of 1 is "top 100%" arithmetically, and a field of
-  // four would hand first place a Sharp Caller tier for beating three people.
-  check("a percentile is withheld until the field is big enough — the tier falls back to score",
-    callerTier({ hasEnough: true, oddieScore: 918, meanEdge: 0.08, topPct: null })?.id === "proven");
+  // four would hand first place a Loud tier for beating three people.
+  check("a percentile is withheld until the field is big enough: the tier falls back to the entry rung",
+    callerTier({ hasEnough: true, oddieScore: 918, marketsCreated: 6, topPct: null })?.id === "proven");
   check("...and never reads as 'top 100%' by leaking a degenerate percentile through",
-    callerTier({ hasEnough: true, oddieScore: 918, meanEdge: 0.08, topPct: 100 })?.id === "proven");
-  check("a real top-5% field still earns Oracle",
-    callerTier({ hasEnough: true, oddieScore: 918, meanEdge: 0.08, topPct: 4 })?.id === "oracle");
+    callerTier({ hasEnough: true, oddieScore: 918, marketsCreated: 6, topPct: 100 })?.id === "proven");
+  check("a real top-5% field still earns Loudest",
+    callerTier({ hasEnough: true, oddieScore: 918, marketsCreated: 6, topPct: 4 })?.id === "oracle");
 }
 
 console.log("\nreputationFor: one read, consistent across every surface");

@@ -62,12 +62,15 @@ console.log("\none fresh win, before the accuracy floor (fewer than 5 resolved)"
   check("it's a win", c?.won === true);
   check("outcome matches", c?.outcome === "yes");
   check("payout is the real proceeds, not null", typeof c?.proceeds === "number" && c.proceeds > 0, String(c?.proceeds));
-  // One call taken and none resolved before it: 1 x callMade = 5. Not the old
-  // literal 500, and not 0 either — the call itself is worth something the
-  // moment it is made, which is the whole point of the volume weighting.
-  check("score baseline is what the activity alone earns, not a legacy 500",
-    c?.scoreBefore === 5, String(c?.scoreBefore));
-  check("scoreAfter is still null below the accuracy floor", c?.scoreAfter === null, String(c?.scoreAfter));
+  // Zero, and that is the contract now. The score is the loudness ladder: it
+  // moves on markets TAGGED and on the growth ledger, and taking a position
+  // earns nothing there at all. A call used to be worth 5 and a resolution
+  // another 5; both read a play-token table nothing writes to any more, so both
+  // are gone rather than left frozen. Betting has its own reward and it is
+  // money.
+  check("taking a call earns no score, because score is loudness not volume",
+    c?.scoreBefore === 0, String(c?.scoreBefore));
+  check("and resolving one does not either", c?.scoreAfter === null || c?.scoreAfter === 0, String(c?.scoreAfter));
   check("streak starts at 1, not flagged as 'extended' (threshold is >= 2)", c?.streakAfter === 1 && c?.streakExtended === false);
 }
 
@@ -115,13 +118,11 @@ console.log("\ncrossing the accuracy floor mid-batch: scoreAfter appears exactly
   const rows = await celebrationsFor(dev);
   check("one celebration for the 5th call", rows.length === 1, String(rows.length));
   const c = rows[0];
-  // 5 calls made (25) + 4 of them resolved (20) at neutral edge = 45. This is
-  // the number the PROFILE would show for the same device, which is the fix:
-  // these two used to run on the resolution half alone and quote a smaller
-  // movement than the profile did for the same event.
-  check("scoreBefore is the pre-call activity's own score (4 resolved, still under the floor)",
-    c?.scoreBefore === 45, String(c?.scoreBefore));
-  check("scoreAfter is now a real number (5 resolved crosses the floor)", typeof c?.scoreAfter === "number", String(c?.scoreAfter));
+  // Still zero after five calls and four resolutions. The celebration reports
+  // the score truthfully, and the truth is that none of this moves it: this
+  // device has tagged nothing and posted nothing.
+  check("five calls and four resolutions still earn no score",
+    c?.scoreBefore === 0, String(c?.scoreBefore));
   check("a 5-call win streak is real and flagged extended", c?.streakAfter === 5 && c?.streakExtended === true);
 }
 

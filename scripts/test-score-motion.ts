@@ -11,7 +11,7 @@ if (process.env.DATABASE_URL) {
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, markCommunityResolved, settleMarket,
   weeklyScoreDeltaFor, rankMovementFor, seasonRankFor, _memCalls, _resetStandingsCache,
-  _memGrant,
+  _memGrant, _memSeasonCredit,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -54,71 +54,47 @@ function backdateLastCallFor(deviceId: string, daysAgo: number): void {
 
 const DEV = (n: number) => `dev-${String(n).padStart(8, "0")}${"a".repeat(24)}`;
 
+/* weeklyScoreDeltaFor measures THE LOUDNESS LADDER now.
+ *
+ * It used to recompute accuracy with and without the week's resolutions and
+ * report the difference. Resolutions no longer move the score at all, so that
+ * reading returned a permanent null. It reads the growth ledger instead: what
+ * was credited in the last seven days, at the same weight the total uses.
+ */
 console.log("\nweeklyScoreDeltaFor: hidden with nothing to show");
 {
-  const nobody = DEV(1);
-  check("no resolutions at all -> null", (await weeklyScoreDeltaFor(nobody)) === null);
+  check("nothing credited at all -> null", (await weeklyScoreDeltaFor(DEV(1))) === null);
 
   const stale = DEV(2);
-  for (let i = 0; i < 5; i++) { await pick(stale, 50, true); backdateLastCallFor(stale, 10); }
-  check("hasEnough with a real score, but every resolution predates the window -> null (hidden, not stale)",
+  _memSeasonCredit(stale, 150, 10);
+  check("credited, but outside the window -> null (hidden, not stale)",
     (await weeklyScoreDeltaFor(stale)) === null);
 
-  const notEnoughYet = DEV(3);
-  await pick(notEnoughYet, 50, true);
-  await pick(notEnoughYet, 50, true);
-  // Two resolutions this week, still short of the ACCURACY floor of 5 — but the
-  // score is activity-led and no longer waits on that floor, so there IS motion
-  // to report. The old expectation (null) belonged to a score that was pure
-  // accuracy; keeping it would have meant hiding real activity from the one
-  // person it happened to.
-  check("resolutions this week report motion even below the accuracy floor",
-    ((await weeklyScoreDeltaFor(notEnoughYet))?.delta ?? 0) > 0);
+  // THE CHANGE, PINNED. Taking calls and resolving them earns nothing here,
+  // because the score is loudness and a position is not loudness. Betting has
+  // its own reward and that reward is money.
+  const bettor = DEV(3);
+  for (let i = 0; i < 5; i++) await pick(bettor, 50, true);
+  check("five winning calls this week move the week's score by nothing",
+    (await weeklyScoreDeltaFor(bettor)) === null);
 }
 
-console.log("\nweeklyScoreDeltaFor: a real delta from resolved history vs. this week");
+console.log("\nweeklyScoreDeltaFor: what the week actually added");
 {
   const dev = DEV(4);
-  // THE TRADE-OFF, PINNED SO IT CANNOT DRIFT SILENTLY.
-  //
-  // Under the activity-led score a single loss on top of a strong record can
-  // still move the week UP, because playing once more adds base while the
-  // quality multiplier barely moves (and here does not move at all — an edge of
-  // +0.5 pins it at the 1.5x ceiling, so the loss costs nothing on that axis).
-  //
-  // That is not a bug, it is the weighting Lev asked for stated in numbers:
-  // showing up counts for more than being right. It is asserted rather than
-  // merely tolerated so that nobody later "fixes" it without deciding to.
-  for (let i = 0; i < 5; i++) { await pick(dev, 50, true); backdateLastCallFor(dev, 10); }
-  await pick(dev, 50, false);
+  _memSeasonCredit(dev, 50);            // surfaced a market
   const wd = await weeklyScoreDeltaFor(dev);
-  check("one loss on a saturated record still nets UP — activity outweighs accuracy, by design",
-    (wd?.delta ?? 0) > 0, JSON.stringify(wd));
+  check("a surfaced market this week reports motion", (wd?.delta ?? 0) > 0, JSON.stringify(wd));
+  check("direction is up", wd?.direction === "up", JSON.stringify(wd));
+  check("the delta is the ledger amount at the score's own weight",
+    wd?.delta === 100, JSON.stringify(wd));   // 50 points x contribution weight 2
 }
 {
   const dev = DEV(5);
-  for (let i = 0; i < 5; i++) { await pick(dev, 50, false); backdateLastCallFor(dev, 10); }
-  await pick(dev, 50, true);
+  _memSeasonCredit(dev, 50, 10);        // last week, must not count
+  _memSeasonCredit(dev, 150);           // this week
   const wd = await weeklyScoreDeltaFor(dev);
-  check("direction is up", wd?.direction === "up", JSON.stringify(wd));
-  check("a winning week moves the score up by a real amount", (wd?.delta ?? 0) > 0, JSON.stringify(wd));
-}
-{
-  const dev = DEV(6);
-  // 4 historical wins, backdated -> still short of the accuracy floor (before.hasEnough === false).
-  for (let i = 0; i < 4; i++) { await pick(dev, 50, true); backdateLastCallFor(dev, 10); }
-  // The 5th win, THIS week, crosses the floor -> the baseline is what the
-  // pre-week activity would score at market-neutral edge, not null and not a
-  // literal 500 (which only ever meant "neutral" under the old formula).
-  await pick(dev, 50, true);
-  const wd = await weeklyScoreDeltaFor(dev);
-  // 4 pre-week calls at neutral edge = 40 base; the 5th win takes it to 5 calls
-  // at a saturated 1.5x = 75. The delta is the 35 between them. Asserted as a
-  // real positive rather than a pinned figure, since the weights are allowed to
-  // move: what must hold is that crossing the floor reports motion instead of
-  // the "no score" it would have reported before.
-  check("crossing the floor this week still produces a delta, not a missing score",
-    (wd?.delta ?? 0) > 0 && wd?.direction === "up", JSON.stringify(wd));
+  check("only the last seven days count", wd?.delta === 300, JSON.stringify(wd));
 }
 
 console.log("\nrankMovementFor: unranked/provisional devices are skipped entirely");
@@ -137,15 +113,18 @@ console.log("\nrankMovementFor: unranked/provisional devices are skipped entirel
 
 console.log("\nrankMovementFor: fires once on a real move, then goes quiet");
 {
+  // Rank moves on the ladder the score is made of. It used to be moved here by
+  // taking better calls, which is no longer a thing the score can see: playing
+  // well earns money, and being loud earns rank.
   const dev = DEV(8);
-  for (let i = 0; i < 5; i++) await pick(dev, 50, false); // deliberately bad — starts near the bottom
+  _memSeasonCredit(dev, 50);   // one surfaced market: on the board, near the bottom
   _resetStandingsCache();
   const rank1 = (await seasonRankFor(dev))!.rank;
   check("first-ever view establishes the baseline silently", (await rankMovementFor(dev)) === null);
   check("re-reading immediately (nothing changed) is still null", (await rankMovementFor(dev)) === null);
 
-  // A strong second half pulls the overall record up sharply -> should climb.
-  for (let i = 0; i < 5; i++) await pick(dev, 10, true);
+  // A loud week: several markets surfaced and a post cleared review.
+  _memSeasonCredit(dev, 2500);
   _resetStandingsCache();
   const rank2 = (await seasonRankFor(dev))!.rank;
   check("the device's rank number actually improved (this is a real move, not a fixture assumption)",
