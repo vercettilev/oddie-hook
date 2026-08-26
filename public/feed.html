@@ -1060,6 +1060,7 @@
   .bal{margin-left:8px;font-family:'Nunito';font-weight:800;font-size:13.5px;
     padding:4px 11px;border:1.5px solid var(--ink);border-radius:999px;
     background:var(--wash);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .bal[hidden]{display:none}   /* an empty pill still draws its border and padding */
   .bal.pulse{animation:balpulse .45s ease}
   /* The unit label under the number. It read "left", from when the pill counted
      a spendable allowance; it reads "score" now, because nothing here is spent
@@ -3521,7 +3522,7 @@ window.addEventListener("hashchange",render);
 function feedTop(cats){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
-       <div class="brand">${BRAND_MARK}<span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+       <div class="brand">${BRAND_MARK}<span class="bal" id="bal" hidden></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
      </div>`;
   paintBalance();paintThemeToggle();
   // The discovery-mode row went with the chips, and for the same reason the
@@ -3565,7 +3566,7 @@ function shellTop(title,preview=true){
 function homeTop(){
   document.getElementById("top").innerHTML=
     `<div class="top-in">
-       <div class="brand">${BRAND_MARK}<span class="bal" id="bal"></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
+       <div class="brand">${BRAND_MARK}<span class="bal" id="bal" hidden></span><button class="themetog" type="button" aria-label="Toggle dark mode"></button></div>
      </div>`;
   paintBalance();paintThemeToggle();
 }
