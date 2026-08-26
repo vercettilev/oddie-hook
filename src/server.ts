@@ -1,6 +1,6 @@
 import express from "express";
 import { displayTitle } from "./title.js";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -197,13 +197,6 @@ async function renderLanding(): Promise<string> {
     parts.push(`<b>${activity.callsToday.toLocaleString("en-US")}</b> call${activity.callsToday === 1 ? "" : "s"} today`);
   }
   const proof = parts.join(" · ");
-  // The hero art. public/portal.png is the painted scene; when it is absent the
-  // landing falls back to the vector one drawn inline in the page, so a missing
-  // file degrades to a different picture rather than to a broken image icon.
-  // Checked per render rather than at boot, so dropping the file in takes effect
-  // once the 60s render cache below rolls over — no restart needed.
-  const hasArt = existsSync(path.join(__dirname, "../public/portal.png")) ? "1" : "0";
-
   // The one hard status claim on the page, rendered per cluster so it cannot
   // lie. "Real SOL" is only written where the SOL is real; on devnet the chip
   // says devnet, because a landing that calls test money real is the exact
@@ -214,7 +207,6 @@ async function renderLanding(): Promise<string> {
 
   const html = LANDING_HTML
     .replace("<!--PROOF-->", proof)
-    .replace("<!--HAS_ART-->", hasArt)
     .replace("<!--LIVE_MODE-->", liveMode)
     .replace("<!--LIVE_CARDS-->", liveCards)
     .replace("<!--NET_CHIP-->", netChip);
