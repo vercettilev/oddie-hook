@@ -168,9 +168,12 @@
   /* The room the mascot is standing in. A soft lime wash bleeding up from the
      lower right is what makes the black read as a lit space rather than as an
      empty background. */
-  .hero::before{content:"";position:absolute;right:-160px;top:40px;width:1000px;height:780px;
-    pointer-events:none;z-index:0;
-    background:radial-gradient(ellipse at 50% 50%,rgba(212,224,23,.13) 0,rgba(212,224,23,.04) 45%,transparent 72%)}
+  /* The room wash is GONE. Behind the hero there were four light sources at
+     once (this, the painting's own bloom, the painting, and the floor grid),
+     and four is not atmosphere, it is fog: the demo cards sat inside the glow
+     instead of on top of it and their borders stopped reading at all. The
+     painting and the grid light the scene; this was the one that only added
+     haze. */
   /* The copy column is capped rather than fluid: the stage needs enough width to
      seat two cards side by side WITHOUT either of them landing on the mascot,
      and every pixel the headline does not need is worth more over there. */
@@ -231,7 +234,8 @@
   .stage{position:relative;height:590px;min-width:0}
   /* Atmosphere, not content: behind the demo, dimmed, and out of the flow so
      it cannot push the thing people are meant to read down the page. */
-  .stage--bg{position:absolute;inset:-6% -10% auto;height:118%;z-index:0;opacity:.34;pointer-events:none}
+  .stage--bg{position:absolute;inset:0 -10%;height:100%;z-index:0;opacity:.13;pointer-events:none;
+    overflow:hidden;filter:saturate(.5) brightness(.72)}
   /* The art sits CENTRED in its column and the cards hang off both edges of the
      stage, so the doorway is framed rather than crowded. As the column narrows
      the cards close in on it and start to overlap, which is the depth the comp
@@ -262,7 +266,7 @@
      just inside every edge: 50/60 = 83% of the horizontal radius and 50/56 =
      89% of the vertical one, both past the transparent stop at 86%. */
   .stage__art[data-art="1"]::before{content:"";position:absolute;inset:-10%;
-    background:radial-gradient(ellipse 46% 52% at 50% 48%,rgba(215,220,31,.22),rgba(215,220,31,.05) 48%,transparent 70%);
+    background:radial-gradient(ellipse 46% 52% at 50% 48%,rgba(215,220,31,.10),rgba(215,220,31,.02) 48%,transparent 70%);
     pointer-events:none}
   .stage__art[data-art="1"] .scene-photo{display:block;width:100%;height:100%;
     object-fit:cover;object-position:50% 40%;filter:saturate(1.15) contrast(1.06);
@@ -279,19 +283,27 @@
      genre's usual devices all cost legibility, and legibility is the brief. */
   .hero::after{content:"";position:absolute;left:-30%;right:-30%;bottom:-14%;height:58%;z-index:0;
     pointer-events:none;
-    background:linear-gradient(rgba(215,220,31,.26) 1.5px,transparent 1.5px),
-               linear-gradient(90deg,rgba(215,220,31,.26) 1.5px,transparent 1.5px);
-    background-size:58px 58px;
+    background:linear-gradient(rgba(215,220,31,.19) 1.2px,transparent 1.2px),
+               linear-gradient(90deg,rgba(215,220,31,.19) 1.2px,transparent 1.2px);
+    background-size:64px 64px;
     transform:perspective(420px) rotateX(70deg);
-    -webkit-mask-image:linear-gradient(transparent,#000 34%,#000);
-    mask-image:linear-gradient(transparent,#000 34%,#000)}
+    /* Fades in later and never reaches full strength. A floor that arrives at
+       100% opacity at the bottom of the frame stops being a horizon and starts
+       being a diagram. */
+    /* Fades in at the horizon AND back out at the bottom. Ending the mask at
+       full strength put the floor's brightest row exactly where the element
+       stops, which draws a hard horizontal line across the page: the one thing
+       a receding floor must not do. */
+    -webkit-mask-image:linear-gradient(transparent 8%,rgba(0,0,0,.75) 42%,rgba(0,0,0,.5) 72%,transparent 100%);
+    mask-image:linear-gradient(transparent 8%,rgba(0,0,0,.75) 42%,rgba(0,0,0,.5) 72%,transparent 100%)}
 
   /* before / after, side by side. Stacks on narrow screens, where the arrow
      turns to point down rather than being rotated text nobody can parse. */
   .demo{display:flex;align-items:center;justify-content:center;gap:26px;margin-top:34px;
     width:100%;max-width:900px}
-  .dtw{flex:1 1 0;min-width:0;background:var(--card);border:1.5px solid rgba(255,255,255,.13);
-    border-radius:16px;padding:14px 16px;text-align:left}
+  .dtw{flex:1 1 0;min-width:0;background:#08090A;border:1.5px solid rgba(255,255,255,.16);
+    border-radius:16px;padding:14px 16px;text-align:left;
+    box-shadow:0 18px 50px rgba(0,0,0,.75)}
   .dtw__who{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--fg-3)}
   .dtw__who i{width:22px;height:22px;border-radius:50%;flex:none;
     background:linear-gradient(135deg,#3a3a3a,#1a1a1a)}
@@ -304,8 +316,9 @@
   .darrow__ln{font-size:42px;line-height:1;color:var(--lime);text-shadow:0 0 20px rgba(215,220,31,.8)}
   .darrow__cap{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--fg-3);white-space:nowrap}
 
-  .dmk{flex:1.15 1 0;min-width:0;background:var(--card);border:1.5px solid rgba(215,220,31,.4);
-    border-radius:16px;padding:15px 16px 16px;text-align:left;box-shadow:0 0 46px rgba(215,220,31,.15)}
+  .dmk{flex:1.15 1 0;min-width:0;background:#08090A;border:1.5px solid rgba(215,220,31,.42);
+    border-radius:16px;padding:15px 16px 16px;text-align:left;
+    box-shadow:0 18px 50px rgba(0,0,0,.75), 0 0 34px rgba(215,220,31,.10)}
   .dmk__q{font-family:'Fredoka';font-weight:700;font-size:21px;line-height:1.2}
   .dmk__row{display:flex;gap:9px;margin-top:13px}
   .dmk__side{flex:1;border-radius:11px;padding:13px 0;text-align:center;
@@ -549,7 +562,10 @@
     .stage__art{position:relative;inset:auto;height:300px}
     /* The portal stays a backdrop on phones too, where the card row below it
        would otherwise reflow it into the middle of the reading order. */
-    .stage--bg{position:absolute;height:100%;opacity:.26}
+    /* The phone had its own, older opacity and kept the painting at twice the
+       desktop strength, which put the mascot and the lit doorway directly
+       behind the tweet card on the smallest screen we have. */
+    .stage--bg{position:absolute;height:100%;opacity:.10}
     .hero::after{height:44%}
 
     /* Full-bleed so the row can run off both edges of the phone the way a real
