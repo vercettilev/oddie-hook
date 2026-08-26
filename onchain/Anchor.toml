@@ -1,15 +1,17 @@
-# Oddie's own pari-mutuel program.
+# Oddie's own pari-mutuel program, and the one production runs on.
 #
-# NOT the program running on devnet today. That one (Ao8tBMVCUMMYAm8cbq2qehP78RCK5xNAPyaXv9TH5FZT)
-# was deployed without its source ever landing in this repo, which is why
-# economy.ts has to describe the creator fee as a "proposed rate": the deployed
-# Market account has no creator field and no fee instruction, so there is
-# nowhere to record who the 3% is owed to and no way to pay it. This workspace
-# exists so that program is ours.
+# It replaced Ao8tBMVCUMMYAm8cbq2qehP78RCK5xNAPyaXv9TH5FZT, which was deployed
+# before its source ever landed in a repo: that Market account had no creator
+# field and no fee instruction, so there was nowhere to record who the 3% was
+# owed to and no way to pay it. This workspace exists so that program is ours,
+# and set_creator exists so a tagger who shows up late still gets paid.
 #
-# DELIBERATELY NOT WIRED TO PRODUCTION. Nothing in src/ imports this, the server
-# still gates every on-chain path behind ONCHAIN_ENABLED (default false), and no
-# deploy target here points at mainnet.
+# WIRED TO PRODUCTION. src/chain/oddieChain.ts talks to this program id,
+# ONCHAIN_ENABLED defaults ON, and oddie.fun mints every market here. The
+# cluster below stays localnet because that is what `anchor test` wants; the
+# network a deploy goes to is passed explicitly. Deploy with scripts/mainnet.sh,
+# which checks the id in all three places it is written down before spending
+# anything.
 
 [toolchain]
 
@@ -18,6 +20,12 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
+oddie_chain = "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu"
+
+[programs.devnet]
+oddie_chain = "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu"
+
+[programs.mainnet]
 oddie_chain = "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu"
 
 [registry]
