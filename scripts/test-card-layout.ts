@@ -9,7 +9,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import {
   renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT, C,
-  pick, INVITE_POOL, BADGE_POOL,
+  pick, INVITE_POOL, BADGE_POOL, VOICE_ANY, VOICE_UNPRICED,
 } from "../src/card/renderCard.js";
 import { renderBanner } from "../src/card/renderBanner.js";
 import { renderPositionCard } from "../src/card/renderPositionCard.js";
@@ -92,9 +92,17 @@ for (const q of QUESTIONS) {
     if (!svg.includes("pays") || !hasInvite || !svg.includes("<path d=\"M ")) {
       failures++; console.error(`  ✗ missing click-trigger pieces at ${yes}%`);
     }
-    const hasBadge = BADGE_POOL.some((s) => svg.includes(s));
-    if ((yes >= 40 && yes <= 60) !== hasBadge) {
-      failures++; console.error(`  ✗ badge presence wrong at ${yes}%`);
+    // The tension badge retired with the old layout: the card opens with a
+    // line of oddie's own voice now, and that carries the tension on EVERY
+    // market rather than only on a 40-60 split. A badge as well would be two
+    // voices arguing on one card.
+    const hasVoice = [...VOICE_ANY, ...VOICE_UNPRICED].some((v) => svg.includes(v));
+    if (!hasVoice) {
+      failures++; console.error(`  ✗ no voice line at ${yes}%`);
+    }
+    const hasBadge = BADGE_POOL.some((b) => svg.includes(b));
+    if (hasBadge) {
+      failures++; console.error(`  ✗ retired tension badge came back at ${yes}%`);
     }
   }
 }
@@ -374,7 +382,12 @@ console.log("\nligature suppression: the shaper must not be allowed to eat lette
 
   // And the unpriced card must not quote a price nobody set.
   check("an unpriced card shows no percentage", !/>\d+%</.test(unpriced));
-  check("...and says so", unpriced.includes("no price yet") && unpriced.includes("open"));
+  // The old card carried a "no price yet" kicker above the hero. The kicker is
+  // gone with that layout; the hero itself reads "open" and the line beside it
+  // says the line is unset. Both are fixed strings, unlike the seeded voice
+  // line, so both are safe to assert.
+  check("...and says so", unpriced.includes(">open<") && unpriced.includes(`f${ZWNJ}irst in sets the line`),
+    unpriced.match(/>open<|first in sets[^<]*/g)?.join(" | ") ?? "neither");
   check("a priced card still shows its number", /62%/.test(svg));
 }
 

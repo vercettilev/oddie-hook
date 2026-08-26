@@ -26,7 +26,9 @@ export function renderCardPng(svg: string): Buffer {
     fitTo: { mode: "width", value: RENDER_WIDTH },
     font: { fontFiles: FONT_FILES, loadSystemFonts: false, defaultFontFamily: "Fredoka" },
     // The card draws its own white card on a white page; no transparency to keep.
-    background: "#ffffff",
+    // The market card bleeds lime to its edges, so a white raster background
+    // flashes a hairline at the corners where the rounded artboard antialiases.
+    background: "#D7DC1F",
   });
   return Buffer.from(resvg.render().asPng());
 }

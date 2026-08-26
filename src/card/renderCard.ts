@@ -40,6 +40,8 @@ export const C = {
   // The hard offset under the wordmark. Same pink as the app's NO side and the
   // landing headline's echo, which is where the treatment comes from.
   echo: "#FF2D78",
+  /** The app's near-black. The card ground, and the ink on every lime slab. */
+  ground: "#0C0D0B",
 };
 
 export const FONT = "'Fredoka', 'Trebuchet MS', sans-serif";
@@ -54,9 +56,12 @@ const PAD_L = 70;
 const PAD_R = 932;
 const CONTENT_W = PAD_R - PAD_L;
 
-/** The question lives strictly between these two y values, caps to descenders. */
-const Q_TOP = 156;
-const Q_BOTTOM = 305;
+/** The question lives strictly between these two y values, caps to descenders.
+ *  It sits lower than it used to because the voice line now speaks above it. */
+const Q_TOP = 212;
+const Q_BOTTOM = 366;
+/** The question is indented past the lime quote rule at x68. */
+const QUOTE_X = 96;
 
 const HERO_BASE = 462;
 const HERO_FS_MAX = 150;
@@ -154,21 +159,30 @@ function ellipsize(line: string, maxW: number, fs: number): string {
  * lines of CONTENT_W) and down (Q_TOP..Q_BOTTOM). Falls back to the smallest
  * size with an ellipsis rather than letting the text run into the hero number.
  */
+/**
+ * The claim, measured down until it fits its band.
+ *
+ * The ladder gained two low rungs that also ALLOW A FOURTH LINE. Three lines at
+ * 38px was the floor, so a genuinely long question ellipsized, and a market's
+ * question is the one thing on this card a stranger can have an opinion about.
+ * Cutting it to fit the layout is cutting the only reason to tap.
+ */
 export function layoutQuestion(question: string): { fs: number; lineH: number; lines: string[] } {
-  const MAX_LINES = 3;
-  const budget = CONTENT_W - 12; // a little slack for font-metric drift
+  const budget = (PAD_R - QUOTE_X) - 12; // a little slack for font-metric drift
 
-  for (const fs of [58, 52, 46, 42, 38]) {
-    const lineH = Math.round(fs * 1.22);
-    const { lines, overflow } = wrapToWidth(question, budget, fs, MAX_LINES);
+  for (const [fs, maxLines, lh] of [
+    [54, 3, 1.22], [48, 3, 1.22], [42, 3, 1.20], [38, 3, 1.20], [34, 4, 1.18], [30, 4, 1.18],
+  ] as const) {
+    const lineH = Math.round(fs * lh);
+    const { lines, overflow } = wrapToWidth(question, budget, fs, maxLines);
     if (overflow) continue;
     const height = CAP * fs + (lines.length - 1) * lineH + DESC * fs;
     if (Q_TOP + height <= Q_BOTTOM) return { fs, lineH, lines };
   }
 
-  const fs = 38;
-  const lineH = Math.round(fs * 1.22);
-  const { lines } = wrapToWidth(question, budget, fs, MAX_LINES);
+  const fs = 30;
+  const lineH = Math.round(fs * 1.18);
+  const { lines } = wrapToWidth(question, budget, fs, 4);
   lines[lines.length - 1] = ellipsize(lines[lines.length - 1] + " …", budget, fs);
   return { fs, lineH, lines };
 }
@@ -238,15 +252,16 @@ const WORDMARK_END = 140 + textWidth("oddie", 46);
  *  sits on the top line (the volume pill). */
 export const LOCKUP_RIGHT = WORDMARK_END + HANDLE_GAP + textWidth(X_HANDLE, HANDLE_FS);
 
-export function brandLockup(): string {
+export function brandLockup(onDark = false): string {
   // The wordmark carries the same hard pink offset the landing headline and both
   // app headers wear: a displaced copy underneath, not a blur. Drawn first so it
   // sits behind. 2px at 46px matches the 2px the web wordmarks use at ~21px only
   // in spirit; measured against the card's 2x raster, 3px is what reads.
   return `${logoMark(52, 62, 68)}
   <text x="143" y="115" font-size="46" font-weight="600" fill="${C.echo}">oddie</text>
-  <text x="140" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
-  <text x="${Math.round(WORDMARK_END + HANDLE_GAP)}" y="112" font-family="${META}" font-size="${HANDLE_FS}" font-weight="700" fill="${C.muted}">${X_HANDLE}</text>`;
+  <text x="140" y="112" font-size="46" font-weight="600" fill="${onDark ? C.white : C.ink}">oddie</text>
+  <text x="${Math.round(WORDMARK_END + HANDLE_GAP)}" y="112" font-family="${META}" font-size="${HANDLE_FS}" font-weight="700"
+        fill="${onDark ? C.white : C.muted}"${onDark ? ` fill-opacity="0.62"` : ""}>${X_HANDLE}</text>`;
 }
 
 /** Volume pill, dropped down to just the money if the full string would reach
@@ -309,6 +324,37 @@ export const INVITE_POOL = ["call it", "prove it", "your move", "pick a side", "
 // the one moment the card can be honestly uncertain rather than performing it.
 // Self-sizing pill (badgeW is computed from the chosen text), so length is
 // freer here than the invite line.
+/**
+ * ODDIE TALKING BACK.
+ *
+ * The card is a REPLY, sitting directly under somebody's confident claim, so it
+ * opens with a line of oddie's own voice before it quotes them. That is the
+ * whole design: lime is oddie (his frame, his voice, his money), white is the
+ * human (the claim, quoted).
+ *
+ * THE RULE THAT MAKES A LINE SAFE: it must be true beside ANY claim, because
+ * nothing here reads the question. So no line may agree, disagree, judge the
+ * topic, or imply an outcome. Each one is about the ACT of saying something
+ * publicly, never about what was said. Same discipline INVITE_POOL already
+ * follows, and the same reason: one bad pairing on X is public forever.
+ */
+export const VOICE_ANY = [
+  "confidence is free. this isn't.",
+  "someone here is wrong.",
+  "big words. open market.",
+  "put a number on it.",
+  "we can settle this.",
+  "easy to say. harder to back.",
+] as const;
+
+/** Only when nobody has staked yet, so these may point at the vacancy. */
+export const VOICE_UNPRICED = [
+  "nobody has paid for that yet.",
+  "empty pool. first word counts.",
+  "still free to be first.",
+  "the line is yours to set.",
+] as const;
+
 export const BADGE_POOL = [
   "too close to call", "dead even. pick a side", "nobody's sure. are you?",
   "50/50 isn't an opinion", "coin flip. break the tie",
@@ -333,86 +379,77 @@ export function renderCard(m: Market, opts: { unpriced?: boolean } = {}): string
   const no = 100 - yes;
 
   const q = layoutQuestion(displayTitle(m.question));
-  const firstBaseline = Q_TOP + CAP * q.fs;
-  const questionTspans = q.lines
-    .map((l, i) => `<tspan x="${PAD_L}" y="${Math.round(firstBaseline + i * q.lineH)}">${esc(l)}</tspan>`)
-    .join("");
 
   const pill = volumePill(m);
 
-  // Hero number. It only shrinks if three digits would crowd the bar; at the
-  // sizes we ship (1%..100%) it never does, so the brand size is stable.
+  // ODDIE SPEAKS FIRST. One line, always exactly one, stepped down rather than
+  // wrapped: a two-line voice line stops being an interjection and starts being
+  // a paragraph, and the pool is short enough that 44 nearly always wins.
+  const voiceSeed = `${m.venue}:${m.venueId}`;
+  const voicePool = unpriced ? [...VOICE_ANY, ...VOICE_UNPRICED] : VOICE_ANY;
+  const voiceText = pick(voicePool, `${voiceSeed}:voice`);
+  let voiceFS = 44;
+  while (voiceFS > 32 && textWidth(voiceText, voiceFS) > CONTENT_W - 4) voiceFS -= 6;
+
+  // The quote rule's height is MEASURED off the question block. A fixed height
+  // hangs below a short question and reads as broken rather than as airy.
+  const firstBaseline = Q_TOP + CAP * q.fs;
+  const qHeight = CAP * q.fs + (q.lines.length - 1) * q.lineH + DESC * q.fs;
+
   const heroText = unpriced ? "open" : `${yes}%`;
-  let heroFS = HERO_FS_MAX;
-  while (heroFS > 96 && PAD_L + textWidth(heroText, heroFS) > HERO_RIGHT_LIMIT) heroFS -= 6;
-
-  // The kicker sits ABOVE the number, not on its baseline: at 150px the number's
-  // left sidebearing is nowhere near a 34px word, and the two used to touch.
-  const heroCapTop = HERO_BASE - CAP * heroFS;
-  const kickerBaseline = Math.round(heroCapTop - 14);
-
-  // The right zone is the CLICK TRIGGER, not a second infographic. The old
-  // mini-bar duplicated the giant number and did no work; in its place:
-  //   - the OFFER: what being right on the underdog side pays ("no pays 4.5x")
-  //   - the INVITATION: one of INVITE_POOL + a drawn arrow (drawn, not typed:
-  //     the bundled fonts have no U+2192 and resvg renders missing glyphs as
-  //     tofu)
-  //   - a tension badge, from BADGE_POOL, when the market is genuinely split
-  //     (40-60%)
   const udSide = yes <= 50 ? "yes" : "no";
   const udPct = udSide === "yes" ? yes : no;
   const mRaw = 100 / Math.max(1, udPct);
   const mult = mRaw >= 10 ? Math.round(mRaw) : Math.round(mRaw * 10) / 10;
-  // An unpriced market has no underdog and therefore no multiple to quote.
-  // What it has is a vacancy, so the offer becomes the ask.
-  const offerText = unpriced ? "first in sets the line" : `${udSide} pays ${mult}\u00d7`;
-  const OFFER_FS = unpriced ? 30 : 40;
-  const balanced = !unpriced && yes >= 40 && yes <= 60;
-  // One seed per market (venue + the venue's own id), NOT the question text:
-  // the question can be re-normalised by displayTitle or re-extracted with
-  // slightly different wording without this becoming a different market, and
-  // the card's voice shouldn't flicker when that happens.
-  const voiceSeed = `${m.venue}:${m.venueId}`;
-  const badgeText = pick(BADGE_POOL, voiceSeed);
-  const badgeW = Math.round(textWidth(badgeText, 20) + 40);
+  const metaText = unpriced ? "first in sets the line" : `${udSide} pays ${mult}\u00d7`;
+
   const inviteText = pick(INVITE_POOL, `${voiceSeed}:invite`);
-  const inviteW = Math.round(textWidth(inviteText, 23));
-  const arrowX = PAD_R - 30; // drawn arrow sits right of the invite text
+  // The pill sizes itself around the text plus the DRAWN arrow: the bundled
+  // subsets have no U+2192 and resvg renders a missing glyph as tofu.
+  const ctaW = Math.round(28 + textWidth(inviteText, 26) + 16 + 26 + 28);
+  const ctaX = 942 - 36 - ctaW;
+
+  // Under six hours the chip stops being information and becomes pressure, so
+  // it fills solid pink instead of sitting in a lime outline.
+  const closing = /\b[0-5]h\b/.test(pill.text);
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${FONT}">
-  <rect width="${W}" height="${H}" fill="${C.white}"/>
+  <!-- The lime IS the border. A near-black card with no frame floats on a dark
+       timeline and a white one melts into a light timeline; this reads on both. -->
+  <rect width="${W}" height="${H}" fill="${C.accent}"/>
+  <rect x="18" y="18" width="964" height="488" rx="44" fill="${C.ground}"/>
 
-  <!-- the speech-bubble card: chunky rounded black outline, like the logo -->
-  <rect x="26" y="26" width="948" height="472" rx="46" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
+  ${brandLockup(true)}
 
-  <!-- oddie mark + wordmark + handle, as a lockup -->
-  ${brandLockup()}
+  <!-- state chip -->
+  ${closing
+    ? `<rect x="${pill.x}" y="68" width="${pill.w}" height="44" rx="22" fill="${C.echo}"/>
+  <text x="${pill.x + pill.w / 2}" y="97" font-family="${META}" font-size="20" font-weight="700"
+        fill="${C.ground}" text-anchor="middle">${esc(pill.text)}</text>`
+    : `<rect x="${pill.x}" y="68" width="${pill.w}" height="44" rx="22" fill="none" stroke="${C.accent}" stroke-width="2"/>
+  <text x="${pill.x + pill.w / 2}" y="97" font-family="${META}" font-size="20" font-weight="700"
+        fill="${C.accent}" text-anchor="middle">${esc(pill.text)}</text>`}
 
-  <!-- volume pill (no venue named) -->
-  <rect x="${pill.x}" y="72" width="${pill.w}" height="48" rx="24" fill="${C.pill}"/>
-  <text x="${pill.x + pill.w / 2}" y="103" font-family="${META}" font-size="21" font-weight="700"
-        fill="${C.muted}" text-anchor="middle">${esc(pill.text)}</text>
+  <!-- oddie's line, in his colour, wearing the same pink offset as the headline -->
+  <text x="71" y="179" font-size="${voiceFS}" font-weight="700" fill="${C.echo}">${esc(voiceText)}</text>
+  <text x="68" y="176" font-size="${voiceFS}" font-weight="700" fill="${C.accent}">${esc(voiceText)}</text>
 
-  <!-- the take -->
-  <text font-size="${q.fs}" font-weight="600" fill="${C.ink}">${questionTspans}</text>
+  <!-- the human's claim, quoted: white behind a lime rule -->
+  <rect x="68" y="${Math.round(Q_TOP - 8)}" width="6" height="${Math.round(qHeight + 16)}" rx="3" fill="${C.accent}"/>
+  <text font-size="${q.fs}" font-weight="600" fill="${C.white}">${q.lines
+    .map((l, k) => `<tspan x="${QUOTE_X}" y="${Math.round(firstBaseline + k * q.lineH)}">${esc(l)}</tspan>`)
+    .join("")}</text>
 
-  <!-- hero number: near-black with a thin white outline, matching the feed. On the
-       card's white ground the outline is invisible, so it reads as a solid black
-       number; the same treatment over the feed's blue fill shows the white halo. -->
-  <text x="${PAD_L}" y="${kickerBaseline}" font-size="${KICKER_FS}" font-weight="600" fill="${C.accent}">${unpriced ? "no price yet" : "yes"}</text>
-  <text x="${PAD_L}" y="${HERO_BASE}" font-size="${heroFS}" font-weight="700" fill="${C.number}"
-        stroke="${C.white}" stroke-width="9" paint-order="stroke" stroke-linejoin="round">${heroText}</text>
+  <!-- the money. The biggest colour area on the card is the button, which is
+       the punchline: there is now real SOL on what you just said. -->
+  <rect x="58" y="380" width="884" height="104" rx="32" fill="${C.accent}"/>
+  <text x="94" y="456" font-size="66" font-weight="700" fill="${C.ground}">${esc(heroText)}</text>
+  <text x="${ctaX - 32}" y="441" font-size="26" font-weight="600" fill="${C.ground}"
+        fill-opacity="0.68" text-anchor="end">${esc(metaText)}</text>
 
-  <!-- the dare: badge (when split), the offer, and the invitation -->
-  ${balanced ? `<rect x="${PAD_R - badgeW}" y="346" width="${badgeW}" height="40" rx="20" fill="${C.white}" stroke="${C.ink}" stroke-width="3"/>
-  <text x="${PAD_R - badgeW / 2}" y="372" font-family="${META}" font-size="20" font-weight="800"
-        fill="${C.ink}" text-anchor="middle">${esc(badgeText)}</text>` : ""}
-  <text x="${PAD_R}" y="${OFFER_BASE}" font-size="${OFFER_FS}" font-weight="600" fill="${C.accent}"
-        stroke="${C.ink}" stroke-width="2.5" paint-order="stroke" stroke-linejoin="round"
-        text-anchor="end">${esc(offerText)}</text>
-  <text x="${arrowX - 12}" y="${HERO_BASE}" font-family="${META}" font-size="23" font-weight="800"
-        fill="${C.ink}" text-anchor="end">${esc(inviteText)}</text>
-  <path d="M ${arrowX - 2} ${HERO_BASE - 8} h 24 m -9 -9 l 9 9 l -9 9" stroke="${C.ink}" stroke-width="4"
+  <rect x="${ctaX}" y="402" width="${ctaW}" height="60" rx="30" fill="${C.ground}"/>
+  <text x="${ctaX + 28}" y="441" font-size="26" font-weight="600" fill="${C.accent}">${esc(inviteText)}</text>
+  <path d="M ${ctaX + ctaW - 28 - 26} 432 h 22 m -8 -8 l 8 8 l -8 8" stroke="${C.accent}" stroke-width="4"
         fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 }
