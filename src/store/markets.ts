@@ -531,9 +531,32 @@ function db(): pg.Pool {
 }
 
 /** Idempotent, runs once per process. Three queries do not need a migration tool. */
+/**
+ * Changes to a table that ALREADY EXISTS.
+ *
+ * The DDL above is all `CREATE TABLE IF NOT EXISTS`, which is exactly right for
+ * adding a table and does NOTHING for changing one: a database that already has
+ * the old shape keeps it, silently, and the first insert against the new
+ * columns fails in production while every local test passes against a fresh
+ * schema. That happened here, one deploy apart, and took the route down with it.
+ *
+ * So anything that alters an existing table goes here, written to be safe to run
+ * on every boot and on a database that has never seen the old shape either.
+ */
+const MIGRATIONS = `
+-- device_avatar changed from a chosen emoji + hue to real uploaded bytes.
+ALTER TABLE device_avatar DROP COLUMN IF EXISTS emoji;
+ALTER TABLE device_avatar DROP COLUMN IF EXISTS hue;
+ALTER TABLE device_avatar ADD COLUMN IF NOT EXISTS image bytea;
+ALTER TABLE device_avatar ADD COLUMN IF NOT EXISTS mime text;
+-- Rows from the emoji era carry no picture and cannot be converted into one.
+DELETE FROM device_avatar WHERE image IS NULL;
+`;
+
 function ensureSchema(): Promise<void> {
   schemaReady ??= db()
     .query(DDL)
+    .then(() => db().query(MIGRATIONS))
     .then(() => console.log("[store] postgres ready — slugs persist across restarts"));
   return schemaReady;
 }

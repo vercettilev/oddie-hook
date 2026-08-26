@@ -1352,8 +1352,16 @@ app.post("/api/profile/avatar", async (req, res) => {
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   const a = parseAvatarDataUrl(req.body?.image);
   if (!a) return res.status(400).json({ error: "a jpeg or png data URL under 250KB is required" });
-  await setDeviceAvatar(deviceId, a);
-  res.json({ ok: true, stamp: (await deviceAvatarStamp(deviceId)) ?? Date.now() });
+  // Caught rather than thrown: an unhandled rejection in an async handler takes
+  // the whole process with it, which is how a single bad column turned one
+  // broken route into a 502 for everybody.
+  try {
+    await setDeviceAvatar(deviceId, a);
+    res.json({ ok: true, stamp: (await deviceAvatarStamp(deviceId)) ?? Date.now() });
+  } catch (e) {
+    console.error("[avatar] save failed:", (e as Error).message);
+    res.status(502).json({ error: "couldn't save that picture" });
+  }
 });
 
 app.post("/api/profile/avatar/clear", async (req, res) => {
