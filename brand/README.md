@@ -3,9 +3,14 @@
 Originals as delivered. Everything in public/ is generated FROM these, so
 regenerate rather than editing an icon by hand.
 
-- `oddiepink.png`   1254x1254. THE LOGO IN USE. Ghost with the pink offset
-                    shadow on #FDF604. The pink matches the landing headline's
-                    echo, which is where it came from.
+- `oddiepink-lime.png` 1254x1254. **THE LOGO IN USE.** oddiepink with its
+                    background remapped from #FDF604 to #D7DC1F, the brand lime.
+                    Generated, not hand-drawn: see the recolour note below.
+- `oddiepink.png`   1254x1254. As delivered, on #FDF604. Kept as the original.
+                    Its yellow is NOT the brand lime, and in the nav it sat
+                    inches from a CTA painted var(--lime), so two almost-matching
+                    yellows disagreed with each other. That is why the version
+                    in use is recoloured.
 - `oddielogo.png`   1254x1254. Same ghost, no pink shadow, on the older lime.
                     Kept as the flat alternative.
 - `oddiebanner.png` 2196x716. Cinematic banner, "Turn arguments into markets."
@@ -27,3 +32,15 @@ favicon.ico is PNG-in-ICO built from the 16/32/48 PNGs; sips cannot write .ico.
 feed.html's `--mark` is the only HAND-EMBEDDED copy: base64 of logo-mark-128.png,
 inlined so the app header never depends on a path resolving. logoMark.ts reads
 public/logo-mark-256.png at runtime, so the share card follows automatically.
+
+## Recolouring the tile
+
+The background is a flat cluster around #FCF604, so it is remapped by distance
+rather than by hue, which leaves the pink shadow, the white body and the black
+outline untouched:
+
+    for every pixel: if |rgb - (252,246,4)| <= 60 then rgb = (0xD7,0xDC,0x1F)
+
+That moved 62% of the image and produced no halo, because the tile is a full
+bleed square (the rounded corner is CSS, not pixels) so there is no edge to
+feather.
