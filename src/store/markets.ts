@@ -2586,7 +2586,7 @@ export async function settleMarket(slug: string, outcome: "yes" | "no"): Promise
       // entire funnel — so recordSurfacer writes the handle and a null device,
       // and the device only comes into being when they sign in later.
       // awardSeasonPoints has always re-resolved here; the fee did not, so the
-      // 3% went silently unpaid for precisely the people it exists to recruit,
+      // the creator fee went silently unpaid for precisely the people it exists to recruit,
       // on the markets they brought in themselves.
       const payee = surfacer?.deviceId
         ?? (surfacer?.handle ? await deviceForTwitterHandle(surfacer.handle).catch(() => null) : null);
@@ -2717,9 +2717,10 @@ async function logFee(input: FeeLogInput): Promise<void> {
  * who never connects a wallet never claims. Anything rendering these rows has
  * to say "yours to claim" rather than "paid to you" until the claim lands.
  *
- * The protocol branch is dead at PROTOCOL_FEE_BPS_REAL = 0 and kept for the
- * day a house fee exists in the program. Best-effort and non-blocking: a
- * logging failure must never affect a real-money market's resolution.
+ * The protocol branch is live too now, on the same terms: deducted by
+ * resolve_market, held in the vault, and pulled by claim_protocol_fee. Both
+ * halves of the 4% are real, and both are recorded here as deducted rather
+ * than as collected.
  */
 export async function logRealFee(slug: string, totalVaultLamports: number): Promise<void> {
   try {
@@ -2738,7 +2739,7 @@ export async function logRealFee(slug: string, totalVaultLamports: number): Prom
       await logFee({
         slug, marketKind: "real", feeKind: "protocol",
         recipientDeviceId: null, recipientHandle: null,
-        rateBps: PROTOCOL_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: protocolFeeAmount, enforced: false,
+        rateBps: PROTOCOL_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: protocolFeeAmount, enforced: true,
       });
     }
   } catch (e) { console.error("[fees] real-money fee logging failed:", (e as Error).message); }
@@ -2746,7 +2747,7 @@ export async function logRealFee(slug: string, totalVaultLamports: number): Prom
 
 /**
  * What the TAGGER actually earned on each of these markets — the receipt
- * behind the "+3% goes to whoever tagged this" promise on a market card.
+ * behind the "a cut goes to whoever tagged this" promise on a market card.
  *
  * Play rows only, and the reason changed. It used to be that a `real` row was
  * an unenforced hypothetical. Now a real row IS deducted on-chain, but the

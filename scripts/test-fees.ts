@@ -163,26 +163,38 @@ console.log("\nreal-money fee: the creator fee, deducted on-chain at resolve");
   await logRealFee(realSlug, TOTAL_LAMPORTS);
   const log = (await feeLog(200)).filter((r) => r.slug === realSlug);
 
-  // ONE row, not two. There is no house fee any more: oddie_chain takes a
-  // creator fee and nothing else, PROTOCOL_FEE_BPS_REAL is 0, and logRealFee
-  // skips a zero amount rather than writing a row claiming nobody was charged
-  // nothing. A second row appearing here means a protocol fee came back
-  // without the program instruction that would let anyone actually collect it.
-  check("one row: the creator fee, and no house fee beside it", log.length === 1, JSON.stringify(log));
+  // TWO rows now, and that is the change. The house fee stopped being zero
+  // when the program grew claim_protocol_fee, so a settled market records both
+  // halves of the 4%. One row appearing here would mean a half went missing.
+  check("two rows: both halves of the takeout", log.length === 2, JSON.stringify(log));
 
   const creatorRow = log.find((r) => r.feeKind === "creator");
   // enforced: true, because resolve_market really does take this out of the
   // pool before winners are paid. It is not yet COLLECTED (that needs the
   // creator's own claim_creator_fee signature), which is a different fact and
   // is why creatorFeesPaidFor still refuses to count real rows as earnings.
-  check("creator row: 3% of the vault, attributed, and genuinely enforced", !!creatorRow &&
+  check("creator row: 2% of the vault, attributed, and genuinely enforced", !!creatorRow &&
     creatorRow.marketKind === "real" && creatorRow.rateBps === CREATOR_FEE_BPS_REAL &&
-    creatorRow.feeAmount === 300_000_000 && creatorRow.recipientDeviceId === CREATOR && creatorRow.enforced === true,
+    creatorRow.feeAmount === 200_000_000 && creatorRow.recipientDeviceId === CREATOR && creatorRow.enforced === true,
     JSON.stringify(creatorRow));
 
-  check("the rate matches what the program is told to charge", CREATOR_FEE_BPS_REAL === 300);
-  check("no house fee is charged, and the constant says so", PROTOCOL_FEE_BPS_REAL === 0);
-  check("no protocol row was written", !log.some((r) => r.feeKind === "protocol"), JSON.stringify(log));
+  // The house fee stopped being zero. Both halves are now real, both are
+  // deducted by resolve_market, and both are pulled by their own signature.
+  const protoRow = log.find((r) => r.feeKind === "protocol");
+  check("protocol row: 2% of the vault, and enforced like the creator's", !!protoRow &&
+    protoRow.marketKind === "real" && protoRow.rateBps === PROTOCOL_FEE_BPS_REAL &&
+    protoRow.feeAmount === 200_000_000 && protoRow.enforced === true,
+    JSON.stringify(protoRow));
+
+  check("the creator's rate matches what the program is told to charge", CREATOR_FEE_BPS_REAL === 200);
+  check("oddie's rate matches too", PROTOCOL_FEE_BPS_REAL === 200);
+  // The number a staker actually loses is the sum, so that is the one with a
+  // ceiling on it. The program refuses anything over 1000 bps.
+  check("the total takeout is 4% and stays under the program's cap",
+    CREATOR_FEE_BPS_REAL + PROTOCOL_FEE_BPS_REAL === 400 &&
+    CREATOR_FEE_BPS_REAL + PROTOCOL_FEE_BPS_REAL <= 1000);
+  check("the two halves are equal, which is the promise made on the card",
+    CREATOR_FEE_BPS_REAL === PROTOCOL_FEE_BPS_REAL);
 
   // An empty vault (nobody staked real money) logs nothing: there is no fee.
   const emptySlug = "fee-real-market-empty";

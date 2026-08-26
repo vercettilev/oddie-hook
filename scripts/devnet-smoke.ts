@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "../src/store/economy.js";
 
 const RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 if (!/\bdevnet\b/.test(RPC)) {
@@ -56,7 +57,8 @@ const minted = await mintMarket({
   question: "Does the rewired client reach the deployed program?",
   closeTime: Math.floor(Date.now() / 1000) + 3600,
   creator: null,          // the normal case: tagger has no wallet yet
-  creatorFeeBps: 300,
+  creatorFeeBps: CREATOR_FEE_BPS_REAL,
+  protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
 });
 ok("mintMarket lands a market on devnet", !!minted, "returned null; see the [chain] log line above");
 if (!minted) process.exit(1);

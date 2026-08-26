@@ -3685,7 +3685,7 @@ function statsRowHtml(m){
   // one thing a first-timer could not learn from its main screen.
   //
   // It is deliberately the SAME sentence as the demo card on the landing page
-  // ("1.4 SOL in the pool · 3% to CryptoNate"). Someone who arrives from the
+  // ("1.4 SOL in the pool · 2% to CryptoNate"). Someone who arrives from the
   // landing should recognise the thing they were shown, word for word.
   //
   // The pool half is a slot, not a number: only Solana knows the vault total,
@@ -3764,8 +3764,8 @@ function buildRail(me,creator,claimFrag,openCalls,topCreators){
         <div><b>${creator.tradersReached}</b><span>traders</span></div>
       </div>
       ${creator.marketsCreated===0
-        ? `<div class="rp-sub">Tag a post on X and you'll earn 3% every time someone trades your market.</div>`
-        : `<div class="rp-sub">You earn 3% of every market you create, paid when it resolves.</div>`}
+        ? `<div class="rp-sub">Tag a post on X and you'll earn 2% every time someone trades your market.</div>`
+        : `<div class="rp-sub">You earn 2% of every market you create, paid when it resolves.</div>`}
       <button class="rp-create" type="button">+ Create a market</button>
       ${creator.marketsCreated>0?`<a class="rp-link" href="#/mymarkets">My markets →</a>`:""}`;
     p.querySelector(".rp-create").onclick=()=>openPasteSheet();
@@ -4444,7 +4444,7 @@ async function renderHome(){
     hero.innerHTML=`
       <div class="cb-copy">
         <h1 class="cb-title">Turn any post on X into a market.</h1>
-        <p class="cb-sub">Tag <b>@oddiefun</b> under any post and we'll create the market for you, and you earn <b>3%</b> when it resolves with people on it.</p>
+        <p class="cb-sub">Tag <b>@oddiefun</b> under any post and we'll create the market for you, and you earn <b>2%</b> when it resolves with people on it.</p>
       </div>
       <div class="cb-actions">
         <a class="cb-tag" href="https://x.com/intent/tweet?text=${encodeURIComponent("@oddiefun ")}" target="_blank" rel="noopener"><span class="glyphx">𝕏</span> Tag @oddiefun on X</a>
@@ -4974,7 +4974,7 @@ async function loadMyMarkets(scroller){
     if(!markets.length){
       scroller.innerHTML=`<div class="sheet"><div class="mm-empty">
         <p class="mm-empty-big">You haven't tagged a market yet.</p>
-        <p class="mm-empty-sub">Reply <b>@oddiefun</b> under any post on X. The market it becomes is yours, and you earn <b>3%</b> when it resolves with people on it.</p>
+        <p class="mm-empty-sub">Reply <b>@oddiefun</b> under any post on X. The market it becomes is yours, and you earn <b>2%</b> when it resolves with people on it.</p>
         <button class="rp-create" type="button">+ Create a market</button>
       </div></div>`;
       scroller.querySelector(".rp-create").onclick=()=>openPasteSheet();
@@ -5164,7 +5164,7 @@ function bestCallHtml(calls, handle){
  * "People reached" is the number worth returning for, and it is the only one on
  * the profile that moves while you are away: your accuracy changes when YOU
  * call, your reach changes when OTHER people do. That is the honest version of
- * a reason to come back, and it is the same number the 3% is paid on, so the
+ * a reason to come back, and it is the same number the 2% is paid on, so the
  * incentive and the metric are the same object rather than two claims that have
  * to agree.
  *
@@ -5177,7 +5177,7 @@ function reachHtml(creator){
   const reached=Number(creator?.tradersReached)||0;
   const earned=Number(creator?.earnings)||0;
   if(!made)return `<p class="psec">What you've brought in</p>
-    <p class="cnote">🏷️ Tag <b>@oddiefun</b> under an argument on X. The market lands in the feed with your name on it, and you earn <b>3%</b> of everything played on it.</p>`;
+    <p class="cnote">🏷️ Tag <b>@oddiefun</b> under an argument on X. The market lands in the feed with your name on it, and you earn <b>2%</b> of everything played on it.</p>`;
   return `<p class="psec">What you've brought in</p>
     <div class="trstats">
       <div class="tile"><div class="v">${made}</div><div class="k">MARKETS TAGGED</div></div>
@@ -5185,7 +5185,7 @@ function reachHtml(creator){
     </div>
     <p class="cnote">${earned>0
       ? `🔥 Your markets have paid you <b>+${earned}</b> in creator fees so far.`
-      : `🔥 You earn <b>3%</b> of every market you tagged, paid when it resolves.`}</p>`;
+      : `🔥 You earn <b>2%</b> of every market you tagged, paid when it resolves.`}</p>`;
 }
 
 function loudNextHtml(mult){
@@ -5585,7 +5585,7 @@ function renderLb(scroller,data){
     accurate:{sub:"Who is actually right. Hit rate across resolved calls, once there are enough of them to mean anything.",
       empty:"No settled records yet. Make a call and let a market resolve.",
       rows:data.accurate,html:(r)=>row(r,`<div class="acc ${r.accuracyPct>=50?"up":"flat"}">${r.accuracyPct}%<small>${r.closed} resolved</small></div>`)},
-    creators:{sub:"Ranked by creator fees earned — 3% of every market you tag, paid when it resolves. Markets created breaks ties.",
+    creators:{sub:"Ranked by creator fees earned — 2% of every market you tag, paid when it resolves. Markets created breaks ties.",
       empty:"Nobody has created a market yet. Tag a post on X and this board is yours.",
       rows:data.creators,html:(r)=>row(r,`<div class="acc ${r.earnings>0?"up":"flat"}">+${r.earnings}<small>${r.marketsCreated} market${r.marketsCreated===1?"":"s"}</small></div>`)},
   };
@@ -5793,7 +5793,7 @@ async function loadProfile(scroller){
       : "You are browsing anonymously. Nothing follows you to another browser yet."}</p>
     ${linked||`${provButtons()}
        <p class="cnote">X connects your identity. Google keeps your record across devices. A wallet signs a
-         message to prove it is yours, and is where your winnings and your 3% arrive.</p>`}
+         message to prove it is yours, and is where your winnings and your 2% arrive.</p>`}
     <p class="psec" style="margin-top:24px">Appearance</p>
     <div class="seg" role="group" aria-label="Theme">
       ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>

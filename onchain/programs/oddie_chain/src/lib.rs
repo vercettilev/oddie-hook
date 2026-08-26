@@ -58,6 +58,14 @@ pub const MAX_QUESTION_LEN: usize = 180;
 /// steps, and "the admin would never" is not a property. 10% is well above the
 /// 2% economy.ts proposes and well below anything predatory.
 pub const MAX_CREATOR_FEE_BPS: u16 = 1_000;
+/// Oddie's own cut has the same 10% ceiling as the creator's, and for the same
+/// reason: a rate is a promise to people whose money is already in the vault,
+/// so the program should refuse to encode one nobody would have staked into.
+pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000;
+/// The ceiling that actually protects a staker. Two 10% fees are a 20% takeout,
+/// which is horse-racing territory and not what anyone thinks they are agreeing
+/// to. 10% total, whatever the split.
+pub const MAX_TOTAL_FEE_BPS: u16 = 1_000;
 
 #[program]
 pub mod oddie_chain {
@@ -85,9 +93,18 @@ pub mod oddie_chain {
         close_time: i64,
         creator: Pubkey,
         creator_fee_bps: u16,
+        protocol_fee_bps: u16,
     ) -> Result<()> {
         require!(question.len() <= MAX_QUESTION_LEN, OddieError::QuestionTooLong);
         require!(creator_fee_bps <= MAX_CREATOR_FEE_BPS, OddieError::FeeTooHigh);
+        require!(protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS, OddieError::FeeTooHigh);
+        // The cap that matters is the TOTAL. Two individually reasonable rates
+        // still add up to a takeout, and the number a staker actually loses is
+        // the sum, so that is the number with a ceiling on it.
+        require!(
+            (creator_fee_bps as u32) + (protocol_fee_bps as u32) <= MAX_TOTAL_FEE_BPS as u32,
+            OddieError::FeeTooHigh
+        );
         let clock = Clock::get()?;
         require!(close_time > clock.unix_timestamp, OddieError::CloseTimeInPast);
 
@@ -104,6 +121,9 @@ pub mod oddie_chain {
         m.creator_fee_bps = creator_fee_bps;
         m.creator_fee_lamports = 0;
         m.creator_fee_claimed = false;
+        m.protocol_fee_bps = protocol_fee_bps;
+        m.protocol_fee_lamports = 0;
+        m.protocol_fee_claimed = false;
         m.bump = ctx.bumps.market;
         m.vault_bump = ctx.bumps.vault;
 
@@ -217,18 +237,24 @@ pub mod oddie_chain {
         let winning_total = if outcome == SIDE_YES { m.total_yes } else { m.total_no };
         let pool = m.total_yes.checked_add(m.total_no).ok_or(OddieError::MathOverflow)?;
 
-        m.creator_fee_lamports = if winning_total == 0 {
-            0
-        } else {
+        // Both fees are fixed here and both are zero when nobody won, because a
+        // pool with no winners is refunded in full and taking a cut of a refund
+        // would be charging people for our own inability to price the question.
+        let bps_to_lamports = |bps: u16| -> Result<u64> {
+            if winning_total == 0 {
+                return Ok(0);
+            }
             // u128 for the intermediate: pool * 1000 overflows u64 at ~1.8e16
             // lamports, which is only ~18M SOL, and a program that is correct
             // only below a certain pool size is not correct.
             let fee = (pool as u128)
-                .checked_mul(m.creator_fee_bps as u128)
+                .checked_mul(bps as u128)
                 .ok_or(OddieError::MathOverflow)?
                 / 10_000u128;
-            u64::try_from(fee).map_err(|_| OddieError::MathOverflow)?
+            u64::try_from(fee).map_err(|_| OddieError::MathOverflow.into())
         };
+        m.creator_fee_lamports = bps_to_lamports(m.creator_fee_bps)?;
+        m.protocol_fee_lamports = bps_to_lamports(m.protocol_fee_bps)?;
         Ok(())
     }
 
@@ -257,6 +283,8 @@ pub mod oddie_chain {
         } else {
             let distributable = pool
                 .checked_sub(m.creator_fee_lamports)
+                .ok_or(OddieError::MathOverflow)?
+                .checked_sub(m.protocol_fee_lamports)
                 .ok_or(OddieError::MathOverflow)?;
             // Truncating division, deliberately: see the header. The dust this
             // leaves is what guarantees the last claimant is payable.
@@ -305,6 +333,33 @@ pub mod oddie_chain {
         pay_from_vault(
             &ctx.accounts.vault.to_account_info(),
             &ctx.accounts.creator.to_account_info(),
+            amount,
+        )?;
+        Ok(())
+    }
+
+    /// Oddie's cut, pulled by the authority that opened the market.
+    ///
+    /// Pull rather than push, mirroring claim_creator_fee, and the reason is
+    /// the same one: resolve should move no money at all. A settlement that
+    /// carries a transfer is a settlement that can fail for a reason unrelated
+    /// to the outcome, and everyone waiting on that market pays for it.
+    ///
+    /// `has_one = authority` over a Signer is what makes this ours and only
+    /// ours. It is the same key that created and resolved the market, so this
+    /// grants no power that did not already exist.
+    pub fn claim_protocol_fee(ctx: Context<ClaimProtocolFee>) -> Result<()> {
+        let m = &mut ctx.accounts.market;
+        require!(m.resolved, OddieError::NotResolved);
+        require!(!m.protocol_fee_claimed, OddieError::AlreadyClaimed);
+        require!(m.protocol_fee_lamports > 0, OddieError::NoFeeOwed);
+
+        let amount = m.protocol_fee_lamports;
+        m.protocol_fee_claimed = true;
+
+        pay_from_vault(
+            &ctx.accounts.vault.to_account_info(),
+            &ctx.accounts.authority.to_account_info(),
             amount,
         )?;
         Ok(())
@@ -423,6 +478,21 @@ pub struct ClaimWinnings<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ClaimProtocolFee<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"market", market.market_id.to_le_bytes().as_ref()],
+        bump = market.bump,
+        has_one = authority @ OddieError::WrongAuthority
+    )]
+    pub market: Account<'info, Market>,
+    #[account(mut, seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
+    pub vault: Account<'info, Vault>,
+}
+
+#[derive(Accounts)]
 pub struct ClaimCreatorFee<'info> {
     /// The creator recorded at create time, signing for themselves. `has_one`
     /// is what makes the fee unstealable: no other key can satisfy it.
@@ -462,6 +532,12 @@ pub struct Market {
     /// Fixed at resolve. Zero until then, and zero forever if nobody won.
     pub creator_fee_lamports: u64,
     pub creator_fee_claimed: bool,
+    /// Oddie's own cut, and stored per market for exactly the same reason the
+    /// creator's is: a rate change must never reprice a pool people already
+    /// staked into. Markets opened while this was zero settle at zero forever.
+    pub protocol_fee_bps: u16,
+    pub protocol_fee_lamports: u64,
+    pub protocol_fee_claimed: bool,
     pub bump: u8,
     pub vault_bump: u8,
 }

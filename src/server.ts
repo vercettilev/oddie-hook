@@ -951,7 +951,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       // See the same fields in /api/feed: every community card carries who
       // tagged it. These are all OPEN markets (openCommunityMarkets), and the
       // creator fee only pays at settlement, so creatorFeePaid is 0 here by
-      // construction — the card shows the forward-looking "+3%" framing.
+      // construction — the card shows the forward-looking creator-fee framing.
       taggedBy: surfacer?.handle ?? null,
       creatorFeePaid: 0,
       sourcePost: surfacer?.sourceText
@@ -2222,7 +2222,8 @@ async function openMarketFromClaim(input: {
   // side in, because the account the bet needs does not exist. Minting first
   // means the failure path writes nothing, so there is no orphan to clean up.
   const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
-  const minted = await mintMarket({ marketId, question, closeTime, creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL });
+  const minted = await mintMarket({ marketId, question, closeTime, creator: null,
+    creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
   if (!minted) {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
@@ -2312,7 +2313,7 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
  * global caps, both deliberately low while this is new.
  *
  * source_url stays required for agents exactly as it is for the operator
- * console. It is what puts a name on the card and what makes the 3% payable to
+ * console. It is what puts a name on the card and what makes the fee payable to
  * a person rather than to nobody, and an agent-opened market with no source
  * would be the "tagged by anonymous" problem returning through a new door.
  */
@@ -2543,13 +2544,16 @@ if (realStakesReady) {
       ok: true, pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey),
       resolved: state.resolved, winningSide: state.winningSide,
       totalYesLamports: state.totalYesLamports, totalNoLamports: state.totalNoLamports,
-      // Real and charged, where these used to be proposals the client had to
-      // caption "not yet enforced". oddie_chain deducts the creator fee from
-      // the pool at resolve and pays it on the creator's own signature, so
-      // realFeesEnforced is true and the copy keyed off it should now state
-      // the fee plainly instead of hedging. The house fee is 0 because the
-      // program has no instruction that could take one.
-      realCreatorFeeBps: CREATOR_FEE_BPS_REAL, realProtocolFeeBps: PROTOCOL_FEE_BPS_REAL, realFeesEnforced: true,
+      // READ FROM THE MARKET, not from our constants, and that distinction is
+      // the whole reason the program stores both rates per market. This used
+      // to report the constants, which meant the sheet quoted today's rate for
+      // a pool that had been minted under a different one: the exact repricing
+      // the on-chain design exists to make impossible, reintroduced one layer
+      // up where nobody would see it. The constants survive only as the answer
+      // for a market minted before the field existed and therefore reading 0.
+      realCreatorFeeBps: state.creatorFeeBps || CREATOR_FEE_BPS_REAL,
+      realProtocolFeeBps: state.protocolFeeBps,
+      realFeesEnforced: true,
       // Who the fee is owed to, and whether it is still waiting. Null creator
       // means the tagger has not connected a wallet yet, which the UI should
       // read as "unclaimed and claimable by the right person", not as "nobody

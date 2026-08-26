@@ -114,12 +114,15 @@
    * as a fixed payout would be the one number in this sheet that is reliably
    * wrong by the time the market resolves.
    */
-  function payoutHint(side, sol, yesLamports, noLamports, feeBps) {
+  function payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps) {
     const mine = sol * 1e9;
     const same = (side === "yes" ? yesLamports : noLamports) + mine;
     const other = side === "yes" ? noLamports : yesLamports;
     const pool = same + other;
-    const distributable = pool - Math.floor((pool * (feeBps || 0)) / 10000);
+    // BOTH fees, because both are deducted before winners are paid. Quoting a
+    // return against only one of them advertises money the vault will not have.
+    const totalBps = (feeBps || 0) + (protoBps || 0);
+    const distributable = pool - Math.floor((pool * totalBps) / 10000);
     const take = (mine / same) * distributable / 1e9;
     // A market with nothing on the other side pays you back your own stake
     // minus the fee, which is not a win and should not be dressed as one.
@@ -295,11 +298,12 @@
     // rate is gone rather than printed as 0%: a line saying we charge nothing
     // invites the question of when we will start.
     const feeBps = marketState.realCreatorFeeBps || 0;
+    const protoBps = marketState.realProtocolFeeBps || 0;
     // Demoted to a footnote under the button. It is true and worth saying, but
     // it is a fact about somebody else's earnings, and it was sitting in the
     // third of three paragraphs a person had to read before reaching YES.
     const feeNoteHTML = feeBps
-      ? `<p class="chain-fee-note">${(feeBps / 100).toFixed(0)}% of the pool goes to whoever started this market. Nothing goes to oddie.</p>`
+      ? `<p class="chain-fee-note">${(feeBps / 100).toFixed(0)}% of the pool goes to whoever started this market${protoBps ? `, ${(protoBps / 100).toFixed(0)}% to oddie` : ""}. Winners split the rest.</p>`
       : "";
 
     const label = clusterLabel(CLUSTER);
@@ -356,7 +360,7 @@
         // invisible to every check that does not actually look at the sheet.
         if (line) {
           line.textContent = (side && sol > 0)
-            ? payoutHint(side, sol, yesLamports, noLamports, feeBps)
+            ? payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps)
             : "";
         }
       };
@@ -617,7 +621,7 @@
     host.prepend(box);
 
     if (!wallet) {
-      box.innerHTML = `<div class="cc-row"><span class="cc-text">Markets you started pay you 3% when they resolve. Connect the wallet you want paid to.</span>
+      box.innerHTML = `<div class="cc-row"><span class="cc-text">Markets you started pay you 2% when they resolve. Connect the wallet you want paid to.</span>
         <button class="cc-go" type="button">Connect</button></div>`;
       box.querySelector(".cc-go").onclick = async () => {
         const b = box.querySelector(".cc-go");

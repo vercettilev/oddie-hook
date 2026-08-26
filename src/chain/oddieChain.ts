@@ -201,6 +201,7 @@ export async function mintMarket(args: {
    */
   creator: string | null;
   creatorFeeBps: number;
+  protocolFeeBps: number;
 }): Promise<MintResult | null> {
   const c = await load();
   if (!c) return null;
@@ -217,6 +218,16 @@ export async function mintMarket(args: {
     // an opaque FeeTooHigh into a log line that names the actual number.
     if (!Number.isInteger(args.creatorFeeBps) || args.creatorFeeBps < 0 || args.creatorFeeBps > 1000) {
       console.error(`[chain] creatorFeeBps ${args.creatorFeeBps} outside 0..1000; refusing to mint`);
+      return null;
+    }
+    if (!Number.isInteger(args.protocolFeeBps) || args.protocolFeeBps < 0 || args.protocolFeeBps > 1000) {
+      console.error(`[chain] protocolFeeBps ${args.protocolFeeBps} outside 0..1000; refusing to mint`);
+      return null;
+    }
+    // The program caps the SUM, because the sum is what a staker actually
+    // loses. Two individually legal rates can still be a takeout.
+    if (args.creatorFeeBps + args.protocolFeeBps > 1000) {
+      console.error(`[chain] total fee ${args.creatorFeeBps + args.protocolFeeBps} bps exceeds the program's 1000; refusing to mint`);
       return null;
     }
     const bal = await c.connection.getBalance(c.admin.publicKey);
@@ -236,7 +247,7 @@ export async function mintMarket(args: {
       : c.web3.PublicKey.default; // the program's "not named yet" sentinel
 
     const signature = await c.program.methods
-      .createMarket(marketIdBn, args.question, new c.BN(args.closeTime), creatorPk, args.creatorFeeBps)
+      .createMarket(marketIdBn, args.question, new c.BN(args.closeTime), creatorPk, args.creatorFeeBps, args.protocolFeeBps)
       .accountsStrict({
         authority: c.admin.publicKey,
         market,
@@ -343,17 +354,38 @@ export interface OnChainMarketState {
   totalYesLamports: number;
   totalNoLamports: number;
   /** Null while the tagger has no wallet yet. The UI reads this to decide
-   *  between "claim your 3%" and "connect a wallet to claim your 3%". */
+   *  between "claim your cut" and "connect a wallet to claim it". */
   creator: string | null;
   creatorFeeBps: number;
   /** Zero until resolve, and zero forever if nobody backed the winning side. */
   creatorFeeLamports: number;
   creatorFeeClaimed: boolean;
+  /** Oddie's own half, read from the market rather than from a constant: a
+   *  market opened before this rate existed carries zero and always will. */
+  protocolFeeBps: number;
+  protocolFeeLamports: number;
+  protocolFeeClaimed: boolean;
 }
 
 /** Read a market's live on-chain state — pool sizes and (once resolved) the
  *  outcome. Anchor's account decoder returns camelCased field names from the
  *  IDL's snake_case; read both to survive either. */
+/**
+ * A fee rate the program could actually have stored, or zero.
+ *
+ * Adding fields to the Market account changed its layout, and an account
+ * written by an older build is simply too short: Anchor decodes past the end
+ * of what was serialised and returns whatever bytes follow. It does not throw.
+ * The first market read after the fee shipped reported a protocol rate of
+ * 65020 bps, which is the account's `bump` and `vault_bump` read as a u16.
+ *
+ * The program caps every rate at 1000 bps, so anything above that is not a
+ * rate this program has ever charged, whatever the decoder says. Reading it as
+ * zero is both true (an old market carries no protocol fee) and safe: it can
+ * only ever understate what comes out of a pool, never overstate it.
+ */
+const sane = (bps: number): number => (Number.isFinite(bps) && bps >= 0 && bps <= 1000 ? bps : 0);
+
 export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainMarketState | null> {
   const c = await load();
   if (!c) return null;
@@ -377,9 +409,12 @@ export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainM
       totalYesLamports: Number(a.totalYes ?? a.total_yes ?? 0),
       totalNoLamports: Number(a.totalNo ?? a.total_no ?? 0),
       creator,
-      creatorFeeBps: Number(a.creatorFeeBps ?? a.creator_fee_bps ?? 0),
+      creatorFeeBps: sane(Number(a.creatorFeeBps ?? a.creator_fee_bps ?? 0)),
       creatorFeeLamports: Number(a.creatorFeeLamports ?? a.creator_fee_lamports ?? 0),
       creatorFeeClaimed: Boolean(a.creatorFeeClaimed ?? a.creator_fee_claimed),
+      protocolFeeBps: sane(Number(a.protocolFeeBps ?? a.protocol_fee_bps ?? 0)),
+      protocolFeeLamports: Number(a.protocolFeeLamports ?? a.protocol_fee_lamports ?? 0),
+      protocolFeeClaimed: Boolean(a.protocolFeeClaimed ?? a.protocol_fee_claimed),
     };
   } catch (e) {
     console.error("[chain] fetchMarketOnChain failed:", (e as Error).message);

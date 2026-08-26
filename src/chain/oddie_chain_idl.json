@@ -94,6 +94,88 @@
       "args": []
     },
     {
+      "name": "claim_protocol_fee",
+      "docs": [
+        "Oddie's cut, pulled by the authority that opened the market.",
+        "",
+        "Pull rather than push, mirroring claim_creator_fee, and the reason is",
+        "the same one: resolve should move no money at all. A settlement that",
+        "carries a transfer is a settlement that can fail for a reason unrelated",
+        "to the outcome, and everyone waiting on that market pays for it.",
+        "",
+        "`has_one = authority` over a Signer is what makes this ours and only",
+        "ours. It is the same key that created and resolved the market, so this",
+        "grants no power that did not already exist."
+      ],
+      "discriminator": [
+        165,
+        228,
+        133,
+        48,
+        99,
+        249,
+        255,
+        33
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim_winnings",
       "docs": [
         "Take what you are owed: a share of the pool if you were right, or your",
@@ -304,6 +386,10 @@
         },
         {
           "name": "creator_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "protocol_fee_bps",
           "type": "u16"
         }
       ]
@@ -775,6 +861,23 @@
           },
           {
             "name": "creator_fee_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "docs": [
+              "Oddie's own cut, and stored per market for exactly the same reason the",
+              "creator's is: a rate change must never reprice a pool people already",
+              "staked into. Markets opened while this was zero settle at zero forever."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee_claimed",
             "type": "bool"
           },
           {

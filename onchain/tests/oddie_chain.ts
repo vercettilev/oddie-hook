@@ -21,7 +21,8 @@ import { assert } from "chai";
 
 const SIDE_YES = 0;
 const SIDE_NO = 1;
-const FEE_BPS = 300; // the 3% economy.ts proposes for play; the real rate is a policy call
+const FEE_BPS = 200;      // 2% to whoever's argument it was
+const PROTOCOL_BPS = 200; // 2% to oddie. 4% total, split down the middle
 
 describe("oddie_chain", () => {
   const provider = anchor.AnchorProvider.env();
@@ -51,11 +52,11 @@ describe("oddie_chain", () => {
     return kp;
   };
 
-  const openMarket = async (creator: PublicKey, feeBps = FEE_BPS) => {
+  const openMarket = async (creator: PublicKey, feeBps = FEE_BPS, protoBps = PROTOCOL_BPS) => {
     const id = freshId();
     const { market, vault } = pdas(id);
     await program.methods
-      .createMarket(id, "Will the test pass?", new BN(Math.floor(Date.now() / 1000) + 3600), creator, feeBps)
+      .createMarket(id, "Will the test pass?", new BN(Math.floor(Date.now() / 1000) + 3600), creator, feeBps, protoBps)
       .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
       .rpc();
     return { id, market, vault };
@@ -102,9 +103,11 @@ describe("oddie_chain", () => {
     const m = await program.account.market.fetch(market);
     const pool = 6 * LAMPORTS_PER_SOL;
     const expectedFee = Math.floor((pool * FEE_BPS) / 10000);
-    assert.equal(m.creatorFeeLamports.toNumber(), expectedFee, "fee fixed at resolve");
+    const expectedProto = Math.floor((pool * PROTOCOL_BPS) / 10000);
+    assert.equal(m.creatorFeeLamports.toNumber(), expectedFee, "creator fee fixed at resolve");
+    assert.equal(m.protocolFeeLamports.toNumber(), expectedProto, "protocol fee fixed at resolve");
 
-    const distributable = pool - expectedFee;
+    const distributable = pool - expectedFee - expectedProto;
     const before1 = await provider.connection.getBalance(win1.publicKey);
     const before2 = await provider.connection.getBalance(win2.publicKey);
     await claim(market, vault, win1);
@@ -122,7 +125,7 @@ describe("oddie_chain", () => {
 
     // THE PROPERTY THAT MATTERS: the two winners plus the fee never exceed the
     // pool. If this fails the vault is promising money it does not hold.
-    assert.isAtMost(want1 + want2 + expectedFee, pool, "payouts + fee overspend the pool");
+    assert.isAtMost(want1 + want2 + expectedFee + expectedProto, pool, "payouts + fees overspend the pool");
 
     // And the creator can actually take theirs, from what is left.
     const feeBefore = await provider.connection.getBalance(creator.publicKey);
@@ -131,6 +134,106 @@ describe("oddie_chain", () => {
       .signers([creator]).rpc();
     const feeGot = (await provider.connection.getBalance(creator.publicKey)) - feeBefore;
     assert.isAtMost(Math.abs(feeGot - expectedFee), 10000, `creator got ${feeGot}, wanted ~${expectedFee}`);
+
+    // And so can we, from what is left after both of them.
+    const protoBefore = await provider.connection.getBalance(authority.publicKey);
+    await program.methods.claimProtocolFee()
+      .accounts({ authority: authority.publicKey, market, vault }).rpc();
+    const protoGot = (await provider.connection.getBalance(authority.publicKey)) - protoBefore;
+    assert.isAtMost(Math.abs(protoGot - expectedProto), 10000, `oddie got ${protoGot}, wanted ~${expectedProto}`);
+  });
+
+  /* ------------------------------------------------------- the protocol fee --
+   * The half that pays for the product. It has to be as unstealable as the
+   * creator's and as invisible when it was never charged, or "markets opened
+   * under the old terms keep the old terms" is a sentence and not a property.
+   */
+  it("a stranger cannot take oddie's cut", async () => {
+    const creator = await funded();
+    const a = await funded();
+    const b = await funded();
+    const thief = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, a, SIDE_YES, 1);
+    await stake(market, vault, b, SIDE_NO, 1);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    await failsWith(
+      program.methods.claimProtocolFee()
+        .accounts({ authority: thief.publicKey, market, vault })
+        .signers([thief]).rpc(),
+      "WrongAuthority");
+  });
+
+  it("refuses to pay oddie twice", async () => {
+    const creator = await funded();
+    const a = await funded();
+    const b = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, a, SIDE_YES, 1);
+    await stake(market, vault, b, SIDE_NO, 1);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+    await program.methods.claimProtocolFee()
+      .accounts({ authority: authority.publicKey, market, vault }).rpc();
+    await failsWith(
+      program.methods.claimProtocolFee()
+        .accounts({ authority: authority.publicKey, market, vault }).rpc(),
+      "AlreadyClaimed");
+  });
+
+  it("charges nothing on a market opened at zero, forever", async () => {
+    // The migration property. Markets minted before this rate existed carry
+    // protocol_fee_bps = 0, and no later rate change can reach back into them.
+    const creator = await funded();
+    const a = await funded();
+    const b = await funded();
+    const { market, vault } = await openMarket(creator.publicKey, FEE_BPS, 0);
+    await stake(market, vault, a, SIDE_YES, 1);
+    await stake(market, vault, b, SIDE_NO, 1);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    const m = await program.account.market.fetch(market);
+    assert.equal(m.protocolFeeLamports.toNumber(), 0, "a zero-rate market owes nothing");
+    await failsWith(
+      program.methods.claimProtocolFee()
+        .accounts({ authority: authority.publicKey, market, vault }).rpc(),
+      "NoFeeOwed");
+  });
+
+  it("takes no cut of a refund", async () => {
+    // Nobody won, so everyone is refunded in full. Charging a fee on a refund
+    // would be billing people for our own inability to price the question.
+    const creator = await funded();
+    const a = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, a, SIDE_YES, 1);
+    await program.methods.resolveMarket(SIDE_NO)   // the side nobody took
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    const m = await program.account.market.fetch(market);
+    assert.equal(m.protocolFeeLamports.toNumber(), 0, "no winners, no protocol fee");
+    assert.equal(m.creatorFeeLamports.toNumber(), 0, "no winners, no creator fee");
+
+    const before = await provider.connection.getBalance(a.publicKey);
+    await claim(market, vault, a);
+    const got = (await provider.connection.getBalance(a.publicKey)) - before;
+    assert.isAtMost(Math.abs(got - 1 * LAMPORTS_PER_SOL), 10000, "refunded in full");
+  });
+
+  it("refuses a total takeout above the ceiling, however it is split", async () => {
+    const creator = await funded();
+    const id = freshId();
+    const { market, vault } = pdas(id);
+    await failsWith(
+      program.methods
+        .createMarket(id, "Will the split hide the takeout?", new BN(Math.floor(Date.now() / 1000) + 3600),
+          creator.publicKey, 600, 600)   // 6% + 6%, each under the individual cap
+        .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
+        .rpc(),
+      "FeeTooHigh");
   });
 
   it("pays a loser nothing, and refuses every second claim", async () => {
@@ -258,7 +361,7 @@ describe("oddie_chain", () => {
     await failsWith(
       program.methods
         .createMarket(id, "Will the rug pull?", new BN(Math.floor(Date.now() / 1000) + 3600),
-          creator.publicKey, 5000)
+          creator.publicKey, 5000, 0)
         .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
         .rpc(),
       "FeeTooHigh");

@@ -181,11 +181,30 @@ export const CREATOR_FEE_BPS_PLAY = 300;   // 3% of total pool (both sides), add
  * The program caps this at 1000 (10%) and mintMarket rejects anything outside
  * 0..1000 before spending a transaction fee to find out.
  */
-export const CREATOR_FEE_BPS_REAL = 300;
+export const CREATOR_FEE_BPS_REAL = 200;
 
-/** Zero, and the program has no instruction that could charge it anyway.
- *  See the note above before changing this to something nonzero. */
-export const PROTOCOL_FEE_BPS_REAL = 0;
+/**
+ * Oddie's own half. 2%, matching the creator's, for a 4% total takeout.
+ *
+ * It was zero, and the reason it stopped being zero is arithmetic rather than
+ * appetite: a market costs us rent on Solana plus a reply on X and returned
+ * nothing, so every market the product succeeded at made it poorer. At 2% a
+ * market pays for itself at roughly a quarter of a SOL in the pool.
+ *
+ * WHY 4% TOTAL, AND WHY THIS SPLIT. Polymarket and Kalshi both land near 3.5%
+ * of money at risk on a 50/50 market, and they charge it on every trade; ours
+ * is taken once, from the pool, at resolve. Traditional pari-mutuel takeout,
+ * which is the mechanic we actually are, runs 15-25%. So 4% once is cheap
+ * against both comparisons. Down the middle because the half that pays a
+ * stranger for starting an argument is the half that brings the next market,
+ * and it should not be the junior partner.
+ *
+ * The program stores BOTH rates on the market at creation, so changing either
+ * number here reprices nothing that already exists. Markets minted while this
+ * was zero settle at zero forever. That is the property that makes a rate
+ * change honest rather than a rug.
+ */
+export const PROTOCOL_FEE_BPS_REAL = 200;
 
 /** Floors to 0 on small pools rather than paying out a fractional token — a
  *  market needs roughly 34+ total tokens staked before the 3% fee rounds up
