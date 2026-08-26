@@ -27,7 +27,7 @@ import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
-import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
+import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
@@ -1522,7 +1522,13 @@ app.get("/api/accuracy", async (req, res) => {
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
   const [acc, weeklyDelta] = await Promise.all([accuracyFor(deviceId), weeklyScoreDeltaFor(deviceId)]);
-  res.json({ ...acc, weeklyDelta });
+  // What a first tag is worth, computed from the same constants that pay it: a
+  // market on the board plus the ledger's surface award. The profile quotes
+  // this number as a price, so it must come from the economy rather than be
+  // typed into the client, where a re-weighting would quietly make it a lie.
+  const firstTagPays = SCORE_WEIGHTS.marketCreated
+    + SEASON_POINTS.surface * SCORE_WEIGHTS.contribution;
+  res.json({ ...acc, weeklyDelta, firstTagPays });
 });
 
 /**

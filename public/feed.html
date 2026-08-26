@@ -2079,6 +2079,79 @@
      — these are achievements, not instructions. */
   .badges{display:flex;flex-wrap:wrap;gap:14px;margin:2px 0 16px}
   .medal{display:flex;flex-direction:column;align-items:center;gap:7px;width:78px;text-align:center}
+  /* A locked slot is drawn, not omitted. An achievement screen that shows only
+     what you already have is a receipt; the empty circles are the pull. */
+  /* A shelf, not a wrap: four slots on one line so the empty ones read as a set
+     with gaps in it rather than as a list that happened to run out. */
+  .badges.shelf{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;flex-wrap:nowrap;margin-bottom:6px}
+  .badges.shelf .medal{width:auto}
+  .badges.shelf .medal-ico{width:48px;height:48px;font-size:20px}
+  .badges.shelf .medal-lab{font-size:9.5px}
+  .medal.locked .medal-ico{background:none;border:2px dashed var(--card-line);box-shadow:none;opacity:.42}
+  .medal.locked .medal-lab{opacity:.5}
+  .shelfnote{font-family:'Nunito';font-size:11px;font-weight:800;color:var(--muted);
+    text-align:center;margin:10px 0 0;letter-spacing:.02em}
+
+  /* ---- the hero: one number, one ladder, one button ---------------------- */
+  .hero1{background:var(--accent);color:#12140A;border:3px solid var(--ink);border-radius:24px;
+    padding:22px 20px 20px;margin:18px 0 16px;box-shadow:0 6px 0 rgba(0,0,0,.22);text-align:center}
+  .hero1-num{font-size:76px;font-weight:700;line-height:.92;color:#12140A;font-variant-numeric:tabular-nums}
+  .hero1-lab{font-family:'Nunito';font-size:10px;font-weight:900;letter-spacing:.08em;color:#3A4106;margin-top:2px}
+  .hero1-chips{display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .hero1-chip{font-family:'Nunito';font-size:11px;font-weight:900;background:#12140A;color:var(--accent);
+    border-radius:999px;padding:5px 11px}
+  .hero1-chip.up{background:#12140A;color:#b6f36a}
+
+  /* The loud ladder. Rung one is lit from the very first visit because 1x is a
+     real reading on a 1x..2x scale, not a zero, which is what lets the new
+     user and the veteran share ONE layout instead of two that drift apart. */
+  .ladder{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:16px}
+  .rung{position:relative;overflow:hidden;border-radius:999px;padding:7px 0;
+    font-family:'Nunito';font-size:11px;font-weight:900;letter-spacing:.02em;
+    border:2px solid #12140A;color:#12140A;background:transparent;opacity:.34}
+  .rung.on{background:#12140A;color:var(--accent);opacity:1}
+  /* The next rung crawls. It is the only motion a user with nothing gets, and
+     it is the difference between an empty track and a track that is waiting. */
+  .rung.next{opacity:.85}
+  .rung.next::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(100deg,transparent 0%,rgba(18,20,10,.20) 45%,transparent 70%);
+    background-size:220% 100%;animation:crawl 2.6s linear infinite}
+  @keyframes crawl{from{background-position:220% 0}to{background-position:-40% 0}}
+  @media (prefers-reduced-motion:reduce){.rung.next::after{animation:none}}
+
+  .hero1-go{display:block;width:100%;margin-top:16px;background:#12140A;color:var(--accent);
+    border:0;border-radius:999px;padding:15px 18px;font-family:'Fredoka';font-size:17px;font-weight:600;
+    cursor:pointer;box-shadow:0 5px 0 rgba(0,0,0,.28);transition:transform .06s,box-shadow .06s}
+  .hero1-go:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(0,0,0,.28)}
+  .hero1-sub{font-family:'Nunito';font-size:11.5px;font-weight:800;color:#3A4106;margin:10px 0 0}
+
+  /* Proof chips. Absent at zero: a count nobody has earned yet is a zero
+     wearing a label, and the ladder above is already the invitation. */
+  .proof{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px;margin:0 0 16px}
+  .proof-c{background:var(--card-surface);border:1.5px solid var(--card-line);border-radius:14px;
+    padding:11px 8px;text-align:center}
+  .proof-v{font-size:22px;font-weight:700;color:var(--on-ground);font-variant-numeric:tabular-nums}
+  .proof-k{font-family:'Nunito';font-size:9.5px;font-weight:900;letter-spacing:.05em;color:var(--muted);margin-top:3px}
+
+  /* The money strip is the one surface on this page with no brand colour and no
+     juice. It is real SOL: it reports, it never celebrates. */
+  .mstrip{display:flex;align-items:center;gap:0;background:var(--card-surface);
+    border:1.5px solid var(--card-line);border-radius:16px;padding:12px 6px;margin:0 0 16px;
+    text-decoration:none;color:inherit}
+  .mstrip-h{flex:1;text-align:center;padding:0 8px}
+  .mstrip-h + .mstrip-h{border-left:1px solid var(--card-line)}
+  .mstrip-v{font-size:17px;font-weight:600;color:var(--on-ground)}
+  .mstrip-k{font-family:'Nunito';font-size:9.5px;font-weight:900;letter-spacing:.05em;color:var(--muted);margin-top:2px}
+  .mstrip-one{font-family:'Nunito';font-size:11.5px;font-weight:800;color:var(--muted);padding:2px 12px;text-align:center;flex:1}
+
+  /* Settings, collapsed. They were roughly half this page. The summary keeps a
+     scent trail so the theme switcher stays findable after folding. */
+  .setrow{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:var(--card-surface);border:1.5px solid var(--card-line);border-radius:16px;
+    padding:13px 15px;margin:18px 0 0;cursor:pointer;color:var(--on-ground);
+    font-family:'Nunito';font-size:12.5px;font-weight:900;letter-spacing:.02em}
+  .setrow-sum{color:var(--muted);font-weight:800}
+  .setbody{margin-top:12px}
   .medal-ico{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
     font-size:23px;line-height:1;background:radial-gradient(circle at 32% 26%, #eefccb, var(--accent) 74%);
     border:1.5px solid var(--card-line);box-shadow:var(--shadow-pop)}
@@ -2630,8 +2703,16 @@ function paintBalance(pulse){
     // top-left corner of a betting app reads as "here is your money" and is
     // wrong twice: it is not money, and the number beside it is not what you
     // could bet. The trophy and the word "score" are doing load-bearing work,
-    // not decoration. 0 for a newcomer stays right: an honest starting score,
-    // where a fake allowance would have been an IOU nobody owed.
+    // not decoration.
+    //
+    // The chip used to print a 0 for a newcomer, on the argument that an honest
+    // zero beats a fake allowance. That argument still holds against a fake
+    // number; it does not hold against showing nothing. A brand-new player met
+    // four separate zeros across one screen, and this was one of them, sitting
+    // beside a profile hero that already says the same thing bigger. So the
+    // chip is earned: it appears with the first oddie, which makes its arrival
+    // a small reward instead of a standing reminder.
+    el.hidden=!(Number(oddies)>0);
     el.innerHTML=`🏆 ${oddies} <span class="ptslbl">score</span>`;
     if(pulse){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse");}
     // Persistent pick-streak badge as visible identity, right beside the balance.
@@ -5268,12 +5349,91 @@ async function loadMyMarkets(scroller){
 const BADGE_ICON={founding:"🏛️",streak:"🔥",category:"🎯",rank:"📈"};
 // Badges as medallions: a circular icon with a lime medal-sheen, caption below
 // — screenshot-friendly the way an achievement screen is, not a flat pill row.
-function badgesHtml(badges){
-  if(!badges||!badges.length)return "";
-  return `<div class="badges">${badges.map(b=>
-    `<div class="medal" title="${esc(b.detail||b.label)}"><div class="medal-ico">${BADGE_ICON[b.kind]||"⭐"}</div><div class="medal-lab">${esc(b.label)}</div></div>`
-  ).join("")}</div>`;
+/**
+ * THE HERO. One number, one ladder, one button.
+ *
+ * This screen used to be six section headers, four separate zeros and two
+ * paragraphs of prose, with the only real motivator (1x to 2x) written out as a
+ * sentence and the only real reward shown only after it was already won. A
+ * control beats a sentence, and a lit first rung beats a hidden ladder.
+ *
+ * The ladder is why the new user and the veteran can share ONE layout: 1x is a
+ * real reading on a 1x..2x scale, not a zero, so nothing here needs an empty
+ * mode that drifts out of sync with the real one.
+ *
+ * id="scoreringnum" MUST stay on the number: animateOscore writes through it,
+ * and countUp guards a null element, so losing it fails silently rather than
+ * loudly.
+ */
+const LOUD_RUNGS=[1,1.25,1.5,2];
+function heroHtml(acc,rank,firstTagPays){
+  const score=Number(acc&&acc.oddieScore)||0;
+  const mult=Math.max(1,Number(acc&&acc.loudMultiplier)||1);
+  const wd=acc&&acc.weeklyDelta;
+  const chips=[
+    acc&&acc.tier?`<span class="hero1-chip">🏆 ${esc(acc.tier.label)}</span>`:"",
+    rank&&rank.topPct!=null?`<span class="hero1-chip">Top ${rank.topPct}%</span>`:"",
+    wd?`<span class="hero1-chip up">▲ ${deltaText(wd.delta)} this week</span>`:"",
+  ].filter(Boolean).join("");
+  const cur=LOUD_RUNGS.filter(r=>r<=mult).length;   // 1..4, never 0
+  const ladder=LOUD_RUNGS.map((r,i)=>{
+    const on=i<cur, next=i===cur;                    // exactly one crawling rung
+    return `<div class="rung${on?" on":""}${next?" next":""}">${r}x</div>`;
+  }).join("");
+  const sub=score>0
+    ? "Every market you tag pays you 2% of its pool."
+    : `Your first tag pays ${firstTagPays} oddies.`;
+  return `<div class="hero1">
+    <div class="hero1-num" id="scoreringnum">${score}</div>
+    <div class="hero1-lab">ODDIES</div>
+    ${chips?`<div class="hero1-chips">${chips}</div>`:""}
+    <div class="ladder" role="group" aria-label="Loud ladder, rung ${cur} of 4. Your markets earn ${mult} times.">${ladder}</div>
+    <button class="hero1-go" id="herogo" type="button">Tag a post on X</button>
+    <p class="hero1-sub">${sub}</p>
+  </div>`;
 }
+
+/** The three facts that prove the number. Absent at zero, because a count
+ *  nobody has earned yet is just a zero wearing a label. */
+function proofHtml(acc,rank){
+  const made=Number(acc&&acc.marketsCreated)||0;
+  const reached=Number(acc&&acc.tradersReached)||0;
+  if(!made&&!reached&&!rank)return "";
+  const c=[];
+  if(made)c.push([made,"MARKETS TAGGED"]);
+  if(reached)c.push([reached,"PEOPLE IN THEM"]);
+  if(rank)c.push([rank.topPct!=null?`Top ${rank.topPct}%`:`#${rank.rank}`,
+                  rank.topPct!=null?"THIS SEASON":`OF ${rank.total}`]);
+  return `<div class="proof">${c.map(([v,k])=>
+    `<div class="proof-c"><div class="proof-v">${v}</div><div class="proof-k">${k}</div></div>`).join("")}</div>`;
+}
+
+/** Real SOL. The only surface here with no brand colour and no motion: it
+ *  reports, it never celebrates, and it never prints a 0.000 at somebody. */
+function moneyStripHtml(earn){
+  const has=earn&&earn.ok&&(Number(earn.earnedLamports)>0||Number(earn.pooledLamports)>0);
+  const body=has
+    ? `<div class="mstrip-h"><div class="mstrip-v">${SOL(earn.earnedLamports)} SOL</div><div class="mstrip-k">EARNED IN FEES</div></div>
+       <div class="mstrip-h"><div class="mstrip-v">${SOL(earn.pooledLamports)} SOL</div><div class="mstrip-k">IN YOUR MARKETS</div></div>`
+    : `<div class="mstrip-one">Your 2% lands here when a market you tagged resolves.</div>`;
+  return `<a class="mstrip" href="#/mymarkets">${body}</a>`;
+}
+
+/** A fixed shelf. Four slots always, earned filled and unearned drawn as slots,
+ *  captioned with a denominator: a bare 0 is a verdict, 0 of 4 is an invitation. */
+const BADGE_SLOTS=[["founding","Founding"],["streak","Streak"],["category","Topic"],["rank","Ranked"]];
+function shelfHtml(badges){
+  const got=new Map((badges||[]).map(b=>[b.kind,b]));
+  const cells=BADGE_SLOTS.map(([kind,fallback])=>{
+    const b=got.get(kind);
+    return b
+      ? `<div class="medal" title="${esc(b.detail||b.label)}"><div class="medal-ico">${BADGE_ICON[kind]||"⭐"}</div><div class="medal-lab">${esc(b.label)}</div></div>`
+      : `<div class="medal locked"><div class="medal-ico">${BADGE_ICON[kind]||"⭐"}</div><div class="medal-lab">${fallback}</div></div>`;
+  }).join("");
+  return `<div class="badges shelf">${cells}</div>
+    <p class="shelfnote">${got.size} of ${BADGE_SLOTS.length} on the shelf</p>`;
+}
+
 // The Oddie Score hero: a ring/gauge filled to score/1000, the number counted
 // up on first paint (see the countUp() call right after each profile renders).
 // id="scoreringnum" is safe to reuse across the private/public views — they
@@ -5281,52 +5441,6 @@ function badgesHtml(badges){
 // "+16" / "−12" — a real Unicode minus on the way down, never a bare hyphen,
 // so a negative delta reads as a sign rather than a stray dash.
 function deltaText(n){return n>=0?`+${n}`:`−${Math.abs(n)}`}
-function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge,loudMult){
-  // The ring shows the LOUD MULTIPLIER, not the score.
-  //
-  // A ring needs something bounded to fill, and the score is unbounded: filling
-  // it to score/1000 would peg it full for anyone active, and a gauge that
-  // reads the same for everyone measures nothing. It used to fill by edge,
-  // which was bounded but is no longer part of the score at all, so the ring
-  // had quietly become permanently empty.
-  //
-  // The multiplier is the one bounded, earnable number left: 1x to 2x, moved by
-  // posting. The sentence under the ring already names the next rung, so the
-  // ring and the copy now describe the same climb.
-  const pct=Math.max(0,Math.min(1,(Number(loudMult)||1)-1));
-  // topPct is null until the ranked field is big enough for a percentile to
-  // mean anything (see MIN_RANKED_FOR_PERCENTILE) — fall back to the raw
-  // standing, which is always true, rather than printing "Top 100%".
-  const rankChip=hasEnough&&rank
-    ?`<span class="rankpill">🏆 ${rank.topPct!=null?`Top ${rank.topPct}% this season`:`#${rank.rank} of ${rank.total} this season`}</span>`
-    :"";
-  // The loud multiplier, worn as status. Only when it's earned (>1x) — at 1x
-  // the loud sheet does the teaching; a permanent "1x" chip would read as a
-  // penalty, not an invitation.
-  const multChip=loudMult>1?`<span class="rankpill">🔥 ${loudMult}× loud multiplier</span>`:"";
-  // Both lines are ephemeral-feeling but for different reasons: weekly is
-  // simply absent with nothing resolved this week (see weeklyScoreDeltaFor);
-  // the rank move is a one-shot the server already marked seen by the time
-  // this response landed, so it just won't be here again next view.
-  const weeklyLine=weeklyDelta?`<div class="oscore-weekly ${weeklyDelta.direction}">${weeklyDelta.direction==="up"?"▲":"▼"} ${deltaText(weeklyDelta.delta)} this week</div>`:"";
-  const rankMoveLine=rankMove?`<div class="rankmove ${rankMove.direction}">${rankMove.direction==="up"?"▲":"▼"} you moved ${rankMove.direction} ${rankMove.spots} spot${rankMove.spots===1?"":"s"} → #${rankMove.rank}</div>`:"";
-  return `<div class="oscore">
-      <div class="scorering" style="--score-pct:${pct}" id="scorering">
-        <div class="scorering-inner">
-          <div class="scorering-num" id="scoreringnum">0</div>
-          <div class="scorering-lab">ODDIES</div>
-        </div>
-      </div>
-      <div class="oscore-side">
-        <div class="oscore-title">Oddies</div>
-        <p class="oscore-desc">markets you tag pay the most · shares and posts pay too · a loud streak multiplies it</p>
-        ${weeklyLine}
-        ${rankChip}
-        ${multChip}
-        ${rankMoveLine}
-      </div>
-    </div>`;
-}
 // A brief "+16"/"−9" pill pinned to the score ring's corner, fading on its own
 // CSS timer (see .score-delta). Skipped under reduced motion — same convention
 // as countUp: no motion at all rather than a motionless flash.
@@ -5397,44 +5511,7 @@ function animateOscore(scroller,score,hasEnough,isMine){
  * reasoning the creator panel on the home rail already follows. */
 const SOL=(l)=>{const n=(Number(l)||0)/1e9;return n>=1?n.toFixed(2):n>0?n.toFixed(3):"0";};
 
-/**
- * THE MONEY, and it leads the profile now.
- *
- * A real-money product whose profile opened with an accuracy percentage was
- * answering the wrong question. What someone wants to know here is what their
- * markets are holding and what those markets have earned them, because that is
- * the payoff for the one behaviour this whole product exists to cause.
- *
- * Read from the chain, per market, so the numbers are the vaults' own. It is
- * deliberately NOT a full PnL: a position is a wallet signing a transaction and
- * nothing off-chain records it, so what you have staked and won is not
- * something the server can know without indexing every position account. Saying
- * less and saying it exactly beats a number nobody can stand behind.
- */
-function moneyHtml(earn){
-  if(!earn||!earn.ok)return "";
-  const pooled=SOL(earn.pooledLamports), earned=SOL(earn.earnedLamports);
-  return `<p class="psec">Your money</p>
-    <div class="trstats moneystats">
-      <div class="tile hero"><div class="v">${earned}<span class="unit">SOL</span></div><div class="k">EARNED IN FEES</div></div>
-      <div class="tile hero"><div class="v">${pooled}<span class="unit">SOL</span></div><div class="k">IN YOUR MARKETS</div></div>
-    </div>
-    <p class="cnote">${Number(earn.earnedLamports)>0
-      ? `🔥 Claim it on <b>My markets</b>. It is paid by your own signature, so nobody else can take it.`
-      : `🔥 You earn <b>2%</b> of every market you tagged, the moment it resolves with people on it.`}</p>`;
-}
 
-function reachHtml(creator){
-  const made=Number(creator?.marketsCreated)||0;
-  const reached=Number(creator?.tradersReached)||0;
-  if(!made)return `<p class="psec">What you've brought in</p>
-    <p class="cnote">🏷️ Tag <b>@oddiefun</b> under an argument on X. The market lands in the feed with your name on it, and you earn <b>2%</b> of everything played on it.</p>`;
-  return `<p class="psec">What you've brought in</p>
-    <div class="trstats">
-      <div class="tile"><div class="v">${made}</div><div class="k">MARKETS TAGGED</div></div>
-      <div class="tile"><div class="v">${reached}</div><div class="k">PEOPLE REACHED</div></div>
-    </div>`;
-}
 
 // What a person brags about, in one place. Three separate Share buttons each
 // built their own accuracy sentence, and when accuracy died all three published
@@ -5452,12 +5529,6 @@ function loudBrag(acc){
   return sc>0?`${sc} oddies earned`:"";
 }
 
-function loudNextHtml(mult){
-  const m=Number(mult)||1;
-  if(m>=2)return `<p class="cnote">🔥 Your markets earn <b>2x</b>, the top of the ladder, held by winning a week.</p>`;
-  const next=m>=1.5?["2x","win a week's loudest"]:m>=1.25?["1.5x","three cleared posts in 30 days"]:["1.25x","one cleared post"];
-  return `<p class="cnote">🔥 Your markets earn <b>${m}x</b> right now. ${next[1][0].toUpperCase()+next[1].slice(1)} makes it <b>${next[0]}</b>.</p>`;
-}
 
 async function renderPublicProfile(){
   const handle=profileHandle;
@@ -5482,18 +5553,23 @@ async function renderPublicProfile(){
   const acc=data.accuracy, badges=data.badges||[], rank=data.rank||null;
   const isMe=myHandle&&myHandle.toLowerCase()===String(data.handle).toLowerCase();
   scroller.innerHTML=`<div class="sheet">
-    <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
-    <div class="trhead"><p class="psec">How loud they are</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
-    ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank,acc.weeklyDelta,null,acc.meanEdge,acc.loudMultiplier||1)}
-    ${badgesHtml(badges)}
-    <div class="trstats">
-      <div class="tile"><div class="v">${Number(acc.marketsCreated)||0}</div><div class="k">MARKETS TAGGED</div></div>
-      <div class="tile"><div class="v">${Number(acc.tradersReached)||0}</div><div class="k">PEOPLE REACHED</div></div>
+    <div class="hrow">
+      <span class="hname">@${esc(data.handle)}</span>
+      ${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}
+      <button class="hshare" id="pubshare" type="button" aria-label="Share this profile">${SHARE_ICON}</button>
     </div>
-    ${!acc.hasEnough?`<p class="cnote">🌱 nothing on the board yet.</p>`:''}
+    ${heroHtml(acc,rank,Number(acc.firstTagPays)||200)}
+    ${proofHtml(acc,rank)}
+    ${shelfHtml(badges)}
     <div class="pfoot"><p class="disclaimer">Markets settle in SOL on Solana. Positions are staked from your own wallet, and oddie never holds your funds.</p></div>
   </div>`;
   animateOscore(scroller,acc.oddieScore,acc.hasEnough,false);
+  // The same button, bound here too. Looking at somebody loud and finding an
+  // unbound control under their score would be the deadest thing on the page,
+  // and the invitation reads better from a stranger's profile than from your
+  // own empty one.
+  const pubGo=scroller.querySelector("#herogo");
+  if(pubGo)pubGo.onclick=()=>{location.href="/feed#/profile";};
   const sb=scroller.querySelector("#pubshare");
   if(sb)sb.onclick=()=>{
     const brag=loudBrag(acc);
@@ -5970,9 +6046,7 @@ async function loadProfile(scroller){
         <div class="kind">${a.provider==="twitter"?"X — your identity":"Google — saved across devices"}</div></div>
     </div>`;}).join("");
 
-  // The accuracy record — the four public stats (accuracy %, streak, best topic,
-  // resolved picks). Below the min resolved-pick threshold, accuracy reads
-  // "building" instead of a misleadingly-precise % off a tiny sample.
+  // The ladder record: score, markets tagged, people reached, loud multiplier.
   let acc=null;
   try{const ar=await fetch(`${API}/api/accuracy?deviceId=${encodeURIComponent(deviceId)}`);if(ar.ok)acc=await ar.json();}catch(e){}
   // Rank movement — a one-shot: this fetch IS what marks it seen server-side
@@ -5982,6 +6056,31 @@ async function loadProfile(scroller){
   try{const rr=await fetch(`${API}/api/rank-movement?deviceId=${encodeURIComponent(deviceId)}`);if(rr.ok)rankMove=(await rr.json()).movement;}catch(e){}
 
   await loadBalance(); // the handle rides on /api/me
+  // What the collapsed settings row absorbs, kept verbatim so nothing about
+  // signing in or theming changed except where it lives.
+  const themeBody=`<div class="seg" role="group" aria-label="Theme">
+      ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>
+        `<button class="segb${themeMode()===v?" on":""}" data-theme-mode="${v}">${l}</button>`).join("")}
+    </div>
+    <p class="cnote">Auto follows your system. Shared cards are always the same, so your theme never changes the image that goes on X.</p>`;
+  const themeLabel={auto:"Auto",bright:"Bright",dark:"Dark"}[themeMode()]||"Auto";
+  const settingsBody=`<p class="sub">Your record, your markets and your fees follow this account to any browser.</p>
+    ${linked}
+    <p class="psec" style="margin-top:22px">Appearance</p>
+    ${themeBody}`;
+  // A scent trail, so folding Appearance away does not make the theme switcher
+  // undiscoverable: the row names what is inside it.
+  const primaryAcct=auth.accounts[0];
+  const settingsSummary=[
+    primaryAcct?(primaryAcct.provider==="twitter"?`X ${primaryAcct.handle||""}`.trim():"Google"):"",
+    themeLabel,
+  ].filter(Boolean).join(" · ");
+  // The price of the first tag, sent by /api/accuracy from the constants that
+  // actually pay it. Never computed here: a re-weighting would silently turn
+  // the hero's price tag into a lie, and surfaceReward is scoped to renderHome
+  // anyway, so reaching for it from this function would throw.
+  const firstTagPays=Number(acc&&acc.firstTagPays)||200;
+
   const handleRow=myHandle?`
     <button class="pfav" id="pfav" type="button" aria-label="Change your picture">${
       myAvatarStamp
@@ -5993,61 +6092,58 @@ async function loadProfile(scroller){
       ${myHandleEditable
         ? '<button class="hedit" id="hedit">edit</button>'
         : '<span class="hkind">your X handle</span>'}
+      <button class="hshare" id="trshare" type="button" aria-label="Share your profile">${SHARE_ICON}</button>
     </div>
     <div class="herr" id="herr" hidden></div>`:"";
 
   scroller.innerHTML=`<div class="sheet">
     ${handleRow}
 
-    <!-- THE SCORE AND THE RANK LEAD.
-         This screen used to open with identity plumbing — the handle, a line of
-         copy about it, every linked account, then the balance — and only reach
-         the score four blocks down. But nobody opens their own profile to read
-         which accounts are connected; they open it to see where they stand. So
-         the standing is first and the plumbing is underneath it, in the order
-         someone would actually go looking for it. -->
-    <!-- THE MONEY GOES FIRST, above the standing.
-         The comment below records why the score was moved to the top of this
-         screen, and it was right at the time: nobody opens their own profile to
-         read which accounts are connected. But the product stopped being about
-         points the day the vaults started holding real SOL, and "where do I
-         stand" is now the second question. The first is what my markets have
-         earned me. -->
-    ${moneyHtml(myEarnings)}
-    ${reachHtml(myCreator)}
+    <!-- SIX SECTION HEADERS, FOUR ZEROS AND TWO PARAGRAPHS OF PROSE USED TO
+         LIVE HERE. What replaced them: one number, one ladder, one button, and
+         everything that was explaining itself in a sentence is now a control.
+         Account and Appearance were roughly half this page and are folded into
+         a single row, except when nobody is signed in, because hiding the way
+         to keep your record behind a tap is not simplification. -->
+    ${heroHtml(acc,myRank,firstTagPays)}
+    ${proofHtml(acc,myRank)}
+    ${moneyStripHtml(myEarnings)}
+    ${shelfHtml(myBadges)}
 
-    ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove,acc?acc.meanEdge:null,acc?(acc.loudMultiplier||1):1)}
-    <div class="trhead">
-      <p class="psec">How loud you are</p>
-      <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
-    </div>
-    ${badgesHtml(myBadges)}
-    ${acc?loudNextHtml(acc.loudMultiplier):""}
+    ${auth.accounts.length?`
+      <button class="setrow" id="setrow" type="button" aria-expanded="false" aria-controls="setbody">
+        <span>Account and appearance</span>
+        <span class="setrow-sum">${esc(settingsSummary)} ›</span>
+      </button>
+      <div class="setbody" id="setbody" hidden>${settingsBody}</div>`
+    :`<p class="psec">Keep your oddies on every device</p>
+      ${provButtons()}
+      <p class="cnote">X connects your identity. Google keeps your record across devices. A wallet signs a
+        message to prove it is yours, and is where your winnings and your 2% arrive.</p>
+      <button class="setrow" id="setrow" type="button" aria-expanded="false" aria-controls="setbody">
+        <span>Appearance</span>
+        <span class="setrow-sum">${esc(themeLabel)} ›</span>
+      </button>
+      <div class="setbody" id="setbody" hidden>${themeBody}</div>`}
 
-    <!-- Account. The predictions balance used to headline this section as
-         "your play balance"; a call is free now, so that number buys nothing
-         and cannot go down. It was the single largest figure on the page and
-         it measured a currency the product no longer has a use for. The
-         section is about WHO you are signed in as, which is what it shows. -->
-    <p class="psec">Account</p>
-    <p class="sub">${auth.accounts.length
-      ? "Your record, your markets and your fees follow this account to any browser."
-      : "You are browsing anonymously. Nothing follows you to another browser yet."}</p>
-    ${linked||`${provButtons()}
-       <p class="cnote">X connects your identity. Google keeps your record across devices. A wallet signs a
-         message to prove it is yours, and is where your winnings and your 2% arrive.</p>`}
-    <p class="psec" style="margin-top:24px">Appearance</p>
-    <div class="seg" role="group" aria-label="Theme">
-      ${[["auto","Auto"],["bright","Bright"],["dark","Dark"]].map(([v,l])=>
-        `<button class="segb${themeMode()===v?" on":""}" data-theme-mode="${v}">${l}</button>`).join("")}
-    </div>
-    <p class="cnote">Auto follows your system. Shared cards are always the same — your theme never changes the image that goes on X.</p>
     <div class="pfoot"><p class="disclaimer">Markets settle in SOL on Solana. Positions are staked from your own wallet, and oddie never holds your funds.</p></div>
   </div>`;
   animateOscore(scroller,acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),true);
   scroller.querySelectorAll("[data-connect]").forEach(b=>b.onclick=()=>{
     location.href=`${API}/api/auth/${b.dataset.connect}/start?deviceId=${encodeURIComponent(deviceId)}`;
   });
+  // THE one button on this screen. It opens the same paste sheet the feed uses,
+  // so there is exactly one way to start a market and it is reachable from the
+  // screen that tells you what starting one is worth.
+  const heroGo=scroller.querySelector("#herogo");
+  if(heroGo)heroGo.onclick=()=>openPasteSheet();
+  // Settings, folded. Account and Appearance were roughly half this page.
+  const setRow=scroller.querySelector("#setrow"), setBody=scroller.querySelector("#setbody");
+  if(setRow&&setBody)setRow.onclick=()=>{
+    const open=setBody.hasAttribute("hidden");
+    setBody.toggleAttribute("hidden",!open);
+    setRow.setAttribute("aria-expanded",String(open));
+  };
   // Shareable profile card → the public profile at /@{handle} (falls back to the
   // homepage only if this device somehow has no handle yet).
   const trshareBtn=scroller.querySelector("#trshare");
