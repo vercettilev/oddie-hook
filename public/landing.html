@@ -912,7 +912,14 @@
        across. One cinematic moment against a page of chunky stickers is a
        stronger pairing than either alone, as long as they never overlap. -->
   <section class="portalband" aria-hidden="true">
-    <img src="/portal.png" alt="">
+    <!-- Below the fold and 1.7MB, so it must never compete with the hero for
+         bandwidth: lazy defers the fetch until it is near the viewport and
+         async decoding keeps the raster off the main thread. Kept as PNG on
+         purpose. JPEG q92 is 397KB against 1702KB, but this frame's whole value
+         is detail in near-black gradients, which is exactly where JPEG rings:
+         measured against the band's visible slice the average channel error is
+         7/255 with excursions to 170 at the arch edge. -->
+    <img src="/portal.png" alt="" loading="lazy" decoding="async" width="1122" height="1402">
   </section>
 
   <section class="strip" id="built">

@@ -14,7 +14,12 @@ regenerate rather than editing an icon by hand.
 - `oddielogo.png`   1254x1254. Same ghost, no pink shadow, on the older lime.
                     Kept as the flat alternative.
 - `oddiebanner.png` 2196x716. Cinematic banner, "Turn arguments into markets."
-- `oddieimage.png`  1122x1402. THE PORTAL IN USE, shipped as public/portal.png.
+- `oddieupscale.png` 1122x1402. THE PORTAL IN USE, shipped as public/portal.png.
+                    Same dimensions as oddieimage but detail-enhanced: across
+                    the band's visible slice, crushed-black pixels fall from 49%
+                    to 38% and horizontal gradient energy rises 43%, which is
+                    why the band no longer reads as a flat dark strip.
+- `oddieimage.png`  1122x1402. The first pink pass, superseded by oddieupscale.
                     Same render as oddiegraphic with pink embers and pink rim
                     light added, which is what ties it to the rest of the brand.
 - `oddiegraphic.png` 1122x1402. The same scene BEFORE the pink was added. This
