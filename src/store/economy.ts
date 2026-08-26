@@ -217,7 +217,7 @@ export function creatorFeePlay(totalPoolTokens: number): number {
  * The answer to "accuracy accumulates, so what?".
  *
  * Before real money, the payoff for being right has to be STATUS, and status
- * needs a name — "top 8%" is a measurement, "Oracle" is something you tell
+ * needs a name: "top 8%" is a measurement, "Loudest" is something you tell
  * people you are. These tiers put a claimable noun on the numbers the product
  * already computes (oddieScore from economy, topPct from the season
  * standings), so a good record becomes an identity rather than a statistic.

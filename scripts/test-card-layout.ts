@@ -378,5 +378,56 @@ console.log("\nligature suppression: the shaper must not be allowed to eat lette
   check("a priced card still shows its number", /62%/.test(svg));
 }
 
+/**
+ * The profile card is the image that goes to X, and it is the surface where a
+ * bad number is loudest: it bypassed every null guard in the app because
+ * Math.round(NaN) is NaN and NaN is not `== null`. For a while every shared
+ * card read "NaN%  ACCURACY" under a brag line reading "NaN% accuracy across 0
+ * calls". These checks render the card from a REAL store record rather than a
+ * hand-built literal, because a hand-built literal is exactly what hid it.
+ */
+console.log("\nthe profile card is postable for a post-pivot user");
+{
+  const { createCommunityMarket, recordSurfacer, accuracyFor, reputationFor, _memSeasonCredit } =
+    await import("../src/store/markets.js");
+  const dev = "dev-card-postable";
+  const closeTime = Math.floor(Date.now() / 1000) + 86_400;
+  for (let i = 0; i < 3; i++) {
+    const m = await createCommunityMarket({ question: `will card proof ${i} land?`, category: "Sports", yesPct: 50, closeTime });
+    await recordSurfacer(m.slug, { deviceId: dev, handle: "cardproof" });
+  }
+  _memSeasonCredit(dev, 75);
+
+  const acc = await accuracyFor(dev);
+  const rep = await reputationFor(dev);
+  const svg = renderProfileCard({
+    handle: "cardproof", oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
+    streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
+    marketsCreated: acc.marketsCreated, tradersReached: acc.tradersReached,
+    loudMultiplier: acc.loudMultiplier,
+    badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
+    rankTopPct: rep.rank ? rep.rank.topPct : null,
+    tierLabel: rep.tier ? rep.tier.label : null, flexLine: rep.flexLine,
+  });
+  const texts = [...svg.matchAll(/>([^<>]+)</g)].map((m) => m[1].trim()).filter(Boolean);
+
+  // Text nodes only, never the raw SVG: the file embeds base64 font data, and
+  // random base64 contains "NaN" often enough to make a whole-file regex a
+  // permanent false positive.
+  check("no NaN, null or undefined survives onto the card",
+    !texts.some((t) => /NaN|null|undefined/.test(t)),
+    texts.filter((t) => /NaN|null|undefined/.test(t)).join(" | "));
+  check("...nor into the brag line it carries",
+    !/NaN|null|undefined/.test(rep.flexLine), rep.flexLine);
+  check("the card shows the score it earned, not 'building'",
+    texts.includes(String(acc.oddieScore)) && !texts.some((t) => /building/i.test(t)),
+    String(acc.oddieScore));
+  check("the stat row reports the ladder, not the dead play record",
+    texts.includes("MARKETS") && texts.includes("PLAYERS") && texts.includes("LOUD")
+    && !texts.includes("ACCURACY") && !texts.includes("RESOLVED") && !texts.includes("STREAK"),
+    texts.join(" | "));
+  check("the brag says what was brought", rep.flexLine === "3 markets tagged", rep.flexLine);
+}
+
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

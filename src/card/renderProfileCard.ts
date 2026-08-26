@@ -31,13 +31,17 @@ export interface ProfileBadge {
 export interface ProfileCard {
   handle: string;
   oddieScore: number | null;
-  /** −1..1, mean(outcome − impliedProb). Drives the ring; the score drives the
-   *  number. Optional so a caller that has not got it renders an empty ring
-   *  rather than a full one. */
+  /** Kept so existing callers still type-check. Nothing on the card reads it:
+   *  edge is no longer part of the score. */
   meanEdge?: number | null;
   accuracyPct: number | null;
   streak: number;
   resolved: number;
+  /** The ladder, which is what this card is now made of. */
+  marketsCreated?: number;
+  tradersReached?: number;
+  /** >=1. Fills the ring, because it is the one bounded number left. */
+  loudMultiplier?: number;
   hasEnough: boolean;
   /** Earned badges, most identity-defining first (kind picks the drawn glyph). */
   badges?: ProfileBadge[];
@@ -118,21 +122,22 @@ function medallion(x: number, cy: number, badge: ProfileBadge): string {
 
 export function renderProfileCard(p: ProfileCard): string {
   const handle = "@" + p.handle.replace(/^@+/, "");
-  const acc = p.accuracyPct == null ? "—" : `${p.accuracyPct}%`;
+  const made = p.marketsCreated ?? 0;
+  const reached = p.tradersReached ?? 0;
+  const mult = Math.max(1, Number(p.loudMultiplier) || 1);
 
-  // The ring shows the QUALITY multiplier, not the score — the same fix the live
-  // profile got, and it matters more here because this is the image that goes to
-  // X. score/1000 worked while the score was capped at 1000; the score is
-  // activity-led and unbounded now, so that ring sat pegged full for anyone who
-  // plays regularly, and a gauge that reads identical for every active player is
-  // decoration. meanEdge is the half that IS bounded (the multiplier runs
-  // 0.5x..1.5x), so half full is market-neutral and fuller is beating it.
+  // The ring shows the LOUD MULTIPLIER. It matters more here than anywhere else
+  // because this is the image that goes to X. It used to fill by meanEdge, and
+  // edge left the score entirely: with meanEdge null the maths came out at
+  // exactly half for every single person, so the gauge on every shared card was
+  // identical and measured nothing. The multiplier runs 1x to 2x and is moved by
+  // posting, which is the thing this card exists to encourage.
   const circumference = 2 * Math.PI * RING_R;
-  const quality = Math.max(0.5, Math.min(1.5, 1 + 2 * (p.meanEdge ?? 0)));
-  const pct = p.hasEnough && p.oddieScore != null ? quality - 0.5 : 0;
-  const heroText = p.hasEnough && p.oddieScore != null ? String(p.oddieScore) : "building";
-  const heroFS = p.hasEnough ? 62 : 32;
-  const kicker = p.hasEnough ? "ODDIES" : "TRACK RECORD";
+  const pct = Math.max(0, Math.min(1, mult - 1));
+  const score = p.oddieScore ?? 0;
+  const heroText = String(score);
+  const heroFS = 62;
+  const kicker = "ODDIES";
   const ring = `<circle cx="${RING_CX}" cy="${RING_CY}" r="${RING_R}" fill="none" stroke="${C.barBg}" stroke-width="${RING_SW}"/>
     ${pct > 0 ? `<circle cx="${RING_CX}" cy="${RING_CY}" r="${RING_R}" fill="none" stroke="${C.accent}" stroke-width="${RING_SW}"
       stroke-linecap="round" stroke-dasharray="${circumference.toFixed(1)}"
@@ -209,16 +214,16 @@ export function renderProfileCard(p: ProfileCard): string {
   <text x="${PAD_L}" y="178" font-size="52" font-weight="700" fill="${C.ink}">${esc(handle)}</text>
   ${flex}
 
-  <!-- hero: Oddie Score ring (or the empty "building" gauge) -->
+  <!-- hero: the score, ringed by how loud they have been -->
   ${ring}
 
   <!-- badges: earned identity, as medallions -->
   ${badgeRow}
 
-  <!-- stat row: accuracy · streak · resolved -->
+  <!-- stat row: what they brought, who turned up, how loud they have been -->
   <line x1="${PAD_L}" y1="${DIVIDER_Y}" x2="${PAD_R}" y2="${DIVIDER_Y}" stroke="${C.barBg}" stroke-width="3"/>
-  ${stat(PAD_L, acc, "ACCURACY")}
-  ${stat(390, String(p.streak), "STREAK")}
-  ${stat(690, String(p.resolved), "RESOLVED")}
+  ${stat(PAD_L, String(made), "MARKETS")}
+  ${stat(390, String(reached), "PLAYERS")}
+  ${stat(690, `${mult}x`, "LOUD")}
 </svg>`;
 }

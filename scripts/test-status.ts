@@ -19,11 +19,15 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { failures++; console.error(`  ✗ ${name}`); if (detail) console.error(`      ${detail}`); }
 };
 
+// Typed, NOT cast. `as AccuracyRecord` on a partial literal is how the ladder
+// fields stayed undefined here while the real record carried them, which is
+// precisely how a NaN reached a share card with every test green.
 const acc = (o: Partial<AccuracyRecord>): AccuracyRecord => ({
   resolved: 40, correct: 31, accuracyPct: 78, oddieScore: 640, meanEdge: 0.14,
   hasEnough: true, minResolved: 10, streak: 3, bestStreak: 7, bestTopic: null,
+  byCategory: [], loudMultiplier: 1, marketsCreated: 0, contributionPoints: 0, tradersReached: 0,
   ...o,
-} as AccuracyRecord);
+});
 
 console.log("\ncallerTier: the ladder is short, and every rung is loudness");
 {
@@ -108,20 +112,51 @@ console.log("\nthe farm is pointed at X, on purpose");
 
 console.log("\nflexLine: the postable brag, and only claims the data supports");
 {
-  check("full line with a qualifying category",
-    flexLine(acc({}), { category: "Crypto", pctile: 3 }) === "78% accuracy across 40 calls · top 3% in Crypto",
-    flexLine(acc({}), { category: "Crypto", pctile: 3 }));
-  check("no qualifying category drops the clause rather than faking one",
-    flexLine(acc({}), null) === "78% accuracy across 40 calls",
-    flexLine(acc({}), null));
-  check("singular 'call' at exactly one resolved",
-    flexLine(acc({ resolved: 1, hasEnough: false, accuracyPct: null }), null) === "1 call resolved · building a track record",
-    flexLine(acc({ resolved: 1, hasEnough: false, accuracyPct: null }), null));
-  check("a provisional record never quotes a percentage",
-    !flexLine(acc({ resolved: 4, hasEnough: false, accuracyPct: null }), { category: "Crypto", pctile: 3 }).includes("%"),
-    flexLine(acc({ resolved: 4, hasEnough: false, accuracyPct: null }), { category: "Crypto", pctile: 3 }));
-  check("a brand-new device reads as building, not as 0%",
-    flexLine(acc({ resolved: 0, hasEnough: false, accuracyPct: null }), null) === "building a track record");
+  const loud = (o: Partial<AccuracyRecord>) => flexLine(acc(o), { category: "Crypto", pctile: 3 });
+  check("what you brought, and who turned up for it",
+    loud({ marketsCreated: 4, tradersReached: 12 }) === "4 markets tagged · 12 players in them",
+    loud({ marketsCreated: 4, tradersReached: 12 }));
+  check("nobody in them yet drops the clause rather than saying zero",
+    loud({ marketsCreated: 4, tradersReached: 0 }) === "4 markets tagged",
+    loud({ marketsCreated: 4, tradersReached: 0 }));
+  check("singular at exactly one of each",
+    loud({ marketsCreated: 1, tradersReached: 1 }) === "1 market tagged · 1 player in them",
+    loud({ marketsCreated: 1, tradersReached: 1 }));
+  check("an earned multiplier is worn",
+    loud({ marketsCreated: 2, tradersReached: 5, loudMultiplier: 1.5 }) === "2 markets tagged · 5 players in them · 1.5x loud");
+  check("points without a market still say something true",
+    loud({ marketsCreated: 0, oddieScore: 300 }) === "300 oddies earned");
+  check("a brand-new device is honest about it",
+    loud({ marketsCreated: 0, oddieScore: null }) === "not on the board yet");
+
+  // The brag goes into a TWEET. Anything that can render as NaN or null in it
+  // is published under the user's name on the product's own channel.
+  for (const o of [{}, { marketsCreated: 3 }, { marketsCreated: 0, oddieScore: 0 },
+                   { resolved: 0, accuracyPct: null, hasEnough: true }] as Partial<AccuracyRecord>[]) {
+    const line = flexLine(acc(o), null);
+    check(`postable, never NaN or null: ${JSON.stringify(o)}`,
+      !/NaN|null|undefined/.test(line), line);
+  }
+}
+
+// The class of bug that hid the NaN: every check above builds an AccuracyRecord
+// by hand, so it can only ever test what the author remembered to put in it.
+// This one goes through the REAL computeAccuracy on the real store.
+console.log("\nthe record a live device actually gets is postable");
+{
+  const { _memSeasonCredit, accuracyFor, reputationFor } = await import("../src/store/markets.js");
+  const dev = "dev-postable-check";
+  _memSeasonCredit(dev, 50);
+  const real = await accuracyFor(dev);
+  check("a real ladder record has a score", (real.oddieScore ?? 0) > 0, String(real.oddieScore));
+  check("...and accuracyPct is null, not NaN, with nothing resolved",
+    real.accuracyPct === null, String(real.accuracyPct));
+  check("...and every number in it is finite or null",
+    [real.oddieScore, real.accuracyPct, real.meanEdge].every((v) => v === null || Number.isFinite(v)),
+    JSON.stringify({ s: real.oddieScore, a: real.accuracyPct, e: real.meanEdge }));
+  const rep = await reputationFor(dev);
+  check("...and the line it would post carries no NaN or null",
+    !/NaN|null|undefined/.test(rep.flexLine), rep.flexLine);
 }
 
 console.log("\nsmall fields cannot mint status");
@@ -143,7 +178,7 @@ console.log("\nreputationFor: one read, consistent across every surface");
   check("an unknown device resolves rather than throwing", !!rep, JSON.stringify(rep).slice(0, 80));
   check("...with no tier invented for it", rep.tier === null, JSON.stringify(rep.tier));
   check("...no rank", rep.rank === null);
-  check("...and an honest flex line", rep.flexLine === "building a track record", rep.flexLine);
+  check("...and an honest flex line", rep.flexLine === "not on the board yet", rep.flexLine);
   check("...and a handle that was never minted as a side effect of looking",
     typeof rep.handle === "string" && rep.handle.length > 0, rep.handle);
 }

@@ -1567,7 +1567,14 @@ function computeAccuracy(
 
   return {
     resolved, correct,
-    accuracyPct: hasEnough ? Math.round((100 * correct) / resolved) : null,
+    // Gated on RESOLVED, never on hasEnough. The two used to mean the same
+    // thing; hasEnough now means "there is something on the loudness ladder",
+    // and a device can have a score with zero resolved picks. Guarding a
+    // division by hasEnough then computes 0/0, and Math.round(NaN) is NaN,
+    // which is not `== null` and so passes every downstream null check: it
+    // reached the share PNG, the og:description and a pre-filled tweet as the
+    // literal text "NaN% accuracy".
+    accuracyPct: resolved >= MIN_RESOLVED_FOR_ACCURACY ? Math.round((100 * correct) / resolved) : null,
     // NOT gated on hasEnough. That gate exists so a hit-rate is never quoted off
     // two picks — a sample-size problem, and the right call for accuracyPct. The
     // score is activity-led now, and activity is not a sample: someone who has
@@ -1714,7 +1721,8 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 export async function weeklyScoreDeltaFor(rawDeviceId: string): Promise<WeeklyScoreDelta | null> {
   const deviceId = await resolveDevice(rawDeviceId);
   const cutoff = Date.now() - WEEK_MS;
-  let earned = 0;
+  let earned = 0;    // growth-ledger points credited in the window
+  let tagged = 0;    // markets put on the board in the window
 
   if (!PERSISTENT) {
     for (const r of memSeasonLog) {
@@ -1722,18 +1730,35 @@ export async function weeklyScoreDeltaFor(rawDeviceId: string): Promise<WeeklySc
       if (Date.parse(r.createdAt) < cutoff) continue;
       earned += r.amount;
     }
+    for (const [, sf] of memSurfacer) {
+      if (sf.deviceId !== deviceId) continue;
+      if (Date.parse(sf.createdAt) < cutoff) continue;
+      tagged++;
+    }
   } else {
     await ensureSchema();
-    const { rows } = await db().query<{ total: string | null }>(
-      `SELECT SUM(amount)::bigint AS total FROM season_points_log
-        WHERE device_id = $1 AND created_at >= now() - interval '7 days'`,
-      [deviceId],
-    );
-    earned = Number(rows[0]?.total ?? 0);
+    const [pts, made] = await Promise.all([
+      db().query<{ total: string | null }>(
+        `SELECT SUM(amount)::bigint AS total FROM season_points_log
+          WHERE device_id = $1 AND created_at >= now() - interval '7 days'`, [deviceId]),
+      db().query<{ n: string }>(
+        `SELECT COUNT(*)::bigint AS n FROM market_surfacer
+          WHERE device_id = $1 AND created_at >= now() - interval '7 days'`, [deviceId]),
+    ]);
+    earned = Number(pts.rows[0]?.total ?? 0);
+    tagged = Number(made.rows[0]?.n ?? 0);
   }
 
-  if (!earned) return null;   // a quiet week says nothing rather than "+0"
-  const delta = earned * SCORE_WEIGHTS.contribution;
+  if (!earned && !tagged) return null;   // a quiet week says nothing rather than "+0"
+  // BOTH halves of the score, or the arrow contradicts the number above it.
+  // Reading the ledger alone was wrong by 100 x multiplier per market: tagging
+  // pays a 50-point `surface` ledger row AND counts in marketsCreated, and only
+  // the first of those is in season_points_log. A week with one tagged market
+  // moved the score by 200 at 1x and reported "+100".
+  const { multiplier } = await loudStatusFor(deviceId).catch(() => ({ multiplier: 1 }));
+  const delta = earned * SCORE_WEIGHTS.contribution
+    + Math.round(tagged * SCORE_WEIGHTS.marketCreated * multiplier);
+  if (!delta) return null;
   return { delta, direction: delta >= 0 ? "up" : "down" };
 }
 
@@ -2310,40 +2335,53 @@ export function _resetStandingsCache(): void { standingsCache = null; }
  * markets surfaced, and the growth ledger.
  */
 async function loudnessRanking(): Promise<{ deviceId: string; score: number }[]> {
-  const points = new Map<string, number>();
+  const devices = new Set<string>();
+  const handles = new Set<string>();
+  const note = (d: string | null, h: string | null): void => {
+    if (d) devices.add(d);
+    else if (h) handles.add(h.replace(/^@+/, "").toLowerCase());
+  };
+
   // Both halves of the ladder, not just the ledger. Tagging a market is the act
   // the whole product asks for and it is the score's biggest rung, so a device
-  // that has only ever done that has to be a candidate. Reading the ledger
-  // alone would leave the person who did exactly what they were asked unranked.
+  // that has only ever done that has to be a candidate.
+  //
+  // Handle-only rows count too. Points and surfaced markets are credited by
+  // handle when the tagger has no device yet, and are resolved to a device the
+  // moment one claims that handle. scoreActivityFor already reads them that way,
+  // so a candidate list built from device_id alone would show somebody a score
+  // on their profile and no row at all on the board.
   if (!PERSISTENT) {
-    for (const r of memSeasonLog) {
-      if (!r.deviceId) continue;
-      points.set(r.deviceId, (points.get(r.deviceId) ?? 0) + r.amount);
-    }
-    for (const [, sf] of memSurfacer) if (sf.deviceId && !points.has(sf.deviceId)) points.set(sf.deviceId, 0);
+    for (const r of memSeasonLog) note(r.deviceId, r.handle);
+    for (const [, sf] of memSurfacer) note(sf.deviceId, sf.handle);
   } else {
     await ensureSchema();
-    const { rows } = await db().query<{ device_id: string; total: string }>(
-      `SELECT device_id, SUM(amount)::bigint AS total FROM season_points_log
-        WHERE device_id IS NOT NULL GROUP BY device_id`,
-    );
-    for (const r of rows) points.set(r.device_id, Number(r.total));
-    const { rows: sf } = await db().query<{ device_id: string }>(
-      `SELECT DISTINCT device_id FROM market_surfacer WHERE device_id IS NOT NULL`,
-    );
-    for (const r of sf) if (!points.has(r.device_id)) points.set(r.device_id, 0);
+    const [pts, made] = await Promise.all([
+      db().query<{ device_id: string | null; handle: string | null }>(
+        `SELECT DISTINCT device_id, handle FROM season_points_log`),
+      db().query<{ device_id: string | null; handle: string | null }>(
+        `SELECT DISTINCT device_id, handle FROM market_surfacer`),
+    ]);
+    for (const r of [...pts.rows, ...made.rows]) note(r.device_id, r.handle);
+  }
+  for (const h of handles) {
+    const d = await deviceForTwitterHandle(h).catch(() => null);
+    if (d) devices.add(d);
   }
 
   const out: { deviceId: string; score: number }[] = [];
-  for (const [deviceId, contributionPoints] of points) {
-    const creator = await creatorStatsFor(deviceId).catch(() => null);
-    const loud = await loudStatusFor(deviceId).catch(() => ({ multiplier: 1 }));
+  for (const deviceId of devices) {
+    // scoreActivityFor, not a private sum: it is the exact read the profile
+    // uses, so the board and the profile cannot quote two different numbers for
+    // one person.
+    const a = await scoreActivityFor(deviceId).catch(() => null);
+    if (!a) continue;
     const score = oddieScoreFrom({
-      marketsCreated: creator?.marketsCreated ?? 0,
-      contributionPoints,
+      marketsCreated: a.marketsCreated,
+      contributionPoints: a.contributionPoints,
       resolvedCalls: 0,
       meanEdge: null,
-      loudMultiplier: loud.multiplier,
+      loudMultiplier: a.loudMultiplier,
     });
     if (score > 0) out.push({ deviceId, score });
   }
@@ -2565,16 +2603,30 @@ export interface CallerReputation {
  * quoting a percentage that isn't yet meaningful. Never renders a claim the
  * data doesn't support; an unimpressive record gets an honest short line.
  */
-export function flexLine(acc: AccuracyRecord, topCategory: { category: string; pctile: number } | null): string {
-  if (!acc.hasEnough || acc.accuracyPct == null) {
-    const n = acc.resolved;
-    return n === 0
-      ? "building a track record"
-      : `${n} call${n === 1 ? "" : "s"} resolved · building a track record`;
+/**
+ * The one line this product asks people to screenshot.
+ *
+ * It used to read "64% accuracy across 20 calls". Nothing resolves calls any
+ * more, so for everyone who arrived after the pivot it read "building a track
+ * record" no matter how many markets they had put up, and once hasEnough moved
+ * to the ladder it read "NaN% accuracy across 0 calls" and offered that to X.
+ *
+ * It says what the ladder measures: what you brought, and who turned up for it.
+ * topCategory is still accepted so call sites keep compiling, and ignored,
+ * because per-category standing is accuracy over the same dead rows.
+ */
+export function flexLine(acc: AccuracyRecord, _topCategory: { category: string; pctile: number } | null): string {
+  const made = acc.marketsCreated;
+  if (made > 0) {
+    const parts = [`${made} market${made === 1 ? "" : "s"} tagged`];
+    if (acc.tradersReached > 0) {
+      parts.push(`${acc.tradersReached} player${acc.tradersReached === 1 ? "" : "s"} in them`);
+    }
+    if (acc.loudMultiplier > 1) parts.push(`${acc.loudMultiplier}x loud`);
+    return parts.join(" · ");
   }
-  const parts = [`${acc.accuracyPct}% accuracy across ${acc.resolved} calls`];
-  if (topCategory) parts.push(`top ${topCategory.pctile}% in ${topCategory.category}`);
-  return parts.join(" · ");
+  if ((acc.oddieScore ?? 0) > 0) return `${acc.oddieScore} oddies earned`;
+  return "not on the board yet";
 }
 
 /** One read that every reputation surface shares. */

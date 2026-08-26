@@ -3903,28 +3903,30 @@ function statsRowHtml(m){
 function buildRail(me,creator,claimFrag,openCalls,topCreators){
   const rail=document.createElement("aside");rail.className="homerail";
 
-  // CALLER identity. A provisional record says how far off it is rather than
-  // quoting a percentage that doesn't mean anything yet — same honesty rule
-  // the standing panel and the share card already follow.
+  // YOUR identity on the rail. It used to lead with an accuracy percentage over
+  // a resolved-pick count, and both are frozen at zero for everyone who arrived
+  // after the play economy was removed: the panel read "null% accurate" over
+  // "0 resolved" and told people to resolve picks they can no longer make.
+  // It leads with the score and the act that moves it.
   if(me){
     const p=document.createElement("div");p.className="rpanel";
     const tierLine=me.tier?`<span class="rp-tier">🏆 ${esc(me.tier.label)}</span>`:"";
-    const pctLine=me.rank&&me.rank.topPct!=null?`<span class="rp-sub">Top ${me.rank.topPct}% of all callers</span>`:"";
+    const pctLine=me.rank&&me.rank.topPct!=null?`<span class="rp-sub">Top ${me.rank.topPct}% on the board</span>`:"";
+    const made=Number(me.marketsCreated)||0, reached=Number(me.tradersReached)||0;
     p.innerHTML=me.hasEnough
-      ? `<div class="rp-head">Your calls</div>
+      ? `<div class="rp-head">Your oddies</div>
          ${tierLine}
-         <div class="rp-big">${me.accuracyPct}%<small>accurate</small></div>
+         <div class="rp-big">${Number(me.oddieScore)||0}<small>oddies</small></div>
          <div class="rp-grid">
-           <div><b>${me.resolved}</b><span>resolved</span></div>
-           <div><b>${me.streak||0}</b><span>streak</span></div>
+           <div><b>${made}</b><span>tagged</span></div>
+           <div><b>${reached}</b><span>reached</span></div>
          </div>
          ${pctLine}
-         ${me.topCategory?`<span class="rp-sub">Top ${me.topCategory.pctile}% in ${esc(me.topCategory.category)}</span>`:""}
          <a class="rp-link" href="#/profile">View profile →</a>`
-      : `<div class="rp-head">Your calls</div>
-         <div class="rp-big rp-big-sm">${me.resolved}<small>resolved</small></div>
-         <div class="rp-sub">${Math.max(0,(me.minResolved||10)-(me.resolved||0))} more before you get a score and a rank.</div>
-         <a class="rp-link" href="#/positions">See your positions →</a>`;
+      : `<div class="rp-head">Your oddies</div>
+         <div class="rp-big rp-big-sm">0<small>oddies</small></div>
+         <div class="rp-sub">Tag @oddiefun on X. One market puts you on the board.</div>
+         <a class="rp-link" href="#/profile">View profile →</a>`;
     rail.appendChild(p);
   }
 
@@ -4810,7 +4812,7 @@ async function renderHome(){
   let topFrag=null;
   if(topCallers.length){
     topFrag=document.createDocumentFragment();
-    section(topFrag,"Top callers");
+    section(topFrag,"Loudest right now");
     // Hash route, same as the nav buttons — a real href so it middle-clicks and
     // right-clicks like a link, no JS interception needed.
     const box=document.createElement("a");box.className="topc";box.href="#/leaderboard";
@@ -4818,7 +4820,7 @@ async function renderHome(){
       <div class="topc-r">
         <div class="topc-rank">${r.rank}</div>
         <div class="topc-who">@${esc(r.handle)}</div>
-        <div class="topc-edge">${pts(r.avgEdge)}<small>${r.closed} closed</small></div>
+        <div class="topc-edge">${Number(r.oddies)||0}<small>${r.loudMultiplier>1?`🔥 ${r.loudMultiplier}x`:"oddies"}</small></div>
       </div>`).join("");
     topFrag.appendChild(box);
     const more=document.createElement("a");more.className="topc-more";more.href="#/leaderboard";
@@ -5434,6 +5436,22 @@ function reachHtml(creator){
     </div>`;
 }
 
+// What a person brags about, in one place. Three separate Share buttons each
+// built their own accuracy sentence, and when accuracy died all three published
+// "null% accuracy" to X under the user's name. One source now, and it can only
+// say things the ladder actually knows.
+function loudBrag(acc){
+  if(!acc)return "";
+  const made=Number(acc.marketsCreated)||0, reached=Number(acc.tradersReached)||0;
+  if(made>0){
+    const p=[`${made} market${made===1?"":"s"} tagged`];
+    if(reached>0)p.push(`${reached} player${reached===1?"":"s"} in them`);
+    return p.join(" · ");
+  }
+  const sc=Number(acc.oddieScore)||0;
+  return sc>0?`${sc} oddies earned`:"";
+}
+
 function loudNextHtml(mult){
   const m=Number(mult)||1;
   if(m>=2)return `<p class="cnote">🔥 Your markets earn <b>2x</b>, the top of the ladder, held by winning a week.</p>`;
@@ -5478,9 +5496,10 @@ async function renderPublicProfile(){
   animateOscore(scroller,acc.oddieScore,acc.hasEnough,false);
   const sb=scroller.querySelector("#pubshare");
   if(sb)sb.onclick=()=>{
-    const text=acc.hasEnough
-      ?`@${data.handle}: ${acc.oddieScore} oddies, ${acc.accuracyPct}% accuracy on oddie`
-      :`@${data.handle} is building a track record on oddie`;
+    const brag=loudBrag(acc);
+    const text=brag
+      ?`@${data.handle}: ${brag} on oddie`
+      :`@${data.handle} is getting loud on oddie`;
     xShare(text, `${SHARE_ORIGIN}/@${data.handle}`, "public_profile");
   };
 }
@@ -5731,7 +5750,7 @@ async function loadLeaderboard(scroller){
  * below show who's winning, this shows what being right has made YOU.
  *
  * Three honest states, never a flattering fourth:
- *   - tiered: the claimable noun ("Oracle"), the percentile, the brag, share.
+ *   - tiered: the claimable noun ("Loudest"), the percentile, the brag, share.
  *   - ranked but untiered: the rank, and what it takes to reach the next tier.
  *   - provisional: how many more resolved calls before any of it counts.
  */
@@ -5761,20 +5780,20 @@ function standingHtml(you){
       ${share(line)}
     </div>`;
   }
-  // Ranked, no tier yet — name the next rung so the grind has a target.
+  // Ranked, no tier yet. It used to say "beat the odds you take to earn Proven
+  // Caller", pointing at a badge that no longer exists by a route that no
+  // longer works. The entry rung is tagging, so it names that.
   return `<div class="standing pending">
-    <div class="standing-tier">Ranked caller</div>
-    <div class="standing-rank">${pct!=null?`Top ${pct}%`:"—"}</div>
-    <div class="standing-sub">${pct!=null?`#${you.rank.rank} of ${you.rank.total} · `:""}beat the odds you take to earn <b>Proven Caller</b>.</div>
+    <div class="standing-tier">On the board</div>
+    <div class="standing-rank">${pct!=null?`Top ${pct}%`:"Ranked"}</div>
+    <div class="standing-sub">${pct!=null?`#${you.rank.rank} of ${you.rank.total} · `:""}Tag <b>@oddiefun</b> on X to climb.</div>
     <div class="standing-flex">${esc(you.flexLine)}</div>
   </div>`;
 }
 
-/* Four boards, four virtues: oddies = loudness and play, accurate = skill,
-   streak = showing up, creators = the markets you brought. The old comment
-   below describes the pre-oddies shape and is kept for the parts still true.
-   Three boards, three virtues: edge = skill, streak = showing up, winnings =
- * playing AND being right. Raw call count is deliberately not a board. */
+/* Two boards, two virtues: oddies = how loud you have been, creators = what
+   your markets have paid you. The accuracy and streak boards are gone with the
+   play economy that fed them. */
 function renderLb(scroller,data){
   const row=(r,inner)=>`
     <div class="r${r.you?" you":""}">
@@ -5858,9 +5877,11 @@ async function loadNotices(scroller){
       <p class="sub">Markets you held that resolved. Won or lost — the call is yours to post.</p>
       ${notices.map(noticeCardHTML).join("")}
     </div>`;
-    // Resolution as content: one tap opens a pre-filled X post — their call, the
-    // odds they took, the outcome, and their accuracy. They edit before posting.
-    const accClause=acc&&acc.hasEnough?`${acc.accuracyPct}% accuracy on oddie`:"on oddie";
+    // Resolution as content: one tap opens a pre-filled X post with their call,
+    // the odds they took, the outcome, and what they have brought to oddie.
+    // They edit before posting.
+    const brag=loudBrag(acc);
+    const accClause=brag?`${brag} on oddie`:"on oddie";
     scroller.querySelectorAll("[data-nshare]").forEach(b=>b.onclick=()=>{
       const slug=b.dataset.slug, odds=b.dataset.odds, outcome=(b.dataset.outcome||"").toUpperCase(), win=b.dataset.win==="1";
       const lead=win?"called it":"missed this one";
@@ -6031,9 +6052,8 @@ async function loadProfile(scroller){
   // homepage only if this device somehow has no handle yet).
   const trshareBtn=scroller.querySelector("#trshare");
   if(trshareBtn)trshareBtn.onclick=()=>{
-    const text=acc&&acc.hasEnough
-      ? `${acc.accuracyPct}% accuracy, ${acc.streak}-pick streak on oddie`
-      : "building my track record on oddie";
+    const brag=loudBrag(acc);
+    const text=brag?`${brag} on oddie`:"getting loud on oddie";
     xShare(text, myHandle?`${SHARE_ORIGIN}/@${myHandle}`:"https://oddie.fun", "profile");
   };
   scroller.querySelectorAll("[data-theme-mode]").forEach(b=>b.onclick=()=>{

@@ -421,11 +421,18 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
 // SPA shell with per-handle og tags (image = the profile card), so a shared
 // /@{handle} link unfurls on X showing the Oddie Score. Fully viewable logged
 // out; the SPA renders the public view from /api/profile/{handle}.
-function profilePageHtml(handle: string, acc: { oddieScore: number | null; accuracyPct: number | null; streak: number; resolved: number; hasEnough: boolean }): string {
+function profilePageHtml(handle: string, acc: { oddieScore: number | null; hasEnough: boolean; marketsCreated: number; tradersReached: number }): string {
   const title = `@${handle} on oddie`;
+  // What unfurls on X. It used to quote accuracy over resolved picks, which is
+  // frozen at zero for everyone post-pivot, and once the score gate moved to
+  // the ladder it read "NaN% accuracy" on the one surface X shows strangers.
+  const made = acc.marketsCreated;
   const desc = acc.hasEnough
-    ? `${acc.oddieScore} oddies · ${acc.accuracyPct}% accuracy · ${acc.resolved} resolved picks`
-    : `building a track record · ${acc.resolved} resolved picks so far`;
+    ? [`${acc.oddieScore} oddies`,
+       made > 0 ? `${made} market${made === 1 ? "" : "s"} tagged` : null,
+       acc.tradersReached > 0 ? `${acc.tradersReached} player${acc.tradersReached === 1 ? "" : "s"} reached` : null,
+      ].filter(Boolean).join(" · ")
+    : `not on the board yet`;
   const img = `${BASE_URL}/card/u/${encodeURIComponent(handle)}.png`;
   const url = `${BASE_URL}/@${handle}`;
   const tags = [
@@ -1019,13 +1026,14 @@ app.get("/api/home", async (req, res) => {
   // board shows, so the teaser and the page it links to can never disagree.
   const topCreators = (await leaderboardCreators(3).catch(() => []))
     .map((r, i) => ({ rank: i + 1, handle: r.handle, earnings: r.earnings, marketsCreated: r.marketsCreated }));
-  // Only RANKED callers are eligible — `provisional` is the store's existing
-  // "sample too small to mean anything" flag, and the full Leaderboard sorts
-  // those below everyone else for the same reason.
-  const ranked = board.filter((r) => !r.provisional);
+  // Everyone with something on the ladder is eligible. It used to filter on
+  // `provisional`, which meant "too few resolved picks to mean anything" and is
+  // now true for every ladder row by construction, so the teaser emptied itself
+  // as soon as ladder rows filled the top of the board.
+  const ranked = board.filter((r) => r.oddies > 0);
   const topCallers = ranked.length >= HOME_MIN_RANKED
     ? ranked.slice(0, HOME_TOP_CALLERS_SHOWN).map((r, i) => ({
-        rank: i + 1, handle: r.handle, avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed,
+        rank: i + 1, handle: r.handle, oddies: r.oddies, loudMultiplier: r.loudMultiplier,
       }))
     : [];
   // The tag-CTA's points-incentive line reads this live rather than hardcoding
@@ -1041,10 +1049,10 @@ app.get("/api/home", async (req, res) => {
     // made, traders reached). Null for a device we don't know yet.
     topCreators,
     me: me ? {
-      handle: me.handle, accuracyPct: me.accuracy.accuracyPct, resolved: me.accuracy.resolved,
-      hasEnough: me.accuracy.hasEnough, minResolved: me.accuracy.minResolved,
+      handle: me.handle, hasEnough: me.accuracy.hasEnough,
       oddieScore: me.accuracy.oddieScore, rank: me.rank, tier: me.tier,
-      topCategory: me.topCategory, streak: me.accuracy.streak,
+      marketsCreated: me.accuracy.marketsCreated, tradersReached: me.accuracy.tradersReached,
+      loudMultiplier: me.accuracy.loudMultiplier,
     } : null,
     creator,
   });
@@ -1223,8 +1231,10 @@ app.get("/card/u/:handle.png", async (req, res) => {
   const [rep, hd] = await Promise.all([reputationFor(deviceId), displayHandle(deviceId)]);
   const acc = rep.accuracy;
   const png = renderCardPng(renderProfileCard({
-    handle: hd.handle, oddieScore: acc.oddieScore, meanEdge: acc.meanEdge, accuracyPct: acc.accuracyPct,
+    handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
+    marketsCreated: acc.marketsCreated, tradersReached: acc.tradersReached,
+    loudMultiplier: acc.loudMultiplier,
     badges: rep.badges.map((b) => ({ label: b.label, kind: b.kind })),
     rankTopPct: rep.rank ? rep.rank.topPct : null,
     tierLabel: rep.tier ? rep.tier.label : null, flexLine: rep.flexLine,
