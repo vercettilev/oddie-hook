@@ -1263,7 +1263,8 @@
     box-shadow:0 3px 0 rgba(0,0,0,.25)}
   :root[data-theme="dark"] .au-av{border-color:#05060A;box-shadow:0 3px 0 rgba(0,0,0,.8)}
   .au-av--oddie{background:var(--accent) var(--mark) center/cover no-repeat}
-  .au-av--emoji{font-family:inherit;font-size:19px;line-height:1}
+  .au-av--img{background:var(--ground-2);overflow:hidden;padding:0}
+  .au-av--img img{width:100%;height:100%;object-fit:cover;display:block}
   .au-who{display:flex;flex-direction:column;min-width:0;line-height:1.15}
   .au-who b{font-family:'Fredoka';font-weight:700;font-size:16px;color:var(--on-ground);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1900,21 +1901,16 @@
   /* profile */
   /* The chosen face: a chunky sticker like everything else a thumb touches. */
   .pfav{position:relative;width:74px;height:74px;border-radius:50%;display:grid;place-items:center;
-    font-size:36px;line-height:1;cursor:pointer;padding:0;margin:0 0 10px;
-    border:3px solid var(--ink);box-shadow:0 5px 0 rgba(0,0,0,.25)}
+    overflow:hidden;font-size:32px;line-height:1;cursor:pointer;padding:0;margin:0 0 10px;
+    background:var(--accent);border:3px solid var(--ink);box-shadow:0 5px 0 rgba(0,0,0,.25)}
+  .pfav img{width:100%;height:100%;object-fit:cover;display:block}
+  .pfav-empty{font-family:'Fredoka';font-weight:700;color:#12140A}
   :root[data-theme="dark"] .pfav{border-color:#05060A;box-shadow:0 5px 0 rgba(0,0,0,.85)}
   .pfav:active{box-shadow:0 1px 0 rgba(0,0,0,.25);transform:translateY(4px)}
   .pfav-pen{position:absolute;right:-4px;bottom:-4px;width:26px;height:26px;border-radius:50%;
     display:grid;place-items:center;font-size:12px;background:var(--ink);color:#fff;border:2.5px solid var(--ground)}
   .pfav--big{width:88px;height:88px;font-size:44px;margin:0 auto 14px;cursor:default}
   .pf-preview{display:flex;justify-content:center}
-  .pf-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
-  .pf-e{font-size:24px;line-height:1;padding:8px 0;cursor:pointer;border-radius:12px;
-    border:2.5px solid var(--card-line);background:none}
-  .pf-e.on{border-color:var(--accent);background:rgba(215,220,31,.14)}
-  .pf-hues{display:flex;gap:8px;justify-content:center;margin-bottom:14px}
-  .pf-h{width:34px;height:34px;border-radius:50%;cursor:pointer;border:3px solid transparent}
-  .pf-h.on{border-color:var(--on-ground)}
 
   .avatar{width:84px;height:84px;border-radius:50%;background:var(--accent);border:1.5px solid #000;position:relative;flex:none}
   .avatar::before,.avatar::after{content:"";position:absolute;width:15px;height:15px;background:#000;border-radius:50%;top:31px}
@@ -1954,8 +1950,14 @@
   .summary .v{font-size:22px;font-weight:700;line-height:1}
   .summary .k{font-family:'Nunito';font-weight:800;font-size:11px;color:var(--muted);margin-top:4px}
 
-  /* Accuracy record — the four public reputation stats. Tiles are the fixed
-     white .tile, so text is FIXED dark to hold contrast in both themes. */
+  /* Accuracy record — the four public reputation stats.
+     The note that used to be here said the tiles were "the fixed white .tile,
+     so text is FIXED dark to hold contrast in both themes". That stopped being
+     true when .tile moved to var(--card-surface): the surface became
+     theme-aware and the ink did not, so every number on this screen was a very
+     dark green on a near-black card. Unreadable, and the same failure this
+     file has recorded three times already, which is a hardcoded colour chosen
+     for a surface that later learned to change. Dark gets its own values. */
   .trhead{display:flex;align-items:center;justify-content:space-between;margin:16px 0 10px}
   .trhead .psec{margin:0}
   .trshare{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#17250a;
@@ -1969,6 +1971,10 @@
   .trstats .v.topic{font-size:17px}
   .trstats .k{font-family:'Nunito';font-weight:800;font-size:11px;color:#5c6660;margin-top:5px}
   .trstats .best{font-size:11px;font-weight:800;color:#5c6660;white-space:nowrap}
+  :root[data-theme="dark"] .trstats .v{color:var(--on-ground)}
+  :root[data-theme="dark"] .trstats .v.topic{color:#D7DC1F}
+  :root[data-theme="dark"] .trstats .k,
+  :root[data-theme="dark"] .trstats .best{color:var(--muted-g)}
   /* Per-category accuracy — supporting detail below the Oddie Score, one row per
      category that has cleared its own resolved-picks threshold (the same
      "building track record" minimum, applied per category instead of globally).
@@ -2503,7 +2509,7 @@ async function initChainLayer(){
  * a second tab or a reload always shows what the database says. `balance` is
  * null until /api/me answers.
  */
-let balance=null, oddies=0, pickStreak=0, myAvatar=null;
+let balance=null, oddies=0, pickStreak=0, myAvatarStamp=null;
 // Identity extras from /api/me, for the private profile: earned badges and the
 // season rank. Cached from the same call that fills the balance pill.
 let myBadges=[], myRank=null;
@@ -2514,7 +2520,7 @@ async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok){const w=await r.json();balance=w.tokens;if(typeof w.oddies==="number")oddies=w.oddies;
-      if(w.avatar&&w.avatar.emoji)myAvatar=w.avatar;
+      myAvatarStamp=w.avatarStamp??null;
       if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
       myBadges=w.badges||[];myRank=w.rank||null;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;
@@ -3726,9 +3732,12 @@ function takeSizeClass(q){
  *  not going to fetch them: that would be a request to a third party on every
  *  card, for every visitor, keyed to a person's identity. A letter on a colour
  *  derived from the handle is stable, free, and reads as an avatar at this size. */
-function handleAvatar(handle,chosen){
-  if(chosen&&chosen.emoji){
-    return `<span class="au-av au-av--emoji" style="background:hsl(${Number(chosen.hue)||0} 70% 62%)">${esc(chosen.emoji)}</span>`;
+function handleAvatar(handle,stamp){
+  // A real picture when the tagger uploaded one. The stamp is the row's own
+  // set_at, so the URL changes when the picture does and the week-long cache
+  // header is safe.
+  if(stamp){
+    return `<span class="au-av au-av--img"><img src="${API}/api/avatar/${encodeURIComponent(handle)}.jpg?v=${stamp}" alt="" loading="lazy"></span>`;
   }
   let h=0; for(let i=0;i<handle.length;i++) h=(h*31+handle.charCodeAt(i))|0;
   const hue=Math.abs(h)%360;
@@ -3950,58 +3959,90 @@ function buildRail(me,creator,claimFrag,openCalls,topCreators){
 }
 
 /* --------------------------------------------------------- pick a face -----
- * Emoji and a hue, not an upload. There is no storage to pay for, no image to
- * resize, nothing to moderate, and no third-party request on every card to
- * fetch somebody's picture. It is also the right register for this product: a
- * face should be one tap, not a file browser.
+ * A real picture, cropped and resized in the browser before it is ever sent.
+ *
+ * A canvas draws the file centre-cropped into a 256x256 square and exports a
+ * JPEG, which lands around 15-25KB. That means no server-side image
+ * processing, no object storage, no upload directory to lose on a redeploy,
+ * and an upper bound on what anyone can store that is enforced by the encoder
+ * rather than by trusting the client.
  */
-const AVATAR_EMOJI=["🙂","😎","🤠","👽","🤖","👻","🦊","🐸","🐙","🦈","🐉","🔥","⚡","💎","🎯","🃏","🧠","👑","🚀","🍀"];
-const AVATAR_HUES=[48,88,150,190,215,265,300,335];
+const AVATAR_PX=256;
+
+function cropToSquare(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      const side=Math.min(img.width,img.height);
+      const c=document.createElement("canvas");
+      c.width=AVATAR_PX;c.height=AVATAR_PX;
+      const g=c.getContext("2d");
+      // Centre crop, then scale. Cropping first is what keeps a portrait photo
+      // from arriving as a squashed face.
+      g.drawImage(img,(img.width-side)/2,(img.height-side)/2,side,side,0,0,AVATAR_PX,AVATAR_PX);
+      resolve(c.toDataURL("image/jpeg",0.82));
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("that file is not an image"));};
+    img.src=url;
+  });
+}
 
 function openAvatarPicker(scroller){
-  let emoji=(myAvatar&&myAvatar.emoji)||"🙂";
-  let hue=(myAvatar&&Number(myAvatar.hue))||48;
-
+  let pending=null;
   const dim=document.createElement("div");dim.className="cdim";
-  dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Pick your face">
-    <h3>Pick your face</h3>
-    <div class="pf-preview" id="pfPrev"></div>
-    <div class="pf-grid" id="pfEmoji">${AVATAR_EMOJI.map(e=>
-      `<button class="pf-e" type="button" data-e="${esc(e)}">${esc(e)}</button>`).join("")}</div>
-    <div class="pf-hues" id="pfHues">${AVATAR_HUES.map(h=>
-      `<button class="pf-h" type="button" data-h="${h}" style="background:hsl(${h} 70% 62%)"></button>`).join("")}</div>
+  dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Profile picture">
+    <h3>Your picture</h3>
+    <p class="cnote">Square works best. It is cropped and shrunk on your device before it is sent, so nothing large ever leaves this browser.</p>
+    <div class="pf-preview"><span class="pfav pfav--big" id="pfPrev">${myAvatarStamp?`<img src="${API}/api/avatar/${encodeURIComponent(myHandle)}.jpg?v=${myAvatarStamp}" alt="">`:`<span class="pfav-empty">${esc((myHandle||"?")[0].toUpperCase())}</span>`}</span></div>
+    <input type="file" id="pfFile" accept="image/jpeg,image/png" hidden>
+    <button class="claimbtn" id="pfPick" type="button">Choose a picture</button>
     <div class="paste-err" id="pfErr" hidden></div>
-    <button class="claimbtn" id="pfSave" type="button">Save</button>
+    <button class="quiet" id="pfSave" type="button" hidden>Save this one</button>
+    ${myAvatarStamp?'<button class="quiet" id="pfClear" type="button">Remove my picture</button>':""}
     <button class="quiet" id="pfCancel" type="button">Not now</button>
   </div>`;
   dim.onclick=(e)=>{if(e.target===dim)dim.remove();};
   document.body.appendChild(dim);
 
-  const paint=()=>{
-    dim.querySelector("#pfPrev").innerHTML=
-      `<span class="pfav pfav--big" style="background:hsl(${hue} 70% 62%)">${esc(emoji)}</span>`;
-    dim.querySelectorAll(".pf-e").forEach(b=>b.classList.toggle("on",b.dataset.e===emoji));
-    dim.querySelectorAll(".pf-h").forEach(b=>b.classList.toggle("on",Number(b.dataset.h)===hue));
-  };
-  dim.querySelectorAll(".pf-e").forEach(b=>b.onclick=()=>{emoji=b.dataset.e;paint();});
-  dim.querySelectorAll(".pf-h").forEach(b=>b.onclick=()=>{hue=Number(b.dataset.h);paint();});
-  paint();
+  const err=dim.querySelector("#pfErr"), prev=dim.querySelector("#pfPrev");
+  const file=dim.querySelector("#pfFile"), save=dim.querySelector("#pfSave");
+  const fail=(msg)=>{err.textContent=msg;err.hidden=false;};
 
-  dim.querySelector("#pfCancel").onclick=()=>dim.remove();
-  dim.querySelector("#pfSave").onclick=async()=>{
-    const err=dim.querySelector("#pfErr"); err.hidden=true;
+  dim.querySelector("#pfPick").onclick=()=>file.click();
+  file.onchange=async()=>{
+    const f=file.files&&file.files[0];
+    if(!f)return;
+    err.hidden=true;
+    try{
+      pending=await cropToSquare(f);
+      prev.innerHTML=`<img src="${pending}" alt="">`;
+      save.hidden=false;
+    }catch(e){fail(e.message||"couldn't read that file");}
+  };
+  save.onclick=async()=>{
+    if(!pending)return;
+    err.hidden=true;save.disabled=true;save.textContent="Saving…";
     try{
       const r=await fetch(`${API}/api/profile/avatar`,{method:"POST",
         headers:{"content-type":"application/json"},
-        body:JSON.stringify({deviceId,emoji,hue})});
+        body:JSON.stringify({deviceId,image:pending})});
       const j=await r.json();
-      if(!r.ok||!j.ok){err.textContent=j.error||"couldn't save. Try again";err.hidden=false;return;}
-      myAvatar={emoji:j.emoji,hue:j.hue};
-      ev("avatar_set",{});
-      dim.remove();
-      loadProfile(scroller);
-    }catch(e){err.textContent="couldn't save. Try again";err.hidden=false;}
+      if(!r.ok||!j.ok){save.disabled=false;save.textContent="Save this one";return fail(j.error||"couldn't save. Try again");}
+      myAvatarStamp=j.stamp; ev("avatar_set",{});
+      dim.remove(); loadProfile(scroller);
+    }catch(e){save.disabled=false;save.textContent="Save this one";fail("couldn't save. Try again");}
   };
+  const clr=dim.querySelector("#pfClear");
+  if(clr)clr.onclick=async()=>{
+    try{
+      await fetch(`${API}/api/profile/avatar/clear`,{method:"POST",
+        headers:{"content-type":"application/json"},body:JSON.stringify({deviceId})});
+      myAvatarStamp=null; dim.remove(); loadProfile(scroller);
+    }catch(e){fail("couldn't remove it. Try again");}
+  };
+  dim.querySelector("#pfCancel").onclick=()=>dim.remove();
 }
 
 const X_STATUS_RE=/(?:twitter|x)\.com\/[^/]+\/status\/(\d+)/i;
@@ -5946,8 +5987,11 @@ async function loadProfile(scroller){
 
   await loadBalance(); // the handle rides on /api/me
   const handleRow=myHandle?`
-    <button class="pfav" id="pfav" type="button" aria-label="Change your face"
-      style="background:hsl(${myAvatar?Number(myAvatar.hue):48} 70% 62%)">${myAvatar?esc(myAvatar.emoji):"🙂"}<span class="pfav-pen" aria-hidden="true">✎</span></button>
+    <button class="pfav" id="pfav" type="button" aria-label="Change your picture">${
+      myAvatarStamp
+        ? `<img src="${API}/api/avatar/${encodeURIComponent(myHandle)}.jpg?v=${myAvatarStamp}" alt="">`
+        : `<span class="pfav-empty">${esc((myHandle||"?")[0].toUpperCase())}</span>`
+    }<span class="pfav-pen" aria-hidden="true">✎</span></button>
     <div class="hrow" id="hrow">
       <span class="hname">@${esc(myHandle)}</span>
       ${myHandleEditable

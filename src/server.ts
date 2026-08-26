@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT, setDeviceAvatar, deviceAvatar, validAvatar, avatarsForHandles,
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT, setDeviceAvatar, clearDeviceAvatar, deviceAvatarImage, deviceAvatarStamp, parseAvatarDataUrl, avatarStampsForHandles, deviceForHandlePublic,
 } from "./store/markets.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -757,9 +757,9 @@ app.get("/api/feed", async (req, res) => {
   // Faces for the author rows. Only for handles that actually have an oddie
   // account and picked one; everyone else falls back to the letter avatar the
   // client generates, which needs no round trip at all.
-  const avatars = await avatarsForHandles(
+  const avatars = await avatarStampsForHandles(
     Object.values(surfacers).map((sf) => sf?.handle ?? "").filter(Boolean),
-  ).catch(() => ({} as Record<string, { emoji: string; hue: number }>));
+  ).catch(() => ({} as Record<string, number>));
   const feesPaid = await creatorFeesPaidFor(feedItems.filter((x) => x.community).map((x) => x.slug))
     .catch(() => ({} as Record<string, { amount: number; handle: string | null }>));
   const withCrowd = feedItems.map((x) => {
@@ -1297,7 +1297,7 @@ app.get("/api/me", async (req, res) => {
   // it is decoration in the most prominent slot on the screen. The pill now
   // carries the one number the product has.
   res.json({ ...wallet, ...handle, pickStreak: acc.streak, oddies: acc.oddieScore ?? 0, badges, rank, openCalls, creator,
-    avatar: await deviceAvatar(deviceId).catch(() => null) });
+    avatarStamp: await deviceAvatarStamp(deviceId).catch(() => null) });
 });
 
 /**
@@ -1339,14 +1339,41 @@ async function displayHandle(deviceId: string): Promise<{ handle: string; handle
   return tw ? { handle: tw.handle!.replace(/^@+/, ""), handleEditable: false } : { handle: own, handleEditable: true };
 }
 
-/** Pick a face. Two short strings, validated, no upload path anywhere. */
+/**
+ * Upload a profile picture, already square and small.
+ *
+ * The browser crops and resizes to 256x256 on a canvas and sends a data URL,
+ * so this only validates. The magic bytes are checked rather than the declared
+ * content type, because we later serve these back with an image header and a
+ * `data:image/jpeg` prefix costs nothing to write.
+ */
 app.post("/api/profile/avatar", async (req, res) => {
   const deviceId = deviceIdOf(req.body);
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const a = validAvatar(req.body?.emoji, req.body?.hue);
-  if (!a) return res.status(400).json({ error: "emoji and hue (0-359) required" });
+  const a = parseAvatarDataUrl(req.body?.image);
+  if (!a) return res.status(400).json({ error: "a jpeg or png data URL under 250KB is required" });
   await setDeviceAvatar(deviceId, a);
-  res.json({ ok: true, ...a });
+  res.json({ ok: true, stamp: (await deviceAvatarStamp(deviceId)) ?? Date.now() });
+});
+
+app.post("/api/profile/avatar/clear", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  await clearDeviceAvatar(deviceId);
+  res.json({ ok: true });
+});
+
+/**
+ * Serve a picture by HANDLE, so a feed card can point an <img> straight at it
+ * without the server having to inline bytes into every payload. Cached hard and
+ * busted by the `v` the feed sends, which is the row's own set_at.
+ */
+app.get("/api/avatar/:handle.jpg", async (req, res) => {
+  const handle = String(req.params.handle || "").replace(/^@+/, "").toLowerCase();
+  const dev = handle ? await deviceForHandlePublic(handle).catch(() => null) : null;
+  const img = dev ? await deviceAvatarImage(dev).catch(() => null) : null;
+  if (!img) return res.status(404).end();
+  res.type(img.mime).set("Cache-Control", "public, max-age=604800, immutable").send(img.image);
 });
 
 app.post("/api/handle", async (req, res) => {

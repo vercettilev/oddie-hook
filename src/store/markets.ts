@@ -485,15 +485,17 @@ CREATE TABLE IF NOT EXISTS featured_markets (
 --     in Railway is stale the moment the first refresh succeeds, and the next
 --     cold start cannot authenticate at all. The env var is the SEED; this
 --     row is the truth from the first refresh onward.
--- A face, chosen rather than uploaded. An emoji and a hue is a complete
--- avatar for this product: nothing to store beyond two short strings, nothing
--- to moderate, nothing to resize, and no third-party request on every card to
--- fetch somebody's picture. It is also the right register: a hypercasual
--- product should let you pick a face in one tap, not open a file browser.
+-- A real profile picture, stored here rather than on a disk or in a bucket.
+--
+-- The bytes are already square and small by the time they arrive: the browser
+-- crops and resizes to 256x256 JPEG on a canvas before uploading, so a row is
+-- ~15-25KB and there is no server-side image processing, no object storage to
+-- provision, and no filesystem to lose on a redeploy. Postgres holds it fine at
+-- this size, and it is one fewer moving part than any alternative.
 CREATE TABLE IF NOT EXISTS device_avatar (
   device_id text PRIMARY KEY,
-  emoji     text NOT NULL,
-  hue       integer NOT NULL,
+  image     bytea NOT NULL,
+  mime      text NOT NULL,
   set_at    timestamptz NOT NULL DEFAULT now()
 );
 
@@ -5348,67 +5350,99 @@ export function _resetBotState(): void {
 }
 
 /* ------------------------------------------------------------- avatars -----
- * Chosen, not uploaded. See the table comment for why.
+ * A real picture, arriving already cropped and resized by the browser.
  *
- * The emoji is validated by LENGTH rather than by a character class: emoji are
- * multi-codepoint (skin tones, ZWJ sequences, variation selectors), so any
- * regex tight enough to be safe would reject half the picker, and any regex
- * loose enough to accept it is not doing much. A cap on grapheme-ish length
- * plus rejecting anything with markup characters is the honest guard.
+ * The client draws the file onto a 256x256 canvas and hands over a JPEG, so
+ * everything below only has to check that what arrived is small, is a JPEG or
+ * a PNG, and actually decodes as one. That keeps the server free of image
+ * processing entirely: no sharp, no ImageMagick, no upload directory.
  */
-const memAvatars = new Map<string, { emoji: string; hue: number }>();
+const memAvatars = new Map<string, { image: Buffer; mime: string }>();
 
-export interface DeviceAvatar { emoji: string; hue: number }
+/** Hard ceiling on a stored avatar. A 256px JPEG lands around 15-25KB, so this
+ *  is roughly ten times the expected size: comfortable for an odd encoder,
+ *  nowhere near enough for anyone to use the table as a file host. */
+export const AVATAR_MAX_BYTES = 250_000;
 
-export function validAvatar(emoji: unknown, hue: unknown): DeviceAvatar | null {
-  if (typeof emoji !== "string") return null;
-  const e = emoji.trim();
-  // Long enough for a ZWJ sequence, short enough that nobody puts a sentence
-  // where a face goes.
-  if (!e || [...e].length > 8 || /[<>&"'\s]/.test(e)) return null;
-  const h = Math.round(Number(hue));
-  if (!Number.isFinite(h) || h < 0 || h > 359) return null;
-  return { emoji: e, hue: h };
+export interface AvatarUpload { image: Buffer; mime: string }
+
+/**
+ * Validate a data URL into bytes, or null.
+ *
+ * The magic bytes are checked, not just the declared type: a `data:image/jpeg`
+ * header costs an attacker nothing to write, and the point of restricting the
+ * type at all is that what we later serve back with an image content-type is
+ * genuinely an image.
+ */
+export function parseAvatarDataUrl(raw: unknown): AvatarUpload | null {
+  if (typeof raw !== "string") return null;
+  const m = /^data:(image\/jpeg|image\/png);base64,([A-Za-z0-9+/=]+)$/.exec(raw.trim());
+  if (!m) return null;
+  let image: Buffer;
+  try { image = Buffer.from(m[2], "base64"); } catch { return null; }
+  if (!image.length || image.length > AVATAR_MAX_BYTES) return null;
+  const isJpeg = image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff;
+  const isPng = image.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (m[1] === "image/jpeg" && !isJpeg) return null;
+  if (m[1] === "image/png" && !isPng) return null;
+  return { image, mime: m[1] };
 }
 
-export async function setDeviceAvatar(rawDeviceId: string, a: DeviceAvatar): Promise<void> {
+export async function setDeviceAvatar(rawDeviceId: string, a: AvatarUpload): Promise<void> {
   const deviceId = await resolveDevice(rawDeviceId);
   if (!PERSISTENT) { memAvatars.set(deviceId, a); return; }
   await ensureSchema();
   await db().query(
-    `INSERT INTO device_avatar (device_id, emoji, hue, set_at) VALUES ($1,$2,$3,now())
-     ON CONFLICT (device_id) DO UPDATE SET emoji=EXCLUDED.emoji, hue=EXCLUDED.hue, set_at=now()`,
-    [deviceId, a.emoji, a.hue],
+    `INSERT INTO device_avatar (device_id, image, mime, set_at) VALUES ($1,$2,$3,now())
+     ON CONFLICT (device_id) DO UPDATE SET image=EXCLUDED.image, mime=EXCLUDED.mime, set_at=now()`,
+    [deviceId, a.image, a.mime],
   );
 }
 
-export async function deviceAvatar(rawDeviceId: string): Promise<DeviceAvatar | null> {
+export async function clearDeviceAvatar(rawDeviceId: string): Promise<void> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) { memAvatars.delete(deviceId); return; }
+  await ensureSchema();
+  await db().query(`DELETE FROM device_avatar WHERE device_id = $1`, [deviceId]);
+}
+
+/** The bytes, for serving. */
+export async function deviceAvatarImage(rawDeviceId: string): Promise<AvatarUpload | null> {
   const deviceId = await resolveDevice(rawDeviceId);
   if (!PERSISTENT) return memAvatars.get(deviceId) ?? null;
   await ensureSchema();
-  const { rows } = await db().query<{ emoji: string; hue: number }>(
-    `SELECT emoji, hue FROM device_avatar WHERE device_id = $1`, [deviceId]);
-  return rows[0] ? { emoji: rows[0].emoji, hue: Number(rows[0].hue) } : null;
+  const { rows } = await db().query<{ image: Buffer; mime: string }>(
+    `SELECT image, mime FROM device_avatar WHERE device_id = $1`, [deviceId]);
+  return rows[0] ? { image: rows[0].image, mime: rows[0].mime } : null;
 }
 
-/** Avatars for a set of twitter handles, for the feed's author rows. Absent
- *  handles simply do not appear, so the caller falls back to the generated
- *  letter avatar rather than to a placeholder face. */
-export async function avatarsForHandles(handles: string[]): Promise<Record<string, DeviceAvatar>> {
-  const out: Record<string, DeviceAvatar> = {};
+/** Just "is there one", plus when it changed, for cache-busting a URL without
+ *  reading the bytes on every feed render. */
+export async function deviceAvatarStamp(rawDeviceId: string): Promise<number | null> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) return memAvatars.has(deviceId) ? 1 : null;
+  await ensureSchema();
+  const { rows } = await db().query<{ at: Date }>(
+    `SELECT set_at AS at FROM device_avatar WHERE device_id = $1`, [deviceId]);
+  return rows[0] ? rows[0].at.getTime() : null;
+}
+
+/** Which of these handles have a picture, and how fresh, so the feed can point
+ *  an <img> at it. Handles with no oddie account or no upload are simply
+ *  absent and the client falls back to the generated letter avatar. */
+export async function avatarStampsForHandles(handles: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
   const wanted = [...new Set(handles.filter(Boolean).map((h) => h.replace(/^@+/, "").toLowerCase()))];
-  if (!wanted.length) return out;
   for (const h of wanted) {
     const dev = await deviceForTwitterHandle(h);
     if (!dev) continue;
-    const a = !PERSISTENT ? memAvatars.get(dev) ?? null : null;
-    if (a) { out[h] = a; continue; }
-    if (PERSISTENT) {
-      await ensureSchema();
-      const { rows } = await db().query<{ emoji: string; hue: number }>(
-        `SELECT emoji, hue FROM device_avatar WHERE device_id = $1`, [dev]);
-      if (rows[0]) out[h] = { emoji: rows[0].emoji, hue: Number(rows[0].hue) };
-    }
+    const stamp = await deviceAvatarStamp(dev);
+    if (stamp) out[h] = stamp;
   }
   return out;
+}
+
+/** The device behind a handle, for serving that handle's picture. */
+export async function deviceForHandlePublic(handle: string): Promise<string | null> {
+  return deviceForTwitterHandle(handle);
 }
