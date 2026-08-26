@@ -2125,6 +2125,8 @@
     cursor:pointer;box-shadow:0 5px 0 rgba(0,0,0,.28);transition:transform .06s,box-shadow .06s}
   .hero1-go:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(0,0,0,.28)}
   .hero1-sub{font-family:'Nunito';font-size:11.5px;font-weight:800;color:#3A4106;margin:10px 0 0}
+  .ladder-lab{margin-top:18px}
+  .hero1-next{font-family:'Nunito';font-size:11px;font-weight:800;color:#3A4106;margin:8px 0 0;opacity:.82}
 
   /* Proof chips. Absent at zero: a count nobody has earned yet is a zero
      wearing a label, and the ladder above is already the invitation. */
@@ -5366,7 +5368,18 @@ const BADGE_ICON={founding:"🏛️",streak:"🔥",category:"🎯",rank:"📈"};
  * and countUp guards a null element, so losing it fails silently rather than
  * loudly.
  */
-const LOUD_RUNGS=[1,1.25,1.5,2];
+// Each rung, and the thing that buys the NEXT one. A bare row of 1x 1.25x 1.5x
+// 2x says nothing: the sentence that used to explain the multiplier was deleted
+// with loudNextHtml, which left four numbers floating with no subject. The row
+// now carries its own subject above it and the price of the next rung below it,
+// which is still two short elements rather than the paragraph it replaced.
+// Thresholds mirror loudMultiplierOf in economy.ts.
+const LOUD_RUNGS=[
+  {m:1,    unlocks:"Post about oddie on X to reach 1.25x"},
+  {m:1.25, unlocks:"Three cleared posts in 30 days reaches 1.5x"},
+  {m:1.5,  unlocks:"Win a week's Loudest to reach 2x"},
+  {m:2,    unlocks:"Top of the ladder. Your markets earn double."},
+];
 function heroHtml(acc,rank,firstTagPays){
   const score=Number(acc&&acc.oddieScore)||0;
   const mult=Math.max(1,Number(acc&&acc.loudMultiplier)||1);
@@ -5376,11 +5389,12 @@ function heroHtml(acc,rank,firstTagPays){
     rank&&rank.topPct!=null?`<span class="hero1-chip">Top ${rank.topPct}%</span>`:"",
     wd?`<span class="hero1-chip up">▲ ${deltaText(wd.delta)} this week</span>`:"",
   ].filter(Boolean).join("");
-  const cur=LOUD_RUNGS.filter(r=>r<=mult).length;   // 1..4, never 0
+  const cur=LOUD_RUNGS.filter(r=>r.m<=mult).length;   // 1..4, never 0
   const ladder=LOUD_RUNGS.map((r,i)=>{
-    const on=i<cur, next=i===cur;                    // exactly one crawling rung
-    return `<div class="rung${on?" on":""}${next?" next":""}">${r}x</div>`;
+    const on=i<cur, next=i===cur;                      // exactly one crawling rung
+    return `<div class="rung${on?" on":""}${next?" next":""}">${r.m}x</div>`;
   }).join("");
+  const nextUp=LOUD_RUNGS[Math.min(cur,LOUD_RUNGS.length)-1].unlocks;
   const sub=score>0
     ? "Every market you tag pays you 2% of its pool."
     : `Your first tag pays ${firstTagPays} oddies.`;
@@ -5388,7 +5402,9 @@ function heroHtml(acc,rank,firstTagPays){
     <div class="hero1-num" id="scoreringnum">${score}</div>
     <div class="hero1-lab">ODDIES</div>
     ${chips?`<div class="hero1-chips">${chips}</div>`:""}
-    <div class="ladder" role="group" aria-label="Loud ladder, rung ${cur} of 4. Your markets earn ${mult} times.">${ladder}</div>
+    <p class="hero1-lab ladder-lab">YOUR MARKETS EARN ${mult}x</p>
+    <div class="ladder" role="group" aria-label="Loud ladder, rung ${cur} of 4. Your markets earn ${mult} times. ${nextUp}">${ladder}</div>
+    <p class="hero1-next">${nextUp}</p>
     <button class="hero1-go" id="herogo" type="button">Tag a post on X</button>
     <p class="hero1-sub">${sub}</p>
   </div>`;
