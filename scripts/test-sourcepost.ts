@@ -108,13 +108,21 @@ console.log("\nthe feed never invents an anonymous person");
   // elsewhere is a different and honest statement (a player who really has
   // linked no handle), and the comments above this function have to be free to
   // describe the bug they exist to explain.
-  const from = feed.indexOf("function taggedChipHtml");
+  // Provenance moved out of the meta row and became the card's AUTHOR ROW: same
+  // rule, more weight, and the person is now a link rather than a label. The
+  // assertions follow it rather than pinning the empty function it left behind.
+  const from = feed.indexOf("function authorRowHtml");
   const body = from < 0 ? "" : feed.slice(from, feed.indexOf("\n}", from) + 2);
-  check("the chip function is where the test thinks it is", from > 0);
-  check("the provenance chip never asserts an anonymous tagger",
+  check("the author row is where the test thinks it is", from > 0);
+  check("provenance never asserts an anonymous tagger",
     body.length > 0 && !/anonymous/i.test(body), body.slice(0, 240));
-  check("the nameless case names oddie instead", feed.includes("opened by oddie"));
-  check("...and the named case still shows the handle", feed.includes("tagged by @${esc(m.taggedBy)}"));
+  check("the nameless case names oddie instead", body.includes("opened this one"));
+  check("...and the named case still shows the handle", body.includes("@${h}"));
+  // The point of the row: the tagger is reachable. A person who cannot be
+  // clicked is a label, and a label is what this replaced.
+  check("the handle links to their X account", body.includes("https://x.com/${h}"));
+  check("...in a new tab, without leaking the referrer chain",
+    body.includes('target="_blank"') && body.includes('rel="noopener noreferrer"'));
 }
 
 console.log(failures === 0 ? "\nall source-post checks passed.\n" : `\n${failures} source-post check(s) FAILED.\n`);
