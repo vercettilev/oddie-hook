@@ -1912,6 +1912,12 @@
   .pfav--big{width:88px;height:88px;font-size:44px;margin:0 auto 14px;cursor:default}
   .pf-preview{display:flex;justify-content:center}
 
+  /* Badges as medallions with weight, not flat discs. A badge is a thing you
+     were given; it should look like an object. */
+  .medal-ico{border:2.5px solid var(--ink);box-shadow:0 4px 0 rgba(0,0,0,.22)}
+  :root[data-theme="dark"] .medal-ico{border-color:#05060A;box-shadow:0 4px 0 rgba(0,0,0,.8)}
+  .medal:active .medal-ico{box-shadow:0 1px 0 rgba(0,0,0,.22);transform:translateY(3px)}
+
   .avatar{width:84px;height:84px;border-radius:50%;background:var(--accent);border:1.5px solid #000;position:relative;flex:none}
   .avatar::before,.avatar::after{content:"";position:absolute;width:15px;height:15px;background:#000;border-radius:50%;top:31px}
   .avatar::before{left:19px}.avatar::after{left:50px}
@@ -1971,6 +1977,22 @@
   .trstats .v.topic{font-size:17px}
   .trstats .k{font-family:'Nunito';font-weight:800;font-size:11px;color:#5c6660;margin-top:5px}
   .trstats .best{font-size:11px;font-weight:800;color:#5c6660;white-space:nowrap}
+  /* Chunk, same system as the feed card: the profile was the last screen still
+     made of hairlines. */
+  .trstats .tile{border:2.5px solid var(--card-line);box-shadow:0 5px 0 rgba(0,0,0,.18)}
+  :root[data-theme="dark"] .trstats .tile{border-color:rgba(255,255,255,.14);box-shadow:0 5px 0 rgba(0,0,0,.7)}
+  .trstats .v{font-family:'Fredoka';font-weight:700;font-size:30px}
+  /* The money leads, so it is bigger and it is lit. Nothing else on this screen
+     gets the accent fill, which is what keeps it meaning "this is the payoff". */
+  .moneystats .tile.hero{background:var(--accent);border-color:var(--ink)}
+  :root[data-theme="dark"] .moneystats .tile.hero{background:var(--accent);border-color:#05060A;
+    box-shadow:0 5px 0 rgba(0,0,0,.85), 0 0 42px rgba(215,220,31,.22)}
+  .moneystats .tile.hero .v,
+  :root[data-theme="dark"] .moneystats .tile.hero .v{color:#12140A;font-size:34px}
+  .moneystats .tile.hero .k,
+  :root[data-theme="dark"] .moneystats .tile.hero .k{color:#3A4106}
+  .moneystats .unit{font-family:'Nunito';font-weight:800;font-size:14px;margin-left:4px;opacity:.75}
+
   :root[data-theme="dark"] .trstats .v{color:var(--on-ground)}
   :root[data-theme="dark"] .trstats .v.topic{color:#D7DC1F}
   :root[data-theme="dark"] .trstats .k,
@@ -5413,20 +5435,45 @@ function bestCallHtml(calls, handle){
  * payoff is the clearest statement of what to do next; hiding the block would
  * leave someone who has never tagged with no idea the axis exists. Same
  * reasoning the creator panel on the home rail already follows. */
+const SOL=(l)=>{const n=(Number(l)||0)/1e9;return n>=1?n.toFixed(2):n>0?n.toFixed(3):"0";};
+
+/**
+ * THE MONEY, and it leads the profile now.
+ *
+ * A real-money product whose profile opened with an accuracy percentage was
+ * answering the wrong question. What someone wants to know here is what their
+ * markets are holding and what those markets have earned them, because that is
+ * the payoff for the one behaviour this whole product exists to cause.
+ *
+ * Read from the chain, per market, so the numbers are the vaults' own. It is
+ * deliberately NOT a full PnL: a position is a wallet signing a transaction and
+ * nothing off-chain records it, so what you have staked and won is not
+ * something the server can know without indexing every position account. Saying
+ * less and saying it exactly beats a number nobody can stand behind.
+ */
+function moneyHtml(earn){
+  if(!earn||!earn.ok)return "";
+  const pooled=SOL(earn.pooledLamports), earned=SOL(earn.earnedLamports);
+  return `<p class="psec">Your money</p>
+    <div class="trstats moneystats">
+      <div class="tile hero"><div class="v">${earned}<span class="unit">SOL</span></div><div class="k">EARNED IN FEES</div></div>
+      <div class="tile hero"><div class="v">${pooled}<span class="unit">SOL</span></div><div class="k">IN YOUR MARKETS</div></div>
+    </div>
+    <p class="cnote">${Number(earn.earnedLamports)>0
+      ? `🔥 Claim it on <b>My markets</b>. It is paid by your own signature, so nobody else can take it.`
+      : `🔥 You earn <b>2%</b> of every market you tagged, the moment it resolves with people on it.`}</p>`;
+}
+
 function reachHtml(creator){
   const made=Number(creator?.marketsCreated)||0;
   const reached=Number(creator?.tradersReached)||0;
-  const earned=Number(creator?.earnings)||0;
   if(!made)return `<p class="psec">What you've brought in</p>
     <p class="cnote">🏷️ Tag <b>@oddiefun</b> under an argument on X. The market lands in the feed with your name on it, and you earn <b>2%</b> of everything played on it.</p>`;
   return `<p class="psec">What you've brought in</p>
     <div class="trstats">
       <div class="tile"><div class="v">${made}</div><div class="k">MARKETS TAGGED</div></div>
       <div class="tile"><div class="v">${reached}</div><div class="k">PEOPLE REACHED</div></div>
-    </div>
-    <p class="cnote">${earned>0
-      ? `🔥 Your markets have paid you <b>+${earned}</b> in creator fees so far.`
-      : `🔥 You earn <b>2%</b> of every market you tagged, paid when it resolves.`}</p>`;
+    </div>`;
 }
 
 function loudNextHtml(mult){
@@ -5944,7 +5991,23 @@ function noticeCardHTML(n){
  * gone — none of them were true, and a screen that shows an invented "5-day
  * streak" next to a real reputation teaches the reader to distrust both.
  */
+let myEarnings=null, earningsPending=false;
+/** Fetched once per load and repainted when it lands. The chain read is the
+ *  slowest thing on this screen, so the record must render without waiting for
+ *  it, and the guard is what stops the repaint from starting another fetch. */
+function fetchEarnings(scroller){
+  if(earningsPending||myEarnings)return;
+  earningsPending=true;
+  fetch(`${API}/api/me/earnings?deviceId=${encodeURIComponent(deviceId)}`)
+    .then(r=>r.json()).then(j=>{
+      if(!j||!j.ok)return;
+      myEarnings=j;
+      if(document.body.dataset.view==="profile")loadProfile(scroller);
+    }).catch(()=>{}).finally(()=>{earningsPending=false;});
+}
+
 async function loadProfile(scroller){
+  fetchEarnings(scroller);
   scroller.innerHTML='<div class="state">loading…</div>';
   await loadAuth();
   let pos={open:[],closed:[],overall:{avgEdge:null,closed:0,provisional:true},tokens:balance};
@@ -6010,6 +6073,16 @@ async function loadProfile(scroller){
          which accounts are connected; they open it to see where they stand. So
          the standing is first and the plumbing is underneath it, in the order
          someone would actually go looking for it. -->
+    <!-- THE MONEY GOES FIRST, above the standing.
+         The comment below records why the score was moved to the top of this
+         screen, and it was right at the time: nobody opens their own profile to
+         read which accounts are connected. But the product stopped being about
+         points the day the vaults started holding real SOL, and "where do I
+         stand" is now the second question. The first is what my markets have
+         earned me. -->
+    ${moneyHtml(myEarnings)}
+    ${reachHtml(myCreator)}
+
     ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove,acc?acc.meanEdge:null,acc?(acc.loudMultiplier||1):1)}
     <div class="trhead">
       <p class="psec">Track record</p>
@@ -6025,7 +6098,6 @@ async function loadProfile(scroller){
     ${acc&&!acc.hasEnough
       ? `<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Accuracy shows at ${acc.minResolved}.</p>`:""}
     ${acc?loudNextHtml(acc.loudMultiplier):""}
-    ${reachHtml(myCreator)}
     ${categoryBreakdownHtml(acc&&acc.byCategory)}
 
     <!-- Account. The predictions balance used to headline this section as

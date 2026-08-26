@@ -1347,6 +1347,40 @@ async function displayHandle(deviceId: string): Promise<{ handle: string; handle
  * content type, because we later serve these back with an image header and a
  * `data:image/jpeg` prefix costs nothing to write.
  */
+/**
+ * The money side of a profile: what the markets you tagged are actually
+ * holding, read from the chain.
+ *
+ * Deliberately NOT a full PnL. A position is taken by a wallet signing a
+ * transaction and nothing off-chain records it, so the server cannot tell you
+ * what you have staked or won without indexing every position account. What it
+ * CAN say exactly is what your own markets hold and what they have already
+ * earned you, which is the half of the loop this product is trying to cause.
+ */
+// NOT /api/profile/earnings: `/api/profile/:handle` is registered hundreds of
+// lines earlier, Express matches in order, and it would capture "earnings" as
+// a handle and answer 404 exists:false. Anything device-scoped lives under
+// /api/me, which has no wildcard sibling.
+app.get("/api/me/earnings", async (req, res) => {
+  const deviceId = deviceIdOf(req.query);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  try {
+    const mine = await onchainMarketsSurfacedBy(deviceId, 50);
+    let pooledLamports = 0, earnedLamports = 0, live = 0, settled = 0;
+    for (const m of mine) {
+      const st = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
+      if (!st) continue;
+      pooledLamports += st.totalYesLamports + st.totalNoLamports;
+      if (st.resolved) { settled++; earnedLamports += st.creatorFeeLamports; }
+      else live++;
+    }
+    res.json({ ok: true, markets: mine.length, live, settled, pooledLamports, earnedLamports, cluster: cluster() });
+  } catch (e) {
+    console.error("[earnings] failed:", (e as Error).message);
+    res.status(502).json({ ok: false, error: "chain unreachable" });
+  }
+});
+
 app.post("/api/profile/avatar", async (req, res) => {
   const deviceId = deviceIdOf(req.body);
   if (!deviceId) return res.status(400).json({ error: "deviceId required" });
