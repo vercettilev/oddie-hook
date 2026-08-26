@@ -808,16 +808,21 @@
      on the card behind this sheet and the demo card on the landing page. They
      were both plain white here, so the one control that decides the direction
      of the bet was the only place in the product where the sides looked alike. */
-  :root[data-theme="dark"] .chain-side{background:var(--ground-2);color:var(--on-ground);
-    border-color:var(--line-g)}
-  :root[data-theme="dark"] .chain-side[data-side="yes"]{color:#D7DC1F;
-    background:rgba(215,220,31,.08);border-color:rgba(215,220,31,.34)}
-  :root[data-theme="dark"] .chain-side[data-side="no"]{color:#FF6FA5;
-    background:rgba(255,45,120,.07);border-color:rgba(255,45,120,.34)}
-  :root[data-theme="dark"] .chain-side[data-side="yes"].on{background:#D7DC1F;color:#0B1400;
-    border-color:#D7DC1F;box-shadow:0 0 26px rgba(215,220,31,.45)}
-  :root[data-theme="dark"] .chain-side[data-side="no"].on{background:#FF2D78;color:#150008;
-    border-color:#FF2D78;box-shadow:0 0 26px rgba(255,45,120,.42)}
+  /* Both sides are SOLID at rest, exactly as they are on the card this sheet
+     opened from. The first version tinted the unselected side, which made the
+     one you had not picked look like a button that does not work: the same
+     "outlined reads as disabled" mistake the feed card made, repeated one
+     screen later and at the moment money is actually being committed.
+     Selection is carried by weight instead: the chosen side keeps its full
+     colour, its offset and a white ring; the other dims and sits flat. */
+  :root[data-theme="dark"] .chain-side{border:3px solid #05060A;
+    box-shadow:0 5px 0 rgba(0,0,0,.9);transition:opacity .16s ease, box-shadow .16s ease, transform .16s ease}
+  :root[data-theme="dark"] .chain-side[data-side="yes"]{background:#D7DC1F;color:#3A4106;opacity:.5}
+  :root[data-theme="dark"] .chain-side[data-side="no"]{background:#FF2D78;color:#5C0020;opacity:.5}
+  :root[data-theme="dark"] .chain-side.on{opacity:1;outline:3px solid rgba(255,255,255,.9);outline-offset:2px}
+  :root[data-theme="dark"] .chain-side[data-side="yes"].on{box-shadow:0 5px 0 rgba(0,0,0,.9), 0 0 34px rgba(215,220,31,.45)}
+  :root[data-theme="dark"] .chain-side[data-side="no"].on{box-shadow:0 5px 0 rgba(0,0,0,.9), 0 0 34px rgba(255,45,120,.42)}
+  :root[data-theme="dark"] .chain-side:active{box-shadow:0 1px 0 rgba(0,0,0,.9);transform:translateY(4px)}
 
   /* The amount step, labelled. Unlabelled pills reading "0.05 0.1 0.25 …" next
      to YES/NO read as a second row of choices rather than as a quantity. */
@@ -832,10 +837,10 @@
     white-space:nowrap}
   .chain-chip.on{background:var(--accent);border-color:var(--ink);border-width:2.5px}
   .chain-chip--other{flex:0 0 auto;padding-left:14px;padding-right:14px}
-  :root[data-theme="dark"] .chain-chip{background:transparent;color:var(--on-ground);
-    border-color:var(--line-g)}
-  :root[data-theme="dark"] .chain-chip.on{background:rgba(215,220,31,.14);color:#D7DC1F;
-    border-color:rgba(215,220,31,.55)}
+  :root[data-theme="dark"] .chain-chip{background:var(--ground-2);color:var(--on-ground);
+    border:2.5px solid rgba(255,255,255,.18);box-shadow:0 4px 0 rgba(0,0,0,.8)}
+  :root[data-theme="dark"] .chain-chip.on{background:#D7DC1F;color:#3A4106;border-color:#05060A}
+  :root[data-theme="dark"] .chain-chip:active{box-shadow:0 1px 0 rgba(0,0,0,.8);transform:translateY(3px)}
   .chain-amt{display:block;width:100%;font:inherit;font-size:16px;font-weight:700;padding:9px 10px;
     margin-bottom:8px;border:1.5px solid var(--ink);border-radius:12px;background:var(--white);
     box-sizing:border-box;text-align:center;color:var(--ink)}
@@ -922,22 +927,44 @@
      with yes and no carrying the same two brand colours they carry everywhere
      else, as translucent tints so they sit on whatever surface is under them.
      The dark overrides below restate the same rules at dark-theme values. */
-  .orow[data-side="yes"]{background:rgba(215,220,31,.16);border-color:rgba(154,160,21,.55)}
-  .orow[data-side="no"]{background:rgba(255,107,90,.11);border-color:rgba(214,74,58,.45)}
-  .orow[data-side="yes"] .oside{color:#5A6109}
-  .orow[data-side="no"] .oside{color:#B23B2B}
-  .orow[data-side="no"] .opay{color:#B23B2B}
+  /* Solid here too. The bright theme was built on a chunky black outline and
+     had drifted to the same translucent tints the dark one had, which is the
+     SaaS look arrived at from the other direction: two pale panes where there
+     should be two buttons. Hypercasual applies to both themes; only the
+     cyberpunk half (black ground, neon floor, glow) is dark-only. */
+  .orow{border:3px solid var(--ink);box-shadow:0 6px 0 rgba(0,0,0,.22)}
+  .orow[data-side="yes"]{background:var(--accent)}
+  .orow[data-side="no"]{background:#FF2D78}
+  .orow[data-side="yes"] .oside{color:#3A4106}
+  .orow[data-side="no"] .oside{color:#5C0020}
+  .orow[data-side="no"] .opay{color:#6B0026}
+  .orow[data-side="yes"] .opay{color:#4A520A}
+  .orow[data-side="no"] .opct{color:#2B0010;-webkit-text-stroke:0}
+  .orow[data-side="yes"] .opct{color:#12140A;-webkit-text-stroke:0}
+  .orow:active{box-shadow:0 2px 0 rgba(0,0,0,.22);transform:translateY(4px) scale(.99)}
 
+  /* DARK, TAKE THREE, and this time the chunk stays.
+   *
+   * The note above records the first two attempts and both were half right.
+   * The original was a 3.5px BLACK outline with a hard offset: chunky, and
+   * invisible on a black page, which is why it became two grey slabs. The fix
+   * was to drop to translucent tints, which restored legibility and threw away
+   * the weight, leaving two faint panes that look like the disabled state of a
+   * button rather than the two halves of a bet.
+   *
+   * On a dark ground the chunk does not come from the outline. It comes from
+   * the FILL. Solid lime and solid pink, dark ink on top, a dark outline for
+   * the edge and a hard offset underneath: the same treatment as the demo card
+   * on the landing, and the same one the share card has always used. The two
+   * surfaces are now literally the same object.
+   */
   :root[data-theme="dark"] .orow{
-    background:var(--card-surface);border:1.5px solid var(--card-line);
-    box-shadow:none;color:var(--on-ground)}
-  :root[data-theme="dark"] .orow[data-side="yes"]{
-    background:rgba(215,220,31,.07);border-color:rgba(215,220,31,.30)}
-  :root[data-theme="dark"] .orow[data-side="no"]{
-    background:rgba(255,45,120,.06);border-color:rgba(255,45,120,.30)}
-  :root[data-theme="dark"] .orow[data-side="yes"] .oside{color:#D7DC1F}
-  :root[data-theme="dark"] .orow[data-side="no"] .oside{color:#FF6FA5}
-  :root[data-theme="dark"] .orow:active{box-shadow:none}
+    border:3px solid #05060A;box-shadow:0 6px 0 rgba(0,0,0,.9)}
+  :root[data-theme="dark"] .orow[data-side="yes"]{background:var(--accent);border-color:#05060A}
+  :root[data-theme="dark"] .orow[data-side="no"]{background:#FF2D78;border-color:#05060A}
+  :root[data-theme="dark"] .orow[data-side="yes"] .oside{color:#3A4106}
+  :root[data-theme="dark"] .orow[data-side="no"] .oside{color:#5C0020}
+  :root[data-theme="dark"] .orow:active{box-shadow:0 2px 0 rgba(0,0,0,.9);transform:translateY(4px) scale(.99)}
   /* The numbers and their fixed ink. .opct is #141414 with a WHITE 2.5px stroke
      — near-black type outlined in white, which is legible on the light theme's
      white tile and all but invisible the moment the tile went dark: the fill
@@ -945,11 +972,38 @@
      olive with the same problem. Both are given theme-aware values here rather
      than being changed at source, so the bright theme keeps exactly what it was
      contrast-checked with. */
-  :root[data-theme="dark"] .opct{color:var(--on-ground);-webkit-text-stroke:0}
-  :root[data-theme="dark"] .orow[data-side="yes"] .opay{color:#C6CE45}
-  :root[data-theme="dark"] .orow[data-side="no"] .opay{color:#FF9A8C}
+  :root[data-theme="dark"] .opct{color:#12140A;-webkit-text-stroke:0}
+  :root[data-theme="dark"] .orow[data-side="no"] .opct{color:#2B0010}
+  :root[data-theme="dark"] .orow[data-side="yes"] .opay{color:#4A520A}
+  :root[data-theme="dark"] .orow[data-side="no"] .opay{color:#6B0026}
   /* Same fix, same reason: a near-black heading inside a strip that is now dark. */
   :root[data-theme="dark"] .onbstrip .onbhero{color:var(--on-ground)}
+  /* ------------------------------------ chunk, on the surfaces that earn it --
+   * Same rule as the landing: the objects a thumb acts on get the weight, and
+   * the metadata around them stays light. Chunk on everything is chunk on
+   * nothing, and the chips are read, not pressed.
+   */
+  :root[data-theme="dark"] .card{
+    border:2.5px solid rgba(255,255,255,.14);box-shadow:0 10px 0 rgba(0,0,0,.55)}
+  /* The teaching strip is an object too: a sticker laid on the feed, not a
+     panel bolted into it. */
+  :root[data-theme="dark"] .onbstrip{
+    border:2.5px solid rgba(255,255,255,.16);box-shadow:0 6px 0 rgba(0,0,0,.7)}
+  /* Anything that signs, connects or spends. A hairline rectangle is what a
+     settings row looks like, and these are the opposite of a settings row. */
+  :root[data-theme="dark"] .cbtn{
+    border:2.5px solid rgba(255,255,255,.2);border-radius:14px;
+    box-shadow:0 5px 0 rgba(0,0,0,.8)}
+  :root[data-theme="dark"] .cbtn:hover:not(:disabled){border-color:var(--accent)}
+  :root[data-theme="dark"] .cbtn:active:not(:disabled){box-shadow:0 1px 0 rgba(0,0,0,.8);transform:translateY(4px)}
+  :root[data-theme="dark"] .cbtn:disabled{box-shadow:none;border-color:rgba(255,255,255,.1)}
+  /* The button that puts SOL down, in the same language as the YES/NO it
+     follows. */
+  :root[data-theme="dark"] .claimbtn{
+    border:3px solid #05060A;box-shadow:0 6px 0 rgba(0,0,0,.9), 0 0 40px rgba(215,220,31,.3)}
+  :root[data-theme="dark"] .claimbtn:active:not(:disabled){
+    box-shadow:0 2px 0 rgba(0,0,0,.9);transform:translateY(4px)}
+
   .orow.dim{opacity:.4;transform:scale(.955)}
   :root[data-theme="dark"] .orow.dim{opacity:.5}
   /* The confirmation snap: one quick ring-flash the instant a call locks in — the
