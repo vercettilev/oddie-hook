@@ -299,7 +299,7 @@ export async function nameCreator(marketPubkey: string, creator: string): Promis
 // claim_winnings on the SAME pari-mutuel program mintMarket already writes to.
 // The admin keypair signs nothing here except resolveMarketOnChain (the
 // authority-only instruction) — a user's stake and claim are transactions
-// the SERVER only ASSEMBLES; the user's own wallet signs and broadcasts them.
+// the SERVER ASSEMBLES and RELAYS; only the user's own wallet can sign them.
 // Same isolation contract as the rest of this file: any failure degrades to
 // null, never throws past this module.
 
@@ -432,6 +432,108 @@ export interface OnChainPosition {
   side: "yes" | "no";
   lamports: number;
   claimed: boolean;
+}
+
+/** confirmTransaction can reject with a bare object, so never read .message blind. */
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
+}
+
+/**
+ * Broadcast a transaction the USER already signed.
+ *
+ * The client used to call window.solana.signAndSendTransaction, which hands
+ * BROADCASTING to the wallet, and a wallet broadcasts to whatever cluster it
+ * happens to be set to. Visitors run Phantom on mainnet while this app runs on
+ * devnet, so every stake was aimed at a cluster where the program does not
+ * exist: the simulation failed, Phantom showed its red banner, and no bet could
+ * ever land. Fifteen markets, zero SOL.
+ *
+ * Signing and sending are separable, so they are separated. The wallet still
+ * signs, and nothing here can sign for it: this only relays bytes that already
+ * carry the user's signature, to the same node the rest of the server reads
+ * from. Non-custodial is unchanged, because a signature is the whole of custody.
+ */
+export interface SubmitResult { ok: boolean; signature?: string; confirmed?: boolean; error?: string; badRequest?: boolean }
+
+export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
+  const c = await load();
+  if (!c) return { ok: false, error: "chain-unavailable" };
+  try {
+    const raw = Buffer.from(txBase64, "base64");
+
+    /**
+     * REFUSE ANYTHING THAT IS NOT OURS.
+     *
+     * Without this the endpoint is an open relay: anybody could post any signed
+     * Solana transaction and have our node broadcast it, on our rate limit and
+     * from our IP. The transaction must touch this program, which is the only
+     * thing a stake, a claim or a fee collection ever does.
+     */
+    const tx = c.web3.Transaction.from(raw);
+    // EXACTLY ONE instruction, and it must be ours. `some()` would let a rider
+    // through: a Solana transaction carries many instructions, so one harmless
+    // call to our program would buy an attacker a free relay for everything
+    // else in the same envelope. Verified against production that this refuses
+    // nothing real: a prepared take_position decodes to exactly one instruction,
+    // and nothing in src/ or public/ adds a ComputeBudget instruction.
+    const mine = c.programId.toBase58();
+    if (tx.instructions.length !== 1 || tx.instructions[0].programId.toBase58() !== mine) {
+      return { ok: false, error: "not-our-program", badRequest: true };
+    }
+    // The wallet is the only thing that can sign, so an unsigned envelope is a
+    // client bug, not a chain failure. Catching it here keeps it out of the RPC.
+    if (!tx.verifySignatures()) return { ok: false, error: "unsigned", badRequest: true };
+
+    // skipPreflight false on purpose: preflight is a simulation against OUR
+    // node, so a transaction the program would reject is refused here with a
+    // readable reason instead of being paid for and reverting on chain.
+    const signature = await c.connection.sendRawTransaction(raw, {
+      skipPreflight: false,
+      preflightCommitment: "confirmed",
+      maxRetries: 3,
+    });
+    /**
+     * ONCE sendRawTransaction RETURNS, THE SIGNATURE IS A FACT.
+     *
+     * Confirmation can still fail for reasons that say nothing about whether
+     * the transaction landed: most sharply, if the RPC websocket never
+     * establishes, web3.js reports an expiry for a stake that is sitting on
+     * chain. Reporting that as a plain error over a re-armed button invites the
+     * user to stake a second time, and the program allows adding to a position
+     * on the same side, so the retry costs them real money.
+     *
+     * So a confirmation problem is reported as ok with confirmed:false and the
+     * signature, and the client shows "sent, confirming" with a link. Only a
+     * send that threw, or a transaction the chain actually rejected, is a
+     * failure, because in both of those nothing was staked.
+     */
+    try {
+      const bh = await c.connection.getLatestBlockhash("confirmed");
+      const res = await c.connection.confirmTransaction(
+        { signature, blockhash: bh.blockhash, lastValidBlockHeight: bh.lastValidBlockHeight },
+        "confirmed",
+      );
+      if (res.value.err) return { ok: false, error: "rejected", signature };
+      return { ok: true, signature, confirmed: true };
+    } catch (e) {
+      console.error("[chain] confirm failed but it was sent:", errText(e));
+      return { ok: true, signature, confirmed: false };
+    }
+  } catch (e) {
+    // confirmTransaction can reject with a plain object rather than an Error,
+    // so reading .message straight off it would log undefined.
+    const m = errText(e);
+    console.error("[chain] submitSignedTx failed:", m);
+    // A short stable code, never the raw web3.js sentence: the client renders
+    // these, and "Signature 5xY... has expired: block height exceeded." is not
+    // a thing to show somebody who just tried to place a bet.
+    const code = /custom program error|Simulation failed|preflight/i.test(m) ? "preflight-failed"
+      : /expired|block height/i.test(m) ? "expired"
+      : /Invalid|deserialize|buffer/i.test(m) ? "malformed"
+      : "unavailable";
+    return { ok: false, error: code, badRequest: code === "malformed" };
+  }
 }
 
 /** A user's position on a market, or null if they have never staked. */

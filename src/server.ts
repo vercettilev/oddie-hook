@@ -30,7 +30,7 @@ import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweet
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx,
-  resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, isValidPubkeyString,
+  resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
@@ -2863,6 +2863,36 @@ if (realStakesReady) {
       return { slug: m.slug, question: m.question, lamports: state.creatorFeeLamports, feeBps: state.creatorFeeBps };
     }));
     res.json({ ok: true, fees: owed.filter(Boolean) });
+  });
+
+  /**
+   * Relay a transaction the user's wallet already signed.
+   *
+   * Pairs with the prepare routes: the server builds it, the wallet signs it,
+   * and the server broadcasts it to the cluster the app actually runs on. The
+   * client used to let the wallet broadcast, which sent every stake to whatever
+   * cluster the visitor's Phantom was set to, and that is why fifteen live
+   * markets held zero SOL.
+   *
+   * This never signs and cannot: it forwards bytes that already carry the
+   * user's signature. A transaction with no valid signature is rejected by the
+   * cluster, not by us, which is the correct place for that check.
+   */
+  app.post("/api/chain/submit", async (req, res) => {
+    // Parity with position/prepare: a stake that lands through the relay stays
+    // visible to the same REGIME 1 observability, which is resolved and logged
+    // and never enforced.
+    noteGeoForCommunity(req);
+    const txBase64 = req.body?.txBase64;
+    if (typeof txBase64 !== "string" || txBase64.length < 64 || txBase64.length > 8000) {
+      return res.status(400).json({ ok: false, error: "txBase64 required" });
+    }
+    const out = await submitSignedTx(txBase64);
+    // 400 for a client that sent something wrong, 502 only for a chain that is
+    // actually unreachable. Funnelling a parse failure into 502 would tell the
+    // user Solana is down when the bug is ours.
+    if (!out.ok) return res.status(out.badRequest ? 400 : 502).json({ ok: false, error: out.error, signature: out.signature });
+    res.json({ ok: true, signature: out.signature, confirmed: out.confirmed !== false, cluster: cluster() });
   });
 
   app.post("/api/chain/creator-fee/prepare", async (req, res) => {

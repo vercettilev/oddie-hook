@@ -13,7 +13,9 @@
 // Architecture, unchanged and worth keeping: the server ASSEMBLES
 // take_position / claim_winnings / claim_creator_fee transactions (the
 // /api/chain/* routes in server.ts) but never signs them and never holds a
-// user's funds. The user's own wallet signs and broadcasts, client-side. This
+// user's funds. The user's own wallet SIGNS, and the server relays the signed
+// bytes to the cluster this app runs on, because a wallet broadcasts to
+// whatever cluster it happens to be set to. Only the wallet can sign. This
 // file talks to window.solana and to this app's own same-origin routes, and to
 // nothing else. The one piece of real client-side Solana code it needs, for
 // deserializing the server-built transaction bytes so the wallet can sign
@@ -63,6 +65,58 @@
   }
 
   /**
+ * Sign with the wallet, broadcast through us.
+ *
+ * This was window.solana.signAndSendTransaction, which hands BROADCASTING to
+ * the wallet, and a wallet broadcasts to whatever cluster it is set to. Almost
+ * every visitor runs Phantom on mainnet while this app runs on devnet, so every
+ * stake was aimed at a cluster where the program does not exist: Phantom could
+ * not simulate it, showed its red "could be malicious" banner, and the bet died
+ * at the wallet. Fifteen live markets, zero SOL, and that is the whole reason.
+ *
+ * signTransaction only signs. The bytes then go to /api/chain/submit and land on
+ * the cluster the app actually runs on, whatever the wallet is set to. The
+ * wallet is still the only thing that can sign, which is the only part that
+ * matters for custody.
+ *
+ * Returns {signature, confirmed}. confirmed:false means it WAS broadcast and
+ * we could not watch it land, which is not a failure and must never be shown
+ * as one: the program lets you add to a position on the same side, so inviting
+ * a retry over a stake that is already on chain costs real money.
+ */
+const SUBMIT_ERROR = {
+  "preflight-failed": "Solana would not accept this one. The market may have just closed or settled.",
+  "expired": "That took too long to reach the network. Nothing was staked, so you can try again.",
+  "malformed": "Something went wrong building that transaction. Try again.",
+  "not-our-program": "That transaction is not one of ours.",
+  "unsigned": "Your wallet did not sign it. Try again.",
+  "rejected": "Solana rejected it, so nothing was staked.",
+  "unavailable": "Solana is not answering right now. Try again in a moment.",
+};
+async function signAndSubmit(tx, onSigned){
+  const w = window.solana;
+  if (!w) throw new Error("No Solana wallet found. Install Phantom to put real SOL on a market.");
+  if (typeof w.signTransaction !== "function") {
+    throw new Error("This wallet cannot sign without sending. Phantom can.");
+  }
+  const signed = await w.signTransaction(tx);
+  if (onSigned) onSigned();
+  // Default options on purpose: the wallet has just signed, so requiring the
+  // signature here turns a wallet that quietly returned an unsigned envelope
+  // into an error we can name instead of bytes the cluster refuses later.
+  const bytes = signed.serialize();
+  let b64 = "";
+  for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
+  const r = await fetch("/api/chain/submit", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ txBase64: btoa(b64) }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(SUBMIT_ERROR[j && j.error] || SUBMIT_ERROR.unavailable);
+  return { signature: j.signature, confirmed: j.confirmed !== false };
+}
+
+/**
  * A refused prepare, in words.
  *
  * The prepare routes now check every rule the program enforces BEFORE handing
@@ -248,9 +302,13 @@ function b64ToBytes(b64) {
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         btn.textContent = "Confirm in wallet…";
-        const { signature } = await window.solana.signAndSendTransaction(tx);
-        body.innerHTML = `<h3>Collected ✓</h3>
-          <p class="cnote">Your winnings are on their way to your wallet, on ${clusterLabel(CLUSTER)}.</p>
+        // The label has to move off "Confirm in wallet" the moment the wallet
+        // is done, or it sits there stale while the server broadcasts.
+        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Broadcasting…"; });
+        body.innerHTML = `<h3>${confirmed ? "Collected ✓" : "Sent"}</h3>
+          <p class="cnote">${confirmed
+            ? `Your winnings are on their way to your wallet, on ${clusterLabel(CLUSTER)}.`
+            : "It is on the network and we lost sight of it while it settled. Follow the link before collecting again."}</p>
           <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
@@ -298,7 +356,7 @@ function b64ToBytes(b64) {
     // the server's prepare route were both there, but nothing in the UI ever
     // called them, so a winner's SOL simply sat in the vault. Same
     // non-custodial contract as staking — the server assembles, the user's own
-    // wallet signs and broadcasts, the admin key is never involved.
+    // wallet signs and the server relays; the admin key is never involved.
     if (marketState.resolved) {
       await renderClaim(body, slug, marketState);
       return;
@@ -445,9 +503,15 @@ function b64ToBytes(b64) {
           const w3 = await loadWeb3();
           const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
           stakeBtn.textContent = "Confirm in wallet…";
-          const { signature } = await window.solana.signAndSendTransaction(tx);
-          body.innerHTML = `<h3>You're in ✓</h3>
-            <p class="cnote">${sol} SOL on ${side.toUpperCase()}${testnet ? `, on ${label}` : ""}.</p>
+          const { signature, confirmed } = await signAndSubmit(tx, () => { stakeBtn.textContent = "Broadcasting…"; });
+          // confirmed:false means it WAS broadcast and we could not watch it
+          // land. Never render that as a failure: the program allows adding to
+          // a position on the same side, so a retry over a stake that is
+          // already on chain would take their money twice.
+          body.innerHTML = `<h3>${confirmed ? "You're in ✓" : "Sent"}</h3>
+            <p class="cnote">${confirmed
+              ? `${sol} SOL on ${side.toUpperCase()}${testnet ? `, on ${label}` : ""}.`
+              : `${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.`}</p>
             <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
             <button class="cclose">Done</button>`;
           body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
@@ -694,9 +758,9 @@ function b64ToBytes(b64) {
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         b.textContent = "Confirm…";
-        const { signature } = await window.solana.signAndSendTransaction(tx);
+        const { signature, confirmed } = await signAndSubmit(tx, () => { b.textContent = "Sending…"; });
         const row = b.closest(".cc-item");
-        row.innerHTML = `<span class="cc-q">Collected ✓</span>
+        row.innerHTML = `<span class="cc-q">${confirmed ? "Collected ✓" : "Sent"}</span>
           <span class="cc-meta"><a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></span>`;
       } catch (e) {
         b.disabled = false; b.textContent = "Collect";
