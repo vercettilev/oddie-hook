@@ -143,12 +143,29 @@
     background:rgba(12,13,11,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
     border:1px solid var(--line);border-radius:999px;padding:9px 9px 9px 20px;
     box-shadow:0 10px 34px rgba(0,0,0,.45)}
+  /* PADDING ONLY, scoped to .nav at 0-2-0, and nothing else.
+     This element also carries .shell, whose padding shorthand is redeclared
+     later in the 720px block, so the rule above loses the padding to it on
+     source order alone: the pill ran at zero horizontal padding at every width.
+     The CTA hid that, having padding of its own; the mark did not, and a 29px
+     square sitting 1px inside a 999px radius pokes its corners through the
+     curve. Scope only what has to win. The FOOTER reuses .nav__in as a pill
+     too, so widening this selector any further takes its flex, its background
+     and its border with it. */
+  .nav .nav__in{padding:9px 9px 9px 20px}
   /* The pill is only as wide as its contents, so the shell's page gutter would
-     centre a narrower box inside a wider one. Drop it here and let the margin
-     do the centring. */
-  .nav .shell{padding:0;max-width:none}
+     centre a narrower box inside a wider one. Drop the WIDTH cap here and let
+     the margin do the centring.
+     It used to zero the PADDING too, and this element carries both classes, so
+     `.nav .shell` at 0-2-0 beat `.nav__in` at 0-1-0 and took the pill's own
+     padding with the gutter it was aiming at. The 560px override lost the same
+     way, so the pill ran at zero horizontal padding at every width. The CTA hid
+     it, having padding of its own; the mark did not, and a 29px square sitting
+     1px inside a 999px radius pokes its corners straight through the curve. */
+  .nav .shell{max-width:none}
   @media (max-width:560px){
-    .nav__in{gap:14px;padding:8px 8px 8px 16px}
+    .nav__in{gap:14px}
+    .nav .nav__in{padding:8px 8px 8px 16px}
   }
   /* No margin-right:auto any more — the pill hugs its contents, so pushing the
      links to a far edge that no longer exists would only add dead space. */
