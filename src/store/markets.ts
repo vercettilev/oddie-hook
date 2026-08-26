@@ -1252,8 +1252,29 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
           ? Math.round((r.correct / r.settled) * 100) : null,
       };
     })
-    .filter((r) => r.deviceId !== excludedId)
-    .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.avgEdge - a.avgEdge);
+    .filter((r) => r.deviceId !== excludedId);
+
+  // Everyone on the loudness ladder who has never taken a play position.
+  //
+  // The candidate list above is built from market_call, and nothing writes
+  // market_call any more, so the board could only ever show people who were
+  // playing before the pivot. Someone who tags markets every day and brings a
+  // crowd to every one of them was invisible on the one surface that says
+  // "here is who is winning", while the landing page invited them to climb it.
+  const known = new Set(ranked.map((r) => r.deviceId));
+  for (const l of await loudnessRanking().catch(() => [])) {
+    if (known.has(l.deviceId) || l.deviceId === excludedId) continue;
+    ranked.push({
+      deviceId: l.deviceId,
+      handle: (await ensureHandle(l.deviceId).catch(() => `#${l.deviceId.slice(0, 4)}`)).replace(/^@+/, ""),
+      avgEdge: 0, closed: 0, provisional: true, accuracyPct: null,
+    });
+  }
+  // Sorted by oddies alone. It used to put every provisional row below every
+  // settled one, which on a board that no longer settles anything means the
+  // people the product actually pays would sort under a frozen historical tail
+  // no matter how loud they got.
+  ranked.sort((a, b) => b.avgEdge - a.avgEdge);
 
   // Oddies for the rows that could plausibly place. accuracyFor is reused
   // rather than reimplemented so the board can never disagree with the profile
@@ -1270,7 +1291,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
     return { ...r, oddies: acc?.oddieScore ?? 0, loudMultiplier: acc?.loudMultiplier ?? 1 };
   }));
   return scored
-    .sort((a, b) => Number(a.provisional) - Number(b.provisional) || b.oddies - a.oddies || b.avgEdge - a.avgEdge)
+    .sort((a, b) => b.oddies - a.oddies || b.avgEdge - a.avgEdge)
     .slice(0, limit);
 }
 
@@ -2290,11 +2311,16 @@ export function _resetStandingsCache(): void { standingsCache = null; }
  */
 async function loudnessRanking(): Promise<{ deviceId: string; score: number }[]> {
   const points = new Map<string, number>();
+  // Both halves of the ladder, not just the ledger. Tagging a market is the act
+  // the whole product asks for and it is the score's biggest rung, so a device
+  // that has only ever done that has to be a candidate. Reading the ledger
+  // alone would leave the person who did exactly what they were asked unranked.
   if (!PERSISTENT) {
     for (const r of memSeasonLog) {
       if (!r.deviceId) continue;
       points.set(r.deviceId, (points.get(r.deviceId) ?? 0) + r.amount);
     }
+    for (const [, sf] of memSurfacer) if (sf.deviceId && !points.has(sf.deviceId)) points.set(sf.deviceId, 0);
   } else {
     await ensureSchema();
     const { rows } = await db().query<{ device_id: string; total: string }>(
@@ -2302,6 +2328,10 @@ async function loudnessRanking(): Promise<{ deviceId: string; score: number }[]>
         WHERE device_id IS NOT NULL GROUP BY device_id`,
     );
     for (const r of rows) points.set(r.device_id, Number(r.total));
+    const { rows: sf } = await db().query<{ device_id: string }>(
+      `SELECT DISTINCT device_id FROM market_surfacer WHERE device_id IS NOT NULL`,
+    );
+    for (const r of sf) if (!points.has(r.device_id)) points.set(r.device_id, 0);
   }
 
   const out: { deviceId: string; score: number }[] = [];

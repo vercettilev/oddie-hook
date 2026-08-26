@@ -11,7 +11,7 @@ if (process.env.DATABASE_URL) {
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, markCommunityResolved, settleMarket,
   weeklyScoreDeltaFor, rankMovementFor, seasonRankFor, _memCalls, _resetStandingsCache,
-  _memGrant, _memSeasonCredit,
+  _memGrant, _memSeasonCredit, recordSurfacer, accuracyFor, leaderboard, reputationFor,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -137,6 +137,36 @@ console.log("\nrankMovementFor: fires once on a real move, then goes quiet");
 
   check("shown exactly once — a second read after the same move reports nothing",
     (await rankMovementFor(dev)) === null);
+}
+
+/**
+ * The board has to be climbable by the ONE act the product asks for.
+ *
+ * Score, rank and every badge used to be computed from resolved play
+ * positions. Real money moved to the chain and nothing settles those rows any
+ * more, so all three had quietly frozen: someone who did exactly what the
+ * landing page asks (tag @oddiefun and put a market up) earned a null score,
+ * no rank, no tier and no row on the leaderboard, forever. Each of the four
+ * checks below failed before this was fixed.
+ */
+console.log("\ntagging a market alone is enough to be on the board");
+{
+  _resetStandingsCache();
+  const tagger = "dev-tagger-only";
+  const slug = await mk("does tagging alone put you on the board?");
+  await recordSurfacer(slug, { deviceId: tagger });
+
+  const acc = await accuracyFor(tagger);
+  check("a market you tagged is a score", (acc.oddieScore ?? 0) > 0, JSON.stringify(acc.oddieScore));
+  check("...and a record worth showing, with no position ever taken", acc.hasEnough);
+
+  _resetStandingsCache();
+  check("...which is enough to be ranked", (await seasonRankFor(tagger)) != null);
+  check("...and to appear on the leaderboard",
+    (await leaderboard(50)).some((r) => r.deviceId === tagger));
+
+  const rep = await reputationFor(tagger);
+  check("...and to wear a tier for it", rep.tier?.id === "proven", JSON.stringify(rep.tier));
 }
 
 console.log(failures === 0 ? "\nall score-motion checks passed.\n" : `\n${failures} check(s) FAILED.\n`);

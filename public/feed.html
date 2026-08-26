@@ -5280,16 +5280,18 @@ function badgesHtml(badges){
 // so a negative delta reads as a sign rather than a stray dash.
 function deltaText(n){return n>=0?`+${n}`:`−${Math.abs(n)}`}
 function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge,loudMult){
-  // The ring shows the QUALITY multiplier, not the score.
+  // The ring shows the LOUD MULTIPLIER, not the score.
   //
-  // It used to fill to score/1000, which worked while the score was capped at
-  // 1000. The score is activity-led and unbounded now, so that ring would sit
-  // pegged full for anyone who plays regularly — a gauge that reads the same
-  // for every active player measures nothing. Edge is the half of the score
-  // that IS bounded (the multiplier runs 0.5x..1.5x), so the ring shows where
-  // you sit in that band: half full is market-neutral, fuller is beating it.
-  const q=Math.max(0.5,Math.min(1.5,1+2*(meanEdge??0)));
-  const pct=hasEnough&&score!=null?(q-0.5):0;
+  // A ring needs something bounded to fill, and the score is unbounded: filling
+  // it to score/1000 would peg it full for anyone active, and a gauge that
+  // reads the same for everyone measures nothing. It used to fill by edge,
+  // which was bounded but is no longer part of the score at all, so the ring
+  // had quietly become permanently empty.
+  //
+  // The multiplier is the one bounded, earnable number left: 1x to 2x, moved by
+  // posting. The sentence under the ring already names the next rung, so the
+  // ring and the copy now describe the same climb.
+  const pct=Math.max(0,Math.min(1,(Number(loudMult)||1)-1));
   // topPct is null until the ranked field is big enough for a percentile to
   // mean anything (see MIN_RANKED_FOR_PERCENTILE) — fall back to the raw
   // standing, which is always true, rather than printing "Top 100%".
@@ -5309,13 +5311,13 @@ function oscoreHtml(score,hasEnough,rank,weeklyDelta,rankMove,meanEdge,loudMult)
   return `<div class="oscore">
       <div class="scorering" style="--score-pct:${pct}" id="scorering">
         <div class="scorering-inner">
-          <div class="scorering-num${hasEnough?"":" building"}" id="scoreringnum">${hasEnough?"0":"building"}</div>
-          <div class="scorering-lab">${hasEnough?"ODDIES":"TRACK RECORD"}</div>
+          <div class="scorering-num" id="scoreringnum">0</div>
+          <div class="scorering-lab">ODDIES</div>
         </div>
       </div>
       <div class="oscore-side">
         <div class="oscore-title">Oddies</div>
-        <p class="oscore-desc">every call, market and post pays here · play is scaled by how right you are</p>
+        <p class="oscore-desc">markets you tag pay the most · shares and posts pay too · a loud streak multiplies it</p>
         ${weeklyLine}
         ${rankChip}
         ${multChip}
@@ -5348,7 +5350,9 @@ let sessionSeenScore=null;
  *  reading that differs from what this tab already showed animates old→new
  *  and drops the delta chip — the score visibly moving, not silently updating. */
 function animateOscore(scroller,score,hasEnough,isMine){
-  if(!hasEnough||score==null)return;
+  // A zero score is a real reading on a loudness ladder, not a missing one, so
+  // it counts up to 0 and stays there rather than leaving the ring blank.
+  score=Number(score)||0;
   const el=scroller.querySelector("#scoreringnum");
   if(!isMine||sessionSeenScore==null){
     countUp(el,score,{duration:850});
@@ -5360,53 +5364,7 @@ function animateOscore(scroller,score,hasEnough,isMine){
   }
   if(isMine)sessionSeenScore=score;
 }
-// Per-category accuracy — supporting detail BELOW the Oddie Score (the primary
-// number, shown first). The server already withheld any category short of its
-// own resolved-picks threshold, so every row here is qualified by construction:
-// nothing to gate client-side, and no placeholder for the categories left out.
-// Each row carries a mini progress bar so the % reads visually, not just as text.
-function categoryBreakdownHtml(byCategory){
-  if(!byCategory||!byCategory.length)return "";
-  return `<p class="psec" style="margin-top:22px">By category</p>
-    <div class="catbreak">${byCategory.map(c=>
-      `<div class="catrow">
-         <div class="catrow-top"><span class="catname">${esc(c.category)}</span><span class="catpct">${c.pct}%</span></div>
-         <div class="catbar"><div class="catbar-fill" style="width:${c.pct}%"></div></div>
-         <span class="catn">${c.resolved} resolved</span>
-       </div>`
-    ).join("")}</div>`;
-}
 
-// --- Public profile page (/@{handle}) — read-only, works fully logged out ----
-// Reuses the private Profile's Oddie Score / stats styling, plus a feed of the
-// handle's recent resolved calls. Nav navigates absolutely so it escapes /@.
-/**
- * YOUR BEST CALL — the single row on this page that is a claim rather than a
- * statistic.
- *
- * Everything else here answers "how are you doing"; this answers "what have
- * you got". It picks the correct call taken at the LONGEST odds, because that
- * is the one nobody else believed, which is the only kind of call worth
- * repeating to anyone. A win at 80% is a fact; a win at 12% is a story.
- *
- * Shown only where it earns the space: a correct call priced under even money.
- * Somebody whose only wins were favourites gets nothing here rather than a
- * limp "you were right about the obvious thing".
- */
-function bestCallHtml(calls, handle){
-  const wins=(calls||[]).filter(c=>c.correct && c.oddsPct<50);
-  if(!wins.length)return "";
-  const best=wins.reduce((a,c)=>c.oddsPct<a.oddsPct?c:a);
-  const mult=Math.round(100/Math.max(1,best.oddsPct));
-  const line=`called ${best.side.toUpperCase()} at ${best.oddsPct}% and it hit.`;
-  const share=`I ${line} ${handle?`oddie.fun/@${handle}`:"oddie.fun"}`;
-  return `<p class="psec" style="margin-top:22px">Your best call</p>
-    <div class="bestcall">
-      <div class="bestcall-q">${esc(displayTitle(best.question))}</div>
-      <div class="bestcall-line"><b>${best.side.toUpperCase()} at ${best.oddsPct}%</b> · the market said no · <b>${mult}× against you</b></div>
-      <button class="standing-share" data-standing-share="${esc(share)}">Post this to X</button>
-    </div>`;
-}
 
 /**
  * What the loud multiplier is, and what moves it.
@@ -5478,21 +5436,11 @@ function reachHtml(creator){
 
 function loudNextHtml(mult){
   const m=Number(mult)||1;
-  if(m>=2)return `<p class="cnote">🔥 Your play earns <b>2×</b> — the top of the ladder, held by winning a week.</p>`;
-  const next=m>=1.5?["2×","win a week's loudest"]:m>=1.25?["1.5×","three cleared posts in 30 days"]:["1.25×","one cleared post"];
-  return `<p class="cnote">🔥 Your play earns <b>${m}×</b> right now. ${next[1][0].toUpperCase()+next[1].slice(1)} makes it <b>${next[0]}</b>.</p>`;
+  if(m>=2)return `<p class="cnote">🔥 Your markets earn <b>2x</b>, the top of the ladder, held by winning a week.</p>`;
+  const next=m>=1.5?["2x","win a week's loudest"]:m>=1.25?["1.5x","three cleared posts in 30 days"]:["1.25x","one cleared post"];
+  return `<p class="cnote">🔥 Your markets earn <b>${m}x</b> right now. ${next[1][0].toUpperCase()+next[1].slice(1)} makes it <b>${next[0]}</b>.</p>`;
 }
 
-function pubCallRow(c){
-  const win=c.correct;
-  return `<div class="pcall ${win?'win':'loss'}">
-    <div class="pcall-q">${esc(c.question)}</div>
-    <div class="pcall-meta">
-      <span class="pcall-side">called ${c.side.toUpperCase()} @ ${c.oddsPct}%</span>
-      <span class="pcall-out">→ ${c.outcome.toUpperCase()} · ${win?'✓ right':'✗ wrong'}</span>
-    </div>
-  </div>`;
-}
 async function renderPublicProfile(){
   const handle=profileHandle;
   shellTop("@"+handle,false);
@@ -5513,31 +5461,18 @@ async function renderPublicProfile(){
     </div>`;
     return;
   }
-  const acc=data.accuracy, calls=data.recentCalls||[], badges=data.badges||[], rank=data.rank||null;
-  const accVal=acc.hasEnough?`${acc.accuracyPct}%`:"building";
-  // Identical construction to your own profile's tile, deliberately: the same
-  // person must not describe themselves one way on their page and another way
-  // on the page other people read.
-  const bestTopicVal=acc.bestTopic
-    ? `${esc(acc.bestTopic.category)}<span class="best"> · ${acc.bestTopic.pct}% of ${acc.bestTopic.resolved}</span>`
-    : "—";
+  const acc=data.accuracy, badges=data.badges||[], rank=data.rank||null;
   const isMe=myHandle&&myHandle.toLowerCase()===String(data.handle).toLowerCase();
   scroller.innerHTML=`<div class="sheet">
     <div class="hrow"><span class="hname">@${esc(data.handle)}</span>${isMe?'<a class="hedit" href="/feed#/profile">your profile ↗</a>':''}</div>
-    <div class="trhead"><p class="psec">Track record</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
+    <div class="trhead"><p class="psec">How loud they are</p><button class="trshare" id="pubshare">${SHARE_ICON}<span>Share</span></button></div>
     ${oscoreHtml(acc.oddieScore,acc.hasEnough,rank,acc.weeklyDelta,null,acc.meanEdge,acc.loudMultiplier||1)}
     ${badgesHtml(badges)}
     <div class="trstats">
-      <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
-      <div class="tile"><div class="v">${acc.streak}${acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:''}</div><div class="k">STREAK</div></div>
-      <div class="tile"><div class="v topic">${bestTopicVal}</div><div class="k">YOUR TOPIC</div></div>
-      <div class="tile"><div class="v">${acc.resolved}</div><div class="k">RESOLVED PICKS</div></div>
+      <div class="tile"><div class="v">${Number(acc.marketsCreated)||0}</div><div class="k">MARKETS TAGGED</div></div>
+      <div class="tile"><div class="v">${Number(acc.tradersReached)||0}</div><div class="k">PEOPLE REACHED</div></div>
     </div>
-    ${!acc.hasEnough?`<p class="cnote">🌱 building track record · ${acc.resolved} of ${acc.minResolved} resolved picks. Oddies show at ${acc.minResolved}.</p>`:''}
-    ${bestCallHtml(calls, data.handle)}
-    ${categoryBreakdownHtml(acc.byCategory)}
-    <p class="psec" style="margin-top:22px">Recent calls</p>
-    ${calls.length?calls.map(pubCallRow).join(''):'<div class="state">No resolved calls yet.</div>'}
+    ${!acc.hasEnough?`<p class="cnote">🌱 nothing on the board yet.</p>`:''}
     <div class="pfoot"><p class="disclaimer">Markets settle in SOL on Solana. Positions are staked from your own wallet, and oddie never holds your funds.</p></div>
   </div>`;
   animateOscore(scroller,acc.oddieScore,acc.hasEnough,false);
@@ -5803,11 +5738,13 @@ async function loadLeaderboard(scroller){
 function standingHtml(you){
   if(!you) return "";
   const share=(txt)=>`<button class="standing-share" data-standing-share="${esc(txt)}">Post this to X</button>`;
+  // The empty state used to count down resolved calls to a rank. Nothing
+  // resolves calls any more, so it was a countdown that could never reach zero.
+  // One tag is the whole entry price, so it says that instead.
   if(!you.hasEnough){
-    const left=Math.max(0,(you.minResolved||10)-(you.resolved||0));
     return `<div class="standing pending">
-      <div class="standing-tier">Building your track record</div>
-      <div class="standing-sub">${you.resolved||0} call${(you.resolved||0)===1?"":"s"} resolved · <b>${left} more</b> before you get a rank and a tier.</div>
+      <div class="standing-tier">Not on the board yet</div>
+      <div class="standing-sub">Tag <b>@oddiefun</b> under an argument on X. <b>One market</b> puts you on it.</div>
     </div>`;
   }
   const pct=you.rank?you.rank.topPct:null;
@@ -5853,27 +5790,14 @@ function renderLb(scroller,data){
     // says so plainly, because a board that pays for something without naming
     // it is a board nobody plays toward. The 🔥 badge appears only where a
     // multiplier has been EARNED — a permanent "1×" would read as a penalty.
-    edge:{sub:"Call it loud. Ranked by oddies — every call, market and post you make lands here, scaled by how right you are. 🌱 means fewer than 10 closed positions.",
-      empty:"Nobody has called anything yet. Be first.",
-      rows:data.rows,html:(r)=>row({...r,handle:r.handle+(r.provisional?" 🌱":"")},`<div class="acc ${cls(r.avgEdge)}">${r.oddies??0}<small>${r.loudMultiplier>1?`🔥 ${r.loudMultiplier}× loud · `:""}${r.accuracyPct!=null?`${r.accuracyPct}% accurate`:`${r.closed} closed`}</small></div>`)},
-    streak:{sub:"Consecutive days with at least one call. Show up, stay up.",
-      empty:"No streaks yet. Day one starts now.",
-      rows:data.streaks,html:(r)=>row(r,`<div class="acc ${r.current>0?"up":"flat"}">${r.current}d<small>best ${r.best}d</small></div>`)},
-    // ACCURACY, in place of the old Winnings board.
-    //
-    // Two reasons for the swap rather than a fifth tab. Winnings ranked net
-    // predictions, and predictions stopped being something the product shows
-    // anywhere once calling became free — a board sorting a currency with no
-    // surface is a mechanic nobody can follow. And the main board moving to
-    // oddies meant "who is actually right" had lost its own home; that is the
-    // product's founding question and it deserves a board, not a column.
-    //
-    // Ranked among the same candidates the main board scores, so the two can
-    // never contradict each other about a person's numbers.
-    accurate:{sub:"Who is actually right. Hit rate across resolved calls, once there are enough of them to mean anything.",
-      empty:"No settled records yet. Make a call and let a market resolve.",
-      rows:data.accurate,html:(r)=>row(r,`<div class="acc ${r.accuracyPct>=50?"up":"flat"}">${r.accuracyPct}%<small>${r.closed} resolved</small></div>`)},
-    creators:{sub:"Ranked by creator fees earned — 2% of every market you tag, paid when it resolves. Markets created breaks ties.",
+    edge:{sub:"Ranked by oddies. Tag a market and it pays the most, then the crowd it pulls in, then every post you make about it. 🔥 is a loud streak.",
+      empty:"Nobody is on the board yet. Tag @oddiefun on X and it is yours.",
+      rows:data.rows,html:(r)=>row(r,`<div class="acc ${r.oddies>0?"up":"flat"}">${r.oddies??0}<small>${r.loudMultiplier>1?`🔥 ${r.loudMultiplier}x loud`:"oddies"}</small></div>`)},
+    // The Accurate and Streak boards are gone. Both ranked play positions, and
+    // real money moved to the chain: nothing writes those rows any more, so the
+    // two tabs were permanently empty invitations to do something the product
+    // had stopped offering.
+    creators:{sub:"Ranked by creator fees earned. 2% of every market you tag, paid when it resolves. Markets created breaks ties.",
       empty:"Nobody has created a market yet. Tag a post on X and this board is yours.",
       rows:data.creators,html:(r)=>row(r,`<div class="acc ${r.earnings>0?"up":"flat"}">+${r.earnings}<small>${r.marketsCreated} market${r.marketsCreated===1?"":"s"}</small></div>`)},
   };
@@ -5884,7 +5808,7 @@ function renderLb(scroller,data){
     ${standingHtml(data.you)}
     ${rankMoveLine}
     <div class="seg" role="tablist" style="margin-bottom:14px">
-      ${[["edge","Oddies"],["accurate","Accurate"],["streak","Streak"],["creators","Creators"]].map(([k,l])=>
+      ${[["edge","Oddies"],["creators","Creators"]].map(([k,l])=>
         `<button class="segb${lbTab===k?" on":""}" data-lbtab="${k}" role="tab">${l}</button>`).join("")}
     </div>
     <p class="sub">${b.sub}</p>
@@ -6035,18 +5959,6 @@ async function loadProfile(scroller){
   // view, never from a background poll that could burn it silently.
   let rankMove=null;
   try{const rr=await fetch(`${API}/api/rank-movement?deviceId=${encodeURIComponent(deviceId)}`);if(rr.ok)rankMove=(await rr.json()).movement;}catch(e){}
-  const accVal=acc?(acc.hasEnough?`${acc.accuracyPct}%`:"building"):"—";
-  const streakVal=acc?String(acc.streak):"—";
-  // The category LEADS and the number follows it, instead of "50% Sports".
-  // A tile whose largest text is a percentage answers "how am I doing"; the
-  // page already answers that four times above. This one is here to answer
-  // "what am I", so the subject comes first and the accuracy becomes the
-  // supporting fact — and it carries its denominator now, because 50% reads as
-  // a coin flip until you can see it was over 20 resolved calls.
-  const bestTopicVal=acc&&acc.bestTopic
-    ? `${esc(acc.bestTopic.category)}<span class="best"> · ${acc.bestTopic.pct}% of ${acc.bestTopic.resolved}</span>`
-    : "—";
-  const resolvedVal=acc?String(acc.resolved):"—";
 
   await loadBalance(); // the handle rides on /api/me
   const handleRow=myHandle?`
@@ -6085,20 +5997,11 @@ async function loadProfile(scroller){
 
     ${oscoreHtml(acc?acc.oddieScore:null,!!(acc&&acc.hasEnough),myRank,acc?acc.weeklyDelta:null,rankMove,acc?acc.meanEdge:null,acc?(acc.loudMultiplier||1):1)}
     <div class="trhead">
-      <p class="psec">Track record</p>
+      <p class="psec">How loud you are</p>
       <button class="trshare" id="trshare">${SHARE_ICON}<span>Share</span></button>
     </div>
     ${badgesHtml(myBadges)}
-    <div class="trstats">
-      <div class="tile"><div class="v">${esc(accVal)}</div><div class="k">ACCURACY</div></div>
-      <div class="tile"><div class="v">${esc(streakVal)}${acc&&acc.bestStreak>acc.streak?`<span class="best"> · best ${acc.bestStreak}</span>`:""}</div><div class="k">STREAK</div></div>
-      <div class="tile"><div class="v topic">${bestTopicVal}</div><div class="k">YOUR TOPIC</div></div>
-      <div class="tile"><div class="v">${esc(resolvedVal)}</div><div class="k">RESOLVED PICKS</div></div>
-    </div>
-    ${acc&&!acc.hasEnough
-      ? `<p class="cnote">🌱 building track record — ${acc.resolved} of ${acc.minResolved} resolved picks. Accuracy shows at ${acc.minResolved}.</p>`:""}
     ${acc?loudNextHtml(acc.loudMultiplier):""}
-    ${categoryBreakdownHtml(acc&&acc.byCategory)}
 
     <!-- Account. The predictions balance used to headline this section as
          "your play balance"; a call is free now, so that number buys nothing
