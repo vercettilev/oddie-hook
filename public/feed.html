@@ -1263,6 +1263,7 @@
     box-shadow:0 3px 0 rgba(0,0,0,.25)}
   :root[data-theme="dark"] .au-av{border-color:#05060A;box-shadow:0 3px 0 rgba(0,0,0,.8)}
   .au-av--oddie{background:var(--accent) var(--mark) center/cover no-repeat}
+  .au-av--emoji{font-family:inherit;font-size:19px;line-height:1}
   .au-who{display:flex;flex-direction:column;min-width:0;line-height:1.15}
   .au-who b{font-family:'Fredoka';font-weight:700;font-size:16px;color:var(--on-ground);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1897,6 +1898,24 @@
   .num{font-family:'Nunito';font-weight:800;font-variant-numeric:tabular-nums}
 
   /* profile */
+  /* The chosen face: a chunky sticker like everything else a thumb touches. */
+  .pfav{position:relative;width:74px;height:74px;border-radius:50%;display:grid;place-items:center;
+    font-size:36px;line-height:1;cursor:pointer;padding:0;margin:0 0 10px;
+    border:3px solid var(--ink);box-shadow:0 5px 0 rgba(0,0,0,.25)}
+  :root[data-theme="dark"] .pfav{border-color:#05060A;box-shadow:0 5px 0 rgba(0,0,0,.85)}
+  .pfav:active{box-shadow:0 1px 0 rgba(0,0,0,.25);transform:translateY(4px)}
+  .pfav-pen{position:absolute;right:-4px;bottom:-4px;width:26px;height:26px;border-radius:50%;
+    display:grid;place-items:center;font-size:12px;background:var(--ink);color:#fff;border:2.5px solid var(--ground)}
+  .pfav--big{width:88px;height:88px;font-size:44px;margin:0 auto 14px;cursor:default}
+  .pf-preview{display:flex;justify-content:center}
+  .pf-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
+  .pf-e{font-size:24px;line-height:1;padding:8px 0;cursor:pointer;border-radius:12px;
+    border:2.5px solid var(--card-line);background:none}
+  .pf-e.on{border-color:var(--accent);background:rgba(215,220,31,.14)}
+  .pf-hues{display:flex;gap:8px;justify-content:center;margin-bottom:14px}
+  .pf-h{width:34px;height:34px;border-radius:50%;cursor:pointer;border:3px solid transparent}
+  .pf-h.on{border-color:var(--on-ground)}
+
   .avatar{width:84px;height:84px;border-radius:50%;background:var(--accent);border:1.5px solid #000;position:relative;flex:none}
   .avatar::before,.avatar::after{content:"";position:absolute;width:15px;height:15px;background:#000;border-radius:50%;top:31px}
   .avatar::before{left:19px}.avatar::after{left:50px}
@@ -2484,7 +2503,7 @@ async function initChainLayer(){
  * a second tab or a reload always shows what the database says. `balance` is
  * null until /api/me answers.
  */
-let balance=null, oddies=0, pickStreak=0;
+let balance=null, oddies=0, pickStreak=0, myAvatar=null;
 // Identity extras from /api/me, for the private profile: earned badges and the
 // season rank. Cached from the same call that fills the balance pill.
 let myBadges=[], myRank=null;
@@ -2495,6 +2514,7 @@ async function loadBalance(){
   try{
     const r=await fetch(`${API}/api/me?deviceId=${encodeURIComponent(deviceId)}`);
     if(r.ok){const w=await r.json();balance=w.tokens;if(typeof w.oddies==="number")oddies=w.oddies;
+      if(w.avatar&&w.avatar.emoji)myAvatar=w.avatar;
       if(typeof w.pickStreak==="number")pickStreak=w.pickStreak;
       myBadges=w.badges||[];myRank=w.rank||null;
       myHandle=w.handle??myHandle;myHandleEditable=w.handleEditable!==false;
@@ -3706,7 +3726,10 @@ function takeSizeClass(q){
  *  not going to fetch them: that would be a request to a third party on every
  *  card, for every visitor, keyed to a person's identity. A letter on a colour
  *  derived from the handle is stable, free, and reads as an avatar at this size. */
-function handleAvatar(handle){
+function handleAvatar(handle,chosen){
+  if(chosen&&chosen.emoji){
+    return `<span class="au-av au-av--emoji" style="background:hsl(${Number(chosen.hue)||0} 70% 62%)">${esc(chosen.emoji)}</span>`;
+  }
   let h=0; for(let i=0;i<handle.length;i++) h=(h*31+handle.charCodeAt(i))|0;
   const hue=Math.abs(h)%360;
   return `<span class="au-av" style="background:hsl(${hue} 70% 62%)">${esc(handle[0].toUpperCase())}</span>`;
@@ -3734,7 +3757,7 @@ function authorRowHtml(m){
   }
   const h=esc(m.taggedBy);
   return `<a class="author" href="https://x.com/${h}" target="_blank" rel="noopener noreferrer">
-      ${handleAvatar(m.taggedBy)}
+      ${handleAvatar(m.taggedBy,m.taggedByAvatar)}
       <span class="au-who"><b>@${h}</b><span class="au-sub">tagged this</span></span>
       <span class="au-go" aria-hidden="true">↗</span>
     </a>`;
@@ -3924,6 +3947,61 @@ function buildRail(me,creator,claimFrag,openCalls,topCreators){
     rail.appendChild(p);
   }
   return rail;
+}
+
+/* --------------------------------------------------------- pick a face -----
+ * Emoji and a hue, not an upload. There is no storage to pay for, no image to
+ * resize, nothing to moderate, and no third-party request on every card to
+ * fetch somebody's picture. It is also the right register for this product: a
+ * face should be one tap, not a file browser.
+ */
+const AVATAR_EMOJI=["🙂","😎","🤠","👽","🤖","👻","🦊","🐸","🐙","🦈","🐉","🔥","⚡","💎","🎯","🃏","🧠","👑","🚀","🍀"];
+const AVATAR_HUES=[48,88,150,190,215,265,300,335];
+
+function openAvatarPicker(scroller){
+  let emoji=(myAvatar&&myAvatar.emoji)||"🙂";
+  let hue=(myAvatar&&Number(myAvatar.hue))||48;
+
+  const dim=document.createElement("div");dim.className="cdim";
+  dim.innerHTML=`<div class="csheet" role="dialog" aria-label="Pick your face">
+    <h3>Pick your face</h3>
+    <div class="pf-preview" id="pfPrev"></div>
+    <div class="pf-grid" id="pfEmoji">${AVATAR_EMOJI.map(e=>
+      `<button class="pf-e" type="button" data-e="${esc(e)}">${esc(e)}</button>`).join("")}</div>
+    <div class="pf-hues" id="pfHues">${AVATAR_HUES.map(h=>
+      `<button class="pf-h" type="button" data-h="${h}" style="background:hsl(${h} 70% 62%)"></button>`).join("")}</div>
+    <div class="paste-err" id="pfErr" hidden></div>
+    <button class="claimbtn" id="pfSave" type="button">Save</button>
+    <button class="quiet" id="pfCancel" type="button">Not now</button>
+  </div>`;
+  dim.onclick=(e)=>{if(e.target===dim)dim.remove();};
+  document.body.appendChild(dim);
+
+  const paint=()=>{
+    dim.querySelector("#pfPrev").innerHTML=
+      `<span class="pfav pfav--big" style="background:hsl(${hue} 70% 62%)">${esc(emoji)}</span>`;
+    dim.querySelectorAll(".pf-e").forEach(b=>b.classList.toggle("on",b.dataset.e===emoji));
+    dim.querySelectorAll(".pf-h").forEach(b=>b.classList.toggle("on",Number(b.dataset.h)===hue));
+  };
+  dim.querySelectorAll(".pf-e").forEach(b=>b.onclick=()=>{emoji=b.dataset.e;paint();});
+  dim.querySelectorAll(".pf-h").forEach(b=>b.onclick=()=>{hue=Number(b.dataset.h);paint();});
+  paint();
+
+  dim.querySelector("#pfCancel").onclick=()=>dim.remove();
+  dim.querySelector("#pfSave").onclick=async()=>{
+    const err=dim.querySelector("#pfErr"); err.hidden=true;
+    try{
+      const r=await fetch(`${API}/api/profile/avatar`,{method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({deviceId,emoji,hue})});
+      const j=await r.json();
+      if(!r.ok||!j.ok){err.textContent=j.error||"couldn't save. Try again";err.hidden=false;return;}
+      myAvatar={emoji:j.emoji,hue:j.hue};
+      ev("avatar_set",{});
+      dim.remove();
+      loadProfile(scroller);
+    }catch(e){err.textContent="couldn't save. Try again";err.hidden=false;}
+  };
 }
 
 const X_STATUS_RE=/(?:twitter|x)\.com\/[^/]+\/status\/(\d+)/i;
@@ -5868,6 +5946,8 @@ async function loadProfile(scroller){
 
   await loadBalance(); // the handle rides on /api/me
   const handleRow=myHandle?`
+    <button class="pfav" id="pfav" type="button" aria-label="Change your face"
+      style="background:hsl(${myAvatar?Number(myAvatar.hue):48} 70% 62%)">${myAvatar?esc(myAvatar.emoji):"🙂"}<span class="pfav-pen" aria-hidden="true">✎</span></button>
     <div class="hrow" id="hrow">
       <span class="hname">@${esc(myHandle)}</span>
       ${myHandleEditable
@@ -5943,6 +6023,9 @@ async function loadProfile(scroller){
   });
   // Rename in place. The server is the judge (shape, blocklist, uniqueness);
   // this only carries the verdict back.
+  const pfav=scroller.querySelector("#pfav");
+  if(pfav)pfav.onclick=()=>openAvatarPicker(scroller);
+
   const heditBtn=scroller.querySelector("#hedit");
   if(heditBtn)heditBtn.onclick=()=>{
     const row=scroller.querySelector("#hrow"), err=scroller.querySelector("#herr");

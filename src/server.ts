@@ -8,7 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT,
+import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT, setDeviceAvatar, deviceAvatar, validAvatar, avatarsForHandles,
 } from "./store/markets.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
@@ -754,6 +754,12 @@ app.get("/api/feed", async (req, res) => {
   // receipt instead of a promise. Only ever non-empty for RESOLVED markets —
   // the fee is paid at settlement — so in practice this populates the
   // permalink of a settled market, not the open ones filling the feed.
+  // Faces for the author rows. Only for handles that actually have an oddie
+  // account and picked one; everyone else falls back to the letter avatar the
+  // client generates, which needs no round trip at all.
+  const avatars = await avatarsForHandles(
+    Object.values(surfacers).map((sf) => sf?.handle ?? "").filter(Boolean),
+  ).catch(() => ({} as Record<string, { emoji: string; hue: number }>));
   const feesPaid = await creatorFeesPaidFor(feedItems.filter((x) => x.community).map((x) => x.slug))
     .catch(() => ({} as Record<string, { amount: number; handle: string | null }>));
   const withCrowd = feedItems.map((x) => {
@@ -787,6 +793,7 @@ app.get("/api/feed", async (req, res) => {
       // and no name at all.
       tagged: x.community === true || taggedSet.has(x.slug),
       taggedBy: x.community === true || taggedSet.has(x.slug) ? (surfacer?.handle ?? null) : null,
+      taggedByAvatar: surfacer?.handle ? (avatars[surfacer.handle.replace(/^@+/, "").toLowerCase()] ?? null) : null,
       creatorFeePaid: paid ? paid.amount : 0,
       // Absent, not zero, when there is nothing honest to say — see pctDeltasFor.
       ...(pctDeltas[x.slug] != null ? { pctDelta: pctDeltas[x.slug] } : {}),
@@ -1289,7 +1296,8 @@ app.get("/api/me", async (req, res) => {
   // the moment a call became free: a number nobody can spend is not a balance,
   // it is decoration in the most prominent slot on the screen. The pill now
   // carries the one number the product has.
-  res.json({ ...wallet, ...handle, pickStreak: acc.streak, oddies: acc.oddieScore ?? 0, badges, rank, openCalls, creator });
+  res.json({ ...wallet, ...handle, pickStreak: acc.streak, oddies: acc.oddieScore ?? 0, badges, rank, openCalls, creator,
+    avatar: await deviceAvatar(deviceId).catch(() => null) });
 });
 
 /**
@@ -1330,6 +1338,16 @@ async function displayHandle(deviceId: string): Promise<{ handle: string; handle
   // strip it here — the UI showed "@@levvercetti" before this did.
   return tw ? { handle: tw.handle!.replace(/^@+/, ""), handleEditable: false } : { handle: own, handleEditable: true };
 }
+
+/** Pick a face. Two short strings, validated, no upload path anywhere. */
+app.post("/api/profile/avatar", async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  const a = validAvatar(req.body?.emoji, req.body?.hue);
+  if (!a) return res.status(400).json({ error: "emoji and hue (0-359) required" });
+  await setDeviceAvatar(deviceId, a);
+  res.json({ ok: true, ...a });
+});
 
 app.post("/api/handle", async (req, res) => {
   const deviceId = deviceIdOf(req.body);

@@ -485,6 +485,18 @@ CREATE TABLE IF NOT EXISTS featured_markets (
 --     in Railway is stale the moment the first refresh succeeds, and the next
 --     cold start cannot authenticate at all. The env var is the SEED; this
 --     row is the truth from the first refresh onward.
+-- A face, chosen rather than uploaded. An emoji and a hue is a complete
+-- avatar for this product: nothing to store beyond two short strings, nothing
+-- to moderate, nothing to resize, and no third-party request on every card to
+-- fetch somebody's picture. It is also the right register: a hypercasual
+-- product should let you pick a face in one tap, not open a file browser.
+CREATE TABLE IF NOT EXISTS device_avatar (
+  device_id text PRIMARY KEY,
+  emoji     text NOT NULL,
+  hue       integer NOT NULL,
+  set_at    timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS bot_state (
   k       text PRIMARY KEY,
   v       text NOT NULL,
@@ -5333,4 +5345,70 @@ export function _memMentionOutcome(tweetId: string): MentionOutcome | null {
 export function _resetBotState(): void {
   memBotState.clear();
   memMentions.clear();
+}
+
+/* ------------------------------------------------------------- avatars -----
+ * Chosen, not uploaded. See the table comment for why.
+ *
+ * The emoji is validated by LENGTH rather than by a character class: emoji are
+ * multi-codepoint (skin tones, ZWJ sequences, variation selectors), so any
+ * regex tight enough to be safe would reject half the picker, and any regex
+ * loose enough to accept it is not doing much. A cap on grapheme-ish length
+ * plus rejecting anything with markup characters is the honest guard.
+ */
+const memAvatars = new Map<string, { emoji: string; hue: number }>();
+
+export interface DeviceAvatar { emoji: string; hue: number }
+
+export function validAvatar(emoji: unknown, hue: unknown): DeviceAvatar | null {
+  if (typeof emoji !== "string") return null;
+  const e = emoji.trim();
+  // Long enough for a ZWJ sequence, short enough that nobody puts a sentence
+  // where a face goes.
+  if (!e || [...e].length > 8 || /[<>&"'\s]/.test(e)) return null;
+  const h = Math.round(Number(hue));
+  if (!Number.isFinite(h) || h < 0 || h > 359) return null;
+  return { emoji: e, hue: h };
+}
+
+export async function setDeviceAvatar(rawDeviceId: string, a: DeviceAvatar): Promise<void> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) { memAvatars.set(deviceId, a); return; }
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO device_avatar (device_id, emoji, hue, set_at) VALUES ($1,$2,$3,now())
+     ON CONFLICT (device_id) DO UPDATE SET emoji=EXCLUDED.emoji, hue=EXCLUDED.hue, set_at=now()`,
+    [deviceId, a.emoji, a.hue],
+  );
+}
+
+export async function deviceAvatar(rawDeviceId: string): Promise<DeviceAvatar | null> {
+  const deviceId = await resolveDevice(rawDeviceId);
+  if (!PERSISTENT) return memAvatars.get(deviceId) ?? null;
+  await ensureSchema();
+  const { rows } = await db().query<{ emoji: string; hue: number }>(
+    `SELECT emoji, hue FROM device_avatar WHERE device_id = $1`, [deviceId]);
+  return rows[0] ? { emoji: rows[0].emoji, hue: Number(rows[0].hue) } : null;
+}
+
+/** Avatars for a set of twitter handles, for the feed's author rows. Absent
+ *  handles simply do not appear, so the caller falls back to the generated
+ *  letter avatar rather than to a placeholder face. */
+export async function avatarsForHandles(handles: string[]): Promise<Record<string, DeviceAvatar>> {
+  const out: Record<string, DeviceAvatar> = {};
+  const wanted = [...new Set(handles.filter(Boolean).map((h) => h.replace(/^@+/, "").toLowerCase()))];
+  if (!wanted.length) return out;
+  for (const h of wanted) {
+    const dev = await deviceForTwitterHandle(h);
+    if (!dev) continue;
+    const a = !PERSISTENT ? memAvatars.get(dev) ?? null : null;
+    if (a) { out[h] = a; continue; }
+    if (PERSISTENT) {
+      await ensureSchema();
+      const { rows } = await db().query<{ emoji: string; hue: number }>(
+        `SELECT emoji, hue FROM device_avatar WHERE device_id = $1`, [dev]);
+      if (rows[0]) out[h] = { emoji: rows[0].emoji, hue: Number(rows[0].hue) };
+    }
+  }
+  return out;
 }
