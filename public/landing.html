@@ -471,7 +471,19 @@
   .pbtn--x .pbtn__g{font-size:17px}
   .prof__note{margin:6px 0 0;color:var(--fg-3);font-size:12.5px;font-weight:600;line-height:1.55}
 
-  .strip{margin-top:80px;padding:34px 0 44px;border-top:1px solid var(--line-soft);text-align:center}
+  /* Full bleed and self-contained: no text over it, no card on it. The mask
+     dissolves all four edges into the page so it reads as a view rather than
+     as a photograph someone pasted in. */
+  /* The source is portrait and the subject (arch, mascot, steps) sits low in
+     it, so a short wide band cropped straight through the thing worth seeing.
+     Taller, and anchored below centre. */
+  .portalband{position:relative;margin-top:88px;height:clamp(380px,50vw,660px);overflow:hidden}
+  .portalband img{width:100%;height:100%;object-fit:cover;object-position:50% 60%;display:block;
+    -webkit-mask-image:radial-gradient(ellipse 78% 82% at 50% 50%,#000 42%,rgba(0,0,0,.55) 72%,transparent 96%);
+    mask-image:radial-gradient(ellipse 78% 82% at 50% 50%,#000 42%,rgba(0,0,0,.55) 72%,transparent 96%)}
+  @media (max-width:720px){ .portalband{margin-top:56px;height:360px} }
+
+  .strip{margin-top:56px;padding:34px 0 44px;border-top:1px solid var(--line-soft);text-align:center}
   .strip .eyebrow{display:block}
   .feats{display:flex;justify-content:center;flex-wrap:wrap;gap:14px 44px;margin-top:22px}
   .feat{display:inline-flex;align-items:center;gap:9px;color:var(--fg-2);font-size:14px;font-weight:700}
@@ -868,6 +880,17 @@
           moves nothing. Taking a side is a separate signature, and that one spends.</p>
       </div>
     </div>
+  </section>
+
+  <!-- The portal, given its own space rather than used as wallpaper.
+       It came off the hero because a painted, cinematic scene sitting behind
+       flat sticker cards reads as a stock backdrop and swallows their edges.
+       The asset was never the problem; the ROLE was. Here nothing is layered
+       on it: full bleed, its own band, the copy above and below rather than
+       across. One cinematic moment against a page of chunky stickers is a
+       stronger pairing than either alone, as long as they never overlap. -->
+  <section class="portalband" aria-hidden="true">
+    <img src="/portal.png" alt="">
   </section>
 
   <section class="strip" id="built">
