@@ -148,8 +148,13 @@
      links to a far edge that no longer exists would only add dead space. */
   .brand{display:flex;align-items:center;gap:10px}
   .brand img{width:34px;height:34px;border-radius:9px}
+  /* The wordmark wears the headline's treatment: lime over a hard pink offset,
+     the same arcade move as h1::before. It used to carry a soft lime glow, and
+     a glow and a hard shadow are different languages, so the two brand marks on
+     one screen disagreed with each other. Offset is 2px rather than the
+     headline's 5px because the shadow has to stay proportional to the type. */
   .brand span{font-family:'Fredoka';font-size:23px;font-weight:600;color:var(--lime);
-    letter-spacing:.14em;text-transform:uppercase;text-shadow:0 0 18px rgba(215,220,31,.55)}
+    letter-spacing:.14em;text-transform:uppercase;text-shadow:2px 2px 0 var(--no)}
   .nav__links{display:flex;align-items:center;gap:34px}
   .nav__links a{color:var(--fg-2);font-size:14px;font-weight:700}
   .nav__links a:hover{color:var(--fg)}

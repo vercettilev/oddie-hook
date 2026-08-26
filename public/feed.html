@@ -194,7 +194,16 @@
   body:not([data-view="feed"]) .top{border-bottom:1.5px solid var(--hair-g)}
   .top-in{max-width:var(--col);margin:0 auto;padding:0 6px}
   .brand{display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:10px}
-  .brand b{font-size:21px;font-weight:600}
+  /* Same treatment as the landing's wordmark and the landing headline: the
+     brand colour over a hard pink offset. --no is not a token in this file (the
+     NO colour is written literally wherever it appears), so the pink is literal.
+     The LETTERFORM changes by theme and the shadow does not: this file's default
+     :root IS the bright theme, and lime on a pale ground is close to invisible,
+     so bright gets --acc-deep, the same dark lime every other text-on-light
+     surface here uses. Matching the headline means keeping the relationship,
+     brand colour over pink, not repeating a hex onto a ground it cannot survive. */
+  .brand b{font-size:21px;font-weight:600;color:var(--acc-deep);text-shadow:2px 2px 0 #FF2D78}
+  :root[data-theme="dark"] .brand b{color:var(--accent)}
   /* The logo+wordmark, now a real link home — grouped so the two keep their own
      8px gap (matching the old flat layout) while acting as one tap target. */
   /* The mark has always linked home; it just never LOOKED like it did, so

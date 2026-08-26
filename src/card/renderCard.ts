@@ -37,6 +37,9 @@ export const C = {
   // (its --acc-deep token) — bare accent reads fine as a big hero fill or a
   // large kicker, but loses contrast at caption sizes.
   accentDeep: "#5A6109",
+  // The hard offset under the wordmark. Same pink as the app's NO side and the
+  // landing headline's echo, which is where the treatment comes from.
+  echo: "#FF2D78",
 };
 
 export const FONT = "'Fredoka', 'Trebuchet MS', sans-serif";
@@ -236,7 +239,12 @@ const WORDMARK_END = 140 + textWidth("oddie", 46);
 export const LOCKUP_RIGHT = WORDMARK_END + HANDLE_GAP + textWidth(X_HANDLE, HANDLE_FS);
 
 export function brandLockup(): string {
+  // The wordmark carries the same hard pink offset the landing headline and both
+  // app headers wear: a displaced copy underneath, not a blur. Drawn first so it
+  // sits behind. 2px at 46px matches the 2px the web wordmarks use at ~21px only
+  // in spirit; measured against the card's 2x raster, 3px is what reads.
   return `${logoMark(52, 62, 68)}
+  <text x="143" y="115" font-size="46" font-weight="600" fill="${C.echo}">oddie</text>
   <text x="140" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
   <text x="${Math.round(WORDMARK_END + HANDLE_GAP)}" y="112" font-family="${META}" font-size="${HANDLE_FS}" font-weight="700" fill="${C.muted}">${X_HANDLE}</text>`;
 }

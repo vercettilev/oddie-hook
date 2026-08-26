@@ -91,6 +91,7 @@ export function renderBanner(): string {
        the handle is doing better work down in the sub line, where it is an
        instruction ("tag @oddiefun on X") rather than a credit. -->
   ${logoMark(PAD_L, 62, 64)}
+  <text x="${PAD_L + 85}" y="115" font-size="46" font-weight="600" fill="${C.echo}">oddie</text>
   <text x="${PAD_L + 82}" y="112" font-size="46" font-weight="600" fill="${C.ink}">oddie</text>
 
   <text font-size="${fs}" font-weight="700" fill="${C.ink}">${headTspans}</text>
