@@ -133,8 +133,14 @@
      covering the top of every section on the way down. */
   .nav{position:sticky;top:14px;z-index:20;height:88px;display:flex;align-items:center;
     pointer-events:none}
+  /* The pill sits over WHATEVER scrolls under it, and one of those things is a
+     full-bleed frame of saturated yellow. At .72 alpha that yellow came through
+     and turned the pill olive, which left the mark's own yellow tile sitting on
+     a muddy near-match instead of on dark. The blur stays for the glass feel;
+     the alpha is now high enough that the pill reads as the same dark chip over
+     black and over the portal alike. */
   .nav__in{display:flex;align-items:center;gap:24px;width:auto;margin:0 auto;pointer-events:auto;
-    background:rgba(12,13,11,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    background:rgba(12,13,11,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
     border:1px solid var(--line);border-radius:999px;padding:9px 9px 9px 20px;
     box-shadow:0 10px 34px rgba(0,0,0,.45)}
   /* The pill is only as wide as its contents, so the shell's page gutter would
@@ -483,9 +489,20 @@
      it, so a short wide band cropped straight through the thing worth seeing.
      Taller, and anchored below centre. */
   .portalband{position:relative;margin-top:88px;height:clamp(380px,50vw,660px);overflow:hidden}
+  /* Two linear fades intersected, not one ellipse.
+     The ellipse mask fell 1 -> .55 over thirty percent and then .55 -> 0 over
+     twenty four, so the falloff changed slope halfway and read as a ring; and an
+     ellipse inscribed in a wide short box never reaches the corners, so the top
+     and bottom edges cut hard against the black page. Two axis-aligned
+     gradients, composited, fade every side monotonically and let the frame melt
+     into the page instead of ending at a line. */
   .portalband img{width:100%;height:100%;object-fit:cover;object-position:50% 60%;display:block;
-    -webkit-mask-image:radial-gradient(ellipse 78% 82% at 50% 50%,#000 42%,rgba(0,0,0,.55) 72%,transparent 96%);
-    mask-image:radial-gradient(ellipse 78% 82% at 50% 50%,#000 42%,rgba(0,0,0,.55) 72%,transparent 96%)}
+    -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 22%,#000 78%,transparent 100%),
+                       linear-gradient(to right,transparent 0,#000 14%,#000 86%,transparent 100%);
+    mask-image:linear-gradient(to bottom,transparent 0,#000 22%,#000 78%,transparent 100%),
+               linear-gradient(to right,transparent 0,#000 14%,#000 86%,transparent 100%);
+    -webkit-mask-composite:source-in;
+    mask-composite:intersect}
   @media (max-width:720px){ .portalband{margin-top:56px;height:360px} }
 
   .strip{margin-top:56px;padding:34px 0 44px;border-top:1px solid var(--line-soft);text-align:center}
