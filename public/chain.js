@@ -62,7 +62,32 @@
     return web3;
   }
 
-  function b64ToBytes(b64) {
+  /**
+ * A refused prepare, in words.
+ *
+ * The prepare routes now check every rule the program enforces BEFORE handing
+ * over a signable transaction, so these are the states where we stop rather
+ * than let the wallet show a red "could be malicious" banner over something
+ * that was always going to revert. Each one is a real answer, not an error.
+ */
+const PREPARE_REASON = {
+  "closed": "Betting on this one has closed. The result is being settled.",
+  "already-resolved": "This market has already settled.",
+  "other-side": "You are already on the other side of this market. One side per wallet.",
+  "not-resolved": "This market has not settled yet.",
+  "no-position": "There is no position on this market from this wallet.",
+  "already-claimed": "Already collected. It is in your wallet.",
+  "lost": "This one went the other way, so there is nothing to collect.",
+  "not-creator": "This market was tagged by a different wallet.",
+  "nothing-owed": "No fee on this one: nobody backed the winning side.",
+  "not-minted": "This market is not on chain yet.",
+  "chain-unreachable": "Solana is not answering right now. Try again in a moment.",
+};
+function prepareError(pj, fallback){
+  return new Error(PREPARE_REASON[pj && pj.reason] || (pj && pj.error) || fallback);
+}
+
+function b64ToBytes(b64) {
     const bin = atob(b64);
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -219,7 +244,7 @@
           body: JSON.stringify({ slug, userPubkey: wallet.publicKey }),
         });
         const pj = await prep.json();
-        if (!prep.ok || !pj.ok) throw new Error(pj.error || pj.reason || "Couldn't prepare the claim.");
+        if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare the claim.");
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         btn.textContent = "Confirm in wallet…";
@@ -416,7 +441,7 @@
           });
           const pj = await prep.json();
           if (prep.status === 451) throw new Error("Real-money stakes aren't available in your region.");
-          if (!prep.ok || !pj.ok) throw new Error(pj.error || "Couldn't prepare the transaction.");
+          if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare the transaction.");
           const w3 = await loadWeb3();
           const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
           stakeBtn.textContent = "Confirm in wallet…";
@@ -665,7 +690,7 @@
           body: JSON.stringify({ slug: b.dataset.slug, creatorPubkey: wallet.publicKey }),
         });
         const pj = await prep.json();
-        if (!prep.ok || !pj.ok) throw new Error(pj.error || "Couldn't prepare the transaction.");
+        if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare the transaction.");
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         b.textContent = "Confirm…";

@@ -2748,6 +2748,40 @@ if (realStakesReady) {
     const detail = await communityMarketDetail(slug);
     if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
     if (detail.resolvedOutcome) return res.status(409).json({ ok: false, reason: "already-resolved" });
+
+    /**
+     * EVERY RULE take_position ENFORCES, CHECKED HERE FIRST.
+     *
+     * This route used to consult only our own database's resolvedOutcome and
+     * then hand over a signable transaction. The program enforces two more
+     * things (lib.rs: `clock < close_time` -> MarketClosed, and
+     * `pos.side == side` -> SideAlreadyTaken), and nothing checked either, so
+     * a wallet already holding YES that tapped NO, or anyone staking a market
+     * past its on-chain close that our resolver had not caught up to, was
+     * handed a transaction guaranteed to revert. Measured: 3 of 15 live
+     * markets were past close and unresolved, one by more than a month.
+     *
+     * A guaranteed revert is not just a wasted fee. Phantom's documented
+     * fourth cause of "This dApp could be malicious" is a transaction that
+     * would fail on chain, so this was manufacturing the red banner ourselves,
+     * and it would go on doing it on mainnet.
+     *
+     * Chain unreadable is NOT treated as a refusal: the program is still the
+     * authority, and blocking every stake because an RPC blinked would be a
+     * worse failure than the one being fixed.
+     */
+    const chainState = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
+    if (chainState) {
+      if (chainState.resolved) return res.status(409).json({ ok: false, reason: "already-resolved" });
+      const now = Math.floor(Date.now() / 1000);
+      if (chainState.closeTime > 0 && now >= chainState.closeTime) {
+        return res.status(409).json({ ok: false, reason: "closed", closeTime: chainState.closeTime });
+      }
+      const held = await fetchPosition(detail.onchainPubkey, userPubkey).catch(() => null);
+      if (held && held.side !== side) {
+        return res.status(409).json({ ok: false, reason: "other-side", side: held.side });
+      }
+    }
     const txBase64 = await preparePositionTx({ marketPubkey: detail.onchainPubkey, userPubkey, side, lamports });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
     res.json({ ok: true, txBase64 });
@@ -2783,6 +2817,21 @@ if (realStakesReady) {
     if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
     const detail = await communityMarketDetail(slug);
     if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
+    // Same rule as the stake route: never hand over a transaction the program
+    // will reject. Simulated live before this existed, this endpoint returned
+    // HTTP 200 and a signable transaction that failed with Custom 3012,
+    // "AnchorError caused by account: position. AccountNotInitialized", for
+    // any wallet that had never staked on the market.
+    const claimState = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
+    if (claimState) {
+      if (!claimState.resolved) return res.status(409).json({ ok: false, reason: "not-resolved" });
+      const pos = await fetchPosition(detail.onchainPubkey, userPubkey).catch(() => null);
+      if (!pos) return res.status(409).json({ ok: false, reason: "no-position" });
+      if (pos.claimed) return res.status(409).json({ ok: false, reason: "already-claimed" });
+      if (claimState.winningSide && pos.side !== claimState.winningSide) {
+        return res.status(409).json({ ok: false, reason: "lost", side: pos.side, outcome: claimState.winningSide });
+      }
+    }
     const txBase64 = await prepareClaimTx({ marketPubkey: detail.onchainPubkey, userPubkey });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
     res.json({ ok: true, txBase64 });
@@ -2822,6 +2871,16 @@ if (realStakesReady) {
     if (!isValidPubkeyString(creatorPubkey)) return res.status(400).json({ error: "invalid creatorPubkey" });
     const detail = await communityMarketDetail(slug);
     if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
+    // Simulated live before this existed: HTTP 200 and a signable transaction
+    // that failed with Custom 6014, "WrongCreator", whenever the asking wallet
+    // was not the market's named creator.
+    const feeState = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
+    if (feeState) {
+      if (!feeState.resolved) return res.status(409).json({ ok: false, reason: "not-resolved" });
+      if (feeState.creator !== creatorPubkey) return res.status(409).json({ ok: false, reason: "not-creator" });
+      if (feeState.creatorFeeClaimed) return res.status(409).json({ ok: false, reason: "already-claimed" });
+      if (feeState.creatorFeeLamports <= 0) return res.status(409).json({ ok: false, reason: "nothing-owed" });
+    }
     const txBase64 = await prepareCreatorFeeTx({ marketPubkey: detail.onchainPubkey, creatorPubkey });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
     res.json({ ok: true, txBase64 });

@@ -350,6 +350,11 @@ export async function resolveMarketOnChain(marketPubkey: string, outcome: "yes" 
 
 export interface OnChainMarketState {
   resolved: boolean;
+  /** Unix seconds. The program refuses a stake at or after this
+   *  (`require!(clock < close_time, MarketClosed)`), and our own database's
+   *  close time is a separate value that can disagree with it, so anything
+   *  deciding whether a stake will succeed has to read THIS one. */
+  closeTime: number;
   winningSide: "yes" | "no" | null;
   totalYesLamports: number;
   totalNoLamports: number;
@@ -405,6 +410,7 @@ export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainM
     const creator = rawCreator && rawCreator !== UNNAMED_CREATOR ? rawCreator : null;
     return {
       resolved,
+      closeTime: Number(a.closeTime ?? a.close_time ?? 0),
       winningSide: resolved ? (side === 0 ? "yes" : "no") : null,
       totalYesLamports: Number(a.totalYes ?? a.total_yes ?? 0),
       totalNoLamports: Number(a.totalNo ?? a.total_no ?? 0),
