@@ -46,7 +46,8 @@
     "test-tool": "tsx scripts/test-tool.ts",
     "smoke-fixture": "tsx scripts/smoke.ts --fixture",
     "mainnet-backfill": "tsx scripts/mainnet-backfill.ts",
-    "test-resolution-reply": "tsx scripts/test-resolution-reply.ts"
+    "test-resolution-reply": "tsx scripts/test-resolution-reply.ts",
+    "resolve-reconcile": "tsx scripts/resolve-reconcile.ts"
   },
   "engines": {
     "node": ">=20"

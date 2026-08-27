@@ -2579,7 +2579,21 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
   if (isChainEnabled()) {
     void communityMarketDetail(slug).then((detail) => {
       if (!detail?.onchainPubkey) return;
-      void resolveMarketOnChain(detail.onchainPubkey, outcome);
+      // The answer is READ now. It used to be discarded, which is how a
+      // resolution came to exist only in our database: the row latches on
+      // `resolved_outcome IS NULL`, so calling this route again answers 409 and
+      // never retries the chain, and claim_winnings is left with no outcome to
+      // pay against. The row still latches; what changed is that a chain that
+      // did not get the verdict is now LOUD, and `npm run resolve-reconcile`
+      // is the way back.
+      void resolveMarketOnChain(detail.onchainPubkey, outcome).then((r) => {
+        if (r.ok) return;
+        console.error(JSON.stringify({
+          evt: "resolve_chain_gap", slug, outcome, reason: r.reason, error: r.error,
+          onChainOutcome: r.onChainOutcome ?? null,
+          fix: "npm run resolve-reconcile",
+        }));
+      }).catch(() => {});
       // Real-money creator/protocol fee: logged as an audit-trail "intended
       // fee" only, never actually deducted — the deployed Solana program has
       // no fee instruction (see economy.ts + logRealFee). Read the

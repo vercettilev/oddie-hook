@@ -338,9 +338,38 @@ function positionPda(c: ChainClient, market: InstanceType<typeof c.web3.PublicKe
  *  off-chain settleMarket, so claim_winnings has a real outcome to pay against.
  *  Best-effort: the off-chain settlement (the product's real economy) never
  *  waits on or depends on this succeeding. */
-export async function resolveMarketOnChain(marketPubkey: string, outcome: "yes" | "no"): Promise<string | null> {
+/**
+ * The three answers a resolve can give, because it used to give one.
+ *
+ * It returned `string | null` and swallowed every error, so "the chain already
+ * has this verdict" and "the RPC is down" and "we are not the authority" were
+ * the same value, and the only caller discarded it anyway. That is how a
+ * resolution comes to exist ONLY in our database: the row latches, the chain
+ * call fails into the void, claim_winnings has no outcome to pay against, and
+ * nothing anywhere knows.
+ */
+export type ResolveResult =
+  | { ok: true; signature: string | null; alreadyResolved: boolean }
+  | { ok: false; reason: "unavailable" | "diverged" | "failed"; error: string; onChainOutcome?: "yes" | "no" };
+
+export async function resolveMarketOnChain(marketPubkey: string, outcome: "yes" | "no"): Promise<ResolveResult> {
   const c = await load();
-  if (!c) return null;
+  if (!c) return { ok: false, reason: "unavailable", error: "chain layer not configured" };
+
+  // Read before writing. A retry of a resolve that already landed must be a
+  // success rather than an AlreadyResolved error, or every reconciliation run
+  // jams on the markets that are already correct.
+  const before = await fetchMarketOnChain(marketPubkey).catch(() => null);
+  if (before?.resolved) {
+    if (before.winningSide === outcome) return { ok: true, signature: null, alreadyResolved: true };
+    // The chain says one thing and we are asking for another. Money may already
+    // have moved on the chain's answer. This is never resolved automatically.
+    return {
+      ok: false, reason: "diverged", onChainOutcome: before.winningSide ?? undefined,
+      error: `chain says ${before.winningSide}, asked for ${outcome}`,
+    };
+  }
+
   try {
     const marketPk = new c.web3.PublicKey(marketPubkey);
     const signature = await c.program.methods
@@ -348,10 +377,14 @@ export async function resolveMarketOnChain(marketPubkey: string, outcome: "yes" 
       .accountsStrict({ authority: c.admin.publicKey, market: marketPk })
       .rpc();
     console.log(`[chain] resolved ${marketPk.toBase58()} -> ${outcome} (sig ${signature.slice(0, 8)}…)`);
-    return signature;
+    return { ok: true, signature, alreadyResolved: false };
   } catch (e) {
-    console.error("[chain] resolveMarketOnChain failed:", (e as Error).message);
-    return null;
+    const msg = (e as Error).message ?? String(e);
+    console.error("[chain] resolveMarketOnChain failed:", msg);
+    // AlreadyResolved can still surface here if something landed between the
+    // read above and this write. Same verdict, same answer: it is done.
+    if (/AlreadyResolved/i.test(msg)) return { ok: true, signature: null, alreadyResolved: true };
+    return { ok: false, reason: "failed", error: msg };
   }
 }
 
