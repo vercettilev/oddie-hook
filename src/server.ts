@@ -44,6 +44,7 @@ import { renderCardPng } from "./card/renderPng.js";
 import { renderBanner } from "./card/renderBanner.js";
 import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
+import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
 import { linkAccount, accountsFor } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
@@ -2588,6 +2589,31 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
       }).catch(() => {});
     }).catch(() => {});
   }
+  /**
+   * ANNOUNCE IT WHERE THE ARGUMENT WAS.
+   *
+   * oddie already replied once in that thread, with the card, and the id of its
+   * own reply is stored, so the result can answer it. Entirely after the
+   * response and never awaited: the money has already moved by the time this
+   * runs, so X being slow or unreachable must not hold up a resolution or fail
+   * one that succeeded.
+   *
+   * It respects X_BOT_DRY_RUN like every other write, so turning the bot's
+   * posting on is still one deliberate switch rather than something a resolve
+   * quietly starts doing.
+   */
+  void postResolution(slug, outcome, {
+    dryRun: X_BOT_DRY_RUN,
+    cardPng: async (s2, o) => {
+      const { all } = await liveMarketData();
+      const rec = await getSlug(s2, all);
+      return rec ? renderCardPng(renderCard(rec.market, { settled: o })) : null;
+    },
+    uploadMedia: (png) => X.uploadMedia(png),
+    postReply: (o) => X.postReply(o),
+    log: (line, extra) => console.log(JSON.stringify({ evt: "x_resolution", line, ...extra })),
+  }).catch((e) => console.error("[resolution] announce failed:", (e as Error).message));
+
   res.json({ ok: true, slug, outcome, settled: settled.length });
 });
 

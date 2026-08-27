@@ -347,6 +347,24 @@ export const VOICE_ANY = [
   "easy to say. harder to back.",
 ] as const;
 
+/**
+ * The settled state. oddie is answering its OWN earlier reply, in the thread
+ * where the argument happened, so this is the only pool that gets to gloat.
+ *
+ * Same safety rule as the others and it matters more here: nothing reads the
+ * question, and the card sits under a real person's tweet. No line may say who
+ * was right, name anybody, or imply the claimer lost. The market settled; that
+ * is a fact about the market. Whether a PERSON won is a private matter and it
+ * belongs in the app, not under their tweet.
+ */
+export const VOICE_SETTLED = [
+  "that's the answer.",
+  "settled. the pool has spoken.",
+  "and there it is.",
+  "market's closed. money moved.",
+  "the line held. or it didn't.",
+] as const;
+
 /** Only when nobody has staked yet, so these may point at the vacancy. */
 export const VOICE_UNPRICED = [
   "nobody has paid for that yet.",
@@ -373,20 +391,30 @@ export const BADGE_POOL = [
  * take it back. Unpriced markets now say so and invite the first stake, which
  * is also the better ask.
  */
-export function renderCard(m: Market, opts: { unpriced?: boolean } = {}): string {
-  const unpriced = opts.unpriced === true;
+export function renderCard(m: Market, opts: { unpriced?: boolean; settled?: "yes" | "no" } = {}): string {
+  const settled = opts.settled;
+  // A settled market has an answer, so it is never unpriced and never invites a
+  // stake. The two states cannot both be true and settled wins.
+  const unpriced = !settled && opts.unpriced === true;
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const no = 100 - yes;
 
   const q = layoutQuestion(displayTitle(m.question));
 
-  const pill = volumePill(m);
+  const pillRaw = volumePill(m);
+  // A settled market has no time left to report. volumePill counts down from
+  // close_time and would say "closing" forever on a market that is already
+  // decided, which is the one word a result card must not carry.
+  const pill = settled
+    ? { text: "community · settled", w: Math.round(textWidth("community · settled", 20) + 40), x: 0 }
+    : pillRaw;
+  if (settled) pill.x = PAD_R - pill.w;
 
   // ODDIE SPEAKS FIRST. One line, always exactly one, stepped down rather than
   // wrapped: a two-line voice line stops being an interjection and starts being
   // a paragraph, and the pool is short enough that 44 nearly always wins.
   const voiceSeed = `${m.venue}:${m.venueId}`;
-  const voicePool = unpriced ? [...VOICE_ANY, ...VOICE_UNPRICED] : VOICE_ANY;
+  const voicePool = settled ? VOICE_SETTLED : unpriced ? [...VOICE_ANY, ...VOICE_UNPRICED] : VOICE_ANY;
   const voiceText = pick(voicePool, `${voiceSeed}:voice`);
   let voiceFS = 44;
   while (voiceFS > 32 && textWidth(voiceText, voiceFS) > CONTENT_W - 4) voiceFS -= 6;
@@ -396,14 +424,15 @@ export function renderCard(m: Market, opts: { unpriced?: boolean } = {}): string
   const firstBaseline = Q_TOP + CAP * q.fs;
   const qHeight = CAP * q.fs + (q.lines.length - 1) * q.lineH + DESC * q.fs;
 
-  const heroText = unpriced ? "open" : `${yes}%`;
+  const heroText = settled ? settled.toUpperCase() : unpriced ? "open" : `${yes}%`;
   const udSide = yes <= 50 ? "yes" : "no";
   const udPct = udSide === "yes" ? yes : no;
   const mRaw = 100 / Math.max(1, udPct);
   const mult = mRaw >= 10 ? Math.round(mRaw) : Math.round(mRaw * 10) / 10;
-  const metaText = unpriced ? "first in sets the line" : `${udSide} pays ${mult}\u00d7`;
+  const metaText = settled ? "settled on chain" : unpriced ? "first in sets the line" : `${udSide} pays ${mult}\u00d7`;
 
-  const inviteText = pick(INVITE_POOL, `${voiceSeed}:invite`);
+  // A settled market has nothing to invite. The CTA becomes the receipt.
+  const inviteText = settled ? "see it" : pick(INVITE_POOL, `${voiceSeed}:invite`);
   // The pill sizes itself around the text plus the DRAWN arrow: the bundled
   // subsets have no U+2192 and resvg renders a missing glyph as tofu.
   const ctaW = Math.round(28 + textWidth(inviteText, 26) + 16 + 26 + 28);
@@ -411,7 +440,7 @@ export function renderCard(m: Market, opts: { unpriced?: boolean } = {}): string
 
   // Under six hours the chip stops being information and becomes pressure, so
   // it fills solid pink instead of sitting in a lime outline.
-  const closing = /\b[0-5]h\b/.test(pill.text);
+  const closing = !settled && /\b[0-5]h\b/.test(pill.text);
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${FONT}">
   <!-- The lime IS the border. A near-black card with no frame floats on a dark

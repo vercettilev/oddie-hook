@@ -5664,6 +5664,26 @@ export async function claimMention(tweetId: string, author: string | null): Prom
   return rowCount === 1;
 }
 
+/**
+ * The id of oddie's OWN reply for a market, so a resolution can answer it.
+ *
+ * The bot records this at src/x/mentionLoop.ts when it posts the card, keyed by
+ * the mention it answered. That means the thread where somebody made the claim
+ * is reachable from the slug alone, with no new data and nobody's permission:
+ * oddie replies to itself, inside their thread, from its own account.
+ */
+export async function replyIdForSlug(slug: string): Promise<string | null> {
+  if (!PERSISTENT) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ reply_id: string | null }>(
+    `SELECT reply_id FROM x_mention
+      WHERE slug = $1 AND outcome = 'replied' AND reply_id IS NOT NULL
+      ORDER BY at DESC LIMIT 1`,
+    [slug],
+  );
+  return rows[0]?.reply_id ?? null;
+}
+
 export async function settleMention(
   tweetId: string,
   outcome: Exclude<MentionOutcome, "claimed">,
