@@ -230,6 +230,16 @@ pub mod oddie_chain {
         require!(outcome == SIDE_YES || outcome == SIDE_NO, OddieError::BadSide);
         let m = &mut ctx.accounts.market;
         require!(!m.resolved, OddieError::AlreadyResolved);
+        // NO CLOSE-TIME GUARD HERE, DELIBERATELY, and it is not an oversight
+        // even though take_position has one. A review flagged the asymmetry, I
+        // added `clock >= close_time`, and twelve tests broke for the right
+        // reason: they open a market and settle it at once, which is what real
+        // early resolution looks like. A question with a close in October can be
+        // decided in August, and holding the pool until October then locks real
+        // money for two months to protect against nothing the outcome changes.
+        // The risk the guard was aimed at, an authority settling a live market,
+        // is a process and key-custody problem; a compromised authority can do
+        // far worse than resolve early.
 
         m.resolved = true;
         m.winning_side = outcome;
@@ -242,6 +252,15 @@ pub mod oddie_chain {
         // would be charging people for our own inability to price the question.
         let bps_to_lamports = |bps: u16| -> Result<u64> {
             if winning_total == 0 {
+                return Ok(0);
+            }
+            // NOBODY TOOK THE OTHER SIDE, so there is nothing to win and nothing
+            // to take a cut of. pool == winning_total means every lamport in the
+            // vault belongs to somebody who was right, and charging them is
+            // charging winners on their own returned stake: they would get 96%
+            // of their money back for a market that never had a counterparty.
+            // Same principle as the refund case directly above.
+            if pool == winning_total {
                 return Ok(0);
             }
             // u128 for the intermediate: pool * 1000 overflows u64 at ~1.8e16

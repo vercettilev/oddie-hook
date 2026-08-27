@@ -85,6 +85,34 @@ describe("oddie_chain", () => {
     }
   };
 
+  it("takes no fee when nobody took the other side", async () => {
+    // The counterpart to the refund case. There, nobody won and the pool goes
+    // back untouched. HERE everybody won, because nobody opposed them, and the
+    // pool is still nothing but their own stake: a fee would charge winners on
+    // money that was never at risk and hand them 96% of what they put in for a
+    // market that had no counterparty. The program used to do exactly that.
+    const creator = await funded();
+    const solo = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+
+    await stake(market, vault, solo, SIDE_YES, 2);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    const m = await program.account.market.fetch(market);
+    assert.equal(m.creatorFeeLamports.toNumber(), 0, "no creator fee on a one-sided pool");
+    assert.equal(m.protocolFeeLamports.toNumber(), 0, "no protocol fee on a one-sided pool");
+
+    const before = await provider.connection.getBalance(solo.publicKey);
+    await claim(market, vault, solo);
+    const after = await provider.connection.getBalance(solo.publicKey);
+    // Their whole stake comes back, minus only the signature fee they paid to
+    // ask for it. Anything less is the bug.
+    const returned = after - before;
+    assert.isAbove(returned, 2 * LAMPORTS_PER_SOL - 20_000, `got back ${returned}, staked ${2 * LAMPORTS_PER_SOL}`);
+    assert.isAtMost(returned, 2 * LAMPORTS_PER_SOL, "cannot get back more than was staked");
+  });
+
   it("pays winners out of the pool minus the creator fee, and the arithmetic closes", async () => {
     const creator = await funded();
     const win1 = await funded();
