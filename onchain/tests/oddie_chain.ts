@@ -72,6 +72,12 @@ describe("oddie_chain", () => {
       })
       .signers([user]).rpc();
 
+  /** What claiming returns ON TOP of the payout: the Position's own rent, which
+   *  `close = owner` hands back. Read from the live account, never hardcoded,
+   *  because it follows the account's size and the cluster's rent rate. */
+  const positionRent = async (market: PublicKey, owner: PublicKey) =>
+    (await provider.connection.getBalance(positionPda(market, owner))) ?? 0;
+
   const claim = async (market: PublicKey, vault: PublicKey, user: Keypair) =>
     program.methods.claimWinnings()
       .accounts({ owner: user.publicKey, market, vault, position: positionPda(market, user.publicKey) })
@@ -103,14 +109,18 @@ describe("oddie_chain", () => {
     assert.equal(m.creatorFeeLamports.toNumber(), 0, "no creator fee on a one-sided pool");
     assert.equal(m.protocolFeeLamports.toNumber(), 0, "no protocol fee on a one-sided pool");
 
+    const rent = await positionRent(market, solo.publicKey);
     const before = await provider.connection.getBalance(solo.publicKey);
     await claim(market, vault, solo);
     const after = await provider.connection.getBalance(solo.publicKey);
-    // Their whole stake comes back, minus only the signature fee they paid to
-    // ask for it. Anything less is the bug.
+    // The whole stake comes back, PLUS the position's rent now that claiming
+    // closes it, minus only the signature fee paid to ask. Anything less than
+    // the stake is the one-sided-fee bug; anything less than stake plus rent is
+    // the rent still being stranded.
     const returned = after - before;
-    assert.isAbove(returned, 2 * LAMPORTS_PER_SOL - 20_000, `got back ${returned}, staked ${2 * LAMPORTS_PER_SOL}`);
-    assert.isAtMost(returned, 2 * LAMPORTS_PER_SOL, "cannot get back more than was staked");
+    assert.isAbove(returned, 2 * LAMPORTS_PER_SOL + rent - 20_000,
+      `got back ${returned}, staked ${2 * LAMPORTS_PER_SOL} with ${rent} rent`);
+    assert.isAtMost(returned, 2 * LAMPORTS_PER_SOL + rent, "cannot get back more than stake plus rent");
   });
 
   it("pays winners out of the pool minus the creator fee, and the arithmetic closes", async () => {
@@ -136,6 +146,10 @@ describe("oddie_chain", () => {
     assert.equal(m.protocolFeeLamports.toNumber(), expectedProto, "protocol fee fixed at resolve");
 
     const distributable = pool - expectedFee - expectedProto;
+    // Claiming also closes the position, so each winner gets their share PLUS
+    // the rent they put up to open it.
+    const rent1 = await positionRent(market, win1.publicKey);
+    const rent2 = await positionRent(market, win2.publicKey);
     const before1 = await provider.connection.getBalance(win1.publicKey);
     const before2 = await provider.connection.getBalance(win2.publicKey);
     await claim(market, vault, win1);
@@ -145,15 +159,21 @@ describe("oddie_chain", () => {
 
     // Signature fees come out of the same balance, so compare against the
     // formula with a small tolerance rather than demanding an exact figure.
-    const want1 = Math.floor((1 * LAMPORTS_PER_SOL * distributable) / (3 * LAMPORTS_PER_SOL));
-    const want2 = Math.floor((2 * LAMPORTS_PER_SOL * distributable) / (3 * LAMPORTS_PER_SOL));
+    const want1 = Math.floor((1 * LAMPORTS_PER_SOL * distributable) / (3 * LAMPORTS_PER_SOL)) + rent1;
+    const want2 = Math.floor((2 * LAMPORTS_PER_SOL * distributable) / (3 * LAMPORTS_PER_SOL)) + rent2;
     assert.isAtMost(Math.abs(got1 - want1), 10000, `win1 got ${got1}, wanted ~${want1}`);
     assert.isAtMost(Math.abs(got2 - want2), 10000, `win2 got ${got2}, wanted ~${want2}`);
     assert.isAbove(got2, got1, "the bigger stake earns more");
 
     // THE PROPERTY THAT MATTERS: the two winners plus the fee never exceed the
     // pool. If this fails the vault is promising money it does not hold.
-    assert.isAtMost(want1 + want2 + expectedFee + expectedProto, pool, "payouts + fees overspend the pool");
+    //
+    // The rents are subtracted back out first, and that is the whole point of
+    // the distinction: returned rent comes from the POSITION accounts, never
+    // from the vault, so counting it here would accuse the vault of overspending
+    // money it never touched. This assertion is about what the VAULT paid.
+    assert.isAtMost((want1 - rent1) + (want2 - rent2) + expectedFee + expectedProto, pool,
+      "payouts + fees overspend the pool");
 
     // And the creator can actually take theirs, from what is left.
     const feeBefore = await provider.connection.getBalance(creator.publicKey);
@@ -245,10 +265,11 @@ describe("oddie_chain", () => {
     assert.equal(m.protocolFeeLamports.toNumber(), 0, "no winners, no protocol fee");
     assert.equal(m.creatorFeeLamports.toNumber(), 0, "no winners, no creator fee");
 
+    const rent = await positionRent(market, a.publicKey);
     const before = await provider.connection.getBalance(a.publicKey);
     await claim(market, vault, a);
     const got = (await provider.connection.getBalance(a.publicKey)) - before;
-    assert.isAtMost(Math.abs(got - 1 * LAMPORTS_PER_SOL), 10000, "refunded in full");
+    assert.isAtMost(Math.abs(got - (1 * LAMPORTS_PER_SOL + rent)), 10000, "refunded in full, rent included");
   });
 
   it("refuses a total takeout above the ceiling, however it is split", async () => {
@@ -274,18 +295,28 @@ describe("oddie_chain", () => {
     await program.methods.resolveMarket(SIDE_YES)
       .accounts({ authority: authority.publicKey, market }).rpc();
 
-    // The property is that a loser GAINS nothing. Whether they also pay a
-    // signature fee is Solana's behaviour, not this program's, and asserting on
-    // it would be testing the validator.
+    // The property MOVED, so it is restated rather than retuned. A loser still
+    // wins nothing from the pool, but claiming now closes their position and
+    // returns its rent, so they end up ahead by the rent minus a signature fee.
+    // That is the point: it is the first reason a loser has ever had to press
+    // the button, and it is their own money coming back.
+    const loserRent = await positionRent(market, loser.publicKey);
     const loserBefore = await provider.connection.getBalance(loser.publicKey);
     await claim(market, vault, loser);
     const loserAfter = await provider.connection.getBalance(loser.publicKey);
-    assert.isAtMost(loserAfter, loserBefore, "a losing claim paid out something");
-    const lost = await program.account.position.fetch(positionPda(market, loser.publicKey));
-    assert.isTrue(lost.claimed, "the losing position is still marked claimed, so it cannot be retried");
+    const loserGot = loserAfter - loserBefore;
+    assert.isAtMost(loserGot, loserRent, "a losing claim paid out more than the rent it returned");
+    assert.isAbove(loserGot, loserRent - 20_000, `loser got ${loserGot}, rent was ${loserRent}`);
+    // The account is GONE, which is a stronger guarantee than a flag: there is
+    // nothing left to pay a second claim from.
+    assert.isNull(await provider.connection.getAccountInfo(positionPda(market, loser.publicKey)),
+      "the claimed position was not closed");
 
-    await failsWith(claim(market, vault, winner).then(() => claim(market, vault, winner)), "AlreadyClaimed");
-    await failsWith(claim(market, vault, loser), "AlreadyClaimed");
+    // A second claim now fails because the ACCOUNT is gone, not because a flag
+    // says so. Callers must read this as "already collected" rather than as
+    // "never staked": see the header's property 4.
+    await failsWith(claim(market, vault, winner).then(() => claim(market, vault, winner)), "AccountNotInitialized");
+    await failsWith(claim(market, vault, loser), "AccountNotInitialized");
 
     await program.methods.claimCreatorFee()
       .accounts({ creator: creator.publicKey, market, vault }).signers([creator]).rpc();
@@ -309,10 +340,11 @@ describe("oddie_chain", () => {
     const m = await program.account.market.fetch(market);
     assert.equal(m.creatorFeeLamports.toNumber(), 0, "no fee is taken from a refund");
 
+    const rentA = await positionRent(market, a.publicKey);
     const before = await provider.connection.getBalance(a.publicKey);
     await claim(market, vault, a);
     const got = (await provider.connection.getBalance(a.publicKey)) - before;
-    assert.isAtMost(Math.abs(got - 1 * LAMPORTS_PER_SOL), 10000, `refund was ${got}`);
+    assert.isAtMost(Math.abs(got - (1 * LAMPORTS_PER_SOL + rentA)), 10000, `refund was ${got}`);
 
     await failsWith(
       program.methods.claimCreatorFee()

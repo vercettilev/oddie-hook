@@ -129,7 +129,10 @@ const PREPARE_REASON = {
   "already-resolved": "This market has already settled.",
   "other-side": "You are already on the other side of this market. One side per wallet.",
   "not-resolved": "This market has not settled yet.",
-  "no-position": "There is no position on this market from this wallet.",
+  // After a claim the position account is CLOSED (that is what returns its
+  // rent), so "no position" and "already collected" look identical from here.
+  // The copy has to be true of both.
+  "no-position": "Nothing to collect here. If you already claimed, it is in your wallet.",
   "already-claimed": "Already collected. It is in your wallet.",
   "lost": "This one went the other way, so there is nothing to collect.",
   "not-creator": "This market was tagged by a different wallet.",

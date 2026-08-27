@@ -32,7 +32,12 @@
 //!      the account and strand every unclaimed position.
 //!   4. Every claim is idempotent. `claimed` / `creator_fee_claimed` are set
 //!      before the transfer, and a second attempt is a hard error rather than a
-//!      silent no-op, so a double-submitted transaction cannot pay twice.
+//!      silent no-op, so a double-submitted transaction cannot pay twice. A
+//!      claimed Position is also CLOSED, which returns its rent and makes the
+//!      second attempt stronger still: the account is gone, so there is nothing
+//!      left to pay from. The error shape changes with it, from AlreadyClaimed
+//!      to a missing account, and callers must read it as "already collected"
+//!      rather than "never staked".
 //!
 //! NOT DEPLOYED AND NOT WIRED. Nothing in src/ imports this. The server still
 //! gates every on-chain path behind ONCHAIN_ENABLED, which defaults to false.
@@ -317,7 +322,9 @@ pub mod oddie_chain {
         // Marked before the transfer. If the transfer fails the whole
         // instruction reverts and the flag goes with it, so this cannot strand
         // a position as claimed-but-unpaid; what it does prevent is any
-        // re-entrant path paying twice.
+        // re-entrant path paying twice. Kept even though `close = owner` makes
+        // it unreadable afterwards: it is the guard that holds WITHIN this
+        // instruction, before the account goes anywhere.
         pos.claimed = true;
 
         if payout > 0 {
@@ -489,6 +496,13 @@ pub struct ClaimWinnings<'info> {
     pub vault: Account<'info, Vault>,
     #[account(
         mut,
+        // THE RENT COMES BACK. A Position costs its owner about 0.00147 SOL to
+        // open and nothing ever returned it: the account outlived the market it
+        // belonged to, holding somebody's money for a market that had finished.
+        // Closing it on claim hands that back, to LOSERS as well as winners,
+        // which is also the first reason a loser has ever had to come back and
+        // press the button.
+        close = owner,
         seeds = [b"position", market.key().as_ref(), owner.key().as_ref()],
         bump = position.bump,
         has_one = owner @ OddieError::WrongOwner
