@@ -2811,7 +2811,21 @@ if (realStakesReady) {
      * worse failure than the one being fixed.
      */
     const chainState = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
-    if (chainState) {
+    /**
+     * A market we cannot READ is a market we cannot verify, and handing over a
+     * transaction we cannot verify is the thing these guards exist to stop.
+     *
+     * This used to fall through on the reasoning that an RPC blink should not
+     * close the whole board. That protected availability over correctness on
+     * the money path, and it could not tell a blink from an account that is
+     * permanently not ours: one market on the board is owned by the program
+     * this one replaced, so it can never decode, and every stake on it was a
+     * guaranteed revert dressed as a working button. Refusing costs a retry
+     * during an outage; allowing costs the user a failed transaction and
+     * Phantom's red banner.
+     */
+    if (!chainState) return res.status(503).json({ ok: false, reason: "chain-unreachable" });
+    {
       if (chainState.resolved) return res.status(409).json({ ok: false, reason: "already-resolved" });
       const now = Math.floor(Date.now() / 1000);
       if (chainState.closeTime > 0 && now >= chainState.closeTime) {

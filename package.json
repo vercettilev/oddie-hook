@@ -47,7 +47,8 @@
     "smoke-fixture": "tsx scripts/smoke.ts --fixture",
     "mainnet-backfill": "tsx scripts/mainnet-backfill.ts",
     "test-resolution-reply": "tsx scripts/test-resolution-reply.ts",
-    "resolve-reconcile": "tsx scripts/resolve-reconcile.ts"
+    "resolve-reconcile": "tsx scripts/resolve-reconcile.ts",
+    "retire": "tsx scripts/retire-markets.ts"
   },
   "engines": {
     "node": ">=20"
