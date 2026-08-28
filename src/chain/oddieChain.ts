@@ -731,3 +731,80 @@ export async function prepareCreatorFeeTx(args: {
     return null;
   }
 }
+
+
+// --- Reading a stake out of a signed transaction -----------------------------
+//
+// The submit relay is the one moment a real stake passes through our hands
+// already signed, which makes it the one honest place to stamp the entry odds
+// for the receipt system: stamping at prepare would let anyone farm
+// good-looking entries without ever signing. So the relay needs to be able to
+// READ the transaction it is about to broadcast, not merely check whose program
+// it calls.
+
+import { createHash } from "node:crypto";
+
+/** Anchor's instruction discriminator: the first 8 bytes of
+ *  sha256("global:<name>"). Computed rather than pasted, so it cannot drift
+ *  from the convention it encodes. */
+export function anchorDiscriminator(name: string): Buffer {
+  return createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
+}
+
+export interface TakePositionInfo {
+  user: string;
+  market: string;
+  side: "yes" | "no";
+  lamports: number;
+}
+
+/**
+ * Decode one instruction IF it is take_position; null for anything else.
+ *
+ * Pure on purpose: data plus account keys in, verdict out, so the offline suite
+ * can pin the byte layout without a chain or even web3. The layout is Anchor's:
+ * 8-byte discriminator, then the args in order (side u8, amount u64 LE). The
+ * account order is the TakePosition context's: user, market, vault, position,
+ * system_program.
+ */
+export function decodeTakePositionIx(data: Buffer, accountKeys: string[]): TakePositionInfo | null {
+  if (data.length !== 8 + 1 + 8) return null;
+  if (!data.subarray(0, 8).equals(anchorDiscriminator("take_position"))) return null;
+  const side = data.readUInt8(8);
+  if (side !== 0 && side !== 1) return null;
+  const lamports = Number(data.readBigUInt64LE(9));
+  if (!Number.isSafeInteger(lamports) || lamports <= 0) return null;
+  if (accountKeys.length < 2) return null;
+  return { user: accountKeys[0], market: accountKeys[1], side: side === 0 ? "yes" : "no", lamports };
+}
+
+/** The same read against a base64 transaction, for the relay. Null whenever the
+ *  envelope is not a single take_position: the relay carries claims and fee
+ *  collections through the same door, and those simply have no entry to stamp. */
+export async function takePositionFromTx(txBase64: string): Promise<TakePositionInfo | null> {
+  try {
+    const { web3 } = await import("@coral-xyz/anchor");
+    const tx = web3.Transaction.from(Buffer.from(txBase64, "base64"));
+    if (tx.instructions.length !== 1) return null;
+    const ix = tx.instructions[0];
+    return decodeTakePositionIx(Buffer.from(ix.data), ix.keys.map((k) => k.pubkey.toBase58()));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What the crowd said, 0-100, for one side of a pool AS IT STANDS. Called with
+ * the state read just before a stake is broadcast, so the staker's own money is
+ * not in it yet: "called YES at 30" must mean the crowd said 30, not "30 after
+ * I moved it".
+ *
+ * An empty pool answers 50. No crowd, no information, and no contrarian credit
+ * for disagreeing with nobody.
+ */
+export function entryShareOf(state: { totalYesLamports: number; totalNoLamports: number }, side: "yes" | "no"): number {
+  const pool = state.totalYesLamports + state.totalNoLamports;
+  if (pool <= 0) return 50;
+  const mine = side === "yes" ? state.totalYesLamports : state.totalNoLamports;
+  return Math.max(0, Math.min(100, Math.round((100 * mine) / pool)));
+}

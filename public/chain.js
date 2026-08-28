@@ -321,11 +321,18 @@ function b64ToBytes(b64) {
         // The label has to move off "Confirm in wallet" the moment the wallet
         // is done, or it sits there stale while the server broadcasts.
         const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Broadcasting…"; });
+        // The receipt is offered at the exact moment they feel like a genius,
+        // because that is the moment they will actually post it. It opens as
+        // its own page: the og image puts the card in the tweet, and posting it
+        // is an ORIGINAL post, which is the format X actually ranks. The bot is
+        // stuck in the replies; the winner is not.
+        const receiptUrl = `/r/${encodeURIComponent(slug)}/${encodeURIComponent(wallet.publicKey)}`;
         body.innerHTML = `<h3>${confirmed ? "Collected ✓" : "Sent"}</h3>
           <p class="cnote">${confirmed
             ? `Your winnings are on their way to your wallet, on ${clusterLabel(CLUSTER)}.`
             : "It is on the network and we lost sight of it while it settled. Follow the link before collecting again."}</p>
           <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          ${confirmed ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       } catch (e) {

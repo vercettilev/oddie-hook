@@ -482,3 +482,76 @@ export function renderCard(m: Market, opts: { unpriced?: boolean; settled?: "yes
         fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 }
+
+
+/** What oddie says over a receipt. Same rules as every other voice pool: short,
+ *  smug, and true beside ANY winning call. */
+export const VOICE_RECEIPT = [
+  "called it.",
+  "saw it first.",
+  "the crowd caught up.",
+  "early is the flex.",
+  "receipts, not vibes.",
+] as const;
+
+/**
+ * The receipt: one wallet's winning call, as a card built to be POSTED.
+ *
+ * This card exists because of two facts that meet in the middle. X demotes
+ * replies, and the bot can only ever reply, so the bot's own cards fight the
+ * ranker with one hand tied. And pari-mutuel pays the pile-on the same
+ * pro-rata as the early call, so the money never rewards having been right
+ * before it was easy. The receipt fixes both at once: it is the early call
+ * made into a thing worth showing off, and it is posted by the WINNER as an
+ * original post, which is the one format the ranker actually likes. The bot is
+ * stuck in the replies; the people who won are not.
+ *
+ * Winners only, and no amounts anywhere. An amount would let size dress up as
+ * conviction, and the whole point of the entry number is that it cannot be
+ * bought after the fact.
+ */
+export function renderReceiptCard(question: string, opts: { side: "yes" | "no"; entryPct: number }): string {
+  const side = opts.side.toUpperCase();
+  const entry = Math.max(0, Math.min(100, Math.round(opts.entryPct)));
+
+  const q = layoutQuestion(displayTitle(question));
+  const firstBaseline = Q_TOP + CAP * q.fs;
+  const qHeight = CAP * q.fs + (q.lines.length - 1) * q.lineH + DESC * q.fs;
+
+  const voiceText = pick(VOICE_RECEIPT, `${question}:receipt`);
+  let voiceFS = 44;
+  while (voiceFS > 32 && textWidth(voiceText, voiceFS) > CONTENT_W - 4) voiceFS -= 6;
+
+  // The flex line. "called YES at 30%" is the entire product of the entry
+  // stamp: the lower the number, the louder the card.
+  const hero = `called ${side} at ${entry}%`;
+  let heroFS = 84;
+  while (heroFS > 48 && textWidth(hero, heroFS) > CONTENT_W - 4) heroFS -= 6;
+
+  const chipText = "receipt \u00b7 settled on chain";
+  const chipW = Math.round(textWidth(chipText, 20) + 40);
+  const chipX = PAD_R - chipW;
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${FONT}">
+  <rect width="${W}" height="${H}" fill="${C.accent}"/>
+  <rect x="18" y="18" width="964" height="488" rx="44" fill="${C.ground}"/>
+
+  ${brandLockup(true)}
+
+  <rect x="${chipX}" y="68" width="${chipW}" height="44" rx="22" fill="none" stroke="${C.accent}" stroke-width="2"/>
+  <text x="${chipX + chipW / 2}" y="97" font-family="${META}" font-size="20" font-weight="700"
+        fill="${C.accent}" text-anchor="middle">${chipText}</text>
+
+  <text x="71" y="179" font-size="${voiceFS}" font-weight="700" fill="${C.echo}">${esc(voiceText)}</text>
+  <text x="68" y="176" font-size="${voiceFS}" font-weight="700" fill="${C.accent}">${esc(voiceText)}</text>
+
+  <rect x="68" y="${Math.round(Q_TOP - 8)}" width="6" height="${Math.round(qHeight + 16)}" rx="3" fill="${C.accent}"/>
+  <text font-size="${q.fs}" font-weight="600" fill="${C.white}">${q.lines
+    .map((l, k) => `<tspan x="${QUOTE_X}" y="${Math.round(firstBaseline + k * q.lineH)}">${esc(l)}</tspan>`)
+    .join("")}</text>
+
+  <!-- the flex, wearing the same pink offset as everything the brand shouts -->
+  <text x="71" y="465" font-size="${heroFS}" font-weight="700" fill="${C.echo}">${esc(hero)}</text>
+  <text x="68" y="462" font-size="${heroFS}" font-weight="700" fill="${C.accent}">${esc(hero)}</text>
+</svg>`;
+}

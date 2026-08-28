@@ -22,7 +22,7 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { openMarketForSourcePost, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
+import { openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
@@ -31,12 +31,13 @@ import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS } 
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
+  takePositionFromTx, entryShareOf,
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
-import { renderCard } from "./card/renderCard.js";
+import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
 import type { SweepDeps, SweepResult } from "./x/mentionLoop.js";
 import * as X from "./x/client.js";
@@ -1157,6 +1158,63 @@ async function marketIsUnpriced(slug: string): Promise<boolean> {
   const state = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
   return ((state?.totalYesLamports ?? 0) + (state?.totalNoLamports ?? 0)) <= 0;
 }
+
+/**
+ * A RECEIPT: one wallet's winning call, as a page whose whole job is to be
+ * POSTED.
+ *
+ * The mechanics matter more than the page. X demotes replies three separate
+ * ways and the bot can only ever reply, so the bot's reach is capped by the
+ * ranker. The winner's reach is not: they post this link as an ORIGINAL post,
+ * the og:image puts the card in the tweet, and the flex does the distribution.
+ * The bot is stuck in the replies; the people who won are not.
+ *
+ * Winners only. A loss is recorded in the accuracy numbers where it belongs,
+ * but a receipt is a brag artifact, and the product must never mint a card
+ * whose job is to embarrass somebody under their own name.
+ *
+ * Everything on it is already public on chain (the position, the outcome), so
+ * the page exposes nothing: it dresses what any explorer would show.
+ */
+app.get("/r/:slug/:wallet", async (req, res) => {
+  const { slug, wallet } = req.params;
+  if (!isValidPubkeyString(wallet)) return res.status(404).send("no such receipt");
+  const detail = await communityMarketDetail(slug).catch(() => null);
+  const entry = await chainEntryFor(slug, wallet).catch(() => null);
+  if (!detail?.resolvedOutcome || !entry || entry.side !== detail.resolvedOutcome) {
+    return res.status(404).send("no such receipt");
+  }
+  const side = entry.side.toUpperCase();
+  const title = `called ${side} at ${entry.entryPct}%`;
+  const png = `${BASE_URL}/r/${encodeURIComponent(slug)}/${encodeURIComponent(wallet)}/card.png`;
+  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(title)} · oddie</title>
+<meta property="og:title" content="${escHtml(title)}">
+<meta property="og:description" content="${escHtml(detail.question)}">
+<meta property="og:image" content="${png}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${png}">
+<style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
+display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px}
+img{max-width:min(96vw,760px);border-radius:18px}
+a{color:#D7DC1F}p{margin:0;color:rgba(255,255,255,.62);max-width:60ch;text-align:center}</style></head><body>
+<img src="${png}" alt="${escHtml(title)}">
+<p>${escHtml(detail.question)}</p>
+<p><a href="/m/${encodeURIComponent(slug)}">see the market</a></p>
+</body></html>`);
+});
+
+app.get("/r/:slug/:wallet/card.png", async (req, res) => {
+  const { slug, wallet } = req.params;
+  if (!isValidPubkeyString(wallet)) return res.status(404).send("no such receipt");
+  const detail = await communityMarketDetail(slug).catch(() => null);
+  const entry = await chainEntryFor(slug, wallet).catch(() => null);
+  if (!detail?.resolvedOutcome || !entry || entry.side !== detail.resolvedOutcome) {
+    return res.status(404).send("no such receipt");
+  }
+  res.type("image/png").send(renderCardPng(renderReceiptCard(detail.question, { side: entry.side, entryPct: entry.entryPct })));
+});
 
 app.get("/card/:slug.svg", async (req, res) => {
   const { all } = await liveMarketData();
@@ -3055,11 +3113,39 @@ if (realStakesReady) {
     if (typeof txBase64 !== "string" || txBase64.length < 64 || txBase64.length > 8000) {
       return res.status(400).json({ ok: false, error: "txBase64 required" });
     }
+    /**
+     * THE ENTRY STAMP, read here and nowhere else.
+     *
+     * This relay is the one moment a real stake passes through our hands
+     * signed, which makes it the only honest place to record what the crowd
+     * said when this wallet called it. Stamping at prepare would let anyone
+     * farm early-looking entries without ever signing; stamping after the
+     * pool moves would let them look early after the fact. So: decode the
+     * envelope, read the pool BEFORE broadcasting (the stake must not be in
+     * its own crowd number), and stamp only once the send succeeded.
+     *
+     * Entirely best-effort. The stamp is reputation, the stake is money, and
+     * a bookkeeping failure must never cost anyone their transaction.
+     */
+    const stake = await takePositionFromTx(txBase64).catch(() => null);
+    const crowdBefore = stake ? await fetchMarketOnChain(stake.market).catch(() => null) : null;
+
     const out = await submitSignedTx(txBase64);
     // 400 for a client that sent something wrong, 502 only for a chain that is
     // actually unreachable. Funnelling a parse failure into 502 would tell the
     // user Solana is down when the bug is ours.
     if (!out.ok) return res.status(out.badRequest ? 400 : 502).json({ ok: false, error: out.error, signature: out.signature });
+
+    if (stake && crowdBefore) {
+      void slugForOnchainPubkey(stake.market).then((slug) => {
+        if (!slug) return;
+        return recordChainEntry({
+          slug, wallet: stake.user, side: stake.side,
+          entryPct: entryShareOf(crowdBefore, stake.side), lamports: stake.lamports,
+        });
+      }).catch(() => {});
+    }
+
     res.json({ ok: true, signature: out.signature, confirmed: out.confirmed !== false, cluster: cluster() });
   });
 

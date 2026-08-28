@@ -586,6 +586,42 @@ CREATE TABLE IF NOT EXISTS oracle_decision (
   acted_at          timestamptz
 );
 CREATE INDEX IF NOT EXISTS oracle_decision_slug_idx ON oracle_decision(slug, id DESC);
+
+-- The moment a wallet FIRST took a side, and what the crowd said at that moment.
+--
+-- WHY THIS EXISTS. Pari-mutuel pays every winner pro-rata regardless of when
+-- they entered, so the money cannot tell a 30%-contrarian from a 90%-bandwagoner:
+-- being early and right earns nothing extra, and being followed actively COSTS
+-- the caller (the pile-on dilutes their own payout). If reputation does not pay
+-- for earliness, nothing does, and the rational good caller goes quiet. This
+-- table is what reputation is computed from: the receipt says "called YES when
+-- the crowd said 30%", and that number has to have been written down at the
+-- time, because afterwards the pool remembers only how it ended.
+--
+-- WRITTEN ONLY WHEN A SIGNED STAKE IS BROADCAST, from /api/chain/submit, never
+-- at prepare. A prepare can be abandoned, and stamping there would let anyone
+-- farm good-looking entries for free: prepare at 30%, never sign, stake later
+-- only once the outcome looks safe. The stamp is the first REAL stake.
+--
+-- FIRST ENTRY WINS (ON CONFLICT DO NOTHING). take_position lets a wallet add to
+-- an existing position, and re-stamping on a top-up would open the other cheat:
+-- enter tiny at 30%, pile in at 90%, look early with size. The receipt never
+-- shows amounts for the same reason.
+--
+-- No foreign key: this is reputation history, market_fee_log's arrangement, and
+-- deleting a market must not delete the record of who called it right.
+CREATE TABLE IF NOT EXISTS chain_entry (
+  slug        text NOT NULL,
+  wallet      text NOT NULL,
+  side        text NOT NULL CHECK (side IN ('yes','no')),
+  -- The share of THEIR side, 0-100, in the pool as it stood JUST BEFORE their
+  -- stake landed. 50 for the first stake into an empty pool: no crowd, no
+  -- information, no contrarian credit.
+  entry_pct   integer NOT NULL,
+  lamports    bigint NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (slug, wallet)
+);
 `;
 
 let pool: pg.Pool | null = null;
@@ -6129,3 +6165,157 @@ export async function openMarketForSourcePost(sourceUrl: string): Promise<{ slug
   );
   return rows[0] ?? null;
 }
+
+
+// --- Entry receipts: who called it, and when the crowd disagreed -------------
+
+export interface ChainEntry {
+  slug: string;
+  wallet: string;
+  side: "yes" | "no";
+  /** Their side's pool share at entry, 0-100. Low = contrarian. */
+  entryPct: number;
+  lamports: number;
+  createdAt: string;
+}
+
+/** A settled entry, scored. The weight is the whole design: 100 minus the
+ *  crowd's agreement at entry, on a win, and nothing on a loss. Calling YES at
+ *  30 that settles YES is worth 70; joining the pile at 85 is worth 15. Stake
+ *  size deliberately never enters it: a leaderboard you can buy with size is a
+ *  PnL board, and PnL boards belong to whoever had the most money to begin
+ *  with. This one belongs to whoever was right when it was hard to be. */
+export interface Receipt extends ChainEntry {
+  outcome: "yes" | "no";
+  won: boolean;
+  question: string;
+  weight: number;
+}
+
+const memChainEntries: ChainEntry[] = [];
+
+/** Stamp a wallet's first stake in a market. Later top-ups are ignored, see the
+ *  table comment. Best-effort: a stamp failure must never fail a stake that has
+ *  already been broadcast. */
+export async function recordChainEntry(e: {
+  slug: string; wallet: string; side: "yes" | "no"; entryPct: number; lamports: number;
+}): Promise<void> {
+  const entryPct = Math.max(0, Math.min(100, Math.round(e.entryPct)));
+  try {
+    if (!PERSISTENT) {
+      if (!memChainEntries.some((x) => x.slug === e.slug && x.wallet === e.wallet)) {
+        memChainEntries.push({ ...e, entryPct, createdAt: new Date().toISOString() });
+      }
+      return;
+    }
+    await ensureSchema();
+    await db().query(
+      `INSERT INTO chain_entry (slug, wallet, side, entry_pct, lamports)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (slug, wallet) DO NOTHING`,
+      [e.slug, e.wallet, e.side, entryPct, e.lamports],
+    );
+  } catch (err) {
+    console.error("[entry] stamp failed (non-fatal):", (err as Error).message);
+  }
+}
+
+interface ChainEntryRow { slug: string; wallet: string; side: "yes" | "no"; entry_pct: number; lamports: string; created_at: Date }
+const rowToEntry = (r: ChainEntryRow): ChainEntry => ({
+  slug: r.slug, wallet: r.wallet, side: r.side, entryPct: r.entry_pct,
+  // bigint arrives from pg as a string; the annotation alone would be a lie.
+  lamports: Number(r.lamports), createdAt: r.created_at.toISOString(),
+});
+
+export async function chainEntryFor(slug: string, wallet: string): Promise<ChainEntry | null> {
+  if (!PERSISTENT) return memChainEntries.find((x) => x.slug === slug && x.wallet === wallet) ?? null;
+  await ensureSchema();
+  const { rows } = await db().query<ChainEntryRow>(
+    `SELECT slug, wallet, side, entry_pct, lamports, created_at FROM chain_entry WHERE slug = $1 AND wallet = $2`,
+    [slug, wallet],
+  );
+  return rows[0] ? rowToEntry(rows[0]) : null;
+}
+
+/** One wallet's settled receipts, newest market first. Open markets are not
+ *  receipts yet: a receipt is proof of having been right, and an open market
+ *  has not said who was. */
+export async function walletReceipts(wallet: string, limit = 50): Promise<Receipt[]> {
+  const n = Math.max(1, Math.min(200, Math.floor(limit)));
+  const score = (e: ChainEntry, outcome: "yes" | "no", question: string): Receipt => ({
+    ...e, outcome, question, won: e.side === outcome,
+    weight: e.side === outcome ? 100 - e.entryPct : 0,
+  });
+  if (!PERSISTENT) {
+    return memChainEntries
+      .filter((e) => e.wallet === wallet)
+      .map((e) => {
+        const meta = memCommunity.get(e.slug);
+        const rec = mem.get(e.slug);
+        return meta?.resolvedOutcome && rec ? score(e, meta.resolvedOutcome, rec.market.question) : null;
+      })
+      .filter((r): r is Receipt => r !== null)
+      .slice(0, n);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<ChainEntryRow & { resolved_outcome: "yes" | "no"; question: string }>(
+    `SELECT ce.slug, ce.wallet, ce.side, ce.entry_pct, ce.lamports, ce.created_at, cm.resolved_outcome, s.question
+       FROM chain_entry ce
+       JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL
+       JOIN market_slug s ON s.slug = ce.slug
+      WHERE ce.wallet = $1
+      ORDER BY ce.created_at DESC
+      LIMIT $2`,
+    [wallet, n],
+  );
+  return rows.map((r) => score(rowToEntry(r), r.resolved_outcome, r.question));
+}
+
+export interface WalletStanding { wallet: string; wins: number; losses: number; points: number }
+
+/** The board, by contrarian points. Ordered by points and never by win count:
+ *  win count is the bandwagon's own metric, and the whole reason this board
+ *  exists is that the pool mechanics tax the people it should be crowning. */
+export async function walletLeaderboard(limit = 20): Promise<WalletStanding[]> {
+  const n = Math.max(1, Math.min(100, Math.floor(limit)));
+  if (!PERSISTENT) {
+    const by = new Map<string, WalletStanding>();
+    for (const e of memChainEntries) {
+      const out = memCommunity.get(e.slug)?.resolvedOutcome;
+      if (!out) continue;
+      const w = by.get(e.wallet) ?? { wallet: e.wallet, wins: 0, losses: 0, points: 0 };
+      if (e.side === out) { w.wins++; w.points += 100 - e.entryPct; } else { w.losses++; }
+      by.set(e.wallet, w);
+    }
+    return [...by.values()].sort((a, b) => b.points - a.points).slice(0, n);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ wallet: string; wins: number; losses: number; points: number }>(
+    `SELECT ce.wallet,
+            COUNT(*) FILTER (WHERE ce.side = cm.resolved_outcome)::int AS wins,
+            COUNT(*) FILTER (WHERE ce.side <> cm.resolved_outcome)::int AS losses,
+            COALESCE(SUM(100 - ce.entry_pct) FILTER (WHERE ce.side = cm.resolved_outcome), 0)::int AS points
+       FROM chain_entry ce
+       JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL
+      GROUP BY ce.wallet
+      ORDER BY points DESC
+      LIMIT $1`,
+    [n],
+  );
+  return rows;
+}
+
+/** slug for an on-chain market account, for the submit relay's stamp. */
+export async function slugForOnchainPubkey(pubkey: string): Promise<string | null> {
+  if (!PERSISTENT) {
+    for (const [slug, meta] of memCommunity) if (meta.onchainPubkey === pubkey) return slug;
+    return null;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string }>(
+    `SELECT slug FROM community_market WHERE onchain_pubkey = $1`, [pubkey],
+  );
+  return rows[0]?.slug ?? null;
+}
+
+/** Test seam: clear the entry stamps. */
+export function _resetChainEntries(): void { memChainEntries.length = 0; }
