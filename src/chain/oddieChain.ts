@@ -63,7 +63,7 @@ const CLUSTER: "devnet" | "testnet" | "mainnet-beta" =
 const SECRET = process.env.SOLANA_ADMIN_SECRET_KEY;
 const IDL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "oddie_chain_idl.json");
 
-// A create needs ~0.0039 SOL (Market + Vault rent + fee). Refuse below a small
+// A create needs ~0.00426 SOL (Market + Vault rent + fee). Refuse below a small
 // buffer so we fail fast+soft rather than eating a doomed tx fee.
 const MIN_LAMPORTS = 10_000_000; // 0.01 SOL
 const LAMPORTS_PER_SOL = 1_000_000_000;

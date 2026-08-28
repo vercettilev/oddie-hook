@@ -337,7 +337,7 @@ pub mod oddie_chain {
         Ok(())
     }
 
-    /// The 3%, pulled by the person it belongs to.
+    /// The creator's cut, pulled by the person it belongs to.
     ///
     /// PULL, NOT PUSH, and that is the substantive design choice here. Pushing
     /// at resolve would mean the market cannot settle until the creator has a

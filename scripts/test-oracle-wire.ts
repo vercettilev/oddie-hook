@@ -259,6 +259,27 @@ console.log("\nA VERDICT NO SEARCH FED IS NOT A VERDICT");
   check("an abstention keeps its own reason", (await proposeVerdict(MARKET)).reasoning.includes("could not find"));
 }
 
+console.log("\nTHE SEARCH BUDGET IS FOR THE MARKET, NOT FOR EACH REQUEST");
+{
+  // max_uses is a per-REQUEST budget and the tools array is re-sent every
+  // round, so a fixed 8 handed out a fresh 8 each time: five rounds meant up to
+  // FORTY server-side searches for one verdict, each billed on top of tokens,
+  // on a market that might still abstain.
+  reset(ok(paused), ok(toolCall(GOOD)));
+  await proposeVerdict(MARKET);
+  const first = (sent[0].body as Record<string, any>).tools.find((t: any) => t.name === "web_search");
+  const second = (sent[1].body as Record<string, any>).tools.find((t: any) => t.name === "web_search");
+  check("the first round asks for the whole budget", first?.max_uses === 8, String(first?.max_uses));
+  check("the second round asks only for what is left", second?.max_uses === 7, String(second?.max_uses));
+
+  // It must never reach zero or a negative, which would be a different request.
+  reset(...Array.from({ length: 12 }, () => ok(paused)));
+  await proposeVerdict(MARKET);
+  const budgets = sent.map((r) => (r.body as Record<string, any>).tools.find((t: any) => t.name === "web_search")?.max_uses);
+  check("the budget never drops below one", budgets.every((b) => b >= 1), JSON.stringify(budgets));
+  check("...and it strictly decreases", JSON.stringify(budgets) === JSON.stringify([8, 7, 6, 5, 4]), JSON.stringify(budgets));
+}
+
 console.log("\nit stops rather than looping forever");
 {
   reset(...Array.from({ length: 12 }, () => ok(paused)));

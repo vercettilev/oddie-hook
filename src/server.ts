@@ -249,9 +249,33 @@ app.get("/", async (_req, res) => {
  * when the reason is that we have no data. Withholding feedUrl makes posting
  * one structurally impossible rather than merely discouraged.
  */
+/**
+ * METERED BECAUSE IT SPENDS MONEY. Both this and /api/replycopy reach a model
+ * (the referee in semantic.ts) and neither had an admin gate or a limiter, so
+ * anything on the internet could loop them and bill the inference key. They are
+ * not admin routes by design and should not become ones, so they get the same
+ * two-tier meter /api/v1/markets uses: a per-caller ceiling that no real use
+ * comes near, and a shared one so a spread-out flood still stops.
+ */
+function meteredModelRoute(req: express.Request, res: express.Response, name: string, perIp: number): boolean {
+  const ip = String(req.ip ?? req.socket.remoteAddress ?? "unknown");
+  if (overLimit(`${name}:${ip}`, perIp)) {
+    res.status(429).json({ error: `rate limit: ${perIp} per hour` });
+    return false;
+  }
+  if (overLimit(`${name}:global`, perIp * 40)) {
+    res.status(429).json({ error: "rate limit: the shared hourly ceiling is full" });
+    return false;
+  }
+  recordHit(`${name}:${ip}`, 3600_000);
+  recordHit(`${name}:global`, 3600_000);
+  return true;
+}
+
 app.post("/hook", async (req, res) => {
   const tweetText: string = req.body?.tweetText ?? "";
   if (!tweetText.trim()) return res.status(400).json({ error: "tweetText required" });
+  if (!meteredModelRoute(req, res, "hook", 60)) return;
 
   const data = await liveMarketData();
 
@@ -331,6 +355,9 @@ app.post("/hook", async (req, res) => {
 app.post("/api/replycopy", async (req, res) => {
   const { tweetText, slug } = req.body as { tweetText?: string; slug?: string };
   if (!tweetText?.trim() || !slug) return res.status(400).json({ error: "tweetText and slug required" });
+  // Two model calls per request when fewer than three variants survive, so this
+  // one is held tighter than /hook.
+  if (!meteredModelRoute(req, res, "replycopy", 30)) return;
   const { all } = await liveMarketData();
   const rec = await getSlug(slug, all);
   if (!rec) return res.status(404).json({ error: "unknown market" });
@@ -3203,7 +3230,18 @@ setTimeout(sweepClosingSoon, 60_000).unref(); // first pass shortly after boot
  */
 const X_BOT_ENABLED = (process.env.X_BOT_ENABLED ?? "false").toLowerCase() === "true";
 const X_BOT_DRY_RUN = (process.env.X_BOT_DRY_RUN ?? "true").toLowerCase() !== "false";
-const X_POLL_MS = Math.max(60_000, Number(process.env.X_POLL_MS ?? 120_000));
+// Number("2m") is NaN, Math.max(60_000, NaN) is NaN, and Node coerces a NaN
+// interval to ONE MILLISECOND. The re-entrancy guard stops it fanning out, but
+// the two-minute poll becomes a back-to-back loop hammering the mentions read,
+// and nothing anywhere says so. A value we cannot read is the default.
+const X_POLL_MS = (() => {
+  const raw = Number(process.env.X_POLL_MS ?? 120_000);
+  if (!Number.isFinite(raw)) {
+    console.error(`[x] X_POLL_MS=${JSON.stringify(process.env.X_POLL_MS)} is not a number. Using 120000.`);
+    return 120_000;
+  }
+  return Math.max(60_000, raw);
+})();
 
 function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
   return {

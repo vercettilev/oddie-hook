@@ -31,6 +31,13 @@ const TIMEOUT_MS = 180_000; // searching is slow and this runs on a schedule, no
  *  an invented source at position nine and have it silently discarded instead of
  *  caught. Anything beyond this is reported and refused, not trimmed away. */
 const MAX_CITATIONS = 20;
+/** Searches allowed for one MARKET. max_uses is a per-REQUEST budget and the
+ *  tools array is re-sent on every round, so declaring 8 inside the loop handed
+ *  out a fresh 8 each time: five rounds meant up to FORTY server-side searches
+ *  for one verdict, each billed on top of tokens, for a market that might still
+ *  abstain. The budget is now tracked across the whole loop and what is left is
+ *  what gets declared. */
+const MAX_SEARCHES = 8;
 const MAX_ROUNDS = 5; // pause_turn and a deferred search each cost a round; a loop that will not finish is an abstain
 
 export type Side = "yes" | "no" | "undetermined";
@@ -147,6 +154,12 @@ function deferredServerTools(blocks: Block[]): string[] {
   return blocks.filter((b) => b.type === "server_tool_use" && b.id && !answered.has(b.id)).map((b) => b.id as string);
 }
 
+/** How many SEARCHES a response actually ran. Distinct from the result count
+ *  below: max_uses is a budget on searches, not on what they returned. */
+function searchesIn(blocks: Block[]): number {
+  return blocks.filter((b) => b.type === "server_tool_use" && b.name === "web_search").length;
+}
+
 /** How many search RESULTS a response actually carried. A search that errors
  *  returns a single object where the list would be, and a search that matched
  *  nothing returns an empty list. Both are zero results and both count as such,
@@ -216,6 +229,7 @@ Search for the evidence, then call record_verdict exactly once.`,
 
   let assistantBlocks: Block[] = [];
   let results = 0;
+  let searches = 0;
   const errors: string[] = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const res = await fetch(messagesUrl(), {
@@ -235,7 +249,10 @@ Search for the evidence, then call record_verdict exactly once.`,
         // outright ("tools with strict: true are not supported with
         // programmatic calling"). We want a plain search. Asking for one
         // removes all three at once.
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8, allowed_callers: ["direct"] }, VERDICT_TOOL],
+        tools: [
+          { type: "web_search_20260209", name: "web_search", max_uses: Math.max(1, MAX_SEARCHES - searches), allowed_callers: ["direct"] },
+          VERDICT_TOOL,
+        ],
         messages,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -246,6 +263,7 @@ Search for the evidence, then call record_verdict exactly once.`,
     }
     const body = (await res.json()) as { content?: Block[]; stop_reason?: string };
     assistantBlocks = body.content ?? [];
+    searches += searchesIn(assistantBlocks);
     results += searchResultsIn(assistantBlocks);
     errors.push(...searchErrorsIn(assistantBlocks));
 

@@ -156,7 +156,11 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         continue;
       }
 
-      const ex = await deps.extract(claimText);
+      // Capped for the same reason the admin route caps at 4000: the parent's
+      // full text goes into an opus prompt with adaptive thinking, and X's post
+      // limit is not our budget. A long-form post was a ~6k-token user message
+      // on a call that already carries a 1.5k-token system prompt.
+      const ex = await deps.extract(claimText.slice(0, 4000));
       if (ex.resolvability === "unresolvable" || !ex.appropriate || !ex.question) {
         // Silence, not an explanation. A public "I can't make a market out of
         // that" is a reply that helps nobody, lands under someone's post, and
