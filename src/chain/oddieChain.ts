@@ -352,6 +352,57 @@ export type ResolveResult =
   | { ok: true; signature: string | null; alreadyResolved: boolean }
   | { ok: false; reason: "unavailable" | "diverged" | "failed"; error: string; onChainOutcome?: "yes" | "no" };
 
+/**
+ * Give back the rent on a market nobody ever staked into.
+ *
+ * The program refuses anything else, and deliberately: `claim_winnings` closes a
+ * position with `close = owner`, so a LOSER still calls it to get their own rent
+ * back, and that call needs this market account to exist. Closing a market with
+ * any history would recover our deposit by stranding somebody else's.
+ *
+ * So this only ever touches empty, finished markets, which is exactly what a
+ * board accumulates: opened, ignored, closed. The pool is checked here as well
+ * as in the program, because a request that is going to revert should not cost a
+ * transaction to find out.
+ */
+export async function closeMarketOnChain(
+  marketPubkey: string,
+): Promise<{ ok: true; signature: string | null; lamports: number } | { ok: false; reason: string; error: string }> {
+  const c = await load();
+  if (!c) return { ok: false, reason: "unavailable", error: "chain layer not configured" };
+
+  const state = await fetchMarketOnChain(marketPubkey).catch(() => null);
+  if (!state) return { ok: false, reason: "unreadable", error: "market account could not be read" };
+  if (state.totalYesLamports > 0 || state.totalNoLamports > 0) {
+    return { ok: false, reason: "has-stakes", error: "somebody staked in this market; closing it would strand their rent" };
+  }
+  if (!state.resolved && state.closeTime * 1000 > Date.now()) {
+    return { ok: false, reason: "still-open", error: `still open until ${new Date(state.closeTime * 1000).toISOString()}` };
+  }
+
+  try {
+    const marketPk = new c.web3.PublicKey(marketPubkey);
+    const [vaultPk] = c.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), marketPk.toBuffer()],
+      c.program.programId,
+    );
+    // Read before writing, so what came back can be reported rather than guessed.
+    const before = await c.connection.getBalance(marketPk).catch(() => 0);
+    const vaultBefore = await c.connection.getBalance(vaultPk).catch(() => 0);
+    const signature = await c.program.methods
+      .closeMarket()
+      .accountsStrict({ authority: c.admin.publicKey, market: marketPk, vault: vaultPk })
+      .rpc();
+    const lamports = before + vaultBefore;
+    console.log(`[chain] closed ${marketPk.toBase58()}, ${(lamports / 1e9).toFixed(6)} SOL back (sig ${signature.slice(0, 8)}…)`);
+    return { ok: true, signature, lamports };
+  } catch (e) {
+    const msg = (e as Error).message ?? String(e);
+    console.error("[chain] closeMarketOnChain failed:", msg);
+    return { ok: false, reason: "failed", error: msg.slice(0, 300) };
+  }
+}
+
 export async function resolveMarketOnChain(marketPubkey: string, outcome: "yes" | "no"): Promise<ResolveResult> {
   const c = await load();
   if (!c) return { ok: false, reason: "unavailable", error: "chain layer not configured" };

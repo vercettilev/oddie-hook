@@ -250,14 +250,14 @@ app.get("/", async (_req, res) => {
  * one structurally impossible rather than merely discouraged.
  */
 /**
- * METERED BECAUSE IT SPENDS MONEY. Both this and /api/replycopy reach a model
+ * METERED BECAUSE IT SPENDS MONEY. /hook and /api/replycopy reach a model
  * (the referee in semantic.ts) and neither had an admin gate or a limiter, so
  * anything on the internet could loop them and bill the inference key. They are
  * not admin routes by design and should not become ones, so they get the same
  * two-tier meter /api/v1/markets uses: a per-caller ceiling that no real use
  * comes near, and a shared one so a spread-out flood still stops.
  */
-function meteredModelRoute(req: express.Request, res: express.Response, name: string, perIp: number): boolean {
+function meteredRoute(req: express.Request, res: express.Response, name: string, perIp: number): boolean {
   const ip = String(req.ip ?? req.socket.remoteAddress ?? "unknown");
   if (overLimit(`${name}:${ip}`, perIp)) {
     res.status(429).json({ error: `rate limit: ${perIp} per hour` });
@@ -275,7 +275,7 @@ function meteredModelRoute(req: express.Request, res: express.Response, name: st
 app.post("/hook", async (req, res) => {
   const tweetText: string = req.body?.tweetText ?? "";
   if (!tweetText.trim()) return res.status(400).json({ error: "tweetText required" });
-  if (!meteredModelRoute(req, res, "hook", 60)) return;
+  if (!meteredRoute(req, res, "hook", 60)) return;
 
   const data = await liveMarketData();
 
@@ -357,7 +357,7 @@ app.post("/api/replycopy", async (req, res) => {
   if (!tweetText?.trim() || !slug) return res.status(400).json({ error: "tweetText and slug required" });
   // Two model calls per request when fewer than three variants survive, so this
   // one is held tighter than /hook.
-  if (!meteredModelRoute(req, res, "replycopy", 30)) return;
+  if (!meteredRoute(req, res, "replycopy", 30)) return;
   const { all } = await liveMarketData();
   const rec = await getSlug(slug, all);
   if (!rec) return res.status(404).json({ error: "unknown market" });
@@ -2333,7 +2333,9 @@ function recordHit(key: string, windowMs: number): void {
 }
 
 type OpenMarketResult =
-  | { ok: true; slug: string; marketId: number; onchain: { pubkey: string; explorer: string; signature: string } }
+  // `onchain` is null for a market opened on-demand: the row exists, the rent
+  // has not been spent, and ensureMinted spends it when somebody turns up.
+  | { ok: true; slug: string; marketId: number; onchain: { pubkey: string; explorer: string; signature: string } | null }
   | { ok: false; status: number; error: string };
 
 /**
@@ -2358,6 +2360,22 @@ async function openMarketFromClaim(input: {
   yesPct?: number;
   resolutionCriteria?: string | null;
   resolvability?: string | null;
+  /**
+   * WHEN THE RENT GETS SPENT.
+   *
+   * "now" is the old behaviour and stays the default for the admin and agent
+   * routes, whose callers are handed an `onchain` object and would be surprised
+   * by a null.
+   *
+   * "on-demand" writes the row and skips the mint. The bot uses it, and the bot
+   * is the volume: every tagged claim used to cost a rent deposit out of our own
+   * wallet whether or not one human ever looked at it, and a market nobody
+   * stakes in is a market whose on-chain account proves nothing the row does not
+   * (the vault is empty). ensureMinted below spends it the moment somebody
+   * actually shows up, and the market_id is assigned HERE either way, so the PDA
+   * is already fixed and two people arriving at once cannot mint two accounts.
+   */
+  mint?: "now" | "on-demand";
 }): Promise<OpenMarketResult> {
   const bad = (status: number, error: string): OpenMarketResult => ({ ok: false, status, error });
   const question = input.question.trim();
@@ -2393,14 +2411,17 @@ async function openMarketFromClaim(input: {
   // side in, because the account the bet needs does not exist. Minting first
   // means the failure path writes nothing, so there is no orphan to clean up.
   const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
-  const minted = await mintMarket({ marketId, question, closeTime, creator: null,
-    creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
-  if (!minted) {
+  const lazy = input.mint === "on-demand";
+  const minted = lazy
+    ? null
+    : await mintMarket({ marketId, question, closeTime, creator: null,
+        creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
+  if (!lazy && !minted) {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
 
   const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability, marketId });
-  await setCommunityOnchain(slug, minted.pubkey, minted.signature);
+  if (minted) await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
   // Awaited, not fire-and-forget: this row is the thing being guaranteed, so a
@@ -2410,7 +2431,44 @@ async function openMarketFromClaim(input: {
   await recordSurfacer(slug, { sourceUrl });
   void awardSurface(slug).catch(() => {}); // points are best-effort; the row is not
 
-  return { ok: true, slug, marketId, onchain: { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature } };
+  return {
+    ok: true, slug, marketId,
+    onchain: minted ? { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature } : null,
+  };
+}
+
+/**
+ * Put a market on chain, now, and do it at most once.
+ *
+ * IDEMPOTENT BY CONSTRUCTION rather than by locking. market_id is assigned when
+ * the ROW is written, and the market PDA is derived from it, so two people
+ * arriving at the same moment are aiming at the same address: one mint lands,
+ * the other fails with an account that already exists, and the re-read below
+ * turns that into the same success. There is no window in which two accounts
+ * can exist for one market.
+ */
+async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
+  const detail = await communityMarketDetail(slug).catch(() => null);
+  if (!detail) return null;
+  if (detail.onchainPubkey) return { pubkey: detail.onchainPubkey };
+  if (!isChainEnabled()) return null;
+  if (detail.resolvedOutcome) return null; // nothing to stake in
+
+  const minted = await mintMarket({
+    marketId: detail.marketId, question: detail.question,
+    closeTime: Math.floor(new Date(detail.closesAt ?? Date.now()).getTime() / 1000),
+    creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+  }).catch(() => null);
+
+  if (minted) {
+    await setCommunityOnchain(slug, minted.pubkey, minted.signature);
+    return { pubkey: minted.pubkey };
+  }
+  // The mint failed. It may have failed because somebody else's landed first,
+  // which is a success wearing the wrong hat, so the row is re-read before this
+  // is called a failure.
+  const again = await communityMarketDetail(slug).catch(() => null);
+  return again?.onchainPubkey ? { pubkey: again.onchainPubkey } : null;
 }
 
 /**
@@ -2813,8 +2871,15 @@ if (realStakesReady) {
       return res.status(400).json({ error: `lamports must be between ${MIN_STAKE_LAMPORTS} and ${MAX_STAKE_LAMPORTS}` });
     }
     const detail = await communityMarketDetail(slug);
-    if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
+    if (!detail) return res.status(404).json({ ok: false, reason: "unknown-market" });
     if (detail.resolvedOutcome) return res.status(409).json({ ok: false, reason: "already-resolved" });
+    // Markets the bot opened carry no on-chain account until somebody wants to
+    // stake in one. This is that moment. It is also the LAST line of defence
+    // rather than the intended one: /api/chain/ensure below is called when the
+    // wallet connects, several seconds of human time earlier, so by the time
+    // anyone has picked a side and an amount the account is already there.
+    const ready = detail.onchainPubkey ? { pubkey: detail.onchainPubkey } : await ensureMinted(slug);
+    if (!ready) return res.status(502).json({ ok: false, reason: "not-minted", error: "this market could not be opened on Solana" });
 
     /**
      * EVERY RULE take_position ENFORCES, CHECKED HERE FIRST.
@@ -2837,7 +2902,7 @@ if (realStakesReady) {
      * authority, and blocking every stake because an RPC blinked would be a
      * worse failure than the one being fixed.
      */
-    const chainState = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
+    const chainState = await fetchMarketOnChain(ready.pubkey).catch(() => null);
     /**
      * A market we cannot READ is a market we cannot verify, and handing over a
      * transaction we cannot verify is the thing these guards exist to stop.
@@ -2858,12 +2923,12 @@ if (realStakesReady) {
       if (chainState.closeTime > 0 && now >= chainState.closeTime) {
         return res.status(409).json({ ok: false, reason: "closed", closeTime: chainState.closeTime });
       }
-      const held = await fetchPosition(detail.onchainPubkey, userPubkey).catch(() => null);
+      const held = await fetchPosition(ready.pubkey, userPubkey).catch(() => null);
       if (held && held.side !== side) {
         return res.status(409).json({ ok: false, reason: "other-side", side: held.side });
       }
     }
-    const txBase64 = await preparePositionTx({ marketPubkey: detail.onchainPubkey, userPubkey, side, lamports });
+    const txBase64 = await preparePositionTx({ marketPubkey: ready.pubkey, userPubkey, side, lamports });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
     res.json({ ok: true, txBase64 });
   });
@@ -2879,6 +2944,28 @@ if (realStakesReady) {
    * this only ever reveals money the user already owns. Blocking a withdrawal
    * is a different and worse act than blocking a new wager.
    */
+  /**
+   * Put this market on chain now, because somebody just connected a wallet.
+   *
+   * The point is LATENCY, not correctness: position/prepare mints on its own if
+   * it has to. Calling this the moment a wallet connects moves the mint behind
+   * several seconds of human time (pick a side, type an amount, approve in
+   * Phantom) so nobody ever waits on it.
+   *
+   * Metered, and not as a formality: this route spends SOL. The ceiling is
+   * bounded by what the old eager behaviour did anyway — mint every market once
+   * — but there is no reason to leave a rent tap open to the internet.
+   */
+  app.post("/api/chain/ensure", async (req, res) => {
+    if (!meteredRoute(req, res, "chain-ensure", 60)) return;
+    const slug = String(req.body?.slug ?? "");
+    if (!slug) return res.status(400).json({ error: "slug required" });
+    const ready = await ensureMinted(slug).catch(() => null);
+    // Not an error the client should act on: the stake path mints on its own if
+    // this did not, so a failure here costs latency and nothing else.
+    res.json({ ok: Boolean(ready), pubkey: ready?.pubkey ?? null });
+  });
+
   app.get("/api/chain/claimable", async (req, res) => {
     const userPubkey = String(req.query.userPubkey ?? "");
     if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
@@ -3257,6 +3344,12 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
         category: input.category,
         resolutionCriteria: input.resolutionCriteria,
         resolvability: input.resolvability,
+        // The bot is the volume, so the bot is where the rent goes. A tagged
+        // claim used to cost a deposit out of our own wallet whether or not one
+        // human ever opened it, and a market nobody stakes in has an empty vault
+        // and therefore an on-chain account that proves nothing the row does
+        // not. It gets minted the moment somebody actually turns up.
+        mint: "on-demand",
       });
       return out.ok ? { ok: true, slug: out.slug } : { ok: false, status: out.status, error: out.error };
     },

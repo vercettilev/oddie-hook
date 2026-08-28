@@ -655,6 +655,7 @@ name = "oddie_chain"
 version = "0.2.0"
 dependencies = [
  "anchor-lang",
+ "solana-sha256-hasher",
 ]
 
 [[package]]

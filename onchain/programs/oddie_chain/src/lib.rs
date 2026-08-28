@@ -4,7 +4,7 @@
 //! Ao8tBMVCUMMYAm8cbq2qehP78RCK5xNAPyaXv9TH5FZT, but its source never landed in
 //! this repo. Its `Market` account has no creator field and it has no
 //! fee-taking instruction, so there is nowhere to record who the 3% is owed to
-//! and no way to pay it. That is exactly why `economy.ts` has to describe
+//! and no way to pay the creator. That is exactly why `economy.ts` has to describe
 //! CREATOR_FEE_BPS_REAL as a proposed rate that is "logged as an intended fee"
 //! and never actually charged. The creator fee is the whole reason a stranger
 //! bothers to tag a market into existence, so a program that cannot pay it
@@ -43,6 +43,7 @@
 //! gates every on-chain path behind ONCHAIN_ENABLED, which defaults to false.
 
 use anchor_lang::prelude::*;
+use solana_sha256_hasher::hash;
 use anchor_lang::system_program;
 
 declare_id!("3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu");
@@ -117,7 +118,7 @@ pub mod oddie_chain {
         m.authority = ctx.accounts.authority.key();
         m.creator = creator;
         m.market_id = market_id;
-        m.question = question;
+        m.question_hash = hash(question.as_bytes()).to_bytes();
         m.close_time = close_time;
         m.resolved = false;
         m.winning_side = 0;
@@ -337,6 +338,39 @@ pub mod oddie_chain {
         Ok(())
     }
 
+    /// Give back the rent on a market nobody ever used.
+    ///
+    /// Opening a market costs oddie a rent deposit for the Market and Vault
+    /// accounts and NOTHING gives it back, so every market that was opened and
+    /// then ignored is a permanent loss. This returns it.
+    ///
+    /// THE CONDITION IS NARROW ON PURPOSE, and the reason is worth stating
+    /// because a wider one looks obviously better and is not. `claim_winnings`
+    /// carries `close = owner`, so a LOSER still has a reason to call it: the
+    /// payout is zero but their position's own rent comes back. That claim needs
+    /// this market account to exist. Closing a market that anyone ever staked
+    /// into would therefore strand somebody else's rent to recover our own,
+    /// which is a trade we do not get to make on their behalf.
+    ///
+    /// So: only a market with an empty pool, and only once it is over. Nobody
+    /// staked, so there is no position to strand, no payout to owe and no fee to
+    /// pay. That is precisely the residue that lazy minting leaves behind, which
+    /// is the case this exists for.
+    ///
+    /// A market WITH stakes stays open forever until everyone has claimed. That
+    /// is not an oversight; it is the same rule as everywhere else here, that
+    /// the house does not get to close a door somebody else is still standing in.
+    pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
+        let m = &ctx.accounts.market;
+        require!(m.total_yes == 0 && m.total_no == 0, OddieError::MarketHasStakes);
+        // Over, so nobody is going to stake now: resolved, or simply past its
+        // close. Either is enough, and the second matters because an ignored
+        // market is usually one nobody bothered to resolve either.
+        let clock = Clock::get()?;
+        require!(m.resolved || clock.unix_timestamp > m.close_time, OddieError::MarketStillOpen);
+        Ok(())
+    }
+
     /// The creator's cut, pulled by the person it belongs to.
     ///
     /// PULL, NOT PUSH, and that is the substantive design choice here. Pushing
@@ -472,6 +506,33 @@ pub struct TakePosition<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CloseMarket<'info> {
+    /// Rent goes back to whoever put it up, which `has_one` below pins to the
+    /// key that opened the market. Nobody else can call this and nobody else
+    /// can be paid by it.
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        close = authority,
+        seeds = [b"market", market.market_id.to_le_bytes().as_ref()],
+        bump = market.bump,
+        has_one = authority @ OddieError::WrongAuthority
+    )]
+    pub market: Account<'info, Market>,
+    /// Closed in the same instruction. With an empty pool it holds nothing but
+    /// its own rent, and leaving it behind would strand most of what this
+    /// instruction exists to recover.
+    #[account(
+        mut,
+        close = authority,
+        seeds = [b"vault", market.key().as_ref()],
+        bump = market.vault_bump
+    )]
+    pub vault: Account<'info, Vault>,
+}
+
+#[derive(Accounts)]
 pub struct ResolveMarket<'info> {
     /// Only the key that opened the market can settle it. This is the oracle
     /// and it is a human decision; see the note in the repo about what putting
@@ -552,8 +613,19 @@ pub struct Market {
     /// have, and the reason this one exists.
     pub creator: Pubkey,
     pub market_id: u64,
-    #[max_len(180)]
-    pub question: String,
+    /// SHA-256 of the question, not the question.
+    ///
+    /// The full text is still on chain and still permanent: it is an argument to
+    /// `create_market`, so it lives in that transaction's instruction data
+    /// forever. Storing a second copy in account state meant paying rent for the
+    /// rest of time for bytes the ledger already had, and it was 184 of this
+    /// account's 306: 59% of the struct, for a field NO INSTRUCTION READS.
+    ///
+    /// The hash keeps the only property that copy actually bought. Anyone can
+    /// check that the question oddie shows for a market is the question the
+    /// market was opened with, and 184 bytes did not make that check stronger
+    /// than 32 do.
+    pub question_hash: [u8; 32],
     pub close_time: i64,
     pub resolved: bool,
     pub winning_side: u8,
@@ -633,4 +705,11 @@ pub enum OddieError {
     CreatorNotNamed,
     #[msg("arithmetic overflow")]
     MathOverflow,
+    // Appended, never inserted: this enum is positional, and putting a variant
+    // in the middle silently renumbers every error after it for any client
+    // built against the old order.
+    #[msg("a market that anyone staked into cannot be closed")]
+    MarketHasStakes,
+    #[msg("market is neither resolved nor past its close time")]
+    MarketStillOpen,
 }

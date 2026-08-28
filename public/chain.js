@@ -151,6 +151,19 @@ function b64ToBytes(b64) {
     return out;
   }
 
+  /** Ask the server to put this market on chain, if it is not already. Purely a
+   *  head start: /api/chain/position/prepare does the same thing on its own. */
+  const ensured = new Set();
+  function ensureOnChain(slug) {
+    if (!slug || ensured.has(slug)) return;
+    ensured.add(slug);
+    fetch("/api/chain/ensure", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug }),
+    }).catch(() => {});
+  }
+
   async function connectWallet() {
     const provider = window.solana;
     if (!provider || !provider.isPhantom) {
@@ -453,6 +466,13 @@ function b64ToBytes(b64) {
 
       sideBtns.forEach((b) => b.onclick = () => {
         side = b.dataset.side;
+        // Picking a side is the earliest moment we know somebody means it, and
+        // markets the bot opened have no on-chain account until somebody does.
+        // Fired here, the mint happens while they are still typing an amount and
+        // approving in Phantom, so nobody ever waits on it. Not awaited and its
+        // failure is not shown: the stake path mints on its own if this did not,
+        // so the only thing lost is a head start.
+        ensureOnChain(slug);
         sideBtns.forEach((x) => x.classList.toggle("on", x === b));
         refresh();
       });

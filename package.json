@@ -51,7 +51,8 @@
     "retire": "tsx scripts/retire-markets.ts",
     "oracle": "tsx scripts/oracle.ts",
     "test-oracle": "tsx scripts/test-oracle.ts",
-    "test-oracle-wire": "tsx scripts/test-oracle-wire.ts"
+    "test-oracle-wire": "tsx scripts/test-oracle-wire.ts",
+    "reclaim-rent": "tsx scripts/reclaim-rent.ts"
   },
   "engines": {
     "node": ">=20"
