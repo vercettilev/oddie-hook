@@ -55,12 +55,30 @@ export interface AuditedCitation {
   note: string;
 }
 
+/** A numeric character reference that is out of range or a lone surrogate would
+ *  throw; an entity we cannot decode is dropped rather than allowed to take the
+ *  whole audit down. */
+function safeCodePoint(n: number): string {
+  try {
+    return n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Collapse the differences that make an honest quote fail: smart quotes,
  *  dashes, entities, non-breaking spaces, casing, and every kind of run of
  *  whitespace. Both sides go through this, so it can only ever make a real
  *  match findable — it cannot invent one. */
 export function normalizeText(s: string): string {
   return s
+    // Numeric references first: a CMS emitting &#8217; for an apostrophe is the
+    // default, not the exception, and an undecoded one failed an honest quote
+    // with the one status that discards the verdict and blames the source.
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => safeCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, n) => safeCodePoint(parseInt(n, 10)))
+    .replace(/&(mdash|ndash|rsquo|lsquo|rdquo|ldquo|hellip|shy);/gi, (_, n) =>
+      ({ mdash: "-", ndash: "-", rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', hellip: "...", shy: "" })[String(n).toLowerCase()] ?? "")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, '"')
@@ -76,59 +94,150 @@ export function normalizeText(s: string): string {
     .toLowerCase();
 }
 
-/** HTML to something a quote can be looked for in. Deliberately crude: script
- *  and style go, every other tag becomes a space so words never fuse across a
- *  tag boundary ("<b>Ars</b>enal" must not read as one token). */
-export function htmlToText(html: string): string {
+/** A tag matcher that does not stop at a ">" inside a quoted attribute value.
+ *  The naive /<[^>]+>/ leaks the tail of any attribute containing one into the
+ *  searchable text, so `content="Arsenal beat Chelsea 3-1 -> the title race is
+ *  over"` became quotable prose that no reader ever sees. */
+const TAG = /<[a-zA-Z\/!?][^>"']*(?:"[^"]*"[^>"']*|'[^']*'[^>"']*)*>/g;
+
+function strip(html: string): string {
   return html
     .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<[^>]+>/g, " ");
+    // The head is metadata, not prose. Leaving it in made a meta description
+    // quotable, which is text the page never shows.
+    .replace(/<head\b[\s\S]*?<\/head>/gi, " ");
 }
 
-/**
- * The most recent date this document claims for itself.
+/** HTML to something a quote can be looked for in. Every tag becomes a space so
+ *  words never fuse across a boundary: "<p>a</p><p>b</p>" must not read as
+ *  "ab". */
+export function htmlToText(html: string): string {
+  return strip(html).replace(TAG, " ");
+}
+
+/** The same text with tags REMOVED rather than spaced, so a word split by an
+ *  inline element survives. This exists because the spaced form alone breaks
+ *  honest quotes on ordinary markup: a drop cap renders
+ *  "<span>T</span>he Commission" as "t he commission", and <wbr> and &shy; do
+ *  the same. Those failed with the one status that discards a verdict and
+ *  blames the source, for markup that is standard on longform news.
  *
- * THE LATEST DATE, NOT THE FIRST ONE FOUND, and that is a correction rather
- * than a preference. Wikipedia's JSON-LD carries datePublished 2001-09-30 on an
- * article edited this morning: taking the first signal marked every Wikipedia
- * citation as written a quarter-century ago, which under the staleness rule
- * below silently blocked every NO verdict that cited one — and Wikipedia is one
- * of the few sources measured that can carry a citation at all.
+ *  A quote is accepted if EITHER form contains it. Checking both cannot invent
+ *  a match that is in neither, and each form covers the case the other breaks. */
+export function htmlToTextJoined(html: string): string {
+  return strip(html).replace(TAG, "");
+}
+
+/** Are these words on this page? Both readings of the markup are tried. */
+export function pageContains(html: string, quote: string): boolean {
+  const q = normalizeText(quote);
+  return normalizeText(htmlToText(html)).includes(q) || normalizeText(htmlToTextJoined(html)).includes(q);
+}
+
+/** Turn a declared date string into an instant, conservatively.
  *
- * The question this date is asked is always the same: could this text have
- * known that a deadline had passed? For that, the newest moment the document
- * admits to is the right bound, and a stray ancient <time> element becomes
- * harmless instead of decisive.
- *
- * Finding nothing is a normal answer and is never held against a page.
- */
-export function documentDateOf(html: string): string | null {
-  const patterns = [
-    /<meta[^>]+property=["']article:(?:published|modified)_time["'][^>]+content=["']([^"']+)["']/gi,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:(?:published|modified)_time["']/gi,
-    /<meta[^>]+itemprop=["'](?:datePublished|dateModified)["'][^>]+content=["']([^"']+)["']/gi,
-    /<meta[^>]+name=["'](?:date|pubdate|publish[-_]?date|last[-_]?modified)["'][^>]+content=["']([^"']+)["']/gi,
-    /"date(?:Published|Modified)"\s*:\s*"([^"]+)"/gi,
-    /<time[^>]+datetime=["']([^"']+)["']/gi,
-  ];
+ *  Two things Date() gets wrong for this purpose. A datetime with no timezone
+ *  is parsed in the HOST's zone, so the same page verifies on a UTC server and
+ *  goes stale on the operator's laptop; it is read as UTC instead. And a bare
+ *  date denotes a whole DAY, not midnight. We keep midnight anyway: the
+ *  question the date is asked is "could this text have known the deadline had
+ *  passed", a day-granular answer is "possibly", and possibly is not
+ *  established. That refuses some good NO verdicts to a human, which is the
+ *  cheap direction; the other reading pays one out. Measured on real
+ *  permalinks this is nearly moot, since every one of them declares a full
+ *  timestamp. */
+function parseDeclared(raw: string): Date | null {
+  const t = raw.trim();
+  const naive = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(t);
+  const d = new Date(naive ? `${t.replace(" ", "T")}Z` : t);
+  const y = d.getUTCFullYear();
+  // A parse landing outside any plausible range is a parse that failed.
+  return Number.isNaN(d.getTime()) || y < 2000 || y > 2100 ? null : d;
+}
+
+function earliest(html: string, patterns: RegExp[]): Date | null {
   let best: Date | null = null;
   for (const re of patterns) {
     for (const m of html.matchAll(re)) {
-      const d = new Date(m[1]);
-      const y = d.getUTCFullYear();
-      // A parse landing outside any plausible range is a parse that failed.
-      if (Number.isNaN(d.getTime()) || y < 2000 || y > 2100) continue;
-      if (!best || d > best) best = d;
+      const d = parseDeclared(m[1]);
+      if (d && (!best || d < best)) best = d;
     }
   }
-  return best ? best.toISOString() : null;
+  return best;
+}
+
+const PUBLISHED = [
+  /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["']/gi,
+  /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["']/gi,
+  /<meta[^>]+itemprop=["']datePublished["'][^>]+content=["']([^"']+)["']/gi,
+  /<meta[^>]+name=["'](?:date|pubdate|publish[-_]?date)["'][^>]+content=["']([^"']+)["']/gi,
+  /"datePublished"\s*:\s*"([^"]+)"/gi,
+];
+const MODIFIED = [
+  /<meta[^>]+property=["']article:modified_time["'][^>]+content=["']([^"']+)["']/gi,
+  /<meta[^>]+itemprop=["']dateModified["'][^>]+content=["']([^"']+)["']/gi,
+  /<meta[^>]+name=["']last[-_]?modified["'][^>]+content=["']([^"']+)["']/gi,
+  /"dateModified"\s*:\s*"([^"]+)"/gi,
+];
+
+/**
+ * When this document says it was written. Null when it does not say.
+ *
+ * TWO CORRECTIONS LIVE HERE, IN OPPOSITE DIRECTIONS, AND BOTH WERE MEASURED.
+ *
+ * It first read the FIRST signal it found. Wikipedia's JSON-LD declares
+ * datePublished 2001 on an article edited this morning, so every Wikipedia
+ * citation looked a quarter-century old and every NO citing one was blocked.
+ *
+ * The obvious repair, take the NEWEST date anywhere in the HTML, was worse and
+ * in the dangerous direction. Any templated news page carries a "latest
+ * stories" sidebar with today's <time> in it, so a 2024 article was certified
+ * as post-close and could settle a NO it could not possibly support. A
+ * forward-looking calendar entry did the same. The staleness rule is the one
+ * thing this file exists for and that repair defeated it.
+ *
+ * So: only DOCUMENT-LEVEL claims count, published preferred over modified, and
+ * the earliest of them wins. Published is what "when was this written" means;
+ * modified only says somebody touched the file, which a footer edit does. The
+ * earliest is the conservative read, and conservative here means a NO gets
+ * refused to a human rather than paid out on a stale page.
+ *
+ * <time datetime> is deliberately NOT read. It was the sidebar's way in, and
+ * measuring 13 real article permalinks found 12 carrying document-level
+ * metadata and NOT ONE relying on <time> alone, so dropping it costs nothing.
+ * The remaining page (sec.gov) declares no date at all, which is its own
+ * answer, not a gap.
+ */
+export function documentDateOf(html: string): string | null {
+  const d = earliest(html, PUBLISHED) ?? earliest(html, MODIFIED);
+  return d ? d.toISOString() : null;
 }
 
 /** Fetch seam. Swapped in tests so the audit's logic is exercised against known
  *  bytes rather than against whatever the internet is doing today. */
-export type PageFetcher = (url: string) => Promise<{ ok: boolean; html: string; status: number }>;
+export type PageFetcher = (url: string) => Promise<{ ok: boolean; html: string; status: number; truncated?: boolean }>;
+
+/** Decode with the charset the response actually declares.
+ *
+ *  Everything was read as UTF-8. A page served ISO-8859-1 or windows-1252 then
+ *  turned every accented character into U+FFFD, so a quote containing one could
+ *  never match and came back as though the source had invented it. Older
+ *  institutional and regulatory sites are the common case for a non-UTF-8
+ *  charset, and they are exactly what a NO on a regulatory market must cite. */
+function decodeBody(buf: ArrayBuffer, contentType: string): string {
+  const head = Buffer.from(buf.slice(0, 2048)).toString("latin1");
+  const declared =
+    /charset=["']?([\w-]+)/i.exec(contentType)?.[1] ??
+    /<meta[^>]+charset=["']?([\w-]+)/i.exec(head)?.[1] ??
+    "utf-8";
+  try {
+    return new TextDecoder(declared.toLowerCase()).decode(buf);
+  } catch {
+    return new TextDecoder("utf-8").decode(buf);
+  }
+}
 
 const liveFetch: PageFetcher = async (url) => {
   try {
@@ -139,8 +248,13 @@ const liveFetch: PageFetcher = async (url) => {
     });
     if (!res.ok) return { ok: false, html: "", status: res.status };
     const buf = await res.arrayBuffer();
-    const html = Buffer.from(buf.slice(0, MAX_BYTES)).toString("utf8");
-    return { ok: true, html, status: res.status };
+    const truncated = buf.byteLength > MAX_BYTES;
+    return {
+      ok: true,
+      html: decodeBody(buf.slice(0, MAX_BYTES), res.headers.get("content-type") ?? ""),
+      status: res.status,
+      truncated,
+    };
   } catch {
     return { ok: false, html: "", status: 0 };
   }
@@ -180,8 +294,15 @@ export async function auditCitation(c: Citation, closeTime: Date | null): Promis
   }
 
   const datedAt = documentDateOf(page.html);
-  const text = normalizeText(htmlToText(page.html));
-  if (!text.includes(quote)) {
+  if (!pageContains(page.html, c.quote)) {
+    // A page we only read part of cannot be said to lack the words. Long
+    // Wikipedia season articles and live blogs routinely pass the cap, and they
+    // are among the few sources measured as citable at all, so calling that
+    // "the words are not there" both refuses the verdict and blames a source
+    // that did nothing wrong.
+    if (page.truncated) {
+      return { ...base, status: "unreachable", datedAt, note: "page too large to read in full" };
+    }
     return { ...base, status: "quote-absent", datedAt, note: "the quoted words are not on that page" };
   }
 
@@ -226,6 +347,9 @@ export interface AuditResult {
    *  only one of them is somebody's fault, so the name claims neither. */
   absent: number;
   unreachable: number;
+  /** Whether the market had a close time at all. A NO leans entirely on it, so
+   *  it travels with the result rather than being assumed. */
+  closeKnown: boolean;
 }
 
 export async function auditCitations(cites: Citation[], closeTime: Date | null): Promise<AuditResult> {
@@ -237,6 +361,7 @@ export async function auditCitations(cites: Citation[], closeTime: Date | null):
     stale: citations.filter((c) => c.status === "stale").length,
     absent: citations.filter((c) => c.status === "quote-absent").length,
     unreachable: citations.filter((c) => c.status === "unreachable").length,
+    closeKnown: closeTime !== null,
   };
 }
 
@@ -270,17 +395,35 @@ export function auditSupports(outcome: "yes" | "no", audit: AuditResult): { ok: 
   if (audit.absent > 0) {
     return { ok: false, why: `${audit.absent} citation(s) no longer show the quoted words on the page` };
   }
+  const dead = audit.unreachable > 0 ? `, ${audit.unreachable} unreachable` : "";
+
   if (outcome === "yes") {
     // A YES only needs the event shown. When the page was written, and whether
     // it says, does not bear on that.
-    const usable = audit.verified + audit.stale + audit.undated;
-    if (usable === 0) return { ok: false, why: "no citation could be verified against its own page" };
-    return { ok: true, why: `${usable} verified citation(s)` };
+    const parts = [
+      audit.verified ? `${audit.verified} dated at or after the close` : "",
+      audit.stale ? `${audit.stale} dated before it` : "",
+      audit.undated ? `${audit.undated} undated` : "",
+    ].filter(Boolean);
+    if (parts.length === 0) return { ok: false, why: `no citation could be verified against its own page${dead}` };
+    // The composition is spelled out rather than summed. It used to report
+    // "N verified citation(s)" for a pile that was mostly stale or dateless,
+    // and "verified" means something narrower than that everywhere else in this
+    // file: the operator was being told the opposite of the distinction the
+    // undated status was added to draw.
+    return { ok: true, why: `${parts.join(", ")}${dead}` };
+  }
+
+  // A NO says a deadline was missed. With no deadline recorded there is nothing
+  // to have missed, and the sentence this used to return named a close time
+  // that did not exist.
+  if (!audit.closeKnown) {
+    return { ok: false, why: "this market has no close time, so nothing can establish that a deadline passed" };
   }
   if (audit.verified === 0) {
-    if (audit.stale > 0) return { ok: false, why: "every verified citation predates the close, which cannot establish a non-event" };
-    if (audit.undated > 0) return { ok: false, why: "no citation declares a date, so none of them can establish a non-event" };
-    return { ok: false, why: "no citation could be verified against its own page" };
+    if (audit.stale > 0) return { ok: false, why: `every verified citation predates the close, which cannot establish a non-event${dead}` };
+    if (audit.undated > 0) return { ok: false, why: `no citation declares a date, so none of them can establish a non-event${dead}` };
+    return { ok: false, why: `no citation could be verified against its own page${dead}` };
   }
-  return { ok: true, why: `${audit.verified} citation(s) dated at or after the close` };
+  return { ok: true, why: `${audit.verified} citation(s) dated at or after the close${dead}` };
 }

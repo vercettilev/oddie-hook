@@ -24,10 +24,17 @@ import { oracleAvailable } from "../src/oracle/verdict.js";
 
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
-const slugArg = (() => {
-  const i = args.indexOf("--slug");
-  return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : null;
-})();
+// A --slug whose value is missing, or is itself a flag, is a TYPO, not "all
+// markets". It used to fall through to null and leave the board unfiltered, so
+// `npm run oracle -- --apply --slug` (flag pasted, slug forgotten) settled
+// everything that passed the gates. The board-empty check below cannot catch
+// that, because no slug was ever parsed.
+const slugIdx = args.indexOf("--slug");
+if (slugIdx >= 0 && (!args[slugIdx + 1] || args[slugIdx + 1].startsWith("--"))) {
+  console.error(`\n  --slug needs a market slug after it. Leave it off entirely to run the whole board.\n`);
+  process.exit(1);
+}
+const slugArg = slugIdx >= 0 ? args[slugIdx + 1] : null;
 
 const avail = oracleAvailable();
 console.log(`\n  oracle: ${avail.ok ? avail.why : `UNAVAILABLE — ${avail.why}`}`);
@@ -56,7 +63,25 @@ console.log(`  ${board.length} open market(s)${APPLY ? ", APPLYING" : ", dry run
 
 const decisions: OracleDecision[] = [];
 for (const m of board) {
-  const detail = await communityMarketDetail(m.slug).catch(() => null);
+  // A database error here is NOT the same as a market created without criteria,
+  // and swallowing it into null said exactly that: an operator reading
+  // "this market carries no resolution criteria" would go and rewrite criteria
+  // that were sitting in the database all along. The loop holds a connection
+  // through minutes of model calls per market, so a mid-run reset is realistic.
+  let detail: Awaited<ReturnType<typeof communityMarketDetail>> | null = null;
+  let detailError: string | null = null;
+  try {
+    detail = await communityMarketDetail(m.slug);
+  } catch (e) {
+    detailError = (e as Error).message;
+  }
+  if (detailError) {
+    console.log(`     ${"could not be read".padEnd(28 - 5)} ${m.slug.slice(0, 44)}`);
+    console.log(`      the database did not answer: ${detailError}`);
+    console.log("");
+    continue;
+  }
+
   const d = await decide({
     slug: m.slug,
     question: m.question,
@@ -87,6 +112,18 @@ const unchecked = decisions.filter((d) => (d.audit?.absent ?? 0) > 0);
 if (unchecked.length) {
   console.log(`  ! ${unchecked.length} market(s) cited a page that no longer shows the quoted words:`);
   for (const d of unchecked) console.log(`      ${d.slug}`);
+  console.log("");
+}
+
+// Dead URLs are the strongest signal available that sources are being invented,
+// and they were counted against nothing and printed nowhere: a proposal with
+// four 404s and one real page settled, and the summary said nothing at all.
+// They do not block on their own, because an unreachable page is often just a
+// site that refuses us, so this is a thing to LOOK at rather than a gate.
+const dead = decisions.filter((d) => (d.audit?.unreachable ?? 0) > 0);
+if (dead.length) {
+  console.log(`  ? ${dead.length} market(s) cited pages we could not reach:`);
+  for (const d of dead) console.log(`      ${d.audit?.unreachable} unreachable  ${d.slug}`);
   console.log("");
 }
 

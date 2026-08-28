@@ -42,6 +42,12 @@ function servePages(map: Record<string, string>): void {
 console.log("\nnormalisation makes an honest quote findable and cannot invent a match");
 {
   check("smart quotes collapse", normalizeText("Arsenal’s “win”") === normalizeText("Arsenal's \"win\""));
+  // A CMS emitting &#8217; for an apostrophe is the default, not the exception.
+  // Undecoded, it failed an honest quote with the status that blames the source.
+  check("numeric character references decode", normalizeText("The company&#8217;s board") === normalizeText("The company’s board"), normalizeText("The company&#8217;s board"));
+  check("hex references decode", normalizeText("caf&#xE9; open") === normalizeText("café open"));
+  check("named typographic entities decode", normalizeText("a &mdash; b") === normalizeText("a - b"));
+  check("a malformed reference does not throw", normalizeText("&#999999999; x").includes("x"));
   check("runs of whitespace collapse", normalizeText("a\n\n  b") === "a b");
   // Words must not fuse across a tag boundary, or "<b>Ars</b>enal" reads as one
   // token and a real quote silently stops matching.
@@ -49,12 +55,37 @@ console.log("\nnormalisation makes an honest quote findable and cannot invent a 
   check("script bodies are not searchable text", !htmlToText("<script>secret words here</script>").includes("secret"));
   check("a declared date is read", documentDateOf(page("x", "2026-08-25T10:00:00Z"))?.startsWith("2026-08-25") === true);
   check("no declared date is null, not a guess", documentDateOf(page("x")) === null);
-  // Measured on the real Wikipedia: its JSON-LD says the article was published
-  // in 2001 and modified today. Reading the first signal instead of the newest
-  // dated every Wikipedia citation to 2001, which marked it stale, which blocked
-  // every NO verdict citing one of the few sources that can be cited at all.
+  // Wikipedia's JSON-LD says published 2001, modified today. Reading the FIRST
+  // signal dated it 2001. Reading the NEWEST date anywhere was worse and in the
+  // dangerous direction, so now: document-level only, published over modified,
+  // earliest wins.
   const wiki = '<html><head><script type="application/ld+json">{"datePublished":"2001-09-30T23:36:15Z","dateModified":"2026-08-26T08:00:00Z"}</script></head><body>x</body></html>';
-  check("the NEWEST date wins, not the first found", documentDateOf(wiki)?.startsWith("2026-08-26") === true, String(documentDateOf(wiki)));
+  check("published beats modified", documentDateOf(wiki)?.startsWith("2001-09-30") === true, String(documentDateOf(wiki)));
+
+  // THE ONE THAT MATTERS. Every templated news page carries a sidebar of
+  // today's stories. Taking the newest date anywhere certified a 2024 article
+  // as post-close, which defeats the only rule this file exists for.
+  const sidebar = '<html><head><meta property="article:published_time" content="2024-03-02T10:00:00Z"></head>' +
+    '<body><article><p>The Commission has not approved the application.</p></article>' +
+    '<aside class="latest"><time datetime="2026-08-28T09:00:00Z">today</time></aside></body></html>';
+  check("a sidebar date cannot make an old article fresh", documentDateOf(sidebar)?.startsWith("2024-03-02") === true, String(documentDateOf(sidebar)));
+
+  // A boilerplate or footer edit bumps dateModified without the document
+  // learning anything.
+  const bumped = '<html><head><script type="application/ld+json">{"datePublished":"2023-01-05T00:00:00Z","dateModified":"2026-08-27T00:00:00Z"}</script></head><body>x</body></html>';
+  check("a modified-date bump cannot certify an old article", documentDateOf(bumped)?.startsWith("2023-01-05") === true, String(documentDateOf(bumped)));
+
+  // Nothing but <time> is now the same as nothing: measured, no real article
+  // relies on it, and it was the sidebar's way in.
+  check("a bare <time> is not a date signal", documentDateOf('<html><body><time datetime="2026-08-28T09:00:00Z">x</time></body></html>') === null);
+
+  // Date() reads a zoneless datetime in the HOST's timezone, so the same page
+  // verified on a UTC server and went stale on a laptop.
+  check("a zoneless datetime is read as UTC", documentDateOf('<meta name="date" content="2026-08-21T07:00:00">') === "2026-08-21T07:00:00.000Z");
+
+  // Only modified declared: that is what we have.
+  check("modified is used when nothing else is declared", documentDateOf('<meta property="article:modified_time" content="2026-08-25T10:00:00Z">')?.startsWith("2026-08-25") === true);
+
   const strayTime = '<html><head><meta property="article:published_time" content="2026-08-25T10:00:00Z"></head><body><time datetime="1999-01-01">old</time></body></html>';
   check("an out-of-range stray date is ignored", documentDateOf(strayTime)?.startsWith("2026-08-25") === true, String(documentDateOf(strayTime)));
 }
@@ -114,10 +145,15 @@ console.log("\nA PAGE THAT DECLARES NO DATE CANNOT ESTABLISH A NON-EVENT");
   check("a NO may NOT stand on an undated page", !auditSupports("no", und).ok, auditSupports("no", und).why);
   check("...and the refusal says why", auditSupports("no", und).why.includes("no citation declares a date"));
 
-  // With no deadline there is nothing to miss, so the distinction does not apply.
+  // With no deadline nothing can be stale, so the citation is simply verified.
   const noClose = await auditCitations([{ url: "https://a.test/undated", quote: "The Commission has not approved" }], null);
   check("with no close time an undated page is simply verified", noClose.verified === 1 && noClose.undated === 0);
-  check("...and supports either side", auditSupports("no", noClose).ok && auditSupports("yes", noClose).ok);
+  check("...and supports a YES", auditSupports("yes", noClose).ok);
+  // But a NO says a DEADLINE was missed, and there is no deadline here. This
+  // used to settle on any reachable page at all, and report it as "dated at or
+  // after the close" about a close that did not exist.
+  check("...but never a NO, because there is no deadline to miss", !auditSupports("no", noClose).ok);
+  check("...and says exactly that", auditSupports("no", noClose).why.includes("no close time"), auditSupports("no", noClose).why);
 }
 
 console.log("\none unverifiable citation discards the verdict, whatever else is in the pile");
@@ -136,9 +172,71 @@ console.log("\none unverifiable citation discards the verdict, whatever else is 
   check("NO is refused anyway", !auditSupports("no", mixed).ok);
 }
 
+console.log("\nthe sentence written into the record says what the evidence actually is");
+{
+  servePages({
+    "https://a.test/late": page("Arsenal beat Chelsea 3-1 on Saturday", "2026-08-25T10:00:00Z"),
+    "https://a.test/nodate": page("Arsenal beat Chelsea 3-1 on Saturday"),
+  });
+  const mix = await auditCitations([
+    { url: "https://a.test/late", quote: "Arsenal beat Chelsea 3-1" },
+    { url: "https://a.test/nodate", quote: "Arsenal beat Chelsea 3-1" },
+    { url: "https://a.test/gone", quote: "Arsenal beat Chelsea 3-1" },
+  ], new Date(CLOSE));
+  const why = auditSupports("yes", mix).why;
+  // It used to call all of these "verified", which is the exact word this file
+  // reserves for "quote found AND dated at or after the close".
+  check("a dateless citation is not called verified", !why.includes("2 verified"), why);
+  check("the composition is spelled out", why.includes("1 dated at or after the close") && why.includes("1 undated"), why);
+  // Dead URLs are the strongest signal available that sources are being made
+  // up, and they were counted nowhere and printed nowhere.
+  check("unreachable citations are surfaced", why.includes("1 unreachable"), why);
+}
+
+console.log("\na page we only half-read is not a page missing its words");
+{
+  _setPageFetcher(async () => ({ ok: true, html: page("nothing relevant here"), status: 200, truncated: true }));
+  const t = await auditCitation({ url: "https://a.test/huge", quote: "Arsenal beat Chelsea 3-1" }, null);
+  // quote-absent is the status that discards the verdict AND accuses the source.
+  // A page we truncated did nothing wrong.
+  check("truncation reads as unreachable, not as an absent quote", t.status === "unreachable", t.status);
+  check("...and says why", t.note.includes("too large"), t.note);
+}
+
+console.log("\nordinary markup does not break an honest quote");
+{
+  // Drop caps are standard on longform news. Spacing every tag turned
+  // "<span>T</span>he Commission" into "t he commission" and failed the quote
+  // with the status that blames the source.
+  servePages({
+    "https://a.test/dropcap": '<html><body><p><span class="dropcap">T</span>he Commission has not approved the application.</p></body></html>',
+    "https://a.test/split": "<html><body><p>The counter<wbr>terrorism unit issued no statement.</p></body></html>",
+    "https://a.test/entity": "<html><body><p>The company&#8217;s board approved the merger on Tuesday.</p></body></html>",
+    "https://a.test/blocks": "<html><body><p>Arsenal won</p><p>the league</p></body></html>",
+  });
+  const q = async (u: string, quote: string) => (await auditCitation({ url: u, quote }, null)).status;
+  check("a drop cap does not break the quote", await q("https://a.test/dropcap", "The Commission has not approved the application") === "verified");
+  check("a word split by <wbr> does not break it", await q("https://a.test/split", "The counterterrorism unit issued no statement") === "verified");
+  check("a numeric entity does not break it", await q("https://a.test/entity", "The company’s board approved the merger") === "verified");
+  // ...and the other direction still holds: separate blocks must not fuse.
+  check("separate blocks still read as separate words", await q("https://a.test/blocks", "Arsenal won the league") === "verified");
+  check("...but not fused into one", await q("https://a.test/blocks", "Arsenal wonthe league") === "verified");
+}
+
+console.log("\ntext no reader ever sees is not quotable");
+{
+  servePages({
+    "https://a.test/meta": '<html><head><meta name="description" content="Arsenal beat Chelsea 3-1 -> the title race is over"></head><body><p>Nothing here.</p></body></html>',
+  });
+  // The naive tag regex stopped at the first ">", so the tail of any attribute
+  // containing one leaked into the searchable text.
+  const a = await auditCitation({ url: "https://a.test/meta", quote: "the title race is over" }, null);
+  check("an attribute value is not quotable prose", a.status === "quote-absent", `${a.status} / ${a.note}`);
+}
+
 console.log("\nno citations at all is an abstention, not a free pass");
 {
-  const empty: AuditResult = { citations: [], verified: 0, undated: 0, stale: 0, absent: 0, unreachable: 0 };
+  const empty: AuditResult = { citations: [], verified: 0, undated: 0, stale: 0, absent: 0, unreachable: 0, closeKnown: true };
   check("YES needs at least one verified citation", !auditSupports("yes", empty).ok);
   check("NO needs at least one verified citation", !auditSupports("no", empty).ok);
 }
@@ -174,11 +272,12 @@ console.log("\nevery gate downstream is a veto on its own");
     outcome: "yes", confidence: "high", checkable: true,
     citations: [{ url: "https://a.test/late", quote: "Arsenal beat Chelsea 3-1" }],
     reasoning: "the league site reports the result",
+    dropped: 0,
     ...over,
   });
   const run = async (p: Partial<Proposal>, second: Side = "yes") => {
     _setProposer(async () => propose(p));
-    _setSecondOpinion(async () => second);
+    _setSecondOpinion(async () => ({ outcome: second, why: "" }));
     return decide({ slug: "m1", question: "Did Arsenal beat Chelsea?", criteria: CRIT, closeTime: CLOSE }, AFTER);
   };
 
@@ -206,6 +305,42 @@ console.log("\nevery gate downstream is a veto on its own");
 
   const shrug = await run({}, "undetermined");
   check("a second read that will not conclude abstains", shrug.settle === null);
+
+  // AN OUTAGE IS NOT A DISAGREEMENT. Both stop the settlement and they are
+  // completely different news: during a rate limit every market on the board
+  // printed "a blind second read said undetermined", so a board of API failures
+  // read as a board of weak evidence.
+  _setProposer(async () => propose({}));
+  _setSecondOpinion(async () => ({ outcome: null, why: "the second read could not be obtained (429)" }));
+  const down = await decide({ slug: "m1", question: "Did Arsenal beat Chelsea?", criteria: CRIT, closeTime: CLOSE }, AFTER);
+  check("an unobtainable second read has its own gate", down.gate === "second-opinion-unavailable", down.gate);
+  check("...and does not claim anybody disagreed", !down.reason.includes("said"), down.reason);
+
+  // decide() promises never to throw and is called in a loop over a whole
+  // board. An unwrapped rejection killed the run at whichever market hit it.
+  _setSecondOpinion(async () => { throw new Error("fetch failed"); });
+  const boom = await decide({ slug: "m1", question: "Did Arsenal beat Chelsea?", criteria: CRIT, closeTime: CLOSE }, AFTER);
+  check("a thrown second read does not kill the run", boom.settle === null && boom.gate === "second-opinion-unavailable", boom.gate);
+  check("...and the cause survives", boom.reason.includes("fetch failed"), boom.reason);
+
+  // A YES resting only on undated pages passes the audit, and used to be handed
+  // an EMPTY evidence list, so it was refused for a disagreement that never
+  // happened.
+  servePages({ "https://a.test/nodate": page("Arsenal beat Chelsea 3-1 on Saturday") });
+  let sawEvidence = -1;
+  _setProposer(async () => propose({ citations: [{ url: "https://a.test/nodate", quote: "Arsenal beat Chelsea 3-1" }] }));
+  _setSecondOpinion(async (_m, evidence) => { sawEvidence = evidence.length; return { outcome: "yes", why: "" }; });
+  const und = await decide({ slug: "m1", question: "Did Arsenal beat Chelsea?", criteria: CRIT, closeTime: CLOSE }, AFTER);
+  check("undated evidence reaches the second reader", sawEvidence === 1, String(sawEvidence));
+  check("...so a YES on undated pages can settle", und.settle === "yes", `${und.gate}: ${und.reason}`);
+
+  // Evidence beyond the audit limit is never checked, so the rule that one
+  // unverifiable citation discards a verdict would only cover the part we saw.
+  servePages({ "https://a.test/late": page("Arsenal beat Chelsea 3-1 on Saturday", "2026-08-25T10:00:00Z") });
+  _setProposer(async () => propose({ dropped: 3 }));
+  _setSecondOpinion(async () => ({ outcome: "yes", why: "" }));
+  const trimmed = await decide({ slug: "m1", question: "Did Arsenal beat Chelsea?", criteria: CRIT, closeTime: CLOSE }, AFTER);
+  check("unaudited evidence abstains", trimmed.settle === null && trimmed.gate === "evidence-not-audited", trimmed.gate);
 
   // The audit runs before confidence so the two never get confused: both abstain,
   // but only one of them means something in the chain invented a source.

@@ -312,7 +312,15 @@ console.log("\nnormalize clamps MEANING, not just shape");
   check("half-built citations are dropped", (await proposeVerdict(MARKET)).citations.length === 0);
 
   reset(ok(toolCall({ ...GOOD, citations: Array.from({ length: 30 }, (_, i) => ({ url: `https://a.test/${i}`, quote: `quote number ${i} here` })) })));
-  check("a flood of citations is capped", (await proposeVerdict(MARKET)).citations.length === 8);
+  const flood = await proposeVerdict(MARKET);
+  check("a flood of citations is capped", flood.citations.length === 20);
+  // The cap used to be 8 and silently discarded the rest, so a model could bury
+  // an invented source at position nine and have it thrown away rather than
+  // caught. What was dropped is now counted, and decide() refuses on it.
+  check("...and what was dropped is counted, not hidden", flood.dropped === 10, String(flood.dropped));
+
+  reset(ok(toolCall(GOOD)));
+  check("an ordinary verdict drops nothing", (await proposeVerdict(MARKET)).dropped === 0);
 
   reset(ok(toolCall({ outcome: "no" })));
   const bare = await proposeVerdict(MARKET);

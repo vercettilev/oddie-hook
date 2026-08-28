@@ -29,6 +29,13 @@ import { runPropose, type Proposal, type Side } from "./verdict.js";
 import { messagesUrl, authHeaders, MODEL } from "../inference.js";
 
 const VERIFY_TIMEOUT_MS = 60_000;
+
+/** What a blind second read came back with. `outcome: null` means we never got
+ *  one, which is a different fact from a read that disagreed. */
+export interface SecondRead {
+  outcome: Side | null;
+  why: string;
+}
 /** Shorter than this and there is nothing to check against. The empty-criteria
  *  case is real: markets opened through the agent API often carry none. */
 const MIN_CRITERIA_CHARS = 25;
@@ -55,11 +62,13 @@ export interface OracleDecision {
     | "not-checkable"
     | "low-confidence"
     | "citations-failed"
+    | "evidence-not-audited"
+    | "second-opinion-unavailable"
     | "second-opinion-disagreed"
     | "error";
   proposal?: Proposal;
   audit?: AuditResult;
-  secondOpinion?: Side;
+  secondOpinion?: Side | null;
 }
 
 const VERIFY_SYSTEM = `You are given a prediction market's question, its resolution criteria, and a set of quotations that have already been fetched and confirmed to appear on the pages they are attributed to.
@@ -93,8 +102,8 @@ const VERIFY_SCHEMA = {
 export async function secondOpinion(
   m: { question: string; criteria: string; closeTime: string | null },
   evidence: Array<{ url: string; quote: string; datedAt: string | null }>,
-): Promise<Side> {
-  if (evidence.length === 0) return "undetermined";
+): Promise<SecondRead> {
+  if (evidence.length === 0) return { outcome: "undetermined", why: "there was nothing to read" };
   const lines = evidence
     .map((e, i) => `[${i + 1}] ${e.url}${e.datedAt ? ` (dated ${e.datedAt})` : ""}\n"${e.quote}"`)
     .join("\n\n");
@@ -104,7 +113,11 @@ export async function secondOpinion(
     headers: authHeaders(),
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 2000,
+      // Thinking is billed against this, and a long evidence list plus adaptive
+      // thinking used to exhaust it: the response came back with a thinking
+      // block and NO text block, which read as the second model disagreeing when
+      // it had simply been cut off.
+      max_tokens: 16000,
       thinking: { type: "adaptive" },
       system: VERIFY_SYSTEM,
       output_config: { format: { type: "json_schema", schema: VERIFY_SCHEMA } },
@@ -117,18 +130,28 @@ export async function secondOpinion(
     }),
     signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
   });
-  // A second opinion we could not obtain is not agreement. It abstains, which
-  // stops the settlement, which is the direction this should fail in.
-  if (!res.ok) return "undetermined";
-  const body = (await res.json()) as { content?: { type: string; text?: string }[] };
+  // A second read we could NOT OBTAIN is reported as that, never as a second
+  // read that disagreed. Both stop the settlement, and collapsing them was a
+  // lie the operator could not see through: during a rate limit or an outage
+  // every market printed "a blind second read of the same evidence said
+  // undetermined", so a whole board of API failures read as a whole board of
+  // weak evidence, and a rejected request shape would have said it forever.
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    return { outcome: null, why: `the second read could not be obtained (${res.status}${detail ? ` ${detail.slice(0, 120)}` : ""})` };
+  }
+  const body = (await res.json()) as { content?: { type: string; text?: string }[]; stop_reason?: string };
   const raw = body.content?.find((b) => b.type === "text")?.text ?? "";
   const json = raw.trim().startsWith("{") ? raw : raw.match(/\{[\s\S]*\}/)?.[0];
-  if (!json) return "undetermined";
+  if (!json) {
+    return { outcome: null, why: `the second read returned no answer${body.stop_reason ? ` (${body.stop_reason})` : ""}` };
+  }
   try {
-    const v = JSON.parse(json) as { outcome?: string };
-    return v.outcome === "yes" || v.outcome === "no" ? v.outcome : "undetermined";
+    const v = JSON.parse(json) as { outcome?: string; reason?: string };
+    const outcome: Side = v.outcome === "yes" || v.outcome === "no" ? v.outcome : "undetermined";
+    return { outcome, why: typeof v.reason === "string" ? v.reason.slice(0, 300) : "" };
   } catch {
-    return "undetermined";
+    return { outcome: null, why: "the second read returned unparseable output" };
   }
 }
 
@@ -174,6 +197,14 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
   if (!proposal.checkable) {
     return { ...base, settle: null, gate: "not-checkable", proposal, reason: `criteria are not checkable: ${proposal.reasoning}` };
   }
+  if (proposal.dropped > 0) {
+    // Part of the evidence was never checked, so "one unverifiable citation
+    // discards the verdict" would be enforced only over the part we looked at.
+    return {
+      ...base, settle: null, gate: "evidence-not-audited", proposal,
+      reason: `${proposal.dropped} citation(s) beyond the audit limit were never checked`,
+    };
+  }
   if (proposal.outcome === "undetermined") {
     return { ...base, settle: null, gate: "proposer-abstained", proposal, reason: proposal.reasoning || "no conclusion reached" };
   }
@@ -192,15 +223,36 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
     return { ...base, settle: null, gate: "low-confidence", proposal, audit, reason: "the proposer was not confident" };
   }
 
-  const usable = audit.citations.filter((c) => c.status === "verified" || c.status === "stale");
-  const second = await secondImpl(
-    { question: m.question, criteria, closeTime: m.closeTime },
-    usable.map((c) => ({ url: c.url, quote: c.quote, datedAt: c.datedAt })),
-  );
-  if (second !== proposal.outcome) {
+  // "undated" belongs here. Leaving it out handed the second reader an EMPTY
+  // list for any YES resting on undated pages, which it correctly answered
+  // "undetermined" to without making a call, and the market was then refused
+  // with "a blind second read of the same evidence said undetermined" about
+  // evidence it was never shown. Every such YES failed, deterministically, for
+  // a reason that was not true.
+  const usable = audit.citations.filter((c) => c.status === "verified" || c.status === "stale" || c.status === "undated");
+
+  let second: SecondRead;
+  try {
+    second = await secondImpl(
+      { question: m.question, criteria, closeTime: m.closeTime },
+      usable.map((c) => ({ url: c.url, quote: c.quote, datedAt: c.datedAt })),
+    );
+  } catch (e) {
+    // This function promises never to throw, and it is called in a loop over a
+    // whole board. An unwrapped rejection here (a socket error, the timeout
+    // firing, a 200 with a non-JSON body) killed the process at whichever
+    // market it happened on, so the rest were never evaluated and, under
+    // --apply, nothing settled at all.
+    second = { outcome: null, why: `the second read failed: ${(e as Error).message}` };
+  }
+
+  if (second.outcome === null) {
+    return { ...base, settle: null, gate: "second-opinion-unavailable", proposal, audit, secondOpinion: null, reason: second.why };
+  }
+  if (second.outcome !== proposal.outcome) {
     return {
-      ...base, settle: null, gate: "second-opinion-disagreed", proposal, audit, secondOpinion: second,
-      reason: `a blind second read of the same evidence said ${second}`,
+      ...base, settle: null, gate: "second-opinion-disagreed", proposal, audit, secondOpinion: second.outcome,
+      reason: `a blind second read of the same evidence said ${second.outcome}${second.why ? `: ${second.why}` : ""}`,
     };
   }
 
@@ -210,7 +262,7 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
     gate: "settled",
     proposal,
     audit,
-    secondOpinion: second,
+    secondOpinion: second.outcome,
     reason: `${support.why}, and a blind second read agreed`,
   };
 }

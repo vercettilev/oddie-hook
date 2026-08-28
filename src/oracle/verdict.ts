@@ -26,6 +26,11 @@ import { messagesUrl, authHeaders, inferenceProvider, API_KEY_ENV, MODEL } from 
 import type { Citation } from "./audit.js";
 
 const TIMEOUT_MS = 180_000; // searching is slow and this runs on a schedule, not in a request
+/** Every citation gets audited, so this is a sanity bound rather than a budget.
+ *  It used to be 8 and applied BEFORE the audit, which meant a model could bury
+ *  an invented source at position nine and have it silently discarded instead of
+ *  caught. Anything beyond this is reported and refused, not trimmed away. */
+const MAX_CITATIONS = 20;
 const MAX_ROUNDS = 5; // pause_turn and a deferred search each cost a round; a loop that will not finish is an abstain
 
 export type Side = "yes" | "no" | "undetermined";
@@ -40,7 +45,21 @@ export interface Proposal {
   checkable: boolean;
   citations: Citation[];
   reasoning: string;
+  /** Citations the model returned beyond what we are willing to audit. Nonzero
+   *  means part of the evidence was never checked, which the pipeline refuses
+   *  on: the rule that one unverifiable citation discards a verdict is worth
+   *  nothing if the unverifiable one can be the ninth. */
+  dropped: number;
 }
+
+/** Models known to carry web_search_20260209 and adaptive thinking. A snapshot,
+ *  not a gate: an unknown model still runs, because a stale list must not be
+ *  able to stop the oracle, and a model that genuinely cannot do this fails
+ *  loudly at the first request with the API's own explanation. What the list
+ *  prevents is the PREFLIGHT LINE claiming "with web search" for a model where
+ *  that is false, which sent an operator looking for the fault everywhere
+ *  except the one place it was. */
+const KNOWN_SEARCH_MODELS = /^claude-(fable-5|mythos-5|opus-(5|4-8|4-7|4-6)|sonnet-(5|4-6))/;
 
 /** Available only against Anthropic, and only with a key. See the header. */
 export function oracleAvailable(): { ok: boolean; why: string } {
@@ -49,7 +68,9 @@ export function oracleAvailable(): { ok: boolean; why: string } {
     return { ok: false, why: `the oracle needs Anthropic's web search; INFERENCE_BASE_URL points at ${p.host}` };
   }
   try { authHeaders(); } catch { return { ok: false, why: `no key: set ${API_KEY_ENV}` }; }
-  return { ok: true, why: `${p.model} with web search` };
+  return KNOWN_SEARCH_MODELS.test(p.model)
+    ? { ok: true, why: `${p.model} with web search` }
+    : { ok: true, why: `${p.model}, which is NOT known to support web_search_20260209 or adaptive thinking; expect every market to fail at the request` };
 }
 
 const VERDICT_TOOL = {
@@ -271,6 +292,7 @@ Search for the evidence, then call record_verdict exactly once.`,
     checkable: true,
     citations: [],
     reasoning: said.slice(0, 400) || "the proposer finished without recording a verdict",
+    dropped: 0,
   };
 }
 
@@ -285,14 +307,15 @@ function normalize(v: Record<string, unknown>): Proposal {
     .map((c) => c as Record<string, unknown>)
     .filter((c) => typeof c?.url === "string" && typeof c?.quote === "string")
     .map((c) => ({ url: String(c.url).trim(), quote: String(c.quote).trim() }))
-    .filter((c) => c.url && c.quote)
-    .slice(0, 8);
+    .filter((c) => c.url && c.quote);
+  const kept = citations.slice(0, MAX_CITATIONS);
   return {
     outcome,
     confidence,
     checkable: v.checkable !== false, // unknown means we do not get to blame the question
-    citations,
+    citations: kept,
     reasoning: typeof v.reasoning === "string" ? v.reasoning.trim().slice(0, 800) : "",
+    dropped: citations.length - kept.length,
   };
 }
 
