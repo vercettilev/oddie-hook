@@ -2769,6 +2769,16 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
     log: (line, extra) => console.log(JSON.stringify({ evt: "x_resolution", line, ...extra })),
+    // The take's author and their cut, for the one @-mention oddie sends: the
+    // result reply reaches whoever TAGGED the market, and the person who earned
+    // the fee is the source author, two levels up and otherwise never told.
+    authorHandle: async (s2) => (await surfacerFor(s2).catch(() => null))?.handle ?? null,
+    authorFeeLamports: async (s2) => {
+      const d = await communityMarketDetail(s2).catch(() => null);
+      if (!d?.onchainPubkey) return 0;
+      const st = await fetchMarketOnChain(d.onchainPubkey).catch(() => null);
+      return st?.creatorFeeLamports ?? 0;
+    },
   }).catch((e) => console.error("[resolution] announce failed:", (e as Error).message));
 
   res.json({ ok: true, slug, outcome, settled: settled.length });

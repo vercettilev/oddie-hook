@@ -5774,8 +5774,14 @@ export async function claimMention(tweetId: string, author: string | null): Prom
  * is reachable from the slug alone, with no new data and nobody's permission:
  * oddie replies to itself, inside their thread, from its own account.
  */
+const memReplyId = new Map<string, string>();
+/** Test seam: give a slug a stored thread reply, so the offline suite can drive
+ *  the posted path (mem has no x_mention table). */
+export function _setMemReplyId(slug: string, replyId: string): void { memReplyId.set(slug, replyId); }
+export function _resetMemReplyId(): void { memReplyId.clear(); }
+
 export async function replyIdForSlug(slug: string): Promise<string | null> {
-  if (!PERSISTENT) return null;
+  if (!PERSISTENT) return memReplyId.get(slug) ?? null;
   await ensureSchema();
   const { rows } = await db().query<{ reply_id: string | null }>(
     `SELECT reply_id FROM x_mention

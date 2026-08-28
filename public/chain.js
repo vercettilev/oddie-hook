@@ -731,7 +731,17 @@ function b64ToBytes(b64) {
    * nothing".
    */
   async function mountCreatorFees() {
-    if (document.body.dataset.view !== "mymarkets") return;
+    // My markets is where a creator goes to look and gets the full box with its
+    // connect prompt. But the person who most needs this is the tagged author,
+    // and they arrive from a settlement @-mention to a MARKET, not to My markets,
+    // so they never saw their earnings. On the feed the box also appears — but
+    // only for a wallet ALREADY connected, and it self-removes when nothing is
+    // owed (refreshCreatorFees below), so it is a payout that finds you rather
+    // than a permanent panel or a cold connect prompt for people who created
+    // nothing.
+    const view = document.body.dataset.view;
+    const onMyMarkets = view === "mymarkets";
+    if (!onMyMarkets && !(view === "feed" && wallet)) return;
     const host = document.querySelector("#scroller .sheet") || document.getElementById("scroller");
     if (!host || host.querySelector("#chaincreatorfees")) return;
 
@@ -739,21 +749,27 @@ function b64ToBytes(b64) {
     box.id = "chaincreatorfees"; box.className = "chain-claimcheck";
     host.prepend(box);
 
-    if (!wallet) {
-      box.innerHTML = `<div class="cc-row"><span class="cc-text">Markets you started pay you 2% when they resolve. Connect the wallet you want paid to.</span>
-        <button class="cc-go" type="button">Connect</button></div>`;
-      box.querySelector(".cc-go").onclick = async () => {
-        const b = box.querySelector(".cc-go");
-        b.disabled = true; b.textContent = "Connecting…";
-        try { await connectWallet(); await refreshCreatorFees(box); }
-        catch (e) {
-          b.disabled = false; b.textContent = "Connect";
-          box.innerHTML = `<div class="cc-row"><span class="cc-text">${esc(e.message)}</span></div>`;
-        }
-      };
-      return;
-    }
-    await refreshCreatorFees(box);
+    // On the feed a connected wallet goes straight to the check; there is no
+    // connect prompt, because someone browsing the feed did not ask to be sold
+    // a wallet, and the box vanishes anyway if they earned nothing.
+    // A connected wallet goes straight to the check, on either view. There is no
+    // connect prompt on the feed: someone browsing did not ask to be sold a
+    // wallet, and the box vanishes anyway if they earned nothing.
+    if (wallet) { await refreshCreatorFees(box); return; }
+
+    // My markets, no wallet: the full box with its connect prompt, since this is
+    // where a creator came deliberately to look.
+    box.innerHTML = `<div class="cc-row"><span class="cc-text">Markets you started pay you 2% when they resolve. Connect the wallet you want paid to.</span>
+      <button class="cc-go" type="button">Connect</button></div>`;
+    box.querySelector(".cc-go").onclick = async () => {
+      const b = box.querySelector(".cc-go");
+      b.disabled = true; b.textContent = "Connecting…";
+      try { await connectWallet(); await refreshCreatorFees(box); }
+      catch (e) {
+        b.disabled = false; b.textContent = "Connect";
+        box.innerHTML = `<div class="cc-row"><span class="cc-text">${esc(e.message)}</span></div>`;
+      }
+    };
   }
 
   async function refreshCreatorFees(box) {

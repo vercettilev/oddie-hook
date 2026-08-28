@@ -4,8 +4,8 @@
 // Run with: npm run test-resolution-reply
 if (process.env.DATABASE_URL) { console.error("refusing to run against a database"); process.exit(1); }
 
-import { postResolution, resolutionText, type ResolutionDeps } from "../src/x/resolutionReply.js";
-import { createCommunityMarket, openCommunityMarkets } from "../src/store/markets.js";
+import { postResolution, resolutionText, authorCreditText, type ResolutionDeps } from "../src/x/resolutionReply.js";
+import { createCommunityMarket, openCommunityMarkets, _setMemReplyId, _resetMemReplyId } from "../src/store/markets.js";
 import { renderCard, VOICE_SETTLED, VOICE_ANY, VOICE_UNPRICED } from "../src/card/renderCard.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -62,6 +62,65 @@ console.log("\nthe settled card is a different card, and never invites a stake")
   check("settled beats unpriced when both are passed",
     renderCard(m, { unpriced: true, settled: "yes" }).includes(">YES<"));
 }
+
+console.log("\nTHE AUTHOR CREDIT: the one @-mention, and only when there is money");
+{
+  // The copy first, purely. It is a payout notice, not a pitch, which is the
+  // whole reason the @-mention is defensible: there is real SOL behind the link.
+  const t = authorCreditText("takeguy", "https://oddie.fun/m/x");
+  check("names the author with exactly one @", t.startsWith("@takeguy,") && !t.includes("@@"), t);
+  check("a handle that already had an @ is not doubled", authorCreditText("@takeguy", "u").startsWith("@takeguy,"));
+  check("carries the collect link", t.includes("https://oddie.fun/m/x"));
+  check("is about the earning, never about who won or lost", !/won|lost|wrong|beat/i.test(t), t);
+}
+{
+  // Now the gate, end to end. A market with a thread, an author, and a fee owed
+  // gets a SECOND reply that mentions the author.
+  _resetMemReplyId();
+  const m = await createCommunityMarket({ question: "Will it snow?", category: "Other", yesPct: 50, closeTime: Math.floor(Date.now() / 1000) + 86400 });
+  _setMemReplyId(m.slug, "oddie-reply-1");
+  const posts: Array<{ text: string; inReplyTo: string }> = [];
+  const base = (over: Partial<ResolutionDeps> = {}): ResolutionDeps => ({
+    dryRun: false, cardPng: async () => null, uploadMedia: async () => "media",
+    postReply: async (o) => { posts.push({ text: o.text, inReplyTo: o.inReplyTo }); return { id: `id-${posts.length}` }; },
+    log: () => {},
+    authorHandle: async () => "takeguy",
+    authorFeeLamports: async () => 4_000_000,
+    ...over,
+  });
+
+  const r = await postResolution(m.slug, "yes", base());
+  check("the result announcement posts", r.posted && posts.some((p) => p.text.startsWith("Settled: YES")), JSON.stringify(posts));
+  check("the author gets a credit reply", Boolean(r.creditReplyId) && posts.some((p) => p.text.startsWith("@takeguy")), JSON.stringify(posts));
+  check("the credit is a SEPARATE reply, under the announcement", posts.length === 2 && posts[1].inReplyTo === "id-1");
+
+  // No fee owed (nobody backed the winner): no tag. This is what stops us
+  // spraying a mention at every market that resolved on an empty side.
+  posts.length = 0;
+  const r2 = await postResolution(m.slug, "yes", base({ authorFeeLamports: async () => 0 }));
+  check("no fee owed means no @-mention", !r2.creditReplyId && posts.length === 1, JSON.stringify(posts));
+
+  // No author handle (a market made in the app, not from a tag): nobody to
+  // credit, and still just the announcement.
+  posts.length = 0;
+  const r3 = await postResolution(m.slug, "no", base({ authorHandle: async () => null }));
+  check("no known author means no @-mention", !r3.creditReplyId && posts.length === 1);
+
+  // The credit is best-effort: if it throws, the resolution still counts as
+  // posted, because the announcement already went out.
+  posts.length = 0;
+  const r4 = await postResolution(m.slug, "yes", base({
+    postReply: async (o) => { posts.push({ text: o.text, inReplyTo: o.inReplyTo }); if (o.text.startsWith("@")) throw new Error("x down"); return { id: `id-${posts.length}` }; },
+  }));
+  check("a failed credit never unwinds a posted resolution", r4.posted && !r4.creditReplyId, JSON.stringify(r4));
+
+  // Dry run credits nobody: it must be exactly as quiet as the announcement.
+  posts.length = 0;
+  const r5 = await postResolution(m.slug, "yes", base({ dryRun: true }));
+  check("dry run posts nothing at all", !r5.posted && posts.length === 0 && r5.reason === "dry-run");
+  _resetMemReplyId();
+}
+
 
 console.log(failures === 0 ? "\nall resolution-reply checks passed.\n" : `\n${failures} check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);
