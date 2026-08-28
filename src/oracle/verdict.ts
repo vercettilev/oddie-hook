@@ -26,7 +26,7 @@ import { messagesUrl, authHeaders, inferenceProvider, API_KEY_ENV, MODEL } from 
 import type { Citation } from "./audit.js";
 
 const TIMEOUT_MS = 180_000; // searching is slow and this runs on a schedule, not in a request
-const MAX_ROUNDS = 4; // pause_turn resumes; a loop that will not finish is an abstain
+const MAX_ROUNDS = 5; // pause_turn and a deferred search each cost a round; a loop that will not finish is an abstain
 
 export type Side = "yes" | "no" | "undetermined";
 export type Confidence = "low" | "medium" | "high";
@@ -107,7 +107,62 @@ Rules:
 - A page showing a CURRENT value tells you nothing about what that value was at an earlier moment. A live price ticker, a league table today, a follower count now: quoting one of those to settle a question about a past date is not evidence, and the right answer there is "undetermined" unless you find a source that states the value AS OF the date the criteria name.
 - Never cite a page you did not open through search. Never construct a URL.`;
 
-interface Block { type: string; name?: string; input?: unknown; text?: string }
+interface Block { type: string; id?: string; name?: string; input?: unknown; text?: string; tool_use_id?: string; content?: unknown }
+
+/**
+ * Server tools this response CALLED but whose result it does not carry.
+ *
+ * This is the shape of a DEFERRED search, and it is the one response the API
+ * documents as having no marker of its own: "detect it by finding a
+ * server_tool_use id with no matching result block. There is no other marker."
+ * It happens when the model asks for a search and calls our tool in the same
+ * parallel group, and it matters enormously here, because the verdict in that
+ * response was written BEFORE the search ran. Pair by id, never by position.
+ */
+function deferredServerTools(blocks: Block[]): string[] {
+  const answered = new Set(
+    blocks.filter((b) => b.type.endsWith("_tool_result") && b.tool_use_id).map((b) => b.tool_use_id as string),
+  );
+  return blocks.filter((b) => b.type === "server_tool_use" && b.id && !answered.has(b.id)).map((b) => b.id as string);
+}
+
+/** How many search RESULTS a response actually carried. A search that errors
+ *  returns a single object where the list would be, and a search that matched
+ *  nothing returns an empty list. Both are zero results and both count as such,
+ *  which is the point: neither one fed the verdict anything. */
+function searchResultsIn(blocks: Block[]): number {
+  let n = 0;
+  for (const b of blocks) if (b.type === "web_search_tool_result" && Array.isArray(b.content)) n += b.content.length;
+  return n;
+}
+
+/** Search failures, by the API's own error_code. These arrive inside a 200, not
+ *  as a thrown status, so nothing else in the stack would notice them. */
+function searchErrorsIn(blocks: Block[]): string[] {
+  return blocks
+    .filter((b) => b.type === "web_search_tool_result" && b.content !== undefined && !Array.isArray(b.content))
+    .map((b) => String((b.content as { error_code?: string }).error_code ?? "unknown"));
+}
+
+/**
+ * A verdict that no search result ever fed is a verdict from the model's prior.
+ *
+ * Here that is not merely weak, it is wrong by construction: every market this
+ * touches closed after the model was built, so its memory of the outcome is a
+ * memory of a different year. The system prompt says so, and a prompt is a
+ * request. This is the check.
+ *
+ * The citations are kept rather than cleared, because a verdict with confident
+ * citations and no searches behind them is the most useful thing an operator
+ * could be shown about what went wrong.
+ */
+function grounded(p: Proposal, results: number, errors: string[]): Proposal {
+  if (p.outcome === "undetermined" || results > 0) return p;
+  const why = errors.length
+    ? `every search failed (${[...new Set(errors)].join(", ")})`
+    : "no search returned anything";
+  return { ...p, outcome: "undetermined", confidence: "low", reasoning: `${why}, so this verdict rested on nothing` };
+}
 
 /**
  * One proposal for one market. Throws only on a broken request; a model that
@@ -139,6 +194,8 @@ Search for the evidence, then call record_verdict exactly once.`,
   ];
 
   let assistantBlocks: Block[] = [];
+  let results = 0;
+  const errors: string[] = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const res = await fetch(messagesUrl(), {
       method: "POST",
@@ -148,7 +205,16 @@ Search for the evidence, then call record_verdict exactly once.`,
         max_tokens: 8000,
         thinking: { type: "adaptive" },
         system: SYSTEM,
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8 }, VERDICT_TOOL],
+        // allowed_callers "direct" is deliberate and not a default. Left off,
+        // _20260209 routes the search THROUGH code execution (dynamic
+        // filtering), which drags three things into a request that settles
+        // money: the response grows code-execution blocks whose exact shape the
+        // docs never show end to end, the request stops being ZDR-eligible, and
+        // it lands next to the one documented rule that could reject us
+        // outright ("tools with strict: true are not supported with
+        // programmatic calling"). We want a plain search. Asking for one
+        // removes all three at once.
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8, allowed_callers: ["direct"] }, VERDICT_TOOL],
         messages,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -159,13 +225,39 @@ Search for the evidence, then call record_verdict exactly once.`,
     }
     const body = (await res.json()) as { content?: Block[]; stop_reason?: string };
     assistantBlocks = body.content ?? [];
+    results += searchResultsIn(assistantBlocks);
+    errors.push(...searchErrorsIn(assistantBlocks));
 
     const call = assistantBlocks.find((b) => b.type === "tool_use" && b.name === "record_verdict");
-    if (call) return normalize(call.input as Record<string, unknown>);
+    const deferred = deferredServerTools(assistantBlocks);
 
-    // pause_turn means the server-side search is mid-flight: hand the partial
-    // turn straight back and let it continue. Anything else means the model
-    // stopped without concluding, and there is nothing to resume.
+    if (call && deferred.length === 0) return grounded(normalize(call.input as Record<string, unknown>), results, errors);
+
+    if (call && deferred.length > 0) {
+      // The verdict and the search request left in the same breath, so the
+      // search had not run when the verdict was written. Taking it would be
+      // taking an answer from memory while the whole file is arranged to
+      // prevent exactly that, and it would look identical to a good one.
+      //
+      // The reply must contain ONLY tool_result blocks: a trailing text block
+      // is a documented 400. The same tools go back too, or the deferred search
+      // has nothing to run against.
+      messages.push({ role: "assistant", content: assistantBlocks });
+      messages.push({
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: "Not recorded. You called this in the same turn as your search, so it was written before any results existed. The search results follow. Read them, then call record_verdict again.",
+        }],
+      });
+      continue;
+    }
+
+    // pause_turn means the server-side loop is mid-flight: hand the partial turn
+    // straight back, unmodified, and let it continue. Unmodified matters:
+    // encrypted_content on every search result and the signature on every
+    // thinking block are validated on the way back in.
     if (body.stop_reason !== "pause_turn") break;
     messages.push({ role: "assistant", content: assistantBlocks });
   }

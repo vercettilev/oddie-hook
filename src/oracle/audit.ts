@@ -37,10 +37,11 @@ export interface Citation {
 }
 
 export type CitationStatus =
-  | "verified"      // fetched, and the quote is in what we fetched
-  | "quote-absent"  // fetched fine, the words are not there — the serious one
+  | "verified"      // the quote is there AND the page is dated at or after the close
+  | "undated"       // the quote is there and the page declares no date at all
+  | "quote-absent"  // fetched fine, the words are not there
   | "unreachable"   // network, status, timeout, or a body we could not read
-  | "stale";        // verified, but dated before the market closed (see below)
+  | "stale";        // the quote is there but the page is dated before the close
 
 export interface AuditedCitation {
   url: string;
@@ -185,15 +186,36 @@ export async function auditCitation(c: Citation, closeTime: Date | null): Promis
   }
 
   if (closeTime && datedAt && new Date(datedAt) < closeTime) {
-    return { ...base, status: "stale", datedAt, note: "published before the market closed" };
+    return { ...base, status: "stale", datedAt, note: "dated before the market closed" };
+  }
+  // A page that declares NO date is its own answer, not a pass.
+  //
+  // This branch was missing and it was a hole in the one rule this file exists
+  // for. The staleness test read `closeTime && datedAt && ...`, so a null date
+  // short-circuited it, the citation came back "verified", and auditSupports
+  // then told the operator "N citation(s) dated at or after the close" about a
+  // page whose date nobody had established. Measured on real permalinks, the
+  // undated class is not random: 3 of 23 declared no date and they were both
+  // SEC press releases and a NASA release, which are exactly the sources a NO on
+  // a regulatory or announcement market would reach for. An archived or
+  // re-served old release would have sailed through a NO it cannot support.
+  //
+  // With no close time there is no deadline to miss, so the distinction is moot
+  // and the citation is simply verified.
+  if (closeTime && !datedAt) {
+    return { ...base, status: "undated", datedAt, note: "quote found, but the page declares no date" };
   }
   return { ...base, status: "verified", datedAt, note: "quote found on the page" };
 }
 
 export interface AuditResult {
   citations: AuditedCitation[];
-  /** Citations whose words we found. */
+  /** Words found AND the page dated at or after the close. The only class a NO
+   *  may rest on. */
   verified: number;
+  /** Words found, no date declared anywhere on the page. Supports a YES; can
+   *  never support a NO, because nothing established when it was written. */
+  undated: number;
   /** Verified, but dated before the close. Real evidence of an EARLY event;
    *  worthless as evidence that something never happened. */
   stale: number;
@@ -211,6 +233,7 @@ export async function auditCitations(cites: Citation[], closeTime: Date | null):
   return {
     citations,
     verified: citations.filter((c) => c.status === "verified").length,
+    undated: citations.filter((c) => c.status === "undated").length,
     stale: citations.filter((c) => c.status === "stale").length,
     absent: citations.filter((c) => c.status === "quote-absent").length,
     unreachable: citations.filter((c) => c.status === "unreachable").length,
@@ -248,14 +271,16 @@ export function auditSupports(outcome: "yes" | "no", audit: AuditResult): { ok: 
     return { ok: false, why: `${audit.absent} citation(s) no longer show the quoted words on the page` };
   }
   if (outcome === "yes") {
-    const usable = audit.verified + audit.stale;
+    // A YES only needs the event shown. When the page was written, and whether
+    // it says, does not bear on that.
+    const usable = audit.verified + audit.stale + audit.undated;
     if (usable === 0) return { ok: false, why: "no citation could be verified against its own page" };
     return { ok: true, why: `${usable} verified citation(s)` };
   }
   if (audit.verified === 0) {
-    return audit.stale > 0
-      ? { ok: false, why: "every verified citation predates the close, which cannot establish a non-event" }
-      : { ok: false, why: "no citation could be verified against its own page" };
+    if (audit.stale > 0) return { ok: false, why: "every verified citation predates the close, which cannot establish a non-event" };
+    if (audit.undated > 0) return { ok: false, why: "no citation declares a date, so none of them can establish a non-event" };
+    return { ok: false, why: "no citation could be verified against its own page" };
   }
   return { ok: true, why: `${audit.verified} citation(s) dated at or after the close` };
 }

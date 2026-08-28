@@ -99,6 +99,27 @@ console.log("\nTHE ASYMMETRY: a pre-close document proves an early event, never 
   check("a YES stands on a post-close citation", auditSupports("yes", late).ok);
 }
 
+console.log("\nA PAGE THAT DECLARES NO DATE CANNOT ESTABLISH A NON-EVENT");
+{
+  // Measured on real permalinks: 3 of 23 verified pages declared no date, and
+  // they were both SEC press releases and a NASA release. Those are precisely
+  // what a NO on a regulatory or announcement market would cite. The staleness
+  // test short-circuited on a null date, so the citation came back "verified"
+  // and the operator was told it was "dated at or after the close".
+  servePages({ "https://a.test/undated": page("The Commission has not approved the application") });
+  const und = await auditCitations([{ url: "https://a.test/undated", quote: "The Commission has not approved" }], new Date(CLOSE));
+  check("an undated page is its own status, not verified", und.citations[0].status === "undated", und.citations[0].status);
+  check("...and is not counted as verified", und.verified === 0 && und.undated === 1);
+  check("a YES may stand on an undated page", auditSupports("yes", und).ok);
+  check("a NO may NOT stand on an undated page", !auditSupports("no", und).ok, auditSupports("no", und).why);
+  check("...and the refusal says why", auditSupports("no", und).why.includes("no citation declares a date"));
+
+  // With no deadline there is nothing to miss, so the distinction does not apply.
+  const noClose = await auditCitations([{ url: "https://a.test/undated", quote: "The Commission has not approved" }], null);
+  check("with no close time an undated page is simply verified", noClose.verified === 1 && noClose.undated === 0);
+  check("...and supports either side", auditSupports("no", noClose).ok && auditSupports("yes", noClose).ok);
+}
+
 console.log("\none unverifiable citation discards the verdict, whatever else is in the pile");
 {
   servePages({
@@ -117,7 +138,7 @@ console.log("\none unverifiable citation discards the verdict, whatever else is 
 
 console.log("\nno citations at all is an abstention, not a free pass");
 {
-  const empty: AuditResult = { citations: [], verified: 0, stale: 0, absent: 0, unreachable: 0 };
+  const empty: AuditResult = { citations: [], verified: 0, undated: 0, stale: 0, absent: 0, unreachable: 0 };
   check("YES needs at least one verified citation", !auditSupports("yes", empty).ok);
   check("NO needs at least one verified citation", !auditSupports("no", empty).ok);
 }

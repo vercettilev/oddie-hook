@@ -82,6 +82,35 @@ const paused = {
     { type: "web_search_tool_result", tool_use_id: "srvtoolu_0", content: [{ type: "web_search_result", url: "https://a.test/0", title: "Partial" }] },
   ],
 };
+/** The documented deferred shape: a server_tool_use with NO matching result,
+ *  alongside a client tool call. stop_reason is "tool_use", not "pause_turn",
+ *  and the only way to tell is the unmatched id. */
+const deferred = (input: unknown) => ({
+  id: "msg_d", type: "message", role: "assistant", model: "claude-opus-4-8",
+  stop_reason: "tool_use",
+  content: [
+    { type: "server_tool_use", id: "srvtoolu_deferred", name: "web_search", input: { query: "arsenal chelsea" } },
+    { type: "tool_use", id: "toolu_early", name: "record_verdict", input },
+  ],
+});
+/** A turn that searched but every search errored. The API returns 200 and puts
+ *  an OBJECT where the result list would be. */
+const searchFailed = (input: unknown) => ({
+  id: "msg_e", type: "message", role: "assistant", model: "claude-opus-4-8",
+  stop_reason: "tool_use",
+  content: [
+    { type: "server_tool_use", id: "srvtoolu_e", name: "web_search", input: { query: "x" } },
+    { type: "web_search_tool_result", tool_use_id: "srvtoolu_e", content: { type: "web_search_tool_result_error", error_code: "max_uses_exceeded" } },
+    { type: "tool_use", id: "toolu_e", name: "record_verdict", input },
+  ],
+});
+/** A turn with no search at all: the model answered from memory. */
+const noSearch = (input: unknown) => ({
+  id: "msg_n", type: "message", role: "assistant", model: "claude-opus-4-8",
+  stop_reason: "tool_use",
+  content: [{ type: "text", text: "I know this one." }, { type: "tool_use", id: "toolu_n", name: "record_verdict", input }],
+});
+
 const GOOD = {
   outcome: "yes", confidence: "high", checkable: true,
   citations: [{ url: "https://a.test/1", quote: "Arsenal beat Chelsea 3-1" }],
@@ -125,6 +154,10 @@ console.log("\nwhat leaves the process");
   const verdict = tools.find((t) => t.name === "record_verdict");
   check("declares the server-side web search tool", web?.type === "web_search_20260209", JSON.stringify(web));
   check("caps how many searches it may run", typeof web?.max_uses === "number");
+  // Left off, _20260209 routes the search through code execution: extra block
+  // shapes, no ZDR, and it stands next to the one documented rule that could
+  // reject a strict tool outright.
+  check("asks for a DIRECT search, not one via code execution", JSON.stringify(web?.allowed_callers) === '["direct"]', JSON.stringify(web?.allowed_callers));
   check("declares record_verdict", Boolean(verdict));
   // strict is what makes the tool payload's shape a guarantee rather than a
   // hope, which is why normalize below can be about MEANING and not parsing.
@@ -165,12 +198,80 @@ console.log("\npause_turn resumes instead of giving up");
   check("...including its server-tool blocks", echoed.includes("server_tool_use") && echoed.includes("web_search_tool_result"), echoed.slice(0, 160));
 }
 
+console.log("\nA VERDICT WRITTEN BEFORE THE SEARCH RAN IS NOT TAKEN");
+{
+  // The model asked for a search and called record_verdict in the same parallel
+  // group. The API does not run the search; the response still contains a
+  // finished-looking verdict, written from memory. Accepting it would be
+  // accepting exactly what this whole file is arranged to prevent, and it would
+  // be indistinguishable from a good answer.
+  reset(ok(deferred(GOOD)), ok(toolCall(GOOD)));
+  const p = await proposeVerdict(MARKET);
+  check("the early verdict is not returned as-is", sent.length === 2, `${sent.length} requests`);
+  check("the verdict finally comes from the searched turn", p.outcome === "yes");
+
+  const follow = sent[1].body as Record<string, any>;
+  const last = follow.messages?.[follow.messages.length - 1];
+  check("it replies to the tool call", last?.role === "user");
+  const blocks = (last?.content ?? []) as Array<Record<string, any>>;
+  // A trailing text block here is a documented 400.
+  check("...with ONLY tool_result blocks", blocks.length > 0 && blocks.every((b) => b.type === "tool_result"), JSON.stringify(blocks).slice(0, 160));
+  check("...addressed to the early call", blocks[0]?.tool_use_id === "toolu_early");
+  check("...saying it was not recorded", String(blocks[0]?.content ?? "").includes("Not recorded"));
+  // Dropping the tools would leave the deferred search nothing to run against.
+  check("the tools go back with it", Array.isArray(follow.tools) && follow.tools.length === 2);
+}
+
+console.log("\nA VERDICT NO SEARCH FED IS NOT A VERDICT");
+{
+  // Every market here closed after the model was built, so an answer from memory
+  // is an answer about a different year. The system prompt asks for a search;
+  // this is what checks.
+  reset(ok(noSearch(GOOD)));
+  const p = await proposeVerdict(MARKET);
+  check("a confident yes with no search becomes undetermined", p.outcome === "undetermined", p.outcome);
+  check("and says so", p.reasoning.includes("no search returned anything"), p.reasoning);
+  check("the citations are kept as evidence of the failure", p.citations.length === 1);
+
+  // Search errors arrive inside a 200 with an object where the list would be,
+  // so nothing else in the stack would notice them.
+  reset(ok(searchFailed(GOOD)));
+  const e = await proposeVerdict(MARKET);
+  check("a verdict on only failed searches is refused", e.outcome === "undetermined");
+  check("...naming the API's error code", e.reasoning.includes("max_uses_exceeded"), e.reasoning);
+
+  // A search that ran and returned nothing is still zero evidence.
+  const emptySearch = { ...toolCall(GOOD) };
+  emptySearch.content = [
+    { type: "server_tool_use", id: "s1", name: "web_search", input: {} },
+    { type: "web_search_tool_result", tool_use_id: "s1", content: [] },
+    { type: "tool_use", id: "t1", name: "record_verdict", input: GOOD },
+  ];
+  reset(ok(emptySearch));
+  check("a search that matched nothing is still nothing", (await proposeVerdict(MARKET)).outcome === "undetermined");
+
+  // The guard must not eat a real verdict.
+  reset(ok(toolCall(GOOD)));
+  check("a searched verdict passes through untouched", (await proposeVerdict(MARKET)).outcome === "yes");
+
+  // ...nor turn an honest abstention into a scolding.
+  reset(ok(noSearch({ ...GOOD, outcome: "undetermined", reasoning: "I could not find a source" })));
+  check("an abstention keeps its own reason", (await proposeVerdict(MARKET)).reasoning.includes("could not find"));
+}
+
 console.log("\nit stops rather than looping forever");
 {
-  reset(ok(paused), ok(paused), ok(paused), ok(paused), ok(paused), ok(paused));
+  reset(...Array.from({ length: 12 }, () => ok(paused)));
   const p = await proposeVerdict(MARKET);
   check("an endless pause ends as undetermined", p.outcome === "undetermined");
-  check("and is bounded", sent.length <= 4, `${sent.length} requests`);
+  check("and is bounded", sent.length <= 5, `${sent.length} requests`);
+
+  // A model that keeps calling the tool in the same breath as its search must
+  // also terminate, rather than being told "not recorded" forever.
+  reset(...Array.from({ length: 12 }, () => ok(deferred(GOOD))));
+  const d = await proposeVerdict(MARKET);
+  check("an endlessly deferred search also ends", d.outcome === "undetermined");
+  check("...and is bounded too", sent.length <= 5, `${sent.length} requests`);
 }
 
 console.log("\nfinishing without a verdict is an abstention, not a crash");
