@@ -91,7 +91,7 @@ console.log("\nTHE ASYMMETRY: a pre-close document proves an early event, never 
   const early = await auditCitations([{ url: "https://a.test/early", quote: "Arsenal beat Chelsea 3-1" }], new Date(CLOSE));
   const late = await auditCitations([{ url: "https://a.test/late", quote: "Arsenal beat Chelsea 3-1" }], new Date(CLOSE));
 
-  check("a pre-close page is marked stale, not rejected", early.stale === 1 && early.fabricated === 0);
+  check("a pre-close page is marked stale, not rejected", early.stale === 1 && early.absent === 0);
   check("a YES may stand on a stale citation", auditSupports("yes", early).ok);
   // The event could still have happened the day after this was written.
   check("a NO may NOT stand on a stale citation", !auditSupports("no", early).ok, auditSupports("no", early).why);
@@ -99,7 +99,7 @@ console.log("\nTHE ASYMMETRY: a pre-close document proves an early event, never 
   check("a YES stands on a post-close citation", auditSupports("yes", late).ok);
 }
 
-console.log("\none fabricated citation discards the verdict, whatever else is in the pile");
+console.log("\none unverifiable citation discards the verdict, whatever else is in the pile");
 {
   servePages({
     "https://a.test/real": page("Arsenal beat Chelsea 3-1 on Saturday", "2026-08-25T10:00:00Z"),
@@ -110,14 +110,14 @@ console.log("\none fabricated citation discards the verdict, whatever else is in
     { url: "https://a.test/fake", quote: "Arsenal have secured the title outright" },
   ], new Date(CLOSE));
   check("the real one still verifies", mixed.verified === 1);
-  check("the invented one is caught", mixed.fabricated === 1);
+  check("the invented one is caught", mixed.absent === 1);
   check("YES is refused anyway", !auditSupports("yes", mixed).ok, auditSupports("yes", mixed).why);
   check("NO is refused anyway", !auditSupports("no", mixed).ok);
 }
 
 console.log("\nno citations at all is an abstention, not a free pass");
 {
-  const empty: AuditResult = { citations: [], verified: 0, stale: 0, fabricated: 0, unreachable: 0 };
+  const empty: AuditResult = { citations: [], verified: 0, stale: 0, absent: 0, unreachable: 0 };
   check("YES needs at least one verified citation", !auditSupports("yes", empty).ok);
   check("NO needs at least one verified citation", !auditSupports("no", empty).ok);
 }
@@ -174,8 +174,8 @@ console.log("\nevery gate downstream is a veto on its own");
   check("low confidence abstains", lowConf.settle === null && lowConf.gate === "low-confidence");
 
   const faked = await run({ citations: [{ url: "https://a.test/late", quote: "Arsenal won the league outright" }] });
-  check("a fabricated quote abstains", faked.settle === null && faked.gate === "citations-failed", faked.reason);
-  check("...and reports it as a citation failure, not as low confidence", faked.audit?.fabricated === 1);
+  check("a quote absent from its page abstains", faked.settle === null && faked.gate === "citations-failed", faked.reason);
+  check("...and reports it as a citation failure, not as low confidence", faked.audit?.absent === 1);
 
   const bare = await run({ citations: [] });
   check("high confidence with no evidence abstains", bare.settle === null && bare.gate === "citations-failed");
@@ -189,7 +189,7 @@ console.log("\nevery gate downstream is a veto on its own");
   // The audit runs before confidence so the two never get confused: both abstain,
   // but only one of them means something in the chain invented a source.
   const both = await run({ confidence: "low", citations: [{ url: "https://a.test/late", quote: "Arsenal won the league outright" }] });
-  check("a fabrication is reported even when confidence was also low", both.gate === "citations-failed", both.gate);
+  check("an absent quote is reported even when confidence was also low", both.gate === "citations-failed", both.gate);
 
   _setProposer(null);
   _setSecondOpinion(null);

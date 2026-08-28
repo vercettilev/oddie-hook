@@ -76,15 +76,17 @@ for (const m of board) {
 }
 
 const settleable = decisions.filter((d) => d.settle);
-// A citation that was fetched cleanly and did not contain its own quote means
-// something in the chain produced words that do not exist. It is reported on its
-// own line because it is the one outcome here that says the process itself is
-// unwell, rather than that a market was hard.
-const fabricated = decisions.filter((d) => (d.audit?.fabricated ?? 0) > 0);
+// A citation that fetched cleanly and did not contain its own quote gets its own
+// line, because it is the outcome worth actually looking at: either a source was
+// invented, or a page changed under us between the search and the check. The
+// first is a problem with the process, the second is a problem with citing pages
+// that move, and both are worth knowing rather than counting as one more market
+// that happened to be hard.
+const unchecked = decisions.filter((d) => (d.audit?.absent ?? 0) > 0);
 
-if (fabricated.length) {
-  console.log(`  ! ${fabricated.length} market(s) cited words that are not on the page they name:`);
-  for (const d of fabricated) console.log(`      ${d.slug}`);
+if (unchecked.length) {
+  console.log(`  ! ${unchecked.length} market(s) cited a page that no longer shows the quoted words:`);
+  for (const d of unchecked) console.log(`      ${d.slug}`);
   console.log("");
 }
 

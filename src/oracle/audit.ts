@@ -197,8 +197,12 @@ export interface AuditResult {
   /** Verified, but dated before the close. Real evidence of an EARLY event;
    *  worthless as evidence that something never happened. */
   stale: number;
-  /** Fetched fine and the words were absent. One of these poisons the verdict. */
-  fabricated: number;
+  /** Fetched fine and the words were not in it. One of these discards the
+   *  verdict. NOT called "fabricated": the audit cannot tell an invented source
+   *  from a live page that changed between the search and our re-fetch, and
+   *  front pages were measured doing exactly that. Both are reasons to stop, and
+   *  only one of them is somebody's fault, so the name claims neither. */
+  absent: number;
   unreachable: number;
 }
 
@@ -208,7 +212,7 @@ export async function auditCitations(cites: Citation[], closeTime: Date | null):
     citations,
     verified: citations.filter((c) => c.status === "verified").length,
     stale: citations.filter((c) => c.status === "stale").length,
-    fabricated: citations.filter((c) => c.status === "quote-absent").length,
+    absent: citations.filter((c) => c.status === "quote-absent").length,
     unreachable: citations.filter((c) => c.status === "unreachable").length,
   };
 }
@@ -235,9 +239,13 @@ export async function auditCitations(cites: Citation[], closeTime: Date | null):
  */
 export function auditSupports(outcome: "yes" | "no", audit: AuditResult): { ok: boolean; why: string } {
   // A source that was reachable and did not contain its own quote is the one
-  // failure that is never outweighed: something in the chain made words up.
-  if (audit.fabricated > 0) {
-    return { ok: false, why: `${audit.fabricated} citation(s) quote words that are not on the page` };
+  // failure no amount of other evidence outweighs. It can mean the quote was
+  // invented; it can equally mean the page moved on between the search and the
+  // re-fetch, which front pages were measured doing. Either way the citation
+  // cannot be checked now, and a verdict whose evidence cannot be checked is a
+  // verdict that goes to a person.
+  if (audit.absent > 0) {
+    return { ok: false, why: `${audit.absent} citation(s) no longer show the quoted words on the page` };
   }
   if (outcome === "yes") {
     const usable = audit.verified + audit.stale;

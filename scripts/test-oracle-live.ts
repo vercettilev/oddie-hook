@@ -40,5 +40,5 @@ for (const c of audit.citations) {
   console.log(`     "${c.quote.slice(0, 110)}"`);
 }
 const s = p.outcome === "undetermined" ? { ok: false, why: "proposer abstained" } : auditSupports(p.outcome, audit);
-console.log(`\n  verified ${audit.verified}, stale ${audit.stale}, absent ${audit.fabricated}, unreachable ${audit.unreachable}`);
+console.log(`\n  verified ${audit.verified}, stale ${audit.stale}, absent ${audit.absent}, unreachable ${audit.unreachable}`);
 console.log(`  support: ${s.ok ? "PASSES" : "refused"} — ${s.why}\n`);

@@ -178,10 +178,10 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
     return { ...base, settle: null, gate: "proposer-abstained", proposal, reason: proposal.reasoning || "no conclusion reached" };
   }
 
-  // The audit runs BEFORE confidence is consulted, so a fabricated citation is
-  // reported as a fabricated citation rather than being swallowed by a
-  // low-confidence abstention that happens to have the same outcome. The two
-  // are the same decision and very different news.
+  // The audit runs BEFORE confidence is consulted, so a citation that failed
+  // against its own page is reported as that, rather than being swallowed by a
+  // low-confidence abstention that happens to reach the same decision. Same
+  // outcome, very different news.
   const audit = await auditCitations(proposal.citations, m.closeTime ? new Date(m.closeTime) : null);
   const support = auditSupports(proposal.outcome, audit);
   if (!support.ok) {
