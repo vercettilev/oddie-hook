@@ -239,7 +239,13 @@ Search for the evidence, then call record_verdict exactly once.`,
         model: MODEL,
         max_tokens: 8000,
         thinking: { type: "adaptive" },
-        system: SYSTEM,
+        // Cached across markets: the runner walks the whole board back to back,
+        // so every market after the first reads this prefix cheaply. Only the
+        // FIRST round of each market hits it, because the tools array renders
+        // before the system block and the search budget below changes between
+        // rounds, which is the correct trade: rounds after the first are the
+        // minority and the budget mattering more is the point of tracking it.
+        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
         // allowed_callers "direct" is deliberate and not a default. Left off,
         // _20260209 routes the search THROUGH code execution (dynamic
         // filtering), which drags three things into a request that settles

@@ -39,6 +39,8 @@ export interface SweepDeps {
   /** Read one tweet, for the parent claim a mention is replying to. */
   tweet(id: string): Promise<{ id: string; text: string; authorHandle: string | null } | null>;
   extract(text: string): Promise<Extraction>;
+  /** An OPEN market already made from this source post, if there is one. */
+  existingMarket?(sourceUrl: string): Promise<{ slug: string; question: string } | null>;
   openMarket(input: {
     question: string;
     closeInput: unknown;
@@ -156,6 +158,44 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         continue;
       }
 
+      // Provenance points at the CLAIM, because the 3% belongs to whoever made
+      // the argument worth pricing. When there is no parent, the mention is the
+      // claim and its author is the creator.
+      const sourceHandle = parent ? parent.authorHandle : m.authorHandle;
+      const sourceId = parent ? parent.id : m.id;
+      const sourceUrl = tweetUrl(sourceHandle, sourceId);
+
+      // ONE POST, ONE MARKET. Checked before a token is spent, because several
+      // people tagging the same hot take is the expected case: the model is not
+      // needed to know we already answered this post, and minting again would
+      // split one question's pool across two pari-mutuel markets while costing
+      // a second rent deposit out of our own wallet.
+      const already = deps.existingMarket ? await deps.existingMarket(sourceUrl).catch(() => null) : null;
+      if (already) {
+        const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${already.slug}`;
+        const reply = buildTweetReply({ question: already.question, permalink, hook: "" });
+        if (deps.dryRun) {
+          await settleMention(m.id, "skipped", { reason: "dry-run", slug: already.slug });
+          decide("skipped", { reason: "dry-run:existing", slug: already.slug, text: reply.primary });
+          log("dry-run reply to an existing market", { tweetId: m.id, slug: already.slug });
+          continue;
+        }
+        // Each person who tagged still gets an answer; they just all land in the
+        // same pool.
+        let mediaIds: string[] | undefined;
+        try {
+          const png = await deps.cardPng(already.slug);
+          if (png) mediaIds = [await deps.uploadMedia(png)];
+        } catch (e) {
+          log("card failed, replying without it", { tweetId: m.id, err: (e as Error).message });
+        }
+        const posted = await deps.postReply({ text: reply.primary, inReplyTo: m.id, mediaIds });
+        await settleMention(m.id, "replied", { slug: already.slug, replyId: posted.id });
+        decide("replied", { reason: "existing", slug: already.slug, text: reply.primary });
+        log("replied with the market this post already has", { tweetId: m.id, slug: already.slug });
+        continue;
+      }
+
       // Capped for the same reason the admin route caps at 4000: the parent's
       // full text goes into an opus prompt with adaptive thinking, and X's post
       // limit is not our budget. A long-form post was a ~6k-token user message
@@ -170,13 +210,6 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         decide("skipped", { reason: `gate:${ex.resolvability}` });
         continue;
       }
-
-      // Provenance points at the CLAIM, because the 3% belongs to whoever made
-      // the argument worth pricing. When there is no parent, the mention is the
-      // claim and its author is the creator.
-      const sourceHandle = parent ? parent.authorHandle : m.authorHandle;
-      const sourceId = parent ? parent.id : m.id;
-      const sourceUrl = tweetUrl(sourceHandle, sourceId);
 
       const minted = await deps.openMarket({
         question: ex.question,

@@ -16,7 +16,8 @@ import {
   auditCitation, auditCitations, auditSupports, normalizeText, htmlToText, documentDateOf,
   _setPageFetcher, type AuditResult,
 } from "../src/oracle/audit.js";
-import { decide, _setSecondOpinion } from "../src/oracle/oracle.js";
+import { decide, shouldRetry, backoffMs, decisionWasPaid, _setSecondOpinion } from "../src/oracle/oracle.js";
+import { recordOracleDecision, oracleAttemptFor, oracleGateCounts, _memOracleDecisions, _memBackdateOracle, _resetOracleDecisions } from "../src/store/markets.js";
 import { _setProposer, type Proposal, type Side } from "../src/oracle/verdict.js";
 
 let failures = 0;
@@ -360,6 +361,71 @@ console.log("\na thrown proposer is an abstention, never a crash");
   );
   check("the run survives and abstains", d.settle === null && d.gate === "error", d.reason);
   _setProposer(null);
+}
+
+console.log("\nasking the same stuck market again, forever, at full price");
+{
+  const H = 3600_000;
+  // Never tried: ask.
+  check("a market never tried is asked", shouldRetry({ lastGate: null, lastDecidedAt: null, paidAttempts: 0 }).retry);
+
+  // The free code gates decide before a token is spent, so re-asking costs
+  // nothing and must never be held back.
+  for (const g of ["no-criteria", "not-closed"]) {
+    check(`"${g}" is free, so it is always re-asked`, shouldRetry({ lastGate: g, lastDecidedAt: new Date().toISOString(), paidAttempts: 3 }).retry);
+  }
+
+  // THE ONE THAT MATTERS FOR COST. The model looked and said the QUESTION is
+  // not checkable. Waiting changes nothing; only a person rewriting the
+  // criteria does. Asked daily it buys the same sentence at full price forever.
+  const stuck = shouldRetry({ lastGate: "not-checkable", lastDecidedAt: new Date(Date.now() - 400 * H).toISOString(), paidAttempts: 9 });
+  check("an uncheckable question is never re-asked on a schedule", !stuck.retry);
+  check("...and says a person has to act", stuck.why.includes("person"), stuck.why);
+
+  // Transient gates back off rather than stopping.
+  const t = (paid: number, agoH: number) =>
+    shouldRetry({ lastGate: "proposer-abstained", lastDecidedAt: new Date(Date.now() - agoH * H).toISOString(), paidAttempts: paid });
+  check("one attempt, an hour ago: held", !t(1, 1).retry);
+  check("one attempt, seven hours ago: asked", t(1, 7).retry);
+  check("two attempts, seven hours ago: held", !t(2, 7).retry);
+  check("two attempts, thirteen hours ago: asked", t(2, 13).retry);
+  check("the wait is quoted in hours", t(2, 7).why.includes("h"), t(2, 7).why);
+  check("backoff doubles", backoffMs(1) === 6 * H && backoffMs(2) === 12 * H && backoffMs(3) === 24 * H);
+  check("...and caps at a week", backoffMs(20) === 7 * 24 * H);
+  check("no paid attempt means no wait", backoffMs(0) === 0);
+
+  // A market whose every attempt times out would otherwise be free to retry at
+  // full price forever, because runPropose can throw AFTER the request went out.
+  check("an error counts as paid", decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: "" }));
+  check("a free gate does not", !decisionWasPaid({ slug: "s", settle: null, gate: "no-criteria", reason: "" }));
+}
+
+console.log("\nthe record is written, and it is what the policy reads");
+{
+  _resetOracleDecisions();
+  await recordOracleDecision({ slug: "m9", settle: null, gate: "proposer-abstained", reason: "no conclusion", paid: true, confidence: "medium" });
+  await recordOracleDecision({ slug: "m9", settle: null, gate: "no-criteria", reason: "none", paid: false });
+  await recordOracleDecision({ slug: "other", settle: "yes", gate: "settled", reason: "ok", paid: true });
+
+  const a = await oracleAttemptFor("m9");
+  check("the latest gate is the one read back", a.lastGate === "no-criteria", String(a.lastGate));
+  // The count is of PAID attempts, not of rows: a free gate must not push a
+  // market further down the backoff for having cost nothing.
+  check("only paid attempts are counted", a.paidAttempts === 1, String(a.paidAttempts));
+  check("another market's rows do not leak in", (await oracleAttemptFor("other")).paidAttempts === 1);
+  check("a market with no history is empty, not an error", (await oracleAttemptFor("nope")).lastGate === null);
+
+  check("refusals are recorded, not just settlements", _memOracleDecisions().filter((r) => r.settle === null).length === 2);
+  const counts = await oracleGateCounts(7);
+  check("gates can be counted across the board", counts["proposer-abstained"] === 1 && counts["settled"] === 1, JSON.stringify(counts));
+
+  // The window matures without anybody sleeping.
+  _resetOracleDecisions();
+  await recordOracleDecision({ slug: "m9", settle: null, gate: "citations-failed", reason: "x", paid: true });
+  check("freshly decided, it is held", !shouldRetry(await oracleAttemptFor("m9")).retry);
+  _memBackdateOracle("m9", 7 * 60);
+  check("seven hours later, it is asked again", shouldRetry(await oracleAttemptFor("m9")).retry);
+  _resetOracleDecisions();
 }
 
 _setPageFetcher(null);

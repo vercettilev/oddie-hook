@@ -312,6 +312,52 @@ async function main() {
       r.looked === 1 && r.decisions[0]?.reason === "dry-run");
   }
 
+  /* ------------------------------------------------- one post, one market -- */
+  {
+    // Several people tagging the SAME hot take is the expected case, not an
+    // edge one: it is the distribution model. Each used to mint its own market,
+    // which is a second rent deposit out of our own wallet, a second extraction
+    // call, and one question with its pool split across two pari-mutuel
+    // markets. Two thin markets are not one good market.
+    _resetBotState();
+    let extracted = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("400")], newestId: "400" }),
+      extract: async () => { extracted++; return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
+      existingMarket: async () => ({ slug: "already-open", question: "Will Bitcoin hit $200k before 2027?" }),
+    });
+    const r = await runMentionSweep(deps);
+    check("no second market is minted for a post that has one", spy.minted.length === 0, JSON.stringify(spy.minted));
+    // The check is a database lookup and it runs BEFORE the model, so knowing
+    // we already answered this post costs nothing.
+    check("...and no extraction is spent finding that out", extracted === 0, String(extracted));
+    check("the person who tagged still gets an answer", r.replied === 1, JSON.stringify(r.decisions));
+    check("...pointing at the market that already exists", r.decisions[0]?.slug === "already-open");
+    check("...with that permalink in the reply", (spy.posted[0]?.text ?? "").includes("/m/already-open"), spy.posted[0]?.text);
+    check("...and the card still goes with it", spy.posted[0]?.mediaIds?.length === 1);
+  }
+  {
+    // The guard must not swallow a genuinely new post.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("401")], newestId: "401" }),
+      existingMarket: async () => null,
+    });
+    const r = await runMentionSweep(deps);
+    check("a post with no market still mints one", spy.minted.length === 1 && r.replied === 1);
+  }
+  {
+    // A lookup failure must fall through to minting: a database blip must not
+    // silently stop answering mentions.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("402")], newestId: "402" }),
+      existingMarket: async () => { throw new Error("db down"); },
+    });
+    await runMentionSweep(deps);
+    check("a failed lookup falls through to minting", spy.minted.length === 1);
+  }
+
   /* --------------------------------------------------------------- helpers -- */
   check("stripLeadingMentions only takes handles off the FRONT",
     stripLeadingMentions("@a @b real text @c") === "real text @c");

@@ -126,7 +126,11 @@ export async function extractClaim(text: string): Promise<Extraction> {
       model: MODEL,
       max_tokens: 2500,
       thinking: { type: "adaptive" },
-      system: SYSTEM,
+      // The system prompt is ~1.5k tokens and identical on every call, which is
+      // exactly what the cache is for: mentions arrive in bursts under a hot
+      // take, and consecutive extractions inside the window read it at about a
+      // tenth of the price. Nothing before it varies, so the prefix is stable.
+      system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       output_config: { format: { type: "json_schema", schema: SCHEMA } },
       // The model has no clock — give it one, or it dates undated claims ("tonight",
       // "this week") to its training-prior year and every inferred close lands in

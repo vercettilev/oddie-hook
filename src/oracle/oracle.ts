@@ -266,3 +266,76 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
     reason: `${support.why}, and a blind second read agreed`,
   };
 }
+
+// --- When is it worth asking again? -----------------------------------------
+//
+// Without this, every run pays the full propose loop for every open market past
+// its close, forever. A market stuck behind a post-propose gate costs the same
+// on the hundredth run as on the first, dry run costs exactly what --apply
+// costs, and nothing anywhere records that it is happening.
+//
+// The policy is deliberately built on WHETHER THE MODEL RAN rather than on the
+// gate name. A gate that is free today could stop being free tomorrow, and a
+// rule keyed on names would silently start charging for something it believed
+// was free.
+
+/** Gates decided before a token is spent. Re-asking costs nothing, so they
+ *  never back off: decide() will simply re-check for free. */
+const FREE_GATES = new Set<OracleDecision["gate"]>(["no-criteria", "not-closed"]);
+
+/** The model looked and said the QUESTION cannot be checked by anyone. Waiting
+ *  does not change that; only a person editing the criteria does. Retrying it
+ *  on a schedule buys the same sentence at full price every time, so it stops
+ *  and asks for a human instead. */
+const PERMANENT_GATES = new Set<OracleDecision["gate"]>(["not-checkable"]);
+
+/** First retry after six hours, doubling, capped at a week. A market that is
+ *  going to resolve usually resolves early; one that has refused six times is
+ *  waiting on something slower than we are. */
+const FIRST_BACKOFF_MS = 6 * 3600_000;
+const MAX_BACKOFF_MS = 7 * 86_400_000;
+
+export function backoffMs(paidAttempts: number): number {
+  if (paidAttempts <= 0) return 0;
+  return Math.min(MAX_BACKOFF_MS, FIRST_BACKOFF_MS * 2 ** (paidAttempts - 1));
+}
+
+export interface RetryVerdict {
+  retry: boolean;
+  /** Plain language, for the operator reading a skipped line. */
+  why: string;
+}
+
+/**
+ * Should this market be put through decide() on this run?
+ *
+ * Answered from the record alone, so it is a pure function and the offline
+ * suite can pin every branch of it.
+ */
+export function shouldRetry(
+  a: { lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number },
+  now = new Date(),
+): RetryVerdict {
+  if (!a.lastGate) return { retry: true, why: "never tried" };
+  if (FREE_GATES.has(a.lastGate as OracleDecision["gate"])) {
+    return { retry: true, why: "the last answer cost nothing to reach" };
+  }
+  if (PERMANENT_GATES.has(a.lastGate as OracleDecision["gate"])) {
+    return { retry: false, why: "the criteria themselves are not checkable; a person has to rewrite them" };
+  }
+  const wait = backoffMs(a.paidAttempts);
+  if (wait === 0) return { retry: true, why: "never actually asked" };
+  const since = a.lastDecidedAt ? now.getTime() - new Date(a.lastDecidedAt).getTime() : Infinity;
+  if (!Number.isFinite(since) || since >= wait) {
+    return { retry: true, why: `${a.paidAttempts} attempt(s) so far, the wait has passed` };
+  }
+  const hours = Math.ceil((wait - since) / 3600_000);
+  return { retry: false, why: `${a.paidAttempts} attempt(s) so far, asking again in about ${hours}h` };
+}
+
+/** Did this decision cost a model call? The `error` gate counts: runPropose can
+ *  throw after the request went out, and treating it as free would let a market
+ *  whose every attempt times out be retried at full price forever. */
+export function decisionWasPaid(d: OracleDecision): boolean {
+  return d.proposal !== undefined || d.gate === "error";
+}

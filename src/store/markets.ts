@@ -520,6 +520,72 @@ CREATE TABLE IF NOT EXISTS x_mention (
   reply_id   text,
   at         timestamptz NOT NULL DEFAULT now()
 );
+
+-- Every decision the oracle has ever reached, settled or refused. Append-only,
+-- one row per decide() call, including the runs that changed nothing: the
+-- REFUSALS are the record here. A market that quietly abstains looks exactly
+-- like a market nobody got to, and this table is the only thing that can tell
+-- those two apart afterwards. It is also what stops the oracle re-spending a
+-- full propose loop on the same stuck market every single run, forever.
+--
+-- No foreign key to market_slug, deliberately: this follows market_fee_log and
+-- not market_call. It is an audit trail, and ON DELETE CASCADE would erase the
+-- record of why we declined to settle a market at exactly the moment somebody
+-- went looking for it.
+CREATE TABLE IF NOT EXISTS oracle_decision (
+  id                bigserial PRIMARY KEY,
+  slug              text NOT NULL,
+  -- 'yes' | 'no', or NULL for "a person needs to look at this". Stored as the
+  -- tri-state it is: folding NULL into a gate value would merge "no verdict"
+  -- with "the verdict is no".
+  settle            text CHECK (settle IN ('yes','no')),
+  -- Which gate stopped it. Deliberately NOT constrained. The list grows every
+  -- time the oracle learns a new reason to refuse, and a CHECK is applied only
+  -- when the table is created, so a new gate name would be accepted by every
+  -- fresh test schema and rejected in production.
+  gate              text NOT NULL,
+  reason            text NOT NULL,
+  -- NULL when the proposer never ran. Both code gates decide before a token is
+  -- spent, which is the whole point of their being first.
+  confidence        text,
+  second_opinion    text,
+  -- Every citation with the status the audit gave it, as the shape the audit
+  -- already produces. jsonb rather than a child table because nothing joins to
+  -- a citation.
+  citations         jsonb NOT NULL DEFAULT '[]'::jsonb,
+  -- The tallies, lifted out of the jsonb above so that asking "did anything
+  -- cite a page that no longer shows its quote" across the whole board does not
+  -- mean opening every document.
+  cites_verified    integer NOT NULL DEFAULT 0,
+  cites_undated     integer NOT NULL DEFAULT 0,
+  cites_stale       integer NOT NULL DEFAULT 0,
+  cites_absent      integer NOT NULL DEFAULT 0,
+  cites_unreachable integer NOT NULL DEFAULT 0,
+  -- Whether the model was actually called. The retry policy is built on this
+  -- and not on the gate name, so a gate that becomes free later cannot quietly
+  -- start counting as a paid attempt.
+  paid              boolean NOT NULL DEFAULT false,
+  -- Propose-then-delay lives in these three columns. Nothing writes them yet:
+  -- the feature waits on whether the oracle runs unattended at all. They are
+  -- here now because CREATE TABLE IF NOT EXISTS never ALTERs, so a column added
+  -- later is a column production silently does not have.
+  --   logged     a decision recorded. Informational, never settleable.
+  --   proposed   a verdict serving out its objection window.
+  --   objected   a person said no. Terminal.
+  --   applied    handed to /api/community/resolve. Terminal.
+  state             text NOT NULL DEFAULT 'logged',
+  -- Written as now() + an interval BY THE DATABASE and compared against now()
+  -- by the database, so one clock measures the window start to finish rather
+  -- than the cron host's idea of the time defining when it opened and the
+  -- database's deciding when it closed. Not a column DEFAULT: see
+  -- device_balance.tokens for what happens when a constant moves in the code
+  -- and the DEFAULT silently does not.
+  settle_after      timestamptz,
+  objection         text,
+  decided_at        timestamptz NOT NULL DEFAULT now(),
+  acted_at          timestamptz
+);
+CREATE INDEX IF NOT EXISTS oracle_decision_slug_idx ON oracle_decision(slug, id DESC);
 `;
 
 let pool: pg.Pool | null = null;
@@ -5817,4 +5883,249 @@ export async function avatarStampsForHandles(handles: string[]): Promise<Record<
 /** The device behind a handle, for serving that handle's picture. */
 export async function deviceForHandlePublic(handle: string): Promise<string | null> {
   return deviceForTwitterHandle(handle);
+}
+
+
+// --- The oracle's own record -------------------------------------------------
+//
+// Why this exists at all: every decision the oracle reaches is a REFUSAL far
+// more often than a settlement, and a refusal leaves no trace anywhere. A
+// market that abstained looks exactly like a market nobody got to, so nobody
+// could tell whether the thing was working, and nobody could see the same
+// market being re-decided at full price on every single run.
+
+export interface OracleAttempt {
+  /** The gate that stopped it last time, or null when it has never been tried. */
+  lastGate: string | null;
+  lastDecidedAt: string | null;
+  /** How many times the model has actually been called for this market. The
+   *  retry backoff is built on this rather than on the row count, because the
+   *  free code gates decide before a token is spent and must not push a market
+   *  further down the backoff for costing nothing. */
+  paidAttempts: number;
+}
+
+export interface OracleDecisionRow {
+  id: number;
+  slug: string;
+  settle: "yes" | "no" | null;
+  gate: string;
+  reason: string;
+  confidence: string | null;
+  secondOpinion: string | null;
+  citations: unknown[];
+  verified: number;
+  undated: number;
+  stale: number;
+  absent: number;
+  unreachable: number;
+  paid: boolean;
+  decidedAt: string;
+}
+
+interface MemOracleRow extends OracleDecisionRow { }
+const memOracleDecisions: MemOracleRow[] = [];
+let memOracleId = 0;
+
+/** The shape recordOracleDecision needs, kept structural rather than importing
+ *  OracleDecision itself: the store must not depend on the oracle module, and a
+ *  type-only import across that boundary is the kind of thing that becomes a
+ *  runtime cycle the day somebody drops the `type` keyword. */
+export interface OracleDecisionInput {
+  slug: string;
+  settle: "yes" | "no" | null;
+  gate: string;
+  reason: string;
+  confidence?: string | null;
+  secondOpinion?: string | null;
+  citations?: unknown[];
+  verified?: number;
+  undated?: number;
+  stale?: number;
+  absent?: number;
+  unreachable?: number;
+  /** Whether the model was actually called. */
+  paid: boolean;
+}
+
+/** Append exactly one row for one decide() call. Best-effort in the
+ *  logExtraction sense: the log going down must never take a settlement with
+ *  it, so every failure is swallowed after being said out loud. */
+export async function recordOracleDecision(d: OracleDecisionInput): Promise<void> {
+  try {
+    if (!PERSISTENT) {
+      memOracleDecisions.push({
+        id: ++memOracleId, slug: d.slug, settle: d.settle, gate: d.gate, reason: d.reason,
+        confidence: d.confidence ?? null, secondOpinion: d.secondOpinion ?? null,
+        citations: d.citations ?? [],
+        verified: d.verified ?? 0, undated: d.undated ?? 0, stale: d.stale ?? 0,
+        absent: d.absent ?? 0, unreachable: d.unreachable ?? 0,
+        paid: d.paid, decidedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    await ensureSchema();
+    // The citations array is stringified. Passed through raw, pg serialises an
+    // array as a Postgres ARRAY literal rather than as JSON, and the insert
+    // either errors or stores something absurd.
+    await db().query(
+      `INSERT INTO oracle_decision
+         (slug, settle, gate, reason, confidence, second_opinion, citations,
+          cites_verified, cites_undated, cites_stale, cites_absent, cites_unreachable, paid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13)`,
+      [
+        d.slug, d.settle, d.gate, d.reason, d.confidence ?? null, d.secondOpinion ?? null,
+        JSON.stringify(d.citations ?? []),
+        d.verified ?? 0, d.undated ?? 0, d.stale ?? 0, d.absent ?? 0, d.unreachable ?? 0, d.paid,
+      ],
+    );
+  } catch (e) {
+    console.error("[oracle-log] write failed (non-fatal):", (e as Error).message);
+  }
+}
+
+/** What the retry policy needs to know about one market, in one query. */
+export async function oracleAttemptFor(slug: string): Promise<OracleAttempt> {
+  if (!PERSISTENT) {
+    const rows = memOracleDecisions.filter((r) => r.slug === slug);
+    const last = rows[rows.length - 1] ?? null;
+    return {
+      lastGate: last?.gate ?? null,
+      lastDecidedAt: last?.decidedAt ?? null,
+      paidAttempts: rows.filter((r) => r.paid).length,
+    };
+  }
+  await ensureSchema();
+  // count(*) comes back as a bigint STRING unless it is cast at the edge, and a
+  // `number` annotation on it would be an unchecked lie no in-memory test could
+  // ever expose.
+  const { rows } = await db().query<{ gate: string | null; decided_at: Date | null; paid_attempts: number }>(
+    `SELECT
+       (SELECT gate       FROM oracle_decision WHERE slug = $1 ORDER BY id DESC LIMIT 1) AS gate,
+       (SELECT decided_at FROM oracle_decision WHERE slug = $1 ORDER BY id DESC LIMIT 1) AS decided_at,
+       (SELECT count(*)::int FROM oracle_decision WHERE slug = $1 AND paid) AS paid_attempts`,
+    [slug],
+  );
+  const r = rows[0];
+  return {
+    lastGate: r?.gate ?? null,
+    lastDecidedAt: r?.decided_at ? r.decided_at.toISOString() : null,
+    paidAttempts: r?.paid_attempts ?? 0,
+  };
+}
+
+/** The board's recent history, newest first. Ordered by id, not by decided_at:
+ *  now() is TRANSACTION time, so rows written in one transaction share a
+ *  timestamp and would come back in an arbitrary order. */
+export async function recentOracleDecisions(limit = 50): Promise<OracleDecisionRow[]> {
+  const n = Math.max(1, Math.min(200, Math.floor(limit)));
+  if (!PERSISTENT) return [...memOracleDecisions].reverse().slice(0, n);
+  await ensureSchema();
+  const { rows } = await db().query<OracleRow>(
+    `SELECT * FROM oracle_decision ORDER BY id DESC LIMIT $1`, [n],
+  );
+  return rows.map(rowToOracleDecision);
+}
+
+/** How often each gate fired lately. This is what OracleDecision.gate's own doc
+ *  comment asks for and there is nowhere else it can be answered from. */
+export async function oracleGateCounts(sinceDays = 7): Promise<Record<string, number>> {
+  if (!PERSISTENT) {
+    const cutoff = Date.now() - sinceDays * 86_400_000;
+    const out: Record<string, number> = {};
+    for (const r of memOracleDecisions) {
+      if (new Date(r.decidedAt).getTime() <= cutoff) continue;
+      out[r.gate] = (out[r.gate] ?? 0) + 1;
+    }
+    return out;
+  }
+  await ensureSchema();
+  // The interval is built in SQL from a bound parameter, never from a JS date.
+  const { rows } = await db().query<{ gate: string; n: number }>(
+    `SELECT gate, count(*)::int n FROM oracle_decision
+      WHERE decided_at > now() - ($1 || ' days')::interval GROUP BY gate ORDER BY n DESC`,
+    [String(Math.max(1, Math.floor(sinceDays)))],
+  );
+  return Object.fromEntries(rows.map((r) => [r.gate, r.n]));
+}
+
+interface OracleRow {
+  id: string; slug: string; settle: "yes" | "no" | null; gate: string; reason: string;
+  confidence: string | null; second_opinion: string | null; citations: unknown[];
+  cites_verified: number; cites_undated: number; cites_stale: number;
+  cites_absent: number; cites_unreachable: number; paid: boolean; decided_at: Date;
+}
+/** The one place `id` stops being a string. bigserial arrives from pg as text. */
+function rowToOracleDecision(r: OracleRow): OracleDecisionRow {
+  return {
+    id: Number(r.id), slug: r.slug, settle: r.settle, gate: r.gate, reason: r.reason,
+    confidence: r.confidence, secondOpinion: r.second_opinion,
+    citations: Array.isArray(r.citations) ? r.citations : [],
+    verified: r.cites_verified, undated: r.cites_undated, stale: r.cites_stale,
+    absent: r.cites_absent, unreachable: r.cites_unreachable,
+    paid: r.paid, decidedAt: r.decided_at.toISOString(),
+  };
+}
+
+/** Test seam: the in-memory log, so the offline suite can assert on what was
+ *  recorded without a database. */
+export function _memOracleDecisions(): OracleDecisionRow[] {
+  return [...memOracleDecisions];
+}
+/** Test seam: backdate a market's whole history so a test can watch a backoff
+ *  window mature without sleeping. */
+export function _memBackdateOracle(slug: string, minutes: number): void {
+  for (const r of memOracleDecisions) {
+    if (r.slug === slug) r.decidedAt = new Date(Date.now() - minutes * 60_000).toISOString();
+  }
+}
+/** Test seam: clear the log and its counter. */
+export function _resetOracleDecisions(): void {
+  memOracleDecisions.length = 0;
+  memOracleId = 0;
+}
+
+/**
+ * Is there already an OPEN market for this source post?
+ *
+ * The distribution model is people tagging oddie under somebody else's hot
+ * take, so several people tagging the SAME take is the expected case rather
+ * than an edge one. Without this, each of them minted their own market: two
+ * rent deposits out of our wallet, two extraction calls, and, worse than either,
+ * one question with its pool split across two pari-mutuel markets. Two thin
+ * markets are not one good market, and the second one is worse than useless
+ * because it makes the first look small.
+ *
+ * Matched on the tweet ID rather than the whole URL, because the handle in a
+ * status link is decorative and its case is not stable.
+ *
+ * OPEN markets only. A settled market for the same post is not a duplicate: the
+ * claim may have moved on, and nothing about a finished pool is split by a new
+ * one.
+ */
+export async function openMarketForSourcePost(sourceUrl: string): Promise<{ slug: string; question: string } | null> {
+  const id = /\/status\/(\d+)/.exec(sourceUrl)?.[1];
+  if (!id) return null;
+  if (!PERSISTENT) {
+    for (const [slug, sur] of memSurfacer) {
+      if (!sur.sourceUrl || !sur.sourceUrl.includes(`/status/${id}`)) continue;
+      if (memCommunity.get(slug)?.resolvedOutcome) continue;
+      const rec = mem.get(slug);
+      if (rec) return { slug, question: rec.market.question };
+    }
+    return null;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; question: string }>(
+    `SELECT ms.slug, s.question
+       FROM market_surfacer ms
+       JOIN market_slug s      ON s.slug = ms.slug
+       JOIN community_market c ON c.slug = ms.slug
+      WHERE split_part(ms.source_url, '/status/', 2) = $1
+        AND c.resolved_outcome IS NULL
+      ORDER BY ms.created_at ASC
+      LIMIT 1`,
+    [id],
+  );
+  return rows[0] ?? null;
 }

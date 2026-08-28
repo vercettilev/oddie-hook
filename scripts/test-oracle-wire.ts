@@ -171,7 +171,12 @@ console.log("\nwhat leaves the process");
   check("hands the model a clock", /Current date and time \(UTC\): \d{4}-/.test(user), user.slice(0, 80));
   check("tells it when the market closed", user.includes(MARKET.closeTime), user.slice(0, 200));
   check("carries the criteria, not just the question", user.includes(MARKET.criteria));
-  check("the system prompt demands verbatim quotes", String(body.system).includes("character-for-character"));
+  // The system arrives as a block array rather than a bare string so it can
+  // carry cache_control: the runner walks the whole board back to back and every
+  // market after the first reads this prefix at about a tenth of the price.
+  const sys = body.system as Array<Record<string, any>>;
+  check("the system prompt demands verbatim quotes", String(sys?.[0]?.text).includes("character-for-character"));
+  check("...and is marked cacheable", sys?.[0]?.cache_control?.type === "ephemeral", JSON.stringify(sys?.[0]?.cache_control));
 }
 
 console.log("\na tool call comes back as a proposal");

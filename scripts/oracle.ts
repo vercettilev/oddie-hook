@@ -3,6 +3,13 @@
 //   npm run oracle                     dry run over every market past its close
 //   npm run oracle -- --slug a-market  one market, dry run
 //   npm run oracle -- --apply          settle the ones that passed every gate
+//   npm run oracle -- --force          ask again even where the record says not to
+//
+// EVERY DECISION IS RECORDED, including the refusals, and the record is what
+// decides whether a market is asked about again at all. Without it this script
+// paid the full propose loop for every open market on every run, forever: a
+// market stuck behind a post-propose gate cost the same on the hundredth run as
+// on the first, and a dry run cost exactly what --apply costs.
 //
 // DRY RUN IS THE DEFAULT and --apply is the only thing that moves money. A dry
 // run makes the same calls and reaches the same decision; it simply stops
@@ -18,12 +25,13 @@
 // Needs DATABASE_URL to read the board. --apply additionally needs ODDIE_BASE_URL
 // and ODDIE_ADMIN_TOKEN, and the token is only ever sent as a header.
 
-import { adminListCommunity, communityMarketDetail } from "../src/store/markets.js";
-import { decide, type OracleDecision } from "../src/oracle/oracle.js";
+import { adminListCommunity, communityMarketDetail, oracleAttemptFor, recordOracleDecision } from "../src/store/markets.js";
+import { decide, shouldRetry, decisionWasPaid, type OracleDecision } from "../src/oracle/oracle.js";
 import { oracleAvailable } from "../src/oracle/verdict.js";
 
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
+const FORCE = args.includes("--force");
 // A --slug whose value is missing, or is itself a flag, is a TYPO, not "all
 // markets". It used to fall through to null and leave the board unfiltered, so
 // `npm run oracle -- --apply --slug` (flag pasted, slug forgotten) settled
@@ -62,6 +70,7 @@ if (slugArg && board.length === 0) {
 console.log(`  ${board.length} open market(s)${APPLY ? ", APPLYING" : ", dry run"}.\n`);
 
 const decisions: OracleDecision[] = [];
+let skipped = 0;
 for (const m of board) {
   // A database error here is NOT the same as a market created without criteria,
   // and swallowing it into null said exactly that: an operator reading
@@ -82,6 +91,19 @@ for (const m of board) {
     continue;
   }
 
+  // Ask the record before spending anything. A market whose criteria the model
+  // has already judged uncheckable will answer the same way at the same price
+  // every run until a person rewrites them.
+  const attempt = await oracleAttemptFor(m.slug).catch(() => ({ lastGate: null, lastDecidedAt: null, paidAttempts: 0 }));
+  const again = shouldRetry(attempt);
+  if (!again.retry && !FORCE) {
+    skipped++;
+    console.log(`     ${"held".padEnd(23)} ${m.slug.slice(0, 44)}`);
+    console.log(`      ${again.why}`);
+    console.log("");
+    continue;
+  }
+
   const d = await decide({
     slug: m.slug,
     question: m.question,
@@ -89,6 +111,18 @@ for (const m of board) {
     closeTime: m.closesAt,
   });
   decisions.push(d);
+
+  // Recorded before anything is announced, and best-effort by construction: the
+  // log going down must not take a settlement with it.
+  await recordOracleDecision({
+    slug: d.slug, settle: d.settle, gate: d.gate, reason: d.reason,
+    confidence: d.proposal?.confidence ?? null,
+    secondOpinion: d.secondOpinion ?? null,
+    citations: d.audit?.citations ?? [],
+    verified: d.audit?.verified ?? 0, undated: d.audit?.undated ?? 0, stale: d.audit?.stale ?? 0,
+    absent: d.audit?.absent ?? 0, unreachable: d.audit?.unreachable ?? 0,
+    paid: decisionWasPaid(d),
+  });
 
   const head = d.settle ? `-> ${d.settle.toUpperCase()}` : `   ${d.gate}`;
   console.log(`  ${head.padEnd(28)} ${m.slug.slice(0, 44)}`);
@@ -128,7 +162,7 @@ if (dead.length) {
 }
 
 if (!APPLY) {
-  console.log(`  ${settleable.length} of ${decisions.length} would settle. Pass --apply to do it.\n`);
+  console.log(`  ${settleable.length} of ${decisions.length} would settle${skipped ? `, ${skipped} held by the record` : ""}. Pass --apply to do it.\n`);
   process.exit(0);
 }
 

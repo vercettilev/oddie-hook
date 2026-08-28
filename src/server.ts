@@ -22,7 +22,7 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
+import { openMarketForSourcePost, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
@@ -3248,6 +3248,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     mentions: (since, max) => X.mentions(since, max),
     tweet: (id) => X.tweet(id),
     extract: (text) => runExtract(text),
+    existingMarket: (sourceUrl) => openMarketForSourcePost(sourceUrl),
     openMarket: async (input) => {
       const out = await openMarketFromClaim({
         question: input.question,
