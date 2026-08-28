@@ -699,7 +699,7 @@ function b64ToBytes(b64) {
       list = j.ok ? j.claimable : [];
     } catch (e) { list = []; }
     if (!list.length) { box.remove(); return; }   // nothing owed -> say nothing
-    box.innerHTML = `<div class="cc-head">💰 You have winnings to collect</div>` + list.map((c) => `
+    box.innerHTML = `<div class="cc-head">You have winnings to collect</div>` + list.map((c) => `
       <div class="cc-item">
         <span class="cc-q">${esc(c.question)}</span>
         <span class="cc-meta">called ${c.side.toUpperCase()} · ${(c.lamports / 1e9).toFixed(3)} SOL staked</span>
@@ -769,7 +769,7 @@ function b64ToBytes(b64) {
     if (!list.length) { box.remove(); return; }
 
     const total = list.reduce((a, f) => a + f.lamports, 0) / 1e9;
-    box.innerHTML = `<div class="cc-head">🏷️ ${total.toFixed(3)} SOL earned from markets you started</div>` + list.map((f) => `
+    box.innerHTML = `<div class="cc-head">${total.toFixed(3)} SOL earned from markets you started</div>` + list.map((f) => `
       <div class="cc-item">
         <span class="cc-q">${esc(f.question)}</span>
         <span class="cc-meta">${(f.feeBps / 100).toFixed(0)}% of the pool · ${(f.lamports / 1e9).toFixed(3)} SOL</span>
