@@ -118,7 +118,7 @@ export async function proposeVerdict(m: {
   criteria: string;
   closeTime: string | null;
 }): Promise<Proposal> {
-  const avail = oracleAvailable();
+  const avail = availability();
   if (!avail.ok) throw new Error(avail.why);
 
   const closed = m.closeTime ? `The market closed at ${m.closeTime} (UTC).` : "The market has no stated close time.";
@@ -202,6 +202,17 @@ function normalize(v: Record<string, unknown>): Proposal {
     citations,
     reasoning: typeof v.reasoning === "string" ? v.reasoning.trim().slice(0, 800) : "",
   };
+}
+
+/** Test seam for the host guard ONLY. The guard above is real and is the thing
+ *  standing between the oracle and a host with no web search; this exists so the
+ *  transport underneath it can be exercised against a local server, which is the
+ *  only way to test the request shape, the pause_turn loop and the parsing
+ *  without an API key. Same pattern as the other seams in this codebase, and
+ *  like them it is called from tests and nowhere else. */
+let availability: () => { ok: boolean; why: string } = oracleAvailable;
+export function _setAvailability(fn: (() => { ok: boolean; why: string }) | null): void {
+  availability = fn ?? oracleAvailable;
 }
 
 type ProposeFn = typeof proposeVerdict;
