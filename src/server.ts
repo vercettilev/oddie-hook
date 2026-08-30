@@ -22,7 +22,7 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
+import { openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, walletReceipts, walletLeaderboard, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
@@ -35,7 +35,7 @@ import {
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
-import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
+import { sendSettleMail, sendMail, settleMailBody, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
@@ -1236,6 +1236,87 @@ app.get("/r/:slug/:wallet/card.png", async (req, res) => {
     return res.status(404).send("no such receipt");
   }
   res.type("image/png").send(renderCardPng(renderReceiptCard(detail.question, { side: entry.side, entryPct: entry.entryPct })));
+});
+
+/**
+ * A WALLET'S RECORD: every settled call it made, and what each was worth.
+ *
+ * This is the surface that makes oddie useful to somebody who is not currently
+ * betting. CT is full of screenshotted calls with editable timestamps; this one
+ * is stamped on chain at the moment of the stake, weighted by how much the crowd
+ * disagreed, and it cannot be edited afterwards. It is a link for a bio.
+ *
+ * Public by construction and it exposes nothing new: every position and every
+ * outcome here is already readable by anyone with the program id. It dresses
+ * what an explorer would show.
+ */
+app.get("/api/w/:wallet", async (req, res) => {
+  const wallet = req.params.wallet;
+  if (!isValidPubkeyString(wallet)) return res.status(404).json({ ok: false, error: "unknown wallet" });
+  const [receipts, board] = await Promise.all([
+    walletReceipts(wallet, 100).catch(() => []),
+    walletLeaderboard(100).catch(() => []),
+  ]);
+  const standing = board.find((w) => w.wallet === wallet) ?? { wallet, wins: 0, losses: 0, points: 0 };
+  const rank = board.findIndex((w) => w.wallet === wallet);
+  res.json({
+    ok: true, ...standing,
+    rank: rank >= 0 ? rank + 1 : null,
+    settled: receipts.length,
+    receipts: receipts.map((r) => ({
+      slug: r.slug, question: r.question, side: r.side, outcome: r.outcome,
+      won: r.won, entryPct: r.entryPct, weight: r.weight,
+      poolSol: Number((r.poolLamports / 1e9).toFixed(4)),
+      at: r.createdAt,
+    })),
+  });
+});
+
+app.get("/w/:wallet", async (req, res) => {
+  const wallet = req.params.wallet;
+  if (!isValidPubkeyString(wallet)) return res.status(404).send("unknown wallet");
+  const receipts = await walletReceipts(wallet, 100).catch(() => []);
+  const wins = receipts.filter((r) => r.won).length;
+  const points = receipts.reduce((a, r) => a + r.weight, 0);
+  const short = `${wallet.slice(0, 4)}…${wallet.slice(-4)}`;
+  const title = receipts.length
+    ? `${wins}/${receipts.length} calls, ${points} points`
+    : "no settled calls yet";
+
+  const rows = receipts.map((r) => `<li class="rw ${r.won ? "w" : "l"}">
+    <a href="/m/${encodeURIComponent(r.slug)}">${escHtml(r.question)}</a>
+    <span class="m">called ${r.side.toUpperCase()} at ${r.entryPct}% · settled ${r.outcome.toUpperCase()}${r.won ? ` · +${r.weight}` : ""}</span>
+  </li>`).join("");
+
+  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(short)} on oddie</title>
+<meta property="og:title" content="${escHtml(title)}">
+<meta property="og:description" content="Calls stamped on chain the moment they were made, weighted by how much the crowd disagreed.">
+<meta name="twitter:card" content="summary">
+<style>
+ body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;padding:32px 20px 64px}
+ .s{max-width:640px;margin:0 auto}
+ h1{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#D7DC1F;margin:0 0 6px}
+ .big{font-size:clamp(30px,7vw,46px);line-height:1.05;letter-spacing:-.03em;margin:0 0 4px}
+ .sub{color:rgba(255,255,255,.62);margin:0 0 26px;font-size:14px}
+ ul{list-style:none;padding:0;margin:0}
+ .rw{border-top:1px solid rgba(255,255,255,.11);padding:13px 0}
+ .rw a{color:#fff;text-decoration:none;display:block;line-height:1.35}
+ .rw a:hover{color:#D7DC1F}
+ .m{display:block;margin-top:5px;font-size:12.5px;color:rgba(255,255,255,.44)}
+ .rw.w .m{color:#D7DC1F}
+ .rw.l .m{color:rgba(255,255,255,.34)}
+ .empty{color:rgba(255,255,255,.44);border-top:1px solid rgba(255,255,255,.11);padding-top:16px;font-size:14px}
+ .f{margin-top:30px;font-size:12px;color:rgba(255,255,255,.34)}
+ .f a{color:rgba(255,255,255,.62)}
+</style></head><body><div class="s">
+<h1>oddie record</h1>
+<p class="big">${escHtml(title)}</p>
+<p class="sub">${escHtml(short)} · every call stamped on chain when it was made</p>
+${receipts.length ? `<ul>${rows}</ul>` : `<p class="empty">No settled calls yet. A call shows up here once its market resolves.</p>`}
+<p class="f">Points are how far from the crowd a winning call was, scaled by how much money was in the pool. <a href="/feed">oddie</a></p>
+</div></body></html>`);
 });
 
 app.get("/card/:slug.svg", async (req, res) => {
@@ -2738,6 +2819,9 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
   if (!ok) return res.status(409).json({ error: "unknown or already-resolved community market" });
   const settled = await settleMarket(slug, outcome);
   await emailSettled(slug, outcome, settled);
+  // The wallet half of the same notice. Fired, never awaited: the play emails
+  // above are part of settling, this one is an announcement.
+  void emailChainStakers(slug, outcome);
   // Real-stakes counterpart: resolve the SAME market on-chain so claim_winnings
   // has an outcome to pay against. Best-effort and entirely after the response-
   // determining work above — the real (virtual) economy never waits on devnet.
@@ -3056,6 +3140,41 @@ if (realStakesReady) {
     res.json({ ok: Boolean(ready), pubkey: ready?.pubkey ?? null });
   });
 
+  /**
+   * A wallet's OPEN stakes: SOL that is on the line right now.
+   *
+   * The gap this fills is the plainest one in the product. After "You're in",
+   * the stake vanished: /api/chain/position was only ever read from the claim
+   * flow, which runs AFTER resolution, so an open position appeared on no
+   * screen at all and the trader's only record was Phantom and a tx link they
+   * had already closed.
+   *
+   * chain_entry says which markets this wallet touched, which is cheap; the
+   * CHAIN says how much is in them, which is authoritative. A stamp records
+   * only a first stake, so quoting it would understate anyone who topped up.
+   */
+  app.get("/api/chain/open", async (req, res) => {
+    const userPubkey = String(req.query.userPubkey ?? "");
+    if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ ok: false, error: "invalid userPubkey" });
+    const candidates = await openEntriesFor(userPubkey).catch(() => []);
+    const open = (await Promise.all(candidates.map(async (c) => {
+      if (!c.onchainPubkey) return null;
+      const pos = await fetchPosition(c.onchainPubkey, userPubkey).catch(() => null);
+      // No position on chain means it was claimed, refunded, or never landed.
+      if (!pos || pos.lamports <= 0 || pos.claimed) return null;
+      const state = await fetchMarketOnChain(c.onchainPubkey).catch(() => null);
+      return {
+        slug: c.slug, question: c.question, side: pos.side, lamports: pos.lamports,
+        entryPct: c.entryPct, closesAt: c.closesAt,
+        explorer: explorerUrl(c.onchainPubkey),
+        // The pool as it stands, so the trader can see the line move against or
+        // with them. Null when the market cannot be read rather than zero.
+        pool: state ? { yes: state.totalYesLamports, no: state.totalNoLamports } : null,
+      };
+    }))).filter(Boolean);
+    res.json({ ok: true, open, cluster: cluster() });
+  });
+
   app.get("/api/chain/claimable", async (req, res) => {
     const userPubkey = String(req.query.userPubkey ?? "");
     if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
@@ -3362,6 +3481,50 @@ if (process.env.ALLOW_TEST_SETTLE === "1") {
  * a verified Google address gets exactly one message. Failures are logged and
  * swallowed — the tokens are already paid; mail is a courtesy, not a ledger.
  */
+/**
+ * Tell the WALLETS that a market they staked in has settled.
+ *
+ * emailSettled below reaches play-economy positions by deviceId. A wallet-only
+ * staker has no deviceId anywhere in that path, so the people with actual SOL
+ * on the line were the only ones the product could not reach: they learned by
+ * revisiting and pressing Check, or they never learned at all.
+ *
+ * Reachability is entirely opt-in and no link is created here. A wallet is
+ * reachable only if its owner signed the wallet-link challenge AND signed in
+ * with Google on the same device; anything less and they simply get nothing.
+ *
+ * Best-effort and never awaited into the response: a mailer failure must not
+ * touch a settlement that has already happened.
+ */
+async function emailChainStakers(slug: string, outcome: "yes" | "no"): Promise<void> {
+  try {
+    const stakers = await walletsInMarket(slug);
+    if (stakers.length === 0) return;
+    const emails = await emailsForWallets([...new Set(stakers.map((s2) => s2.wallet))]);
+    if (Object.keys(emails).length === 0) return;
+    const rec = await getSlug(slug);
+    const question = rec?.market.question ?? slug;
+    for (const st of stakers) {
+      const to = emails[st.wallet];
+      if (!to) continue;
+      // The winner is pointed at the claim, the loser at the market. Neither is
+      // quoted a payout: pari-mutuel pays from the final pool, and the exact
+      // number lives on the claim screen where it is read from the chain.
+      const won = st.side === outcome;
+      const url = won ? `${BASE_URL}/m/${encodeURIComponent(slug)}` : `${BASE_URL}/m/${encodeURIComponent(slug)}`;
+      const { subject, html } = settleMailBody({
+        to, question, side: st.side, entryPct: st.entryPct, outcome,
+        // Denominated in SOL, and deliberately not a predicted payout.
+        stake: Number((st.lamports / 1e9).toFixed(4)), proceeds: 0,
+        positionsUrl: url,
+      });
+      await sendMail({ to, subject, html });
+    }
+  } catch (err) {
+    console.error("[mail] chain settle batch failed:", (err as Error).message);
+  }
+}
+
 async function emailSettled(slug: string, outcome: "yes" | "no", settled: { deviceId: string | null; side: "yes" | "no"; stake: number; entryPct: number; proceeds: number }[]): Promise<void> {
   try {
     const rec = await getSlug(slug);

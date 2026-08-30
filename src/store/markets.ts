@@ -6420,3 +6420,94 @@ export async function slugForOnchainPubkey(pubkey: string): Promise<string | nul
 
 /** Test seam: clear the entry stamps. */
 export function _resetChainEntries(): void { memChainEntries.length = 0; }
+
+
+/**
+ * Reachable email addresses for a set of WALLETS.
+ *
+ * The chain knows a wallet; the mailer knows an address; nothing joined them,
+ * so a wallet-only staker could win and never be told. This walks the link the
+ * user opted into: /api/auth/wallet/verify stores the wallet as a `phantom`
+ * account row against a canonical device, and a Google sign-in stores the
+ * address against that same device. A wallet with no phantom row, or a device
+ * with no Google row, simply is not reachable and gets nothing.
+ *
+ * NO NEW LINK IS CREATED HERE. The privacy stance is that a device→wallet
+ * association is never inferred from a stake; this only reads one the user
+ * deliberately made by signing a challenge, and reaches the address they
+ * already gave us "for settlement emails only".
+ */
+export async function emailsForWallets(wallets: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (wallets.length === 0) return out;
+  const { _memAccounts } = await import("./accounts.js");
+  if (!PERSISTENT) {
+    for (const w of wallets) {
+      const link = _memAccounts.find((a) => a.provider === "phantom" && a.uid === w);
+      if (!link) continue;
+      const google = _memAccounts.find((a) => a.provider === "google" && a.email && a.canonicalDevice === link.canonicalDevice);
+      if (google?.email) out[w] = google.email;
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ wallet: string; email: string }>(
+    `SELECT DISTINCT ON (w.provider_uid) w.provider_uid AS wallet, g.email
+       FROM account w
+       JOIN account g
+         ON g.canonical_device = w.canonical_device
+        AND g.provider = 'google'
+        AND g.email IS NOT NULL
+      WHERE w.provider = 'phantom' AND w.provider_uid = ANY($1::text[])
+      ORDER BY w.provider_uid, g.created_at`,
+    [wallets],
+  );
+  for (const r of rows) out[r.wallet] = r.email;
+  return out;
+}
+
+/** Every wallet that stamped an entry on this market, for the settlement
+ *  notice. First stakes only, which is all we need: a wallet that topped up
+ *  already has a stamp. */
+export async function walletsInMarket(slug: string): Promise<Array<{ wallet: string; side: "yes" | "no"; entryPct: number; lamports: number }>> {
+  if (!PERSISTENT) {
+    return memChainEntries.filter((e) => e.slug === slug).map((e) => ({ wallet: e.wallet, side: e.side, entryPct: e.entryPct, lamports: e.lamports }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ wallet: string; side: "yes" | "no"; entry_pct: number; lamports: string }>(
+    `SELECT wallet, side, entry_pct, lamports FROM chain_entry WHERE slug = $1`, [slug],
+  );
+  // bigint arrives as a string.
+  return rows.map((r) => ({ wallet: r.wallet, side: r.side, entryPct: r.entry_pct, lamports: Number(r.lamports) }));
+}
+
+/** The markets a wallet has stamped an entry on that are still OPEN. These are
+ *  the candidates for its open-positions list; the authoritative amount comes
+ *  from the chain, not from here, because a stamp records only a first stake. */
+export async function openEntriesFor(wallet: string): Promise<Array<{ slug: string; question: string; side: "yes" | "no"; entryPct: number; closesAt: string | null; onchainPubkey: string | null }>> {
+  if (!PERSISTENT) {
+    return memChainEntries
+      .filter((e) => e.wallet === wallet && !memCommunity.get(e.slug)?.resolvedOutcome)
+      .map((e) => {
+        const rec = mem.get(e.slug);
+        return {
+          slug: e.slug, question: rec?.market.question ?? e.slug, side: e.side, entryPct: e.entryPct,
+          closesAt: rec?.market.closesAt ?? null, onchainPubkey: memCommunity.get(e.slug)?.onchainPubkey ?? null,
+        };
+      });
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; question: string; side: "yes" | "no"; entry_pct: number; closes_at: Date | null; onchain_pubkey: string | null }>(
+    `SELECT ce.slug, s.question, ce.side, ce.entry_pct, s.closes_at, cm.onchain_pubkey
+       FROM chain_entry ce
+       JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NULL
+       JOIN market_slug s ON s.slug = ce.slug
+      WHERE ce.wallet = $1
+      ORDER BY s.closes_at ASC NULLS LAST`,
+    [wallet],
+  );
+  return rows.map((r) => ({
+    slug: r.slug, question: r.question, side: r.side, entryPct: r.entry_pct,
+    closesAt: r.closes_at ? r.closes_at.toISOString() : null, onchainPubkey: r.onchain_pubkey,
+  }));
+}

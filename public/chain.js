@@ -359,7 +359,8 @@ function b64ToBytes(b64) {
             ? `Your winnings are on their way to your wallet, on ${clusterLabel(CLUSTER)}.`
             : "It is on the network and we lost sight of it while it settled. Follow the link before collecting again."}</p>
           <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
-          ${confirmed ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
+          ${confirmed ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>
+          <p class="cnote" style="margin-top:10px"><a href="/w/${encodeURIComponent(wallet.publicKey)}" target="_blank" rel="noopener">your whole record →</a></p>` : ""}
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       } catch (e) {
@@ -706,6 +707,7 @@ function b64ToBytes(b64) {
 
   function scan() {
     document.querySelectorAll('.card[data-community="1"]').forEach(attachButton);
+    mountOpenStakes();
     mountClaimCheck();
     mountCreatorFees();
   }
@@ -721,6 +723,51 @@ function b64ToBytes(b64) {
    * only on the Positions view, only once, and silent when there's nothing to
    * collect — a permanent "no winnings" banner is clutter, not information.
    */
+  /**
+   * OPEN SOL, on the screen where a trader looks for what they are holding.
+   *
+   * After "You're in" the stake used to vanish from the product entirely: the
+   * position endpoint was only read by the claim flow, which runs after
+   * resolution. So the one thing a real-money user most wants to see, money
+   * currently at risk, appeared nowhere. It sits above the claim box because
+   * open money is more urgent than settled money.
+   */
+  async function mountOpenStakes() {
+    if (document.body.dataset.view !== "positions" || !wallet) return;
+    const host = document.querySelector("#scroller .sheet") || document.getElementById("scroller");
+    if (!host || host.querySelector("#chainopen")) return;
+
+    const box = document.createElement("div");
+    box.id = "chainopen"; box.className = "chain-claimcheck";
+    host.prepend(box);
+    box.innerHTML = `<div class="cc-row"><span class="cc-text">Checking what you have on the line…</span></div>`;
+
+    let open = [];
+    try {
+      const r = await fetch(`/api/chain/open?userPubkey=${encodeURIComponent(wallet.publicKey)}`);
+      const j = await r.json();
+      open = j.ok ? j.open : [];
+    } catch (e) { open = []; }
+
+    // Nothing at risk says nothing. A permanent "no open stakes" panel is
+    // clutter on a screen that already has an empty state.
+    if (!open.length) { box.remove(); return; }
+
+    const total = open.reduce((a, o) => a + o.lamports, 0) / 1e9;
+    box.innerHTML = `<div class="cc-head">${total.toFixed(3)} SOL on the line</div>` + open.map((o) => {
+      const pool = o.pool ? (o.pool.yes + o.pool.no) : 0;
+      // The line as it stands now, so a trader can see it move since they
+      // entered. Omitted rather than invented when the market cannot be read.
+      const now = pool > 0 ? Math.round((100 * (o.side === "yes" ? o.pool.yes : o.pool.no)) / pool) : null;
+      const moved = now === null ? "" : ` · now ${now}%`;
+      return `<div class="cc-item">
+        <span class="cc-q">${esc(o.question)}</span>
+        <span class="cc-meta">${o.side.toUpperCase()} · ${(o.lamports / 1e9).toFixed(3)} SOL · in at ${o.entryPct}%${moved}</span>
+        <a class="cc-claim" href="/m/${encodeURIComponent(o.slug)}">Open</a>
+      </div>`;
+    }).join("");
+  }
+
   async function mountClaimCheck() {
     if (document.body.dataset.view !== "positions") return;
     const host = document.querySelector("#scroller .sheet") || document.getElementById("scroller");

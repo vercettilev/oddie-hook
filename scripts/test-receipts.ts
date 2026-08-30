@@ -15,8 +15,9 @@ import { anchorDiscriminator, decodeTakePositionIx, entryShareOf } from "../src/
 import {
   recordChainEntry, chainEntryFor, walletReceipts, walletLeaderboard, slugForOnchainPubkey,
   createCommunityMarket, markCommunityResolved, _resetChainEntries,
-  receiptWeight, FULL_CREDIT_LAMPORTS,
+  receiptWeight, FULL_CREDIT_LAMPORTS, emailsForWallets, walletsInMarket, openEntriesFor,
 } from "../src/store/markets.js";
+import { linkAccount, _memAccounts } from "../src/store/accounts.js";
 import { renderReceiptCard, VOICE_RECEIPT, textWidth } from "../src/card/renderCard.js";
 
 let failures = 0;
@@ -187,6 +188,56 @@ console.log("\nthe board and the receipts cannot disagree");
   check("the board matches the receipt for the deep call", pa === ra[0]?.weight, `${pa} vs ${ra[0]?.weight}`);
   check("...and for the dust call", pb === rb[0]?.weight, `${pb} vs ${rb[0]?.weight}`);
   check("a dust farmer still shows the win, worth zero", board.find((w) => w.wallet === W_B)?.wins === 1);
+  _resetChainEntries();
+}
+
+
+console.log("\nREACHING A WALLET IS OPT-IN, AND NOTHING HERE CREATES A LINK");
+{
+  _resetChainEntries();
+  _memAccounts.length = 0;
+  const m = await createCommunityMarket({ question: "Reachable?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
+  await recordChainEntry({ slug: m.slug, wallet: W_A, side: "yes", entryPct: 20, lamports: FULL_CREDIT_LAMPORTS });
+  await recordChainEntry({ slug: m.slug, wallet: W_B, side: "no", entryPct: 80, lamports: FULL_CREDIT_LAMPORTS });
+
+  // A staker who never linked anything is unreachable, and that is correct: a
+  // stake must never by itself tell us who somebody is.
+  check("a bare wallet is not reachable", Object.keys(await emailsForWallets([W_A, W_B])).length === 0);
+
+  // Half a link is not a link. Wallet signed, but no email on the device.
+  await linkAccount("dev-1", { provider: "phantom", uid: W_A });
+  check("a linked wallet with no email is still unreachable", Object.keys(await emailsForWallets([W_A])).length === 0);
+
+  // Both halves, deliberately given by the same person on the same device.
+  await linkAccount("dev-1", { provider: "google", uid: "g-1", email: "a@example.com" });
+  const reach = await emailsForWallets([W_A, W_B]);
+  check("both halves make a wallet reachable", reach[W_A] === "a@example.com", JSON.stringify(reach));
+  check("...and only that wallet", reach[W_B] === undefined);
+
+  // A different person's email must never leak across devices.
+  await linkAccount("dev-2", { provider: "google", uid: "g-2", email: "b@example.com" });
+  await linkAccount("dev-2", { provider: "phantom", uid: W_C });
+  const both = await emailsForWallets([W_A, W_C]);
+  check("each wallet gets its own device's address", both[W_A] === "a@example.com" && both[W_C] === "b@example.com", JSON.stringify(both));
+
+  check("the market's stakers are listed for the notice", (await walletsInMarket(m.slug)).length === 2);
+  _memAccounts.length = 0;
+  _resetChainEntries();
+}
+
+console.log("\nopen stakes are the OPEN ones, and a stamp is only a candidate");
+{
+  _resetChainEntries();
+  const open = await createCommunityMarket({ question: "Still running?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
+  const done = await createCommunityMarket({ question: "Finished?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
+  await recordChainEntry({ slug: open.slug, wallet: W_A, side: "yes", entryPct: 30, lamports: 5_000_000 });
+  await recordChainEntry({ slug: done.slug, wallet: W_A, side: "no", entryPct: 40, lamports: 5_000_000 });
+  await markCommunityResolved(done.slug, "no");
+
+  const list = await openEntriesFor(W_A);
+  check("a settled market is not an open stake", list.length === 1 && list[0].slug === open.slug, JSON.stringify(list.map((x) => x.slug)));
+  check("it carries what the panel needs", list[0].question.includes("Still running") && list[0].side === "yes" && list[0].entryPct === 30);
+  check("another wallet sees none of it", (await openEntriesFor(W_B)).length === 0);
   _resetChainEntries();
 }
 
