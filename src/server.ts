@@ -718,7 +718,20 @@ app.get("/api/feed", async (req, res) => {
     // the discovery lenses (Trending / New / Resolving Soon) re-rank WITHIN the
     // partition instead of dissolving it — a lens should change the order of
     // the tagged markets, never bury them under untagged ones.
-    const tagged = [...communityItems, ...scored.filter((x) => surfaced.has(x.slug))];
+    // Deduped by slug, and the community item wins.
+    //
+    // These two lists used to be disjoint: communityItems was ours and `scored`
+    // was the venue feed. Removing venues made `scored` a view of the SAME
+    // community markets, so every market that carries a surfacer row appeared
+    // in both and the feed rendered it twice. Measured live before this fix:
+    // five markets, ten cards. The community item is the one to keep because it
+    // carries the fields the card needs (pool, forming, creator fee, on-chain
+    // link); the scored copy has none of them.
+    const seen = new Set(communityItems.map((x) => x.slug));
+    const tagged = [
+      ...communityItems,
+      ...scored.filter((x) => surfaced.has(x.slug) && !seen.has(x.slug)),
+    ];
     // The wider market is SCAFFOLDING, not a section. It exists only while
     // there are too few tagged markets to be a feed on their own, and it
     // removes itself the moment there are — no flag to flip, no date to

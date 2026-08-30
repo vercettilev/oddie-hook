@@ -73,6 +73,21 @@ pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000;
 /// to. 10% total, whatever the split.
 pub const MAX_TOTAL_FEE_BPS: u16 = 1_000;
 
+/// How long after close a market may sit unresolved before anyone may take
+/// their own stake back.
+///
+/// Every other exit here runs through the authority: only it can resolve, and
+/// claim_winnings requires a resolution. So an authority that stops signing,
+/// for any reason at all, locks every staker's money forever with no
+/// instruction that can free it. "Non-custodial" is not true of a vault whose
+/// only door is one key that may never turn again.
+///
+/// Thirty days is deliberately long. It is not a dispute window and it is not
+/// a way to duck a verdict you dislike: it is far past any honest settlement,
+/// so reaching it means nobody settled at all. Anything shorter would let a
+/// staker walk out of a market that is merely late.
+pub const REFUND_AFTER_CLOSE_SECS: i64 = 30 * 24 * 60 * 60;
+
 #[program]
 pub mod oddie_chain {
     use super::*;
@@ -290,6 +305,50 @@ pub mod oddie_chain {
     /// has no formula, and the alternatives are keeping the money or inventing
     /// a rule; returning it is the only one of the three that is not a
     /// confiscation.
+    /// Take your own stake back from a market nobody ever settled.
+    ///
+    /// PERMISSIONLESS AND ONLY OVER YOUR OWN POSITION. The authority is not a
+    /// signer here and cannot be: this instruction exists precisely for the
+    /// case where the authority is gone, so requiring it would be requiring the
+    /// thing that failed. Every account is derived from seeds, so a caller can
+    /// only ever reach their own position, and the refund is exactly what they
+    /// put in.
+    ///
+    /// It cannot be used to escape a verdict. `!m.resolved` is checked first,
+    /// so the moment a market HAS an outcome this door closes and
+    /// claim_winnings is the only way out, whether you won or lost. The window
+    /// opens thirty days after close, which is far past any honest settlement.
+    ///
+    /// No fee is taken. A fee is the price of a market working; this is the
+    /// path for one that did not.
+    pub fn refund_after_deadline(ctx: Context<RefundAfterDeadline>) -> Result<()> {
+        let m = &ctx.accounts.market;
+        require!(!m.resolved, OddieError::AlreadyResolved);
+
+        let clock = Clock::get()?;
+        let opens_at = m
+            .close_time
+            .checked_add(REFUND_AFTER_CLOSE_SECS)
+            .ok_or(OddieError::MathOverflow)?;
+        require!(clock.unix_timestamp > opens_at, OddieError::RefundNotYetOpen);
+
+        let pos = &mut ctx.accounts.position;
+        require!(!pos.claimed, OddieError::AlreadyClaimed);
+        require!(pos.amount > 0, OddieError::ZeroAmount);
+
+        // Marked before the transfer, exactly as claim_winnings does: if the
+        // transfer fails the whole instruction reverts and the flag goes with
+        // it, so this can never strand a position as refunded-but-unpaid.
+        pos.claimed = true;
+        let amount = pos.amount;
+        pay_from_vault(
+            &ctx.accounts.vault.to_account_info(),
+            &ctx.accounts.owner.to_account_info(),
+            amount,
+        )?;
+        Ok(())
+    }
+
     pub fn claim_winnings(ctx: Context<ClaimWinnings>) -> Result<()> {
         let m = &ctx.accounts.market;
         require!(m.resolved, OddieError::NotResolved);
@@ -527,6 +586,31 @@ pub struct TakePosition<'info> {
 }
 
 #[derive(Accounts)]
+pub struct RefundAfterDeadline<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"market", market.market_id.to_le_bytes().as_ref()],
+        bump = market.bump
+    )]
+    pub market: Account<'info, Market>,
+    #[account(mut, seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
+    pub vault: Account<'info, Vault>,
+    /// Seeded on the caller's own key, so nobody can refund anybody else, and
+    /// closed to them like every other exit so the position rent comes back too.
+    #[account(
+        mut,
+        close = owner,
+        seeds = [b"position", market.key().as_ref(), owner.key().as_ref()],
+        bump = position.bump,
+        has_one = owner @ OddieError::WrongOwner
+    )]
+    pub position: Account<'info, Position>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct CloseMarket<'info> {
     /// Rent goes back to whoever put it up, which `has_one` below pins to the
     /// key that opened the market. Nobody else can call this and nobody else
@@ -733,4 +817,6 @@ pub enum OddieError {
     MarketHasStakes,
     #[msg("market is neither resolved nor past its close time")]
     MarketStillOpen,
+    #[msg("the refund window has not opened yet")]
+    RefundNotYetOpen,
 }

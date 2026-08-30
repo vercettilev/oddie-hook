@@ -164,10 +164,37 @@ function b64ToBytes(b64) {
     }).catch(() => {});
   }
 
+  /** A phone with no injected wallet, which is where most of our traffic lands.
+   *  X opens links in its own in-app browser and mobile Safari has no
+   *  extensions, so window.solana simply does not exist there. */
+  function isMobileNoWallet() {
+    return !window.solana && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+  }
+
+  /** Phantom's universal link: it opens THIS page inside Phantom's own browser,
+   *  where window.solana does exist, and the flow continues normally from there.
+   *  Nothing is signed by the link and no parameters carry anything private. */
+  function phantomDeepLink() {
+    const url = window.location.href;
+    return `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(window.location.origin)}`;
+  }
+
   async function connectWallet() {
     const provider = window.solana;
     if (!provider || !provider.isPhantom) {
-      throw new Error("No Solana wallet found. Install Phantom to put real stake behind a call.");
+      // A DEAD END WAS THE BUG. Most clicks arrive from X on a phone, where no
+      // wallet can be injected, and the copy said "install Phantom" with no
+      // link and no next step. On mobile the answer is not to install anything:
+      // Phantom is very likely already there, and its universal link reopens
+      // this exact page inside it. The error carries the link so the button can
+      // offer it instead of stopping.
+      const err = new Error(
+        isMobileNoWallet()
+          ? "Open this in Phantom to stake. Tap below and it reopens right here."
+          : "No Solana wallet found. Install Phantom to put real stake behind a call.",
+      );
+      if (isMobileNoWallet()) err.deepLink = phantomDeepLink();
+      throw err;
     }
     const resp = await provider.connect();
     wallet = { publicKey: resp.publicKey.toString() };
@@ -513,6 +540,18 @@ function b64ToBytes(b64) {
           catch (e) {
             stakeBtn.disabled = false; refresh();
             if (line) line.textContent = e.message;
+            // On a phone the message is not the end of the road: the deep link
+            // reopens this page inside Phantom, where the flow just continues.
+            // Offered as a link the user taps rather than a redirect we perform,
+            // because sending somebody to another app unasked is not ours to do.
+            if (e.deepLink && line) {
+              const a = document.createElement("a");
+              a.href = e.deepLink;
+              a.className = "cbtn";
+              a.style.cssText = "display:block;text-align:center;text-decoration:none;margin-top:8px";
+              a.textContent = "Open in Phantom";
+              line.after(a);
+            }
             return;
           }
           const w = body.querySelector(".chain-wallet");
@@ -626,11 +665,22 @@ function b64ToBytes(b64) {
     const pct = poolPct(yes, no);
 
     if (pct == null) {
-      // No stake either side. Say so once, on the card, instead of letting the
-      // play pool's 50/50 pass for a price.
+      // No stake either side, so there IS no price. The payout line said so
+      // while the percentage kept standing at the stored 50, which reads as a
+      // market that has been priced at even money by somebody. Both halves go:
+      // the number becomes a dash, the fill bar empties, and the aria-label
+      // stops quoting odds nobody set. The share card already did this ("open ·
+      // first in sets the line"); the feed card was the surface that did not.
       rows.forEach((row) => {
         const pay = row.querySelector(".opay");
         if (pay) pay.textContent = "first in";
+        const num = row.querySelector(".opct-num");
+        if (num) { num.textContent = "\u2013"; delete num.dataset.to; }
+        const unit = row.querySelector(".opct-unit");
+        if (unit) unit.textContent = "";
+        row.style.setProperty("--fill", "0%");
+        const side = (row.dataset.side || "").toUpperCase();
+        row.setAttribute("aria-label", `${side}, no price yet, first stake sets the line`);
       });
       card.dataset.chainPool = "empty";
       return;
@@ -642,9 +692,14 @@ function b64ToBytes(b64) {
       if (v == null) return;
       const num = row.querySelector(".opct-num");
       if (num) { num.textContent = String(v); num.dataset.to = String(v); }
+      // Restored, because the empty branch above blanks it and a card can go
+      // from empty to priced without a reload the moment somebody stakes.
+      const unit = row.querySelector(".opct-unit");
+      if (unit) unit.textContent = "%";
       const pay = row.querySelector(".opay");
       if (pay) pay.textContent = fmtMult(v);
       row.style.setProperty("--fill", v + "%");
+      row.setAttribute("aria-label", `${side.toUpperCase()}, ${v} percent, pays ${fmtMult(v)}`);
     });
     card.dataset.chainPool = "live";
   }

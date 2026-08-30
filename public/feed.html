@@ -5307,6 +5307,14 @@ function startLiveOddsPoll(card){
       const r=await fetch(`${API}/api/market/${encodeURIComponent(slug)}`);
       if(!r.ok)return;
       const j=await r.json();
+      // THE CHAIN OWNS THE PRICE ON A COMMUNITY CARD. /api/market returns the
+      // stored play-era yesPct, which is 50 on every bot-minted market, and
+      // this poll was repainting it over the vault odds chain.js had just
+      // written: the card animated back to a 50/50 nobody set, every five
+      // seconds. data-chain-pool is chain.js's own marker ("live" when the
+      // vault has money, "empty" when it does not), so its presence means the
+      // number is already answered by the only source that can answer it.
+      if(card.dataset.chainPool)return;
       if(typeof j?.market?.yesPct==="number")updateCardOdds(card,j.market.yesPct);
     }catch(e){/* one missed tick; the next one just tries again */}
   };

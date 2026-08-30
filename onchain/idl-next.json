@@ -177,15 +177,6 @@
     },
     {
       "name": "claim_winnings",
-      "docs": [
-        "Take what you are owed: a share of the pool if you were right, or your",
-        "stake back if nobody was.",
-        "",
-        "The refund branch is not a courtesy. A pari-mutuel pool with no winners",
-        "has no formula, and the alternatives are keeping the money or inventing",
-        "a rule; returning it is the only one of the three that is not a",
-        "confiscation."
-      ],
       "discriminator": [
         161,
         215,
@@ -497,6 +488,138 @@
           "type": "u16"
         }
       ]
+    },
+    {
+      "name": "refund_after_deadline",
+      "docs": [
+        "Take what you are owed: a share of the pool if you were right, or your",
+        "stake back if nobody was.",
+        "",
+        "The refund branch is not a courtesy. A pari-mutuel pool with no winners",
+        "has no formula, and the alternatives are keeping the money or inventing",
+        "a rule; returning it is the only one of the three that is not a",
+        "confiscation.",
+        "Take your own stake back from a market nobody ever settled.",
+        "",
+        "PERMISSIONLESS AND ONLY OVER YOUR OWN POSITION. The authority is not a",
+        "signer here and cannot be: this instruction exists precisely for the",
+        "case where the authority is gone, so requiring it would be requiring the",
+        "thing that failed. Every account is derived from seeds, so a caller can",
+        "only ever reach their own position, and the refund is exactly what they",
+        "put in.",
+        "",
+        "It cannot be used to escape a verdict. `!m.resolved` is checked first,",
+        "so the moment a market HAS an outcome this door closes and",
+        "claim_winnings is the only way out, whether you won or lost. The window",
+        "opens thirty days after close, which is far past any honest settlement.",
+        "",
+        "No fee is taken. A fee is the price of a market working; this is the",
+        "path for one that did not."
+      ],
+      "discriminator": [
+        175,
+        189,
+        26,
+        90,
+        209,
+        113,
+        41,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "docs": [
+            "Seeded on the caller's own key, so nobody can refund anybody else, and",
+            "closed to them like every other exit so the position rent comes back too."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "resolve_market",
@@ -910,6 +1033,11 @@
       "code": 6019,
       "name": "MarketStillOpen",
       "msg": "market is neither resolved nor past its close time"
+    },
+    {
+      "code": 6020,
+      "name": "RefundNotYetOpen",
+      "msg": "the refund window has not opened yet"
     }
   ],
   "types": [
