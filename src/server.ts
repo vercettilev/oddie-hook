@@ -738,7 +738,16 @@ app.get("/api/feed", async (req, res) => {
     // remember, and it comes back by itself if tagged supply ever thins out
     // again. Above the floor the feed is nothing but markets people tagged,
     // which is the thing the product is actually for.
-    const untagged = tagged.length >= FEED_TAGGED_FLOOR ? [] : items.filter((x) => !surfaced.has(x.slug));
+    // Deduped against `tagged`, not just against `surfaced`. A community market
+    // with no surfacer row (one made in the app, or an old row whose provenance
+    // was lost) is absent from `surfaced`, so it fell through to here while
+    // already sitting in communityItems above: the first dedupe pass caught four
+    // of the five duplicates and this was the fifth. Whatever is already on the
+    // feed does not get a second card, whichever list it came from.
+    const onFeed = new Set(tagged.map((x) => x.slug));
+    const untagged = tagged.length >= FEED_TAGGED_FLOOR
+      ? []
+      : items.filter((x) => !surfaced.has(x.slug) && !onFeed.has(x.slug));
     console.log(JSON.stringify({ evt: "feed_tagged", tagged: tagged.length, floor: FEED_TAGGED_FLOOR, scaffolding: untagged.length > 0 }));
     feedItems = [...sortFeedItems(tagged, sort), ...sortFeedItems(untagged, sort)];
   }
