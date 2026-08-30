@@ -61,6 +61,24 @@ const CLUSTER: "devnet" | "testnet" | "mainnet-beta" =
   (/\bdevnet\b/.test(RPC_URL) ? "devnet" : /\btestnet\b/.test(RPC_URL) ? "testnet" : "mainnet-beta");
 
 const SECRET = process.env.SOLANA_ADMIN_SECRET_KEY;
+/**
+ * THIS FILE MUST MATCH THE PROGRAM THAT IS DEPLOYED, NOT THE SOURCE IN THIS REPO.
+ *
+ * They are two halves of one contract and only one half is under our control at
+ * any moment. Regenerating the IDL alongside a program change and committing it
+ * points the live server at a layout the live program does not have: the
+ * discriminator still matches (Anchor derives it from the struct NAME), so every
+ * account passes the gate and then fails on a field, fetchMarketOnChain catches
+ * the throw and returns null, and every market reads as "unreachable" while
+ * nothing logs a cause. That is exactly what happened here, measured against
+ * devnet: the old IDL decoded the live markets fine and the new one threw
+ * "Invalid bool" on all of them, because the question String moved everything
+ * after it by its own length.
+ *
+ * So the IDL swap is a DEPLOY step, not a code step. The next program's IDL
+ * waits in onchain/idl-next.json and is copied over this one only once the
+ * program that matches it is actually on chain.
+ */
 const IDL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "oddie_chain_idl.json");
 
 // A create needs ~0.00426 SOL (Market + Vault rent + fee). Refuse below a small
