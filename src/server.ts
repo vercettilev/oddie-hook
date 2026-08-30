@@ -3059,7 +3059,16 @@ if (realStakesReady) {
     // "AnchorError caused by account: position. AccountNotInitialized", for
     // any wallet that had never staked on the market.
     const claimState = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
-    if (claimState) {
+    // A market we cannot READ is a market we cannot verify, and the guards below
+    // are the whole reason this route exists. Wrapping them in `if (claimState)`
+    // meant an unreadable market skipped ALL of them and still got HTTP 200 with
+    // a signable transaction, which is the exact failure they were written to
+    // stop. Not hypothetical: while the committed IDL did not match the deployed
+    // program every read returned null, so this route handed out
+    // guaranteed-revert transactions for the length of that window. Same rule as
+    // the stake route: unreadable is a refusal.
+    if (!claimState) return res.status(503).json({ ok: false, reason: "chain-unreachable" });
+    {
       if (!claimState.resolved) return res.status(409).json({ ok: false, reason: "not-resolved" });
       const pos = await fetchPosition(detail.onchainPubkey, userPubkey).catch(() => null);
       if (!pos) return res.status(409).json({ ok: false, reason: "no-position" });
@@ -3169,7 +3178,9 @@ if (realStakesReady) {
     // that failed with Custom 6014, "WrongCreator", whenever the asking wallet
     // was not the market's named creator.
     const feeState = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
-    if (feeState) {
+    // Same inversion as the claim route above, same reason.
+    if (!feeState) return res.status(503).json({ ok: false, reason: "chain-unreachable" });
+    {
       if (!feeState.resolved) return res.status(409).json({ ok: false, reason: "not-resolved" });
       if (feeState.creator !== creatorPubkey) return res.status(409).json({ ok: false, reason: "not-creator" });
       if (feeState.creatorFeeClaimed) return res.status(409).json({ ok: false, reason: "already-claimed" });

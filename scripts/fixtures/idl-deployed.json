@@ -1,0 +1,943 @@
+{
+  "address": "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu",
+  "metadata": {
+    "name": "oddie_chain",
+    "version": "0.2.0",
+    "spec": "0.1.0",
+    "description": "Oddie pari-mutuel markets with a payable creator fee"
+  },
+  "instructions": [
+    {
+      "name": "claim_creator_fee",
+      "docs": [
+        "The 3%, pulled by the person it belongs to.",
+        "",
+        "PULL, NOT PUSH, and that is the substantive design choice here. Pushing",
+        "at resolve would mean the market cannot settle until the creator has a",
+        "funded, rent-exempt account to receive into, which makes settlement for",
+        "everybody else depend on a third party who may never have opened a",
+        "wallet. It would also hand the resolve transaction a lamport transfer to",
+        "an address the resolver does not control. A claim the creator signs",
+        "themselves keeps settlement independent of them and proves ownership of",
+        "the wallet at the moment of payment."
+      ],
+      "discriminator": [
+        26,
+        97,
+        138,
+        203,
+        132,
+        171,
+        141,
+        252
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "The creator recorded at create time, signing for themselves. `has_one`",
+            "is what makes the fee unstealable: no other key can satisfy it."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_protocol_fee",
+      "docs": [
+        "Oddie's cut, pulled by the authority that opened the market.",
+        "",
+        "Pull rather than push, mirroring claim_creator_fee, and the reason is",
+        "the same one: resolve should move no money at all. A settlement that",
+        "carries a transfer is a settlement that can fail for a reason unrelated",
+        "to the outcome, and everyone waiting on that market pays for it.",
+        "",
+        "`has_one = authority` over a Signer is what makes this ours and only",
+        "ours. It is the same key that created and resolved the market, so this",
+        "grants no power that did not already exist."
+      ],
+      "discriminator": [
+        165,
+        228,
+        133,
+        48,
+        99,
+        249,
+        255,
+        33
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_winnings",
+      "docs": [
+        "Take what you are owed: a share of the pool if you were right, or your",
+        "stake back if nobody was.",
+        "",
+        "The refund branch is not a courtesy. A pari-mutuel pool with no winners",
+        "has no formula, and the alternatives are keeping the money or inventing",
+        "a rule; returning it is the only one of the three that is not a",
+        "confiscation."
+      ],
+      "discriminator": [
+        161,
+        215,
+        24,
+        59,
+        14,
+        236,
+        242,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_market",
+      "docs": [
+        "Open a market. `creator` is passed explicitly rather than taken from the",
+        "signer: markets are minted by Oddie's admin key on behalf of whoever",
+        "tagged the argument on X, and that person is very often not present and",
+        "has no wallet yet. Recording them here is what makes the fee payable to",
+        "them later, and it is the on-chain half of `market_surfacer`.",
+        "",
+        "Pass `Pubkey::default()` when the tagger has no wallet yet, which is the",
+        "normal case at tag time, and name them later with `set_creator`. That is",
+        "a one-way fill, so an unnamed market stays claimable by the right person",
+        "whenever they turn up, while a named one can never be redirected.",
+        "",
+        "A creator who never connects a wallet simply never claims; the fee stays",
+        "in the vault as dust rather than being redirected to the house, because",
+        "silently rerouting someone's fee to ourselves is worse than leaving it",
+        "unclaimed."
+      ],
+      "discriminator": [
+        103,
+        226,
+        97,
+        235,
+        200,
+        188,
+        251,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "market_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_id",
+          "type": "u64"
+        },
+        {
+          "name": "question",
+          "type": "string"
+        },
+        {
+          "name": "close_time",
+          "type": "i64"
+        },
+        {
+          "name": "creator",
+          "type": "pubkey"
+        },
+        {
+          "name": "creator_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "protocol_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "resolve_market",
+      "docs": [
+        "Settle, and fix the creator fee for good.",
+        "",
+        "The fee is computed HERE and stored, not recomputed per claim. If each",
+        "claim recomputed it from live totals it would be a moving number, and",
+        "the last claimant would be the one who absorbs the drift. Fixing it once",
+        "at resolve makes every subsequent payout a pure function of numbers that",
+        "can no longer change.",
+        "",
+        "NO FEE WHEN THERE ARE NO WINNERS. If nobody backed the winning side the",
+        "market pays refunds instead of winnings (see claim_winnings), and taking",
+        "a cut of a refund would mean charging people to be given their own money",
+        "back."
+      ],
+      "discriminator": [
+        155,
+        23,
+        80,
+        173,
+        46,
+        74,
+        23,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Only the key that opened the market can settle it. This is the oracle",
+            "and it is a human decision; see the note in the repo about what putting",
+            "a market on chain does and does not prove."
+          ],
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "outcome",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "set_creator",
+      "docs": [
+        "Name the creator of a market that was opened without one.",
+        "",
+        "Markets are minted the moment someone tags the argument on X, and that",
+        "person usually has no wallet at that moment. `create_market` therefore",
+        "accepts `Pubkey::default()` as \"not named yet\", and this fills it in",
+        "once they connect one. Without this the fee has no payable address and",
+        "\"being loud pays\" is not true in real money, which is the whole point.",
+        "",
+        "ONE WAY, and that is the only security property here. A creator can be",
+        "named, never renamed and never cleared, so a fee already promised to",
+        "somebody cannot be redirected. It deliberately does NOT require the",
+        "market to be unresolved: a tagger who connects a wallet a week after",
+        "their market settled should still get paid, and gating on resolution",
+        "would only strand them. That costs nothing in trust, because the",
+        "authority can already name any creator at create time and can already",
+        "resolve any market. This adds no power it did not have; it only moves",
+        "when the name can be supplied.",
+        "",
+        "The unset sentinel is safe to leave in place indefinitely: no private",
+        "key exists for the all-zero pubkey, so `claim_creator_fee`'s",
+        "`has_one = creator` on a Signer can never be satisfied while unset."
+      ],
+      "discriminator": [
+        254,
+        148,
+        255,
+        112,
+        207,
+        142,
+        170,
+        165
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "`has_one = authority` is what keeps this instruction the house's own:",
+            "nobody but the key that opened the market can name its creator."
+          ],
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "creator",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "take_position",
+      "docs": [
+        "Stake on a side. One position account per (market, user), so a second",
+        "call from the same wallet ADDS to the existing stake rather than opening",
+        "a rival one: two positions for one person on one market would make the",
+        "payout maths ambiguous and the UI worse.",
+        "",
+        "Switching sides is refused rather than silently re-staking. Someone who",
+        "wants the other side of their own call is asking for something this",
+        "program does not do, and quietly moving their money is the wrong answer",
+        "to that."
+      ],
+      "discriminator": [
+        33,
+        247,
+        99,
+        64,
+        57,
+        75,
+        247,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "side",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "QuestionTooLong",
+      "msg": "question exceeds the 180-character limit"
+    },
+    {
+      "code": 6001,
+      "name": "FeeTooHigh",
+      "msg": "creator fee exceeds the maximum allowed"
+    },
+    {
+      "code": 6002,
+      "name": "CloseTimeInPast",
+      "msg": "close time must be in the future"
+    },
+    {
+      "code": 6003,
+      "name": "BadSide",
+      "msg": "side must be 0 (yes) or 1 (no)"
+    },
+    {
+      "code": 6004,
+      "name": "ZeroAmount",
+      "msg": "amount must be greater than zero"
+    },
+    {
+      "code": 6005,
+      "name": "AlreadyResolved",
+      "msg": "market is already resolved"
+    },
+    {
+      "code": 6006,
+      "name": "NotResolved",
+      "msg": "market is not resolved yet"
+    },
+    {
+      "code": 6007,
+      "name": "MarketClosed",
+      "msg": "market is closed to new positions"
+    },
+    {
+      "code": 6008,
+      "name": "SideAlreadyTaken",
+      "msg": "this wallet already holds the other side of this market"
+    },
+    {
+      "code": 6009,
+      "name": "AlreadyClaimed",
+      "msg": "already claimed"
+    },
+    {
+      "code": 6010,
+      "name": "NoFeeOwed",
+      "msg": "no creator fee is owed on this market"
+    },
+    {
+      "code": 6011,
+      "name": "VaultUnderfunded",
+      "msg": "vault cannot cover this payout without breaking rent exemption"
+    },
+    {
+      "code": 6012,
+      "name": "WrongAuthority",
+      "msg": "signer is not this market's authority"
+    },
+    {
+      "code": 6013,
+      "name": "WrongOwner",
+      "msg": "signer is not this position's owner"
+    },
+    {
+      "code": 6014,
+      "name": "WrongCreator",
+      "msg": "signer is not this market's creator"
+    },
+    {
+      "code": 6015,
+      "name": "CreatorAlreadySet",
+      "msg": "this market's creator is already named and cannot be changed"
+    },
+    {
+      "code": 6016,
+      "name": "CreatorNotNamed",
+      "msg": "creator cannot be set to the unnamed address"
+    },
+    {
+      "code": 6017,
+      "name": "MathOverflow",
+      "msg": "arithmetic overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Market",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "docs": [
+              "Who the creator fee is owed to. The field the deployed program does not",
+              "have, and the reason this one exists."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "market_id",
+            "type": "u64"
+          },
+          {
+            "name": "question",
+            "type": "string"
+          },
+          {
+            "name": "close_time",
+            "type": "i64"
+          },
+          {
+            "name": "resolved",
+            "type": "bool"
+          },
+          {
+            "name": "winning_side",
+            "type": "u8"
+          },
+          {
+            "name": "total_yes",
+            "type": "u64"
+          },
+          {
+            "name": "total_no",
+            "type": "u64"
+          },
+          {
+            "name": "creator_fee_bps",
+            "docs": [
+              "Stored per market, so changing the rate later cannot reprice a market",
+              "people have already staked into."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "creator_fee_lamports",
+            "docs": [
+              "Fixed at resolve. Zero until then, and zero forever if nobody won."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "creator_fee_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "protocol_fee_bps",
+            "docs": [
+              "Oddie's own cut, and stored per market for exactly the same reason the",
+              "creator's is: a rate change must never reprice a pool people already",
+              "staked into. Markets opened while this was zero settle at zero forever."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "protocol_fee_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fee_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

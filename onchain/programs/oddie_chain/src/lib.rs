@@ -362,6 +362,27 @@ pub mod oddie_chain {
     /// the house does not get to close a door somebody else is still standing in.
     pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
         let m = &ctx.accounts.market;
+
+        // THE MONEY IS CHECKED, NOT A DECODED CLAIM ABOUT THE MONEY.
+        //
+        // total_yes and total_no come out of the Market account, and this
+        // instruction closes accounts written by OTHER versions of this
+        // program. Anchor derives a discriminator from the struct NAME, so an
+        // account laid out by an older version passes the gate and is then read
+        // at the wrong offsets: fields land on each other's bytes and a pool
+        // with real SOL in it can decode as empty. Guarding an irreversible
+        // `close = authority` on those bytes means the guard is evaluated
+        // against exactly the corruption it exists to catch, and the failure
+        // mode is draining somebody else's stake into the admin wallet.
+        //
+        // The vault's lamport balance cannot be misread. It is the runtime's
+        // own number, it is what would actually be swept, and it is above its
+        // own rent if and only if somebody staked. So it is the load-bearing
+        // check, and the decoded totals stay only as a cheap early-out for the
+        // ordinary case.
+        let vault_ai = ctx.accounts.vault.to_account_info();
+        let vault_rent = Rent::get()?.minimum_balance(vault_ai.data_len());
+        require!(vault_ai.lamports() <= vault_rent, OddieError::MarketHasStakes);
         require!(m.total_yes == 0 && m.total_no == 0, OddieError::MarketHasStakes);
         // Over, so nobody is going to stake now: resolved, or simply past its
         // close. Either is enough, and the second matters because an ignored

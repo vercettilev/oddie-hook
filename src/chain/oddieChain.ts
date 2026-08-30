@@ -394,6 +394,24 @@ export async function closeMarketOnChain(
   if (state.totalYesLamports > 0 || state.totalNoLamports > 0) {
     return { ok: false, reason: "has-stakes", error: "somebody staked in this market; closing it would strand their rent" };
   }
+  // The decoded totals are a claim about the money; the vault balance IS the
+  // money. An account written by an older layout can decode as an empty pool
+  // while the vault holds real SOL, so the balance is checked here too and the
+  // program checks it again on its own side. A market whose vault we cannot even
+  // read is never closed.
+  try {
+    const [vaultPk] = c.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), new c.web3.PublicKey(marketPubkey).toBuffer()],
+      c.program.programId,
+    );
+    const held = await c.connection.getBalance(vaultPk);
+    const rentMin = await c.connection.getMinimumBalanceForRentExemption(8 + 33);
+    if (held > rentMin) {
+      return { ok: false, reason: "has-stakes", error: `vault holds ${(held / 1e9).toFixed(6)} SOL, above its own rent` };
+    }
+  } catch (e) {
+    return { ok: false, reason: "unreadable", error: `vault balance could not be read: ${(e as Error).message}` };
+  }
   if (!state.resolved && state.closeTime * 1000 > Date.now()) {
     return { ok: false, reason: "still-open", error: `still open until ${new Date(state.closeTime * 1000).toISOString()}` };
   }
