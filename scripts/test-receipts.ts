@@ -15,6 +15,7 @@ import { anchorDiscriminator, decodeTakePositionIx, entryShareOf } from "../src/
 import {
   recordChainEntry, chainEntryFor, walletReceipts, walletLeaderboard, slugForOnchainPubkey,
   createCommunityMarket, markCommunityResolved, _resetChainEntries,
+  receiptWeight, FULL_CREDIT_LAMPORTS,
 } from "../src/store/markets.js";
 import { renderReceiptCard, VOICE_RECEIPT, textWidth } from "../src/card/renderCard.js";
 
@@ -78,9 +79,9 @@ console.log("\na receipt is proof, so an open market cannot mint one");
   _resetChainEntries();
   const { slug: open } = await createCommunityMarket({ question: "Still open?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
   const { slug: done } = await createCommunityMarket({ question: "Did BTC close above 100k?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
-  await recordChainEntry({ slug: open, wallet: W_A, side: "yes", entryPct: 20, lamports: 5 });
-  await recordChainEntry({ slug: done, wallet: W_A, side: "yes", entryPct: 30, lamports: 5 });
-  await recordChainEntry({ slug: done, wallet: W_B, side: "no", entryPct: 70, lamports: 5 });
+  await recordChainEntry({ slug: open, wallet: W_A, side: "yes", entryPct: 20, lamports: FULL_CREDIT_LAMPORTS });
+  await recordChainEntry({ slug: done, wallet: W_A, side: "yes", entryPct: 30, lamports: FULL_CREDIT_LAMPORTS });
+  await recordChainEntry({ slug: done, wallet: W_B, side: "no", entryPct: 70, lamports: FULL_CREDIT_LAMPORTS });
   await markCommunityResolved(done, "yes");
 
   const a = await walletReceipts(W_A);
@@ -105,11 +106,11 @@ console.log("\nTHE BOARD IS ORDERED BY EARLINESS, NOT BY WIN COUNT");
   const m1 = await mk("m1?", "yes"), m2 = await mk("m2?", "yes"), m3 = await mk("m3?", "yes"), m4 = await mk("m4?", "yes");
 
   // C: one brave call at 25 that won -> 75 points.
-  await recordChainEntry({ slug: m1.slug, wallet: W_C, side: "yes", entryPct: 25, lamports: 1 });
+  await recordChainEntry({ slug: m1.slug, wallet: W_C, side: "yes", entryPct: 25, lamports: FULL_CREDIT_LAMPORTS });
   // A: three bandwagon wins at 90 -> 30 points, more wins, fewer points.
-  for (const m of [m2, m3, m4]) await recordChainEntry({ slug: m.slug, wallet: W_A, side: "yes", entryPct: 90, lamports: 1 });
+  for (const m of [m2, m3, m4]) await recordChainEntry({ slug: m.slug, wallet: W_A, side: "yes", entryPct: 90, lamports: FULL_CREDIT_LAMPORTS });
   // B: a loss, worth nothing but counted.
-  await recordChainEntry({ slug: m1.slug, wallet: W_B, side: "no", entryPct: 75, lamports: 1 });
+  await recordChainEntry({ slug: m1.slug, wallet: W_B, side: "no", entryPct: 75, lamports: FULL_CREDIT_LAMPORTS });
   for (const m of [m1, m2, m3, m4]) await markCommunityResolved(m.slug, m.out);
 
   const board = await walletLeaderboard();
@@ -139,6 +140,54 @@ console.log("\nthe card is a flex, not a disclosure");
   for (const v of VOICE_RECEIPT) {
     check(`voice line fits at 32: "${v}"`, textWidth(v, 32) < 860, String(textWidth(v, 32)));
   }
+}
+
+
+console.log("\nDEPTH IS WHAT MAKES EARLINESS EXPENSIVE TO FAKE");
+{
+  // The formula, purely. Full credit needs a real pool behind it.
+  const full = FULL_CREDIT_LAMPORTS;
+  check("a 30% call in a full pool is worth 70", receiptWeight({ entryPct: 30, won: true, poolLamports: full }) === 70);
+  check("a loss is worth nothing however deep", receiptWeight({ entryPct: 0, won: false, poolLamports: full * 10 }) === 0);
+  check("deeper than the reference does not pay more", receiptWeight({ entryPct: 30, won: true, poolLamports: full * 100 }) === 70);
+  check("half the depth is half the credit", receiptWeight({ entryPct: 0, won: true, poolLamports: full / 2 }) === 50);
+
+  // THE ATTACK, priced. Two wallets you control: one puts the minimum stake on
+  // NO in an empty market, the other then calls YES at a 0% share. You need not
+  // predict anything, because one of your wallets always wins. Before depth
+  // scaling that receipt was worth the maximum and cost about a cent.
+  const dustPool = 2_000_000; // two minimum stakes, 0.002 SOL
+  check("the manufactured perfect call is worth ~nothing", receiptWeight({ entryPct: 0, won: true, poolLamports: dustPool }) === 0,
+    String(receiptWeight({ entryPct: 0, won: true, poolLamports: dustPool })));
+  // ...and an honest call in a real market is untouched.
+  check("an honest call in a real pool keeps its credit", receiptWeight({ entryPct: 20, won: true, poolLamports: full }) === 80);
+}
+
+console.log("\nthe board and the receipts cannot disagree");
+{
+  _resetChainEntries();
+  const deep = await createCommunityMarket({ question: "Deep market?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
+  const dust = await createCommunityMarket({ question: "Dust market?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
+  // Same perfect entry (0%) in both. Only the depth differs.
+  await recordChainEntry({ slug: deep.slug, wallet: W_A, side: "yes", entryPct: 0, lamports: FULL_CREDIT_LAMPORTS });
+  await recordChainEntry({ slug: dust.slug, wallet: W_B, side: "yes", entryPct: 0, lamports: 1_000_000 });
+  await markCommunityResolved(deep.slug, "yes");
+  await markCommunityResolved(dust.slug, "yes");
+
+  const ra = await walletReceipts(W_A), rb = await walletReceipts(W_B);
+  check("the deep call scores full", ra[0]?.weight === 100, JSON.stringify(ra[0]));
+  check("the dust call scores ~nothing", (rb[0]?.weight ?? -1) === 0, JSON.stringify(rb[0]));
+  check("the receipt reports the depth it was scored on", ra[0]?.poolLamports === FULL_CREDIT_LAMPORTS);
+
+  // The board must agree with the receipts, exactly. Two formulas is one
+  // formula too many.
+  const board = await walletLeaderboard();
+  const pa = board.find((w) => w.wallet === W_A)?.points;
+  const pb = board.find((w) => w.wallet === W_B)?.points;
+  check("the board matches the receipt for the deep call", pa === ra[0]?.weight, `${pa} vs ${ra[0]?.weight}`);
+  check("...and for the dust call", pb === rb[0]?.weight, `${pb} vs ${rb[0]?.weight}`);
+  check("a dust farmer still shows the win, worth zero", board.find((w) => w.wallet === W_B)?.wins === 1);
+  _resetChainEntries();
 }
 
 console.log("\nthe pubkey-to-slug lookup answers only what it knows");

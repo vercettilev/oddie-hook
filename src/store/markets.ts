@@ -6185,16 +6185,54 @@ export interface ChainEntry {
   createdAt: string;
 }
 
-/** A settled entry, scored. The weight is the whole design: 100 minus the
- *  crowd's agreement at entry, on a win, and nothing on a loss. Calling YES at
- *  30 that settles YES is worth 70; joining the pile at 85 is worth 15. Stake
- *  size deliberately never enters it: a leaderboard you can buy with size is a
- *  PnL board, and PnL boards belong to whoever had the most money to begin
- *  with. This one belongs to whoever was right when it was hard to be. */
+/** The pool depth at which an earliness claim counts for full credit. Below it
+ *  the credit scales down linearly, and the reason is an attack rather than a
+ *  taste:
+ *
+ *  entry_pct is a side's share of the pool just before you stake, so two
+ *  wallets you control can manufacture a perfect one. Wallet A puts the minimum
+ *  on NO in an empty market; wallet B then stakes YES at a 0% share, which is
+ *  maximum earliness. You do not have to predict anything, because you are on
+ *  both sides and one of you always wins. Measured against the live minimum
+ *  stake, that receipt costs about a cent.
+ *
+ *  Scaling by depth prices it. To claim full credit you must put this much
+ *  liquidity in the pool and eat the 4% fee on all of it, and if both sides are
+ *  yours you eat it on both. Free becomes "4% of the depth you are claiming
+ *  credit for", which is roughly what honest participation costs.
+ *
+ *  This is a mitigation, not a proof: a farmer with real capital can still buy
+ *  credit. It stops being nearly free, which is the part that matters once
+ *  rewards ride on it. */
+export const FULL_CREDIT_LAMPORTS = 5_000_000_000; // 5 SOL
+
+/**
+ * What one settled call is worth. The ONE place this is computed, called by
+ * both the receipts and the board, so the two can never disagree about what a
+ * wallet earned.
+ *
+ * 100 minus the crowd's agreement at entry, on a win and nothing on a loss,
+ * scaled by how deep the pool actually got. Calling YES at 30 in a real market
+ * is worth 70; joining the pile at 85 is worth 15; calling YES at 0 in a pool
+ * with two dust stakes in it is worth almost nothing.
+ *
+ * Stake SIZE still never enters it. A board you can buy with size is a PnL
+ * board, and PnL boards belong to whoever started with the most money. Depth is
+ * a property of the market, not of your position in it.
+ */
+export function receiptWeight(input: { entryPct: number; won: boolean; poolLamports: number }): number {
+  if (!input.won) return 0;
+  const depth = Math.min(1, Math.max(0, input.poolLamports) / FULL_CREDIT_LAMPORTS);
+  return Math.round((100 - Math.max(0, Math.min(100, input.entryPct))) * depth);
+}
+
+/** A settled entry, scored. */
 export interface Receipt extends ChainEntry {
   outcome: "yes" | "no";
   won: boolean;
   question: string;
+  /** The pool at settlement, which is what the weight is scaled by. */
+  poolLamports: number;
   weight: number;
 }
 
@@ -6242,22 +6280,69 @@ export async function chainEntryFor(slug: string, wallet: string): Promise<Chain
   return rows[0] ? rowToEntry(rows[0]) : null;
 }
 
+/**
+ * The pool a market settled with, in lamports.
+ *
+ * market_fee_log already records it: basis_amount on the real-money rows is the
+ * vault total the fee was taken from, written at resolve. Nothing new is
+ * stored to answer this.
+ *
+ * The fallback sums the entry stamps, which UNDERCOUNTS because stamps record
+ * only a wallet's first stake and never its top-ups. That is the right
+ * direction to be wrong in: a smaller pool means less credit, so a market whose
+ * fee log went missing gives its callers a conservative score rather than a
+ * generous one.
+ */
+async function settlementPools(slugs: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (slugs.length === 0) return out;
+  if (!PERSISTENT) {
+    for (const slug of slugs) {
+      const logged = memFeeLog
+        .filter((f) => f.slug === slug && f.marketKind === "real")
+        .reduce((a, f) => Math.max(a, f.basisAmount), 0);
+      const stamped = memChainEntries.filter((e) => e.slug === slug).reduce((a, e) => a + e.lamports, 0);
+      out.set(slug, Math.max(logged, stamped));
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; pool: string }>(
+    `SELECT ce.slug,
+            GREATEST(
+              COALESCE((SELECT MAX(f.basis_amount) FROM market_fee_log f
+                         WHERE f.slug = ce.slug AND f.market_kind = 'real'), 0),
+              COALESCE(SUM(ce.lamports), 0)
+            ) AS pool
+       FROM chain_entry ce
+      WHERE ce.slug = ANY($1::text[])
+      GROUP BY ce.slug`,
+    [slugs],
+  );
+  // bigint arrives as a string; a `number` annotation here would be a lie.
+  for (const r of rows) out.set(r.slug, Number(r.pool));
+  return out;
+}
+
 /** One wallet's settled receipts, newest market first. Open markets are not
  *  receipts yet: a receipt is proof of having been right, and an open market
  *  has not said who was. */
 export async function walletReceipts(wallet: string, limit = 50): Promise<Receipt[]> {
   const n = Math.max(1, Math.min(200, Math.floor(limit)));
-  const score = (e: ChainEntry, outcome: "yes" | "no", question: string): Receipt => ({
-    ...e, outcome, question, won: e.side === outcome,
-    weight: e.side === outcome ? 100 - e.entryPct : 0,
-  });
+  const score = (e: ChainEntry, outcome: "yes" | "no", question: string, poolLamports: number): Receipt => {
+    const won = e.side === outcome;
+    return { ...e, outcome, question, won, poolLamports, weight: receiptWeight({ entryPct: e.entryPct, won, poolLamports }) };
+  };
   if (!PERSISTENT) {
-    return memChainEntries
-      .filter((e) => e.wallet === wallet)
+    const mine = memChainEntries.filter((e) => e.wallet === wallet);
+    const pools = await settlementPools([...new Set(mine.map((e) => e.slug))]);
+    return mine
       .map((e) => {
         const meta = memCommunity.get(e.slug);
         const rec = mem.get(e.slug);
-        return meta?.resolvedOutcome && rec ? score(e, meta.resolvedOutcome, rec.market.question) : null;
+        return meta?.resolvedOutcome && rec
+          ? score(e, meta.resolvedOutcome, rec.market.question, pools.get(e.slug) ?? 0)
+          : null;
       })
       .filter((r): r is Receipt => r !== null)
       .slice(0, n);
@@ -6273,7 +6358,8 @@ export async function walletReceipts(wallet: string, limit = 50): Promise<Receip
       LIMIT $2`,
     [wallet, n],
   );
-  return rows.map((r) => score(rowToEntry(r), r.resolved_outcome, r.question));
+  const pools = await settlementPools([...new Set(rows.map((r) => r.slug))]);
+  return rows.map((r) => score(rowToEntry(r), r.resolved_outcome, r.question, pools.get(r.slug) ?? 0));
 }
 
 export interface WalletStanding { wallet: string; wins: number; losses: number; points: number }
@@ -6283,31 +6369,40 @@ export interface WalletStanding { wallet: string; wins: number; losses: number; 
  *  exists is that the pool mechanics tax the people it should be crowning. */
 export async function walletLeaderboard(limit = 20): Promise<WalletStanding[]> {
   const n = Math.max(1, Math.min(100, Math.floor(limit)));
+
+  /** Settled calls, raw. Scoring happens in ONE place (receiptWeight) for both
+   *  backends and for the receipts too: a board that computes the formula in
+   *  SQL and a profile that computes it in TypeScript is two formulas, and the
+   *  day they disagree is the day the number stops meaning anything. */
+  let calls: Array<{ wallet: string; slug: string; entryPct: number; won: boolean }>;
   if (!PERSISTENT) {
-    const by = new Map<string, WalletStanding>();
-    for (const e of memChainEntries) {
+    calls = memChainEntries.flatMap((e) => {
       const out = memCommunity.get(e.slug)?.resolvedOutcome;
-      if (!out) continue;
-      const w = by.get(e.wallet) ?? { wallet: e.wallet, wins: 0, losses: 0, points: 0 };
-      if (e.side === out) { w.wins++; w.points += 100 - e.entryPct; } else { w.losses++; }
-      by.set(e.wallet, w);
-    }
-    return [...by.values()].sort((a, b) => b.points - a.points).slice(0, n);
+      return out ? [{ wallet: e.wallet, slug: e.slug, entryPct: e.entryPct, won: e.side === out }] : [];
+    });
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ wallet: string; slug: string; entry_pct: number; won: boolean }>(
+      `SELECT ce.wallet, ce.slug, ce.entry_pct, (ce.side = cm.resolved_outcome) AS won
+         FROM chain_entry ce
+         JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL`,
+    );
+    calls = rows.map((r) => ({ wallet: r.wallet, slug: r.slug, entryPct: r.entry_pct, won: r.won }));
   }
-  await ensureSchema();
-  const { rows } = await db().query<{ wallet: string; wins: number; losses: number; points: number }>(
-    `SELECT ce.wallet,
-            COUNT(*) FILTER (WHERE ce.side = cm.resolved_outcome)::int AS wins,
-            COUNT(*) FILTER (WHERE ce.side <> cm.resolved_outcome)::int AS losses,
-            COALESCE(SUM(100 - ce.entry_pct) FILTER (WHERE ce.side = cm.resolved_outcome), 0)::int AS points
-       FROM chain_entry ce
-       JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL
-      GROUP BY ce.wallet
-      ORDER BY points DESC
-      LIMIT $1`,
-    [n],
-  );
-  return rows;
+
+  const pools = await settlementPools([...new Set(calls.map((c) => c.slug))]);
+  const by = new Map<string, WalletStanding>();
+  for (const c of calls) {
+    const w = by.get(c.wallet) ?? { wallet: c.wallet, wins: 0, losses: 0, points: 0 };
+    if (c.won) {
+      w.wins++;
+      w.points += receiptWeight({ entryPct: c.entryPct, won: true, poolLamports: pools.get(c.slug) ?? 0 });
+    } else {
+      w.losses++;
+    }
+    by.set(c.wallet, w);
+  }
+  return [...by.values()].sort((a, b) => b.points - a.points).slice(0, n);
 }
 
 /** slug for an on-chain market account, for the submit relay's stamp. */
