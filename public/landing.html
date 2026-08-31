@@ -36,6 +36,12 @@
      and costs no request. Fredoka survives for the sticker world only: the cards
      and mockups, where the friendliness is the point and the type is small. -->
 <style>
+  @font-face{font-family:'Anton';font-style:normal;font-weight:400;font-display:swap;
+    src:url('/fonts/anton-latin.woff2') format('woff2');
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+  @font-face{font-family:'Anton';font-style:normal;font-weight:400;font-display:swap;
+    src:url('/fonts/anton-latin-ext.woff2') format('woff2');
+    unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
   @font-face{font-family:'Fredoka';font-style:normal;font-weight:400 700;font-display:swap;
     src:url('/fonts/fredoka-latin-ext.woff2') format('woff2');
     unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
@@ -78,9 +84,8 @@
     --fg-3:rgba(255,255,255,.42);
     --line:rgba(255,255,255,.13);
     --shell:1240px;
-    --display:'Helvetica Neue',Helvetica,Arial,system-ui,sans-serif;
-    --display-tight:'Arial Narrow','Helvetica Neue Condensed',var(--display);
-    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+    --display:'Anton','Arial Narrow','Helvetica Neue',Helvetica,sans-serif;
+        --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
   }
 
   *{box-sizing:border-box}
@@ -104,23 +109,28 @@
   .f--pink{background:var(--pink);color:var(--ink)}
   .f--lime{background:var(--lime);color:var(--ink)}
 
-  /* The torn edge between fields. A background strip rather than a mask: a mask
-     that fails to load takes the whole field with it, a background that fails is
-     a straight edge. Each field paints its OWN colour upward over the one above. */
-  .f::before{content:"";position:absolute;left:0;right:0;top:-1px;height:16px;z-index:3;
-    pointer-events:none;background-repeat:repeat-x;background-size:1200px 16px}
-  .f--black::before{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='16' preserveAspectRatio='none'%3E%3Cpath d='M0 0 L1200 0 L1200 7 L1160 11 L1118 5 L1074 12 L1030 6 L988 13 L944 7 L900 12 L858 4 L814 11 L770 5 L728 12 L684 6 L640 13 L598 7 L554 12 L510 4 L468 11 L424 5 L380 12 L338 6 L294 13 L250 7 L206 12 L164 4 L120 11 L76 5 L32 12 L0 6 Z' fill='%23000'/%3E%3C/svg%3E")}
-  .f--cream::before{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='16' preserveAspectRatio='none'%3E%3Cpath d='M0 0 L1200 0 L1200 7 L1160 11 L1118 5 L1074 12 L1030 6 L988 13 L944 7 L900 12 L858 4 L814 11 L770 5 L728 12 L684 6 L640 13 L598 7 L554 12 L510 4 L468 11 L424 5 L380 12 L338 6 L294 13 L250 7 L206 12 L164 4 L120 11 L76 5 L32 12 L0 6 Z' fill='%23F4F1E0'/%3E%3C/svg%3E")}
-  .f--pink::before{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='16' preserveAspectRatio='none'%3E%3Cpath d='M0 0 L1200 0 L1200 7 L1160 11 L1118 5 L1074 12 L1030 6 L988 13 L944 7 L900 12 L858 4 L814 11 L770 5 L728 12 L684 6 L640 13 L598 7 L554 12 L510 4 L468 11 L424 5 L380 12 L338 6 L294 13 L250 7 L206 12 L164 4 L120 11 L76 5 L32 12 L0 6 Z' fill='%23FF2D78'/%3E%3C/svg%3E")}
-  .f--lime::before{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='16' preserveAspectRatio='none'%3E%3Cpath d='M0 0 L1200 0 L1200 7 L1160 11 L1118 5 L1074 12 L1030 6 L988 13 L944 7 L900 12 L858 4 L814 11 L770 5 L728 12 L684 6 L640 13 L598 7 L554 12 L510 4 L468 11 L424 5 L380 12 L338 6 L294 13 L250 7 L206 12 L164 4 L120 11 L76 5 L32 12 L0 6 Z' fill='%23D7DC1F'/%3E%3C/svg%3E")}
-  .f:first-of-type::before{display:none}
+  /* The torn edge between fields, drawn by the section ABOVE in the colour of
+     the one below. It used to be a ::before hanging off the top, which the
+     section's own overflow:hidden clipped away, so every join rendered as a hard
+     rule. At 58px it is deep enough to eat into the photographic cut-outs the
+     way the comps' tears do, instead of sitting on top of them as a border. */
+  .f::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:58px;z-index:5;
+    pointer-events:none;background-repeat:repeat-x;background-size:1200px 58px;
+    background-position:bottom}
+  .f:not([class*="to-"])::after{display:none}
+  .to-cream::after{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 13 L34 4 L82 20 L115 21 L166 19 L189 5 L224 5 L248 20 L271 21 L323 10 L363 21 L386 10 L425 7 L460 7 L485 21 L524 8 L564 21 L597 6 L641 5 L682 9 L725 20 L771 13 L811 17 L842 10 L886 10 L926 12 L963 13 L994 5 L1032 16 L1078 13 L1129 18 L1152 5 L1192 13 L1200 12 L1200 58 Z' fill='%23F4F1E0'/%3E%3Cpath d='M0 58 L0 22 L34 12 L82 28 L115 28 L166 29 L189 18 L224 15 L248 33 L271 29 L323 17 L363 34 L386 17 L425 18 L460 22 L485 32 L524 16 L564 31 L597 21 L641 12 L682 23 L725 33 L771 27 L811 29 L842 19 L886 18 L926 27 L963 27 L994 13 L1032 25 L1078 22 L1129 31 L1152 20 L1192 25 L1200 24 L1200 58 Z' fill='%23F4F1E0'/%3E%3C/svg%3E")}
+  .to-pink::after {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 14 L40 17 L88 5 L125 5 L170 12 L201 15 L223 17 L250 6 L273 9 L299 10 L333 18 L360 17 L399 11 L447 16 L477 16 L520 15 L546 5 L572 10 L594 18 L624 12 L650 16 L683 21 L735 7 L787 4 L837 20 L871 15 L896 18 L919 9 L947 17 L972 13 L997 3 L1036 6 L1077 3 L1126 9 L1152 11 L1193 14 L1200 12 L1200 58 Z' fill='%23F4F1E0'/%3E%3Cpath d='M0 58 L0 28 L40 25 L88 16 L125 12 L170 26 L201 27 L223 29 L250 20 L273 20 L299 23 L333 26 L360 30 L399 20 L447 31 L477 28 L520 25 L546 14 L572 20 L594 27 L624 19 L650 31 L683 33 L735 22 L787 18 L837 33 L871 28 L896 31 L919 17 L947 26 L972 20 L997 12 L1036 18 L1077 11 L1126 22 L1152 23 L1193 28 L1200 24 L1200 58 Z' fill='%23FF2D78'/%3E%3C/svg%3E")}
+  .to-lime::after {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 6 L36 18 L67 5 L92 13 L129 8 L151 9 L184 7 L235 3 L266 5 L304 14 L337 10 L376 19 L418 10 L465 10 L510 10 L548 18 L593 3 L640 11 L670 9 L706 14 L730 10 L759 18 L791 9 L832 3 L883 14 L931 6 L978 9 L1028 8 L1075 13 L1122 15 L1156 5 L1183 7 L1200 12 L1200 58 Z' fill='%23F4F1E0'/%3E%3Cpath d='M0 58 L0 20 L36 32 L67 14 L92 24 L129 23 L151 24 L184 22 L235 18 L266 16 L304 23 L337 25 L376 31 L418 20 L465 23 L510 20 L548 30 L593 10 L640 25 L670 21 L706 26 L730 18 L759 28 L791 23 L832 17 L883 22 L931 19 L978 23 L1028 21 L1075 21 L1122 29 L1156 14 L1183 14 L1200 24 L1200 58 Z' fill='%23D7DC1F'/%3E%3C/svg%3E")}
+  /* A section whose last child is a full-bleed art band gives up its bottom
+     padding, or the band floats in a slab of flat colour. */
+  .f--band{padding-bottom:0}
 
   /* ------------------------------------------------------------------ type -- */
-  .h,.h1{font-family:var(--display);font-weight:800;text-transform:uppercase;
-    letter-spacing:-.045em;line-height:.9;margin:0;text-wrap:balance}
-  .h1{font-size:clamp(46px,8.2vw,118px)}
-  .h{font-size:clamp(32px,5.4vw,74px)}
-  .h--sm{font-size:clamp(22px,2.9vw,38px);letter-spacing:-.035em;line-height:.98}
+  .h,.h1{font-family:var(--display);font-weight:400;text-transform:uppercase;
+    letter-spacing:-.005em;line-height:.92;margin:0;text-wrap:balance}
+  .h1{font-size:clamp(52px,9.4vw,146px)}
+  .h{font-size:clamp(36px,6.2vw,92px)}
+  .h--sm{font-size:clamp(26px,3.4vw,46px);letter-spacing:-.005em;line-height:.96}
 
   /* The printed-ink pass. The comps' type is worn wood type; this eats a little
      of every letter with a turbulence mask so the edges break up the same way.
@@ -144,12 +154,12 @@
   .nav{position:absolute;top:0;left:0;right:0;z-index:12;padding:26px 0}
   .brand{display:inline-flex;align-items:center;gap:12px}
   .brand img{width:44px;height:44px;border-radius:12px}
-  .brand span{font-family:var(--display);font-size:30px;font-weight:800;color:#fff;
-    letter-spacing:-.04em;text-transform:lowercase}
+  .brand span{font-family:var(--display);font-size:30px;font-weight:400;color:#fff;
+    letter-spacing:.01em;text-transform:uppercase}
 
   /* --------------------------------------------------------------- buttons -- */
   .btn{display:inline-flex;align-items:center;gap:10px;cursor:pointer;
-    font-family:var(--display);font-weight:800;font-size:clamp(15px,1.5vw,19px);
+    font-family:var(--display);font-weight:400;font-size:clamp(15px,1.5vw,19px);
     text-transform:uppercase;letter-spacing:-.01em;
     padding:15px 26px;border-radius:4px;border:3px solid var(--ink);
     background:var(--lime);color:var(--ink);box-shadow:6px 7px 0 rgba(0,0,0,.9)}
@@ -177,12 +187,14 @@
      ratio and every piece of art is positioned as a percentage of it. Below
      900px it stops being a poster and becomes a column. */
   .hero{position:relative}
-  .hero__frame{position:relative;width:100%;max-width:1672px;margin:0 auto;aspect-ratio:1672/941;
-    min-height:660px}
-  .hero__copy{position:absolute;left:2.6%;top:15%;width:46%;z-index:4;
+  .hero__frame{position:relative;width:100%;max-width:1672px;margin:0 auto;aspect-ratio:1672/1085;
+    min-height:720px}
+  .hero__copy{position:absolute;left:2.6%;top:10%;width:46%;z-index:4;
     display:flex;flex-direction:column;align-items:flex-start;gap:clamp(14px,1.6vw,22px)}
-  .hero__pre{font-family:var(--display);font-weight:800;text-transform:uppercase;
-    font-size:clamp(13px,1.35vw,19px);letter-spacing:.06em;line-height:1.25;color:#fff}
+  /* The premise is set in a plain grotesk in the comp, not the wood type: Anton
+     at 14px all-caps closes its counters and reads as a bar. */
+  .hero__pre{font-family:'Nunito',system-ui,sans-serif;font-weight:800;text-transform:uppercase;
+    font-size:clamp(13px,1.3vw,18px);letter-spacing:.06em;line-height:1.32;color:#fff}
   .hero__pre b{color:var(--pink);font-weight:800}
   .hero .h1 .l2{color:var(--lime);display:block}
   .hero .lede{color:var(--fg-2);max-width:34ch}
@@ -193,7 +205,6 @@
   /* Percentages read straight off the comp, so the pieces keep the relationship
      they were composed with instead of being re-guessed in CSS. */
   .a-right {right:0;    top:5.8%;  width:19.6%}
-  .a-bottom{left:32%;   bottom:0;  width:13.2%}
   .a-peek  {left:49.9%; top:46.8%; width:12.9%; z-index:2}
   .a-note  {left:70.6%; top:19.7%; width:9.9%}
   .a-tag   {left:71.8%; top:31%;   width:12.9%}
@@ -214,7 +225,7 @@
   .tw__name{font-size:13px;font-weight:800;display:flex;align-items:center;gap:5px}
   .tw__name svg{width:13px;height:13px;fill:#1D9BF0}
   .tw__at{font-size:12px;color:#6E6A5C;font-weight:700}
-  .tw__txt{margin:12px 0 0;font-family:var(--display);font-weight:800;text-transform:uppercase;
+  .tw__txt{margin:12px 0 0;font-family:var(--display);font-weight:400;text-transform:uppercase;
     font-size:clamp(17px,2vw,29px);line-height:.98;letter-spacing:-.035em}
   .tw__meta{margin-top:12px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6E6A5C;
     letter-spacing:.02em}
@@ -227,9 +238,9 @@
   .mkt__side{flex:1;padding:14px 16px 12px;text-align:left}
   .mkt__yes{background:var(--lime);color:var(--ink)}
   .mkt__no{background:var(--pink);color:var(--ink)}
-  .mkt__k{font-family:var(--display);font-weight:800;text-transform:uppercase;font-size:13px;
+  .mkt__k{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:13px;
     letter-spacing:.02em}
-  .mkt__v{font-family:var(--display);font-weight:800;font-size:clamp(24px,3.1vw,44px);
+  .mkt__v{font-family:var(--display);font-weight:400;font-size:clamp(24px,3.1vw,44px);
     letter-spacing:-.05em;line-height:.92;margin-top:2px}
   .mkt__sub{font-family:var(--mono);font-size:10px;font-weight:700;margin-top:6px;opacity:.78}
   .mkt__foot{background:var(--ink);color:#fff;text-align:center;padding:9px 10px;
@@ -254,7 +265,7 @@
     .hero__copy{position:static;width:100%;padding:0 22px;gap:16px}
     .art{position:static;margin-top:26px}
     .art img{position:static}
-    .a-right,.a-bottom,.a-note,.a-tag{display:none}
+    .a-right,.a-note,.a-tag{display:none}
     .a-peek{width:120px;margin:0 auto -22px;position:relative;z-index:3}
     .card{position:static;width:auto;margin:0 22px}
     .c-tweet{transform:rotate(-1deg)}
@@ -270,9 +281,9 @@
   .step:nth-child(odd){transform:rotate(-.5deg)}
   .step:nth-child(even){transform:rotate(.4deg)}
   .step__hd{display:flex;align-items:flex-start;gap:11px}
-  .step__n{flex:none;background:var(--ink);color:#fff;font-family:var(--display);font-weight:800;
+  .step__n{flex:none;background:var(--ink);color:#fff;font-family:var(--display);font-weight:400;
     font-size:19px;padding:5px 10px;border-radius:3px;letter-spacing:-.02em}
-  .step__t{margin:0;font-family:var(--display);font-weight:800;text-transform:uppercase;
+  .step__t{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
     font-size:16px;line-height:1.02;letter-spacing:-.02em}
   .step__b{margin:0;font-size:13.5px;font-weight:600;line-height:1.5;color:var(--ink-2)}
   .step__art{position:relative;border-radius:3px;overflow:hidden;background:var(--black);
@@ -281,7 +292,7 @@
   .step:first-child .step__art img{object-position:center 14%}
   .step__mini{border:2px solid var(--ink);border-radius:3px;overflow:hidden;background:var(--ink)}
   .mini__row{display:flex}
-  .mini__s{flex:1;padding:7px 9px;font-family:var(--display);font-weight:800;letter-spacing:-.02em}
+  .mini__s{flex:1;padding:7px 9px;font-family:var(--display);font-weight:400;letter-spacing:-.02em}
   .mini__s small{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.06em;
     font-weight:700;opacity:.75}
   .mini__yes{background:var(--lime);color:var(--ink)}
@@ -296,7 +307,7 @@
   .paid{background:var(--cream);border:2px dashed var(--ink-3);border-radius:3px;padding:14px}
   .paid__k{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;
     text-transform:uppercase;color:var(--ink-3)}
-  .paid__v{font-family:var(--display);font-weight:800;font-size:38px;letter-spacing:-.05em;
+  .paid__v{font-family:var(--display);font-weight:400;font-size:38px;letter-spacing:-.05em;
     line-height:1;margin-top:4px;color:var(--ink)}
   .paid__c{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.08em;
     text-transform:uppercase;color:var(--ink-3);margin-top:4px}
@@ -307,12 +318,12 @@
   .board .h{color:var(--ink)}
   .board .h .l2{display:block;color:var(--lime);
     text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink)}
-  .megaphone{width:74px;margin-bottom:6px}
+  .megaphone{width:104px;margin-bottom:2px}
   .lb{background:var(--cream-card);border:3px solid var(--ink);border-radius:4px;padding:18px;
     box-shadow:9px 10px 0 rgba(11,12,5,.5);color:var(--ink);transform:rotate(-.6deg)}
   .lb__hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
     background:var(--ink);color:#fff;padding:10px 14px;border-radius:3px}
-  .lb__hd h3{margin:0;font-family:var(--display);font-weight:800;text-transform:uppercase;
+  .lb__hd h3{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
     font-size:19px;letter-spacing:-.03em}
   .lb__tag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em;
     color:var(--lime);text-transform:uppercase}
@@ -323,7 +334,7 @@
     background:var(--lime);border:2px solid var(--ink);
     font-family:var(--mono);font-size:11px;font-weight:700}
   .lb__who{flex:1;font-family:var(--mono);font-size:13px;font-weight:700}
-  .lb__pts{font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.03em}
+  .lb__pts{font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:-.03em}
   .lb__pts small{font-family:var(--mono);font-size:9px;letter-spacing:.1em;opacity:.6;
     display:block;text-align:right;font-weight:700}
   .lb__note{margin:12px 0 0;font-family:var(--mono);font-size:9.5px;font-weight:700;
@@ -332,9 +343,9 @@
   .earn{display:flex;flex-direction:column;gap:14px}
   .earnc{display:flex;align-items:center;gap:16px;background:var(--ink);color:#fff;
     border-radius:4px;padding:16px 18px}
-  .earnc__n{flex:none;font-family:var(--display);font-weight:800;font-size:38px;
+  .earnc__n{flex:none;font-family:var(--display);font-weight:400;font-size:38px;
     letter-spacing:-.05em;color:var(--lime);line-height:1}
-  .earnc__t{font-family:var(--display);font-weight:800;text-transform:uppercase;font-size:14px;
+  .earnc__t{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:14px;
     letter-spacing:-.01em}
   .earnc__b{margin:4px 0 0;font-size:13px;font-weight:600;line-height:1.45;color:rgba(255,255,255,.68)}
   .bandnote{margin:0;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;
@@ -376,7 +387,7 @@
   /* -------------------------------------------------------------- sign in -- */
   .prof{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,400px);gap:44px;align-items:start}
   @media (max-width:860px){.prof{grid-template-columns:1fr;gap:26px}}
-  .prof__t{margin:0;font-family:var(--display);font-size:clamp(23px,3vw,38px);font-weight:800;
+  .prof__t{margin:0;font-family:var(--display);font-size:clamp(26px,3.4vw,44px);font-weight:400;
     text-transform:uppercase;letter-spacing:-.04em;line-height:.96}
   .prof__b{margin:14px 0 0;font-size:15.5px;font-weight:600;line-height:1.55;color:var(--ink-2);max-width:44ch}
   .prof__opts{display:flex;flex-direction:column;gap:10px}
@@ -403,7 +414,7 @@
     text-transform:uppercase;color:var(--ink-3)}
   .lcard__live{display:inline-flex;align-items:center;gap:5px;color:var(--lime-deep)}
   .lcard__live::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--lime-deep)}
-  .lcard__q{margin:0;font-family:var(--display);font-weight:800;text-transform:uppercase;
+  .lcard__q{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
     font-size:15px;line-height:1.05;letter-spacing:-.02em}
   .lcard__bar{position:relative;height:9px;margin:12px 0 8px;background:var(--pink);
     border:2px solid var(--ink);border-radius:99px;overflow:hidden}
@@ -438,7 +449,7 @@
     align-items:center;justify-content:center;padding:20px}
   .lp-sheet{width:100%;max-width:480px;background:var(--cream-card);color:var(--ink);
     border:3px solid var(--ink);border-radius:5px;padding:22px;box-shadow:10px 12px 0 rgba(0,0,0,.6)}
-  .lp-sheet h3{margin:0 0 10px;font-family:var(--display);font-weight:800;font-size:23px;
+  .lp-sheet h3{margin:0 0 10px;font-family:var(--display);font-weight:400;font-size:23px;
     text-transform:uppercase;letter-spacing:-.035em}
   .lp-sheet .lp-note{margin:0 0 14px;font-size:14px;line-height:1.55;color:var(--ink-2)}
   .lp-in{width:100%;box-sizing:border-box;font:inherit;font-weight:700;font-size:14px;
@@ -447,7 +458,7 @@
   .lp-err{font-size:12px;font-weight:800;color:var(--pink-deep);margin:8px 0 0}
   .lp-go{display:block;width:100%;margin-top:12px;background:var(--lime);color:var(--ink);
     border:3px solid var(--ink);border-radius:3px;padding:13px;cursor:pointer;
-    font-family:var(--display);font-weight:800;font-size:15px;text-transform:uppercase;
+    font-family:var(--display);font-weight:400;font-size:15px;text-transform:uppercase;
     letter-spacing:-.01em}
   .lp-own{display:block;width:100%;border:none;background:none;font:inherit;font-weight:700;
     font-size:13px;color:var(--ink-2);margin-top:12px;cursor:pointer}
@@ -457,11 +468,11 @@
 </style>
 
 <!-- ====================================================== 01 · HERO · BLACK == -->
-<header class="f f--black hero">
+<header class="f f--black hero to-cream">
   <nav class="nav">
     <div class="shell">
       <a class="brand" href="/?stay=1" aria-label="Oddie home">
-        <img src="/logo-mark-96.png" alt=""><span>oddie</span>
+        <img src="/logo-mark-96.png" alt=""><span>Oddie</span>
       </a>
     </div>
   </nav>
@@ -499,11 +510,10 @@
     <!-- Photographic pieces, cut from the comp. They carry no information, so
          they are aria-hidden and the cards beside them say everything. -->
     <div class="art" aria-hidden="true">
-      <img class="a-right"  src="/art/hero-people-right.webp"  alt="" width="327" height="886" fetchpriority="high">
-      <img class="a-bottom" src="/art/hero-people-bottom.webp" alt="" width="221" height="181" loading="lazy">
-      <img class="a-note"   src="/art/tag-note.webp"           alt="" width="165" height="110" loading="lazy">
-      <img class="a-tag"    src="/art/oddiefun-sticker.webp"   alt="" width="215" height="80"  loading="lazy">
-      <img class="a-peek"   src="/art/mascot-peek.webp"        alt="" width="215" height="172" loading="lazy">
+      <img class="a-right"  src="/art/hero-people-right.webp?v=3"  alt="" width="327" height="886" fetchpriority="high">
+      <img class="a-note"   src="/art/tag-note.webp?v=3"           alt="" width="165" height="110" loading="lazy">
+      <img class="a-tag"    src="/art/oddiefun-sticker.webp?v=3"   alt="" width="215" height="80"  loading="lazy">
+      <img class="a-peek"   src="/art/mascot-peek.webp?v=4"        alt="" width="215" height="172" loading="lazy">
     </div>
 
     <!-- THE TWO CARDS ARE HTML. They carry the numbers, and a number baked into
@@ -546,7 +556,7 @@
 <main>
 
   <!-- ===================================================== 02 · STEPS · CREAM == -->
-  <section class="f f--cream sec" id="how" data-live="<!--LIVE_MODE-->">
+  <section class="f f--cream sec to-pink" id="how" data-live="<!--LIVE_MODE-->">
     <div class="shell">
 
       <!-- STATE A: not enough real markets yet. Teach the loop rather than show
@@ -560,7 +570,7 @@
           <div class="step reveal">
             <div class="step__hd"><span class="step__n">01</span>
               <div><h3 class="step__t">Someone posts a take</h3></div></div>
-            <div class="step__art"><img src="/art/hero-people-right.webp" alt="" aria-hidden="true" loading="lazy"></div>
+            <div class="step__art"><img src="/art/hero-people-right.webp?v=3" alt="" aria-hidden="true" loading="lazy"></div>
             <p class="step__b">Hot takes, unpopular opinions, wild claims. Anything goes.</p>
           </div>
 
@@ -580,7 +590,7 @@
           <div class="step reveal">
             <div class="step__hd"><span class="step__n">03</span>
               <div><h3 class="step__t">People pick a side</h3></div></div>
-            <div class="step__art"><img src="/art/hero-people-bottom.webp" alt="" aria-hidden="true" loading="lazy"></div>
+            <div class="step__art"><img src="/art/crowd-card.webp?v=3" alt="" aria-hidden="true" loading="lazy"></div>
             <p class="step__b">The crowd backs it. The odds move. The price is what the room believes.</p>
           </div>
 
@@ -620,11 +630,11 @@
        SEASON_POINTS, doubled by SCORE_WEIGHTS.contribution, and LOUD_MULT_MAX
        for the multiplier, so the page can never promise more than the product
        pays. These are SCORE, not money, and the copy has to keep saying so. -->
-  <section class="f f--pink sec" id="board">
+  <section class="f f--pink sec f--band to-cream" id="board">
     <div class="shell">
       <div class="board">
         <div class="stack">
-          <img class="megaphone reveal" src="/art/megaphone.webp" alt="" aria-hidden="true" width="122" height="122" loading="lazy">
+          <img class="megaphone reveal" src="/art/megaphone.webp?v=3" alt="" aria-hidden="true" width="122" height="122" loading="lazy">
           <h2 class="h rough reveal">Be loud,<br><span class="l2">climb the board.</span></h2>
           <p class="lede reveal" style="color:var(--ink)">Earn points for markets that get action. The louder your takes,
             the higher you climb.</p>
@@ -662,14 +672,14 @@
     </div>
 
     <div class="band band--bleed" aria-hidden="true">
-      <img src="/art/board-crowd.webp" alt="" width="1400" height="214" loading="lazy">
+      <img src="/art/board-crowd.webp?v=3" alt="" width="1400" height="214" loading="lazy">
     </div>
   </section>
 
   <!-- ==================================================== 04 · SIGN IN · CREAM ==
        A way in that is not "go to the feed and find it". The device id is minted
        lazily by the script below, on the first click and never on page view. -->
-  <section class="f f--cream sec" id="profile">
+  <section class="f f--cream sec to-lime" id="profile">
     <div class="shell">
       <p class="label" style="color:var(--lime-deep)">Keep your record</p>
       <div class="prof" style="margin-top:18px">
@@ -721,7 +731,7 @@
     </div>
     <div class="outro__pad"></div>
     <div class="outro__art" aria-hidden="true">
-      <img src="/art/outro-art.webp" alt="" width="1400" height="788" loading="lazy">
+      <img src="/art/outro-art.webp?v=3" alt="" width="1400" height="788" loading="lazy">
     </div>
   </section>
 </main>
