@@ -129,7 +129,7 @@
   /* ------------------------------------------------------------------ type -- */
   .h,.h1{font-family:var(--display);font-weight:400;text-transform:uppercase;
     letter-spacing:-.005em;line-height:.92;margin:0;text-wrap:balance}
-  .h1{font-size:clamp(44px,6.9vw,106px)}
+  .h1{font-size:clamp(40px,5.9vw,90px);max-inline-size:12ch}
   .h{font-size:clamp(36px,6.2vw,92px)}
   .h--sm{font-size:clamp(26px,3.4vw,46px);letter-spacing:-.005em;line-height:.96}
 
@@ -157,10 +157,10 @@
     text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink)}
 
   /* ------------------------------------------------------------------ nav -- */
-  .nav{position:absolute;top:0;left:0;right:0;z-index:12;padding:26px 0}
+  .nav{position:absolute;top:0;left:0;right:0;z-index:12;padding:22px 0}
   .brand{display:inline-flex;align-items:center;gap:12px}
-  .brand img{width:44px;height:44px;border-radius:12px}
-  .brand span{font-family:var(--display);font-size:30px;font-weight:400;color:#fff;
+  .brand img{width:38px;height:38px;border-radius:10px}
+  .brand span{font-family:var(--display);font-size:26px;font-weight:400;color:#fff;
     letter-spacing:.01em;text-transform:uppercase}
 
   /* --------------------------------------------------------------- buttons -- */
@@ -196,10 +196,10 @@
      ONE character, ONE crowd. The page closes on black now so the two do not
      repeat each other. */
   .hero{position:relative}
-  .hero__frame{position:relative;width:100%;max-width:1672px;margin:0 auto;aspect-ratio:1672/1165;
-    min-height:760px}
-  .hero__copy{position:absolute;left:3.6%;top:9%;width:50%;z-index:4;
-    display:flex;flex-direction:column;align-items:flex-start;gap:clamp(11px,1.25vw,17px)}
+  .hero__frame{position:relative;width:100%;max-width:1672px;margin:0 auto;aspect-ratio:1400/788;
+    min-height:600px}
+  .hero__copy{position:absolute;left:3.6%;top:10.5%;width:min(42%,545px);z-index:4;
+    display:flex;flex-direction:column;align-items:flex-start}
   .hero__pre{font-family:'Nunito',system-ui,sans-serif;font-weight:800;text-transform:uppercase;
     font-size:clamp(13px,1.3vw,18px);letter-spacing:.06em;line-height:1.32;color:var(--ink)}
   .hero__pre b{color:var(--pink);font-weight:800}
@@ -218,8 +218,17 @@
     mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='60'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .5' numOctaves='2'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='9'/%3E%3C/filter%3E%3Crect x='2' y='4' width='396' height='52' rx='6' fill='%23fff' filter='url(%23b)'/%3E%3C/svg%3E");
     -webkit-mask-size:100% 100%;mask-size:100% 100%}
 
+  /* Spacing tiers, not one flat gap: what belongs together sits close, what is a
+     new thought gets air. This is the hierarchy that was missing. */
+  .hero__pre{margin:0}
+  .hero .h1{margin-top:clamp(12px,1.4vw,20px)}
+  .hero .brush{margin-top:clamp(20px,2.2vw,30px);max-width:100%}
+  .hero .rails{margin-top:clamp(18px,2vw,28px)}
+  .hero .btn{margin-top:clamp(14px,1.5vw,20px)}
+  .hero .livechip{margin-top:clamp(9px,1vw,14px)}
+
   .heroart{position:absolute;inset:0;z-index:1;pointer-events:none}
-  .heroart img{position:absolute;left:0;bottom:0;width:100%;height:auto}
+  .heroart img{position:absolute;left:0;bottom:-8%;width:100%;height:auto}
 
   .livechip{display:inline-flex;align-items:center;gap:8px;
     font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;
@@ -232,7 +241,7 @@
 
   /* The odds sit IN the column, at the end of it, as the thing the copy was
      leading to. Floating them was half of what made the old hero a pile. */
-  .c-mkt{width:min(100%,400px);margin-top:4px;transform:rotate(-.9deg);z-index:3;
+  .c-mkt{position:absolute;left:43%;bottom:19%;width:25%;transform:rotate(-1.2deg);z-index:3;
     border:3px solid var(--ink);border-radius:6px;box-shadow:8px 9px 0 rgba(11,12,5,.55);
     overflow:hidden;background:var(--ink);text-align:left;z-index:3}
   .mkt__row{display:flex}
@@ -254,7 +263,7 @@
     .hero__copy{position:static;width:100%;padding:0 22px;gap:16px}
     .heroart{position:static;margin-top:26px}
     .heroart img{position:static;width:100%;height:auto;object-fit:contain}
-    .c-mkt{width:auto;margin:6px 0 0;transform:rotate(-.6deg)}
+    .c-mkt{position:static;left:auto;bottom:auto;width:auto;margin:24px 0 0;transform:rotate(-.6deg)}
   }
 
   /* ---------------------------------------------------------------- steps -- */
@@ -492,25 +501,26 @@
            front door. -->
       <span class="proof"><!--PROOF--></span>
 
-      <!-- ONE product object in the hero, and it is HTML: it carries the numbers,
-           and a number baked into a raster is a number nobody can correct. -->
-      <div class="card c-mkt" role="img" aria-label="Example market: 71 percent called yes holding 355 dollars, 29 percent called no holding 145 dollars, 500 dollars in the pool, 2 percent to the person who started it.">
-        <div class="mkt__row">
-          <div class="mkt__side mkt__yes">
-            <div class="mkt__k">Yes</div>
-            <div class="mkt__v">71%</div>
-            <div class="mkt__sub">$355</div>
-          </div>
-          <div class="mkt__side mkt__no">
-            <div class="mkt__k">No</div>
-            <div class="mkt__v">29%</div>
-            <div class="mkt__sub">$145</div>
-          </div>
-        </div>
-        <div class="mkt__foot">$500 in the pool &middot; <b>2% to @cryptobro88</b></div>
-      </div>
 
     </div>
+
+  <!-- ONE product object in the hero, and it is HTML: it carries the numbers,
+  and a number baked into a raster is a number nobody can correct. -->
+  <div class="card c-mkt" role="img" aria-label="Example market: 71 percent called yes holding 355 dollars, 29 percent called no holding 145 dollars, 500 dollars in the pool, 2 percent to the person who started it.">
+  <div class="mkt__row">
+  <div class="mkt__side mkt__yes">
+  <div class="mkt__k">Yes</div>
+  <div class="mkt__v">71%</div>
+  <div class="mkt__sub">$355</div>
+  </div>
+  <div class="mkt__side mkt__no">
+  <div class="mkt__k">No</div>
+  <div class="mkt__v">29%</div>
+  <div class="mkt__sub">$145</div>
+  </div>
+  </div>
+  <div class="mkt__foot">$500 in the pool &middot; <b>2% to @cryptobro88</b></div>
+  </div>
 
     <div class="heroart" aria-hidden="true">
       <img src="/art/outro-art.webp?v=5" alt="" width="1400" height="788" decoding="async" fetchpriority="high">
