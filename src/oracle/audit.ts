@@ -215,6 +215,52 @@ export function documentDateOf(html: string): string | null {
   return d ? d.toISOString() : null;
 }
 
+/**
+ * Does this quote name a date at or after `after`?
+ *
+ * This is how an UNDATED page can still establish a non-event, and the reason
+ * that branch is needed at all was measured rather than guessed. A NO needs a
+ * source that knows the whole window closed, and the right source for a NO is a
+ * record that COVERS the window: a price history, a results table, an official
+ * index. Those are LIVING pages, continuously updated, and a living page carries
+ * no publication date. So the rule "dated at or after the close" and the
+ * instruction "find a complete record" were in direct contradiction, and the
+ * measurement showed it: of seven period-covering sources, six were perfectly
+ * fetchable and almost every one of them declared no date at all.
+ *
+ * The quote is the way out. It is the span we have already verified is on the
+ * page, so if it names a date inside or after the window, the page demonstrably
+ * covers the period in question. A frozen old document does not accidentally
+ * quote a date that had not happened when it was written.
+ *
+ * Deliberately narrow: only three unambiguous shapes are read, and anything it
+ * cannot parse is simply no evidence of coverage rather than a guess. Being
+ * unable to read a date must never become a reason to accept one.
+ */
+export function quoteCoversDate(quote: string, after: Date): boolean {
+  const MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec";
+  const found: Date[] = [];
+  const push = (y: number, mo: number, d: number) => {
+    const dt = new Date(Date.UTC(y, mo, d));
+    if (!Number.isNaN(dt.getTime()) && y >= 2000 && y <= 2100) found.push(dt);
+  };
+  const monthIndex = (name: string) => {
+    const n = name.toLowerCase().slice(0, 3);
+    return ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(n);
+  };
+  // 2026-07-30
+  for (const m of quote.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) push(+m[1], +m[2] - 1, +m[3]);
+  // July 30, 2026  /  Jul 30 2026
+  for (const m of quote.matchAll(new RegExp(`\\b(${MONTHS})\\.?\\s+(\\d{1,2}),?\\s+(\\d{4})\\b`, "gi"))) {
+    push(+m[3], monthIndex(m[1]), +m[2]);
+  }
+  // 30 July 2026
+  for (const m of quote.matchAll(new RegExp(`\\b(\\d{1,2})\\s+(${MONTHS})\\.?,?\\s+(\\d{4})\\b`, "gi"))) {
+    push(+m[3], monthIndex(m[2]), +m[1]);
+  }
+  return found.some((d) => d >= after);
+}
+
 /** Fetch seam. Swapped in tests so the audit's logic is exercised against known
  *  bytes rather than against whatever the internet is doing today. */
 export type PageFetcher = (url: string) => Promise<{ ok: boolean; html: string; status: number; truncated?: boolean }>;
@@ -342,6 +388,13 @@ export async function auditCitation(c: Citation, closeTime: Date | null): Promis
   // With no close time there is no deadline to miss, so the distinction is moot
   // and the citation is simply verified.
   if (closeTime && !datedAt) {
+    // A living record proves its own coverage through the quote. See
+    // quoteCoversDate: the page carries no date because it is continuously
+    // updated, but the span we verified names a moment at or after the close,
+    // so it demonstrably knows about the period the market asks about.
+    if (quoteCoversDate(c.quote, closeTime)) {
+      return { ...base, status: "verified", datedAt, note: "undated page, but the quote itself covers the close" };
+    }
     return { ...base, status: "undated", datedAt, note: "quote found, but the page declares no date" };
   }
   return { ...base, status: "verified", datedAt, note: "quote found on the page" };

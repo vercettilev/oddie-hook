@@ -14,7 +14,7 @@ if (process.env.DATABASE_URL) { console.error("refusing to run against a databas
 
 import {
   auditCitation, auditCitations, auditSupports, normalizeText, htmlToText, documentDateOf,
-  _setPageFetcher, type AuditResult,
+  quoteCoversDate, _setPageFetcher, type AuditResult,
 } from "../src/oracle/audit.js";
 import { decide, shouldRetry, backoffMs, decisionWasPaid, _setSecondOpinion } from "../src/oracle/oracle.js";
 import { recordOracleDecision, oracleAttemptFor, oracleGateCounts, _memOracleDecisions, _memBackdateOracle, _resetOracleDecisions } from "../src/store/markets.js";
@@ -171,6 +171,40 @@ console.log("\none unverifiable citation discards the verdict, whatever else is 
   check("the invented one is caught", mixed.absent === 1);
   check("YES is refused anyway", !auditSupports("yes", mixed).ok, auditSupports("yes", mixed).why);
   check("NO is refused anyway", !auditSupports("no", mixed).ok);
+}
+
+
+console.log("\nA LIVING RECORD PROVES ITS COVERAGE THROUGH ITS QUOTE");
+{
+  // Why this branch exists, measured: a NO needs a source that knows the window
+  // closed, the right source for a NO is a record that COVERS the window, and
+  // such records are living pages that carry no publication date. Of seven
+  // period-covering sources checked live, six were fetchable and nearly all
+  // declared no date. The rule and the instruction were contradicting each
+  // other, so no NO could ever settle.
+  const close = new Date("2026-08-01T00:00:00Z");
+  check("an ISO date after the close counts", quoteCoversDate("ETH 2026-08-14 close 3,102.44", close));
+  check("a written date after the close counts", quoteCoversDate("Settled on August 14, 2026 at par", close));
+  check("day-first is read too", quoteCoversDate("14 August 2026, no filings recorded", close));
+  check("a date BEFORE the close does not count", !quoteCoversDate("ETH 2026-07-14 close 3,102.44", close));
+  // A quote with no readable date is no evidence of coverage. Being unable to
+  // read a date must never become a reason to accept one.
+  check("no date at all is not coverage", !quoteCoversDate("no such product has shipped", close));
+  check("a bare year is not a date", !quoteCoversDate("nothing in 2026 so far", close));
+
+  servePages({
+    "https://a.test/history": page("2026-08-14 | ETH | 3102.44 | no low below 10"),
+    "https://a.test/frozen": page("The Commission has not approved the application"),
+  });
+  const living = await auditCitations([{ url: "https://a.test/history", quote: "2026-08-14 | ETH | 3102.44" }], close);
+  check("a living record is verified, not undated", living.verified === 1 && living.undated === 0, JSON.stringify(living.citations[0]));
+  check("...so a NO can finally stand on it", auditSupports("no", living).ok, auditSupports("no", living).why);
+
+  // The frozen-document case the undated status was created for is untouched:
+  // an old press release quoting nothing dated cannot support a NO.
+  const frozen = await auditCitations([{ url: "https://a.test/frozen", quote: "The Commission has not approved" }], close);
+  check("an undated frozen document is still undated", frozen.undated === 1 && frozen.verified === 0);
+  check("...and still cannot carry a NO", !auditSupports("no", frozen).ok);
 }
 
 console.log("\nthe sentence written into the record says what the evidence actually is");
