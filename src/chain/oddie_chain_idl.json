@@ -10,7 +10,7 @@
     {
       "name": "claim_creator_fee",
       "docs": [
-        "The 3%, pulled by the person it belongs to.",
+        "The creator's cut, pulled by the person it belongs to.",
         "",
         "PULL, NOT PUSH, and that is the substantive design choice here. Pushing",
         "at resolve would mean the market cannot settle until the creator has a",
@@ -177,15 +177,6 @@
     },
     {
       "name": "claim_winnings",
-      "docs": [
-        "Take what you are owed: a share of the pool if you were right, or your",
-        "stake back if nobody was.",
-        "",
-        "The refund branch is not a courtesy. A pari-mutuel pool with no winners",
-        "has no formula, and the alternatives are keeping the money or inventing",
-        "a rule; returning it is the only one of the three that is not a",
-        "confiscation."
-      ],
       "discriminator": [
         161,
         215,
@@ -275,6 +266,110 @@
               {
                 "kind": "account",
                 "path": "owner"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_market",
+      "docs": [
+        "Give back the rent on a market nobody ever used.",
+        "",
+        "Opening a market costs oddie a rent deposit for the Market and Vault",
+        "accounts and NOTHING gives it back, so every market that was opened and",
+        "then ignored is a permanent loss. This returns it.",
+        "",
+        "THE CONDITION IS NARROW ON PURPOSE, and the reason is worth stating",
+        "because a wider one looks obviously better and is not. `claim_winnings`",
+        "carries `close = owner`, so a LOSER still has a reason to call it: the",
+        "payout is zero but their position's own rent comes back. That claim needs",
+        "this market account to exist. Closing a market that anyone ever staked",
+        "into would therefore strand somebody else's rent to recover our own,",
+        "which is a trade we do not get to make on their behalf.",
+        "",
+        "So: only a market with an empty pool, and only once it is over. Nobody",
+        "staked, so there is no position to strand, no payout to owe and no fee to",
+        "pay. That is precisely the residue that lazy minting leaves behind, which",
+        "is the case this exists for.",
+        "",
+        "A market WITH stakes stays open forever until everyone has claimed. That",
+        "is not an oversight; it is the same rule as everywhere else here, that",
+        "the house does not get to close a door somebody else is still standing in."
+      ],
+      "discriminator": [
+        88,
+        154,
+        248,
+        186,
+        48,
+        14,
+        123,
+        244
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Rent goes back to whoever put it up, which `has_one` below pins to the",
+            "key that opened the market. Nobody else can call this and nobody else",
+            "can be paid by it."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Closed in the same instruction. With an empty pool it holds nothing but",
+            "its own rent, and leaving it behind would strand most of what this",
+            "instruction exists to recover."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
               }
             ]
           }
@@ -393,6 +488,138 @@
           "type": "u16"
         }
       ]
+    },
+    {
+      "name": "refund_after_deadline",
+      "docs": [
+        "Take what you are owed: a share of the pool if you were right, or your",
+        "stake back if nobody was.",
+        "",
+        "The refund branch is not a courtesy. A pari-mutuel pool with no winners",
+        "has no formula, and the alternatives are keeping the money or inventing",
+        "a rule; returning it is the only one of the three that is not a",
+        "confiscation.",
+        "Take your own stake back from a market nobody ever settled.",
+        "",
+        "PERMISSIONLESS AND ONLY OVER YOUR OWN POSITION. The authority is not a",
+        "signer here and cannot be: this instruction exists precisely for the",
+        "case where the authority is gone, so requiring it would be requiring the",
+        "thing that failed. Every account is derived from seeds, so a caller can",
+        "only ever reach their own position, and the refund is exactly what they",
+        "put in.",
+        "",
+        "It cannot be used to escape a verdict. `!m.resolved` is checked first,",
+        "so the moment a market HAS an outcome this door closes and",
+        "claim_winnings is the only way out, whether you won or lost. The window",
+        "opens thirty days after close, which is far past any honest settlement.",
+        "",
+        "No fee is taken. A fee is the price of a market working; this is the",
+        "path for one that did not."
+      ],
+      "discriminator": [
+        175,
+        189,
+        26,
+        90,
+        209,
+        113,
+        41,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "docs": [
+            "Seeded on the caller's own key, so nobody can refund anybody else, and",
+            "closed to them like every other exit so the position rent comes back too."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "resolve_market",
@@ -796,6 +1023,21 @@
       "code": 6017,
       "name": "MathOverflow",
       "msg": "arithmetic overflow"
+    },
+    {
+      "code": 6018,
+      "name": "MarketHasStakes",
+      "msg": "a market that anyone staked into cannot be closed"
+    },
+    {
+      "code": 6019,
+      "name": "MarketStillOpen",
+      "msg": "market is neither resolved nor past its close time"
+    },
+    {
+      "code": 6020,
+      "name": "RefundNotYetOpen",
+      "msg": "the refund window has not opened yet"
     }
   ],
   "types": [
@@ -821,8 +1063,27 @@
             "type": "u64"
           },
           {
-            "name": "question",
-            "type": "string"
+            "name": "question_hash",
+            "docs": [
+              "SHA-256 of the question, not the question.",
+              "",
+              "The full text is still on chain and still permanent: it is an argument to",
+              "`create_market`, so it lives in that transaction's instruction data",
+              "forever. Storing a second copy in account state meant paying rent for the",
+              "rest of time for bytes the ledger already had, and it was 184 of this",
+              "account's 306: 59% of the struct, for a field NO INSTRUCTION READS.",
+              "",
+              "The hash keeps the only property that copy actually bought. Anyone can",
+              "check that the question oddie shows for a market is the question the",
+              "market was opened with, and 184 bytes did not make that check stronger",
+              "than 32 do."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "close_time",
