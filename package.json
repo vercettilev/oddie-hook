@@ -55,7 +55,8 @@
     "reclaim-rent": "tsx scripts/reclaim-rent.ts",
     "test-receipts": "tsx scripts/test-receipts.ts",
     "test-idl-drift": "tsx scripts/test-idl-drift.ts",
-    "oracle-backtest": "tsx scripts/oracle-backtest.ts"
+    "oracle-backtest": "tsx scripts/oracle-backtest.ts",
+    "retire-board": "tsx scripts/retire-board.ts"
   },
   "engines": {
     "node": ">=20"

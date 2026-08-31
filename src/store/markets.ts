@@ -353,6 +353,22 @@ CREATE TABLE IF NOT EXISTS community_market (
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolution_criteria text;
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolvability       text;
 
+-- Taken off the board without being destroyed.
+--
+-- The alternative was retire --delete, which removes the
+-- market_slug row and cascades through community_market, market_surfacer and
+-- market_call: the only record of who tagged a market, gone, at exactly the
+-- moment somebody would want to look it up. It also orphans the on-chain
+-- account beyond the reach of reclaim-rent, which enumerates by database row.
+--
+-- RETIRED MEANS UNDISCOVERABLE, NOT UNREACHABLE. It disappears from the feed,
+-- from pricing, from the agent API and from the one-post-one-market check, so a
+-- fresh tag on the same post opens a fresh market. It stays reachable at its own
+-- permalink and in its stakers' positions, because hiding a market somebody has
+-- money in is hiding their money. A market with anything in its vault is refused
+-- outright.
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS retired_at timestamptz;
+
 -- Every extraction, logged for later prompt tuning: the input argument, the
 -- engine's structured output, and (on publish) the operator's final edits.
 CREATE TABLE IF NOT EXISTS extraction_log (
@@ -3113,6 +3129,8 @@ interface CommunityMeta {
   onchainSig: string | null;
   resolutionCriteria: string | null;
   resolvability: string | null;
+  /** Set when the market was taken off the board. See the DDL note. */
+  retiredAt?: string | null;
 }
 const memCommunity = new Map<string, CommunityMeta>();
 
@@ -4684,7 +4702,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
   if (!PERSISTENT) {
     const out: CommunityMarket[] = [];
     for (const meta of memCommunity.values()) {
-      if (meta.resolvedOutcome) continue;
+      if (meta.resolvedOutcome || meta.retiredAt) continue;
       const rec = mem.get(meta.slug);
       if (!rec) continue;
       // DISTINCT devices per side, not staked tokens: a free call stakes
@@ -4713,7 +4731,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
            count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no'  AND mc.closed_at IS NULL)::int AS no_pool
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
-     WHERE c.resolved_outcome IS NULL
+     WHERE c.resolved_outcome IS NULL AND c.retired_at IS NULL
      GROUP BY s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
               c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.created_at
      ORDER BY c.created_at DESC`);
@@ -6151,7 +6169,8 @@ export async function openMarketForSourcePost(sourceUrl: string): Promise<{ slug
   if (!PERSISTENT) {
     for (const [slug, sur] of memSurfacer) {
       if (!sur.sourceUrl || !sur.sourceUrl.includes(`/status/${id}`)) continue;
-      if (memCommunity.get(slug)?.resolvedOutcome) continue;
+      const meta = memCommunity.get(slug);
+      if (meta?.resolvedOutcome || meta?.retiredAt) continue;
       const rec = mem.get(slug);
       if (rec) return { slug, question: rec.market.question };
     }
@@ -6164,7 +6183,7 @@ export async function openMarketForSourcePost(sourceUrl: string): Promise<{ slug
        JOIN market_slug s      ON s.slug = ms.slug
        JOIN community_market c ON c.slug = ms.slug
       WHERE split_part(ms.source_url, '/status/', 2) = $1
-        AND c.resolved_outcome IS NULL
+        AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
       ORDER BY ms.created_at ASC
       LIMIT 1`,
     [id],
@@ -6510,4 +6529,49 @@ export async function openEntriesFor(wallet: string): Promise<Array<{ slug: stri
     slug: r.slug, question: r.question, side: r.side, entryPct: r.entry_pct,
     closesAt: r.closes_at ? r.closes_at.toISOString() : null, onchainPubkey: r.onchain_pubkey,
   }));
+}
+
+/**
+ * Take a market off the board without destroying it.
+ *
+ * THE GUARD THAT NO ARGUMENT OVERRIDES: a market with anything in its vault is
+ * refused. Retiring hides a market from discovery, and hiding a market somebody
+ * has money in is hiding their money. The caller passes the vault total it read
+ * from the chain; passing null means it could not be read, which is also a
+ * refusal, because "we could not check" must never resolve to "go ahead".
+ *
+ * What stays reachable afterwards, deliberately: the permalink, the market
+ * detail, and the market's rows in anyone's positions. What goes: the feed,
+ * pricing, the agent API, and the one-post-one-market check, so a fresh tag on
+ * the same post opens a fresh market instead of pointing at a dead one.
+ */
+export async function retireMarket(slug: string, vaultLamports: number | null): Promise<{ ok: boolean; reason?: string }> {
+  if (vaultLamports === null) return { ok: false, reason: "the vault could not be read, so it was not retired" };
+  if (vaultLamports > 0) return { ok: false, reason: `holds ${(vaultLamports / 1e9).toFixed(4)} SOL` };
+  if (!PERSISTENT) {
+    const meta = memCommunity.get(slug);
+    if (!meta) return { ok: false, reason: "unknown market" };
+    // Latches like the UPDATE below, so the two backends cannot disagree about
+    // what a second call does.
+    if (meta.retiredAt) return { ok: false, reason: "unknown market, or already retired" };
+    meta.retiredAt = new Date().toISOString();
+    return { ok: true };
+  }
+  await ensureSchema();
+  // Latches: a second call on an already-retired market changes nothing and
+  // reports honestly rather than moving the timestamp.
+  const { rowCount } = await db().query(
+    `UPDATE community_market SET retired_at = now() WHERE slug = $1 AND retired_at IS NULL`, [slug],
+  );
+  return (rowCount ?? 0) > 0 ? { ok: true } : { ok: false, reason: "unknown market, or already retired" };
+}
+
+/** Is this market off the board? Used by the tools that must not act on one. */
+export async function isRetired(slug: string): Promise<boolean> {
+  if (!PERSISTENT) return Boolean(memCommunity.get(slug)?.retiredAt);
+  await ensureSchema();
+  const { rows } = await db().query<{ retired_at: Date | null }>(
+    `SELECT retired_at FROM community_market WHERE slug = $1`, [slug],
+  );
+  return Boolean(rows[0]?.retired_at);
 }

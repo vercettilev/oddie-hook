@@ -16,6 +16,7 @@ import {
   recordChainEntry, chainEntryFor, walletReceipts, walletLeaderboard, slugForOnchainPubkey,
   createCommunityMarket, markCommunityResolved, _resetChainEntries,
   receiptWeight, FULL_CREDIT_LAMPORTS, emailsForWallets, walletsInMarket, openEntriesFor,
+  retireMarket, isRetired, openCommunityMarkets, openMarketForSourcePost, recordSurfacer,
 } from "../src/store/markets.js";
 import { linkAccount, _memAccounts } from "../src/store/accounts.js";
 import { renderReceiptCard, VOICE_RECEIPT, textWidth } from "../src/card/renderCard.js";
@@ -238,6 +239,39 @@ console.log("\nopen stakes are the OPEN ones, and a stamp is only a candidate");
   check("a settled market is not an open stake", list.length === 1 && list[0].slug === open.slug, JSON.stringify(list.map((x) => x.slug)));
   check("it carries what the panel needs", list[0].question.includes("Still running") && list[0].side === "yes" && list[0].entryPct === 30);
   check("another wallet sees none of it", (await openEntriesFor(W_B)).length === 0);
+  _resetChainEntries();
+}
+
+
+console.log("\nRETIRING HIDES A MARKET FROM DISCOVERY, NEVER FROM ITS OWNER");
+{
+  _resetChainEntries();
+  const m = await createCommunityMarket({ question: "Off the board?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
+  await recordSurfacer(m.slug, { sourceUrl: "https://x.com/someone/status/77771111" });
+
+  const before = (await openCommunityMarkets()).length;
+  check("it starts on the board", before > 0);
+  check("and its source post is taken", (await openMarketForSourcePost("https://x.com/someone/status/77771111")) !== null);
+
+  // THE GUARD NOTHING OVERRIDES. Hiding a market somebody has money in is
+  // hiding their money, so a funded vault is refused...
+  const funded = await retireMarket(m.slug, 5_000_000);
+  check("a market holding SOL is refused", !funded.ok && Boolean(funded.reason?.includes("SOL")), JSON.stringify(funded));
+  // ...and so is one we could not check, because "we could not check" must
+  // never resolve to "go ahead".
+  const unknown = await retireMarket(m.slug, null);
+  check("an unreadable vault is refused too", !unknown.ok && Boolean(unknown.reason?.includes("could not be read")), JSON.stringify(unknown));
+  check("neither refusal changed anything", !(await isRetired(m.slug)));
+
+  const out = await retireMarket(m.slug, 0);
+  check("an empty market retires", out.ok && (await isRetired(m.slug)));
+  check("it leaves the board", (await openCommunityMarkets()).length === before - 1);
+  // The whole point: a fresh tag on the same post opens a FRESH market rather
+  // than pointing somebody at a dead one.
+  check("its source post is free again", (await openMarketForSourcePost("https://x.com/someone/status/77771111")) === null);
+
+  // Latches, so a second run reports honestly instead of moving the timestamp.
+  check("retiring twice is not a second retirement", !(await retireMarket(m.slug, 0)).ok);
   _resetChainEntries();
 }
 
