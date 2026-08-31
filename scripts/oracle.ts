@@ -32,6 +32,39 @@ import { oracleAvailable } from "../src/oracle/verdict.js";
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
 const FORCE = args.includes("--force");
+/**
+ * Open the "not closed yet" gate, to see what the rest of the pipeline says.
+ *
+ * WHAT THIS DOES NOT DO, because the first version of this comment claimed it
+ * did: it does not show you the future. The clock moves for the CODE gates
+ * only. The proposer builds its own timestamp from the real clock and searches
+ * the real internet, so on a market whose event has not happened it correctly
+ * reports that nothing has happened and abstains. Measured: three markets, all
+ * three abstained with reasoning that named today's real date.
+ *
+ * That makes it useful for exactly two things and nothing else: proving the
+ * oracle refuses to invent outcomes for events still in the future, and seeing
+ * which markets are blocked by criteria rather than by the calendar. To measure
+ * how often the oracle can actually settle, use scripts/oracle-backtest.ts,
+ * which asks it about events that have already happened.
+ *
+ * It NEVER combines with --apply. Settling a market as though time had passed is
+ * settling an open market.
+ */
+const asOfIdx = args.indexOf("--as-of");
+if (asOfIdx >= 0 && (!args[asOfIdx + 1] || args[asOfIdx + 1].startsWith("--"))) {
+  console.error(`\n  --as-of needs an ISO timestamp after it, for example --as-of 2027-01-01\n`);
+  process.exit(1);
+}
+const AS_OF = asOfIdx >= 0 ? new Date(args[asOfIdx + 1]) : null;
+if (AS_OF && Number.isNaN(AS_OF.getTime())) {
+  console.error(`\n  --as-of could not read "${args[asOfIdx + 1]}" as a date.\n`);
+  process.exit(1);
+}
+if (AS_OF && APPLY) {
+  console.error(`\n  --as-of and --apply cannot be used together. Pretending time has passed and then settling would settle a market that is still open.\n`);
+  process.exit(1);
+}
 // A --slug whose value is missing, or is itself a flag, is a TYPO, not "all
 // markets". It used to fall through to null and leave the board unfiltered, so
 // `npm run oracle -- --apply --slug` (flag pasted, slug forgotten) settled
@@ -67,7 +100,7 @@ if (slugArg && board.length === 0) {
   process.exit(1);
 }
 
-console.log(`  ${board.length} open market(s)${APPLY ? ", APPLYING" : ", dry run"}.\n`);
+console.log(`  ${board.length} open market(s)${APPLY ? ", APPLYING" : ", dry run"}${AS_OF ? `, as of ${AS_OF.toISOString()}` : ""}.\n`);
 
 const decisions: OracleDecision[] = [];
 let skipped = 0;
@@ -109,7 +142,7 @@ for (const m of board) {
     question: m.question,
     criteria: detail?.resolutionCriteria ?? null,
     closeTime: m.closesAt,
-  });
+  }, AS_OF ?? undefined);
   decisions.push(d);
 
   // Recorded before anything is announced, and best-effort by construction: the
@@ -162,6 +195,11 @@ if (dead.length) {
 }
 
 if (!APPLY) {
+  const byGate = new Map<string, number>();
+  for (const d of decisions) byGate.set(d.gate, (byGate.get(d.gate) ?? 0) + 1);
+  console.log(`  gates: ${[...byGate.entries()].sort((a, b) => b[1] - a[1]).map(([g, n]) => `${g} ${n}`).join(", ")}`);
+  const paid = decisions.filter((d) => d.proposal !== undefined || d.gate === "error").length;
+  console.log(`  ${paid} of ${decisions.length} reached the model; the rest were decided for free.`);
   console.log(`  ${settleable.length} of ${decisions.length} would settle${skipped ? `, ${skipped} held by the record` : ""}. Pass --apply to do it.\n`);
   process.exit(0);
 }

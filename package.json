@@ -54,7 +54,8 @@
     "test-oracle-wire": "tsx scripts/test-oracle-wire.ts",
     "reclaim-rent": "tsx scripts/reclaim-rent.ts",
     "test-receipts": "tsx scripts/test-receipts.ts",
-    "test-idl-drift": "tsx scripts/test-idl-drift.ts"
+    "test-idl-drift": "tsx scripts/test-idl-drift.ts",
+    "oracle-backtest": "tsx scripts/oracle-backtest.ts"
   },
   "engines": {
     "node": ">=20"

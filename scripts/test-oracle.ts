@@ -194,6 +194,26 @@ console.log("\nthe sentence written into the record says what the evidence actua
   check("unreachable citations are surfaced", why.includes("1 unreachable"), why);
 }
 
+console.log("\na page that renders in JavaScript was not read, so it is not accused");
+{
+  // Measured on fifa.com: 4,551 bytes of markup, zero characters of prose,
+  // because the content arrives via a script we never run. quote-absent is the
+  // status that discards a verdict AND says a source was invented; a page we
+  // could not read has done neither.
+  const shell = "<html><head><title>x</title></head><body><div id=\"root\"></div>" +
+    "<script>window.__DATA__=" + JSON.stringify({ pad: "x".repeat(1200) }) + "</script></body></html>";
+  _setPageFetcher(async () => ({ ok: true, html: shell, status: 200 }));
+  const j = await auditCitation({ url: "https://a.test/spa", quote: "Full Time, New York Stadium, 2026" }, null);
+  check("a JS shell is unreachable, not an absent quote", j.status === "unreachable", `${j.status} / ${j.note}`);
+  check("...and says why", j.note.includes("JavaScript"), j.note);
+
+  // A tiny page that is ALL content must still be read normally: a plain API
+  // response is a few hundred bytes and every one of them is prose.
+  _setPageFetcher(async () => ({ ok: true, html: '{"bitcoin":{"usd":105690}}', status: 200 }));
+  const api = await auditCitation({ url: "https://a.test/api", quote: '"bitcoin":{"usd":105690}' }, null);
+  check("a small API response is still readable", api.status === "verified", `${api.status} / ${api.note}`);
+}
+
 console.log("\na page we only half-read is not a page missing its words");
 {
   _setPageFetcher(async () => ({ ok: true, html: page("nothing relevant here"), status: 200, truncated: true }));

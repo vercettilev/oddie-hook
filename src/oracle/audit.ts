@@ -294,6 +294,24 @@ export async function auditCitation(c: Citation, closeTime: Date | null): Promis
   }
 
   const datedAt = documentDateOf(page.html);
+
+  // A PAGE THAT RENDERS ITS TEXT IN JAVASCRIPT WAS NOT READ, AND MUST NOT BE
+  // ACCUSED. Measured on fifa.com: 4,551 bytes of markup arrive and the
+  // extractor gets ZERO characters of prose out of them, because the content is
+  // fetched by a script we never run. Calling that "the quoted words are not on
+  // that page" is the same mistake as calling a truncated page absent, and it
+  // is worse than useless: quote-absent is the status that discards the whole
+  // verdict AND tells the operator a source was invented. The page did nothing
+  // wrong; we simply cannot read it.
+  //
+  // Substantial markup with almost no prose is the signature. A genuinely tiny
+  // document is not caught by this: a plain API response is a few hundred bytes
+  // that are ALL content, and the ratio here is what separates the two.
+  const readable = normalizeText(htmlToText(page.html));
+  if (page.html.length > 1000 && readable.length < 200) {
+    return { ...base, status: "unreachable", datedAt, note: "the page renders its text in JavaScript, so we could not read it" };
+  }
+
   if (!pageContains(page.html, c.quote)) {
     // A page we only read part of cannot be said to lack the words. Long
     // Wikipedia season articles and live blogs routinely pass the cap, and they
