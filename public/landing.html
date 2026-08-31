@@ -128,7 +128,7 @@
   /* ------------------------------------------------------------------ type -- */
   .h,.h1{font-family:var(--display);font-weight:400;text-transform:uppercase;
     letter-spacing:-.005em;line-height:.92;margin:0;text-wrap:balance}
-  .h1{font-size:clamp(52px,9.4vw,146px)}
+  .h1{font-size:clamp(46px,7.7vw,124px)}
   .h{font-size:clamp(36px,6.2vw,92px)}
   .h--sm{font-size:clamp(26px,3.4vw,46px);letter-spacing:-.005em;line-height:.96}
 
@@ -189,7 +189,7 @@
   .hero{position:relative}
   .hero__frame{position:relative;width:100%;max-width:1672px;margin:0 auto;aspect-ratio:1672/1085;
     min-height:720px}
-  .hero__copy{position:absolute;left:2.6%;top:10%;width:46%;z-index:4;
+  .hero__copy{position:absolute;left:3.4%;top:12%;width:37%;z-index:4;
     display:flex;flex-direction:column;align-items:flex-start;gap:clamp(14px,1.6vw,22px)}
   /* The premise is set in a plain grotesk in the comp, not the wood type: Anton
      at 14px all-caps closes its counters and reads as a bar. */
@@ -203,19 +203,32 @@
   .art{position:absolute;inset:0;z-index:1;pointer-events:none}
   .art img{position:absolute}
   /* Percentages read straight off the comp, so the pieces keep the relationship
-     they were composed with instead of being re-guessed in CSS. */
-  .a-right {right:0;    top:5.8%;  width:19.6%}
-  .a-peek  {left:49.9%; top:46.8%; width:12.9%; z-index:2}
-  .a-note  {left:70.6%; top:19.7%; width:9.9%}
-  .a-tag   {left:71.8%; top:31%;   width:12.9%}
+     they were composed with instead of being re-guessed in CSS. The copy column
+     was 46% and the cards 32%, which left the middle of the hero empty and
+     pushed the art out to the edges; the comp runs a 35% column and cards that
+     are nearly half the frame wide. */
+  .a-right {right:0;    top:5.5%; width:20.5%; height:88%; object-fit:cover; object-position:left top}
+  .a-peek  {left:50.2%; top:44.4%; width:12.4%; z-index:3}
+  .a-crowd {left:22.5%; bottom:6%;   width:17%}
+  .a-note  {position:absolute;left:67.5%; top:13.5%; width:9.6%; z-index:6;pointer-events:none}
+  .a-tag   {position:absolute;left:70.5%; top:25.5%; width:12.2%; z-index:6;pointer-events:none}
+
+  /* A rectangle crop on a dark ground announces its own edges the moment
+     anything inside it is lighter than the ground, which is what made the hero
+     read as chopped. Masking each piece turns the cut into a tear, which is the
+     comps' own language and is indifferent to what the photo contains. */
+  .a-right{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' preserveAspectRatio='none'%3E%3Cpath d='M0 9 L40 7 L72 5 L118 4 L140 3 L166 4 L191 1 L218 4 L252 3 L272 3 L300 0 L300 300 L281 290 L248 297 L203 290 L162 288 L136 291 L107 290 L68 299 L39 290 L0 295 L3 286 L1 248 L0 219 L12 194 L12 152 L7 124 L2 92 L6 61 L9 43 L8 22 L5 0 Z' fill='%23fff'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' preserveAspectRatio='none'%3E%3Cpath d='M0 9 L40 7 L72 5 L118 4 L140 3 L166 4 L191 1 L218 4 L252 3 L272 3 L300 0 L300 300 L281 290 L248 297 L203 290 L162 288 L136 291 L107 290 L68 299 L39 290 L0 295 L3 286 L1 248 L0 219 L12 194 L12 152 L7 124 L2 92 L6 61 L9 43 L8 22 L5 0 Z' fill='%23fff'/%3E%3C/svg%3E");
+    -webkit-mask-size:100% 100%;mask-size:100% 100%}
+  .a-note,.a-tag,.a-crowd{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' preserveAspectRatio='none'%3E%3Cpath d='M0 4 L29 10 L60 4 L97 1 L121 9 L160 1 L180 7 L216 0 L247 4 L267 2 L293 6 L289 0 L299 31 L298 63 L293 88 L291 117 L293 145 L300 187 L296 208 L292 240 L292 260 L292 286 L283 299 L250 297 L206 292 L172 288 L127 292 L98 300 L63 292 L43 291 L0 292 L1 299 L6 267 L4 235 L8 198 L9 153 L3 111 L4 78 L10 57 L3 24 L8 0 Z' fill='%23fff'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' preserveAspectRatio='none'%3E%3Cpath d='M0 4 L29 10 L60 4 L97 1 L121 9 L160 1 L180 7 L216 0 L247 4 L267 2 L293 6 L289 0 L299 31 L298 63 L293 88 L291 117 L293 145 L300 187 L296 208 L292 240 L292 260 L292 286 L283 299 L250 297 L206 292 L172 288 L127 292 L98 300 L63 292 L43 291 L0 292 L1 299 L6 267 L4 235 L8 198 L9 153 L3 111 L4 78 L10 57 L3 24 L8 0 Z' fill='%23fff'/%3E%3C/svg%3E");
+    -webkit-mask-size:100% 100%;mask-size:100% 100%}
 
   /* The two cards are HTML, not picture: they carry the numbers, and a number
      baked into a raster is a number nobody can correct. */
   .card{position:absolute;z-index:2;text-align:left}
-  .c-tweet{left:47.8%;top:2.2%;width:31.7%;background:var(--cream-card);color:var(--ink);
+  .c-tweet{left:35%;top:3%;width:45%;background:var(--cream-card);color:var(--ink);
     border:3px solid var(--ink);border-radius:3px;padding:18px 20px 14px;
     transform:rotate(-1.2deg);box-shadow:9px 10px 0 rgba(0,0,0,.85)}
-  .c-mkt{left:45.5%;top:62%;width:31.7%;transform:rotate(1deg);
+  .c-mkt{left:33.6%;top:60%;width:44%;transform:rotate(1deg);
     border:3px solid var(--ink);border-radius:6px;box-shadow:9px 10px 0 rgba(0,0,0,.85);
     outline:3px solid var(--lime);overflow:hidden;background:var(--ink)}
 
@@ -226,7 +239,7 @@
   .tw__name svg{width:13px;height:13px;fill:#1D9BF0}
   .tw__at{font-size:12px;color:#6E6A5C;font-weight:700}
   .tw__txt{margin:12px 0 0;font-family:var(--display);font-weight:400;text-transform:uppercase;
-    font-size:clamp(17px,2vw,29px);line-height:.98;letter-spacing:-.035em}
+    font-size:clamp(26px,4.6vw,70px);line-height:.94;letter-spacing:-.015em}
   .tw__meta{margin-top:12px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6E6A5C;
     letter-spacing:.02em}
   .tw__eng{display:flex;gap:16px;margin-top:9px;padding-top:9px;border-top:1px solid #DCD8C6;
@@ -265,7 +278,7 @@
     .hero__copy{position:static;width:100%;padding:0 22px;gap:16px}
     .art{position:static;margin-top:26px}
     .art img{position:static}
-    .a-right,.a-note,.a-tag{display:none}
+    .a-right,.a-note,.a-tag,.a-crowd{display:none}
     .a-peek{width:120px;margin:0 auto -22px;position:relative;z-index:3}
     .card{position:static;width:auto;margin:0 22px}
     .c-tweet{transform:rotate(-1deg)}
@@ -510,11 +523,15 @@
     <!-- Photographic pieces, cut from the comp. They carry no information, so
          they are aria-hidden and the cards beside them say everything. -->
     <div class="art" aria-hidden="true">
-      <img class="a-right"  src="/art/hero-people-right.webp?v=3"  alt="" width="327" height="886" fetchpriority="high">
-      <img class="a-note"   src="/art/tag-note.webp?v=3"           alt="" width="165" height="110" loading="lazy">
-      <img class="a-tag"    src="/art/oddiefun-sticker.webp?v=3"   alt="" width="215" height="80"  loading="lazy">
-      <img class="a-peek"   src="/art/mascot-peek.webp?v=4"        alt="" width="215" height="172" loading="lazy">
+      <img class="a-right"  src="/art/hero-people-right.webp?v=5"  alt="" width="327" height="886" fetchpriority="high">
+      <img class="a-note"   src="/art/tag-note.webp?v=5"           alt="" width="165" height="110" loading="lazy">
+      <img class="a-tag"    src="/art/oddiefun-sticker.webp?v=5"   alt="" width="215" height="80"  loading="lazy">
+      <img class="a-crowd"  src="/art/hero-crowd.webp?v=5" alt="" width="203" height="155" loading="lazy">
+      <img class="a-peek"   src="/art/mascot-peek.webp?v=5"        alt="" width="215" height="172" loading="lazy">
     </div>
+
+    <img class="a-note" src="/art/tag-note.webp?v=5" alt="" aria-hidden="true" width="165" height="110" loading="lazy">
+    <img class="a-tag"  src="/art/oddiefun-sticker.webp?v=5" alt="" aria-hidden="true" width="215" height="80" loading="lazy">
 
     <!-- THE TWO CARDS ARE HTML. They carry the numbers, and a number baked into
          a raster is a number nobody can correct. -->
@@ -570,7 +587,7 @@
           <div class="step reveal">
             <div class="step__hd"><span class="step__n">01</span>
               <div><h3 class="step__t">Someone posts a take</h3></div></div>
-            <div class="step__art"><img src="/art/hero-people-right.webp?v=3" alt="" aria-hidden="true" loading="lazy"></div>
+            <div class="step__art"><img src="/art/hero-people-right.webp?v=5" alt="" aria-hidden="true" loading="lazy"></div>
             <p class="step__b">Hot takes, unpopular opinions, wild claims. Anything goes.</p>
           </div>
 
@@ -590,7 +607,7 @@
           <div class="step reveal">
             <div class="step__hd"><span class="step__n">03</span>
               <div><h3 class="step__t">People pick a side</h3></div></div>
-            <div class="step__art"><img src="/art/crowd-card.webp?v=3" alt="" aria-hidden="true" loading="lazy"></div>
+            <div class="step__art"><img src="/art/crowd-card.webp?v=5" alt="" aria-hidden="true" loading="lazy"></div>
             <p class="step__b">The crowd backs it. The odds move. The price is what the room believes.</p>
           </div>
 
@@ -634,7 +651,7 @@
     <div class="shell">
       <div class="board">
         <div class="stack">
-          <img class="megaphone reveal" src="/art/megaphone.webp?v=3" alt="" aria-hidden="true" width="122" height="122" loading="lazy">
+          <img class="megaphone reveal" src="/art/megaphone.webp?v=5" alt="" aria-hidden="true" width="122" height="122" loading="lazy">
           <h2 class="h rough reveal">Be loud,<br><span class="l2">climb the board.</span></h2>
           <p class="lede reveal" style="color:var(--ink)">Earn points for markets that get action. The louder your takes,
             the higher you climb.</p>
@@ -672,7 +689,7 @@
     </div>
 
     <div class="band band--bleed" aria-hidden="true">
-      <img src="/art/board-crowd.webp?v=3" alt="" width="1400" height="214" loading="lazy">
+      <img src="/art/board-crowd.webp?v=5" alt="" width="1400" height="214" loading="lazy">
     </div>
   </section>
 
@@ -731,7 +748,7 @@
     </div>
     <div class="outro__pad"></div>
     <div class="outro__art" aria-hidden="true">
-      <img src="/art/outro-art.webp?v=3" alt="" width="1400" height="788" loading="lazy">
+      <img src="/art/outro-art.webp?v=5" alt="" width="1400" height="788" loading="lazy">
     </div>
   </section>
 </main>
