@@ -32,6 +32,11 @@ interface Case {
   closeTime: string;
   /** What actually happened. The fixture's whole value is that this is known. */
   answer: "yes" | "no";
+  /** The page a human fetched to establish the answer, and the line they read
+   *  it from. Carried so a future reader can re-check the fixture itself rather
+   *  than trusting it: a fixture with a wrong answer scores a correct oracle as
+   *  wrong, which is the one number this exists to protect. */
+  evidence: string;
   note: string;
 }
 
@@ -41,42 +46,144 @@ interface Case {
  * the ones the asymmetry in audit.ts makes structurally harder, which is the
  * point of including them.
  */
+/**
+ * Real markets, in oddie's actual shape, whose answers are already settled.
+ *
+ * The first version of this fixture was six questions I wrote from intuition,
+ * and it measured the wrong thing: half of them were absurdities ("did Bitcoin
+ * trade above $1,000,000") that no one would ever open a market on, where the
+ * honest answer is that no record specifically denies a silly claim. Tuning
+ * against those was overfitting to bad questions.
+ *
+ * These came from a search of events that actually resolved between May and
+ * August 2026, in the shape a tagged X argument produces: a specific subject, a
+ * threshold, a hard date, and a nameable public source. Every answer was
+ * established by fetching a page and reading it, then independently re-fetched
+ * and re-checked by a second pass, which dropped 11 of 24 candidates and
+ * corrected 7 of the survivors (two close times that sat too near the event, a
+ * results-table quote that only existed de-spaced, and two price questions
+ * missing a lower bound that made them trivially YES).
+ *
+ * Seven NO and six YES on purpose. A fixture of YES cases proves nothing: an
+ * oracle that always answers yes scores perfectly on it.
+ */
 const CASES: Case[] = [
   {
-    question: "Did Anthropic announce a model called Claude Opus 5 before 27 August 2026?",
-    criteria: "Resolves YES if Anthropic's official website, newsroom, or documentation shows an announcement of a model named Claude Opus 5 dated before 27 August 2026; otherwise NO.",
-    closeTime: "2026-08-27T00:00:00Z", answer: "yes",
-    note: "well-sourced, official page, recent",
+    question: "Will Argentina win the 2026 FIFA World Cup final on 19 July 2026?",
+    criteria: "YES if Argentina are the winners of the 2026 FIFA World Cup final at MetLife Stadium (including extra time or penalties); NO if any other nation lifts the trophy. Settled by the official FIFA World Cup 2026 final result and major wire reports of the match.",
+    closeTime: "2026-07-19T23:00:00Z",
+    answer: "no",
+    // Defending champions chasing back-to-back titles is a genuine X argument with a hard date and an official settling source.
+    evidence: "https://www.cbsnews.com/news/2026-fifa-world-cup-final-spain-argentina-sunday/",
+    note: "It took 106 minutes for Ferran Torres to score the first and only goal in the 2026 FIFA World Cup final at MetLife Stadium in New Jersey, giving Spain the 1-0 win over Argentina in",
   },
   {
-    question: "Did Bitcoin trade above $1,000,000 at any point during July 2026?",
-    criteria: "Resolves YES if a recognised price tracker (CoinGecko, CoinMarketCap) shows a BTC/USD price above $1,000,000 at any point in July 2026; otherwise NO.",
-    closeTime: "2026-08-01T00:00:00Z", answer: "no",
-    note: "a NO that requires refusing an absurd claim, not finding a source",
+    question: "Will Arsenal win the 2026 UEFA Champions League final against Paris Saint-Germain on 30 May 2026?",
+    criteria: "YES if Arsenal are declared winners of the 2026 UEFA Champions League final at the Puskas Arena, by any margin including a penalty shootout; NO if Paris Saint-Germain win. Settled by the official UEFA final result and the ESPN match report for the game.",
+    closeTime: "2026-05-30T20:00:00Z",
+    answer: "no",
+    // A single-match final with a nameable official result is the ideal oddie shape, and Arsenal's first European Cup vs a PSG repeat was a real argument.
+    evidence: "https://www.espn.com/soccer/report/_/gameId/401862897",
+    note: "PSG beat Arsenal on penalties to defend Champions League title",
   },
   {
-    question: "Was Donald Trump the sitting president of the United States on 1 August 2026?",
-    criteria: "Resolves YES if official US government sources show Donald Trump holding the office of President on 1 August 2026; otherwise NO.",
-    closeTime: "2026-08-02T00:00:00Z", answer: "yes",
-    note: "widely documented, many citable sources",
+    question: "Will Arsenal be crowned champions of the 2025-26 Premier League season?",
+    criteria: "YES if Arsenal finish top of the 2025-26 Premier League table and are awarded the title; NO if any other club wins it. Settled by the final Premier League table on premierleague.com and match reports of the title-clinching result.",
+    closeTime: "2026-05-24T18:00:00Z",
+    answer: "yes",
+    // A season-long title race resolving on a specific matchday, settled by an unambiguous public league table.
+    evidence: "https://www.espn.com/soccer/story/_/id/48813813/arsenal-win-premier-league-title-2026-manchester-city-bournemouth",
+    note: "Arsenal were crowned Premier League champions for the first time in 22 years after Manchester City failed to beat Bournemouth on Tuesday.",
   },
   {
-    question: "Did the 2026 FIFA World Cup final take place before 1 August 2026?",
-    criteria: "Resolves YES if FIFA's official site or major sports outlets show the 2026 World Cup final was played before 1 August 2026; otherwise NO.",
-    closeTime: "2026-08-01T00:00:00Z", answer: "yes",
-    note: "sports, a fixed calendar event",
+    question: "Will Jannik Sinner successfully defend his Wimbledon men's singles title in the final on 12 July 2026?",
+    criteria: "YES if Sinner wins the 2026 Wimbledon gentlemen's singles final; NO if his opponent wins or if Sinner does not reach the final. Settled by the official Wimbledon championship results and major outlets' final match reports.",
+    closeTime: "2026-07-12T21:00:00Z",
+    answer: "yes",
+    // Grand Slam finals are a staple of X sports arguments, with a fixed date and an official results page.
+    evidence: "https://www.espn.com/tennis/story/_/id/49342484/wimbledon-2026-men-final-live-tennis-latest-updates-jannik-sinner-alexander-zverev-news-results-schedule-weather",
+    note: "Jannik Sinner has defended his title, coming from a set down to beat Alexander Zverev, 6-7, 7-6, 6-3, 6-4 in three hours, 46 minutes in London.",
   },
   {
-    question: "Did Ethereum's price fall below $10 at any point in July 2026?",
-    criteria: "Resolves YES if a recognised price tracker shows an ETH/USD price below $10 at any point during July 2026; otherwise NO.",
-    closeTime: "2026-08-01T00:00:00Z", answer: "no",
-    note: "the NO case again, on a market a price page can actually address",
+    question: "Will the New York Knicks win the 2026 NBA Finals?",
+    criteria: "YES if the Knicks win the 2026 NBA Finals series against the San Antonio Spurs; NO if the Spurs win the series. Settled by the official NBA.com playoff series result for the 2026 Finals.",
+    closeTime: "2026-06-14T05:00:00Z",
+    answer: "yes",
+    // A best-of-seven final with a public official result and a huge fanbase argument (a 53-year Knicks drought vs a rising Spurs team) is a natural bot-tag
+    evidence: "https://www.espn.com/nba/story/_/id/49053284/new-york-knicks-win-2026-nba-finals-path-championship-outlast-east-brunson-towns-hart",
+    note: "It culminated in a five-game NBA Finals win over the rising San Antonio Spurs, as the Knicks won their first title in 53 years.",
   },
   {
-    question: "Did Apple release a product named 'Apple Car' before August 2026?",
-    criteria: "Resolves YES if Apple's official newsroom shows the release of a product named Apple Car before 1 August 2026; otherwise NO.",
-    closeTime: "2026-08-01T00:00:00Z", answer: "no",
-    note: "a NO where the honest proof is an absence, which is the hardest shape",
+    question: "Will Lando Norris win the 2026 British Grand Prix at Silverstone on 5 July 2026?",
+    criteria: "YES if Norris is classified first in the official race classification for the 2026 British Grand Prix; NO if any other driver wins. Settled by the official race result on formula1.com for the 2026 British Grand Prix, corroborated by the Wikipedia race report.",
+    closeTime: "2026-07-05T17:00:00Z",
+    answer: "no",
+    // A home-race win for a British driver is a textbook X argument, and F1 publishes an official classification the same day.
+    evidence: "https://en.wikipedia.org/wiki/2026_British_Grand_Prix",
+    note: "Leclerc took his ninth Formula One victory, his first at the British Grand Prix, ahead of George Russell (Mercedes), who took his first podium at Silverstone, and Hamilton.",
+  },
+  {
+    question: "Will Bitcoin trade below $60,000 at any point in 2026 before July 1, 2026?",
+    criteria: "YES if a major price source records a BTC spot price under $60,000 on any date between 2026-01-01 and 2026-07-01; NO if BTC never prints below that level in that window. Settled by Forbes/CoinGecko BTC spot price coverage.",
+    closeTime: "2026-07-01T00:00:00Z",
+    answer: "yes",
+    // A round-number BTC threshold with a hard deadline, genuinely arguable in late May 2026 when BTC was still near $80,000.
+    evidence: "https://www.forbes.com/sites/tylerroush/2026/06/05/bitcoin-falls-below-60000-erasing-trump-fueled-rally/",
+    note: "The price of bitcoin fell to a low of $59,840 just after noon on Friday",
+  },
+  {
+    question: "Will Bitcoin set a new all-time high above its October 2025 record of $126,198 at any point before August 21, 2026?",
+    criteria: "YES if BTC prints above $126,198.07 (the Oct 6, 2025 record) before 2026-08-21; NO if the all-time high is still dated October 2025 at close. Settled by Fortune's daily Bitcoin price page / CoinGecko's ATH field.",
+    closeTime: "2026-08-21T12:00:00Z",
+    answer: "no",
+    // A perennially argued claim ('new ATH this cycle') with a nameable settling source, and well-posed without a start bound because an all-time high is de
+    evidence: "https://fortune.com/article/price-of-bitcoin-08-21-2026/",
+    note: "Bitcoin reached its highest price ever on Oct. 6, 2025, pricing at a whopping $126,198.07.",
+  },
+  {
+    question: "Will Ethereum trade below $2,000 at any point in 2026 before August 18, 2026?",
+    criteria: "YES if ETH spot prints under $2,000 on any date between 2026-01-01 and 2026-08-18; NO otherwise. Settled by Fortune's daily Ethereum price page or CoinGecko's ETH daily close data.",
+    closeTime: "2026-08-18T00:00:00Z",
+    answer: "yes",
+    // A round-number threshold on the second-largest asset, exactly the kind of line people fight over in ETH replies.
+    evidence: "https://fortune.com/article/price-of-ethereum-08-17-2026/",
+    note: "At 6:15 a.m. Eastern Time on August 17, 2026, the price of Ethereum (1 ETH) is $1,891.33.",
+  },
+  {
+    question: "Will Ethereum's Glamsterdam upgrade activate on mainnet before August 1, 2026?",
+    criteria: "YES if the Glamsterdam hard fork activates on Ethereum mainnet before 2026-08-01; NO if it is still unshipped at that date. Settled by ethereum.org's Glamsterdam roadmap page.",
+    closeTime: "2026-08-01T00:00:00Z",
+    answer: "no",
+    // Ship-date arguments about Ethereum forks are a staple of crypto X, and Glamsterdam was originally targeted at H1 2026, so a July deadline was genuinel
+    evidence: "https://ethereum.org/roadmap/glamsterdam/",
+    note: "Glamsterdam is an upcoming Ethereum upgrade planned for Q4 2026",
+  },
+  {
+    question: "Will Solana's Alpenglow consensus upgrade be live on Solana mainnet before August 15, 2026?",
+    criteria: "YES if Alpenglow consensus (Votor) is activated on Solana mainnet before 2026-08-15; NO if only prerequisite SIMDs have shipped and Alpenglow itself is still pending. Settled by solana.com/upgrades/alpenglow or Solana core-dev release coverage.",
+    closeTime: "2026-08-15T00:00:00Z",
+    answer: "no",
+    // Alpenglow's 150ms-finality claim was heavily hyped and community validator testing went live in May 2026, so 'is it actually live yet' was a real disp
+    evidence: "https://crypto.news/solana-alpenglow-targets-150ms-finality-in-october/",
+    note: "Alpenglow is expected to activate with Agave 4.3, which is targeted for October 2026.",
+  },
+  {
+    question: "Will Strategy (MSTR) publicly disclose a sale of at least $100 million of its bitcoin holdings in 2026 before August 1, 2026?",
+    criteria: "YES if Strategy announces or files disclosure of a bitcoin disposal worth $100M or more between 2026-01-01 and 2026-08-01; NO if all disclosed sales in that window stay under that size. Settled by Strategy's SEC filings or major-outlet coverage of them (Fortune/CNBC/CoinDesk).",
+    closeTime: "2026-08-01T00:00:00Z",
+    answer: "yes",
+    // 'Saylor will never sell' was one of the loudest arguments on crypto X, and the first 2026 sale was only 32 BTC, so a $100M threshold was a real dividi
+    evidence: "https://fortune.com/2026/07/06/michael-saylor-strategy-216-million-bitcoin-sale-largest-ever/",
+    note: "Strategy announced on Monday morning that it sold $216 million worth of Bitcoin over the past week.",
+  },
+  {
+    question: "Will NVIDIA report total revenue of at least $100 billion for its fiscal Q2 2027 (quarter ended July 26, 2026)?",
+    criteria: "YES if NVIDIA's official quarterly results press release on nvidianews.nvidia.com states Q2 FY2027 revenue of $100.0 billion or more; NO if it states less. Source: the NVIDIA Newsroom release \"NVIDIA Announces Financial Results for Second Quarter Fiscal 2027\".",
+    closeTime: "2026-08-26T23:59:59Z",
+    answer: "no",
+    // A round-number earnings threshold on the most-argued stock on X, settled by a single official press release on a scheduled date, which is close to the
+    evidence: "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027",
+    note: "Revenue of $96.2 billion, up 106% from a year ago",
   },
 ];
 
