@@ -129,7 +129,7 @@
   /* ------------------------------------------------------------------ type -- */
   .h,.h1{font-family:var(--display);font-weight:400;text-transform:uppercase;
     letter-spacing:-.005em;line-height:.92;margin:0;text-wrap:balance}
-  .h1{font-size:clamp(40px,5.9vw,90px);max-inline-size:12ch}
+  .h1{font-size:clamp(46px,7.6vw,124px);max-inline-size:11ch}
   .h{font-size:clamp(36px,6.2vw,92px)}
   .h--sm{font-size:clamp(26px,3.4vw,46px);letter-spacing:-.005em;line-height:.96}
 
@@ -157,7 +157,9 @@
     text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink)}
 
   /* ------------------------------------------------------------------ nav -- */
-  .nav{position:absolute;top:0;left:0;right:0;z-index:12;padding:22px 0}
+  .nav{position:absolute;top:0;left:0;right:0;z-index:12;padding:26px 0}
+  .nav .shell{max-width:none;padding-left:17%}
+  @media (max-width:900px){.nav .shell{padding-left:22px}}
   .brand{display:inline-flex;align-items:center;gap:12px}
   .brand img{width:38px;height:38px;border-radius:10px}
   .brand span{font-family:var(--display);font-size:26px;font-weight:400;color:#fff;
@@ -198,7 +200,7 @@
   .hero{position:relative}
   .hero__frame{position:relative;width:100%;max-width:1672px;margin:0 auto;aspect-ratio:1400/788;
     min-height:600px}
-  .hero__copy{position:absolute;left:3.6%;top:10.5%;width:min(42%,545px);z-index:4;
+  .hero__copy{position:absolute;left:17%;top:13%;width:min(46%,640px);z-index:4;
     display:flex;flex-direction:column;align-items:flex-start}
   .hero__pre{font-family:'Nunito',system-ui,sans-serif;font-weight:800;text-transform:uppercase;
     font-size:clamp(13px,1.3vw,18px);letter-spacing:.06em;line-height:1.32;color:var(--ink)}
@@ -225,45 +227,24 @@
   .hero .brush{margin-top:clamp(20px,2.2vw,30px);max-width:100%}
   .hero .rails{margin-top:clamp(18px,2vw,28px)}
   .hero .btn{margin-top:clamp(14px,1.5vw,20px)}
-  .hero .livechip{margin-top:clamp(9px,1vw,14px)}
 
   .heroart{position:absolute;inset:0;z-index:1;pointer-events:none}
-  .heroart img{position:absolute;left:0;bottom:-8%;width:100%;height:auto}
+  .heroart img{position:absolute;left:0;bottom:0;width:100%;height:auto}
 
   .livechip{display:inline-flex;align-items:center;gap:8px;
     font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--ink);opacity:.6}
-  .livechip i{width:8px;height:8px;border-radius:50%;background:var(--ink)}
+    text-transform:uppercase;color:var(--fg-3)}
+  .livechip i{width:7px;height:7px;border-radius:50%;background:var(--lime)}
   .proof{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.09em;
-    text-transform:uppercase;color:var(--ink);opacity:.6}
+    text-transform:uppercase;color:var(--fg-3)}
   .proof:empty{display:none}
-  .proof b{opacity:1}
-
-  /* The odds sit IN the column, at the end of it, as the thing the copy was
-     leading to. Floating them was half of what made the old hero a pile. */
-  .c-mkt{position:absolute;left:43%;bottom:19%;width:25%;transform:rotate(-1.2deg);z-index:3;
-    border:3px solid var(--ink);border-radius:6px;box-shadow:8px 9px 0 rgba(11,12,5,.55);
-    overflow:hidden;background:var(--ink);text-align:left;z-index:3}
-  .mkt__row{display:flex}
-  .mkt__side{flex:1;padding:14px 16px 12px;text-align:left}
-  .mkt__yes{background:var(--lime-hot);color:var(--ink)}
-  .mkt__no{background:var(--pink);color:var(--ink)}
-  .mkt__k{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:14px;
-    letter-spacing:.02em}
-  .mkt__v{font-family:var(--display);font-weight:400;font-size:clamp(26px,3.1vw,44px);
-    letter-spacing:-.04em;line-height:.92;margin-top:2px}
-  .mkt__sub{font-family:var(--mono);font-size:10px;font-weight:700;margin-top:6px;opacity:.78}
-  .mkt__foot{background:var(--ink);color:#fff;text-align:center;padding:9px 10px;
-    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em;
-    text-transform:uppercase}
-  .mkt__foot b{color:var(--lime)}
+  .proof b{color:#fff}
 
   @media (max-width:900px){
     .hero__frame{aspect-ratio:auto;min-height:0;padding:104px 0 0}
     .hero__copy{position:static;width:100%;padding:0 22px;gap:16px}
     .heroart{position:static;margin-top:26px}
     .heroart img{position:static;width:100%;height:auto;object-fit:contain}
-    .c-mkt{position:static;left:auto;bottom:auto;width:auto;margin:24px 0 0;transform:rotate(-.6deg)}
   }
 
   /* ---------------------------------------------------------------- steps -- */
@@ -495,32 +476,9 @@
            compose box hands a cold visitor the hardest first step. -->
       <button class="btn btn--dark" id="ctacreate" type="button">Launch app <i aria-hidden="true">&rarr;</i></button>
 
-      <!--NET_CHIP-->
-      <!-- Injected whole, not as a bare number inside a fixed sentence: with only
-           the figure templated, a cold or failed read printed "0 markets" on the
-           front door. -->
-      <span class="proof"><!--PROOF--></span>
 
 
     </div>
-
-  <!-- ONE product object in the hero, and it is HTML: it carries the numbers,
-  and a number baked into a raster is a number nobody can correct. -->
-  <div class="card c-mkt" role="img" aria-label="Example market: 71 percent called yes holding 355 dollars, 29 percent called no holding 145 dollars, 500 dollars in the pool, 2 percent to the person who started it.">
-  <div class="mkt__row">
-  <div class="mkt__side mkt__yes">
-  <div class="mkt__k">Yes</div>
-  <div class="mkt__v">71%</div>
-  <div class="mkt__sub">$355</div>
-  </div>
-  <div class="mkt__side mkt__no">
-  <div class="mkt__k">No</div>
-  <div class="mkt__v">29%</div>
-  <div class="mkt__sub">$145</div>
-  </div>
-  </div>
-  <div class="mkt__foot">$500 in the pool &middot; <b>2% to @cryptobro88</b></div>
-  </div>
 
     <div class="heroart" aria-hidden="true">
       <img src="/art/outro-art.webp?v=5" alt="" width="1400" height="788" decoding="async" fetchpriority="high">
@@ -710,6 +668,8 @@
     <!-- The plain, exact line. Dollars are what the page shows, because this is
          being built for people who do not hold SOL; SOL is what the vault holds,
          so both facts are printed rather than one. -->
+    <!--NET_CHIP-->
+    <span class="proof"><!--PROOF--></span>
     <span class="sp">Pools are held and settled in SOL on Solana. Dollar figures are conversions. Oddie never holds your funds.</span>
   </div>
 </footer>
