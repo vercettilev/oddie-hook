@@ -20,7 +20,7 @@
 // cannot be read: "we could not check" must never resolve to "go ahead".
 
 import pg from "pg";
-import { isChainEnabled, fetchMarketOnChain } from "../src/chain/oddieChain.js";
+import { isChainEnabled, stakedInVault } from "../src/chain/oddieChain.js";
 import { adminListCommunity, retireMarket } from "../src/store/markets.js";
 
 const args = process.argv.slice(2);
@@ -48,16 +48,16 @@ console.log(`\n  ${picked.length} selected of ${board.length} open${GO ? ", RETI
 
 let done = 0, refused = 0;
 for (const m of picked) {
-  // Read the vault before deciding. An unminted market has no vault and nothing
-  // at risk; a minted one must be read, and an unreadable one is refused.
+  // Read the VAULT BALANCE, not the market's totals.
+  //
+  // The totals live in the Market account, and a Market written by an older
+  // program layout cannot be deserialised at all, so asking it whether anybody
+  // has money in there answers "unreadable" precisely when the answer matters.
+  // The vault's balance is the runtime's own number and needs no decoding; it
+  // is also the money itself rather than a claim about it. An unminted market
+  // has no vault and nothing at risk.
   let vault: number | null = 0;
-  if (m.onchainPubkey) {
-    if (!isChainEnabled()) vault = null;
-    else {
-      const st = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
-      vault = st ? st.totalYesLamports + st.totalNoLamports : null;
-    }
-  }
+  if (m.onchainPubkey) vault = isChainEnabled() ? await stakedInVault(m.onchainPubkey) : null;
 
   if (!GO) {
     const verdict = vault === null ? "REFUSED (vault unreadable)" : vault > 0 ? `REFUSED (${(vault / 1e9).toFixed(4)} SOL)` : "would retire";

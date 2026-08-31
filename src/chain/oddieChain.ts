@@ -371,6 +371,45 @@ export type ResolveResult =
   | { ok: false; reason: "unavailable" | "diverged" | "failed"; error: string; onChainOutcome?: "yes" | "no" };
 
 /**
+ * How much SOL is actually staked in a market's vault, in lamports.
+ *
+ * This exists because the obvious way to ask, reading total_yes and total_no
+ * off the Market account, stops working exactly when it matters most. A Market
+ * written by an older layout cannot be deserialised at all, so every question
+ * about it answers "unreadable", including the only one that decides whether it
+ * is safe to touch: is anybody's money in there.
+ *
+ * The vault's balance needs no decoding. It is the runtime's own number, the
+ * Vault account's layout has not changed anyway, and it is the money itself
+ * rather than a claim about the money. Anything above the rent-exempt minimum
+ * is somebody's stake; exactly the minimum means the vault holds nothing but
+ * itself; and a vault that does not exist at all holds nothing, which is the
+ * shape of a market minted by a program we no longer run.
+ *
+ * Null means the chain could not be reached, which callers must treat as a
+ * refusal rather than as zero.
+ */
+export async function stakedInVault(marketPubkey: string): Promise<number | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    const marketPk = new c.web3.PublicKey(marketPubkey);
+    const [vaultPk] = c.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), marketPk.toBuffer()],
+      c.program.programId,
+    );
+    const [balance, rentMin] = await Promise.all([
+      c.connection.getBalance(vaultPk),
+      c.connection.getMinimumBalanceForRentExemption(8 + 33),
+    ]);
+    if (balance === 0) return 0;
+    return Math.max(0, balance - rentMin);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Give back the rent on a market nobody ever staked into.
  *
  * The program refuses anything else, and deliberately: `claim_winnings` closes a
