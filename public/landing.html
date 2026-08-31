@@ -146,9 +146,14 @@
   .stack{display:flex;flex-direction:column;align-items:flex-start;gap:18px}
 
   /* Marker underline, the comps' recurring emphasis mark. */
-  .mk{position:relative;white-space:nowrap}
-  .mk::after{content:"";position:absolute;left:-2%;right:-2%;bottom:-.06em;height:.13em;
-    background:var(--pink);border-radius:99px;transform:rotate(-.5deg)}
+  .mk{white-space:nowrap;
+    background-image:linear-gradient(var(--pink),var(--pink));
+    background-repeat:no-repeat;background-size:100% .1em;background-position:0 102%;
+    padding-bottom:.1em}
+  /* In the accent position it also takes the chartreuse-on-outline treatment the
+     board headline uses, so the two loud headings match. */
+  .h .mk{color:var(--lime);background-size:100% .085em;
+    text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink)}
 
   /* ------------------------------------------------------------------ nav -- */
   .nav{position:absolute;top:0;left:0;right:0;z-index:12;padding:26px 0}
@@ -202,12 +207,15 @@
 
   .art{position:absolute;inset:0;z-index:1;pointer-events:none}
   .art img{position:absolute}
+  /* height:auto or the HTML height attribute fights the CSS width and stretches
+     the picture. The attributes stay because they reserve the box before load. */
+  .art img,.a-note,.a-tag,.minipeek,.paid__ghost,.megaphone,.band img{height:auto}
   /* Percentages read straight off the comp, so the pieces keep the relationship
      they were composed with instead of being re-guessed in CSS. The copy column
      was 46% and the cards 32%, which left the middle of the hero empty and
      pushed the art out to the edges; the comp runs a 35% column and cards that
      are nearly half the frame wide. */
-  .a-right {right:0;    top:5.5%; width:20.5%; height:88%; object-fit:cover; object-position:left top}
+  .a-right {right:0;    top:5.5%; width:20.5%; height:88%!important; object-fit:cover; object-position:left top}
   .a-peek  {left:50.2%; top:44.4%; width:12.4%; z-index:3}
   .a-crowd {left:22.5%; bottom:6%;   width:17%}
   .a-note  {position:absolute;left:67.5%; top:13.5%; width:9.6%; z-index:6;pointer-events:none}
@@ -289,13 +297,19 @@
   /* ---------------------------------------------------------------- steps -- */
   .sec{padding:clamp(58px,7vw,96px) 0}
   .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px;margin-top:38px}
-  .step{background:var(--cream-card);border:3px solid var(--ink);border-radius:4px;padding:18px;
-    box-shadow:8px 9px 0 rgba(11,12,5,.82);display:flex;flex-direction:column;gap:12px}
-  .step:nth-child(odd){transform:rotate(-.5deg)}
-  .step:nth-child(even){transform:rotate(.4deg)}
+  /* Torn paper, not a rounded rectangle. The outline is a MASK and the shadow
+     moves to a filter, because box-shadow paints outside the mask and would be
+     clipped away by it. The border goes too: a 3px stroke cannot follow a ragged
+     edge, and drawn straight it re-announces the rectangle the mask just removed. */
+  .step{background:var(--cream-card);padding:24px 22px;display:flex;flex-direction:column;gap:12px;
+    -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='240' preserveAspectRatio='none'%3E%3Cpath d='M0.0 3.4 L24.3 2.1 L48.6 1.5 L72.9 8.2 L97.1 5.2 L121.4 6.2 L145.7 5.0 L170.0 3.5 L194.3 6.6 L218.6 5.2 L242.9 7.0 L267.1 6.0 L291.4 7.6 L315.7 4.0 L340.0 1.4 L338.7 0.0 L333.5 21.8 L338.5 43.6 L334.1 65.5 L334.4 87.3 L339.5 109.1 L332.9 130.9 L339.7 152.7 L332.2 174.5 L332.4 196.4 L338.1 218.2 L333.5 240.0 L340.0 237.3 L315.7 232.4 L291.4 232.0 L267.1 238.4 L242.9 234.5 L218.6 234.4 L194.3 237.1 L170.0 239.5 L145.7 231.2 L121.4 233.8 L97.1 231.8 L72.9 238.9 L48.6 234.0 L24.3 238.9 L0.0 233.4 L6.7 240.0 L3.8 218.2 L6.6 196.4 L4.1 174.5 L1.2 152.7 L0.2 130.9 L3.6 109.1 L4.4 87.3 L6.0 65.5 L3.7 43.6 L6.0 21.8 L1.3 0.0 Z' fill='%23fff'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='240' preserveAspectRatio='none'%3E%3Cpath d='M0.0 3.4 L24.3 2.1 L48.6 1.5 L72.9 8.2 L97.1 5.2 L121.4 6.2 L145.7 5.0 L170.0 3.5 L194.3 6.6 L218.6 5.2 L242.9 7.0 L267.1 6.0 L291.4 7.6 L315.7 4.0 L340.0 1.4 L338.7 0.0 L333.5 21.8 L338.5 43.6 L334.1 65.5 L334.4 87.3 L339.5 109.1 L332.9 130.9 L339.7 152.7 L332.2 174.5 L332.4 196.4 L338.1 218.2 L333.5 240.0 L340.0 237.3 L315.7 232.4 L291.4 232.0 L267.1 238.4 L242.9 234.5 L218.6 234.4 L194.3 237.1 L170.0 239.5 L145.7 231.2 L121.4 233.8 L97.1 231.8 L72.9 238.9 L48.6 234.0 L24.3 238.9 L0.0 233.4 L6.7 240.0 L3.8 218.2 L6.6 196.4 L4.1 174.5 L1.2 152.7 L0.2 130.9 L3.6 109.1 L4.4 87.3 L6.0 65.5 L3.7 43.6 L6.0 21.8 L1.3 0.0 Z' fill='%23fff'/%3E%3C/svg%3E");
+    -webkit-mask-size:100% 100%;mask-size:100% 100%;
+    filter:drop-shadow(7px 8px 0 rgba(11,12,5,.8))}
+  .step:nth-child(odd){transform:rotate(-.7deg)}
+  .step:nth-child(even){transform:rotate(.6deg)}
   .step__hd{display:flex;align-items:flex-start;gap:11px}
   .step__n{flex:none;background:var(--ink);color:#fff;font-family:var(--display);font-weight:400;
-    font-size:19px;padding:5px 10px;border-radius:3px;letter-spacing:-.02em}
+    font-size:21px;padding:6px 12px 5px;letter-spacing:-.02em;transform:rotate(-1.2deg)}
   .step__t{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
     font-size:16px;line-height:1.02;letter-spacing:-.02em}
   .step__b{margin:0;font-size:13.5px;font-weight:600;line-height:1.5;color:var(--ink-2)}
@@ -317,23 +331,36 @@
      this is real money, so it gets no tilt, no drop shadow and no brand colour
      beyond the figure. The app's profile strip already works this way and the
      front door now matches it. */
-  .paid{background:var(--cream);border:2px dashed var(--ink-3);border-radius:3px;padding:14px}
-  .paid__k{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--ink-3)}
-  .paid__v{font-family:var(--display);font-weight:400;font-size:38px;letter-spacing:-.05em;
-    line-height:1;margin-top:4px;color:var(--ink)}
-  .paid__c{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.08em;
-    text-transform:uppercase;color:var(--ink-3);margin-top:4px}
+  /* The comp paints this card chartreuse, and that is right for step four of an
+     explainer: the quiet-money rule is about the FIGURE, which still gets no
+     glow, no motion and no colour of its own. */
+  .minihold{position:relative;padding-top:30px}
+  .minipeek{position:absolute;left:12%;top:0;width:min(27%,88px);z-index:1}
+  .minihold .step__mini{position:relative;z-index:2}
+  .paid{position:relative;overflow:hidden;background:var(--lime);border:3px solid var(--ink);
+    border-radius:4px;padding:14px 16px 16px;min-height:132px}
+  .paid__k{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink);opacity:.72}
+  .paid__v{position:relative;z-index:2;font-family:var(--display);font-weight:400;font-size:46px;letter-spacing:-.04em;
+    line-height:1;margin-top:2px;color:var(--ink)}
+  .paid__c{position:relative;z-index:2;font-size:11.5px;font-weight:700;line-height:1.35;color:var(--ink);opacity:.72;
+    margin-top:4px;max-width:16ch}
+  .paid__stamp{position:absolute;right:-4px;top:16px;z-index:2;background:var(--pink);color:#fff;
+    font-family:var(--display);font-weight:400;font-size:17px;text-transform:uppercase;
+    letter-spacing:.02em;padding:4px 14px 3px;transform:rotate(-7deg)}
+  .paid__ghost{position:absolute;right:-14px;bottom:-18px;width:46%;pointer-events:none;z-index:1;opacity:.95}
 
   /* ---------------------------------------------------------------- board -- */
   .board{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:44px;align-items:start}
   @media (max-width:900px){.board{grid-template-columns:1fr;gap:30px}}
-  .board .h{color:var(--ink)}
+  .board .h{color:var(--ink);line-height:1.02}
   .board .h .l2{display:block;color:var(--lime);
     text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink)}
   .megaphone{width:104px;margin-bottom:2px}
-  .lb{background:var(--cream-card);border:3px solid var(--ink);border-radius:4px;padding:18px;
-    box-shadow:9px 10px 0 rgba(11,12,5,.5);color:var(--ink);transform:rotate(-.6deg)}
+  .lb{background:var(--cream-card);padding:24px 22px;color:var(--ink);transform:rotate(-.6deg);
+    -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='520' preserveAspectRatio='none'%3E%3Cpath d='M0.0 4.3 L30.0 7.0 L60.0 5.2 L90.0 2.6 L120.0 1.1 L150.0 0.5 L180.0 0.3 L210.0 6.9 L240.0 7.0 L270.0 6.0 L300.0 0.9 L330.0 5.3 L360.0 1.0 L390.0 7.1 L420.0 5.2 L414.0 0.0 L415.1 47.3 L416.7 94.5 L413.2 141.8 L412.3 189.1 L418.1 236.4 L416.5 283.6 L414.1 330.9 L414.6 378.2 L416.7 425.5 L416.4 472.7 L412.3 520.0 L420.0 518.6 L390.0 519.8 L360.0 518.7 L330.0 518.3 L300.0 514.1 L270.0 514.0 L240.0 512.9 L210.0 517.0 L180.0 512.6 L150.0 517.4 L120.0 512.8 L90.0 517.8 L60.0 514.5 L30.0 518.3 L0.0 517.8 L5.7 520.0 L4.8 472.7 L8.0 425.5 L0.9 378.2 L5.4 330.9 L1.8 283.6 L2.6 236.4 L1.2 189.1 L4.5 141.8 L1.9 94.5 L0.5 47.3 L5.3 0.0 Z' fill='%23fff'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='520' preserveAspectRatio='none'%3E%3Cpath d='M0.0 4.3 L30.0 7.0 L60.0 5.2 L90.0 2.6 L120.0 1.1 L150.0 0.5 L180.0 0.3 L210.0 6.9 L240.0 7.0 L270.0 6.0 L300.0 0.9 L330.0 5.3 L360.0 1.0 L390.0 7.1 L420.0 5.2 L414.0 0.0 L415.1 47.3 L416.7 94.5 L413.2 141.8 L412.3 189.1 L418.1 236.4 L416.5 283.6 L414.1 330.9 L414.6 378.2 L416.7 425.5 L416.4 472.7 L412.3 520.0 L420.0 518.6 L390.0 519.8 L360.0 518.7 L330.0 518.3 L300.0 514.1 L270.0 514.0 L240.0 512.9 L210.0 517.0 L180.0 512.6 L150.0 517.4 L120.0 512.8 L90.0 517.8 L60.0 514.5 L30.0 518.3 L0.0 517.8 L5.7 520.0 L4.8 472.7 L8.0 425.5 L0.9 378.2 L5.4 330.9 L1.8 283.6 L2.6 236.4 L1.2 189.1 L4.5 141.8 L1.9 94.5 L0.5 47.3 L5.3 0.0 Z' fill='%23fff'/%3E%3C/svg%3E");
+    -webkit-mask-size:100% 100%;mask-size:100% 100%;
+    filter:drop-shadow(8px 9px 0 rgba(11,12,5,.45))}
   .lb__hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
     background:var(--ink);color:#fff;padding:10px 14px;border-radius:3px}
   .lb__hd h3{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
@@ -354,10 +381,11 @@
     letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
 
   .earn{display:flex;flex-direction:column;gap:14px}
-  .earnc{display:flex;align-items:center;gap:16px;background:var(--ink);color:#fff;
-    border-radius:4px;padding:16px 18px}
-  .earnc__n{flex:none;font-family:var(--display);font-weight:400;font-size:38px;
-    letter-spacing:-.05em;color:var(--lime);line-height:1}
+  .earnc{display:flex;align-items:center;gap:18px;background:var(--ink);color:#fff;
+    border-radius:4px;padding:16px 20px 16px 16px}
+  .earnc__n{flex:none;font-family:var(--display);font-weight:400;font-size:30px;
+    letter-spacing:-.03em;color:var(--ink);line-height:1;background:var(--lime);
+    padding:7px 12px 6px;transform:rotate(-2deg);white-space:nowrap}
   .earnc__t{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:14px;
     letter-spacing:-.01em}
   .earnc__b{margin:4px 0 0;font-size:13px;font-weight:600;line-height:1.45;color:rgba(255,255,255,.68)}
@@ -592,12 +620,15 @@
           <div class="step reveal">
             <div class="step__hd"><span class="step__n">02</span>
               <div><h3 class="step__t">Oddie gives it odds</h3></div></div>
-            <div class="step__mini" role="img" aria-label="Example: the take becomes a market at 71 percent yes, 29 percent no.">
-              <div class="mini__row">
-                <div class="mini__s mini__yes">71% <small>Yes</small></div>
-                <div class="mini__s mini__no">29% <small>No</small></div>
+            <div class="minihold">
+              <img class="minipeek" src="/art/mascot-peek.webp?v=5" alt="" aria-hidden="true" width="160" height="120" loading="lazy">
+              <div class="step__mini" role="img" aria-label="Example: the take becomes a market at 71 percent yes, 29 percent no.">
+                <div class="mini__row">
+                  <div class="mini__s mini__yes">71% <small>Yes</small></div>
+                  <div class="mini__s mini__no">29% <small>No</small></div>
+                </div>
+                <div class="mini__f">A market with its own vault</div>
               </div>
-              <div class="mini__f">A market with its own vault</div>
             </div>
             <p class="step__b">Oddie spins it up in seconds. Yes or no. The market is live.</p>
           </div>
@@ -618,9 +649,11 @@
                  resolves in your favour" describes a bettor, not a tagger, and
                  would have promised the wrong thing on the front door. -->
             <div class="paid">
-              <div class="paid__k">Your market resolved with $2,000 in it</div>
+              <div class="paid__k">You earned</div>
               <div class="paid__v">+$40</div>
-              <div class="paid__c">to whoever started it</div>
+              <div class="paid__c">on a market that resolved with $2,000 in it</div>
+              <span class="paid__stamp" aria-hidden="true">Paid</span>
+              <img class="paid__ghost" src="/art/mascot-cool.webp?v=5" alt="" aria-hidden="true" width="569" height="438" loading="lazy">
             </div>
             <p class="step__b">2% of the pool, whichever side wins, claimed with your own wallet.
               Oddie takes 2%, which is what keeps the markets opening.</p>
