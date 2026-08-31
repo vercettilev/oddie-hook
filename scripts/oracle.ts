@@ -93,7 +93,9 @@ if (APPLY && (!BASE || !TOKEN)) {
 
 // adminListCommunity, not openCommunityMarkets: the latter returns venue_id,
 // which is a separate column from slug and only looks like it on a good day.
-const all = (await adminListCommunity()).filter((m) => !m.resolvedOutcome);
+// Retired markets are off the board and must not be settled: the oracle would
+// be deciding a market nobody can see or stake in.
+const all = (await adminListCommunity()).filter((m) => !m.resolvedOutcome && !m.retiredAt);
 const board = slugArg ? all.filter((m) => m.slug === slugArg) : all;
 if (slugArg && board.length === 0) {
   console.error(`\n  ${slugArg} is not an open market.\n`);

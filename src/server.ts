@@ -2647,7 +2647,11 @@ app.get("/api/v1/markets", async (req, res) => {
   // together. openCommunityMarkets returns the pricing shape, which has none of
   // those.
   const all = await adminListCommunity().catch(() => []);
-  const items = await Promise.all(all.filter((m) => !m.resolvedOutcome).slice(0, limit).map(async (m) => {
+  // Retired markets are off the board, and this is a public surface. The list
+  // above is the admin view and returns them on purpose, so the filter has to be
+  // here: without it the agent API kept serving markets that had already left
+  // the feed.
+  const items = await Promise.all(all.filter((m) => !m.resolvedOutcome && !m.retiredAt).slice(0, limit).map(async (m) => {
     const state = m.onchainPubkey ? await fetchMarketOnChain(m.onchainPubkey).catch(() => null) : null;
     const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
     const total = yes + no;

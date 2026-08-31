@@ -37,7 +37,7 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const board = (await adminListCommunity()).filter((m) => !m.resolvedOutcome);
+const board = (await adminListCommunity()).filter((m) => !m.resolvedOutcome && !m.retiredAt);
 const picked = SLUGS.length ? board.filter((m) => SLUGS.includes(m.slug)) : board;
 
 const missing = SLUGS.filter((s) => !board.some((m) => m.slug === s));

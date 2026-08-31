@@ -4748,6 +4748,12 @@ export interface CommunityListItem {
   slug: string; question: string; yesPct: number;
   resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; closesAt: string | null;
   yesTokens: number; noTokens: number; yesPlayers: number; noPlayers: number;
+  /** Set when the market was taken off the board. This list is the ADMIN view
+   *  and deliberately still returns retired markets, so every caller that
+   *  presents markets to the public has to filter on this itself. Missing that
+   *  is how a retired market kept being served by the agent API after it had
+   *  already left the feed. */
+  retiredAt: string | null;
 }
 
 /** Every community market with resolution + on-chain state + pool totals, for the /tool admin panel. */
@@ -4791,27 +4797,29 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
         slug: meta.slug, question: rec.market.question, yesPct: rec.market.yesPct,
         resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, closesAt: rec.market.closesAt,
         yesTokens: tokens("yes"), noTokens: tokens("no"), yesPlayers: players("yes"), noPlayers: players("no"),
+        retiredAt: meta.retiredAt ?? null,
       };
     });
   }
   await ensureSchema();
   const { rows } = await db().query<{
     slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null;
-    yes_tokens: number; no_tokens: number; yes_players: number; no_players: number;
+    yes_tokens: number; no_tokens: number; yes_players: number; no_players: number; retired_at: Date | null;
   }>(`
-    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at,
+    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes'), 0)::int AS yes_tokens,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'), 0)::int  AS no_tokens,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes')::int AS yes_players,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no')::int  AS no_players
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
-     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.created_at
+     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
     slug: r.slug, question: r.question, yesPct: r.yes_pct, resolvedOutcome: r.resolved_outcome,
     onchainPubkey: r.onchain_pubkey, closesAt: r.closes_at ? r.closes_at.toISOString() : null,
     yesTokens: r.yes_tokens, noTokens: r.no_tokens, yesPlayers: r.yes_players, noPlayers: r.no_players,
+    retiredAt: r.retired_at ? r.retired_at.toISOString() : null,
   }));
 }
 
