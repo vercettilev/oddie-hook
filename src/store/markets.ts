@@ -652,6 +652,11 @@ CREATE TABLE IF NOT EXISTS chain_entry (
 -- carries the reason and when it stops being trusted, because the only thing
 -- that can change a refusal is our own classifier improving.
 CREATE TABLE IF NOT EXISTS api_claim_key (
+  -- NAMESPACED BY CALLER. The key is the caller's own header value, so a single
+  -- global namespace let any key holder read another's answers and, worse, squat
+  -- their keys: send tg:<their chat>:<their message> first and their bot is
+  -- handed your market forever. Callers are hashed in, exactly as the quota
+  -- bucket does, so the key never lands in a row.
   key         text PRIMARY KEY,
   -- Set when the claim became a market. Null on a refusal.
   slug        text,
@@ -661,6 +666,21 @@ CREATE TABLE IF NOT EXISTS api_claim_key (
   -- When a cached refusal stops being trusted. Null for a market, which never
   -- expires: the same key must always answer with the same market.
   expires_at  timestamptz,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Refusals, keyed on the CLAIM TEXT rather than on a caller's header.
+--
+-- The per-key ledger above cannot stop this waste: an unsettleable claim is a
+-- property of its words, so the same junk under a fresh Idempotency-Key spends
+-- a fresh model call to be told the same thing, and the caller chooses that
+-- header. Measured: five keys over identical refused text, five model calls.
+-- Hashed, so the text itself is not stored twice.
+CREATE TABLE IF NOT EXISTS api_refusal_text (
+  text_hash   text PRIMARY KEY,
+  reason      text NOT NULL,
+  detail      text,
+  expires_at  timestamptz NOT NULL,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
@@ -3624,9 +3644,24 @@ export const ODDIES_PER = Object.fromEntries(
  *  an operator-created market with no identifiable contributor earns nothing. */
 export function handleFromSourceUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  const m = String(url).match(/(?:^|\/\/)(?:www\.)?(?:x|twitter|fixupx|vxtwitter)\.com\/([A-Za-z0-9_]{1,15})\/status\//i);
+  // PARSED, NOT PATTERN-MATCHED. The regex this replaces looked for
+  // "//x.com/<handle>/status/" anywhere in the string, so any URL that merely
+  // CONTAINED one matched: https://evil.example.com/#https://x.com/victim/status/1
+  // credited "victim". That is not a cosmetic bug. This handle decides who
+  // receives the creator fee and who is written on chain as the market's
+  // creator, so a caller who could choose the source URL could choose whose
+  // name went on somebody else's market.
+  let u: URL;
+  try { u = new URL(String(url)); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+  if (!["x.com", "twitter.com", "fixupx.com", "vxtwitter.com"].includes(host)) return null;
+  // The handle must be the FIRST path segment and be followed by /status/, so a
+  // fragment or a query string cannot contribute either.
+  const m = /^\/([A-Za-z0-9_]{1,15})\/status\/\d+/.exec(u.pathname);
   return m ? m[1].toLowerCase() : null;
 }
+
 
 /** Resolve a twitter handle to a canonical device, or null if that handle has
  *  no Oddie account yet. Checks the linked-account table first (the authoritative
@@ -6758,4 +6793,81 @@ const memQuota = new Map<string, { tokens: number; at: number }>();
 export function _resetApiLedgers(): void {
   memClaimKeys.clear();
   memQuota.clear();
+}
+
+/** One caller's namespace. The bearer key is hashed so it never lands in a row
+ *  or a log line, and every ledger read and write goes through here. */
+export function callerScope(apiKey: string): string {
+  return createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+}
+
+/** The hash a refusal is remembered by. Normalised first, so the same claim
+ *  with different spacing or casing is the same claim. */
+export function claimTextHash(text: string): string {
+  return createHash("sha256").update(text.trim().toLowerCase().replace(/\s+/g, " ")).digest("hex");
+}
+
+/**
+ * Has this exact claim already been refused?
+ *
+ * Separate from the idempotency ledger on purpose. That one answers "what did
+ * THIS key produce"; this one answers "have we already paid to learn that these
+ * words cannot be settled". The second question is the one that saves money,
+ * because the caller picks the key and can rotate it, but cannot change what
+ * the claim says.
+ */
+export async function refusalForText(text: string): Promise<{ reason: string; detail: string | null } | null> {
+  const h = claimTextHash(text);
+  if (!PERSISTENT) {
+    const r = memRefusals.get(h);
+    if (!r || Date.now() > r.expiresAt) return null;
+    return { reason: r.reason, detail: r.detail };
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ reason: string; detail: string | null }>(
+    `SELECT reason, detail FROM api_refusal_text WHERE text_hash = $1 AND expires_at > now()`, [h],
+  );
+  return rows[0] ?? null;
+}
+
+export async function recordRefusalForText(text: string, reason: string, detail: string | null, ttlSeconds: number): Promise<void> {
+  const h = claimTextHash(text);
+  const ttl = Math.max(60, ttlSeconds);
+  try {
+    if (!PERSISTENT) { memRefusals.set(h, { reason, detail, expiresAt: Date.now() + ttl * 1000 }); return; }
+    await ensureSchema();
+    await db().query(
+      `INSERT INTO api_refusal_text (text_hash, reason, detail, expires_at)
+       VALUES ($1,$2,$3, now() + ($4 || ' seconds')::interval)
+       ON CONFLICT (text_hash) DO UPDATE SET reason=EXCLUDED.reason, detail=EXCLUDED.detail, expires_at=EXCLUDED.expires_at`,
+      [h, reason, detail, String(ttl)],
+    );
+  } catch (e) {
+    console.error("[claims] refusal cache write failed (non-fatal):", (e as Error).message);
+  }
+}
+
+const memRefusals = new Map<string, { reason: string; detail: string | null; expiresAt: number }>();
+
+/**
+ * Put a token back.
+ *
+ * A token is taken before the work so two replicas cannot both start it, but
+ * several paths then do no work at all: the extractor being unreachable, a
+ * market failing to open. Charging for those means an inference outage locks a
+ * group out for half an hour on top of being an outage.
+ */
+export async function releaseQuotaToken(apiKey: string, scope: string, capacity: number): Promise<void> {
+  const bucket = `${callerScope(apiKey)}:${scope}`;
+  try {
+    if (!PERSISTENT) {
+      const cur = memQuota.get(bucket);
+      if (cur) memQuota.set(bucket, { tokens: Math.min(capacity, cur.tokens + 1), at: cur.at });
+      return;
+    }
+    await ensureSchema();
+    await db().query(
+      `UPDATE api_quota SET tokens = LEAST($2::float8, tokens + 1) WHERE bucket = $1`, [bucket, capacity],
+    );
+  } catch { /* a refund we could not make is not worth failing a request over */ }
 }

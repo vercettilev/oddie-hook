@@ -3,7 +3,7 @@ import { displayTitle } from "./title.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, createHash } from "node:crypto";
 import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
@@ -22,7 +22,7 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { claimKeyLookup, claimKeyRecord, takeQuotaToken, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, walletReceipts, walletLeaderboard, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
+import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, walletReceipts, walletLeaderboard, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
@@ -2670,87 +2670,166 @@ const BOT_KEYS = (process.env.ODDIE_BOT_KEYS ?? "").split(",").map((k) => k.trim
  *  goal goes in and six people call it in ninety seconds, so a flat hourly cap
  *  would throttle exactly when the product is working. */
 const BOT_BURST = Math.max(1, Number(process.env.ODDIE_BOT_BURST ?? 10));
-const BOT_PER_HOUR = Math.max(1, Number(process.env.ODDIE_BOT_PER_HOUR ?? 20));
+const BOT_PER_HOUR = Math.max(1, Number(process.env.ODDIE_BOT_PER_HOUR ?? 10));
+/** How long a refusal is trusted. Ours to choose and ours to send, because the
+ *  only thing that can change a refusal is our own classifier. */
+const REFUSAL_TTL_S = 86_400;
 
 app.post("/api/v1/claims", async (req, res) => {
-  const auth = String(req.get("authorization") ?? "");
-  const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  // timingSafeEqual needs equal lengths, so compare against each configured key
-  // at its own length rather than short-circuiting on the first mismatch.
-  const authorised = BOT_KEYS.some((k) => {
-    const a = Buffer.from(k), b = Buffer.from(key);
-    return a.length === b.length && timingSafeEqual(a, b);
-  });
-  if (!authorised) return res.status(401).json({ error: "unauthorized" });
-
-  const idem = String(req.get("idempotency-key") ?? "").trim();
-  if (!idem || idem.length > 200) return res.status(400).json({ error: "Idempotency-Key required" });
-
-  const claimText = String(req.body?.claim_text ?? "").trim();
-  const permalink = req.body?.permalink != null ? String(req.body.permalink) : null;
-  const chatId = req.body?.context?.chat_id != null ? String(req.body.context.chat_id) : "unknown";
-  if (claimText.length < 12) return res.status(400).json({ error: "claim_text too short" });
-
-  // Answer from the ledger before anything is spent. A key that already
-  // produced a market answers with the same market for good; a cached refusal
-  // answers 422 again until it ages out.
-  const seen = await claimKeyLookup(idem).catch(() => null);
-  if (seen?.slug) {
-    const detail = await communityMarketDetail(seen.slug).catch(() => null);
-    if (detail) return res.json({ state: "existing", market: marketPayload(seen.slug, detail) });
-  }
-  if (seen?.refusal) {
-    return res.status(422).json({ state: "refused", reason: seen.refusal, detail: seen.detail ?? "", cache_for_seconds: 86_400 });
-  }
-
-  // Only now does anything cost us. Quota is taken per group, so one loud room
-  // cannot spend another's budget.
-  const token = await takeQuotaToken(key, `chat:${chatId}`, { capacity: BOT_BURST, perHour: BOT_PER_HOUR });
-  if (!token.ok) {
-    res.set("Retry-After", String(token.retryAfterSeconds));
-    return res.status(429).json({ error: "rate limited", retry_after_seconds: token.retryAfterSeconds });
-  }
-
-  let ex: Awaited<ReturnType<typeof runExtract>>;
   try {
-    ex = await runExtract(claimText.slice(0, 4000));
+    // --- FREE CHECKS FIRST. Nothing below this block costs anything, and an
+    // --- adversarial review measured what happens when they run late: a
+    // --- malformed permalink burned a full model call to return a 400.
+    const auth = String(req.get("authorization") ?? "");
+    const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+    // Fixed-width digests, so the comparison never depends on the length of a
+    // configured key and cannot leak it.
+    const presented = createHash("sha256").update(key).digest();
+    const authorised = key.length > 0 && BOT_KEYS.some((k) => timingSafeEqual(presented, createHash("sha256").update(k).digest()));
+    if (!authorised) return res.status(401).json({ error: "unauthorized" });
+
+    const idem = String(req.get("idempotency-key") ?? "").trim();
+    if (!idem || idem.length > 200) return res.status(400).json({ error: "Idempotency-Key required, max 200 chars" });
+
+    const claimText = String(req.body?.claim_text ?? "").trim().slice(0, 4000);
+    if (claimText.length < 12) return res.status(400).json({ error: "claim_text too short" });
+
+    // chat_id is bounded because it becomes part of a primary key. Unbounded, a
+    // 3KB value overflows the btree, the insert throws, and the throw escapes an
+    // async handler Express does not catch: one request, whole process.
+    const rawChat = req.body?.context?.chat_id;
+    const chatId = rawChat == null ? "" : String(rawChat).slice(0, 64);
+    if (!chatId) return res.status(400).json({ error: "context.chat_id required" });
+
+    // The permalink decides who is credited, so it is validated here rather
+    // than deep inside the mint. Parsed, not pattern-matched.
+    const permalink = req.body?.permalink != null ? String(req.body.permalink) : null;
+    if (permalink) {
+      let u: URL | null = null;
+      try { u = new URL(permalink); } catch { u = null; }
+      if (!u || u.protocol !== "https:") return res.status(400).json({ error: "permalink must be an https URL" });
+    }
+
+    const scope = callerScope(key);
+    // NAMESPACED BY CALLER. A global ledger let one key holder read another's
+    // answers, and squat their keys outright.
+    const ledgerKey = `${scope}:${idem}`;
+
+    // --- ANSWER FROM WHAT WE ALREADY KNOW, still spending nothing ---
+    const seen = await claimKeyLookup(ledgerKey).catch(() => null);
+    if (seen?.slug) {
+      const detail = await communityMarketDetail(seen.slug).catch(() => null);
+      // A key that produced a market is SETTLED. Falling through here on an
+      // unreadable market turned a failed read into a write: every retry minted
+      // another market and reported it as "existing".
+      return res.json({ state: "existing", market: marketPayload(seen.slug, detail) });
+    }
+    if (seen?.refusal) {
+      return res.status(422).json({ state: "refused", reason: seen.refusal, detail: seen.detail ?? "", cache_for_seconds: REFUSAL_TTL_S });
+    }
+    // The caller picks the idempotency key and can rotate it; it cannot change
+    // what the claim says. This is the cache that actually stops repeat spend.
+    const textRefusal = await refusalForText(claimText).catch(() => null);
+    if (textRefusal) {
+      await claimKeyRecord(ledgerKey, { refusal: textRefusal.reason, detail: textRefusal.detail, cacheForSeconds: REFUSAL_TTL_S }).catch(() => {});
+      return res.status(422).json({ state: "refused", reason: textRefusal.reason, detail: textRefusal.detail ?? "", cache_for_seconds: REFUSAL_TTL_S });
+    }
+    // One post, one market, the same rule the X loop follows. Without it a
+    // single permalink minted a market per idempotency key.
+    if (permalink) {
+      const already = await openMarketForSourcePost(permalink).catch(() => null);
+      if (already) {
+        await claimKeyRecord(ledgerKey, { slug: already.slug }).catch(() => {});
+        const detail = await communityMarketDetail(already.slug).catch(() => null);
+        return res.json({ state: "existing", market: marketPayload(already.slug, detail) });
+      }
+    }
+    // Asking for a token before checking the engine is even configured spends a
+    // group's budget on an outage.
+    if (!extractEnabled()) return res.status(503).json({ error: "extraction unavailable" });
+
+    // --- FROM HERE IT COSTS ---
+    // TWO buckets. The per-group one keeps a loud room from starving the
+    // others; the per-key one is the ceiling, and it exists because the group
+    // is named by the CALLER. With only the first, a partner rotating chat_id
+    // got a fresh full bucket every time: measured at 30 fabricated groups, 30
+    // model calls, zero refusals.
+    const globalToken = await takeQuotaToken(key, "all", { capacity: BOT_BURST * 4, perHour: BOT_PER_HOUR * 4 });
+    if (!globalToken.ok) {
+      res.set("Retry-After", String(globalToken.retryAfterSeconds));
+      return res.status(429).json({ error: "rate limited", retry_after_seconds: globalToken.retryAfterSeconds });
+    }
+    const groupToken = await takeQuotaToken(key, `chat:${chatId}`, { capacity: BOT_BURST, perHour: BOT_PER_HOUR });
+    if (!groupToken.ok) {
+      await releaseQuotaToken(key, "all", BOT_BURST * 4);
+      res.set("Retry-After", String(groupToken.retryAfterSeconds));
+      return res.status(429).json({ error: "rate limited", retry_after_seconds: groupToken.retryAfterSeconds });
+    }
+    /** Give both tokens back on any path that did no work. */
+    const refund = async () => {
+      await releaseQuotaToken(key, "all", BOT_BURST * 4);
+      await releaseQuotaToken(key, `chat:${chatId}`, BOT_BURST);
+    };
+
+    let ex: Awaited<ReturnType<typeof runExtract>>;
+    try {
+      ex = await runExtract(claimText);
+    } catch (e) {
+      // Ours and transient. Never cached as a refusal, and never charged: an
+      // outage locking a group out for half an hour is the outage plus a
+      // penalty.
+      console.error("[claims] extract failed:", (e as Error).message);
+      await refund();
+      return res.status(503).json({ error: "extraction unavailable" });
+    }
+
+    const refusal = !ex.appropriate ? "inappropriate" : ex.resolvability === "unresolvable" ? "unresolvable" : !ex.question ? "no_question" : null;
+    if (refusal) {
+      await recordRefusalForText(claimText, refusal, ex.reason, REFUSAL_TTL_S);
+      const wrote = await claimKeyRecord(ledgerKey, { refusal, detail: ex.reason, cacheForSeconds: REFUSAL_TTL_S })
+        .then(() => true).catch(() => false);
+      // A refusal whose ledger write failed is not cached, and saying it is
+      // would have the caller skip a claim we will happily re-bill.
+      return res.status(422).json({ state: "refused", reason: refusal, detail: ex.reason, cache_for_seconds: wrote ? REFUSAL_TTL_S : 0 });
+    }
+
+    const out = await openMarketFromClaim({
+      question: ex.question,
+      closeInput: ex.close_time,
+      sourceUrl: permalink,
+      category: ex.category,
+      resolutionCriteria: ex.resolution_criteria || null,
+      resolvability: ex.resolvability,
+      mint: "on-demand",
+    });
+    if (!out.ok) {
+      await refund();
+      return res.status(out.status >= 500 ? 502 : out.status).json({ error: out.error });
+    }
+
+    // The ledger is the authority, so what it returns decides the answer. The
+    // previous version reconciled with `settled.slug ?? out.slug`, which reads
+    // a stored REFUSAL as agreement and reported a market as created under a
+    // key that answers 422 forever after.
+    let settled: Awaited<ReturnType<typeof claimKeyRecord>>;
+    try {
+      settled = await claimKeyRecord(ledgerKey, { slug: out.slug });
+    } catch (e) {
+      console.error("[claims] ledger write failed after mint:", (e as Error).message, out.slug);
+      return res.status(500).json({ error: "market created but not recorded", slug: out.slug });
+    }
+    if (settled.refusal || !settled.slug) {
+      return res.status(422).json({ state: "refused", reason: settled.refusal ?? "no_question", detail: settled.detail ?? "", cache_for_seconds: REFUSAL_TTL_S });
+    }
+    const detail = await communityMarketDetail(settled.slug).catch(() => null);
+    res.json({ state: settled.slug === out.slug ? "created" : "existing", market: marketPayload(settled.slug, detail) });
   } catch (e) {
-    // Inference being down is ours and it is transient. It is NOT a refusal and
-    // must not be cached as one, or an outage would silently poison every claim
-    // it touched for a day.
-    console.error("[claims] extract failed:", (e as Error).message);
-    return res.status(503).json({ error: "extraction unavailable" });
+    // Express 4 does not catch a rejected async handler, and an uncaught
+    // rejection ends the process on modern Node. One bad request must not be a
+    // restart loop.
+    console.error("[claims] unhandled:", (e as Error).message);
+    if (!res.headersSent) res.status(500).json({ error: "internal error" });
   }
-
-  // The gate, reported with a code the caller can count rather than prose it
-  // would have to parse.
-  const refusal = !ex.appropriate ? "inappropriate" : ex.resolvability === "unresolvable" ? "unresolvable" : !ex.question ? "no_question" : null;
-  if (refusal) {
-    await claimKeyRecord(idem, { refusal, detail: ex.reason, cacheForSeconds: 86_400 }).catch(() => {});
-    return res.status(422).json({ state: "refused", reason: refusal, detail: ex.reason, cache_for_seconds: 86_400 });
-  }
-
-  const out = await openMarketFromClaim({
-    question: ex.question,
-    closeInput: ex.close_time,
-    sourceUrl: permalink,
-    category: ex.category,
-    resolutionCriteria: ex.resolution_criteria || null,
-    resolvability: ex.resolvability,
-    // Same as the X bot: a claim nobody has staked in does not need an on-chain
-    // account yet, and most never will.
-    mint: "on-demand",
-  });
-  if (!out.ok) return res.status(out.status >= 500 ? 502 : out.status).json({ error: out.error });
-
-  // Recorded AFTER the market exists, and the record is the authority: if a
-  // racing request got there first, its slug is what comes back and this one's
-  // market is simply an extra row nobody points at. Rare, and cheaper than
-  // holding a lock across a model call.
-  const settled = await claimKeyRecord(idem, { slug: out.slug }).catch(() => ({ slug: out.slug, refusal: null, detail: null, expired: false }));
-  const slug = settled.slug ?? out.slug;
-  const detail = await communityMarketDetail(slug).catch(() => null);
-  res.json({ state: slug === out.slug ? "created" : "existing", market: marketPayload(slug, detail) });
 });
 
 /** The one shape every claims response returns, so created and existing cannot

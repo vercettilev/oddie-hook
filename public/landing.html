@@ -160,8 +160,8 @@
   /* Three links measured under 44px on mobile. An ::after expander grows the
      hit area without touching layout; vertical padding on an inline box would
      not have, and negative-margin compensation risks overlap. */
-  .brand,.board__more,.foot a,.nav__links a:not(.btn){position:relative}
-  .brand::after,.board__more::after,.foot a::after,
+  .brand,.foot a,.nav__links a:not(.btn){position:relative}
+  .brand::after,.foot a::after,
   .nav__links a:not(.btn)::after{content:'';position:absolute;
     left:0;right:0;top:50%;height:44px;transform:translateY(-50%)}
   .brand img{width:clamp(32px,3vw,42px);border-radius:10px}
@@ -201,41 +201,7 @@
   .B__fig img{width:100%}
   .fignote{margin:clamp(12px,1.5vw,20px) 0 0;text-align:center;font-family:var(--mono);
     font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3)}
-
-  .scoreboard{margin-top:clamp(34px,4vw,56px);border-top:2px solid var(--line)}
-  .livegrid{display:block}
-  /* Each market is a wide row: question left, the split-odds bar right. The bar
-     IS the brand motif, used structurally instead of as decoration. */
-  .lcard{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,300px);
-    gap:clamp(14px,2.5vw,36px);align-items:center;padding:clamp(13px,1.5vw,18px) 0;
-    border-bottom:2px solid var(--line);color:var(--fg)}
-  .lcard:hover{background:rgba(255,255,255,.04)}
-  .lcard__top{display:flex;order:-1;grid-column:1/-1;gap:12px;align-items:center;
-    font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--fg-3);margin-bottom:-6px}
-  .lcard__live{display:inline-flex;align-items:center;gap:6px;color:var(--pink)}
-  .lcard__live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--pink)}
-  .lcard__q{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
-    font-size:clamp(19px,2.2vw,32px);line-height:1.02;letter-spacing:-.005em}
-  .lcard__bar{display:block;position:relative;height:16px;background:var(--pink);
-    border:2px solid var(--cream);border-radius:99px;overflow:hidden;grid-column:2}
-  .lcard__bar i{position:absolute;left:0;top:0;bottom:0;background:var(--yellow)}
-  .lcard__odds{display:flex;grid-column:2;justify-content:space-between;margin-top:6px;
-    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.09em}
-  .qcard__yes{color:var(--yellow)}
-  .qcard__no{color:var(--pink)}
-  .board__more{display:inline-flex;align-items:center;gap:8px;margin-top:clamp(22px,2.6vw,34px);
-    font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--yellow)}
-  /* One server-side number decides. A shelf holding two markets claims more than
-     the product has; an empty one claims it and fails. */
-  .sec[data-live="0"] .board--live{display:none}
-  .sec[data-live="1"] .board--teach{display:none}
-  @media (max-width:720px){
-    .lcard{grid-template-columns:1fr;gap:12px}
-    .lcard__bar,.lcard__odds{grid-column:1}
-  }
-
+  
   /* ================================================== C · PINK · reputation ==
      Two columns so the field is not a headline over a void, and the three
      figures are sticker chips rather than a second card grid. */
@@ -332,7 +298,6 @@
   /* adim 1: silinen satir ici style'larin sinif karsiliklari */
   .B .lede{max-width:38ch}
   .B__fig{margin-block:0}
-  .scoreboard > .kicker{margin:clamp(14px,1.8vw,24px) 0 clamp(12px,1.6vw,20px)}
 
   /* ---------------------------------------------------------- dikisler --
      Uc alan gecisi de yirtik kagit. Mekanizma her yerde ayni: AYNI maskeyi
@@ -402,7 +367,6 @@
   .B__mani{grid-column:1;grid-row:1;max-width:none;margin:0;padding:0;border-bottom:0}
   .B__head{grid-column:2;grid-row:1;max-width:none;margin:clamp(34px,7vw,116px) 0 0}
   .B__fig{grid-column:1/-1;grid-row:2}
-  .scoreboard{grid-column:1/-1;grid-row:3}
   .B .B__mani.col--mid{align-items:flex-start;text-align:left}
   .B .B__head.col--mid{align-items:flex-end;text-align:right}
   .B .B__head .h2 span{margin-left:auto}
@@ -423,31 +387,6 @@
     bottom:calc(-1 * clamp(6px,1.2vw,16px));
     margin:0;text-align:left;max-width:none;white-space:nowrap;
     background:var(--black);color:var(--fg-3);padding:7px 12px;rotate:-1.8deg}
-
-  /* skorbord: yuzde 10.5px mono'dan 42px Anton'a cikar, satirlar zit yone egilir */
-  .scoreboard{position:relative;z-index:1;border-top:0;margin-top:clamp(24px,3vw,44px)}
-  .lcard{grid-template-columns:minmax(0,1fr) minmax(210px,340px);
-    grid-template-rows:auto auto auto;align-items:center;
-    padding:clamp(13px,1.7vw,22px) 0;border-bottom:0;position:relative}
-  .lcard__q{grid-column:1;grid-row:2/4;align-self:center}
-  .lcard__bar{grid-row:2;align-self:end;margin-bottom:2px}
-  .lcard__odds{grid-row:3;align-self:start}
-  .lcard__top{font-size:9.5px;letter-spacing:.2em;margin-bottom:-4px}
-  .lcard__q{font-size:clamp(22px,3.4vw,50px);line-height:.96}
-  .lcard__bar{height:22px;border-width:3px}
-  .lcard__odds{margin-top:10px;font-family:var(--display);font-weight:400;
-    font-size:clamp(24px,3vw,42px);letter-spacing:0;line-height:1}
-  /* yirtik satir ayiricisi. pointer-events:none ZORUNLU: canli modda .lcard
-     bir <a>, ustune serilen katman tiklamayi calardi. */
-  .lcard::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;
-    background:rgba(255,255,255,.24);pointer-events:none;
-    -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2);
-    -webkit-mask-size:140% 100%;mask-size:140% 100%;
-    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
-  .livegrid > .lcard:last-child::after{display:none}
-  .livegrid > .lcard:nth-child(odd){rotate:-.55deg;margin-right:clamp(0px,5vw,74px)}
-  .livegrid > .lcard:nth-child(even){rotate:.6deg;margin-left:clamp(0px,5.6vw,84px)}
-  .lcard:hover{background:rgba(255,255,255,.06)}
 
   /* -------------------------------------------------------- C · pembe --
      60/40 ders kitabi gridi kirilir: baslik uc kademeli merdiven, ucuncu
@@ -472,7 +411,8 @@
 
   /* pullar: esit uclu satir biter, uc farkli genislik/ofset/egim ve iki
      gercek kolon cakismasi (1/6 ile 5/10, 5/10 ile 9/13) */
-  .chips{position:relative;display:grid;
+  /* giris ile pullar arasi: ikisi ayri dusunce, ust uste yigilmasinlar */
+  .chips{margin-top:clamp(30px,4vw,62px);position:relative;display:grid;
     grid-template-columns:repeat(12,minmax(0,1fr));
     column-gap:clamp(8px,1.4vw,20px);row-gap:0;
     margin-top:clamp(10px,1.6vw,26px);padding-bottom:clamp(16px,2.2vw,34px)}
@@ -581,13 +521,6 @@
     .C__ghost{width:min(112%,380px);margin-top:calc(-1 * clamp(50px,9vw,140px))}
   }
   @media (max-width:900px){
-    /* Yeni .lcard kurali dosyanin sonunda oldugu icin ustteki mobil
-       media query'yi eziyordu: 390px'te ilk sutun 0px'e cokup soruyu
-       yuzdelerin uzerine bindiriyordu. Satirlari da sifirlamak sart,
-       yoksa tek sutunda q(2/4) ile bar(2) ayni hucreye duser. */
-    .lcard{grid-template-columns:minmax(0,1fr);grid-template-rows:none;gap:10px}
-    .lcard__q,.lcard__bar,.lcard__odds{grid-column:1;grid-row:auto;align-self:auto}
-    .lcard__q{margin-bottom:2px}
     /* nowrap masaustunde tek satir veriyor, 390px'te 510px genislik ve tasma */
     .fignote{white-space:normal;max-width:34ch}
     .A__hero{grid-template-columns:1fr;gap:0}
@@ -606,8 +539,6 @@
     .B__mani .h2 span:nth-child(2){margin-left:0}
     .B__fig{width:calc(100% + 8vw);margin-left:-4vw;margin-top:clamp(16px,4vw,28px)}
     .fignote{position:static;display:inline-block;margin-top:10px}
-    .livegrid > .lcard:nth-child(odd){margin-right:0;rotate:-.4deg}
-    .livegrid > .lcard:nth-child(even){margin-left:0;rotate:.45deg}
 
     .C__top{grid-template-columns:1fr}
     .C__top .h2 span:nth-child(2),.C__top .lede{margin-left:0}
@@ -670,7 +601,6 @@
   .B__fig{grid-row:3;width:min(84vw,980px);
     margin-left:calc(50% - min(42vw,490px));
     margin-top:clamp(10px,1.6vw,26px)}
-  .scoreboard{grid-row:4}
 
   /* --------------------------------------------------------- giris --
      "Be Oddie." ile "Continue with X" ayni nefeste. Ayri bir kapanis
@@ -693,11 +623,6 @@
   .join .pbtn{box-shadow:5px 6px 0 var(--black)}
   .join .pbtn:hover{box-shadow:4px 5px 0 var(--yellow)}
   .join .pbtn:disabled{box-shadow:5px 6px 0 rgba(2,3,2,.4)}
-  .join::after{content:"";position:absolute;z-index:2;pointer-events:none;
-    right:calc(-1 * clamp(4px,1.6vw,22px));bottom:calc(-1 * clamp(2px,.8vw,12px));
-    width:clamp(84px,9vw,150px);aspect-ratio:160/120;
-    background:url("/brand/mascot-peek.webp") right bottom/contain no-repeat;
-    rotate:4deg}
 
   /* Kalabalik artik dogrudan siyah alt bilgiye giriyor: kendi yirtik
      deckle kenari pembe/siyah gecisini tasiyor, ustune CSS yirtigi konmuyor. */
@@ -713,13 +638,11 @@
     .B__head{grid-column:1;grid-row:3;max-width:none;margin-left:0;
       margin-top:clamp(22px,5vw,40px)}
     .B__fig{grid-column:1;grid-row:4}
-    .scoreboard{grid-column:1;grid-row:5}
     .B__fig{width:calc(100% + 8vw);margin-left:-4vw}
     .join{grid-template-columns:1fr}
     .join .kicker,.join .lede,.join .btn--light,.join .ways,.join .lede--fine{
       grid-column:1;grid-row:auto}
     .join .ways{margin-top:clamp(12px,3vw,20px)}
-    .join::after{width:clamp(72px,18vw,104px)}
   }
 
   /* .B__head satir 2'ye tasinip saga kayinca sol kenardaki yildiz metnin
@@ -747,6 +670,34 @@
     footer::before{-webkit-mask-size:360% var(--seam-h);mask-size:360% var(--seam-h)}
     footer::after{-webkit-mask-size:360% 100%;mask-size:360% 100%}
   }
+
+  /* ---------------------------------------------------- hiyerarsi --
+     Ayni ekranda iki esdeger CTA vardi (nav hapi + hero butonu), ikisi de
+     siyah dolgu. Nav'daki kontura donuyor, hero'daki buyuyor: tek ana
+     eylem. */
+  .nav__links .btn{background:transparent;color:var(--ink);
+    border:2.5px solid var(--ink);box-shadow:none;padding:9px 17px}
+  .nav__links .btn:hover{background:var(--ink);color:var(--yellow);
+    box-shadow:none;transform:none}
+  .nav__links .btn i{color:currentColor}
+  .A__hero .btn{font-size:clamp(19px,2vw,27px);padding:17px 34px}
+  /* destek cumlesi basligin yanindaki ikinci siyah kutle olmaktan cikiyor */
+  .A__hero .brush{font-size:clamp(13px,1.15vw,15.5px);padding:9px 17px}
+
+  /* Siyah alanda iki blok da ayni gramerdeydi: kicker + iki renkli merdiven
+     + alti cizgi. Ikincisi kucululuyor ve swash'i birakiyor, boylece alanda
+     tek bir bas ses kaliyor. */
+  .B__head .h2{font-size:clamp(24px,3.6vw,54px)}
+  .B__head .lo::after{display:none}
+  .B__head .lede{max-width:44ch}
+
+  /* Pullar zikzak okunuyordu: dikey kayma yarilaniyor ve sayilar birbirine
+     yaklasiyor, cunku uc pul esit agirlikta uc olgu. */
+  .chip:nth-child(1){margin-top:clamp(6px,1vw,14px)}
+  .chip:nth-child(2){margin-top:clamp(20px,3vw,46px)}
+  .chip:nth-child(3){margin-top:0}
+  .chip:nth-child(2) .chip__n{font-size:clamp(40px,5.6vw,90px)}
+  .chip:nth-child(3) .chip__n{font-size:clamp(36px,4.8vw,78px)}
 </style>
 
 <!-- ==================================================== A · YELLOW · ONE FIELD ==
@@ -760,7 +711,7 @@
       </a>
       <div class="nav__links">
         <a href="#how">How it works</a>
-        <a href="#live">Live markets</a>
+        <a href="/feed">Live markets</a>
         <a href="#board">Leaderboard</a>
         <a class="btn" href="/feed">Launch app <i aria-hidden="true">&rarr;</i></a>
       </div>
@@ -796,7 +747,7 @@
   <!-- ================================================= B · BLACK · THE MOVE ==
        Centred, because A was asymmetric. One picture explains the product and
        the real board sits under it as a scoreboard. -->
-  <section class="B on-dark sec" id="how" data-live="<!--LIVE_MODE-->">
+  <section class="B on-dark sec" id="how">
     <div class="shell">
       <div class="B__mani col col--mid">
         <p class="kicker reveal">The internet's oldest bug</p>
@@ -819,37 +770,9 @@
 
       <figure class="B__fig reveal">
         <img src="/brand/flow.webp" alt="Example: a post claiming AI will replace more jobs than it creates gets tagged @oddiefun, and becomes an Oddie market where the crowd calls yes or no." width="1500" height="844" loading="lazy">
-        <figcaption class="fignote">The odds in the picture are an example. The real ones are below.</figcaption>
+        <figcaption class="fignote">The odds in the picture are an example.</figcaption>
       </figure>
 
-      <div class="scoreboard" id="live">
-        <p class="kicker reveal">
-          See what the internet is arguing about</p>
-
-        <!-- STATE B: enough real markets to stand on their own, server-rendered
-             from the same rows the app serves. -->
-        <div class="board--live">
-          <div class="livegrid"><!--LIVE_CARDS--></div>
-        </div>
-        <!-- STATE A: not enough yet. Two examples, labelled as such. -->
-        <div class="board--teach">
-          <div class="livegrid">
-            <span class="lcard">
-              <span class="lcard__top"><span>Example</span><span class="lcard__live">Live</span></span>
-              <p class="lcard__q">Will Bitcoin hit $200k before 2027?</p>
-              <span class="lcard__bar"><i style="width:71%"></i></span>
-              <span class="lcard__odds"><span class="qcard__yes">71% YES</span><span class="qcard__no">29% NO</span></span>
-            </span>
-            <span class="lcard">
-              <span class="lcard__top"><span>Example</span><span class="lcard__live">Live</span></span>
-              <p class="lcard__q">Will remote work still be the norm by 2030?</p>
-              <span class="lcard__bar"><i style="width:74%"></i></span>
-              <span class="lcard__odds"><span class="qcard__yes">74% YES</span><span class="qcard__no">26% NO</span></span>
-            </span>
-          </div>
-        </div>
-        <a class="board__more" href="/feed">See every market <span aria-hidden="true">&rarr;</span></a>
-      </div>
     </div>
   </section>
 
@@ -868,24 +791,6 @@
         </div>
         <img class="C__ghost reveal" src="/brand/mascot-cool.webp?v=8" alt="" aria-hidden="true"
           width="569" height="438" loading="lazy">
-      </div>
-
-      <div class="chips">
-        <div class="chip reveal">
-          <span class="chip__n">+150</span>
-          <div class="chip__t">Share your call</div>
-          <p class="chip__b">Paste the link to your post. Once it clears review, the points are yours.</p>
-        </div>
-        <div class="chip reveal">
-          <span class="chip__n">+300</span>
-          <div class="chip__t">Be the week's loudest</div>
-          <p class="chip__b">The best posts each week earn again, on top of what they already earned.</p>
-        </div>
-        <div class="chip reveal">
-          <span class="chip__n">2&times;</span>
-          <div class="chip__t">Every call you make</div>
-          <p class="chip__b">Keep posting and your calls, markets and wins earn up to double.</p>
-        </div>
       </div>
 
       <!-- Giris, itibar alaninin devami: "Be Oddie." ile "Continue with X"
@@ -917,6 +822,25 @@
         that one spends.</p>
       <a class="btn btn--light" href="/feed">Launch app <i aria-hidden="true">&rarr;</i></a>
     </div>
+
+      <div class="chips">
+        <div class="chip reveal">
+          <span class="chip__n">+150</span>
+          <div class="chip__t">Share your call</div>
+          <p class="chip__b">Paste the link to your post. Once it clears review, the points are yours.</p>
+        </div>
+        <div class="chip reveal">
+          <span class="chip__n">+300</span>
+          <div class="chip__t">Be the week's loudest</div>
+          <p class="chip__b">The best posts each week earn again, on top of what they already earned.</p>
+        </div>
+        <div class="chip reveal">
+          <span class="chip__n">2&times;</span>
+          <div class="chip__t">Every call you make</div>
+          <p class="chip__b">Keep posting and your calls, markets and wins earn up to double.</p>
+        </div>
+      </div>
+
     </div>
 
     <!-- the crowd is the last thing the page says -->
