@@ -2652,7 +2652,20 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   // is where a Telegram market actually reaches the chain. The rate has to be
   // decided from the surfacer here too, or the deferred mint quietly reinstates
   // the 2% the direct path just stopped charging.
-  const sur = await surfacerFor(slug).catch(() => null);
+  //
+  // NOT `.catch(() => null)`. The rate is written into the market account and is
+  // permanent, so a transient database error must not be allowed to decide it:
+  // swallowing the failure would mint an X market at 0% and quietly cost its
+  // creator every lamport of their share, forever, with no way back. Refusing
+  // to mint is recoverable -- the stake that triggered this fails, and the next
+  // one mints correctly.
+  let sur: Awaited<ReturnType<typeof surfacerFor>>;
+  try {
+    sur = await surfacerFor(slug);
+  } catch (e) {
+    console.error("[chain] refusing to mint: the fee rate is permanent and the surfacer read failed:", (e as Error).message);
+    return null;
+  }
   const minted = await mintMarket({
     marketId: detail.marketId, question: detail.question,
     closeTime: Math.floor(new Date(detail.closesAt ?? Date.now()).getTime() / 1000),
