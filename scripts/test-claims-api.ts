@@ -11,7 +11,8 @@ if (process.env.DATABASE_URL) { console.error("refusing to run against a databas
 
 import {
   claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope,
-  refusalForText, recordRefusalForText, claimTextHash, handleFromSourceUrl, _resetApiLedgers,
+  refusalForText, recordRefusalForText, claimTextHash, handleFromSourceUrl,
+  sourceUrlKind, sourcePostKey, _resetApiLedgers,
 } from "../src/store/markets.js";
 
 let failures = 0;
@@ -103,6 +104,49 @@ console.log("\nATTRIBUTION CANNOT BE SPOOFED BY A URL THAT MERELY CONTAINS ONE")
   check("nor a lookalike host", handleFromSourceUrl("https://x.com.evil.com/victim/status/1") === null);
   check("a non-http scheme is refused", handleFromSourceUrl("javascript:alert(1)//x.com/a/status/1") === null);
   check("a telegram link credits nobody", handleFromSourceUrl("https://t.me/c/1234/987") === null);
+}
+
+console.log("\nACCEPTING A SOURCE AND PAYING FOR IT ARE DIFFERENT QUESTIONS");
+{
+  // These were one function, and that is the bug that made the Telegram bot
+  // unable to open a single market: openMarketFromClaim asked
+  // handleFromSourceUrl whether to ACCEPT a source, and a t.me link has no
+  // handle in it, so every claim the bot ever sent was refused -- AFTER a full
+  // extraction had been billed for it.
+  check("an x status link is accepted", sourceUrlKind("https://x.com/realperson/status/123") === "x");
+  check("a public group link is accepted", sourceUrlKind("https://t.me/somegroup/4567") === "telegram");
+  check("a private group link is accepted", sourceUrlKind("https://t.me/c/1234567890/89") === "telegram");
+  check("...and still credits nobody", handleFromSourceUrl("https://t.me/somegroup/4567") === null);
+
+  // The widened gate must not widen the attack surface the narrow one closed.
+  check("a bare x profile is not a source", sourceUrlKind("https://x.com/realperson") === null);
+  check("a t.me invite link is not a message", sourceUrlKind("https://t.me/joinchat/AAAA") === null);
+  check("a t.me channel root is not a message", sourceUrlKind("https://t.me/somegroup") === null);
+  check("a lookalike host is refused", sourceUrlKind("https://t.me.evil.com/g/1") === null);
+  check("a fragment cannot smuggle a source", sourceUrlKind("https://evil.example.com/#https://t.me/g/1") === null);
+  check("a non-http scheme is refused", sourceUrlKind("javascript:alert(1)//t.me/g/1") === null);
+  check("null is not a source", sourceUrlKind(null) === null);
+}
+
+console.log("\nONE POST, ONE MARKET -- ON BOTH SURFACES");
+{
+  // The rule used to be a "/status/" regex over the raw URL. A t.me link has no
+  // /status/, so it returned null and the whole rule was silently absent for
+  // Telegram: every retry a fresh market.
+  const a = sourcePostKey("https://x.com/someone/status/999");
+  check("four spellings of one tweet share a key", a === sourcePostKey("https://vxtwitter.com/Other/status/999")
+    && a === sourcePostKey("https://www.twitter.com/x/status/999")
+    && a === sourcePostKey("https://fixupx.com/y/status/999"), String(a));
+  check("a query string does not change the key", sourcePostKey("https://x.com/a/status/999?s=20") === a);
+
+  const t = sourcePostKey("https://t.me/somegroup/4567");
+  check("a telegram message has a key at all", t !== null, String(t));
+  check("...distinct from the tweet's", t !== a);
+  check("...stable across a trailing slash", sourcePostKey("https://t.me/somegroup/4567/") === t);
+  check("...and case-insensitive, as telegram names are", sourcePostKey("https://t.me/SomeGroup/4567") === t);
+  check("a different message is a different key", sourcePostKey("https://t.me/somegroup/4568") !== t);
+  check("a different group is a different key", sourcePostKey("https://t.me/othergroup/4567") !== t);
+  check("an unacceptable source has no key", sourcePostKey("https://evil.example.com/x") === null);
 }
 
 console.log("\nTHE LEDGER IS NAMESPACED, SO ONE CALLER CANNOT SQUAT ANOTHER'S KEYS");

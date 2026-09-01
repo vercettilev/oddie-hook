@@ -423,6 +423,21 @@ CREATE TABLE IF NOT EXISTS market_surfacer (
 ALTER TABLE market_surfacer ADD COLUMN IF NOT EXISTS source_text text;
 ALTER TABLE market_surfacer ADD COLUMN IF NOT EXISTS source_author text;
 
+-- The identity of the source POST, as opposed to its URL. Four spellings of the
+-- same tweet (x/twitter/fixupx/vxtwitter) share one key, and a Telegram message
+-- gets one too. Before this, the one-post-one-market rule was a regex for
+-- "/status/" applied to the raw URL, so it matched no Telegram link at all and
+-- the rule was silently absent for that whole surface -- a spend gate that
+-- looked present and was not. Backfilled below for rows written before it.
+ALTER TABLE market_surfacer ADD COLUMN IF NOT EXISTS source_key text;
+-- substring, not split_part: split_part carries the query string along, so a
+-- URL ending "?s=20" backfilled as "123?s=20" and would never match the key the
+-- code computes from the path alone.
+UPDATE market_surfacer
+   SET source_key = 'x:' || substring(source_url from '/status/([0-9]+)')
+ WHERE source_key IS NULL AND substring(source_url from '/status/([0-9]+)') IS NOT NULL;
+CREATE INDEX IF NOT EXISTS market_surfacer_source_key_idx ON market_surfacer (source_key);
+
 -- The Season Points ledger. BACKEND-ONLY (never shown as a standalone number):
 -- it is both the audit trail for every award AND the source of truth for a
 -- contributor's total (SUM(amount)). dedup_key makes every event idempotent —
@@ -3199,7 +3214,7 @@ const memCommunity = new Map<string, CommunityMeta>();
 
 // In-memory mirrors of market_surfacer and season_points_log (the mem backend
 // tests run against). Same shape as the tables above.
-interface MemSurfacer { handle: string | null; deviceId: string | null; sourceUrl: string | null; createdAt: string; sourceText?: string | null; sourceAuthor?: string | null }
+interface MemSurfacer { handle: string | null; deviceId: string | null; sourceUrl: string | null; sourceKey?: string | null; createdAt: string; sourceText?: string | null; sourceAuthor?: string | null }
 const memSurfacer = new Map<string, MemSurfacer>();
 interface MemSeasonRow { deviceId: string | null; handle: string | null; event: string; amount: number; slug: string | null; dedupKey: string; createdAt: string }
 const memSeasonLog: MemSeasonRow[] = [];
@@ -3662,6 +3677,64 @@ export function handleFromSourceUrl(url: string | null | undefined): string | nu
   return m ? m[1].toLowerCase() : null;
 }
 
+/**
+ * Is this a source we accept at all — a different question from who it pays.
+ *
+ * These two were the same function, and that is exactly the bug. On X they
+ * coincide: the handle in the URL is both the provenance and the payee. On
+ * Telegram they come apart. A t.me link is a real, checkable source for the
+ * card, but there is no handle in it and therefore nobody to pay. Asking
+ * `handleFromSourceUrl` whether a source is acceptable answered "no" for every
+ * Telegram market ever submitted, so the bot could not open a single one.
+ *
+ * `handleFromSourceUrl` stays exactly as it is — it decides who receives money
+ * and is deliberately narrow. This decides whether we will show the market at
+ * all, and is allowed to be wider.
+ */
+export type SourceKind = "x" | "telegram";
+export function sourceUrlKind(url: string | null | undefined): SourceKind | null {
+  if (!url) return null;
+  let u: URL;
+  try { u = new URL(String(url)); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+  // A trailing slash is the same link. Stripped before matching because the
+  // Telegram pattern is $-anchored, and without this "t.me/group/123/" -- which
+  // Telegram itself produces -- was refused outright as an unknown source.
+  const path = u.pathname.replace(/\/+$/, "");
+  if (["x.com", "twitter.com", "fixupx.com", "vxtwitter.com"].includes(host)) {
+    // Still has to be a real status permalink, not just the right host.
+    return /^\/[A-Za-z0-9_]{1,15}\/status\/\d+/.test(path) ? "x" : null;
+  }
+  // t.me/<group>/<id> for a public group, t.me/c/<internal>/<id> for a private
+  // one. Both identify exactly one message, which is all provenance needs.
+  if (host === "t.me") {
+    return /^\/(c\/\d+|[A-Za-z0-9_]{4,32})\/\d+$/.test(path) ? "telegram" : null;
+  }
+  return null;
+}
+
+/**
+ * The identity of the post a market came from, for the one-post-one-market rule.
+ *
+ * Not the URL itself: x.com, twitter.com, fixupx.com and vxtwitter.com are four
+ * spellings of the same tweet, so the status id is the identity there. A
+ * Telegram message has no such id in the URL, so the normalised path is — which
+ * is why this returns a KEY rather than a number, and why the old `/status/`
+ * regex silently disabled the whole rule for Telegram: no match, no dedupe, a
+ * fresh market for every retry.
+ */
+export function sourcePostKey(url: string | null | undefined): string | null {
+  const kind = sourceUrlKind(url);
+  if (!kind) return null;
+  const u = new URL(String(url));
+  if (kind === "x") {
+    const id = /\/status\/(\d+)/.exec(u.pathname)?.[1];
+    return id ? `x:${id}` : null;
+  }
+  return `tg:${u.pathname.replace(/\/+$/, "").toLowerCase()}`;
+}
+
 
 /** Resolve a twitter handle to a canonical device, or null if that handle has
  *  no Oddie account yet. Checks the linked-account table first (the authoritative
@@ -3742,25 +3815,32 @@ export async function recordSurfacer(slug: string, input: { handle?: string | nu
   const handle = (input.handle ?? handleFromSourceUrl(input.sourceUrl))?.replace(/^@+/, "").toLowerCase() ?? null;
   const sourceUrl = input.sourceUrl ?? null;
   const deviceId = input.deviceId ?? (await deviceForTwitterHandle(handle).catch(() => null));
-  if (!handle && !deviceId) return; // no identifiable contributor — nothing to record
+  // A Telegram market has no handle and no device, and it still needs this row:
+  // it is where the source URL lives, and the source URL is what the
+  // one-post-one-market rule reads. Returning early on "no contributor" meant
+  // every Telegram market was created with no provenance AND no dedupe.
+  const sourceKey = sourcePostKey(sourceUrl);
+  if (!handle && !deviceId && !sourceKey) return; // genuinely nothing to record
   // The source post's text, cached at record time so a market can still show
   // the claim it came from after the post is deleted. Awaited rather than
   // fired off, because this is the one moment we're guaranteed to be holding
   // the URL — but it can never fail the write: fetchSourcePost returns null on
   // every error path, and a null simply means the card shows no preview.
-  const post = sourceUrl ? await fetchSourcePost(sourceUrl).catch(() => null) : null;
+  // X only: fetchSourcePost speaks X's oEmbed, so handing it a t.me link is a
+  // guaranteed-null round trip on every Telegram market.
+  const post = sourceUrlKind(sourceUrl) === "x" ? await fetchSourcePost(sourceUrl!).catch(() => null) : null;
   if (!PERSISTENT) {
     if (!memSurfacer.has(slug)) memSurfacer.set(slug, {
-      handle, deviceId, sourceUrl, createdAt: new Date().toISOString(),
+      handle, deviceId, sourceUrl, sourceKey, createdAt: new Date().toISOString(),
       sourceText: post?.text ?? null, sourceAuthor: post?.authorName ?? null,
     });
     return;
   }
   await ensureSchema();
   await db().query(
-    `INSERT INTO market_surfacer (slug, handle, device_id, source_url, source_text, source_author)
-     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (slug) DO NOTHING`,
-    [slug, handle, deviceId, sourceUrl, post?.text ?? null, post?.authorName ?? null],
+    `INSERT INTO market_surfacer (slug, handle, device_id, source_url, source_key, source_text, source_author)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (slug) DO NOTHING`,
+    [slug, handle, deviceId, sourceUrl, sourceKey, post?.text ?? null, post?.authorName ?? null],
   );
 }
 
@@ -6250,11 +6330,14 @@ export function _resetOracleDecisions(): void {
  * one.
  */
 export async function openMarketForSourcePost(sourceUrl: string): Promise<{ slug: string; question: string } | null> {
-  const id = /\/status\/(\d+)/.exec(sourceUrl)?.[1];
-  if (!id) return null;
+  // Keyed, not pattern-matched. The old form looked for "/status/" in the raw
+  // URL, so a t.me permalink produced no id, returned null here, and the
+  // one-post-one-market rule was silently skipped for every Telegram market.
+  const key = sourcePostKey(sourceUrl);
+  if (!key) return null;
   if (!PERSISTENT) {
     for (const [slug, sur] of memSurfacer) {
-      if (!sur.sourceUrl || !sur.sourceUrl.includes(`/status/${id}`)) continue;
+      if ((sur.sourceKey ?? sourcePostKey(sur.sourceUrl)) !== key) continue;
       const meta = memCommunity.get(slug);
       if (meta?.resolvedOutcome || meta?.retiredAt) continue;
       const rec = mem.get(slug);
@@ -6268,11 +6351,11 @@ export async function openMarketForSourcePost(sourceUrl: string): Promise<{ slug
        FROM market_surfacer ms
        JOIN market_slug s      ON s.slug = ms.slug
        JOIN community_market c ON c.slug = ms.slug
-      WHERE split_part(ms.source_url, '/status/', 2) = $1
+      WHERE ms.source_key = $1
         AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
       ORDER BY ms.created_at ASC
       LIMIT 1`,
-    [id],
+    [key],
   );
   return rows[0] ?? null;
 }

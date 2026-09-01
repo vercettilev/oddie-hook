@@ -12,7 +12,7 @@ import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, 
 } from "./store/markets.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
-import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, pctDeltasFor } from "./store/markets.js";
+import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, sourceUrlKind, pctDeltasFor } from "./store/markets.js";
 import { reputationFor } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { creatorFeesPaidFor } from "./store/markets.js";
@@ -686,6 +686,10 @@ app.get("/api/feed", async (req, res) => {
   const poolSizes = await communityPoolSizes(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
   // Calls in the last 24h — the "happening now" signal. See communityRecentCalls.
   const recentCalls = await communityRecentCalls(community.map((m) => slugFor(m)), 24).catch(() => ({} as Record<string, number>));
+  // The fee rate SHOWN has to be the fee rate CHARGED. A market whose source
+  // has no handle is minted at 0 bps, so printing the constant here would quote
+  // a deduction the chain does not make.
+  const feedSurfacers = await surfacersFor(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, SurfacerInfo>));
   const communityItems = community.map((m) => {
     const slug = slugFor(m);
     const positions = playerCounts[slug] ?? 0;
@@ -703,7 +707,7 @@ app.get("/api/feed", async (req, res) => {
       forming: positions < MARKET_FORMING_MIN,
       formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-      creatorFeeBps: CREATOR_FEE_BPS_REAL, // the rate the program deducts; shown on the card's stake line
+      creatorFeeBps: creatorFeeBpsForHandle(feedSurfacers[slug]?.handle), // the rate the program deducts; shown on the card's stake line
       poolTokens: poolSizes[slug] ?? 0,
       callsToday: recentCalls[slug] ?? 0,
     };
@@ -770,6 +774,11 @@ app.get("/api/feed", async (req, res) => {
       feedItems.unshift({
         slug: start.slug,
         category: isCommunity ? "Community" : categorize(start.market),
+        // The one place the constant survives: the drifted/resolved fallback
+        // for a market not in the live set, with no surfacer lookup to hang
+        // the real rate off. It over-states the fee for a handle-less market,
+        // which pays the holder MORE than quoted rather than less -- the safe
+        // direction for a number to be wrong in.
         ...(isCommunity ? { community: true as const, onchain: null, creatorFeeBps: CREATOR_FEE_BPS_REAL } : {}),
         ...start.market,
       });
@@ -999,7 +1008,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       ...m, slug, category: "Community", topicCategory: m.category, community: true as const,
       positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-      creatorFeeBps: CREATOR_FEE_BPS_REAL,
+      creatorFeeBps: creatorFeeBpsForHandle(surfacer?.handle),
       poolTokens: poolSizes[slug] ?? 0,
       callsToday: recentCalls[slug] ?? 0,
       crowd: crowd[slug] ?? { yes: 0, no: 0 },
@@ -2513,6 +2522,25 @@ type OpenMarketResult =
  * Returns a result rather than writing a response, so callers own their own
  * status codes and shapes. Never throws for input problems.
  */
+/**
+ * The creator fee is only charged when there is somebody it can be paid TO.
+ *
+ * create_market deducts creator_fee_bps from the winners' pool and holds it for
+ * whatever address sits in `creator`. That address is filled in later, by
+ * set_creator, from the X handle in the source URL. A market whose source has
+ * no handle -- every Telegram market, by construction -- can never be filled
+ * in, so the fee would come out of real winners and sit in the vault unclaimed
+ * forever. The program is explicit that it will not reroute an unclaimed fee to
+ * the house, and it is right to refuse; the honest answer is not to charge it.
+ *
+ * The rate is stored per market on chain, so this can go back to the full rate
+ * for Telegram the day a group admin can claim it, without repricing anything
+ * already open.
+ */
+function creatorFeeBpsForHandle(handle: string | null | undefined): number {
+  return handle ? CREATOR_FEE_BPS_REAL : 0;
+}
+
 async function openMarketFromClaim(input: {
   question: string;
   closeInput: unknown;
@@ -2562,8 +2590,13 @@ async function openMarketFromClaim(input: {
 
   const sourceUrl = input.sourceUrl?.trim() || null;
   if (!sourceUrl) return bad(400, "source_url required: a market with no source can never show who it came from");
-  if (!handleFromSourceUrl(sourceUrl)) {
-    return bad(400, "source_url must be an x.com/…/status/… link, because the handle in it is what names the card");
+  // ACCEPTANCE, not attribution. These were the same check, and on X they
+  // coincide -- the handle in the URL is both where the market came from and
+  // who gets paid. A t.me link is a real source with no handle in it, so asking
+  // handleFromSourceUrl whether to accept a source rejected every Telegram
+  // market ever submitted. Who gets paid is decided separately, below.
+  if (!sourceUrlKind(sourceUrl)) {
+    return bad(400, "source_url must be an x.com/…/status/… or t.me/…/… link");
   }
 
   // The vault comes first. Written the other way round, a Solana failure
@@ -2576,7 +2609,7 @@ async function openMarketFromClaim(input: {
   const minted = lazy
     ? null
     : await mintMarket({ marketId, question, closeTime, creator: null,
-        creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
+        creatorFeeBps: creatorFeeBpsForHandle(handleFromSourceUrl(sourceUrl)), protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
   if (!lazy && !minted) {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
@@ -2615,10 +2648,15 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   if (!isChainEnabled()) return null;
   if (detail.resolvedOutcome) return null; // nothing to stake in
 
+  // THE path for bot-created markets: the claims route mints on-demand, so this
+  // is where a Telegram market actually reaches the chain. The rate has to be
+  // decided from the surfacer here too, or the deferred mint quietly reinstates
+  // the 2% the direct path just stopped charging.
+  const sur = await surfacerFor(slug).catch(() => null);
   const minted = await mintMarket({
     marketId: detail.marketId, question: detail.question,
     closeTime: Math.floor(new Date(detail.closesAt ?? Date.now()).getTime() / 1000),
-    creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+    creator: null, creatorFeeBps: creatorFeeBpsForHandle(sur?.handle), protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
   }).catch(() => null);
 
   if (minted) {
@@ -2701,13 +2739,27 @@ app.post("/api/v1/claims", async (req, res) => {
     const chatId = rawChat == null ? "" : String(rawChat).slice(0, 64);
     if (!chatId) return res.status(400).json({ error: "context.chat_id required" });
 
-    // The permalink decides who is credited, so it is validated here rather
-    // than deep inside the mint. Parsed, not pattern-matched.
+    // The permalink is the provenance, the dedupe identity, and the thing that
+    // decides who is credited -- so EVERY test it has to pass runs here, before
+    // anything costs money.
+    //
+    // It used to be checked for https only, with the host rejected deep inside
+    // openMarketFromClaim, AFTER a full extraction had been billed. The bot can
+    // only ever send a t.me link, so every Telegram claim ever submitted paid
+    // for a model call and got a 400 back -- and because a 400 is not a 422, it
+    // was never cached as a refusal and the quota was refunded, so there was
+    // nothing at all capping the repeat spend.
     const permalink = req.body?.permalink != null ? String(req.body.permalink) : null;
-    if (permalink) {
-      let u: URL | null = null;
-      try { u = new URL(permalink); } catch { u = null; }
-      if (!u || u.protocol !== "https:") return res.status(400).json({ error: "permalink must be an https URL" });
+    if (!permalink) {
+      return res.status(400).json({ error: "permalink required: a market with no source cannot show where it came from" });
+    }
+    let permalinkUrl: URL | null = null;
+    try { permalinkUrl = new URL(permalink); } catch { permalinkUrl = null; }
+    if (!permalinkUrl || permalinkUrl.protocol !== "https:") {
+      return res.status(400).json({ error: "permalink must be an https URL" });
+    }
+    if (!sourceUrlKind(permalink)) {
+      return res.status(400).json({ error: "permalink must be an x.com/.../status/... or t.me/.../... link" });
     }
 
     const scope = callerScope(key);
@@ -2736,13 +2788,11 @@ app.post("/api/v1/claims", async (req, res) => {
     }
     // One post, one market, the same rule the X loop follows. Without it a
     // single permalink minted a market per idempotency key.
-    if (permalink) {
-      const already = await openMarketForSourcePost(permalink).catch(() => null);
-      if (already) {
-        await claimKeyRecord(ledgerKey, { slug: already.slug }).catch(() => {});
-        const detail = await communityMarketDetail(already.slug).catch(() => null);
-        return res.json({ state: "existing", market: marketPayload(already.slug, detail) });
-      }
+    const already = await openMarketForSourcePost(permalink).catch(() => null);
+    if (already) {
+      await claimKeyRecord(ledgerKey, { slug: already.slug }).catch(() => {});
+      const detail = await communityMarketDetail(already.slug).catch(() => null);
+      return res.json({ state: "existing", market: marketPayload(already.slug, detail) });
     }
     // Asking for a token before checking the engine is even configured spends a
     // group's budget on an outage.
