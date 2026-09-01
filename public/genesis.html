@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oddie Receipts: Genesis</title>
+<meta name="description" content="You get 5 receipts. You can't use them on yourself. Put someone else's claim on the record and see who was right.">
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=2">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
+<!-- This page's whole job is to be pasted into X threads, so it is the one
+     page that cannot unfurl as a bare link. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="oddie">
+<meta property="og:url" content="https://oddie.fun/genesis">
+<meta property="og:title" content="You get 5 receipts. You can't use them on yourself.">
+<meta property="og:description" content="Connect X, claim 5 receipts, tag @oddiefun under a claim. Every tag opens a real market. 1 person = 1 point.">
+<meta property="og:image" content="https://oddie.fun/og-genesis.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="You get 5 receipts. You can't use them on yourself.">
+<meta name="twitter:description" content="Connect X, claim 5 receipts, tag @oddiefun under a claim. Every tag opens a real market. 1 person = 1 point.">
+<meta name="twitter:image" content="https://oddie.fun/og-genesis.png">
+
+<script>
+  /* Iki giris yolu, tek dosya. ?state=in TASARIM ONIZLEMESIDIR (ornek
+     sayilarla), ?connected=twitter ise OAuth donusudur: X baglantisi sunucuda
+     gercekten kuruldu, o yuzden bu mod ornek sayi GOSTEREMEZ — asagidaki
+     betik degerleri durust sifir-duruma ceker. Stilden once calisir ki sayfa
+     once yanlis durumu gosterip sonra ziplamasin. */
+  (function(){
+    var d = document.documentElement;
+    var real = /[?&]connected=twitter(&|$)/.test(location.search);
+    d.dataset.state = (real || /[?&]state=in(&|$)/.test(location.search)) ? "in" : "out";
+    if (real) d.dataset.real = "1";
+    /* /genesis/how is a VIEW of this same document, not a second file. The
+       four steps and the formula therefore exist in exactly one place. */
+    d.dataset.view = /\/how\/?$/.test(location.pathname) ? "how" : "main";
+  })();
+</script>
+
+<!-- Anton, self-hosted, same file the landing uses. One weight only: asking for
+     700+ makes the browser smear a synthetic bold over a face that is already
+     black. Every display element here is 400. -->
+<style>
+  @font-face{font-family:'Anton';src:url('/fonts/anton-latin.woff2') format('woff2');
+    font-weight:400;font-style:normal;font-display:swap}
+  @font-face{font-family:'Nunito';src:url('/fonts/nunito-latin.woff2') format('woff2');
+    font-weight:400 800;font-style:normal;font-display:swap}
+
+  /* Campaign layer, deliberately louder than the app. The product surface is
+     the calm one; this is a poster. Same three grounds as the landing so the
+     two read as one brand, plus ONE element the landing does not have: the
+     thermal receipt. That is the asset this campaign owns. */
+  :root{
+    --yellow:#D7DC1F;
+    --yellow-hi:#E7EC4E;
+    --pink:#FF2D78;
+    --pink-field:#E13774;
+    --pink-deep:#A3053F;
+    --black:#020302;
+    --cream:#FBFCF4;
+    --paper:#F7F5EE;      /* receipt stock, a shade warmer than --cream */
+    --ink:#0B0D04;
+    --ink-2:#494E2D;
+    --fg:#fff;
+    /* Body copy on a black field was running at 68% white, which computes to a
+       9.3:1 ratio and still reads dim: a contrast ratio is not legibility, and
+       light strokes thin out on dark grounds. 87% is the value Material uses for
+       high-emphasis text on dark surfaces; 70% keeps labels quieter without
+       making them grey mush. */
+    --fg-2:rgba(255,255,255,.87);
+    --fg-3:rgba(255,255,255,.78);
+    --line:rgba(255,255,255,.16);
+    --shell:1240px;
+    --display:'Anton','Arial Narrow','Helvetica Neue',Helvetica,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+    --zip:cubic-bezier(.34,1.56,.64,1);
+    --seam-h:clamp(34px,5vw,76px);
+    /* Two tear masks, different seeds: the same mask used twice reads as a
+       pattern and the eye stops seeing a torn edge. */
+    --tear-1:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t1' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042 0.05' numOctaves='2' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='54'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t1)'/%3E%3C/svg%3E");
+    --tear-2:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t2' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0034 0.055' numOctaves='2' seed='23'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='44'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t2)'/%3E%3C/svg%3E");
+    /* The receipt's own bottom edge: a fine perforated tear, not the big
+       section-sized one. Its own mask so the two never share a scale. */
+    --tear-fine:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='40' preserveAspectRatio='none'%3E%3Cfilter id='tf' x='-20%25' y='-60%25' width='140%25' height='220%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.09 0.5' numOctaves='2' seed='13'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='11'/%3E%3C/filter%3E%3Crect x='-20' y='-20' width='360' height='48' fill='%23fff' filter='url(%23tf)'/%3E%3C/svg%3E");
+  }
+
+  /* iki durum: cikisli varsayilan, girisli onizleme */
+  [data-state="in"] .out-only{display:none}
+  [data-state="out"] .in-only{display:none}
+
+  /* ------------------------------------------------------- views --
+     Logged out the explanation IS the value, so it stays in the flow. Once you
+     are in, the page is about where you stand and the explanation moves behind
+     the nav link. The how view is this same document with the campaign chrome
+     stripped, which is why nothing here is duplicated. */
+  [data-view="how"] .A,
+  [data-view="how"] #board,
+  [data-view="how"] #mine,
+  [data-view="how"] .nav__how,
+  [data-view="how"] .navstate{display:none}
+  [data-view="main"] .nav__back,
+  [data-view="main"] .how-only{display:none}
+  /* The design preview hides the steps (a returning player knows them); the
+     REAL freshly-connected state must not, because that person has never
+     tagged and this is the only instruction on the page. */
+  [data-view="main"][data-state="in"]:not([data-real="1"]) #loop{display:none}
+  [data-real="1"] .nav__how{display:none}
+  /* Really connected (not the design preview): nothing has been spent yet, so a
+     ledger of example rows would be a lie about this person's account. */
+  [data-real="1"] #mine{display:none}
+  /* the loop's torn seam assumes a yellow field above it; in the how view it
+     sits straight under the cream masthead, so the seam comes off */
+  [data-view="how"] #loop::before,
+  [data-view="how"] #loop::after{display:none}
+  [data-view="how"] #loop{padding-top:clamp(28px,3.6vw,54px)}
+  .how-only{margin-top:clamp(26px,3.4vw,46px)}
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--yellow);color:var(--ink);
+    font-family:'Nunito',system-ui,-apple-system,sans-serif;font-weight:600;
+    font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block;height:auto}
+  .shell{width:100%;max-width:var(--shell);margin:0 auto;padding:0 clamp(20px,4vw,40px)}
+  a:focus-visible,button:focus-visible{outline:3px solid currentColor;outline-offset:3px;border-radius:4px}
+  .on-dark a:focus-visible,.on-dark button:focus-visible{outline-color:var(--yellow)}
+
+  /* ------------------------------------------------------------------ type -- */
+  .h1,.h2,.h3{font-family:var(--display);font-weight:400;text-transform:uppercase;
+    letter-spacing:-.01em;margin:0;text-wrap:balance}
+  /* Anton's caps measure .859em, so any line-height under ~.87 makes two
+     stacked lines collide. .96 leaves a real gap at every size in the clamp. */
+  /* Two lines now. Measured: a character runs ~4.44% of the font size in Anton,
+     so the 12-character line needs the cap at 130 to clear the 720px column. */
+  .h1{font-size:clamp(46px,9vw,130px);line-height:.96}
+  .h2{font-size:clamp(30px,5.2vw,74px);line-height:.98}
+  .h3{font-size:clamp(19px,2.1vw,28px);line-height:1.08}
+  .h1 span,.h2 span{display:block;width:fit-content;max-width:100%;position:relative}
+  /* Nothing on this page is set below 12px. The mono labels were at 10 and 10.5,
+     which passes every contrast check and is still hard to read; contrast and
+     size are separate failures and only one of them was being measured. The
+     receipt mock sits at 11.5 because it is a small physical object, and its
+     numbers are repeated as real text in the ledger beside it. */
+  .kicker{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.18em;color:var(--ink-2);margin:0}
+  .on-dark .kicker{color:var(--fg-3)}
+  /* Balanced wrapping: every one of these blocks was ending on a single orphan
+     word. Browsers without it just wrap normally, so there is nothing to lose. */
+  .lede,.step p,.fine{text-wrap:balance}
+  .lede{font-size:clamp(16px,1.35vw,19px);line-height:1.62;color:var(--ink-2);margin:14px 0 0;max-width:46ch}
+  .on-dark .lede{color:var(--fg-2)}
+
+  /* --------------------------------------------------------------- masthead -- */
+  .topbar{position:sticky;top:0;z-index:50;background:var(--cream);
+    border-bottom:3px solid var(--ink)}
+  .nav__in{display:flex;align-items:center;justify-content:space-between;gap:20px;
+    padding-top:clamp(9px,1.1vw,14px);padding-bottom:clamp(9px,1.1vw,14px)}
+  /* --------------------------------------------- Genesis hapi (landing'le es) */
+  .gcta{display:flex;align-items:center;gap:clamp(10px,1.4vw,18px);min-width:0;
+    margin:0 clamp(10px,1.6vw,24px)}
+  .gcta__pill{display:inline-flex;align-items:center;gap:10px;flex:none;
+    background:var(--ink);color:#fff;border-radius:3px;
+    padding:10px 14px 9px;box-shadow:5px 6px 0 var(--pink);
+    transition:translate .13s var(--zip),scale .13s var(--zip),box-shadow .13s ease-out}
+  .gcta:hover .gcta__pill{translate:1px 1px;box-shadow:4px 5px 0 var(--pink)}
+  .gcta:active .gcta__pill{scale:.965;translate:3px 4px}
+  .gcta__tag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink);background:var(--yellow);
+    padding:4px 7px 3px;rotate:-1.6deg;flex:none}
+  .gcta__hd{font-family:var(--display);font-weight:400;text-transform:uppercase;
+    font-size:clamp(14px,1.35vw,19px);letter-spacing:.005em;color:var(--yellow);
+    white-space:nowrap}
+  .gcta__pill i{font-style:normal;color:var(--yellow);font-size:16px}
+  /* ------------------------------------------------------------ butonlar --
+     (Yanlis kesimde silinen taban aile, oturumdaki halleriyle yeniden kuruldu.) */
+  .btn{display:inline-flex;align-items:center;gap:10px;cursor:pointer;
+    font-family:var(--display);font-weight:400;font-size:clamp(17px,1.7vw,23px);
+    text-transform:uppercase;padding:15px 30px;border-radius:3px;border:0;
+    background:var(--ink);color:#fff;box-shadow:6px 7px 0 var(--pink);
+    transition:translate .13s var(--zip),scale .13s var(--zip),box-shadow .13s ease-out}
+  .btn:hover{translate:1px 1px;box-shadow:5px 6px 0 var(--pink)}
+  .btn:active{scale:.965;translate:3px 4px}
+  .btn i{font-style:normal;color:var(--yellow)}
+  /* iki satirli CTA: ustte eylem, altta kazandirdigi */
+  .btn--2l{flex-direction:column;align-items:flex-start;gap:3px;
+    padding:14px 30px 13px}
+  .btn__main{display:flex;align-items:center;gap:10px}
+  .btn--2l small{font-family:var(--mono);font-size:12px;font-weight:700;
+    letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.87)}
+
+  /* nav'daki Launch app landing'deki gibi konturlu ikincil.
+     KAYNAK SIRASI ONEMLI: bu taban kural medya bloklarindan ONCE durmali,
+     yoksa ayni ozgullukte olduklari icin 560px kuralini ezip mobili bozuyor
+     (olculdu: buton 126px'e buyudu, landing 110). */
+  .nav__links .btn{padding:9px 17px;font-size:14px;background:transparent;color:var(--ink);
+    border:2.5px solid var(--ink);box-shadow:none}
+  .nav__links .btn:hover{translate:none;box-shadow:none;background:rgba(11,13,4,.06)}
+  .nav__links .btn i{color:var(--ink)}
+  @media (max-width:820px){.gcta__hd{display:none}}
+  @media (max-width:560px){
+    .nav__in{gap:8px}
+    .gcta{margin:0 4px}
+    .gcta__pill{padding:10px 12px 9px;box-shadow:4px 5px 0 var(--pink)}
+    .gcta__tag{font-size:8.5px;letter-spacing:.14em;padding:4px 6px 3px}
+    .nav__links{gap:10px}
+    .nav__links .btn{padding:11px 13px;font-size:12.5px}
+    .navstate{display:none}
+    /* how gorunumunde cikis Back'tir; hap orada susleme, bari sardirmasin */
+    [data-view="how"] .gcta{display:none}
+  }
+
+  /* --------------------------------------------------- marka + baglantilar --
+     (Yanlis bir kesimde silinen bolge, landing'in kurallariyla birebir
+     yeniden kuruldu.) */
+  .brand{display:inline-flex;align-items:center;gap:11px;position:relative;
+    min-height:clamp(47px,3.4vw,49px)}
+  .brand::after{content:'';position:absolute;left:-7px;right:-7px;top:50%;height:44px;
+    transform:translateY(-50%)}
+  .brand img{width:clamp(32px,3vw,42px);border-radius:10px}
+  .brand span{font-family:var(--display);font-size:clamp(22px,2.2vw,30px);color:var(--ink);
+    text-transform:lowercase}
+  @media (max-width:480px){.brand span{display:none}}
+  .nav__links{display:flex;align-items:center;gap:clamp(16px,2.4vw,32px)}
+  .nav__links a:not(.btn){font-family:var(--mono);font-size:12px;font-weight:700;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);position:relative}
+  .nav__links a:not(.btn):hover{color:var(--ink)}
+  .nav__links a:not(.btn)::after{content:'';position:absolute;left:0;right:0;
+    top:50%;height:44px;transform:translateY(-50%)}
+  @media (max-width:720px){
+    .nav__links a:not(.btn){display:none}
+    /* how gorunumunun tek cikisi */
+    [data-view="how"] .nav__links .nav__back{display:inline-block}
+  }
+
+  /* ============================================== the receipt · the new asset ==
+     The one element this campaign owns and the landing does not. Real paper
+     stock, mono type, a perforated tear at the bottom, and a rotated stamp.
+     Built in CSS rather than shipped as an image so every instance can carry
+     REAL market text later without re-cutting an asset. */
+  .rcpt{position:relative;width:min(100%,336px);background:var(--paper);color:var(--ink);
+    font-family:var(--mono);font-size:12.5px;line-height:1.5;
+    padding:20px 22px 34px;rotate:-1.6deg;
+    -webkit-mask-image:var(--tear-fine),linear-gradient(#000,#000);
+    mask-image:var(--tear-fine),linear-gradient(#000,#000);
+    -webkit-mask-size:100% 26px,100% calc(100% - 24px);
+    mask-size:100% 26px,100% calc(100% - 24px);
+    -webkit-mask-position:bottom,top;mask-position:bottom,top;
+    -webkit-mask-repeat:no-repeat,no-repeat;mask-repeat:no-repeat,no-repeat}
+  /* The shadow has to live on a PARENT: mask clips the element's own box, and a
+     box-shadow sits outside that box, so it was being erased entirely. As a
+     filter on the wrapper it is applied after the mask and traces the tear. */
+  .rcpt-wrap{filter:drop-shadow(12px 14px 0 var(--pink-deep))}
+  .rcpt__top{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    padding-bottom:11px;border-bottom:2px dashed rgba(11,13,4,.34)}
+  .rcpt__who{margin:13px 0 4px;font-size:11.5px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-2)}
+  .rcpt__claim{margin:0;font-family:var(--display);font-weight:400;font-size:20px;
+    line-height:1.06;text-transform:uppercase}
+  .rcpt__split{display:flex;gap:10px;margin:16px 0 0}
+  .rcpt__split b{flex:1;display:block;font-family:var(--display);font-weight:400;
+    font-size:21px;line-height:1;text-align:center;padding:9px 4px 8px;
+    border:2px solid var(--ink)}
+  .rcpt__split .y{background:var(--yellow)}
+  .rcpt__split .n{background:var(--pink);color:var(--ink)}
+  .rcpt__meta{margin:14px 0 0;padding-right:clamp(78px,36%,124px);
+    font-size:11.5px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-2)}
+  .rcpt__stamp{position:absolute;right:14px;bottom:78px;
+    font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--pink-deep);border:3px solid var(--pink-deep);
+    padding:5px 10px 4px;rotate:-9deg;opacity:.92}
+  /* barcode: a repeating-linear-gradient, not an image, so it stays crisp */
+  .rcpt__code{height:26px;margin-top:16px;
+    background-image:repeating-linear-gradient(90deg,
+      var(--ink) 0 2px,transparent 2px 5px,var(--ink) 5px 8px,transparent 8px 10px,
+      var(--ink) 10px 11px,transparent 11px 15px)}
+
+  /* ================================================== A · YELLOW · the hook == */
+  .A{position:relative;background:var(--yellow);overflow-x:clip;overflow-y:visible}
+  .A::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+    opacity:.26;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='gr'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='3'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23gr)'/%3E%3C/svg%3E");
+    background-size:220px 220px}
+  .A > .shell{position:relative;z-index:3;
+    padding-top:clamp(30px,4.4vw,66px);padding-bottom:clamp(34px,4.6vw,72px)}
+  .A__in{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.62fr);
+    gap:clamp(22px,3.6vw,58px);align-items:center}
+  .A__art{justify-self:end}
+
+  /* ------------------------------------------------- brand stickers -- */
+  /* Each sticker states its own section's idea, so these are content and not
+     decoration: every one carries a real alt and none is aria-hidden. */
+  /* These two sit in an auto grid track, so a percentage width would resolve
+     against a track that is itself sized from the image: zero until it loads,
+     and a jump when it does. An explicit width plus the width/height attributes
+     lets the browser reserve the box from the aspect ratio alone. */
+  .art{display:block;max-width:100%;height:auto}
+  .art--ticket{width:100%;max-width:430px;rotate:-2.2deg}
+  /* Sized to the heading beside them rather than to themselves: at 270 the
+     sticker was half again as tall as the text it sits next to, and the row
+     paid for the difference in empty space. */
+  .art--record{width:clamp(140px,14.5vw,208px);rotate:2.6deg;justify-self:end}
+  .art--podium{width:clamp(128px,13vw,188px);rotate:-1.8deg;justify-self:end}
+
+  /* a section heading that carries a sticker beside it */
+  .shead{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);
+    gap:clamp(18px,3vw,48px);align-items:center}
+  .A .btn{margin-top:clamp(18px,2.4vw,32px)}
+  /* The instruction, sized like a section heading rather than body copy: it is
+     the first thing a reader should act on. */
+  .authnote{margin:clamp(12px,1.4vw,18px) 0 0;font-family:var(--mono);font-size:12px;
+    font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pink-deep)}
+  .doit{margin:clamp(16px,2vw,26px) 0 0;font-family:var(--display);font-weight:400;
+    text-transform:uppercase;font-size:clamp(21px,2.6vw,37px);line-height:1.06;
+    color:var(--ink);max-width:21ch;text-wrap:balance}
+
+  /* ================================================= B · BLACK · the loop == */
+  .B{position:relative;background:var(--black);color:var(--fg);overflow-x:clip;
+    padding-top:calc(var(--seam-h) + clamp(22px,2.8vw,44px));
+    padding-bottom:clamp(30px,3.8vw,58px)}
+  .B::before,.B::after,.C::before,.C::after{content:"";position:absolute;
+    left:-3%;right:-3%;top:0;pointer-events:none;
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+  .B::before,.C::before{height:calc(var(--seam-h) + 9px);background:var(--cream);z-index:1;
+    -webkit-mask-size:100% var(--seam-h);mask-size:100% var(--seam-h);
+    -webkit-mask-position:0 9px;mask-position:0 9px}
+  .B::after,.C::after{height:var(--seam-h);z-index:2;
+    -webkit-mask-size:100% 100%;mask-size:100% 100%}
+  .B::before{-webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
+  .B::after{background:var(--yellow);-webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
+  .B > .shell{position:relative;z-index:3}
+
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+    gap:clamp(20px,2.6vw,38px);margin-top:clamp(22px,2.6vw,38px)}
+  /* Cards, not copy floating on the field. Even at full white the body text kept
+     reading as unimportant beside the display type around it, because nothing
+     bounded it. A cream surface fixes the weight and the contrast at once, and
+     it is the card language the board and the receipt already use. */
+  .step{background:var(--cream);color:var(--ink);
+    padding:clamp(16px,1.8vw,24px) clamp(16px,1.8vw,24px) clamp(20px,2.2vw,28px);
+    box-shadow:9px 10px 0 var(--pink-deep)}
+  .step:nth-child(1){rotate:-.7deg}
+  .step:nth-child(2){rotate:.5deg}
+  .step:nth-child(3){rotate:-.4deg}
+  .step__n{display:inline-block;font-family:var(--display);font-weight:400;
+    font-size:clamp(30px,3.1vw,46px);line-height:1;color:var(--ink);
+    background:var(--yellow);padding:5px 14px 4px;box-shadow:4px 5px 0 var(--ink)}
+  .step h3{margin:14px 0 0;font-family:var(--display);font-weight:400;
+    font-size:clamp(21px,2.1vw,27px);text-transform:uppercase;color:var(--ink)}
+  .step p{margin:9px 0 0;font-size:clamp(17px,1.6vw,20.5px);line-height:1.48;
+    color:var(--ink-2)}
+  .step code{font-family:var(--mono);font-size:13px;font-weight:700;color:#fff;
+    background:rgba(255,255,255,.09);padding:2px 6px;border-radius:3px;white-space:nowrap}
+
+  /* the formula, deliberately explicit: a campaign whose scoring you have to
+     guess at is a campaign people assume is rigged */
+  .form{margin-top:clamp(26px,3.2vw,46px);border-top:3px solid var(--line);
+    padding-top:clamp(18px,2.2vw,30px)}
+  /* One rule, stated as an equation. The four-row ladder it replaces said the
+     same thing in three different units and made the reader do arithmetic to
+     find the rule hiding inside it. */
+  .eq{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 clamp(14px,2vw,32px);
+    margin-top:clamp(16px,2.2vw,28px)}
+  .eq b{font-family:var(--display);font-weight:400;line-height:1;
+    font-size:clamp(38px,6.2vw,88px)}
+  .eq__a{color:var(--fg)}
+  .eq__b{color:var(--yellow)}
+  .eq i{font-style:normal;font-family:var(--display);font-weight:400;line-height:1;
+    font-size:clamp(30px,4.6vw,66px);color:var(--fg-3)}
+  .cta-loop{margin-top:clamp(20px,2.4vw,32px)}
+  [data-view="how"] .cta-loop{display:none}
+
+  /* Harcama sheet'i: landing'in lp-* parcasinin birebir tasinmis hali, cunku
+     "fis harcamak" = X'te bir iddianin altina yanit birakmak, ve bu akis
+     landing'de zaten cozulmustu. */
+  .lp-dim{position:fixed;inset:0;z-index:60;background:rgba(2,3,2,.7);display:flex;
+    align-items:center;justify-content:center;padding:20px}
+  .lp-sheet{width:100%;max-width:480px;background:var(--cream);color:var(--ink);
+    border:3px solid var(--ink);border-radius:5px;padding:22px;box-shadow:10px 12px 0 var(--pink)}
+  .lp-sheet h3{margin:0 0 10px;font-family:var(--display);font-weight:400;font-size:24px;
+    text-transform:uppercase}
+  .lp-sheet .lp-note{margin:0 0 14px;font-size:14px;line-height:1.55;color:var(--ink-2)}
+  .lp-in{width:100%;box-sizing:border-box;font:inherit;font-weight:700;font-size:14px;
+    background:#fff;color:var(--ink);border:2px solid var(--ink);border-radius:3px;padding:12px 14px}
+  .lp-in:focus{outline:none;border-color:var(--pink)}
+  .lp-err{font-size:12px;font-weight:800;color:var(--pink-deep);margin:8px 0 0}
+  .lp-go{display:block;width:100%;margin-top:12px;background:var(--yellow);color:var(--ink);
+    border:3px solid var(--ink);border-radius:3px;padding:13px;cursor:pointer;
+    font-family:var(--display);font-weight:400;font-size:16px;text-transform:uppercase}
+  .lp-own{display:block;width:100%;border:none;background:none;font:inherit;font-weight:700;
+    font-size:13px;color:var(--ink-2);margin-top:12px;cursor:pointer}
+  .lp-own:hover{color:var(--ink);text-decoration:underline}
+  .lp-close{display:block;width:100%;border:none;background:none;font:inherit;font-weight:800;
+    font-size:13px;color:var(--ink-2);margin-top:8px;cursor:pointer}
+  .scarce{margin:clamp(14px,1.8vw,24px) 0 0;font-family:var(--display);font-weight:400;
+    text-transform:uppercase;font-size:clamp(18px,1.9vw,27px);line-height:1.1;
+    color:var(--pink)}
+  .fine{margin:clamp(10px,1.2vw,14px) 0 0;font-size:14px;line-height:1.55;
+    color:var(--fg-2);max-width:54ch}
+  /* the fairness rule: a values statement, so it gets its own air */
+  .oneline{margin:clamp(20px,2.3vw,30px) 0 0;font-family:var(--display);font-weight:400;
+    text-transform:uppercase;font-size:clamp(18px,1.9vw,27px);line-height:1.1;
+    color:var(--yellow);max-width:none}
+  .oneline span{display:block}
+  .detail{margin-top:clamp(26px,3.4vw,48px);border-top:3px solid var(--line);
+    padding-top:clamp(20px,2.6vw,34px)}
+  .detail li{font-size:15px;line-height:1.6;color:var(--fg-2);margin:0 0 10px}
+  .detail ul{margin:clamp(12px,1.6vw,20px) 0 0;padding-left:20px;max-width:60ch}
+
+  /* ================================================ C · PINK · the board == */
+  .C{position:relative;background:var(--pink-field);overflow-x:clip;overflow-y:visible;
+    padding-top:calc(var(--seam-h) + clamp(20px,2.6vw,40px));
+    padding-bottom:clamp(30px,3.8vw,58px)}
+  .C::before{-webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
+  .C::after{background:var(--black);-webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
+  .C > .shell{position:relative;z-index:3}
+  .C .kicker{color:var(--ink)}
+  .C .lede{color:var(--ink)}
+  .board{margin-top:clamp(22px,2.8vw,40px);background:var(--cream);
+    border:3px solid var(--ink);box-shadow:11px 13px 0 var(--ink);rotate:-.4deg}
+  .board__hd,.board__row{display:grid;
+    grid-template-columns:64px minmax(0,1fr) minmax(96px,auto);
+    gap:12px;align-items:center;padding:12px clamp(14px,2vw,26px)}
+  .board__hd{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-2);border-bottom:3px solid var(--ink)}
+  .board__row{border-bottom:2px solid rgba(11,13,4,.16)}
+  .board__row:last-child{border-bottom:0}
+  .board__row b{font-family:var(--display);font-weight:400;font-size:clamp(17px,1.7vw,23px)}
+  /* Your own row, pinned above the top: the distance between you and #1 is the
+     only thing a scoreboard is for, and it stops existing the moment you have
+     to go hunting for yourself in the list. */
+  .board__row--me{background:var(--yellow);border-bottom:3px solid var(--ink)}
+  .nav__back{font-family:var(--mono);font-size:12px;font-weight:700;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);position:relative}
+  .nav__back:hover{color:var(--ink)}
+  .board__row .who{font-family:var(--mono);font-size:13px;font-weight:700}
+  .board__row .n{font-family:var(--display);font-weight:400;font-size:clamp(18px,1.9vw,26px);
+    text-align:right}
+  .board__note{padding:14px clamp(14px,2vw,26px);font-family:var(--mono);font-size:12px;
+    font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
+    border-top:3px solid var(--ink);background:rgba(11,13,4,.05)}
+
+  /* the only link down here, so it does not get the quiet label colour */
+  footer{background:var(--black);color:var(--fg-2);padding:clamp(18px,2.2vw,30px) 0}
+  .foot{display:flex;flex-wrap:wrap;gap:10px 24px;align-items:center;
+    font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.13em;
+    text-transform:uppercase}
+  .foot a{position:relative}
+  .foot a::after{content:'';position:absolute;left:0;right:0;top:50%;height:44px;
+    transform:translateY(-50%)}
+  .foot a:hover{color:#fff}
+
+  @media (max-width:900px){
+    .A__in{grid-template-columns:1fr;gap:clamp(24px,6vw,40px)}
+    .A__art{justify-self:start}
+    .board__hd,.board__row{grid-template-columns:44px minmax(0,1fr) minmax(70px,auto);
+      gap:10px}
+  }
+  @media (max-width:700px){
+    .B::before,.C::before{-webkit-mask-size:360% var(--seam-h);mask-size:360% var(--seam-h)}
+    .B::after,.C::after{-webkit-mask-size:360% 100%;mask-size:360% 100%}
+  }
+  @media (max-width:900px){
+    .art--ticket{max-width:min(74vw,360px)}
+  }
+  @media (max-width:760px){
+    .shead{grid-template-columns:1fr;gap:clamp(14px,4vw,26px)}
+    .art--record,.art--podium{justify-self:start;width:min(52vw,220px)}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .btn{transition:none}
+    .btn:hover,.btn:active{translate:none;scale:1}
+  }
+
+  /* ------------------------------------------------- girisli durum · pano -- */
+  .navstate{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink);background:var(--yellow);
+    border:2px solid var(--ink);padding:5px 10px 4px;rotate:-1.4deg}
+  .pips{display:flex;gap:7px;margin:clamp(16px,2.2vw,28px) 0 0}
+  .pip{width:clamp(26px,2.6vw,36px);height:clamp(26px,2.6vw,36px);
+    background:var(--ink);border:3px solid var(--ink);border-radius:3px;rotate:-2deg}
+  .pip:nth-child(even){rotate:2deg}
+  .pip--spent{background:transparent}
+  .pip--burnt{background:transparent;position:relative;opacity:.5}
+  /* yanmis: uzeri cizik. Iki cizgi, pseudo ile, ekstra markup yok. */
+  .pip--burnt::before,.pip--burnt::after{content:"";position:absolute;
+    left:-4px;right:-4px;top:50%;height:3px;background:var(--ink)}
+  .pip--burnt::before{rotate:42deg}
+  .pip--burnt::after{rotate:-42deg}
+  .stats{display:flex;flex-wrap:wrap;gap:clamp(16px,3vw,44px);
+    margin:clamp(18px,2.4vw,32px) 0 0}
+  .stat b{display:block;font-family:var(--display);font-weight:400;
+    font-size:clamp(30px,3.6vw,52px);line-height:1;color:var(--ink)}
+  .stat span{display:block;margin-top:4px;font-family:var(--mono);font-size:12px;
+    font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+  .in-only .btn{margin-top:clamp(18px,2.4vw,30px)}
+
+  /* defter satirlari: fisin kucuk olcegi */
+  /* siyahtan siyaha geciyor: dikis yok, ve .B'nin dikis payi da gereksiz */
+  #mine{padding-top:clamp(30px,3.8vw,58px)}
+  #mine::before,#mine::after{display:none}
+  .mgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,336px);
+    gap:clamp(24px,3.6vw,56px);align-items:start;margin-top:clamp(22px,2.8vw,40px)}
+  .mrow{display:grid;grid-template-columns:74px minmax(0,1fr) 110px 118px;
+    gap:clamp(10px,1.6vw,22px);align-items:center;
+    padding:clamp(13px,1.6vw,20px) 0;border-bottom:2px solid var(--line)}
+  .mrow:last-child{border-bottom:0}
+  .mrow__n{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
+    color:var(--fg-3)}
+  .mrow__q{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
+    font-size:clamp(17px,1.9vw,26px);line-height:1.04;color:#fff}
+  .mrow__b{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--fg-2)}
+  .mrow__s{font-family:var(--display);font-weight:400;text-transform:uppercase;
+    font-size:clamp(14px,1.5vw,20px);text-align:right;color:var(--fg-3)}
+  .mrow__s--won{color:var(--pink)}
+  .mrow__s--dead{color:var(--fg-3);text-decoration:line-through}
+  @media (max-width:820px){
+    .mgrid{grid-template-columns:1fr}
+    .mrow{grid-template-columns:64px minmax(0,1fr);row-gap:6px}
+    .mrow__b{grid-column:2}
+    .mrow__s{grid-column:2;text-align:left}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <nav class="shell nav__in">
+    <a class="brand" href="/" aria-label="Oddie home">
+      <img src="/brand/mark.webp" alt="" width="320" height="320"><span>oddie</span>
+    </a>
+    <!-- Landing ile ayni masthead: ayni hap, ayni uclu. Hapin buradaki tek
+         isi tutarlilik; tiklaninca zaten bu sayfaya gelir. -->
+    <a class="gcta" href="/genesis">
+      <span class="gcta__pill">
+        <b class="gcta__tag">Receipts</b>
+        <b class="gcta__hd">Genesis is live.</b>
+        <i aria-hidden="true">&rarr;</i>
+      </span>
+    </a>
+    <div class="nav__links">
+      <a class="nav__how out-only" href="#loop">How it works</a>
+      <a class="nav__how in-only" href="/genesis/how" data-keep-state>How it works</a>
+      <a href="https://x.com/oddiefun" target="_blank" rel="noopener">Follow on X</a>
+      <a class="btn" data-soon href="/feed">Launch app <i aria-hidden="true">&rarr;</i></a>
+      <a class="nav__back" href="/genesis" data-keep-state>&larr; Back</a>
+      <span class="navstate in-only">3 left &middot; #184</span>
+    </div>
+  </nav>
+</div>
+
+<!-- ==================================================== A · YELLOW · the hook ==
+     The headline names the object, the ticket states the constraint, and the
+     lede explains the loop. Three jobs, three voices, no sentence repeated. -->
+<header class="A">
+  <div class="shell">
+    <div class="A__in">
+      <div>
+        <p class="kicker">Oddie Receipts &middot; Genesis</p>
+        <!-- The loudest element on the page has to be literal. "Keep receipts"
+             was internet slang for proof somebody said something: a reader can
+             know every word and still not know what the page does. This says
+             the job instead, and it carries both the campaign's constraint
+             ("they", never you) and the number the board ranks by ("people"). -->
+        <h1 class="h1"><span>Make people</span><span>pick a side.</span></h1>
+        <!-- Out only: once you are in you have already claimed them, and the
+             pips and the stats below say where you stand instead. -->
+        <p class="doit out-only">Claim your 5 receipts. Start tagging Oddie under
+          what people say.</p>
+        <!-- The instruction above is what to do; this is what it is. It stays,
+             small but present: the hero is the most-read part of the page and it
+             must not hide that these are real markets with real money in them. -->
+        <p class="lede">Every tag spends 1 receipt and opens a real market where
+          people put money on YES or NO.</p>
+        <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
+             ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
+             birakmak "butona bastim, hicbir sey olmadi"nin ta kendisiydi. -->
+        <p class="authnote" hidden>That didn't go through. Nothing changed. Try again.</p>
+        <!-- href is the no-JS fallback; the boot script swaps it for the real
+             OAuth start URL, which needs this device's id. -->
+        <a class="btn btn--2l out-only" data-xconnect href="https://x.com/oddiefun">
+          <span class="btn__main">Continue with X <i aria-hidden="true">&rarr;</i></span>
+          <small>to claim your 5 receipts</small>
+        </a>
+
+        <div class="in-only">
+          <div class="pips" role="img" aria-label="Three receipts left of five">
+            <b class="pip"></b><b class="pip"></b><b class="pip"></b>
+            <b class="pip pip--spent"></b><b class="pip pip--burnt"></b>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>3</b><span>receipts left</span></div>
+            <div class="stat"><b>#184</b><span>rank</span></div>
+            <div class="stat"><b>7</b><span>people brought in</span></div>
+          </div>
+          <!-- Spending a receipt happens ON X (a tag), not in the app. The href
+               is the no-JS fallback; with JS the click opens the spend sheet. -->
+          <a class="btn" id="spend" href="https://x.com/intent/tweet?text=%40oddiefun%20"
+             target="_blank" rel="noopener">Use a receipt <i aria-hidden="true">&rarr;</i></a>
+        </div>
+      </div>
+
+      <div class="A__art">
+        <!-- The ticket carries the campaign's rule in its own artwork, which is
+             why the black pitch panel that used to repeat it word for word is
+             gone. The sentence survives as text in the alt, in step 3 and in
+             the formula below, so it is never image-only. -->
+        <img class="art art--ticket" src="/brand/genesis-ticket.webp"
+             width="920" height="1136" fetchpriority="high" decoding="async"
+             alt="A Genesis ticket for 5 receipts, marked: you can't use them on yourself.">
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ================================================= B · BLACK · the loop ==
+       Four steps, and step 2 deliberately does NOT require the X bot: the
+       market is created from the pasted link, and the reply is distribution
+       rather than the thing that makes the market exist. -->
+  <section class="B on-dark" id="loop">
+    <div class="shell">
+      <div class="shead">
+        <div>
+          <p class="kicker">How it works</p>
+          <h2 class="h2"><span>How your</span><span>5 receipts work.</span></h2>
+        </div>
+        <img class="art art--record" src="/brand/genesis-record.webp"
+             width="700" height="811" loading="lazy" decoding="async"
+             alt="Oddie holding a Genesis receipt stamped On the record.">
+      </div>
+
+      <!-- Three steps, one line each. The fourth used to be a rule about who
+           collects the fee rather than a move the player makes, so it is stated
+           once below instead of pretending to be a step. Vocabulary is locked to
+           four words across the whole page: receipt, market, people, score. -->
+      <div class="steps">
+        <div class="step">
+          <span class="step__n">1</span>
+          <h3>Connect your X</h3>
+          <p>Every X account gets 5 receipts. Claiming them is free, and so is
+            spending one.</p>
+        </div>
+        <div class="step">
+          <span class="step__n">2</span>
+          <h3>Tag @oddiefun</h3>
+          <p>Reply @oddiefun under somebody's claim, or tweet it yourself.
+            Each tag spends 1 receipt and opens a real market.</p>
+        </div>
+        <div class="step">
+          <span class="step__n">3</span>
+          <h3>People join</h3>
+          <p>The more people who put money in your market, the higher you rank.</p>
+        </div>
+      </div>
+
+      <!-- Lev'in ucret karari: tesvik edilen sey marketi ACAN kisi. Sifirdan
+           tweet atarak da baskasinin iddiasini virallestirerek de acabilirsin;
+           iki yolda da %2 senin. Landing'deki "whoever started it" ile ayni
+           kural, iki sayfa ayni agizdan. -->
+      <p class="oneline"><span>Create the market.</span><span>Earn the 2% fee.</span></p>
+
+      <div class="form">
+        <p class="kicker">What you get</p>
+        <div class="eq">
+          <b class="eq__a">1 person</b><i aria-hidden="true">=</i><b class="eq__b">1 point</b>
+        </div>
+        <!-- Kitlik kampanyanin kancasi, o yuzden fisiltiyla degil pembeyle
+             soylenir; hemen altindaki gri satir gerilimi kurar: bedava AMA 5. -->
+        <p class="scarce">You only get 5. Use them wisely.</p>
+        <p class="fine">Spending one costs nothing.</p>
+        <!-- The black section had no way forward. Hidden in the how view, where
+             the block below already carries one. -->
+        <a class="btn btn--2l out-only cta-loop" data-xconnect href="https://x.com/oddiefun">
+          <span class="btn__main">Continue with X <i aria-hidden="true">&rarr;</i></span>
+          <small>to claim your 5 receipts</small>
+        </a>
+
+        <!-- The rules a player only needs once they are playing. They live in the
+             how view rather than in the pitch, which is why this block exists in
+             one place and appears in one place. -->
+        <div class="how-only detail">
+          <h3 class="h3">The rest of the rules.</h3>
+          <ul>
+            <li>A person counts once per season, and only when they put real
+              money in from their own wallet. Your own wallet never counts.</li>
+            <li>Bet size does not matter. One person counts once, big or small.</li>
+            <li>Oddie writes the resolution criteria when the market opens, and
+              hands you a reply to drop in the thread.</li>
+          </ul>
+        </div>
+
+        <!-- The how view has no other way forward, so it does not dead-end. -->
+        <a class="btn how-only" href="/genesis" data-keep-state>Get your receipts <i aria-hidden="true">&rarr;</i></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ girisli · receipt defteri ==
+       Her satir bir fis: ne yazdigin, kac kisi arkasina gectigi, ve hakkini
+       geri kazanip kazanmadigin. Ayni dil, kucuk olcek. -->
+  <section class="B on-dark in-only" id="mine">
+    <div class="shell">
+      <p class="kicker">Your receipts &middot; design preview</p>
+      <h2 class="h2"><span>What you put</span><span>on the record.</span></h2>
+
+      <div class="mgrid">
+      <div class="mine">
+        <div class="mrow">
+          <span class="mrow__n">#0041</span>
+          <p class="mrow__q">Phantom ships stock limit orders before Breakpoint.</p>
+          <span class="mrow__b">4 people</span>
+          <span class="mrow__s mrow__s--won">+4 points</span>
+        </div>
+        <div class="mrow">
+          <span class="mrow__n">#0088</span>
+          <p class="mrow__q">This startup reaches 100k users before Dec 31.</p>
+          <span class="mrow__b">1 person</span>
+          <span class="mrow__s">+1 point</span>
+        </div>
+        <div class="mrow">
+          <span class="mrow__n">#0103</span>
+          <p class="mrow__q">Telegram enables native USDT payments in Mini Apps.</p>
+          <span class="mrow__b">0 people</span>
+          <span class="mrow__s">0 points</span>
+        </div>
+      </div>
+
+      <!-- The first row, opened up. Built in CSS rather than shipped as an
+           image so this one instance can carry REAL market text later without
+           re-cutting an asset; the stickers cannot. Hidden from the
+           accessibility tree because the row above already reads it out. -->
+      <div class="rcpt-wrap">
+      <div class="rcpt" aria-hidden="true">
+        <div class="rcpt__top"><span>Oddie receipt</span><span>#0041</span></div>
+        <p class="rcpt__who">Put on the record by you</p>
+        <p class="rcpt__claim">Phantom ships stock limit orders before Breakpoint.</p>
+        <div class="rcpt__split"><b class="y">YES 42%</b><b class="n">NO 58%</b></div>
+        <p class="rcpt__meta">4 people &middot; 0.28 SOL in<br>Resolves 30 Sep 2027</p>
+        <div class="rcpt__code"></div>
+        <span class="rcpt__stamp">On the record</span>
+      </div>
+      </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================ C · PINK · the board ==
+       Ranked by people brought in, not points: the number a player optimises
+       should be the same number the product needs. "Scorekeeper" is gone as a
+       word because it was a fourth name for a human on a page that already had
+       three. -->
+  <section class="C" id="board">
+    <div class="shell">
+      <div class="shead">
+        <div>
+          <p class="kicker">The board</p>
+          <h2 class="h2"><span>The only number</span><span>is people.</span></h2>
+        </div>
+        <img class="art art--podium" src="/brand/genesis-podium.webp"
+             width="640" height="787" loading="lazy" decoding="async"
+             alt="Oddie on the first-place podium, holding up a trophy to a crowd.">
+      </div>
+
+      <div class="board">
+        <div class="board__hd">
+          <span>Rank</span><span>Name</span><span>People</span>
+        </div>
+        <div class="board__row board__row--me in-only">
+          <b>#184</b><span class="who">You</span><span class="n">7</span></div>
+        <div class="board__row"><b>&mdash;</b><span class="who">Opens with the season</span>
+          <span class="n">&mdash;</span></div>
+        <div class="board__note out-only">The season has not started. Nothing here is a projection.</div>
+        <div class="board__note in-only">Design preview. The season has not started, so the row above
+          is an example rather than a standing.</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="shell foot">
+    <a href="https://x.com/oddiefun" target="_blank" rel="noopener">Oddie on X</a>
+    <!-- Moved down from the hero rather than deleted. "Genesis" plus a leaderboard
+         reads as an airdrop to anyone who has seen one before, and this is the
+         sentence that says it is not. -->
+    <span>No token &middot; no airdrop</span>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var d = document.documentElement;
+    /* Design preview only: carry ?state=in across the two views. The REAL
+       connected mode must not be carried — a link is not a session. */
+    if (d.dataset.state === "in" && !d.dataset.real) {
+      document.querySelectorAll("a[data-keep-state]").forEach(function(a){
+        a.setAttribute("href", a.getAttribute("href") + "?state=in");
+      });
+    }
+    if (d.dataset.view === "how") {
+      document.title = "How Oddie Receipts works";
+    }
+
+    /* ------------------------------------------------ real X connect ----
+       Same device id, same key, same fallback as the app (oddie_did), so the
+       account this page links is the account the app will open with. The
+       server's start route already takes return=, and its callback lands on
+       /genesis?connected=twitter. */
+    var did = (function(){
+      var mint = function(){ return crypto.randomUUID ? crypto.randomUUID()
+        : String(Math.random()).slice(2) + Date.now().toString(36); };
+      try {
+        var hit = localStorage.getItem("oddie_did");
+        if (hit) return hit;
+        var id = mint(); localStorage.setItem("oddie_did", id); return id;
+      } catch(e) {}
+      try {
+        var m = document.cookie.match(/(?:^|;\s*)oddie_did=([^;]+)/);
+        if (m) return decodeURIComponent(m[1]);
+        var id2 = mint();
+        document.cookie = "oddie_did=" + encodeURIComponent(id2) +
+          ";path=/;max-age=31536000;samesite=lax";
+        return id2;
+      } catch(e) { return null; }
+    })();
+    if (/[?&]auth_error=/.test(location.search)) {
+      var an = document.querySelector(".authnote");
+      if (an) an.hidden = false;
+    }
+    if (did) {
+      document.querySelectorAll("[data-xconnect]").forEach(function(a){
+        a.setAttribute("href",
+          "/api/auth/twitter/start?deviceId=" + encodeURIComponent(did) +
+          "&return=%2Fgenesis");
+      });
+    }
+
+    /* The connected zero-state. The in-state markup carries EXAMPLE numbers
+       for the design preview; a person who just linked their real account
+       must see their real position instead: 5 receipts, no rank, nobody
+       brought in yet. */
+    if (d.dataset.real) {
+      var pips = document.querySelector(".pips");
+      if (pips) {
+        pips.setAttribute("aria-label", "Five receipts of five");
+        pips.querySelectorAll(".pip").forEach(function(pp){
+          pp.className = "pip";
+        });
+      }
+      var st = document.querySelectorAll(".stat");
+      var set = function(i, b, sp){ if (st[i]) {
+        st[i].querySelector("b").textContent = b;
+        st[i].querySelector("span").textContent = sp; } };
+      set(0, "5", "receipts left");
+      set(1, "\u2014", "rank \u00b7 season opens soon");
+      set(2, "0", "people brought in");
+      var ns = document.querySelector(".navstate");
+      if (ns) ns.textContent = "5 left";
+      var me = document.querySelector(".board__row--me");
+      if (me) {
+        me.querySelector("b").textContent = "\u2014";
+        var n = me.querySelector(".n"); if (n) n.textContent = "0";
+      }
+      var note = document.querySelector(".board__note.in-only");
+      if (note) note.textContent = "You are on the board when the season opens. Nothing here is a projection.";
+    }
+
+    /* ------------------------------------------------ spend sheet -------
+       Spending a receipt IS tagging on X. The sheet asks for the claim's
+       link and opens a reply with @oddiefun prefilled; the markup href is a
+       bare tweet intent, kept as the no-JS fallback. Wired in every in
+       state so the preview demonstrates the real behaviour. */
+    var spend = document.getElementById("spend");
+    if (spend) spend.addEventListener("click", function(e){
+      e.preventDefault();
+      var RE = /(?:twitter|x)\.com\/[^/]+\/status\/(\d+)/i;
+      var dim = document.createElement("div"); dim.className = "lp-dim";
+      dim.innerHTML = '<div class="lp-sheet" role="dialog" aria-label="Spend a receipt">'
+        + '<h3>Spend a receipt</h3>'
+        + '<p class="lp-note">Paste the link to the claim on X. We\'ll open a reply with '
+        + '<b>@oddiefun</b> already in it. Sending that reply is what spends the receipt '
+        + 'and opens the market.</p>'
+        + '<input class="lp-in" type="url" inputmode="url" placeholder="https://x.com/someone/status/123&hellip;" autocomplete="off">'
+        + '<div class="lp-err" hidden></div>'
+        + '<button class="lp-go" type="button">Open the reply on X</button>'
+        + '<button class="lp-own" type="button">No post to reply to? Tweet the claim yourself, tag @oddiefun</button>'
+        + '<button class="lp-close" type="button">Not now</button>';
+      dim.addEventListener("click", function(ev){ if (ev.target === dim) dim.remove(); });
+      document.body.appendChild(dim);
+      var input = dim.querySelector(".lp-in"), err = dim.querySelector(".lp-err");
+      dim.querySelector(".lp-close").onclick = function(){ dim.remove(); };
+      input.focus();
+      var go = function(){
+        var hit = RE.exec(input.value.trim());
+        if (!hit) {
+          err.hidden = false;
+          err.textContent = "That doesn't look like a link to an X post. It should look like x.com/name/status/123\u2026";
+          return;
+        }
+        window.open("https://x.com/intent/tweet?in_reply_to=" + hit[1] +
+          "&text=" + encodeURIComponent("@oddiefun "), "_blank", "noopener");
+        dim.remove();
+      };
+      dim.querySelector(".lp-go").onclick = go;
+      dim.querySelector(".lp-own").onclick = function(){
+        window.open("https://x.com/intent/tweet?text=" + encodeURIComponent("@oddiefun "), "_blank", "noopener");
+        dim.remove();
+      };
+      input.addEventListener("keydown", function(ev){ if (ev.key === "Enter") go(); });
+      input.addEventListener("input", function(){ err.hidden = true; });
+    });
+  })();
+</script>
+<script>
+  /* Landing'dekiyle ayni "coming soon" davranisi: uygulama acik degil, o
+     yuzden Launch app hover'da bunu soyler ve tiklama islemez. */
+  (function(){
+    document.querySelectorAll("[data-soon]").forEach(function(el){
+      var orig = el.innerHTML;
+      /* landing ile ayni: kilit swap aninda, cikista birakilir */
+      function on(){ el.style.minWidth = el.offsetWidth + "px"; el.innerHTML = "Coming soon"; }
+      function off(){ el.innerHTML = orig; el.style.minWidth = ""; }
+      el.addEventListener("mouseenter", on);
+      el.addEventListener("mouseleave", off);
+      el.addEventListener("focus", on);
+      el.addEventListener("blur", off);
+    });
+    document.addEventListener("click", function(e){
+      var el = e.target.closest && e.target.closest("[data-soon]");
+      if (!el) return;
+      e.preventDefault(); e.stopPropagation();
+      el.style.minWidth = el.offsetWidth + "px";
+      el.innerHTML = "Coming soon";
+    }, true);
+  })();
+</script>
+
+</body>
+</html>

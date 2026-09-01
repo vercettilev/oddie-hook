@@ -70,6 +70,9 @@ const FEED_HTML_NO_SHARE_BLOCK = FEED_HTML.replace(
   /<!-- SHARE-PREVIEW-BLOCK-START[\s\S]*?SHARE-PREVIEW-BLOCK-END -->\n?/, "");
 const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf8");
 const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html"), "utf8");
+// Genesis campaign page. Read once at boot like every other static shell here,
+// so an edit needs a restart to show up.
+const GENESIS_HTML = readFileSync(path.join(__dirname, "../public/genesis.html"), "utf8");
 
 // Static assets — favicons, touch/PWA icons, the manifest, the raw logos. The two
 // HTML documents keep their own routes (/feed, /tool), and /card, /market are
@@ -533,6 +536,13 @@ function positionPageHtml(rec: { market: { question: string; yesPct: number; vol
   ].join("\n");
   return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
 }
+// Both paths serve the SAME file: /genesis/how is a view of the campaign page,
+// not a second copy of it. The explanation lives in exactly one place, and the
+// boot script switches views off location.pathname.
+app.get(["/genesis", "/genesis/how"], (_req, res) => {
+  res.type("html").send(GENESIS_HTML);
+});
+
 app.get("/feed", (_req, res) => {
   res.type("html").send(FEED_HTML); // feed without a start market also works
 });
@@ -1971,7 +1981,19 @@ app.get("/api/auth/:provider/start", (req, res) => {
   // possible thing for a sign-in button to do. They redirect now, into the
   // app's existing ?auth_error= handling, which says "nothing changed" and
   // leaves the person somewhere they can use.
-  const bail = (why: string) => res.redirect(`${BASE_URL}/feed?auth_error=${encodeURIComponent(why)}`);
+  // Optional post-auth destination (e.g. /genesis, or the /m/{slug} permalink
+  // the tap came from). Strictly a LOCAL path — anything else (absolute URLs,
+  // protocol-relative "//host") is dropped, so this can never become an open
+  // redirect. Parsed FIRST because failures honour it too: a person who
+  // started on /genesis must land back on /genesis, not inside the app.
+  const rq = req.query.return;
+  const returnTo =
+    typeof rq === "string" && rq.startsWith("/") && !rq.startsWith("//") && rq.length <= 200 ? rq : null;
+  const bail = (why: string) => {
+    const dest = returnTo ?? "/feed";
+    const sep = dest.includes("?") ? "&" : "?";
+    return res.redirect(`${BASE_URL}${dest}${sep}auth_error=${encodeURIComponent(why)}`);
+  };
   const p = req.params.provider;
   if (!isProvider(p)) return bail("unknown_provider");
   if (!isConfigured(p)) {
@@ -1981,13 +2003,6 @@ app.get("/api/auth/:provider/start", (req, res) => {
   const q = req.query.deviceId;
   const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
   if (!deviceId) return bail("missing_device");
-
-  // Optional post-auth destination (e.g. the /m/{slug} permalink the tap came
-  // from). Strictly a LOCAL path — anything else (absolute URLs, protocol-
-  // relative "//host") is dropped, so this can never become an open redirect.
-  const rq = req.query.return;
-  const returnTo =
-    typeof rq === "string" && rq.startsWith("/") && !rq.startsWith("//") && rq.length <= 200 ? rq : null;
 
   const { verifier, challenge } = pkce();
   const state = remember(p, verifier, deviceId, returnTo);
@@ -2000,18 +2015,24 @@ app.get("/api/auth/:provider/start", (req, res) => {
  */
 app.get("/api/auth/:provider/callback", async (req, res) => {
   const p = req.params.provider;
-  const back = (params: string) => res.redirect(`${BASE_URL}/feed?${params}#/profile`);
+  // One-shot, consumed UP FRONT so even a Cancel on the provider's screen can
+  // send the person back where they started (the returnTo lives in the state).
+  const state = typeof req.query.state === "string" ? req.query.state : null;
+  const pendingAuth = state ? consume(state) : null;
+  const back = (params: string) => {
+    if (pendingAuth?.returnTo) {
+      const sep = pendingAuth.returnTo.includes("?") ? "&" : "?";
+      return res.redirect(`${BASE_URL}${pendingAuth.returnTo}${sep}${params}`);
+    }
+    return res.redirect(`${BASE_URL}/feed?${params}#/profile`);
+  };
   if (!isProvider(p)) return back("auth_error=unknown_provider");
 
   // The provider says no: the user hit Cancel, or the app is misconfigured.
   if (typeof req.query.error === "string") return back(`auth_error=${encodeURIComponent(req.query.error)}`);
 
   const code = typeof req.query.code === "string" ? req.query.code : null;
-  const state = typeof req.query.state === "string" ? req.query.state : null;
   if (!code || !state) return back("auth_error=missing_code");
-
-  // One-shot: a replayed state is a double-tapped back button at best.
-  const pendingAuth = consume(state);
   if (!pendingAuth || pendingAuth.provider !== p) return back("auth_error=expired");
 
   try {

@@ -82,9 +82,19 @@ console.log("\nno screen writes a provider name into its markup by hand");
     ...[...landing.matchAll(/\/feed\?connect=([a-z]+)/g)].map((m) => m[1]),
     ...[...landing.matchAll(/data-connect="([a-z]+)"/g)].map((m) => m[1]),
   ];
-  for (const p of PROVIDERS) {
-    check(`the landing offers "${p}"`, linked.includes(p),
-      `landing offers: ${[...new Set(linked)].join(", ")}`);
+  // Third shape, added when the landing stopped offering sign-in at all: the
+  // buttons moved into the app, which is where a device id and a session
+  // already live. With no sign-in surface there is no set to drift out of, so
+  // the parity check has nothing to measure — asserting it anyway would be a
+  // test people have to placate, and this file's whole point is that those get
+  // deleted. Offering SOME but not all is still the bug, and still fails.
+  if (linked.length === 0) {
+    check("the landing offers no sign-in at all, so provider parity does not apply to it", true);
+  } else {
+    for (const p of PROVIDERS) {
+      check(`the landing offers "${p}"`, linked.includes(p),
+        `landing offers: ${[...new Set(linked)].join(", ")}`);
+    }
   }
 }
 
