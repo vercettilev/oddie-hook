@@ -13,6 +13,7 @@ import {
   claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope,
   refusalForText, recordRefusalForText, claimTextHash, handleFromSourceUrl,
   sourceUrlKind, sourcePostKey, _resetApiLedgers,
+  createCommunityMarket, recordSurfacer, openMarketForSourcePost,
 } from "../src/store/markets.js";
 
 let failures = 0;
@@ -244,6 +245,38 @@ console.log("\nA PATH THAT DID NO WORK GIVES THE TOKEN BACK");
   let n = 0;
   while ((await takeQuotaToken(KEY, "chat:X", opts)).ok) { n++; if (n > 5) break; }
   check("refunds cannot exceed capacity", n <= 2, `${n} tokens after over-refunding`);
+}
+
+console.log("\nTHE DEDUPE PATH ITSELF, NOT JUST THE KEY FUNCTION");
+{
+  // Everything above tests sourcePostKey in isolation. This drives the actual
+  // rule: store a market's provenance, then look it up the way the route does.
+  // Spellings that fetchSourcePost ignores are used on purpose, so the test
+  // makes no network call.
+  const future = Math.floor(Date.now() / 1000) + 86_400;
+
+  const a = await createCommunityMarket({ question: "Will the vote pass?", closeTime: future });
+  await recordSurfacer(a.slug, { sourceUrl: "https://fixupx.com/Someone/status/777" });
+  const byX = await openMarketForSourcePost("https://x.com/different/status/777");
+  check("a different spelling of the same tweet finds the market", byX?.slug === a.slug, String(byX?.slug));
+  const byIweb = await openMarketForSourcePost("https://x.com/i/web/status/777");
+  check("...so does the handle-less form the bot emits", byIweb?.slug === a.slug, String(byIweb?.slug));
+  const byPadded = await openMarketForSourcePost("https://vxtwitter.com/x/status/000777");
+  check("...and a zero-padded id", byPadded?.slug === a.slug, String(byPadded?.slug));
+  check("a different tweet finds nothing",
+    (await openMarketForSourcePost("https://x.com/a/status/778")) === null);
+
+  const b = await createCommunityMarket({ question: "Will the launch slip?", closeTime: future });
+  await recordSurfacer(b.slug, { sourceUrl: "https://t.me/somegroup/4567" });
+  const byTg = await openMarketForSourcePost("https://t.me/somegroup/4567");
+  check("a telegram message dedupes at all", byTg?.slug === b.slug, String(byTg?.slug));
+  check("...through a trailing slash",
+    (await openMarketForSourcePost("https://t.me/somegroup/4567/"))?.slug === b.slug);
+  check("...and a padded id, which used to mint a market per retry",
+    (await openMarketForSourcePost("https://t.me/somegroup/0004567"))?.slug === b.slug);
+  check("a different telegram message finds nothing",
+    (await openMarketForSourcePost("https://t.me/somegroup/4568")) === null);
+  check("the two markets did not collide", byTg?.slug !== byX?.slug);
 }
 
 console.log(failures === 0 ? "\nall claims-api checks passed\n" : `\n${failures} FAILED\n`);
