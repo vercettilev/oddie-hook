@@ -638,6 +638,49 @@ CREATE TABLE IF NOT EXISTS chain_entry (
   created_at  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (slug, wallet)
 );
+
+-- The bot API's idempotency ledger.
+--
+-- A caller sends Idempotency-Key: tg:<chat_id>:<message_id> and this table is
+-- the final authority on what that key already produced. The bot has its own
+-- dedupe, but two people can trigger the same claim in the same second and both
+-- requests race past it; only a unique constraint settles that, and the failure
+-- mode it prevents costs us on-chain rent.
+--
+-- A REFUSAL IS RECORDED TOO. An unsettleable claim is a permanent property of
+-- its text, so re-asking spends a model call to learn the same thing. The row
+-- carries the reason and when it stops being trusted, because the only thing
+-- that can change a refusal is our own classifier improving.
+CREATE TABLE IF NOT EXISTS api_claim_key (
+  key         text PRIMARY KEY,
+  -- Set when the claim became a market. Null on a refusal.
+  slug        text,
+  -- Set on a refusal: unresolvable | inappropriate | no_question. Null on success.
+  refusal     text,
+  detail      text,
+  -- When a cached refusal stops being trusted. Null for a market, which never
+  -- expires: the same key must always answer with the same market.
+  expires_at  timestamptz,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Per-caller, per-group rate limiting, as a token bucket.
+--
+-- Keyed on the CALLER AND THE GROUP, never on IP: every request from a bot
+-- arrives from one server address, so an IP-keyed limit would make every group
+-- it serves share a single bucket and let the busiest one starve the rest.
+--
+-- A bucket rather than a flat hourly cap because arguments cluster: a goal goes
+-- in and six people make six predictions in ninety seconds. A flat cap throttles
+-- exactly when the product is working.
+--
+-- Rows are keyed by a HASH of the API key, so the key itself never lands in a
+-- table or a log line.
+CREATE TABLE IF NOT EXISTS api_quota (
+  bucket      text PRIMARY KEY,
+  tokens      double precision NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 let pool: pg.Pool | null = null;
@@ -6582,4 +6625,137 @@ export async function isRetired(slug: string): Promise<boolean> {
     `SELECT retired_at FROM community_market WHERE slug = $1`, [slug],
   );
   return Boolean(rows[0]?.retired_at);
+}
+
+// --- The bot API: idempotency and quota ------------------------------------
+
+export interface ClaimKeyRecord {
+  slug: string | null;
+  refusal: string | null;
+  detail: string | null;
+  /** True when a cached refusal has aged out and should be re-asked. */
+  expired: boolean;
+}
+
+const memClaimKeys = new Map<string, { slug: string | null; refusal: string | null; detail: string | null; expiresAt: number | null }>();
+
+/** What this idempotency key already produced, or null if it is new. A refusal
+ *  past its expiry answers null so the claim is asked again. */
+export async function claimKeyLookup(key: string): Promise<ClaimKeyRecord | null> {
+  if (!PERSISTENT) {
+    const r = memClaimKeys.get(key);
+    if (!r) return null;
+    const expired = r.expiresAt !== null && Date.now() > r.expiresAt;
+    return expired ? null : { slug: r.slug, refusal: r.refusal, detail: r.detail, expired: false };
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string | null; refusal: string | null; detail: string | null; expired: boolean }>(
+    `SELECT slug, refusal, detail, (expires_at IS NOT NULL AND expires_at < now()) AS expired
+       FROM api_claim_key WHERE key = $1`, [key],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return r.expired ? null : r;
+}
+
+/**
+ * Record what a key produced. Returns what is STORED, which may not be what was
+ * passed: if another request won the race, the winner's answer is returned and
+ * this one is discarded. That is the point, and it is why the write is a single
+ * statement rather than a check followed by an insert.
+ */
+export async function claimKeyRecord(
+  key: string,
+  value: { slug?: string | null; refusal?: string | null; detail?: string | null; cacheForSeconds?: number | null },
+): Promise<ClaimKeyRecord> {
+  const slug = value.slug ?? null;
+  const refusal = value.refusal ?? null;
+  const detail = value.detail ?? null;
+  const ttl = refusal ? Math.max(60, value.cacheForSeconds ?? 86_400) : null;
+  if (!PERSISTENT) {
+    const existing = memClaimKeys.get(key);
+    if (existing && !(existing.expiresAt !== null && Date.now() > existing.expiresAt)) {
+      return { slug: existing.slug, refusal: existing.refusal, detail: existing.detail, expired: false };
+    }
+    memClaimKeys.set(key, { slug, refusal, detail, expiresAt: ttl ? Date.now() + ttl * 1000 : null });
+    return { slug, refusal, detail, expired: false };
+  }
+  await ensureSchema();
+  // ON CONFLICT re-reads rather than overwrites, EXCEPT where the stored row is
+  // an expired refusal: that one is genuinely stale and the fresh answer
+  // replaces it.
+  const { rows } = await db().query<{ slug: string | null; refusal: string | null; detail: string | null }>(
+    `INSERT INTO api_claim_key (key, slug, refusal, detail, expires_at)
+     VALUES ($1,$2,$3,$4, CASE WHEN $5::int IS NULL THEN NULL ELSE now() + ($5 || ' seconds')::interval END)
+     ON CONFLICT (key) DO UPDATE
+       SET slug = EXCLUDED.slug, refusal = EXCLUDED.refusal, detail = EXCLUDED.detail,
+           expires_at = EXCLUDED.expires_at, created_at = now()
+       WHERE api_claim_key.expires_at IS NOT NULL AND api_claim_key.expires_at < now()
+     RETURNING slug, refusal, detail`,
+    [key, slug, refusal, detail, ttl],
+  );
+  // No row back means the conflict target existed and the WHERE refused the
+  // update, so somebody else's answer stands. Read it.
+  if (rows[0]) return { ...rows[0], expired: false };
+  const settled = await claimKeyLookup(key);
+  return settled ?? { slug, refusal, detail, expired: false };
+}
+
+/**
+ * Take one token from a caller's bucket for one group.
+ *
+ * Refills continuously rather than on a schedule, so there is nothing to run
+ * and no edge at the top of the hour. Returns how long to wait when empty,
+ * which becomes the Retry-After header: a caller guessing at backoff either
+ * wastes requests or delivers late.
+ */
+export async function takeQuotaToken(
+  apiKey: string, scope: string, opts: { capacity: number; perHour: number },
+): Promise<{ ok: true } | { ok: false; retryAfterSeconds: number }> {
+  // The key is hashed so it never lands in a table or a log line.
+  const bucket = `${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}:${scope}`;
+  const { capacity, perHour } = opts;
+  const perSecond = perHour / 3600;
+
+  if (!PERSISTENT) {
+    const now = Date.now();
+    const cur = memQuota.get(bucket) ?? { tokens: capacity, at: now };
+    const tokens = Math.min(capacity, cur.tokens + ((now - cur.at) / 1000) * perSecond);
+    if (tokens < 1) {
+      memQuota.set(bucket, { tokens, at: now });
+      return { ok: false, retryAfterSeconds: Math.ceil((1 - tokens) / perSecond) };
+    }
+    memQuota.set(bucket, { tokens: tokens - 1, at: now });
+    return { ok: true };
+  }
+  await ensureSchema();
+  // One statement, so two replicas cannot both read a full bucket and both
+  // spend it. The refill is computed from the row's own timestamp inside the
+  // same write that spends the token.
+  const { rows } = await db().query<{ tokens: number }>(
+    `INSERT INTO api_quota (bucket, tokens, updated_at) VALUES ($1, $2 - 1, now())
+     ON CONFLICT (bucket) DO UPDATE
+       SET tokens = LEAST($2::float8, api_quota.tokens + EXTRACT(EPOCH FROM (now() - api_quota.updated_at)) * $3::float8) - 1,
+           updated_at = now()
+     WHERE LEAST($2::float8, api_quota.tokens + EXTRACT(EPOCH FROM (now() - api_quota.updated_at)) * $3::float8) >= 1
+     RETURNING tokens`,
+    [bucket, capacity, perSecond],
+  );
+  if (rows[0]) return { ok: true };
+  // The WHERE refused, so the bucket is below one token. Read how far below to
+  // answer honestly instead of guessing.
+  const { rows: cur } = await db().query<{ tokens: number }>(
+    `SELECT LEAST($2::float8, tokens + EXTRACT(EPOCH FROM (now() - updated_at)) * $3::float8) AS tokens
+       FROM api_quota WHERE bucket = $1`, [bucket, capacity, perSecond],
+  );
+  const have = cur[0]?.tokens ?? 0;
+  return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((1 - have) / perSecond)) };
+}
+
+const memQuota = new Map<string, { tokens: number; at: number }>();
+
+/** Test seam: clear the bot API's ledgers. */
+export function _resetApiLedgers(): void {
+  memClaimKeys.clear();
+  memQuota.clear();
 }

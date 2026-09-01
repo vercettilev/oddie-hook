@@ -22,8 +22,6 @@
 <meta name="twitter:image" content="https://oddie.fun/og.png">
 
 <style>
-  /* Self-hosted faces, the same files the app serves. Anton carries the
-     posters, Nunito the reading, a system mono the labels. */
   @font-face{font-family:'Anton';font-style:normal;font-weight:400;font-display:swap;
     src:url('/fonts/anton-latin.woff2') format('woff2');
     unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
@@ -40,27 +38,36 @@
     src:url('/fonts/fredoka-latin.woff2') format('woff2');
     unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 
-  /* Oddie's five, from the product itself. */
+  /* THREE GROUNDS. The page used to run eight full-width colour changes in
+     6100px, which is not a rhythm, it is flashing. Yellow, black, pink, and
+     cream only ever as a card surface. No background texture at all: a uniform
+     dot grid at a fixed size is a SaaS wallpaper, not a halftone, because a real
+     halftone varies its dot with the tone it is reproducing. */
   :root{
     --yellow:#D7DC1F;
     --yellow-hi:#E7EC4E;
     --pink:#FF2D78;
     --pink-deep:#A3053F;
     --black:#020302;
-    --pale:#ECEFD6;
     --cream:#FBFCF4;
     --ink:#0B0D04;
-    --ink-2:#4A4F2E;
-    --ink-3:#6F7551;
+    --ink-2:#494E2D;
+    --ink-3:#6E7450;
     --fg:#fff;
     --fg-2:rgba(255,255,255,.68);
-    --fg-3:rgba(255,255,255,.44);
-    --line:rgba(255,255,255,.14);
+    --fg-3:rgba(255,255,255,.56);
+    --line:rgba(255,255,255,.16);
     --shell:1240px;
     --display:'Anton','Arial Narrow','Helvetica Neue',Helvetica,sans-serif;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
-    --air:clamp(56px,7vw,104px);
-    --air-lg:clamp(84px,11vw,168px);
+    /* Alan gecisleri duz kesik degil yirtik kagit. Uc AYRI seed sart: ayni maske
+       uc kez kullanilsa goz onu desen olarak tanir ve yine "bolum siniri" okur.
+       Beyaz dikdortgen kutunun ust yarisini kapliyor, alt kenari yerinden
+       oynatiliyor; 76px'lik bir bantta yirtik ~14-55px arasi geziniyor. */
+    --seam-h:clamp(34px,5vw,76px);
+  --tear-1:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t1' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042 0.05' numOctaves='2' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='54'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t1)'/%3E%3C/svg%3E");
+  --tear-2:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t2' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0034 0.055' numOctaves='2' seed='23'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='44'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t2)'/%3E%3C/svg%3E");
+  --tear-3:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t3' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0038 0.045' numOctaves='2' seed='41'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='62'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t3)'/%3E%3C/svg%3E");
   }
 
   *{box-sizing:border-box}
@@ -72,62 +79,54 @@
   a{color:inherit;text-decoration:none}
   img{max-width:100%;display:block;height:auto}
   .shell{width:100%;max-width:var(--shell);margin:0 auto;padding:0 clamp(20px,4vw,40px)}
-
   a:focus-visible,button:focus-visible{outline:3px solid currentColor;outline-offset:3px;border-radius:4px}
-  .f--black a:focus-visible,.f--black button:focus-visible{outline-color:var(--yellow)}
-
-  /* ---------------------------------------------------------------- fields -- */
-  .f{position:relative;padding:var(--air) 0}
-  .f--quiet{padding:var(--air-lg) 0}
-  .f--yellow{background:var(--yellow);color:var(--ink)}
-  .f--pale  {background:var(--pale);color:var(--ink)}
-  .f--cream {background:var(--cream);color:var(--ink)}
-  .f--black {background:var(--black);color:var(--fg)}
-  .f--pink  {background:var(--pink);color:var(--ink)}
-
-  /* The torn edge is drawn by the section ABOVE, in the colour of the one
-     below; hung off the top it gets clipped by the section's own overflow. */
-  .f::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:clamp(26px,3.4vw,52px);
-    z-index:5;pointer-events:none;background-repeat:repeat-x;background-size:1200px 100%;
-    background-position:bottom}
-  .f:not([class*="to-"])::after{display:none}
-  .to-pale::after  {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 14 L38 9 L74 17 L118 7 L156 16 L198 6 L242 15 L286 8 L322 18 L366 9 L410 17 L452 7 L494 16 L538 10 L580 18 L624 8 L668 15 L710 7 L754 17 L798 9 L840 16 L884 6 L926 15 L970 9 L1012 17 L1056 8 L1098 16 L1142 10 L1200 14 L1200 58 Z' fill='%23ECEFD6'/%3E%3C/svg%3E")}
-  .to-cream::after {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 14 L38 9 L74 17 L118 7 L156 16 L198 6 L242 15 L286 8 L322 18 L366 9 L410 17 L452 7 L494 16 L538 10 L580 18 L624 8 L668 15 L710 7 L754 17 L798 9 L840 16 L884 6 L926 15 L970 9 L1012 17 L1056 8 L1098 16 L1142 10 L1200 14 L1200 58 Z' fill='%23FBFCF4'/%3E%3C/svg%3E")}
-  .to-black::after {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 14 L38 9 L74 17 L118 7 L156 16 L198 6 L242 15 L286 8 L322 18 L366 9 L410 17 L452 7 L494 16 L538 10 L580 18 L624 8 L668 15 L710 7 L754 17 L798 9 L840 16 L884 6 L926 15 L970 9 L1012 17 L1056 8 L1098 16 L1142 10 L1200 14 L1200 58 Z' fill='%23020302'/%3E%3C/svg%3E")}
-  .to-pink::after  {background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 14 L38 9 L74 17 L118 7 L156 16 L198 6 L242 15 L286 8 L322 18 L366 9 L410 17 L452 7 L494 16 L538 10 L580 18 L624 8 L668 15 L710 7 L754 17 L798 9 L840 16 L884 6 L926 15 L970 9 L1012 17 L1056 8 L1098 16 L1142 10 L1200 14 L1200 58 Z' fill='%23FF2D78'/%3E%3C/svg%3E")}
-  .to-yellow::after{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='58' preserveAspectRatio='none'%3E%3Cpath d='M0 58 L0 14 L38 9 L74 17 L118 7 L156 16 L198 6 L242 15 L286 8 L322 18 L366 9 L410 17 L452 7 L494 16 L538 10 L580 18 L624 8 L668 15 L710 7 L754 17 L798 9 L840 16 L884 6 L926 15 L970 9 L1012 17 L1056 8 L1098 16 L1142 10 L1200 14 L1200 58 Z' fill='%23D7DC1F'/%3E%3C/svg%3E")}
-
-  /* Faint halftone so the loud fields read as print rather than as swatches. */
-  .f--yellow::before,.f--pink::before{content:"";position:absolute;inset:0;z-index:0;
-    pointer-events:none;opacity:.14;mix-blend-mode:multiply;
-    background-image:radial-gradient(currentColor 1px,transparent 1.2px);
-    background-size:7px 7px}
+  .on-dark a:focus-visible,.on-dark button:focus-visible{outline-color:var(--yellow)}
 
   /* ------------------------------------------------------------------ type -- */
-  .h1,.h2{font-family:var(--display);font-weight:400;text-transform:uppercase;
+  .h1,.h2,.h3{font-family:var(--display);font-weight:400;text-transform:uppercase;
     letter-spacing:-.005em;line-height:.94;margin:0;text-wrap:balance}
-  .h1{font-size:clamp(46px,7.6vw,122px)}
-  .h2{font-size:clamp(34px,5.2vw,82px)}
-  .h1 span,.h2 span{display:block}
-  .lo{color:var(--pink);
-    text-shadow:2px 2px 0 var(--ink),-2px -2px 0 var(--ink),2px -2px 0 var(--ink),-2px 2px 0 var(--ink)}
-  .f--black .lo{color:var(--yellow);
-    text-shadow:2px 2px 0 var(--black),-2px -2px 0 var(--black),2px -2px 0 var(--black),-2px 2px 0 var(--black)}
-  .f--pink .lo{color:var(--yellow)}
+  .h1{font-size:clamp(46px,7.4vw,116px)}
+  .h2{font-size:clamp(32px,4.6vw,72px)}
+  .h3{font-size:clamp(21px,2.5vw,36px)}
+  .h1 span,.h2 span,.h3 span{display:block;width:fit-content;max-width:100%;position:relative}
+  /* Pembe/sari 2.40:1 ve sari/pembe 2.40:1: ikisi de 24px+ display icin gereken
+     3:1'in ALTINDA, o iki zeminde kontur zorunlu. Sari/siyah 13.92:1, orada
+     kontur kontrast icin degil, sadece kalinlik icin. */
+  .lo{position:relative;color:var(--pink);
+    text-shadow:2px 0 0 var(--ink),-2px 0 0 var(--ink),0 2px 0 var(--ink),0 -2px 0 var(--ink),
+                1.5px 1.5px 0 var(--ink),-1.5px 1.5px 0 var(--ink),
+                1.5px -1.5px 0 var(--ink),-1.5px -1.5px 0 var(--ink)}
+  .on-dark .lo{color:var(--yellow);text-shadow:5px 6px 0 var(--pink)}
+  .f--pink .lo{color:var(--yellow);
+    text-shadow:2px 0 0 var(--black),-2px 0 0 var(--black),0 2px 0 var(--black),0 -2px 0 var(--black)}
+  /* kutusunu sagdan tasan, elle cekilmis gibi duran alti cizgi */
+  .lo::after{content:"";position:absolute;left:-.04em;right:-.14em;bottom:-.12em;
+    height:.075em;background:var(--ink);rotate:-.9deg;pointer-events:none}
+  .on-dark .lo::after{background:var(--pink)}
+  .f--pink .lo::after{background:var(--black)}
 
   .kicker{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;
-    letter-spacing:.18em;color:var(--ink-3)}
-  .f--black .kicker{color:var(--fg-3)}
-  .f--pink .kicker{color:rgba(11,13,4,.62)}
-  .lede{margin:0;font-size:clamp(16px,1.55vw,19px);line-height:1.6;max-width:46ch;color:var(--ink-2)}
-  .f--black .lede{color:var(--fg-2)}
-  .f--pink .lede{color:rgba(11,13,4,.78)}
-  .stack{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(18px,2vw,28px)}
+    letter-spacing:.18em;color:var(--ink-3);margin:0}
+  .on-dark .kicker{color:var(--fg-3)}
+  .f--pink .kicker{color:var(--ink)}
+  .lede{margin:0;font-size:clamp(16px,1.5vw,19px);line-height:1.6;max-width:46ch;color:var(--ink-2)}
+  .on-dark .lede{color:var(--fg-2)}
+  .f--pink .lede{color:var(--ink)}
+  /* A dark block nested inside a coloured field keeps the dark field's ink.
+     Both rules were 0,2,0, so source order handed near-black text to a
+     near-black ground and the sign-in copy vanished. */
+  .f--pink .on-dark .kicker{color:var(--fg-3)}
+  .f--pink .on-dark .lede{color:var(--fg-2)}
+  .f--pink .on-dark .lo{color:var(--yellow);text-shadow:5px 6px 0 var(--pink)}
+  .f--pink .on-dark .lo::after{background:var(--pink)}
+  .col{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(13px,1.5vw,20px)}
+  .col--mid{align-items:center;text-align:center}
+  .col--end{align-items:flex-end;text-align:right}
   .mk{background-image:linear-gradient(var(--pink),var(--pink));background-repeat:no-repeat;
     background-size:100% .09em;background-position:0 101%;padding-bottom:.08em}
 
   .brush{display:inline-block;background:var(--ink);color:#fff;padding:11px 22px;
-    font-size:clamp(14px,1.45vw,18px);font-weight:700;line-height:1.35;transform:rotate(-.8deg);
+    font-size:clamp(14px,1.4vw,18px);font-weight:700;line-height:1.35;transform:rotate(-.8deg);
     -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='60'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .5' numOctaves='2'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='9'/%3E%3C/filter%3E%3Crect x='2' y='4' width='396' height='52' rx='6' fill='%23fff' filter='url(%23b)'/%3E%3C/svg%3E");
     mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='60'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03 .5' numOctaves='2'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='9'/%3E%3C/filter%3E%3Crect x='2' y='4' width='396' height='52' rx='6' fill='%23fff' filter='url(%23b)'/%3E%3C/svg%3E");
     -webkit-mask-size:100% 100%;mask-size:100% 100%}
@@ -135,147 +134,150 @@
   /* --------------------------------------------------------------- controls -- */
   .btn{display:inline-flex;align-items:center;gap:10px;cursor:pointer;
     font-family:var(--display);font-weight:400;font-size:clamp(16px,1.5vw,20px);
-    text-transform:uppercase;letter-spacing:.005em;padding:15px 28px;border-radius:3px;
-    border:0;background:var(--ink);color:#fff;box-shadow:6px 7px 0 rgba(11,13,4,.32)}
-  .btn:hover{background:#1a1e0a;transform:translate(1px,1px);box-shadow:5px 6px 0 rgba(11,13,4,.32)}
+    text-transform:uppercase;padding:15px 28px;border-radius:3px;border:0;
+    background:var(--ink);color:#fff;box-shadow:6px 7px 0 rgba(11,13,4,.3)}
+  .btn:hover{background:#1a1e0a;transform:translate(1px,1px);box-shadow:5px 6px 0 rgba(11,13,4,.3)}
   .btn i{font-style:normal;color:var(--yellow)}
-  .btn--light{background:var(--yellow);color:var(--ink);box-shadow:6px 7px 0 rgba(0,0,0,.5)}
+  .btn--light{background:var(--yellow);color:var(--ink);box-shadow:6px 7px 0 rgba(0,0,0,.55)}
   .btn--light:hover{background:var(--yellow-hi)}
   .btn--light i{color:var(--ink)}
   @media (prefers-reduced-motion:reduce){.btn:hover{transform:none}}
 
-  .rails{display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;
-    font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;
+  .rails{display:inline-flex;align-items:center;gap:11px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.13em;
     text-transform:uppercase;color:var(--ink-2)}
-  .f--black .rails{color:var(--fg-3)}
-  .rails b{font-weight:700;opacity:.62}
+  .on-dark .rails{color:var(--fg-3)}
+  .rails b{opacity:.6}
   .rails span{display:inline-flex;align-items:center;gap:6px}
   .rails svg{width:14px;height:14px;fill:currentColor}
-  .rails small{font-size:9.5px;opacity:.55;letter-spacing:.1em}
-  .rails .sep{opacity:.32}
+  .rails small{font-size:9.5px;opacity:.55}
+  .rails .sep{opacity:.3}
 
   /* ------------------------------------------------------------------- nav -- */
-  .nav{position:absolute;top:0;left:0;right:0;z-index:14;padding:clamp(18px,2.2vw,30px) 0}
-  .nav__in{display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .nav__in{display:flex;align-items:center;justify-content:space-between;gap:20px;
+    padding:clamp(18px,2.2vw,30px) 0 clamp(34px,5vw,72px)}
   .brand{display:inline-flex;align-items:center;gap:11px}
+  /* Three links measured under 44px on mobile. An ::after expander grows the
+     hit area without touching layout; vertical padding on an inline box would
+     not have, and negative-margin compensation risks overlap. */
+  .brand,.board__more,.foot a,.nav__links a:not(.btn){position:relative}
+  .brand::after,.board__more::after,.foot a::after,
+  .nav__links a:not(.btn)::after{content:'';position:absolute;
+    left:0;right:0;top:50%;height:44px;transform:translateY(-50%)}
   .brand img{width:clamp(32px,3vw,42px);border-radius:10px}
   .brand span{font-family:var(--display);font-size:clamp(22px,2.2vw,30px);color:var(--ink);
-    text-transform:lowercase;letter-spacing:.01em}
+    text-transform:lowercase}
   .nav__links{display:flex;align-items:center;gap:clamp(16px,2.4vw,32px)}
-  .nav__links a{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+  .nav__links a:not(.btn){font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
     text-transform:uppercase;color:var(--ink-2)}
-  .nav__links a:hover{color:var(--ink)}
-  .nav .btn{padding:11px 20px;font-size:14px;box-shadow:4px 5px 0 rgba(11,13,4,.3)}
-  @media (max-width:760px){.nav__links a{display:none}}
+  .nav__links a:not(.btn):hover{color:var(--ink)}
+  .nav__links .btn{padding:11px 20px;font-size:14px;box-shadow:4px 5px 0 rgba(11,13,4,.3)}
+  @media (max-width:760px){.nav__links a:not(.btn){display:none}}
 
-  /* ------------------------------------------------------------------ hero --
-     Type on the left, the composed sticker on the right, nothing else. The
-     sticker IS the product's whole world: character, YES/NO, crowd. */
-  .hero{padding:0;overflow:hidden}
-  .hero__in{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);
-    align-items:center;gap:clamp(20px,3vw,48px);
-    padding-top:clamp(104px,14vh,168px);padding-bottom:clamp(64px,9vh,120px)}
-  .hero__copy{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(18px,2.2vw,30px)}
-  .hero__art{position:relative;transform:rotate(1.6deg)}
-  .hero__art img{width:100%;max-width:640px;margin:0 auto;
-    filter:drop-shadow(0 14px 34px rgba(11,13,4,.18))}
+  /* ================================================== A · YELLOW · one field ==
+     Hero and manifesto share the ground. The hero is asymmetric with the
+     sticker bleeding off the right edge; the manifesto answers it from the
+     right, smaller, so the field is not one long left-aligned column. */
+  .A{position:relative;background:var(--yellow);overflow:hidden}
+  .A > .shell{padding-bottom:clamp(44px,5.5vw,84px)}
+  .A__hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.94fr);
+    gap:clamp(20px,3vw,48px);align-items:center}
+  .A__art{margin-right:calc(-1 * clamp(16px,6vw,110px))}
+  .A__art img{width:100%;transform:rotate(1.5deg)}
   @media (max-width:900px){
-    .hero__in{grid-template-columns:1fr;padding-top:clamp(88px,12vh,120px)}
-    .hero__art{transform:rotate(1deg);margin-top:6px;min-width:0}
-    .hero__art img{max-width:min(460px,100%)}
+    .A__hero{grid-template-columns:1fr}
+    .A__art{margin-right:0}
   }
 
-  /* --------------------------------------------------------------- marquee --
-     The internet talking, literally: one black band of claims scrolling by.
-     Two copies of the row make the loop seamless; reduced motion stops it and
-     lets the row stand as a static strip. */
-  .tick{position:relative;overflow:hidden;background:var(--black);color:var(--cream);
-    padding:clamp(12px,1.4vw,18px) 0}
-  .tick__in{display:flex;width:max-content;animation:tick 30s linear infinite}
-  .tick:hover .tick__in{animation-play-state:paused}
-  .tick__row{display:flex;align-items:center;white-space:nowrap}
-  .tick__row span{font-family:var(--display);font-size:clamp(15px,1.7vw,23px);
-    text-transform:uppercase;padding:0 clamp(14px,1.6vw,24px)}
-  .tick__row i{font-style:normal;color:var(--yellow);font-family:var(--mono);
-    font-size:11px;font-weight:700;letter-spacing:.1em}
-  @keyframes tick{to{transform:translateX(-50%)}}
-  @media (prefers-reduced-motion:reduce){.tick__in{animation:none}}
+  /* =================================================== B · BLACK · the move ==
+     Centred, because A was asymmetric. One picture explains the product, and
+     the real markets sit under it as a scoreboard, NOT as a card grid: two
+     three-up grids on one page is how the template creeps back. */
+  .B{background:var(--black);color:var(--fg);padding:clamp(44px,5vw,68px) 0 clamp(48px,5.5vw,76px)}
+  .B__mani{max-width:840px;margin:0 auto clamp(46px,6vw,84px);padding-bottom:clamp(40px,5vw,70px);
+    border-bottom:2px solid var(--line)}
+  .B__head{max-width:840px;margin:0 auto}
+  .B__fig{max-width:1000px;margin:clamp(28px,3.6vw,52px) auto 0}
+  .B__fig img{width:100%}
+  .fignote{margin:clamp(12px,1.5vw,20px) 0 0;text-align:center;font-family:var(--mono);
+    font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3)}
 
-  /* ---------------------------------------------------------------- magic -- */
-  .figure{width:100%;max-width:1040px;margin:clamp(26px,3.4vw,48px) auto 0}
-  .figure img{width:100%;filter:drop-shadow(0 16px 40px rgba(0,0,0,.5))}
-  .fignote{margin:clamp(14px,1.8vw,22px) auto 0;text-align:center;
-    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--fg-3)}
-
-  /* ------------------------------------------------------------ live board -- */
-  .splitgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
-    gap:clamp(36px,6vw,88px);align-items:center}
-  @media (max-width:920px){.splitgrid{grid-template-columns:1fr;gap:34px}}
-  .feats{display:flex;flex-direction:column;gap:clamp(14px,1.6vw,20px);margin-top:8px}
-  .feat{display:flex;align-items:flex-start;gap:13px;font-size:15.5px;font-weight:700;color:var(--ink-2)}
-  .feat svg{width:20px;height:20px;flex:none;margin-top:2px;fill:none;stroke:var(--ink);
-    stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-  .board{border:3px solid var(--ink);border-radius:5px;background:var(--cream);overflow:hidden;
-    box-shadow:9px 10px 0 rgba(11,13,4,.32);transform:rotate(-.5deg)}
-  .board__bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
-    padding:12px 16px;background:var(--ink);color:#fff}
-  .board__bar b{font-family:var(--display);font-size:19px;text-transform:lowercase;font-weight:400}
-  .board__bar span{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--yellow)}
-  .livegrid{display:grid;gap:0}
-  .lcard{display:block;padding:15px 17px;border-bottom:1px solid #E4E1CF;color:var(--ink)}
-  .lcard:last-child{border-bottom:0}
-  .lcard:hover{background:#fff}
-  .lcard__top{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;
-    font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.11em;
-    text-transform:uppercase;color:var(--ink-3)}
-  .lcard__live{display:inline-flex;align-items:center;gap:5px;color:var(--pink-deep)}
+  .scoreboard{margin-top:clamp(34px,4vw,56px);border-top:2px solid var(--line)}
+  .livegrid{display:block}
+  /* Each market is a wide row: question left, the split-odds bar right. The bar
+     IS the brand motif, used structurally instead of as decoration. */
+  .lcard{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,300px);
+    gap:clamp(14px,2.5vw,36px);align-items:center;padding:clamp(13px,1.5vw,18px) 0;
+    border-bottom:2px solid var(--line);color:var(--fg)}
+  .lcard:hover{background:rgba(255,255,255,.04)}
+  .lcard__top{display:flex;order:-1;grid-column:1/-1;gap:12px;align-items:center;
+    font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--fg-3);margin-bottom:-6px}
+  .lcard__live{display:inline-flex;align-items:center;gap:6px;color:var(--pink)}
   .lcard__live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--pink)}
-  .lcard__q{margin:9px 0 0;font-family:'Fredoka',var(--display);font-weight:600;font-size:15.5px;
-    line-height:1.3}
-  .lcard__bar{display:block;position:relative;height:9px;margin:12px 0 8px;background:var(--pink);
-    border:2px solid var(--ink);border-radius:99px;overflow:hidden}
+  .lcard__q{margin:0;font-family:var(--display);font-weight:400;text-transform:uppercase;
+    font-size:clamp(19px,2.2vw,32px);line-height:1.02;letter-spacing:-.005em}
+  .lcard__bar{display:block;position:relative;height:16px;background:var(--pink);
+    border:2px solid var(--cream);border-radius:99px;overflow:hidden;grid-column:2}
   .lcard__bar i{position:absolute;left:0;top:0;bottom:0;background:var(--yellow)}
-  .lcard__odds{display:flex;width:100%;justify-content:space-between;
-    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em}
-  .qcard__yes{color:#5A6109}
-  .qcard__no{color:var(--pink-deep)}
-  .board__more{display:block;padding:13px 17px;background:var(--pale);
-    font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--ink)}
+  .lcard__odds{display:flex;grid-column:2;justify-content:space-between;margin-top:6px;
+    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.09em}
+  .qcard__yes{color:var(--yellow)}
+  .qcard__no{color:var(--pink)}
+  .board__more{display:inline-flex;align-items:center;gap:8px;margin-top:clamp(22px,2.6vw,34px);
+    font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--yellow)}
+  /* One server-side number decides. A shelf holding two markets claims more than
+     the product has; an empty one claims it and fails. */
   .sec[data-live="0"] .board--live{display:none}
   .sec[data-live="1"] .board--teach{display:none}
+  @media (max-width:720px){
+    .lcard{grid-template-columns:1fr;gap:12px}
+    .lcard__bar,.lcard__odds{grid-column:1}
+  }
 
-  /* -------------------------------------------------------------- reputation -- */
-  .reps{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:clamp(14px,1.6vw,20px);
-    margin-top:clamp(26px,3vw,40px);width:100%}
-  .rep{background:var(--ink);color:#fff;border-radius:4px;padding:20px 20px 22px;transform:rotate(-.4deg)}
-  .rep:nth-child(2){transform:rotate(.5deg)}
-  .rep:nth-child(3){transform:rotate(-.3deg)}
-  .rep__n{font-family:var(--display);font-size:clamp(34px,4vw,52px);line-height:1;color:var(--ink);
-    background:var(--yellow);display:inline-block;padding:6px 13px 5px;transform:rotate(-2deg)}
-  .rep__t{margin-top:14px;font-family:var(--display);font-size:17px;text-transform:uppercase}
-  .rep__b{margin:6px 0 0;font-size:13.5px;font-weight:600;line-height:1.5;color:rgba(255,255,255,.66)}
+  /* ================================================== C · PINK · reputation ==
+     Two columns so the field is not a headline over a void, and the three
+     figures are sticker chips rather than a second card grid. */
+  .C{position:relative;background:var(--pink);
+    overflow:hidden;                    /* eski tarayici icin geri dusus */
+    overflow-x:clip;overflow-y:visible; /* maskot siyah/pembe dikisini kessin */
+    padding:clamp(30px,3.6vw,54px) 0 0}
+  .C__top{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);
+    gap:clamp(24px,4vw,64px);align-items:center}
+  .C__ghost{justify-self:end;width:min(100%,340px);transform:rotate(-2deg)}
+  .chips{display:flex;flex-wrap:wrap;gap:clamp(20px,2.8vw,44px);
+    margin-top:clamp(30px,3.6vw,52px)}
+  .chip{flex:1 1 220px;min-width:200px}
+  .chip__n{display:inline-block;font-family:var(--display);font-weight:400;
+    font-size:clamp(38px,4.6vw,64px);line-height:1;color:var(--ink);background:var(--yellow);
+    padding:7px 15px 6px;box-shadow:5px 6px 0 rgba(11,13,4,.5)}
+  .chip__t{margin-top:16px;font-family:var(--display);font-weight:400;font-size:18px;
+    text-transform:uppercase;color:var(--ink)}
+  .chip__b{margin:6px 0 0;font-size:14px;font-weight:600;line-height:1.5;color:var(--ink)}
+  @media (max-width:900px){
+    .C__top{grid-template-columns:1fr}
+    .C__ghost{justify-self:start;width:min(70%,260px)}
+  }
 
-  /* ---------------------------------------------------------------- sign in -- */
-  .ways{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;width:100%;
-    max-width:760px;margin-top:6px}
+  /* the crowd carries the close, it is not a decoration under it */
+  .crowd{margin-top:clamp(32px,4vw,58px);line-height:0}
+  .crowd img{width:100%}
+  .ways{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;
+    width:100%;max-width:760px;margin-top:4px}
   .pbtn{display:flex;align-items:center;gap:11px;cursor:pointer;width:100%;
     background:transparent;color:#fff;border:2px solid var(--line);border-radius:4px;
-    padding:13px 16px;font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.08em;
-    text-transform:uppercase;text-align:left}
+    padding:13px 16px;font-family:var(--mono);font-size:11.5px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;text-align:left}
   .pbtn:hover{border-color:var(--yellow);color:var(--yellow)}
   .pbtn:disabled{opacity:.42;cursor:default}
   .pbtn__g{display:grid;place-items:center;width:22px;height:22px;flex:none;font-size:15px}
   .pmark{border-radius:5px}
 
-  /* ------------------------------------------------------------------ outro -- */
-  .crowdband{margin:0;padding:clamp(20px,3vw,44px) 0 0;line-height:0}
-  .crowdband img{width:100%;max-width:1500px;margin:0 auto}
-  footer{background:var(--black);padding:26px 0 40px;color:var(--fg-3)}
+  footer{background:var(--black);padding:8px 0 40px;color:var(--fg-3)}
   .foot{display:flex;align-items:center;gap:10px 24px;flex-wrap:wrap;
-    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.09em;
+    text-transform:uppercase}
   .foot a:hover{color:#fff}
   .foot .sp{text-transform:none;letter-spacing:0;font-family:'Nunito',sans-serif;font-size:12.5px}
   .livechip{display:inline-flex;align-items:center;gap:8px}
@@ -283,15 +285,12 @@
   .proof:empty{display:none}
   .proof b{color:#fff}
 
-  .ghost{pointer-events:none;user-select:none}
-  .ghost--peek{width:clamp(76px,8vw,116px)}
-
   /* --------------------------------------------------------------- reveal -- */
-  .reveal-armed .reveal{opacity:0;transform:translateY(14px)}
-  .reveal-armed .reveal.shown{opacity:1;transform:none;
-    transition:opacity .5s cubic-bezier(.22,.61,.36,1),transform .62s cubic-bezier(.16,1,.3,1)}
+  .reveal-armed .reveal{opacity:0;translate:0 14px}
+  .reveal-armed .reveal.shown{opacity:1;translate:none;
+    transition:opacity .5s cubic-bezier(.22,.61,.36,1),translate .62s cubic-bezier(.16,1,.3,1)}
   @media (prefers-reduced-motion:reduce){
-    .reveal-armed .reveal{opacity:1;transform:none}
+    .reveal-armed .reveal{opacity:1;translate:none}
     .reveal-armed .reveal.shown{transition:none}
   }
 
@@ -315,15 +314,447 @@
   .lp-own:hover{color:var(--ink);text-decoration:underline}
   .lp-close{display:block;width:100%;border:none;background:none;font:inherit;font-weight:800;
     font-size:13px;color:var(--ink-3);margin-top:8px;cursor:pointer}
+
+  /* ==================================================================== *
+   *  KOMPOZISYON AMELIYATI                                               *
+   *  Referans sticker sanatinin olculen grameri: hicbir sey 0 derecede    *
+   *  durmaz, her birincil nesne bir komsusuyla %15-35 ortusur, her alan   *
+   *  gecisinde tam bir buyuk nesne iki alanda birden yasar, ve bir        *
+   *  ekranda 10-14 ayrik nesne bulunur. Onceki sayfa her bolumu           *
+   *  ortalanmis bir blok + esit hava olarak kuruyordu; ayni metin, ayni   *
+   *  yapi, farkli kompozisyon.                                           *
+   *                                                                      *
+   *  KAIDE: .reveal tasiyan hicbir elemana transform/translate YAZILMAZ.  *
+   *  .reveal.shown{translate:none} onlari siler. Egim rotate, kayma       *
+   *  margin ile yapilir. Bu yuzden .B__fig margin-left ile ortalaniyor.   *
+   * ==================================================================== */
+
+  /* adim 1: silinen satir ici style'larin sinif karsiliklari */
+  .B .lede{max-width:38ch}
+  .B__fig{margin-block:0}
+  .scoreboard > .kicker{margin:clamp(14px,1.8vw,24px) 0 clamp(12px,1.6vw,20px)}
+
+  /* ---------------------------------------------------------- dikisler --
+     Uc alan gecisi de yirtik kagit. Mekanizma her yerde ayni: AYNI maskeyi
+     tasiyan iki pseudo. ::before krem ve maskesi 9px asagi kaydirilmis,
+     ::after ustteki alanin rengi. Yukaridan asagi: ustteki rengin disleri,
+     9px krem deckle, alttaki alan. Tek pseudo + drop-shadow ise CALISMAZ:
+     CSS filter mask'ten ONCE uygulanir, golge de maskelenip yok olur. */
+  .B::before,.B::after,.C::before,.C::after{
+    content:"";position:absolute;left:-3%;right:-3%;top:0;pointer-events:none;
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+  .B::before,.C::before{
+    height:calc(var(--seam-h) + 9px);background:var(--cream);z-index:1;
+    -webkit-mask-size:100% var(--seam-h);mask-size:100% var(--seam-h);
+    -webkit-mask-position:0 9px;mask-position:0 9px}
+  .B::after,.C::after{
+    height:var(--seam-h);z-index:2;
+    -webkit-mask-size:100% 100%;mask-size:100% 100%}
+
+  /* 1. dikis SARI -> SIYAH. Kayan serit kalkinca dikis dogrudan B'nin
+     tepesine tasindi. */
+  .B::before{-webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
+  .B::after{background:var(--yellow);
+    -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
+
+  .C::before{-webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
+  .C::after{background:var(--black);
+    -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
+  .C > .shell{position:relative;z-index:3}
+
+  @media (max-width:700px){
+    .B::before,.C::before{
+      -webkit-mask-size:360% var(--seam-h);mask-size:360% var(--seam-h)}
+    .B::after,.C::after{
+      -webkit-mask-size:360% 100%;mask-size:360% 100%}
+  }
+
+  /* ------------------------------------------------------- A · hero --
+     Sanat kendi hucresinden %50 tasar: sagdan viewport kenarinda kirpilir,
+     negatif alt marjla ticker'in siyahina girer. Baslik iki esit ses degil,
+     bir merdiven. */
+  .nav__in{padding:clamp(14px,1.8vw,24px) 0 clamp(16px,2.6vw,40px)}
+  .A > .shell{padding-bottom:clamp(16px,2.2vw,34px)}
+  .A__hero{position:relative;display:grid;
+    grid-template-columns:minmax(0,1.15fr) minmax(0,.55fr);
+    gap:clamp(10px,1.6vw,28px);align-items:end}
+  .A__hero > .col{position:relative;z-index:5}
+  .A__art{position:relative;z-index:2;pointer-events:none;margin:0;
+    margin-right:calc(-1 * clamp(20px,8vw,150px));
+    margin-left:calc(-1 * clamp(0px,4vw,72px));
+    margin-bottom:calc(-1 * clamp(46px,7.6vw,128px))}
+  .A__art img{width:150%;max-width:none;rotate:2.6deg;
+    filter:drop-shadow(9px 11px 0 rgba(2,3,2,.16))}
+  .A__hero .h1{position:relative;z-index:3;margin:0;
+    font-size:clamp(40px,8.4vw,96px);line-height:.84;letter-spacing:-.02em;
+    text-wrap:initial}
+  .A__hero .h1 span:nth-child(1){font-size:.72em}
+  .A__hero .h1 span:nth-child(2){margin-left:clamp(0px,3.4vw,58px);margin-top:.21em;
+    rotate:-1.3deg;transform-origin:0 60%}
+
+  /* -------------------------------------------------------- B · siyah --
+     Ust uste iki ortalanmis blok yan yana iki banda doner: sol sola dayali,
+     sag saga dayali ve asagidan basliyor. Akis gorseli alanin devi olur ve
+     ikisinin de icine biner. */
+  .B{position:relative;padding:clamp(30px,3.4vw,50px) 0 clamp(24px,2.6vw,38px)}
+  .B > .shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    column-gap:clamp(20px,3.2vw,58px);align-items:start}
+  .B__mani{grid-column:1;grid-row:1;max-width:none;margin:0;padding:0;border-bottom:0}
+  .B__head{grid-column:2;grid-row:1;max-width:none;margin:clamp(34px,7vw,116px) 0 0}
+  .B__fig{grid-column:1/-1;grid-row:2}
+  .scoreboard{grid-column:1/-1;grid-row:3}
+  .B .B__mani.col--mid{align-items:flex-start;text-align:left}
+  .B .B__head.col--mid{align-items:flex-end;text-align:right}
+  .B .B__head .h2 span{margin-left:auto}
+  .B__mani .h2{font-size:clamp(30px,5.6vw,84px);line-height:.86;letter-spacing:-.018em}
+  .B__head .h2{font-size:clamp(28px,4.8vw,72px);line-height:.86;letter-spacing:-.015em}
+  .B__mani .h2 span:nth-child(2){margin-left:clamp(0px,2.6vw,44px)}
+  .B__head .h2 span:nth-child(2){margin-right:clamp(0px,2.6vw,44px)}
+
+  .B__fig{position:relative;z-index:2;max-width:none;
+    width:min(112vw,1360px);
+    margin-left:calc(50% - min(56vw,680px));
+    margin-right:0;
+    margin-top:0;
+    margin-bottom:0;
+    rotate:-1.6deg}
+  .B__fig img{width:100%;filter:drop-shadow(10px 12px 0 var(--pink))}
+  .fignote{position:absolute;left:clamp(8px,3.4vw,58px);
+    bottom:calc(-1 * clamp(6px,1.2vw,16px));
+    margin:0;text-align:left;max-width:none;white-space:nowrap;
+    background:var(--black);color:var(--fg-3);padding:7px 12px;rotate:-1.8deg}
+
+  /* skorbord: yuzde 10.5px mono'dan 42px Anton'a cikar, satirlar zit yone egilir */
+  .scoreboard{position:relative;z-index:1;border-top:0;margin-top:clamp(24px,3vw,44px)}
+  .lcard{grid-template-columns:minmax(0,1fr) minmax(210px,340px);
+    grid-template-rows:auto auto auto;align-items:center;
+    padding:clamp(13px,1.7vw,22px) 0;border-bottom:0;position:relative}
+  .lcard__q{grid-column:1;grid-row:2/4;align-self:center}
+  .lcard__bar{grid-row:2;align-self:end;margin-bottom:2px}
+  .lcard__odds{grid-row:3;align-self:start}
+  .lcard__top{font-size:9.5px;letter-spacing:.2em;margin-bottom:-4px}
+  .lcard__q{font-size:clamp(22px,3.4vw,50px);line-height:.96}
+  .lcard__bar{height:22px;border-width:3px}
+  .lcard__odds{margin-top:10px;font-family:var(--display);font-weight:400;
+    font-size:clamp(24px,3vw,42px);letter-spacing:0;line-height:1}
+  /* yirtik satir ayiricisi. pointer-events:none ZORUNLU: canli modda .lcard
+     bir <a>, ustune serilen katman tiklamayi calardi. */
+  .lcard::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;
+    background:rgba(255,255,255,.24);pointer-events:none;
+    -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2);
+    -webkit-mask-size:140% 100%;mask-size:140% 100%;
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+  .livegrid > .lcard:last-child::after{display:none}
+  .livegrid > .lcard:nth-child(odd){rotate:-.55deg;margin-right:clamp(0px,5vw,74px)}
+  .livegrid > .lcard:nth-child(even){rotate:.6deg;margin-left:clamp(0px,5.6vw,84px)}
+  .lcard:hover{background:rgba(255,255,255,.06)}
+
+  /* -------------------------------------------------------- C · pembe --
+     60/40 ders kitabi gridi kirilir: baslik uc kademeli merdiven, ucuncu
+     satir alanin en buyugu ve maskotun omzundan geciyor. Maskot yukari
+     tirmanip siyah/pembe dikisini kesiyor. */
+  .C__top{position:relative;display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,.68fr);
+    gap:clamp(10px,2vw,32px);align-items:end}
+  .C__top > .col{position:relative;z-index:3;max-width:min(100%,780px)}
+  .C__top .h2{font-size:clamp(32px,6.4vw,96px);line-height:.84;letter-spacing:-.02em}
+  .C__top .h2 span:nth-child(2){margin-left:clamp(0px,2.4vw,42px)}
+  .C__top .h2 span:nth-child(3){margin-left:clamp(0px,4.6vw,84px);margin-top:.14em;
+    font-size:1.34em;rotate:-1.6deg;transform-origin:0 60%}
+  .C__top .lede{max-width:40ch;margin-left:clamp(0px,2.4vw,42px)}
+  .C__ghost{position:relative;z-index:1;justify-self:end;align-self:start;
+    width:min(128%,470px);max-width:none;
+    margin:calc(-1 * clamp(74px,12vw,196px))
+           calc(-1 * clamp(6px,3.4vw,64px))
+           calc(-1 * clamp(10px,1.8vw,26px)) 0;
+    rotate:-4.5deg;
+    filter:drop-shadow(8px 10px 0 rgba(2,3,2,.35))}
+
+  /* pullar: esit uclu satir biter, uc farkli genislik/ofset/egim ve iki
+     gercek kolon cakismasi (1/6 ile 5/10, 5/10 ile 9/13) */
+  .chips{position:relative;display:grid;
+    grid-template-columns:repeat(12,minmax(0,1fr));
+    column-gap:clamp(8px,1.4vw,20px);row-gap:0;
+    margin-top:clamp(10px,1.6vw,26px);padding-bottom:clamp(16px,2.2vw,34px)}
+  .chip{position:relative;flex:none;min-width:0;grid-row:1}
+  .chip:nth-child(1){grid-column:1/6;margin-top:clamp(10px,1.4vw,22px);rotate:-1.9deg;z-index:3}
+  .chip:nth-child(2){grid-column:5/10;margin-top:clamp(44px,6vw,98px);rotate:1.5deg;z-index:4}
+  .chip:nth-child(3){grid-column:9/13;margin-top:0;
+    margin-right:calc(-1 * clamp(0px,3vw,52px));rotate:-1.1deg;z-index:2}
+  .chip__n{display:inline-block;position:relative;z-index:2;
+    margin-left:calc(-1 * clamp(8px,1.4vw,22px));
+    font-size:clamp(38px,5.4vw,86px);padding:6px 16px 5px;
+    box-shadow:6px 7px 0 var(--black);rotate:-4deg}
+  .chip:nth-child(2) .chip__n{font-size:clamp(46px,6.6vw,110px);rotate:3.2deg;
+    margin-left:calc(-1 * clamp(14px,2.4vw,38px));
+    background:var(--black);color:var(--yellow)}
+  .chip:nth-child(3) .chip__n{font-size:clamp(32px,4.2vw,68px);rotate:-2deg}
+  .chip__t{display:inline-block;margin-top:12px;background:var(--black);color:var(--yellow);
+    padding:6px 12px;font-size:clamp(15px,1.4vw,19px);rotate:-1.2deg}
+  .chip__b{max-width:30ch;font-size:14px}
+
+  /* ---------------------------------------------------- C · kapanis --
+     Kalabalik alt kenarina sabitlenip kirpilir (goruntunun ust yarisi zaten
+     bos), viewport'tan genis yapilip iki yandan kesilir, ve negatif alt
+     marjla siyah kapanisin icine girerek pembe/siyah dikisini KESER.
+     Ustune ikinci bir CSS yirtigi konmuyor: gorsel kendi deckle kenarini
+     zaten tasiyor, cift kenar okunurdu. */
+  .crowd{position:relative;z-index:4;line-height:0;pointer-events:none;
+    width:112%;margin-left:-6%;
+    margin-top:clamp(20px,3vw,44px);
+    margin-bottom:calc(-1 * clamp(34px,5vw,86px))}
+  .crowd img{width:100%;max-width:none;
+    height:clamp(140px,20vw,290px);
+    object-fit:cover;object-position:50% 100%}
+
+  .ways{display:flex;flex-wrap:wrap;align-items:flex-start;
+    gap:clamp(9px,1.1vw,14px);width:100%;max-width:none;
+    grid-template-columns:none;margin-top:clamp(6px,1vw,12px)}
+  .pbtn{flex:0 1 auto;width:auto;min-height:48px;
+    background:var(--black);color:#fff;border:3px solid var(--cream);border-radius:5px;
+    padding:12px 16px;box-shadow:5px 6px 0 var(--pink)}
+  .ways .pbtn:nth-child(1){rotate:-1.8deg}
+  .ways .pbtn:nth-child(2){rotate:1.2deg;margin-left:clamp(0px,1.6vw,22px)}
+  .ways .pbtn:nth-child(3){rotate:-.9deg;margin-left:calc(-1 * clamp(0px,.8vw,12px))}
+  .pbtn:hover{border-color:var(--yellow);color:var(--yellow);box-shadow:4px 5px 0 var(--yellow)}
+  .pbtn:disabled{opacity:.42;cursor:default;box-shadow:5px 6px 0 rgba(255,45,120,.35)}
+
+  /* tek golge dili: her golge 4-10px, SIFIR blur, duz marka rengi */
+  .A .btn{box-shadow:6px 7px 0 var(--pink)}
+  .A .btn:hover{box-shadow:5px 6px 0 var(--pink)}
+  .nav__links .btn{box-shadow:4px 5px 0 var(--pink)}
+  .nav__links .btn:hover{box-shadow:3px 4px 0 var(--pink)}
+  .btn--light{box-shadow:7px 8px 0 var(--pink)}
+  .btn--light:hover{box-shadow:6px 7px 0 var(--pink)}
+  .lp-sheet{box-shadow:10px 12px 0 var(--pink)}
+
+  /* Bu adimdan sonra sayfada blur degeri sifirdan buyuk TEK BIR golge
+     kalmamali. Denetim:
+       grep -n 'box-shadow\|drop-shadow' public/landing.html
+     ciktidaki her satirda ucuncu sayi 0 olmali. */
+
+  /* konfeti: 2-3'lu demetler halinde, daima buyuk bir nesnenin konturunun
+     0-40px disinda. Markup'a tek satir eklenmiyor, hepsi bos pseudo. */
+  :root{
+    --m-dash-p:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 56'%3E%3Cg fill='none' stroke='%23FF2D78' stroke-width='9' stroke-linecap='round'%3E%3Cpath d='M9 46 L27 13'/%3E%3Cpath d='M31 50 L49 19'/%3E%3Cpath d='M53 42 L60 30'/%3E%3C/g%3E%3C/svg%3E");
+    --m-dash-y:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 56'%3E%3Cg fill='none' stroke='%23D7DC1F' stroke-width='9' stroke-linecap='round'%3E%3Cpath d='M9 46 L27 13'/%3E%3Cpath d='M31 50 L49 19'/%3E%3Cpath d='M53 42 L60 30'/%3E%3C/g%3E%3C/svg%3E");
+    --m-star-i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Cpath d='M30 3 37 24 58 24 41 37 48 58 30 45 12 58 19 37 2 24 23 24Z' fill='none' stroke='%23020302' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --m-star-p:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Cpath d='M30 3 37 24 58 24 41 37 48 58 30 45 12 58 19 37 2 24 23 24Z' fill='none' stroke='%23FF2D78' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .A__hero::before,.A__hero::after,.A__hero .h1::after,.B__mani::after,.B__head::after,
+  .B__fig::before,.C__top::after,.chips::before,.chip:nth-child(2)::after{
+    content:"";position:absolute;pointer-events:none;z-index:5;
+    background-repeat:no-repeat;background-position:center;background-size:contain}
+
+  /* A */
+  .A__hero::before{width:clamp(44px,5vw,74px);aspect-ratio:64/56;background-image:var(--m-dash-p);
+    left:calc(-1 * clamp(4px,2.2vw,38px));top:clamp(4px,3vw,50px);rotate:-9deg}
+  .A__hero .h1::after{width:clamp(30px,3.4vw,54px);aspect-ratio:1;background-image:var(--m-star-i);
+    top:-.16em;right:clamp(-40px,-2.8vw,-16px);rotate:-12deg}
+  .A__hero::after{width:clamp(34px,3.6vw,58px);aspect-ratio:1;background-image:var(--m-star-p);
+    left:clamp(6px,13vw,196px);bottom:clamp(-4px,1vw,16px);rotate:11deg}
+
+  /* B — siyah uzerinde sari/pembe, metin ve panonun konturundan */
+  .B__mani,.B__head{position:relative;z-index:4}
+  .B__mani::after{width:clamp(42px,4.6vw,70px);aspect-ratio:64/56;background-image:var(--m-dash-y);
+    right:clamp(-26px,-1.8vw,-10px);top:-16px;rotate:13deg}
+  .B__head::after{width:clamp(34px,3.6vw,56px);aspect-ratio:1;background-image:var(--m-star-p);
+    left:clamp(-38px,-2.8vw,-14px);bottom:clamp(-16px,-1.2vw,-6px);rotate:-8deg}
+  .B__fig::before{width:clamp(44px,5vw,76px);aspect-ratio:64/56;background-image:var(--m-dash-p);
+    left:clamp(-28px,-2vw,-10px);top:clamp(-18px,-1.2vw,-2px);rotate:-14deg}
+
+  /* C — pembe uzerinde sari/siyah, maskotun ve pulun konturundan */
+  .C__top::after{width:clamp(46px,5vw,76px);aspect-ratio:64/56;background-image:var(--m-dash-y);
+    right:clamp(2px,6vw,92px);bottom:calc(-1 * clamp(6px,1.4vw,22px));rotate:-11deg}
+  .chips::before{width:clamp(30px,3.2vw,52px);aspect-ratio:1;background-image:var(--m-star-i);
+    left:clamp(-8px,-.8vw,0px);top:clamp(2px,1vw,14px);rotate:9deg}
+  .chip:nth-child(2)::after{width:clamp(34px,3.6vw,56px);aspect-ratio:64/56;
+    background-image:var(--m-dash-p);
+    right:calc(-1 * clamp(12px,1.6vw,26px));bottom:calc(-1 * clamp(10px,1.2vw,20px));rotate:16deg}
+
+  /* --------------------------------------------------------- mobil --
+     ZORUNLU, secenek degil: dosyadaki mevcut media query'leri bu bloktan
+     ONCE geldigi icin esit ozgullukteki yeni kurallar onlari her genislikte
+     ezer. Egimler korunur, kaydirmalar sifirlanir, konfetinin cogu gizlenir. */
+  @media (max-width:1180px){
+    .B__fig{width:min(108vw,1040px);margin-left:calc(50% - min(54vw,520px))}
+    .C__ghost{width:min(112%,380px);margin-top:calc(-1 * clamp(50px,9vw,140px))}
+  }
+  @media (max-width:900px){
+    /* Yeni .lcard kurali dosyanin sonunda oldugu icin ustteki mobil
+       media query'yi eziyordu: 390px'te ilk sutun 0px'e cokup soruyu
+       yuzdelerin uzerine bindiriyordu. Satirlari da sifirlamak sart,
+       yoksa tek sutunda q(2/4) ile bar(2) ayni hucreye duser. */
+    .lcard{grid-template-columns:minmax(0,1fr);grid-template-rows:none;gap:10px}
+    .lcard__q,.lcard__bar,.lcard__odds{grid-column:1;grid-row:auto;align-self:auto}
+    .lcard__q{margin-bottom:2px}
+    /* nowrap masaustunde tek satir veriyor, 390px'te 510px genislik ve tasma */
+    .fignote{white-space:normal;max-width:34ch}
+    .A__hero{grid-template-columns:1fr;gap:0}
+    .A__hero .h1 span:nth-child(1){font-size:.8em}
+    .A__hero .h1 span:nth-child(2){margin-left:0;rotate:-.8deg}
+    .A__art{justify-self:end;margin-left:0;
+      margin-right:calc(-1 * clamp(14px,6vw,48px));
+      margin-bottom:calc(-1 * clamp(28px,7vw,60px))}
+    .A__art img{width:112%;rotate:1.8deg}
+
+    .B > .shell{display:block}
+    .B__mani,.B__head{margin:0}
+    .B__head{margin-top:clamp(26px,6vw,44px)}
+    .B .B__head.col--mid{align-items:flex-start;text-align:left}
+    .B .B__head .h2 span{margin-left:0;margin-right:0}
+    .B__mani .h2 span:nth-child(2){margin-left:0}
+    .B__fig{width:calc(100% + 8vw);margin-left:-4vw;margin-top:clamp(16px,4vw,28px)}
+    .fignote{position:static;display:inline-block;margin-top:10px}
+    .livegrid > .lcard:nth-child(odd){margin-right:0;rotate:-.4deg}
+    .livegrid > .lcard:nth-child(even){margin-left:0;rotate:.45deg}
+
+    .C__top{grid-template-columns:1fr}
+    .C__top .h2 span:nth-child(2),.C__top .lede{margin-left:0}
+    .C__top .h2 span:nth-child(3){font-size:1.14em;margin-left:0;rotate:-1deg}
+    .C__ghost{justify-self:end;align-self:auto;width:min(76%,300px);
+      margin:calc(-1 * clamp(28px,8vw,64px)) calc(-1 * clamp(6px,3vw,18px)) clamp(4px,2vw,12px) 0}
+  }
+  @media (max-width:740px){
+    .chips{grid-template-columns:1fr;row-gap:clamp(24px,6vw,36px)}
+    .chip:nth-child(1),.chip:nth-child(2),.chip:nth-child(3){
+      grid-column:1;grid-row:auto;margin-top:0;margin-right:0}
+    .chip:nth-child(2){margin-left:clamp(10px,4vw,24px)}
+    .chip__n,.chip:nth-child(2) .chip__n,.chip:nth-child(3) .chip__n{
+      margin-left:calc(-1 * clamp(6px,2vw,12px))}
+    .ways .pbtn{flex:1 1 100%;margin-left:0}
+    .crowd{width:110%;margin-left:-5%}
+  }
+  @media (max-width:560px){
+    .A__hero::before,.A__hero::after,.B__head::after,.B__fig::before,
+    .chips::before,.chip:nth-child(2)::after{display:none}
+    :root{--seam-h:34px}
+    .crowd img{height:clamp(130px,32vw,170px)}
+  }
+
+  /* ==================================================================== *
+   *  YENIDEN YAPI                                                        *
+   *  Kayan serit kalkti, tekrar eden kapanis basligi kalkti, giris        *
+   *  butonlari itibar alaninin devami oldu. Uc alan ayni, ama artik       *
+   *  her alan tek bir dusunce ve bir ekrana sigiyor.                     *
+   * ==================================================================== */
+
+  /* Dikis artik B'nin tepesinde: ust dolgu dislerin altinda metin
+     birakmayacak kadar, dikis yuksekligine bagli. */
+  .B{padding-top:calc(var(--seam-h) + clamp(18px,2.2vw,34px));
+     padding-bottom:clamp(24px,2.6vw,38px);
+     overflow-x:clip;overflow-y:visible}
+  .B > .shell{position:relative;z-index:3;
+    grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);
+    align-items:start}
+
+  /* Oddie manifestoya giriyor ve sari/siyah dikisini kesiyor: her gecise
+     iki alanda birden yasayan bir nesne. z-index dislerin (2) uzerinde. */
+  .B__ghost{grid-column:2;grid-row:1;position:relative;z-index:5;
+    justify-self:end;align-self:start;
+    width:min(112%,400px);max-width:none;
+    margin-top:calc(-1 * clamp(54px,9.5vw,168px));
+    margin-right:calc(-1 * clamp(0px,2.6vw,44px));
+    rotate:3.4deg;
+    filter:drop-shadow(9px 11px 0 var(--pink))}
+
+  /* "You argue" artik tek basina bir satir: sagda duruyor ama metni sola
+     dayali, cunku saga dayali govde metni okunmayi zorlastiriyordu. */
+  .B__head{grid-column:1/-1;grid-row:2;max-width:min(100%,720px);
+    margin:clamp(26px,3.4vw,56px) 0 0 auto}
+  .B .B__head.col--mid{align-items:flex-start;text-align:left}
+  .B .B__head .h2 span{margin-left:0;margin-right:0}
+  .B__head .h2 span:nth-child(2){margin-left:clamp(0px,2.2vw,38px)}
+
+  /* Baslik + gorsel birlikte bir ekrana sigsin diye gorsel kucultuldu */
+  .B__fig{grid-row:3;width:min(84vw,980px);
+    margin-left:calc(50% - min(42vw,490px));
+    margin-top:clamp(10px,1.6vw,26px)}
+  .scoreboard{grid-row:4}
+
+  /* --------------------------------------------------------- giris --
+     "Be Oddie." ile "Continue with X" ayni nefeste. Ayri bir kapanis
+     alani yok; sayfanin son sozu kalabalik. */
+  .join{position:relative;z-index:3;display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    column-gap:clamp(18px,3.4vw,60px);row-gap:clamp(4px,.8vw,10px);
+    align-items:start;
+    margin-top:clamp(24px,3.2vw,48px);
+    padding-top:clamp(18px,2.4vw,34px);
+    border-top:3px solid rgba(11,13,4,.32)}
+  .join .kicker{grid-column:1;grid-row:1;margin:0}
+  .join .lede{grid-column:1;grid-row:2;max-width:34ch;margin:6px 0 0}
+  .join .btn--light{grid-column:1;grid-row:3;justify-self:start;
+    margin-top:clamp(10px,1.4vw,18px);rotate:-1.4deg}
+  .join .ways{grid-column:2;grid-row:1/4;margin-top:0}
+  .join .lede--fine{grid-column:1/-1;grid-row:4;font-size:13px;max-width:62ch;
+    margin-top:clamp(12px,1.6vw,22px)}
+  /* pembe zeminde pembe golge gorunmez */
+  .join .pbtn{box-shadow:5px 6px 0 var(--black)}
+  .join .pbtn:hover{box-shadow:4px 5px 0 var(--yellow)}
+  .join .pbtn:disabled{box-shadow:5px 6px 0 rgba(2,3,2,.4)}
+  .join::after{content:"";position:absolute;z-index:2;pointer-events:none;
+    right:calc(-1 * clamp(4px,1.6vw,22px));bottom:calc(-1 * clamp(2px,.8vw,12px));
+    width:clamp(84px,9vw,150px);aspect-ratio:160/120;
+    background:url("/brand/mascot-peek.webp") right bottom/contain no-repeat;
+    rotate:4deg}
+
+  /* Kalabalik artik dogrudan siyah alt bilgiye giriyor: kendi yirtik
+     deckle kenari pembe/siyah gecisini tasiyor, ustune CSS yirtigi konmuyor. */
+  .crowd{margin-top:clamp(24px,3.2vw,48px);margin-bottom:0}
+  footer{padding-top:clamp(16px,2vw,28px)}
+
+  @media (max-width:900px){
+    .B > .shell{display:grid;grid-template-columns:minmax(0,1fr)}
+    .B__ghost{grid-column:1;grid-row:1;justify-self:end;
+      width:min(52%,215px);
+      margin:calc(-1 * clamp(38px,10vw,92px)) calc(-1 * clamp(2px,2vw,16px)) 0 auto}
+    .B__mani{grid-column:1;grid-row:2}
+    .B__head{grid-column:1;grid-row:3;max-width:none;margin-left:0;
+      margin-top:clamp(22px,5vw,40px)}
+    .B__fig{grid-column:1;grid-row:4}
+    .scoreboard{grid-column:1;grid-row:5}
+    .B__fig{width:calc(100% + 8vw);margin-left:-4vw}
+    .join{grid-template-columns:1fr}
+    .join .kicker,.join .lede,.join .btn--light,.join .ways,.join .lede--fine{
+      grid-column:1;grid-row:auto}
+    .join .ways{margin-top:clamp(12px,3vw,20px)}
+    .join::after{width:clamp(72px,18vw,104px)}
+  }
+
+  /* .B__head satir 2'ye tasinip saga kayinca sol kenardaki yildiz metnin
+     ustune dustu; isaret blogun sag disina aliniyor. */
+  .B__head::after{left:auto;right:calc(-1 * clamp(10px,2.2vw,36px));
+    bottom:calc(-1 * clamp(4px,1vw,14px))}
+
+  /* 3. dikis PEMBE -> SIYAH. Kalabaligin kendi deckle'i seffaf bir bantla
+     bittigi icin gecis duz kaliyordu; alt bilgiye kendi yirtigi veriliyor.
+     --seam-h burada yerel olarak kucultuluyor: alt bilgi 72px dis tasiyacak
+     kadar yuksek degil. */
+  footer{position:relative;overflow-x:clip;
+    --seam-h:clamp(22px,3vw,44px);
+    padding-top:calc(var(--seam-h) + clamp(10px,1.4vw,20px))}
+  footer::before,footer::after{content:"";position:absolute;left:-3%;right:-3%;top:0;
+    pointer-events:none;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+    -webkit-mask-image:var(--tear-3);mask-image:var(--tear-3)}
+  footer::before{height:calc(var(--seam-h) + 7px);background:var(--cream);z-index:1;
+    -webkit-mask-size:100% var(--seam-h);mask-size:100% var(--seam-h);
+    -webkit-mask-position:0 7px;mask-position:0 7px}
+  footer::after{height:var(--seam-h);z-index:2;background:var(--pink);
+    -webkit-mask-size:100% 100%;mask-size:100% 100%}
+  footer .shell{position:relative;z-index:3}
+  @media (max-width:700px){
+    footer::before{-webkit-mask-size:360% var(--seam-h);mask-size:360% var(--seam-h)}
+    footer::after{-webkit-mask-size:360% 100%;mask-size:360% 100%}
+  }
 </style>
 
-<!-- ============================================== 1 · HERO · YELLOW ==
-     Type on the left, the composed sticker on the right. The sticker already
-     carries the whole world (character, YES/NO, crowd), so nothing else is
-     allowed in. -->
-<header class="f f--yellow hero">
-  <nav class="nav">
-    <div class="shell nav__in">
+<!-- ==================================================== A · YELLOW · ONE FIELD ==
+     The hero and the manifesto are one breath on one ground. No product UI
+     here at all; the market only shows up in B, where it is proof. -->
+<header class="A">
+  <div class="shell">
+    <nav class="nav__in">
       <a class="brand" href="/?stay=1" aria-label="Oddie home">
         <img src="/brand/mark.webp" alt="" width="320" height="320"><span>oddie</span>
       </a>
@@ -333,177 +764,134 @@
         <a href="#board">Leaderboard</a>
         <a class="btn" href="/feed">Launch app <i aria-hidden="true">&rarr;</i></a>
       </div>
-    </div>
-  </nav>
+    </nav>
 
-  <div class="shell hero__in">
-    <div class="hero__copy">
-      <h1 class="h1"><span>The internet talks.</span><span class="lo">Oddie keeps score.</span></h1>
-      <span class="brush">Tag Oddie wherever the argument is.</span>
-      <p class="lede">Turn arguments into markets. Call them, back them, and earn when
-        the market you started spreads.</p>
-      <button class="btn" id="ctacreate" type="button">Launch app <i aria-hidden="true">&rarr;</i></button>
-      <span class="rails">
-        <b>Works on</b>
-        <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-7 8 8.2 12h-6.4l-5-7.3L6 22H2.9l7.5-8.6L2.5 2h6.6l4.5 6.6L18.9 2z"/></svg>X</span>
-        <span class="sep">/</span>
-        <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.9 3.3 2.9 10.6c-1.3.5-1.3 1.3-.2 1.6l4.8 1.5 1.8 5.6c.2.6.4.8 1 .8.5 0 .7-.2 1-.5l2.4-2.3 5 3.7c.9.5 1.6.2 1.8-.9l3.3-15.4c.3-1.3-.5-1.9-1.9-1.4z"/></svg>Telegram <small>Soon</small></span>
-        <span class="sep">/</span>
-        <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 5.3A16 16 0 0 0 15.6 4l-.3.6a15 15 0 0 1 3.4 1.2 12 12 0 0 0-9.5 0A15 15 0 0 1 12.6 4.6L12.4 4a16 16 0 0 0-4 1.3C5.5 9.5 4.7 13.6 5.1 17.6a16 16 0 0 0 4.9 2.5l1-1.6c-.5-.2-1.1-.5-1.6-.8l.4-.3a11.5 11.5 0 0 0 9.8 0l.4.3c-.5.3-1 .6-1.6.8l1 1.6a16 16 0 0 0 4.9-2.5c.5-4.6-.8-8.7-3-12.3zM9.7 15.2c-1 0-1.7-.9-1.7-1.9s.8-1.9 1.7-1.9 1.8.9 1.7 1.9c0 1-.8 1.9-1.7 1.9zm4.6 0c-1 0-1.7-.9-1.7-1.9s.8-1.9 1.7-1.9 1.8.9 1.7 1.9c0 1-.7 1.9-1.7 1.9z"/></svg>Discord <small>Soon</small></span>
-      </span>
-    </div>
+    <div class="A__hero">
+      <div class="col">
+        <h1 class="h1"><span>The internet talks.</span><span class="lo">Oddie keeps score.</span></h1>
+        <span class="brush">Tag Oddie wherever the argument is.</span>
+        <p class="lede">Turn arguments into markets. Call them, back them, and earn when the
+          market you started spreads.</p>
+        <button class="btn" id="ctacreate" type="button">Launch app <i aria-hidden="true">&rarr;</i></button>
+        <span class="rails">
+          <b>Works on</b>
+          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-7 8 8.2 12h-6.4l-5-7.3L6 22H2.9l7.5-8.6L2.5 2h6.6l4.5 6.6L18.9 2z"/></svg>X</span>
+          <span class="sep">/</span>
+          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.9 3.3 2.9 10.6c-1.3.5-1.3 1.3-.2 1.6l4.8 1.5 1.8 5.6c.2.6.4.8 1 .8.5 0 .7-.2 1-.5l2.4-2.3 5 3.7c.9.5 1.6.2 1.8-.9l3.3-15.4c.3-1.3-.5-1.9-1.9-1.4z"/></svg>Telegram <small>Soon</small></span>
+          <span class="sep">/</span>
+          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 5.3A16 16 0 0 0 15.6 4l-.3.6a15 15 0 0 1 3.4 1.2 12 12 0 0 0-9.5 0A15 15 0 0 1 12.6 4.6L12.4 4a16 16 0 0 0-4 1.3C5.5 9.5 4.7 13.6 5.1 17.6a16 16 0 0 0 4.9 2.5l1-1.6c-.5-.2-1.1-.5-1.6-.8l.4-.3a11.5 11.5 0 0 0 9.8 0l.4.3c-.5.3-1 .6-1.6.8l1 1.6a16 16 0 0 0 4.9-2.5c.5-4.6-.8-8.7-3-12.3zM9.7 15.2c-1 0-1.7-.9-1.7-1.9s.8-1.9 1.7-1.9 1.8.9 1.7 1.9c0 1-.8 1.9-1.7 1.9zm4.6 0c-1 0-1.7-.9-1.7-1.9s.8-1.9 1.7-1.9 1.8.9 1.7 1.9c0 1-.7 1.9-1.7 1.9z"/></svg>Discord <small>Soon</small></span>
+        </span>
+      </div>
 
-    <div class="hero__art" aria-hidden="true">
-      <img src="/brand/sticker-hero.webp" alt="" width="1200" height="900" decoding="async" fetchpriority="high">
+      <div class="A__art" aria-hidden="true">
+        <img src="/brand/sticker-hero.webp" alt="" width="1200" height="900" decoding="async" fetchpriority="high">
+      </div>
     </div>
   </div>
+
 </header>
-
-<!-- ================================================== · THE TICKER · ==
-     The internet talking, literally. Claims scroll by; the duplicate row is
-     what makes the loop seamless and is hidden from assistive tech. -->
-<div class="tick" aria-label="Arguments happening on the internet right now, as examples">
-  <div class="tick__in">
-    <div class="tick__row">
-      <span>Bitcoin will never hit $200k</span><i>VS</i>
-      <span>AI will kill entry-level jobs</span><i>VS</i>
-      <span>Pineapple on pizza is elite</span><i>VS</i>
-      <span>Remote work stays the norm</span><i>VS</i>
-      <span>Hot takes are cheap, receipts are rare</span><i>VS</i>
-      <span>ETH flips BTC next cycle</span><i>VS</i>
-    </div>
-    <div class="tick__row" aria-hidden="true">
-      <span>Bitcoin will never hit $200k</span><i>VS</i>
-      <span>AI will kill entry-level jobs</span><i>VS</i>
-      <span>Pineapple on pizza is elite</span><i>VS</i>
-      <span>Remote work stays the norm</span><i>VS</i>
-      <span>Hot takes are cheap, receipts are rare</span><i>VS</i>
-      <span>ETH flips BTC next cycle</span><i>VS</i>
-    </div>
-  </div>
-</div>
 
 <main>
 
-  <!-- ============================================ 2 · MANIFESTO · CREAM ==
-       The quiet one: a claim, a paragraph, air, and the character peeking in
-       from the edge. Nothing else. -->
-  <section class="f f--cream f--quiet to-black" id="why" style="overflow:hidden">
-    <div class="shell stack" style="position:relative">
-      <p class="kicker reveal">The internet's oldest bug</p>
-      <h2 class="h2 reveal"><span>Everyone's sure.</span><span class="lo">Nobody keeps score.</span></h2>
-      <p class="lede reveal">The internet is full of claims, takes and arguments, and being loud
-        has always been enough. Oddie turns them into markets, so now you can just
-        <span class="mk">be right</span> instead.</p>
-      <img class="ghost ghost--peek reveal" src="/brand/mascot-peek.webp?v=7" alt="" aria-hidden="true"
-        width="160" height="120" loading="lazy"
-        style="position:absolute;right:clamp(8px,4vw,60px);bottom:calc(-1 * var(--air-lg));opacity:.96">
-    </div>
-  </section>
+  <!-- ================================================= B · BLACK · THE MOVE ==
+       Centred, because A was asymmetric. One picture explains the product and
+       the real board sits under it as a scoreboard. -->
+  <section class="B on-dark sec" id="how" data-live="<!--LIVE_MODE-->">
+    <div class="shell">
+      <div class="B__mani col col--mid">
+        <p class="kicker reveal">The internet's oldest bug</p>
+        <h2 class="h2 reveal"><span>Everyone's sure.</span><span class="lo">Nobody keeps score.</span></h2>
+        <p class="lede reveal">The internet is full of claims, takes and
+          arguments, and being loud has always been enough. Oddie turns them into markets, so now
+          you can just <span class="mk">be right</span> instead.</p>
+      </div>
 
-  <!-- ========================================= 3 · MAGIC MOMENT · BLACK ==
-       The one picture that explains the product, at full width. The figures
-       inside it are illustrative and the caption says so. -->
-  <section class="f f--black to-pale" id="how">
-    <div class="shell stack">
-      <p class="kicker reveal">The move</p>
-      <h2 class="h2 reveal"><span>You argue.</span><span class="lo">Oddie makes it a market.</span></h2>
-      <p class="lede reveal">Tag Oddie under any claim and it opens a real market on Solana with its
-        own vault. Anyone can call it. 2% of the pool goes to whoever started it.</p>
-      <figure class="figure reveal" style="margin-left:auto;margin-right:auto">
+      <img class="B__ghost reveal" src="/brand/mascot.webp" alt="" aria-hidden="true"
+        width="834" height="930" loading="lazy">
+
+      <div class="B__head col col--mid">
+        <p class="kicker reveal">The move</p>
+        <h2 class="h2 reveal"><span>You argue.</span><span class="lo">Oddie makes it a market.</span></h2>
+        <p class="lede reveal">Tag Oddie under any claim and it opens a real
+          market on Solana with its own vault. Anyone can call it, and 2% of the pool goes to
+          whoever started it.</p>
+      </div>
+
+      <figure class="B__fig reveal">
         <img src="/brand/flow.webp" alt="Example: a post claiming AI will replace more jobs than it creates gets tagged @oddiefun, and becomes an Oddie market where the crowd calls yes or no." width="1500" height="844" loading="lazy">
         <figcaption class="fignote">The odds in the picture are an example. The real ones are below.</figcaption>
       </figure>
-    </div>
-  </section>
 
-  <!-- ========================================== 4 · PRODUCT PROOF · PALE ==
-       The app appears once, as evidence, server-rendered from the same rows
-       the app itself serves. One number decides which state shows, so this can
-       never advertise a market the product does not have. -->
-  <section class="f f--pale f--quiet to-pink sec" id="live" data-live="<!--LIVE_MODE-->">
-    <div class="shell splitgrid">
-      <div class="stack">
-        <p class="kicker reveal">The app</p>
-        <h2 class="h2 reveal"><span>See what the internet</span><span>is arguing about.</span></h2>
-        <div class="feats reveal">
-          <p class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg>Live arguments, pulled from wherever they started</p>
-          <p class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg>Call yes or no. The price is what the room believes</p>
-          <p class="feat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V9M12 21V4M18 21v-8"/></svg>Earn points for the markets you start. Climb the board</p>
+      <div class="scoreboard" id="live">
+        <p class="kicker reveal">
+          See what the internet is arguing about</p>
+
+        <!-- STATE B: enough real markets to stand on their own, server-rendered
+             from the same rows the app serves. -->
+        <div class="board--live">
+          <div class="livegrid"><!--LIVE_CARDS--></div>
         </div>
-        <a class="btn reveal" href="/feed">Open the app <i aria-hidden="true">&rarr;</i></a>
-      </div>
-
-      <div class="reveal">
-        <div class="board">
-          <div class="board__bar"><b>oddie</b><span>Live on Oddie</span></div>
-          <div class="board--live">
-            <div class="livegrid"><!--LIVE_CARDS--></div>
+        <!-- STATE A: not enough yet. Two examples, labelled as such. -->
+        <div class="board--teach">
+          <div class="livegrid">
+            <span class="lcard">
+              <span class="lcard__top"><span>Example</span><span class="lcard__live">Live</span></span>
+              <p class="lcard__q">Will Bitcoin hit $200k before 2027?</p>
+              <span class="lcard__bar"><i style="width:71%"></i></span>
+              <span class="lcard__odds"><span class="qcard__yes">71% YES</span><span class="qcard__no">29% NO</span></span>
+            </span>
+            <span class="lcard">
+              <span class="lcard__top"><span>Example</span><span class="lcard__live">Live</span></span>
+              <p class="lcard__q">Will remote work still be the norm by 2030?</p>
+              <span class="lcard__bar"><i style="width:74%"></i></span>
+              <span class="lcard__odds"><span class="qcard__yes">74% YES</span><span class="qcard__no">26% NO</span></span>
+            </span>
           </div>
-          <div class="board--teach">
-            <div class="livegrid">
-              <span class="lcard">
-                <span class="lcard__top"><span>Example</span><span class="lcard__live">Live</span></span>
-                <p class="lcard__q">Will Bitcoin hit $200k before 2027?</p>
-                <span class="lcard__bar"><i style="width:71%"></i></span>
-                <span class="lcard__odds"><span class="qcard__yes">71% YES</span><span class="qcard__no">29% NO</span></span>
-              </span>
-              <span class="lcard">
-                <span class="lcard__top"><span>Example</span><span class="lcard__live">Live</span></span>
-                <p class="lcard__q">Will remote work still be the norm by 2030?</p>
-                <span class="lcard__bar"><i style="width:74%"></i></span>
-                <span class="lcard__odds"><span class="qcard__yes">74% YES</span><span class="qcard__no">26% NO</span></span>
-              </span>
-            </div>
-          </div>
-          <a class="board__more" href="/feed">See every market &rarr;</a>
         </div>
+        <a class="board__more" href="/feed">See every market <span aria-hidden="true">&rarr;</span></a>
       </div>
     </div>
   </section>
 
-  <!-- =========================================== 5 · REPUTATION · PINK ==
-       Points, never payouts, and every figure is the one the product pays. -->
-  <section class="f f--pink to-black" id="board">
-    <div class="shell stack">
-      <p class="kicker reveal">Reputation</p>
-      <h2 class="h2 reveal"><span>Be right.</span><span>Be early.</span><span class="lo">Be Oddie.</span></h2>
-      <p class="lede reveal">Every call is scored either way, so the record builds whether you
-        were right or loud. Points, not payouts. The money is the 2% above.</p>
-      <div class="reps">
-        <div class="rep reveal">
-          <span class="rep__n">+150</span>
-          <div class="rep__t">Share your call</div>
-          <p class="rep__b">Paste the link to your post. Once it clears review, the points are yours.</p>
+  <!-- ================================================ C · PINK · REPUTATION ==
+       Two columns so the ground is not a headline over a void, and the three
+       figures are sticker chips rather than a second card grid. Every number
+       here is the one the product actually pays. -->
+  <section class="C f--pink" id="board">
+    <div class="shell">
+      <div class="C__top">
+        <div class="col">
+          <p class="kicker reveal">Reputation</p>
+          <h2 class="h2 reveal"><span>Be right.</span><span>Be early.</span><span class="lo">Be Oddie.</span></h2>
+          <p class="lede reveal">Every call is scored either way, so the record builds whether you
+            were right or loud. Points, not payouts. The money is the 2% above.</p>
         </div>
-        <div class="rep reveal">
-          <span class="rep__n">+300</span>
-          <div class="rep__t">Be the week's loudest</div>
-          <p class="rep__b">The best posts each week earn again, on top of what they already earned.</p>
+        <img class="C__ghost reveal" src="/brand/mascot-cool.webp?v=8" alt="" aria-hidden="true"
+          width="569" height="438" loading="lazy">
+      </div>
+
+      <div class="chips">
+        <div class="chip reveal">
+          <span class="chip__n">+150</span>
+          <div class="chip__t">Share your call</div>
+          <p class="chip__b">Paste the link to your post. Once it clears review, the points are yours.</p>
         </div>
-        <div class="rep reveal">
-          <span class="rep__n">2&times;</span>
-          <div class="rep__t">Every call you make</div>
-          <p class="rep__b">Keep posting and your calls, markets and wins earn up to double.</p>
+        <div class="chip reveal">
+          <span class="chip__n">+300</span>
+          <div class="chip__t">Be the week's loudest</div>
+          <p class="chip__b">The best posts each week earn again, on top of what they already earned.</p>
+        </div>
+        <div class="chip reveal">
+          <span class="chip__n">2&times;</span>
+          <div class="chip__t">Every call you make</div>
+          <p class="chip__b">Keep posting and your calls, markets and wins earn up to double.</p>
         </div>
       </div>
-    </div>
-  </section>
 
-  <!-- ============================================ 6 · FINAL CTA · BLACK ==
-       The crowd rises into the finale. The three sign-in buttons are read from
-       one list by test-providers; a provider missing here is the bug that
-       shipped three times. -->
-  <section class="f f--black" id="built" style="padding-top:0">
-    <div class="crowdband" aria-hidden="true">
-      <img src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy">
-    </div>
-    <div class="shell stack" style="margin-top:clamp(30px,4vw,54px)">
-      <h2 class="h2"><span>The internet talks.</span><span class="lo">Oddie keeps score.</span></h2>
-      <span class="brush">Every argument. Everywhere.</span>
-      <a class="btn btn--light" href="/feed">Launch app <i aria-hidden="true">&rarr;</i></a>
-
-      <p class="kicker" style="margin-top:clamp(14px,2vw,26px)">Keep your record</p>
+      <!-- Giris, itibar alaninin devami: "Be Oddie." ile "Continue with X"
+         ayni nefeste okunuyor, arada tekrar eden bir kapanis basligi yok. -->
+    <div class="join" id="built">
+      <p class="kicker">Keep your record</p>
       <p class="lede">Look around as a guest. Every call is scored either way; connecting just
         means the record follows you off this browser.</p>
       <div class="ways">
@@ -524,9 +912,18 @@
         <button class="pbtn" type="button" data-connect="phantom">
           <span class="pbtn__g"><img class="pmark" src="/phantomlogo.png" alt="" width="19" height="19"></span> Continue with Phantom</button>
       </div>
-      <p class="lede" style="font-size:13px;max-width:52ch">Signing proves the wallet is yours. It approves
-        no transaction and moves nothing. Taking a side is a separate signature, and that one spends.</p>
+      <p class="lede lede--fine">Signing proves the wallet is yours. It
+        approves no transaction and moves nothing. Taking a side is a separate signature, and
+        that one spends.</p>
+      <a class="btn btn--light" href="/feed">Launch app <i aria-hidden="true">&rarr;</i></a>
     </div>
+    </div>
+
+    <!-- the crowd is the last thing the page says -->
+    <div class="crowd" aria-hidden="true">
+      <img src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy">
+    </div>
+
   </section>
 </main>
 
@@ -536,8 +933,6 @@
     <a href="https://x.com/oddiefun" target="_blank" rel="noopener">@oddiefun on X</a>
     <!--NET_CHIP-->
     <span class="proof"><!--PROOF--></span>
-    <!-- Dollars are what the page shows because this is being built for people
-         who do not hold SOL; SOL is what the vault holds, so both facts print. -->
     <span class="sp">Pools are held and settled in SOL on Solana. Oddie never holds your funds.</span>
   </div>
 </footer>
