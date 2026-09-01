@@ -149,6 +149,33 @@ console.log("\nONE POST, ONE MARKET -- ON BOTH SURFACES");
   check("an unacceptable source has no key", sourcePostKey("https://evil.example.com/x") === null);
 }
 
+console.log("\nTHE X LOOP'S OWN HANDLE-LESS PERMALINK");
+{
+  // mentionLoop.ts:107 emits x.com/i/web/status/<id> whenever it could not
+  // resolve the author. The first version of sourceUrlKind rejected exactly
+  // that, which switched one-post-one-market off for the bot's primary path.
+  check("i/web/status is a source", sourceUrlKind("https://x.com/i/web/status/555") === "x");
+  check("i/status is a source", sourceUrlKind("https://x.com/i/status/555") === "x");
+  check("...and it still credits nobody", handleFromSourceUrl("https://x.com/i/web/status/555") === null);
+  check("...but it is the SAME post as the named form",
+    sourcePostKey("https://x.com/i/web/status/555") === sourcePostKey("https://x.com/someone/status/555"));
+  check("i/web is not a bare profile", sourceUrlKind("https://x.com/i/web") === null);
+}
+
+console.log("\nONE MESSAGE CANNOT PRODUCE MORE THAN ONE KEY");
+{
+  // The caller writes the permalink. Before normalising, padding the id with
+  // zeros produced a brand new key every time, so the dedupe never fired and a
+  // retry loop could mint a market per attempt.
+  const t = sourcePostKey("https://t.me/somegroup/4567");
+  check("telegram: leading zeros collapse", sourcePostKey("https://t.me/somegroup/0004567") === t);
+  check("telegram: a private group id normalises too",
+    sourcePostKey("https://t.me/c/1234567890/0089") === sourcePostKey("https://t.me/c/1234567890/89"));
+  const x = sourcePostKey("https://x.com/a/status/999");
+  check("x: leading zeros collapse", sourcePostKey("https://x.com/a/status/000999") === x);
+  check("a padded id is still a real key", x === "x:999", String(x));
+}
+
 console.log("\nTHE LEDGER IS NAMESPACED, SO ONE CALLER CANNOT SQUAT ANOTHER'S KEYS");
 {
   _resetApiLedgers();

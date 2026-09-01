@@ -353,6 +353,22 @@ CREATE TABLE IF NOT EXISTS community_market (
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolution_criteria text;
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolvability       text;
 
+-- The creator fee rate this market will be minted with, decided ONCE and
+-- carried by the same row that makes the market visible.
+--
+-- It used to be re-derived at mint time from market_surfacer. That row is
+-- written AFTER this one and behind an oEmbed fetch, so for up to six seconds a
+-- market was live on the feed with no surfacer -- and surfacerFor returns null
+-- for a missing row rather than throwing, so an unauthenticated
+-- /api/chain/ensure landing in that window minted an X market at 0 bps. The
+-- rate is permanent once on chain, making that an unrecoverable loss of the
+-- creator's whole share. A rate carried by the publishing row cannot be read
+-- before it exists.
+--
+-- NULL means "written before this column existed". Those markets all predate
+-- any 0-bps market, so the full rate is the correct reading for them.
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS creator_fee_bps integer;
+
 -- Taken off the board without being destroyed.
 --
 -- The alternative was retire --delete, which removes the
@@ -430,12 +446,19 @@ ALTER TABLE market_surfacer ADD COLUMN IF NOT EXISTS source_author text;
 -- the rule was silently absent for that whole surface -- a spend gate that
 -- looked present and was not. Backfilled below for rows written before it.
 ALTER TABLE market_surfacer ADD COLUMN IF NOT EXISTS source_key text;
--- substring, not split_part: split_part carries the query string along, so a
--- URL ending "?s=20" backfilled as "123?s=20" and would never match the key the
--- code computes from the path alone.
+-- This has to produce EXACTLY what sourcePostKey() computes for the same URL,
+-- or a backfilled row holds a key the runtime never asks for and silently
+-- stops deduping. Three things that took getting wrong to notice:
+--   substring, not split_part -- split_part carries the query string, so a URL
+--     ending "?s=20" became "123?s=20";
+--   ::bigint::text -- the code normalises the id through BigInt, so a
+--     zero-padded "0000123" must collapse to "123" here too;
+--   an anchored host+path test -- the loose '%/status/%' form also keyed rows
+--     whose host sourceUrlKind refuses, which the runtime can never match.
 UPDATE market_surfacer
-   SET source_key = 'x:' || substring(source_url from '/status/([0-9]+)')
- WHERE source_key IS NULL AND substring(source_url from '/status/([0-9]+)') IS NOT NULL;
+   SET source_key = 'x:' || (substring(source_url from '/status/([0-9]+)'))::bigint::text
+ WHERE source_key IS NULL
+   AND source_url ~ '^https?://(www\.)?(x|twitter|fixupx|vxtwitter)\.com/([A-Za-z0-9_]{1,15}|i/web|i)/status/[0-9]+([/?#]|$)';
 CREATE INDEX IF NOT EXISTS market_surfacer_source_key_idx ON market_surfacer (source_key);
 
 -- The Season Points ledger. BACKEND-ONLY (never shown as a standalone number):
@@ -3196,6 +3219,10 @@ export type CommunityMarket = Market & {
   onchainSig: string | null;
   resolutionCriteria: string | null;
   resolvability: string | null;
+  /** The rate this market is (or will be) minted with. Carried on the list
+   *  so the feed shows the fee actually charged, without a second lookup
+   *  that can be empty or fail. */
+  creatorFeeBps: number;
 };
 
 interface CommunityMeta {
@@ -3209,6 +3236,8 @@ interface CommunityMeta {
   resolvability: string | null;
   /** Set when the market was taken off the board. See the DDL note. */
   retiredAt?: string | null;
+  /** The rate this market will be minted at. See the DDL note on the column. */
+  creatorFeeBps?: number;
 }
 const memCommunity = new Map<string, CommunityMeta>();
 
@@ -3285,17 +3314,30 @@ async function logFee(input: FeeLogInput): Promise<void> {
  * halves of the 4% are real, and both are recorded here as deducted rather
  * than as collected.
  */
-export async function logRealFee(slug: string, totalVaultLamports: number): Promise<void> {
+export async function logRealFee(
+  slug: string,
+  totalVaultLamports: number,
+  /**
+   * The rate the PROGRAM actually fixed on this market, read from the chain by
+   * the caller. Not every market charges the full rate any more: one with no
+   * creator to pay is minted at 0, and recomputing from the constant booked a
+   * 2% creator fee against a market the chain deducted nothing for -- a ledger
+   * that disagrees with the vault. Defaults to the constant for callers that
+   * have no state to hand, which is the correct reading for every market minted
+   * before rates could differ.
+   */
+  creatorFeeBps: number = CREATOR_FEE_BPS_REAL,
+): Promise<void> {
   try {
     if (totalVaultLamports <= 0) return;
     const surfacer = await surfacerFor(slug);
-    const creatorFeeAmount = Math.floor((totalVaultLamports * CREATOR_FEE_BPS_REAL) / 10000);
+    const creatorFeeAmount = Math.floor((totalVaultLamports * creatorFeeBps) / 10000);
     const protocolFeeAmount = Math.floor((totalVaultLamports * PROTOCOL_FEE_BPS_REAL) / 10000);
     if (creatorFeeAmount > 0) {
       await logFee({
         slug, marketKind: "real", feeKind: "creator",
         recipientDeviceId: surfacer?.deviceId ?? null, recipientHandle: surfacer?.handle ?? null,
-        rateBps: CREATOR_FEE_BPS_REAL, basisAmount: totalVaultLamports, feeAmount: creatorFeeAmount, enforced: true,
+        rateBps: creatorFeeBps, basisAmount: totalVaultLamports, feeAmount: creatorFeeAmount, enforced: true,
       });
     }
     if (protocolFeeAmount > 0) {
@@ -3565,12 +3607,17 @@ export async function createCommunityMarket(input: {
   // publish a row, since the same id has to address both. Defaults to the
   // clock, which is what every other caller wants.
   marketId?: number;
+  /** Decided by the caller from the source, and stored, so the mint never has
+   *  to re-derive it from a row that may not exist yet. Defaults to the full
+   *  rate, which is what every caller that has a creator wants. */
+  creatorFeeBps?: number;
 }): Promise<{ slug: string; marketId: number; market: Market }> {
   const marketId = input.marketId ?? Date.now(); // unique-per-ms; also the on-chain market_id (u64)
   const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
   const category = input.category?.trim() || "Community";
   const resolutionCriteria = input.resolutionCriteria?.trim() || null;
   const resolvability = input.resolvability?.trim() || null;
+  const creatorFeeBps = Number.isInteger(input.creatorFeeBps) ? input.creatorFeeBps! : CREATOR_FEE_BPS_REAL;
   const market: Market = {
     venue: "community",
     venueId: String(marketId),
@@ -3586,15 +3633,15 @@ export async function createCommunityMarket(input: {
   if (!PERSISTENT) {
     memCommunity.set(rec.slug, {
       slug: rec.slug, marketId, category, resolvedOutcome: null, onchainPubkey: null, onchainSig: null,
-      resolutionCriteria, resolvability,
+      resolutionCriteria, resolvability, creatorFeeBps,
     });
     return { slug: rec.slug, marketId, market };
   }
   await ensureSchema();
   await db().query(
-    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability)
-     VALUES ($1,$2,$3,$4,$5) ON CONFLICT (slug) DO NOTHING`,
-    [rec.slug, marketId, category, resolutionCriteria, resolvability],
+    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability, creator_fee_bps)
+     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (slug) DO NOTHING`,
+    [rec.slug, marketId, category, resolutionCriteria, resolvability, creatorFeeBps],
   );
   return { slug: rec.slug, marketId, market };
 }
@@ -3704,7 +3751,15 @@ export function sourceUrlKind(url: string | null | undefined): SourceKind | null
   const path = u.pathname.replace(/\/+$/, "");
   if (["x.com", "twitter.com", "fixupx.com", "vxtwitter.com"].includes(host)) {
     // Still has to be a real status permalink, not just the right host.
-    return /^\/[A-Za-z0-9_]{1,15}\/status\/\d+/.test(path) ? "x" : null;
+    //
+    // The handle-less forms are included on purpose. mentionLoop.ts:107 emits
+    // `x.com/i/web/status/<id>` whenever it could not resolve the author, and
+    // the previous shape rejected exactly those, which switched off
+    // one-post-one-market for the bot's own primary path: existingMarket found
+    // nothing, so the same tweet could open a market on every pass.
+    // handleFromSourceUrl still returns null for them, which is correct -- no
+    // handle means no payee -- so they mint at 0 bps, which is also correct.
+    return /^\/(?:i\/web\/status|i\/status|[A-Za-z0-9_]{1,15}\/status)\/\d+/.test(path) ? "x" : null;
   }
   // t.me/<group>/<id> for a public group, t.me/c/<internal>/<id> for a private
   // one. Both identify exactly one message, which is all provenance needs.
@@ -3730,9 +3785,23 @@ export function sourcePostKey(url: string | null | undefined): string | null {
   const u = new URL(String(url));
   if (kind === "x") {
     const id = /\/status\/(\d+)/.exec(u.pathname)?.[1];
-    return id ? `x:${id}` : null;
+    // Digits, normalised: "0000123" and "123" are the same tweet.
+    return id ? `x:${BigInt(id).toString()}` : null;
   }
-  return `tg:${u.pathname.replace(/\/+$/, "").toLowerCase()}`;
+  // NORMALISED, not just lowercased. The caller writes this URL, and the raw
+  // path let one Telegram message produce unlimited distinct keys -- pad the id
+  // with leading zeros and the one-post-one-market rule sees a new post every
+  // time, so a retry loop mints a market per attempt.
+  //
+  // Residual, and deliberate: a group's public form (t.me/<name>/<id>) and its
+  // private form (t.me/c/<internal>/<id>) are two keys for one message. They
+  // cannot be reconciled from the URL alone, a group only ever emits one of
+  // them at a time, and the per-caller idempotency ledger covers the retry
+  // case, so this is a note rather than a hole.
+  const seg = u.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+  const id = BigInt(seg[seg.length - 1]!).toString();
+  const chat = seg.slice(0, -1).join("/").toLowerCase();
+  return `tg:/${chat}/${id}`;
 }
 
 
@@ -3839,7 +3908,9 @@ export async function recordSurfacer(slug: string, input: { handle?: string | nu
   await ensureSchema();
   await db().query(
     `INSERT INTO market_surfacer (slug, handle, device_id, source_url, source_key, source_text, source_author)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (slug) DO NOTHING`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (slug) DO UPDATE SET source_key = EXCLUDED.source_key
+       WHERE market_surfacer.source_key IS NULL AND EXCLUDED.source_key IS NOT NULL`,
     [slug, handle, deviceId, sourceUrl, sourceKey, post?.text ?? null, post?.authorName ?? null],
   );
 }
@@ -4872,6 +4943,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
         ...rec.market, yesPct: crowdPct(rec.market.yesPct, yes, no),
         marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
         resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
+        creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
       });
     }
     return out;
@@ -4880,18 +4952,18 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
   const { rows } = await db().query<{
     venue_id: string; question: string; yes_pct: number; closes_at: Date | null; volume_usd: number; venue_url: string;
     market_id: string; category: string; onchain_pubkey: string | null; onchain_sig: string | null;
-    resolution_criteria: string | null; resolvability: string | null;
+    resolution_criteria: string | null; resolvability: string | null; creator_fee_bps: number | null;
     yes_pool: number; no_pool: number;
   }>(`
     SELECT s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability,
+           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.creator_fee_bps,
            count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes' AND mc.closed_at IS NULL)::int AS yes_pool,
            count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no'  AND mc.closed_at IS NULL)::int AS no_pool
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
      WHERE c.resolved_outcome IS NULL AND c.retired_at IS NULL
      GROUP BY s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-              c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.created_at
+              c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.creator_fee_bps, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
     venue: "community", venueId: r.venue_id, question: r.question, yesPct: crowdPct(r.yes_pct, r.yes_pool, r.no_pool),
@@ -4899,6 +4971,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
     venueUrl: r.venue_url, tags: [], marketId: Number(r.market_id), category: r.category,
     onchainPubkey: r.onchain_pubkey, onchainSig: r.onchain_sig,
     resolutionCriteria: r.resolution_criteria, resolvability: r.resolvability,
+    creatorFeeBps: r.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
   }));
 }
 
@@ -4912,6 +4985,10 @@ export interface CommunityListItem {
    *  is how a retired market kept being served by the agent API after it had
    *  already left the feed. */
   retiredAt: string | null;
+  /** The rate this market is (or will be) minted with, so a public list can
+   *  quote the fee it actually charges per market instead of one constant for
+   *  the whole response. */
+  creatorFeeBps: number;
 }
 
 /** Every community market with resolution + on-chain state + pool totals, for the /tool admin panel. */
@@ -4955,29 +5032,30 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
         slug: meta.slug, question: rec.market.question, yesPct: rec.market.yesPct,
         resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, closesAt: rec.market.closesAt,
         yesTokens: tokens("yes"), noTokens: tokens("no"), yesPlayers: players("yes"), noPlayers: players("no"),
-        retiredAt: meta.retiredAt ?? null,
+        retiredAt: meta.retiredAt ?? null, creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
       };
     });
   }
   await ensureSchema();
   const { rows } = await db().query<{
-    slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null;
+    slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null; creator_fee_bps: number | null;
     yes_tokens: number; no_tokens: number; yes_players: number; no_players: number; retired_at: Date | null;
   }>(`
-    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at,
+    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.creator_fee_bps,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes'), 0)::int AS yes_tokens,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'), 0)::int  AS no_tokens,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes')::int AS yes_players,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no')::int  AS no_players
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
-     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.created_at
+     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.creator_fee_bps, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
     slug: r.slug, question: r.question, yesPct: r.yes_pct, resolvedOutcome: r.resolved_outcome,
     onchainPubkey: r.onchain_pubkey, closesAt: r.closes_at ? r.closes_at.toISOString() : null,
     yesTokens: r.yes_tokens, noTokens: r.no_tokens, yesPlayers: r.yes_players, noPlayers: r.no_players,
     retiredAt: r.retired_at ? r.retired_at.toISOString() : null,
+    creatorFeeBps: r.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
   }));
 }
 
@@ -4988,6 +5066,10 @@ export interface CommunityMarketDetail {
   slug: string; question: string; closesAt: string | null; yesPct: number; marketId: number;
   resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; onchainSig: string | null;
   resolutionCriteria: string | null; resolvability: string | null;
+  /** The creator fee this market is (or will be) minted with. Never null: a row
+   *  written before the column existed reads as the full rate, which is what it
+   *  was minted with. */
+  creatorFeeBps: number;
   positions: CommunityDetailPosition[];
 }
 
@@ -5004,12 +5086,13 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
     return {
       slug, question: rec.market.question, closesAt: rec.market.closesAt, yesPct: rec.market.yesPct,
       marketId: meta.marketId, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
-      resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability, positions,
+      resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
+      creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL, positions,
     };
   }
   await ensureSchema();
-  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null }>(`
-    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability
+  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; creator_fee_bps: number | null }>(`
+    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.creator_fee_bps
       FROM community_market c JOIN market_slug s ON s.slug = c.slug WHERE c.slug = $1`, [slug]);
   if (!meta.rows.length) return null;
   const m = meta.rows[0];
@@ -5019,6 +5102,7 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
     slug, question: m.question, closesAt: m.closes_at ? m.closes_at.toISOString() : null, yesPct: m.yes_pct,
     marketId: Number(m.market_id), resolvedOutcome: m.resolved_outcome, onchainPubkey: m.onchain_pubkey, onchainSig: m.onchain_sig,
     resolutionCriteria: m.resolution_criteria, resolvability: m.resolvability,
+    creatorFeeBps: m.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
     positions: pos.rows.map((r) => ({ deviceId: r.device_id, side: r.side, tokens: r.tokens, entryPct: r.pct_at, closed: Boolean(r.closed_at), proceeds: r.proceeds })),
   };
 }

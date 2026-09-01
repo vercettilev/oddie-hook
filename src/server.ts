@@ -686,10 +686,6 @@ app.get("/api/feed", async (req, res) => {
   const poolSizes = await communityPoolSizes(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
   // Calls in the last 24h — the "happening now" signal. See communityRecentCalls.
   const recentCalls = await communityRecentCalls(community.map((m) => slugFor(m)), 24).catch(() => ({} as Record<string, number>));
-  // The fee rate SHOWN has to be the fee rate CHARGED. A market whose source
-  // has no handle is minted at 0 bps, so printing the constant here would quote
-  // a deduction the chain does not make.
-  const feedSurfacers = await surfacersFor(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, SurfacerInfo>));
   const communityItems = community.map((m) => {
     const slug = slugFor(m);
     const positions = playerCounts[slug] ?? 0;
@@ -707,7 +703,10 @@ app.get("/api/feed", async (req, res) => {
       forming: positions < MARKET_FORMING_MIN,
       formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-      creatorFeeBps: creatorFeeBpsForHandle(feedSurfacers[slug]?.handle), // the rate the program deducts; shown on the card's stake line
+      // The rate SHOWN is the rate CHARGED, read off the market's own row.
+      // It was briefly derived from a batched surfacer lookup, which meant a
+      // single failed query printed 0% on every card at once.
+      creatorFeeBps: m.creatorFeeBps, // the rate the program deducts; shown on the card's stake line
       poolTokens: poolSizes[slug] ?? 0,
       callsToday: recentCalls[slug] ?? 0,
     };
@@ -774,11 +773,10 @@ app.get("/api/feed", async (req, res) => {
       feedItems.unshift({
         slug: start.slug,
         category: isCommunity ? "Community" : categorize(start.market),
-        // The one place the constant survives: the drifted/resolved fallback
-        // for a market not in the live set, with no surfacer lookup to hang
-        // the real rate off. It over-states the fee for a handle-less market,
-        // which pays the holder MORE than quoted rather than less -- the safe
-        // direction for a number to be wrong in.
+        // A DEFAULT, not an assertion: `...start.market` is spread after it, so
+        // a community market that carries its own rate overrides this. It only
+        // survives for a record that predates the column, and those all predate
+        // any 0-bps market, so the full rate is right for them.
         ...(isCommunity ? { community: true as const, onchain: null, creatorFeeBps: CREATOR_FEE_BPS_REAL } : {}),
         ...start.market,
       });
@@ -1008,7 +1006,7 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
       ...m, slug, category: "Community", topicCategory: m.category, community: true as const,
       positions, forming: positions < MARKET_FORMING_MIN, formingMin: MARKET_FORMING_MIN,
       onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-      creatorFeeBps: creatorFeeBpsForHandle(surfacer?.handle),
+      creatorFeeBps: m.creatorFeeBps,
       poolTokens: poolSizes[slug] ?? 0,
       callsToday: recentCalls[slug] ?? 0,
       crowd: crowd[slug] ?? { yes: 0, no: 0 },
@@ -2599,6 +2597,16 @@ async function openMarketFromClaim(input: {
     return bad(400, "source_url must be an x.com/…/status/… or t.me/…/… link");
   }
 
+  // Decided ONCE, here, from the source, and used by both the mint below and
+  // the row that publishes the market. ensureMinted reads it back from that row
+  // rather than re-deriving it from market_surfacer, which is written later and
+  // behind an oEmbed fetch: for up to six seconds the market was live on the
+  // feed with no surfacer row, and a missing row reads as null rather than
+  // raising, so an unauthenticated /api/chain/ensure landing in that window
+  // minted an X market at 0 bps. Nothing on chain can change a rate afterwards,
+  // so that was the creator's entire share, gone, unrecoverably.
+  const creatorFeeBps = creatorFeeBpsForHandle(handleFromSourceUrl(sourceUrl));
+
   // The vault comes first. Written the other way round, a Solana failure
   // returned "was not published" to the caller while the row it had already
   // created went on being served by the feed: a market nobody could ever take a
@@ -2609,12 +2617,12 @@ async function openMarketFromClaim(input: {
   const minted = lazy
     ? null
     : await mintMarket({ marketId, question, closeTime, creator: null,
-        creatorFeeBps: creatorFeeBpsForHandle(handleFromSourceUrl(sourceUrl)), protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
+        creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
   if (!lazy && !minted) {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
 
-  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability, marketId });
+  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability, marketId, creatorFeeBps });
   if (minted) await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
@@ -2649,27 +2657,19 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   if (detail.resolvedOutcome) return null; // nothing to stake in
 
   // THE path for bot-created markets: the claims route mints on-demand, so this
-  // is where a Telegram market actually reaches the chain. The rate has to be
-  // decided from the surfacer here too, or the deferred mint quietly reinstates
-  // the 2% the direct path just stopped charging.
+  // is where a Telegram market actually reaches the chain.
   //
-  // NOT `.catch(() => null)`. The rate is written into the market account and is
-  // permanent, so a transient database error must not be allowed to decide it:
-  // swallowing the failure would mint an X market at 0% and quietly cost its
-  // creator every lamport of their share, forever, with no way back. Refusing
-  // to mint is recoverable -- the stake that triggered this fails, and the next
-  // one mints correctly.
-  let sur: Awaited<ReturnType<typeof surfacerFor>>;
-  try {
-    sur = await surfacerFor(slug);
-  } catch (e) {
-    console.error("[chain] refusing to mint: the fee rate is permanent and the surfacer read failed:", (e as Error).message);
-    return null;
-  }
+  // The rate comes off `detail` — the same row whose absence already made this
+  // function return null a few lines up. An earlier version re-derived it from
+  // market_surfacer, which is written AFTER the market is published and behind
+  // an oEmbed fetch, and whose absence reads as null rather than as an error.
+  // That gave a window in which this minted an X market at 0 bps, permanently.
+  // There is no window now: a market that cannot be read is not minted, and a
+  // market that can be read carries its own rate.
   const minted = await mintMarket({
     marketId: detail.marketId, question: detail.question,
     closeTime: Math.floor(new Date(detail.closesAt ?? Date.now()).getTime() / 1000),
-    creator: null, creatorFeeBps: creatorFeeBpsForHandle(sur?.handle), protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+    creator: null, creatorFeeBps: detail.creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
   }).catch(() => null);
 
   if (minted) {
@@ -2933,10 +2933,17 @@ app.get("/api/v1/markets", async (req, res) => {
       yesPct: total > 0 ? Math.max(1, Math.min(99, Math.round((yes / total) * 100))) : null,
       oddsSource: total > 0 ? "vault" : "unpriced",
       onchain: m.onchainPubkey ? { pubkey: m.onchainPubkey, explorer: explorerUrl(m.onchainPubkey) } : null,
+      // PER MARKET, because the rates differ now: a market with no creator to
+      // pay is minted at 0. The chain is the authority once minted; the row is
+      // what it WILL be minted with. A single response-level constant quoted a
+      // creator share against markets that charge none.
+      creatorFeeBps: state?.creatorFeeBps ?? m.creatorFeeBps,
     };
   }));
   res.json({
     ok: true, cluster: cluster(),
+    // The DEFAULT rate, kept for callers that read it. Prefer the per-market
+    // creatorFeeBps on each item above; this one cannot be right for every row.
     creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
     markets: items,
   });
@@ -3119,7 +3126,9 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
       // no fee instruction (see economy.ts + logRealFee). Read the
       // vault total straight from chain rather than trusting a stale value.
       void fetchMarketOnChain(detail.onchainPubkey).then((state) => {
-        if (state) void logRealFee(slug, state.totalYesLamports + state.totalNoLamports);
+        // state.creatorFeeBps, not the constant: the ledger must record what the
+        // program fixed on THIS market, which is 0 for one with no creator.
+        if (state) void logRealFee(slug, state.totalYesLamports + state.totalNoLamports, state.creatorFeeBps);
       }).catch(() => {});
     }).catch(() => {});
   }
@@ -3272,7 +3281,9 @@ if (realStakesReady) {
       // the on-chain design exists to make impossible, reintroduced one layer
       // up where nobody would see it. The constants survive only as the answer
       // for a market minted before the field existed and therefore reading 0.
-      realCreatorFeeBps: state.creatorFeeBps || CREATOR_FEE_BPS_REAL,
+      // ?? not ||: a legitimate 0 is now possible (a market with no creator
+      // to pay), and `0 || 200` quotes a 4% takeout on a 2% market.
+      realCreatorFeeBps: state.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
       realProtocolFeeBps: state.protocolFeeBps,
       realFeesEnforced: true,
       // Who the fee is owed to, and whether it is still waiting. Null creator
