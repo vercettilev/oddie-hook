@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Oddie Receipts: Genesis</title>
-<meta name="description" content="You get 5 receipts. You can't use them on yourself. Put someone else's claim on the record and see who was right.">
+<title>Oddie Tickets: Genesis</title>
+<meta name="description" content="You get 5 tickets. You can't use them on yourself. Put someone else's claim on the record and see who was right.">
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=2">
@@ -14,12 +14,12 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/genesis">
-<meta property="og:title" content="You get 5 receipts. You can't use them on yourself.">
-<meta property="og:description" content="Connect X, claim 5 receipts, tag @oddiefun under a claim. Every tag opens a real market. 1 person = 1 point.">
+<meta property="og:title" content="You get 5 tickets. You can't use them on yourself.">
+<meta property="og:description" content="Connect X, claim 5 tickets, tag @oddiefun under a claim. Every tag opens a real market. 1 person = 1 point.">
 <meta property="og:image" content="https://oddie.fun/og-genesis.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="You get 5 receipts. You can't use them on yourself.">
-<meta name="twitter:description" content="Connect X, claim 5 receipts, tag @oddiefun under a claim. Every tag opens a real market. 1 person = 1 point.">
+<meta name="twitter:title" content="You get 5 tickets. You can't use them on yourself.">
+<meta name="twitter:description" content="Connect X, claim 5 tickets, tag @oddiefun under a claim. Every tag opens a real market. 1 person = 1 point.">
 <meta name="twitter:image" content="https://oddie.fun/og-genesis.png">
 
 <script>
@@ -51,7 +51,7 @@
   /* Campaign layer, deliberately louder than the app. The product surface is
      the calm one; this is a poster. Same three grounds as the landing so the
      two read as one brand, plus ONE element the landing does not have: the
-     thermal receipt. That is the asset this campaign owns. */
+     thermal ticket. That is the asset this campaign owns. */
   :root{
     --yellow:#D7DC1F;
     --yellow-hi:#E7EC4E;
@@ -60,7 +60,7 @@
     --pink-deep:#A3053F;
     --black:#020302;
     --cream:#FBFCF4;
-    --paper:#F7F5EE;      /* receipt stock, a shade warmer than --cream */
+    --paper:#F7F5EE;      /* ticket stock, a shade warmer than --cream */
     --ink:#0B0D04;
     --ink-2:#494E2D;
     --fg:#fff;
@@ -81,7 +81,7 @@
        pattern and the eye stops seeing a torn edge. */
     --tear-1:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t1' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042 0.05' numOctaves='2' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='54'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t1)'/%3E%3C/svg%3E");
     --tear-2:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t2' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0034 0.055' numOctaves='2' seed='23'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='44'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t2)'/%3E%3C/svg%3E");
-    /* The receipt's own bottom edge: a fine perforated tear, not the big
+    /* The ticket's own bottom edge: a fine perforated tear, not the big
        section-sized one. Its own mask so the two never share a scale. */
     --tear-fine:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='40' preserveAspectRatio='none'%3E%3Cfilter id='tf' x='-20%25' y='-60%25' width='140%25' height='220%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.09 0.5' numOctaves='2' seed='13'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='11'/%3E%3C/filter%3E%3Crect x='-20' y='-20' width='360' height='48' fill='%23fff' filter='url(%23tf)'/%3E%3C/svg%3E");
   }
@@ -142,7 +142,7 @@
   /* Nothing on this page is set below 12px. The mono labels were at 10 and 10.5,
      which passes every contrast check and is still hard to read; contrast and
      size are separate failures and only one of them was being measured. The
-     receipt mock sits at 11.5 because it is a small physical object, and its
+     ticket mock sits at 11.5 because it is a small physical object, and its
      numbers are repeated as real text in the ledger beside it. */
   .kicker{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;
     letter-spacing:.18em;color:var(--ink-2);margin:0}
@@ -235,7 +235,7 @@
     [data-view="how"] .nav__links .nav__back{display:inline-block}
   }
 
-  /* ============================================== the receipt · the new asset ==
+  /* ============================================== the ticket · the new asset ==
      The one element this campaign owns and the landing does not. Real paper
      stock, mono type, a perforated tear at the bottom, and a rotated stamp.
      Built in CSS rather than shipped as an image so every instance can carry
@@ -339,7 +339,7 @@
   /* Cards, not copy floating on the field. Even at full white the body text kept
      reading as unimportant beside the display type around it, because nothing
      bounded it. A cream surface fixes the weight and the contrast at once, and
-     it is the card language the board and the receipt already use. */
+     it is the card language the board and the ticket already use. */
   .step{background:var(--cream);color:var(--ink);
     padding:clamp(16px,1.8vw,24px) clamp(16px,1.8vw,24px) clamp(20px,2.2vw,28px);
     box-shadow:9px 10px 0 var(--pink-deep)}
@@ -538,7 +538,7 @@
          isi tutarlilik; tiklaninca zaten bu sayfaya gelir. -->
     <a class="gcta" href="/genesis">
       <span class="gcta__pill">
-        <b class="gcta__tag">Receipts</b>
+        <b class="gcta__tag">Tickets</b>
         <b class="gcta__hd">Genesis is live.</b>
         <i aria-hidden="true">&rarr;</i>
       </span>
@@ -561,8 +561,8 @@
   <div class="shell">
     <div class="A__in">
       <div>
-        <p class="kicker">Oddie Receipts &middot; Genesis</p>
-        <!-- The loudest element on the page has to be literal. "Keep receipts"
+        <p class="kicker">Oddie Tickets &middot; Genesis</p>
+        <!-- The loudest element on the page has to be literal. "Keep tickets"
              was internet slang for proof somebody said something: a reader can
              know every word and still not know what the page does. This says
              the job instead, and it carries both the campaign's constraint
@@ -570,12 +570,12 @@
         <h1 class="h1"><span>Make people</span><span>pick a side.</span></h1>
         <!-- Out only: once you are in you have already claimed them, and the
              pips and the stats below say where you stand instead. -->
-        <p class="doit out-only">Claim your 5 receipts. Start tagging Oddie under
+        <p class="doit out-only">Claim your 5 tickets. Start tagging Oddie under
           what people say.</p>
         <!-- The instruction above is what to do; this is what it is. It stays,
              small but present: the hero is the most-read part of the page and it
              must not hide that these are real markets with real money in them. -->
-        <p class="lede">Every tag spends 1 receipt and opens a real market where
+        <p class="lede">Every tag spends 1 ticket and opens a real market where
           people put money on YES or NO.</p>
         <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
              ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
@@ -585,23 +585,23 @@
              OAuth start URL, which needs this device's id. -->
         <a class="btn btn--2l out-only" data-xconnect href="https://x.com/oddiefun">
           <span class="btn__main">Continue with X <i aria-hidden="true">&rarr;</i></span>
-          <small>to claim your 5 receipts</small>
+          <small>to claim your 5 tickets</small>
         </a>
 
         <div class="in-only">
-          <div class="pips" role="img" aria-label="Three receipts left of five">
+          <div class="pips" role="img" aria-label="Three tickets left of five">
             <b class="pip"></b><b class="pip"></b><b class="pip"></b>
             <b class="pip pip--spent"></b><b class="pip pip--burnt"></b>
           </div>
           <div class="stats">
-            <div class="stat"><b>3</b><span>receipts left</span></div>
+            <div class="stat"><b>3</b><span>tickets left</span></div>
             <div class="stat"><b>#184</b><span>rank</span></div>
             <div class="stat"><b>7</b><span>people brought in</span></div>
           </div>
-          <!-- Spending a receipt happens ON X (a tag), not in the app. The href
+          <!-- Spending a ticket happens ON X (a tag), not in the app. The href
                is the no-JS fallback; with JS the click opens the spend sheet. -->
           <a class="btn" id="spend" href="https://x.com/intent/tweet?text=%40oddiefun%20"
-             target="_blank" rel="noopener">Use a receipt <i aria-hidden="true">&rarr;</i></a>
+             target="_blank" rel="noopener">Use a ticket <i aria-hidden="true">&rarr;</i></a>
         </div>
       </div>
 
@@ -612,7 +612,7 @@
              the formula below, so it is never image-only. -->
         <img class="art art--ticket" src="/brand/genesis-ticket.webp"
              width="920" height="1136" fetchpriority="high" decoding="async"
-             alt="A Genesis ticket for 5 receipts, marked: you can't use them on yourself.">
+             alt="Oddie holding up the Genesis ticket: 5 tickets.">
       </div>
     </div>
   </div>
@@ -628,29 +628,29 @@
       <div class="shead">
         <div>
           <p class="kicker">How it works</p>
-          <h2 class="h2"><span>How your</span><span>5 receipts work.</span></h2>
+          <h2 class="h2"><span>How your</span><span>5 tickets work.</span></h2>
         </div>
         <img class="art art--record" src="/brand/genesis-record.webp"
              width="700" height="811" loading="lazy" decoding="async"
-             alt="Oddie holding a Genesis receipt stamped On the record.">
+             alt="Oddie holding a Genesis ticket stamped On the record.">
       </div>
 
       <!-- Three steps, one line each. The fourth used to be a rule about who
            collects the fee rather than a move the player makes, so it is stated
            once below instead of pretending to be a step. Vocabulary is locked to
-           four words across the whole page: receipt, market, people, score. -->
+           four words across the whole page: ticket, market, people, score. -->
       <div class="steps">
         <div class="step">
           <span class="step__n">1</span>
           <h3>Connect your X</h3>
-          <p>Every X account gets 5 receipts. Claiming them is free, and so is
+          <p>Every X account gets 5 tickets. Claiming them is free, and so is
             spending one.</p>
         </div>
         <div class="step">
           <span class="step__n">2</span>
           <h3>Tag @oddiefun</h3>
           <p>Reply @oddiefun under somebody's claim, or tweet it yourself.
-            Each tag spends 1 receipt and opens a real market.</p>
+            Each tag spends 1 ticket and opens a real market.</p>
         </div>
         <div class="step">
           <span class="step__n">3</span>
@@ -678,7 +678,7 @@
              the block below already carries one. -->
         <a class="btn btn--2l out-only cta-loop" data-xconnect href="https://x.com/oddiefun">
           <span class="btn__main">Continue with X <i aria-hidden="true">&rarr;</i></span>
-          <small>to claim your 5 receipts</small>
+          <small>to claim your 5 tickets</small>
         </a>
 
         <!-- The rules a player only needs once they are playing. They live in the
@@ -696,17 +696,17 @@
         </div>
 
         <!-- The how view has no other way forward, so it does not dead-end. -->
-        <a class="btn how-only" href="/genesis" data-keep-state>Get your receipts <i aria-hidden="true">&rarr;</i></a>
+        <a class="btn how-only" href="/genesis" data-keep-state>Get your tickets <i aria-hidden="true">&rarr;</i></a>
       </div>
     </div>
   </section>
 
-  <!-- ============================================ girisli · receipt defteri ==
+  <!-- ============================================ girisli · ticket defteri ==
        Her satir bir fis: ne yazdigin, kac kisi arkasina gectigi, ve hakkini
        geri kazanip kazanmadigin. Ayni dil, kucuk olcek. -->
   <section class="B on-dark in-only" id="mine">
     <div class="shell">
-      <p class="kicker">Your receipts &middot; design preview</p>
+      <p class="kicker">Your tickets &middot; design preview</p>
       <h2 class="h2"><span>What you put</span><span>on the record.</span></h2>
 
       <div class="mgrid">
@@ -737,7 +737,7 @@
            accessibility tree because the row above already reads it out. -->
       <div class="rcpt-wrap">
       <div class="rcpt" aria-hidden="true">
-        <div class="rcpt__top"><span>Oddie receipt</span><span>#0041</span></div>
+        <div class="rcpt__top"><span>Oddie ticket</span><span>#0041</span></div>
         <p class="rcpt__who">Put on the record by you</p>
         <p class="rcpt__claim">Phantom ships stock limit orders before Breakpoint.</p>
         <div class="rcpt__split"><b class="y">YES 42%</b><b class="n">NO 58%</b></div>
@@ -804,7 +804,7 @@
       });
     }
     if (d.dataset.view === "how") {
-      document.title = "How Oddie Receipts works";
+      document.title = "How Oddie Tickets works";
     }
 
     /* ------------------------------------------------ real X connect ----
@@ -843,12 +843,12 @@
 
     /* The connected zero-state. The in-state markup carries EXAMPLE numbers
        for the design preview; a person who just linked their real account
-       must see their real position instead: 5 receipts, no rank, nobody
+       must see their real position instead: 5 tickets, no rank, nobody
        brought in yet. */
     if (d.dataset.real) {
       var pips = document.querySelector(".pips");
       if (pips) {
-        pips.setAttribute("aria-label", "Five receipts of five");
+        pips.setAttribute("aria-label", "Five tickets of five");
         pips.querySelectorAll(".pip").forEach(function(pp){
           pp.className = "pip";
         });
@@ -857,7 +857,7 @@
       var set = function(i, b, sp){ if (st[i]) {
         st[i].querySelector("b").textContent = b;
         st[i].querySelector("span").textContent = sp; } };
-      set(0, "5", "receipts left");
+      set(0, "5", "tickets left");
       set(1, "\u2014", "rank \u00b7 season opens soon");
       set(2, "0", "people brought in");
       var ns = document.querySelector(".navstate");
@@ -872,7 +872,7 @@
     }
 
     /* ------------------------------------------------ spend sheet -------
-       Spending a receipt IS tagging on X. The sheet asks for the claim's
+       Spending a ticket IS tagging on X. The sheet asks for the claim's
        link and opens a reply with @oddiefun prefilled; the markup href is a
        bare tweet intent, kept as the no-JS fallback. Wired in every in
        state so the preview demonstrates the real behaviour. */
@@ -881,10 +881,10 @@
       e.preventDefault();
       var RE = /(?:twitter|x)\.com\/[^/]+\/status\/(\d+)/i;
       var dim = document.createElement("div"); dim.className = "lp-dim";
-      dim.innerHTML = '<div class="lp-sheet" role="dialog" aria-label="Spend a receipt">'
-        + '<h3>Spend a receipt</h3>'
+      dim.innerHTML = '<div class="lp-sheet" role="dialog" aria-label="Spend a ticket">'
+        + '<h3>Spend a ticket</h3>'
         + '<p class="lp-note">Paste the link to the claim on X. We\'ll open a reply with '
-        + '<b>@oddiefun</b> already in it. Sending that reply is what spends the receipt '
+        + '<b>@oddiefun</b> already in it. Sending that reply is what spends the ticket '
         + 'and opens the market.</p>'
         + '<input class="lp-in" type="url" inputmode="url" placeholder="https://x.com/someone/status/123&hellip;" autocomplete="off">'
         + '<div class="lp-err" hidden></div>'
