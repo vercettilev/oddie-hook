@@ -31,6 +31,9 @@ export interface Identity {
   name?: string | null;
   /** Verified Google address, held for settlement emails only. */
   email?: string | null;
+  /** X only: the Genesis snapshot riding through from identify(); linkAccount
+   *  itself never reads it, the callback hands it to captureGenesisProfile. */
+  xProfile?: import("../genesis/profileStore.js").XProfileRaw | null;
 }
 
 export interface Account {

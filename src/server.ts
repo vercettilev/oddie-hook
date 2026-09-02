@@ -45,7 +45,8 @@ import { renderCardPng } from "./card/renderPng.js";
 import { renderBanner } from "./card/renderBanner.js";
 import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
-import { classifyArchetype } from "./genesis/archetype.js";
+import { classifyArchetype, ARCHETYPE_LABEL } from "./genesis/archetype.js";
+import { captureGenesisProfile, genesisProfileByHandle, genesisProfileForDevice, type GenesisProfile } from "./genesis/profileStore.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
@@ -1216,6 +1217,151 @@ app.get("/card/genesis-preview.png", (req, res) => {
 });
 app.get("/banner.png", sendBanner);
 
+/* ------------------------------------------------------------ genesis card --
+ * The REAL pipeline the preview above rehearses: stored snapshot in, PNG out.
+ * Anyone can fetch anyone's card by handle — everything on it came from the
+ * public profile of someone who connected, and the share page below needs it
+ * to unfurl for strangers. */
+const genesisCardPngCache = new Map<string, Buffer>(); // uid:capturedAt -> png
+// ~300KB per card (the sticker rides inside), so the cache is BOUNDED: its job
+// is absorbing the unfurl burst on a card that is being shared right now, not
+// holding every card ever minted. Map iteration is insertion-ordered, which
+// makes FIFO eviction one delete of the first key.
+const GENESIS_CARD_CACHE_MAX = 200;
+
+/* A render is ~90ms of SYNCHRONOUS CPU on the one event loop that also serves
+ * the money routes, and the route is anonymous. Cache hits are free and stay
+ * unmetered; this bucket meters RENDERS, so a crawler cycling through more
+ * handles than the cache holds cannot pin the process. Review measured the
+ * attack at ~11 req/s of misses = 100% CPU; at 3/s sustained the same traffic
+ * costs a quarter of a core, and a genuinely hot card is a hit anyway. */
+const RENDER_BURST = Math.max(1, Number(process.env.GENESIS_RENDER_BURST ?? 12));
+const RENDER_PER_SEC = Math.max(0.1, Number(process.env.GENESIS_RENDER_PER_SEC ?? 3));
+let renderTokens = RENDER_BURST;
+let renderRefillAt = Date.now();
+function takeRenderToken(): boolean {
+  const now = Date.now();
+  renderTokens = Math.min(RENDER_BURST, renderTokens + ((now - renderRefillAt) / 1000) * RENDER_PER_SEC);
+  renderRefillAt = now;
+  if (renderTokens < 1) return false;
+  renderTokens -= 1;
+  return true;
+}
+
+function genesisCardPng(gp: GenesisProfile): Buffer {
+  const key = `${gp.uid}:${gp.capturedAt}`;
+  const hit = genesisCardPngCache.get(key);
+  if (hit) return hit;
+  // Belt to profileStore's capture-time strip: rows written before the strip
+  // existed (or seeded) must not be able to make the XML parser throw.
+  const safe = (t: string) => t.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uFFFE\uFFFF]/g, "");
+  const png = renderCardPng(renderGenesisCard({
+    handle: `@${gp.handle}`, archetype: gp.archetype,
+    headline: safe(gp.headline), reason: safe(gp.reason),
+    claim: gp.pinnedText ? safe(gp.pinnedText).slice(0, 200) : null,
+  }));
+  // A reconnect mints a new key; drop the stale one rather than letting each
+  // reconnect leave a corpse behind.
+  for (const k of genesisCardPngCache.keys()) if (k.startsWith(`${gp.uid}:`)) genesisCardPngCache.delete(k);
+  while (genesisCardPngCache.size >= GENESIS_CARD_CACHE_MAX) {
+    genesisCardPngCache.delete(genesisCardPngCache.keys().next().value as string);
+  }
+  genesisCardPngCache.set(key, png);
+  return png;
+}
+
+app.get("/card/genesis/:handle.png", async (req, res) => {
+  // Express 4 does not catch a rejected async handler, and an uncaught
+  // rejection ends the process on modern Node — same guard as /api/v1/claims.
+  try {
+    const gp = await genesisProfileByHandle(req.params.handle).catch(() => null);
+    if (!gp) return res.status(404).send("no such card");
+    const key = `${gp.uid}:${gp.capturedAt}`;
+    if (!genesisCardPngCache.has(key) && !takeRenderToken()) {
+      return res.status(429).set("Retry-After", "2").send("rendering, try again");
+    }
+    // One hour, not a week: short enough that a reconnect's fresh verdict wins
+    // the next unfurl, long enough that a viral card is not re-rasterised per view.
+    res.type("image/png").set("Cache-Control", "public, max-age=3600").send(genesisCardPng(gp));
+  } catch (err) {
+    console.error("[genesis] card render failed:", (err as Error).message);
+    res.status(500).send("card render failed");
+  }
+});
+
+/**
+ * The card's SHARE PAGE, and the whole reason the card exists: X intents cannot
+ * carry an image, so the tweet carries this link and the og:image puts the card
+ * in the timeline. Public on purpose — a stranger who taps through lands one
+ * button away from their own card.
+ */
+app.get("/g/:handle", async (req, res) => {
+  const gp = await genesisProfileByHandle(req.params.handle).catch(() => null);
+  if (!gp) return res.redirect("/genesis");
+  const label = ARCHETYPE_LABEL[gp.archetype];
+  const png = `${BASE_URL}/card/genesis/${encodeURIComponent(gp.handle)}.png`;
+  const title = `${label} · @${gp.handle}`;
+  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(title)} · oddie</title>
+<meta property="og:title" content="${escHtml(title)}">
+<meta property="og:description" content="${escHtml(gp.headline)}">
+<meta property="og:image" content="${png}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${png}">
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
+display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px}
+img{max-width:min(96vw,760px);border-radius:18px}
+p{margin:0;color:rgba(255,255,255,.62);max-width:60ch;text-align:center}
+a.claim{background:#D7DC1F;color:#020302;text-decoration:none;font-weight:800;
+padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
+<img src="${png}" alt="${escHtml(title)}">
+<p>oddie read this profile. Yours is one tap away.</p>
+<a class="claim" href="/genesis">Claim your 5 tickets</a>
+</body></html>`);
+});
+
+/**
+ * The connected page's own card lookup: which snapshot belongs to this
+ * browser's X account. Same deviceId the rest of the API speaks.
+ */
+app.get("/api/genesis/me", async (req, res) => {
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  if (!deviceId) return res.json({ profile: null });
+  const gp = await genesisProfileForDevice(deviceId).catch(() => null);
+  if (!gp) return res.json({ profile: null });
+  res.json({ profile: {
+    handle: gp.handle, name: gp.name, archetype: gp.archetype,
+    label: ARCHETYPE_LABEL[gp.archetype], headline: gp.headline, reason: gp.reason,
+    cardUrl: `/card/genesis/${encodeURIComponent(gp.handle)}.png`,
+    shareUrl: `${BASE_URL}/g/${encodeURIComponent(gp.handle)}`,
+  } });
+});
+
+/* Dev-only seed for exercising the real store+render path without an OAuth
+ * round trip (the client secret lives in prod). Absent unless the env flag is
+ * set, which production never sets. */
+if (process.env.GENESIS_DEV_SEED === "1") {
+  app.post("/api/genesis/_seed", express.json(), async (req, res) => {
+    const b = req.body ?? {};
+    const gp = await captureGenesisProfile(String(b.uid ?? "dev1"), String(b.handle ?? "levvercetti"), b.name ?? null, {
+      createdAt: String(b.createdAt ?? "2014-05-01T00:00:00Z"),
+      bio: String(b.bio ?? ""),
+      tweetCount: Number(b.tweetCount ?? 12000),
+      followers: Number(b.followers ?? 900),
+      following: Number(b.following ?? 400),
+      pinnedText: b.pinnedText ? String(b.pinnedText) : null,
+    });
+    // Optionally bind a browser to it, so /api/genesis/me answers for that
+    // device exactly the way a real OAuth return would leave things.
+    if (typeof b.deviceId === "string" && DEVICE_ID.test(b.deviceId)) {
+      await linkAccount(b.deviceId, { provider: "twitter", uid: gp.uid, handle: `@${gp.handle}`, name: gp.name });
+    }
+    res.json({ ok: true, profile: gp });
+  });
+}
+
 app.get("/og.svg", (_req, res) => res.type("image/svg+xml").send(renderBanner()));
 
 /** Whether a market's vault is empty, which is not the same as 50/50. A chain
@@ -2069,6 +2215,17 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
     const identity = await identify(p, code, pendingAuth.verifier, BASE_URL);
     const result = await linkAccount(pendingAuth.deviceId, identity);
     console.log(JSON.stringify({ evt: "auth_link", provider: p, seeded: result.seeded }));
+    // The Genesis card. Best-effort ON PURPOSE: the sign-in is complete and a
+    // storage hiccup must not turn a successful link into an auth_error page.
+    if (identity.provider === "twitter" && identity.xProfile && identity.handle) {
+      try {
+        const gp = await captureGenesisProfile(
+          identity.uid, identity.handle.replace(/^@+/, ""), identity.name ?? null, identity.xProfile);
+        console.log(JSON.stringify({ evt: "genesis_card", handle: gp.handle, archetype: gp.archetype }));
+      } catch (err) {
+        console.error("[genesis] card capture failed:", (err as Error).message);
+      }
+    }
     // A sign-in that began on a market permalink returns TO that market — the
     // person came to play this one, not to meet the generic feed.
     if (pendingAuth.returnTo) {

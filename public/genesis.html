@@ -519,6 +519,20 @@
     font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
   .in-only .btn{margin-top:clamp(18px,2.4vw,30px)}
 
+  /* ---------------------------------------------------- girisli · kartin --
+     Sayfanin geri kalaniyla ayni pul grameri: murekkep cerceve, kucuk egim,
+     sert ofset golge. 560px tavani hero sutununa sigar, mobilde %100. */
+  .gcard{margin:clamp(18px,2.4vw,30px) 0 0;max-width:560px}
+  .gcard__img{display:block;width:100%;height:auto;border-radius:14px;
+    border:3px solid var(--ink);rotate:-.8deg;
+    box-shadow:7px 9px 0 rgba(11,13,4,.16);background:var(--ink)}
+  .gcard__row{display:flex;align-items:center;gap:18px;margin-top:16px;flex-wrap:wrap}
+  .gcard__row .btn{margin-top:0}
+  .gcard__save{font-family:var(--mono);font-size:12px;font-weight:700;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
+    text-decoration:underline;text-underline-offset:3px}
+  .gcard__save:hover,.gcard__save:focus-visible{color:var(--ink)}
+
   /* defter satirlari: fisin kucuk olcegi */
   /* siyahtan siyaha geciyor: dikis yok, ve .B'nin dikis payi da gereksiz */
   #mine{padding-top:clamp(30px,3.8vw,58px)}
@@ -609,6 +623,19 @@
         </a>
 
         <div class="in-only">
+          <!-- The card that greets you. The OAuth callback stored a snapshot
+               of the profile and minted a verdict; this is the PNG the /g/
+               share page embeds. Hidden until a card actually exists, so the
+               zero-state never shows a broken image. -->
+          <div class="gcard" id="gcard" hidden>
+            <img class="gcard__img" id="gcardimg" width="1000" height="560"
+                 decoding="async" alt="Your Genesis card">
+            <div class="gcard__row">
+              <a class="btn" id="gpost" target="_blank" rel="noopener"
+                 href="https://x.com/intent/tweet">Post your card <i aria-hidden="true">&rarr;</i></a>
+              <a class="gcard__save" id="gsave" href="#" download>Save image</a>
+            </div>
+          </div>
           <div class="pips" role="img" aria-label="Three tickets left of five">
             <b class="pip"></b><b class="pip"></b><b class="pip"></b>
             <b class="pip pip--spent"></b><b class="pip pip--burnt"></b>
@@ -865,7 +892,7 @@
        for the design preview; a person who just linked their real account
        must see their real position instead: 5 tickets, no rank, nobody
        brought in yet. */
-    if (d.dataset.real) {
+    function applyRealZero() {
       var pips = document.querySelector(".pips");
       if (pips) {
         pips.setAttribute("aria-label", "Five tickets of five");
@@ -889,6 +916,56 @@
       }
       var note = document.querySelector(".board__note.in-only");
       if (note) note.textContent = "You are on the board when the season opens. Nothing here is a projection.";
+    }
+    if (d.dataset.real) applyRealZero();
+
+    /* ------------------------------------------------ kartin ------------
+       Iki kaynak, tek blok. Tasarim onizlemesi (?state=in) tezgah kartini
+       gosterir; gercek durumda /api/genesis/me cihazin X hesabina bakilan
+       anlik goruntuyu getirir. Profil varsa donen ziyaretcide sayfa BAGLI
+       ACILIR: bir kere baglanan kisi her giriste kartiyla karsilanir, tek
+       seferlik URL parametresine mahkum degildir. */
+    var gcard = document.getElementById("gcard");
+    function showCard(cardUrl, postHref, saveName) {
+      if (!gcard) return;
+      document.getElementById("gcardimg").src = cardUrl;
+      document.getElementById("gpost").setAttribute("href", postHref);
+      var save = document.getElementById("gsave");
+      save.setAttribute("href", cardUrl);
+      save.setAttribute("download", saveName);
+      gcard.hidden = false;
+    }
+    if (gcard) {
+      /* ?state=in acikca istenmis tasarim onizlemesidir: ornek sayilar ve
+         tezgah karti GORUNMELI. Cihaz gecmisinde gercek bir profil olsa bile
+         fetch'i atlariz, yoksa implicit durum explicit istegi ezer ve
+         onizleme gelistirilen tarayicida acilamaz olur. */
+      var designPreview = d.dataset.state === "in" && !d.dataset.real;
+      if (designPreview) {
+        showCard("/card/genesis-preview.png",
+          "https://x.com/intent/tweet?text=" + encodeURIComponent("oddie read my X. " + location.origin + "/genesis"),
+          "oddie-genesis-card.png");
+      }
+      if (did && !designPreview) {
+        fetch("/api/genesis/me?deviceId=" + encodeURIComponent(did))
+          .then(function(r){ return r.json(); })
+          .then(function(j){
+            var pr = j && j.profile;
+            if (!pr) return;
+            if (!d.dataset.real) {
+              d.dataset.real = "1"; d.dataset.state = "in"; applyRealZero();
+              /* Basarisiz bir YENIDEN baglanma denemesi buraya auth_error ile
+                 dusebilir; baglantiniz duruyor, "Try again" diyen notun tum
+                 baglanma dugmelerini kaybetmis halde asili kalmasi yanlisti. */
+              var an = document.querySelector(".authnote");
+              if (an) an.hidden = true;
+            }
+            showCard(pr.cardUrl,
+              "https://x.com/intent/tweet?text=" + encodeURIComponent("oddie read my X. Verdict: " + pr.label + ". " + pr.shareUrl),
+              "oddie-genesis-" + pr.handle + ".png");
+          })
+          .catch(function(){});
+      }
     }
 
     /* ------------------------------------------------ spend sheet -------

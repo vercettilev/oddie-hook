@@ -21,6 +21,10 @@ export interface Identity {
   name?: string | null;
   /** Google only, and only when verified. Used for settlement emails, nothing else. */
   email?: string | null;
+  /** X only: the rest of what the one users/me call said, for the Genesis
+   *  card. The access token dies inside identify(), so this payload is the
+   *  only place the data survives to. */
+  xProfile?: import("../genesis/profileStore.js").XProfileRaw | null;
 }
 
 interface Config {
@@ -188,14 +192,37 @@ function readIdToken(idToken: string): { sub: string; name?: string; email?: str
   return { sub: claims.sub, name: claims.name, email: claims.email_verified ? claims.email : undefined };
 }
 
-async function xUser(accessToken: string): Promise<{ id: string; username?: string; name?: string }> {
-  const res = await fetch("https://api.x.com/2/users/me", {
+interface XUserData {
+  id: string; username?: string; name?: string;
+  created_at?: string; description?: string; pinned_tweet_id?: string;
+  public_metrics?: { followers_count?: number; following_count?: number; tweet_count?: number };
+}
+
+/**
+ * The SAME single users/me read the sign-in always made, asking for more
+ * fields. One user read is one user read whatever it carries, so the Genesis
+ * snapshot (bio, metrics, age, pinned tweet) costs nothing extra and adds no
+ * failure mode: if this call dies, the sign-in was failing anyway.
+ */
+async function xUser(accessToken: string): Promise<{ user: XUserData; pinnedText: string | null }> {
+  const fields = new URLSearchParams({
+    "user.fields": "created_at,description,public_metrics,pinned_tweet_id",
+    "expansions": "pinned_tweet_id",
+    "tweet.fields": "text",
+  });
+  const res = await fetch(`https://api.x.com/2/users/me?${fields}`, {
     headers: { authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(10_000),
   });
-  const json = (await res.json().catch(() => ({}))) as { data?: { id: string; username?: string; name?: string }; title?: string; detail?: string };
+  const json = (await res.json().catch(() => ({}))) as {
+    data?: XUserData; includes?: { tweets?: Array<{ id: string; text?: string }> };
+    title?: string; detail?: string;
+  };
   if (!res.ok || !json.data?.id) throw new Error(`x users/me ${res.status}: ${json.detail ?? json.title ?? "unknown"}`);
-  return json.data;
+  const pinned = json.data.pinned_tweet_id
+    ? json.includes?.tweets?.find((t) => t.id === json.data!.pinned_tweet_id)?.text ?? null
+    : null;
+  return { user: json.data, pinnedText: pinned };
 }
 
 /** Code in, identity out. The access token does not survive this function. */
@@ -205,6 +232,16 @@ export async function identify(p: Provider, code: string, verifier: string, base
     const { sub, name, email } = readIdToken(token);
     return { provider: "google", uid: sub, handle: null, name: name ?? null, email: email ?? null };
   }
-  const u = await xUser(token);
-  return { provider: "twitter", uid: u.id, handle: u.username ? `@${u.username}` : null, name: u.name ?? null };
+  const { user: u, pinnedText } = await xUser(token);
+  return {
+    provider: "twitter", uid: u.id, handle: u.username ? `@${u.username}` : null, name: u.name ?? null,
+    xProfile: u.created_at ? {
+      createdAt: u.created_at,
+      bio: u.description ?? "",
+      tweetCount: u.public_metrics?.tweet_count ?? 0,
+      followers: u.public_metrics?.followers_count ?? 0,
+      following: u.public_metrics?.following_count ?? 0,
+      pinnedText,
+    } : null,
+  };
 }

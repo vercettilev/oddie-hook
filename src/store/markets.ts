@@ -739,6 +739,28 @@ CREATE TABLE IF NOT EXISTS api_quota (
   tokens      double precision NOT NULL,
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
+
+-- Genesis profile snapshot: what users/me said at the moment the account
+-- connected, plus the archetype verdict computed from it right then. One row
+-- per X identity; reconnecting refreshes it (see genesis/profileStore.ts).
+-- IF NOT EXISTS never alters a live table: any future column change goes in
+-- as an explicit ALTER below, like market_surfacer's.
+CREATE TABLE IF NOT EXISTS genesis_profile (
+  provider_uid  text PRIMARY KEY,             -- X numeric id; handles rename
+  handle        text NOT NULL,                -- without the @
+  display_name  text,
+  bio           text,
+  x_created_at  timestamptz,
+  tweet_count   integer,
+  followers     integer,
+  following     integer,
+  pinned_text   text,
+  archetype     text NOT NULL,
+  headline      text NOT NULL,
+  reason        text NOT NULL,
+  captured_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS genesis_profile_handle_idx ON genesis_profile (lower(handle));
 `;
 
 let pool: pg.Pool | null = null;
