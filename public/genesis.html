@@ -199,6 +199,8 @@
     border:2.5px solid var(--ink);box-shadow:none}
   .nav__links .btn:hover{translate:none;box-shadow:none;background:rgba(11,13,4,.06)}
   .nav__links .btn i{color:var(--ink)}
+  /* eve-donus varyanti: ayni hap, ok basta ve sola bakar */
+  .gcta--home .gcta__pill i{font-size:16px}
   @media (max-width:820px){.gcta__hd{display:none}}
   @media (max-width:560px){
     .nav__in{gap:8px}
@@ -534,13 +536,14 @@
     <a class="brand" href="/" aria-label="Oddie home">
       <img src="/brand/mark.webp" alt="" width="320" height="320"><span>oddie</span>
     </a>
-    <!-- Landing ile ayni masthead: ayni hap, ayni uclu. Hapin buradaki tek
-         isi tutarlilik; tiklaninca zaten bu sayfaya gelir. -->
-    <a class="gcta" href="/genesis">
+    <!-- Landing'deki hapin birebir ikizi ama tersi: orada Genesis'e gelen
+         kapi, burada eve donen kapi. Ayni boyut, ayni stil; sadece yon ve soz
+         degisti — iki sayfanin ayri sayfalar oldugunu bu simetri anlatiyor. -->
+    <a class="gcta gcta--home" href="/">
       <span class="gcta__pill">
-        <b class="gcta__tag">Tickets</b>
-        <b class="gcta__hd">Genesis is live.</b>
-        <i aria-hidden="true">&rarr;</i>
+        <i aria-hidden="true">&larr;</i>
+        <b class="gcta__tag">Oddie</b>
+        <b class="gcta__hd">Back to home.</b>
       </span>
     </a>
     <div class="nav__links">

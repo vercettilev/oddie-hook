@@ -57,7 +57,9 @@
     "test-idl-drift": "tsx scripts/test-idl-drift.ts",
     "oracle-backtest": "tsx scripts/oracle-backtest.ts",
     "retire-board": "tsx scripts/retire-board.ts",
-    "test-claims-api": "tsx scripts/test-claims-api.ts"
+    "test-claims-api": "tsx scripts/test-claims-api.ts",
+    "test-archetype": "tsx scripts/test-archetype.ts",
+    "test-archetype-dagilim": "tsx scripts/test-archetype-dagilim.ts"
   },
   "engines": {
     "node": ">=20"
