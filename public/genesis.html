@@ -199,8 +199,10 @@
     border:2.5px solid var(--ink);box-shadow:none}
   .nav__links .btn:hover{translate:none;box-shadow:none;background:rgba(11,13,4,.06)}
   .nav__links .btn i{color:var(--ink)}
-  /* eve-donus varyanti: ayni hap, ok basta ve sola bakar */
+  /* eve-donus varyanti: ayni hap, ok basta ve sola bakar. Cipsiz oldugu icin
+     yazi mobilde de kalir; yoksa 820 altinda hap tek basina bir ok olurdu. */
   .gcta--home .gcta__pill i{font-size:16px}
+  @media (max-width:820px){.gcta--home .gcta__hd{display:inline}}
   @media (max-width:820px){.gcta__hd{display:none}}
   @media (max-width:560px){
     .nav__in{gap:8px}
@@ -542,7 +544,6 @@
     <a class="gcta gcta--home" href="/">
       <span class="gcta__pill">
         <i aria-hidden="true">&larr;</i>
-        <b class="gcta__tag">Oddie</b>
         <b class="gcta__hd">Back to home.</b>
       </span>
     </a>
