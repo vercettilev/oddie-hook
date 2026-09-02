@@ -480,6 +480,22 @@
     .btn:hover,.btn:active{translate:none;scale:1}
   }
 
+  /* ------------------------------------------------------------- reveal --
+     Landing'le ayni cikis dili: firlar, biraz gecer, geri oturur. Gizli
+     durum YALNIZ script varken uygulanir (reveal-armed), o yuzden JS'siz
+     hicbir icerik saklanmaz. translate/scale bagimsiz ozellikler oldugu
+     icin kartlarin ve pullarin statik rotate'leri silinmez (eski
+     transform:none tuzagi). */
+  .reveal-armed .reveal{opacity:0;translate:0 26px;scale:.945}
+  .reveal-armed .reveal.shown{opacity:1;translate:none;scale:1;
+    transition:opacity .32s ease-out,
+               translate .56s var(--zip),
+               scale .56s var(--zip)}
+  @media (prefers-reduced-motion:reduce){
+    .reveal-armed .reveal{opacity:1;translate:none;scale:1}
+    .reveal-armed .reveal.shown{transition:none}
+  }
+
   /* ------------------------------------------------- girisli durum · pano -- */
   .navstate{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
     text-transform:uppercase;color:var(--ink);background:var(--yellow);
@@ -630,11 +646,11 @@
   <section class="B on-dark" id="loop">
     <div class="shell">
       <div class="shead">
-        <div>
+        <div class="reveal">
           <p class="kicker">How it works</p>
           <h2 class="h2"><span>How your</span><span>5 tickets work.</span></h2>
         </div>
-        <img class="art art--record" src="/brand/genesis-record.webp"
+        <img class="art art--record reveal" src="/brand/genesis-record.webp"
              width="700" height="811" loading="lazy" decoding="async"
              alt="Oddie holding a Genesis ticket stamped On the record.">
       </div>
@@ -644,19 +660,19 @@
            once below instead of pretending to be a step. Vocabulary is locked to
            four words across the whole page: ticket, market, people, score. -->
       <div class="steps">
-        <div class="step">
+        <div class="step reveal">
           <span class="step__n">1</span>
           <h3>Connect your X</h3>
           <p>Every X account gets 5 tickets. Claiming them is free, and so is
             spending one.</p>
         </div>
-        <div class="step">
+        <div class="step reveal">
           <span class="step__n">2</span>
           <h3>Tag @oddiefun</h3>
           <p>Reply @oddiefun under somebody's claim, or tweet it yourself.
             Each tag spends 1 ticket and opens a real market.</p>
         </div>
-        <div class="step">
+        <div class="step reveal">
           <span class="step__n">3</span>
           <h3>People join</h3>
           <p>The more people who put money in your market, the higher you rank.</p>
@@ -667,17 +683,17 @@
            tweet atarak da baskasinin iddiasini virallestirerek de acabilirsin;
            iki yolda da %2 senin. Landing'deki "whoever started it" ile ayni
            kural, iki sayfa ayni agizdan. -->
-      <p class="oneline"><span>Create the market.</span><span>Earn the 2% fee.</span></p>
+      <p class="oneline reveal"><span>Create the market.</span><span>Earn the 2% fee.</span></p>
 
       <div class="form">
         <p class="kicker">What you get</p>
-        <div class="eq">
+        <div class="eq reveal">
           <b class="eq__a">1 person</b><i aria-hidden="true">=</i><b class="eq__b">1 point</b>
         </div>
         <!-- Kitlik kampanyanin kancasi, o yuzden fisiltiyla degil pembeyle
              soylenir; hemen altindaki gri satir gerilimi kurar: bedava AMA 5. -->
-        <p class="scarce">You only get 5. Use them wisely.</p>
-        <p class="fine">Spending one costs nothing.</p>
+        <p class="scarce reveal">You only get 5. Use them wisely.</p>
+        <p class="fine reveal">Spending one costs nothing.</p>
         <!-- The black section had no way forward. Hidden in the how view, where
              the block below already carries one. -->
         <a class="btn btn--2l out-only cta-loop" data-xconnect href="https://x.com/oddiefun">
@@ -739,7 +755,7 @@
            image so this one instance can carry REAL market text later without
            re-cutting an asset; the stickers cannot. Hidden from the
            accessibility tree because the row above already reads it out. -->
-      <div class="rcpt-wrap">
+      <div class="rcpt-wrap reveal">
       <div class="rcpt" aria-hidden="true">
         <div class="rcpt__top"><span>Oddie ticket</span><span>#0041</span></div>
         <p class="rcpt__who">Put on the record by you</p>
@@ -762,16 +778,16 @@
   <section class="C" id="board">
     <div class="shell">
       <div class="shead">
-        <div>
+        <div class="reveal">
           <p class="kicker">The board</p>
           <h2 class="h2"><span>The only number</span><span>is people.</span></h2>
         </div>
-        <img class="art art--podium" src="/brand/genesis-podium.webp"
+        <img class="art art--podium reveal" src="/brand/genesis-podium.webp"
              width="640" height="787" loading="lazy" decoding="async"
              alt="Oddie on the first-place podium, holding up a trophy to a crowd.">
       </div>
 
-      <div class="board">
+      <div class="board reveal">
         <div class="board__hd">
           <span>Rank</span><span>Name</span><span>People</span>
         </div>
@@ -942,6 +958,86 @@
       el.style.minWidth = el.offsetWidth + "px";
       el.innerHTML = "Coming soon";
     }, true);
+  })();
+</script>
+<script>
+  /* Landing'in cikis+zip sistemi, birebir. Kurallari da ayni: reduced-motion
+     aninda atlar; icerik asla sakli kalamaz (gizleme yalniz script varken,
+     observer + failsafe zamanlayici + yolculuk bitisi ucu de acar); hash
+     yolculuktan SONRA yazilir ki tarayici hedefe ziplamasin. */
+  (function () {
+    var root = document.documentElement;
+    var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var items = [].slice.call(document.querySelectorAll(".reveal"));
+    if (!items.length) return;
+
+    function showAll() { for (var i = 0; i < items.length; i++) items[i].classList.add("shown"); }
+
+    if (reduced || !("IntersectionObserver" in window)) {
+      bindLinks(true);
+      return;
+    }
+
+    root.classList.add("reveal-armed");
+    setTimeout(showAll, 6000);
+
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var el = entry.target;
+        io.unobserve(el);
+        var peers = [].slice.call(el.parentNode.children).filter(function (n) { return n.classList.contains("reveal"); });
+        var n = Math.max(0, peers.indexOf(el));
+        setTimeout(function () { el.classList.add("shown"); }, 60 + n * 105);
+      });
+    }, { rootMargin: "0px 0px -12% 0px", threshold: 0.08 });
+    items.forEach(function (el) { io.observe(el); });
+
+    bindLinks(false);
+
+    function ease(t) { var c1 = 1.30, c3 = c1 + 1, u = t - 1;
+      return 1 + c3 * u * u * u + c1 * u * u; }
+
+    function bindLinks(instant) {
+      document.addEventListener("click", function (e) {
+        var a = e.target.closest && e.target.closest('a[href^="#"]');
+        if (!a) return;
+        var hash = a.getAttribute("href");
+        if (hash.length < 2) return;
+        var section = document.querySelector(hash);
+        if (!section) return;
+        e.preventDefault();
+
+        if (instant) { section.scrollIntoView(); history.replaceState(null, "", hash); return; }
+
+        var start = window.scrollY;
+        var end = Math.min(
+          section.getBoundingClientRect().top + start - 26,
+          document.documentElement.scrollHeight - window.innerHeight
+        );
+        var dist = end - start;
+        if (Math.abs(dist) < 2) { history.replaceState(null, "", hash); return; }
+
+        var dur = Math.min(760, Math.max(360, Math.abs(dist) * 0.30));
+        var enCok = document.documentElement.scrollHeight - window.innerHeight;
+        var t0 = null, done = false;
+        function finish() {
+          if (done) return;
+          done = true;
+          window.scrollTo(0, end);
+          history.replaceState(null, "", hash);
+        }
+        setTimeout(finish, dur + 350);
+        function step(ts) {
+          if (done) return;
+          if (t0 === null) t0 = ts;
+          var p = Math.min(1, (ts - t0) / dur);
+          window.scrollTo(0, Math.max(0, Math.min(enCok, start + dist * ease(p))));
+          if (p < 1) requestAnimationFrame(step); else finish();
+        }
+        requestAnimationFrame(step);
+      });
+    }
   })();
 </script>
 

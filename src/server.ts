@@ -44,6 +44,8 @@ import * as X from "./x/client.js";
 import { renderCardPng } from "./card/renderPng.js";
 import { renderBanner } from "./card/renderBanner.js";
 import { renderProfileCard } from "./card/renderProfileCard.js";
+import { renderGenesisCard } from "./card/renderGenesisCard.js";
+import { classifyArchetype } from "./genesis/archetype.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
@@ -1184,6 +1186,34 @@ const sendBanner = (_req: express.Request, res: express.Response) => {
   res.type("image/png").set("Cache-Control", "public, max-age=86400").send(bannerPng);
 };
 app.get("/og.png", sendBanner);
+
+/**
+ * Genesis card PREVIEW: the full real pipeline (classifier -> renderer) fed
+ * from query params instead of a stored profile snapshot, because the
+ * snapshot capture at OAuth-callback time does not exist yet. This is how the
+ * card is designed and reviewed; the production route will feed the same two
+ * functions from stored data and this route will remain as the test bench.
+ * No writes, no external calls, so it is safe to leave open.
+ */
+app.get("/card/genesis-preview.png", (req, res) => {
+  const q = (k: string, dflt: string) => (typeof req.query[k] === "string" && (req.query[k] as string).length ? (req.query[k] as string) : dflt);
+  const num = (k: string, dflt: number) => { const v = Number(req.query[k]); return Number.isFinite(v) && v >= 0 ? v : dflt; };
+  const handle = "@" + q("handle", "somebody").replace(/^@+/, "").slice(0, 20);
+  const r = classifyArchetype({
+    handle,
+    bio: q("bio", "").slice(0, 400),
+    createdAt: q("created", "2019-03-01T00:00:00Z"),
+    tweetCount: num("tweets", 4000),
+    followers: num("followers", 800),
+    following: num("following", 600),
+    pinnedText: q("pinned", "") || null,
+  });
+  const png = renderCardPng(renderGenesisCard({
+    handle, archetype: r.archetype, headline: r.headline, reason: r.reason,
+    claim: (q("pinned", "") || null)?.slice(0, 200) ?? null,
+  }));
+  res.type("image/png").set("Cache-Control", "no-store").send(png);
+});
 app.get("/banner.png", sendBanner);
 
 app.get("/og.svg", (_req, res) => res.type("image/svg+xml").send(renderBanner()));
