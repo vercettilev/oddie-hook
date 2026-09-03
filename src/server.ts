@@ -51,7 +51,7 @@ import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, ge
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor, disconnectDevice } from "./store/accounts.js";
+import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
 
@@ -1391,7 +1391,7 @@ if (process.env.GENESIS_DEV_SEED === "1") {
     const tags = Math.max(0, Math.min(5, Number(b.tags ?? 0)));
     const bettors = Math.max(0, Math.min(50, Number(b.bettors ?? 0)));
     for (let i = 0; i < tags; i++) await spendTicketForTag(`dev-${handle}-${i}`, handle, "somebodyelse");
-    for (let i = 0; i < bettors; i++) await creditFundedBettor(`dev-${handle}-0`, `devwallet-${handle}-${i}`);
+    for (let i = 0; i < bettors; i++) await creditFundedBettor(`dev-${handle}-0`, `devwallet-${handle}-${i}`, null);
     res.json({ ok: true, standing: await genesisStanding(handle) });
   });
 }
@@ -2419,11 +2419,15 @@ app.post("/api/ev", async (req, res) => {
  * The invite panel's data. Waitlist emails come from Supabase (the landing's
  * store) over plain REST — no SDK. Without SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY
  * on this service the panel says so and manual allowlisting still works.
- * Railway-origin only, like /tool.
+ * ADMIN ONLY. Yorumda "Railway-origin only" yaziyordu ama kodda oyle bir
+ * kontrol HIC yoktu: iki uc da herkese acikti. GET, SUPABASE_* set edilir
+ * edilmez 200 bekleme listesi e-postasini herkese acik bir URL'de yayinlardi;
+ * POST ise oddie.fun'in kendi gonderen alan adindan isteyene mail attiran
+ * ACIK BIR POSTACIYDI ve gonderdigi adresi allowlist'e yaziyordu.
  */
 const SUPA = () => ({ url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY });
 
-app.get("/api/invites", async (_req, res) => {
+app.get("/api/invites", requireAdmin, async (_req, res) => {
   const { url, key } = SUPA();
   let waitlist: { email: string; created_at: string }[] | null = null;
   if (url && key) {
@@ -2437,7 +2441,7 @@ app.get("/api/invites", async (_req, res) => {
   res.json({ waitlist, supabase: Boolean(url && key), allowlist: await allowlistRows() });
 });
 
-app.post("/api/invites/send", async (req, res) => {
+app.post("/api/invites/send", requireAdmin, async (req, res) => {
   const email = String((req.body as { email?: unknown })?.email ?? "").trim().toLowerCase();
   const source = String((req.body as { source?: unknown })?.source ?? "waitlist");
   if (!email.includes("@")) return res.status(400).json({ ok: false, reason: "bad email" });
@@ -3844,9 +3848,13 @@ if (realStakesReady) {
         });
         // The Genesis board's ONLY number: a wallet that had never funded
         // anything before is a new human, credited to whoever's tag got them
-        // here. Best-effort like the stamp above — this is the money path, and
-        // bookkeeping must never cost anybody their transaction.
-        await creditFundedBettor(slug, stake.user).catch((e) =>
+        // here. The wallet's owner rides along so the ledger can enforce the
+        // rule the page prints, "your own wallet never counts" — without it
+        // anybody could fund their own market and score off it. Best-effort
+        // like the stamp above: this is the money path, and bookkeeping must
+        // never cost anybody their transaction.
+        const walletOwner = await twitterHandleForWallet(stake.user).catch(() => null);
+        await creditFundedBettor(slug, stake.user, walletOwner).catch((e) =>
           console.error("[genesis] bettor credit failed (non-fatal):", (e as Error).message));
       }).catch(() => {});
     }

@@ -536,6 +536,11 @@
      karttı. Bu serit kimin bagli oldugunu soyler ve tek cikis kapisini tasir.
      Cikis sessiz bir baglantidir, tören degil: hesap ve gecmisi durur, sadece
      bu tarayici anonimlige doner. */
+  /* [hidden] tarayici stilinde display:none'dur ama yazar stili onu ezer:
+     bu kural yuzunden serit HER girisli durumda gorunuyordu ve profil
+     gelmeden once sahte "@you connected" yaziyordu. Once gizliligi
+     geri veriyoruz. */
+  .who-strip[hidden]{display:none}
   .who-strip{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
     margin:clamp(16px,2vw,26px) 0 0;font-family:var(--mono);font-size:12px;
     font-weight:700;letter-spacing:.1em;text-transform:uppercase}

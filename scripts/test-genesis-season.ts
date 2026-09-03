@@ -71,6 +71,27 @@ async function main(): Promise<void> {
   check("while the board still counts every person",
     (await genesisStanding("alice")).peopleBrought === 3);
 
+  // --- your own wallet never counts (the rule the page prints) -------------
+  _resetSeason();
+  await spendTicketForTag("m1", "alice", "bob");
+  await creditFundedBettor("m1", "wallet-alice", "alice");
+  check("funding your own market scores nothing",
+    (await genesisStanding("alice")).peopleBrought === 0);
+  check("and hands no ticket back", (await ticketsLeft("alice")) === GENESIS_TICKETS - 1);
+  await creditFundedBettor("m1", "wallet-alice2", "ALICE");
+  check("upper case is the same person", (await genesisStanding("alice")).peopleBrought === 0);
+  // The wallet is NOT burned: it must still be able to count for somebody else.
+  await spendTicketForTag("m2", "bob", null);
+  await creditFundedBettor("m2", "wallet-alice", "alice");
+  check("that same wallet still counts for somebody else",
+    (await genesisStanding("bob")).peopleBrought === 1);
+  await creditFundedBettor("m1", "wallet-stranger", "carol");
+  check("somebody else's wallet counts normally",
+    (await genesisStanding("alice")).peopleBrought === 1);
+  await creditFundedBettor("m1", "wallet-anon", null);
+  check("an unlinked wallet counts (we cannot prove it is yours)",
+    (await genesisStanding("alice")).peopleBrought === 2);
+
   // --- an untagged market credits nobody -----------------------------------
   _resetSeason();
   await creditFundedBettor("orphan", "wallet-Z");

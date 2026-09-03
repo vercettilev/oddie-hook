@@ -140,13 +140,23 @@ export async function spendTicketForTag(
  * Once per wallet forever, not once per market, because the board counts
  * people rather than bets. Best-effort by contract: the caller is the money
  * path, and no bookkeeping failure may ever cost somebody their transaction.
+ *
+ * `walletHandle` is the X handle that owns this wallet, when we know it, and it
+ * enforces the rule the page prints: YOUR OWN WALLET NEVER COUNTS. Funding your
+ * own market records NOTHING at all rather than a null-credited row, on purpose:
+ * a wallet consumed here could never count for somebody else later, and the
+ * rule is "this does not score", not "this wallet is spent".
  */
-export async function creditFundedBettor(slug: string, wallet: string): Promise<void> {
+export async function creditFundedBettor(
+  slug: string, wallet: string, walletHandle?: string | null,
+): Promise<void> {
   if (!slug || !wallet) return;
+  const owner = walletHandle ? norm(walletHandle) : null;
 
   if (!STORE_PERSISTENT) {
     if (memBettors.some((b) => b.wallet === wallet)) return;
     const tag = memTags.find((t) => t.slug === slug) ?? null;
+    if (tag && owner && tag.handle === owner) return; // kendi cuzdanin sayilmaz
     memBettors.push({ wallet, slug, handle: tag?.handle ?? null });
     if (tag && memBalance(tag.handle) < GENESIS_TICKETS) {
       memLog.push({ handle: tag.handle, delta: 1, reason: "bettor", dedupKey: `bettor:${wallet}` });
@@ -160,6 +170,7 @@ export async function creditFundedBettor(slug: string, wallet: string): Promise<
     await client.query("BEGIN");
     const tag = await client.query<{ handle: string }>(`SELECT handle FROM genesis_tag WHERE slug = $1`, [slug]);
     const handle = tag.rows[0]?.handle ?? null;
+    if (handle && owner && handle === owner) { await client.query("COMMIT"); return; }
     const ins = await client.query(
       `INSERT INTO genesis_bettor (wallet, slug, handle) VALUES ($1,$2,$3)
        ON CONFLICT (wallet) DO NOTHING RETURNING wallet`,

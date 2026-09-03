@@ -213,6 +213,37 @@ export async function disconnectDevice(deviceId: string): Promise<void> {
   await storeDb().query(`DELETE FROM device_account WHERE device_id = $1`, [deviceId]);
 }
 
+/**
+ * The X handle of whoever owns this wallet, if the wallet has ever been linked
+ * and that person has also connected X. Null when either half is missing.
+ *
+ * Exists for ONE rule the Genesis page prints and the ledger has to honour:
+ * "Your own wallet never counts." Without this the person who opened a market
+ * could fund it themselves and score a point off it, which is the only number
+ * the campaign has.
+ */
+export async function twitterHandleForWallet(wallet: string): Promise<string | null> {
+  if (!wallet) return null;
+
+  if (!STORE_PERSISTENT) {
+    const w = memAccounts.find((a) => a.provider === "phantom" && a.uid === wallet);
+    if (!w) return null;
+    const tw = memAccounts.find((a) => a.provider === "twitter" && a.canonicalDevice === w.canonicalDevice);
+    return tw?.handle ? tw.handle.replace(/^@+/, "").toLowerCase() : null;
+  }
+
+  await storeSchema();
+  const { rows } = await storeDb().query<{ handle: string | null }>(
+    `SELECT tw.handle FROM account w
+       JOIN account tw ON tw.canonical_device = w.canonical_device AND tw.provider = 'twitter'
+      WHERE w.provider = 'phantom' AND w.provider_uid = $1
+      LIMIT 1`,
+    [wallet],
+  );
+  const h = rows[0]?.handle ?? null;
+  return h ? h.replace(/^@+/, "").toLowerCase() : null;
+}
+
 /** Every account this browser is signed in to. Empty for an anonymous device. */
 export async function accountsFor(deviceId: string): Promise<Account[]> {
   if (!STORE_PERSISTENT) {
