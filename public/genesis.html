@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Fontlari ILK PAINT'ten once cek. Anton butun basliklarin yuzu ve
+     font-display:swap ile soguk onbellekte once fallback (Arial Narrow) cizilip
+     1-2 saniye sonra Anton'a pop yapiyordu: kullanicinin "ilk acilista yanlis
+     duruyor" dedigi buydu. Preload olmadan font @font-face parse edilip bir
+     eleman onu KULLANANA kadar kesfedilmiyor, yani gec. crossorigin sart:
+     woff2 her zaman CORS modunda cekilir, onsuz preload iki kez indirir.
+     Yalniz latin alt-kumeleri: Ingilizce kopya -ext glifi kullanmiyor. -->
+<link rel="preload" as="font" type="font/woff2" href="/fonts/anton-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/fonts/nunito-latin.woff2" crossorigin>
 <title>Oddie Tickets: Genesis</title>
 <meta name="description" content="You get 5 tickets. Tag @oddiefun on a claim on X and it becomes a real market where people put money on YES or NO.">
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
