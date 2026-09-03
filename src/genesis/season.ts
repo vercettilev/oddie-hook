@@ -23,6 +23,7 @@
  *                       first market that got them in.
  */
 import { storeDb, storeSchema, STORE_PERSISTENT } from "../store/markets.js";
+import { _memProfileByHandle } from "./profileStore.js";
 
 /** The campaign constant. Everybody starts here; nobody is ever handed more. */
 export const GENESIS_TICKETS = 5;
@@ -282,5 +283,108 @@ export async function genesisBoard(limit = 20): Promise<BoardRow[]> {
   return rows.map((r) => ({
     handle: r.handle, peopleBrought: Number(r.people),
     marketsOpened: Number(r.opened), rank: Number(r.rank),
+  }));
+}
+
+/* ------------------------------------------------------------- operator -- */
+
+export interface RosterRow {
+  handle: string;
+  name: string | null;
+  archetype: string | null;
+  /** When they connected X. Null for a handle that only ever tagged. */
+  connectedAt: string | null;
+  ticketsLeft: number;
+  marketsOpened: number;
+  peopleBrought: number;
+  /** Every market they opened, newest first: slug, whose claim it was, when. */
+  tags: Array<{ slug: string; sourceHandle: string | null; at: string }>;
+}
+
+/**
+ * THE ROSTER: everybody the campaign has touched, and what they did.
+ *
+ * Deliberately a UNION rather than a join off genesis_profile. Connecting and
+ * tagging are separate acts and either can happen without the other: the ledger
+ * is keyed on the X handle precisely so that somebody who tags without ever
+ * visiting the site still spends tickets. An operator view built on connections
+ * alone would silently omit exactly those people, which is the group worth
+ * watching most.
+ *
+ * Operator-only: this is the one place handles, names and tag targets are
+ * listed together, so the route that serves it must be admin-gated.
+ */
+export async function genesisRoster(limit = 200): Promise<RosterRow[]> {
+  const n = Math.max(1, Math.min(1000, Math.floor(limit)));
+
+  if (!STORE_PERSISTENT) {
+    const handles = new Set<string>(memTags.map((t) => t.handle));
+    return [...handles].slice(0, n).map((handle) => {
+      // Ayni birlesim: profil deposunu da okur, yoksa BAGLANMIS birine
+      // "hic baglanmadi" derdi ve bu tam olarak bu sayfanin yalan
+      // soylememesi gereken sey.
+      const gp = _memProfileByHandle(handle);
+      return {
+        handle,
+        name: gp?.name ?? null,
+        archetype: gp?.archetype ?? null,
+        connectedAt: gp?.capturedAt ?? null,
+        ticketsLeft: Math.max(0, Math.min(GENESIS_TICKETS, memBalance(handle))),
+        marketsOpened: memTags.filter((t) => t.handle === handle).length,
+        peopleBrought: memBettors.filter((b) => b.handle === handle).length,
+        tags: memTags.filter((t) => t.handle === handle)
+          .map((t) => ({ slug: t.slug, sourceHandle: t.sourceHandle, at: "" })),
+      };
+    });
+  }
+
+  await storeSchema();
+  const { rows } = await storeDb().query<{
+    handle: string; display_name: string | null; archetype: string | null;
+    captured_at: Date | null; tickets: string; opened: string; people: string;
+  }>(
+    `WITH folk AS (
+       SELECT lower(handle) AS handle FROM genesis_profile WHERE handle <> ''
+       UNION
+       SELECT handle FROM genesis_tag
+       UNION
+       SELECT handle FROM genesis_ticket_log
+     )
+     SELECT f.handle,
+            gp.display_name, gp.archetype, gp.captured_at,
+            COALESCE((SELECT SUM(delta) FROM genesis_ticket_log l WHERE l.handle = f.handle), 0) + $2 AS tickets,
+            (SELECT COUNT(*) FROM genesis_tag t WHERE t.handle = f.handle) AS opened,
+            (SELECT COUNT(*) FROM genesis_bettor b WHERE b.handle = f.handle) AS people
+       FROM folk f
+       LEFT JOIN genesis_profile gp ON lower(gp.handle) = f.handle
+      ORDER BY people DESC, opened DESC, f.handle ASC
+      LIMIT $1`,
+    [n, GENESIS_TICKETS],
+  );
+  if (!rows.length) return [];
+
+  // One extra query for every tag, rather than N: the roster is an operator
+  // page and N+1 over a growing campaign is how these pages get slow quietly.
+  const { rows: tagRows } = await storeDb().query<{ handle: string; slug: string; source_handle: string | null; at: Date }>(
+    `SELECT handle, slug, source_handle, at FROM genesis_tag
+      WHERE handle = ANY($1::text[]) ORDER BY at DESC`,
+    [rows.map((r) => r.handle)],
+  );
+  const byHandle = new Map<string, RosterRow["tags"]>();
+  for (const t of tagRows) {
+    const list = byHandle.get(t.handle) ?? [];
+    list.push({ slug: t.slug, sourceHandle: t.source_handle, at: t.at.toISOString() });
+    byHandle.set(t.handle, list);
+  }
+
+  return rows.map((r) => ({
+    handle: r.handle,
+    name: r.display_name,
+    archetype: r.archetype,
+    connectedAt: r.captured_at ? r.captured_at.toISOString() : null,
+    ticketsLeft: Math.max(0, Math.min(GENESIS_TICKETS, Number(r.tickets))),
+    marketsOpened: Number(r.opened),
+    peopleBrought: Number(r.people),
+    tags: byHandle.get(r.handle) ?? [],
   }));
 }

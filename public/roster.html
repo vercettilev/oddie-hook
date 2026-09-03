@@ -1,0 +1,189 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Genesis roster</title>
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<style>
+  /* Operator tool, not a campaign surface: the brand's colours, none of its
+     theatre. No webfont either — this page is opened to READ a table, and
+     inlining 68KB of Anton to decorate an admin screen would be silly. */
+  :root{
+    --yellow:#D7DC1F; --pink:#FF2D78; --pink-deep:#A3053F;
+    --cream:#FBFCF4; --ink:#0B0D04; --ink-2:#494E2D; --line:#E3E5D6;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--cream);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:.16em;
+    text-transform:uppercase;margin:0 0 4px}
+  .sub{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin:0 0 22px}
+
+  .gate{border:3px solid var(--ink);background:#fff;padding:20px;max-width:460px;
+    box-shadow:7px 8px 0 var(--pink-deep)}
+  .gate label{display:block;font-family:var(--mono);font-size:11px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin:0 0 8px}
+  .gate input{width:100%;font:inherit;font-family:var(--mono);padding:11px 12px;
+    border:2px solid var(--ink);background:#fff;color:var(--ink)}
+  .gate input:focus{outline:3px solid var(--pink);outline-offset:2px}
+  .gate button{margin-top:12px;font-family:var(--mono);font-size:13px;font-weight:800;
+    letter-spacing:.1em;text-transform:uppercase;background:var(--yellow);color:var(--ink);
+    border:3px solid var(--ink);padding:11px 18px;cursor:pointer}
+  .gate button:hover{background:#e7ec4e}
+  .err{margin-top:10px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--pink-deep)}
+
+  .sums{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 20px}
+  .sum{border:3px solid var(--ink);background:#fff;padding:12px 16px;min-width:132px}
+  .sum b{display:block;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .sum span{display:block;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-top:3px}
+
+  table{width:100%;border-collapse:collapse;background:#fff;border:3px solid var(--ink)}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-2);background:var(--cream);
+    position:sticky;top:0;border-bottom:3px solid var(--ink)}
+  tbody tr:last-child td{border-bottom:0}
+  .who{font-family:var(--mono);font-weight:700}
+  .who a{color:var(--ink)}
+  .name{display:block;font-size:12px;color:var(--ink-2);font-family:var(--sans);font-weight:400}
+  .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  .pips{font-family:var(--mono);letter-spacing:2px}
+  .arch{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;background:var(--yellow);border:2px solid var(--ink);
+    padding:2px 6px;white-space:nowrap}
+  .none{color:var(--ink-2);font-style:italic}
+  .tags{margin:0;padding:0;list-style:none;font-family:var(--mono);font-size:12px}
+  .tags li{padding:2px 0}
+  .tags a{color:var(--pink-deep)}
+  .empty{padding:26px;text-align:center;font-family:var(--mono);font-size:13px;color:var(--ink-2)}
+  @media (max-width:760px){
+    .hide-sm{display:none}
+    .wrap{padding:18px 12px 60px}
+  }
+</style>
+
+<div class="wrap">
+  <h1>Genesis roster</h1>
+  <p class="sub">Who connected X, what they tagged, and where their 5 tickets went.</p>
+
+  <form class="gate" id="gate">
+    <label for="tok">Admin token</label>
+    <input id="tok" type="password" autocomplete="off" spellcheck="false">
+    <button type="submit">Open</button>
+    <div class="err" id="err" hidden></div>
+  </form>
+
+  <div id="out" hidden>
+    <div class="sums" id="sums"></div>
+    <table>
+      <thead><tr>
+        <th>Handle</th>
+        <th>Archetype</th>
+        <th class="num">Tickets</th>
+        <th class="num">Opened</th>
+        <th class="num">People</th>
+        <th class="hide-sm">Tagged</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="sub" style="margin-top:14px" id="foot"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var gate = document.getElementById("gate");
+  var err = document.getElementById("err");
+
+  /* sessionStorage, not localStorage: an admin token should not outlive the
+     tab it was typed into. */
+  var saved = null;
+  try { saved = sessionStorage.getItem("oddie_admin"); } catch (e) {}
+  if (saved) load(saved);
+
+  gate.addEventListener("submit", function (e) {
+    e.preventDefault();
+    load(document.getElementById("tok").value.trim());
+  });
+
+  function load(token) {
+    if (!token) return;
+    err.hidden = true;
+    fetch("/api/admin/genesis/roster?limit=500", { headers: { "x-oddie-admin": token } })
+      .then(function (r) {
+        if (r.status === 401) throw new Error("That token was not accepted.");
+        if (!r.ok) throw new Error("Server said " + r.status + ".");
+        return r.json();
+      })
+      .then(function (j) {
+        try { sessionStorage.setItem("oddie_admin", token); } catch (e) {}
+        render(j.roster || [], j.tickets || 5);
+      })
+      .catch(function (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+        try { sessionStorage.removeItem("oddie_admin"); } catch (x) {}
+      });
+  }
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
+    return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]; }); }
+
+  function render(roster, cap) {
+    gate.hidden = true;
+    document.getElementById("out").hidden = false;
+
+    var connected = roster.filter(function (r) { return r.connectedAt; }).length;
+    var opened = roster.reduce(function (s, r) { return s + r.marketsOpened; }, 0);
+    var people = roster.reduce(function (s, r) { return s + r.peopleBrought; }, 0);
+    var spent = roster.reduce(function (s, r) { return s + (cap - r.ticketsLeft); }, 0);
+    document.getElementById("sums").innerHTML =
+      sum(roster.length, "handles seen") +
+      sum(connected, "connected X") +
+      sum(opened, "markets opened") +
+      sum(people, "people brought") +
+      sum(spent, "tickets spent");
+
+    var rows = document.getElementById("rows");
+    if (!roster.length) {
+      rows.innerHTML = '<tr><td colspan="6" class="empty">Nobody has connected or tagged yet.</td></tr>';
+      document.getElementById("foot").textContent = "";
+      return;
+    }
+
+    rows.innerHTML = roster.map(function (r) {
+      var left = r.ticketsLeft;
+      var pips = "■".repeat(left) + "□".repeat(Math.max(0, cap - left));
+      var tags = r.tags.length
+        ? '<ul class="tags">' + r.tags.slice(0, 6).map(function (t) {
+            return "<li>" + (t.sourceHandle ? "under @" + esc(t.sourceHandle) : "own post")
+              + ' &middot; <a href="/m/' + encodeURIComponent(t.slug) + '">' + esc(t.slug) + "</a></li>";
+          }).join("") + (r.tags.length > 6 ? "<li>+" + (r.tags.length - 6) + " more</li>" : "") + "</ul>"
+        : '<span class="none">no tags yet</span>';
+      return "<tr>"
+        + '<td class="who"><a href="https://x.com/' + encodeURIComponent(r.handle) + '" target="_blank" rel="noopener">@'
+        + esc(r.handle) + "</a>"
+        + (r.name ? '<span class="name">' + esc(r.name) + "</span>" : "")
+        + (r.connectedAt ? "" : '<span class="name">tagged only, never connected</span>')
+        + "</td>"
+        + "<td>" + (r.archetype ? '<span class="arch">' + esc(r.archetype) + "</span>" : '<span class="none">&mdash;</span>') + "</td>"
+        + '<td class="num"><span class="pips">' + pips + "</span></td>"
+        + '<td class="num">' + r.marketsOpened + "</td>"
+        + '<td class="num">' + r.peopleBrought + "</td>"
+        + '<td class="hide-sm">' + tags + "</td>"
+        + "</tr>";
+    }).join("");
+
+    document.getElementById("foot").textContent =
+      roster.length + " rows. A handle appears here the moment it tags, even if it never opened the site.";
+  }
+
+  function sum(n, label) {
+    return '<div class="sum"><b>' + n + "</b><span>" + label + "</span></div>";
+  }
+})();
+</script>

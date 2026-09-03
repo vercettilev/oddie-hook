@@ -47,7 +47,7 @@ import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
 import { classifyArchetype, ARCHETYPE_LABEL, genesisShareLine } from "./genesis/archetype.js";
 import { captureGenesisProfile, genesisProfileByHandle, genesisProfileForDevice, type GenesisProfile } from "./genesis/profileStore.js";
-import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, GENESIS_TICKETS } from "./genesis/season.js";
+import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, genesisRoster, GENESIS_TICKETS } from "./genesis/season.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
@@ -77,6 +77,7 @@ app.use(express.json());
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
+const ROSTER_HTML = readFileSync(path.join(__dirname, "../public/roster.html"), "utf8");
 
 /**
  * UYGULAMA KAPALI (Lev, 2026-09-03): app bastan yazilacak, o yuzden simdilik
@@ -1390,6 +1391,27 @@ app.get("/api/genesis/me", async (req, res) => {
     // knows, and a fabricated 5/5 would be a lie about somebody's balance.
     standing,
   } });
+});
+
+/**
+ * THE ROSTER — everybody the campaign has touched, and what they did with it.
+ *
+ * Admin-gated, because it is the one place handles, display names, archetypes
+ * and tag targets sit together; the public board deliberately shows only people
+ * who brought somebody and only their count.
+ *
+ * The PAGE is served open (it is an empty shell) and asks for the token itself,
+ * so the token travels in a header instead of a URL and never lands in a log or
+ * a referrer.
+ */
+app.get("/genesis/roster", (_req, res) => {
+  res.set("X-Robots-Tag", "noindex, nofollow").type("html").send(ROSTER_HTML);
+});
+
+app.get("/api/admin/genesis/roster", requireAdmin, async (req, res) => {
+  const limit = Number(req.query.limit);
+  const roster = await genesisRoster(Number.isFinite(limit) ? limit : 200).catch(() => []);
+  res.set("Cache-Control", "no-store").json({ tickets: GENESIS_TICKETS, roster });
 });
 
 /** The season board. Public: it is a leaderboard. */

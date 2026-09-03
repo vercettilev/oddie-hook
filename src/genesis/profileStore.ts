@@ -119,6 +119,18 @@ export async function captureGenesisProfile(
   return row;
 }
 
+/**
+ * Test/dev seam: the in-memory profiles, so the operator roster can join
+ * against them without a database. The pg path does this join in SQL.
+ */
+export function _memProfileByHandle(handle: string): GenesisProfile | null {
+  const h = handle.replace(/^@+/, "").toLowerCase();
+  for (const p of memProfiles.values()) {
+    if (p.handle && p.handle.toLowerCase() === h) return p;
+  }
+  return null;
+}
+
 /** Case-insensitive handle lookup, "@" tolerated. Null when never connected. */
 export async function genesisProfileByHandle(rawHandle: string): Promise<GenesisProfile | null> {
   const handle = rawHandle.replace(/^@+/, "");
