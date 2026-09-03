@@ -436,6 +436,26 @@ async function main() {
       graded === "GTA 6 comes out before 2027, what do you say", JSON.stringify(graded));
   }
 
+  {
+    // The composer prefill "On the record @oddiefun: <claim>" must grade as
+    // the claim: not a leading mention (so no strip), our handle removed
+    // mid-sentence, preamble left for the extractor to see through.
+    _resetBotState();
+    let graded = "";
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("700", {
+        repliedToId: null,
+        text: "On the record @oddiefun: GTA 6 ships before 2027.",
+      })], newestId: "700" }),
+      tweet: async () => { throw new Error("no parent should be fetched"); },
+      extract: async (t) => { graded = t; return goodExtraction("Will GTA 6 ship before 2027?"); },
+    });
+    const r = await runMentionSweep(deps);
+    check("the composer prefill shape mints a market", spy.minted.length === 1 && r.replied === 1);
+    check("with our handle out and the claim intact",
+      graded === "On the record : GTA 6 ships before 2027.", JSON.stringify(graded));
+  }
+
   /* --------------------------------------------------------------- helpers -- */
   check("stripBotHandle takes our handle out wherever it sits",
     stripBotHandle("GTA before 2027 @oddiefun what do you say", "oddiefun") === "GTA before 2027 what do you say");

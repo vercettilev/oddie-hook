@@ -566,6 +566,16 @@
   .act-row{display:flex;align-items:center;gap:clamp(16px,2vw,26px);flex-wrap:wrap;
     margin-top:clamp(18px,2.4vw,30px)}
   .act-row .btn{margin-top:0}
+  /* Doldurmali sablon: composer'da gorecegi seyin birebir on izlemesi.
+     Sabit kisim cip, bosluk kesik cizgili yuva — beklenti tiklamadan ONCE
+     kuruluyor, kimse bos composer karsisinda donup kalmiyor. */
+  .spend-shape{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    margin:clamp(12px,1.5vw,18px) 0 0;font-family:var(--mono);font-size:12.5px;
+    font-weight:700;letter-spacing:.02em}
+  .spend-shape__fixed{background:var(--cream);color:var(--ink);
+    border:2px solid var(--ink);padding:6px 10px 5px;rotate:-.6deg}
+  .spend-shape__slot{border:2px dashed var(--ink-2);color:var(--ink-2);
+    padding:6px 12px 5px;rotate:.4deg}
   .board-jump{font-family:var(--mono);font-size:13px;font-weight:700;
     letter-spacing:.1em;text-transform:uppercase;color:var(--ink);
     text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:2px}
@@ -708,14 +718,29 @@
                reddedilmis kalip. Birinin postuna cevap verecek kisi zaten
                X'tedir ve orada reply'a basar; siteye link tasimak geriye
                yurumekti. Modal oldu, buton dogrudan tag'i hazir composer. -->
+          <!-- Prefill "@oddiefun " DEGIL, "On the record @oddiefun: " —
+               iki sebeple. (1) ERISIM: @ ile BASLAYAN post X'te reply gibi
+               sinifllanip kisiliyor, ve imlec prefill'in SONUNA dustugu icin
+               insan iddiasini tag'in arkasina yazacakti; "On" ile baslayinca
+               mention cumle ICINDE kaliyor. (2) FOOLPROOF: bos haliyle aynen
+               postlanirsa "(insert a claim here)" gibi bir beceriksizlik degil
+               zararsiz bir slogan; dolu haliyle "On the record @oddiefun:
+               GTA 6 ships before 2027." diye dogal okunuyor. Talimat metni
+               composer'a ASLA konmaz: intent metni placeholder degil gercek
+               metindir ve bir kismi onu aynen postlar. Sablon asagida,
+               postlanamayacagi yerde. -->
           <div class="act-row">
-            <a class="btn btn--2l" id="spend" href="https://x.com/intent/tweet?text=%40oddiefun%20"
+            <a class="btn btn--2l" id="spend" href="https://x.com/intent/tweet?text=On%20the%20record%20%40oddiefun%3A%20"
                target="_blank" rel="noopener">
               <span class="btn__main">Use a ticket <i aria-hidden="true">&rarr;</i></span>
               <small>tweet a claim, tag @oddiefun</small>
             </a>
             <a class="board-jump" href="#board">See your row on the board <i aria-hidden="true">&darr;</i></a>
           </div>
+          <p class="spend-shape">
+            <b class="spend-shape__fixed">On the record @oddiefun:</b>
+            <span class="spend-shape__slot">your claim, with a date or a number in it</span>
+          </p>
         </div>
       </div>
 
