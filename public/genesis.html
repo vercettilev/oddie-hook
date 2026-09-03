@@ -406,6 +406,11 @@
      olmasi dogru durumdur. */
   /* Bolumun ilk sozu artik bu tek cumle: baslik degil, gomulu bir alt satir
      da degil. */
+  /* Gorsel olarak gizli ama belge yapisinda ve ekran okuyucuda VAR. Bolumun
+     gorunur basligini gorselin kendi lettering'i tasiyor; bu da anlatiyi
+     tasiyor. display:none OLMAZ, o ekran okuyucudan da siler. */
+  .a11y{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
   .lede--lead{max-width:52ch;margin-top:0}
   .thread{margin:clamp(22px,2.8vw,38px) 0 0;max-width:880px;position:relative}
   .thread__art{display:block;width:100%;height:auto}
@@ -745,7 +750,13 @@
        rather than the thing that makes the market exist. -->
   <section class="B on-dark" id="loop">
     <div class="shell">
-      <!-- Kicker + H2 + pul kalkti: alttaki gorselin KENDI basligi ("3 STEP
+      <!-- Gorunur baslik gorselin kendi lettering'inde ("3 STEP GENESIS
+           FLOW"); belge yapisinin da bir basligi olmali, yoksa "How it works"
+           baglantisi etiketsiz bir bolume iniyor ve ekran okuyucu H1'den
+           dogruca tahtaya atliyordu. -->
+      <h2 class="a11y">How your 5 tickets work</h2>
+
+      <!-- Kicker + gorunur H2 + pul kalkti: alttaki gorselin KENDI basligi ("3 STEP
            GENESIS FLOW") ayni seyi soyluyordu, iki baslik ust uste biniyordu.
            Gorselin tasimadigi tek cumle bu: "claim" NEDIR. Gercek bir
            kullanici tam bunu bilemedigi icin @oddiefun'i etiketleyip ne
