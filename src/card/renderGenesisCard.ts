@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { C, DISPLAY, META, brandLockup, esc, textWidth, wrapToWidth } from "./renderCard.js";
-import { Archetype, ARCHETYPE_LABEL } from "../genesis/archetype.js";
+import { C, DISPLAY, META, brandLockup, esc, wrapToWidth } from "./renderCard.js";
+import { Archetype } from "../genesis/archetype.js";
 
 // The Genesis profile card: the mirror a freshly connected account gets back.
 // Same brand shell as every other share card (white ground, ink-stroked frame,
@@ -74,30 +74,31 @@ const PALETTES: Record<GenesisTheme, Palette> = {
 };
 
 export function renderGenesisCard(card: GenesisCard, theme: GenesisTheme = "midnight"): string {
-  const label = ARCHETYPE_LABEL[card.archetype];
   const p = PALETTES[theme];
 
   // The card is a flex someone reposts, so it carries only what is theirs to
-  // brag about: their handle, the costume they earned, and the type's one-line
-  // verdict. Everything transactional (the old ticket stub, the "tag @oddiefun"
-  // instruction, the redundant "account since" reason) is gone — the sticker
-  // owns the right half and the words are cut to the share-worthy minimum.
+  // brag about: their handle and the type's one-line verdict. The archetype
+  // name lives on the sticker itself, so the old pill badge (a second "THE OG")
+  // and the GENESIS kicker (a third brand mark next to the wordmark and footer)
+  // are both cut — the sticker owns the right half, the left holds four things
+  // at most: wordmark, handle, the flex line, and the url.
 
-  // --- left column: who, the costume, the one flex line ------------------
-  const labelFs = 32;
-  const labelW = Math.round(textWidth(label, labelFs, "display")) + 44;
-
-  // The headline is the shareable payload. It gets the full left column above
-  // the footer; the sticker takes the right, so it wraps to ~455px.
-  let headFs = 44;
+  // The handle and the flex line are one hero unit: WHO, then their verdict.
+  // Centred vertically in the space between the wordmark and the footer so the
+  // block never strands the handle at the top over a gap.
+  const handleFs = 60;
+  let headFs = 46;
   let head = wrapToWidth(card.headline, 455, headFs, 4, "meta");
-  if (head.lines.length >= 4) { headFs = 34; head = wrapToWidth(card.headline, 455, headFs, 4, "meta"); }
-  // Bottom-anchored so 2- and 4-line headlines both sit on the footer.
-  const headBottom = 470;
-  const headLines = head.lines.map((ln, i) => {
-    const y = headBottom - (head.lines.length - 1 - i) * (headFs + 8);
-    return `<text x="${PAD_L}" y="${y}" font-family="${META}" font-size="${headFs}" font-weight="800" fill="${p.head}">${esc(ln)}</text>`;
-  }).join("\n  ");
+  if (head.lines.length >= 4) { headFs = 35; head = wrapToWidth(card.headline, 455, headFs, 4, "meta"); }
+  const lineH = headFs + 8;
+  const gap = 66;                         // handle baseline -> first headline baseline
+  const region = { top: 156, bottom: 486 };
+  const blockH = 46 /*handle cap*/ + gap + (head.lines.length - 1) * lineH;
+  const handleY = Math.max(region.top + 46, region.top + Math.round(((region.bottom - region.top) - blockH) / 2) + 46);
+  const headTop = handleY + gap;
+  const headLines = head.lines.map((ln, i) =>
+    `<text x="${PAD_L}" y="${headTop + i * lineH}" font-family="${META}" font-size="${headFs}" font-weight="800" fill="${p.head}">${esc(ln)}</text>`
+  ).join("\n  ");
 
   // --- right half: the costume, floor to ceiling ------------------------
   // meet-fit into a tall right zone so no sticker is cropped or distorted; the
@@ -119,16 +120,8 @@ export function renderGenesisCard(card: GenesisCard, theme: GenesisTheme = "midn
   ${sparks}
   ${brandLockup(p.onDark)}
 
-  <!-- season kicker, moved left so the sticker owns the whole right side -->
-  <text x="${PAD_L}" y="176" font-family="${META}" font-size="19" font-weight="700" fill="${p.kicker}" letter-spacing="4">GENESIS</text>
-
-  <!-- who, and the costume they earned -->
-  <text x="${PAD_L}" y="228" font-size="52" fill="${p.handle}">${esc(card.handle)}</text>
-  <g transform="rotate(-1.5 ${PAD_L + labelW / 2} 268)">
-    <rect x="${PAD_L + 4}" y="${250 + 4}" width="${labelW}" height="50" fill="${p.pillOffset}"/>
-    <rect x="${PAD_L}" y="250" width="${labelW}" height="50" fill="${p.pillBg}"/>
-    <text x="${PAD_L + 22}" y="${250 + 37}" font-size="${labelFs}" fill="${p.pillText}">${esc(label)}</text>
-  </g>
+  <!-- who: the only identity line, given room now the pill and kicker are gone -->
+  <text x="${PAD_L}" y="${handleY}" font-size="${handleFs}" fill="${p.handle}">${esc(card.handle)}</text>
 
   <!-- the type's own one-line verdict: the whole reason it gets reposted -->
   ${headLines}
