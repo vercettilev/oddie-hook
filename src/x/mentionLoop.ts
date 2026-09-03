@@ -45,6 +45,9 @@ export interface SweepDeps {
     question: string;
     closeInput: unknown;
     sourceUrl: string;
+    /** Who tagged, i.e. who OPENED the market. The 2% goes to this person, and
+     *  on a reply-tag it is not the author of sourceUrl. */
+    taggerHandle: string | null;
     category?: string;
     resolutionCriteria?: string | null;
     resolvability?: string | null;
@@ -189,9 +192,10 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         continue;
       }
 
-      // Provenance points at the CLAIM, because the 3% belongs to whoever made
-      // the argument worth pricing. When there is no parent, the mention is the
-      // claim and its author is the creator.
+      // Provenance points at the CLAIM: sourceUrl is the post being priced and
+      // it is what the card quotes and what the one-post-one-market rule reads.
+      // It is NOT the payee. The 2% goes to whoever OPENED the market, which on
+      // a reply-tag is the tagger, and that handle is carried separately.
       const sourceHandle = parent ? parent.authorHandle : m.authorHandle;
       const sourceId = parent ? parent.id : m.id;
       const sourceUrl = tweetUrl(sourceHandle, sourceId);
@@ -256,6 +260,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       }
 
       const minted = await deps.openMarket({
+        taggerHandle: m.authorHandle,
         question: ex.question,
         closeInput: ex.close_time,
         sourceUrl,

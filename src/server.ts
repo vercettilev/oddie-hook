@@ -2804,6 +2804,17 @@ async function openMarketFromClaim(input: {
   question: string;
   closeInput: unknown;
   sourceUrl: string | null;
+  /**
+   * WHO OPENED IT, when that is somebody other than the claim's author.
+   *
+   * Lev'in karari: %2 marketi ACAN kisiye gider. Reply-tag akisinda acan kisi
+   * ETIKETCIDIR; sourceUrl ise iddianin sahibini gosterir (provenance, kartta
+   * gorunen alinti). Ikisi ayni sey degil ve bu alan olmadan para yanlis
+   * kisiye gidiyordu: recordSurfacer handle'i sourceUrl'den turetiyor,
+   * nameCreatorOnTaggedMarkets da zincirdeki creator'i o satirdan yaziyordu.
+   * Bos birakildiginda eski davranis aynen surer (Telegram, admin, agent).
+   */
+  taggerHandle?: string | null;
   category?: string;
   yesPct?: number;
   resolutionCriteria?: string | null;
@@ -2866,7 +2877,12 @@ async function openMarketFromClaim(input: {
   // raising, so an unauthenticated /api/chain/ensure landing in that window
   // minted an X market at 0 bps. Nothing on chain can change a rate afterwards,
   // so that was the creator's entire share, gone, unrecoverably.
-  const creatorFeeBps = creatorFeeBpsForHandle(handleFromSourceUrl(sourceUrl));
+  // Oran, PARAYI ALACAK kisiye gore belirlenir. Etiketci varsa odenecek kisi
+  // odur; yoksa eski davranis (iddianin sahibi). Ikisini ayirmak, oranin
+  // gercek ama alicinin bilinmedigi bir marketi mumkun kilardi: %2 kazanandan
+  // kesilir ve hicbir zaman talep edilemezdi.
+  const payeeHandle = input.taggerHandle ?? handleFromSourceUrl(sourceUrl);
+  const creatorFeeBps = creatorFeeBpsForHandle(payeeHandle);
 
   // The vault comes first. Written the other way round, a Solana failure
   // returned "was not published" to the caller while the row it had already
@@ -2891,7 +2907,9 @@ async function openMarketFromClaim(input: {
   // market must not report success while its provenance silently failed to
   // land. recordSurfacer swallows its own oEmbed failures, so this waits on the
   // write and not on X.
-  await recordSurfacer(slug, { sourceUrl });
+  // handle ACIKCA veriliyor: verilmezse recordSurfacer onu sourceUrl'den
+  // turetir, yani iddianin sahibini yazar ve zincirdeki creator o olur.
+  await recordSurfacer(slug, { sourceUrl, handle: payeeHandle });
   void awardSurface(slug).catch(() => {}); // points are best-effort; the row is not
 
   return {
@@ -4186,6 +4204,9 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
         question: input.question,
         closeInput: input.closeInput,
         sourceUrl: input.sourceUrl,
+        // Marketi acan kisi: %2 ona gider. sourceUrl iddianin sahibini
+        // gosterir ve o baska biri olabilir.
+        taggerHandle: input.taggerHandle ?? null,
         category: input.category,
         resolutionCriteria: input.resolutionCriteria,
         resolvability: input.resolvability,

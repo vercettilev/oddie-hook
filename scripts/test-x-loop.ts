@@ -63,17 +63,20 @@ const goodExtraction = (q: string): Extraction => ({
 interface Spy {
   posted: Array<{ text: string; inReplyTo: string; mediaIds?: string[] }>;
   minted: string[];
+  /** Who each mint was told OPENED the market. The 2% follows this. */
+  taggers: Array<string | null>;
   uploads: number;
 }
 
 function harness(over: Partial<SweepDeps> = {}): { deps: SweepDeps; spy: Spy } {
-  const spy: Spy = { posted: [], minted: [], uploads: 0 };
+  const spy: Spy = { posted: [], minted: [], taggers: [], uploads: 0 };
   const deps: SweepDeps = {
     mentions: async () => ({ items: [], newestId: null }),
     tweet: async (id) => ({ id, text: "Bitcoin will never hit $200k, cope harder.", authorHandle: "cryptonate" }),
     extract: async () => goodExtraction("Will Bitcoin hit $200k before 2027?"),
     openMarket: async (input) => {
       spy.minted.push(input.question);
+      spy.taggers.push(input.taggerHandle);
       return { ok: true, slug: `slug-${spy.minted.length}` } as MintResult;
     },
     cardPng: async () => Buffer.from("png"),
@@ -414,6 +417,34 @@ async function main() {
     const r = await runMentionSweep(deps);
     check("a broken ledger still mints and still replies",
       spy.minted.length === 1 && spy.posted.length === 1 && r.replied === 1);
+  }
+
+  {
+    // THE MONEY. Lev's rule: the 2% goes to whoever OPENED the market. On a
+    // reply-tag that is the tagger, never the author of the claim being
+    // priced, and the mint has to be TOLD which is which.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("800", { authorHandle: "tagger1" })], newestId: "800" }),
+      // parent (the claim) is by somebody else entirely
+      tweet: async (id) => ({ id, text: "Bitcoin will never hit $200k, cope harder.", authorHandle: "cryptonate" }),
+    });
+    await runMentionSweep(deps);
+    check("the mint is told the TAGGER opened it, not the claim's author",
+      spy.taggers.length === 1 && spy.taggers[0] === "tagger1", JSON.stringify(spy.taggers));
+  }
+  {
+    // Standalone: tagger and claim author are the same person, and the answer
+    // is still the tagger.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("801", { repliedToId: null, authorHandle: "solo1",
+        text: "GTA 6 ships before 2027 @oddiefun" })], newestId: "801" }),
+      tweet: async () => { throw new Error("no parent"); },
+    });
+    await runMentionSweep(deps);
+    check("a standalone tag names its own author as the opener",
+      spy.taggers[0] === "solo1", JSON.stringify(spy.taggers));
   }
 
   /* --------------------------------------- tag without a reply (standalone) -- */
