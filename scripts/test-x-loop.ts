@@ -23,7 +23,7 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-import { runMentionSweep, stripLeadingMentions, tweetUrl, SWEEP_CAP } from "../src/x/mentionLoop.js";
+import { runMentionSweep, stripLeadingMentions, stripBotHandle, tweetUrl, SWEEP_CAP } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
 import { botStateGet, _memMentionOutcome, _resetBotState } from "../src/store/markets.js";
 import { SINCE_KEY } from "../src/x/client.js";
@@ -416,7 +416,33 @@ async function main() {
       spy.minted.length === 1 && spy.posted.length === 1 && r.replied === 1);
   }
 
+  /* --------------------------------------- tag without a reply (standalone) -- */
+  {
+    // A TAG DOES NOT HAVE TO BE A REPLY. With no parent the person's own post
+    // is the claim, and the tag usually sits at the END of it.
+    _resetBotState();
+    let graded = "";
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("600", {
+        repliedToId: null,
+        text: "GTA 6 comes out before 2027, what do you say @oddiefun",
+      })], newestId: "600" }),
+      tweet: async () => { throw new Error("no parent should ever be fetched"); },
+      extract: async (t) => { graded = t; return goodExtraction("Will GTA 6 ship before 2027?"); },
+    });
+    const r = await runMentionSweep(deps);
+    check("a standalone tagged post still opens a market", spy.minted.length === 1 && r.replied === 1);
+    check("and our own handle is not graded as part of the claim",
+      graded === "GTA 6 comes out before 2027, what do you say", JSON.stringify(graded));
+  }
+
   /* --------------------------------------------------------------- helpers -- */
+  check("stripBotHandle takes our handle out wherever it sits",
+    stripBotHandle("GTA before 2027 @oddiefun what do you say", "oddiefun") === "GTA before 2027 what do you say");
+  check("stripBotHandle leaves somebody else's handle alone, even at the end",
+    stripBotHandle("the next CEO will be @jack", "oddiefun") === "the next CEO will be @jack");
+  check("stripBotHandle does not eat a longer handle that starts the same way",
+    stripBotHandle("ask @oddiefunny about it", "oddiefun") === "ask @oddiefunny about it");
   check("stripLeadingMentions only takes handles off the FRONT",
     stripLeadingMentions("@a @b real text @c") === "real text @c");
   check("tweetUrl falls back to the handle-free form",

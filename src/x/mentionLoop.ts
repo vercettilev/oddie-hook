@@ -53,6 +53,9 @@ export interface SweepDeps {
   cardPng(slug: string): Promise<Buffer | null>;
   uploadMedia(png: Buffer): Promise<string>;
   postReply(opts: { text: string; inReplyTo: string; mediaIds?: string[] }): Promise<{ id: string }>;
+  /** Our own handle, without the @. Used only to strip routing out of the
+   *  claim text; defaults to oddiefun. */
+  botHandle?: string;
   /** Tickets left for a handle, and the spend when a tag opens a market. Both
    *  optional so every existing caller and test constructs SweepDeps unchanged;
    *  absent, the sweep behaves exactly as it did before the season existed. */
@@ -106,6 +109,24 @@ export function stripLeadingMentions(text: string): string {
   return text.replace(/^(?:\s*@[A-Za-z0-9_]{1,15})+/, "").trim();
 }
 
+/**
+ * Take OUR OWN handle out of the claim, wherever it sits.
+ *
+ * Tagging does not have to be a reply, and in a standalone post the tag
+ * usually lands at the END ("GTA drops before 2027, what do you say
+ * @oddiefun"). stripLeadingMentions only looks at the front, so that handle
+ * went into the grader as if it were part of the argument.
+ *
+ * ONLY our handle, never a blanket trailing strip: a mention at the end can be
+ * the subject of the claim itself ("the next CEO will be @jack"), and removing
+ * it would grade a sentence with its subject cut out.
+ */
+export function stripBotHandle(text: string, handle: string): string {
+  const h = handle.replace(/^@+/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(h)) return text;
+  return text.replace(new RegExp(`@${h}\\b`, "gi"), " ").replace(/\s{2,}/g, " ").trim();
+}
+
 /** Tweets are addressed by handle in the URL, but any handle resolves; the id
  *  is what makes it canonical. `i/web` is X's own handle-free form. */
 export function tweetUrl(handle: string | null, id: string): string {
@@ -156,7 +177,12 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // under someone's take means "price THAT", and grading the mention text
       // would grade the word "@oddiefun".
       const parent = m.repliedToId ? await deps.tweet(m.repliedToId) : null;
-      const claimText = parent ? parent.text : stripLeadingMentions(m.text);
+      // Tagging is not required to be a reply. With no parent the mention IS
+      // the claim, so the person's own post becomes the market.
+      const claimText = stripBotHandle(
+        parent ? parent.text : stripLeadingMentions(m.text),
+        deps.botHandle ?? "oddiefun",
+      );
       if (!claimText || claimText.length < 12) {
         await settleMention(m.id, "skipped", { reason: "no-claim" });
         decide("skipped", { reason: "no-claim" });

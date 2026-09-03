@@ -454,6 +454,18 @@
   /* Kasasi bos yeni market: oran yerine ne oldugunu soyleyen tek satir. */
   .tw__empty{margin:10px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
     letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+  /* Ikinci yol. Etiketin cevap OLMASI SART DEGIL: kendi tweet'ini atip
+     icinde etiketlersen de market acilir (kod'da da oyle: ebeveyn yoksa
+     mention'in kendisi iddiadir). Ilk demo yalniz cevap yolunu gosteriyordu. */
+  .or{display:flex;align-items:center;gap:14px;margin:clamp(20px,2.4vw,32px) 0 0;
+    font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--fg-3)}
+  .or::before,.or::after{content:"";height:3px;background:var(--line);flex:1}
+  .tw--solo{margin-top:clamp(16px,1.9vw,26px);rotate:.4deg}
+  .tw--solo::before{display:none}
+  /* Etiket cumlenin ICINDE: standalone'da genelde sona dusuyor. */
+  .tw__inline{background:var(--yellow);box-shadow:3px 3px 0 var(--ink);
+    padding:1px 6px;font-weight:800;white-space:nowrap}
   @media (max-width:520px){
     .tw__av{width:26px;height:26px}
     .tw + .tw::before{left:22px}
@@ -787,6 +799,18 @@
           <p class="tw__link">oddie.fun/m/bitcoin-200k-2027</p>
           <div class="tw__yesno"><b>YES</b><b>NO</b></div>
           <p class="tw__empty">Nobody has bet yet. There are no odds until somebody does.</p>
+        </div>
+
+        <p class="or">Or with no post to reply to</p>
+
+        <div class="tw tw--solo">
+          <div class="tw__who">
+            <span class="tw__av" aria-hidden="true"></span>
+            <b>You</b><span>@you</span>
+          </div>
+          <p class="tw__txt">GTA 6 comes out before 2027. What do you say
+            <b class="tw__inline">@oddiefun</b></p>
+          <span class="tw__note">Your own post, tagged. Same ticket, same market.</span>
         </div>
       </div>
 
