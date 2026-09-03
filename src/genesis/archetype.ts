@@ -88,9 +88,11 @@ const ARCHETYPE_BRAG: Record<Archetype, string> = {
   main: "It was always my timeline.",
 };
 
-/** The share-tweet body (without the link, which the caller appends). */
+/** The share-tweet body (without the link, which the caller appends).
+ *  A blank line separates the brag from the verdict, and @oddiefun is a real
+ *  mention (mid-tweet, so X does not treat it as a reply). */
 export function genesisShareLine(a: Archetype): string {
-  return `${ARCHETYPE_BRAG[a]} oddie called it: ${ARCHETYPE_LABEL[a]}. what's yours?`;
+  return `${ARCHETYPE_BRAG[a]}\n\n@oddiefun called it: ${ARCHETYPE_LABEL[a]}. what's yours?`;
 }
 
 /* ------------------------------------------------------------- signals -- */
