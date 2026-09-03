@@ -72,6 +72,27 @@ export const ARCHETYPE_LABEL: Record<Archetype, string> = {
   rookie: "THE ROOKIE", og: "THE OG", main: "THE MAIN CHARACTER",
 };
 
+// The first line of the share tweet: a first-person brag in the type's voice.
+// The card image already carries the handle, the label and the flat headline,
+// so the tweet TEXT adds attitude the picture can't and a challenge that makes
+// the reader want their own. No em dashes (Lev's rule for user-facing copy).
+const ARCHETYPE_BRAG: Record<Archetype, string> = {
+  prophet: "I call it before the chart does.",
+  loudest: "Loudest in every room, and usually right.",
+  lurker: "Watched everything. Said nothing. Until now.",
+  doubter: "Doubt is a strategy. Mine works.",
+  maxi: "One coin. One thesis. No exit.",
+  judge: "I grade your takes so you don't have to.",
+  rookie: "Day one. Remember the name.",
+  og: "Here before it was cool.",
+  main: "It was always my timeline.",
+};
+
+/** The share-tweet body (without the link, which the caller appends). */
+export function genesisShareLine(a: Archetype): string {
+  return `${ARCHETYPE_BRAG[a]} oddie called it: ${ARCHETYPE_LABEL[a]}. what's yours?`;
+}
+
 /* ------------------------------------------------------------- signals -- */
 
 // A prophecy is either a claim WITH a date ("will" alone catches half of X, a
