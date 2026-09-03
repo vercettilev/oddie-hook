@@ -199,6 +199,20 @@ export async function linkAccount(rawDeviceId: string, id: Identity): Promise<Li
   }
 }
 
+/**
+ * Sign THIS BROWSER out: drop its device_account row. The account, its
+ * canonical device and every bit of its history stay untouched — the browser
+ * simply goes back to being anonymous, exactly the state it was born in.
+ * Reconnecting is the same OAuth door as ever; linkAccount finds the account
+ * and repoints. Nothing here is destructive, which is why it needs no
+ * confirmation ceremony.
+ */
+export async function disconnectDevice(deviceId: string): Promise<void> {
+  if (!STORE_PERSISTENT) { _memDeviceAccount.delete(deviceId); return; }
+  await storeSchema();
+  await storeDb().query(`DELETE FROM device_account WHERE device_id = $1`, [deviceId]);
+}
+
 /** Every account this browser is signed in to. Empty for an anonymous device. */
 export async function accountsFor(deviceId: string): Promise<Account[]> {
   if (!STORE_PERSISTENT) {

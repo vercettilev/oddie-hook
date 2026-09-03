@@ -45,13 +45,13 @@ import { renderCardPng } from "./card/renderPng.js";
 import { renderBanner } from "./card/renderBanner.js";
 import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
-import { classifyArchetype, ARCHETYPE_LABEL } from "./genesis/archetype.js";
+import { classifyArchetype, ARCHETYPE_LABEL, genesisShareLine } from "./genesis/archetype.js";
 import { captureGenesisProfile, genesisProfileByHandle, genesisProfileForDevice, type GenesisProfile } from "./genesis/profileStore.js";
 import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, GENESIS_TICKETS } from "./genesis/season.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor } from "./store/accounts.js";
+import { linkAccount, accountsFor, disconnectDevice } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
 
@@ -1296,11 +1296,16 @@ app.get("/card/genesis/:handle.png", async (req, res) => {
  * in the timeline. Public on purpose — a stranger who taps through lands one
  * button away from their own card.
  */
+// Bump when the Genesis card design changes so X (which caches og:images hard)
+// re-fetches: the query makes the URL new to the crawler, the bytes are already
+// the current render.
+const GENESIS_CARD_VERSION = "3";
+
 app.get("/g/:handle", async (req, res) => {
   const gp = await genesisProfileByHandle(req.params.handle).catch(() => null);
   if (!gp) return res.redirect("/genesis");
   const label = ARCHETYPE_LABEL[gp.archetype];
-  const png = `${BASE_URL}/card/genesis/${encodeURIComponent(gp.handle)}.png`;
+  const png = `${BASE_URL}/card/genesis/${encodeURIComponent(gp.handle)}.png?v=${GENESIS_CARD_VERSION}`;
   const title = `${label} · @${gp.handle}`;
   res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1338,6 +1343,7 @@ app.get("/api/genesis/me", async (req, res) => {
     label: ARCHETYPE_LABEL[gp.archetype], headline: gp.headline, reason: gp.reason,
     cardUrl: `/card/genesis/${encodeURIComponent(gp.handle)}.png`,
     shareUrl: `${BASE_URL}/g/${encodeURIComponent(gp.handle)}`,
+    shareText: genesisShareLine(gp.archetype),
     // Absent rather than zeroed when the read failed: the page shows what it
     // knows, and a fabricated 5/5 would be a lie about somebody's balance.
     standing,
@@ -2261,6 +2267,21 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
     console.error(`[auth] ${p} failed:`, (err as Error).message);
     return back("auth_error=link_failed");
   }
+});
+
+/**
+ * Sign this browser out. POST because it changes state; body carries the same
+ * deviceId the rest of the API speaks. Deliberately NOT provider-scoped: the
+ * genesis page has exactly one identity to let go of, and dropping the
+ * device_account row is what "disconnect" honestly means here — the account
+ * and its history survive, reconnecting is one OAuth round trip.
+ */
+app.post("/api/auth/disconnect", express.json(), async (req, res) => {
+  const raw = (req.body as { deviceId?: unknown })?.deviceId;
+  const deviceId = typeof raw === "string" && DEVICE_ID.test(raw) ? raw : null;
+  if (!deviceId) return res.status(400).json({ ok: false, error: "deviceId required" });
+  await disconnectDevice(deviceId).catch(() => {});
+  res.json({ ok: true });
 });
 
 /** The exact URI each provider console must have registered. Read-only, no secrets. */
