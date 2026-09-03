@@ -328,7 +328,7 @@ function b64ToBytes(b64) {
 
     const sol = (position.lamports / 1e9).toFixed(3);
     shell(`<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>, and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
-      <button class="claimbtn" id="chainclaim">Claim winnings</button>
+      <button class="claimbtn" id="chainclaim">Collect winnings</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`);
 
@@ -364,7 +364,7 @@ function b64ToBytes(b64) {
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       } catch (e) {
-        btn.disabled = false; btn.textContent = "Claim winnings";
+        btn.disabled = false; btn.textContent = "Collect winnings";
         if (line) line.textContent = e.message || "Something went wrong. Try again.";
       }
     };

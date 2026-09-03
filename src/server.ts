@@ -1319,7 +1319,7 @@ a.claim{background:#D7DC1F;color:#020302;text-decoration:none;font-weight:800;
 padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
 <img src="${png}" alt="${escHtml(title)}">
 <p>oddie read this profile. Yours is one tap away.</p>
-<a class="claim" href="/genesis">Claim your 5 tickets</a>
+<a class="claim" href="/genesis">Get your 5 tickets</a>
 </body></html>`);
 });
 

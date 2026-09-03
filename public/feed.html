@@ -3205,7 +3205,7 @@ function shareMenu({url,text,slug,source,anchor}){
     ev("share_done",{slug,source,via:"whatsapp"});
   }));
   const loudIcon='<svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6l-5 4H4a1 1 0 0 0-1 1z"/><path d="M15 9a3.5 3.5 0 0 1 0 6"/><path d="M17.5 6.5a7 7 0 0 1 0 11"/></svg>';
-  menu.appendChild(item("Claim oddies",loudIcon,()=>loudClaim(source)));
+  menu.appendChild(item("Collect oddies",loudIcon,()=>loudClaim(source)));
   function close(){dim.remove();menu.remove();document.removeEventListener("keydown",onKey);}
   function onKey(e){if(e.key==="Escape")close();}
   dim.onclick=close;document.addEventListener("keydown",onKey);
@@ -3304,7 +3304,7 @@ function loudPromoCard(){
       <div class="cc-title">Call it loud. Get paid for it.</div>
       <div class="cc-sub">+150 oddies per cleared post · +300 for the week's loudest<span id="loudwin"></span></div>
     </div>
-    <button class="claimbtn" id="loudpromobtn">Claim oddies</button>
+    <button class="claimbtn" id="loudpromobtn">Collect oddies</button>
     <button class="onbx" type="button" aria-label="Dismiss">×</button>`;
   el.querySelector("#loudpromobtn").onclick=()=>loudClaim("feed_promo");
   el.querySelector(".onbx").onclick=()=>{lsSet(LOUD_PROMO_KEY);el.remove();};
