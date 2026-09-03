@@ -213,6 +213,54 @@
   .B__fig img{width:100%}
   .fignote{margin:clamp(12px,1.5vw,20px) 0 0;text-align:center;font-family:var(--mono);
     font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3)}
+
+  /* ---------------------------------------------------------------- akis --
+     Mekanigin resmi, cizim yerine sayfanin kendi kagidiyla. Onceki gorsel
+     uc seyi yanlis ogretiyordu: @oddiefun tweet'in kosesinde filigran gibi
+     duruyordu (yazilmis bir cevap gibi degil), ok marketin KENDILIGINDEN
+     olustugunu ima ediyordu (okuyucunun isi resimde yoktu), ve yeni dogmus
+     bir markette YES %68 gosteriyordu. Ucu de burada duzeliyor; ozellikle
+     ORAN YOK, cunku yeni marketin kasasi bostur. */
+  .flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;
+    align-items:center;gap:clamp(10px,1.2vw,20px)}
+  .fw{background:var(--cream);color:var(--ink);
+    padding:clamp(13px,1.3vw,20px) clamp(14px,1.4vw,21px);
+    box-shadow:8px 9px 0 var(--pink-deep)}
+  .fw:nth-of-type(1){rotate:-.6deg}
+  .fw:nth-of-type(2){rotate:.5deg}
+  .fw:nth-of-type(3){rotate:-.4deg}
+  .fw__who{display:flex;align-items:center;gap:8px}
+  .fw__av{width:26px;height:26px;border-radius:50%;background:var(--ink);flex:0 0 auto}
+  .fw__av--o{background:var(--yellow);border:3px solid var(--ink)}
+  .fw__who b{font-family:var(--display);font-weight:400;font-size:17px;text-transform:uppercase}
+  .fw__who span{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink-2)}
+  .fw__txt{margin:9px 0 0;font-size:clamp(15px,1.35vw,18px);line-height:1.42;color:var(--ink)}
+  .fw__re{margin:0;font-family:var(--mono);font-size:11px;font-weight:700;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+  /* Sayfanin en onemli dokuz karakteri: yazilmis bir cevap, kosede duran bir
+     rozet degil. */
+  .fw__tag{display:inline-block;margin:10px 0 0;font-family:var(--display);
+    font-weight:400;font-size:clamp(22px,2.3vw,32px);line-height:1;color:var(--ink);
+    background:var(--yellow);padding:6px 12px 4px;box-shadow:5px 6px 0 var(--ink)}
+  .fw__note{display:block;margin:11px 0 0;font-family:var(--mono);font-size:11px;
+    font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+  .fw__cta{margin:10px 0 0;font-family:var(--display);font-weight:400;
+    text-transform:uppercase;font-size:clamp(13px,1.25vw,16px);color:var(--ink)}
+  .fw__yesno{display:flex;gap:7px;margin:11px 0 0}
+  .fw__yesno b{font-family:var(--display);font-weight:400;font-size:14px;
+    padding:6px 14px 4px;border:3px solid var(--ink)}
+  .fw__yesno b:first-child{background:var(--yellow)}
+  .fw__yesno b:last-child{background:var(--pink);color:#fff}
+  .fw__empty{margin:9px 0 0;font-family:var(--mono);font-size:11px;font-weight:700;
+    letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+  /* Oklar ADIMLAR arasinda, sihir arasinda degil: ikisi de bir insanin
+     hareketinden sonra geliyor. */
+  .fw__go{font-family:var(--display);font-weight:400;font-size:clamp(22px,2.4vw,34px);
+    color:var(--pink);line-height:1}
+  @media (max-width:900px){
+    .flow{grid-template-columns:1fr;gap:clamp(12px,3vw,18px)}
+    .fw__go{justify-self:center;rotate:90deg;font-size:26px}
+  }
   
   /* ================================================== C · PINK · reputation ==
      Two columns so the field is not a headline over a void, and the three
@@ -501,8 +549,10 @@
     right:clamp(-26px,-1.8vw,-10px);top:-16px;rotate:13deg}
   .B__head::after{width:clamp(34px,3.6vw,56px);aspect-ratio:1;background-image:var(--m-star-p);
     left:clamp(-38px,-2.8vw,-14px);bottom:clamp(-16px,-1.2vw,-6px);rotate:-8deg}
+  /* Kartlar geldikten sonra bu isaret figurun sol ustunde ilk kartin
+     uzerine biniyordu; yukari ve disari alindi. */
   .B__fig::before{width:clamp(44px,5vw,76px);aspect-ratio:64/56;background-image:var(--m-dash-p);
-    left:clamp(-28px,-2vw,-10px);top:clamp(-18px,-1.2vw,-2px);rotate:-14deg}
+    left:clamp(-30px,-2.4vw,-12px);top:calc(-1 * clamp(30px,3.4vw,58px));rotate:-14deg}
 
   /* C — pembe uzerinde sari/siyah, maskotun ve pulun konturundan */
   .C__top::after{width:clamp(46px,5vw,76px);aspect-ratio:64/56;background-image:var(--m-dash-y);
@@ -538,7 +588,10 @@
     .B .B__head.col--mid{align-items:flex-start;text-align:left}
     .B .B__head .h2 span{margin-left:0;margin-right:0}
     .B__mani .h2 span:nth-child(2){margin-left:0}
-    .B__fig{width:calc(100% + 8vw);margin-left:-4vw;margin-top:clamp(16px,4vw,28px)}
+    /* Bu tasma GORSEL icindi: resim kenardan akinca iyi duruyordu. Figur
+       artik OKUNACAK kartlar tasiyor ve ayni tasma metni kirpiyor, o yuzden
+       dar ekranda figur kabin icinde kaliyor. */
+    .B__fig{width:100%;margin-left:0;margin-top:clamp(16px,4vw,28px)}
     .fignote{position:static;display:inline-block;margin-top:10px}
 
     .C__top{grid-template-columns:1fr}
@@ -616,7 +669,8 @@
     .B__head{grid-column:1;grid-row:3;max-width:none;margin-left:0;
       margin-top:clamp(22px,5vw,40px)}
     .B__fig{grid-column:1;grid-row:4}
-    .B__fig{width:calc(100% + 8vw);margin-left:-4vw}
+    /* Ayni sebep: tasma gorselindi, kartlari kirpiyor. */
+    .B__fig{width:100%;margin-left:0}
   }
 
   /* .B__head satir 2'ye tasinip saga kayinca sol kenardaki yildiz metnin
@@ -1014,10 +1068,36 @@
       </div>
 
       <figure class="B__fig reveal">
-        <img src="/brand/flow.webp" alt="Example: a post claiming AI will replace more jobs than it creates gets tagged @oddiefun, and becomes an Oddie market where the crowd calls yes or no." width="1500" height="844" loading="lazy">
-        <figcaption class="fignote">The odds in the picture are an example.</figcaption>
-        <span class="anno anno--tap" aria-hidden="true">One tap to take a side</span>
-        <span class="anno anno--tag" aria-hidden="true">This reply is what opens it</span>
+        <div class="flow" aria-label="An example: somebody makes a claim, you reply @oddiefun under it, and a market comes back.">
+          <div class="fw">
+            <div class="fw__who">
+              <span class="fw__av" aria-hidden="true"></span>
+              <b>Nate</b><span>@cryptonate</span>
+            </div>
+            <p class="fw__txt">Bitcoin will never hit $200k. Cope harder.</p>
+          </div>
+
+          <span class="fw__go" aria-hidden="true">&rarr;</span>
+
+          <div class="fw">
+            <p class="fw__re">Replying to @cryptonate</p>
+            <p class="fw__tag">@oddiefun</p>
+            <span class="fw__note">You type this. That is the whole move.</span>
+          </div>
+
+          <span class="fw__go" aria-hidden="true">&rarr;</span>
+
+          <div class="fw">
+            <div class="fw__who">
+              <span class="fw__av fw__av--o" aria-hidden="true"></span>
+              <b>oddie</b><span>@oddiefun</span>
+            </div>
+            <p class="fw__txt">Will Bitcoin hit $200k before 2027?</p>
+            <p class="fw__cta">Pick a side, winners split the pool</p>
+            <div class="fw__yesno"><b>YES</b><b>NO</b></div>
+            <p class="fw__empty">Nobody has bet yet. No odds until somebody does.</p>
+          </div>
+        </div>
       </figure>
 
     </div>
