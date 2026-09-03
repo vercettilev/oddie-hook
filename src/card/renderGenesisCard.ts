@@ -44,8 +44,38 @@ export interface GenesisCard {
   claim: string | null;
 }
 
-export function renderGenesisCard(card: GenesisCard): string {
+export type GenesisTheme = "light" | "midnight" | "acid";
+
+// The three surfaces the landing actually uses. The card wears one so it reads
+// as a page pulled out of the site, not a plain white box. Midnight and acid are
+// the loud ones; light is the tame fallback.
+interface Palette {
+  bg: string; frameStroke: string; frameW: number; offset: string;
+  onDark: boolean; kicker: string; handle: string;
+  pillBg: string; pillText: string; pillOffset: string;
+  head: string; footer: string; spark: string;
+}
+const PALETTES: Record<GenesisTheme, Palette> = {
+  light: {
+    bg: C.white, frameStroke: C.ink, frameW: 13, offset: C.pinkDeep, onDark: false,
+    kicker: C.accentDeep, handle: C.ink, pillBg: C.ink, pillText: C.accent,
+    pillOffset: C.echo, head: C.ink, footer: C.muted, spark: C.echo,
+  },
+  midnight: {
+    bg: C.ground, frameStroke: C.accent, frameW: 7, offset: C.echo, onDark: true,
+    kicker: C.accent, handle: "#FFFFFF", pillBg: C.accent, pillText: C.ground,
+    pillOffset: C.echo, head: "#FFFFFF", footer: "#9AA3AE", spark: C.accent,
+  },
+  acid: {
+    bg: C.accent, frameStroke: C.ink, frameW: 13, offset: C.ink, onDark: false,
+    kicker: C.ink, handle: C.ink, pillBg: C.ink, pillText: C.accent,
+    pillOffset: C.echo, head: C.ink, footer: "#4A4F0A", spark: C.echo,
+  },
+};
+
+export function renderGenesisCard(card: GenesisCard, theme: GenesisTheme = "midnight"): string {
   const label = ARCHETYPE_LABEL[card.archetype];
+  const p = PALETTES[theme];
 
   // The card is a flex someone reposts, so it carries only what is theirs to
   // brag about: their handle, the costume they earned, and the type's one-line
@@ -66,7 +96,7 @@ export function renderGenesisCard(card: GenesisCard): string {
   const headBottom = 470;
   const headLines = head.lines.map((ln, i) => {
     const y = headBottom - (head.lines.length - 1 - i) * (headFs + 8);
-    return `<text x="${PAD_L}" y="${y}" font-family="${META}" font-size="${headFs}" font-weight="800" fill="${C.ink}">${esc(ln)}</text>`;
+    return `<text x="${PAD_L}" y="${y}" font-family="${META}" font-size="${headFs}" font-weight="800" fill="${p.head}">${esc(ln)}</text>`;
   }).join("\n  ");
 
   // --- right half: the costume, floor to ceiling ------------------------
@@ -75,29 +105,36 @@ export function renderGenesisCard(card: GenesisCard): string {
   // keeps it in the sticker-sheet language of the landing.
   const art = `<image href="${artHref(card.archetype)}" x="560" y="70" width="410" height="420" preserveAspectRatio="xMidYMid meet" transform="rotate(-2.5 765 280)"/>`;
 
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${DISPLAY}">
-  <rect width="${W}" height="${H}" fill="${C.white}"/>
-  <rect x="42" y="42" width="948" height="508" fill="${C.pinkDeep}"/>
-  <rect x="26" y="26" width="948" height="508" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
+  // A few hand-drawn sparks behind the sticker, the landing's marginalia energy.
+  const sparks = `<g stroke="${p.spark}" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M556 128 l26 -16"/><path d="M548 168 l30 4"/>
+    <path d="M980 300 l-26 12"/><path d="M956 470 l20 20"/>
+  </g>`;
 
-  ${brandLockup()}
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${DISPLAY}">
+  <rect width="${W}" height="${H}" fill="${p.bg}"/>
+  <rect x="42" y="42" width="948" height="508" fill="${p.offset}"/>
+  <rect x="26" y="26" width="948" height="508" fill="${p.bg}" stroke="${p.frameStroke}" stroke-width="${p.frameW}"/>
+
+  ${sparks}
+  ${brandLockup(p.onDark)}
 
   <!-- season kicker, moved left so the sticker owns the whole right side -->
-  <text x="${PAD_L}" y="176" font-family="${META}" font-size="19" font-weight="700" fill="${C.accentDeep}" letter-spacing="4">GENESIS</text>
+  <text x="${PAD_L}" y="176" font-family="${META}" font-size="19" font-weight="700" fill="${p.kicker}" letter-spacing="4">GENESIS</text>
 
   <!-- who, and the costume they earned -->
-  <text x="${PAD_L}" y="228" font-size="52" fill="${C.ink}">${esc(card.handle)}</text>
+  <text x="${PAD_L}" y="228" font-size="52" fill="${p.handle}">${esc(card.handle)}</text>
   <g transform="rotate(-1.5 ${PAD_L + labelW / 2} 268)">
-    <rect x="${PAD_L + 4}" y="${250 + 4}" width="${labelW}" height="50" fill="${C.echo}"/>
-    <rect x="${PAD_L}" y="250" width="${labelW}" height="50" fill="${C.ink}"/>
-    <text x="${PAD_L + 22}" y="${250 + 37}" font-size="${labelFs}" fill="${C.accent}">${esc(label)}</text>
+    <rect x="${PAD_L + 4}" y="${250 + 4}" width="${labelW}" height="50" fill="${p.pillOffset}"/>
+    <rect x="${PAD_L}" y="250" width="${labelW}" height="50" fill="${p.pillBg}"/>
+    <text x="${PAD_L + 22}" y="${250 + 37}" font-size="${labelFs}" fill="${p.pillText}">${esc(label)}</text>
   </g>
 
   <!-- the type's own one-line verdict: the whole reason it gets reposted -->
   ${headLines}
 
-  <!-- one small footer: brand + the hook, nothing else -->
-  <text x="${PAD_L}" y="510" font-family="${META}" font-size="17" font-weight="700" fill="${C.muted}" letter-spacing="1">oddie.fun/genesis<tspan fill="${C.accentDeep}">&#160;&#160;·&#160;&#160;5 tickets waiting</tspan></text>
+  <!-- one small footer: just the brand, nothing transactional -->
+  <text x="${PAD_L}" y="510" font-family="${META}" font-size="17" font-weight="700" fill="${p.footer}" letter-spacing="1">oddie.fun/genesis</text>
 
   ${art}
 </svg>`;
