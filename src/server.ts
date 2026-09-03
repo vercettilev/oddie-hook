@@ -59,12 +59,44 @@ const app = express();
 // Real client IPs, not the reverse proxy's — required for the real-money
 // geofence (see src/geo/resolveClientCountry.ts) to read X-Forwarded-For
 // instead of reporting Railway's own edge address for every request.
-app.set("trust proxy", true);
+//
+// 1, NOT true. `true` trusts the WHOLE X-Forwarded-For chain, and Express then
+// takes its leftmost entry: a value the client writes. Every per-IP limit in
+// this file (meteredRoute, the claims quota) was therefore keyed on a string
+// the caller chooses, so one attacker could present a fresh "IP" per request
+// and never be limited at all. Railway puts exactly one proxy in front of this
+// service, so trusting one hop makes req.ip the address THAT proxy observed,
+// which is the real client and is not writable from outside.
+//
+// If a second proxy is ever added in front (a CDN), this number goes to 2. Too
+// low is safe (limits get stricter and collapse onto the proxy); too high is
+// the hole above.
+app.set("trust proxy", 1);
 app.use(express.json());
 
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
+
+/**
+ * UYGULAMA KAPALI (Lev, 2026-09-03): app bastan yazilacak, o yuzden simdilik
+ * hicbir yol eski kabugu SERVIS ETMIYOR. Kod duruyor, dosya duruyor, tek
+ * degisen sey disari acilmasi.
+ *
+ * Bunun kapatilmasi gereken bir sey olmasinin sebebi: nav zaten "Launch app ·
+ * Coming soon" diyor ve tiklamayi blokluyordu, ama /feed URL'ini yazan herkes
+ * calisan uygulamayi aliyordu; menu "yakinda" derken urun aciktu. Uc kapi
+ * vardi ve ucu de ayni kabugu donduruyordu: /feed, /@handle ve bilinmeyen bir
+ * slug'la /m/:slug.
+ *
+ * Env ile geri acilir, deploy gerektirmeden: APP_OPEN=true.
+ */
+const APP_OPEN = (process.env.APP_OPEN ?? "false").toLowerCase() === "true";
+
+/** Kapaliyken herkesi kampanyaya gonder: 404 vermek yerine gidilecek bir yer. */
+function appClosed(res: express.Response): void {
+  res.set("Cache-Control", "no-store").redirect(302, "/genesis");
+}
 // A market page's own og/twitter tags replace this block rather than merely
 // outranking it: see the SHARE-PREVIEW-BLOCK comment in feed.html for why
 // "inject ours first and assume it wins" turned out not to hold for X.
@@ -429,6 +461,10 @@ function marketPageHtml(rec: { market: { question: string; yesPct: number; volum
 // The market permalink — every market's canonical landing page. /m/{slug} is
 // the short share path; /market/{slug} (already in the wild) serves the same.
 app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
+  // Market sayfasi kabugun kendisidir. Kapaliyken market linkleri de kapali;
+  // su an CANLIDA HIC MARKET YOK (dogrulandi: /api/v1/markets bos), yani bu
+  // hicbir paylasilmis baglantiyi kirmiyor. Bot acildiginda APP_OPEN=true.
+  if (!APP_OPEN) return appClosed(res);
   // pricingSet(), not getMarketData() alone: a shared permalink for a
   // community market must unfurl with its real live odds, not the stored
   // opening line — getMarketData() only ever knows about Kalshi/Polymarket.
@@ -492,6 +528,7 @@ function profilePageHtml(handle: string, acc: { oddieScore: number | null; hasEn
 }
 
 app.get("/@:handle", async (req, res) => {
+  if (!APP_OPEN) return appClosed(res);
   const handle = String(req.params.handle).replace(/^@+/, "");
   const deviceId = await deviceForHandle(handle).catch(() => null);
   // Unknown handle: still serve the SPA (it shows a "no such profile" state).
@@ -552,6 +589,7 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
 });
 
 app.get("/feed", (_req, res) => {
+  if (!APP_OPEN) return appClosed(res);
   res.type("html").send(FEED_HTML); // feed without a start market also works
 });
 
