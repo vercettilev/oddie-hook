@@ -428,11 +428,11 @@
   /* Ikinci yol. Etiketin cevap OLMASI SART DEGIL: kendi tweet'ini atip
      icinde etiketlersen de market acilir (kod'da da oyle: ebeveyn yoksa
      mention'in kendisi iddiadir). Ilk demo yalniz cevap yolunu gosteriyordu. */
-  .or{display:flex;align-items:center;gap:14px;margin:clamp(20px,2.4vw,32px) 0 0;
+  .or{display:flex;align-items:center;gap:14px;max-width:640px;margin:clamp(20px,2.4vw,32px) 0 0;
     font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.14em;
     text-transform:uppercase;color:var(--fg-3)}
   .or::before,.or::after{content:"";height:3px;background:var(--line);flex:1}
-  .tw--solo{margin-top:clamp(16px,1.9vw,26px);rotate:.4deg}
+  .tw--solo{margin-top:clamp(16px,1.9vw,26px);rotate:.4deg;max-width:640px}
   .tw--solo::before{display:none}
   /* Etiket cumlenin ICINDE: standalone'da genelde sona dusuyor. */
   .tw__inline{background:var(--yellow);box-shadow:3px 3px 0 var(--ink);
@@ -618,7 +618,6 @@
       <a href="https://x.com/oddiefun" target="_blank" rel="noopener">Follow on X</a>
       <a class="btn" data-soon href="/feed">Launch app <i aria-hidden="true">&rarr;</i></a>
       <a class="nav__back" href="/genesis" data-keep-state>&larr; Back</a>
-      <span class="navstate in-only">3 left &middot; #184</span>
     </div>
   </nav>
 </div>
@@ -711,37 +710,16 @@
         <div class="reveal">
           <p class="kicker">How it works</p>
           <h2 class="h2"><span>How your</span><span>5 tickets work.</span></h2>
+          <!-- Uc kart buradaydi ve ucu de sayfada baska yerde tekrar
+               ediyordu: "5 bilet" asagida "You only get 5", "insanlar
+               siralar" asagida "1 person = 1 point", etiketleme hareketi de
+               alttaki gorselde. Tekrar etmeyen TEK cumle buydu, kaldi. -->
+          <p class="lede">A claim is something that ends up true or false, with a
+            date or a number in it. Tag one and it costs 1 ticket.</p>
         </div>
         <img class="art art--record reveal" src="/brand/genesis-record.webp"
              width="700" height="811" loading="lazy" decoding="async"
              alt="Oddie holding a Genesis ticket stamped On the record.">
-      </div>
-
-      <!-- Three steps, one line each. The fourth used to be a rule about who
-           collects the fee rather than a move the player makes, so it is stated
-           once below instead of pretending to be a step. Vocabulary is locked to
-           four words across the whole page: ticket, market, people, score. -->
-      <div class="steps">
-        <div class="step reveal">
-          <span class="step__n">1</span>
-          <h3>Connect your X</h3>
-          <p>Every X account gets 5 tickets. That is your whole budget for
-            the season.</p>
-        </div>
-        <div class="step reveal">
-          <span class="step__n">2</span>
-          <h3>Tag @oddiefun on a claim</h3>
-          <p>The claim is the part that matters: something that ends up true or
-            false, with a date or a number in it. Reply under someone else&#8217;s post
-            or write the claim yourself, either way the tag is the whole move.
-            It spends 1 ticket and opens the market.</p>
-        </div>
-        <div class="step reveal">
-          <span class="step__n">3</span>
-          <h3>Let people join</h3>
-          <p>The more people who put money in your market, the higher you rank.
-            Your own wallet never counts.</p>
-        </div>
       </div>
 
       <!-- Kurali yukarida uc kutu anlatti; burasi TEK bir ornek. Sayfada bu
