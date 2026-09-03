@@ -231,6 +231,7 @@ async function renderLanding(): Promise<string> {
 }
 
 app.get("/", async (_req, res) => {
+  res.set("Cache-Control", "no-cache");
   try {
     res.type("html").send(await renderLanding());
   } catch (e) {
@@ -544,7 +545,10 @@ function positionPageHtml(rec: { market: { question: string; yesPct: number; vol
 // not a second copy of it. The explanation lives in exactly one place, and the
 // boot script switches views off location.pathname.
 app.get(["/genesis", "/genesis/how"], (_req, res) => {
-  res.type("html").send(GENESIS_HTML);
+  // no-cache = the browser must revalidate (cheap 304 via etag) before reusing.
+  // The page inlines its JS, so a heuristically-cached copy runs stale script;
+  // this is what left an old "Post your card" tweet string live after a deploy.
+  res.set("Cache-Control", "no-cache").type("html").send(GENESIS_HTML);
 });
 
 app.get("/feed", (_req, res) => {
