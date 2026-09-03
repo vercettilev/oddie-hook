@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Oddie Tickets: Genesis</title>
-<meta name="description" content="You get 5 tickets. Reply @oddiefun under a claim on X and it becomes a real market where people put money on YES or NO.">
+<meta name="description" content="You get 5 tickets. Tag @oddiefun on a claim on X and it becomes a real market where people put money on YES or NO.">
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=2">
@@ -407,53 +407,21 @@
     color:var(--fg-2);max-width:54ch}
   /* the fairness rule: a values statement, so it gets its own air */
   /* ------------------------------------------------------------- thread --
-     Istedigimiz TEK hareketin resmi. Ekran goruntusu degil, sayfanin kendi
-     kagit diliyle cizilmis bir X ipligi: birinin iddiasi, altina yazilan tek
-     kelimelik cevap, geri gelen market. Gorsel dosya degil cunku botun
-     gercek ciktisi degisince bu da elle guncellenebilir kalmali ve bir
-     .webp gibi sessizce eskimemeli.
-     KURAL: yeni acilan marketin kasasi bostur, o yuzden burada ORAN YOK.
-     Uydurma bir "%68 YES" kodun mumkun demedigi bir durumu gosterirdi. */
-  .thread{margin:clamp(26px,3.2vw,44px) 0 0;max-width:640px;position:relative}
+     Istedigimiz TEK hareketin resmi. Elle cizilmis kartlar yerine landing
+     ile ayni sticker gorseli: iki sayfa tek resmi paylassin diye (Lev'in
+     karari). Altindaki ikinci yol paneli kaliyor, cunku etiketin cevap
+     olmasi sart degil ve gorsel yalniz cevap yolunu cizyor.
+     DIKKAT: gorseldeki market %68/%32 gosteriyor. Yeni acilan bir marketin
+     kasasi bostur ve kod oran uretmez; burasi artik o kurali ihlal ediyor. */
+  .thread{margin:clamp(26px,3.2vw,44px) 0 0;max-width:880px;position:relative}
+  .thread__art{display:block;width:100%;height:auto}
   .tw{background:var(--cream);color:var(--ink);position:relative;
     padding:clamp(14px,1.6vw,20px) clamp(15px,1.7vw,22px);
     box-shadow:8px 9px 0 var(--pink-deep)}
   .tw + .tw{margin-top:clamp(16px,1.9vw,26px)}
-  .tw:nth-child(1){rotate:-.5deg}
-  .tw:nth-child(2){rotate:.45deg}
-  .tw:nth-child(3){rotate:-.35deg}
-  /* Iplik cizgisi: kartlari X'teki gibi birbirine baglar. */
-  .tw + .tw::before{content:"";position:absolute;left:26px;top:calc(-1 * clamp(16px,1.9vw,26px));
-    width:3px;height:clamp(16px,1.9vw,26px);background:var(--ink);opacity:.28}
-  .tw__who{display:flex;align-items:center;gap:9px}
-  .tw__av{width:30px;height:30px;border-radius:50%;background:var(--ink);
-    flex:0 0 auto;display:block}
-  .tw__av--o{background:var(--yellow);border:3px solid var(--ink)}
-  .tw__who b{font-family:var(--display);font-weight:400;font-size:19px;
-    text-transform:uppercase;letter-spacing:.01em}
-  .tw__who span{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink-2)}
   .tw__txt{margin:10px 0 0;font-size:clamp(16px,1.55vw,19.5px);line-height:1.45;color:var(--ink)}
-  .tw__re{margin:0;font-family:var(--mono);font-size:12px;font-weight:700;
-    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
-  /* Sayfanin en onemli 9 karakteri. Sari zemin + murekkep golge: bilet
-     pullarinin ayni grameri, cunku bu da bir bilet harcamasi. */
-  .tw__tag{display:inline-block;margin:11px 0 0;font-family:var(--display);
-    font-weight:400;font-size:clamp(26px,3vw,40px);line-height:1;color:var(--ink);
-    background:var(--yellow);padding:7px 14px 5px;box-shadow:5px 6px 0 var(--ink)}
   .tw__note{display:block;margin:14px 0 0;font-family:var(--mono);font-size:12px;
     font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
-  .tw__cta{margin:12px 0 0;font-family:var(--display);font-weight:400;
-    text-transform:uppercase;font-size:clamp(15px,1.5vw,19px);color:var(--ink)}
-  .tw__link{margin:4px 0 0;font-family:var(--mono);font-size:13px;font-weight:700;
-    color:var(--pink-deep);word-break:break-all}
-  .tw__yesno{display:flex;gap:8px;margin:13px 0 0}
-  .tw__yesno b{font-family:var(--display);font-weight:400;font-size:15px;
-    letter-spacing:.04em;padding:7px 16px 5px;border:3px solid var(--ink)}
-  .tw__yesno b:first-child{background:var(--yellow)}
-  .tw__yesno b:last-child{background:var(--pink);color:#fff}
-  /* Kasasi bos yeni market: oran yerine ne oldugunu soyleyen tek satir. */
-  .tw__empty{margin:10px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
-    letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
   /* Ikinci yol. Etiketin cevap OLMASI SART DEGIL: kendi tweet'ini atip
      icinde etiketlersen de market acilir (kod'da da oyle: ebeveyn yoksa
      mention'in kendisi iddiadir). Ilk demo yalniz cevap yolunu gosteriyordu. */
@@ -467,7 +435,6 @@
   .tw__inline{background:var(--yellow);box-shadow:3px 3px 0 var(--ink);
     padding:1px 6px;font-weight:800;white-space:nowrap}
   @media (max-width:520px){
-    .tw__av{width:26px;height:26px}
     .tw + .tw::before{left:22px}
   }
 
@@ -760,14 +727,15 @@
         </div>
         <div class="step reveal">
           <span class="step__n">2</span>
-          <h3>Reply @oddiefun under a claim</h3>
+          <h3>Tag @oddiefun on a claim</h3>
           <p>The claim is the part that matters: something that ends up true or
-            false, with a date or a number in it. Your reply is the whole move.
+            false, with a date or a number in it. Reply under someone else&#8217;s post
+            or write the claim yourself, either way the tag is the whole move.
             It spends 1 ticket and opens the market.</p>
         </div>
         <div class="step reveal">
           <span class="step__n">3</span>
-          <h3>People join</h3>
+          <h3>Let people join</h3>
           <p>The more people who put money in your market, the higher you rank.
             Your own wallet never counts.</p>
         </div>
@@ -776,42 +744,15 @@
       <!-- Kurali yukarida uc kutu anlatti; burasi TEK bir ornek. Sayfada bu
            hareketin resmi hic yoktu ve gercek bir kullanici @oddiefun yazip
            ne olacagini bilemedigini yazdi. -->
-      <div class="thread reveal" aria-label="An example: somebody makes a claim, you reply @oddiefun, a market comes back.">
-        <div class="tw">
-          <div class="tw__who">
-            <span class="tw__av" aria-hidden="true"></span>
-            <b>Nate</b><span>@cryptonate</span>
-          </div>
-          <p class="tw__txt">Phantom never cracks the top 10 finance apps. Cope harder.</p>
-        </div>
-
-        <div class="tw">
-          <p class="tw__re">Replying to @cryptonate</p>
-          <p class="tw__tag">@oddiefun</p>
-          <span class="tw__note">That is the whole move. One word, nothing else.</span>
-        </div>
-
-        <div class="tw">
-          <div class="tw__who">
-            <span class="tw__av tw__av--o" aria-hidden="true"></span>
-            <b>oddie</b><span>@oddiefun</span>
-          </div>
-          <p class="tw__txt">Phantom in the US top 10 finance apps before 2027?</p>
-          <p class="tw__cta">Pick a side, winners split the pool &darr;</p>
-          <p class="tw__link">oddie.fun/m/phantom-top10-2027</p>
-          <div class="tw__yesno"><b>YES</b><b>NO</b></div>
-          <p class="tw__empty">Nobody has bet yet. There are no odds until somebody does.</p>
-        </div>
+      <div class="thread reveal">
+        <img class="thread__art" src="/brand/flow-market.webp" width="1600" height="900"
+             loading="lazy" alt="Three steps: somebody posts that Pump.fun will close Q4 with more revenue than Q3, you tag @oddiefun on it, and an Oddie market opens on that claim with a YES and a NO side.">
 
         <p class="or">Or with no post to reply to</p>
 
         <div class="tw tw--solo">
-          <div class="tw__who">
-            <span class="tw__av" aria-hidden="true"></span>
-            <b>You</b><span>@you</span>
-          </div>
-          <p class="tw__txt">GTA 6 comes out before 2027. What do you say
-            <b class="tw__inline">@oddiefun</b></p>
+          <p class="tw__txt">Firedancer runs a third of Solana stake before 2027.
+            What do you say <b class="tw__inline">@oddiefun</b></p>
           <span class="tw__note">Your own post, tagged. Same ticket, same market.</span>
         </div>
       </div>
