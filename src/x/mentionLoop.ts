@@ -53,6 +53,11 @@ export interface SweepDeps {
   cardPng(slug: string): Promise<Buffer | null>;
   uploadMedia(png: Buffer): Promise<string>;
   postReply(opts: { text: string; inReplyTo: string; mediaIds?: string[] }): Promise<{ id: string }>;
+  /** Tickets left for a handle, and the spend when a tag opens a market. Both
+   *  optional so every existing caller and test constructs SweepDeps unchanged;
+   *  absent, the sweep behaves exactly as it did before the season existed. */
+  ticketsLeft?(handle: string): Promise<number>;
+  spendTicket?(slug: string, tagger: string, source: string | null): Promise<boolean>;
   /** Public origin, for building the /m/{slug} permalink the reply carries. */
   baseUrl: string;
   /** The bot's own user id, so it can never answer itself. */
@@ -196,6 +201,19 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         continue;
       }
 
+      // OUT OF TICKETS: checked BEFORE the model call and before the mint, so
+      // an exhausted tagger costs neither an opus call nor a rent deposit.
+      // Silent, like every other gate here, and their own page is where the
+      // balance lives, so there is somewhere honest to go and see it.
+      if (deps.ticketsLeft && m.authorHandle) {
+        const left = await deps.ticketsLeft(m.authorHandle).catch(() => 1);
+        if (left <= 0) {
+          await settleMention(m.id, "skipped", { reason: "no-tickets" });
+          decide("skipped", { reason: "no-tickets" });
+          continue;
+        }
+      }
+
       // Capped for the same reason the admin route caps at 4000: the parent's
       // full text goes into an opus prompt with adaptive thinking, and X's post
       // limit is not our budget. A long-form post was a ~6k-token user message
@@ -223,6 +241,13 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         await settleMention(m.id, "failed", { reason: `mint:${minted.status} ${minted.error}` });
         decide("failed", { reason: `mint:${minted.status}` });
         continue;
+      }
+
+      // The market exists, so the ticket is spent. After the mint on purpose:
+      // a tag that failed to become a market costs the tagger nothing.
+      if (deps.spendTicket && m.authorHandle) {
+        await deps.spendTicket(minted.slug, m.authorHandle, sourceHandle).catch((e) =>
+          log("ticket spend failed (market still stands)", { tweetId: m.id, err: (e as Error).message }));
       }
 
       const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;

@@ -761,6 +761,45 @@ CREATE TABLE IF NOT EXISTS genesis_profile (
   captured_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS genesis_profile_handle_idx ON genesis_profile (lower(handle));
+
+-- The Genesis season. All three are keyed on the X HANDLE, lowercased, NOT on
+-- a connected account: "every X account gets 5 tickets" is a promise to every
+-- tagger, and keying on the account would mean the people who connected were
+-- the only ones who could ever run out. See genesis/season.ts.
+
+-- Every ticket movement. The log IS the balance (5 + SUM(delta)); dedup_key
+-- makes a retried sweep or a replayed submit idempotent.
+CREATE TABLE IF NOT EXISTS genesis_ticket_log (
+  id         bigserial PRIMARY KEY,
+  handle     text NOT NULL,
+  delta      integer NOT NULL,               -- -1 spend, +1 regen
+  reason     text NOT NULL,                  -- 'tag' | 'bettor'
+  dedup_key  text NOT NULL UNIQUE,           -- 'tag:<slug>' | 'bettor:<wallet>'
+  at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS genesis_ticket_log_handle_idx ON genesis_ticket_log (handle);
+
+-- Who OPENED a market by tagging. Deliberately not market_surfacer: that row
+-- records the claim's author (provenance), and on a reply-tag the tagger is
+-- somebody else entirely.
+CREATE TABLE IF NOT EXISTS genesis_tag (
+  slug           text PRIMARY KEY REFERENCES market_slug(slug) ON DELETE CASCADE,
+  handle         text NOT NULL,              -- the tagger, lowercased
+  source_handle  text,                       -- the claim's author, when there was one
+  at             timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS genesis_tag_handle_idx ON genesis_tag (handle);
+
+-- First touch, once per wallet FOREVER: the board counts humans who put real
+-- money in, so one wallet funding ten markets is one person, credited to the
+-- market that got them in.
+CREATE TABLE IF NOT EXISTS genesis_bettor (
+  wallet   text PRIMARY KEY,
+  slug     text NOT NULL,
+  handle   text,                             -- creditee; null when nobody tagged it
+  at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS genesis_bettor_handle_idx ON genesis_bettor (handle);
 `;
 
 let pool: pg.Pool | null = null;

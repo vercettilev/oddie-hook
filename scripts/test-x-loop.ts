@@ -358,6 +358,64 @@ async function main() {
     check("a failed lookup falls through to minting", spy.minted.length === 1);
   }
 
+  /* ------------------------------------------------------ genesis tickets -- */
+  {
+    // OUT OF TICKETS. The gate must fire BEFORE the model call and before the
+    // mint: an exhausted tagger costs neither an opus call nor a rent deposit.
+    _resetBotState();
+    let extracted = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("500")], newestId: "500" }),
+      extract: async () => { extracted++; return goodExtraction("Will it?"); },
+      ticketsLeft: async () => 0,
+    });
+    const r = await runMentionSweep(deps);
+    check("an empty ticket book mints nothing", spy.minted.length === 0 && r.skipped === 1);
+    check("and does not pay for an extraction first", extracted === 0);
+    check("recorded as no-tickets, not as a failure",
+      r.decisions[0]?.reason === "no-tickets" && r.failed === 0);
+  }
+  {
+    // The spend is charged with the TAGGER and the CLAIM's author, in that
+    // order: the person who tagged pays, the person quoted does not.
+    _resetBotState();
+    const spends: Array<[string, string, string | null]> = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("501", { authorHandle: "tagger1" })], newestId: "501" }),
+      ticketsLeft: async () => 3,
+      spendTicket: async (slug, tagger, source) => { spends.push([slug, tagger, source]); return true; },
+    });
+    await runMentionSweep(deps);
+    check("a minted market charges the tagger, naming the claim's author",
+      spends.length === 1 && spends[0][1] === "tagger1" && spends[0][2] === "cryptonate", JSON.stringify(spends));
+  }
+  {
+    // A market that already exists is a reply, not a new market, so it is free.
+    _resetBotState();
+    const spends: string[] = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("502")], newestId: "502" }),
+      existingMarket: async () => ({ slug: "already", question: "Will it?" }),
+      ticketsLeft: async () => 3,
+      spendTicket: async (slug) => { spends.push(slug); return true; },
+    });
+    await runMentionSweep(deps);
+    check("joining a market somebody else opened costs no ticket", spends.length === 0);
+  }
+  {
+    // The season must never be able to break the bot: a ledger that throws
+    // leaves the market minted and the reply posted.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("503")], newestId: "503" }),
+      ticketsLeft: async () => { throw new Error("ledger down"); },
+      spendTicket: async () => { throw new Error("ledger down"); },
+    });
+    const r = await runMentionSweep(deps);
+    check("a broken ledger still mints and still replies",
+      spy.minted.length === 1 && spy.posted.length === 1 && r.replied === 1);
+  }
+
   /* --------------------------------------------------------------- helpers -- */
   check("stripLeadingMentions only takes handles off the FRONT",
     stripLeadingMentions("@a @b real text @c") === "real text @c");

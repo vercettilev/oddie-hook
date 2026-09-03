@@ -47,6 +47,7 @@ import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
 import { classifyArchetype, ARCHETYPE_LABEL } from "./genesis/archetype.js";
 import { captureGenesisProfile, genesisProfileByHandle, genesisProfileForDevice, type GenesisProfile } from "./genesis/profileStore.js";
+import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, GENESIS_TICKETS } from "./genesis/season.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
@@ -1331,12 +1332,23 @@ app.get("/api/genesis/me", async (req, res) => {
   if (!deviceId) return res.json({ profile: null });
   const gp = await genesisProfileForDevice(deviceId).catch(() => null);
   if (!gp) return res.json({ profile: null });
+  const standing = await genesisStanding(gp.handle).catch(() => null);
   res.json({ profile: {
     handle: gp.handle, name: gp.name, archetype: gp.archetype,
     label: ARCHETYPE_LABEL[gp.archetype], headline: gp.headline, reason: gp.reason,
     cardUrl: `/card/genesis/${encodeURIComponent(gp.handle)}.png`,
     shareUrl: `${BASE_URL}/g/${encodeURIComponent(gp.handle)}`,
+    // Absent rather than zeroed when the read failed: the page shows what it
+    // knows, and a fabricated 5/5 would be a lie about somebody's balance.
+    standing,
   } });
+});
+
+/** The season board. Public: it is a leaderboard. */
+app.get("/api/genesis/board", async (req, res) => {
+  const limit = Number(req.query.limit);
+  const rows = await genesisBoard(Number.isFinite(limit) ? limit : 20).catch(() => []);
+  res.json({ tickets: GENESIS_TICKETS, rows });
 });
 
 /* Dev-only seed for exercising the real store+render path without an OAuth
@@ -1359,6 +1371,18 @@ if (process.env.GENESIS_DEV_SEED === "1") {
       await linkAccount(b.deviceId, { provider: "twitter", uid: gp.uid, handle: `@${gp.handle}`, name: gp.name });
     }
     res.json({ ok: true, profile: gp });
+  });
+
+  /* Season seeding for the same dev-only purpose: drive the connected page
+   * through spent/ranked states without a bot sweep or an on-chain stake. */
+  app.post("/api/genesis/_seedSeason", express.json(), async (req, res) => {
+    const b = req.body ?? {};
+    const handle = String(b.handle ?? "levvercetti");
+    const tags = Math.max(0, Math.min(5, Number(b.tags ?? 0)));
+    const bettors = Math.max(0, Math.min(50, Number(b.bettors ?? 0)));
+    for (let i = 0; i < tags; i++) await spendTicketForTag(`dev-${handle}-${i}`, handle, "somebodyelse");
+    for (let i = 0; i < bettors; i++) await creditFundedBettor(`dev-${handle}-0`, `devwallet-${handle}-${i}`);
+    res.json({ ok: true, standing: await genesisStanding(handle) });
   });
 }
 
@@ -3787,12 +3811,18 @@ if (realStakesReady) {
     if (!out.ok) return res.status(out.badRequest ? 400 : 502).json({ ok: false, error: out.error, signature: out.signature });
 
     if (stake && crowdBefore) {
-      void slugForOnchainPubkey(stake.market).then((slug) => {
+      void slugForOnchainPubkey(stake.market).then(async (slug) => {
         if (!slug) return;
-        return recordChainEntry({
+        await recordChainEntry({
           slug, wallet: stake.user, side: stake.side,
           entryPct: entryShareOf(crowdBefore, stake.side), lamports: stake.lamports,
         });
+        // The Genesis board's ONLY number: a wallet that had never funded
+        // anything before is a new human, credited to whoever's tag got them
+        // here. Best-effort like the stamp above — this is the money path, and
+        // bookkeeping must never cost anybody their transaction.
+        await creditFundedBettor(slug, stake.user).catch((e) =>
+          console.error("[genesis] bettor credit failed (non-fatal):", (e as Error).message));
       }).catch(() => {});
     }
 
@@ -4142,6 +4172,10 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     },
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
+    // The Genesis season. A tag is a ticket, checked before the model call and
+    // charged only once the market exists.
+    ticketsLeft: (handle) => ticketsLeft(handle),
+    spendTicket: (slug, tagger, source) => spendTicketForTag(slug, tagger, source),
     baseUrl: BASE_URL,
     botUserId: process.env.X_BOT_USER_ID ?? "",
     dryRun: X_BOT_DRY_RUN,

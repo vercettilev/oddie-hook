@@ -892,30 +892,42 @@
        for the design preview; a person who just linked their real account
        must see their real position instead: 5 tickets, no rank, nobody
        brought in yet. */
-    function applyRealZero() {
+    /* Gercek durum. Argumansiz cagrildiginda hicbir sey yatirilmamis kabul
+       eder (bagli sifir-durumu); sunucudan standing gelince ayni fonksiyon
+       gercek sayilarla tekrar cagrilir. Ornek sayilarin uzerine YAZAR, cunku
+       markup tasarim onizlemesi icin ornek tasir ve baglanan kisi kendi
+       rakamindan baskasini gormemeli. */
+    function applyRealZero(standing) {
+      var left = standing ? standing.ticketsLeft : 5;
+      var people = standing ? standing.peopleBrought : 0;
+      var rank = standing && standing.rank ? "#" + standing.rank : "\u2014";
       var pips = document.querySelector(".pips");
       if (pips) {
-        pips.setAttribute("aria-label", "Five tickets of five");
-        pips.querySelectorAll(".pip").forEach(function(pp){
-          pp.className = "pip";
+        pips.setAttribute("aria-label", left + " tickets left of five");
+        pips.querySelectorAll(".pip").forEach(function(pp, i){
+          /* Harcanan biletin yeri bos kalir: kac tane oldugu degil, KAC TANE
+             KALDIGI okunmali. */
+          pp.className = i < left ? "pip" : "pip pip--spent";
         });
       }
       var st = document.querySelectorAll(".stat");
       var set = function(i, b, sp){ if (st[i]) {
         st[i].querySelector("b").textContent = b;
         st[i].querySelector("span").textContent = sp; } };
-      set(0, "5", "tickets left");
-      set(1, "\u2014", "rank \u00b7 season opens soon");
-      set(2, "0", "people brought in");
+      set(0, String(left), left === 1 ? "ticket left" : "tickets left");
+      set(1, rank, standing && standing.rank ? "rank" : "rank \u00b7 nobody joined yet");
+      set(2, String(people), people === 1 ? "person brought in" : "people brought in");
       var ns = document.querySelector(".navstate");
-      if (ns) ns.textContent = "5 left";
+      if (ns) ns.textContent = left + " left";
       var me = document.querySelector(".board__row--me");
       if (me) {
-        me.querySelector("b").textContent = "\u2014";
-        var n = me.querySelector(".n"); if (n) n.textContent = "0";
+        me.querySelector("b").textContent = rank;
+        var n = me.querySelector(".n"); if (n) n.textContent = String(people);
       }
       var note = document.querySelector(".board__note.in-only");
-      if (note) note.textContent = "You are on the board when the season opens. Nothing here is a projection.";
+      if (note) note.textContent = people > 0
+        ? "Every person who put money into one of your markets counts once."
+        : "You are on the board the moment somebody joins one of your markets.";
     }
     if (d.dataset.real) applyRealZero();
 
@@ -953,13 +965,16 @@
             var pr = j && j.profile;
             if (!pr) return;
             if (!d.dataset.real) {
-              d.dataset.real = "1"; d.dataset.state = "in"; applyRealZero();
+              d.dataset.real = "1"; d.dataset.state = "in"; applyRealZero(pr.standing);
               /* Basarisiz bir YENIDEN baglanma denemesi buraya auth_error ile
                  dusebilir; baglantiniz duruyor, "Try again" diyen notun tum
                  baglanma dugmelerini kaybetmis halde asili kalmasi yanlisti. */
               var an = document.querySelector(".authnote");
               if (an) an.hidden = true;
             }
+            /* Zaten ?connected=twitter ile bagli acildiysa yukarida sifir
+               durum yatirilmisti; gercek rakamlar simdi geldi, uzerine yaz. */
+            if (pr.standing) applyRealZero(pr.standing);
             showCard(pr.cardUrl,
               "https://x.com/intent/tweet?text=" + encodeURIComponent("oddie read my X. Verdict: " + pr.label + ". " + pr.shareUrl),
               "oddie-genesis-" + pr.handle + ".png");
