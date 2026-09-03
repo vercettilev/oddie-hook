@@ -557,6 +557,10 @@
   .act-row{display:flex;align-items:center;gap:clamp(16px,2vw,26px);flex-wrap:wrap;
     margin-top:clamp(18px,2.4vw,30px)}
   .act-row .btn{margin-top:0}
+  /* Tukenmis bilet: buton duruyor ama artik bir kapi degil, bir durum. */
+  .btn--spent{background:transparent;color:var(--ink);border:3px dashed var(--ink);
+    box-shadow:none;cursor:default}
+  .btn--spent:hover,.btn--spent:active{translate:none;scale:1;background:transparent}
   /* Doldurmali sablon: composer'da gorecegi seyin birebir on izlemesi.
      Sabit kisim cip, bosluk kesik cizgili yuva — beklenti tiklamadan ONCE
      kuruluyor, kimse bos composer karsisinda donup kalmiyor. */
@@ -1013,6 +1017,26 @@
       if (note) note.textContent = people > 0
         ? "Every person who put money into one of your markets counts once."
         : "You are on the leaderboard the moment somebody joins one of your markets.";
+
+      /* Biletin bittiyse buton seni X'e atmamali: attigin etiket sunucuda
+         SESSIZCE eleniyor (sweep bilet kapisini model cagrisindan once
+         uyguluyor), yani hicbir sey olmadan geri donerdin. Butun hikayeyi
+         burada anlatiyoruz, cunku geri kazanmanin yolu var. */
+      var spendBtn = document.getElementById("spend");
+      if (spendBtn) {
+        var out = left <= 0;
+        spendBtn.classList.toggle("btn--spent", out);
+        spendBtn.querySelector(".btn__main").innerHTML = out
+          ? "No tickets left"
+          : 'Use a ticket <i aria-hidden="true">&rarr;</i>';
+        spendBtn.querySelector("small").textContent = out
+          ? "one comes back when somebody joins a market you opened"
+          : "tweet a claim, tag @oddiefun";
+        if (out) { spendBtn.setAttribute("aria-disabled", "true"); spendBtn.removeAttribute("target"); }
+        else { spendBtn.removeAttribute("aria-disabled"); spendBtn.setAttribute("target", "_blank"); }
+      }
+      var shape = document.querySelector(".spend-shape");
+      if (shape) shape.hidden = left <= 0;
     }
     if (d.dataset.real) applyRealZero();
 
@@ -1022,6 +1046,13 @@
        anlik goruntuyu getirir. Profil varsa donen ziyaretcide sayfa BAGLI
        ACILIR: bir kere baglanan kisi her giriste kartiyla karsilanir, tek
        seferlik URL parametresine mahkum degildir. */
+    /* aria-disabled ekran okuyucuya soyler ama tiklamayi DURDURMAZ; kapiyi
+       gercekten kapatan sey bu. */
+    document.addEventListener("click", function(e){
+      var a = e.target.closest && e.target.closest('#spend[aria-disabled="true"]');
+      if (a) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+
     var gcard = document.getElementById("gcard");
     function showCard(cardUrl, postHref, saveName) {
       if (!gcard) return;
@@ -1032,6 +1063,50 @@
       save.setAttribute("download", saveName);
       gcard.hidden = false;
     }
+    /* Kendi satirin tahtada SABITLENMIS olarak zaten duruyor; API listesi de
+       seni iceriyor, yani filtrelemezsek ayni kisi iki kez gorunur. Handle
+       profil cagrisindan gelir ve iki cagri yarisir, o yuzden temizlik ikisinin
+       de ardindan calisir. */
+    var myHandle = null;
+    function dedupeBoard() {
+      if (!myHandle) return;
+      document.querySelectorAll(".board__row:not(.board__row--me) .who").forEach(function(w){
+        if (w.textContent.replace(/^@/, "").toLowerCase() === myHandle.toLowerCase()) w.parentNode.remove();
+      });
+    }
+
+    /* Tahta simdiye kadar SABIT markup'ti: /api/genesis/board yazildi ama
+       sayfa onu hic cagirmiyordu, yani sezon acilsa bile "Opens with the
+       season" yazmaya devam ederdi. Tasarim onizlemesinde atlanir. */
+    if (d.dataset.state !== "in" || d.dataset.real) {
+      fetch("/api/genesis/board?limit=10")
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          var rows = (j && j.rows) || [];
+          if (!rows.length) return;               // sezon henuz bos: markup dogru
+          var board = document.querySelector(".board");
+          if (!board) return;
+          var hd = board.querySelector(".board__hd");
+          board.querySelectorAll(".board__row").forEach(function(r){
+            if (!r.classList.contains("board__row--me")) r.remove();
+          });
+          var me = board.querySelector(".board__row--me");
+          rows.forEach(function(row){
+            var el = document.createElement("div");
+            el.className = "board__row";
+            var b = document.createElement("b"); b.textContent = "#" + row.rank;
+            var w = document.createElement("span"); w.className = "who"; w.textContent = "@" + row.handle;
+            var n = document.createElement("span"); n.className = "n"; n.textContent = String(row.peopleBrought);
+            el.appendChild(b); el.appendChild(w); el.appendChild(n);
+            board.insertBefore(el, me && me.nextSibling ? me.nextSibling : null);
+          });
+          dedupeBoard();
+          var note = board.querySelector(".board__note.out-only");
+          if (note) note.textContent = "Ranked by how many people put real money into markets they opened.";
+        })
+        .catch(function(){});
+    }
+
     if (gcard) {
       /* ?state=in acikca istenmis tasarim onizlemesidir: ornek sayilar ve
          tezgah karti GORUNMELI. Cihaz gecmisinde gercek bir profil olsa bile
@@ -1060,6 +1135,7 @@
             /* Zaten ?connected=twitter ile bagli acildiysa yukarida sifir
                durum yatirilmisti; gercek rakamlar simdi geldi, uzerine yaz. */
             if (pr.standing) applyRealZero(pr.standing);
+            myHandle = pr.handle; dedupeBoard();
             /* Kimlik seridi: kim bagli, ve tek cikis kapisi. */
             var who = document.getElementById("gwho");
             if (who) {
