@@ -221,46 +221,12 @@
      olustugunu ima ediyordu (okuyucunun isi resimde yoktu), ve yeni dogmus
      bir markette YES %68 gosteriyordu. Ucu de burada duzeliyor; ozellikle
      ORAN YOK, cunku yeni marketin kasasi bostur. */
-  .flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;
-    align-items:center;gap:clamp(10px,1.2vw,20px)}
-  .fw{background:var(--cream);color:var(--ink);
-    padding:clamp(13px,1.3vw,20px) clamp(14px,1.4vw,21px);
-    box-shadow:8px 9px 0 var(--pink-deep)}
-  .fw:nth-of-type(1){rotate:-.6deg}
-  .fw:nth-of-type(2){rotate:.5deg}
-  .fw:nth-of-type(3){rotate:-.4deg}
-  .fw__who{display:flex;align-items:center;gap:8px}
-  .fw__av{width:26px;height:26px;border-radius:50%;background:var(--ink);flex:0 0 auto}
-  .fw__av--o{background:var(--yellow);border:3px solid var(--ink)}
-  .fw__who b{font-family:var(--display);font-weight:400;font-size:17px;text-transform:uppercase}
-  .fw__who span{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink-2)}
-  .fw__txt{margin:9px 0 0;font-size:clamp(15px,1.35vw,18px);line-height:1.42;color:var(--ink)}
-  .fw__re{margin:0;font-family:var(--mono);font-size:11px;font-weight:700;
-    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
-  /* Sayfanin en onemli dokuz karakteri: yazilmis bir cevap, kosede duran bir
-     rozet degil. */
-  .fw__tag{display:inline-block;margin:10px 0 0;font-family:var(--display);
-    font-weight:400;font-size:clamp(22px,2.3vw,32px);line-height:1;color:var(--ink);
-    background:var(--yellow);padding:6px 12px 4px;box-shadow:5px 6px 0 var(--ink)}
-  .fw__note{display:block;margin:11px 0 0;font-family:var(--mono);font-size:11px;
-    font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
-  .fw__cta{margin:10px 0 0;font-family:var(--display);font-weight:400;
-    text-transform:uppercase;font-size:clamp(13px,1.25vw,16px);color:var(--ink)}
-  .fw__yesno{display:flex;gap:7px;margin:11px 0 0}
-  .fw__yesno b{font-family:var(--display);font-weight:400;font-size:14px;
-    padding:6px 14px 4px;border:3px solid var(--ink)}
-  .fw__yesno b:first-child{background:var(--yellow)}
-  .fw__yesno b:last-child{background:var(--pink);color:#fff}
-  .fw__empty{margin:9px 0 0;font-family:var(--mono);font-size:11px;font-weight:700;
-    letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
-  /* Oklar ADIMLAR arasinda, sihir arasinda degil: ikisi de bir insanin
-     hareketinden sonra geliyor. */
-  .fw__go{font-family:var(--display);font-weight:400;font-size:clamp(22px,2.4vw,34px);
-    color:var(--pink);line-height:1}
-  @media (max-width:900px){
-    .flow{grid-template-columns:1fr;gap:clamp(12px,3vw,18px)}
-    .fw__go{justify-self:center;rotate:90deg;font-size:26px}
-  }
+  /* --------------------------------------------------- uc panel akisi --
+     Gorsel once tek parcaydi ve telefonda tweet metni 9px'e iniyordu. Uc
+     esit panele kesildi: genis ekranda yan yana, dar ekranda alt alta ve
+     her panel tam genislik. Aradaki oklar kaynakta silindi, cunku dikey
+     dizilimde panellerin yanina sarkiyorlardi; sirayi zaten panellerin
+     altindaki 1/2/3 etiketleri tasiyor. */
   
   /* ================================================== C · PINK · reputation ==
      Two columns so the field is not a headline over a void, and the three
@@ -435,7 +401,7 @@
     margin-top:0;
     margin-bottom:0;
     rotate:-1.6deg}
-  .B__fig img{width:100%;filter:drop-shadow(10px 12px 0 var(--pink))}
+  .B__fig img{width:100%}
   /* Manifesto ve telefon ciktiktan sonra kalan iki parca: baslik tam genislik
      ve sola yaslanir, figur altinda akar. Kaynak sirasi geregi bu blok yukarida
      kalan eski yerlesim kurallarini ezer. */
@@ -444,9 +410,9 @@
   .B .B__head .h2 span{margin-left:0}
   .B__head .h2 span:nth-child(2){margin-right:0;margin-left:clamp(0px,2.6vw,44px)}
   .B__fig{grid-column:1/-1;grid-row:2}
-  .fignote{position:absolute;left:clamp(8px,3.4vw,58px);
-    bottom:calc(-1 * clamp(6px,1.2vw,16px));
-    margin:0;text-align:left;max-width:none;white-space:nowrap;
+  .fignote{position:static;display:inline-block;
+    margin:clamp(4px,.8vw,10px) 0 0 clamp(8px,3.4vw,58px);
+    text-align:left;max-width:none;white-space:nowrap;
     background:var(--black);color:var(--fg-3);padding:7px 12px;rotate:-1.8deg}
 
   /* -------------------------------------------------------- C · pembe --
@@ -1062,42 +1028,14 @@
       <div class="B__head col col--mid">
         <p class="kicker reveal">The move</p>
         <h2 class="h2 reveal"><span>You argue.</span><span class="lo">Oddie makes it a market.</span></h2>
-        <p class="lede reveal">Tag Oddie under any claim and it opens a real
+        <p class="lede reveal">Reply @oddiefun under any claim and it opens a real
           market on Solana with its own vault. Anyone can call it, and 2% of the pool goes to
           whoever started it.</p>
       </div>
 
       <figure class="B__fig reveal">
-        <div class="flow" aria-label="An example: somebody makes a claim, you reply @oddiefun under it, and a market comes back.">
-          <div class="fw">
-            <div class="fw__who">
-              <span class="fw__av" aria-hidden="true"></span>
-              <b>Nate</b><span>@cryptonate</span>
-            </div>
-            <p class="fw__txt">Bitcoin will never hit $200k. Cope harder.</p>
-          </div>
-
-          <span class="fw__go" aria-hidden="true">&rarr;</span>
-
-          <div class="fw">
-            <p class="fw__re">Replying to @cryptonate</p>
-            <p class="fw__tag">@oddiefun</p>
-            <span class="fw__note">You type this. That is the whole move.</span>
-          </div>
-
-          <span class="fw__go" aria-hidden="true">&rarr;</span>
-
-          <div class="fw">
-            <div class="fw__who">
-              <span class="fw__av fw__av--o" aria-hidden="true"></span>
-              <b>oddie</b><span>@oddiefun</span>
-            </div>
-            <p class="fw__txt">Will Bitcoin hit $200k before 2027?</p>
-            <p class="fw__cta">Pick a side, winners split the pool</p>
-            <div class="fw__yesno"><b>YES</b><b>NO</b></div>
-            <p class="fw__empty">Nobody has bet yet. No odds until somebody does.</p>
-          </div>
-        </div>
+        <img src="/brand/flow-market.webp" width="1600" height="900" loading="lazy"
+             alt="Three steps: somebody posts that Pump.fun will close Q4 with more revenue than Q3, you tag @oddiefun under it, and an Oddie market opens on that claim with a YES and a NO side.">
         <figcaption class="fignote">No post to reply to? Tweet the claim yourself and tag @oddiefun in it. Same market.</figcaption>
       </figure>
 
@@ -1141,25 +1079,6 @@
         <img class="C__ghost reveal" src="/brand/mascot-trophy.webp" alt="" aria-hidden="true"
           width="940" height="803" loading="lazy">
       </div>
-
-      <div class="chips">
-        <div class="chip reveal">
-          <span class="chip__n">+150</span>
-          <div class="chip__t">Share your call</div>
-          <p class="chip__b">Paste the link to your post. Once it clears review, the points are yours.</p>
-        </div>
-        <div class="chip reveal">
-          <span class="chip__n">+300</span>
-          <div class="chip__t">Be the week's loudest</div>
-          <p class="chip__b">The best posts each week earn again, on top of what they already earned.</p>
-        </div>
-        <div class="chip reveal">
-          <span class="chip__n">2&times;</span>
-          <div class="chip__t">Every market you tag</div>
-          <p class="chip__b">Keep posting and the markets you tag earn up to double.</p>
-        </div>
-      </div>
-
     </div>
 
     <!-- the crowd is the last thing the page says -->
