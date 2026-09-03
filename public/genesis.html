@@ -391,28 +391,6 @@
   .cta-loop{margin-top:clamp(20px,2.4vw,32px)}
   [data-view="how"] .cta-loop{display:none}
 
-  /* Harcama sheet'i: landing'in lp-* parcasinin birebir tasinmis hali, cunku
-     "fis harcamak" = X'te bir iddianin altina yanit birakmak, ve bu akis
-     landing'de zaten cozulmustu. */
-  .lp-dim{position:fixed;inset:0;z-index:60;background:rgba(2,3,2,.7);display:flex;
-    align-items:center;justify-content:center;padding:20px}
-  .lp-sheet{width:100%;max-width:480px;background:var(--cream);color:var(--ink);
-    border:3px solid var(--ink);border-radius:5px;padding:22px;box-shadow:10px 12px 0 var(--pink)}
-  .lp-sheet h3{margin:0 0 10px;font-family:var(--display);font-weight:400;font-size:24px;
-    text-transform:uppercase}
-  .lp-sheet .lp-note{margin:0 0 14px;font-size:14px;line-height:1.55;color:var(--ink-2)}
-  .lp-in{width:100%;box-sizing:border-box;font:inherit;font-weight:700;font-size:14px;
-    background:#fff;color:var(--ink);border:2px solid var(--ink);border-radius:3px;padding:12px 14px}
-  .lp-in:focus{outline:none;border-color:var(--pink)}
-  .lp-err{font-size:12px;font-weight:800;color:var(--pink-deep);margin:8px 0 0}
-  .lp-go{display:block;width:100%;margin-top:12px;background:var(--yellow);color:var(--ink);
-    border:3px solid var(--ink);border-radius:3px;padding:13px;cursor:pointer;
-    font-family:var(--display);font-weight:400;font-size:16px;text-transform:uppercase}
-  .lp-own{display:block;width:100%;border:none;background:none;font:inherit;font-weight:700;
-    font-size:13px;color:var(--ink-2);margin-top:12px;cursor:pointer}
-  .lp-own:hover{color:var(--ink);text-decoration:underline}
-  .lp-close{display:block;width:100%;border:none;background:none;font:inherit;font-weight:800;
-    font-size:13px;color:var(--ink-2);margin-top:8px;cursor:pointer}
   .scarce{margin:clamp(14px,1.8vw,24px) 0 0;font-family:var(--display);font-weight:400;
     text-transform:uppercase;font-size:clamp(18px,1.9vw,27px);line-height:1.1;
     color:var(--pink)}
@@ -582,11 +560,16 @@
     font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink-2);
     text-decoration:underline;text-underline-offset:3px}
   .who-strip__out:hover,.who-strip__out:focus-visible{color:var(--ink)}
-  .board-jump{display:inline-block;margin-top:clamp(12px,1.5vw,18px);
-    font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--ink-2);text-decoration:underline;
-    text-underline-offset:3px}
-  .board-jump:hover,.board-jump:focus-visible{color:var(--ink)}
+  /* Iki eylem tek satirda, gcard'in kendi cifti gibi: birincil buton +
+     sessiz ama OKUNUR bag. Onceki hali <br> ile alta atilmis 12px gri
+     satirdi ve gozukmuyordu. */
+  .act-row{display:flex;align-items:center;gap:clamp(16px,2vw,26px);flex-wrap:wrap;
+    margin-top:clamp(18px,2.4vw,30px)}
+  .act-row .btn{margin-top:0}
+  .board-jump{font-family:var(--mono);font-size:13px;font-weight:700;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink);
+    text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:2px}
+  .board-jump:hover,.board-jump:focus-visible{color:var(--pink-deep)}
 
   .gcard{margin:clamp(18px,2.4vw,30px) 0 0;max-width:560px}
   .gcard__img{display:block;width:100%;height:auto;border-radius:14px;
@@ -719,12 +702,20 @@
             <div class="stat"><b>#184</b><span>rank</span></div>
             <div class="stat"><b>7</b><span>people brought in</span></div>
           </div>
-          <!-- Spending a ticket happens ON X (a tag), not in the app. The href
-               is the no-JS fallback; with JS the click opens the spend sheet. -->
-          <a class="btn" id="spend" href="https://x.com/intent/tweet?text=%40oddiefun%20"
-             target="_blank" rel="noopener">Use a ticket <i aria-hidden="true">&rarr;</i></a>
-          <br>
-          <a class="board-jump" href="#board">See your row on the board <i aria-hidden="true">&darr;</i></a>
+          <!-- Bilet X'TE harcanir, burada degil; butonun isi seni en az
+               surtunmeyle composer'a birakmak. Eski hali once bir modal acip
+               link YAPISTIRTIYORDU — tam da "genesis'in hizini keser" diye
+               reddedilmis kalip. Birinin postuna cevap verecek kisi zaten
+               X'tedir ve orada reply'a basar; siteye link tasimak geriye
+               yurumekti. Modal oldu, buton dogrudan tag'i hazir composer. -->
+          <div class="act-row">
+            <a class="btn btn--2l" id="spend" href="https://x.com/intent/tweet?text=%40oddiefun%20"
+               target="_blank" rel="noopener">
+              <span class="btn__main">Use a ticket <i aria-hidden="true">&rarr;</i></span>
+              <small>tweet a claim, tag @oddiefun</small>
+            </a>
+            <a class="board-jump" href="#board">See your row on the board <i aria-hidden="true">&darr;</i></a>
+          </div>
         </div>
       </div>
 
@@ -1086,50 +1077,6 @@
       }
     }
 
-    /* ------------------------------------------------ spend sheet -------
-       Spending a ticket IS tagging on X. The sheet asks for the claim's
-       link and opens a reply with @oddiefun prefilled; the markup href is a
-       bare tweet intent, kept as the no-JS fallback. Wired in every in
-       state so the preview demonstrates the real behaviour. */
-    var spend = document.getElementById("spend");
-    if (spend) spend.addEventListener("click", function(e){
-      e.preventDefault();
-      var RE = /(?:twitter|x)\.com\/[^/]+\/status\/(\d+)/i;
-      var dim = document.createElement("div"); dim.className = "lp-dim";
-      dim.innerHTML = '<div class="lp-sheet" role="dialog" aria-label="Spend a ticket">'
-        + '<h3>Spend a ticket</h3>'
-        + '<p class="lp-note">Paste the link to the claim on X. We\'ll open a reply with '
-        + '<b>@oddiefun</b> already in it. Sending that reply is what spends the ticket '
-        + 'and opens the market.</p>'
-        + '<input class="lp-in" type="url" inputmode="url" placeholder="https://x.com/someone/status/123&hellip;" autocomplete="off">'
-        + '<div class="lp-err" hidden></div>'
-        + '<button class="lp-go" type="button">Open the reply on X</button>'
-        + '<button class="lp-own" type="button">No post to reply to? Tweet the claim yourself, tag @oddiefun</button>'
-        + '<button class="lp-close" type="button">Not now</button>';
-      dim.addEventListener("click", function(ev){ if (ev.target === dim) dim.remove(); });
-      document.body.appendChild(dim);
-      var input = dim.querySelector(".lp-in"), err = dim.querySelector(".lp-err");
-      dim.querySelector(".lp-close").onclick = function(){ dim.remove(); };
-      input.focus();
-      var go = function(){
-        var hit = RE.exec(input.value.trim());
-        if (!hit) {
-          err.hidden = false;
-          err.textContent = "That doesn't look like a link to an X post. It should look like x.com/name/status/123\u2026";
-          return;
-        }
-        window.open("https://x.com/intent/tweet?in_reply_to=" + hit[1] +
-          "&text=" + encodeURIComponent("@oddiefun "), "_blank", "noopener");
-        dim.remove();
-      };
-      dim.querySelector(".lp-go").onclick = go;
-      dim.querySelector(".lp-own").onclick = function(){
-        window.open("https://x.com/intent/tweet?text=" + encodeURIComponent("@oddiefun "), "_blank", "noopener");
-        dim.remove();
-      };
-      input.addEventListener("keydown", function(ev){ if (ev.key === "Enter") go(); });
-      input.addEventListener("input", function(){ err.hidden = true; });
-    });
   })();
 </script>
 <script>
