@@ -106,7 +106,10 @@
      REAL freshly-connected state must not, because that person has never
      tagged and this is the only instruction on the page. */
   [data-view="main"][data-state="in"]:not([data-real="1"]) #loop{display:none}
-  [data-real="1"] .nav__how{display:none}
+  /* "How it works" gercek bagli durumda gizleniyordu. Lev'in karari
+     2026-09-03: iki masthead ayni iskeleti tasimali, ve landing o linki
+     her durumda gosteriyor. Adimlar sayfada zaten acik oldugu icin link
+     tekrar gibi duruyordu, ama iki barin ayni olmasi daha degerli. */
   /* Really connected (not the design preview): nothing has been spent yet, so a
      ledger of example rows would be a lie about this person's account. */
   [data-real="1"] #mine{display:none}
