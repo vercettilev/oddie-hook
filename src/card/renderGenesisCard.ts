@@ -47,26 +47,33 @@ export interface GenesisCard {
 export function renderGenesisCard(card: GenesisCard): string {
   const label = ARCHETYPE_LABEL[card.archetype];
 
-  // --- left column: who, the headline, the dare -------------------------
-  const labelFs = 30;
-  // Measured in Anton (the label's actual face), so no fudge factor: real
-  // advance width + symmetric 22px padding each side.
+  // The card is a flex someone reposts, so it carries only what is theirs to
+  // brag about: their handle, the costume they earned, and the type's one-line
+  // verdict. Everything transactional (the old ticket stub, the "tag @oddiefun"
+  // instruction, the redundant "account since" reason) is gone — the sticker
+  // owns the right half and the words are cut to the share-worthy minimum.
+
+  // --- left column: who, the costume, the one flex line ------------------
+  const labelFs = 32;
   const labelW = Math.round(textWidth(label, labelFs, "display")) + 44;
 
-  // The reason sits UNDER the verdict pill at a fixed spot (justification
-  // belongs next to the label, and a 3-line headline must never push it into
-  // the dare), then the headline gets the room between it and the dare.
-  // Three-line headlines refit at a smaller size so the block never crowds
-  // the dare pinned at the bottom.
-  let headFs = 42;
-  let head = wrapToWidth(card.headline, 540, headFs, 3, "meta");
-  if (head.lines.length === 3) { headFs = 37; head = wrapToWidth(card.headline, 540, headFs, 3, "meta"); }
-  const headY = 342;
-  const headLines = head.lines.map((ln, i) =>
-    `<text x="${PAD_L}" y="${headY + i * (headFs + 10)}" font-family="${META}" font-size="${headFs}" font-weight="800" fill="${C.ink}">${esc(ln)}</text>`).join("\n  ");
+  // The headline is the shareable payload. It gets the full left column above
+  // the footer; the sticker takes the right, so it wraps to ~455px.
+  let headFs = 44;
+  let head = wrapToWidth(card.headline, 455, headFs, 4, "meta");
+  if (head.lines.length >= 4) { headFs = 34; head = wrapToWidth(card.headline, 455, headFs, 4, "meta"); }
+  // Bottom-anchored so 2- and 4-line headlines both sit on the footer.
+  const headBottom = 470;
+  const headLines = head.lines.map((ln, i) => {
+    const y = headBottom - (head.lines.length - 1 - i) * (headFs + 8);
+    return `<text x="${PAD_L}" y="${y}" font-family="${META}" font-size="${headFs}" font-weight="800" fill="${C.ink}">${esc(ln)}</text>`;
+  }).join("\n  ");
 
-  // --- right column: the costume and the stub ---------------------------
-  const stub = card.claim ? stubWith(card.claim) : stubEmpty();
+  // --- right half: the costume, floor to ceiling ------------------------
+  // meet-fit into a tall right zone so no sticker is cropped or distorted; the
+  // varied aspect ratios (0.74-1.04) all land big and centred. A slight tilt
+  // keeps it in the sticker-sheet language of the landing.
+  const art = `<image href="${artHref(card.archetype)}" x="560" y="70" width="410" height="420" preserveAspectRatio="xMidYMid meet" transform="rotate(-2.5 765 280)"/>`;
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${DISPLAY}">
   <rect width="${W}" height="${H}" fill="${C.white}"/>
@@ -74,54 +81,24 @@ export function renderGenesisCard(card: GenesisCard): string {
   <rect x="26" y="26" width="948" height="508" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
 
   ${brandLockup()}
-  <text x="930" y="112" text-anchor="end" font-family="${META}" font-size="24" font-weight="700" fill="${C.accentDeep}" letter-spacing="3">GENESIS</text>
+
+  <!-- season kicker, moved left so the sticker owns the whole right side -->
+  <text x="${PAD_L}" y="176" font-family="${META}" font-size="19" font-weight="700" fill="${C.accentDeep}" letter-spacing="4">GENESIS</text>
 
   <!-- who, and the costume they earned -->
-  <text x="${PAD_L}" y="182" font-size="46" fill="${C.ink}">${esc(card.handle)}</text>
-  <g transform="rotate(-1.5 ${PAD_L + labelW / 2} 222)">
-    <rect x="${PAD_L + 4}" y="${204 + 4}" width="${labelW}" height="46" fill="${C.echo}"/>
-    <rect x="${PAD_L}" y="204" width="${labelW}" height="46" fill="${C.ink}"/>
-    <text x="${PAD_L + 22}" y="${204 + 34}" font-size="${labelFs}" fill="${C.accent}">${esc(label)}</text>
+  <text x="${PAD_L}" y="228" font-size="52" fill="${C.ink}">${esc(card.handle)}</text>
+  <g transform="rotate(-1.5 ${PAD_L + labelW / 2} 268)">
+    <rect x="${PAD_L + 4}" y="${250 + 4}" width="${labelW}" height="50" fill="${C.echo}"/>
+    <rect x="${PAD_L}" y="250" width="${labelW}" height="50" fill="${C.ink}"/>
+    <text x="${PAD_L + 22}" y="${250 + 37}" font-size="${labelFs}" fill="${C.accent}">${esc(label)}</text>
   </g>
 
-  <!-- the type's own headline, the person's numbers already in it -->
-  <text x="${PAD_L}" y="284" font-family="${META}" font-size="20" font-weight="700" fill="${C.muted}">${esc(card.reason)}</text>
+  <!-- the type's own one-line verdict: the whole reason it gets reposted -->
   ${headLines}
 
-  <!-- the dare -->
-  <text x="${PAD_L}" y="482" font-size="34" fill="${C.ink}">UNTIL NOW.&#160;&#160;<tspan fill="${C.accentDeep}">5 TICKETS WAITING.</tspan></text>
-  <text x="${PAD_L}" y="512" font-family="${META}" font-size="17" font-weight="700" fill="${C.muted}" letter-spacing="2">ODDIE.FUN/GENESIS</text>
+  <!-- one small footer: brand + the hook, nothing else -->
+  <text x="${PAD_L}" y="510" font-family="${META}" font-size="17" font-weight="700" fill="${C.muted}" letter-spacing="1">oddie.fun/genesis<tspan fill="${C.accentDeep}">&#160;&#160;·&#160;&#160;5 tickets waiting</tspan></text>
 
-  <!-- the costume, leaning on the stub -->
-  ${stub}
-  <image href="${artHref(card.archetype)}" x="700" y="120" width="230" height="260" preserveAspectRatio="xMidYMid meet" transform="rotate(2.5 815 250)"/>
+  ${art}
 </svg>`;
-}
-
-// The pinned claim as a ticket stub: white paper, dashed tear, barcode, the
-// NEVER SCORED stamp. Their words in our object.
-function stubWith(claim: string): string {
-  const fs = 19;
-  const wrapped = wrapToWidth(claim, 210, fs, 3, "meta");
-  const lines = wrapped.lines.map((ln, i) =>
-    `<text x="678" y="${418 + i * (fs + 6)}" font-family="${META}" font-size="${fs}" font-weight="800" fill="${C.ink}">${esc(ln)}${wrapped.overflow && i === wrapped.lines.length - 1 ? "…" : ""}</text>`).join("\n    ");
-  return `<g transform="rotate(-2 790 443)">
-    <rect x="656" y="370" width="278" height="150" fill="#F7F5EE" stroke="${C.ink}" stroke-width="4"/>
-    <line x1="668" y1="394" x2="922" y2="394" stroke="${C.ink}" stroke-width="2.5" stroke-dasharray="7 6"/>
-    <text x="678" y="387" font-family="${META}" font-size="12" font-weight="700" fill="${C.muted}" letter-spacing="2">YOU PINNED THIS</text>
-    ${lines}
-    <g transform="rotate(-7 848 496)">
-      <rect x="782" y="482" width="128" height="28" fill="${C.white}" stroke="${C.echo}" stroke-width="3"/>
-      <text x="792" y="502" font-family="${META}" font-size="14" font-weight="800" fill="${C.echo}" letter-spacing="1">NEVER SCORED</text>
-    </g>
-  </g>`;
-}
-
-function stubEmpty(): string {
-  return `<g transform="rotate(-2 790 443)">
-    <rect x="656" y="370" width="278" height="150" fill="#F7F5EE" stroke="${C.ink}" stroke-width="4" stroke-dasharray="10 7"/>
-    <text x="678" y="430" font-size="27" fill="${C.ink}">THIS LINE</text>
-    <text x="678" y="464" font-size="27" fill="${C.ink}">IS YOURS.</text>
-    <text x="678" y="494" font-family="${META}" font-size="14" font-weight="700" fill="${C.muted}">Tag @oddiefun on a claim.</text>
-  </g>`;
 }
