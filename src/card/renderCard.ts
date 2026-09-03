@@ -49,6 +49,9 @@ export const C = {
 };
 
 export const FONT = "'Fredoka', 'Trebuchet MS', sans-serif";
+// The landing's --display face. Loud/identity type wears this; the wordmark
+// on every card uses it so the logo is one shape everywhere, like the site.
+export const DISPLAY = "'Anton', 'Arial Narrow', 'Helvetica Neue', sans-serif";
 export const META = "'Nunito', system-ui, sans-serif";
 
 // --- Geometry ---------------------------------------------------------------
@@ -83,6 +86,18 @@ const DESC = 0.22;
 
 // --- Text measurement -------------------------------------------------------
 
+// Real advance widths (em) measured from the shipped TTFs, so pill widths and
+// wrap points are right for each face. ASCII 32-126; anything else falls back.
+const EM_DISPLAY: Record<string, number> = {" ":0.2344,"!":0.229,"\"":0.4287,"#":0.5464,"$":0.4619,"%":1.0566,"&":0.52,"'":0.2139,"(":0.291,")":0.291,"*":0.4521,"+":0.3555,",":0.2363,"-":0.311,".":0.2285,"/":0.4053,"0":0.4941,"1":0.3306,"2":0.4941,"3":0.4941,"4":0.4941,"5":0.4941,"6":0.4941,"7":0.4941,"8":0.4941,"9":0.4941,":":0.2417,";":0.2451,"<":0.3213,"=":0.311,">":0.3213,"?":0.4922,"@":0.8643,"A":0.4854,"B":0.4785,"C":0.4741,"D":0.4932,"E":0.4116,"F":0.3989,"G":0.4849,"H":0.499,"I":0.2266,"J":0.4663,"K":0.4722,"L":0.3975,"M":0.7461,"N":0.498,"O":0.4863,"P":0.4722,"Q":0.4937,"R":0.4766,"S":0.4614,"T":0.3955,"U":0.4736,"V":0.4692,"W":0.7119,"X":0.4839,"Y":0.4463,"Z":0.4102,"[":0.3179,"\\":0.4053,"]":0.3179,"^":0.4736,"_":0.3652,"`":0.3174,"a":0.4834,"b":0.5015,"c":0.4912,"d":0.498,"e":0.4883,"f":0.2803,"g":0.5039,"h":0.5054,"i":0.2432,"j":0.2627,"k":0.4907,"l":0.248,"m":0.7583,"n":0.4985,"o":0.4966,"p":0.5015,"q":0.498,"r":0.3467,"s":0.4746,"t":0.3052,"u":0.499,"v":0.4609,"w":0.6963,"x":0.459,"y":0.4609,"z":0.3857,"{":0.3398,"|":0.2163,"}":0.3403,"~":0.4927};
+const EM_META: Record<string, number> = {" ":0.271,"!":0.248,"\"":0.448,"#":0.6,"$":0.6,"%":0.945,"&":0.726,"'":0.243,"(":0.358,")":0.358,"*":0.453,"+":0.6,",":0.248,"-":0.434,".":0.248,"/":0.313,"0":0.6,"1":0.6,"2":0.6,"3":0.6,"4":0.6,"5":0.6,"6":0.6,"7":0.6,"8":0.6,"9":0.6,":":0.248,";":0.248,"<":0.6,"=":0.6,">":0.6,"?":0.459,"@":0.95,"A":0.744,"B":0.688,"C":0.68,"D":0.762,"E":0.597,"F":0.562,"G":0.736,"H":0.773,"I":0.282,"J":0.354,"K":0.665,"L":0.562,"M":0.868,"N":0.748,"O":0.785,"P":0.652,"Q":0.785,"R":0.686,"S":0.631,"T":0.621,"U":0.738,"V":0.713,"W":1.113,"X":0.672,"Y":0.618,"Z":0.605,"[":0.354,"\\":0.313,"]":0.354,"^":0.6,"_":0.5,"`":0.377,"a":0.547,"b":0.6,"c":0.472,"d":0.6,"e":0.542,"f":0.364,"g":0.604,"h":0.585,"i":0.255,"j":0.259,"k":0.536,"l":0.319,"m":0.877,"n":0.585,"o":0.576,"p":0.6,"q":0.6,"r":0.392,"s":0.488,"t":0.384,"u":0.579,"v":0.527,"w":0.853,"x":0.546,"y":0.526,"z":0.474,"{":0.391,"|":0.288,"}":0.391,"~":0.6};
+
+/** Which measured face to use. Omit for the legacy rough approximation, which the
+ *  market and position cards are tuned against; pass a face for the accurate
+ *  per-glyph tables (the Genesis card and the wordmark use these). */
+export type Face = "display" | "meta";
+const EM: Record<Face, Record<string, number>> = { display: EM_DISPLAY, meta: EM_META };
+
+
 const NARROW = new Set("ijltIf.,:;'!|()[]/\\-".split(""));
 const WIDE = new Set("mwMW%@".split(""));
 const UPPER = /[A-Z]/;
@@ -99,9 +114,15 @@ function charEm(ch: string): number {
 
 /** Approximate advance width. The real font is not available to us here, so this
  *  is deliberately generous; every consumer adds its own margin on top. */
-export function textWidth(s: string, fs: number): number {
+export function textWidth(s: string, fs: number, face?: Face): number {
   let em = 0;
-  for (const ch of s) em += charEm(ch);
+  if (face) {
+    const t = EM[face];
+    // 0.5 em is a safe fallback for the rare glyph outside ASCII 32-126.
+    for (const ch of s) em += t[ch] ?? 0.5;
+  } else {
+    for (const ch of s) em += charEm(ch);
+  }
   return em * fs;
 }
 
@@ -113,7 +134,7 @@ export interface Wrapped {
 /** Greedy wrap to a pixel budget. Long single words are hard-broken. Exported:
  *  renderProfileCard.ts reuses this for badge-medallion labels rather than
  *  hand-rolling a second wrap implementation. */
-export function wrapToWidth(text: string, maxW: number, fs: number, maxLines: number): Wrapped {
+export function wrapToWidth(text: string, maxW: number, fs: number, maxLines: number, face?: Face): Wrapped {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let cur = "";
@@ -122,9 +143,9 @@ export function wrapToWidth(text: string, maxW: number, fs: number, maxLines: nu
     let w = words[i];
 
     // A word wider than the whole line can never fit; split it.
-    while (textWidth(w, fs) > maxW) {
+    while (textWidth(w, fs, face) > maxW) {
       let cut = w.length - 1;
-      while (cut > 1 && textWidth(w.slice(0, cut), fs) > maxW) cut--;
+      while (cut > 1 && textWidth(w.slice(0, cut), fs, face) > maxW) cut--;
       if (cur) {
         lines.push(cur);
         cur = "";
@@ -136,7 +157,7 @@ export function wrapToWidth(text: string, maxW: number, fs: number, maxLines: nu
     }
 
     const candidate = cur ? `${cur} ${w}` : w;
-    if (textWidth(candidate, fs) <= maxW) {
+    if (textWidth(candidate, fs, face) <= maxW) {
       cur = candidate;
       continue;
     }
@@ -251,10 +272,10 @@ export function eye(cx: number, cy: number, r: number): string {
 
 const HANDLE_FS = 26;
 const HANDLE_GAP = 16;
-const WORDMARK_END = 140 + textWidth("oddie", 46);
+const WORDMARK_END = 140 + textWidth("oddie", 46, "display");
 /** Right edge of the whole lockup — the collision budget for anything that
  *  sits on the top line (the volume pill). */
-export const LOCKUP_RIGHT = WORDMARK_END + HANDLE_GAP + textWidth(X_HANDLE, HANDLE_FS);
+export const LOCKUP_RIGHT = WORDMARK_END + HANDLE_GAP + textWidth(X_HANDLE, HANDLE_FS, "meta");
 
 export function brandLockup(onDark = false): string {
   // The wordmark carries the same hard pink offset the landing headline and both
@@ -262,8 +283,8 @@ export function brandLockup(onDark = false): string {
   // sits behind. 2px at 46px matches the 2px the web wordmarks use at ~21px only
   // in spirit; measured against the card's 2x raster, 3px is what reads.
   return `${logoMark(52, 62, 68)}
-  <text x="143" y="115" font-size="46" font-weight="600" fill="${C.echo}">oddie</text>
-  <text x="140" y="112" font-size="46" font-weight="600" fill="${onDark ? C.white : C.ink}">oddie</text>
+  <text x="143" y="115" font-family="${DISPLAY}" font-size="46" fill="${C.echo}">oddie</text>
+  <text x="140" y="112" font-family="${DISPLAY}" font-size="46" fill="${onDark ? C.white : C.ink}">oddie</text>
   <text x="${Math.round(WORDMARK_END + HANDLE_GAP)}" y="112" font-family="${META}" font-size="${HANDLE_FS}" font-weight="700"
         fill="${onDark ? C.white : C.muted}"${onDark ? ` fill-opacity="0.62"` : ""}>${X_HANDLE}</text>`;
 }

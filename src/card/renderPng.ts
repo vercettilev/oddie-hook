@@ -14,7 +14,7 @@ import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FONT_DIR = path.join(here, "../../assets/fonts");
-const FONT_FILES = ["Fredoka_600SemiBold.ttf", "Fredoka_700Bold.ttf", "Nunito_700Bold.ttf"]
+const FONT_FILES = ["Fredoka_600SemiBold.ttf", "Fredoka_700Bold.ttf", "Nunito_700Bold.ttf", "Anton.ttf"]
   .map((f) => path.join(FONT_DIR, f));
 
 // 2× the 1000×524 artboard: crisp on the retina crops X and iMessage show, still
