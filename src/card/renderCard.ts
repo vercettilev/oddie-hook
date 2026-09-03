@@ -42,6 +42,10 @@ export const C = {
   echo: "#FF2D78",
   /** The app's near-black. The card ground, and the ink on every lime slab. */
   ground: "#0C0D0B",
+  // The landing and genesis pages drop every card on this darker pink at a hard
+  // offset (--pink-deep, .step and .tw both use it). Bright echo stays for small
+  // chips; a full card frame needs the deeper one or the offset glares.
+  pinkDeep: "#A3053F",
 };
 
 export const FONT = "'Fredoka', 'Trebuchet MS', sans-serif";

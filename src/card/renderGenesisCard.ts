@@ -71,7 +71,8 @@ export function renderGenesisCard(card: GenesisCard): string {
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${FONT}">
   <rect width="${W}" height="${H}" fill="${C.white}"/>
-  <rect x="26" y="26" width="948" height="508" rx="46" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
+  <rect x="42" y="42" width="948" height="508" fill="${C.pinkDeep}"/>
+  <rect x="26" y="26" width="948" height="508" fill="${C.white}" stroke="${C.ink}" stroke-width="13"/>
 
   ${brandLockup()}
   <text x="930" y="112" text-anchor="end" font-family="${META}" font-size="24" font-weight="700" fill="${C.accentDeep}" letter-spacing="3">GENESIS</text>
@@ -79,8 +80,8 @@ export function renderGenesisCard(card: GenesisCard): string {
   <!-- who, and the costume they earned -->
   <text x="${PAD_L}" y="182" font-size="44" font-weight="700" fill="${C.ink}">${esc(card.handle)}</text>
   <g transform="rotate(-1.5 ${PAD_L + labelW / 2} 222)">
-    <rect x="${PAD_L + 4}" y="${204 + 4}" width="${labelW}" height="46" rx="8" fill="${C.echo}"/>
-    <rect x="${PAD_L}" y="204" width="${labelW}" height="46" rx="8" fill="${C.ink}"/>
+    <rect x="${PAD_L + 4}" y="${204 + 4}" width="${labelW}" height="46" fill="${C.echo}"/>
+    <rect x="${PAD_L}" y="204" width="${labelW}" height="46" fill="${C.ink}"/>
     <text x="${PAD_L + 22}" y="${204 + 33}" font-size="${labelFs}" font-weight="700" fill="${C.accent}">${esc(label)}</text>
   </g>
 
@@ -106,12 +107,12 @@ function stubWith(claim: string): string {
   const lines = wrapped.lines.map((ln, i) =>
     `<text x="678" y="${418 + i * (fs + 6)}" font-size="${fs}" font-weight="700" fill="${C.ink}">${esc(ln)}${wrapped.overflow && i === wrapped.lines.length - 1 ? "…" : ""}</text>`).join("\n    ");
   return `<g transform="rotate(-2 790 443)">
-    <rect x="656" y="370" width="278" height="150" rx="6" fill="#F7F5EE" stroke="${C.ink}" stroke-width="4"/>
+    <rect x="656" y="370" width="278" height="150" fill="#F7F5EE" stroke="${C.ink}" stroke-width="4"/>
     <line x1="668" y1="394" x2="922" y2="394" stroke="${C.ink}" stroke-width="2.5" stroke-dasharray="7 6"/>
     <text x="678" y="387" font-family="${META}" font-size="12" font-weight="700" fill="${C.muted}" letter-spacing="2">YOU PINNED THIS</text>
     ${lines}
     <g transform="rotate(-7 848 496)">
-      <rect x="782" y="482" width="128" height="28" rx="4" fill="${C.white}" stroke="${C.echo}" stroke-width="3"/>
+      <rect x="782" y="482" width="128" height="28" fill="${C.white}" stroke="${C.echo}" stroke-width="3"/>
       <text x="792" y="502" font-family="${META}" font-size="14" font-weight="800" fill="${C.echo}" letter-spacing="1">NEVER SCORED</text>
     </g>
   </g>`;
@@ -119,9 +120,9 @@ function stubWith(claim: string): string {
 
 function stubEmpty(): string {
   return `<g transform="rotate(-2 790 443)">
-    <rect x="656" y="370" width="278" height="150" rx="6" fill="#F7F5EE" stroke="${C.ink}" stroke-width="4" stroke-dasharray="10 7"/>
+    <rect x="656" y="370" width="278" height="150" fill="#F7F5EE" stroke="${C.ink}" stroke-width="4" stroke-dasharray="10 7"/>
     <text x="678" y="428" font-size="24" font-weight="700" fill="${C.ink}">THIS LINE</text>
     <text x="678" y="460" font-size="24" font-weight="700" fill="${C.ink}">IS YOURS.</text>
-    <text x="678" y="494" font-family="${META}" font-size="14" font-weight="700" fill="${C.muted}">Tag @oddiefun under a claim.</text>
+    <text x="678" y="494" font-family="${META}" font-size="14" font-weight="700" fill="${C.muted}">Tag @oddiefun on a claim.</text>
   </g>`;
 }
