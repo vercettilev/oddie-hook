@@ -311,7 +311,10 @@ console.log("\na market page ships one og:image, not a competition between two")
   // stripped base? Grepped as source text for the same reason server.ts
   // can't be imported above.
   const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
-  for (const fn of ["marketPageHtml", "profilePageHtml", "positionPageHtml"]) {
+  // profilePageHtml is gone on purpose: /@handle no longer renders a second,
+  // device-keyed profile on the feed shell, it redirects to the wallet's record
+  // at /w/<address> (one person, one record). The other two die with feed.html.
+  for (const fn of ["marketPageHtml", "positionPageHtml"]) {
     const from = server.indexOf(`function ${fn}(`);
     const body = from < 0 ? "" : server.slice(from, server.indexOf("\n}", from) + 2);
     check(`${fn} exists`, body.length > 0);

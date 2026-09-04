@@ -54,7 +54,7 @@ import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, ge
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets } from "./store/accounts.js";
+import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
 
@@ -75,9 +75,48 @@ const app = express();
 // low is safe (limits get stricter and collapse onto the proxy); too high is
 // the hole above.
 app.set("trust proxy", 1);
+
+// The split itself. Only GET/HEAD navigations are redirected: an API POST that
+// lands on the wrong host is a caller's bug and a 301 would silently turn it
+// into a GET. Nothing happens at all while APP_HOST is unset.
+app.use((req, res, next) => {
+  if (!APP_HOST || (req.method !== "GET" && req.method !== "HEAD")) return next();
+  const where = hostFor(req.path);
+  const onApp = isAppHost(req);
+  if (where === "app" && !onApp) return res.redirect(301, `${APP_BASE_URL}${req.originalUrl}`);
+  if (where === "apex" && onApp && req.path !== "/") return res.redirect(301, `${BASE_URL}${req.originalUrl}`);
+  next();
+});
 app.use(express.json());
 
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
+/**
+ * THE HOST SPLIT, BEHIND A FLAG.
+ *
+ * Lev's call: oddie.fun keeps the landing and the Genesis campaign; the app
+ * (list at the root, /m, /you, /board, /w) moves to app.oddie.fun. Same
+ * server, same repo, answering two names. Identity already crosses the line
+ * (the device id is a .oddie.fun cookie, see public/app/id.js).
+ *
+ * APP_HOST unset = no split, today's behaviour, so this ships before the DNS
+ * exists without sending anybody to a host that does not resolve. Once Lev
+ * adds the CNAME and sets APP_HOST=app.oddie.fun:
+ *   - app paths on the apex 301 to the app host (the one-line insurance for a
+ *     bot reply or a card that still carries an apex market link);
+ *   - landing paths on the app host 301 back to the apex;
+ *   - "/" on the app host is the market list, not the landing.
+ * Absolute app links (og:url, the bot's permalink, the v1 API's url field)
+ * are built from APP_BASE_URL so they point at the right host either way.
+ */
+const APP_HOST = (process.env.APP_HOST ?? "").trim().toLowerCase();
+const APP_BASE_URL = APP_HOST ? `https://${APP_HOST}` : BASE_URL;
+const isAppHost = (req: express.Request): boolean => Boolean(APP_HOST) && req.hostname.toLowerCase() === APP_HOST;
+/** Which host a path belongs on. "shared" is served by both (APIs, assets). */
+function hostFor(path: string): "app" | "apex" | "shared" {
+  if (/^\/(m|market|w)\//.test(path) || /^\/(you|positions|board|leaderboard|markets)\/?$/.test(path) || path.startsWith("/@")) return "app";
+  if (path === "/" || /^\/(genesis|g|card)(\/|$)/.test(path)) return "apex";
+  return "shared";
+}
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
 const ROSTER_HTML = readFileSync(path.join(__dirname, "../public/roster.html"), "utf8");
@@ -296,7 +335,13 @@ async function renderLanding(): Promise<string> {
   return html;
 }
 
-app.get("/", async (_req, res) => {
+app.get("/", async (req, res) => {
+  // On the app host the root IS the app: the list, not the landing. This is
+  // the front door Lev felt was missing ("the app has no home").
+  if (isAppHost(req)) {
+    if (!APP_OPEN) return appClosed(res);
+    return res.set("Cache-Control", "no-cache").type("html").send(stampGate(MARKETS_HTML));
+  }
   res.set("Cache-Control", "no-cache");
   try {
     res.type("html").send(await renderLanding());
@@ -471,7 +516,7 @@ function marketPageHtml(rec: { market: { question: string; yesPct: number; volum
         : `call it — ${yes}% yes right now`)
     : `call it — ${yes}% yes · ${moneyShort(m.volumeUsd)} in play`;
   const img = `${BASE_URL}/card/${slug}.png`;
-  const url = `${BASE_URL}/m/${slug}`; // canonical: the short permalink
+  const url = `${APP_BASE_URL}/m/${slug}`; // canonical: the short permalink
   const tags = [
     `<link rel="canonical" href="${ogEsc(url)}">`,
     `<meta property="og:type" content="website">`,
@@ -575,47 +620,36 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
 // SPA shell with per-handle og tags (image = the profile card), so a shared
 // /@{handle} link unfurls on X showing the Oddie Score. Fully viewable logged
 // out; the SPA renders the public view from /api/profile/{handle}.
-function profilePageHtml(handle: string, acc: { oddieScore: number | null; hasEnough: boolean; marketsCreated: number }): string {
-  const title = `@${handle} on oddie`;
-  // What unfurls on X. It used to quote accuracy over resolved picks, which is
-  // frozen at zero for everyone post-pivot, and once the score gate moved to
-  // the ladder it read "NaN% accuracy" on the one surface X shows strangers.
-  const made = acc.marketsCreated;
-  const desc = acc.hasEnough
-    ? [`${acc.oddieScore} oddies`,
-       made > 0 ? `${made} market${made === 1 ? "" : "s"} tagged` : null,
-      ].filter(Boolean).join(" · ")
-    : `not on the board yet`;
-  const img = `${BASE_URL}/card/u/${encodeURIComponent(handle)}.png`;
-  const url = `${BASE_URL}/@${handle}`;
-  const tags = [
-    `<link rel="canonical" href="${ogEsc(url)}">`,
-    `<meta property="og:type" content="profile">`,
-    `<meta property="og:site_name" content="oddie">`,
-    `<meta property="og:title" content="${ogEsc(title)}">`,
-    `<meta property="og:description" content="${ogEsc(desc)}">`,
-    `<meta property="og:url" content="${ogEsc(url)}">`,
-    `<meta property="og:image" content="${ogEsc(img)}">`,
-    `<meta property="og:image:type" content="image/png">`,
-    `<meta property="og:image:width" content="2000">`,
-    `<meta property="og:image:height" content="1048">`,
-    `<meta property="og:image:alt" content="${ogEsc(title)}">`,
-    `<meta name="twitter:card" content="summary_large_image">`,
-    `<meta name="twitter:title" content="${ogEsc(title)}">`,
-    `<meta name="twitter:description" content="${ogEsc(desc)}">`,
-    `<meta name="twitter:image" content="${ogEsc(img)}">`,
-  ].join("\n");
-  return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
-}
 
 app.get("/@:handle", async (req, res) => {
   if (!APP_OPEN) return appClosed(res);
+  /**
+   * ONE PERSON, ONE RECORD, TWO DOORS.
+   *
+   * This was a second profile system keyed on the device (score, badges,
+   * accuracy), beside the wallet-keyed record at /w/<address>. Two records for
+   * one person disagree eventually, and the device-keyed one was already
+   * frozen (its inputs stopped being written at the pivot). So the handle is
+   * now a door onto the wallet's record: linked wallet -> 302 there. A handle
+   * that exists but never linked a wallet gets the honest dead end below rather
+   * than an empty profile pretending to be a record.
+   */
   const handle = String(req.params.handle).replace(/^@+/, "");
-  const deviceId = await deviceForHandle(handle).catch(() => null);
-  // Unknown handle: still serve the SPA (it shows a "no such profile" state).
-  if (!deviceId) return res.type("html").send(FEED_HTML);
-  const [acc, hd] = await Promise.all([accuracyFor(deviceId), displayHandle(deviceId)]);
-  res.type("html").send(profilePageHtml(hd.handle, acc));
+  const wallet = await walletForTwitterHandle(handle).catch(() => null);
+  if (wallet) return res.redirect(302, `/w/${wallet}`);
+  const known = await deviceForHandle(handle).catch(() => null);
+  const title = known ? `@${handle} has not linked a wallet yet` : `No such handle`;
+  const body = known
+    ? `Every call on oddie is stamped to a wallet. <b>@${escHtml(handle)}</b> has connected X but has not linked the wallet they stake from, so there is no record to show yet.`
+    : `Nobody by that name has connected to oddie.`;
+  res.status(known ? 200 : 404).set("Cache-Control", "no-cache").type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>${escHtml(title)} · oddie</title>
+<style>body{margin:0;background:#020302;color:#FBFCF4;font-family:'Nunito',system-ui,sans-serif;padding:40px 20px}
+.s{max-width:640px;margin:0 auto}h1{font-family:'Anton','Arial Narrow',sans-serif;font-weight:400;text-transform:uppercase;font-size:clamp(28px,6vw,44px);line-height:1.02;margin:0 0 14px}
+p{font-size:16px;line-height:1.55;color:rgba(255,255,255,.72);margin:0 0 22px}b{color:#FBFCF4}
+a{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#D7DC1F}</style></head>
+<body><div class="s"><h1>${escHtml(title)}</h1><p>${body}</p><a href="/board">See who was right</a></div></body></html>`);
 });
 
 // Public profile data (no auth — anyone can view anyone's record).
@@ -1883,7 +1917,7 @@ app.get("/w/:wallet", async (req, res) => {
       : `${who}: ${mine.length} settled call${mine.length === 1 ? "" : "s"}`;
   }
 
-  const url = `${BASE_URL}/w/${wallet}`;
+  const url = `${APP_BASE_URL}/w/${wallet}`;
   const tags = [
     `<link rel="canonical" href="${ogEsc(url)}">`,
     `<meta property="og:type" content="profile">`,
@@ -3559,7 +3593,7 @@ app.post("/api/v1/claims", async (req, res) => {
 function marketPayload(slug: string, detail: { question: string; closesAt: string | null } | null) {
   return {
     slug,
-    url: `${BASE_URL}/m/${slug}`,
+    url: `${APP_BASE_URL}/m/${slug}`,
     card_image_url: `${BASE_URL}/card/${slug}.png`,
     question: detail?.question ?? "",
     closes_at: detail?.closesAt ?? null,
@@ -3604,7 +3638,7 @@ app.get("/api/v1/markets", async (req, res) => {
     return {
       slug: m.slug,
       question: m.question,
-      url: `${BASE_URL}/m/${m.slug}`,
+      url: `${APP_BASE_URL}/m/${m.slug}`,
       closesAt: m.closesAt,
       resolved: Boolean(m.resolvedOutcome),
       outcome: m.resolvedOutcome ?? null,
@@ -3651,7 +3685,7 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     ok: true,
     slug: detail.slug,
     question: detail.question,
-    url: `${BASE_URL}/m/${detail.slug}`,
+    url: `${APP_BASE_URL}/m/${detail.slug}`,
     closesAt: detail.closesAt,
     resolutionCriteria: detail.resolutionCriteria ?? null,
     resolved: Boolean(state?.resolved ?? detail.resolvedOutcome),
@@ -3709,7 +3743,7 @@ app.post("/api/v1/markets", async (req, res) => {
   recordHit(`v1create:${ip}`, 3600_000);
   recordHit("v1create:global", 86_400_000);
   res.json({
-    ok: true, slug: out.slug, url: `${BASE_URL}/m/${out.slug}`,
+    ok: true, slug: out.slug, url: `${APP_BASE_URL}/m/${out.slug}`,
     onchain: out.onchain, cluster: cluster(),
     note: `Anyone can now take a side with real SOL. ${(CREATOR_FEE_BPS_REAL / 100).toFixed(0)}% of the pool goes to the handle in source_url.`,
   });
@@ -3730,7 +3764,7 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
   });
   if (!out.ok) return res.status(out.status).json({ error: out.error, chainEnabled: isChainEnabled() });
   res.json({
-    ok: true, slug: out.slug, marketId: out.marketId, url: `${BASE_URL}/m/${out.slug}`,
+    ok: true, slug: out.slug, marketId: out.marketId, url: `${APP_BASE_URL}/m/${out.slug}`,
     onchain: out.onchain, chainEnabled: isChainEnabled(), cluster: cluster(),
   });
 });
@@ -4552,7 +4586,7 @@ app.post("/api/tweet/generate", requireAdmin, async (req, res) => {
   const marketId = b.market_id != null ? String(b.market_id) : null;
   const hook = b.hook != null ? String(b.hook).trim() : "";
 
-  const permalink = `${BASE_URL}/m/${slug}`;
+  const permalink = `${APP_BASE_URL}/m/${slug}`;
   // Two copy variants off the same market (venue / closest / new): the REPLY (to
   // post under the tweet) and the QUOTE (to quote-post on the poster's timeline).
   // Both question-first, odds-free, with an optional teaser hook when it fits.
@@ -4712,7 +4746,7 @@ async function emailChainStakers(slug: string, outcome: "yes" | "no"): Promise<v
       // quoted a payout: pari-mutuel pays from the final pool, and the exact
       // number lives on the claim screen where it is read from the chain.
       const won = st.side === outcome;
-      const url = won ? `${BASE_URL}/m/${encodeURIComponent(slug)}` : `${BASE_URL}/m/${encodeURIComponent(slug)}`;
+      const url = won ? `${APP_BASE_URL}/m/${encodeURIComponent(slug)}` : `${APP_BASE_URL}/m/${encodeURIComponent(slug)}`;
       const { subject, html } = settleMailBody({
         to, question, side: st.side, entryPct: st.entryPct, outcome,
         // Denominated in SOL, and deliberately not a predicted payout.

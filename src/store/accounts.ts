@@ -257,6 +257,40 @@ export async function twitterHandlesForWallets(wallets: string[]): Promise<Map<s
   return out;
 }
 
+/**
+ * The inverse: the wallet behind an X handle, if that person has ever linked
+ * one. Exists for /@handle, which used to be a second profile system keyed on
+ * the device and now REDIRECTS to the wallet's record at /w/<address>: one
+ * person, one record, two doors. Null when the handle is unknown or has never
+ * linked a wallet; the caller draws the honest dead end for that.
+ *
+ * Case-insensitive on the handle, "@" tolerated, same as every other handle
+ * lookup here. If a person somehow has two linked wallets on one canonical
+ * device the newest link wins, which is the one they most recently proved.
+ */
+export async function walletForTwitterHandle(rawHandle: string): Promise<string | null> {
+  const handle = rawHandle.replace(/^@+/, "").toLowerCase();
+  if (!/^[a-z0-9_]{1,15}$/.test(handle)) return null;
+
+  if (!STORE_PERSISTENT) {
+    const tw = memAccounts.find((a) => a.provider === "twitter" && (a.handle ?? "").replace(/^@+/, "").toLowerCase() === handle);
+    if (!tw) return null;
+    const ws = memAccounts.filter((a) => a.provider === "phantom" && a.canonicalDevice === tw.canonicalDevice);
+    return ws.length ? ws[ws.length - 1].uid : null;
+  }
+
+  await storeSchema();
+  const { rows } = await storeDb().query<{ provider_uid: string }>(
+    `SELECT w.provider_uid FROM account tw
+       JOIN account w ON w.canonical_device = tw.canonical_device AND w.provider = 'phantom'
+      WHERE tw.provider = 'twitter' AND lower(ltrim(tw.handle, '@')) = $1
+      ORDER BY w.created_at DESC
+      LIMIT 1`,
+    [handle],
+  );
+  return rows[0]?.provider_uid ?? null;
+}
+
 export async function twitterHandleForWallet(wallet: string): Promise<string | null> {
   if (!wallet) return null;
 
