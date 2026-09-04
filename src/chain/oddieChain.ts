@@ -648,8 +648,23 @@ export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
     // else in the same envelope. Verified against production that this refuses
     // nothing real: a prepared take_position decodes to exactly one instruction,
     // and nothing in src/ or public/ adds a ComputeBudget instruction.
+    // EXACTLY ONE instruction of OURS, and every other instruction must be
+    // ComputeBudget. `some()` would let a rider through: a Solana transaction
+    // carries many instructions, so one harmless call to our program would buy
+    // an attacker a free relay for everything else in the same envelope.
+    //
+    // ComputeBudget is the one passenger allowed, and it is allowed because we
+    // now put it there ourselves: without a priority fee a mainnet transaction
+    // is dropped under congestion. It can move no money and touch no account,
+    // so admitting it costs the guard nothing.
     const mine = c.programId.toBase58();
-    if (tx.instructions.length !== 1 || tx.instructions[0].programId.toBase58() !== mine) {
+    const COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111";
+    const ours = tx.instructions.filter((i) => i.programId.toBase58() === mine);
+    const strangers = tx.instructions.filter((i) => {
+      const pid = i.programId.toBase58();
+      return pid !== mine && pid !== COMPUTE_BUDGET;
+    });
+    if (ours.length !== 1 || strangers.length > 0) {
       return { ok: false, error: "not-our-program", badRequest: true };
     }
     // The wallet is the only thing that can sign, so an unsigned envelope is a
@@ -746,8 +761,7 @@ export async function preparePositionTx(args: {
       })
       .instruction();
     const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
-    const tx = new c.web3.Transaction({ feePayer: userPk, recentBlockhash: blockhash }).add(ix);
-    return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+    return buildUserTx(c, ix, userPk, blockhash);
   } catch (e) {
     console.error("[chain] preparePositionTx failed:", (e as Error).message);
     return null;
@@ -768,8 +782,7 @@ export async function prepareClaimTx(args: { marketPubkey: string; userPubkey: s
       })
       .instruction();
     const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
-    const tx = new c.web3.Transaction({ feePayer: userPk, recentBlockhash: blockhash }).add(ix);
-    return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+    return buildUserTx(c, ix, userPk, blockhash);
   } catch (e) {
     console.error("[chain] prepareClaimTx failed:", (e as Error).message);
     return null;
@@ -794,6 +807,36 @@ export async function prepareClaimTx(args: { marketPubkey: string; userPubkey: s
  * returns HTTP 200 and a guaranteed-revert transaction, which is worse than a
  * refusal because the wallet is the one that looks broken.
  */
+/**
+ * THE PRIORITY FEE, and why every transaction this file builds now carries one.
+ *
+ * Devnet has no fee market, so a bare zero-fee transaction always landed and
+ * this was invisible. Mainnet deprioritises zero-fee transactions under
+ * congestion and simply drops them; the user's wallet signs, the bytes go out,
+ * and nothing ever happens. That failure is also the WORST one we have, because
+ * submitSignedTx reports a dropped transaction as ok:true, confirmed:false,
+ * which the client renders as "Sent".
+ *
+ * Price is per compute unit in micro-lamports and the default is deliberately
+ * small: at the default 200k CU allocation, 10_000 micro-lamports is 2_000
+ * lamports, i.e. 0.000002 SOL. Enough to clear the ordinary queue, nowhere near
+ * enough to matter next to a bet. Tunable without a deploy for the day the
+ * network is genuinely busy.
+ */
+const PRIORITY_MICRO_LAMPORTS = Math.max(0, Number(process.env.SOLANA_PRIORITY_MICRO_LAMPORTS ?? 10_000));
+
+/** The one place a user-signed transaction is assembled, so the fee can never
+ *  be added to two of the three paths and forgotten on the third. */
+function buildUserTx(c: Awaited<ReturnType<typeof load>>, ix: unknown, feePayer: unknown, blockhash: string) {
+  const chain = c as NonNullable<typeof c>;
+  const tx = new chain.web3.Transaction({ feePayer: feePayer as never, recentBlockhash: blockhash });
+  if (PRIORITY_MICRO_LAMPORTS > 0) {
+    tx.add(chain.web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_MICRO_LAMPORTS }));
+  }
+  tx.add(ix as never);
+  return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+}
+
 export async function prepareRefundTx(args: { marketPubkey: string; userPubkey: string }): Promise<string | null> {
   const c = await load();
   if (!c) return null;
@@ -807,8 +850,7 @@ export async function prepareRefundTx(args: { marketPubkey: string; userPubkey: 
       })
       .instruction();
     const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
-    const tx = new c.web3.Transaction({ feePayer: userPk, recentBlockhash: blockhash }).add(ix);
-    return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+    return buildUserTx(c, ix, userPk, blockhash);
   } catch (e) {
     console.error("[chain] prepareRefundTx failed:", (e as Error).message);
     return null;
@@ -900,8 +942,7 @@ export async function prepareCreatorFeeTx(args: {
       .accountsStrict({ creator: creatorPk, market: marketPk, vault: vaultPda(c, marketPk) })
       .instruction();
     const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
-    const tx = new c.web3.Transaction({ feePayer: creatorPk, recentBlockhash: blockhash }).add(ix);
-    return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+    return buildUserTx(c, ix, creatorPk, blockhash);
   } catch (e) {
     console.error("[chain] prepareCreatorFeeTx failed:", (e as Error).message);
     return null;
@@ -961,8 +1002,14 @@ export async function takePositionFromTx(txBase64: string): Promise<TakePosition
   try {
     const { web3 } = await import("@coral-xyz/anchor");
     const tx = web3.Transaction.from(Buffer.from(txBase64, "base64"));
-    if (tx.instructions.length !== 1) return null;
-    const ix = tx.instructions[0];
+    // Find OUR instruction rather than assuming index 0: the envelope now
+    // carries a ComputeBudget instruction in front of it. Assuming the old
+    // position here would have returned null for every stake, which silently
+    // kills the entry-odds stamp AND the Genesis new-bettor credit, with no
+    // error anywhere.
+    const programId = (await programIdString()) ?? "";
+    const ix = tx.instructions.find((i) => i.programId.toBase58() === programId);
+    if (!ix) return null;
     return decodeTakePositionIx(Buffer.from(ix.data), ix.keys.map((k) => k.pubkey.toBase58()));
   } catch {
     return null;

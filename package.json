@@ -60,7 +60,8 @@
     "test-claims-api": "tsx scripts/test-claims-api.ts",
     "test-archetype": "tsx scripts/test-archetype.ts",
     "test-archetype-dagilim": "tsx scripts/test-archetype-dagilim.ts",
-    "test-genesis-season": "tsx scripts/test-genesis-season.ts"
+    "test-genesis-season": "tsx scripts/test-genesis-season.ts",
+    "test-relay-guard": "tsx scripts/test-relay-guard.ts"
   },
   "engines": {
     "node": ">=20"
