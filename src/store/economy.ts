@@ -419,3 +419,44 @@ export function reputationOf(edges: number[]): Reputation {
   const avg = edges.reduce((a, b) => a + b, 0) / closed;
   return { avgEdge: avg, closed, provisional: closed < PROVISIONAL_BELOW };
 }
+
+/**
+ * THE PROGRAM'S PAYOUT, MIRRORED. Keep identical to lib.rs:claim_winnings.
+ *
+ * Off-chain this is the only way to answer "what did that call actually make",
+ * because the Position account is CLOSED when it is claimed: after collection
+ * the chain remembers the market's frozen totals but not the individual stake,
+ * so a realized-money number has to be recomputed from the market plus our own
+ * stamped entry. Which means it has to be right.
+ *
+ *   winningTotal == 0  -> everyone refunded, no fee was taken
+ *   wrong side         -> 0
+ *   otherwise          -> floor(stake x (pool - creatorFee - protocolFee) / winningTotal)
+ *
+ * Truncating division, deliberately, exactly as the program does: rounding up
+ * is how a pari-mutuel ends one lamport short for the last claimant, and a
+ * mirror that rounds differently would quietly overstate everybody.
+ */
+export interface SettledMarketTotals {
+  winningSide: "yes" | "no";
+  totalYesLamports: number;
+  totalNoLamports: number;
+  creatorFeeLamports: number;
+  protocolFeeLamports: number;
+}
+
+export function payoutLamports(
+  stakeLamports: number, side: "yes" | "no", m: SettledMarketTotals,
+): number {
+  if (!Number.isFinite(stakeLamports) || stakeLamports <= 0) return 0;
+  const pool = m.totalYesLamports + m.totalNoLamports;
+  const winningTotal = m.winningSide === "yes" ? m.totalYesLamports : m.totalNoLamports;
+  // Nobody backed the winner: the program refunds every stake and takes no fee.
+  // This is NOT a loss, and treating it as one would invent losses out of the
+  // markets where the house behaved best.
+  if (winningTotal === 0) return stakeLamports;
+  if (side !== m.winningSide) return 0;
+  const distributable = pool - m.creatorFeeLamports - m.protocolFeeLamports;
+  if (distributable <= 0) return 0;
+  return Math.floor((stakeLamports * distributable) / winningTotal);
+}

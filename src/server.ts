@@ -22,19 +22,20 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, walletReceipts, walletLeaderboard, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS } from "./store/markets.js";
+import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls } from "./store/markets.js";
+import type { SettledCall } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
-import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS } from "./store/economy.js";
+import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS, payoutLamports } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
   takePositionFromTx, entryShareOf, chainHealth, readMarket, readMarkets, readPositions, forgetMarket,
 } from "./chain/oddieChain.js";
-import type { MarketRead } from "./chain/oddieChain.js";
+import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendSettleMail, sendMail, settleMailBody, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
@@ -87,6 +88,8 @@ const MARKET_HTML = readFileSync(path.join(__dirname, "../public/app/market.html
 const YOU_HTML = readFileSync(path.join(__dirname, "../public/app/you.html"), "utf8");
 /** The board: who was right when the room disagreed. */
 const BOARD_HTML = readFileSync(path.join(__dirname, "../public/app/board.html"), "utf8");
+/** One wallet's record. The shareable artifact: the page somebody posts. */
+const WHO_HTML = readFileSync(path.join(__dirname, "../public/app/who.html"), "utf8");
 
 /**
  * UYGULAMA KAPALI (Lev, 2026-09-03): app bastan yazilacak, o yuzden simdilik
@@ -1649,24 +1652,127 @@ app.get("/r/:slug/:wallet/card.png", async (req, res) => {
 app.get("/api/w/:wallet", async (req, res) => {
   const wallet = req.params.wallet;
   if (!isValidPubkeyString(wallet)) return res.status(404).json({ ok: false, error: "unknown wallet" });
-  const [receipts, board] = await Promise.all([
-    walletReceipts(wallet, 100).catch(() => []),
-    walletLeaderboard(100).catch(() => []),
-  ]);
-  const standing = board.find((w) => w.wallet === wallet) ?? { wallet, wins: 0, losses: 0, points: 0 };
-  const rank = board.findIndex((w) => w.wallet === wallet);
+  // The SAME ledger the board is built from. This route used to compute its
+  // own standing from walletLeaderboard and its own receipts from
+  // walletReceipts, both priced off our store's pool estimate; the board now
+  // prices off the chain, and two prices for one call is how a profile and a
+  // leaderboard end up disagreeing about the same person.
+  const { calls, standings } = await settledLedger().catch(() => ({ calls: [] as PricedCall[], standings: [] as Standing[] }));
+  const mine = calls.filter((c) => c.wallet === wallet);
+  const standing = standings.find((w) => w.wallet === wallet)
+    ?? { wallet, wins: 0, losses: 0, points: 0, realizedLamports: 0, unpriced: 0 };
+  const idx = standings.findIndex((w) => w.wallet === wallet);
+  const handle = await twitterHandleForWallet(wallet).catch(() => null);
   res.json({
-    ok: true, ...standing,
-    rank: rank >= 0 ? rank + 1 : null,
-    settled: receipts.length,
-    receipts: receipts.map((r) => ({
+    ok: true,
+    wallet: standing.wallet, wins: standing.wins, losses: standing.losses, points: standing.points,
+    handle,
+    realizedSol: Number((standing.realizedLamports / 1e9).toFixed(4)),
+    unpriced: standing.unpriced,
+    rank: idx >= 0 ? idx + 1 : null,
+    settled: mine.length,
+    receipts: mine.map((r) => ({
       slug: r.slug, question: r.question, side: r.side, outcome: r.outcome,
       won: r.won, entryPct: r.entryPct, weight: r.weight,
-      poolSol: Number((r.poolLamports / 1e9).toFixed(4)),
-      at: r.createdAt,
+      stakeSol: Number((r.lamports / 1e9).toFixed(4)),
+      // Null, not zero, when the market could not be read.
+      pnlSol: r.pnlLamports === null ? null : Number((r.pnlLamports / 1e9).toFixed(4)),
+      poolSol: r.poolLamports === null ? null : Number((r.poolLamports / 1e9).toFixed(4)),
     })),
   });
 });
+
+/**
+ * THE LEDGER: every settled call, priced by the program's own payout maths.
+ *
+ * ONE computation, used by the board and by a wallet's page, because two
+ * places computing "what did this person make" is two answers and the day they
+ * disagree is the day the number stops meaning anything.
+ *
+ * The payout formula is lifted from lib.rs:claim_winnings and must stay
+ * identical to it:
+ *
+ *   winningTotal == 0  -> everyone is refunded, no fee was taken
+ *   wrong side         -> 0
+ *   otherwise          -> floor(stake x (pool - creatorFee - protocolFee) / winningTotal)
+ *
+ * All four inputs are frozen on the market account at resolve, which is why
+ * this reads the chain rather than our own store: our `settlementPools` knows
+ * the pool but never the WINNING SIDE's share of it, and that is the
+ * denominator. Truncating division on purpose, same as the program.
+ *
+ * A market we cannot read is priced as null, never as zero. A zero here would
+ * be "you made nothing", published about somebody's money, on the strength of
+ * a failed request.
+ */
+interface PricedCall {
+  wallet: string; slug: string; question: string;
+  side: "yes" | "no"; outcome: "yes" | "no"; won: boolean;
+  lamports: number; entryPct: number;
+  poolLamports: number | null;
+  payoutLamports: number | null;
+  pnlLamports: number | null;
+  weight: number | null;
+}
+interface Standing {
+  wallet: string; wins: number; losses: number; points: number;
+  realizedLamports: number;
+  /** Settled calls whose market could not be read, so they are in no total. */
+  unpriced: number;
+}
+
+function priceCall(c: SettledCall, m: OnChainMarketState | null): PricedCall {
+  const base = {
+    wallet: c.wallet, slug: c.slug, question: c.question, side: c.side,
+    outcome: c.outcome, won: c.won, lamports: c.lamports, entryPct: c.entryPct,
+  };
+  if (!m || !m.resolved || !m.winningSide) {
+    return { ...base, poolLamports: null, payoutLamports: null, pnlLamports: null, weight: null };
+  }
+  const pool = m.totalYesLamports + m.totalNoLamports;
+  // The formula itself lives in economy.ts beside the other money maths, and is
+  // tested against the program's own edge cases there.
+  const payout = payoutLamports(c.lamports, c.side, { ...m, winningSide: m.winningSide });
+  return {
+    ...base,
+    poolLamports: pool,
+    payoutLamports: payout,
+    pnlLamports: payout - c.lamports,
+    // The chain's pool, not our store's estimate: one number, one source.
+    weight: receiptWeight({ entryPct: c.entryPct, won: c.won, poolLamports: pool }),
+  };
+}
+
+async function settledLedger(): Promise<{ calls: PricedCall[]; standings: Standing[] }> {
+  const raw = await settledCalls().catch(() => []);
+  const keys = [...new Set(raw.map((c) => c.onchainPubkey).filter(Boolean))] as string[];
+  const states = await readMarkets(keys, { maxAgeMs: 10_000 }).catch(() => new Map<string, MarketRead>());
+  const calls = raw.map((c) => {
+    const r = c.onchainPubkey ? states.get(c.onchainPubkey) : undefined;
+    return priceCall(c, r?.ok ? r.state : null);
+  });
+
+  const by = new Map<string, Standing>();
+  for (const c of calls) {
+    const st = by.get(c.wallet) ?? { wallet: c.wallet, wins: 0, losses: 0, points: 0, realizedLamports: 0, unpriced: 0 };
+    // RIGHT-OR-WRONG AND HOW-MUCH ARE DIFFERENT QUESTIONS, and only the second
+    // one needs the chain. The outcome comes from our own settlement, so a
+    // market we could not price is still a call we know they got right or
+    // wrong; dropping it from the record too would understate somebody's
+    // hit rate because an RPC blinked. Only the money and the points wait.
+    if (c.won) st.wins++; else st.losses++;
+    if (c.pnlLamports === null) st.unpriced++;
+    else {
+      st.points += c.weight ?? 0;
+      st.realizedLamports += c.pnlLamports;
+    }
+    by.set(c.wallet, st);
+  }
+  // Ordered by points, never by money and never by win count. See the board
+  // route below for why.
+  const standings = [...by.values()].sort((a, b) => b.points - a.points || b.realizedLamports - a.realizedLamports);
+  return { calls, standings };
+}
 
 /**
  * THE BOARD, AND WHY IT RANKS THIS AND NOT VOLUME.
@@ -1687,17 +1793,23 @@ app.get("/api/w/:wallet", async (req, res) => {
  */
 app.get("/api/board", async (req, res) => {
   const limit = Math.max(1, Math.min(100, Number(req.query.limit ?? 20) || 20));
-  const board = await walletLeaderboard(limit).catch(() => []);
+  const { standings } = await settledLedger().catch(() => ({ standings: [] as Standing[], calls: [] }));
+  const top = standings.slice(0, limit);
   // A board of base58 strings is not a social object. One query for the lot.
-  const handles = await twitterHandlesForWallets(board.map((b) => b.wallet)).catch(() => new Map<string, string>());
+  const handles = await twitterHandlesForWallets(top.map((b) => b.wallet)).catch(() => new Map<string, string>());
   let rank = 0, prev: number | null = null;
-  const rows = board.map((b) => {
+  const rows = top.map((b) => {
     if (prev === null || b.points !== prev) { rank += 1; prev = b.points; }
     return {
       wallet: b.wallet,
       short: `${b.wallet.slice(0, 4)}…${b.wallet.slice(-4)}`,
       handle: handles.get(b.wallet) ?? null,
       wins: b.wins, losses: b.losses, points: b.points, rank,
+      // ORDERING is points; this is the same standing said in money, because
+      // "341 points" needs a footnote and "+2.4 SOL" does not. Shown, never
+      // sorted on: sorting on it would rank the biggest bankroll.
+      realizedSol: Number((b.realizedLamports / 1e9).toFixed(4)),
+      unpriced: b.unpriced,
     };
   });
   res.json({
@@ -1711,48 +1823,48 @@ app.get("/api/board", async (req, res) => {
 app.get("/w/:wallet", async (req, res) => {
   const wallet = req.params.wallet;
   if (!isValidPubkeyString(wallet)) return res.status(404).send("unknown wallet");
-  const receipts = await walletReceipts(wallet, 100).catch(() => []);
-  const wins = receipts.filter((r) => r.won).length;
-  const points = receipts.reduce((a, r) => a + r.weight, 0);
+
+  /**
+   * THE SHAREABLE ARTIFACT, so its unfurl is built from a real read.
+   *
+   * This is the page somebody posts to say "I called it", which makes the og
+   * line the most-copied sentence on the site. It leads with MONEY because
+   * money needs no footnote: "+4.21 SOL" travels and "341 points" needs the
+   * page to explain it. Both are true and both are here; only one goes in the
+   * card. A wallet whose markets could not be priced gets the honest line
+   * instead of a confident zero.
+   */
+  const { calls, standings } = await settledLedger().catch(() => ({ calls: [] as PricedCall[], standings: [] as Standing[] }));
+  const mine = calls.filter((c) => c.wallet === wallet);
+  const st = standings.find((w) => w.wallet === wallet);
+  const handle = await twitterHandleForWallet(wallet).catch(() => null);
   const short = `${wallet.slice(0, 4)}…${wallet.slice(-4)}`;
-  const title = receipts.length
-    ? `${wins}/${receipts.length} calls, ${points} points`
-    : "no settled calls yet";
+  const who = handle ? `@${handle}` : short;
 
-  const rows = receipts.map((r) => `<li class="rw ${r.won ? "w" : "l"}">
-    <a href="/m/${encodeURIComponent(r.slug)}">${escHtml(r.question)}</a>
-    <span class="m">called ${r.side.toUpperCase()} at ${r.entryPct}% · settled ${r.outcome.toUpperCase()}${r.won ? ` · +${r.weight}` : ""}</span>
-  </li>`).join("");
+  let title: string;
+  if (!st || mine.length === 0) title = `${who} has no settled calls yet`;
+  else {
+    const net = st.realizedLamports / 1e9;
+    const money = st.unpriced === mine.length ? null : `${net > 0 ? "+" : ""}${net.toFixed(2)} SOL`;
+    title = money
+      ? `${who}: ${st.wins}/${st.wins + st.losses} calls right, ${money}`
+      : `${who}: ${mine.length} settled call${mine.length === 1 ? "" : "s"}`;
+  }
 
-  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escHtml(short)} on oddie</title>
-<meta property="og:title" content="${escHtml(title)}">
-<meta property="og:description" content="Calls stamped on chain the moment they were made, weighted by how much the crowd disagreed.">
-<meta name="twitter:card" content="summary">
-<style>
- body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;padding:32px 20px 64px}
- .s{max-width:640px;margin:0 auto}
- h1{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#D7DC1F;margin:0 0 6px}
- .big{font-size:clamp(30px,7vw,46px);line-height:1.05;letter-spacing:-.03em;margin:0 0 4px}
- .sub{color:rgba(255,255,255,.62);margin:0 0 26px;font-size:14px}
- ul{list-style:none;padding:0;margin:0}
- .rw{border-top:1px solid rgba(255,255,255,.11);padding:13px 0}
- .rw a{color:#fff;text-decoration:none;display:block;line-height:1.35}
- .rw a:hover{color:#D7DC1F}
- .m{display:block;margin-top:5px;font-size:12.5px;color:rgba(255,255,255,.44)}
- .rw.w .m{color:#D7DC1F}
- .rw.l .m{color:rgba(255,255,255,.34)}
- .empty{color:rgba(255,255,255,.44);border-top:1px solid rgba(255,255,255,.11);padding-top:16px;font-size:14px}
- .f{margin-top:30px;font-size:12px;color:rgba(255,255,255,.34)}
- .f a{color:rgba(255,255,255,.62)}
-</style></head><body><div class="s">
-<h1>oddie record</h1>
-<p class="big">${escHtml(title)}</p>
-<p class="sub">${escHtml(short)} · every call stamped on chain when it was made</p>
-${receipts.length ? `<ul>${rows}</ul>` : `<p class="empty">No settled calls yet. A call shows up here once its market resolves.</p>`}
-<p class="f">Points are how far from the crowd a winning call was, scaled by how much money was in the pool. <a href="/feed">oddie</a></p>
-</div></body></html>`);
+  const url = `${BASE_URL}/w/${wallet}`;
+  const tags = [
+    `<link rel="canonical" href="${ogEsc(url)}">`,
+    `<meta property="og:type" content="profile">`,
+    `<meta property="og:site_name" content="oddie">`,
+    `<meta property="og:title" content="${ogEsc(title)}">`,
+    `<meta property="og:description" content="Every call stamped on chain the moment it was made, priced by the pool it settled against.">`,
+    `<meta property="og:url" content="${ogEsc(url)}">`,
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="${ogEsc(title)}">`,
+    `<meta name="twitter:description" content="Every call stamped on chain the moment it was made, priced by the pool it settled against.">`,
+  ].join("\n");
+  res.set("Cache-Control", "no-cache").type("html")
+    .send(WHO_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`));
 });
 
 app.get("/card/:slug.svg", async (req, res) => {

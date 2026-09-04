@@ -6657,6 +6657,20 @@ async function settlementPools(slugs: string[]): Promise<Map<string, number>> {
   return out;
 }
 
+/**
+ * SUPERSEDED, AND NOT TO BE PICKED BACK UP.
+ *
+ * server.ts's settledLedger() now prices every settled call from the MARKET
+ * ACCOUNT (the frozen total_yes/total_no/fees the program pays against), which
+ * this module cannot reach and must not try to. These two price off
+ * settlementPools instead, which knows the pool but never the winning side's
+ * share of it — the denominator of the payout. So they can agree with the
+ * board by luck and not by construction.
+ *
+ * Nothing in the server calls either any more; only test-receipts.ts does.
+ * They go with feed.html's retirement. Until then: do NOT wire a surface to
+ * them. One person's record computed two ways is two records.
+ */
 /** One wallet's settled receipts, newest market first. Open markets are not
  *  receipts yet: a receipt is proof of having been right, and an open market
  *  has not said who was. */
@@ -6695,8 +6709,79 @@ export async function walletReceipts(wallet: string, limit = 50): Promise<Receip
   return rows.map((r) => score(rowToEntry(r), r.resolved_outcome, r.question, pools.get(r.slug) ?? 0));
 }
 
+/**
+ * Every settled call by everyone, with the market account it landed in.
+ *
+ * The board and a wallet's own page both need the same raw material, and they
+ * need one thing this store cannot supply: what the WINNING SIDE totalled at
+ * resolve, which is the denominator of the program's payout. That number lives
+ * on the market account and nowhere else, so this returns the on-chain pubkey
+ * and lets the caller (which is allowed to touch the chain layer; this module
+ * deliberately is not) read it once for the whole board.
+ */
+export interface SettledCall {
+  wallet: string; slug: string; question: string; onchainPubkey: string | null;
+  side: "yes" | "no"; lamports: number; entryPct: number;
+  outcome: "yes" | "no"; won: boolean;
+}
+
+export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
+  const n = Math.max(1, Math.min(5000, Math.floor(limit)));
+  if (!PERSISTENT) {
+    const out: SettledCall[] = [];
+    for (const e of memChainEntries) {
+      const meta = memCommunity.get(e.slug);
+      const rec = mem.get(e.slug);
+      if (!meta?.resolvedOutcome || !rec) continue;
+      out.push({
+        wallet: e.wallet, slug: e.slug, question: rec.market.question,
+        onchainPubkey: meta.onchainPubkey ?? null,
+        side: e.side, lamports: e.lamports, entryPct: e.entryPct,
+        outcome: meta.resolvedOutcome, won: e.side === meta.resolvedOutcome,
+      });
+      if (out.length >= n) break;
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{
+    wallet: string; slug: string; question: string; onchain_pubkey: string | null;
+    side: "yes" | "no"; lamports: string; entry_pct: number; resolved_outcome: "yes" | "no";
+  }>(
+    `SELECT ce.wallet, ce.slug, s.question, cm.onchain_pubkey, ce.side, ce.lamports,
+            ce.entry_pct, cm.resolved_outcome
+       FROM chain_entry ce
+       JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL
+       JOIN market_slug s ON s.slug = ce.slug
+      ORDER BY ce.created_at DESC
+      LIMIT $1`,
+    [n],
+  );
+  // lamports is bigint and arrives as a STRING; annotating it `number` would be
+  // a lie that only breaks against a real database.
+  return rows.map((r) => ({
+    wallet: r.wallet, slug: r.slug, question: r.question, onchainPubkey: r.onchain_pubkey,
+    side: r.side, lamports: Number(r.lamports), entryPct: r.entry_pct,
+    outcome: r.resolved_outcome, won: r.side === r.resolved_outcome,
+  }));
+}
+
 export interface WalletStanding { wallet: string; wins: number; losses: number; points: number }
 
+/**
+ * SUPERSEDED, AND NOT TO BE PICKED BACK UP.
+ *
+ * server.ts's settledLedger() now prices every settled call from the MARKET
+ * ACCOUNT (the frozen total_yes/total_no/fees the program pays against), which
+ * this module cannot reach and must not try to. These two price off
+ * settlementPools instead, which knows the pool but never the winning side's
+ * share of it — the denominator of the payout. So they can agree with the
+ * board by luck and not by construction.
+ *
+ * Nothing in the server calls either any more; only test-receipts.ts does.
+ * They go with feed.html's retirement. Until then: do NOT wire a surface to
+ * them. One person's record computed two ways is two records.
+ */
 /** The board, by contrarian points. Ordered by points and never by win count:
  *  win count is the bandwagon's own metric, and the whole reason this board
  *  exists is that the pool mechanics tax the people it should be crowning. */
