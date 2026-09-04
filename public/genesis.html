@@ -927,6 +927,7 @@
   </div>
 </footer>
 
+<script src="/app/id.js"></script>
 <script>
   (function(){
     var d = document.documentElement;
@@ -950,23 +951,12 @@
        account this page links is the account the app will open with. The
        server's start route already takes return=, and its callback lands on
        /genesis?connected=twitter. */
-    var did = (function(){
-      var mint = function(){ return crypto.randomUUID ? crypto.randomUUID()
-        : String(Math.random()).slice(2) + Date.now().toString(36); };
-      try {
-        var hit = localStorage.getItem("oddie_did");
-        if (hit) return hit;
-        var id = mint(); localStorage.setItem("oddie_did", id); return id;
-      } catch(e) {}
-      try {
-        var m = document.cookie.match(/(?:^|;\s*)oddie_did=([^;]+)/);
-        if (m) return decodeURIComponent(m[1]);
-        var id2 = mint();
-        document.cookie = "oddie_did=" + encodeURIComponent(id2) +
-          ";path=/;max-age=31536000;samesite=lax";
-        return id2;
-      } catch(e) { return null; }
-    })();
+    /* The id comes from /app/id.js, loaded synchronously above: ONE definition
+       shared with every app shell, cookie-first so it survives the move to
+       app.oddie.fun. The inline copy this replaced was localStorage-first and
+       wrote a host-only cookie, which is exactly the split that would have made
+       every Genesis connector a stranger on the app host. */
+    var did = (window.OddieId && window.OddieId.get()) || null;
     if (/[?&]auth_error=/.test(location.search)) {
       var an = document.querySelector(".authnote");
       if (an) an.hidden = false;
