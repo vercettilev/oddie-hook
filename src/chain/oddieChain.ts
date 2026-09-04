@@ -693,42 +693,215 @@ export interface OnChainMarketState {
  */
 const sane = (bps: number): number => (Number.isFinite(bps) && bps >= 0 && bps <= 1000 ? bps : 0);
 
-export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainMarketState | null> {
+/**
+ * THE DIFFERENCE BETWEEN "NOTHING IS THERE" AND "WE COULD NOT LOOK".
+ *
+ * fetchMarketOnChain answered `null` for both, and every caller coalesced that
+ * null to zero. So a throttled RPC did not make the site say "we cannot read
+ * this right now" -- it made every market on the page advertise an EMPTY POOL,
+ * with real money sitting in the vault. Odds computed from it, entry shares
+ * computed from it, "be the first to back this" printed under a market holding
+ * a hundred stakes. The failure is silent, it looks like data, and it points at
+ * money, which is the worst combination the three can make.
+ *
+ * So the read has three answers now, and callers have to spend one:
+ *
+ *   · ok         we read it, here is the state
+ *   · absent     the account genuinely is not there (a market not yet minted)
+ *   · unreadable we do not know, and MUST NOT be rendered as a number
+ *
+ * `absent` is knowledge. `unreadable` is the absence of knowledge. Collapsing
+ * them was the bug.
+ */
+export type MarketRead =
+  | { ok: true; state: OnChainMarketState }
+  | { ok: false; reason: "absent" }
+  | { ok: false; reason: "unreadable"; error: string };
+
+/** The decode, split from the fetch so both the single and batched reads share
+ *  exactly one interpretation of a Market account. */
+function decodeMarket(a: Record<string, unknown>): OnChainMarketState {
+  const resolved = Boolean(a.resolved);
+  const side = Number(a.winningSide ?? a.winning_side ?? 0);
+  // The unnamed sentinel is the all-zero pubkey. Reporting it as a real
+  // address would have the UI offer a claim button to nobody.
+  const rawCreator = String(a.creator ?? "");
+  const creator = rawCreator && rawCreator !== UNNAMED_CREATOR ? rawCreator : null;
+  return {
+    resolved,
+    authority: a.authority ? String(a.authority) : null,
+    closeTime: Number(a.closeTime ?? a.close_time ?? 0),
+    winningSide: resolved ? (side === 0 ? "yes" : "no") : null,
+    totalYesLamports: Number(a.totalYes ?? a.total_yes ?? 0),
+    totalNoLamports: Number(a.totalNo ?? a.total_no ?? 0),
+    creator,
+    creatorFeeBps: sane(Number(a.creatorFeeBps ?? a.creator_fee_bps ?? 0)),
+    creatorFeeLamports: Number(a.creatorFeeLamports ?? a.creator_fee_lamports ?? 0),
+    creatorFeeClaimed: Boolean(a.creatorFeeClaimed ?? a.creator_fee_claimed),
+    protocolFeeBps: sane(Number(a.protocolFeeBps ?? a.protocol_fee_bps ?? 0)),
+    protocolFeeLamports: Number(a.protocolFeeLamports ?? a.protocol_fee_lamports ?? 0),
+    protocolFeeClaimed: Boolean(a.protocolFeeClaimed ?? a.protocol_fee_claimed),
+  };
+}
+
+/**
+ * A few seconds of memory, and ONLY for successful reads.
+ *
+ * `unreadable` is never cached: it is the state we most want to leave behind,
+ * and caching it would extend a blip into a stall. `absent` is never cached
+ * either, because a market minted a second ago is absent and then is not, and
+ * a cached "no such market" would hide it from the person who just opened it.
+ *
+ * The cache is OPT-IN per call rather than on by default. Money paths (the
+ * entry share a staker is quoted, the pool a bet is priced against) pass
+ * nothing and always read fresh; list and feed paints pass a maxAge and accept
+ * a few seconds of staleness in exchange for not making one RPC call per row.
+ */
+const marketCache = new Map<string, { at: number; state: OnChainMarketState }>();
+const MARKET_CACHE_MAX = 500;
+
+function cacheGet(pubkey: string, maxAgeMs: number): OnChainMarketState | null {
+  if (maxAgeMs <= 0) return null;
+  const hit = marketCache.get(pubkey);
+  if (!hit || Date.now() - hit.at > maxAgeMs) return null;
+  return hit.state;
+}
+
+function cachePut(pubkey: string, state: OnChainMarketState): void {
+  // Crude bound, not an LRU: this exists so a long-running process cannot grow
+  // a map without limit, and the cost of dropping a warm entry is one RPC call.
+  if (marketCache.size >= MARKET_CACHE_MAX) marketCache.clear();
+  marketCache.set(pubkey, { at: Date.now(), state });
+}
+
+/** Drop a market from the read cache. Called after a write we KNOW changed it,
+ *  so the next read cannot serve the pre-stake pool back to the staker. */
+export function forgetMarket(pubkey: string): void {
+  marketCache.delete(pubkey);
+}
+
+/**
+ * One market, with the three-way answer.
+ *
+ * `maxAgeMs` defaults to 0: fresh unless a caller explicitly says otherwise.
+ * The default has to be the safe one, because the unsafe one is invisible.
+ */
+export async function readMarket(
+  marketPubkey: string, opts: { maxAgeMs?: number } = {},
+): Promise<MarketRead> {
+  const maxAge = opts.maxAgeMs ?? 0;
+  const cached = cacheGet(marketPubkey, maxAge);
+  if (cached) return { ok: true, state: cached };
+
   const c = await load();
-  if (!c) return null;
+  // The chain layer being off is not "this market is empty". It is the same
+  // not-knowing as a dead RPC, and it gets the same answer.
+  if (!c) return { ok: false, reason: "unreadable", error: "chain layer unavailable" };
   try {
     // The generic `Idl` type this module uses (see the isolation-contract note
     // at the top) has no statically-known account names, only the runtime IDL
     // loaded in `load()` does — same reason `.methods.createMarket(...)` above
     // resolves loosely. `as any` here is that erasure, not an unchecked guess.
     const acct = await (c.program.account as any).market.fetchNullable(new c.web3.PublicKey(marketPubkey));
-    if (!acct) return null;
-    const a = acct as Record<string, unknown>;
-    const resolved = Boolean(a.resolved);
-    const side = Number(a.winningSide ?? a.winning_side ?? 0);
-    // The unnamed sentinel is the all-zero pubkey. Reporting it as a real
-    // address would have the UI offer a claim button to nobody.
-    const rawCreator = String(a.creator ?? "");
-    const creator = rawCreator && rawCreator !== UNNAMED_CREATOR ? rawCreator : null;
-    return {
-      resolved,
-      authority: a.authority ? String(a.authority) : null,
-      closeTime: Number(a.closeTime ?? a.close_time ?? 0),
-      winningSide: resolved ? (side === 0 ? "yes" : "no") : null,
-      totalYesLamports: Number(a.totalYes ?? a.total_yes ?? 0),
-      totalNoLamports: Number(a.totalNo ?? a.total_no ?? 0),
-      creator,
-      creatorFeeBps: sane(Number(a.creatorFeeBps ?? a.creator_fee_bps ?? 0)),
-      creatorFeeLamports: Number(a.creatorFeeLamports ?? a.creator_fee_lamports ?? 0),
-      creatorFeeClaimed: Boolean(a.creatorFeeClaimed ?? a.creator_fee_claimed),
-      protocolFeeBps: sane(Number(a.protocolFeeBps ?? a.protocol_fee_bps ?? 0)),
-      protocolFeeLamports: Number(a.protocolFeeLamports ?? a.protocol_fee_lamports ?? 0),
-      protocolFeeClaimed: Boolean(a.protocolFeeClaimed ?? a.protocol_fee_claimed),
-    };
+    if (!acct) return { ok: false, reason: "absent" };
+    const state = decodeMarket(acct as Record<string, unknown>);
+    cachePut(marketPubkey, state);
+    return { ok: true, state };
   } catch (e) {
-    console.error("[chain] fetchMarketOnChain failed:", (e as Error).message);
-    return null;
+    const error = (e as Error).message;
+    console.error(`[chain] readMarket ${marketPubkey.slice(0, 8)}… unreadable:`, error);
+    return { ok: false, reason: "unreadable", error };
   }
+}
+
+/**
+ * Many markets in as few round trips as the RPC allows.
+ *
+ * This replaces the N+1 that every list endpoint was doing: one getAccountInfo
+ * per row, fired in parallel, which is precisely the shape a public RPC rate
+ * limits. Under that limit the old code did not slow down, it started
+ * returning nulls, which the callers printed as zeroes. So batching is not a
+ * performance nicety here; it is most of the fix for the lie above.
+ *
+ * Decoding is per-account and individually guarded ON PURPOSE. anchor's own
+ * fetchMultiple decodes inside the batch and throws the whole call if a single
+ * account fails its discriminator, which is exactly the IDL-drift case this
+ * file warns about at the top: one stale account would blank an entire page of
+ * healthy markets. Here a bad account is `unreadable` and its neighbours are
+ * still `ok`.
+ */
+export async function readMarkets(
+  marketPubkeys: string[], opts: { maxAgeMs?: number } = {},
+): Promise<Map<string, MarketRead>> {
+  const maxAge = opts.maxAgeMs ?? 0;
+  const out = new Map<string, MarketRead>();
+  // De-duplicated: the same market can appear twice in one feed page, and
+  // asking the RPC about it twice is asking to be throttled.
+  const wanted: string[] = [];
+  for (const pk of marketPubkeys) {
+    if (out.has(pk)) continue;
+    const cached = cacheGet(pk, maxAge);
+    if (cached) { out.set(pk, { ok: true, state: cached }); continue; }
+    if (!wanted.includes(pk)) wanted.push(pk);
+  }
+  if (wanted.length === 0) return out;
+
+  const c = await load();
+  if (!c) {
+    for (const pk of wanted) out.set(pk, { ok: false, reason: "unreadable", error: "chain layer unavailable" });
+    return out;
+  }
+
+  const coder = (c.program.account as any).market.coder;
+  const idlName = (c.program.account as any).market._idlAccount?.name ?? "Market";
+  const mine = c.programId.toBase58();
+  const CHUNK = 99; // getMultipleAccounts caps at 100; 99 matches anchor's own
+
+  for (let i = 0; i < wanted.length; i += CHUNK) {
+    const slice = wanted.slice(i, i + CHUNK);
+    let infos: Array<{ data: Buffer; owner: { toBase58(): string } } | null>;
+    try {
+      infos = await c.connection.getMultipleAccountsInfo(slice.map((pk) => new c.web3.PublicKey(pk))) as any;
+    } catch (e) {
+      // A failed chunk is unreadable for that chunk only. The next chunk still
+      // gets its chance rather than the whole page going dark on one blip.
+      const error = (e as Error).message;
+      console.error(`[chain] readMarkets chunk of ${slice.length} unreadable:`, error);
+      for (const pk of slice) out.set(pk, { ok: false, reason: "unreadable", error });
+      continue;
+    }
+    slice.forEach((pk, idx) => {
+      const info = infos[idx];
+      if (!info) { out.set(pk, { ok: false, reason: "absent" }); return; }
+      if (info.owner.toBase58() !== mine) {
+        // A PDA of ours is always owned by us, so this is an anomaly rather
+        // than an empty market. Refusing to call it zero is the safe direction.
+        out.set(pk, { ok: false, reason: "unreadable", error: "account is not owned by our program" });
+        return;
+      }
+      try {
+        const state = decodeMarket(coder.accounts.decode(idlName, info.data) as Record<string, unknown>);
+        cachePut(pk, state);
+        out.set(pk, { ok: true, state });
+      } catch (e) {
+        const error = (e as Error).message;
+        console.error(`[chain] readMarkets decode ${pk.slice(0, 8)}… failed:`, error);
+        out.set(pk, { ok: false, reason: "unreadable", error });
+      }
+    });
+  }
+  return out;
+}
+
+/**
+ * The old shape, kept for callers where a missing market and an unreadable one
+ * genuinely lead to the same branch (a resolve that will retry, a sweep that
+ * skips). Anything that RENDERS A NUMBER must use readMarket instead, because
+ * this signature cannot tell the caller which of the two it got.
+ */
+export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainMarketState | null> {
+  const r = await readMarket(marketPubkey);
+  return r.ok ? r.state : null;
 }
 
 export interface OnChainPosition {

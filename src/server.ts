@@ -32,8 +32,9 @@ import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
-  takePositionFromTx, entryShareOf, chainHealth,
+  takePositionFromTx, entryShareOf, chainHealth, readMarkets, forgetMarket,
 } from "./chain/oddieChain.js";
+import type { MarketRead } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendSettleMail, sendMail, settleMailBody, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
@@ -1887,7 +1888,19 @@ async function displayHandle(deviceId: string): Promise<{ handle: string; handle
  * fetched twice per profile load. Cached by device, short enough that a fee
  * claimed in another tab shows up on the next visit.
  */
-interface ChainMine { markets: number; live: number; settled: number; pooledLamports: number; earnedLamports: number; claimed: boolean }
+interface ChainMine {
+  markets: number; live: number; settled: number;
+  pooledLamports: number; earnedLamports: number; claimed: boolean;
+  /**
+   * How many of this person's markets we could not read.
+   *
+   * These totals are SUMS, and a sum that silently drops its unreadable terms
+   * is not a smaller sum, it is a wrong one. "You have earned 0" to somebody
+   * who has earned is the single most damaging thing this endpoint can say, so
+   * the count travels with the number and the surface can mark it partial.
+   */
+  unreadable: number;
+}
 const chainMineCache = new Map<string, { at: number; val: ChainMine }>();
 const CHAIN_MINE_TTL_MS = 30_000;
 
@@ -1895,16 +1908,27 @@ async function chainMineFor(deviceId: string): Promise<ChainMine> {
   const hit = chainMineCache.get(deviceId);
   if (hit && Date.now() - hit.at < CHAIN_MINE_TTL_MS) return hit.val;
   const mine = await onchainMarketsSurfacedBy(deviceId, 50);
-  let pooledLamports = 0, earnedLamports = 0, live = 0, settled = 0, claimed = false;
+  // One batched read instead of up to 50 separate ones. The old shape was the
+  // exact request pattern a public RPC throttles, and a throttled read did not
+  // slow this down, it zeroed it.
+  const states = await readMarkets(mine.map((m) => m.onchainPubkey), { maxAgeMs: CHAIN_MINE_TTL_MS })
+    .catch(() => new Map<string, MarketRead>());
+  let pooledLamports = 0, earnedLamports = 0, live = 0, settled = 0, claimed = false, unreadable = 0;
   for (const m of mine) {
-    const st = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
-    if (!st) continue;
+    const r = states.get(m.onchainPubkey);
+    // `absent` is knowledge (nothing was ever minted there) and counts as
+    // nothing. `unreadable` is the absence of knowledge and is counted as such.
+    if (!r || (!r.ok && r.reason === "unreadable")) { unreadable++; continue; }
+    if (!r.ok) continue;
+    const st = r.state;
     pooledLamports += st.totalYesLamports + st.totalNoLamports;
     if (st.resolved) { settled++; earnedLamports += st.creatorFeeLamports; if (st.creatorFeeClaimed) claimed = true; }
     else live++;
   }
-  const val: ChainMine = { markets: mine.length, live, settled, pooledLamports, earnedLamports, claimed };
-  chainMineCache.set(deviceId, { at: Date.now(), val });
+  const val: ChainMine = { markets: mine.length, live, settled, pooledLamports, earnedLamports, claimed, unreadable };
+  // A partial answer is not cached: caching it would hold the wrong total for
+  // the full TTL after the RPC recovered.
+  if (unreadable === 0) chainMineCache.set(deviceId, { at: Date.now(), val });
   return val;
 }
 
@@ -2213,10 +2237,14 @@ app.get("/api/auth/wallet/challenge", (req, res) => {
 async function nameCreatorOnTaggedMarkets(deviceId: string, address: string): Promise<void> {
   try {
     const mine = await onchainMarketsSurfacedBy(deviceId);
+    const states = await readMarkets(mine.map((m) => m.onchainPubkey)).catch(() => new Map<string, MarketRead>());
     let named = 0;
     for (const m of mine) {
-      const state = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
-      if (!state || state.creator) continue; // unreachable, or somebody already named it
+      const r = states.get(m.onchainPubkey);
+      // Unreadable is skipped rather than named: naming writes to chain, and
+      // writing on the strength of a read that failed is how you pay a fee to
+      // set a field that was already set. It retries on the next wallet verify.
+      if (!r || !r.ok || r.state.creator) continue;
       if (await nameCreator(m.onchainPubkey, address)) named++;
     }
     if (named) console.log(JSON.stringify({ evt: "creator_named", count: named, address }));
@@ -3929,14 +3957,23 @@ if (realStakesReady) {
     const creatorPubkey = String(req.query.creatorPubkey ?? "");
     if (!isValidPubkeyString(creatorPubkey)) return res.status(400).json({ error: "invalid creatorPubkey" });
     const markets = await resolvedOnchainMarkets(40).catch(() => []);
-    const owed = await Promise.all(markets.map(async (m) => {
-      const state = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
-      if (!state || state.creatorFeeClaimed) return null;
+    const states = await readMarkets(markets.map((m) => m.onchainPubkey), { maxAgeMs: 5_000 })
+      .catch(() => new Map<string, MarketRead>());
+    let unreadable = 0;
+    const owed = markets.map((m) => {
+      const r = states.get(m.onchainPubkey);
+      // Money owed TO the user. An unreadable market silently dropped from this
+      // list is a fee they are never told about and therefore never claim, so
+      // the omission is counted and returned rather than swallowed.
+      if (!r || (!r.ok && r.reason === "unreadable")) { unreadable++; return null; }
+      if (!r.ok) return null;
+      const state = r.state;
+      if (state.creatorFeeClaimed) return null;
       if (state.creatorFeeLamports <= 0) return null;      // nobody backed the winner
       if (state.creator !== creatorPubkey) return null;    // not theirs, or nobody's yet
       return { slug: m.slug, question: m.question, lamports: state.creatorFeeLamports, feeBps: state.creatorFeeBps };
-    }));
-    res.json({ ok: true, fees: owed.filter(Boolean) });
+    });
+    res.json({ ok: true, fees: owed.filter(Boolean), unreadable });
   });
 
   /**
@@ -4000,18 +4037,27 @@ if (realStakesReady) {
    */
   app.get("/api/admin/protocol-fees", requireAdmin, async (_req, res) => {
     const markets = await resolvedOnchainMarkets(40).catch(() => []);
-    const rows = await Promise.all(markets.map(async (m) => {
-      const state = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
-      if (!state || state.protocolFeeClaimed || state.protocolFeeLamports <= 0) return null;
+    const states = await readMarkets(markets.map((m) => m.onchainPubkey)).catch(() => new Map<string, MarketRead>());
+    let unreadable = 0;
+    const rows = markets.map((m) => {
+      const r = states.get(m.onchainPubkey);
+      if (!r || (!r.ok && r.reason === "unreadable")) { unreadable++; return null; }
+      if (!r.ok) return null;
+      const state = r.state;
+      if (state.protocolFeeClaimed || state.protocolFeeLamports <= 0) return null;
       return {
         slug: m.slug, question: m.question, onchainPubkey: m.onchainPubkey,
         lamports: state.protocolFeeLamports, feeBps: state.protocolFeeBps,
       };
-    }));
+    });
     const owed = rows.filter(Boolean) as Array<{ lamports: number }>;
     res.set("Cache-Control", "no-store").json({
       ok: true,
       totalLamports: owed.reduce((sum, r) => sum + r.lamports, 0),
+      // A revenue total is a sum too. `unreadable` is how many resolved markets
+      // this figure could not look at, so "we are owed X" is never mistaken for
+      // "X is everything we are owed".
+      unreadable,
       fees: owed,
     });
   });
@@ -4083,7 +4129,33 @@ if (realStakesReady) {
     // user Solana is down when the bug is ours.
     if (!out.ok) return res.status(out.badRequest ? 400 : 502).json({ ok: false, error: out.error, signature: out.signature });
 
-    if (stake && crowdBefore) {
+    // The pool just moved. Any cached read of this market is now a number from
+    // before the stake, so it is dropped rather than served for the rest of its
+    // TTL to the very person who just changed it.
+    if (stake) forgetMarket(stake.market);
+
+    /**
+     * BOOKKEEPING WAITS FOR CONFIRMATION. THE MONEY DOES NOT.
+     *
+     * submitSignedTx answers ok/confirmed:false when the send went out but the
+     * confirmation could not be read, which is the right answer for the USER
+     * (their transaction may well be landing, and telling them it failed would
+     * be worse). It is the wrong basis for a ledger entry.
+     *
+     * Stamping an unconfirmed send credits the Genesis board with a funded
+     * bettor and the score board with an entry for a transaction that may
+     * never land, and it is farmable on purpose: send, let it die, keep the
+     * credit. A missing stamp for a stake that did land is recoverable from
+     * the signature below; a fabricated row on a public leaderboard is not.
+     */
+    if (stake && crowdBefore && out.confirmed !== true) {
+      console.warn(JSON.stringify({
+        evt: "chain_entry_unconfirmed", signature: out.signature ?? null,
+        market: stake.market, wallet: stake.user, lamports: stake.lamports,
+      }));
+    }
+
+    if (stake && crowdBefore && out.confirmed === true) {
       void slugForOnchainPubkey(stake.market).then(async (slug) => {
         if (!slug) return;
         await recordChainEntry({
