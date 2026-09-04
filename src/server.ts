@@ -32,7 +32,7 @@ import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
-  takePositionFromTx, entryShareOf, chainHealth, readMarkets, forgetMarket,
+  takePositionFromTx, entryShareOf, chainHealth, readMarket, readMarkets, forgetMarket,
 } from "./chain/oddieChain.js";
 import type { MarketRead } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
@@ -3307,8 +3307,23 @@ app.get("/api/v1/markets", async (req, res) => {
   // above is the admin view and returns them on purpose, so the filter has to be
   // here: without it the agent API kept serving markets that had already left
   // the feed.
-  const items = await Promise.all(all.filter((m) => !m.resolvedOutcome && !m.retiredAt).slice(0, limit).map(async (m) => {
-    const state = m.onchainPubkey ? await fetchMarketOnChain(m.onchainPubkey).catch(() => null) : null;
+  const live = all.filter((m) => !m.resolvedOutcome && !m.retiredAt).slice(0, limit);
+  // One batched read for the whole page instead of one per row. The old shape
+  // was the exact request pattern a public RPC throttles, and being throttled
+  // did not slow this endpoint down, it published zeroes.
+  const states = await readMarkets(live.map((m) => m.onchainPubkey).filter(Boolean) as string[], { maxAgeMs: 4_000 })
+    .catch(() => new Map<string, MarketRead>());
+  const items = live.map((m) => {
+    const r = m.onchainPubkey ? states.get(m.onchainPubkey) : { ok: false as const, reason: "absent" as const };
+    const state = r?.ok ? r.state : null;
+    // UNREADABLE IS NOT AN EMPTY POOL, AND THIS IS A PUBLIC FEED.
+    //
+    // `pool: {totalSol: 0}` for a market we simply could not reach is a
+    // number nobody measured, published under our name, about somebody's
+    // money. So the numbers go away entirely and oddsSource says why. A
+    // consumer reading `pool.totalSol` blindly now throws, which is the loud
+    // failure; reading a zero was the silent one.
+    const unreadable = Boolean(r && !r.ok && r.reason === "unreadable");
     const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
     const total = yes + no;
     return {
@@ -3318,9 +3333,9 @@ app.get("/api/v1/markets", async (req, res) => {
       closesAt: m.closesAt,
       resolved: Boolean(m.resolvedOutcome),
       outcome: m.resolvedOutcome ?? null,
-      pool: { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
-      yesPct: total > 0 ? Math.max(1, Math.min(99, Math.round((yes / total) * 100))) : null,
-      oddsSource: total > 0 ? "vault" : "unpriced",
+      pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
+      yesPct: unreadable || total <= 0 ? null : Math.max(1, Math.min(99, Math.round((yes / total) * 100))),
+      oddsSource: unreadable ? "unreadable" : total > 0 ? "vault" : "unpriced",
       onchain: m.onchainPubkey ? { pubkey: m.onchainPubkey, explorer: explorerUrl(m.onchainPubkey) } : null,
       // PER MARKET, because the rates differ now: a market with no creator to
       // pay is minted at 0. The chain is the authority once minted; the row is
@@ -3328,7 +3343,7 @@ app.get("/api/v1/markets", async (req, res) => {
       // creator share against markets that charge none.
       creatorFeeBps: state?.creatorFeeBps ?? m.creatorFeeBps,
     };
-  }));
+  });
   res.json({
     ok: true, cluster: cluster(),
     // The DEFAULT rate, kept for callers that read it. Prefer the per-market
@@ -3342,7 +3357,13 @@ app.get("/api/v1/markets", async (req, res) => {
 app.get("/api/v1/markets/:slug", async (req, res) => {
   const detail = await communityMarketDetail(req.params.slug);
   if (!detail) return res.status(404).json({ ok: false, error: "unknown market" });
-  const state = detail.onchainPubkey ? await fetchMarketOnChain(detail.onchainPubkey).catch(() => null) : null;
+  const read = detail.onchainPubkey
+    ? await readMarket(detail.onchainPubkey).catch((): MarketRead => ({ ok: false, reason: "unreadable", error: "read threw" }))
+    : ({ ok: false, reason: "absent" } as MarketRead);
+  const state = read.ok ? read.state : null;
+  // See the list route above: an unreadable market publishes no pool at all
+  // rather than a zero nobody measured.
+  const unreadable = !read.ok && read.reason === "unreadable";
   const surfacer = await surfacerFor(req.params.slug).catch(() => null);
   const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
   const total = yes + no;
@@ -3355,9 +3376,9 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     resolutionCriteria: detail.resolutionCriteria ?? null,
     resolved: Boolean(state?.resolved ?? detail.resolvedOutcome),
     outcome: state?.winningSide ?? detail.resolvedOutcome ?? null,
-    pool: { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
-    yesPct: total > 0 ? Math.max(1, Math.min(99, Math.round((yes / total) * 100))) : null,
-    oddsSource: total > 0 ? "vault" : "unpriced",
+    pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
+    yesPct: unreadable || total <= 0 ? null : Math.max(1, Math.min(99, Math.round((yes / total) * 100))),
+    oddsSource: unreadable ? "unreadable" : total > 0 ? "vault" : "unpriced",
     taggedBy: surfacer?.handle ?? null,
     // Read off the market, not from our constants. A market minted under a
     // different rate keeps it, and an agent that assumed today's numbers would
