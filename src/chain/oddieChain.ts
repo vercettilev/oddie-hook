@@ -87,6 +87,28 @@ const MIN_LAMPORTS = 10_000_000; // 0.01 SOL
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 /**
+ * What one market actually costs the admin wallet, measured against real
+ * accounts rather than estimated: Market (314 bytes) 0.003076 + Vault (41
+ * bytes) 0.001176 + the signature 0.000005.
+ *
+ * Nearly all of it is rent, and rent is refundable only through close_market,
+ * which refuses any market whose totals are non-zero. Since mints happen
+ * on-demand -- at the moment somebody is about to stake -- almost every minted
+ * market carries stakes. So treat this as SPENT per market, not as a deposit.
+ */
+const COST_PER_MARKET_LAMPORTS = 4_257_000;
+
+/**
+ * The band between "still working" and "already stopped".
+ *
+ * MIN_LAMPORTS is a cliff: one market above it everything works, one market
+ * below it every mint is refused and the only trace is a log line nobody
+ * reads. A cliff with no approach is how a campaign stops silently mid-flight,
+ * so this is the approach: roughly ten more markets of warning.
+ */
+const WARN_LAMPORTS = 50_000_000; // 0.05 SOL
+
+/**
  * The program's "creator not named yet" sentinel, base58 of the all-zero
  * pubkey. Written as a literal rather than derived from web3, because every
  * pure helper in this file has to stay import-safe (see the isolation note at
@@ -208,6 +230,110 @@ export async function adminBalanceSol(): Promise<number | null> {
 }
 
 /**
+ * How close the admin wallet is to stopping, in the terms an operator acts on.
+ *
+ * `marketsLeft` counts to the FLOOR, not to zero, because minting stops at the
+ * floor: a wallet holding exactly MIN_LAMPORTS can open no markets at all, and
+ * reporting its balance as "0.01 SOL" while the answer to "how many more?" is
+ * zero is the kind of true-but-useless number that lets a campaign stall.
+ *
+ * Cached for a minute: every admin surface reads this, and an RPC call per
+ * page paint would be a self-inflicted rate limit.
+ */
+export type ChainHealthState = "ok" | "low" | "stopped" | "off";
+
+export interface ChainHealth {
+  state: ChainHealthState;
+  /** Null when the chain layer is off or the RPC could not be reached. */
+  balanceSol: number | null;
+  /** Markets still mintable before the floor stops them. Null when unknown. */
+  marketsLeft: number | null;
+  costPerMarketSol: number;
+  floorSol: number;
+  warnSol: number;
+  admin: string | null;
+  programId: string | null;
+  cluster: string;
+  /** Mints refused for lack of funds since this process started. */
+  refusedForFunds: number;
+  lastRefusalAt: string | null;
+  checkedAt: string;
+}
+
+/**
+ * The arithmetic, split out from the RPC so it can be tested without one.
+ *
+ * `marketsLeft` counts down to the FLOOR rather than to zero, because that is
+ * where minting actually stops. A wallet sitting exactly on the floor has a
+ * balance and no runway at all, and the two numbers have to disagree for the
+ * gauge to be worth reading.
+ */
+export function chainRunway(lamports: number | null): {
+  state: ChainHealthState; balanceSol: number | null; marketsLeft: number | null;
+} {
+  // Unreadable is its own answer. Reporting it as 0 invents an empty wallet and
+  // reporting it as healthy hides a real one, and both lie toward money.
+  if (lamports === null || !Number.isFinite(lamports)) {
+    return { state: "off", balanceSol: null, marketsLeft: null };
+  }
+  return {
+    state: lamports < MIN_LAMPORTS ? "stopped" : lamports < WARN_LAMPORTS ? "low" : "ok",
+    balanceSol: lamports / LAMPORTS_PER_SOL,
+    marketsLeft: Math.max(0, Math.floor((lamports - MIN_LAMPORTS) / COST_PER_MARKET_LAMPORTS)),
+  };
+}
+
+let refusedForFunds = 0;
+let lastRefusalAt: string | null = null;
+let healthCache: { at: number; value: ChainHealth } | null = null;
+const HEALTH_TTL_MS = 60_000;
+
+export async function chainHealth(force = false): Promise<ChainHealth> {
+  const now = Date.now();
+  if (!force && healthCache && now - healthCache.at < HEALTH_TTL_MS) {
+    // The counters are live even when the balance is a minute stale: a refusal
+    // that happened ten seconds ago must not wait out the cache to be seen.
+    return { ...healthCache.value, refusedForFunds, lastRefusalAt };
+  }
+
+  const base = {
+    costPerMarketSol: COST_PER_MARKET_LAMPORTS / LAMPORTS_PER_SOL,
+    floorSol: MIN_LAMPORTS / LAMPORTS_PER_SOL,
+    warnSol: WARN_LAMPORTS / LAMPORTS_PER_SOL,
+    cluster: CLUSTER,
+    refusedForFunds,
+    lastRefusalAt,
+    checkedAt: new Date(now).toISOString(),
+  };
+
+  const c = await load();
+  if (!c) {
+    const value: ChainHealth = {
+      ...base, state: "off", balanceSol: null, marketsLeft: null,
+      admin: null, programId: null,
+    };
+    healthCache = { at: now, value };
+    return value;
+  }
+
+  let lamports: number | null = null;
+  try {
+    lamports = await c.connection.getBalance(c.admin.publicKey);
+  } catch {
+    lamports = null; // unreachable RPC is not the same as an empty wallet
+  }
+
+  const value: ChainHealth = {
+    ...base,
+    ...chainRunway(lamports),
+    admin: c.admin.publicKey.toBase58(),
+    programId: c.programId.toBase58(),
+  };
+  healthCache = { at: now, value };
+  return value;
+}
+
+/**
  * Mint a market on devnet. Returns the market PDA + tx signature on success, or
  * null on ANY failure (unconfigured, underfunded, RPC error). Never throws.
  * `marketId` seeds the PDA; the caller passes the community market's own id so
@@ -257,9 +383,15 @@ export async function mintMarket(args: {
     }
     const bal = await c.connection.getBalance(c.admin.publicKey);
     if (bal < MIN_LAMPORTS) {
+      // Counted, not just logged. This is the number that turns "the site went
+      // quiet" into "the site refused 14 bets since the balance ran out", and
+      // it is the only user-visible consequence of an unfunded wallet.
+      refusedForFunds++;
+      lastRefusalAt = new Date().toISOString();
       console.error(
         `[chain] admin wallet ${c.admin.publicKey.toBase58()} low: ${(bal / LAMPORTS_PER_SOL).toFixed(4)} SOL ` +
-          `(< ${(MIN_LAMPORTS / LAMPORTS_PER_SOL).toFixed(2)}). Fund it. Skipping on-chain mint.`,
+          `(< ${(MIN_LAMPORTS / LAMPORTS_PER_SOL).toFixed(2)}). Fund it. Skipping on-chain mint. ` +
+          `${refusedForFunds} mint(s) refused for funds so far.`,
       );
       return null;
     }

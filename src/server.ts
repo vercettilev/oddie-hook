@@ -32,7 +32,7 @@ import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
-  takePositionFromTx, entryShareOf,
+  takePositionFromTx, entryShareOf, chainHealth,
 } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
@@ -1413,6 +1413,27 @@ app.get("/api/admin/genesis/roster", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit);
   const roster = await genesisRoster(Number.isFinite(limit) ? limit : 200).catch(() => []);
   res.set("Cache-Control", "no-store").json({ tickets: GENESIS_TICKETS, roster });
+});
+
+/**
+ * How much runway the admin wallet has left, in markets.
+ *
+ * Every market costs the admin wallet rent it will never get back (close_market
+ * refuses any market that took a bet, and mints are on-demand, so effectively
+ * every minted market has taken one). When the balance crosses the floor,
+ * minting stops -- and the only trace today is a log line. This endpoint, and
+ * the strip it draws on /genesis/roster, are what make that visible before it
+ * happens rather than after.
+ *
+ * Admin-gated because it names the admin wallet and its balance. That is not a
+ * secret in the cryptographic sense (the address is on chain either way), but
+ * "here is the wallet that pays for everything and here is how close it is to
+ * empty" is an invitation we do not need to print publicly.
+ */
+app.get("/api/admin/chain/health", requireAdmin, async (req, res) => {
+  const health = await chainHealth(req.query.fresh === "1").catch(() => null);
+  if (!health) return res.status(503).json({ ok: false, error: "health unavailable" });
+  res.set("Cache-Control", "no-store").json({ ok: true, ...health });
 });
 
 /** The season board. Public: it is a leaderboard. */
@@ -3675,7 +3696,25 @@ if (realStakesReady) {
     // wallet connects, several seconds of human time earlier, so by the time
     // anyone has picked a side and an amount the account is already there.
     const ready = detail.onchainPubkey ? { pubkey: detail.onchainPubkey } : await ensureMinted(slug);
-    if (!ready) return res.status(502).json({ ok: false, reason: "not-minted", error: "this market could not be opened on Solana" });
+    if (!ready) {
+      // WHOSE FAULT IT IS, SAID OUT LOUD.
+      //
+      // This used to answer "this market could not be opened on Solana" for
+      // every cause, which blames the market. The most likely cause is our own
+      // admin wallet running under its floor, and telling somebody their bet
+      // failed because of the market they picked -- when the truth is we ran
+      // out of rent money -- sends them to look for a problem that is not
+      // theirs, and sends them away for good. chainHealth is cached, so this
+      // costs nothing on the path that matters.
+      const health = await chainHealth().catch(() => null);
+      if (health?.state === "stopped") {
+        return res.status(503).json({
+          ok: false, reason: "mint-paused",
+          error: "we cannot open new markets right now. This is on us, not on this market. Try again shortly.",
+        });
+      }
+      return res.status(502).json({ ok: false, reason: "not-minted", error: "this market could not be opened on Solana" });
+    }
 
     /**
      * EVERY RULE take_position ENFORCES, CHECKED HERE FIRST.

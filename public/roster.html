@@ -35,6 +35,20 @@
   .gate button:hover{background:#e7ec4e}
   .err{margin-top:10px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--pink-deep)}
 
+  /* The fuel gauge. Loud only when it needs to be: an operator who sees a red
+     strip every visit stops seeing it, so `ok` is a quiet line and only `low`
+     and `stopped` take the border and the colour. */
+  .fuel{margin:0 0 18px;padding:11px 14px;border:3px solid var(--ink);background:#fff;
+    font-family:var(--mono);font-size:12.5px;line-height:1.55}
+  .fuel b{font-weight:800}
+  .fuel--ok{border:0;background:none;box-shadow:none;padding:0 0 2px;color:var(--ink-2);font-size:12px}
+  .fuel--low{background:var(--yellow);box-shadow:5px 6px 0 var(--ink)}
+  .fuel--stopped{background:var(--pink-deep);color:#fff;box-shadow:5px 6px 0 var(--ink)}
+  .fuel--off{color:var(--ink-2);border-style:dashed}
+  .fuel__head{display:block;font-size:11px;font-weight:800;letter-spacing:.14em;
+    text-transform:uppercase;margin:0 0 4px}
+  .fuel code{font-family:var(--mono);font-size:11.5px;opacity:.85}
+
   .sums{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 20px}
   .sum{border:3px solid var(--ink);background:#fff;padding:12px 16px;min-width:132px}
   .sum b{display:block;font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
@@ -78,6 +92,7 @@
   </form>
 
   <div id="out" hidden>
+    <div id="fuel"></div>
     <div class="sums" id="sums"></div>
     <table>
       <thead><tr>
@@ -122,6 +137,10 @@
       .then(function (j) {
         try { sessionStorage.setItem("oddie_admin", token); } catch (e) {}
         render(j.roster || [], j.tickets || 5);
+        /* Fired after the table is on screen, and its failure is swallowed:
+           the wallet gauge is important, but it must never be the reason the
+           roster does not load. */
+        fuel(token);
       })
       .catch(function (e) {
         err.textContent = e.message;
@@ -184,6 +203,55 @@
 
   function sum(n, label) {
     return '<div class="sum"><b>' + n + "</b><span>" + label + "</span></div>";
+  }
+
+  /* The admin wallet pays rent for every market and never gets it back. When it
+     crosses the floor, minting stops and the site simply goes quiet. This is
+     the only place that says so before it happens. */
+  function fuel(token) {
+    var box = document.getElementById("fuel");
+    fetch("/api/admin/chain/health", { headers: { "x-oddie-admin": token } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (h) {
+        if (!h || !h.ok) { box.innerHTML = ""; return; }
+        var sol = h.balanceSol == null ? null : h.balanceSol.toFixed(4);
+        var left = h.marketsLeft;
+        var refused = h.refusedForFunds || 0;
+        var tail = refused
+          ? " <b>" + refused + "</b> mint" + (refused === 1 ? " has" : "s have")
+            + " already been refused for lack of funds."
+          : "";
+        var addr = h.admin ? ' <code>' + esc(h.admin) + "</code>" : "";
+
+        if (h.state === "stopped") {
+          box.className = "fuel fuel--stopped";
+          box.innerHTML = '<span class="fuel__head">Minting has stopped</span>'
+            + "The admin wallet holds <b>" + sol + " SOL</b>, under the "
+            + h.floorSol + " floor. No new market can be opened until it is funded."
+            + tail + addr;
+          return;
+        }
+        if (h.state === "low") {
+          box.className = "fuel fuel--low";
+          box.innerHTML = '<span class="fuel__head">Fund the admin wallet</span>'
+            + "<b>" + sol + " SOL</b> left, enough for about <b>" + left
+            + "</b> more market" + (left === 1 ? "" : "s") + ". Below "
+            + h.floorSol + " SOL minting stops and the site goes quiet with no error page."
+            + tail + addr;
+          return;
+        }
+        if (h.state === "off") {
+          box.className = "fuel fuel--off";
+          box.innerHTML = "Admin wallet balance is unreadable right now, so runway is unknown. "
+            + "This is an RPC or configuration problem, not proof of an empty wallet." + tail;
+          return;
+        }
+        box.className = "fuel fuel--ok";
+        box.innerHTML = "Admin wallet " + sol + " SOL on " + esc(h.cluster)
+          + ", about " + left + " more markets at " + h.costPerMarketSol.toFixed(5)
+          + " SOL each." + tail;
+      })
+      .catch(function () { box.innerHTML = ""; });
   }
 })();
 </script>
