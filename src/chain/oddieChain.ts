@@ -777,6 +777,53 @@ export async function prepareClaimTx(args: { marketPubkey: string; userPubkey: s
 }
 
 /**
+ * THE USER'S OWN EXIT from a market nobody ever settled.
+ *
+ * Resolution here is MANUAL, so a market that never gets resolved is not an
+ * exotic edge case: it is what happens whenever the operator is asleep, busy,
+ * or gone. Without this the staker's money has no door at all, and "we will
+ * settle it eventually" is not a property anyone should have to trust.
+ *
+ * The program makes it permissionless on purpose: the OWNER signs for
+ * themselves, the authority is not involved, and it opens
+ * REFUND_AFTER_CLOSE_SECS (30 days) after close_time. It returns the full
+ * stake and, because the Position carries `close = owner`, the rent too.
+ *
+ * Guarded server-side before it hands out anything signable, same rule the
+ * claim route learned the hard way: a prepare route that skips its checks
+ * returns HTTP 200 and a guaranteed-revert transaction, which is worse than a
+ * refusal because the wallet is the one that looks broken.
+ */
+export async function prepareRefundTx(args: { marketPubkey: string; userPubkey: string }): Promise<string | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    const marketPk = new c.web3.PublicKey(args.marketPubkey);
+    const userPk = new c.web3.PublicKey(args.userPubkey);
+    const ix = await c.program.methods
+      .refundAfterDeadline()
+      .accountsStrict({
+        owner: userPk, market: marketPk, vault: vaultPda(c, marketPk), position: positionPda(c, marketPk, userPk),
+      })
+      .instruction();
+    const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
+    const tx = new c.web3.Transaction({ feePayer: userPk, recentBlockhash: blockhash }).add(ix);
+    return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+  } catch (e) {
+    console.error("[chain] prepareRefundTx failed:", (e as Error).message);
+    return null;
+  }
+}
+
+/** When a market's refund window opens: close_time + 30 days, as a unix time.
+ *  Mirrors REFUND_AFTER_CLOSE_SECS in the program; if that constant ever moves,
+ *  this moves with it or the UI starts promising the wrong date. */
+export const REFUND_AFTER_CLOSE_SECS = 30 * 24 * 60 * 60;
+export function refundOpensAt(closeTimeUnix: number): number {
+  return closeTimeUnix + REFUND_AFTER_CLOSE_SECS;
+}
+
+/**
  * Same shape again, for claim_creator_fee: the payout to whoever tagged the
  * argument that became this market. This is the transaction that makes "being
  * loud pays" a fact rather than a slogan, so it is worth naming as such.

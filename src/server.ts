@@ -30,6 +30,7 @@ import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweet
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
+  prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
   takePositionFromTx, entryShareOf,
 } from "./chain/oddieChain.js";
@@ -3784,6 +3785,14 @@ if (realStakesReady) {
       // No position on chain means it was claimed, refunded, or never landed.
       if (!pos || pos.lamports <= 0 || pos.claimed) return null;
       const state = await fetchMarketOnChain(c.onchainPubkey).catch(() => null);
+      // THE WAY OUT, surfaced where the money is. A market that was never
+      // settled is the operator's failure, and the person holding a position in
+      // it needs to see both that it exists and when they can take their stake
+      // back without us. Null when the chain could not be read: an exit we
+      // cannot verify must not be promised.
+      const refund = state && !state.resolved
+        ? { opensAt: refundOpensAt(state.closeTime), openNow: Math.floor(Date.now() / 1000) > refundOpensAt(state.closeTime) }
+        : null;
       return {
         slug: c.slug, question: c.question, side: pos.side, lamports: pos.lamports,
         entryPct: c.entryPct, closesAt: c.closesAt,
@@ -3791,6 +3800,7 @@ if (realStakesReady) {
         // The pool as it stands, so the trader can see the line move against or
         // with them. Null when the market cannot be read rather than zero.
         pool: state ? { yes: state.totalYesLamports, no: state.totalNoLamports } : null,
+        refund,
       };
     }))).filter(Boolean);
     res.json({ ok: true, open, cluster: cluster() });
@@ -3888,6 +3898,46 @@ if (realStakesReady) {
       return { slug: m.slug, question: m.question, lamports: state.creatorFeeLamports, feeBps: state.creatorFeeBps };
     }));
     res.json({ ok: true, fees: owed.filter(Boolean) });
+  });
+
+  /**
+   * THE WAY OUT of a market nobody settled.
+   *
+   * Resolution is manual, so an unsettled market is the ordinary failure of an
+   * operator being asleep rather than an exotic case, and until now the staker
+   * had no door: the program's permissionless refund_after_deadline existed and
+   * nothing in the product could reach it. Opens 30 days after close, pays back
+   * the whole stake plus the position rent, and needs no authority signature.
+   *
+   * Every precondition the program enforces is checked HERE first, because a
+   * prepare route that skips them answers 200 with a transaction that is certain
+   * to revert, and then the wallet is the thing that looks broken.
+   */
+  app.post("/api/chain/refund/prepare", async (req, res) => {
+    const slug = String(req.body?.slug ?? "");
+    const userPubkey = String(req.body?.userPubkey ?? "");
+    if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ ok: false, reason: "invalid userPubkey" });
+    const detail = await communityMarketDetail(slug).catch(() => null);
+    if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "no such market" });
+
+    const state = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
+    // Unreadable is a refusal, never a shrug: the guards below are the reason
+    // this route exists at all.
+    if (!state) return res.status(503).json({ ok: false, reason: "chain-unreachable" });
+    if (state.resolved) return res.status(409).json({ ok: false, reason: "resolved", hint: "claim instead" });
+
+    const opensAt = refundOpensAt(state.closeTime);
+    const now = Math.floor(Date.now() / 1000);
+    if (now <= opensAt) {
+      return res.status(409).json({ ok: false, reason: "not-yet-open", opensAt });
+    }
+    const pos = await fetchPosition(detail.onchainPubkey, userPubkey).catch(() => null);
+    if (!pos) return res.status(409).json({ ok: false, reason: "no-position" });
+    if (pos.claimed) return res.status(409).json({ ok: false, reason: "already-claimed" });
+
+    const txBase64 = await prepareRefundTx({ marketPubkey: detail.onchainPubkey, userPubkey });
+    if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
+    res.json({ ok: true, txBase64, lamports: pos.lamports });
   });
 
   /**
