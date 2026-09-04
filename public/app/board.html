@@ -1,9 +1,8 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Your positions · oddie</title>
+<title>Who was right · oddie</title>
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
 <style>
 /* Fonts are EMBEDDED, not linked. A preload plus font-display:swap still
@@ -24,7 +23,7 @@
 :root{
   --yellow:#D7DC1F; --yellow-hi:#E7EC4E; --yellow-deep:#5F6410;
   --pink:#FF2D78; --pink-deep:#A3053F;
-  --black:#020302; --cream:#FBFCF4; --ink:#0B0D04; --ink-2:#494E2D;
+  --black:#020302; --cream:#FBFCF4; --ink:#0B0D04;
   --fg:#fff; --fg-2:rgba(255,255,255,.68); --fg-3:rgba(255,255,255,.50);
   --line:rgba(255,255,255,.16);
   --display:'Anton','Arial Narrow','Helvetica Neue',Helvetica,sans-serif;
@@ -34,16 +33,16 @@
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--black);color:var(--fg);
-  font-family:var(--body);font-size:16px;line-height:1.5;
-  -webkit-font-smoothing:antialiased;padding-bottom:env(safe-area-inset-bottom)}
+body{margin:0;background:var(--black);color:var(--fg);font-family:var(--body);
+  font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  padding-bottom:env(safe-area-inset-bottom)}
 a{color:inherit}
 .wrap{max-width:var(--shell);margin:0 auto;padding:0 20px}
 
 .top{border-bottom:1px solid var(--line)}
 .top .wrap{display:flex;align-items:center;gap:18px;height:64px}
-.mark{font-family:var(--display);font-size:26px;letter-spacing:.02em;
-  text-transform:uppercase;text-decoration:none;color:var(--yellow);line-height:1}
+.mark{font-family:var(--display);font-size:26px;letter-spacing:.02em;text-transform:uppercase;
+  text-decoration:none;color:var(--yellow);line-height:1}
 .top nav{margin-left:auto;display:flex;align-items:center;gap:18px}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
@@ -51,69 +50,42 @@ a{color:inherit}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
-  line-height:1.02;text-transform:uppercase;margin:0 0 8px;color:var(--cream)}
-.sub{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.13em;
-  text-transform:uppercase;color:var(--fg-3);margin:0 0 26px}
-.sub b{color:var(--yellow)}
+  line-height:1.02;text-transform:uppercase;margin:0 0 12px;color:var(--cream)}
 
-/* ---- the connect gate ---- */
-.gate{border:3px solid var(--cream);padding:22px 20px;margin:0 0 26px}
-.gate p{margin:0 0 16px;font-size:15px;line-height:1.55;color:var(--fg-2);max-width:52ch}
-.big{font-family:var(--display);font-size:21px;letter-spacing:.03em;text-transform:uppercase;
-  line-height:1;background:var(--yellow);color:var(--ink);border:3px solid var(--black);
-  padding:16px 22px;cursor:pointer;box-shadow:6px 7px 0 var(--yellow-deep);
-  transition:transform .12s ease,box-shadow .12s ease}
-.big:hover:not(:disabled){background:var(--yellow-hi);transform:translate(-2px,-2px);
-  box-shadow:8px 9px 0 var(--yellow-deep)}
-.big:active:not(:disabled){transform:translate(2px,3px);box-shadow:2px 3px 0 var(--yellow-deep)}
-.big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
-.big:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.deep{display:inline-block;margin-top:12px;font-family:var(--mono);font-size:12px;
-  font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--yellow)}
+/* A number nobody understands is decoration. The rule is stated once, in
+   full, above the table that applies it. */
+.rule{border-left:3px solid var(--yellow);padding:2px 0 2px 16px;margin:0 0 28px;
+  font-size:15px;line-height:1.6;color:var(--fg-2);max-width:60ch}
+.rule b{color:var(--cream)}
+.rule .ex{display:block;margin-top:8px;font-family:var(--mono);font-size:11.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
 
-/* ---- sections ---- */
-section{margin:0 0 34px}
-h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--fg-3);margin:0 0 12px;
-  padding-bottom:8px;border-bottom:1px solid var(--line)}
-h2 b{color:var(--yellow);font-weight:800}
+table{width:100%;border-collapse:collapse}
+thead th{font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--fg-3);text-align:left;
+  padding:0 10px 10px;border-bottom:1px solid var(--line)}
+tbody td{padding:14px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:hover td{background:rgba(251,252,244,.04)}
+.r{font-family:var(--display);font-size:22px;line-height:1;color:var(--fg-3);width:1%;
+  padding-right:4px;font-variant-numeric:tabular-nums}
+.r--top{color:var(--yellow)}
+.who a{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--cream);
+  text-decoration:none;word-break:break-all}
+.who a:hover{color:var(--yellow)}
+.who .anon{color:var(--fg-2);font-weight:400}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{font-family:var(--display);font-size:24px;line-height:1;color:var(--yellow)}
+.wl{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
+  color:var(--fg-3)}
+.wl b{color:var(--fg-2)}
 
-.row{border:3px solid var(--cream);padding:15px 17px;margin:0 0 12px}
-.row--win{border-color:var(--yellow)}
-.row__q{font-family:var(--display);font-weight:400;font-size:clamp(17px,3.6vw,22px);
-  line-height:1.12;text-transform:uppercase;color:var(--cream);margin:0 0 9px;text-wrap:balance}
-.row__m{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
-  text-transform:uppercase;color:var(--fg-3);
-  display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 12px;font-variant-numeric:tabular-nums}
-.row__m .y{color:var(--yellow)}
-.row__m .n{color:var(--pink)}
-.row__m b{color:var(--fg)}
-.act{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.act .go{font-family:var(--display);font-size:16px;letter-spacing:.03em;text-transform:uppercase;
-  line-height:1;background:var(--yellow);color:var(--ink);border:3px solid var(--black);
-  padding:11px 16px;cursor:pointer;box-shadow:4px 5px 0 var(--yellow-deep)}
-.act .go:hover{background:var(--yellow-hi)}
-.act .go:focus-visible{outline:3px solid var(--cream);outline-offset:3px}
-/* Rent-only is a real but small return, and calling it "collect winnings"
-   would be a lie the button tells. It gets the quiet treatment to match. */
-.act .go--rent{background:transparent;color:var(--cream);border-color:var(--cream);
-  box-shadow:none;font-size:14px}
-.act .go--rent:hover{background:rgba(251,252,244,.1)}
-.act a.open{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--fg-2)}
-
-.empty{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--fg-3);
-  border:2px dashed var(--fg-3);padding:14px 16px}
-
-/* An admission, never a number. Same voice as the market page's unreadable
-   pool: what is missing is our view, not the money. */
-.blind{border:2px dashed var(--pink);padding:12px 15px;margin:0 0 12px;
-  font-size:13.5px;line-height:1.5;color:var(--cream)}
-.blind b{color:var(--pink)}
-
+.empty{border:2px dashed var(--fg-3);padding:22px 20px;font-size:15px;line-height:1.6;
+  color:var(--fg-2)}
+.empty b{color:var(--cream)}
 .load{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--fg-3);padding:40px 0}
 .err{border:3px solid var(--pink);padding:15px 17px;font-size:14px;color:var(--cream)}
+@media (max-width:520px){ .hide-sm{display:none} tbody td{padding:12px 6px} }
 </style>
 
 <header class="top">
@@ -128,153 +100,62 @@ h2 b{color:var(--yellow);font-weight:800}
 </header>
 
 <main class="wrap">
-  <h1>Your positions</h1>
-  <p class="sub" id="sub">What you have riding, and what is waiting to be collected</p>
-  <div id="view"><p class="load">Checking for a wallet…</p></div>
+  <h1>Who was right</h1>
+  <p class="rule" id="rule">
+    Points go to being right <b>when the room disagreed</b>. Calling it at 20% and
+    landing it is worth eight times calling it at 90%, and a pool nobody else was
+    in barely counts at all. Losing is worth nothing, and nothing is all it takes
+    away.
+    <span class="ex" id="ex">full weight at a 5 SOL pool</span>
+  </p>
+  <div id="view"><p class="load">Reading settled markets…</p></div>
 </main>
 
-<link rel="stylesheet" href="/app/money.css">
-<script src="/chain.js"></script>
 <script>
 (function () {
   var view = document.getElementById("view");
-  var sub = document.getElementById("sub");
-
   function esc(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
     });
   }
-  var SOL = function (l) { return (l / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") || "0"; };
-  var C = function () { return window.OddieChain || null; };
 
-  function gate(msg, deepLink) {
-    view.innerHTML = '<div class="gate">'
-      + "<p>" + esc(msg) + "</p>"
-      + '<button class="big" id="connect" type="button">Connect wallet</button>'
-      + (deepLink ? '<a class="deep" href="' + esc(deepLink) + '">Open in Phantom</a>' : "")
-      + "</div>";
-    document.getElementById("connect").addEventListener("click", function () {
-      var b = document.getElementById("connect");
-      b.disabled = true; b.textContent = "Connecting…";
-      C().connect().then(load).catch(function (e) {
-        // The deep link rides on the error for a reason: on a phone arriving
-        // from X there is no wallet to inject, and "install Phantom" is a dead
-        // end when Phantom is very likely already installed.
-        gate(e.message, e.deepLink || null);
-      });
-    });
-  }
-
-  /** One position, whether it is riding or ready to collect. */
-  function row(o, kind) {
-    // EVERY bit is its own element. .row__m is a flex row and `gap` only
-    // separates element children, so a bare string joins onto its neighbour
-    // with nothing between them ("RESOLVED YESYOU WERE RIGHT").
-    var cell = function (t) { return "<span>" + t + "</span>"; };
-    var bits = [
-      o.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>',
-      cell("<b>" + SOL(o.lamports) + " SOL</b>"),
-    ];
-    if (kind === "open") {
-      if (o.entryPct != null) bits.push(cell("in at " + o.entryPct + "%"));
-      // Omitted rather than invented when the market could not be read.
-      var pool = o.pool ? o.pool.yes + o.pool.no : 0;
-      if (pool > 0) bits.push(cell("now " + Math.round((100 * (o.side === "yes" ? o.pool.yes : o.pool.no)) / pool) + "%"));
-      if (o.refund && o.refund.openNow) bits.push(cell("refund open"));
-    } else {
-      bits.push(cell("resolved " + String(o.outcome || "").toUpperCase()));
-      bits.push(cell(o.won ? "you were right" : "you missed this one"));
-    }
-    var act = kind === "open"
-      ? '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>'
-      : '<button class="go' + (o.won ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '" type="button">'
-        + (o.won ? "Collect winnings" : "Get your rent back") + "</button>"
-        + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>';
-    return '<div class="row' + (kind === "claim" && o.won ? " row--win" : "") + '">'
-      + '<p class="row__q">' + esc(o.question) + "</p>"
-      + '<p class="row__m">' + bits.join("") + "</p>"
-      + '<div class="act">' + act + "</div></div>";
-  }
-
-  /* "We could not check N of these" is the whole point of the read layer:
-     an unreadable position is not an absent one, and a winner must never be
-     told they have nothing because an RPC blinked. */
-  function blind(n, what) {
-    if (!n) return "";
-    return '<div class="blind"><b>' + n + "</b> " + esc(what)
-      + (n === 1 ? " could not be read just now." : " could not be read just now.")
-      + " Your money is untouched; only our view of it is missing. Refresh in a moment.</div>";
-  }
-
-  function load() {
-    var w = C().wallet();
-    if (!w) return gate("Connect the wallet you staked from. We never hold your funds, and we cannot see a position until you do.");
-    sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b> on this device";
-    view.innerHTML = '<p class="load">Reading the chain…</p>';
-
-    var pk = encodeURIComponent(w.publicKey);
-    Promise.all([
-      fetch("/api/chain/claimable?userPubkey=" + pk).then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch("/api/chain/open?userPubkey=" + pk).then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch("/api/chain/creator-fees?creatorPubkey=" + pk).then(function (r) { return r.json(); }).catch(function () { return null; }),
-    ]).then(function (r) {
-      var claim = r[0], open = r[1], fees = r[2];
-      if (!claim && !open && !fees) {
-        view.innerHTML = '<div class="err">We could not reach the chain just now. Nothing is wrong with your money; try again in a moment.</div>';
+  fetch("/api/board?limit=50")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
+    .then(function (j) {
+      if (!j.ok) throw new Error("bad response");
+      if (j.fullCreditSol) document.getElementById("ex").textContent = "full weight at a " + j.fullCreditSol + " SOL pool";
+      var rows = j.rows || [];
+      if (!rows.length) {
+        // Honest rather than seeded. An empty board is what "no market has
+        // settled yet" looks like, and inventing rows to fill it would be the
+        // first lie this page tells.
+        view.innerHTML = '<div class="empty"><b>No market has settled yet.</b><br>'
+          + "A row appears here the first time somebody is right about one. "
+          + 'Tag <b>@oddiefun</b> on a claim and the first market is yours.</div>';
         return;
       }
-      var html = "";
-
-      var cl = (claim && claim.claimable) || [];
-      var wins = cl.filter(function (o) { return o.won; });
-      html += "<section><h2>Ready to collect" + (wins.length ? " <b>" + wins.length + "</b>" : "") + "</h2>"
-        + blind(claim && claim.unreadable, cl.length ? "more settled market(s)" : "settled market(s)")
-        + (cl.length ? cl.map(function (o) { return row(o, "claim"); }).join("")
-                     : '<p class="empty">Nothing to collect right now.</p>')
-        + "</section>";
-
-      var op = (open && open.open) || [];
-      var riding = op.reduce(function (a, o) { return a + o.lamports; }, 0);
-      html += "<section><h2>On the line" + (riding ? " <b>" + SOL(riding) + " SOL</b>" : "") + "</h2>"
-        + blind(open && open.unreadable, "of your position(s)")
-        + (op.length ? op.map(function (o) { return row(o, "open"); }).join("")
-                     : '<p class="empty">Nothing riding. Tag @oddiefun on a claim and a market opens.</p>')
-        + "</section>";
-
-      var fs = (fees && fees.fees) || [];
-      if (fs.length || (fees && fees.unreadable)) {
-        html += "<section><h2>Fees you are owed</h2>"
-          + blind(fees && fees.unreadable, "settled market(s)")
-          + fs.map(function (f) {
-              return '<div class="row"><p class="row__q">' + esc(f.question) + "</p>"
-                + '<p class="row__m"><span><b>' + SOL(f.lamports) + " SOL</b></span>"
-                + "<span>" + (f.feeBps / 100) + "% for opening it</span></p>"
-                + '<div class="act"><a class="open" href="/m/' + encodeURIComponent(f.slug) + '">Open the market</a></div></div>';
-            }).join("")
-          + "</section>";
-      }
-
-      view.innerHTML = html;
-      Array.prototype.forEach.call(view.querySelectorAll(".go"), function (b) {
-        b.addEventListener("click", function () {
-          C().openClaim(b.dataset.slug, b.dataset.outcome);
-        });
-      });
+      view.innerHTML = "<table><thead><tr>"
+        + '<th class="r">#</th><th>Caller</th>'
+        + '<th class="num hide-sm">Record</th><th class="num">Points</th>'
+        + "</tr></thead><tbody>"
+        + rows.map(function (w) {
+            // A linked X handle is the identity; a wallet is one too, just a
+            // quieter one. Never a placeholder in place of either.
+            var name = w.handle
+              ? "@" + esc(w.handle)
+              : '<span class="anon">' + esc(w.short) + "</span>";
+            return "<tr>"
+              + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">' + w.rank + "</td>"
+              + '<td class="who"><a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a></td>"
+              + '<td class="num hide-sm wl"><b>' + w.wins + "</b> right &middot; " + w.losses + " wrong</td>"
+              + '<td class="num"><span class="pts">' + w.points + "</span></td>"
+              + "</tr>";
+          }).join("")
+        + "</tbody></table>";
+    })
+    .catch(function (e) {
+      view.innerHTML = '<div class="err">We could not load the board just now (' + esc(e.message) + ").</div>";
     });
-  }
-
-  // chain.js is loaded synchronously above, so OddieChain is already here.
-  // The cluster comes from the server and is passed in: without it the money
-  // sheet labels the network from chain.js's default, and a label about
-  // whether this is real money is not a thing to guess.
-  if (!C()) {
-    view.innerHTML = '<div class="err">The wallet layer did not load. Reload the page.</div>';
-  } else {
-    fetch("/api/chain/status")
-      .then(function (r) { return r.json(); })
-      .catch(function () { return null; })
-      .then(function (j) { C().init(j && j.cluster); load(); });
-  }
 })();
 </script>

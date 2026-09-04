@@ -22,7 +22,7 @@ import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, walletReceipts, walletLeaderboard, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor } from "./store/markets.js";
+import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, walletReceipts, walletLeaderboard, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
@@ -53,7 +53,7 @@ import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, ge
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet } from "./store/accounts.js";
+import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
 
@@ -85,6 +85,8 @@ const ROSTER_HTML = readFileSync(path.join(__dirname, "../public/roster.html"), 
 const MARKET_HTML = readFileSync(path.join(__dirname, "../public/app/market.html"), "utf8");
 /** "Your positions": what a wallet has riding and what it can collect. */
 const YOU_HTML = readFileSync(path.join(__dirname, "../public/app/you.html"), "utf8");
+/** The board: who was right when the room disagreed. */
+const BOARD_HTML = readFileSync(path.join(__dirname, "../public/app/board.html"), "utf8");
 
 /**
  * UYGULAMA KAPALI (Lev, 2026-09-03): app bastan yazilacak, o yuzden simdilik
@@ -665,6 +667,14 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
 app.get(["/you", "/positions"], (_req, res) => {
   if (!APP_OPEN) return appClosed(res);
   res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(YOU_HTML);
+});
+
+/** The board. Public and indexable: it is the page that answers "who should I
+ *  listen to", which is the only question a prediction product exists to
+ *  answer, and it is worth being found for. */
+app.get(["/board", "/leaderboard"], (_req, res) => {
+  if (!APP_OPEN) return appClosed(res);
+  res.set("Cache-Control", "no-cache").type("html").send(BOARD_HTML);
 });
 
 app.get("/feed", (_req, res) => {
@@ -1655,6 +1665,46 @@ app.get("/api/w/:wallet", async (req, res) => {
       poolSol: Number((r.poolLamports / 1e9).toFixed(4)),
       at: r.createdAt,
     })),
+  });
+});
+
+/**
+ * THE BOARD, AND WHY IT RANKS THIS AND NOT VOLUME.
+ *
+ * receiptWeight is `(100 - entryPct) x min(1, pool / 5 SOL)`, and zero for a
+ * loss. So being right at 90%, when the room already agreed, is worth 10; being
+ * right at 20% is worth 80; and either is scaled down to nothing in a pool
+ * nobody else was in. That closes the two games a prediction board invites:
+ * you cannot farm it by stacking near-certainties, and you cannot farm it by
+ * funding your own tiny market and calling it.
+ *
+ * Volume was the obvious alternative and it ranks whoever has the most money,
+ * which says nothing about whether they were right. Raw accuracy was the other
+ * one and it rewards betting on sure things. This is accuracy, corrected.
+ *
+ * Dense rank, matching the Genesis board: the rank advances per distinct total,
+ * not per row, so two people on the same points are the same place.
+ */
+app.get("/api/board", async (req, res) => {
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit ?? 20) || 20));
+  const board = await walletLeaderboard(limit).catch(() => []);
+  // A board of base58 strings is not a social object. One query for the lot.
+  const handles = await twitterHandlesForWallets(board.map((b) => b.wallet)).catch(() => new Map<string, string>());
+  let rank = 0, prev: number | null = null;
+  const rows = board.map((b) => {
+    if (prev === null || b.points !== prev) { rank += 1; prev = b.points; }
+    return {
+      wallet: b.wallet,
+      short: `${b.wallet.slice(0, 4)}…${b.wallet.slice(-4)}`,
+      handle: handles.get(b.wallet) ?? null,
+      wins: b.wins, losses: b.losses, points: b.points, rank,
+    };
+  });
+  res.json({
+    ok: true, rows,
+    // The denominator the weight uses, published so the page can explain the
+    // number instead of asking people to trust it.
+    fullCreditSol: FULL_CREDIT_LAMPORTS / 1e9,
   });
 });
 

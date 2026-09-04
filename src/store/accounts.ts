@@ -222,6 +222,41 @@ export async function disconnectDevice(deviceId: string): Promise<void> {
  * could fund it themselves and score a point off it, which is the only number
  * the campaign has.
  */
+/**
+ * The same lookup for a whole board, in one query.
+ *
+ * A leaderboard of base58 strings is not a social object, so every row wants a
+ * handle — and calling the single-wallet version per row turns one page paint
+ * into twenty database round trips. Wallets with no linked X account are
+ * simply absent from the map; the caller falls back to the short address,
+ * which is a real identity too, just a quieter one.
+ */
+export async function twitterHandlesForWallets(wallets: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const want = [...new Set(wallets.filter(Boolean))];
+  if (want.length === 0) return out;
+
+  if (!STORE_PERSISTENT) {
+    for (const w of want) {
+      const acc = memAccounts.find((a) => a.provider === "phantom" && a.uid === w);
+      if (!acc) continue;
+      const tw = memAccounts.find((a) => a.provider === "twitter" && a.canonicalDevice === acc.canonicalDevice);
+      if (tw?.handle) out.set(w, tw.handle.replace(/^@+/, "").toLowerCase());
+    }
+    return out;
+  }
+
+  await storeSchema();
+  const { rows } = await storeDb().query<{ provider_uid: string; handle: string | null }>(
+    `SELECT w.provider_uid, tw.handle FROM account w
+       JOIN account tw ON tw.canonical_device = w.canonical_device AND tw.provider = 'twitter'
+      WHERE w.provider = 'phantom' AND w.provider_uid = ANY($1::text[])`,
+    [want],
+  );
+  for (const r of rows) if (r.handle) out.set(r.provider_uid, r.handle.replace(/^@+/, "").toLowerCase());
+  return out;
+}
+
 export async function twitterHandleForWallet(wallet: string): Promise<string | null> {
   if (!wallet) return null;
 
