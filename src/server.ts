@@ -32,7 +32,7 @@ import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
-  takePositionFromTx, entryShareOf, chainHealth, readMarket, readMarkets, forgetMarket,
+  takePositionFromTx, entryShareOf, chainHealth, readMarket, readMarkets, readPositions, forgetMarket,
 } from "./chain/oddieChain.js";
 import type { MarketRead } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
@@ -83,6 +83,8 @@ const ROSTER_HTML = readFileSync(path.join(__dirname, "../public/roster.html"), 
 /** The rebuilt market page. Read once at boot like every other shell here,
  *  which means an edit to it needs a server restart to be visible. */
 const MARKET_HTML = readFileSync(path.join(__dirname, "../public/app/market.html"), "utf8");
+/** "Your positions": what a wallet has riding and what it can collect. */
+const YOU_HTML = readFileSync(path.join(__dirname, "../public/app/you.html"), "utf8");
 
 /**
  * UYGULAMA KAPALI (Lev, 2026-09-03): app bastan yazilacak, o yuzden simdilik
@@ -646,6 +648,23 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
   // The page inlines its JS, so a heuristically-cached copy runs stale script;
   // this is what left an old "Post your card" tweet string live after a deploy.
   res.set("Cache-Control", "no-cache").type("html").send(GENESIS_HTML);
+});
+
+/**
+ * The return half of the loop.
+ *
+ * Somebody who staked had nowhere to come back to: the open-stakes and
+ * claim-check widgets existed only as mounts inside feed.html, keyed off its
+ * own `data-view="positions"` shell. A market page that says "collect it with
+ * the wallet you staked from" needs a page where that happens.
+ *
+ * Wallet-scoped, not account-scoped, so it is noindex and holds nothing
+ * personal in the URL: everything on it comes from the wallet the visitor
+ * connects, and the server never links a wallet to a device.
+ */
+app.get(["/you", "/positions"], (_req, res) => {
+  if (!APP_OPEN) return appClosed(res);
+  res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(YOU_HTML);
 });
 
 app.get("/feed", (_req, res) => {
@@ -3923,13 +3942,29 @@ if (realStakesReady) {
   app.get("/api/chain/open", async (req, res) => {
     const userPubkey = String(req.query.userPubkey ?? "");
     if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ ok: false, error: "invalid userPubkey" });
-    const candidates = await openEntriesFor(userPubkey).catch(() => []);
-    const open = (await Promise.all(candidates.map(async (c) => {
-      if (!c.onchainPubkey) return null;
-      const pos = await fetchPosition(c.onchainPubkey, userPubkey).catch(() => null);
-      // No position on chain means it was claimed, refunded, or never landed.
-      if (!pos || pos.lamports <= 0 || pos.claimed) return null;
-      const state = await fetchMarketOnChain(c.onchainPubkey).catch(() => null);
+    const candidates = (await openEntriesFor(userPubkey).catch(() => []))
+      .filter((c) => Boolean(c.onchainPubkey));
+    // Two batched reads for the whole page. This used to be TWO RPC calls per
+    // candidate fired in parallel, which is the shape a public RPC throttles,
+    // and being throttled did not slow the page down: it emptied it.
+    const keys = candidates.map((c) => c.onchainPubkey as string);
+    const [positions, states] = await Promise.all([
+      readPositions(keys, userPubkey).catch(() => new Map()),
+      readMarkets(keys, { maxAgeMs: 4_000 }).catch(() => new Map<string, MarketRead>()),
+    ]);
+    let unreadable = 0;
+    const open = candidates.map((c) => {
+      const pk = c.onchainPubkey as string;
+      const pr = positions.get(pk);
+      // "You hold nothing here" and "we could not check" are opposite facts
+      // about this person's money. Only the first is silence; the second is
+      // counted and returned so the page can say so.
+      if (!pr || (!pr.ok && pr.reason === "unreadable")) { unreadable++; return null; }
+      if (!pr.ok) return null;                                   // never staked, or claimed and closed
+      const pos = pr.position;
+      if (pos.lamports <= 0 || pos.claimed) return null;
+      const mr = states.get(pk);
+      const state = mr?.ok ? mr.state : null;
       // THE WAY OUT, surfaced where the money is. A market that was never
       // settled is the operator's failure, and the person holding a position in
       // it needs to see both that it exists and when they can take their stake
@@ -3941,23 +3976,33 @@ if (realStakesReady) {
       return {
         slug: c.slug, question: c.question, side: pos.side, lamports: pos.lamports,
         entryPct: c.entryPct, closesAt: c.closesAt,
-        explorer: explorerUrl(c.onchainPubkey),
+        explorer: explorerUrl(pk),
         // The pool as it stands, so the trader can see the line move against or
         // with them. Null when the market cannot be read rather than zero.
         pool: state ? { yes: state.totalYesLamports, no: state.totalNoLamports } : null,
         refund,
       };
-    }))).filter(Boolean);
-    res.json({ ok: true, open, cluster: cluster() });
+    }).filter(Boolean);
+    res.json({ ok: true, open, unreadable, cluster: cluster() });
   });
 
   app.get("/api/chain/claimable", async (req, res) => {
     const userPubkey = String(req.query.userPubkey ?? "");
     if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
     const markets = await resolvedOnchainMarkets(40).catch(() => []);
-    const found = await Promise.all(markets.map(async (m) => {
-      const position = await fetchPosition(m.onchainPubkey, userPubkey).catch(() => null);
-      if (!position || position.claimed) return null;
+    // One read for up to forty markets instead of forty.
+    const positions = await readPositions(markets.map((m) => m.onchainPubkey), userPubkey)
+      .catch(() => new Map());
+    let unreadable = 0;
+    const found = markets.map((m) => {
+      const pr = positions.get(m.onchainPubkey);
+      // Money this person already owns. An unreadable position dropped from
+      // this list is a winner told they have nothing to collect because an RPC
+      // blinked, so it is counted and returned instead of swallowed.
+      if (!pr || (!pr.ok && pr.reason === "unreadable")) { unreadable++; return null; }
+      if (!pr.ok) return null;
+      const position = pr.position;
+      if (position.claimed) return null;
       // A LOSING POSITION IS STILL CLAIMABLE, and dropping it here was costing
       // people money. claim_winnings pays a loser nothing (lib.rs: payout = 0
       // when the side missed) but the Position account carries `close = owner`,
@@ -3972,8 +4017,8 @@ if (realStakesReady) {
         // What pressing the button actually does, so the UI never has to guess.
         won, returns: won ? "winnings-and-rent" : "rent-only",
       };
-    }));
-    res.json({ ok: true, claimable: found.filter(Boolean) });
+    });
+    res.json({ ok: true, claimable: found.filter(Boolean), unreadable });
   });
 
   app.post("/api/chain/claim/prepare", async (req, res) => {

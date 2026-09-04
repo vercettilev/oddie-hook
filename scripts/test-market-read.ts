@@ -12,7 +12,7 @@
  */
 process.env.ONCHAIN_ENABLED = "false";
 
-import { readMarket, readMarkets, fetchMarketOnChain, forgetMarket } from "../src/chain/oddieChain.js";
+import { readMarket, readMarkets, readPositions, fetchMarketOnChain, forgetMarket } from "../src/chain/oddieChain.js";
 
 let failed = 0;
 const check = (name: string, ok: boolean, extra?: unknown) => {
@@ -60,6 +60,26 @@ check("an empty request is an empty map, not a throw", none.size === 0);
 let threw = false;
 try { forgetMarket(A); forgetMarket("not-a-pubkey"); } catch { threw = true; }
 check("forgetting an uncached market is a no-op, not a throw", !threw);
+
+// --- positions ------------------------------------------------------------
+// The same distinction, about the reader's OWN money, where getting it wrong
+// tells a winner they have nothing to collect.
+const WALLET = "7dHbWXmci3dT8UFYWYZweBLXgycu4LNvBQzVQrqDVwPZ";
+const pos = await readPositions([A, B], WALLET);
+check("an unreachable chain marks every position UNREADABLE, not absent",
+  pos.size === 2 && [...pos.values()].every((v) => !v.ok && v.reason === "unreadable"), [...pos.entries()]);
+check("positions answer for every market key asked about", pos.has(A) && pos.has(B));
+
+const dupPos = await readPositions([A, A, B], WALLET);
+check("duplicate markets collapse to one position entry each", dupPos.size === 2);
+
+check("an empty position request is an empty map", (await readPositions([], WALLET)).size === 0);
+
+// A malformed wallet must not be answered with "you hold nothing": that is a
+// confident answer to a question we were never able to ask.
+const bad = await readPositions([A], "not-a-real-pubkey");
+check("a malformed wallet reads unreadable, never absent",
+  bad.size === 1 && !bad.get(A)!.ok && (bad.get(A) as { reason: string }).reason === "unreadable", bad.get(A));
 
 console.log(failed === 0 ? "\nall market read checks passed.\n" : `\n${failed} FAILED\n`);
 if (failed > 0) process.exit(1);

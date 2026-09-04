@@ -43,10 +43,21 @@
     return `https://explorer.solana.com/tx/${sig}${q}`;
   }
 
-  /** Set once from /api/chain/status before init() runs. Defaults to the
-   *  safest wrong answer: mislabelling mainnet as devnet would be far worse
-   *  than the reverse, so the default is the one that cannot understate risk. */
-  let CLUSTER = "devnet";
+  /**
+   * Set from /api/chain/status before init() runs.
+   *
+   * THE DEFAULT WAS THE OPPOSITE OF ITS OWN RULE. It read "mislabelling
+   * mainnet as devnet would be far worse than the reverse, so the default is
+   * the one that cannot understate risk" and then defaulted to "devnet",
+   * which IS that mislabelling: the sheet says "Test SOL on Solana devnet"
+   * over a wallet about to spend real money. Any page that calls init()
+   * without a cluster, or whose status fetch fails, lands in that window.
+   *
+   * So the default is now the one that can only OVERSTATE: on devnet before
+   * status arrives the sheet says "Real SOL", which makes somebody more
+   * careful with test money rather than less careful with real money.
+   */
+  let CLUSTER = "mainnet-beta";
 
   let web3 = null; // @solana/web3.js, lazy-loaded on first real use
   let wallet = null; // {publicKey: string} once connected, shared across sheets in this session
@@ -965,5 +976,15 @@ function b64ToBytes(b64) {
     await renderClaim(body, slug, { winningSide: winningSide, resolved: true });
   }
 
-  window.OddieChain = { init, openStake: openStakeSheet, openClaim: openClaimSheet };
+  window.OddieChain = {
+    init, openStake: openStakeSheet, openClaim: openClaimSheet,
+    // The positions page needs the wallet before it can ask a single question,
+    // and connectWallet carries things a page must not reimplement: the Phantom
+    // check, the mobile universal link that reopens the page inside Phantom
+    // (a plain "install Phantom" is a dead end for a click arriving from X on
+    // a phone), and the session-shared `wallet` every sheet reads.
+    connect: connectWallet,
+    wallet: function () { return wallet; },
+    short: short,
+  };
 })();

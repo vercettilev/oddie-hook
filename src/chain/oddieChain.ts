@@ -1028,6 +1028,107 @@ export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
 }
 
 /** A user's position on a market, or null if they have never staked. */
+const decodePosition = (a: Record<string, unknown>): OnChainPosition =>
+  ({ side: Number(a.side) === 0 ? "yes" : "no", lamports: Number(a.amount), claimed: Boolean(a.claimed) });
+
+/**
+ * A person's stake in one market, with the same three answers a market read
+ * has, and for the same reason.
+ *
+ * "No position here" and "we could not check" are opposite facts about
+ * somebody's own money: the first means nothing is owed, the second means we
+ * do not know. Collapsing them is how a page tells a winner they have nothing
+ * to collect because an RPC blinked.
+ */
+export type PositionRead =
+  | { ok: true; position: OnChainPosition }
+  | { ok: false; reason: "absent" }
+  | { ok: false; reason: "unreadable"; error: string };
+
+/**
+ * Every position this wallet holds across the given markets, in as few round
+ * trips as the RPC allows, keyed by MARKET pubkey.
+ *
+ * The routes that list what somebody has riding and what they can collect were
+ * doing one getAccountInfo per market, and one of them did a second for the
+ * market itself, so opening that page fired up to eighty calls. Deriving all
+ * the PDAs first and asking once turns it into one.
+ *
+ * Never cached. A market's pool a few seconds stale is a rounding error on a
+ * list; a person's own position a few seconds stale is their money, and the
+ * moment it matters most is right after they changed it.
+ */
+export async function readPositions(
+  marketPubkeys: string[], userPubkey: string,
+): Promise<Map<string, PositionRead>> {
+  const out = new Map<string, PositionRead>();
+  const wanted = [...new Set(marketPubkeys)];
+  if (wanted.length === 0) return out;
+
+  const c = await load();
+  if (!c) {
+    for (const pk of wanted) out.set(pk, { ok: false, reason: "unreadable", error: "chain layer unavailable" });
+    return out;
+  }
+
+  let userPk: InstanceType<typeof c.web3.PublicKey>;
+  try {
+    userPk = new c.web3.PublicKey(userPubkey);
+  } catch {
+    // A malformed wallet is the caller's error, not the chain's. Saying
+    // "absent" would answer "you hold nothing" to a question we never asked.
+    for (const pk of wanted) out.set(pk, { ok: false, reason: "unreadable", error: "invalid userPubkey" });
+    return out;
+  }
+
+  const coder = (c.program.account as any).position.coder;
+  const idlName = (c.program.account as any).position._idlAccount?.name ?? "Position";
+  const mine = c.programId.toBase58();
+  const CHUNK = 99;
+
+  for (let i = 0; i < wanted.length; i += CHUNK) {
+    const slice = wanted.slice(i, i + CHUNK);
+    let pdas: Array<InstanceType<typeof c.web3.PublicKey>>;
+    try {
+      pdas = slice.map((pk) => positionPda(c, new c.web3.PublicKey(pk), userPk));
+    } catch (e) {
+      const error = (e as Error).message;
+      for (const pk of slice) out.set(pk, { ok: false, reason: "unreadable", error });
+      continue;
+    }
+    let infos: Array<{ data: Buffer; owner: { toBase58(): string } } | null>;
+    try {
+      infos = await c.connection.getMultipleAccountsInfo(pdas) as any;
+    } catch (e) {
+      const error = (e as Error).message;
+      console.error(`[chain] readPositions chunk of ${slice.length} unreadable:`, error);
+      for (const pk of slice) out.set(pk, { ok: false, reason: "unreadable", error });
+      continue;
+    }
+    slice.forEach((pk, idx) => {
+      const info = infos[idx];
+      // No account at the PDA is the real, common answer: this wallet never
+      // staked here, or already claimed and closed it.
+      if (!info) { out.set(pk, { ok: false, reason: "absent" }); return; }
+      if (info.owner.toBase58() !== mine) {
+        out.set(pk, { ok: false, reason: "unreadable", error: "account is not owned by our program" });
+        return;
+      }
+      try {
+        out.set(pk, { ok: true, position: decodePosition(coder.accounts.decode(idlName, info.data) as Record<string, unknown>) });
+      } catch (e) {
+        const error = (e as Error).message;
+        console.error(`[chain] readPositions decode ${pk.slice(0, 8)}… failed:`, error);
+        out.set(pk, { ok: false, reason: "unreadable", error });
+      }
+    });
+  }
+  return out;
+}
+
+/** The old single-account shape. Same caveat as fetchMarketOnChain: it cannot
+ *  tell "no position" from "could not check", so anything that decides what a
+ *  person is owed should use readPositions. */
 export async function fetchPosition(marketPubkey: string, userPubkey: string): Promise<OnChainPosition | null> {
   const c = await load();
   if (!c) return null;
@@ -1036,8 +1137,7 @@ export async function fetchPosition(marketPubkey: string, userPubkey: string): P
     const userPk = new c.web3.PublicKey(userPubkey);
     const acct = await (c.program.account as any).position.fetchNullable(positionPda(c, marketPk, userPk));
     if (!acct) return null;
-    const a = acct as Record<string, unknown>;
-    return { side: Number(a.side) === 0 ? "yes" : "no", lamports: Number(a.amount), claimed: Boolean(a.claimed) };
+    return decodePosition(acct as Record<string, unknown>);
   } catch (e) {
     console.error("[chain] fetchPosition failed:", (e as Error).message);
     return null;
