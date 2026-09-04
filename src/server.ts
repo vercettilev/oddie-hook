@@ -29,7 +29,7 @@ import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS } from "./store/economy.js";
 import {
-  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx,
+  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
   takePositionFromTx, entryShareOf,
 } from "./chain/oddieChain.js";
@@ -3870,6 +3870,65 @@ if (realStakesReady) {
       return { slug: m.slug, question: m.question, lamports: state.creatorFeeLamports, feeBps: state.creatorFeeBps };
     }));
     res.json({ ok: true, fees: owed.filter(Boolean) });
+  });
+
+  /**
+   * ODDIE'S OWN 2%: what is owed, and the sweep that collects it.
+   *
+   * Admin-gated, because unlike the creator fee this is not a transaction we
+   * hand to somebody's wallet: `claim_protocol_fee` is signed by the market's
+   * AUTHORITY, which is this server's admin key. So the GET reports and the
+   * POST actually moves money, with our own signature.
+   *
+   * This did not exist at all until now. Every resolve fixes the protocol fee
+   * into the market and the money sits in the vault waiting for a pull, and
+   * there was no puller: on devnet that was invisible because the numbers were
+   * play, on mainnet it would have been 100% of the product's revenue accruing
+   * into vaults with no door.
+   *
+   * NOTE FOR LATER, and it is a real constraint rather than a todo: the
+   * program pays the AUTHORITY, so revenue lands in the hot key this server
+   * signs with, not in a cold treasury. Moving it onward is a separate manual
+   * step, and the sweep deliberately does not attempt it.
+   */
+  app.get("/api/admin/protocol-fees", requireAdmin, async (_req, res) => {
+    const markets = await resolvedOnchainMarkets(40).catch(() => []);
+    const rows = await Promise.all(markets.map(async (m) => {
+      const state = await fetchMarketOnChain(m.onchainPubkey).catch(() => null);
+      if (!state || state.protocolFeeClaimed || state.protocolFeeLamports <= 0) return null;
+      return {
+        slug: m.slug, question: m.question, onchainPubkey: m.onchainPubkey,
+        lamports: state.protocolFeeLamports, feeBps: state.protocolFeeBps,
+      };
+    }));
+    const owed = rows.filter(Boolean) as Array<{ lamports: number }>;
+    res.set("Cache-Control", "no-store").json({
+      ok: true,
+      totalLamports: owed.reduce((sum, r) => sum + r.lamports, 0),
+      fees: owed,
+    });
+  });
+
+  app.post("/api/admin/protocol-fees/sweep", requireAdmin, express.json(), async (req, res) => {
+    // One market when asked for one, otherwise everything owed. Sequential on
+    // purpose: these are signed sends from a single key, and firing them in
+    // parallel races the same blockhash and the same nonce-free signer.
+    const only = typeof req.body?.slug === "string" ? req.body.slug : null;
+    const markets = (await resolvedOnchainMarkets(40).catch(() => []))
+      .filter((m) => (only ? m.slug === only : true));
+    const done: Array<{ slug: string; ok: boolean; lamports?: number; signature?: string | null; error?: string }> = [];
+    for (const m of markets) {
+      const r = await claimProtocolFee(m.onchainPubkey);
+      if (r.alreadyClaimed) continue;                 // nothing to report, nothing moved
+      if (!r.ok && /not resolved yet|unreadable/.test(r.error ?? "")) continue;
+      done.push({ slug: m.slug, ok: r.ok, lamports: r.lamports, signature: r.signature ?? null, error: r.error });
+    }
+    res.set("Cache-Control", "no-store").json({
+      ok: true,
+      swept: done.filter((d) => d.ok).length,
+      lamports: done.filter((d) => d.ok).reduce((s, d) => s + (d.lamports ?? 0), 0),
+      results: done,
+    });
   });
 
   /**

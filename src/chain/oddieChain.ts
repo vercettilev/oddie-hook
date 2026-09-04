@@ -786,6 +786,60 @@ export async function prepareClaimTx(args: { marketPubkey: string; userPubkey: s
  * transaction does not weaken that: a tx built for the wrong wallet is simply
  * one the program rejects.
  */
+export interface ProtocolFeeResult {
+  ok: boolean;
+  signature?: string | null;
+  /** True when the fee had already been pulled. Idempotent, not an error. */
+  alreadyClaimed?: boolean;
+  /** What was swept, in lamports, when we could read it before pulling. */
+  lamports?: number;
+  error?: string;
+}
+
+/**
+ * Pull oddie's own 2% out of one settled market's vault.
+ *
+ * NOT a prepare-for-the-user function, and that asymmetry is the program's,
+ * not ours: `claim_creator_fee` is signed by the CREATOR (so it must be built
+ * unsigned and handed to their wallet), while `claim_protocol_fee` is signed
+ * by the market's AUTHORITY, which is the admin key this server already holds.
+ * So this signs and sends directly, exactly like resolveMarketOnChain.
+ *
+ * Until this existed, resolve fixed protocol_fee_lamports into every market
+ * and nothing anywhere could ever move it: 100% of the product's own revenue
+ * accrued into vaults with no door. Invisible on devnet, where the numbers
+ * were play money.
+ *
+ * Read-before-write, same reason as resolve: a sweep that runs twice over the
+ * same market must report success rather than jam the whole run on the ones
+ * that are already correct.
+ */
+export async function claimProtocolFee(marketPubkey: string): Promise<ProtocolFeeResult> {
+  const c = await load();
+  if (!c) return { ok: false, error: "chain layer not configured" };
+
+  const before = await fetchMarketOnChain(marketPubkey).catch(() => null);
+  if (!before) return { ok: false, error: "market unreadable" };
+  if (!before.resolved) return { ok: false, error: "not resolved yet" };
+  if (before.protocolFeeClaimed) return { ok: true, signature: null, alreadyClaimed: true, lamports: 0 };
+
+  try {
+    const marketPk = new c.web3.PublicKey(marketPubkey);
+    const signature = await c.program.methods
+      .claimProtocolFee()
+      .accountsStrict({ authority: c.admin.publicKey, market: marketPk, vault: vaultPda(c, marketPk) })
+      .rpc();
+    console.log(`[chain] protocol fee swept ${marketPk.toBase58()} (${before.protocolFeeLamports} lamports, sig ${signature.slice(0, 8)}…)`);
+    return { ok: true, signature, alreadyClaimed: false, lamports: before.protocolFeeLamports };
+  } catch (e) {
+    const msg = (e as Error).message ?? String(e);
+    // Landed between the read and the write: same verdict as resolve's.
+    if (/AlreadyClaimed/i.test(msg)) return { ok: true, signature: null, alreadyClaimed: true, lamports: 0 };
+    console.error("[chain] claimProtocolFee failed:", msg);
+    return { ok: false, error: msg };
+  }
+}
+
 export async function prepareCreatorFeeTx(args: {
   marketPubkey: string; creatorPubkey: string;
 }): Promise<string | null> {
