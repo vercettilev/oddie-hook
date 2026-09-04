@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Who was right · oddie</title>
+<title>Open markets · oddie</title>
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
 <style>
 /* Fonts are EMBEDDED, not linked. A preload plus font-display:swap still
@@ -29,7 +29,7 @@
   --display:'Anton','Arial Narrow','Helvetica Neue',Helvetica,sans-serif;
   --body:'Nunito',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
-  --shell:760px;
+  --shell:860px;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -50,50 +50,54 @@ a{color:inherit}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
-  line-height:1.02;text-transform:uppercase;margin:0 0 12px;color:var(--cream)}
+  line-height:1.02;text-transform:uppercase;margin:0 0 8px;color:var(--cream)}
+.sub{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--fg-3);margin:0 0 28px}
 
-/* A number nobody understands is decoration. The rule is stated once, in
-   full, above the table that applies it. */
-.rule{border-left:3px solid var(--yellow);padding:2px 0 2px 16px;margin:0 0 28px;
-  font-size:15px;line-height:1.6;color:var(--fg-2);max-width:60ch}
-.rule b{color:var(--cream)}
-.rule .ex{display:block;margin-top:8px;font-family:var(--mono);font-size:11.5px;
-  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
+.card{border:3px solid var(--cream);padding:18px 20px 16px;margin:0 0 16px}
+.card__m{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--fg-3);
+  display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 10px}
+.card__m b{color:var(--yellow);font-weight:700}
+.card__q{font-family:var(--display);font-weight:400;font-size:clamp(19px,4vw,27px);
+  line-height:1.1;text-transform:uppercase;margin:0 0 14px;text-wrap:balance}
+.card__q a{color:var(--cream);text-decoration:none}
+.card__q a:hover{color:var(--yellow)}
 
-table{width:100%;border-collapse:collapse}
-thead th{font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--fg-3);text-align:left;
-  padding:0 10px 10px;border-bottom:1px solid var(--line)}
-tbody td{padding:14px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-tbody tr:hover td{background:rgba(251,252,244,.04)}
-.r{font-family:var(--display);font-size:22px;line-height:1;color:var(--fg-3);width:1%;
-  padding-right:4px;font-variant-numeric:tabular-nums}
-.r--top{color:var(--yellow)}
-.who a{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--cream);
-  text-decoration:none;word-break:break-all}
-.who a:hover{color:var(--yellow)}
-.who .anon{color:var(--fg-2);font-weight:400}
-.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.pts{font-family:var(--display);font-size:24px;line-height:1;color:var(--yellow)}
-.wl{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
-  color:var(--fg-3)}
-.wl b{color:var(--fg-2)}
-/* The same standing, said in money. Deliberately quieter than the points: the
-   points are what the board is ORDERED by, and making the money louder would
-   imply it is what wins. */
-.net{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.02em}
-.net--up{color:var(--cream)}
-.net--dn{color:var(--pink)}
-.net--flat{color:var(--fg-3)}
-.net--none{color:var(--fg-3);font-size:11.5px;letter-spacing:.09em}
+.pool{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;
+  font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-3);font-variant-numeric:tabular-nums}
+.pool b{font-family:var(--display);font-size:22px;letter-spacing:.01em;color:var(--yellow)}
+.pool--quiet{font-style:normal;text-transform:none;letter-spacing:.02em;font-size:13px;
+  font-family:var(--body);color:var(--fg-2)}
+.bar{display:flex;height:12px;margin:0 0 12px;border:2px solid var(--cream)}
+.bar i{display:block;font-style:normal}
+.bar__y{background:var(--yellow)}
+.bar__n{background:var(--pink)}
 
-.empty{border:2px dashed var(--fg-3);padding:22px 20px;font-size:15px;line-height:1.6;
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.side{display:block;text-align:center;text-decoration:none;
+  font-family:var(--display);font-size:19px;letter-spacing:.03em;text-transform:uppercase;
+  line-height:1;border:3px solid var(--black);padding:13px 10px;color:var(--black);
+  transition:transform .12s ease,box-shadow .12s ease}
+.side--y{background:var(--yellow);box-shadow:5px 6px 0 var(--yellow-deep)}
+.side--n{background:var(--pink);box-shadow:5px 6px 0 var(--pink-deep)}
+.side:hover{transform:translate(-2px,-2px)}
+.side--y:hover{background:var(--yellow-hi);box-shadow:7px 8px 0 var(--yellow-deep)}
+.side--n:hover{box-shadow:7px 8px 0 var(--pink-deep)}
+.side:active{transform:translate(2px,3px)}
+.side:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
+.side span{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
+  letter-spacing:.1em;margin-top:6px;opacity:.72}
+
+.empty{border:2px dashed var(--fg-3);padding:24px 22px;font-size:15px;line-height:1.65;
   color:var(--fg-2)}
 .empty b{color:var(--cream)}
+.empty a{color:var(--yellow)}
 .load{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--fg-3);padding:40px 0}
 .err{border:3px solid var(--pink);padding:15px 17px;font-size:14px;color:var(--cream)}
-@media (max-width:520px){ .hide-sm{display:none} tbody td{padding:12px 6px} }
+@media (max-width:460px){ .sides{grid-template-columns:1fr} }
 </style>
 
 <header class="top">
@@ -108,16 +112,9 @@ tbody tr:hover td{background:rgba(251,252,244,.04)}
 </header>
 
 <main class="wrap">
-  <h1>Who was right</h1>
-  <p class="rule" id="rule">
-    Points go to being right <b>when the room disagreed</b>. Calling it at 20% and
-    landing it is worth eight times calling it at 90%, and a pool nobody else was
-    in barely counts at all. Losing is worth nothing, and nothing is all it takes
-    away. <b>Net</b> is the same record in money, and the board is never sorted
-    by it: money would rank the biggest wallet.
-    <span class="ex" id="ex">full weight at a 5 SOL pool</span>
-  </p>
-  <div id="view"><p class="load">Reading settled markets…</p></div>
+  <h1>Open markets</h1>
+  <p class="sub" id="sub">Newest first. Every one of them started as a tweet.</p>
+  <div id="view"><p class="load">Loading markets…</p></div>
 </main>
 
 <script>
@@ -128,53 +125,70 @@ tbody tr:hover td{background:rgba(251,252,244,.04)}
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
     });
   }
+  function when(iso) {
+    if (!iso) return null;
+    var d = new Date(iso).getTime();
+    if (!isFinite(d)) return null;
+    var s = Math.round((d - Date.now()) / 1000), past = s < 0, n = Math.abs(s), unit, v;
+    if (n < 3600) { v = Math.max(1, Math.round(n / 60)); unit = "minute"; }
+    else if (n < 86400) { v = Math.round(n / 3600); unit = "hour"; }
+    else { v = Math.round(n / 86400); unit = "day"; }
+    var t = v + " " + unit + (v === 1 ? "" : "s");
+    return past ? "closed " + t + " ago" : "closes in " + t;
+  }
 
-  fetch("/api/board?limit=50")
+  fetch("/api/v1/markets?limit=50")
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
     .then(function (j) {
       if (!j.ok) throw new Error("bad response");
-      if (j.fullCreditSol) document.getElementById("ex").textContent = "full weight at a " + j.fullCreditSol + " SOL pool";
-      var rows = j.rows || [];
-      if (!rows.length) {
-        // Honest rather than seeded. An empty board is what "no market has
-        // settled yet" looks like, and inventing rows to fill it would be the
-        // first lie this page tells.
-        view.innerHTML = '<div class="empty"><b>No market has settled yet.</b><br>'
-          + "A row appears here the first time somebody is right about one. "
-          + 'Tag <b>@oddiefun</b> on a claim and the first market is yours.</div>';
+      var ms = j.markets || [];
+      if (!ms.length) {
+        view.innerHTML = '<div class="empty"><b>No open markets right now.</b><br>'
+          + "Every market here started as somebody tagging <b>@oddiefun</b> under a claim "
+          + "worth arguing about. Post one and the first market is yours. "
+          + '<a href="/genesis">See how it works</a>.</div>';
         return;
       }
-      view.innerHTML = "<table><thead><tr>"
-        + '<th class="r">#</th><th>Caller</th>'
-        + '<th class="num hide-sm">Record</th><th class="num">Net</th><th class="num">Points</th>'
-        + "</tr></thead><tbody>"
-        + rows.map(function (w) {
-            // A linked X handle is the identity; a wallet is one too, just a
-            // quieter one. Never a placeholder in place of either.
-            var name = w.handle
-              ? "@" + esc(w.handle)
-              : '<span class="anon">' + esc(w.short) + "</span>";
-            // A market we could not read is priced as nothing at all, so its
-            // calls are in no total. Saying so beats a confident number built
-            // on a failed request.
-            var n = typeof w.realizedSol === "number" ? w.realizedSol : null;
-            var net = n === null
-              ? '<span class="net net--none">n/a</span>'
-              : '<span class="net ' + (n > 0 ? "net--up" : n < 0 ? "net--dn" : "net--flat") + '">'
-                + (n > 0 ? "+" : "") + n.toFixed(2) + " SOL</span>";
-            if (w.unpriced) net += '<span class="net net--none"><br>' + w.unpriced + " unpriced</span>";
-            return "<tr>"
-              + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">' + w.rank + "</td>"
-              + '<td class="who"><a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a></td>"
-              + '<td class="num hide-sm wl"><b>' + w.wins + "</b> right &middot; " + w.losses + " wrong</td>"
-              + '<td class="num">' + net + "</td>"
-              + '<td class="num"><span class="pts">' + w.points + "</span></td>"
-              + "</tr>";
-          }).join("")
-        + "</tbody></table>";
+      view.innerHTML = ms.map(function (m) {
+        var bits = [];
+        if (m.taggedBy) bits.push("Opened by <b>@" + esc(m.taggedBy) + "</b>");
+        var w = when(m.closesAt);
+        if (w) bits.push(esc(w));
+
+        // The same three-way rule the market page uses. An unreadable pool is
+        // never drawn as an empty one: a card that says "nothing staked" over
+        // real money is the lie this whole read layer exists to stop.
+        var pool = "";
+        if (m.oddsSource === "unreadable") {
+          pool = '<p class="pool pool--quiet">Pool unreadable right now, so no odds are shown.</p>';
+        } else if (!m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
+          pool = '<p class="pool pool--quiet">No one has backed a side yet. The first stake sets the price.</p>';
+        } else {
+          var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
+          var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
+          pool = '<p class="pool"><b>' + (tot / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
+            + "</b> SOL in the pool</p>"
+            + '<div class="bar" role="img" aria-label="' + yp + ' percent yes"><i class="bar__y" style="width:'
+            + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>';
+        }
+        var pct = (m.oddsSource === "vault" && m.yesPct != null) ? m.yesPct : null;
+        var href = "/m/" + encodeURIComponent(m.slug);
+        return '<article class="card">'
+          + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
+          + '<h2 class="card__q"><a href="' + href + '">' + esc(m.question) + "</a></h2>"
+          + pool
+          + '<div class="sides">'
+          + '<a class="side side--y" href="' + href + '?side=yes">YES'
+          + (pct === null ? "" : "<span>" + pct + "%</span>") + "</a>"
+          + '<a class="side side--n" href="' + href + '?side=no">NO'
+          + (pct === null ? "" : "<span>" + (100 - pct) + "%</span>") + "</a>"
+          + "</div></article>";
+      }).join("");
+      document.getElementById("sub").textContent =
+        ms.length + (ms.length === 1 ? " market" : " markets") + " open. Newest first. Every one started as a tweet.";
     })
     .catch(function (e) {
-      view.innerHTML = '<div class="err">We could not load the board just now (' + esc(e.message) + ").</div>";
+      view.innerHTML = '<div class="err">We could not load the markets just now (' + esc(e.message) + ").</div>";
     });
 })();
 </script>

@@ -90,6 +90,8 @@ const YOU_HTML = readFileSync(path.join(__dirname, "../public/app/you.html"), "u
 const BOARD_HTML = readFileSync(path.join(__dirname, "../public/app/board.html"), "utf8");
 /** One wallet's record. The shareable artifact: the page somebody posts. */
 const WHO_HTML = readFileSync(path.join(__dirname, "../public/app/who.html"), "utf8");
+/** The list: every open market, newest first. The app's front door. */
+const MARKETS_HTML = readFileSync(path.join(__dirname, "../public/app/markets.html"), "utf8");
 
 /**
  * UYGULAMA KAPALI (Lev, 2026-09-03): app bastan yazilacak, o yuzden simdilik
@@ -670,6 +672,24 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
 app.get(["/you", "/positions"], (_req, res) => {
   if (!APP_OPEN) return appClosed(res);
   res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(YOU_HTML);
+});
+
+/**
+ * The list. Public and indexable.
+ *
+ * Deliberately the only ordering: newest first, which is what a product fed by
+ * X should show — the market somebody just opened is the one being argued
+ * about right now. No sort control, because a second ordering would need a
+ * reason and there is not one yet; the pool is on every card, so where the
+ * action is stays visible without a toggle.
+ */
+// NOT also "/app": public/app/ is a real asset directory now, and
+// express.static (registered first) answers /app with a 301 to /app/ before
+// this route is ever reached. A route name that a directory already owns is a
+// trap rather than a convenience.
+app.get("/markets", (_req, res) => {
+  if (!APP_OPEN) return appClosed(res);
+  res.set("Cache-Control", "no-cache").type("html").send(MARKETS_HTML);
 });
 
 /** The board. Public and indexable: it is the page that answers "who should I
@@ -3549,8 +3569,13 @@ app.get("/api/v1/markets", async (req, res) => {
   // One batched read for the whole page instead of one per row. The old shape
   // was the exact request pattern a public RPC throttles, and being throttled
   // did not slow this endpoint down, it published zeroes.
-  const states = await readMarkets(live.map((m) => m.onchainPubkey).filter(Boolean) as string[], { maxAgeMs: 4_000 })
-    .catch(() => new Map<string, MarketRead>());
+  const [states, openers] = await Promise.all([
+    readMarkets(live.map((m) => m.onchainPubkey).filter(Boolean) as string[], { maxAgeMs: 4_000 })
+      .catch(() => new Map<string, MarketRead>()),
+    // Who opened it: the handle the 2% is paid to, and the reason the market
+    // exists. One query for the page, not one per row.
+    surfacersFor(live.map((m) => m.slug)).catch(() => ({} as Record<string, SurfacerInfo>)),
+  ]);
   const items = live.map((m) => {
     const r = m.onchainPubkey ? states.get(m.onchainPubkey) : { ok: false as const, reason: "absent" as const };
     const state = r?.ok ? r.state : null;
@@ -3571,6 +3596,7 @@ app.get("/api/v1/markets", async (req, res) => {
       closesAt: m.closesAt,
       resolved: Boolean(m.resolvedOutcome),
       outcome: m.resolvedOutcome ?? null,
+      taggedBy: openers[m.slug]?.handle ?? null,
       pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
       yesPct: unreadable || total <= 0 ? null : Math.max(1, Math.min(99, Math.round((yes / total) * 100))),
       oddsSource: unreadable ? "unreadable" : total > 0 ? "vault" : "unpriced",

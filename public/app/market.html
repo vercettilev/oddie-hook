@@ -151,9 +151,9 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   <div class="wrap">
     <a class="mark" href="/">oddie</a>
     <nav>
+      <a href="/markets">Markets</a>
       <a href="/board">Who was right</a>
       <a href="/you">Your positions</a>
-      <a href="/genesis">Genesis</a>
     </nav>
   </div>
 </header>
@@ -280,6 +280,18 @@ main.wrap{padding-top:34px;padding-bottom:72px}
         if (window.OddieChain && window.OddieChain.openStake) window.OddieChain.openStake(SLUG, b.dataset.side);
       });
     });
+
+    /* ?side=yes|no: arriving from a card on the list, where the side was
+       already chosen. The sheet opens on that side rather than making somebody
+       pick twice. Ignored on a closed or resolved market, where there is no
+       side left to take, and the param is dropped from the URL either way so a
+       reload or a shared link does not re-open a money sheet at somebody. */
+    var wanted = (location.search.match(/[?&]side=(yes|no)\b/) || [])[1];
+    if (wanted) {
+      history.replaceState(null, "", location.pathname);
+      var b = view.querySelector('.side[data-side="' + wanted + '"]');
+      if (b && !b.disabled) b.click();
+    }
   }
 
   fetch("/api/v1/markets/" + encodeURIComponent(SLUG))
