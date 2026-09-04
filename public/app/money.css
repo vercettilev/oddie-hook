@@ -1,0 +1,158 @@
+/*
+ * The money sheet, in the app's own language.
+ *
+ * chain.js builds this DOM and has never carried a line of CSS: every class it
+ * writes was defined inside feed.html, so the money path was invisibly welded
+ * to a page that is being retired. This file is that weld cut, and it is a
+ * REWRITE rather than a copy — feed.html's rules are the old app's look, and
+ * the app is being rebuilt in the landing's.
+ *
+ * Loaded by every app shell that can take or return money. It is not inlined
+ * with the rest of the page because nothing here paints until somebody taps a
+ * side, so it cannot cause the first-paint flash that forces inlining
+ * elsewhere.
+ */
+.cdim{
+  position:fixed;inset:0;z-index:90;
+  background:rgba(2,3,2,.72);
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:0;
+  animation:cdim-in .16s ease-out;
+}
+@keyframes cdim-in{from{opacity:0}to{opacity:1}}
+@media (min-width:620px){ .cdim{align-items:center;padding:24px} }
+
+.csheet{
+  width:100%;max-width:520px;
+  background:var(--cream,#FBFCF4);color:var(--ink,#0B0D04);
+  border:3px solid var(--black,#020302);
+  box-shadow:0 -8px 0 rgba(2,3,2,.35);
+  padding:22px 20px calc(24px + env(safe-area-inset-bottom));
+  max-height:88vh;overflow-y:auto;
+  animation:csheet-in .2s cubic-bezier(.22,.9,.3,1);
+}
+@keyframes csheet-in{from{transform:translateY(14px)}to{transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .cdim,.csheet{animation:none}
+}
+@media (min-width:620px){ .csheet{box-shadow:9px 10px 0 var(--pink-deep,#A3053F)} }
+
+.csheet h3{
+  font-family:var(--display,'Anton',sans-serif);font-weight:400;
+  font-size:clamp(21px,5vw,27px);line-height:1.06;letter-spacing:.01em;
+  text-transform:uppercase;margin:0 0 10px;
+}
+.chain-q{text-wrap:balance}
+.cnote{font-size:14px;line-height:1.5;color:var(--ink-2,#494E2D);margin:0 0 16px}
+.cnote b{color:var(--ink,#0B0D04)}
+
+/* ---- the live pool, inside the sheet ---- */
+.chain-pool-empty,.chain-pool-odds{
+  border:2px solid var(--ink,#0B0D04);padding:10px 12px;margin:0 0 16px;
+}
+.chain-pool-empty{
+  font-family:var(--mono,monospace);font-size:11.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;border-style:dashed;
+  color:var(--ink-2,#494E2D);
+}
+.chain-pool-odds{display:flex;gap:14px;justify-content:space-between}
+.chain-pool-side{
+  font-family:var(--mono,monospace);font-size:11px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2,#494E2D);
+}
+.chain-pool-side b{font-size:17px;letter-spacing:0;color:var(--ink,#0B0D04)}
+.chain-pool-side small{opacity:.72}
+
+/* ---- picking a side ---- */
+.chain-side-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 18px}
+.chain-side{
+  font-family:var(--display,'Anton',sans-serif);font-size:22px;letter-spacing:.03em;
+  text-transform:uppercase;line-height:1;
+  background:#fff;color:var(--ink,#0B0D04);
+  border:3px solid var(--ink,#0B0D04);padding:15px 10px;cursor:pointer;
+}
+.chain-side:hover{background:#F1F3E4}
+.chain-side[aria-pressed="true"],.chain-side.on{color:var(--black,#020302)}
+.chain-side[data-side="yes"][aria-pressed="true"],.chain-side[data-side="yes"].on{
+  background:var(--yellow,#D7DC1F);box-shadow:4px 5px 0 var(--ink,#0B0D04)}
+.chain-side[data-side="no"][aria-pressed="true"],.chain-side[data-side="no"].on{
+  background:var(--pink,#FF2D78);box-shadow:4px 5px 0 var(--ink,#0B0D04)}
+.chain-side:focus-visible{outline:3px solid var(--pink,#FF2D78);outline-offset:3px}
+
+/* ---- how much ---- */
+.chain-amt-lab{
+  font-family:var(--mono,monospace);font-size:10.5px;font-weight:800;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2,#494E2D);margin:0 0 8px;
+}
+.chain-amt-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.chain-chip{
+  font-family:var(--mono,monospace);font-size:12.5px;font-weight:700;
+  background:#fff;color:var(--ink,#0B0D04);
+  border:2px solid var(--ink,#0B0D04);padding:9px 13px;cursor:pointer;
+}
+.chain-chip:hover{background:#F1F3E4}
+.chain-chip[aria-pressed="true"],.chain-chip.on{
+  background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4)}
+.chain-chip:focus-visible{outline:3px solid var(--pink,#FF2D78);outline-offset:3px}
+.chain-amt{
+  display:block;width:100%;font:inherit;font-family:var(--mono,monospace);
+  padding:11px 12px;border:2px solid var(--ink,#0B0D04);background:#fff;
+  color:var(--ink,#0B0D04);margin:0 0 12px;
+}
+.chain-amt:focus{outline:3px solid var(--pink,#FF2D78);outline-offset:2px}
+/* `display:block` above OUTRANKS the hidden attribute's UA rule, so the custom
+   amount field sat open before anybody chose "Other". Any rule in this file
+   that sets display on an element chain.js toggles needs this partner; today
+   .chain-amt is the only one it toggles. */
+.chain-amt[hidden]{display:none}
+
+/* The payout line. Money arithmetic, so it gets the tabular figures that stop
+   digits from shifting under their own labels as the amount changes. */
+.chain-line{
+  font-family:var(--mono,monospace);font-size:12px;line-height:1.6;
+  font-variant-numeric:tabular-nums;color:var(--ink-2,#494E2D);
+  min-height:1.6em;margin:0 0 14px;
+}
+.chain-line b{color:var(--ink,#0B0D04)}
+
+/* ---- the buttons that move money ---- */
+.claimbtn,.cbtn{
+  display:block;width:100%;
+  font-family:var(--display,'Anton',sans-serif);font-size:21px;letter-spacing:.03em;
+  text-transform:uppercase;line-height:1;
+  background:var(--yellow,#D7DC1F);color:var(--ink,#0B0D04);
+  border:3px solid var(--ink,#0B0D04);padding:16px 14px;cursor:pointer;
+  box-shadow:5px 6px 0 var(--pink-deep,#A3053F);
+  transition:transform .12s ease,box-shadow .12s ease;
+}
+.claimbtn:hover:not(:disabled),.cbtn:hover:not(:disabled){
+  background:var(--yellow-hi,#E7EC4E);transform:translate(-2px,-2px);
+  box-shadow:7px 8px 0 var(--pink-deep,#A3053F)}
+.claimbtn:active:not(:disabled),.cbtn:active:not(:disabled){
+  transform:translate(2px,3px);box-shadow:2px 3px 0 var(--pink-deep,#A3053F)}
+.claimbtn:focus-visible,.cbtn:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:4px}
+.claimbtn:disabled,.cbtn:disabled{
+  opacity:.45;cursor:not-allowed;transform:none;box-shadow:3px 4px 0 rgba(11,13,4,.35)}
+
+/* The way out. Quiet on purpose: it must always be findable and must never
+   compete with the button that does the thing. */
+.cclose{
+  display:block;width:100%;margin-top:10px;
+  font-family:var(--mono,monospace);font-size:12px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;
+  background:none;color:var(--ink-2,#494E2D);border:0;padding:13px 10px;cursor:pointer;
+}
+.cclose:hover{color:var(--ink,#0B0D04)}
+.cclose:focus-visible{outline:2px solid var(--ink,#0B0D04);outline-offset:2px}
+
+.chain-wallet{
+  font-family:var(--mono,monospace);font-size:11px;letter-spacing:.08em;
+  color:var(--ink-2,#494E2D);margin:12px 0 0;word-break:break-all;
+}
+.chain-fee-note{
+  font-size:12px;line-height:1.5;color:var(--ink-2,#494E2D);margin:12px 0 0;
+}
+.chain-sig{
+  font-family:var(--mono,monospace);font-size:11.5px;margin:12px 0 0;word-break:break-all;
+}
+.chain-sig a{color:var(--pink-deep,#A3053F)}

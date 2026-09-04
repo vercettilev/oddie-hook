@@ -382,7 +382,12 @@ function b64ToBytes(b64) {
     // just tapped, so without this the screen that takes a stake never states
     // what the stake is about: a swipe feed makes it genuinely easy to bet on
     // the market you scrolled past rather than the one you meant.
-    const qEl = document.querySelector(`.card[data-slug="${slug}"] .take`);
+    // Two homes, because there are two shells now. feed.html has a card per
+    // market; the rebuilt market page IS one market and marks its heading.
+    // Falling through to "Pick a side" means a sheet that takes money without
+    // naming what it is for, so both are tried before that happens.
+    const qEl = document.querySelector(`.card[data-slug="${slug}"] .take`)
+      || document.querySelector(`[data-oddie-question][data-slug="${slug}"]`);
     const question = qEl ? qEl.textContent.trim() : "";
     const titleHTML = question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
@@ -946,5 +951,19 @@ function b64ToBytes(b64) {
   // point back when real money was an optional layer beside the card's own
   // YES/NO. With one economy there is one pair of buttons, and they are the
   // ones already on the card.
-  window.OddieChain = { init, openStake: openStakeSheet };
+  /**
+   * The collect half, openable directly.
+   *
+   * openStakeSheet already routes to renderClaim when the market reads
+   * resolved, but that path needs a live /api/chain/market read to discover
+   * it. A page that ALREADY knows the outcome (the market page renders it)
+   * should be able to open the collect sheet without a second round trip and
+   * without pretending to offer a stake first.
+   */
+  async function openClaimSheet(slug, winningSide) {
+    const body = sheetShell();
+    await renderClaim(body, slug, { winningSide: winningSide, resolved: true });
+  }
+
+  window.OddieChain = { init, openStake: openStakeSheet, openClaim: openClaimSheet };
 })();

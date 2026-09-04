@@ -80,6 +80,9 @@ const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
 const ROSTER_HTML = readFileSync(path.join(__dirname, "../public/roster.html"), "utf8");
+/** The rebuilt market page. Read once at boot like every other shell here,
+ *  which means an edit to it needs a server restart to be visible. */
+const MARKET_HTML = readFileSync(path.join(__dirname, "../public/app/market.html"), "utf8");
 
 /**
  * UYGULAMA KAPALI (Lev, 2026-09-03): app bastan yazilacak, o yuzden simdilik
@@ -144,7 +147,14 @@ app.use(express.static(path.join(__dirname, "../public"), {
   index: false,
   maxAge: "7d",
   setHeaders: (res, filePath) => {
-    if (path.basename(filePath) === "chain.js") res.setHeader("Cache-Control", "no-cache");
+    // chain.js and everything under public/app are the two halves of ONE
+    // betting UI: the script that builds the money sheet and the stylesheet
+    // that makes it legible. Shipping a markup change against a week-old
+    // stylesheet is the same stale-UI-with-no-invalidation problem the note
+    // above describes, so the exemption covers both.
+    const base = path.basename(filePath);
+    const inApp = filePath.includes(`${path.sep}public${path.sep}app${path.sep}`);
+    if (base === "chain.js" || inApp) res.setHeader("Cache-Control", "no-cache");
   },
 }));
 
@@ -461,6 +471,51 @@ function marketPageHtml(rec: { market: { question: string; yesPct: number; volum
   return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
 }
 
+/**
+ * The rebuilt market page's og tags.
+ *
+ * The description is built from an ACTUAL read, not from a stored opening
+ * line, and it refuses to quote a percentage it could not measure: an unfurl
+ * is the most-copied surface we have, and "68% yes right now" pasted into X
+ * about a pool nobody could read would outlive the blip that caused it.
+ */
+async function marketShellHtml(slug: string, question: string): Promise<string> {
+  const title = displayTitle(question);
+  const detail = await communityMarketDetail(slug).catch(() => null);
+  const read = detail?.onchainPubkey
+    ? await readMarket(detail.onchainPubkey, { maxAgeMs: 10_000 }).catch((): MarketRead => ({ ok: false, reason: "unreadable", error: "read threw" }))
+    : ({ ok: false, reason: "absent" } as MarketRead);
+  let desc = "Real money on Solana. Call it YES or NO.";
+  if (read.ok) {
+    const yes = read.state.totalYesLamports, no = read.state.totalNoLamports, tot = yes + no;
+    if (read.state.resolved && read.state.winningSide) desc = `Resolved ${read.state.winningSide.toUpperCase()}.`;
+    else if (tot > 0) {
+      const pct = Math.max(1, Math.min(99, Math.round((yes / tot) * 100)));
+      desc = `${(tot / 1e9).toFixed(2)} SOL in the pool — ${pct}% yes right now.`;
+    } else desc = "No one has backed a side yet. The first stake sets the price.";
+  }
+  const img = `${BASE_URL}/card/${slug}.png`;
+  const url = `${BASE_URL}/m/${slug}`;
+  const tags = [
+    `<link rel="canonical" href="${ogEsc(url)}">`,
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="oddie">`,
+    `<meta property="og:title" content="${ogEsc(title)}">`,
+    `<meta property="og:description" content="${ogEsc(desc)}">`,
+    `<meta property="og:url" content="${ogEsc(url)}">`,
+    `<meta property="og:image" content="${ogEsc(img)}">`,
+    `<meta property="og:image:type" content="image/png">`,
+    `<meta property="og:image:width" content="2000">`,
+    `<meta property="og:image:height" content="1048">`,
+    `<meta property="og:image:alt" content="${ogEsc(title)}">`,
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${ogEsc(title)}">`,
+    `<meta name="twitter:description" content="${ogEsc(desc)}">`,
+    `<meta name="twitter:image" content="${ogEsc(img)}">`,
+  ].join("\n");
+  return MARKET_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+}
+
 // The market permalink — every market's canonical landing page. /m/{slug} is
 // the short share path; /market/{slug} (already in the wild) serves the same.
 app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
@@ -483,14 +538,16 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
       return res.type("html").send(positionPageHtml(rec, req.params.slug, share));
     }
   }
-  // For a community market, the og line reflects the forming state (call count
-  // until the market has formed, then the %).
-  let forming: { positions: number } | null = null;
-  if (rec && rec.market.venue === "community") {
-    const n = (await communityPlayerCounts([req.params.slug]).catch(() => ({} as Record<string, number>)))[req.params.slug] ?? 0;
-    if (n < MARKET_FORMING_MIN) forming = { positions: n };
-  }
-  res.type("html").send(rec ? marketPageHtml(rec, req.params.slug, forming) : FEED_HTML);
+  // The rebuilt shell. no-cache for the same reason genesis carries it: this
+  // page inlines its own script, and a heuristically-cached copy runs stale
+  // script against a live money API.
+  const question = rec?.market.question ?? (await communityMarketDetail(req.params.slug).catch(() => null))?.question ?? null;
+  // An unknown slug still gets the shell: the page's own fetch renders the
+  // "no market here" state, which is a better dead end than the old app.
+  const html = question
+    ? await marketShellHtml(req.params.slug, question)
+    : MARKET_HTML;
+  res.set("Cache-Control", "no-cache").type("html").send(html);
 });
 
 // Public profile page — the reputation/share loop's real destination. Serves the
