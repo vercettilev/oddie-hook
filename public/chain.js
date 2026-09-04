@@ -801,11 +801,24 @@ function b64ToBytes(b64) {
       list = j.ok ? j.claimable : [];
     } catch (e) { list = []; }
     if (!list.length) { box.remove(); return; }   // nothing owed -> say nothing
-    box.innerHTML = `<div class="cc-head">You have winnings to collect</div>` + list.map((c) => `
+    /* The list now includes markets you LOST, because claiming one still
+       returns the rent the position was holding. That must never be dressed up
+       as a payout: the heading counts only wins, and a lost row says in words
+       what pressing the button does. A person who reads "collect" and receives
+       0.0015 SOL back on a bet they lost has been misled by us, not by chance. */
+    const wins = list.filter((c) => c.won !== false);
+    const head = wins.length
+      ? (wins.length === list.length
+          ? "You have winnings to collect"
+          : "You have winnings to collect, and rent to get back")
+      : "Nothing won, but your rent is still yours";
+    box.innerHTML = `<div class="cc-head">${head}</div>` + list.map((c) => `
       <div class="cc-item">
         <span class="cc-q">${esc(c.question)}</span>
-        <span class="cc-meta">called ${c.side.toUpperCase()} · ${(c.lamports / 1e9).toFixed(3)} SOL staked</span>
-        <button class="cc-claim" type="button" data-slug="${esc(c.slug)}">Claim</button>
+        <span class="cc-meta">called ${c.side.toUpperCase()} · ${(c.lamports / 1e9).toFixed(3)} SOL staked${
+          c.won === false ? " · lost, this returns your rent only" : ""}</span>
+        <button class="cc-claim" type="button" data-slug="${esc(c.slug)}">${
+          c.won === false ? "Get rent back" : "Claim"}</button>
       </div>`).join("");
     box.querySelectorAll(".cc-claim").forEach((b) => b.onclick = () => openStakeSheet(b.dataset.slug));
   }

@@ -3803,8 +3803,20 @@ if (realStakesReady) {
     const found = await Promise.all(markets.map(async (m) => {
       const position = await fetchPosition(m.onchainPubkey, userPubkey).catch(() => null);
       if (!position || position.claimed) return null;
-      if (position.side !== m.resolvedOutcome) return null;   // lost this one
-      return { slug: m.slug, question: m.question, side: position.side, lamports: position.lamports, outcome: m.resolvedOutcome };
+      // A LOSING POSITION IS STILL CLAIMABLE, and dropping it here was costing
+      // people money. claim_winnings pays a loser nothing (lib.rs: payout = 0
+      // when the side missed) but the Position account carries `close = owner`,
+      // so calling it returns the ~0.00147 SOL of rent the position has been
+      // holding since the bet was placed. The program's own comment says this
+      // is "the first reason a loser has ever had to come back and press the
+      // button"; filtering them out here meant they never saw one.
+      const won = position.side === m.resolvedOutcome;
+      return {
+        slug: m.slug, question: m.question, side: position.side,
+        lamports: position.lamports, outcome: m.resolvedOutcome,
+        // What pressing the button actually does, so the UI never has to guess.
+        won, returns: won ? "winnings-and-rent" : "rent-only",
+      };
     }));
     res.json({ ok: true, claimable: found.filter(Boolean) });
   });
@@ -3835,9 +3847,15 @@ if (realStakesReady) {
       const pos = await fetchPosition(detail.onchainPubkey, userPubkey).catch(() => null);
       if (!pos) return res.status(409).json({ ok: false, reason: "no-position" });
       if (pos.claimed) return res.status(409).json({ ok: false, reason: "already-claimed" });
-      if (claimState.winningSide && pos.side !== claimState.winningSide) {
-        return res.status(409).json({ ok: false, reason: "lost", side: pos.side, outcome: claimState.winningSide });
-      }
+      // NO "lost" REFUSAL. This used to 409 before building anything, which
+      // permanently forfeited the loser's rent deposit: the program is happy to
+      // be called by a loser (payout 0, `close = owner` returns the rent), and
+      // we were the only thing standing in the way. Worse, MIN_STAKE is 0.001
+      // SOL and the rent is 0.00147, so the smallest allowed bet cost more to
+      // hold than it staked and the product would not give the larger half
+      // back. The caller is told which it is by /api/chain/claimable's
+      // `returns` field, so the sheet can say "this returns your rent, you did
+      // not win this one" instead of pretending it is a payout.
     }
     const txBase64 = await prepareClaimTx({ marketPubkey: detail.onchainPubkey, userPubkey });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
