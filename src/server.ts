@@ -107,6 +107,18 @@ const MARKETS_HTML = readFileSync(path.join(__dirname, "../public/app/markets.ht
  * Env ile geri acilir, deploy gerektirmeden: APP_OPEN=true.
  */
 const APP_OPEN = (process.env.APP_OPEN ?? "false").toLowerCase() === "true";
+/**
+ * The X gate on the app's own pages (the list and /you). Default ON: it is
+ * Lev's call that the app is the social layer and every board row should carry
+ * a name from day one. Public market pages are never gated (they are what the
+ * bot links to and what X unfurls). The flag exists so loosening the gate after
+ * the Genesis season is an env change, not a deploy.
+ */
+const APP_X_GATE = (process.env.APP_X_GATE ?? "true").toLowerCase() === "true";
+/** Stamp a shell so its own script knows the gate is on. A meta tag rather
+ *  than a body attribute because the shells have no explicit <body>. */
+const stampGate = (html: string): string =>
+  APP_X_GATE ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="oddie-xgate" content="1">') : html;
 
 /** Kapaliyken herkesi kampanyaya gonder: 404 vermek yerine gidilecek bir yer. */
 function appClosed(res: express.Response): void {
@@ -671,7 +683,7 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
  */
 app.get(["/you", "/positions"], (_req, res) => {
   if (!APP_OPEN) return appClosed(res);
-  res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(YOU_HTML);
+  res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampGate(YOU_HTML));
 });
 
 /**
@@ -689,7 +701,7 @@ app.get(["/you", "/positions"], (_req, res) => {
 // trap rather than a convenience.
 app.get("/markets", (_req, res) => {
   if (!APP_OPEN) return appClosed(res);
-  res.set("Cache-Control", "no-cache").type("html").send(MARKETS_HTML);
+  res.set("Cache-Control", "no-cache").type("html").send(stampGate(MARKETS_HTML));
 });
 
 /** The board. Public and indexable: it is the page that answers "who should I

@@ -107,6 +107,20 @@ h2 b{color:var(--yellow);font-weight:800}
 
 /* An admission, never a number. Same voice as the market page's unreadable
    pool: what is missing is our view, not the money. */
+/* The wallet link, offered where it pays: a connected-but-unlinked wallet
+   cannot be named as a market's creator, so its 2% is unpayable. Quiet strip,
+   one button, and it disappears once linked. */
+.linkme{border:2px solid var(--yellow);padding:13px 16px;margin:0 0 20px;
+  display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between}
+.linkme p{margin:0;font-size:14px;line-height:1.5;color:var(--cream);max-width:48ch}
+.linkme .go{font-family:var(--display);font-size:16px;letter-spacing:.03em;text-transform:uppercase;
+  line-height:1;background:var(--yellow);color:var(--ink);border:3px solid var(--black);
+  padding:11px 16px;cursor:pointer;box-shadow:4px 5px 0 var(--yellow-deep)}
+.linkme .go:disabled{opacity:.5;cursor:wait}
+.act .go[disabled]{opacity:.55;cursor:wait}
+.act .done{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--yellow)}
+.act .done a{color:var(--fg-2)}
 .blind{border:2px dashed var(--pink);padding:12px 15px;margin:0 0 12px;
   font-size:13.5px;line-height:1.5;color:var(--cream)}
 .blind b{color:var(--pink)}
@@ -134,6 +148,7 @@ h2 b{color:var(--yellow);font-weight:800}
 </main>
 
 <link rel="stylesheet" href="/app/money.css">
+<script src="/app/id.js"></script>
 <script src="/chain.js"></script>
 <script>
 (function () {
@@ -147,6 +162,22 @@ h2 b{color:var(--yellow);font-weight:800}
   }
   var SOL = function (l) { return (l / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") || "0"; };
   var C = function () { return window.OddieChain || null; };
+
+  /* THE X GATE. This page is the social layer, so it asks for X first: cheap,
+     no money, and anyone arriving from Genesis has already done it. The wallet
+     is asked for after, at the point it pays. Off when the server did not
+     stamp the page (APP_X_GATE=false), so loosening it never needs a deploy. */
+  var XGATE = !!document.querySelector('meta[name="oddie-xgate"]');
+  function xgate() {
+    var did = (window.OddieId && window.OddieId.get()) || "";
+    sub.textContent = "Your record, your positions, your name on the board";
+    view.innerHTML = '<div class="gate">'
+      + "<p>This is where your calls live under your name. Continue with X and the board knows who you are; "
+      + "your wallet is only asked for when you take a side.</p>"
+      + '<a class="big" id="xconnect" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did)
+      + '&return=%2Fyou">Continue with X</a>'
+      + "</div>";
+  }
 
   function gate(msg, deepLink) {
     view.innerHTML = '<div class="gate">'
@@ -247,16 +278,55 @@ h2 b{color:var(--yellow);font-weight:800}
         html += "<section><h2>Fees you are owed</h2>"
           + blind(fees && fees.unreadable, "settled market(s)")
           + fs.map(function (f) {
-              return '<div class="row"><p class="row__q">' + esc(f.question) + "</p>"
+              // A row that names an amount owed MUST carry the control that
+              // collects it. The audit found this row with only an "Open the
+              // market" link, which sent people to a page whose one button ran
+              // the position-claim flow and told them they had no stake here.
+              return '<div class="row row--win"><p class="row__q">' + esc(f.question) + "</p>"
                 + '<p class="row__m"><span><b>' + SOL(f.lamports) + " SOL</b></span>"
                 + "<span>" + (f.feeBps / 100) + "% for opening it</span></p>"
-                + '<div class="act"><a class="open" href="/m/' + encodeURIComponent(f.slug) + '">Open the market</a></div></div>';
+                + '<div class="act"><button class="go fee" data-slug="' + esc(f.slug) + '" type="button">Collect your fee</button>'
+                + '<a class="open" href="/m/' + encodeURIComponent(f.slug) + '">Open the market</a></div></div>';
             }).join("")
           + "</section>";
       }
 
+      // Connected but not linked: the wallet can bet, but it cannot be named
+      // as a creator, so any market this person opened cannot pay them. Offered
+      // here, not at the bet, because here is where it pays.
+      if (C().linked() === false) {
+        html = '<div class="linkme"><p>This wallet is connected but not linked to you yet. '
+          + "Linking is one signature, costs nothing, and it is what lets markets you open pay you their 2%.</p>"
+          + '<button class="go" id="linkme" type="button">Link this wallet</button></div>' + html;
+      }
+
       view.innerHTML = html;
-      Array.prototype.forEach.call(view.querySelectorAll(".go"), function (b) {
+
+      var lk = view.querySelector("#linkme");
+      if (lk) lk.addEventListener("click", function () {
+        lk.disabled = true; lk.textContent = "Check your wallet…";
+        C().link().then(load).catch(function (e) {
+          lk.disabled = false; lk.textContent = "Link this wallet";
+          lk.parentNode.querySelector("p").textContent = e.message || "That did not go through. Nothing changed.";
+        });
+      });
+
+      Array.prototype.forEach.call(view.querySelectorAll(".go.fee"), function (b) {
+        b.addEventListener("click", function () {
+          b.disabled = true;
+          C().collectCreatorFee(b.dataset.slug, function (t) { b.textContent = t; })
+            .then(function (r) {
+              b.outerHTML = '<span class="done">' + (r.confirmed ? "Collected" : "Sent")
+                + ' &middot; <a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(C().short(r.signature)) + " &#8599;</a></span>";
+            })
+            .catch(function (e) {
+              b.disabled = false; b.textContent = "Collect your fee";
+              var m = b.closest(".row").querySelector(".row__m");
+              if (m) m.innerHTML += "<span>" + esc(e.message || "Something went wrong, try again.") + "</span>";
+            });
+        });
+      });
+      Array.prototype.forEach.call(view.querySelectorAll(".go:not(.fee)"), function (b) {
         b.addEventListener("click", function () {
           C().openClaim(b.dataset.slug, b.dataset.outcome);
         });
@@ -271,10 +341,22 @@ h2 b{color:var(--yellow);font-weight:800}
   if (!C()) {
     view.innerHTML = '<div class="err">The wallet layer did not load. Reload the page.</div>';
   } else {
-    fetch("/api/chain/status")
-      .then(function (r) { return r.json(); })
-      .catch(function () { return null; })
-      .then(function (j) { C().init(j && j.cluster); load(); });
+    var did = (window.OddieId && window.OddieId.get()) || "";
+    Promise.all([
+      fetch("/api/chain/status").then(function (r) { return r.json(); }).catch(function () { return null; }),
+      XGATE && did
+        ? fetch("/api/auth/me?deviceId=" + encodeURIComponent(did)).then(function (r) { return r.json(); }).catch(function () { return null; })
+        : Promise.resolve(null),
+    ]).then(function (r) {
+      var status = r[0], me = r[1];
+      C().init(status && status.cluster);
+      // Gate closed and no X on this device: ask for X. An unreachable
+      // /api/auth/me is NOT treated as "no X" — that would lock out somebody
+      // who is connected because a request blinked — so the page proceeds.
+      var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
+      if (XGATE && me && !hasX) return xgate();
+      load();
+    });
   }
 })();
 </script>

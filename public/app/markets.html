@@ -90,6 +90,14 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .side span{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
   letter-spacing:.1em;margin-top:6px;opacity:.72}
 
+.gate{border:3px solid var(--cream);padding:22px 20px;margin:0 0 26px}
+.gate p{margin:0 0 16px;font-size:15px;line-height:1.55;color:var(--fg-2);max-width:52ch}
+.big{display:inline-block;text-decoration:none;font-family:var(--display);font-size:21px;
+  letter-spacing:.03em;text-transform:uppercase;line-height:1;background:var(--yellow);
+  color:var(--ink);border:3px solid var(--black);padding:16px 22px;cursor:pointer;
+  box-shadow:6px 7px 0 var(--yellow-deep);transition:transform .12s ease,box-shadow .12s ease}
+.big:hover{background:var(--yellow-hi);transform:translate(-2px,-2px);box-shadow:8px 9px 0 var(--yellow-deep)}
+.big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
 .empty{border:2px dashed var(--fg-3);padding:24px 22px;font-size:15px;line-height:1.65;
   color:var(--fg-2)}
 .empty b{color:var(--cream)}
@@ -117,9 +125,16 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   <div id="view"><p class="load">Loading markets…</p></div>
 </main>
 
+<script src="/app/id.js"></script>
 <script>
 (function () {
   var view = document.getElementById("view");
+  /* THE X GATE, on the app's front door. Cheap (no money, no signature) and
+     already done by anyone arriving from Genesis, so for the launch cohort it
+     costs nothing and it means every row on the board has a name from day one.
+     Public market pages are NOT gated: they are what the bot links to and what
+     X unfurls. Off when the server did not stamp the page (APP_X_GATE=false). */
+  var XGATE = !!document.querySelector('meta[name="oddie-xgate"]');
   function esc(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
@@ -137,6 +152,30 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
     return past ? "closed " + t + " ago" : "closes in " + t;
   }
 
+  function xgate() {
+    var did = (window.OddieId && window.OddieId.get()) || "";
+    document.getElementById("sub").textContent = "Every market started as a tweet. Yours will too.";
+    view.innerHTML = '<div class="gate">'
+      + "<p>Markets opened by people you follow, your own record, your name on the board. "
+      + "Continue with X and it is yours; a wallet is only asked for when you take a side.</p>"
+      + '<a class="big" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">Continue with X</a>'
+      + "</div>";
+  }
+
+  var did = (window.OddieId && window.OddieId.get()) || "";
+  var who = XGATE && did
+    ? fetch("/api/auth/me?deviceId=" + encodeURIComponent(did)).then(function (r) { return r.json(); }).catch(function () { return null; })
+    : Promise.resolve(null);
+
+  who.then(function (me) {
+    // An unreachable /api/auth/me is not "no X": the list still renders rather
+    // than locking out somebody who is connected because a request blinked.
+    var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
+    if (XGATE && me && !hasX) return xgate();
+    return loadMarkets();
+  });
+
+  function loadMarkets() {
   fetch("/api/v1/markets?limit=50")
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
     .then(function (j) {
@@ -190,5 +229,6 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
     .catch(function (e) {
       view.innerHTML = '<div class="err">We could not load the markets just now (' + esc(e.message) + ").</div>";
     });
+  }
 })();
 </script>

@@ -190,6 +190,63 @@ function b64ToBytes(b64) {
     return `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(window.location.origin)}`;
   }
 
+  /**
+   * THE LINK, and why a bare connect is not enough.
+   *
+   * provider.connect() proves nothing to the server: it hands the page a
+   * public key, and anyone can type a public key. The signed challenge below
+   * is what writes the `phantom` account row that ties this wallet to this
+   * device, and that row is what everything social hangs off: the @handle on
+   * the board instead of base58, and the on-chain creator name that makes a
+   * tagger's 2% payable at all (nameCreatorOnTaggedMarkets runs off verify).
+   *
+   * feed.html carried the only copy of this handshake; deleting it would have
+   * orphaned every future creator fee permanently. It lives here now.
+   *
+   * Once per (device, wallet): /api/auth/me is asked first, and a wallet
+   * already linked is not asked to sign again. A REJECTED signature is not a
+   * failed connect — the bet still works without the link — so the wallet is
+   * returned either way and `linked` records which it was, for the page to
+   * offer the link again where it pays.
+   */
+  let linked = null; // null = unknown, true/false once checked or attempted
+
+  function deviceId() {
+    return (window.OddieId && window.OddieId.get && window.OddieId.get()) || null;
+  }
+
+  async function alreadyLinked(address) {
+    const did = deviceId();
+    if (!did) return false;
+    try {
+      const r = await fetch(`/api/auth/me?deviceId=${encodeURIComponent(did)}`);
+      const j = await r.json();
+      const mine = shortAddr(address);
+      return Array.isArray(j.accounts) && j.accounts.some((a) => a.provider === "phantom" && a.handle === mine);
+    } catch (e) { return false; }
+  }
+
+  /** Same shape the server's shortAddress() produces for the account handle. */
+  function shortAddr(a) { return `${a.slice(0, 4)}…${a.slice(-4)}`; }
+
+  async function linkWallet(provider, address) {
+    const did = deviceId();
+    if (!did) return false;                      // no identity on this page: nothing to link to
+    const cr = await fetch(`/api/auth/wallet/challenge?deviceId=${encodeURIComponent(did)}&address=${encodeURIComponent(address)}`);
+    if (!cr.ok) throw new Error("Couldn't start the wallet link.");
+    const { nonce, message } = await cr.json();
+    const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
+    // Hex keeps the signature ASCII-safe over JSON without a base58 encoder.
+    const sig = [...new Uint8Array(signed.signature)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const vr = await fetch("/api/auth/wallet/verify", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: did, address, nonce, signature: sig }),
+    });
+    const out = await vr.json().catch(() => ({}));
+    if (!vr.ok) throw new Error(out.error || "The wallet link did not verify.");
+    return true;
+  }
+
   async function connectWallet() {
     const provider = window.solana;
     if (!provider || !provider.isPhantom) {
@@ -209,7 +266,57 @@ function b64ToBytes(b64) {
     }
     const resp = await provider.connect();
     wallet = { publicKey: resp.publicKey.toString() };
+
+    // Link unless this device already did. A rejected signature leaves the
+    // wallet connected and `linked` false; a missing device id (a page with
+    // no /app/id.js) leaves it null and is simply not attempted.
+    if (linked === null || linked === false) {
+      try {
+        linked = (await alreadyLinked(wallet.publicKey)) || (await linkWallet(provider, wallet.publicKey));
+      } catch (e) {
+        const rejected = e && (e.code === 4001 || /reject|denied|cancel/i.test(e.message || ""));
+        linked = false;
+        if (!rejected) console.warn("[chain] wallet link skipped:", e && e.message);
+      }
+    }
     return wallet;
+  }
+
+  /** Explicit re-link for a page that wants to offer it ("link this wallet
+   *  so your markets pay you"). Throws on rejection so the button can say so. */
+  async function relinkWallet() {
+    if (!wallet) await connectWallet();
+    if (linked) return true;
+    const provider = window.solana;
+    linked = await linkWallet(provider, wallet.publicKey);
+    return linked;
+  }
+
+  /**
+   * One creator fee, collected. The page renders its own row and button; this
+   * does prepare -> sign -> relay and reports back. Split out of the feed-only
+   * refreshCreatorFees so the claim_creator_fee instruction has a caller that
+   * does not depend on feed.html's DOM.
+   */
+  async function collectCreatorFee(slug, onProgress) {
+    if (!wallet) await connectWallet();
+    const say = (t) => { if (onProgress) onProgress(t); };
+    say("Preparing…");
+    const prep = await fetch("/api/chain/creator-fee/prepare", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug, creatorPubkey: wallet.publicKey }),
+    });
+    // .catch, because the body is not always JSON: a proxy's 502 page or a
+    // 404 fallthrough is HTML, and an unguarded .json() leaks
+    // "Unexpected token '<'" straight into the row a person is looking at.
+    // Seen in review against a fixture; the real server can do it too.
+    const pj = await prep.json().catch(() => ({}));
+    if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare the transaction.");
+    const w3 = await loadWeb3();
+    const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
+    say("Confirm in your wallet…");
+    const out = await signAndSubmit(tx, () => say("Sending…"));
+    return { signature: out.signature, confirmed: out.confirmed, url: txUrl(out.signature, CLUSTER) };
   }
 
   function short(s) {
@@ -387,6 +494,22 @@ function b64ToBytes(b64) {
    * the decision, and asking for it again inside the sheet would make the
    * card's buttons decorative.
    */
+  /** "Put your name on it": shown only when this device has no X account.
+   *  Silent on any failure — an ask that errors is worse than no ask. */
+  async function offerName(host) {
+    if (!host) return;
+    const did = deviceId();
+    if (!did) return;
+    try {
+      const r = await fetch(`/api/auth/me?deviceId=${encodeURIComponent(did)}`);
+      const j = await r.json();
+      if (Array.isArray(j.accounts) && j.accounts.some((a) => a.provider === "twitter")) return;
+      const back = encodeURIComponent(location.pathname);
+      host.innerHTML = `<p class="cnote chain-name">This call is on chain as <b>${wallet ? shortAddr(wallet.publicKey) : "your wallet"}</b>.
+        <a class="cbtn cbtn--x" href="/api/auth/twitter/start?deviceId=${encodeURIComponent(did)}&return=${back}">Put your name on it with X</a></p>`;
+    } catch (e) { /* nothing to offer */ }
+  }
+
   async function openStakeSheet(slug, presetSide) {
     const body = sheetShell();
     // The question the money is going on. The sheet covers the card that was
@@ -599,8 +722,16 @@ function b64ToBytes(b64) {
               ? `${sol} SOL on ${side.toUpperCase()}${testnet ? `, on ${label}` : ""}.`
               : `${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.`}</p>
             <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+            <div id="chainname"></div>
             <button class="cclose">Done</button>`;
           body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+          // THE RECEIPT MOMENT. The one place X is asked for on the cold path,
+          // and the only moment it has something to sell: the call just landed,
+          // it is on chain under a base58 address, and the person wants it to
+          // be theirs. Asked before the bet it is a toll; asked here it is a
+          // trade. Naming is retroactive (the board resolves handles at read
+          // time), so one tap names this call and every earlier one.
+          void offerName(body.querySelector("#chainname"));
         } catch (e) {
           stakeBtn.disabled = false; refresh();
           if (line) line.textContent = e.message || "Something went wrong, try again.";
@@ -985,6 +1116,9 @@ function b64ToBytes(b64) {
     // a phone), and the session-shared `wallet` every sheet reads.
     connect: connectWallet,
     wallet: function () { return wallet; },
+    linked: function () { return linked; },
+    link: relinkWallet,
+    collectCreatorFee: collectCreatorFee,
     short: short,
   };
 })();

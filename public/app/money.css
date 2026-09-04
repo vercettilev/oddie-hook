@@ -156,3 +156,14 @@
   font-family:var(--mono,monospace);font-size:11.5px;margin:12px 0 0;word-break:break-all;
 }
 .chain-sig a{color:var(--pink-deep,#A3053F)}
+
+/* ---- the receipt moment: the one X ask on the cold path ---- */
+.chain-name{margin:14px 0 4px;padding-top:12px;border-top:1px dashed var(--ink,#0B0D04)}
+.chain-name b{font-family:var(--mono,monospace);font-weight:700}
+.cbtn--x{
+  display:block;margin-top:10px;text-align:center;text-decoration:none;
+  background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4);
+  box-shadow:5px 6px 0 var(--pink,#FF2D78);font-size:17px;padding:13px 14px;
+}
+.cbtn--x:hover{background:#1a1e0a;color:var(--cream,#FBFCF4);transform:translate(-2px,-2px);
+  box-shadow:7px 8px 0 var(--pink,#FF2D78)}
