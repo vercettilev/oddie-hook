@@ -167,3 +167,12 @@
 }
 .cbtn--x:hover{background:#1a1e0a;color:var(--cream,#FBFCF4);transform:translate(-2px,-2px);
   box-shadow:7px 8px 0 var(--pink,#FF2D78)}
+
+/* ---- post your call, from the receipt ---- */
+.cbtn--share{
+  display:block;margin-top:12px;text-align:center;text-decoration:none;
+  background:var(--cream,#FBFCF4);color:var(--ink,#0B0D04);
+  box-shadow:5px 6px 0 var(--ink,#0B0D04);font-size:17px;padding:13px 14px;
+}
+.cbtn--share:hover{background:#fff;color:var(--ink,#0B0D04);transform:translate(-2px,-2px);
+  box-shadow:7px 8px 0 var(--ink,#0B0D04)}

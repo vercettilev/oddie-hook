@@ -3640,7 +3640,11 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
   // See the list route above: an unreadable market publishes no pool at all
   // rather than a zero nobody measured.
   const unreadable = !read.ok && read.reason === "unreadable";
-  const surfacer = await surfacerFor(req.params.slug).catch(() => null);
+  // surfacersFor rather than surfacerFor: the batch shape is the one that
+  // carries the ORIGINATING POST (url, text, author). A market IS a claim
+  // somebody made on X, and the page that takes money against it has to let
+  // the claim be checked at source, not reduce provenance to a handle.
+  const src = (await surfacersFor([req.params.slug]).catch(() => ({} as Record<string, SurfacerInfo>)))[req.params.slug] ?? null;
   const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
   const total = yes + no;
   res.json({
@@ -3655,7 +3659,12 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
     yesPct: unreadable || total <= 0 ? null : Math.max(1, Math.min(99, Math.round((yes / total) * 100))),
     oddsSource: unreadable ? "unreadable" : total > 0 ? "vault" : "unpriced",
-    taggedBy: surfacer?.handle ?? null,
+    taggedBy: src?.handle ?? null,
+    // Null fields, never empty strings: the page decides whether to draw a
+    // quoted card (text known) or just a link (only the url known).
+    sourcePost: src && (src.sourceUrl || src.sourceText)
+      ? { url: src.sourceUrl, text: src.sourceText, author: src.sourceAuthor }
+      : null,
     // Read off the market, not from our constants. A market minted under a
     // different rate keeps it, and an agent that assumed today's numbers would
     // quote the wrong takeout for exactly the pools where it matters.

@@ -130,6 +130,38 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .collect:active{transform:translate(2px,2px);box-shadow:none}
 .collect:focus-visible{outline:3px solid var(--black);outline-offset:4px}
 
+/* ---- the claim, at source ---- */
+.src{border-left:3px solid var(--fg-3);padding:4px 0 4px 16px;margin:0 0 22px}
+.src__who{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--fg-3);margin:0 0 6px}
+.src__who b{color:var(--fg-2)}
+.src__t{font-size:15.5px;line-height:1.5;color:var(--fg-2);margin:0 0 8px;
+  overflow-wrap:anywhere}
+.src__a{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--yellow);text-decoration:none}
+.src__a:hover{text-decoration:underline}
+
+/* ---- the terms this settles by ---- */
+.terms{border:2px solid var(--fg-3);margin:0 0 22px}
+.terms summary{cursor:pointer;list-style:none;padding:12px 16px;
+  font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--cream);display:flex;justify-content:space-between;gap:12px}
+.terms summary::-webkit-details-marker{display:none}
+.terms summary::after{content:"+";font-size:16px;line-height:1;color:var(--yellow)}
+.terms[open] summary::after{content:"\2212"}
+.terms summary:focus-visible{outline:3px solid var(--cream);outline-offset:-3px}
+.terms__b{padding:0 16px 14px;font-size:14.5px;line-height:1.6;color:var(--fg-2);
+  white-space:pre-wrap;overflow-wrap:anywhere}
+.terms__b b{color:var(--cream)}
+
+/* ---- share ---- */
+.share{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--cream);text-decoration:none;
+  border:2px solid var(--cream);padding:9px 13px;display:inline-block;cursor:pointer;
+  background:none}
+.share:hover{background:var(--cream);color:var(--black)}
+.share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+
 /* ---- the money rail ---- */
 .rail{border-top:1px solid var(--line);padding-top:16px;
   font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--fg-3);
@@ -224,6 +256,19 @@ main.wrap{padding-top:34px;padding-bottom:72px}
         + '<button class="collect" id="collect" type="button">Collect winnings</button></div>';
     }
 
+    /* THE CLAIM AT SOURCE. A market is a claim somebody made on X, and this is
+       the page money is put against it on. "Opened by @handle" is a name, not
+       a source. When we hold the post text it is quoted; when we hold only
+       the url it is linked; when we hold neither, nothing is invented. */
+    if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url)) {
+      var sp = m.sourcePost;
+      html += '<blockquote class="src">'
+        + '<p class="src__who">From a post' + (sp.author ? " by <b>" + esc(sp.author) + "</b>" : (m.taggedBy ? " by <b>@" + esc(m.taggedBy) + "</b>" : "")) + "</p>"
+        + (sp.text ? '<p class="src__t">' + esc(sp.text) + "</p>" : "")
+        + (sp.url ? '<a class="src__a" href="' + esc(sp.url) + '" target="_blank" rel="noopener">Check it at source on X</a>' : "")
+        + "</blockquote>";
+    }
+
     /* THE POOL, AND THE THREE THINGS IT CAN BE.
        A number, a knowable nothing, or an admission. The third one used to be
        printed as the second, so a market holding real money invited people to
@@ -261,14 +306,40 @@ main.wrap{padding-top:34px;padding-bottom:72px}
       }
     }
 
+    /* THE TERMS. Resolution here is manual, which makes the published criteria
+       the only thing standing between "we settle by the rule" and "we settle
+       however we like". Taking SOL against a market without showing them is
+       a contract with a blank clause. Collapsed, because most people already
+       know what the question means; present, because some people are about
+       to find out they disagreed about it. */
+    if (m.resolutionCriteria) {
+      html += '<details class="terms"><summary>How this settles</summary>'
+        + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
+    }
+
     var fee = ((m.creatorFeeBps + m.protocolFeeBps) / 100);
     html += '<div class="rail">'
       + "<span><b>" + fee + "%</b> of the pool, once, at resolve</span>"
       + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of it to whoever opened this</span>" : "")
       + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">View the vault on Solana</a></span>' : "")
+      + '<span><button class="share" id="share" type="button">Share</button></span>'
       + "</div>";
 
     view.innerHTML = html;
+
+    /* Share: the native sheet where there is one (phones), the X intent
+       everywhere else. The text is the question and the link, nothing about
+       odds: a shared number goes stale, a shared question does not. */
+    var sh = view.querySelector("#share");
+    if (sh) sh.addEventListener("click", function () {
+      var url = location.origin + location.pathname;
+      var text = m.question;
+      if (navigator.share) {
+        navigator.share({ title: "oddie", text: text, url: url }).catch(function () {});
+        return;
+      }
+      window.open("https://x.com/intent/tweet?text=" + encodeURIComponent(text + " " + url), "_blank", "noopener");
+    });
 
     var collect = view.querySelector("#collect");
     if (collect) collect.addEventListener("click", function () {

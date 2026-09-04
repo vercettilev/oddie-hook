@@ -90,6 +90,12 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 .rec__m .dn{color:var(--pink)}
 .rec__m .na{font-style:italic;text-transform:none;letter-spacing:.02em}
 
+.share{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--cream);text-decoration:none;
+  border:2px solid var(--cream);padding:9px 13px;display:inline-block;cursor:pointer;
+  background:none;margin:0 0 26px}
+.share:hover{background:var(--cream);color:var(--black)}
+.share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .blind{border:2px dashed var(--pink);padding:12px 15px;margin:0 0 20px;
   font-size:13.5px;line-height:1.5;color:var(--cream)}
 .blind b{color:var(--pink)}
@@ -152,6 +158,10 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
           + "</div>";
       }
 
+      // The record is the thing that gets posted. server.ts calls this page
+      // "THE SHAREABLE ARTIFACT" and until now it had no share control.
+      if (recs.length) html += '<button class="share" id="share" type="button">Share this record</button>';
+
       if (j.unpriced) {
         // Precise about WHICH total is missing: the record below still counts
         // these calls, because whether they were right is known from the
@@ -186,6 +196,16 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
       }
 
       view.innerHTML = html;
+
+      var sh = view.querySelector("#share");
+      if (sh) sh.addEventListener("click", function () {
+        var url = location.origin + location.pathname;
+        var who = j.handle ? "@" + j.handle : shortOf(j.wallet);
+        var text = who + ": " + j.wins + "/" + (j.wins + j.losses) + " calls right"
+          + (net === null ? "" : ", " + (net > 0 ? "+" : "") + net.toFixed(2) + " SOL") + ", every one stamped on chain.";
+        if (navigator.share) { navigator.share({ title: "oddie", text: text, url: url }).catch(function () {}); return; }
+        window.open("https://x.com/intent/tweet?text=" + encodeURIComponent(text + " " + url), "_blank", "noopener");
+      });
     })
     .catch(function (e) {
       view.innerHTML = '<h1 class="who">' + (String(e.message) === "unknown wallet" ? "No such wallet" : "Could not load this page")

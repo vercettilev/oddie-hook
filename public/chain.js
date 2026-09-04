@@ -722,9 +722,27 @@ function b64ToBytes(b64) {
               ? `${sol} SOL on ${side.toUpperCase()}${testnet ? `, on ${label}` : ""}.`
               : `${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.`}</p>
             <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+            <a class="cbtn cbtn--share" id="chainshare" href="#" rel="noopener">Post your call</a>
             <div id="chainname"></div>
             <button class="cclose">Done</button>`;
           body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+          // "Tag it. Bet it. Get paid." — the third verb starts here. Every
+          // stake is a post, and every post brings the next stranger to a bot
+          // link. Text carries the side and the entry price, which are the two
+          // things that make a call worth screenshotting, and the market link.
+          {
+            const url = `${location.origin}/m/${encodeURIComponent(slug)}`;
+            const pct = yesOnchainPct == null ? null : (side === "yes" ? yesOnchainPct : noOnchainPct);
+            const text = `Called ${side.toUpperCase()}${pct == null ? "" : ` at ${pct}%`} on: ${question || "this"}. Stamped on chain.`;
+            const a = body.querySelector("#chainshare");
+            a.href = `https://x.com/intent/tweet?text=${encodeURIComponent(`${text} ${url}`)}`;
+            a.target = "_blank";
+            a.onclick = (ev) => {
+              if (!navigator.share) return; // the intent link does the job
+              ev.preventDefault();
+              navigator.share({ title: "oddie", text, url }).catch(() => {});
+            };
+          }
           // THE RECEIPT MOMENT. The one place X is asked for on the cold path,
           // and the only moment it has something to sell: the call just landed,
           // it is on chain under a base58 address, and the person wants it to
