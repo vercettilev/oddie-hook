@@ -8,8 +8,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, getWallet, positionsFor, sellPosition, leaderboard, recordEvent, slugFor, EVENT_NAMES, ensureHandle, setHandle, noticesFor, settleMarket, openSlugs, resolveDevice, crowdSplits, mintShareToken, getShareCall, accuracyFor, categoryHistoryFor, communityPlayerCounts, MARKET_FORMING_MIN, logPageView, metricsSummary, deviceForHandle, resolvedCallsFor, badgesFor, achievementsFor, seasonRankFor, surfacersFor, SEASON_POINTS, callersFor, recentlySettled, homeActivity, celebrationsFor, markCelebrationsSeen, notifyClosingSoon, openCallsSummaryFor, weeklyScoreDeltaFor, rankMovementFor, isNewUserFor, claimTagTeachingMoment, CALL_COST, awardShare, botStateGet, PERSISTENT, setDeviceAvatar, clearDeviceAvatar, deviceAvatarImage, deviceAvatarStamp, parseAvatarDataUrl, avatarStampsForHandles, deviceForHandlePublic,
-} from "./store/markets.js";
+import { createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, sourceUrlKind, pctDeltasFor } from "./store/markets.js";
@@ -20,7 +19,6 @@ import { creatorStatsFor } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
 import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
-import { sortFeedItems, isFeedSort } from "./venues/feedSort.js";
 import type { SurfacerInfo } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls } from "./store/markets.js";
 import type { SettledCall } from "./store/markets.js";
@@ -28,7 +26,7 @@ import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
-import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, SCORE_WEIGHTS, payoutLamports } from "./store/economy.js";
+import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, payoutLamports } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   prepareRefundTx, refundOpensAt,
@@ -38,7 +36,7 @@ import {
 import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
-import { sendSettleMail, sendMail, settleMailBody, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
+import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
@@ -46,7 +44,6 @@ import type { SweepDeps, SweepResult } from "./x/mentionLoop.js";
 import * as X from "./x/client.js";
 import { renderCardPng } from "./card/renderPng.js";
 import { renderBanner } from "./card/renderBanner.js";
-import { renderProfileCard } from "./card/renderProfileCard.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
 import { classifyArchetype, ARCHETYPE_LABEL, genesisShareLine } from "./genesis/archetype.js";
 import { captureGenesisProfile, genesisProfileByHandle, genesisProfileForDevice, type GenesisProfile } from "./genesis/profileStore.js";
@@ -489,11 +486,6 @@ app.post("/api/replycopy", async (req, res) => {
 const ogEsc = (s: string): string =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 
-function moneyShort(n: number): string {
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `$${Math.round(n / 1e3)}K`;
-  return `$${Math.round(n)}`;
-}
 
 /**
  * The rebuilt market page's og tags.
@@ -599,20 +591,6 @@ a{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter
 <body><div class="s"><h1>${escHtml(title)}</h1><p>${body}</p><a href="/board">See who was right</a></div></body></html>`);
 });
 
-// Public profile data (no auth — anyone can view anyone's record).
-app.get("/api/profile/:handle", async (req, res) => {
-  const handle = String(req.params.handle).replace(/^@+/, "");
-  const deviceId = await deviceForHandle(handle).catch(() => null);
-  if (!deviceId) return res.status(404).json({ exists: false });
-  const [rep, recentCalls, hd, weeklyDelta] = await Promise.all([
-    reputationFor(deviceId), resolvedCallsFor(deviceId, 20), displayHandle(deviceId), weeklyScoreDeltaFor(deviceId),
-  ]);
-  res.json({
-    exists: true, handle: hd.handle, accuracy: { ...rep.accuracy, weeklyDelta },
-    recentCalls, badges: rep.badges, rank: rep.rank,
-    tier: rep.tier, topCategory: rep.topCategory, flexLine: rep.flexLine,
-  });
-});
 // Both paths serve the SAME file: /genesis/how is a view of the campaign page,
 // not a second copy of it. The explanation lives in exactly one place, and the
 // boot script switches views off location.pathname.
@@ -666,369 +644,9 @@ app.get(["/board", "/leaderboard"], (_req, res) => {
   res.set("Cache-Control", "no-cache").type("html").send(BOARD_HTML);
 });
 
-/**
- * Feed data: start market first (if given), then same category, then the
- * rest by volume. Optional ?cat= filters to one category (chips).
- */
-// How many past picks a device needs before its history overrides the cold
-// default. Below this, one or two picks is noise, not a taste.
-const FEED_HISTORY_MIN = 3;
 
-// How many tagged markets For You needs before it stops padding itself with
-// untagged ones. Roughly a session's worth of full-screen cards: below it a
-// tagged-only feed would dead-end in a few swipes, which teaches a new visitor
-// that the product is empty rather than that it is tag-driven. Above it the
-// padding is gone and every card in the feed is one somebody tagged.
-const FEED_TAGGED_FLOOR = 12;
 
-/**
- * Re-rank venue cards toward a device's most-played categories, while injecting
- * up to two markets from OTHER categories into the head — engagement bias, not
- * a filter bubble. Leads with the top category, drops an "other" at positions 2
- * and 5, then fills the rest (top category, then the remaining others).
- */
-function personalizeByHistory<T extends { cat: string; m: { volumeUsd: number } }>(list: T[], weight: Map<string, number>): T[] {
-  const w = (c: string) => weight.get(c) ?? 0;
-  const sorted = [...list].sort((a, b) => w(b.cat) - w(a.cat) || b.m.volumeUsd - a.m.volumeUsd);
-  const topCat = sorted[0]?.cat ?? null;
-  if (topCat === null) return sorted;
-  const top = sorted.filter((e) => e.cat === topCat);
-  const others = sorted.filter((e) => e.cat !== topCat);
-  if (!top.length || !others.length) return sorted; // only one category present — nothing to interleave
-  const inject = new Set([1, 4]); // 0-indexed head positions for an "other" card
-  const out: T[] = [];
-  let ti = 0, oi = 0, injected = 0;
-  for (let i = 0; out.length < sorted.length; i++) {
-    if (inject.has(i) && injected < 2 && oi < others.length) { out.push(others[oi++]); injected++; }
-    else if (ti < top.length) out.push(top[ti++]);
-    else if (oi < others.length) out.push(others[oi++]);
-    else break;
-  }
-  return out;
-}
 
-app.get("/api/feed", async (req, res) => {
-  const startSlug = String(req.query.start ?? "");
-  const cat = String(req.query.cat ?? "");
-  // Discovery mode — For You / Trending / New / Resolving Soon. A lens over
-  // the same set, never a filter; see feedSort.ts for each mode's rule and
-  // the honesty constraints behind it.
-  const sortRaw = String(req.query.sort ?? "foryou");
-  const sort = isFeedSort(sortRaw) ? sortRaw : "foryou";
-  // Personalization: 1-3 picked categories rank FIRST (not filter — breadth
-  // stays visible), each block still volume-sorted.
-  const cats = String(req.query.cats ?? "").split(",").map((x) => x.trim()).filter((x) => (CATEGORIES as readonly string[]).includes(x)).slice(0, 3);
-  const feedDevice = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
-  const data = await liveMarketData();
-
-  // An empty feed is now a real state rather than an outage: it means nobody
-  // has tagged an argument yet. Still a 503 so the client keeps its existing
-  // retry, but named for what it is.
-  if (data.all.length === 0) {
-    return res.status(503).json({ error: "no_markets_yet" });
-  }
-
-  // Cards come from the CURATED set: bettable, and in one of the five chips. The
-  // matcher's universe is wider (`data.markets`) and deliberately not scrollable
-  // — a WTI crude market is a fine answer to a WTI take and a bad card to land on
-  // while swiping. The start slug resolves against the raw set, so a market that
-  // drifted to 98% still opens its own page.
-  const enriched = data.feed.map((m) => ({ m, cat: categorize(m) }));
-  let list = cat && cat !== "For you" ? enriched.filter((e) => e.cat === cat) : enriched;
-
-  const start = startSlug ? await getSlug(startSlug, data.all) : undefined;
-  const startCat = start ? categorize(start.market) : null;
-
-  list = [...list].sort((a, b) => {
-    if (startCat) {
-      const ac = a.cat === startCat ? 0 : 1;
-      const bc = b.cat === startCat ? 0 : 1;
-      if (ac !== bc) return ac - bc; // same category as the door first
-    }
-    return b.m.volumeUsd - a.m.volumeUsd; // then trending by volume
-  });
-
-  // Derive, don't write. Slugs are deterministic, so a feed card is shareable
-  // without minting a row; the row appears if and when someone opens it.
-  if (cats.length) {
-    list = [...list].sort((a, b) => {
-      const ai = cats.includes(a.cat) ? 0 : 1, bi = cats.includes(b.cat) ? 0 : 1;
-      if (ai !== bi) return ai - bi;
-      return b.m.volumeUsd - a.m.volumeUsd;
-    });
-  }
-
-  // Ranking signal for the default "For you" feed: explicit picks > play history
-  // > cold default. History bias applies only to a device with a real track of
-  // play; a cold/anonymous visitor (no history) keeps the broad-appeal default.
-  // Logged either way so the choice can be sanity-checked later.
-  let rankSignal: "picked" | "history" | "cold" = cats.length ? "picked" : "cold";
-  if (!cats.length && (!cat || cat === "For you") && !start && feedDevice) {
-    const hist = await categoryHistoryFor(feedDevice).catch(() => [] as { category: string; count: number }[]);
-    const total = hist.reduce((a, h) => a + h.count, 0);
-    if (total >= FEED_HISTORY_MIN) {
-      list = personalizeByHistory(list, new Map(hist.map((h) => [h.category, h.count])));
-      rankSignal = "history";
-      console.log(JSON.stringify({ evt: "feed_rank", signal: "history", device: feedDevice.slice(0, 8), picks: total, top: hist.slice(0, 3) }));
-    }
-  }
-  if (rankSignal !== "history") {
-    console.log(JSON.stringify({ evt: "feed_rank", signal: rankSignal, device: feedDevice ? feedDevice.slice(0, 8) : null }));
-  }
-
-  const scored = list.map((e) => ({ slug: slugFor(e.m), category: e.cat, ...e.m }));
-  const items = scored.slice(0, 40);
-
-  /* --------------------------------------------------- the tagged-only rule --
-   * Everything in For You is there because a person tagged it. A venue market
-   * qualifies the same way a community market does — by having a surfacer —
-   * not by being big.
-   *
-   * This reverses the old cold-visitor rule (broad-appeal venue markets first,
-   * community below). That rule optimised for a trustworthy front door and it
-   * worked, but it made the product read as a market list with a tagging
-   * feature attached. The tag IS the product, so the tag leads.
-   *
-   * Membership is looked up across EVERY candidate, not the top 40: a tagged
-   * market must never be invisible because it is small. Venue markets nobody
-   * tagged still appear, below a divider, as the wider market to tag from.
-   */
-  const taggedFeed = !cat || cat === "For you";
-  const surfaced = taggedFeed
-    ? await surfacedSlugs(scored.map((x) => x.slug)).catch(() => new Set<string>())
-    : new Set<string>();
-
-  // Community markets are the product, but they are NOT the right first thing a
-  // cold, organic visitor sees: a niche insider question with zero context is a
-  // bad front door. So placement is source-aware (see feedItems below). The
-  // on-chain badge is emitted only while ONCHAIN_ENABLED is on (stored pubkeys
-  // stay in the DB either way).
-  let community: CommunityMarket[] = [];
-  try { community = await openCommunityMarkets(); }
-  catch (e) { console.error("[community] feed load failed (serving venue markets only):", (e as Error).message); }
-  // "Market forming": below MARKET_FORMING_MIN distinct players a % is skewable
-  // noise, so we show the call count instead until the market has formed.
-  const playerCounts = await communityPlayerCounts(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
-  // Predictions staked, not headcount — see communityPoolSizes. The card shows
-  // both because they answer different questions ("how much is riding on this"
-  // vs "how many people care") and diverge the moment anyone doubles down.
-  const poolSizes = await communityPoolSizes(community.map((m) => slugFor(m))).catch(() => ({} as Record<string, number>));
-  // Calls in the last 24h — the "happening now" signal. See communityRecentCalls.
-  const recentCalls = await communityRecentCalls(community.map((m) => slugFor(m)), 24).catch(() => ({} as Record<string, number>));
-  const communityItems = community.map((m) => {
-    const slug = slugFor(m);
-    const positions = playerCounts[slug] ?? 0;
-    return {
-      ...m,
-      slug, category: "Community",
-      // The market's own topical pick (Sports/Crypto/…), preserved under a
-      // separate field since `category` above is deliberately flattened to
-      // the single "Community" chip — the client groups the feed's community
-      // cluster by this instead, so a football claim and a crypto claim don't
-      // render back-to-back with no distinction.
-      topicCategory: m.category,
-      community: true as const,
-      positions,
-      forming: positions < MARKET_FORMING_MIN,
-      formingMin: MARKET_FORMING_MIN,
-      onchain: onchainEnabled() && m.onchainPubkey ? explorerUrl(m.onchainPubkey) : null,
-      // The rate SHOWN is the rate CHARGED, read off the market's own row.
-      // It was briefly derived from a batched surfacer lookup, which meant a
-      // single failed query printed 0% on every card at once.
-      creatorFeeBps: m.creatorFeeBps, // the rate the program deducts; shown on the card's stake line
-      poolTokens: poolSizes[slug] ?? 0,
-      callsToday: recentCalls[slug] ?? 0,
-    };
-  });
-
-  let feedItems: Array<Record<string, unknown> & { slug: string }> = items;
-  if (cat === "Community") {
-    // The Community tab is Community markets' correct home — they rank normally here.
-    feedItems = communityItems;
-  } else if (taggedFeed) {
-    // Tagged first, the wider market after. Each block is sorted on its own so
-    // the discovery lenses (Trending / New / Resolving Soon) re-rank WITHIN the
-    // partition instead of dissolving it — a lens should change the order of
-    // the tagged markets, never bury them under untagged ones.
-    // Deduped by slug, and the community item wins.
-    //
-    // These two lists used to be disjoint: communityItems was ours and `scored`
-    // was the venue feed. Removing venues made `scored` a view of the SAME
-    // community markets, so every market that carries a surfacer row appeared
-    // in both and the feed rendered it twice. Measured live before this fix:
-    // five markets, ten cards. The community item is the one to keep because it
-    // carries the fields the card needs (pool, forming, creator fee, on-chain
-    // link); the scored copy has none of them.
-    const seen = new Set(communityItems.map((x) => x.slug));
-    const tagged = [
-      ...communityItems,
-      ...scored.filter((x) => surfaced.has(x.slug) && !seen.has(x.slug)),
-    ];
-    // The wider market is SCAFFOLDING, not a section. It exists only while
-    // there are too few tagged markets to be a feed on their own, and it
-    // removes itself the moment there are — no flag to flip, no date to
-    // remember, and it comes back by itself if tagged supply ever thins out
-    // again. Above the floor the feed is nothing but markets people tagged,
-    // which is the thing the product is actually for.
-    // Deduped against `tagged`, not just against `surfaced`. A community market
-    // with no surfacer row (one made in the app, or an old row whose provenance
-    // was lost) is absent from `surfaced`, so it fell through to here while
-    // already sitting in communityItems above: the first dedupe pass caught four
-    // of the five duplicates and this was the fifth. Whatever is already on the
-    // feed does not get a second card, whichever list it came from.
-    const onFeed = new Set(tagged.map((x) => x.slug));
-    const untagged = tagged.length >= FEED_TAGGED_FLOOR
-      ? []
-      : items.filter((x) => !surfaced.has(x.slug) && !onFeed.has(x.slug));
-    console.log(JSON.stringify({ evt: "feed_tagged", tagged: tagged.length, floor: FEED_TAGGED_FLOOR, scaffolding: untagged.length > 0 }));
-    feedItems = [...sortFeedItems(tagged, sort), ...sortFeedItems(untagged, sort)];
-  }
-
-  // Discovery-mode ordering, applied over the assembled list. "foryou" is a
-  // no-op by design — the ranking above IS the For You ranking. Skipped in the
-  // tagged feed, which has already sorted each side of its partition.
-  if (!taggedFeed) feedItems = sortFeedItems(feedItems, sort);
-
-  // A start slug (a /m/ permalink landing) pins ITS market to the very top —
-  // above even the community block: the shared market is the page's headline,
-  // the rest of the feed is "related" below it.
-  if (start) {
-    const i = feedItems.findIndex((x) => x.slug === start.slug);
-    if (i > 0) feedItems.unshift(feedItems.splice(i, 1)[0]);
-    else if (i === -1) {
-      // Not in the live set (drifted odds, or a resolved community market): the
-      // permalink still opens. Community rows keep community framing either way.
-      const isCommunity = start.market.venue === "community";
-      feedItems.unshift({
-        slug: start.slug,
-        category: isCommunity ? "Community" : categorize(start.market),
-        // A DEFAULT, not an assertion: `...start.market` is spread after it, so
-        // a community market that carries its own rate overrides this. It only
-        // survives for a record that predates the column, and those all predate
-        // any 0-bps market, so the full rate is right for them.
-        ...(isCommunity ? { community: true as const, onchain: null, creatorFeeBps: CREATOR_FEE_BPS_REAL } : {}),
-        ...start.market,
-      });
-    }
-  }
-
-  // "Other" is the categorizer's shrug, and `inFeed` filters it out of the feed
-  // by definition — so shipping it as a chip offers a tab that can never hold a
-  // card. It was harmless while every market landed in a real category; widening
-  // the fetch to all tags made it a promise the feed cannot keep.
-  // The social layer, read from the same rows every screen reads: what the
-  // POPPERS said, alongside what the market prices. One query for the page.
-  // Tag membership for the cards actually being sent. The For You feed already
-  // has it (the wide lookup it partitioned on is a superset); every other tab
-  // asks now, because being tagged is a property of the MARKET, not of the tab
-  // it happens to be shown in — a card that leads with "tagged by @x" in For
-  // You must say the same thing under the Politics chip.
-  const taggedSet = taggedFeed
-    ? surfaced
-    : await surfacedSlugs(feedItems.map((x) => x.slug)).catch(() => new Set<string>());
-  const crowd = await crowdSplits(feedItems.map((x) => x.slug));
-  // How far each line has moved since yesterday's reading. One query for the
-  // page; absent for markets with no prior reading, no movement, or a stale
-  // one, so a missing entry means "nothing to say" rather than "flat".
-  const pctDeltas = await pctDeltasFor(feedItems.map((x) => x.slug)).catch(
-    () => ({} as Record<string, number>),
-  );
-  // The surfacer handle + source tweet per market — the party a "challenge the
-  // other side" reply is aimed at, and the permalink's source-tweet card. One
-  // query for the whole feed; null where a market has no source.
-  const surfacers = await surfacersFor(feedItems.map((x) => x.slug)).catch(
-    () => ({} as Record<string, SurfacerInfo>),
-  );
-  // "Who called what" is permalink-only: fetching it for every card in the feed
-  // would be an N+1 query across a whole page, so it's scoped to just the
-  // pinned start market.
-  const callers = start ? await callersFor(start.slug, 20).catch(() => null) : null;
-  // What each market's tagger actually earned, for the cards that can show a
-  // receipt instead of a promise. Only ever non-empty for RESOLVED markets —
-  // the fee is paid at settlement — so in practice this populates the
-  // permalink of a settled market, not the open ones filling the feed.
-  // Faces for the author rows. Only for handles that actually have an oddie
-  // account and picked one; everyone else falls back to the letter avatar the
-  // client generates, which needs no round trip at all.
-  const avatars = await avatarStampsForHandles(
-    Object.values(surfacers).map((sf) => sf?.handle ?? "").filter(Boolean),
-  ).catch(() => ({} as Record<string, number>));
-  const feesPaid = await creatorFeesPaidFor(feedItems.filter((x) => x.community).map((x) => x.slug))
-    .catch(() => ({} as Record<string, { amount: number; handle: string | null }>));
-  const withCrowd = feedItems.map((x) => {
-    const surfacer = surfacers[x.slug];
-    const paid = feesPaid[x.slug];
-    const extra: Record<string, unknown> = {
-      ...x,
-      crowd: crowd[x.slug] ?? { yes: 0, no: 0 },
-      challengeHandle: surfacer?.handle ?? null,
-      sourceUrl: surfacer?.sourceUrl ?? null,
-      // The source post itself, so a card can SHOW the claim it came from
-      // rather than only linking to it. Null whenever we never got the text
-      // (private/deleted post, or oEmbed unreachable at record time).
-      // Any TAGGED market can show the post it came from, not just a community
-      // one. A venue market somebody tagged has the same story — "this argument
-      // on X is now a market" — and gating the post on `community` was an
-      // artefact of the days when only community markets could be tagged.
-      sourcePost: (x.community === true || taggedSet.has(x.slug)) && surfacer?.sourceText
-        ? { text: surfacer.sourceText, author: surfacer.sourceAuthor, handle: surfacer.handle, url: surfacer.sourceUrl }
-        : null,
-      // Tagging provenance, for EVERY tagged market — community by definition,
-      // and a venue market once somebody tagged it. The card exists because a
-      // person tagged a claim, and that has to be visible on the card itself
-      // rather than inferable from a "community market" chip.
-      //
-      // `tagged` is the flag the client renders from; taggedBy is the name. A
-      // null name means no surfacer was ever recorded, which the client renders
-      // as "opened by oddie" — never a fabricated person, and no longer the
-      // "anonymous" this comment used to promise (that framing asserted a real
-      // tagger we merely couldn't name). An untagged market sends tagged:false
-      // and no name at all.
-      tagged: x.community === true || taggedSet.has(x.slug),
-      taggedBy: x.community === true || taggedSet.has(x.slug) ? (surfacer?.handle ?? null) : null,
-      taggedByAvatar: surfacer?.handle ? (avatars[surfacer.handle.replace(/^@+/, "").toLowerCase()] ?? null) : null,
-      creatorFeePaid: paid ? paid.amount : 0,
-      // Absent, not zero, when there is nothing honest to say — see pctDeltasFor.
-      ...(pctDeltas[x.slug] != null ? { pctDelta: pctDeltas[x.slug] } : {}),
-    };
-    if (callers && start && x.slug === start.slug) {
-      extra.callers = callers.callers;
-      extra.callersTotal = callers.total;
-    }
-    return extra;
-  });
-
-  // The divider between the two halves of the tagged feed, inserted by finding
-  // the first untagged card rather than by index — the start-slug pin can
-  // reorder the list after the partition was built, and a boundary index would
-  // silently drift. Absent when the feed is all one kind (nothing tagged yet,
-  // or nothing untagged left), because a divider with nothing above it teaches
-  // nothing and a divider with nothing below it is a dead end.
-  if (taggedFeed) {
-    const at = withCrowd.findIndex((x) => x.tagged !== true);
-    if (at > 0) {
-      withCrowd.splice(at, 0, {
-        slug: "__wider",
-        sectionHeader: "the wider market",
-        sectionNote: "nobody's tagged these yet. Tag one on X and it lands above, with your name on it.",
-      });
-      // The top half had no header at all, so the feed opened on markets that
-      // were made for an argument and markets listed from a venue with nothing
-      // saying which was which. A first reader's honest conclusion was that
-      // oddie runs all of them — that it is another venue. One line, because
-      // the per-card chips carry the specific attribution.
-      withCrowd.unshift({
-        slug: "__made",
-        sectionHeader: "made for an argument",
-        sectionNote: "these started as a claim on X. Tag @oddiefun under one and yours lands here.",
-      });
-    }
-  }
-
-  const chips: string[] = CATEGORIES.filter((c) => c !== "Other");
-  if (community.length) chips.push("Community");
-  res.json({ categories: ["For you", ...chips], items: withCrowd, sort });
-});
 
 /**
  * The homepage's "Live right now" slots (up to `n`). Resolution order:
@@ -1152,13 +770,6 @@ async function resolveFeatured(n = 4, prefCats: string[] = []): Promise<Array<Re
     };
   });
 }
-/** How many ranked callers the teaser lists at most. */
-const HOME_TOP_CALLERS_SHOWN = 3;
-/** How few it will render with. One: at low volume, requiring three hid the
- *  board entirely, and "here is the person to beat" is a real competition even
- *  with one name in it. What counts as RANKED is unchanged — the store's
- *  min-resolved/provisional bar still decides who is eligible at all. */
-const HOME_MIN_RANKED = 1;
 
 // The client only ever shows HOME_FEATURED_SHOWN cards in the visible "Open
 // markets" section — but it fetches HOME_FEATURED_POOL, and keeps the extras
@@ -1169,111 +780,8 @@ const HOME_MIN_RANKED = 1;
 const HOME_FEATURED_SHOWN = 4;
 const HOME_FEATURED_POOL = 12;
 
-app.get("/api/home", async (req, res) => {
-  // deviceId is optional here (home renders fine cold, no deviceId at all) —
-  // when present it unlocks the one PERSONAL section, openCalls.
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  // The visitor's picked categories, same shape and same validation as
-  // /api/feed's `cats` — the client sends whatever the taste picker stored.
-  // Used to re-rank (never filter) the community markets below.
-  const prefCats = String(req.query.cats ?? "").split(",").map((x) => x.trim())
-    .filter((x) => (CATEGORIES as readonly string[]).includes(x)).slice(0, 3);
-  // Every section degrades to absent on failure, never to a fake: the client
-  // renders each one only when its array is non-empty (see renderHome).
-  const [featured, settled, board, activity, openCalls, newUser] = await Promise.all([
-    resolveFeatured(HOME_FEATURED_POOL, prefCats).catch((e) => { console.error("[home] resolve failed:", (e as Error).message); return []; }),
-    // Two, not three: settled rows look alike, so the third adds repetition
-    // rather than proof — and the 175px it costs is what keeps the leaderboard
-    // teaser below it inside the first desktop screen.
-    recentlySettled(2).catch((e) => { console.error("[home] settled failed:", (e as Error).message); return []; }),
-    leaderboard(20).catch((e) => { console.error("[home] leaderboard failed:", (e as Error).message); return []; }),
-    homeActivity().catch((e) => { console.error("[home] activity failed:", (e as Error).message); return null; }),
-    deviceId
-      ? openCallsSummaryFor(deviceId).catch((e) => { console.error("[home] openCalls failed:", (e as Error).message); return null; })
-      : Promise.resolve(null),
-    // Stage 1 of onboarding: true only for a device with zero calls, ever — a
-    // failure here defaults to false (never falsely cue a returning player).
-    deviceId
-      ? isNewUserFor(deviceId).catch((e) => { console.error("[home] newUser failed:", (e as Error).message); return false; })
-      : Promise.resolve(false),
-  ]);
-  // The viewer's OWN two identities, for the right rail: how good their CALLS
-  // are (reputationFor) and how good their MARKETS are (creatorStatsFor).
-  // Deliberately two objects, not one merged "stats" blob — they answer
-  // different questions and the rail shows them as two separate panels.
-  const [me, creator] = deviceId
-    ? await Promise.all([
-        reputationFor(deviceId).catch(() => null),
-        creatorStatsFor(deviceId).catch(() => null),
-      ])
-    : [null, null];
-  // The rail's "Top creators" teaser — same rows the Leaderboard's creator
-  // board shows, so the teaser and the page it links to can never disagree.
-  const topCreators = (await leaderboardCreators(3).catch(() => []))
-    .map((r, i) => ({ rank: i + 1, handle: r.handle, earnings: r.earnings, marketsCreated: r.marketsCreated }));
-  // Everyone with something on the ladder is eligible. It used to filter on
-  // `provisional`, which meant "too few resolved picks to mean anything" and is
-  // now true for every ladder row by construction, so the teaser emptied itself
-  // as soon as ladder rows filled the top of the board.
-  const ranked = board.filter((r) => r.oddies > 0);
-  const topCallers = ranked.length >= HOME_MIN_RANKED
-    ? ranked.slice(0, HOME_TOP_CALLERS_SHOWN).map((r, i) => ({
-        rank: i + 1, handle: r.handle, oddies: r.oddies, loudMultiplier: r.loudMultiplier,
-      }))
-    : [];
-  // The tag-CTA's points-incentive line reads this live rather than hardcoding
-  // "50" — the two can never drift apart, because there's only one number.
-  // Same reasoning for featuredShown: the client slices `featured` into the
-  // visible section vs. the loop's reserve pool using THIS number, not its own
-  // hardcoded 4, so the two can never disagree about where the pool starts.
-  res.json({
-    featured, settled, topCallers, activity, openCalls, newUser,
-    surfaceReward: SEASON_POINTS.surface, featuredShown: HOME_FEATURED_SHOWN,
-    // The right rail's two panels. `me` is the caller identity (accuracy,
-    // rank, tier), `creator` is the market-maker one (fees earned, markets
-    // made, traders reached). Null for a device we don't know yet.
-    topCreators,
-    me: me ? {
-      handle: me.handle, hasEnough: me.accuracy.hasEnough,
-      oddieScore: me.accuracy.oddieScore, rank: me.rank, tier: me.tier,
-      marketsCreated: me.accuracy.marketsCreated,
-      loudMultiplier: me.accuracy.loudMultiplier,
-    } : null,
-    creator,
-  });
-});
 
-/**
- * The creator's own dashboard — every market this device tagged, with pool,
- * callers and fees earned per market. Device-scoped, not admin: it only ever
- * reveals markets the asking device created and numbers that are public on
- * the cards anyway.
- */
-app.get("/api/my-markets", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const markets = await marketsSurfacedBy(deviceId, 50).catch(() => []);
-  res.json({ markets });
-});
 
-/**
- * Slug data (JSON) for anything that needs one market. Resolves against the raw
- * set: a link already in the wild keeps working, and keeps showing live odds,
- * even after the market drifts past 96%.
- */
-app.get("/api/market/:slug", async (req, res) => {
-  // This is what the client renders a permalink page FROM — same reasoning as
-  // the /m/:slug route above: pricingSet(), so a community market's live pool
-  // price actually reaches the page, not just its own card in the feed.
-  const all = await pricingSet();
-  const rec = await getSlug(req.params.slug, all);
-  if (!rec) return res.status(404).json({ error: "unknown market" });
-  const yesTokens = rec.calls.filter((c) => c.side === "yes").reduce((s, c) => s + c.tokens, 0);
-  const noTokens = rec.calls.filter((c) => c.side === "no").reduce((s, c) => s + c.tokens, 0);
-  res.json({ ...rec, tally: { yesTokens, noTokens, calls: rec.calls.length } });
-});
 
 /**
  * The card as SVG (rasterize to PNG before posting to X). This one is embedded in
@@ -1894,21 +1402,6 @@ app.get("/card/pc/:token.png", async (req, res) => {
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
 });
 
-/** Owner mints the share link for one of their calls. 404 for everyone else. */
-app.post("/api/position/:id/sharelink", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  const id = Number(req.params.id);
-  if (!deviceId || !Number.isInteger(id)) return res.status(400).json({ ok: false });
-  const r = await mintShareToken(id, deviceId);
-  if (!r.ok) return res.status(404).json({ ok: false });
-  // Sharing a position is a scored growth event — this route is where a real
-  // share link gets minted, so it is the only honest place to award it. Deduped
-  // on the call id, so pressing share twice on the same position pays once and
-  // sharing a DIFFERENT position pays again. Fire-and-forget: the share link is
-  // the thing the user asked for and must not wait on a points write.
-  void awardShare(r.slug, deviceId, id).catch(() => {});
-  res.json({ ok: true, url: `${BASE_URL}/market/${r.slug}?pc=${r.token}`, cardUrl: `${BASE_URL}/card/pc/${r.token}.png` });
-});
 
 app.get("/card/:slug.png", async (req, res) => {
   const slug = req.params.slug;
@@ -1931,45 +1424,6 @@ app.get("/card/:slug.png", async (req, res) => {
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
 });
 
-// The public-profile og image — same renderer/cache as the market card.
-app.get("/card/u/:handle.png", async (req, res) => {
-  const handle = String(req.params.handle).replace(/^@+/, "");
-  const key = `@${handle.toLowerCase()}`;
-  const now = Date.now();
-  const hit = pngCache.get(key);
-  if (hit && now - hit.at < PNG_TTL_MS) {
-    return res.type("image/png").set("Cache-Control", "public, max-age=300").send(hit.png);
-  }
-  const deviceId = await deviceForHandle(handle).catch(() => null);
-  if (!deviceId) return res.status(404).send("unknown profile");
-  // One read for every reputation surface — see reputationFor. The card, the
-  // profile API and the leaderboard all describe a person from this same
-  // object, so they cannot disagree about what someone is.
-  // The chain read is best-effort and shared with the money strip's cache: this
-  // card is the image X unfurls, so a slow RPC must cost one stat, never the
-  // card.
-  const [rep, hd, chain] = await Promise.all([
-    reputationFor(deviceId), displayHandle(deviceId), chainMineFor(deviceId).catch(() => null),
-  ]);
-  const acc = rep.accuracy;
-  // The card wears the same stamps the app's sheet does. It used to be fed by
-  // badgesFor, which can only produce one earnable kind, so someone holding
-  // eight achievements shared a card carrying one medallion.
-  const earnedStamps = (await achievementsFor(deviceId, acc, rep.rank,
-    chain ? { ...chain, resolved: chain.settled } : null).catch(() => []))
-    .filter((a) => a.earned);
-  const png = renderCardPng(renderProfileCard({
-    handle: hd.handle, oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
-    streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
-    marketsCreated: acc.marketsCreated, pooledLamports: chain?.pooledLamports ?? 0,
-    loudMultiplier: acc.loudMultiplier,
-    badges: earnedStamps.map((a) => ({ label: a.name, id: a.id })),
-    rankTopPct: rep.rank ? rep.rank.topPct : null,
-    tierLabel: rep.tier ? rep.tier.label : null, flexLine: rep.flexLine,
-  }));
-  pngCache.set(key, { png, at: now });
-  res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
-});
 
 /**
  * The anonymous device id the feed generates and keeps in localStorage. It is a
@@ -1995,48 +1449,8 @@ const deviceIdOf = (body: unknown): string | null => {
  * it server-side regardless of what any client claims. Passing for the first
  * time after an invite records invite_accepted — the loop's success metric.
  */
-/** Honest social proof for the landing: how many markets are live right now.
- *  Counts, no user numbers, no invention. */
-app.get("/api/stats", async (_req, res) => {
-  const data = await liveMarketData();
-  res.json({ liveMarkets: data.markets.length });
-});
 
-app.get("/api/gate", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const gate = await gateFor(deviceId);
-  if (gate.allowed && gate.justAccepted) {
-    recordEvent({ name: "invite_accepted", deviceId }).catch(() => {});
-  }
-  res.json(gate);
-});
 
-app.get("/api/me", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  // openCalls and creator ride along here rather than getting their own request:
-  // the feed already fetches /api/me at boot, and the status strip at the top of
-  // it needs exactly these two. Both degrade to null — the strip omits whatever
-  // did not arrive rather than showing a zero it cannot stand behind.
-  const [wallet, handle, acc, rank, openCalls, creator] = await Promise.all([
-    getWallet(deviceId), displayHandle(deviceId),
-    accuracyFor(deviceId), seasonRankFor(deviceId),
-    openCallsSummaryFor(deviceId).catch(() => null),
-    creatorStatsFor(deviceId).catch(() => null),
-  ]);
-  const badges = await badgesFor(deviceId, acc);
-  // pickStreak drives the persistent streak badge near the balance (2+ only).
-  // `oddies` rides along from the accuracy read this route already performs.
-  // The header pill used to count predictions, which stopped meaning anything
-  // the moment a call became free: a number nobody can spend is not a balance,
-  // it is decoration in the most prominent slot on the screen. The pill now
-  // carries the one number the product has.
-  res.json({ ...wallet, ...handle, pickStreak: acc.streak, oddies: acc.oddieScore ?? 0, badges, rank, openCalls, creator,
-    avatarStamp: await deviceAvatarStamp(deviceId).catch(() => null) });
-});
 
 /**
  * The daily claim is gone, and so is the balance it topped up.
@@ -2053,16 +1467,6 @@ app.get("/api/me", async (req, res) => {
  * can explain. Both halves go together, here and in /api/market/:slug/call.
  */
 
-// A permalink landing (fired by the SPA when it opens on a /m/{slug} page), so
-// the wedge metrics can measure click→pick. Device-attributed; bots that fetch
-// the og tags without running JS never fire it, which is what we want.
-app.post("/api/pageview", async (req, res) => {
-  const slug = String(req.body?.slug ?? "").trim();
-  if (!slug) return res.status(400).json({ error: "slug required" });
-  const deviceId = deviceIdOf(req.body); // optional
-  void logPageView(slug, deviceId || null); // fire-and-forget
-  res.json({ ok: true });
-});
 
 /**
  * One identity, two sources. A linked X account's real @handle wins for display;
@@ -2151,224 +1555,21 @@ async function chainMineFor(deviceId: string): Promise<ChainMine> {
   return val;
 }
 
-app.get("/api/me/earnings", async (req, res) => {
-  const deviceId = deviceIdOf(req.query);
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  try {
-    res.json({ ok: true, ...(await chainMineFor(deviceId)), cluster: cluster() });
-  } catch (e) {
-    console.error("[earnings] failed:", (e as Error).message);
-    res.status(502).json({ ok: false, error: "chain unreachable" });
-  }
-});
 
-app.post("/api/profile/avatar", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const a = parseAvatarDataUrl(req.body?.image);
-  if (!a) return res.status(400).json({ error: "a jpeg or png data URL under 250KB is required" });
-  // Caught rather than thrown: an unhandled rejection in an async handler takes
-  // the whole process with it, which is how a single bad column turned one
-  // broken route into a 502 for everybody.
-  try {
-    await setDeviceAvatar(deviceId, a);
-    res.json({ ok: true, stamp: (await deviceAvatarStamp(deviceId)) ?? Date.now() });
-  } catch (e) {
-    console.error("[avatar] save failed:", (e as Error).message);
-    res.status(502).json({ error: "couldn't save that picture" });
-  }
-});
 
-app.post("/api/profile/avatar/clear", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  await clearDeviceAvatar(deviceId);
-  res.json({ ok: true });
-});
 
-/**
- * Serve a picture by HANDLE, so a feed card can point an <img> straight at it
- * without the server having to inline bytes into every payload. Cached hard and
- * busted by the `v` the feed sends, which is the row's own set_at.
- */
-app.get("/api/avatar/:handle.jpg", async (req, res) => {
-  const handle = String(req.params.handle || "").replace(/^@+/, "").toLowerCase();
-  const dev = handle ? await deviceForHandlePublic(handle).catch(() => null) : null;
-  const img = dev ? await deviceAvatarImage(dev).catch(() => null) : null;
-  if (!img) return res.status(404).end();
-  res.type(img.mime).set("Cache-Control", "public, max-age=604800, immutable").send(img.image);
-});
 
-app.post("/api/handle", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  if (!deviceId) return res.status(400).json({ ok: false, reason: "deviceId required" });
-  const proposed = (req.body as { handle?: unknown })?.handle;
-  if (typeof proposed !== "string") return res.status(400).json({ ok: false, reason: "handle required" });
-  const r = await setHandle(deviceId, proposed);
-  res.status(r.ok ? 200 : 409).json(r);
-});
 
-/** Real notifications: whatever has actually happened to this stream. */
-app.get("/api/notices", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json({ notices: await noticesFor(deviceId) });
-});
 
-// The resolution celebration — fetched on every boot alongside the gate check.
-// Empty on almost every load (the whole point: it only has rows when a
-// position resolved since the device was last shown one), so this stays cheap.
-app.get("/api/celebrations", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json({ celebrations: await celebrationsFor(deviceId) });
-});
-// Fired once the client has actually FINISHED showing the batch (dismissed, or
-// swiped past the last card) — see markCelebrationsSeen for why this is never
-// called at fetch time.
-app.post("/api/celebrations/seen", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  // Numbers OR numeric strings, because notice.id is a bigserial and
-  // node-postgres hands int8 back as a STRING to avoid losing precision past
-  // 2^53. This route only accepted numbers, so every real client sent the ids
-  // it had been given, got a 400, and nothing was ever marked seen: the
-  // celebration modal came back on every single load, forever. The TypeScript
-  // annotation on the query said `number` and was simply wrong about runtime.
-  const raw = req.body?.noticeIds;
-  const isId = (n: unknown) =>
-    (typeof n === "number" && Number.isInteger(n)) || (typeof n === "string" && /^\d+$/.test(n));
-  if (!Array.isArray(raw) || !raw.every(isId)) {
-    return res.status(400).json({ error: "noticeIds must be an array of ids" });
-  }
-  await markCelebrationsSeen(deviceId, raw.map(String));
-  res.json({ ok: true });
-});
 
-/**
- * Stage 2 of new-user onboarding — the "now the real move: tag @oddiefun"
- * teaching moment, shown once inline right after a device's first-ever call
- * locks. The client only calls this when placeCall just reported
- * firstEver:true; the response IS the one-shot gate (see claimTagTeachingMoment) —
- * `show:true` at most once per device, ever, regardless of how many times a
- * firstEver:true call is (mistakenly or not) reported.
- */
-app.post("/api/onboarding/tag-teaching-seen", async (req, res) => {
-  const deviceId = deviceIdOf(req.body);
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json({ show: await claimTagTeachingMoment(deviceId) });
-});
 
 // The /api/onboarding/tour-seen endpoint lived here. Removed with the guided
 // tour itself (see the tombstone in feed.html) — nothing calls it, and a
 // dead one-shot endpoint invites someone to resurrect the tour through it.
 
-/**
- * Open positions carry today's price so the hold-or-sell decision can be made
- * on the screen that offers it. Closed ones carry the edge they scored, and the
- * reputation is the average of exactly those — including the losses.
- */
-app.get("/api/positions", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  // pricingSet(): an open community-market position's nowPct/edgeNow/valueNow
-  // all come from this set (see positionsFor) — venue-only data would make
-  // every open community position read as "the venue isn't quoting this",
-  // permanently, since community markets were never IN getMarketData() at all.
-  const all = await pricingSet();
-  const [wallet, positions, streak] = await Promise.all([getWallet(deviceId), positionsFor(deviceId, all), streakFor(deviceId)]);
-  res.json({ ...positions, tokens: wallet.tokens, streak });
-});
 
-/**
- * The accuracy record — the public reputation metric. Overall accuracy (gated by
- * a minimum resolved-pick count), current + best consecutive-correct streak, and
- * best topic. Feeds the Profile stats and the notification/profile share text.
- */
-app.get("/api/accuracy", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const [acc, weeklyDelta] = await Promise.all([accuracyFor(deviceId), weeklyScoreDeltaFor(deviceId)]);
-  // What a first tag is worth, computed from the same constants that pay it: a
-  // market on the board plus the ledger's surface award. The profile quotes
-  // this number as a price, so it must come from the economy rather than be
-  // typed into the client, where a re-weighting would quietly make it a lie.
-  const firstTagPays = SCORE_WEIGHTS.marketCreated
-    + SEASON_POINTS.surface * SCORE_WEIGHTS.contribution;
-  // The shelf ships with the record, so the profile paints it in one fetch. The
-  // chain half is best-effort: a slow or unreachable RPC costs the four foil
-  // stamps, not the whole screen, and they read as not-yet rather than as an
-  // error the user has to understand.
-  const [rank, chain] = await Promise.all([
-    seasonRankFor(deviceId).catch(() => null),
-    chainMineFor(deviceId).catch(() => null),
-  ]);
-  const achievements = await achievementsFor(deviceId, acc, rank,
-    chain ? { ...chain, resolved: chain.settled } : null).catch(() => []);
-  res.json({ ...acc, weeklyDelta, firstTagPays, achievements });
-});
 
-/**
- * Rank movement — "you moved up 2 spots -> #14" — consumed exactly once per
- * change. Called ONLY from the client's Profile and Leaderboard loaders, never
- * from the balance pill's background /api/me refresh: this read IS the
- * "mark seen" (see rankMovementFor), so wiring it into a poll would burn the
- * one showing before the user ever looked at either screen.
- */
-app.get("/api/rank-movement", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  res.json({ movement: await rankMovementFor(deviceId) });
-});
 
-/**
- * Sell a position at the venue's current price for that side.
- *
- * NOT gated. The curated-launch rope governs OPENING positions (the call flow),
- * not closing them: you may always exit a position you already hold. Gating the
- * sell trapped tokens in a market a non-allowlisted holder couldn't leave — and
- * returned a 403 the screen rendered as "Couldn't sell — try again", a lie that
- * invited an endless pointless retry. Selling only ever returns YOUR own stake
- * to YOUR balance; it grants no access, so there is nothing here to gate.
- *
- * Every failure is a state the screen can render — the row is gone, it was
- * already sold, the venue stopped quoting it — so they come back as ok:false
- * with a reason rather than as an exception. A stale venue is the one case that
- * must NOT go through: selling against a price nobody is quoting any more is
- * how a paper economy quietly prints tokens.
- */
-app.post("/api/position/:id/sell", async (req, res) => {
-  const id = Number(req.params.id);
-  const deviceId = deviceIdOf(req.body);
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "bad position id" });
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  try {
-    // The staleness gate is a venue-data concern (a Kalshi/Polymarket fetch
-    // failure serving a cached price is exactly when NOT to let someone sell
-    // into it) — checked against getMarketData() alone, on purpose. But the
-    // set actually PRICING the sell has to include community markets too, or
-    // livePctOf never finds the market and every community-market sell fails
-    // as "unpriced" — this was true before today's live-pricing change as
-    // well, since getMarketData() never included community markets at all.
-    const data = await liveMarketData();
-    if (data.stale) return res.status(503).json({ ok: false, reason: "stale-odds" });
-    let community: CommunityMarket[] = [];
-    try { community = await openCommunityMarkets(); } catch (e) { /* best-effort, matches pricingSet's own tolerance */ }
-    const result = await sellPosition(id, deviceId, [...data.all, ...community]);
-    if (!result.ok && result.reason === "not-found") return res.status(404).json(result);
-    res.json(result);
-  } catch (err) {
-    // sellPosition re-throws on a DB fault; without this the route 500s with an
-    // HTML body, the client's r.json() throws, and it too reads as "try again".
-    console.error("[sell] unexpected error:", (err as Error).message);
-    res.status(500).json({ ok: false, reason: "server-error" });
-  }
-});
 
 // --- optional identity -------------------------------------------------------
 //
@@ -2630,55 +1831,6 @@ app.get("/api/auth/config", (_req, res) => {
   });
 });
 
-/**
- * Ranked by average edge. Devices are anonymous and stay that way: the id is
- * truncated to something you can recognise as your own row and nobody else's.
- */
-app.get("/api/leaderboard", async (req, res) => {
-  const q = req.query.deviceId;
-  const raw = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  // Board rows are canonical devices; a signed-in browser's own id is not.
-  const me = raw ? await resolveDevice(raw) : null;
-  // 40, not 20: two boards are drawn from this one pool and each shows 20, so
-  // the pool has to be wider than either. It is also the scoring cap, so this
-  // asks for exactly what leaderboard() is willing to score and no more.
-  const [edge, streaks, creators] = await Promise.all([leaderboard(40), leaderboardStreaks(20), leaderboardCreators(20).catch(() => [])]);
-  // The viewer's OWN standing, sent alongside the boards. A leaderboard whose
-  // top 20 you aren't in tells you nothing about yourself, which is exactly
-  // the "accuracy accumulates, so what?" complaint — this is the answer:
-  // where you actually stand, what tier that earns, and what to say about it.
-  const you = me ? await reputationFor(me).catch(() => null) : null;
-  res.json({
-    you: you ? {
-      handle: you.handle, rank: you.rank, tier: you.tier,
-      flexLine: you.flexLine, topCategory: you.topCategory,
-      accuracyPct: you.accuracy.accuracyPct, resolved: you.accuracy.resolved,
-      hasEnough: you.accuracy.hasEnough, minResolved: you.accuracy.minResolved,
-    } : null,
-    // oddies is what the board RANKS by now, and loudMultiplier is how it
-    // says so on the row — both have to survive this reshaping or the client
-    // renders a board that sorts by a number it never received.
-    // Same scored pool, sorted a second way. "Who is loudest" and "who is
-    // right" are different questions and each gets a board; drawing both from
-    // one call keeps their numbers identical and the reads bounded.
-    accurate: edge
-      .filter((r) => r.accuracyPct != null)
-      .sort((a, b) => (b.accuracyPct ?? 0) - (a.accuracyPct ?? 0) || b.closed - a.closed)
-      .slice(0, 20)
-      .map((r, i) => ({
-        rank: i + 1, handle: r.handle, you: r.deviceId === me,
-        accuracyPct: r.accuracyPct, closed: r.closed,
-      })),
-    rows: edge.slice(0, 20).map((r, i) => ({
-      rank: i + 1, handle: r.handle, you: r.deviceId === me,
-      avgEdge: Math.round(r.avgEdge * 10) / 10, closed: r.closed, provisional: r.provisional,
-      accuracyPct: r.accuracyPct, oddies: r.oddies, loudMultiplier: r.loudMultiplier,
-    })),
-    streaks: streaks.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, current: r.current, best: r.best })),
-    // The creator board — who is good at MAKING markets. See leaderboardCreators.
-    creators: creators.map((r, i) => ({ rank: i + 1, handle: r.handle, you: r.deviceId === me, earnings: r.earnings, marketsCreated: r.marketsCreated })),
-  });
-});
 
 /**
  * Placing a play-token call is gone. Settling and selling one is not.
@@ -2697,35 +1849,6 @@ app.get("/api/leaderboard", async (req, res) => {
  */
 
 
-/**
- * Week-1 telemetry. Four names, nothing else accepted; an unknown name is a 400
- * rather than a row, so the table cannot silently grow a fifth event nobody
- * decided on.
- *
- * Answers exactly three questions: how many came, how deep did they scroll, how
- * many tapped. No IP, no user agent, no referrer, no free text. The feed sends
- * these with sendBeacon, so the response body is never read — 204 and move on.
- */
-app.post("/api/ev", async (req, res) => {
-  const name = req.body?.name;
-  const deviceId = deviceIdOf(req.body);
-  if (!(EVENT_NAMES as readonly string[]).includes(name)) return res.status(400).json({ error: "unknown event" });
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-
-  const side = req.body?.side === "yes" || req.body?.side === "no" ? req.body.side : null;
-  const idxRaw = Number(req.body?.idx);
-  const str = (v: unknown, max: number) => (typeof v === "string" && v.length <= max ? v : null);
-
-  await recordEvent({
-    name,
-    deviceId,
-    slug: str(req.body?.slug, 120),
-    idx: Number.isInteger(idxRaw) && idxRaw >= 0 && idxRaw < 1000 ? idxRaw : null,
-    side,
-    cat: str(req.body?.cat, 40),
-  });
-  res.status(204).end();
-});
 
 /**
  * Week-1 seeding aid, for one operator. Paste a tweet, get the slug, card and
@@ -2845,39 +1968,8 @@ app.post("/api/mentions/:id/dismiss", requireAdmin, async (req, res) => {
   res.json({ ok: await dismissMention(id) });
 });
 
-// Loud submissions — phase 1 of the loudness flywheel. A player who posted
-// about oddie pastes their link; it lands in a review queue. Approval (the
-// operator today, an X API read once credits exist) pays SEASON_POINTS.loud_post.
-app.post("/api/loud/submit", async (req, res) => {
-  const deviceId = typeof req.body?.deviceId === "string" && DEVICE_ID.test(req.body.deviceId) ? req.body.deviceId : null;
-  const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  if (!url) return res.status(400).json({ error: "url required" });
-  const r = await submitLoudPost(deviceId, url);
-  if (r.ok) return res.json({ ok: true, status: r.status, dailyCap: LOUD_DAILY_CAP });
-  const message: Record<string, string> = {
-    bad_url: "that's not an X post link — paste the full x.com/…/status/… URL",
-    no_x_account: "connect your X account first — loud points need a real author",
-    not_your_account: "that post isn't from your connected X account",
-    already_submitted: "that post was already submitted",
-    daily_cap: `that's ${LOUD_DAILY_CAP} submissions in 24h — save the next one for tomorrow`,
-  };
-  res.status(400).json({ ok: false, reason: r.reason, error: message[r.reason] ?? r.reason });
-});
 
-app.get("/api/loud/mine", async (req, res) => {
-  const q = req.query.deviceId;
-  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
-  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
-  const [posts, status] = await Promise.all([loudPostsFor(deviceId), loudStatusFor(deviceId)]);
-  res.json({ posts, ...status });
-});
 
-// Public: the latest weekly Loudest picks, for the feed's promo card. Real
-// names being paid is the whole pitch, so this is deliberately not gated.
-app.get("/api/loud/winners", async (_req, res) => {
-  res.json({ winners: await loudWinners() });
-});
 
 app.get("/api/admin/loud/queue", requireAdmin, async (_req, res) => {
   res.json({ queue: await loudQueue() });
