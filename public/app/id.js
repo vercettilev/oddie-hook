@@ -56,8 +56,30 @@ window.OddieId = (function () {
   writeCookie(id);
   writeLocal(id);
 
+  /* Small remembered preferences, on the same cross-host cookie, so a choice
+     made on oddie.fun holds on app.oddie.fun. Used for "I'll do this later" on
+     the X gate: skipping is a first-class outcome (the old app's welcome sheet
+     said exactly that), and a skip that is forgotten on the next page is a
+     nag, not a choice. Days-bounded so it is never forever. */
+  function recall(key) {
+    try {
+      var m = document.cookie.match(new RegExp("(?:^|;\\s*)oddie_" + key + "=([^;]+)"));
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch (e) { return null; }
+  }
+  function remember(key, value, days) {
+    try {
+      document.cookie = "oddie_" + key + "=" + encodeURIComponent(value)
+        + ";path=/;max-age=" + Math.round((days || 7) * 86400) + ";samesite=lax"
+        + (location.protocol === "https:" ? ";secure" : "")
+        + domainAttr();
+    } catch (e) {}
+  }
+
   return {
     get: function () { return id; },
+    recall: recall,
+    remember: remember,
     /* Dev/test seam: says which store the id came from on this load. */
     _source: readCookie() === id ? "cookie" : "fresh",
   };

@@ -98,6 +98,13 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   box-shadow:6px 7px 0 var(--yellow-deep);transition:transform .12s ease,box-shadow .12s ease}
 .big:hover{background:var(--yellow-hi);transform:translate(-2px,-2px);box-shadow:8px 9px 0 var(--yellow-deep)}
 .big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
+/* The way past the gate. Quiet on purpose: findable, never competing with
+   the button that does the thing. */
+.later{display:block;margin-top:14px;background:none;border:0;padding:8px 0;cursor:pointer;
+  font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--fg-3)}
+.later:hover{color:var(--cream)}
+.later:focus-visible{outline:2px solid var(--cream);outline-offset:3px}
 .empty{border:2px dashed var(--fg-3);padding:24px 22px;font-size:15px;line-height:1.65;
   color:var(--fg-2)}
 .empty b{color:var(--cream)}
@@ -159,7 +166,16 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
       + "<p>Markets opened by people you follow, your own record, your name on the board. "
       + "Continue with X and it is yours; a wallet is only asked for when you take a side.</p>"
       + '<a class="big" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">Continue with X</a>'
+      + '<button class="later" id="later" type="button">I\'ll do this later</button>'
       + "</div>";
+    // Skipping is a first-class outcome, not a failure. Remembered for a week
+    // on the cross-host cookie so the next page is not the same question; the
+    // ask comes back where it pays, after a call lands.
+    document.getElementById("later").addEventListener("click", function () {
+      if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
+      document.getElementById("sub").textContent = "Newest first. Every one of them started as a tweet.";
+      loadMarkets();
+    });
   }
 
   var did = (window.OddieId && window.OddieId.get()) || "";
@@ -171,7 +187,8 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
     // An unreachable /api/auth/me is not "no X": the list still renders rather
     // than locking out somebody who is connected because a request blinked.
     var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
-    if (XGATE && me && !hasX) return xgate();
+    var skipped = !!(window.OddieId && window.OddieId.recall && window.OddieId.recall("xlater"));
+    if (XGATE && me && !hasX && !skipped) return xgate();
     return loadMarkets();
   });
 

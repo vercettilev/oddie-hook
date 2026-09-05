@@ -68,6 +68,11 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .big:active:not(:disabled){transform:translate(2px,3px);box-shadow:2px 3px 0 var(--yellow-deep)}
 .big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
 .big:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.later{display:block;margin-top:14px;background:none;border:0;padding:8px 0;cursor:pointer;
+  font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--fg-3)}
+.later:hover{color:var(--cream)}
+.later:focus-visible{outline:2px solid var(--cream);outline-offset:3px}
 .deep{display:inline-block;margin-top:12px;font-family:var(--mono);font-size:12px;
   font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--yellow)}
 
@@ -176,7 +181,15 @@ h2 b{color:var(--yellow);font-weight:800}
       + "your wallet is only asked for when you take a side.</p>"
       + '<a class="big" id="xconnect" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did)
       + '&return=%2Fyou">Continue with X</a>'
+      + '<button class="later" id="later" type="button">I\'ll do this later</button>'
       + "</div>";
+    // "Later" here means: go straight to the wallet. The page is wallet-scoped
+    // anyway; X only adds the name. Remembered for a week, cross-host.
+    document.getElementById("later").addEventListener("click", function () {
+      if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
+      sub.textContent = "What you have riding, and what is waiting to be collected";
+      load();
+    });
   }
 
   function gate(msg, deepLink) {
@@ -354,7 +367,8 @@ h2 b{color:var(--yellow);font-weight:800}
       // /api/auth/me is NOT treated as "no X" — that would lock out somebody
       // who is connected because a request blinked — so the page proceeds.
       var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
-      if (XGATE && me && !hasX) return xgate();
+      var skipped = !!(window.OddieId && window.OddieId.recall && window.OddieId.recall("xlater"));
+      if (XGATE && me && !hasX && !skipped) return xgate();
       load();
     });
   }
