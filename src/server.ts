@@ -105,6 +105,11 @@ const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 const APP_HOST = (process.env.APP_HOST ?? "").trim().toLowerCase();
 const APP_BASE_URL = APP_HOST ? `https://${APP_HOST}` : BASE_URL;
 const isAppHost = (req: express.Request): boolean => Boolean(APP_HOST) && req.hostname.toLowerCase() === APP_HOST;
+/** The absolute origin a local path should be reached on: app paths on the
+ *  app host, everything else on the apex. Used wherever the server builds a
+ *  redirect from a path, so an X sign-in started on the app comes back to the
+ *  app in one hop instead of via a 301 off the apex. */
+const homeFor = (path: string): string => (APP_HOST && hostFor(path) === "app" ? APP_BASE_URL : BASE_URL);
 /** Which host a path belongs on. "shared" is served by both (APIs, assets). */
 function hostFor(path: string): "app" | "apex" | "shared" {
   if (/^\/(m|market|w)\//.test(path) || /^\/(you|positions|board|leaderboard|markets)\/?$/.test(path) || path.startsWith("/@")) return "app";
@@ -1664,7 +1669,7 @@ app.get("/api/auth/:provider/start", (req, res) => {
   const bail = (why: string) => {
     const dest = returnTo ?? "/markets";
     const sep = dest.includes("?") ? "&" : "?";
-    return res.redirect(`${BASE_URL}${dest}${sep}auth_error=${encodeURIComponent(why)}`);
+    return res.redirect(`${homeFor(dest)}${dest}${sep}auth_error=${encodeURIComponent(why)}`);
   };
   const p = req.params.provider;
   if (!isProvider(p)) return bail("unknown_provider");
@@ -1694,9 +1699,9 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
   const back = (params: string) => {
     if (pendingAuth?.returnTo) {
       const sep = pendingAuth.returnTo.includes("?") ? "&" : "?";
-      return res.redirect(`${BASE_URL}${pendingAuth.returnTo}${sep}${params}`);
+      return res.redirect(`${homeFor(pendingAuth.returnTo)}${pendingAuth.returnTo}${sep}${params}`);
     }
-    return res.redirect(`${BASE_URL}/markets?${params}`);
+    return res.redirect(`${APP_BASE_URL}/markets?${params}`);
   };
   if (!isProvider(p)) return back("auth_error=unknown_provider");
 
@@ -1726,7 +1731,7 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
     // person came to play this one, not to meet the generic feed.
     if (pendingAuth.returnTo) {
       const sep = pendingAuth.returnTo.includes("?") ? "&" : "?";
-      return res.redirect(`${BASE_URL}${pendingAuth.returnTo}${sep}connected=${p}`);
+      return res.redirect(`${homeFor(pendingAuth.returnTo)}${pendingAuth.returnTo}${sep}connected=${p}`);
     }
     return back(`connected=${p}`);
   } catch (err) {
