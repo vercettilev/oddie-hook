@@ -154,7 +154,11 @@ const stampGate = (html: string): string =>
 
 /** Kapaliyken herkesi kampanyaya gonder: 404 vermek yerine gidilecek bir yer. */
 function appClosed(res: express.Response): void {
-  res.set("Cache-Control", "no-store").redirect(302, "/genesis");
+  // Absolute, to the apex. A relative "/genesis" resolves on whichever host
+  // the request hit; on app.oddie.fun that is an apex path, which the split
+  // then 301s back to oddie.fun: two hops for every closed-app visit, and the
+  // closed app is the path every visitor takes until APP_OPEN flips.
+  res.set("Cache-Control", "no-store").redirect(302, `${BASE_URL}/genesis`);
 }
 const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf8");
 const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html"), "utf8");
