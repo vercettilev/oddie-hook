@@ -8,19 +8,15 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
-import { emailsFor, mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, gateFor, addToAllowlist, allowlistRows, streakFor, leaderboardStreaks, leaderboardWinnings, awardLoud, isoWeekOf, submitLoudPost, loudPostsFor, loudQueue, decideLoudPost, LOUD_DAILY_CAP, loudWinners, ODDIES_PER, loudStatusFor } from "./store/markets.js";
-import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies, type CommunityMarket } from "./store/markets.js";
-import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, surfacedSlugs, handleFromSourceUrl, sourceUrlKind, pctDeltasFor } from "./store/markets.js";
-import { reputationFor } from "./store/markets.js";
+import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
+import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
+import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
+import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
-import { creatorFeesPaidFor } from "./store/markets.js";
-import { creatorStatsFor } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
-import { leaderboardCreators, marketsSurfacedBy } from "./store/markets.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, emailsForWallets, walletsInMarket, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls } from "./store/markets.js";
+import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls } from "./store/markets.js";
 import type { SettledCall } from "./store/markets.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -36,7 +32,7 @@ import {
 import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
-import { sendSettleMail, sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
+import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
@@ -2832,11 +2828,8 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
   const ok = await markCommunityResolved(slug, outcome);
   if (!ok) return res.status(409).json({ error: "unknown or already-resolved community market" });
   const settled = await settleMarket(slug, outcome);
-  await emailSettled(slug, outcome, settled);
-  // The wallet half of the same notice. Fired, never awaited: the play emails
-  // above are part of settling, this one is an announcement.
-  // Settlement reaches stakers on X (the resolution reply); the email path
-  // went with Google sign-in, which had no door outside feed.html.
+  // Settlement is announced on X (the resolution reply). The email path went
+  // with Google sign-in, which had no door outside the retired feed.
   // Real-stakes counterpart: resolve the SAME market on-chain so claim_winnings
   // has an outcome to pay against. Best-effort and entirely after the response-
   // determining work above — the real (virtual) economy never waits on devnet.
@@ -3714,7 +3707,6 @@ if (process.env.ALLOW_TEST_SETTLE === "1") {
     const { slug, outcome } = req.body as { slug?: string; outcome?: string };
     if (!slug || (outcome !== "yes" && outcome !== "no")) return res.status(400).json({ error: "slug and outcome required" });
     const settled = await settleMarket(slug, outcome);
-    await emailSettled(slug, outcome, settled);
     res.json({ settled });
   });
 }
@@ -3724,40 +3716,6 @@ if (process.env.ALLOW_TEST_SETTLE === "1") {
  * a verified Google address gets exactly one message. Failures are logged and
  * swallowed — the tokens are already paid; mail is a courtesy, not a ledger.
  */
-/**
- * Tell the WALLETS that a market they staked in has settled.
- *
- * emailSettled below reaches play-economy positions by deviceId. A wallet-only
- * staker has no deviceId anywhere in that path, so the people with actual SOL
- * on the line were the only ones the product could not reach: they learned by
- * revisiting and pressing Check, or they never learned at all.
- *
- * Reachability is entirely opt-in and no link is created here. A wallet is
- * reachable only if its owner signed the wallet-link challenge AND signed in
- * with Google on the same device; anything less and they simply get nothing.
- *
- * Best-effort and never awaited into the response: a mailer failure must not
- * touch a settlement that has already happened.
- */
-async function emailSettled(slug: string, outcome: "yes" | "no", settled: { deviceId: string | null; side: "yes" | "no"; stake: number; entryPct: number; proceeds: number }[]): Promise<void> {
-  try {
-    const rec = await getSlug(slug);
-    const question = rec?.market.question ?? slug;
-    const devices = [...new Set(settled.map((x) => x.deviceId).filter((d): d is string => Boolean(d)))];
-    const emails = await emailsFor(devices);
-    for (const p of settled) {
-      const to = p.deviceId ? emails[p.deviceId] : undefined;
-      if (!to) continue;
-      await sendSettleMail({
-        to, question, side: p.side, entryPct: p.entryPct, outcome,
-        proceeds: p.proceeds, stake: p.stake,
-        positionsUrl: `${APP_BASE_URL}/you`,
-      });
-    }
-  } catch (err) {
-    console.error("[mail] settle batch failed:", (err as Error).message);
-  }
-}
 
 /**
  * The venue auto-settle sweep is gone with the venues.
@@ -3945,6 +3903,6 @@ if (X_BOT_ENABLED) {
 const PORT = Number(process.env.PORT ?? 3000);
 app.listen(PORT, () =>
   console.log(
-    `oddie on ${BASE_URL} (port ${PORT}) — inference ${inferenceProvider().anthropic ? "anthropic" : inferenceProvider().host} (${inferenceProvider().model}) — semantic matching ${semanticEnabled() ? "ON" : `OFF (set ${SEMANTIC_KEY_ENV} to enable)`}; claim extraction ${extractEnabled() ? "ON" : `OFF (set ${EXTRACT_KEY_ENV} to enable)`}; settle mail ${mailEnabled() ? "ON" : `DRY-RUN (set ${MAIL_KEY_ENV} to send)`}`,
+    `oddie on ${BASE_URL} (port ${PORT}) — inference ${inferenceProvider().anthropic ? "anthropic" : inferenceProvider().host} (${inferenceProvider().model}) — semantic matching ${semanticEnabled() ? "ON" : `OFF (set ${SEMANTIC_KEY_ENV} to enable)`}; claim extraction ${extractEnabled() ? "ON" : `OFF (set ${EXTRACT_KEY_ENV} to enable)`}; mail ${mailEnabled() ? "ON" : `DRY-RUN (set ${MAIL_KEY_ENV} to send)`}`,
   ),
 );

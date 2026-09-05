@@ -5697,25 +5697,6 @@ export async function getShareCall(token: string): Promise<ShareCall | null> {
  * for the automated channel, and the X-mention worklist for the manual one.
  */
 
-/** device -> verified Google email, for every device in the list that has one. */
-export async function emailsFor(deviceIds: string[]): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  if (deviceIds.length === 0) return out;
-  if (!PERSISTENT) {
-    const { _memAccounts } = await import("./accounts.js");
-    for (const a of _memAccounts) {
-      if (a.provider === "google" && a.email && deviceIds.includes(a.canonicalDevice)) out[a.canonicalDevice] = a.email;
-    }
-    return out;
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ canonical_device: string; email: string }>(
-    `SELECT DISTINCT ON (canonical_device) canonical_device, email FROM account
-      WHERE provider = 'google' AND email IS NOT NULL AND canonical_device = ANY($1)
-      ORDER BY canonical_device, created_at`, [deviceIds]);
-  for (const r of rows) out[r.canonical_device] = r.email;
-  return out;
-}
 
 export interface MentionCandidate {
   callId: number;
@@ -6840,49 +6821,6 @@ export async function slugForOnchainPubkey(pubkey: string): Promise<string | nul
 export function _resetChainEntries(): void { memChainEntries.length = 0; }
 
 
-/**
- * Reachable email addresses for a set of WALLETS.
- *
- * The chain knows a wallet; the mailer knows an address; nothing joined them,
- * so a wallet-only staker could win and never be told. This walks the link the
- * user opted into: /api/auth/wallet/verify stores the wallet as a `phantom`
- * account row against a canonical device, and a Google sign-in stores the
- * address against that same device. A wallet with no phantom row, or a device
- * with no Google row, simply is not reachable and gets nothing.
- *
- * NO NEW LINK IS CREATED HERE. The privacy stance is that a device→wallet
- * association is never inferred from a stake; this only reads one the user
- * deliberately made by signing a challenge, and reaches the address they
- * already gave us "for settlement emails only".
- */
-export async function emailsForWallets(wallets: string[]): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  if (wallets.length === 0) return out;
-  const { _memAccounts } = await import("./accounts.js");
-  if (!PERSISTENT) {
-    for (const w of wallets) {
-      const link = _memAccounts.find((a) => a.provider === "phantom" && a.uid === w);
-      if (!link) continue;
-      const google = _memAccounts.find((a) => a.provider === "google" && a.email && a.canonicalDevice === link.canonicalDevice);
-      if (google?.email) out[w] = google.email;
-    }
-    return out;
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ wallet: string; email: string }>(
-    `SELECT DISTINCT ON (w.provider_uid) w.provider_uid AS wallet, g.email
-       FROM account w
-       JOIN account g
-         ON g.canonical_device = w.canonical_device
-        AND g.provider = 'google'
-        AND g.email IS NOT NULL
-      WHERE w.provider = 'phantom' AND w.provider_uid = ANY($1::text[])
-      ORDER BY w.provider_uid, g.created_at`,
-    [wallets],
-  );
-  for (const r of rows) out[r.wallet] = r.email;
-  return out;
-}
 
 /** Every wallet that stamped an entry on this market, for the settlement
  *  notice. First stakes only, which is all we need: a wallet that topped up

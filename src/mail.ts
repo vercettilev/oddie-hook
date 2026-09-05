@@ -1,7 +1,9 @@
-// Settlement emails, and nothing else. One template: what you called, what
-// happened, what it paid, a link to your positions. No marketing, no streaks,
-// no "come back and play" — the resolution IS the reason to come back, and
-// dressing it up would teach people to ignore the sender.
+// One bare mailer, used by the operator invite flow (/api/invites/send).
+//
+// The settlement template that lived here went with Google sign-in on
+// 2026-09-05: settlement is announced on X, where the identity is, and an
+// email path that could only ever reach Google-linked accounts had no door
+// left once the old feed retired.
 //
 // Provider: Resend (https://resend.com) — one POST, free tier of 100/day,
 // which is orders of magnitude above current volume. RESEND_API_KEY enables
@@ -20,51 +22,16 @@ export const mailEnabled = (): boolean => Boolean(process.env[API_KEY_ENV]);
 // Set MAIL_FROM to an oddie.fun sender once the domain is verified in Resend.
 const FROM = () => process.env.MAIL_FROM ?? "Oddie <info@oddie.fun>";
 
-export interface SettleMail {
-  to: string;
-  question: string;
-  side: "yes" | "no";
-  entryPct: number;
-  outcome: "yes" | "no";
-  proceeds: number;
-  stake: number;
-  positionsUrl: string;
-}
-
-export function settleMailBody(m: SettleMail): { subject: string; html: string } {
-  const won = m.side === m.outcome;
-  const subject = won
-    ? `you called it — ${m.question}`
-    : `resolved ${m.outcome.toUpperCase()} — ${m.question}`;
-  const verdict = won
-    ? `You called <b>${m.side.toUpperCase()}</b> at ${m.entryPct}% and the market resolved <b>${m.outcome.toUpperCase()}</b>. Your ${m.stake} tokens paid <b>${m.proceeds}</b>.`
-    : `You called <b>${m.side.toUpperCase()}</b> at ${m.entryPct}% — the market resolved <b>${m.outcome.toUpperCase()}</b>. The ${m.stake} tokens didn't come back this time.`;
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:520px">
-  <p style="font-size:17px;font-weight:700;margin:0 0 12px">${esc(m.question)}</p>
-  <p style="margin:0 0 16px">${verdict}</p>
-  <p style="margin:0 0 20px"><a href="${esc(m.positionsUrl)}" style="color:#14607f">your positions →</a></p>
-  <p style="color:#6B7A88;font-size:12.5px;margin:0">oddie sends one email per resolved position, nothing else.</p>
-</div>`;
-  return { subject, html };
-}
-
-const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]!));
 
 /** The bare send: any subject/html to any address. Dry-run without the key. */
 export async function sendMail(msg: { to: string; subject: string; html: string }): Promise<"sent" | "dry-run" | "failed"> {
   return coreSend(msg.to, msg.subject, msg.html);
 }
 
-/** Send, or dry-run-log when the key is absent. Never throws: a mail failure
- *  must not touch settlement, which already happened. */
-export async function sendSettleMail(m: SettleMail): Promise<"sent" | "dry-run" | "failed"> {
-  const { subject, html } = settleMailBody(m);
-  return coreSend(m.to, subject, html, m.positionsUrl);
-}
 
-async function coreSend(to: string, subject: string, html: string, ctx?: string): Promise<"sent" | "dry-run" | "failed"> {
+async function coreSend(to: string, subject: string, html: string): Promise<"sent" | "dry-run" | "failed"> {
   if (!mailEnabled()) {
-    console.log(JSON.stringify({ evt: "mail-dry-run", to, subject, ctx }));
+    console.log(JSON.stringify({ evt: "mail-dry-run", to, subject }));
     return "dry-run";
   }
   try {

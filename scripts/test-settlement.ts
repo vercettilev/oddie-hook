@@ -228,18 +228,6 @@ console.log("\nshare tokens: owner-minted, stable, resolving");
   check("an unknown token is null", (await getShareCall("nope-token-xx")) === null);
 }
 
-console.log("\nsettlement email lookup (google address, verified only)");
-{
-  const { emailsFor } = await import("../src/store/markets.js");
-  const { linkAccount } = await import("../src/store/accounts.js");
-  await linkAccount("mail-dev-000001", { provider: "google", uid: "g-mail-1", name: "Maily", email: "maily@example.com" });
-  await linkAccount("nomail-dev-00001", { provider: "google", uid: "g-mail-2", name: "NoMail" }); // no email claim
-  const map = await emailsFor(["mail-dev-000001", "nomail-dev-00001", "stranger-dev-99"]);
-  check("a google account's verified email resolves", map["mail-dev-000001"] === "maily@example.com", JSON.stringify(map));
-  check("no email, no entry", !("nomail-dev-00001" in map));
-  check("unknown devices are absent", !("stranger-dev-99" in map));
-}
-
 console.log("\nholders and scalpers share one leaderboard metric");
 {
   const rows = await leaderboard(20);
