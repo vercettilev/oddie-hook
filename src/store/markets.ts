@@ -1149,16 +1149,6 @@ async function hasAnyCallFor(deviceId: string): Promise<boolean> {
   return rows[0]?.e === true;
 }
 
-/** Home page onboarding: true for a device that has never placed a call — the
- *  gate for stage 1 of the two-stage onboarding (the "make your first call"
- *  cue). deviceId here is NOT pre-resolved (unlike most exports) because the
- *  caller — /api/home — already has a raw deviceId and this is a thin negation
- *  of hasAnyCallFor; resolving through an account is still correct since a
- *  signed-in device's history lives on its canonical device either way. */
-export async function isNewUserFor(rawDeviceId: string): Promise<boolean> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  return !(await hasAnyCallFor(deviceId));
-}
 
 /**
  * The one write of paper trading: deduct the stake and record the call, or do
@@ -2066,43 +2056,7 @@ export async function deviceForHandle(rawHandle: string): Promise<string | null>
   return deviceForTwitterHandle(rawHandle);
 }
 
-export interface ResolvedCall {
-  question: string;
-  side: "yes" | "no";
-  oddsPct: number;        // the price they took on their side
-  outcome: "yes" | "no";  // how the market resolved
-  correct: boolean;
-  closedAt: string;
-}
 
-/** A device's recent RESOLVED calls (exit_pct 0/100), newest first — the public
- *  profile's track feed. Sold positions (exit 1–99) are excluded, same rule as
- *  the accuracy record. */
-export async function resolvedCallsFor(rawDeviceId: string, limit = 20): Promise<ResolvedCall[]> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const n = Math.max(1, Math.min(50, Math.floor(limit)));
-  const shape = (side: "yes" | "no", exit: number, pct: number, question: string, closedAt: string): ResolvedCall => {
-    const correct = exit === 100;
-    return { question, side, oddsPct: Math.max(1, Math.min(99, Math.round(pct))), outcome: correct ? side : side === "yes" ? "no" : "yes", correct, closedAt };
-  };
-  if (!PERSISTENT) {
-    return memCalls
-      .filter((c) => c.deviceId === deviceId && c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
-      .sort((a, b) => (a.closedAt! < b.closedAt! ? 1 : a.closedAt! > b.closedAt! ? -1 : b.id - a.id))
-      .slice(0, n)
-      .map((c) => shape(c.side, c.exitPct as number, c.entryPct, c.question, c.closedAt!));
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ side: "yes" | "no"; exit_pct: number; pct_at: number; question: string; closed_at: Date }>(
-    `SELECT mc.side, mc.exit_pct, mc.pct_at, s.question, mc.closed_at
-       FROM market_call mc JOIN market_slug s ON s.slug = mc.slug
-      WHERE mc.device_id = $1 AND mc.closed_at IS NOT NULL
-        AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
-      ORDER BY mc.closed_at DESC, mc.id DESC LIMIT $2`,
-    [deviceId, n],
-  );
-  return rows.map((r) => shape(r.side, r.exit_pct, r.pct_at, r.question, r.closed_at.toISOString()));
-}
 
 /* ------------------------------------------------------ resolution celebration --
  * The app's one required emotional beat: a device that opens with resolved
@@ -2114,120 +2068,12 @@ export async function resolvedCallsFor(rawDeviceId: string, limit = 20): Promise
  * run twice: once excluding the newly-resolved call, once including it).
  */
 
-export interface Celebration {
-  noticeId: number;
-  callId: number;
-  slug: string;
-  question: string;
-  side: "yes" | "no";
-  outcome: "yes" | "no";
-  won: boolean;
-  oddsPct: number;              // the price they took on their side
-  proceeds: number | null;      // points paid out — null on a loss
-  scoreBefore: number;          // 500 (the neutral baseline) if not hasEnough yet
-  scoreAfter: number | null;    // null only if still short of the accuracy floor
-  streakBefore: number;
-  streakAfter: number;
-  streakExtended: boolean;      // a genuinely new streak worth naming (>= 2)
-  challengeHandle: string | null;
-  settledAt: string;
-}
 
 type CelebrationRow = {
   callId: number; slug: string; question: string; side: "yes" | "no";
   entryPct: number; exitPct: number; proceeds: number | null; category: string; closedAt: string;
 };
 
-export async function celebrationsFor(rawDeviceId: string): Promise<Celebration[]> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const prob = (pctAt: number) => clamp(pctAt / 100, 0.01, 0.99);
-
-  let rows: CelebrationRow[];
-  let unseenCallIds: Set<number>;
-  let noticeIdByCall: Map<number, number>;
-
-  if (!PERSISTENT) {
-    const calls = memCalls
-      .filter((c) => c.deviceId === deviceId && c.closedAt && (c.exitPct === 100 || c.exitPct === 0) && c.entryPct != null)
-      .sort((a, b) => (a.closedAt! < b.closedAt! ? -1 : a.closedAt! > b.closedAt! ? 1 : a.id - b.id));
-    rows = calls.map((c) => ({
-      callId: c.id, slug: c.slug, question: c.question, side: c.side, entryPct: c.entryPct,
-      exitPct: c.exitPct as number, proceeds: c.proceeds,
-      category: memCommunity.get(c.slug)?.category ?? categorizeText(c.question),
-      closedAt: c.closedAt!,
-    }));
-    const unseen = memNotices.filter((n) =>
-      n.deviceId === deviceId && (n.kind === "settle_win" || n.kind === "settle_loss") && !n.seenAt);
-    unseenCallIds = new Set(unseen.map((n) => n.callId).filter((x): x is number => x != null));
-    noticeIdByCall = new Map(unseen.map((n) => [n.callId as number, n.id]));
-  } else {
-    await ensureSchema();
-    const { rows: qr } = await db().query<{
-      call_id: number; slug: string; question: string; side: "yes" | "no"; pct_at: number;
-      exit_pct: number; proceeds: number | null; comm_cat: string | null; closed_at: Date;
-    }>(
-      `SELECT mc.id AS call_id, mc.slug, s.question, mc.side, mc.pct_at, mc.exit_pct, mc.proceeds,
-              cm.category AS comm_cat, mc.closed_at
-         FROM market_call mc
-         JOIN market_slug s ON s.slug = mc.slug
-         LEFT JOIN community_market cm ON cm.slug = mc.slug
-        WHERE mc.device_id = $1 AND mc.closed_at IS NOT NULL
-          AND mc.exit_pct IN (0, 100) AND mc.pct_at IS NOT NULL
-        ORDER BY mc.closed_at ASC, mc.id ASC`,
-      [deviceId],
-    );
-    rows = qr.map((r) => ({
-      callId: r.call_id, slug: r.slug, question: r.question, side: r.side, entryPct: r.pct_at,
-      exitPct: r.exit_pct, proceeds: r.proceeds, category: r.comm_cat ?? categorizeText(r.question),
-      closedAt: r.closed_at.toISOString(),
-    }));
-    const { rows: nr } = await db().query<{ id: number; call_id: number }>(
-      `SELECT id, call_id FROM notice
-        WHERE device_id = $1 AND kind IN ('settle_win','settle_loss') AND seen_at IS NULL AND call_id IS NOT NULL`,
-      [deviceId],
-    );
-    unseenCallIds = new Set(nr.map((r) => r.call_id));
-    noticeIdByCall = new Map(nr.map((r) => [r.call_id, r.id]));
-  }
-
-  if (unseenCallIds.size === 0) return [];
-
-  // Read once, used for every before/after in the loop below — the same numbers
-  // the profile scores with, so the movement a celebration claims matches the
-  // movement the profile shows. Fetched only after the early return, since a
-  // device with nothing to celebrate should not pay for it.
-  const activity = await scoreActivityFor(deviceId);
-  const accRow = (r: CelebrationRow) => ({ correct: r.exitPct === 100, category: r.category, pct: prob(r.entryPct) });
-  const out: Celebration[] = [];
-  const slugsNeeded = new Set<string>();
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    if (!unseenCallIds.has(r.callId)) continue;
-    const before = computeAccuracy(rows.slice(0, i).map(accRow), activity);
-    const after = computeAccuracy(rows.slice(0, i + 1).map(accRow), activity);
-    const won = r.exitPct === 100;
-    const outcome = won ? r.side : r.side === "yes" ? "no" : "yes";
-    slugsNeeded.add(r.slug);
-    out.push({
-      noticeId: noticeIdByCall.get(r.callId)!,
-      callId: r.callId, slug: r.slug, question: r.question, side: r.side, outcome, won,
-      oddsPct: Math.max(1, Math.min(99, Math.round(r.entryPct))),
-      proceeds: won ? r.proceeds : null,
-      scoreBefore: before.hasEnough ? (before.oddieScore as number)
-        : oddieScoreFrom({ ...activity, resolvedCalls: before.resolved, meanEdge: 0 }),
-      scoreAfter: after.hasEnough ? after.oddieScore : null,
-      streakBefore: before.streak, streakAfter: after.streak,
-      streakExtended: after.streak > before.streak && after.streak >= 2,
-      challengeHandle: null, // filled in below, once, batched
-      settledAt: r.closedAt,
-    });
-  }
-
-  const surfacers = await surfacersFor([...slugsNeeded]).catch(() => ({} as Record<string, SurfacerInfo>));
-  for (const c of out) c.challengeHandle = surfacers[c.slug]?.handle ?? null;
-
-  return out;
-}
 
 /**
  * Mark celebrations as shown — the only write in this flow, and the thing that
@@ -3089,36 +2935,6 @@ export async function reputationFor(rawDeviceId: string): Promise<CallerReputati
   return { handle: hd ?? "caller", accuracy, rank, tier, badges, topCategory, flexLine: flexLine(accuracy, topCategory) };
 }
 
-/**
- * A device's category engagement — every position it has ever taken (open OR
- * resolved), counted by category. The signal for personalizing "For you": a
- * player with a Sports-heavy history should see Sports lead. Counts ALL picks
- * (not just resolved) so a new signed-in user's open positions shape the feed
- * immediately. Empty for a device that has never played (a cold visitor).
- */
-export async function categoryHistoryFor(rawDeviceId: string): Promise<{ category: string; count: number }[]> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const counts = new Map<string, number>();
-  const bump = (cat: string) => counts.set(cat, (counts.get(cat) ?? 0) + 1);
-  if (!PERSISTENT) {
-    for (const c of memCalls) {
-      if (c.deviceId !== deviceId) continue;
-      bump(memCommunity.get(c.slug)?.category ?? categorizeText(c.question));
-    }
-  } else {
-    await ensureSchema();
-    const { rows } = await db().query<{ question: string; comm_cat: string | null }>(
-      `SELECT s.question, cm.category AS comm_cat
-         FROM market_call mc
-         JOIN market_slug s ON s.slug = mc.slug
-         LEFT JOIN community_market cm ON cm.slug = mc.slug
-        WHERE mc.device_id = $1`,
-      [deviceId],
-    );
-    for (const r of rows) bump(r.comm_cat ?? categorizeText(r.question));
-  }
-  return [...counts.entries()].map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count);
-}
 
 /* --------------------------------------------------------------- settlement --
  * The venue resolved; pay everyone holding the market, exactly once.
@@ -4219,13 +4035,6 @@ async function awardSeasonPoints(
 export async function awardSurface(slug: string): Promise<boolean> {
   return awardSeasonPoints("surface", slug, `surface:${slug}`);
 }
-/** +40: this device put one of its calls on X. Deduped per (device, call), so
- *  it pays once for each position shared, not once per press of the button.
- *  Unlike the other four this one credits the SHARER rather than the market's
- *  surfacer — it is their post. */
-export async function awardShare(slug: string, deviceId: string, callId: number): Promise<boolean> {
-  return awardSeasonPoints("shared", slug, `shared:${callId}`, deviceId);
-}
 /** +100: `slug` just reached 3 distinct participants. Once per market. */
 export async function awardThreePlayers(slug: string): Promise<boolean> {
   return awardSeasonPoints("three_players", slug, `three_players:${slug}`);
@@ -4740,18 +4549,6 @@ export async function listTweetReplies(limit = 50): Promise<TweetReplyLogItem[]>
 interface MemView { slug: string; deviceId: string | null; at: number }
 const memPageView: MemView[] = [];
 
-/** Log a permalink landing. device_id is resolved so a view joins to the pick
- *  that may follow it (click→pick). Best-effort — never blocks the page. */
-export async function logPageView(slug: string, rawDeviceId: string | null): Promise<void> {
-  try {
-    const deviceId = rawDeviceId ? await resolveDevice(rawDeviceId) : null;
-    if (!PERSISTENT) { memPageView.push({ slug, deviceId, at: Date.now() }); return; }
-    await ensureSchema();
-    await db().query(`INSERT INTO page_view (slug, device_id) VALUES ($1,$2)`, [slug, deviceId]);
-  } catch (e) {
-    console.error("[pageview] write failed (non-fatal):", (e as Error).message);
-  }
-}
 
 export interface MetricsSummary {
   generatedAt: string;
@@ -5878,18 +5675,6 @@ export async function allowlistRows(limit = 400): Promise<AllowRow[]> {
   return rows.map((r) => ({ email: r.email, source: r.source, cohort: r.cohort, xHandle: r.x_handle, invitedAt: r.invited_at?.toISOString() ?? null, acceptedAt: r.accepted_at?.toISOString() ?? null, createdAt: r.created_at.toISOString() }));
 }
 
-/** Map a device to its cohort via canonical account -> allowlist (email or x_uid).
- *  'default' when unmatched. The funnel joins on this to read a wave alone. */
-export async function cohortOfDevice(rawDeviceId: string): Promise<string> {
-  if (!PERSISTENT) return "default";
-  const deviceId = await resolveDevice(rawDeviceId);
-  const { rows } = await db().query<{ cohort: string }>(
-    `SELECT al.cohort FROM account a
-       JOIN allowlist al ON (al.email IS NOT NULL AND lower(al.email)=lower(a.email))
-                         OR (al.x_uid IS NOT NULL AND a.provider='twitter' AND al.x_uid=a.provider_uid)
-      WHERE a.canonical_device=$1 ORDER BY al.created_at LIMIT 1`, [deviceId]);
-  return rows[0]?.cohort ?? "default";
-}
 
 /* --------------------------------------------------------------- scoring --
  * Three boards, three virtues: edge (skill), streak (showing up), net
@@ -6001,23 +5786,7 @@ async function withHandles<T extends { deviceId: string; handle: string }>(rows:
   return rows;
 }
 
-/** How many calls this device (canonical) has ever placed — the free-taste cap
- *  reads this. Cheap: indexed by device_id. */
-export async function callCountOf(rawDeviceId: string): Promise<number> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  if (!PERSISTENT) return memCalls.filter((c) => c.deviceId === deviceId).length;
-  await ensureSchema();
-  const { rows } = await db().query<{ n: number }>(`SELECT count(*)::int n FROM market_call WHERE device_id = $1`, [deviceId]);
-  return rows[0].n;
-}
 
-/** Every market that still has an open position — the sweep's worklist. */
-export async function openSlugs(): Promise<string[]> {
-  if (!PERSISTENT) return [...new Set(memCalls.filter((c) => !c.closedAt).map((c) => c.slug))];
-  await ensureSchema();
-  const { rows } = await db().query<{ slug: string }>(`SELECT DISTINCT slug FROM market_call WHERE closed_at IS NULL`);
-  return rows.map((r) => r.slug);
-}
 
 /* ------------------------------------------------------------- bot state -----
  * The X bot's durable memory. Deliberately a tiny KV rather than columns on a
@@ -6154,57 +5923,10 @@ const memAvatars = new Map<string, { image: Buffer; mime: string }>();
  *  nowhere near enough for anyone to use the table as a file host. */
 export const AVATAR_MAX_BYTES = 250_000;
 
-export interface AvatarUpload { image: Buffer; mime: string }
 
-/**
- * Validate a data URL into bytes, or null.
- *
- * The magic bytes are checked, not just the declared type: a `data:image/jpeg`
- * header costs an attacker nothing to write, and the point of restricting the
- * type at all is that what we later serve back with an image content-type is
- * genuinely an image.
- */
-export function parseAvatarDataUrl(raw: unknown): AvatarUpload | null {
-  if (typeof raw !== "string") return null;
-  const m = /^data:(image\/jpeg|image\/png);base64,([A-Za-z0-9+/=]+)$/.exec(raw.trim());
-  if (!m) return null;
-  let image: Buffer;
-  try { image = Buffer.from(m[2], "base64"); } catch { return null; }
-  if (!image.length || image.length > AVATAR_MAX_BYTES) return null;
-  const isJpeg = image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff;
-  const isPng = image.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  if (m[1] === "image/jpeg" && !isJpeg) return null;
-  if (m[1] === "image/png" && !isPng) return null;
-  return { image, mime: m[1] };
-}
 
-export async function setDeviceAvatar(rawDeviceId: string, a: AvatarUpload): Promise<void> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  if (!PERSISTENT) { memAvatars.set(deviceId, a); return; }
-  await ensureSchema();
-  await db().query(
-    `INSERT INTO device_avatar (device_id, image, mime, set_at) VALUES ($1,$2,$3,now())
-     ON CONFLICT (device_id) DO UPDATE SET image=EXCLUDED.image, mime=EXCLUDED.mime, set_at=now()`,
-    [deviceId, a.image, a.mime],
-  );
-}
 
-export async function clearDeviceAvatar(rawDeviceId: string): Promise<void> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  if (!PERSISTENT) { memAvatars.delete(deviceId); return; }
-  await ensureSchema();
-  await db().query(`DELETE FROM device_avatar WHERE device_id = $1`, [deviceId]);
-}
 
-/** The bytes, for serving. */
-export async function deviceAvatarImage(rawDeviceId: string): Promise<AvatarUpload | null> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  if (!PERSISTENT) return memAvatars.get(deviceId) ?? null;
-  await ensureSchema();
-  const { rows } = await db().query<{ image: Buffer; mime: string }>(
-    `SELECT image, mime FROM device_avatar WHERE device_id = $1`, [deviceId]);
-  return rows[0] ? { image: rows[0].image, mime: rows[0].mime } : null;
-}
 
 /** Just "is there one", plus when it changed, for cache-busting a URL without
  *  reading the bytes on every feed render. */
@@ -6217,25 +5939,7 @@ export async function deviceAvatarStamp(rawDeviceId: string): Promise<number | n
   return rows[0] ? rows[0].at.getTime() : null;
 }
 
-/** Which of these handles have a picture, and how fresh, so the feed can point
- *  an <img> at it. Handles with no oddie account or no upload are simply
- *  absent and the client falls back to the generated letter avatar. */
-export async function avatarStampsForHandles(handles: string[]): Promise<Record<string, number>> {
-  const out: Record<string, number> = {};
-  const wanted = [...new Set(handles.filter(Boolean).map((h) => h.replace(/^@+/, "").toLowerCase()))];
-  for (const h of wanted) {
-    const dev = await deviceForTwitterHandle(h);
-    if (!dev) continue;
-    const stamp = await deviceAvatarStamp(dev);
-    if (stamp) out[h] = stamp;
-  }
-  return out;
-}
 
-/** The device behind a handle, for serving that handle's picture. */
-export async function deviceForHandlePublic(handle: string): Promise<string | null> {
-  return deviceForTwitterHandle(handle);
-}
 
 
 // --- The oracle's own record -------------------------------------------------
@@ -6540,15 +6244,6 @@ export function receiptWeight(input: { entryPct: number; won: boolean; poolLampo
   return Math.round((100 - Math.max(0, Math.min(100, input.entryPct))) * depth);
 }
 
-/** A settled entry, scored. */
-export interface Receipt extends ChainEntry {
-  outcome: "yes" | "no";
-  won: boolean;
-  question: string;
-  /** The pool at settlement, which is what the weight is scaled by. */
-  poolLamports: number;
-  weight: number;
-}
 
 const memChainEntries: ChainEntry[] = [];
 
@@ -6594,49 +6289,6 @@ export async function chainEntryFor(slug: string, wallet: string): Promise<Chain
   return rows[0] ? rowToEntry(rows[0]) : null;
 }
 
-/**
- * The pool a market settled with, in lamports.
- *
- * market_fee_log already records it: basis_amount on the real-money rows is the
- * vault total the fee was taken from, written at resolve. Nothing new is
- * stored to answer this.
- *
- * The fallback sums the entry stamps, which UNDERCOUNTS because stamps record
- * only a wallet's first stake and never its top-ups. That is the right
- * direction to be wrong in: a smaller pool means less credit, so a market whose
- * fee log went missing gives its callers a conservative score rather than a
- * generous one.
- */
-async function settlementPools(slugs: string[]): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  if (slugs.length === 0) return out;
-  if (!PERSISTENT) {
-    for (const slug of slugs) {
-      const logged = memFeeLog
-        .filter((f) => f.slug === slug && f.marketKind === "real")
-        .reduce((a, f) => Math.max(a, f.basisAmount), 0);
-      const stamped = memChainEntries.filter((e) => e.slug === slug).reduce((a, e) => a + e.lamports, 0);
-      out.set(slug, Math.max(logged, stamped));
-    }
-    return out;
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ slug: string; pool: string }>(
-    `SELECT ce.slug,
-            GREATEST(
-              COALESCE((SELECT MAX(f.basis_amount) FROM market_fee_log f
-                         WHERE f.slug = ce.slug AND f.market_kind = 'real'), 0),
-              COALESCE(SUM(ce.lamports), 0)
-            ) AS pool
-       FROM chain_entry ce
-      WHERE ce.slug = ANY($1::text[])
-      GROUP BY ce.slug`,
-    [slugs],
-  );
-  // bigint arrives as a string; a `number` annotation here would be a lie.
-  for (const r of rows) out.set(r.slug, Number(r.pool));
-  return out;
-}
 
 /**
  * SUPERSEDED, AND NOT TO BE PICKED BACK UP.
@@ -6652,43 +6304,6 @@ async function settlementPools(slugs: string[]): Promise<Map<string, number>> {
  * They go with feed.html's retirement. Until then: do NOT wire a surface to
  * them. One person's record computed two ways is two records.
  */
-/** One wallet's settled receipts, newest market first. Open markets are not
- *  receipts yet: a receipt is proof of having been right, and an open market
- *  has not said who was. */
-export async function walletReceipts(wallet: string, limit = 50): Promise<Receipt[]> {
-  const n = Math.max(1, Math.min(200, Math.floor(limit)));
-  const score = (e: ChainEntry, outcome: "yes" | "no", question: string, poolLamports: number): Receipt => {
-    const won = e.side === outcome;
-    return { ...e, outcome, question, won, poolLamports, weight: receiptWeight({ entryPct: e.entryPct, won, poolLamports }) };
-  };
-  if (!PERSISTENT) {
-    const mine = memChainEntries.filter((e) => e.wallet === wallet);
-    const pools = await settlementPools([...new Set(mine.map((e) => e.slug))]);
-    return mine
-      .map((e) => {
-        const meta = memCommunity.get(e.slug);
-        const rec = mem.get(e.slug);
-        return meta?.resolvedOutcome && rec
-          ? score(e, meta.resolvedOutcome, rec.market.question, pools.get(e.slug) ?? 0)
-          : null;
-      })
-      .filter((r): r is Receipt => r !== null)
-      .slice(0, n);
-  }
-  await ensureSchema();
-  const { rows } = await db().query<ChainEntryRow & { resolved_outcome: "yes" | "no"; question: string }>(
-    `SELECT ce.slug, ce.wallet, ce.side, ce.entry_pct, ce.lamports, ce.created_at, cm.resolved_outcome, s.question
-       FROM chain_entry ce
-       JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL
-       JOIN market_slug s ON s.slug = ce.slug
-      WHERE ce.wallet = $1
-      ORDER BY ce.created_at DESC
-      LIMIT $2`,
-    [wallet, n],
-  );
-  const pools = await settlementPools([...new Set(rows.map((r) => r.slug))]);
-  return rows.map((r) => score(rowToEntry(r), r.resolved_outcome, r.question, pools.get(r.slug) ?? 0));
-}
 
 /**
  * Every settled call by everyone, with the market account it landed in.
@@ -6747,7 +6362,6 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
   }));
 }
 
-export interface WalletStanding { wallet: string; wins: number; losses: number; points: number }
 
 /**
  * SUPERSEDED, AND NOT TO BE PICKED BACK UP.
@@ -6763,46 +6377,6 @@ export interface WalletStanding { wallet: string; wins: number; losses: number; 
  * They go with feed.html's retirement. Until then: do NOT wire a surface to
  * them. One person's record computed two ways is two records.
  */
-/** The board, by contrarian points. Ordered by points and never by win count:
- *  win count is the bandwagon's own metric, and the whole reason this board
- *  exists is that the pool mechanics tax the people it should be crowning. */
-export async function walletLeaderboard(limit = 20): Promise<WalletStanding[]> {
-  const n = Math.max(1, Math.min(100, Math.floor(limit)));
-
-  /** Settled calls, raw. Scoring happens in ONE place (receiptWeight) for both
-   *  backends and for the receipts too: a board that computes the formula in
-   *  SQL and a profile that computes it in TypeScript is two formulas, and the
-   *  day they disagree is the day the number stops meaning anything. */
-  let calls: Array<{ wallet: string; slug: string; entryPct: number; won: boolean }>;
-  if (!PERSISTENT) {
-    calls = memChainEntries.flatMap((e) => {
-      const out = memCommunity.get(e.slug)?.resolvedOutcome;
-      return out ? [{ wallet: e.wallet, slug: e.slug, entryPct: e.entryPct, won: e.side === out }] : [];
-    });
-  } else {
-    await ensureSchema();
-    const { rows } = await db().query<{ wallet: string; slug: string; entry_pct: number; won: boolean }>(
-      `SELECT ce.wallet, ce.slug, ce.entry_pct, (ce.side = cm.resolved_outcome) AS won
-         FROM chain_entry ce
-         JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL`,
-    );
-    calls = rows.map((r) => ({ wallet: r.wallet, slug: r.slug, entryPct: r.entry_pct, won: r.won }));
-  }
-
-  const pools = await settlementPools([...new Set(calls.map((c) => c.slug))]);
-  const by = new Map<string, WalletStanding>();
-  for (const c of calls) {
-    const w = by.get(c.wallet) ?? { wallet: c.wallet, wins: 0, losses: 0, points: 0 };
-    if (c.won) {
-      w.wins++;
-      w.points += receiptWeight({ entryPct: c.entryPct, won: true, poolLamports: pools.get(c.slug) ?? 0 });
-    } else {
-      w.losses++;
-    }
-    by.set(c.wallet, w);
-  }
-  return [...by.values()].sort((a, b) => b.points - a.points).slice(0, n);
-}
 
 /** slug for an on-chain market account, for the submit relay's stamp. */
 export async function slugForOnchainPubkey(pubkey: string): Promise<string | null> {

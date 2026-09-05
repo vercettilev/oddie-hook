@@ -17,12 +17,13 @@ import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
 import type { SurfacerInfo } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls } from "./store/markets.js";
-import type { SettledCall } from "./store/markets.js";
+import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
+import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
-import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, payoutLamports } from "./store/economy.js";
+import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
   prepareRefundTx, refundOpensAt,
@@ -627,6 +628,10 @@ app.get(["/you", "/positions"], (_req, res) => {
 // express.static (registered first) answers /app with a 301 to /app/ before
 // this route is ever reached. A route name that a directory already owns is a
 // trap rather than a convenience.
+// Old bookmarks and any link that still says /feed land on the app's home.
+// The route itself is gone; this is one line so it never 404s on somebody.
+app.get("/feed", (_req, res) => res.redirect(301, "/markets"));
+
 app.get("/markets", (_req, res) => {
   if (!APP_OPEN) return appClosed(res);
   res.set("Cache-Control", "no-cache").type("html").send(stampGate(MARKETS_HTML));
@@ -1170,64 +1175,12 @@ app.get("/api/w/:wallet", async (req, res) => {
 /**
  * THE LEDGER: every settled call, priced by the program's own payout maths.
  *
- * ONE computation, used by the board and by a wallet's page, because two
- * places computing "what did this person make" is two answers and the day they
- * disagree is the day the number stops meaning anything.
- *
- * The payout formula is lifted from lib.rs:claim_winnings and must stay
- * identical to it:
- *
- *   winningTotal == 0  -> everyone is refunded, no fee was taken
- *   wrong side         -> 0
- *   otherwise          -> floor(stake x (pool - creatorFee - protocolFee) / winningTotal)
- *
- * All four inputs are frozen on the market account at resolve, which is why
- * this reads the chain rather than our own store: our `settlementPools` knows
- * the pool but never the WINNING SIDE's share of it, and that is the
- * denominator. Truncating division on purpose, same as the program.
- *
- * A market we cannot read is priced as null, never as zero. A zero here would
- * be "you made nothing", published about somebody's money, on the strength of
- * a failed request.
+ * The maths live in src/store/standings.ts, pure and tested. This is only the
+ * plumbing: the settled calls from the store, the frozen totals from the
+ * chain (one batched read), and the roll-up. A market we cannot read prices
+ * to null there, never to zero, and the standings count the call right or
+ * wrong regardless: the outcome is ours, only the money needed the chain.
  */
-interface PricedCall {
-  wallet: string; slug: string; question: string;
-  side: "yes" | "no"; outcome: "yes" | "no"; won: boolean;
-  lamports: number; entryPct: number;
-  poolLamports: number | null;
-  payoutLamports: number | null;
-  pnlLamports: number | null;
-  weight: number | null;
-}
-interface Standing {
-  wallet: string; wins: number; losses: number; points: number;
-  realizedLamports: number;
-  /** Settled calls whose market could not be read, so they are in no total. */
-  unpriced: number;
-}
-
-function priceCall(c: SettledCall, m: OnChainMarketState | null): PricedCall {
-  const base = {
-    wallet: c.wallet, slug: c.slug, question: c.question, side: c.side,
-    outcome: c.outcome, won: c.won, lamports: c.lamports, entryPct: c.entryPct,
-  };
-  if (!m || !m.resolved || !m.winningSide) {
-    return { ...base, poolLamports: null, payoutLamports: null, pnlLamports: null, weight: null };
-  }
-  const pool = m.totalYesLamports + m.totalNoLamports;
-  // The formula itself lives in economy.ts beside the other money maths, and is
-  // tested against the program's own edge cases there.
-  const payout = payoutLamports(c.lamports, c.side, { ...m, winningSide: m.winningSide });
-  return {
-    ...base,
-    poolLamports: pool,
-    payoutLamports: payout,
-    pnlLamports: payout - c.lamports,
-    // The chain's pool, not our store's estimate: one number, one source.
-    weight: receiptWeight({ entryPct: c.entryPct, won: c.won, poolLamports: pool }),
-  };
-}
-
 async function settledLedger(): Promise<{ calls: PricedCall[]; standings: Standing[] }> {
   const raw = await settledCalls().catch(() => []);
   const keys = [...new Set(raw.map((c) => c.onchainPubkey).filter(Boolean))] as string[];
@@ -1236,27 +1189,7 @@ async function settledLedger(): Promise<{ calls: PricedCall[]; standings: Standi
     const r = c.onchainPubkey ? states.get(c.onchainPubkey) : undefined;
     return priceCall(c, r?.ok ? r.state : null);
   });
-
-  const by = new Map<string, Standing>();
-  for (const c of calls) {
-    const st = by.get(c.wallet) ?? { wallet: c.wallet, wins: 0, losses: 0, points: 0, realizedLamports: 0, unpriced: 0 };
-    // RIGHT-OR-WRONG AND HOW-MUCH ARE DIFFERENT QUESTIONS, and only the second
-    // one needs the chain. The outcome comes from our own settlement, so a
-    // market we could not price is still a call we know they got right or
-    // wrong; dropping it from the record too would understate somebody's
-    // hit rate because an RPC blinked. Only the money and the points wait.
-    if (c.won) st.wins++; else st.losses++;
-    if (c.pnlLamports === null) st.unpriced++;
-    else {
-      st.points += c.weight ?? 0;
-      st.realizedLamports += c.pnlLamports;
-    }
-    by.set(c.wallet, st);
-  }
-  // Ordered by points, never by money and never by win count. See the board
-  // route below for why.
-  const standings = [...by.values()].sort((a, b) => b.points - a.points || b.realizedLamports - a.realizedLamports);
-  return { calls, standings };
+  return { calls, standings: standingsFrom(calls) };
 }
 
 /**
@@ -1282,9 +1215,8 @@ app.get("/api/board", async (req, res) => {
   const top = standings.slice(0, limit);
   // A board of base58 strings is not a social object. One query for the lot.
   const handles = await twitterHandlesForWallets(top.map((b) => b.wallet)).catch(() => new Map<string, string>());
-  let rank = 0, prev: number | null = null;
-  const rows = top.map((b) => {
-    if (prev === null || b.points !== prev) { rank += 1; prev = b.points; }
+  const rows = denseRank(top).map((b) => {
+    const rank = b.rank;
     return {
       wallet: b.wallet,
       short: `${b.wallet.slice(0, 4)}…${b.wallet.slice(-4)}`,

@@ -12,8 +12,9 @@
 if (process.env.DATABASE_URL) { console.error("refusing to run against a database"); process.exit(1); }
 
 import { anchorDiscriminator, decodeTakePositionIx, entryShareOf } from "../src/chain/oddieChain.js";
-import { recordChainEntry, chainEntryFor, walletReceipts, walletLeaderboard, slugForOnchainPubkey, createCommunityMarket, markCommunityResolved, _resetChainEntries, receiptWeight, FULL_CREDIT_LAMPORTS, openEntriesFor, retireMarket, isRetired, openCommunityMarkets, openMarketForSourcePost, recordSurfacer } from "../src/store/markets.js";
+import { recordChainEntry, chainEntryFor, settledCalls, slugForOnchainPubkey, createCommunityMarket, markCommunityResolved, _resetChainEntries, receiptWeight, FULL_CREDIT_LAMPORTS, openEntriesFor, retireMarket, isRetired, openCommunityMarkets, openMarketForSourcePost, recordSurfacer } from "../src/store/markets.js";
 import { renderReceiptCard, VOICE_RECEIPT, textWidth } from "../src/card/renderCard.js";
+import { priceCall, standingsFrom, denseRank, type MarketTotals } from "../src/store/standings.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -80,13 +81,19 @@ console.log("\na receipt is proof, so an open market cannot mint one");
   await recordChainEntry({ slug: done, wallet: W_B, side: "no", entryPct: 70, lamports: FULL_CREDIT_LAMPORTS });
   await markCommunityResolved(done, "yes");
 
-  const a = await walletReceipts(W_A);
-  check("only the settled market is a receipt", a.length === 1 && a[0].slug === done, JSON.stringify(a.map((r) => r.slug)));
-  check("a win at 30 weighs 70", a[0].won && a[0].weight === 70, JSON.stringify(a[0]));
-  check("the receipt carries the question", a[0].question.includes("BTC"));
+  // The store answers only for settled markets; the open one is not a receipt.
+  const calls = await settledCalls();
+  check("only the settled market yields calls", calls.every((c) => c.slug === done) && calls.length === 2, JSON.stringify(calls.map((c) => c.slug)));
+  check("the call carries the question", calls[0]!.question.includes("BTC"));
 
-  const b = await walletReceipts(W_B);
-  check("a loss is a receipt too, at weight zero", b.length === 1 && !b[0].won && b[0].weight === 0, JSON.stringify(b[0]));
+  // Priced against the market's frozen totals, as the chain leaves them.
+  const full: MarketTotals = { resolved: true, winningSide: "yes", totalYesLamports: FULL_CREDIT_LAMPORTS, totalNoLamports: FULL_CREDIT_LAMPORTS, creatorFeeLamports: 0, protocolFeeLamports: 0 };
+  const a = priceCall(calls.find((c) => c.wallet === W_A)!, full);
+  check("a win at 30 weighs 70", a.won && a.weight === 70, JSON.stringify(a));
+  const b = priceCall(calls.find((c) => c.wallet === W_B)!, full);
+  check("a loss is a receipt too, at weight zero", !b.won && b.weight === 0, JSON.stringify(b));
+  check("an unreadable market prices to null, never to zero",
+    priceCall(calls[0]!, null).weight === null && priceCall(calls[0]!, null).pnlLamports === null);
 }
 
 console.log("\nTHE BOARD IS ORDERED BY EARLINESS, NOT BY WIN COUNT");
@@ -100,7 +107,6 @@ console.log("\nTHE BOARD IS ORDERED BY EARLINESS, NOT BY WIN COUNT");
     return { slug, out };
   };
   const m1 = await mk("m1?", "yes"), m2 = await mk("m2?", "yes"), m3 = await mk("m3?", "yes"), m4 = await mk("m4?", "yes");
-
   // C: one brave call at 25 that won -> 75 points.
   await recordChainEntry({ slug: m1.slug, wallet: W_C, side: "yes", entryPct: 25, lamports: FULL_CREDIT_LAMPORTS });
   // A: three bandwagon wins at 90 -> 30 points, more wins, fewer points.
@@ -109,11 +115,17 @@ console.log("\nTHE BOARD IS ORDERED BY EARLINESS, NOT BY WIN COUNT");
   await recordChainEntry({ slug: m1.slug, wallet: W_B, side: "no", entryPct: 75, lamports: FULL_CREDIT_LAMPORTS });
   for (const m of [m1, m2, m3, m4]) await markCommunityResolved(m.slug, m.out);
 
-  const board = await walletLeaderboard();
+  const full: MarketTotals = { resolved: true, winningSide: "yes", totalYesLamports: FULL_CREDIT_LAMPORTS, totalNoLamports: FULL_CREDIT_LAMPORTS, creatorFeeLamports: 0, protocolFeeLamports: 0 };
+  const board = standingsFrom((await settledCalls()).map((c) => priceCall(c, full)));
   check("one contrarian win outranks three bandwagon wins", board[0]?.wallet === W_C && board[1]?.wallet === W_A,
     JSON.stringify(board.map((w) => [w.wallet.slice(0, 3), w.points])));
   check("the points say why", board[0]?.points === 75 && board[1]?.points === 30);
   check("losses are counted, never scored", board.find((w) => w.wallet === W_B)?.losses === 1 && board.find((w) => w.wallet === W_B)?.points === 0);
+  const ranked = denseRank(board);
+  check("dense rank advances per distinct total", ranked[0]!.rank === 1 && ranked[1]!.rank === 2);
+  // Ties share a place: give A a fourth bandwagon win worth... no, test the rule directly.
+  const tie = denseRank([{ points: 10 }, { points: 10 }, { points: 3 }]);
+  check("two people on the same points are the same place, the next is third", tie.map((t) => t.rank).join(",") === "1,1,2");
 }
 
 console.log("\nthe card is a flex, not a disclosure");
@@ -164,28 +176,29 @@ console.log("\nthe board and the receipts cannot disagree");
   _resetChainEntries();
   const deep = await createCommunityMarket({ question: "Deep market?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
   const dust = await createCommunityMarket({ question: "Dust market?", closeTime: Math.floor(Date.now() / 1000) + 3600 });
-  // Same perfect entry (0%) in both. Only the depth differs.
+  // Same perfect entry (0%) in both. Only the depth differs, and the depth is
+  // the market's own frozen pool, not a sum of our stamps.
   await recordChainEntry({ slug: deep.slug, wallet: W_A, side: "yes", entryPct: 0, lamports: FULL_CREDIT_LAMPORTS });
   await recordChainEntry({ slug: dust.slug, wallet: W_B, side: "yes", entryPct: 0, lamports: 1_000_000 });
   await markCommunityResolved(deep.slug, "yes");
   await markCommunityResolved(dust.slug, "yes");
+  const totals = (yes: number, no: number): MarketTotals =>
+    ({ resolved: true, winningSide: "yes", totalYesLamports: yes, totalNoLamports: no, creatorFeeLamports: 0, protocolFeeLamports: 0 });
+  const pool: Record<string, MarketTotals> = { [deep.slug]: totals(FULL_CREDIT_LAMPORTS, FULL_CREDIT_LAMPORTS), [dust.slug]: totals(1_000_000, 1_000_000) };
 
-  const ra = await walletReceipts(W_A), rb = await walletReceipts(W_B);
-  check("the deep call scores full", ra[0]?.weight === 100, JSON.stringify(ra[0]));
-  check("the dust call scores ~nothing", (rb[0]?.weight ?? -1) === 0, JSON.stringify(rb[0]));
-  check("the receipt reports the depth it was scored on", ra[0]?.poolLamports === FULL_CREDIT_LAMPORTS);
+  const calls = (await settledCalls()).map((c) => priceCall(c, pool[c.slug]!));
+  const ra = calls.find((c) => c.wallet === W_A)!, rb = calls.find((c) => c.wallet === W_B)!;
+  check("the deep call scores full", ra.weight === 100, JSON.stringify(ra));
+  check("the dust call scores ~nothing", rb.weight === 0, JSON.stringify(rb));
+  check("the receipt reports the depth it was scored on", ra.poolLamports === 2 * FULL_CREDIT_LAMPORTS);
 
-  // The board must agree with the receipts, exactly. Two formulas is one
-  // formula too many.
-  const board = await walletLeaderboard();
-  const pa = board.find((w) => w.wallet === W_A)?.points;
-  const pb = board.find((w) => w.wallet === W_B)?.points;
-  check("the board matches the receipt for the deep call", pa === ra[0]?.weight, `${pa} vs ${ra[0]?.weight}`);
-  check("...and for the dust call", pb === rb[0]?.weight, `${pb} vs ${rb[0]?.weight}`);
+  // The board is a roll-up of the very same priced calls. One formula.
+  const board = standingsFrom(calls);
+  check("the board matches the receipt for the deep call", board.find((w) => w.wallet === W_A)?.points === ra.weight);
+  check("...and for the dust call", board.find((w) => w.wallet === W_B)?.points === rb.weight);
   check("a dust farmer still shows the win, worth zero", board.find((w) => w.wallet === W_B)?.wins === 1);
   _resetChainEntries();
 }
-
 
 console.log("\nopen stakes are the OPEN ones, and a stamp is only a candidate");
 {
