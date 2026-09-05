@@ -1758,7 +1758,7 @@ app.post("/api/auth/disconnect", express.json(), async (req, res) => {
 /** The exact URI each provider console must have registered. Read-only, no secrets. */
 app.get("/api/auth/config", (_req, res) => {
   res.json({
-    baseUrl: BASE_URL,
+    baseUrl: APP_BASE_URL, // the app host: the bot's link must not 301 through the apex
     providers: PROVIDERS.map((p) => ({
       provider: p,
       callback: redirectUri(BASE_URL, p),
@@ -2816,7 +2816,7 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
    * posting on is still one deliberate switch rather than something a resolve
    * quietly starts doing.
    */
-  void postResolution(slug, outcome, {
+  void postResolution(slug, outcome, { baseUrl: APP_BASE_URL,
     dryRun: X_BOT_DRY_RUN,
     cardPng: async (s2, o) => {
       const { all } = await liveMarketData();
@@ -3773,7 +3773,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     // charged only once the market exists.
     ticketsLeft: (handle) => ticketsLeft(handle),
     spendTicket: (slug, tagger, source) => spendTicketForTag(slug, tagger, source),
-    baseUrl: BASE_URL,
+    baseUrl: APP_BASE_URL, // the app host: the bot's link must not 301 through the apex
     botUserId: process.env.X_BOT_USER_ID ?? "",
     dryRun: X_BOT_DRY_RUN,
     log: (line, extra) => console.log(JSON.stringify({ evt: "x_bot", line, ...extra })),

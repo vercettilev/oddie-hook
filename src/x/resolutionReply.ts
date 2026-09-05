@@ -20,6 +20,11 @@
 import { replyIdForSlug, communityMarketDetail } from "../store/markets.js";
 
 export interface ResolutionDeps {
+  /** Public origin for the /m/{slug} link the reply carries. Optional so every
+   *  existing caller and test is unchanged; the server passes the APP host,
+   *  because a link that lands on the apex only to 301 to the app is a hop on
+   *  the one path that brings strangers in. */
+  baseUrl?: string;
   /** Whether the bot is allowed to actually post. */
   dryRun: boolean;
   /** The settled card for a market, as PNG bytes. */
@@ -99,7 +104,7 @@ export async function postResolution(
   const inReplyTo = await replyIdForSlug(slug).catch(() => null);
   if (!inReplyTo) { deps.log("resolution: no thread to answer", { slug }); return { posted: false, reason: "no-thread" }; }
 
-  const url = `https://oddie.fun/m/${slug}`;
+  const url = `${(deps.baseUrl ?? "https://oddie.fun").replace(/\/+$/, "")}/m/${slug}`;
   const text = resolutionText(detail.question, outcome, url);
 
   if (deps.dryRun) {
