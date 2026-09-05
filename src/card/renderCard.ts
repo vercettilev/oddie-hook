@@ -23,8 +23,9 @@ import { logoMark } from "./logoMark.js";
 // (#B6F05F) because the value lived here as a literal with nothing tying it to
 // the stylesheets. The two greens are close enough to survive a glance and far
 // enough apart to read as two products when a share card and the page it opens
-// sit on one screen. Every value below now matches a token in feed.html by
-// name; keep them in step.
+// sit on one screen. Every value below matches a token in the :root that all
+// app shells share (public/app/market.html), and scripts/test-card-layout.ts
+// holds them in step.
 export const C = {
   accent: "#D7DC1F", // --accent: brand chartreuse, sampled off the mark
   ink: "#000000",

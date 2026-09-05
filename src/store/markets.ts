@@ -230,7 +230,7 @@ ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS claim_streak integer NOT NUL
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS last_seen_rank integer;
 
 -- Whether this device has ever been shown the post-first-call tag-teaching
--- moment ("now the real move: tag @oddiefun...") — see claimTagTeachingMoment.
+-- moment ("now the real move: tag @oddiefun...") — a retired-feed flag; the column stays for the rows that exist.
 -- A single ever-flag, not a notice-queue row: this is a one-time onboarding
 -- beat tied to the device, not a replayable event.
 ALTER TABLE device_balance ADD COLUMN IF NOT EXISTS tag_teaching_seen_at timestamptz;
@@ -260,7 +260,7 @@ ALTER TABLE notice ADD COLUMN IF NOT EXISTS call_id bigint;
 
 -- Whether the device has actually been SHOWN this resolution's celebration
 -- takeover — a separate, richer moment from the flat notice line, so this is
--- set only once the client finishes displaying it (see markCelebrationsSeen),
+-- set only once the client finishes displaying it (by the retired feed; the column stays for the rows that exist),
 -- never at fetch time. NULL means "not yet celebrated"; settlement notices only,
 -- irrelevant to every other kind.
 ALTER TABLE notice ADD COLUMN IF NOT EXISTS seen_at timestamptz;
@@ -2082,35 +2082,6 @@ type CelebrationRow = {
  * last card) — never at fetch time. A render crash before anything was shown
  * leaves the celebration to try again next load instead of silently vanishing.
  */
-/**
- * Ids arrive as STRINGS and stay strings all the way to Postgres.
- *
- * notice.id is a bigserial, and node-postgres returns int8 as a string rather
- * than risk a JS number past 2^53. So the id a client hands back is the string
- * it was given, and any step that insisted on `number` silently dropped it.
- * `$2::bigint[]` binds a string array without complaint, so there is nothing to
- * convert; the in-memory path compares as strings for the same reason.
- */
-export async function markCelebrationsSeen(rawDeviceId: string, noticeIds: Array<number | string>): Promise<void> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const ids = [...new Set(noticeIds.map(String))].filter((n) => /^\d+$/.test(n));
-  if (!ids.length) return;
-  if (!PERSISTENT) {
-    const now = new Date().toISOString();
-    for (const n of memNotices) if (n.deviceId === deviceId && ids.includes(String(n.id))) n.seenAt = now;
-    return;
-  }
-  await ensureSchema();
-  // Explicit ::bigint[] — notice.id is bigserial (bigint). Left to inference,
-  // a plain JS number array can bind as int4[], and bigint = ANY(int4[])
-  // leans on an implicit cross-type promotion instead of a guaranteed match;
-  // this is the one write that makes a celebration fire exactly once, so it
-  // gets the unambiguous cast rather than trusting the driver to infer right.
-  await db().query(
-    `UPDATE notice SET seen_at = now() WHERE device_id = $1 AND id = ANY($2::bigint[]) AND seen_at IS NULL`,
-    [deviceId, ids],
-  );
-}
 
 export interface MarketCaller {
   handle: string | null;  // null -> the client shows "anonymous caller"
@@ -2582,7 +2553,7 @@ export interface RankMovement { direction: "up" | "down"; spots: number; rank: n
  * leaderboard or profile screen). Reads the device's last-seen rank, compares
  * it to the current one, and overwrites the stored value in the same call —
  * so calling this IS "marking it seen", the same one-shot contract
- * markCelebrationsSeen uses for the celebration queue, just consumed by the
+ * the retired feed's celebration queue used, just consumed by the
  * read itself instead of a separate endpoint.
  *
  * Unranked/provisional devices (seasonRankFor -> null) return null and leave
@@ -2649,13 +2620,6 @@ async function claimOnceFlag(rawDeviceId: string, column: string, memSeen: Set<s
   return rows.length > 0;
 }
 
-/**
- * Stage 2 of new-user onboarding: "now the real move — tag @oddiefun on X."
- * Shown once, ever, right after a device's first-ever call locks.
- */
-export async function claimTagTeachingMoment(rawDeviceId: string): Promise<boolean> {
-  return claimOnceFlag(rawDeviceId, "tag_teaching_seen_at", memTagTeachingSeen);
-}
 
 /**
  * The first-visit guided tour (3-step in-page spotlight). Claimed by the
@@ -6290,20 +6254,6 @@ export async function chainEntryFor(slug: string, wallet: string): Promise<Chain
 }
 
 
-/**
- * SUPERSEDED, AND NOT TO BE PICKED BACK UP.
- *
- * server.ts's settledLedger() now prices every settled call from the MARKET
- * ACCOUNT (the frozen total_yes/total_no/fees the program pays against), which
- * this module cannot reach and must not try to. These two price off
- * settlementPools instead, which knows the pool but never the winning side's
- * share of it — the denominator of the payout. So they can agree with the
- * board by luck and not by construction.
- *
- * Nothing in the server calls either any more; only test-receipts.ts does.
- * They go with feed.html's retirement. Until then: do NOT wire a surface to
- * them. One person's record computed two ways is two records.
- */
 
 /**
  * Every settled call by everyone, with the market account it landed in.
@@ -6363,20 +6313,6 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
 }
 
 
-/**
- * SUPERSEDED, AND NOT TO BE PICKED BACK UP.
- *
- * server.ts's settledLedger() now prices every settled call from the MARKET
- * ACCOUNT (the frozen total_yes/total_no/fees the program pays against), which
- * this module cannot reach and must not try to. These two price off
- * settlementPools instead, which knows the pool but never the winning side's
- * share of it — the denominator of the payout. So they can agree with the
- * board by luck and not by construction.
- *
- * Nothing in the server calls either any more; only test-receipts.ts does.
- * They go with feed.html's retirement. Until then: do NOT wire a surface to
- * them. One person's record computed two ways is two records.
- */
 
 /** slug for an on-chain market account, for the submit relay's stamp. */
 export async function slugForOnchainPubkey(pubkey: string): Promise<string | null> {

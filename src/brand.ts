@@ -1,7 +1,8 @@
 /**
  * The product tagline — single source of truth for code usages (invite-email
- * footer, tweet copy). The feed hero renders it as static HTML in
- * public/feed.html; keep that copy in sync with this string.
+ * footer, tweet copy). Rendered from this constant wherever it appears; the
+ * static copy that once lived in the retired feed is gone, so there is nothing
+ * to keep in sync by hand.
  */
 export const TAGLINE = "predict, don't argue";
 

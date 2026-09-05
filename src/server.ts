@@ -1492,7 +1492,7 @@ async function chainMineFor(deviceId: string): Promise<ChainMine> {
 
 
 // The /api/onboarding/tour-seen endpoint lived here. Removed with the guided
-// tour itself (see the tombstone in feed.html) — nothing calls it, and a
+// tour itself (the feed that carried it is retired) — nothing calls it, and a
 // dead one-shot endpoint invites someone to resurrect the tour through it.
 
 
@@ -2866,8 +2866,9 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
 // is never accepted unless the admin key that resolves it is also present.
 const realStakesReady = isChainEnabled() && GEOBLOCK_LIST_VERIFIED;
 
-// The single boolean the client gates every trace of this UI behind (see
-// initChainLayer in feed.html). Under REGIME 1 it is the master flag alone:
+// The single boolean the client gates every trace of this UI behind (the app
+// shells probe /api/chain/status, then OddieChain.init). Under REGIME 1 it is
+// the master flag alone:
 // the community parimutuel is open everywhere, so there is no geo term to
 // fold in here any more. GEOBLOCK_LIST_VERIFIED still gates it — the list is
 // what REGIME 2 will enforce, and shipping a real-money surface on an
@@ -2902,9 +2903,9 @@ function noteGeoForCommunity(req: express.Request): void {
 }
 
 /**
- * The switch the whole client-side chain layer hangs off: initChainLayer in
- * feed.html probes this before injecting chain.js, so if this route is absent
- * the betting UI silently never exists.
+ * The switch the whole client-side chain layer hangs off: the app shells
+ * (public/app/market.html, you.html) probe this before OddieChain.init, so if
+ * this route is absent the betting UI silently never exists.
  *
  * RESTORED. The venue removal deleted a span that ran from venueRealMoneyReady
  * to the realStakesReady block, and this route lived inside it despite having

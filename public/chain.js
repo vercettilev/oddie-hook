@@ -512,16 +512,12 @@ function b64ToBytes(b64) {
 
   async function openStakeSheet(slug, presetSide) {
     const body = sheetShell();
-    // The question the money is going on. The sheet covers the card that was
-    // just tapped, so without this the screen that takes a stake never states
-    // what the stake is about: a swipe feed makes it genuinely easy to bet on
-    // the market you scrolled past rather than the one you meant.
-    // Two homes, because there are two shells now. feed.html has a card per
-    // market; the rebuilt market page IS one market and marks its heading.
-    // Falling through to "Pick a side" means a sheet that takes money without
-    // naming what it is for, so both are tried before that happens.
-    const qEl = document.querySelector(`.card[data-slug="${slug}"] .take`)
-      || document.querySelector(`[data-oddie-question][data-slug="${slug}"]`);
+    // The question the money is going on. The sheet covers the page, so
+    // without this the screen that takes a stake never states what the stake
+    // is about. The market page marks its heading with data-oddie-question;
+    // falling through to "Pick a side" would be a sheet that takes money
+    // without naming what it is for.
+    const qEl = document.querySelector(`[data-oddie-question][data-slug="${slug}"]`);
     const question = qEl ? qEl.textContent.trim() : "";
     const titleHTML = question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
