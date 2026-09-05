@@ -1,15 +1,23 @@
-// Every surface that offers a sign-in offers ALL of them.
+// The sign-in surfaces offer exactly the providers the product offers.
 //
-// This exists because the same bug shipped three times. A provider was added,
-// and a screen that listed providers in literal markup kept listing the old
-// set: the connect sheet, then the profile, then the in-feed gate card each
-// went on offering X and Google after Phantom existed. Nothing failed, nothing
-// logged — the wallet was simply unreachable from that screen, and it took
-// somebody looking at it to notice.
+// This file exists because the same bug shipped three times: a provider was
+// added, and a screen that listed providers in literal markup kept listing
+// the old set. Nothing failed, nothing logged, the new one was simply
+// unreachable from that screen. So it is a static check on the SOURCE.
 //
-// It is a static check on purpose. The drift is in the SOURCE — a literal
-// provider name written into markup instead of read from the one list — so
-// that is what to look for, and it costs nothing to run.
+// The invariant changed shape on 2026-09-05 and the file says so rather than
+// pretending: Google sign-in was dropped (the identity is X; settlement is an
+// X reply, not an email), and the surfaces were deliberately split. Genesis
+// offers X and nothing else, because it is the campaign. The app offers X at
+// its door and the wallet at the bet, because that is where each one pays.
+// So "every surface offers ALL providers" is no longer the rule. The rules
+// that survive are these three, and each one is a regression somebody could
+// actually ship:
+//   1. no surface offers a provider the product no longer offers (a Google
+//      button quietly coming back);
+//   2. the app really does offer both of the two that remain;
+//   3. nobody hand-types a provider name into markup instead of reading it
+//      from the one list.
 //
 // Run with: npm run test-providers
 
@@ -20,103 +28,91 @@ const check = (name: string, ok: boolean, detail = "") => {
   if (ok) console.log(`  ✓ ${name}`);
   else { failures++; console.error(`  ✗ ${name}`); if (detail) console.error(`      ${detail}`); }
 };
+const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 
-const accounts = readFileSync("src/store/accounts.ts", "utf8");
-const feed = readFileSync("public/feed.html", "utf8");
-const landing = readFileSync("public/landing.html", "utf8");
+/** What the product OFFERS. Not the same set as what the account layer KNOWS:
+ *  the union in accounts.ts must keep "google" because production rows exist
+ *  with it, and a type that cannot describe stored data is a lie. */
+const OFFERED = ["twitter", "phantom"] as const;
 
-// --- the one list everything else is measured against ----------------------
+const accounts = read("src/store/accounts.ts");
 const union = accounts.match(/export type Provider\s*=\s*([^;]+);/);
-const PROVIDERS = union ? [...union[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]) : [];
+const KNOWN = union ? [...union[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]) : [];
 
-console.log("\nthe account layer's provider list is the source of truth");
+console.log("\nthe account layer knows every provider the product offers");
 {
-  check("src/store/accounts.ts declares a Provider union", PROVIDERS.length > 0, union?.[1] ?? "not found");
-  check("...and it has more than one member (a single-provider union makes this test vacuous)",
-    PROVIDERS.length > 1, PROVIDERS.join(", "));
-  console.log(`      providers: ${PROVIDERS.join(", ")}`);
+  check("src/store/accounts.ts declares a Provider union", KNOWN.length > 0, union?.[1] ?? "not found");
+  for (const p of OFFERED) check(`the union contains "${p}"`, KNOWN.includes(p), `known: ${KNOWN.join(", ")}`);
+  console.log(`      known: ${KNOWN.join(", ")}   offered: ${OFFERED.join(", ")}`);
 }
 
-console.log("\nthe app knows a mark and a label for every one of them");
+const SURFACES: Record<string, string> = {
+  "public/landing.html": read("public/landing.html"),
+  "public/genesis.html": read("public/genesis.html"),
+  "public/app/markets.html": read("public/app/markets.html"),
+  "public/app/market.html": read("public/app/market.html"),
+  "public/app/you.html": read("public/app/you.html"),
+  "public/app/board.html": read("public/app/board.html"),
+  "public/app/who.html": read("public/app/who.html"),
+  "public/chain.js": read("public/chain.js"),
+};
+
+console.log("\nno surface offers a provider the product dropped");
 {
-  // PROV is the client's provider table. A provider missing from it renders as
-  // `undefined` in a button, or is skipped entirely by the p&&... guards.
-  // Bounded to the PROV literal itself. An earlier version let the match run to
-  // the next "};" in the file and swept up `headers:{...}` from a fetch call
-  // further down — a test that reports keys the source never declared is worse
-  // than no test, because the noise is what gets ignored.
-  const start = feed.indexOf("const PROV={");
-  const end = feed.indexOf("\n", feed.indexOf("phantom:", start));
-  const body = start >= 0 ? feed.slice(start, end) : "";
-  const keys = [...body.matchAll(/(?:\{|\s)([a-z]+)\s*:\s*\{/g)].map((m) => m[1]);
-  check("feed.html defines PROV", keys.length > 0, keys.join(", "));
-  for (const p of PROVIDERS) {
-    check(`PROV has an entry for "${p}"`, keys.includes(p), `PROV keys: ${keys.join(", ")}`);
+  const dropped = KNOWN.filter((p) => !(OFFERED as readonly string[]).includes(p));
+  check("something was in fact dropped, so this check is not vacuous", dropped.length > 0, KNOWN.join(", "));
+  for (const [file, src] of Object.entries(SURFACES)) {
+    for (const p of dropped) {
+      // A sign-in for a dropped provider has exactly two shapes: its OAuth
+      // start route, or a data-connect/data-p literal. Font hosts and comments
+      // are not offers.
+      const offers = new RegExp(`auth/${p}/start|data-(?:connect|p)="${p}"`).test(src);
+      check(`${file} does not offer "${p}"`, !offers);
+    }
   }
-  check("PROV has no entry the account layer does not know",
-    keys.every((k) => PROVIDERS.includes(k)), `extra: ${keys.filter((k) => !PROVIDERS.includes(k)).join(", ")}`);
+}
+
+console.log("\nthe app offers both providers that remain, where each one pays");
+{
+  const app = SURFACES["public/app/markets.html"] + SURFACES["public/app/you.html"];
+  check("the app's door offers X (the gate on the list and on /you)", /auth\/twitter\/start/.test(app));
+  check("genesis offers X (the campaign's connect)", /auth\/twitter\/start/.test(SURFACES["public/genesis.html"]));
+  // The wallet is offered by chain.js, which the money shells load. It is the
+  // only place a wallet can be connected, so both facts are checked: the
+  // offer exists, and the shells that take money reach it.
+  check("chain.js offers the wallet (Phantom detection + connect)",
+    /isPhantom/.test(SURFACES["public/chain.js"]) && /provider\.connect\(\)/.test(SURFACES["public/chain.js"]));
+  for (const f of ["public/app/market.html", "public/app/you.html"]) {
+    check(`${f} loads chain.js, so the wallet is reachable from it`, /src="\/chain\.js"/.test(SURFACES[f]));
+  }
 }
 
 console.log("\nno screen writes a provider name into its markup by hand");
 {
   // The exact shape of all three regressions: a literal provider in a data
-  // attribute, next to a hand-typed glyph, instead of a value produced by
-  // mapping over the list. Template placeholders (${provider}) are the correct
-  // form and are not literals, so they do not match.
-  const literals = [...feed.matchAll(/data-(?:connect|p)="([a-z]+)"/g)].map((m) => m[1]);
-  check("feed.html has no hardcoded data-connect / data-p provider",
-    literals.length === 0,
-    literals.length ? `hardcoded: ${[...new Set(literals)].join(", ")} — build these from PROV instead` : "");
-
-  // The same drift, one level up. The landing names its providers literally
-  // (it is static HTML with no PROV to read), so instead of banning literals
-  // there, require the full set.
-  //
-  // Two forms are accepted because the landing changed shape once already: it
-  // used to LINK to /feed?connect=<p> and now it has data-connect buttons that
-  // start the sign-in in place. The invariant being guarded is "the landing
-  // offers every provider", not "offers them as links" — this check failing
-  // when only the mechanism changed would be the test measuring the wrong
-  // thing, and a test people have to placate is a test people delete.
-  const linked = [
-    ...[...landing.matchAll(/\/feed\?connect=([a-z]+)/g)].map((m) => m[1]),
-    ...[...landing.matchAll(/data-connect="([a-z]+)"/g)].map((m) => m[1]),
-  ];
-  // Third shape, added when the landing stopped offering sign-in at all: the
-  // buttons moved into the app, which is where a device id and a session
-  // already live. With no sign-in surface there is no set to drift out of, so
-  // the parity check has nothing to measure — asserting it anyway would be a
-  // test people have to placate, and this file's whole point is that those get
-  // deleted. Offering SOME but not all is still the bug, and still fails.
-  if (linked.length === 0) {
-    check("the landing offers no sign-in at all, so provider parity does not apply to it", true);
-  } else {
-    for (const p of PROVIDERS) {
-      check(`the landing offers "${p}"`, linked.includes(p),
-        `landing offers: ${[...new Set(linked)].join(", ")}`);
-    }
+  // attribute instead of a value produced from the list. Template
+  // placeholders (${provider}) are the correct form and do not match.
+  for (const [file, src] of Object.entries(SURFACES)) {
+    if (!file.endsWith(".html")) continue;
+    const literals = [...src.matchAll(/data-(?:connect|p)="([a-z]+)"/g)].map((m) => m[1]);
+    check(`${file} has no hardcoded data-connect / data-p provider`, literals.length === 0,
+      literals.length ? `hardcoded: ${[...new Set(literals)].join(", ")}` : "");
   }
 }
 
 console.log("\nthe server advertises the same set");
 {
-  const server = readFileSync("src/server.ts", "utf8");
-  // /api/auth/me is what the client builds its buttons from. Anything it omits
-  // is invisible to every screen at once.
-  const me = server.slice(server.indexOf('app.get("/api/auth/me"'), server.indexOf('app.get("/api/auth/me"') + 1200);
-  const oauth = readFileSync("src/auth/oauth.ts", "utf8");
+  const server = read("src/server.ts");
+  const at = server.indexOf('app.get("/api/auth/me"');
+  const me = server.slice(at, at + 1200);
+  const oauth = read("src/auth/oauth.ts");
   const oauthList = oauth.match(/export const PROVIDERS:[^=]+=\s*\[([^\]]+)\]/);
   const oauthNames = oauthList ? [...oauthList[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]) : [];
-  const nonOauth = PROVIDERS.filter((p) => !oauthNames.includes(p));
-
-  check("every OAuth provider is in the account union",
-    oauthNames.every((p) => PROVIDERS.includes(p)), oauthNames.join(", "));
-  for (const p of nonOauth) {
-    // A non-OAuth provider (a wallet) cannot come from PROVIDERS, so the route
-    // has to append it explicitly — that append is what this checks.
-    check(`/api/auth/me appends the non-OAuth provider "${p}"`,
-      me.includes(`"${p}"`), "it is in the union but the route never advertises it");
-  }
+  check("every OAuth provider is in the account union", oauthNames.every((p) => KNOWN.includes(p)), oauthNames.join(", "));
+  // A wallet is not an OAuth provider, so the route has to append it by hand;
+  // that append is the only way any screen ever learns it exists.
+  check('/api/auth/me appends the non-OAuth provider "phantom"', me.includes('"phantom"'),
+    "it is offered but the route never advertises it");
 }
 
 console.log(failures === 0 ? "\nall provider checks passed.\n" : `\n${failures} provider check(s) FAILED.\n`);

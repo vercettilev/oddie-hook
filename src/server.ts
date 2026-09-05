@@ -118,7 +118,6 @@ function hostFor(path: string): "app" | "apex" | "shared" {
   return "shared";
 }
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FEED_HTML = readFileSync(path.join(__dirname, "../public/feed.html"), "utf8");
 const ROSTER_HTML = readFileSync(path.join(__dirname, "../public/roster.html"), "utf8");
 /** The rebuilt market page. Read once at boot like every other shell here,
  *  which means an edit to it needs a server restart to be visible. */
@@ -163,13 +162,6 @@ const stampGate = (html: string): string =>
 function appClosed(res: express.Response): void {
   res.set("Cache-Control", "no-store").redirect(302, "/genesis");
 }
-// A market page's own og/twitter tags replace this block rather than merely
-// outranking it: see the SHARE-PREVIEW-BLOCK comment in feed.html for why
-// "inject ours first and assume it wins" turned out not to hold for X.
-// Computed once at load, not per-request: this route sees real crawler
-// traffic every time a card gets shared.
-const FEED_HTML_NO_SHARE_BLOCK = FEED_HTML.replace(
-  /<!-- SHARE-PREVIEW-BLOCK-START[\s\S]*?SHARE-PREVIEW-BLOCK-END -->\n?/, "");
 const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf8");
 const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html"), "utf8");
 // Genesis campaign page. Read once at boot like every other static shell here,
@@ -177,7 +169,7 @@ const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html")
 const GENESIS_HTML = readFileSync(path.join(__dirname, "../public/genesis.html"), "utf8");
 
 // Static assets — favicons, touch/PWA icons, the manifest, the raw logos. The two
-// HTML documents keep their own routes (/feed, /tool), and /card, /market are
+// HTML documents keep their own routes (/tool and the app shells), and /card, /market are
 // dynamic, so this only ever answers for real files. oddie.fun points straight at
 // this service, so these are served here from ./public — one origin, no proxy
 // allow-list to keep in sync, so the whole /api/ev class of rewrite gaps is gone.
@@ -236,7 +228,7 @@ app.use(express.static(path.join(__dirname, "../public"), {
  *  - The share card, title and description that oddie.fun throws on X belong to
  *    the landing; the app's belong to the app.
  *
- * The app is unchanged and still lives at /feed. Anyone whose browser already
+ * The old app lived at /feed until 2026-09-05; the shells under public/app are the app now. Anyone whose browser already
  * carries a device id is bounced there by the landing's own first script, so a
  * returning player never has to read the pitch again.
  *
@@ -436,7 +428,7 @@ app.post("/hook", async (req, res) => {
       matched: false,
       reason: "no confident market",
       category: scoped ? cat : null,
-      feedUrl: scoped ? `${BASE_URL}/feed?cat=${encodeURIComponent(cat)}` : `${BASE_URL}/feed`,
+      feedUrl: `${APP_BASE_URL}/markets`,
       stale: data.stale,
     });
   }
@@ -503,40 +495,6 @@ function moneyShort(n: number): string {
   return `$${Math.round(n)}`;
 }
 
-function marketPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number; venue?: string } }, slug: string, forming?: { positions: number } | null): string {
-  const m = rec.market;
-  const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
-  const title = displayTitle(m.question);
-  // Community markets speak "% yes", never venue volume ("$0 in play" would be
-  // venue framing on a community share); venue markets keep their liquidity line.
-  // A market still FORMING has no meaningful %, so it shows the call count.
-  const desc = m.venue === "community"
-    ? (forming
-        ? `market forming — ${forming.positions} ${forming.positions === 1 ? "call" : "calls"} so far`
-        : `call it — ${yes}% yes right now`)
-    : `call it — ${yes}% yes · ${moneyShort(m.volumeUsd)} in play`;
-  const img = `${BASE_URL}/card/${slug}.png`;
-  const url = `${APP_BASE_URL}/m/${slug}`; // canonical: the short permalink
-  const tags = [
-    `<link rel="canonical" href="${ogEsc(url)}">`,
-    `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="oddie">`,
-    `<meta property="og:title" content="${ogEsc(title)}">`,
-    `<meta property="og:description" content="${ogEsc(desc)}">`,
-    `<meta property="og:url" content="${ogEsc(url)}">`,
-    `<meta property="og:image" content="${ogEsc(img)}">`,
-    `<meta property="og:image:type" content="image/png">`,
-    `<meta property="og:image:width" content="2000">`,
-    `<meta property="og:image:height" content="1048">`,
-    `<meta property="og:image:alt" content="${ogEsc(title)}">`,
-    `<meta name="twitter:card" content="summary_large_image">`,
-    `<meta name="twitter:title" content="${ogEsc(title)}">`,
-    `<meta name="twitter:description" content="${ogEsc(desc)}">`,
-    `<meta name="twitter:image" content="${ogEsc(img)}">`,
-  ].join("\n");
-  return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
-}
-
 /**
  * The rebuilt market page's og tags.
  *
@@ -589,25 +547,14 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
   // su an CANLIDA HIC MARKET YOK (dogrulandi: /api/v1/markets bos), yani bu
   // hicbir paylasilmis baglantiyi kirmiyor. Bot acildiginda APP_OPEN=true.
   if (!APP_OPEN) return appClosed(res);
-  // pricingSet(), not getMarketData() alone: a shared permalink for a
-  // community market must unfurl with its real live odds, not the stored
-  // opening line — getMarketData() only ever knows about Kalshi/Polymarket.
-  const all = await pricingSet();
-  const rec = await getSlug(req.params.slug, all).catch(() => null);
-  // ?pc=<token>: a PERSONAL share. The unfurl shows their call, not the generic
-  // market — that's the whole reason their followers react. Falls back to the
-  // market og on any mismatch, so a stale token still lands on a working page.
-  const pc = typeof req.query.pc === "string" ? req.query.pc : null;
-  if (rec && pc) {
-    const share = await getShareCall(pc).catch(() => null);
-    if (share && share.slug === req.params.slug) {
-      return res.type("html").send(positionPageHtml(rec, req.params.slug, share));
-    }
-  }
+  // The ?pc= personal-share page went with feed.html: its unfurl is now the
+  // wallet's record at /w/<address>, and the bot's resolution card (/card/pc)
+  // still renders without it. A stale ?pc= link lands on the market, which is
+  // the honest fallback it always had.
   // The rebuilt shell. no-cache for the same reason genesis carries it: this
   // page inlines its own script, and a heuristically-cached copy runs stale
   // script against a live money API.
-  const question = rec?.market.question ?? (await communityMarketDetail(req.params.slug).catch(() => null))?.question ?? null;
+  const question = (await communityMarketDetail(req.params.slug).catch(() => null))?.question ?? null;
   // An unknown slug still gets the shell: the page's own fetch renders the
   // "no market here" state, which is a better dead end than the old app.
   const html = question
@@ -666,33 +613,6 @@ app.get("/api/profile/:handle", async (req, res) => {
     tier: rep.tier, topCategory: rep.topCategory, flexLine: rep.flexLine,
   });
 });
-
-function positionPageHtml(rec: { market: { question: string; yesPct: number; volumeUsd: number } }, slug: string, share: { token: string; handle: string; side: string; entryPct: number; resolved: string | null }): string {
-  const title = `@${share.handle} called ${share.side.toUpperCase()} at ${share.entryPct}%`;
-  const won = share.resolved === share.side;
-  const desc = share.resolved && share.resolved !== "sold"
-    ? `resolved ${share.resolved.toUpperCase()} ${won ? "— called it" : ""} · ${rec.market.question}`
-    : `${rec.market.question} · market says ${Math.round(rec.market.yesPct)}% yes`;
-  const img = `${BASE_URL}/card/pc/${share.token}.png`;
-  const url = `${BASE_URL}/market/${slug}?pc=${share.token}`;
-  const tags = [
-    `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="oddie">`,
-    `<meta property="og:title" content="${ogEsc(title)}">`,
-    `<meta property="og:description" content="${ogEsc(desc)}">`,
-    `<meta property="og:url" content="${ogEsc(url)}">`,
-    `<meta property="og:image" content="${ogEsc(img)}">`,
-    `<meta property="og:image:type" content="image/png">`,
-    `<meta property="og:image:width" content="2000">`,
-    `<meta property="og:image:height" content="1048">`,
-    `<meta property="og:image:alt" content="${ogEsc(title)}">`,
-    `<meta name="twitter:card" content="summary_large_image">`,
-    `<meta name="twitter:title" content="${ogEsc(title)}">`,
-    `<meta name="twitter:description" content="${ogEsc(desc)}">`,
-    `<meta name="twitter:image" content="${ogEsc(img)}">`,
-  ].join("\n");
-  return FEED_HTML_NO_SHARE_BLOCK.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
-}
 // Both paths serve the SAME file: /genesis/how is a view of the campaign page,
 // not a second copy of it. The explanation lives in exactly one place, and the
 // boot script switches views off location.pathname.
@@ -744,11 +664,6 @@ app.get("/markets", (_req, res) => {
 app.get(["/board", "/leaderboard"], (_req, res) => {
   if (!APP_OPEN) return appClosed(res);
   res.set("Cache-Control", "no-cache").type("html").send(BOARD_HTML);
-});
-
-app.get("/feed", (_req, res) => {
-  if (!APP_OPEN) return appClosed(res);
-  res.type("html").send(FEED_HTML); // feed without a start market also works
 });
 
 /**
@@ -2614,7 +2529,7 @@ app.get("/api/auth/:provider/start", (req, res) => {
   const returnTo =
     typeof rq === "string" && rq.startsWith("/") && !rq.startsWith("//") && rq.length <= 200 ? rq : null;
   const bail = (why: string) => {
-    const dest = returnTo ?? "/feed";
+    const dest = returnTo ?? "/markets";
     const sep = dest.includes("?") ? "&" : "?";
     return res.redirect(`${BASE_URL}${dest}${sep}auth_error=${encodeURIComponent(why)}`);
   };
@@ -2648,7 +2563,7 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
       const sep = pendingAuth.returnTo.includes("?") ? "&" : "?";
       return res.redirect(`${BASE_URL}${pendingAuth.returnTo}${sep}${params}`);
     }
-    return res.redirect(`${BASE_URL}/feed?${params}#/profile`);
+    return res.redirect(`${BASE_URL}/markets?${params}`);
   };
   if (!isProvider(p)) return back("auth_error=unknown_provider");
 
@@ -2867,7 +2782,7 @@ app.post("/api/invites/send", requireAdmin, async (req, res) => {
     html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:520px">
   <p style="font-size:17px;font-weight:700;margin:0 0 12px">you're in.</p>
   <p style="margin:0 0 16px">Your spot on the Oddie beta just opened. Sign in with this Google account and you're playing — free, virtual predictions, nothing to cash out.</p>
-  <p style="margin:0 0 20px"><a href="${BASE_URL}/feed?invite=1" style="display:inline-block;background:#68C6FF;color:#000;font-weight:700;border:3px solid #000;border-radius:14px;padding:10px 18px;text-decoration:none">open the feed →</a></p>
+  <p style="margin:0 0 20px"><a href="${APP_BASE_URL}/markets?invite=1" style="display:inline-block;background:#68C6FF;color:#000;font-weight:700;border:3px solid #000;border-radius:14px;padding:10px 18px;text-decoration:none">open the feed →</a></p>
   <p style="color:#6B7A88;font-size:12.5px;margin:0">oddie · ${TAGLINE}</p>
 </div>`,
   });
@@ -3828,7 +3743,8 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
   await emailSettled(slug, outcome, settled);
   // The wallet half of the same notice. Fired, never awaited: the play emails
   // above are part of settling, this one is an announcement.
-  void emailChainStakers(slug, outcome);
+  // Settlement reaches stakers on X (the resolution reply); the email path
+  // went with Google sign-in, which had no door outside feed.html.
   // Real-stakes counterpart: resolve the SAME market on-chain so claim_winnings
   // has an outcome to pay against. Best-effort and entirely after the response-
   // determining work above — the real (virtual) economy never waits on devnet.
@@ -4731,35 +4647,6 @@ if (process.env.ALLOW_TEST_SETTLE === "1") {
  * Best-effort and never awaited into the response: a mailer failure must not
  * touch a settlement that has already happened.
  */
-async function emailChainStakers(slug: string, outcome: "yes" | "no"): Promise<void> {
-  try {
-    const stakers = await walletsInMarket(slug);
-    if (stakers.length === 0) return;
-    const emails = await emailsForWallets([...new Set(stakers.map((s2) => s2.wallet))]);
-    if (Object.keys(emails).length === 0) return;
-    const rec = await getSlug(slug);
-    const question = rec?.market.question ?? slug;
-    for (const st of stakers) {
-      const to = emails[st.wallet];
-      if (!to) continue;
-      // The winner is pointed at the claim, the loser at the market. Neither is
-      // quoted a payout: pari-mutuel pays from the final pool, and the exact
-      // number lives on the claim screen where it is read from the chain.
-      const won = st.side === outcome;
-      const url = won ? `${APP_BASE_URL}/m/${encodeURIComponent(slug)}` : `${APP_BASE_URL}/m/${encodeURIComponent(slug)}`;
-      const { subject, html } = settleMailBody({
-        to, question, side: st.side, entryPct: st.entryPct, outcome,
-        // Denominated in SOL, and deliberately not a predicted payout.
-        stake: Number((st.lamports / 1e9).toFixed(4)), proceeds: 0,
-        positionsUrl: url,
-      });
-      await sendMail({ to, subject, html });
-    }
-  } catch (err) {
-    console.error("[mail] chain settle batch failed:", (err as Error).message);
-  }
-}
-
 async function emailSettled(slug: string, outcome: "yes" | "no", settled: { deviceId: string | null; side: "yes" | "no"; stake: number; entryPct: number; proceeds: number }[]): Promise<void> {
   try {
     const rec = await getSlug(slug);
@@ -4772,7 +4659,7 @@ async function emailSettled(slug: string, outcome: "yes" | "no", settled: { devi
       await sendSettleMail({
         to, question, side: p.side, entryPct: p.entryPct, outcome,
         proceeds: p.proceeds, stake: p.stake,
-        positionsUrl: `${BASE_URL}/feed#/positions`,
+        positionsUrl: `${APP_BASE_URL}/you`,
       });
     }
   } catch (err) {

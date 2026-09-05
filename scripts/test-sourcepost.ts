@@ -101,28 +101,30 @@ console.log("\nthe handle a market is named after");
 // which was every community market in production. It was untrue (nobody chose
 // anonymity; the source was simply never recorded) and it read to a first-time
 // visitor as though oddie lists these markets itself.
-console.log("\nthe feed never invents an anonymous person");
+console.log("\nthe market page never invents an anonymous person");
 {
-  const feed = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
-  // Scoped to the chip FUNCTION's body, not the file. "anonymous caller"
-  // elsewhere is a different and honest statement (a player who really has
-  // linked no handle), and the comments above this function have to be free to
-  // describe the bug they exist to explain.
-  // Provenance moved out of the meta row and became the card's AUTHOR ROW: same
-  // rule, more weight, and the person is now a link rather than a label. The
-  // assertions follow it rather than pinning the empty function it left behind.
-  const from = feed.indexOf("function authorRowHtml");
-  const body = from < 0 ? "" : feed.slice(from, feed.indexOf("\n}", from) + 2);
-  check("the author row is where the test thinks it is", from > 0);
-  check("provenance never asserts an anonymous tagger",
-    body.length > 0 && !/anonymous/i.test(body), body.slice(0, 240));
-  check("the nameless case names oddie instead", body.includes("opened this one"));
-  check("...and the named case still shows the handle", body.includes("@${h}"));
-  // The point of the row: the tagger is reachable. A person who cannot be
-  // clicked is a label, and a label is what this replaced.
-  check("the handle links to their X account", body.includes("https://x.com/${h}"));
+  // Provenance now lives on the rebuilt market page (public/app/market.html):
+  // an "Opened by @handle" eyebrow and, when the originating post is known, a
+  // quoted source card with a link to check it at source. The rule this
+  // guards is unchanged from the feed's author row: a market with no recorded
+  // source shows NOTHING about who opened it, never a made-up "anonymous", and
+  // a named tagger is a link, not a label.
+  const page = readFileSync(new URL("../public/app/market.html", import.meta.url), "utf8");
+  const from = page.indexOf("function render(m)");
+  const body = from < 0 ? "" : page.slice(from, page.indexOf("\n  }\n", from) + 4);
+  check("the market page's render() is where the test thinks it is", from > 0);
+  check("provenance never asserts an anonymous tagger", body.length > 0 && !/anonymous/i.test(body));
+  check("the eyebrow only names an opener when one is recorded",
+    body.includes('if (m.taggedBy) bits.push("Opened by <b>@"'));
+  check("the source card only renders when a post is actually known",
+    body.includes("if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url))"));
+  check("...and quotes text only when text exists, never a placeholder",
+    body.includes("(sp.text ? '<p class=\"src__t\">'"));
+  // The point of the row: the claim is checkable at source. A person who
+  // cannot be clicked is a label, and a label is what this replaced.
+  check("the source is a link to the post on X", body.includes("Check it at source on X"));
   check("...in a new tab, without leaking the referrer chain",
-    body.includes('target="_blank"') && body.includes('rel="noopener noreferrer"'));
+    body.includes('target="_blank" rel="noopener noreferrer"'));
 }
 
 console.log(failures === 0 ? "\nall source-post checks passed.\n" : `\n${failures} source-post check(s) FAILED.\n`);

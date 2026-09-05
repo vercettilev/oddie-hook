@@ -222,16 +222,22 @@ console.log("\ndisplayTitle: the card's title is the tweet");
 // the failure that actually happened.
 console.log("\nthe images we post match the app people land in");
 {
-  const feedCss = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
-  const token = (name: string) => feedCss.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`))?.[1]?.toUpperCase() ?? null;
+  // The app people land in is the rebuilt market page. Its :root is the
+  // palette every shell under public/app shares, so one file speaks for all.
+  const appCss = readFileSync(new URL("../public/app/market.html", import.meta.url), "utf8");
+  const token = (name: string) => appCss.match(new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`))?.[1]?.toUpperCase() ?? null;
 
-  check("the feed still declares an --accent to be measured against", token("accent") !== null);
-  check("the card's accent IS the app's accent", C.accent.toUpperCase() === token("accent"),
-    `card ${C.accent} vs feed --accent ${token("accent")}`);
-  check("...and its deep variant is the app's --acc-deep", C.accentDeep.toUpperCase() === token("acc-deep"),
-    `card ${C.accentDeep} vs feed --acc-deep ${token("acc-deep")}`);
-  check("...and its pale wash is the app's --wash", C.pill.toUpperCase() === token("wash"),
-    `card ${C.pill} vs feed --wash ${token("wash")}`);
+  check("the app still declares a --yellow to be measured against", token("yellow") !== null);
+  check("the card's accent IS the app's --yellow", C.accent.toUpperCase() === token("yellow"),
+    `card ${C.accent} vs app --yellow ${token("yellow")}`);
+  // Two olives five units apart under one name is exactly the drift this check
+  // exists to stop; the app was moved onto the card's documented value.
+  check("...and its deep variant is the app's --yellow-deep", C.accentDeep.toUpperCase() === token("yellow-deep"),
+    `card ${C.accentDeep} vs app --yellow-deep ${token("yellow-deep")}`);
+  check("...and its hard offset is the app's --pink (the NO side)", C.echo.toUpperCase() === token("pink"),
+    `card ${C.echo} vs app --pink ${token("pink")}`);
+  // C.pill (the card's pale wash) has no app counterpart any more: the app is
+  // single-theme on black and never paints a light wash. It is card-internal.
 
   // The banner is drawn, not stored. A checked-in public/banner.png is exactly
   // how the last one went stale, so its absence is part of the contract.
@@ -254,7 +260,9 @@ console.log("\nthe images we post match the app people land in");
     `headline right edge ${Math.round(headRight)} at ${headFS}px vs chips at 618`);
 
   // Both share surfaces must point at a route this server answers, not a file.
-  for (const page of ["landing", "feed"] as const) {
+  // genesis.html deliberately ships its own campaign image, not the banner,
+  // so only the landing is held to "both tags are the rendered banner".
+  for (const page of ["landing"] as const) {
     const html = readFileSync(new URL(`../public/${page}.html`, import.meta.url), "utf8");
     const imgs = [...html.matchAll(/(?:og:image|twitter:image)" content="([^"]+)"/g)].map((m) => m[1]);
     check(`${page}.html ships both image tags`, imgs.length === 2, JSON.stringify(imgs));
@@ -262,96 +270,14 @@ console.log("\nthe images we post match the app people land in");
   }
 }
 
-// --- a shared reply's unfurl is not a competition between two og:image tags --
-//
-// Trigger: a reply's permalink unfurled on X as the generic root banner
-// (placeholder odds, no question) instead of the market's own card. The cause
-// was never a missing tag: marketPageHtml() has always injected its own
-// og:image right after <title>. It was an EXTRA one: feed.html's own static
-// share-preview block, further down the same document, was never removed, so
-// the served page carried two competing og:image tags (and eight other
-// duplicated properties) and X evidently did not honor the first one, which
-// is the assumption the old code silently depended on.
-//
-// server.ts can't be imported here to call marketPageHtml() directly: it
-// calls app.listen() at module scope with no guard, so importing it would
-// try to bind a real port as a side effect of running this test. Both halves
-// of the actual fix are checkable without that: the marker-stripped HTML
-// (the same transform server.ts applies at load) and server.ts's OWN SOURCE
-// (grepped as text, the pattern this suite already uses for tool.html) prove
-// the wiring is correct without executing the server.
-console.log("\na market page ships one og:image, not a competition between two");
-{
-  const feed = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
-  const starts = (feed.match(/SHARE-PREVIEW-BLOCK-START/g) ?? []).length;
-  const ends = (feed.match(/SHARE-PREVIEW-BLOCK-END/g) ?? []).length;
-  check("feed.html has exactly one share-preview block to strip", starts === 1 && ends === 1, `start=${starts} end=${ends}`);
-  check("...opening before closing", feed.indexOf("SHARE-PREVIEW-BLOCK-START") < feed.indexOf("SHARE-PREVIEW-BLOCK-END"));
-
-  // The exact transform server.ts applies, run here on the same source.
-  const stripped = feed.replace(/<!-- SHARE-PREVIEW-BLOCK-START[\s\S]*?SHARE-PREVIEW-BLOCK-END -->\n?/, "");
-  check("stripping actually removes something", stripped.length < feed.length, `${feed.length} -> ${stripped.length}`);
-
-  // Every property a market page's own injected tags would collide with.
-  const DUPLICATE_PRONE = [
-    "og:type", "og:site_name", "og:title", "og:description", "og:image",
-    "twitter:card", "twitter:title", "twitter:description", "twitter:image",
-  ];
-  for (const prop of DUPLICATE_PRONE) {
-    const n = (stripped.match(new RegExp(`(?:property|name)="${prop}"`, "g")) ?? []).length;
-    check(`after stripping, "${prop}" appears zero times in the base (a market page adds its own)`, n === 0, `${n} left`);
-  }
-  // And the strip must be surgical: the plain SEO description (a different
-  // tag from og:description, unrelated to card unfurls) is not this bug and
-  // must survive untouched.
-  check('the plain <meta name="description"> is NOT part of the stripped block',
-    stripped.includes('<meta name="description" content="Oddie turns any claim on X into a market'));
-
-  // The other half: are the three page builders actually wired to the
-  // stripped base? Grepped as source text for the same reason server.ts
-  // can't be imported above.
-  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
-  // profilePageHtml is gone on purpose: /@handle no longer renders a second,
-  // device-keyed profile on the feed shell, it redirects to the wallet's record
-  // at /w/<address> (one person, one record). The other two die with feed.html.
-  for (const fn of ["marketPageHtml", "positionPageHtml"]) {
-    const from = server.indexOf(`function ${fn}(`);
-    const body = from < 0 ? "" : server.slice(from, server.indexOf("\n}", from) + 2);
-    check(`${fn} exists`, body.length > 0);
-    check(`${fn} builds on FEED_HTML_NO_SHARE_BLOCK, not raw FEED_HTML`,
-      body.includes("FEED_HTML_NO_SHARE_BLOCK") && !/[^_]FEED_HTML\./.test(body), body.match(/FEED_HTML\w*\.replace/)?.[0]);
-  }
-}
-
-// --- the movement chip speaks only when it has something true to say --------
-//
-// pctDelta is sent ONLY when a prior reading exists, is recent enough to call
-// "today", and the line actually moved. The client must therefore render on
-// presence and never compute a zero: a card that says "▲0 today" claims a
-// measurement was taken, and one that says "today" about a week-old reading is
-// worse than saying nothing. The function is lifted out of the page and run,
-// rather than grepped, because the failure being guarded is behavioural.
-console.log("\nthe movement chip renders on presence, not on a number");
-{
-  const feed = readFileSync(new URL("../public/feed.html", import.meta.url), "utf8");
-  const from = feed.indexOf("function deltaChip");
-  const body = from < 0 ? "" : feed.slice(from, feed.indexOf("\n}", from) + 2);
-  check("deltaChip is where the test thinks it is", from > 0);
-
-  const deltaChip = new Function(`${body}; return deltaChip;`)() as (m: unknown) => string;
-  check("a rise renders with an up arrow", /▲9 today/.test(deltaChip({ pctDelta: 9 })), deltaChip({ pctDelta: 9 }));
-  check("...and carries the up class", /mchip-delta up/.test(deltaChip({ pctDelta: 9 })));
-  check("a fall renders the magnitude, not a minus sign",
-    /▼4 today/.test(deltaChip({ pctDelta: -4 })) && !deltaChip({ pctDelta: -4 }).includes("-4"),
-    deltaChip({ pctDelta: -4 }));
-  check("...and carries the down class", /mchip-delta down/.test(deltaChip({ pctDelta: -4 })));
-
-  // The four silences. Each of these would be a claim the server never made.
-  check("an explicit zero renders nothing", deltaChip({ pctDelta: 0 }) === "");
-  check("an absent field renders nothing", deltaChip({}) === "");
-  check("a null renders nothing", deltaChip({ pctDelta: null }) === "");
-  check("a non-number renders nothing", deltaChip({ pctDelta: "abc" }) === "");
-}
+/* Two sections used to live here and went with public/feed.html:
+ *  - "a market page ships one og:image": it pinned FEED_HTML_NO_SHARE_BLOCK
+ *    and the page builders that wrapped the feed shell. The rebuilt market
+ *    page injects its own og tags into a shell that carries none (see
+ *    marketShellHtml in server.ts), so there is no second image to strip.
+ *  - "the movement chip renders on presence": it pinned feed.html's deltaChip.
+ *    The rebuilt app has no movement chip. If one returns, its four silences
+ *    (zero, absent, null, non-number render NOTHING) return with it. */
 
 /* ------------------------------------------------------------- ligatures --
  * The bug this guards: the bundled Fredoka subsets carry the GSUB ligature

@@ -1,6 +1,6 @@
-// Betting, with real SOL. Loaded only when /api/chain/status says the server
-// can reach the chain (see initChainLayer() in feed.html, which injects this
-// file's script tag and hands it the cluster). This file existing in a page
+// Betting, with real SOL. Loaded by the app shells under public/app (the
+// market page and /you), which call OddieChain.init(cluster) with the cluster
+// /api/chain/status reports. This file existing in a page
 // load already means that answered yes; there is no further flag check inside
 // it.
 //
