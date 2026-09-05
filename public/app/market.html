@@ -343,12 +343,27 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 
     var collect = view.querySelector("#collect");
     if (collect) collect.addEventListener("click", function () {
-      if (window.OddieChain && window.OddieChain.openClaim) window.OddieChain.openClaim(SLUG, m.outcome);
+      if (window.OddieChain && window.OddieChain.openClaim) return window.OddieChain.openClaim(SLUG, m.outcome);
+      var was = collect.textContent;
+      collect.textContent = "Can't collect right now, reload in a moment";
+      setTimeout(function () { collect.textContent = was; }, 4000);
     });
 
+    /* A missing money layer is a thing to say out loud. Without the else
+       branch a tap on YES with chain.js not loaded (blocked script, a CDN
+       blip, an extension) did nothing at all: a silent no-op wearing the
+       costume of a bet. The old feed said this in the card; this says it in
+       the button, and puts the button back after a moment. */
+    function noMoneyLayer(b, label) {
+      var was = b.innerHTML;
+      b.innerHTML = label + "<small>can't take a side right now, reload in a moment</small>";
+      b.setAttribute("aria-live", "polite");
+      setTimeout(function () { b.innerHTML = was; }, 4000);
+    }
     Array.prototype.forEach.call(view.querySelectorAll(".side"), function (b) {
       b.addEventListener("click", function () {
-        if (window.OddieChain && window.OddieChain.openStake) window.OddieChain.openStake(SLUG, b.dataset.side);
+        if (window.OddieChain && window.OddieChain.openStake) return window.OddieChain.openStake(SLUG, b.dataset.side);
+        noMoneyLayer(b, b.dataset.side === "yes" ? "YES" : "NO");
       });
     });
 
