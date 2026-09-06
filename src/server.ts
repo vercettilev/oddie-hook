@@ -2689,6 +2689,12 @@ app.get("/api/v1/markets", async (req, res) => {
       resolved: Boolean(m.resolvedOutcome),
       outcome: m.resolvedOutcome ?? null,
       taggedBy: openers[m.slug]?.handle ?? null,
+      // Kartin @handle cipi bir profile degil, iddianin GELDIGI gonderiye
+      // gidebilsin diye. Veri zaten yukarida okundu (surfacersFor), tek eksik
+      // onu yayinlamakti. Istemci yazari URL'den cikarip handle ile
+      // karsilastiriyor: ikisi ayni degilse cip profile gider, cunku taggedBy
+      // ETIKETLEYENDIR ve sourceUrl baskasinin gonderisi olabilir.
+      sourceUrl: openers[m.slug]?.sourceUrl ?? null,
       pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
       yesPct: unreadable || total <= 0 ? null : Math.max(1, Math.min(99, Math.round((yes / total) * 100))),
       oddsSource: unreadable ? "unreadable" : total > 0 ? "vault" : "unpriced",

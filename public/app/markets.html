@@ -273,9 +273,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
 <script src="/app/id.js"></script>
 <script src="/app/me.js"></script>
+<!-- Para tabakasi. market.html ile AYNI dosya: feed'de bahis alan sheet ile
+     market sayfasindaki sheet ayni kod olmali, yoksa iki yerde iki farkli
+     urun ogretilir. chain.js zaten openStake'i disariya aciyor. -->
+<script src="/chain.js" defer></script>
 <script>
 (function () {
   var view = document.getElementById("view");
+  var inited = false;   // OddieChain.init bir kez calisir, her listelemede degil
   /* THE X GATE, on the app's front door. Cheap (no money, no signature) and
      already done by anyone arriving from Genesis, so for the launch cohort it
      costs nothing and it means every row on the board has a name from day one.
@@ -342,9 +347,20 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      for the href, esc for the text -- the same handle, two different escapes,
      because a handle in an attribute and a handle in markup are not the same
      hazard. */
-  function byChip(handle) {
+  function byChip(handle, sourceUrl) {
     var h = String(handle).replace(/^@+/, "");
-    return '<a class="by" href="https://x.com/' + encodeURIComponent(h)
+    var href = "https://x.com/" + encodeURIComponent(h);
+    /* CIP KIMIN GONDERISINI ACTIGI KONUSUNDA YALAN SOYLEYEMEZ.
+       Kaynak gonderi gosterilen handle'a AITSE cip oraya gider: okuyan kisi
+       iddiayi kendi baglaminda gorur, profile dusup aramaz. Yazar farkliysa
+       eski davranis surer, cunku taggedBy ETIKETLEYENDIR ve sourceUrl pekala
+       baskasinin gonderisi olabilir (bkz. openMarketFromClaim'deki
+       taggerHandle notu); o durumda "@smolwyne" yazan bir cipin baskasinin
+       tweetini acmasi olurdu. */
+    var m = String(sourceUrl || "").match(
+      /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^\/?#]+)\/status\/\d+/i);
+    if (m && m[1].toLowerCase() === h.toLowerCase()) href = sourceUrl;
+    return '<a class="by" href="' + esc(href)
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
 
@@ -366,7 +382,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         // WHO OPENED IT IS THE POINT. This was four grey characters, which is
         // how a social market reads as a ticker. A pill linked to their X
         // profile makes the opener a person you can go look at.
-        if (m.taggedBy) bits.push(byChip(m.taggedBy));
+        if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
         var w = when(m.closesAt);
         if (w) bits.push(esc(w));
 
@@ -390,21 +406,55 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         var href = "/m/" + encodeURIComponent(m.slug);
         return '<article class="card">'
           + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
-          + '<h2 class="card__q"><a href="' + href + '">' + esc(m.question) + "</a></h2>"
+          + '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
+          + '<a href="' + href + '">' + esc(m.question) + "</a></h2>"
           + pool
           + '<div class="sides">'
-          + '<a class="side side--y" href="' + href + '?side=yes">YES'
+          + '<a class="side side--y" data-slug="' + esc(m.slug) + '" data-side="yes" href="' + href + '?side=yes">YES'
           + (pct === null ? "" : "<span>" + pct + "%</span>") + "</a>"
-          + '<a class="side side--n" href="' + href + '?side=no">NO'
+          + '<a class="side side--n" data-slug="' + esc(m.slug) + '" data-side="no" href="' + href + '?side=no">NO'
           + (pct === null ? "" : "<span>" + (100 - pct) + "%</span>") + "</a>"
           + "</div></article>";
       }).join("");
       document.getElementById("sub").textContent =
         ms.length + (ms.length === 1 ? " market open" : " markets open");
+
+      /* Ag adi sunucudan gelir, burada tahmin edilmez. Liste yaniti zaten
+         cluster tasiyor, yani ekstra bir istek yok. */
+      if (!inited) {
+        inited = true;
+        if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(j.cluster);
+        else window.addEventListener("load", function () {
+          if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(j.cluster);
+        });
+      }
     })
     .catch(function (e) {
       view.innerHTML = '<div class="err">We could not load the markets just now (' + esc(e.message) + ").</div>";
     });
   }
+
+  /* TARAF TUTMAK FEED'I TERK ETTIRMEZ.
+     YES/NO hala <a>: chain.js yuklendiyse tiklamayi biz aliyoruz ve sheet
+     kartin uzerinde aciliyor; yuklenmediyse (engellenmis script, bir aksilik)
+     preventDefault hic calismaz ve link kendi isini yapar -- markete taraf
+     secili gider. Butona cevirip "su an bahis alinamiyor" demek yerine bu
+     secildi, cunku calisan bir yedek yol bir ozurden iyidir. Ayni sebeple
+     yeni sekmede acma, orta tik ve baglanti kopyalama da bozulmadan kaliyor.
+     Delegasyon: kartlar her yuklemede yeniden ciziliyor, tek dinleyici
+     hepsini kapsiyor. */
+  view.addEventListener("click", function (ev) {
+    var a = ev.target.closest && ev.target.closest("a.side");
+    if (!a || !a.dataset.slug) return;
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button > 0) return;  // "yeni sekmede ac" niyeti
+    if (!(window.OddieChain && window.OddieChain.openStake)) return;       // link kendi isini yapsin
+    ev.preventDefault();
+    window.OddieChain.openStake(a.dataset.slug, a.dataset.side);
+  });
+
+  /* Para hareket etti, liste de hareket etsin: chain.js bahis dustugu anda
+     bunu firlatiyor ve sunucu o an onbellegini birakiyor, yani yeniden
+     okuma bu bahsi de iceriyor. market.html ile ayni sozlesme. */
+  document.addEventListener("oddie:staked", function () { loadMarkets(); });
 })();
 </script>
