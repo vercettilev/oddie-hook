@@ -59,7 +59,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   display:flex;flex-wrap:wrap;gap:6px 14px}
 .eyebrow b{color:var(--yellow);font-weight:700}
 .q{font-family:var(--display);font-weight:400;
-  font-size:clamp(30px,6.4vw,54px);line-height:1.02;letter-spacing:.005em;
+  font-size:clamp(28px,5.1vw,44px);line-height:1.04;letter-spacing:.005em;
   text-transform:uppercase;text-wrap:balance;margin:0 0 26px;color:var(--cream)}
 
 /* ---- the pool ---- */
@@ -142,6 +142,8 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .src__a:hover{text-decoration:underline}
 
 /* ---- the terms this settles by ---- */
+.how{font-size:15px;line-height:1.55;color:var(--fg-2);margin:0 0 14px;max-width:46ch}
+.how b{color:var(--cream);font-weight:700}
 .terms{border:2px solid var(--fg-3);margin:0 0 22px}
 .terms summary{cursor:pointer;list-style:none;padding:12px 16px;
   font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.14em;
@@ -416,6 +418,33 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     return /^(?:https?:\/\/t\.co\/\S+|pic\.twitter\.com\/\S+|https?:\/\/pic\.x\.com\/\S+|\s)+$/i.test(out) ? "" : out;
   }
 
+  /* ALINTININ ISI KANIT, TAM METIN DEGIL.
+     Buradaki blok "iddia gercekten atilmis ve iste baglami" diyor; tweet'i
+     bastan sona okutmak degil. 322 karakterlik bir gonderi telefonda alintiyi
+     195px yapiyordu ve sorunun kendisiyle yer icin yarisiyordu. Tamami zaten
+     bir tik uzakta: "See the post". Kesme kelime sinirinda, cunku kelimenin
+     ortasindan kesilmis bir alinti okuyana alintinin bozuk oldugunu dusundurur. */
+  var POST_MAX = 110;
+  function shortPost(t) {
+    var x = tidyPost(t);
+    if (x.length <= POST_MAX) return x;
+    var cut = x.slice(0, POST_MAX);
+    var sp = cut.lastIndexOf(" ");
+    if (sp > POST_MAX * 0.6) cut = cut.slice(0, sp);
+    return cut.replace(/[\s.,;:!?\u2013\u2014-]+$/, "") + "\u2026";
+  }
+
+  /* BIR KISI, BIR ISIM.
+     API "author" olarak GORUNEN ADI veriyor ("wyne"), tepedeki cip ise
+     handle'i ("@smolwyne"): ayni ekranda ayni insan iki farkli isimle
+     duruyordu. Handle gonderinin KENDI URL'sinden cikariliyor, cunku dogru
+     cevap "bu gonderiyi kim atti" -- etiketleyen baskasi olabilir. */
+  function postHandle(sp, taggedBy) {
+    var m = String((sp && sp.url) || "").match(
+      /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^\/?#]+)\/status\/\d+/i);
+    return m ? m[1] : (taggedBy || null);
+  }
+
   function render(m) {
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
     var resolved = Boolean(m.resolved && m.outcome);
@@ -452,9 +481,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        the url it is linked; when we hold neither, nothing is invented. */
     if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url)) {
       var sp = m.sourcePost;
+      var ph = postHandle(sp, m.taggedBy);
       html += '<blockquote class="src">'
-        + '<p class="src__who">' + (sp.author ? "From <b>" + esc(sp.author) + "</b>" : (m.taggedBy ? "From " + byChip(m.taggedBy) : "The claim")) + "</p>"
-        + (tidyPost(sp.text) ? '<p class="src__t">' + esc(tidyPost(sp.text)) + "</p>" : "")
+        + '<p class="src__who">' + (ph ? "From <b>@" + esc(ph) + "</b>" : "The claim") + "</p>"
+        + (shortPost(sp.text) ? '<p class="src__t">' + esc(shortPost(sp.text)) + "</p>" : "")
         + (sp.url ? '<a class="src__a" href="' + esc(sp.url) + '" target="_blank" rel="noopener noreferrer">See the post</a>' : "")
         + "</blockquote>";
     }
@@ -495,6 +525,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
           + "You are in <b>" + esc(String(youAreIn.side).toUpperCase()) + "</b> for <b>"
           + esc(String(youAreIn.sol)) + " SOL</b></p>";
       }
+      /* SAYFA NE YAPTIGINI SOYLEMIYORDU.
+         Iki renkli buton vardi ve basinca ne olacagini hicbir yer yazmiyordu:
+         parayi kim aliyor, kazanan neye gore belli oluyor. Eylemin ONUNDE
+         duruyor, cunku eylemden sonra aciklama aciklama degil mazerettir. */
+      if (!off) html += '<p class="how">Put SOL on <b>YES</b> or <b>NO</b>. Winners split the pool.</p>';
       html += '<div class="sides">'
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES"
         + (note ? "<small>" + esc(note) + "</small>" : "") + "</button>"
@@ -513,15 +548,23 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        know what the question means; present, because some people are about
        to find out they disagreed about it. */
     if (m.resolutionCriteria) {
-      html += '<details class="terms"><summary>How this settles'
+      /* ACIK GELIYOR. Cozum kurallari paranin karsiligini belirleyen tek
+         metin; katlanmis halde "onemli degil" diye okunuyordu. Landing'de
+         "kim karar veriyor" sorusunu one cikardik, paranin konuldugu sayfada
+         saklamak tutarsizdi. Katlanabilir kaliyor, kapatmak isteyen kapatir. */
+      html += '<details class="terms" open><summary>How this settles'
         + '<img class="psticker" src="/brand/st-judge.webp" alt=""></summary>'
         + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
     }
 
     var fee = ((m.creatorFeeBps + m.protocolFeeBps) / 100);
     html += '<div class="rail">'
-      + "<span><b>" + fee + "%</b> at resolve</span>"
-      + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> to the opener</span>" : "")
+      /* "4% at resolve" ve "2% to the opener" yan yana %6 gibi okunuyordu.
+         Ikisi de "of the pool" diyor: ayni paydaya baglanan iki sayi
+         toplanamaz, ikincisi birincinin icindedir. */
+      + "<span><b>" + fee + "%</b> of the pool at settle</span>"
+      + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of the pool to "
+          + (m.taggedBy ? "@" + esc(m.taggedBy) : "the opener") + "</span>" : "")
       + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">Vault</a></span>' : "")
       + '<span><button class="share" id="share" type="button">Share</button></span>'
       + "</div>";
