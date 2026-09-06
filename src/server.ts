@@ -668,10 +668,22 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
  * personal in the URL: everything on it comes from the wallet the visitor
  * connects, and the server never links a wallet to a device.
  */
-app.get(["/you", "/positions"], (req, res) => {
+app.get("/positions", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampApp(YOU_HTML));
 });
+/* /you was the original name and is kept forever, not deleted. It is a page
+ * people bookmark, it is the return path baked into X sign-ins that were
+ * started before this rename, and returnTo is validated for SHAPE and never
+ * for existence -- so a deleted /you would link somebody's X account
+ * successfully and then drop them on a 404, with nothing logged. Relative
+ * target, so it stays on whichever host the request arrived on.
+ *
+ * Both names stay in hostFor()'s app-path alternation permanently: tidying
+ * "you|" out of it while this redirect lives would reclassify /you as shared,
+ * stop the apex-to-app 301 firing for it, and land old links on the wrong
+ * host with no error anywhere. */
+app.get("/you", (_req, res) => res.redirect(301, "/positions"));
 
 /**
  * The list. Public and indexable.

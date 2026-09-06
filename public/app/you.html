@@ -273,7 +273,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <nav>
       <a href="/markets">Markets</a>
       <a href="/board">Who was right</a>
-      <a href="/you">Your positions</a>
+      <a href="/positions">Positions</a>
       <a href="/genesis">Genesis</a>
     </nav>
   </div>
@@ -322,8 +322,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ deviceId: did }),
-      }).then(function () { location.href = "/you"; })
-        .catch(function () { location.href = "/you"; });
+      }).then(function () { location.href = "/positions"; })
+        .catch(function () { location.href = "/positions"; });
     }, { once: true });
   });
 
@@ -351,7 +351,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       + '<img class="gsticker" src="/brand/st-main.webp" alt="">'
       + "<p>Your calls, under your name. The wallet comes later.</p>"
       + '<a class="big" id="xconnect" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did)
-      + '&return=%2Fyou">Continue with X</a>'
+      + '&return=%2Fpositions">Continue with X</a>'
       + '<button class="later" id="later" type="button">I\'ll do this later</button>'
       + "</div>";
     // "Later" here means: go straight to the wallet. The page is wallet-scoped
