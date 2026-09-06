@@ -293,6 +293,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   .start .ssticker{grid-row:auto;width:min(180px,46vw)}
   .start__go{grid-column:1;justify-content:center}
 }
+
+/* An .err can carry a link out. Without this it inherits the body link colour
+   and disappears into the sentence. */
+.err a{color:var(--yellow);text-decoration:underline;text-underline-offset:3px}
+.err a:hover{color:var(--yellow-hi)}
 </style>
 
 <header class="top">
@@ -446,7 +451,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     var act = kind === "open"
       ? '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>'
       : '<button class="go' + (o.won ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '" type="button">'
-        + (o.won ? "Collect winnings" : "Get your rent back") + "</button>"
+        + (o.won ? "Collect winnings" : "Get your deposit back") + "</button>"
         + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>';
     return '<div class="row' + (kind === "claim" && o.won ? " row--win" : "") + '">'
       + '<p class="row__q">' + esc(o.question) + "</p>"
@@ -734,6 +739,25 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
       var skipped = !!(window.OddieId && window.OddieId.recall && window.OddieId.recall("xlater"));
       if (XGATE && me && !hasX && !skipped) return xgate();
+
+      /* THE CHAIN LAYER CAN BE OFF, AND THAT IS NOT A BLIP.
+         status.enabled was fetched and dropped on the floor. With real stakes
+         switched off the server does not register /api/chain/claimable, /open
+         or /creator-fees at all, so all three fetches 404, all three land as
+         null, and the page printed "We could not reach the chain just now,
+         try again in a moment" -- an invitation to keep reloading a thing that
+         is not coming back. Worse, before that it asked for a wallet connect
+         to fund a read that cannot happen.
+         Only `false` counts. A status fetch that itself failed leaves this
+         undefined, and the page proceeds exactly as it did, because a blinked
+         request is not evidence that trading is off. */
+      if (status && status.enabled === false) {
+        sub.textContent = "";
+        view.innerHTML = '<div class="err">Betting is switched off right now. '
+          + 'Nothing is wrong with your money, and anything you have already staked '
+          + 'is untouched on chain. <a href="/markets">See the markets</a></div>';
+        return;
+      }
       load();
     });
   }

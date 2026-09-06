@@ -485,15 +485,32 @@ function b64ToBytes(b64) {
         <button class="cclose">Close</button>`);
       return;
     }
-    if ((position.side || "").toUpperCase() !== won) {
-      shell(`<p class="cnote">You were on <b>${(position.side || "").toUpperCase()}</b> and it resolved <b>${won}</b>. Nothing to collect on this one.</p>
-        <button class="cclose">Close</button>`);
-      return;
-    }
-
+    /* A LOSING POSITION IS STILL WORTH PRESSING THE BUTTON FOR.
+     *
+     * This branch used to say "Nothing to collect on this one" and hand over a
+     * Close button, which forfeited real money. Every bet parks about 0.0015
+     * SOL of account rent, the program closes the position to its owner when
+     * claim_winnings runs, and the server DELIBERATELY has no loser refusal in
+     * /api/chain/claim/prepare -- its comment says so, and names this sheet as
+     * the thing that should say "this returns your rent, you did not win this
+     * one" instead of pretending it is a payout. The profile has been drawing
+     * a "Get your rent back" button that routed straight into this refusal.
+     *
+     * The rent can be larger than the bet: the minimum stake is 0.001 SOL and
+     * the rent is 0.00147, so on the smallest allowed bet this branch was
+     * keeping more than the person had staked.
+     *
+     * Same transaction either way, so the flow below is shared and only the
+     * sentence and the button change. */
+    const isWinner = (position.side || "").toUpperCase() === won;
     const sol = (position.lamports / 1e9).toFixed(3);
-    shell(`<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>, and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
+    shell(isWinner
+      ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>, and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
       <button class="claimbtn" id="chainclaim">Collect winnings</button>
+      <div class="chain-line" id="chainline"></div>
+      <button class="cclose">Later</button>`
+      : `<p class="cnote">You called <b>${(position.side || "").toUpperCase()}</b> and it went <b>${won}</b>, so there are no winnings here. The deposit your bet has been holding is still yours. Take it back; your wallet signs, we never hold it.</p>
+      <button class="claimbtn" id="chainclaim">Get your deposit back</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`);
 
@@ -521,16 +538,16 @@ function b64ToBytes(b64) {
         const receiptUrl = `/r/${encodeURIComponent(slug)}/${encodeURIComponent(wallet.publicKey)}`;
         body.innerHTML = `<h3>${confirmed ? "Collected ✓" : "Sent"}</h3>
           <p class="cnote">${confirmed
-            ? `Your winnings are on their way to your wallet, on ${clusterLabel(CLUSTER)}.`
+            ? `${isWinner ? "Your winnings are" : "Your deposit is"} on their way to your wallet, on ${clusterLabel(CLUSTER)}.`
             : "It is on the network and we lost sight of it while it settled. Follow the link before collecting again."}</p>
           <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
-          ${confirmed ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>
-          <p class="cnote" style="margin-top:10px"><a href="/w/${encodeURIComponent(wallet.publicKey)}" target="_blank" rel="noopener">your whole record →</a></p>` : ""}
+          ${confirmed && isWinner ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
+          ${confirmed ? `<p class="cnote" style="margin-top:10px"><a href="/w/${encodeURIComponent(wallet.publicKey)}" target="_blank" rel="noopener">your whole record →</a></p>` : ""}
           ${homeLink()}
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       } catch (e) {
-        btn.disabled = false; btn.textContent = "Collect winnings";
+        btn.disabled = false; btn.textContent = isWinner ? "Collect winnings" : "Get your deposit back";
         if (line) line.textContent = e.message || "Something went wrong. Try again.";
       }
     };
