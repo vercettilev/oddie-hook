@@ -570,8 +570,14 @@
   /* Doldurmali sablon: composer'da gorecegi seyin birebir on izlemesi.
      Sabit kisim cip, bosluk kesik cizgili yuva — beklenti tiklamadan ONCE
      kuruluyor, kimse bos composer karsisinda donup kalmiyor. */
+  /* Prefill'in kendisi olculmus ve degismez (bkz. asagidaki yorum). Sorun
+     metin degil, ETIKETSIZ olmasiydi: okuyucu bunun bir onizleme oldugunu
+     anlamayip talimat saniyordu. Etiket o boslugu kapatiyor. */
+  .spend-shape__lead{margin:clamp(12px,1.5vw,18px) 0 6px;font-family:var(--mono);
+    font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-2)}
   .spend-shape{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-    margin:clamp(12px,1.5vw,18px) 0 0;font-family:var(--mono);font-size:12.5px;
+    margin:0;font-family:var(--mono);font-size:12.5px;
     font-weight:700;letter-spacing:.02em}
   .spend-shape__fixed{background:var(--cream);color:var(--ink);
     border:2px solid var(--ink);padding:6px 10px 5px;rotate:-.6deg}
@@ -673,8 +679,8 @@
         <!-- The instruction above is what to do; this is what it is. It stays,
              small but present: the hero is the most-read part of the page and it
              must not hide that these are real markets with real money in them. -->
-        <p class="lede">Put it under any claim on X, or post the claim yourself.
-          A real market opens on it and people take YES or NO with real money.</p>
+        <p class="lede">Reply @oddiefun under someone's claim on X, or post your own claim
+          and tag it. A real market opens, and anyone can bet YES or NO with real money.</p>
         <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
              ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
              birakmak "butona bastim, hicbir sey olmadi"nin ta kendisiydi. -->
@@ -712,7 +718,7 @@
           <div class="stats">
             <div class="stat"><b>3</b><span>tickets left</span></div>
             <div class="stat"><b>#184</b><span>rank</span></div>
-            <div class="stat"><b>7</b><span>people brought in</span></div>
+            <div class="stat"><b>7</b><span>people who bet</span></div>
           </div>
           <!-- Bilet X'TE harcanir, burada degil; butonun isi seni en az
                surtunmeyle composer'a birakmak. Eski hali once bir modal acip
@@ -739,6 +745,7 @@
             </a>
             <a class="board-jump" href="#board">See your row on the leaderboard <i aria-hidden="true">&darr;</i></a>
           </div>
+          <p class="spend-shape__lead">Your tweet will look like this</p>
           <p class="spend-shape">
             <b class="spend-shape__fixed">On the record @oddiefun:</b>
             <span class="spend-shape__slot">your claim, with a date or a number in it</span>
@@ -777,8 +784,8 @@
            Gorselin tasimadigi tek cumle bu: "claim" NEDIR. Gercek bir
            kullanici tam bunu bilemedigi icin @oddiefun'i etiketleyip ne
            olacagini soramamisti, o yuzden tanim gorselden ONCE duruyor. -->
-      <p class="lede lede--lead reveal">A claim is something that ends up true or
-        false, with a date or a number in it. Tag one and it costs 1 ticket.</p>
+      <p class="lede lede--lead reveal">A claim is a statement that will later turn out
+        true or false, with a date or a number in it. Tagging one costs 1 ticket.</p>
 
       <!-- "Or with no post to reply to" karti da kalkti: gorselin 2. paneli
            zaten "Post it or reply with it." diyor. -->
@@ -791,7 +798,7 @@
            tweet atarak da baskasinin iddiasini virallestirerek de acabilirsin;
            iki yolda da %2 senin. Landing'deki "whoever started it" ile ayni
            kural, iki sayfa ayni agizdan. -->
-      <p class="oneline reveal"><span>Create the market.</span><span>Earn the 2% fee.</span></p>
+      <p class="oneline reveal"><span>Open the market.</span><span>Keep 2% of everything bet in it.</span></p>
 
       <div class="form">
         <p class="kicker">What you get</p>
@@ -805,7 +812,7 @@
              Simdi ikisi de adiyla aniliyor — bilet kit, para degil — ve
              "wisely" somut bir tarife donusuyor: tahta katilan INSANI sayar,
              o yuzden dogru bilet taraf tutturacak iddiaya harcanir. -->
-        <p class="scarce reveal">You only get 5. Spend them where people will actually pick a side.</p>
+        <p class="scarce reveal">You only get 5. Spend them where people will actually bet YES or NO.</p>
         <p class="fine reveal">A ticket is the only thing a tag costs you. No money of your own goes in.</p>
         <!-- The black section had no way forward. Hidden in the how view, where
              the block below already carries one. -->
@@ -822,9 +829,9 @@
           <ul>
             <li>A person counts once per season, and only when they put real
               money in from their own wallet. Your own wallet never counts.</li>
-            <li>Bet size does not matter. One person counts once, big or small.</li>
-            <li>Oddie writes the resolution criteria when the market opens, and
-              hands you a reply to drop in the thread.</li>
+            <li>Bet size does not matter. One person counts once, whether they bet a lot or a little.</li>
+            <li>Oddie decides how the market will be settled before it opens, and gives you
+              a ready-made reply to post in the thread.</li>
           </ul>
         </div>
 
@@ -846,7 +853,7 @@
            ornek biletler var; etiket ne olduklarini kullanicinin dilinde
            soylemeli. -->
       <p class="kicker">Your tickets &middot; an example</p>
-      <h2 class="h2"><span>What you put</span><span>on the record.</span></h2>
+      <h2 class="h2"><span>What a ticket</span><span>turns into.</span></h2>
 
       <div class="mgrid">
       <div class="mine">
@@ -876,11 +883,11 @@
            accessibility tree because the row above already reads it out. -->
       <div class="rcpt-wrap reveal">
       <div class="rcpt" aria-hidden="true">
-        <div class="rcpt__top"><span>Oddie ticket</span><span>#0041</span></div>
-        <p class="rcpt__who">Put on the record by you</p>
+        <div class="rcpt__top"><span>Oddie market</span><span>#0041</span></div>
+        <p class="rcpt__who">Opened by you</p>
         <p class="rcpt__claim">Phantom ships stock limit orders before Breakpoint.</p>
         <div class="rcpt__split"><b class="y">YES 42%</b><b class="n">NO 58%</b></div>
-        <p class="rcpt__meta">4 people &middot; 0.28 SOL in<br>Resolves 30 Sep 2026</p>
+        <p class="rcpt__meta">4 people &middot; 0.28 SOL bet<br>Settles 30 Sep 2026</p>
         <div class="rcpt__code"></div>
         <span class="rcpt__stamp">On the record</span>
       </div>
@@ -899,7 +906,7 @@
       <div class="shead">
         <div class="reveal">
           <p class="kicker">The leaderboard</p>
-          <h2 class="h2"><span>The only number</span><span>is people.</span></h2>
+          <h2 class="h2"><span>One number:</span><span>people.</span></h2>
         </div>
         <img class="art art--podium reveal" src="/brand/genesis-podium.webp"
              width="640" height="787" loading="lazy" decoding="async"
@@ -912,7 +919,7 @@
         </div>
         <div class="board__row board__row--me in-only">
           <b>#184</b><span class="who">You</span><span class="n">7</span></div>
-        <div class="board__row"><b>&mdash;</b><span class="who">Opens with the season</span>
+        <div class="board__row"><b>&mdash;</b><span class="who">Starts when Genesis starts</span>
           <span class="n">&mdash;</span></div>
         <div class="board__note out-only">The season has not started. Nothing here is a projection.</div>
         <div class="board__note in-only">Design preview. The season has not started, so the row above
@@ -1009,7 +1016,7 @@
         st[i].querySelector("span").textContent = sp; } };
       set(0, String(left), left === 1 ? "ticket left" : "tickets left");
       set(1, rank, standing && standing.rank ? "rank" : "rank \u00b7 nobody joined yet");
-      set(2, String(people), people === 1 ? "person brought in" : "people brought in");
+      set(2, String(people), people === 1 ? "person who bet" : "people who bet");
       var ns = document.querySelector(".navstate");
       if (ns) ns.textContent = left + " left";
       var me = document.querySelector(".board__row--me");
