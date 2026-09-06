@@ -3,7 +3,7 @@ import { displayTitle } from "./title.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { timingSafeEqual, createHash } from "node:crypto";
+import { timingSafeEqual, createHash, createHmac } from "node:crypto";
 import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
@@ -156,6 +156,32 @@ const APP_X_GATE = (process.env.APP_X_GATE ?? "true").toLowerCase() === "true";
  *  than a body attribute because the shells have no explicit <body>. */
 const stampGate = (html: string): string =>
   APP_X_GATE ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="oddie-xgate" content="1">') : html;
+
+/**
+ * THE OPERATOR'S DOOR INTO THE CLOSED APP.
+ *
+ * APP_OPEN=false is the right state until Lev has tested, but "closed" must
+ * not mean closed to the person testing it. /preview takes the admin token
+ * he already uses for the roster, and sets a cookie on .oddie.fun (so it
+ * holds across the split) whose value is an HMAC of that token: nothing
+ * secret travels in the cookie, and rotating the admin token invalidates
+ * every preview cookie at once. Everybody else keeps seeing the campaign.
+ */
+const PREVIEW_COOKIE = "oddie_preview";
+const previewValue = (): string | null => {
+  const t = process.env.ODDIE_ADMIN_TOKEN;
+  return t ? createHmac("sha256", t).update("oddie-preview-v1").digest("hex") : null;
+};
+const cookieOf = (req: express.Request, name: string): string | null => {
+  const m = (req.headers.cookie ?? "").match(new RegExp("(?:^|;\\s*)" + name + "=([^;]+)"));
+  return m ? decodeURIComponent(m[1]) : null;
+};
+const hasPreview = (req: express.Request): boolean => {
+  const want = previewValue(); const got = cookieOf(req, PREVIEW_COOKIE);
+  return Boolean(want && got && got.length === want.length && timingSafeEqual(Buffer.from(got), Buffer.from(want)));
+};
+/** Open to the public, or open to this operator's browser. */
+const appOpenFor = (req: express.Request): boolean => APP_OPEN || hasPreview(req);
 
 /** Kapaliyken herkesi kampanyaya gonder: 404 vermek yerine gidilecek bir yer. */
 function appClosed(res: express.Response): void {
@@ -334,7 +360,7 @@ app.get("/", async (req, res) => {
   // On the app host the root IS the app: the list, not the landing. This is
   // the front door Lev felt was missing ("the app has no home").
   if (isAppHost(req)) {
-    if (!APP_OPEN) return appClosed(res);
+    if (!appOpenFor(req)) return appClosed(res);
     return res.set("Cache-Control", "no-cache").type("html").send(stampGate(MARKETS_HTML));
   }
   res.set("Cache-Control", "no-cache");
@@ -544,7 +570,7 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
   // Market sayfasi kabugun kendisidir. Kapaliyken market linkleri de kapali;
   // su an CANLIDA HIC MARKET YOK (dogrulandi: /api/v1/markets bos), yani bu
   // hicbir paylasilmis baglantiyi kirmiyor. Bot acildiginda APP_OPEN=true.
-  if (!APP_OPEN) return appClosed(res);
+  if (!appOpenFor(req)) return appClosed(res);
   // The ?pc= personal-share page went with feed.html: its unfurl is now the
   // wallet's record at /w/<address>, and the bot's resolution card (/card/pc)
   // still renders without it. A stale ?pc= link lands on the market, which is
@@ -567,7 +593,7 @@ app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
 // out; the SPA renders the public view from /api/profile/{handle}.
 
 app.get("/@:handle", async (req, res) => {
-  if (!APP_OPEN) return appClosed(res);
+  if (!appOpenFor(req)) return appClosed(res);
   /**
    * ONE PERSON, ONE RECORD, TWO DOORS.
    *
@@ -619,8 +645,8 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
  * personal in the URL: everything on it comes from the wallet the visitor
  * connects, and the server never links a wallet to a device.
  */
-app.get(["/you", "/positions"], (_req, res) => {
-  if (!APP_OPEN) return appClosed(res);
+app.get(["/you", "/positions"], (req, res) => {
+  if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampGate(YOU_HTML));
 });
 
@@ -637,20 +663,48 @@ app.get(["/you", "/positions"], (_req, res) => {
 // express.static (registered first) answers /app with a 301 to /app/ before
 // this route is ever reached. A route name that a directory already owns is a
 // trap rather than a convenience.
+const PREVIEW_PAGE = (msg: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Preview · oddie</title><style>body{margin:0;background:#020302;color:#FBFCF4;font-family:system-ui,sans-serif;padding:40px 20px}
+.s{max-width:420px;margin:0 auto}h1{font-family:'Anton','Arial Narrow',sans-serif;font-weight:400;text-transform:uppercase;font-size:34px;margin:0 0 6px}
+p{color:rgba(255,255,255,.7);font-size:14px;line-height:1.5;margin:0 0 18px}label{display:block;font:700 11px ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5);margin:0 0 8px}
+input{width:100%;box-sizing:border-box;font:inherit;padding:12px;border:3px solid #FBFCF4;background:#020302;color:#FBFCF4}
+button{margin-top:12px;font:800 15px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;background:#D7DC1F;color:#0B0D04;border:3px solid #020302;padding:12px 18px;cursor:pointer;box-shadow:5px 6px 0 #5A6109}
+.e{color:#FF2D78;font:700 12px ui-monospace,monospace;margin:10px 0 0}</style></head>
+<body><div class="s"><h1>Operator preview</h1><p>The app is closed to the public. Your admin token opens it in this browser, on both hosts, for 30 days.</p>
+<form method="post" action="/preview"><label for="t">Admin token</label><input id="t" name="token" type="password" autocomplete="off"><button type="submit">Open the app for me</button></form>${msg ? `<p class="e">${msg}</p>` : ""}</div></body></html>`;
+
+app.get("/preview", (_req, res) => {
+  res.set("Cache-Control", "no-store").type("html").send(PREVIEW_PAGE(""));
+});
+app.post("/preview", express.urlencoded({ extended: false }), (req, res) => {
+  const want = process.env.ODDIE_ADMIN_TOKEN ?? "";
+  const got = String(req.body?.token ?? "");
+  const ok = want.length > 0 && got.length === want.length && timingSafeEqual(Buffer.from(got), Buffer.from(want));
+  if (!ok) {
+    console.log(JSON.stringify({ evt: "preview_refused" }));
+    return res.status(401).set("Cache-Control", "no-store").type("html").send(PREVIEW_PAGE("That token was not accepted."));
+  }
+  const host = new URL(BASE_URL).hostname;
+  const domain = /(^|\.)oddie\.fun$/.test(host) ? "; Domain=.oddie.fun" : "";
+  const secure = BASE_URL.startsWith("https:") ? "; Secure" : "";
+  res.set("Set-Cookie", `${PREVIEW_COOKIE}=${previewValue()}; Path=/; Max-Age=${30 * 86400}; HttpOnly; SameSite=Lax${secure}${domain}`);
+  res.set("Cache-Control", "no-store").redirect(302, `${APP_BASE_URL}/`);
+});
+
 // Old bookmarks and any link that still says /feed land on the app's home.
 // The route itself is gone; this is one line so it never 404s on somebody.
 app.get("/feed", (_req, res) => res.redirect(301, "/markets"));
 
-app.get("/markets", (_req, res) => {
-  if (!APP_OPEN) return appClosed(res);
+app.get("/markets", (req, res) => {
+  if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").type("html").send(stampGate(MARKETS_HTML));
 });
 
 /** The board. Public and indexable: it is the page that answers "who should I
  *  listen to", which is the only question a prediction product exists to
  *  answer, and it is worth being found for. */
-app.get(["/board", "/leaderboard"], (_req, res) => {
-  if (!APP_OPEN) return appClosed(res);
+app.get(["/board", "/leaderboard"], (req, res) => {
+  if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").type("html").send(BOARD_HTML);
 });
 
