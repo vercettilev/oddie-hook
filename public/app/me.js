@@ -27,15 +27,21 @@
   a.href = "/api/auth/twitter/start?deviceId=" + encodeURIComponent(did)
          + "&return=" + encodeURIComponent(location.pathname);
 
-  if (!did) return;
-  fetch("/api/auth/me?deviceId=" + encodeURIComponent(did))
-    .then(function (r) { return r.json(); })
+  // One request, published for whoever else needs it. window.OddieMe always
+  // settles: pages await it rather than opening a second identical call, and a
+  // failure resolves to an empty identity instead of hanging their render.
+  window.OddieMe = did
+    ? fetch("/api/auth/me?deviceId=" + encodeURIComponent(did))
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { accounts: [] }; })
+    : Promise.resolve({ accounts: [] });
+
+  window.OddieMe
     .then(function (j) {
       var tw = (j.accounts || []).filter(function (x) { return x.provider === "twitter"; })[0];
       if (!tw || !tw.handle) return;
       a.className = "mechip";
       a.textContent = "@" + String(tw.handle).replace(/^@+/, "");
       a.href = "/you";
-    })
-    .catch(function () { /* the invitation stands */ });
+    });
 })();

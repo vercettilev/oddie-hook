@@ -222,6 +222,27 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   .top .mechip{order:2;margin-left:auto}
   .top nav{order:3;width:100%;margin-left:0;justify-content:flex-start;gap:6px 14px}
 }
+
+/* THE HEADING STICKER OWNS THE RIGHT EDGE. Trailing the words, it read as
+   punctuation; at the end of the row and at nearly twice the size it reads as
+   the page's mascot. :has() scopes this to the headings that actually carry
+   one, so market.html's question h1 is untouched. On a narrow screen the row
+   wraps and the sticker keeps the right edge on its own line. */
+h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
+.hsticker{height:clamp(80px,11vw,132px);margin-left:auto;transform:rotate(4deg)}
+
+/* Signed in as / the way out. Quiet on purpose: it is the exit, not an offer.
+   [hidden] restated because .idstrip sets display. */
+.idstrip[hidden]{display:none}
+.idstrip{display:flex;align-items:center;gap:10px;margin:0 0 28px}
+.idstrip__chip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
+  text-transform:uppercase;background:var(--cream);color:var(--ink);
+  padding:5px 12px 4px;border-radius:999px}
+.idstrip__out{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;background:none;border:0;padding:6px 2px;cursor:pointer;
+  color:var(--fg-3);text-decoration:underline;text-underline-offset:3px}
+.idstrip__out:hover{color:var(--pink)}
+.idstrip__out:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 </style>
 
 <header class="top">
@@ -239,18 +260,50 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 <main class="wrap">
   <h1>Your positions <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
   <p class="sub" id="sub">What you have riding</p>
+  <!-- Signed in as, and the way out. The masthead chip says who you are on
+       every page; this is the one page that also has to let you stop being
+       them. Same pattern the Genesis page already uses. -->
+  <p class="idstrip" id="idstrip" hidden>
+    <b class="idstrip__chip" id="idhandle">@you</b>
+    <button class="idstrip__out" id="idout" type="button">Disconnect</button>
+  </p>
   <div id="view"><p class="load">Checking for a wallet…</p></div>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
-<script src="/app/me.js" defer></script>
+<script src="/app/me.js"></script>
 <script src="/chain.js"></script>
 <script>
 (function () {
   var view = document.getElementById("view");
   var sub = document.getElementById("sub");
+
+  /* SIGNED IN AS, AND THE WAY OUT.
+     disconnectDevice() drops this browser's device_account row and nothing
+     else: the account, its canonical device, the Genesis profile and every
+     settled call survive, and reconnecting through the same OAuth door
+     repoints them back. Nothing here is destructive, which is why it asks for
+     no confirmation. It does sign the WALLET link out too, since that link is
+     a row on the same device, so the label promises a sign-out and not an
+     X-only one. */
+  (window.OddieMe || Promise.resolve({ accounts: [] })).then(function (me) {
+    var tw = ((me && me.accounts) || []).filter(function (a) { return a.provider === "twitter"; })[0];
+    if (!tw || !tw.handle) return;
+    var strip = document.getElementById("idstrip");
+    document.getElementById("idhandle").textContent = "@" + String(tw.handle).replace(/^@+/, "");
+    strip.hidden = false;
+    document.getElementById("idout").addEventListener("click", function () {
+      var did = (window.OddieId && window.OddieId.get()) || "";
+      fetch("/api/auth/disconnect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deviceId: did }),
+      }).then(function () { location.href = "/you"; })
+        .catch(function () { location.href = "/you"; });
+    }, { once: true });
+  });
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {

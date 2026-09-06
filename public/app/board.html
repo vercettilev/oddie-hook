@@ -170,6 +170,14 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
   .top .mechip{order:2;margin-left:auto}
   .top nav{order:3;width:100%;margin-left:0;justify-content:flex-start;gap:6px 14px}
 }
+
+/* THE HEADING STICKER OWNS THE RIGHT EDGE. Trailing the words, it read as
+   punctuation; at the end of the row and at nearly twice the size it reads as
+   the page's mascot. :has() scopes this to the headings that actually carry
+   one, so market.html's question h1 is untouched. On a narrow screen the row
+   wraps and the sticker keeps the right edge on its own line. */
+h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
+.hsticker{height:clamp(80px,11vw,132px);margin-left:auto;transform:rotate(4deg)}
 </style>
 
 <header class="top">
@@ -196,7 +204,7 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <script src="/app/id.js"></script>
-<script src="/app/me.js" defer></script>
+<script src="/app/me.js"></script>
 <script>
 (function () {
   var view = document.getElementById("view");
