@@ -150,6 +150,16 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .addr{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em}
 h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04em;color:var(--fg-3)}
 .rec__m{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em}
+
+/* One sticker per moment, never the same one twice: the pool is wide enough
+   that reusing a single mascot everywhere is a wasted vocabulary. */
+.hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
+  transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
+.psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
+  transform:rotate(-5deg);flex:0 0 auto}
+.peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
+  width:auto;transform:rotate(7deg);pointer-events:none;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
 </style>
 
 <header class="top">
@@ -222,10 +232,11 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       }
 
       if (!recs.length) {
-        html += '<div class="empty"><b>No settled calls yet.</b><br>'
+        html += '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
+          + '<h3>No settled calls yet</h3><p>'
           + "A call shows up here once the market it was made in settles. "
           + "Nothing on this page can be edited after the fact: each row is a position "
-          + "the chain recorded at the moment it was taken.</div>";
+          + "the chain recorded at the moment it was taken.</p></div>";
       } else {
         html += "<h2>Every settled call</h2>" + recs.map(function (r) {
           var side = r.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>';

@@ -140,6 +140,16 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
   color:var(--fg-3)}
 .who a{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.02em}
 .wl{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em}
+
+/* One sticker per moment, never the same one twice: the pool is wide enough
+   that reusing a single mascot everywhere is a wasted vocabulary. */
+.hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
+  transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
+.psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
+  transform:rotate(-5deg);flex:0 0 auto}
+.peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
+  width:auto;transform:rotate(7deg);pointer-events:none;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
 </style>
 
 <header class="top">
@@ -155,7 +165,7 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
 </header>
 
 <main class="wrap">
-  <h1>Who was right</h1>
+  <h1>Who was right <img class="hsticker" src="/brand/st-called.webp" alt=""></h1>
   <p class="rule" id="rule">
     Points go to being right <b>when the room disagreed</b>. Calling it at 20% and
     landing it is worth eight times calling it at 90%, and a pool nobody else was

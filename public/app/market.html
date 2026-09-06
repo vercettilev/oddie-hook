@@ -238,7 +238,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .src__t{color:var(--ink);font-weight:600}
 .src__a{color:var(--pink-deep);font-family:var(--display);font-weight:400;font-size:15px;
   letter-spacing:.02em}
-.pool{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+.pool{position:relative;background:var(--cream);color:var(--ink);border:3px solid var(--black);
   box-shadow:7px 8px 0 var(--pink-deep);transform:rotate(.4deg)}
 .pool__n{color:var(--ink)}
 .pool__n span{color:rgba(11,13,4,.55)}
@@ -265,6 +265,21 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    ends in a void does not say so. Lazy: it is decoration, never the point. */
 .crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
   pointer-events:none;user-select:none}
+
+/* One sticker per moment, never the same one twice: the pool is wide enough
+   that reusing a single mascot everywhere is a wasted vocabulary. */
+.hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
+  transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
+.psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
+  transform:rotate(-5deg);flex:0 0 auto}
+.peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
+  width:auto;transform:rotate(7deg);pointer-events:none;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
+.sides{position:relative}
+/* summary is a space-between flex row (label ... +). A third child would
+   float in the gap, so the judge is pinned to the label's right. */
+.terms summary{align-items:center}
+.terms summary .psticker{margin-right:auto}
 </style>
 
 <header class="top">
@@ -370,7 +385,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       html += '<div class="pool pool--quiet"><div class="pool__n">Nothing is staked yet.</div>'
         + '<div class="pool__k">This market opens on Solana the moment somebody backs a side.</div></div>';
     } else if (src === "unpriced" || !m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
-      html += '<div class="pool pool--quiet"><div class="pool__n">No one has backed a side yet.</div>'
+      html += '<div class="pool pool--quiet"><img class="peek" src="/brand/st-first.webp" alt="">'
+        + '<div class="pool__n">No one has backed a side yet.</div>'
         + '<div class="pool__k">The first stake sets the price</div></div>';
     } else {
       var y = m.pool.yesLamports, n = m.pool.noLamports, tot = y + n;
@@ -403,7 +419,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        know what the question means; present, because some people are about
        to find out they disagreed about it. */
     if (m.resolutionCriteria) {
-      html += '<details class="terms"><summary>How this settles</summary>'
+      html += '<details class="terms"><summary>How this settles'
+        + '<img class="psticker" src="/brand/st-judge.webp" alt=""></summary>'
         + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
     }
 

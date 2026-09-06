@@ -185,6 +185,16 @@ h1{color:var(--cream)}
    ends in a void does not say so. Lazy: it is decoration, never the point. */
 .crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
   pointer-events:none;user-select:none}
+
+/* One sticker per moment, never the same one twice: the pool is wide enough
+   that reusing a single mascot everywhere is a wasted vocabulary. */
+.hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
+  transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
+.psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
+  transform:rotate(-5deg);flex:0 0 auto}
+.peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
+  width:auto;transform:rotate(7deg);pointer-events:none;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
 </style>
 
 <header class="top">
@@ -200,7 +210,7 @@ h1{color:var(--cream)}
 </header>
 
 <main class="wrap">
-  <h1>Open markets</h1>
+  <h1>Open markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
   <p class="sub" id="sub">Newest first. Every one of them started as a tweet.</p>
   <div id="view"><p class="load">Loading markets…</p></div>
 </main>
@@ -273,7 +283,7 @@ h1{color:var(--cream)}
       if (!j.ok) throw new Error("bad response");
       var ms = j.markets || [];
       if (!ms.length) {
-        view.innerHTML = '<div class="poster"><img src="/brand/sticker-hero.webp" alt="">'
+        view.innerHTML = '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
           + '<h3>No open markets right now</h3>'
           + '<p>Every one starts as somebody tagging <b>@oddiefun</b> under a claim worth arguing about. '
           + 'Post one and the first market is yours. <a href="/genesis">See how it works</a>.</p></div>';

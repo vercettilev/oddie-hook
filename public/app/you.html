@@ -192,6 +192,16 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .linkme p{color:rgba(11,13,4,.78)}
 .empty{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   color:var(--fg-3)}
+
+/* One sticker per moment, never the same one twice: the pool is wide enough
+   that reusing a single mascot everywhere is a wasted vocabulary. */
+.hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
+  transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
+.psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
+  transform:rotate(-5deg);flex:0 0 auto}
+.peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
+  width:auto;transform:rotate(7deg);pointer-events:none;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
 </style>
 
 <header class="top">
@@ -207,7 +217,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 </header>
 
 <main class="wrap">
-  <h1>Your positions</h1>
+  <h1>Your positions <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
   <p class="sub" id="sub">What you have riding, and what is waiting to be collected</p>
   <div id="view"><p class="load">Checking for a wallet…</p></div>
 </main>
@@ -238,7 +248,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
     var did = (window.OddieId && window.OddieId.get()) || "";
     sub.textContent = "Your record, your positions, your name on the board";
     view.innerHTML = '<div class="gate">'
-      + '<img class="gsticker" src="/brand/mascot-trophy.webp" alt="">'
+      + '<img class="gsticker" src="/brand/st-main.webp" alt="">'
       + "<p>This is where your calls live under your name. Continue with X and the board knows who you are; "
       + "your wallet is only asked for when you take a side.</p>"
       + '<a class="big" id="xconnect" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did)
@@ -256,7 +266,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
   function gate(msg, deepLink) {
     view.innerHTML = '<div class="gate">'
-      + '<img class="gsticker" src="/brand/sticker-hero.webp" alt="">'
+      + '<img class="gsticker" src="/brand/st-decide.webp" alt="">'
       + "<p>" + esc(msg) + "</p>"
       + '<button class="big" id="connect" type="button">Connect wallet</button>'
       + (deepLink ? '<a class="deep" href="' + esc(deepLink) + '">Open in Phantom</a>' : "")
@@ -346,7 +356,8 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       html += "<section><h2>On the line" + (riding ? " <b>" + SOL(riding) + " SOL</b>" : "") + "</h2>"
         + blind(open && open.unreadable, "of your position(s)")
         + (op.length ? op.map(function (o) { return row(o, "open"); }).join("")
-                     : '<p class="empty">Nothing riding. Tag @oddiefun on a claim and a market opens.</p>')
+                     : '<p class="empty">Nothing riding. Tag @oddiefun on a claim and a market opens.'
+                       + '<img class="psticker" src="/brand/st-grass.webp" alt=""></p>')
         + "</section>";
 
       var fs = (fees && fees.fees) || [];
