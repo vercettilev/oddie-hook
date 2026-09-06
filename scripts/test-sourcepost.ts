@@ -120,8 +120,18 @@ console.log("\nthe market page never invents an anonymous person");
     body.includes('if (m.taggedBy) bits.push('));
   check("the source card only renders when a post is actually known",
     body.includes("if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url))"));
-  check("...and quotes text only when text exists, never a placeholder",
-    body.includes("(sp.text ? '<p class=\"src__t\">'"));
+  // Pinned on the GUARD, not the expression: the condition moved from sp.text
+  // to tidyPost(sp.text) when the display started stripping X's trailing
+  // t.co/pic tails, which also means a media-only post now renders no quote at
+  // all rather than one junk token under the word "From".
+  check("...and quotes text only when text survives cleaning, never a placeholder",
+    body.includes("(tidyPost(sp.text) ? '<p class=\"src__t\">'"));
+  // tidyPost lives OUTSIDE render(), so this one reads the whole page. The
+  // anchor is the load-bearing part: without the trailing $ the cleaner would
+  // eat a t.co link in the middle of a sentence, which can be the very thing
+  // being claimed.
+  check("...and the cleaner strips only TRAILING tails, so an inline link stays in the claim",
+    page.includes("function tidyPost(") && /\)\)\+\\s\*\$\/i/.test(page));
   // The point of the row: the claim is checkable at source. A person who
   // cannot be clicked is a label, and a label is what this replaced.
   check("the source is a link to the post on X",

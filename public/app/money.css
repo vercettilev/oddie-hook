@@ -94,6 +94,12 @@
 .chain-chip[aria-pressed="true"],.chain-chip.on{
   background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4)}
 .chain-chip:focus-visible{outline:3px solid var(--pink,#FF2D78);outline-offset:3px}
+/* MORE THAN THIS WALLET HOLDS. Struck through rather than merely dimmed:
+   a faded chip reads as "loading", a struck one reads as "not for you".
+   Only ever applied once a balance actually came back -- an unreadable
+   balance leaves every chip exactly as it was. */
+.chain-chip--over{opacity:.42;cursor:not-allowed;text-decoration:line-through}
+.chain-chip--over:hover{background:#fff}
 .chain-amt{
   display:block;width:100%;font:inherit;font-family:var(--mono,monospace);
   padding:11px 12px;border:2px solid var(--ink,#0B0D04);background:#fff;

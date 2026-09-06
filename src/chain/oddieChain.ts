@@ -218,6 +218,30 @@ export async function adminAddress(): Promise<string | null> {
   return c ? c.admin.publicKey.toBase58() : null;
 }
 
+/**
+ * A STAKER'S OWN BALANCE, read through our RPC rather than theirs.
+ *
+ * The sheet used to offer 0.05 / 0.1 / 0.25 SOL chips to a wallet it had never
+ * asked how much it held, and an underfunded tap died at preflight simulation
+ * -- which the error map then reported as "the market may have just closed or
+ * settled". A false statement about the market, on the most common first-timer
+ * failure there is. Knowing the number lets the sheet grey out what cannot be
+ * afforded instead of guessing wrong about why Solana said no.
+ *
+ * Read here and not in the browser because the RPC endpoint is ours and its
+ * key does not belong in a page. Null on any failure: a sheet with no balance
+ * behaves exactly as it did before, which is the safe direction.
+ */
+export async function walletBalanceLamports(address: string): Promise<number | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    return await c.connection.getBalance(new c.web3.PublicKey(address));
+  } catch {
+    return null;
+  }
+}
+
 /** Balance of the admin wallet in SOL, or null if unconfigured/unreachable. */
 export async function adminBalanceSol(): Promise<number | null> {
   const c = await load();
@@ -1019,7 +1043,14 @@ export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
     // A short stable code, never the raw web3.js sentence: the client renders
     // these, and "Signature 5xY... has expired: block height exceeded." is not
     // a thing to show somebody who just tried to place a bet.
-    const code = /custom program error|Simulation failed|preflight/i.test(m) ? "preflight-failed"
+    // NOT ENOUGH SOL IS ITS OWN ANSWER, and it must be tested BEFORE the
+    // generic one: an underfunded transaction fails simulation, so it used to
+    // land in "preflight-failed", whose sentence tells the user the market may
+    // have closed. That is a false statement about the market, delivered on
+    // the most likely first-timer failure there is, and it sends somebody
+    // looking for a problem that was never theirs.
+    const code = /insufficient (lamports|funds)|debit an account|prior credit/i.test(m) ? "insufficient-funds"
+      : /custom program error|Simulation failed|preflight/i.test(m) ? "preflight-failed"
       : /expired|block height/i.test(m) ? "expired"
       : /Invalid|deserialize|buffer/i.test(m) ? "malformed"
       : "unavailable";

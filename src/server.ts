@@ -26,6 +26,7 @@ import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweet
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
+  walletBalanceLamports,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
   takePositionFromTx, entryShareOf, chainHealth, readMarket, readMarkets, readPositions, forgetMarket,
@@ -289,6 +290,7 @@ app.use(express.static(path.join(__dirname, "../public"), {
  */
 const LANDING_TTL_MS = 60_000;
 const LANDING_LIVE_MIN = 15;    // real markets before the band becomes a shelf
+const LANDING_PROOF_MIN = 25;   // markets before the count is worth printing
 const LANDING_LIVE_CARDS = 6;
 let landingCache: { html: string; at: number } | null = null;
 
@@ -339,8 +341,14 @@ async function renderLanding(): Promise<string> {
   // both are checkable by clicking through to the feed. Same rule as everywhere
   // else on this page — a fact is printed whole or not at all, and a zero is the
   // absence of an answer rather than a smaller number to boast.
+  //
+  // Bir esik daha: DOGRU bir sayi da sayfaya zarar verebilir. "1 market tagged
+  // so far" hicbir seyi yanlis soylemiyordu ama canli bir sayac olarak tek
+  // isi ziyaretciye burayi kimsenin kullanmadigini duyurmakti. Sayiyi sismek
+  // yerine esigin altinda hic yazmiyoruz: yoklugu, 1'den iyi. Esik gecilince
+  // satir kendiliginden geri gelir, sayfada duzenlenecek bir sey yok.
   const parts: string[] = [];
-  if (community.length > 0) {
+  if (community.length >= LANDING_PROOF_MIN) {
     parts.push(`<b>${community.length.toLocaleString("en-US")}</b> market${community.length === 1 ? "" : "s"} tagged so far`);
   }
   if (activity && activity.callsToday > 0) {
@@ -1229,7 +1237,10 @@ app.get("/api/w/:wallet", async (req, res) => {
   const mine = calls.filter((c) => c.wallet === wallet);
   const standing = standings.find((w) => w.wallet === wallet)
     ?? { wallet, wins: 0, losses: 0, points: 0, realizedLamports: 0, unpriced: 0 };
-  const idx = standings.findIndex((w) => w.wallet === wallet);
+  // DENSE rank, the same rule /api/board uses. This was idx + 1, so two people
+  // tied on points saw one "#" on their profile and a different one on the
+  // board -- the exact disagreement the comment above this block warns about.
+  const idx = denseRank(standings).find((w) => w.wallet === wallet)?.rank ?? null;
   const handle = await twitterHandleForWallet(wallet).catch(() => null);
   res.json({
     ok: true,
@@ -1237,7 +1248,7 @@ app.get("/api/w/:wallet", async (req, res) => {
     handle,
     realizedSol: Number((standing.realizedLamports / 1e9).toFixed(4)),
     unpriced: standing.unpriced,
-    rank: idx >= 0 ? idx + 1 : null,
+    rank: idx,
     settled: mine.length,
     receipts: mine.map((r) => ({
       slug: r.slug, question: r.question, side: r.side, outcome: r.outcome,
@@ -3035,6 +3046,26 @@ if (realStakesReady) {
       creatorFeeClaimed: state.creatorFeeClaimed,
       cluster: cluster(),
     });
+  });
+
+  /**
+   * WHAT THIS WALLET CAN ACTUALLY SPEND.
+   *
+   * The stake sheet offered fixed chips to a wallet whose balance it had never
+   * read, so the commonest first-timer failure -- not enough SOL -- died at
+   * preflight and was reported as "the market may have just closed or
+   * settled". Public because it says nothing that is not already public on
+   * chain: anyone can read any address's balance from any RPC. Rate-limited
+   * like the other reads so it cannot be used to hammer our endpoint.
+   */
+  app.get("/api/chain/balance", async (req, res) => {
+    const address = String(req.query.address ?? "");
+    if (!isValidPubkeyString(address)) return res.status(400).json({ ok: false, error: "invalid address" });
+    const lamports = await walletBalanceLamports(address);
+    // null is "we could not read it", NOT zero. A zero here would grey out
+    // every chip on a wallet that is merely unreachable.
+    if (lamports === null) return res.json({ ok: false, reason: "unreadable" });
+    res.json({ ok: true, lamports });
   });
 
   app.get("/api/chain/position", async (req, res) => {

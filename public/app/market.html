@@ -312,6 +312,25 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   .top .mechip{order:2;margin-left:auto}
   .top nav{order:3;width:100%;margin-left:0;justify-content:flex-start;gap:6px 14px}
 }
+
+/* You are in. A sticker, not a status bar: it is the receipt the page keeps
+   after the sheet is gone, and it should read as a win-shaped thing. */
+.in-strip{display:flex;align-items:center;justify-content:center;gap:8px;
+  font-family:var(--display);font-weight:400;font-size:clamp(16px,3vw,21px);
+  letter-spacing:.03em;text-transform:uppercase;color:var(--ink);
+  border:3px solid var(--black);padding:11px 16px 9px;margin:0 0 14px;
+  transform:rotate(-.6deg)}
+.in-strip b{font-weight:400}
+.in-strip--y{background:var(--yellow);box-shadow:6px 7px 0 var(--yellow-deep)}
+.in-strip--n{background:var(--pink);color:var(--cream);box-shadow:6px 7px 0 var(--pink-deep)}
+
+/* THE QUOTE IS EVIDENCE, NOT THE PAGE. It is here so nobody bets on our
+   paraphrase of somebody's claim -- m.question is an LLM rewrite of this text,
+   so removing it would mean "trust our restatement" on a real-money market.
+   But it is the source, not the headline, so it gets four lines and the link
+   is the way to the rest. */
+.src__t{display:-webkit-box;-webkit-line-clamp:4;line-clamp:4;-webkit-box-orient:vertical;
+  overflow:hidden;margin:0 0 10px}
 </style>
 
 <header class="top">
@@ -373,6 +392,30 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
 
+  /* What this browser just put on this market. Null until a stake lands in
+     this session: the page has no wallet-scoped read of its own, so it can
+     only ever speak about what it watched happen. Never invented. */
+  var youAreIn = null;
+
+  /* THE TWEET, WITHOUT THE PASTE.
+     The stored text is X's verbatim body, so it arrives carrying the tails a
+     tweet has and a quotation does not: the t.co shortlink X appends for any
+     attachment, and the pic.twitter.com token for media. Neither is readable
+     and neither is the claim. Stripped only from the END, because a link in
+     the middle of a sentence can be part of what is being claimed, and only
+     from the display -- the row keeps the original. "See the post" is still
+     right there for anyone who wants the whole thing. */
+  function tidyPost(t) {
+    var out = String(t == null ? "" : t)
+      .replace(/(?:\s+(?:https?:\/\/t\.co\/\S+|pic\.twitter\.com\/\S+|https?:\/\/pic\.x\.com\/\S+))+\s*$/i, "")
+      .trim();
+    // A media-only tweet is all tail and no claim. Blanked rather than printed
+    // as one junk token: the block already renders link-only correctly, and an
+    // empty quote is more honest than "pic.twitter.com/x9UNEvg13U" under the
+    // word "From".
+    return /^(?:https?:\/\/t\.co\/\S+|pic\.twitter\.com\/\S+|https?:\/\/pic\.x\.com\/\S+|\s)+$/i.test(out) ? "" : out;
+  }
+
   function render(m) {
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
     var resolved = Boolean(m.resolved && m.outcome);
@@ -411,7 +454,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       var sp = m.sourcePost;
       html += '<blockquote class="src">'
         + '<p class="src__who">' + (sp.author ? "From <b>" + esc(sp.author) + "</b>" : (m.taggedBy ? "From " + byChip(m.taggedBy) : "The claim")) + "</p>"
-        + (sp.text ? '<p class="src__t">' + esc(sp.text) + "</p>" : "")
+        + (tidyPost(sp.text) ? '<p class="src__t">' + esc(tidyPost(sp.text)) + "</p>" : "")
         + (sp.url ? '<a class="src__a" href="' + esc(sp.url) + '" target="_blank" rel="noopener noreferrer">See the post</a>' : "")
         + "</blockquote>";
     }
@@ -443,6 +486,15 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     if (!resolved) {
       var off = closed;
       var note = off ? "closed" : src === "unreadable" ? "no odds" : "";
+      /* You are in. The one line on this page that is about the reader rather
+         than the market, and the only evidence anywhere that their money
+         landed: before this, a stake closed the sheet and left the page
+         looking exactly as it did beforehand. */
+      if (youAreIn) {
+        html += '<p class="in-strip in-strip--' + (youAreIn.side === "yes" ? "y" : "n") + '">'
+          + "You are in <b>" + esc(String(youAreIn.side).toUpperCase()) + "</b> for <b>"
+          + esc(String(youAreIn.sol)) + " SOL</b></p>";
+      }
       html += '<div class="sides">'
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES"
         + (note ? "<small>" + esc(note) + "</small>" : "") + "</button>"
@@ -529,19 +581,38 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     }
   }
 
+  function load(first) {
   fetch("/api/v1/markets/" + encodeURIComponent(SLUG))
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? "no such market" : "server said " + r.status)); })
     .then(function (m) {
       if (!m || !m.ok) throw new Error("bad response");
-      if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(m.cluster);
-      else window.addEventListener("load", function () {
+      if (first) {
         if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(m.cluster);
-      });
+        else window.addEventListener("load", function () {
+          if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(m.cluster);
+        });
+      }
       render(m);
     })
     .catch(function (e) {
       view.innerHTML = '<h1 class="q">' + (String(e.message) === "no such market" ? "No market here" : "We could not load this market")
         + '</h1><p class="rail">' + esc(e.message) + '. <a href="/">Back to oddie</a></p>';
     });
+  }
+  load(true);
+
+  /* THE MONEY MOVED, SO THE PAGE MOVES.
+     chain.js fires this the moment a stake lands. Two things follow: the pool
+     and the percentages are refetched (the server dropped its cached chain
+     read on submit, so they come back including this bet), and the page keeps
+     a standing line saying what this person has riding -- which is the only
+     evidence, anywhere on the page, that they are in at all. Kept in a
+     variable rather than drawn once, because render() rebuilds everything. */
+  document.addEventListener("oddie:staked", function (ev) {
+    var d = ev.detail || {};
+    if (d.slug && d.slug !== SLUG) return;
+    if (d.side && d.sol) youAreIn = { side: d.side, sol: d.sol };
+    load(false);
+  });
 })();
 </script>

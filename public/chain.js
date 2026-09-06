@@ -96,6 +96,7 @@
  * a retry over a stake that is already on chain costs real money.
  */
 const SUBMIT_ERROR = {
+  "insufficient-funds": "Not enough SOL in this wallet for that stake plus the account rent and network fee.",
   "preflight-failed": "Solana would not accept this one. The market may have just closed or settled.",
   "expired": "That took too long to reach the network. Nothing was staked, so you can try again.",
   "malformed": "Something went wrong building that transaction. Try again.",
@@ -267,17 +268,21 @@ function b64ToBytes(b64) {
     const resp = await provider.connect();
     wallet = { publicKey: resp.publicKey.toString() };
 
-    // Link unless this device already did. A rejected signature leaves the
-    // wallet connected and `linked` false; a missing device id (a page with
-    // no /app/id.js) leaves it null and is simply not attempted.
-    if (linked === null || linked === false) {
-      try {
-        linked = (await alreadyLinked(wallet.publicKey)) || (await linkWallet(provider, wallet.publicKey));
-      } catch (e) {
-        const rejected = e && (e.code === 4001 || /reject|denied|cancel/i.test(e.message || ""));
-        linked = false;
-        if (!rejected) console.warn("[chain] wallet link skipped:", e && e.message);
-      }
+    // CONNECTING DOES NOT SIGN ANYTHING ANY MORE.
+    //
+    // This used to call linkWallet here, which is a signMessage popup -- so a
+    // first-time staker saw Phantom twice before they had bet once, and the
+    // second popup arrived while the button still read "Check your wallet…"
+    // with no reason on screen for why a signature was suddenly wanted. The
+    // link is worth having (it is what lets a market you opened pay you), but
+    // it is worth having AFTER the money, where the product already asks for
+    // it twice with the reason attached: on the receipt, and on /you.
+    //
+    // The cheap half stays: a GET that tells us whether this wallet is already
+    // linked. It raises no popup and it keeps `linked` honest for the pages
+    // that offer the link.
+    if (linked === null) {
+      linked = await alreadyLinked(wallet.publicKey).catch(() => false);
     }
     return wallet;
   }
@@ -522,6 +527,19 @@ function b64ToBytes(b64) {
     const titleHTML = question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
 
+    // A WALLET PHANTOM ALREADY TRUSTS IS NOT A DECISION.
+    //
+    // onlyIfTrusted reconnects an approved wallet with no popup and throws
+    // instead of raising one, so this is free and silent for everybody else.
+    // Without it, a returning staker pressed "Connect wallet to bet", Phantom
+    // approved instantly and invisibly, and the button just... changed -- so
+    // they pressed it again. Run alongside the market read, not before it.
+    const trusted = (!wallet && window.solana && window.solana.isPhantom)
+      ? window.solana.connect({ onlyIfTrusted: true })
+          .then((r) => { wallet = { publicKey: r.publicKey.toString() }; })
+          .catch(() => {})
+      : Promise.resolve();
+
     let marketState;
     try {
       const r = await fetch(`/api/chain/market/${encodeURIComponent(slug)}`);
@@ -547,6 +565,7 @@ function b64ToBytes(b64) {
       await renderClaim(body, slug, marketState);
       return;
     }
+    await trusted;   // by here the button can say YES · 0.1 SOL on the first paint
 
     // The real-money pool's own odds — live from Solana, not derived from the
     // free predictions pool the card behind this sheet already shows. Shown
@@ -615,6 +634,42 @@ function b64ToBytes(b64) {
       const stakeBtn = body.querySelector("#chainstake");
       const line = body.querySelector("#chainline");
 
+      // WHAT THIS WALLET CAN ACTUALLY SPEND.
+      //
+      // The chips were offered to a wallet nobody had asked how much it held,
+      // so an underfunded tap died at preflight and came back as "the market
+      // may have just closed or settled" -- a false claim about the market, on
+      // the single most likely first-timer failure. Knowing the number turns
+      // that into a chip that is simply greyed out before it is ever pressed.
+      //
+      // HEADROOM, not the raw balance: the Position account's rent (~0.00147
+      // SOL, which the program charges the user) and the network fee come out
+      // on top of the stake. Betting a wallet's exact balance always fails.
+      const HEADROOM_SOL = 0.0025;
+      let balSol = null;                       // null = unknown, never treated as 0
+      const spendable = () => (balSol === null ? Infinity : Math.max(0, balSol - HEADROOM_SOL));
+      const solText = (n) => n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") || "0";
+
+      async function showBalance() {
+        if (!wallet) return;
+        try {
+          const r = await fetch(`/api/chain/balance?address=${encodeURIComponent(wallet.publicKey)}`);
+          const j = await r.json();
+          if (!j || !j.ok) return;             // unreadable: behave exactly as before
+          balSol = j.lamports / 1e9;
+        } catch (e) { return; }
+        const w = body.querySelector(".chain-wallet");
+        if (w) w.innerHTML = `Wallet: <b>${short(wallet.publicKey)}</b> &middot; <b>${solText(balSol)} SOL</b>`;
+        const max = spendable();
+        chips.forEach((c) => {
+          if (c.dataset.sol === "custom") return;
+          const over = parseFloat(c.dataset.sol) > max;
+          c.disabled = over;
+          c.classList.toggle("chain-chip--over", over);
+        });
+        refresh();
+      }
+
       // ONE button, and it never dead-ends. Whatever is missing is what it
       // asks for next, so there is never a disabled control with no
       // explanation of what would enable it.
@@ -622,15 +677,18 @@ function b64ToBytes(b64) {
         if (!side) { stakeBtn.disabled = true; stakeBtn.textContent = "Pick a side"; }
         else if (!(sol > 0)) { stakeBtn.disabled = true; stakeBtn.textContent = "Choose an amount"; }
         else if (!wallet) { stakeBtn.disabled = false; stakeBtn.textContent = "Connect wallet to bet"; }
+        else if (sol > spendable()) { stakeBtn.disabled = true; stakeBtn.textContent = `Not enough SOL`; }
         else { stakeBtn.disabled = false; stakeBtn.textContent = `${side.toUpperCase()} · ${sol} SOL`; }
         // Ternary, not `a && b && f()`. That short-circuits to the boolean
         // `false` when either test fails, and textContent renders it as the
         // word "false" sitting under the odds. Caught in the browser; it is
         // invisible to every check that does not actually look at the sheet.
         if (line) {
-          line.textContent = (side && sol > 0)
-            ? payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps)
-            : "";
+          line.textContent = (side && sol > 0 && sol > spendable())
+            ? `This wallet holds ${solText(balSol)} SOL. A bet also needs about ${HEADROOM_SOL} SOL for account rent and the network fee.`
+            : (side && sol > 0)
+              ? payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps)
+              : "";
         }
       };
 
@@ -643,6 +701,13 @@ function b64ToBytes(b64) {
         // failure is not shown: the stake path mints on its own if this did not,
         // so the only thing lost is a head start.
         ensureOnChain(slug);
+        // Same reasoning, same moment: web3.js is ~1MB from a CDN and was
+        // fetched AFTER prepare succeeded, i.e. inside the money action, where
+        // its latency lands on top of the wait for a wallet popup and where a
+        // blocked CDN stops somebody who has already committed. Warmed here it
+        // is cached by the time the button is pressed. Not awaited: the stake
+        // path loads it anyway, so the only thing lost is the head start.
+        void loadWeb3().catch(() => {});
         sideBtns.forEach((x) => x.classList.toggle("on", x === b));
         refresh();
       });
@@ -664,6 +729,7 @@ function b64ToBytes(b64) {
       // and wrong the moment a side arrives pre-picked from the card: it asked
       // for a decision the user had already made one tap earlier.
       refresh();
+      void showBalance();   // no-op without a wallet; instant for a trusted one
 
       stakeBtn.onclick = async () => {
         // The connect step is folded into the same button rather than being a
@@ -692,8 +758,17 @@ function b64ToBytes(b64) {
           }
           const w = body.querySelector(".chain-wallet");
           if (!w) stakeBtn.insertAdjacentHTML("afterend", `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>`);
+          void showBalance();
           refresh();
-          return; // one more tap to bet, so a wallet popup never becomes a spend
+          // The second tap exists so a wallet popup never turns straight into a
+          // spend. That is worth keeping for a COLD connect, where Phantom just
+          // interrupted the person. It was never worth anything for a wallet
+          // Phantom trusts and reconnects silently -- there the user pressed a
+          // button, saw nothing happen, and had to press it again. Those wallets
+          // are now connected before the sheet paints (see the trusted probe in
+          // openStakeSheet), so this line is only ever reached after a real
+          // popup, which is exactly the case it was written for.
+          return;
         }
         stakeBtn.disabled = true; stakeBtn.textContent = "Preparing…";
         try {
@@ -746,9 +821,31 @@ function b64ToBytes(b64) {
           // trade. Naming is retroactive (the board resolves handles at read
           // time), so one tap names this call and every earlier one.
           void offerName(body.querySelector("#chainname"));
+
+          // THE PAGE BEHIND THIS SHEET STILL SHOWS THE POOL FROM BEFORE.
+          // The money moved and the market underneath said nothing about it:
+          // same total, same percentages, no sign the person is now in. The
+          // server already dropped its cached chain read on submit, so a
+          // refetch comes back fresh. Announced rather than performed --
+          // chain.js has no business knowing how a host page draws itself.
+          try {
+            document.dispatchEvent(new CustomEvent("oddie:staked", {
+              detail: { slug, side, sol, signature, confirmed },
+            }));
+          } catch (e) { /* a page that cannot hear it simply does not update */ }
         } catch (e) {
           stakeBtn.disabled = false; refresh();
-          if (line) line.textContent = e.message || "Something went wrong, try again.";
+          // A REJECTED SIGNATURE IS NOT AN ERROR, it is the commonest way
+          // somebody changes their mind, and it was rendering the wallet's own
+          // English ("User rejected the request.") with nothing saying whether
+          // money had moved. The one thing a person needs to know at that
+          // moment is that it did not.
+          const rejected = e && (e.code === 4001 || /reject|denied|cancel/i.test(e.message || ""));
+          if (line) {
+            line.textContent = rejected
+              ? `Nothing left your wallet. Tap ${side.toUpperCase()} · ${sol} SOL when you're ready.`
+              : (e.message || "Something went wrong, try again.");
+          }
         }
       };
     };

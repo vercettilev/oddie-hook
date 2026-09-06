@@ -178,6 +178,12 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
    wraps and the sticker keeps the right edge on its own line. */
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .hsticker{height:clamp(80px,11vw,132px);margin-left:auto;transform:rotate(4deg)}
+
+/* The other board, named. Quiet: it is a signpost, not a competing offer. */
+.other-board{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--fg-3);margin:-16px 0 28px}
+.other-board a{color:var(--yellow)}
+.other-board a:hover{color:var(--yellow-hi)}
 </style>
 
 <header class="top">
@@ -199,6 +205,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     at 90%. Ranked by points, never by money.
     <span class="ex" id="ex">full weight at a 5 SOL pool</span>
   </p>
+  <!-- TWO BOARDS, TWO UNITS. The Genesis page has its own ranking and it counts
+       something else entirely: not whether you were right, but how many people
+       put money into markets you opened. Both show "#rank @name number", so a
+       person seeing #3 here and #184 there has no way to know they are
+       unrelated unless one of them says so. One line, here, where the
+       confusion would start. -->
+  <p class="other-board">Genesis ranks something else:
+    <a href="/genesis">people you brought in</a></p>
   <div id="view"><p class="load">Reading settled markets…</p></div>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
