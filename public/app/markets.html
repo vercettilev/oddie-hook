@@ -33,7 +33,7 @@
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--black);color:var(--fg);font-family:var(--body);
+body{margin:0;color:var(--fg);background:var(--black) radial-gradient(120% 55% at 50% -8%, rgba(215,220,31,.09), transparent 62%) no-repeat;font-family:var(--body);
   font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
   padding-bottom:env(safe-area-inset-bottom)}
 a{color:inherit}
@@ -113,11 +113,24 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   color:var(--fg-3);padding:40px 0}
 .err{border:3px solid var(--pink);padding:15px 17px;font-size:14px;color:var(--cream)}
 @media (max-width:460px){ .sides{grid-template-columns:1fr} }
+
+/* ---- brand: a movement, not a terminal ---- */
+.mark{display:inline-flex;align-items:center;gap:10px}
+.mark img{width:30px;height:30px;border-radius:7px;transform:rotate(-4deg)}
+.poster{text-align:center;max-width:540px;margin:8px auto 0;padding:14px 20px 26px}
+.poster img{width:min(320px,74vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
+  filter:drop-shadow(0 12px 26px rgba(0,0,0,.55))}
+.poster h3{font-family:var(--display);font-weight:400;font-size:clamp(22px,5vw,30px);line-height:1.05;
+  text-transform:uppercase;color:var(--cream);margin:0 0 8px;text-wrap:balance}
+.poster p{margin:0 auto;max-width:44ch;font-size:15px;line-height:1.6;color:var(--fg-2)}
+.poster p b{color:var(--cream)} .poster a{color:var(--yellow)}
+.gate img.gsticker{width:min(230px,58vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
+  filter:drop-shadow(0 10px 22px rgba(0,0,0,.5))}
 </style>
 
 <header class="top">
   <div class="wrap">
-    <a class="mark" href="/">oddie</a>
+    <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
       <a href="/board">Who was right</a>
@@ -200,10 +213,10 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
       if (!j.ok) throw new Error("bad response");
       var ms = j.markets || [];
       if (!ms.length) {
-        view.innerHTML = '<div class="empty"><b>No open markets right now.</b><br>'
-          + "Every market here started as somebody tagging <b>@oddiefun</b> under a claim "
-          + "worth arguing about. Post one and the first market is yours. "
-          + '<a href="/genesis">See how it works</a>.</div>';
+        view.innerHTML = '<div class="poster"><img src="/brand/sticker-hero.webp" alt="">'
+          + '<h3>No open markets right now</h3>'
+          + '<p>Every one starts as somebody tagging <b>@oddiefun</b> under a claim worth arguing about. '
+          + 'Post one and the first market is yours. <a href="/genesis">See how it works</a>.</p></div>';
         return;
       }
       view.innerHTML = ms.map(function (m) {
