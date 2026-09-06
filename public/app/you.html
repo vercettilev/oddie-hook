@@ -218,7 +218,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
 <main class="wrap">
   <h1>Your positions <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
-  <p class="sub" id="sub">What you have riding, and what is waiting to be collected</p>
+  <p class="sub" id="sub">What you have riding</p>
   <div id="view"><p class="load">Checking for a wallet…</p></div>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
@@ -246,11 +246,10 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   var XGATE = !!document.querySelector('meta[name="oddie-xgate"]');
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
-    sub.textContent = "Your record, your positions, your name on the board";
+    sub.textContent = "Your name on the board";
     view.innerHTML = '<div class="gate">'
       + '<img class="gsticker" src="/brand/st-main.webp" alt="">'
-      + "<p>This is where your calls live under your name. Continue with X and the board knows who you are; "
-      + "your wallet is only asked for when you take a side.</p>"
+      + "<p>Your calls, under your name. The wallet comes later.</p>"
       + '<a class="big" id="xconnect" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did)
       + '&return=%2Fyou">Continue with X</a>'
       + '<button class="later" id="later" type="button">I\'ll do this later</button>'
@@ -259,7 +258,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
     // anyway; X only adds the name. Remembered for a week, cross-host.
     document.getElementById("later").addEventListener("click", function () {
       if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
-      sub.textContent = "What you have riding, and what is waiting to be collected";
+      sub.textContent = "What you have riding";
       load();
     });
   }
@@ -320,13 +319,12 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   function blind(n, what) {
     if (!n) return "";
     return '<div class="blind"><b>' + n + "</b> " + esc(what)
-      + (n === 1 ? " could not be read just now." : " could not be read just now.")
-      + " Your money is untouched; only our view of it is missing. Refresh in a moment.</div>";
+      + " we could not read. Your money is safe.</div>";
   }
 
   function load() {
     var w = C().wallet();
-    if (!w) return gate("Connect the wallet you staked from. We never hold your funds, and we cannot see a position until you do.");
+    if (!w) return gate("Connect the wallet you staked from. We never hold your funds.");
     sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b> on this device";
     view.innerHTML = '<p class="load">Reading the chain…</p>';
 
@@ -356,7 +354,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       html += "<section><h2>On the line" + (riding ? " <b>" + SOL(riding) + " SOL</b>" : "") + "</h2>"
         + blind(open && open.unreadable, "of your position(s)")
         + (op.length ? op.map(function (o) { return row(o, "open"); }).join("")
-                     : '<p class="empty">Nothing riding. Tag @oddiefun on a claim and a market opens.'
+                     : '<p class="empty">Nothing riding. Tag @oddiefun on a claim.'
                        + '<img class="psticker" src="/brand/st-grass.webp" alt=""></p>')
         + "</section>";
 
@@ -382,8 +380,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       // as a creator, so any market this person opened cannot pay them. Offered
       // here, not at the bet, because here is where it pays.
       if (C().linked() === false) {
-        html = '<div class="linkme"><p>This wallet is connected but not linked to you yet. '
-          + "Linking is one signature, costs nothing, and it is what lets markets you open pay you their 2%.</p>"
+        html = '<div class="linkme"><p>One signature, free. It lets markets you open pay you.</p>'
           + '<button class="go" id="linkme" type="button">Link this wallet</button></div>' + html;
       }
 

@@ -167,11 +167,8 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
 <main class="wrap">
   <h1>Who was right <img class="hsticker" src="/brand/st-called.webp" alt=""></h1>
   <p class="rule" id="rule">
-    Points go to being right <b>when the room disagreed</b>. Calling it at 20% and
-    landing it is worth eight times calling it at 90%, and a pool nobody else was
-    in barely counts at all. Losing is worth nothing, and nothing is all it takes
-    away. <b>Net</b> is the same record in money, and the board is never sorted
-    by it: money would rank the biggest wallet.
+    Being right <b>when the room disagreed</b>. Called it at 20% beats called it
+    at 90%. Ranked by points, never by money.
     <span class="ex" id="ex">full weight at a 5 SOL pool</span>
   </p>
   <div id="view"><p class="load">Reading settled markets…</p></div>
@@ -198,9 +195,8 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
         // settled yet" looks like, and inventing rows to fill it would be the
         // first lie this page tells.
         view.innerHTML = '<div class="poster"><img src="/brand/mascot-trophy.webp" alt="">'
-          + '<h3>No market has settled yet</h3>'
-          + '<p>A row appears here the first time somebody is right about one. '
-          + 'Tag <b>@oddiefun</b> on a claim and the first market is yours.</p></div>';
+          + '<h3>Nobody has been right yet</h3>'
+          + '<p>Tag <b>@oddiefun</b> on a claim. The first market is yours.</p></div>';
         return;
       }
       view.innerHTML = "<table><thead><tr>"

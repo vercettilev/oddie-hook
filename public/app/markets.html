@@ -211,7 +211,7 @@ h1{color:var(--cream)}
 
 <main class="wrap">
   <h1>Open markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
-  <p class="sub" id="sub">Newest first. Every one of them started as a tweet.</p>
+  <p class="sub" id="sub">Every one started as a tweet.</p>
   <div id="view"><p class="load">Loading markets…</p></div>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
@@ -240,15 +240,14 @@ h1{color:var(--cream)}
     else if (n < 86400) { v = Math.round(n / 3600); unit = "hour"; }
     else { v = Math.round(n / 86400); unit = "day"; }
     var t = v + " " + unit + (v === 1 ? "" : "s");
-    return past ? "closed " + t + " ago" : "closes in " + t;
+    return past ? "closed" : t + " left";
   }
 
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
-    document.getElementById("sub").textContent = "Every market started as a tweet. Yours will too.";
+    document.getElementById("sub").textContent = "Every one started as a tweet.";
     view.innerHTML = '<div class="gate">'
-      + "<p>Markets opened by people you follow, your own record, your name on the board. "
-      + "Continue with X and it is yours; a wallet is only asked for when you take a side.</p>"
+      + "<p>Markets from people you follow. Your name on the board.</p>"
       + '<a class="big" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">Continue with X</a>'
       + '<button class="later" id="later" type="button">I\'ll do this later</button>'
       + "</div>";
@@ -257,7 +256,7 @@ h1{color:var(--cream)}
     // ask comes back where it pays, after a call lands.
     document.getElementById("later").addEventListener("click", function () {
       if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
-      document.getElementById("sub").textContent = "Newest first. Every one of them started as a tweet.";
+      document.getElementById("sub").textContent = "Every one started as a tweet.";
       loadMarkets();
     });
   }
@@ -284,14 +283,14 @@ h1{color:var(--cream)}
       var ms = j.markets || [];
       if (!ms.length) {
         view.innerHTML = '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
-          + '<h3>No open markets right now</h3>'
-          + '<p>Every one starts as somebody tagging <b>@oddiefun</b> under a claim worth arguing about. '
-          + 'Post one and the first market is yours. <a href="/genesis">See how it works</a>.</p></div>';
+          + '<h3>Nothing open yet</h3>'
+          + '<p>Tag <b>@oddiefun</b> on a claim. The first market is yours. '
+          + '<a href="/genesis">How it works</a></p></div>';
         return;
       }
       view.innerHTML = ms.map(function (m) {
         var bits = [];
-        if (m.taggedBy) bits.push("Opened by <b>@" + esc(m.taggedBy) + "</b>");
+        if (m.taggedBy) bits.push("<b>@" + esc(m.taggedBy) + "</b>");
         var w = when(m.closesAt);
         if (w) bits.push(esc(w));
 
@@ -300,9 +299,9 @@ h1{color:var(--cream)}
         // real money is the lie this whole read layer exists to stop.
         var pool = "";
         if (m.oddsSource === "unreadable") {
-          pool = '<p class="pool pool--quiet">Pool unreadable right now, so no odds are shown.</p>';
+          pool = '<p class="pool pool--quiet">Can\'t read this pool</p>';
         } else if (!m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
-          pool = '<p class="pool pool--quiet">No one has backed a side yet. The first stake sets the price.</p>';
+          pool = '<p class="pool pool--quiet">No stakes yet</p>';
         } else {
           var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
           var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
@@ -325,7 +324,7 @@ h1{color:var(--cream)}
           + "</div></article>";
       }).join("");
       document.getElementById("sub").textContent =
-        ms.length + (ms.length === 1 ? " market" : " markets") + " open. Newest first. Every one started as a tweet.";
+        ms.length + (ms.length === 1 ? " market open" : " markets open");
     })
     .catch(function (e) {
       view.innerHTML = '<div class="err">We could not load the markets just now (' + esc(e.message) + ").</div>";

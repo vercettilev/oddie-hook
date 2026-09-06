@@ -328,7 +328,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     else if (n < 86400) { v = Math.round(n / 3600); unit = "hour"; }
     else { v = Math.round(n / 86400); unit = "day"; }
     var t = v + " " + unit + (v === 1 ? "" : "s");
-    return past ? "closed " + t + " ago" : "closes in " + t;
+    return past ? "closed" : t + " left";
   }
 
   function render(m) {
@@ -336,7 +336,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
-    if (m.taggedBy) bits.push("Opened by <b>@" + esc(m.taggedBy) + "</b>");
+    if (m.taggedBy) bits.push("<b>@" + esc(m.taggedBy) + "</b>");
     var w = when(m.closesAt);
     if (w) bits.push(esc(w));
 
@@ -357,7 +357,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       // nothing to connect with, which is how a winning position sits in a
       // vault forever.
       html += '<div class="verdict verdict--' + (yes ? "y" : "n") + '">Resolved ' + (yes ? "YES" : "NO")
-        + '<p>If you backed ' + (yes ? "YES" : "NO") + ", your share of the pool is waiting. It is collected with the wallet you staked from; we never hold it.</p>"
+        + '<p>Backed ' + (yes ? "YES" : "NO") + "? Your share is waiting.</p>"
         + '<button class="collect" id="collect" type="button">Collect winnings</button></div>';
     }
 
@@ -368,9 +368,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url)) {
       var sp = m.sourcePost;
       html += '<blockquote class="src">'
-        + '<p class="src__who">From a post' + (sp.author ? " by <b>" + esc(sp.author) + "</b>" : (m.taggedBy ? " by <b>@" + esc(m.taggedBy) + "</b>" : "")) + "</p>"
+        + '<p class="src__who">' + (sp.author ? "From <b>" + esc(sp.author) + "</b>" : (m.taggedBy ? "From <b>@" + esc(m.taggedBy) + "</b>" : "The claim")) + "</p>"
         + (sp.text ? '<p class="src__t">' + esc(sp.text) + "</p>" : "")
-        + (sp.url ? '<a class="src__a" href="' + esc(sp.url) + '" target="_blank" rel="noopener noreferrer">Check it at source on X</a>' : "")
+        + (sp.url ? '<a class="src__a" href="' + esc(sp.url) + '" target="_blank" rel="noopener noreferrer">See the post</a>' : "")
         + "</blockquote>";
     }
 
@@ -379,15 +379,15 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        printed as the second, so a market holding real money invited people to
        "be the first". It gets its own voice now and no digits at all. */
     if (src === "unreadable") {
-      html += '<div class="pool pool--quiet"><div class="pool__n">We cannot read this pool right now.</div>'
-        + '<div class="pool__k">Solana did not answer. The money is untouched; only our view of it is missing. Refresh in a moment.</div></div>';
+      html += '<div class="pool pool--quiet"><div class="pool__n">Can\'t read this pool.</div>'
+        + '<div class="pool__k">Your money is safe. Try again in a moment.</div></div>';
     } else if (!m.onchain) {
-      html += '<div class="pool pool--quiet"><div class="pool__n">Nothing is staked yet.</div>'
-        + '<div class="pool__k">This market opens on Solana the moment somebody backs a side.</div></div>';
+      html += '<div class="pool pool--quiet"><div class="pool__n">No stakes yet.</div>'
+        + '<div class="pool__k">Opens on Solana with the first stake</div></div>';
     } else if (src === "unpriced" || !m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
       html += '<div class="pool pool--quiet"><img class="peek" src="/brand/st-first.webp" alt="">'
-        + '<div class="pool__n">No one has backed a side yet.</div>'
-        + '<div class="pool__k">The first stake sets the price</div></div>';
+        + '<div class="pool__n">No stakes yet.</div>'
+        + '<div class="pool__k">First one sets the price</div></div>';
     } else {
       var y = m.pool.yesLamports, n = m.pool.noLamports, tot = y + n;
       var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
@@ -400,15 +400,15 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
     if (!resolved) {
       var off = closed;
-      var note = off ? "closed" : src === "unreadable" ? "odds unavailable" : "";
+      var note = off ? "closed" : src === "unreadable" ? "no odds" : "";
       html += '<div class="sides">'
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES"
         + (note ? "<small>" + esc(note) + "</small>" : "") + "</button>"
         + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO"
         + (note ? "<small>" + esc(note) + "</small>" : "") + "</button></div>";
       if (closed) {
-        html += '<div class="pool pool--quiet"><div class="pool__n">This market is closed and not settled yet.</div>'
-          + '<div class="pool__k">Nothing more can be staked. Your position stays yours until it settles.</div></div>';
+        html += '<div class="pool pool--quiet"><div class="pool__n">Closed, not settled yet.</div>'
+          + '<div class="pool__k">Your position stays yours</div></div>';
       }
     }
 
@@ -426,9 +426,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
     var fee = ((m.creatorFeeBps + m.protocolFeeBps) / 100);
     html += '<div class="rail">'
-      + "<span><b>" + fee + "%</b> of the pool, once, at resolve</span>"
-      + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of it to whoever opened this</span>" : "")
-      + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">View the vault on Solana</a></span>' : "")
+      + "<span><b>" + fee + "%</b> at resolve</span>"
+      + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> to the opener</span>" : "")
+      + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">Vault</a></span>' : "")
       + '<span><button class="share" id="share" type="button">Share</button></span>'
       + "</div>";
 

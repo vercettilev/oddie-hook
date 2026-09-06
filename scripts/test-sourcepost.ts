@@ -114,15 +114,18 @@ console.log("\nthe market page never invents an anonymous person");
   const body = from < 0 ? "" : page.slice(from, page.indexOf("\n  }\n", from) + 4);
   check("the market page's render() is where the test thinks it is", from > 0);
   check("provenance never asserts an anonymous tagger", body.length > 0 && !/anonymous/i.test(body));
+  // The wording is deliberately terse (hypercasual: the byline is just the
+  // handle). What is pinned is the GUARD, not the phrasing.
   check("the eyebrow only names an opener when one is recorded",
-    body.includes('if (m.taggedBy) bits.push("Opened by <b>@"'));
+    body.includes('if (m.taggedBy) bits.push('));
   check("the source card only renders when a post is actually known",
     body.includes("if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url))"));
   check("...and quotes text only when text exists, never a placeholder",
     body.includes("(sp.text ? '<p class=\"src__t\">'"));
   // The point of the row: the claim is checkable at source. A person who
   // cannot be clicked is a label, and a label is what this replaced.
-  check("the source is a link to the post on X", body.includes("Check it at source on X"));
+  check("the source is a link to the post on X",
+    body.includes("sp.url ? '<a class=\"src__a\"") && body.includes("See the post"));
   check("...in a new tab, without leaking the referrer chain",
     body.includes('target="_blank" rel="noopener noreferrer"'));
 }

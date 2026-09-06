@@ -200,7 +200,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
       var html = '<h1 class="who">' + (j.handle ? "@" + esc(j.handle) : esc(short)) + "</h1>"
         + '<p class="addr">' + (j.handle ? esc(short) + " &middot; " : "")
-        + "on Solana &middot; every call below was stamped on chain when it was made</p>";
+        + "every call stamped on chain</p>";
 
       if (recs.length) {
         // Money first: "+4.21 SOL" needs no explanation and "341 points" does.
@@ -224,19 +224,14 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
         // Precise about WHICH total is missing: the record below still counts
         // these calls, because whether they were right is known from the
         // settlement. Only the money and the points needed the chain.
-        html += '<div class="blind">The SOL and points totals leave out <b>' + j.unpriced
-          + "</b> settled call" + (j.unpriced === 1 ? "" : "s")
-          + ": their market could not be read just now. The record counts them, because"
-          + " whether they were right is not in question. Nothing is wrong with the money,"
-          + " only with our view of it.</div>";
+        html += '<div class="blind">Totals leave out <b>' + j.unpriced + "</b> call"
+          + (j.unpriced === 1 ? "" : "s") + " we could not read. The record still counts them.</div>";
       }
 
       if (!recs.length) {
         html += '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
           + '<h3>No settled calls yet</h3><p>'
-          + "A call shows up here once the market it was made in settles. "
-          + "Nothing on this page can be edited after the fact: each row is a position "
-          + "the chain recorded at the moment it was taken.</p></div>";
+          + "Nothing here can be edited after the fact.</p></div>";
       } else {
         html += "<h2>Every settled call</h2>" + recs.map(function (r) {
           var side = r.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>';
