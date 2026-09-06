@@ -209,9 +209,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .act .done{font-family:var(--display);font-weight:400;font-size:14px;color:var(--pink-deep)}
 .act .done a{color:rgba(11,13,4,.6)}
 h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04em;color:var(--fg-3)}
-.linkme{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+/* ONE RULE FOR THE WHOLE PAGE: an ASK is outlined on the black field, a
+   RECORD is a cream sticker. The connect gate already moved; this was the last
+   full-width white slab left, and it is an ask, not a record. Cream is now
+   reserved for the things that state a fact about you -- a position, a fee you
+   are owed, a settled call. */
+.linkme{background:transparent;color:var(--fg);border:3px solid var(--yellow);
   box-shadow:7px 8px 0 var(--yellow-deep)}
-.linkme p{color:rgba(11,13,4,.78)}
+.linkme p{color:var(--fg-2)}
 .empty{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   color:var(--fg-3)}
 
@@ -301,6 +306,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 (function () {
   var view = document.getElementById("view");
   var sub = document.getElementById("sub");
+
+  /* What the server says about the chain layer: whether it is on, which
+     cluster, and the creator-fee rate. Held here so load() can read the rate
+     without a second request and without this file keeping its own copy of a
+     number the server owns. Null until the boot fetch lands, and the fee copy
+     falls back to a rate-free sentence rather than guessing. */
+  var CHAIN_STATUS = null;
 
   /* SIGNED IN AS, AND THE WAY OUT.
      disconnectDevice() drops this browser's device_account row and nothing
@@ -459,11 +471,39 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
                        + '<img class="psticker" src="/brand/st-grass.webp" alt=""></p>')
         + "</section>";
 
+      /* YOUR FEES, SHOWN TO EVERYBODY, INCLUDING PEOPLE WITH NONE.
+         This section used to appear only when there was money in it, so the
+         one thing it teaches -- that opening markets pays you -- reached
+         nobody who had not already been paid. It is always here now.
+
+         WHAT THE ZERO STATE MAY SAY. /api/chain/creator-fees returns only
+         UNCLAIMED, resolved, non-zero fees whose on-chain creator is this
+         exact wallet, so it physically cannot tell "never earned" apart from
+         "earned it and already collected it". That rules out every number
+         that would look like a measurement of this person: earned, collected,
+         opened, pending, expected. No wallet-keyed count of markets opened is
+         reachable from anywhere in this codebase either.
+
+         So the only number here is the RATE, and it comes from the server
+         (/api/chain/status) rather than a constant in this file, because the
+         rate is written per market at creation and a page printing a stale
+         copy of it would be describing a deal nobody was offered. */
       var fs = (fees && fees.fees) || [];
-      if (fs.length || (fees && fees.unreadable)) {
-        html += "<section><h2>Fees you are owed</h2>"
-          + blind(fees && fees.unreadable, "settled market(s)")
-          + fs.map(function (f) {
+      var feeRate = (CHAIN_STATUS && CHAIN_STATUS.creatorFeeBps) || 0;
+      html += "<section><h2>Your fees</h2>"
+        + blind(fees && fees.unreadable, "settled market(s)");
+      if (!fs.length) {
+        // Two preconditions, because they are the actual reason the number is
+        // zero and they are the part worth teaching. Not printed as a zero:
+        // an unreadable pool is announced separately by blind() above.
+        html += '<p class="empty">'
+          + (feeRate
+              ? "Tag <b>@oddiefun</b> on a claim and the market it opens pays you <b>" + (feeRate / 100) + "%</b> of the pool when it settles."
+              : "Tag <b>@oddiefun</b> on a claim and the market it opens pays you a cut of the pool when it settles.")
+          + '<img class="psticker" src="/brand/st-first.webp" alt=""></p>';
+      }
+      {
+        html += fs.map(function (f) {
               // A row that names an amount owed MUST carry the control that
               // collects it. The audit found this row with only an "Open the
               // market" link, which sent people to a page whose one button ran
@@ -473,17 +513,31 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
                 + "<span>" + (f.feeBps / 100) + "% for opening it</span></p>"
                 + '<div class="act"><button class="go fee" data-slug="' + esc(f.slug) + '" type="button">Collect your fee</button>'
                 + '<a class="open" href="/m/' + encodeURIComponent(f.slug) + '">Open the market</a></div></div>';
-            }).join("")
-          + "</section>";
+            }).join("");
       }
 
-      // Connected but not linked: the wallet can bet, but it cannot be named
-      // as a creator, so any market this person opened cannot pay them. Offered
-      // here, not at the bet, because here is where it pays.
+      /* CONNECTED BUT NOT LINKED, ASKED INSIDE THE SECTION THAT EXPLAINS WHY.
+         Signing is the ONLY thing that writes this wallet into a market's
+         on-chain `creator` field, so an unlinked wallet cannot be paid a fee
+         no matter how many markets its owner opened. This ask used to sit at
+         the top of the page as a floating request for a signature with the
+         reason in small print; it belongs here, under the sentence that says
+         what the signature is worth.
+
+         It matters more since the stake path stopped signing automatically:
+         connecting a wallet to place a bet no longer links it, so this is now
+         the main door to being named as a creator at all.
+
+         `=== false` and not `!linked()`: null means we have not checked yet,
+         and a page that asks an already-linked person to link again reads as
+         broken. The check can still be wrong in the safe direction, since a
+         blinked /api/auth/me resolves to false, and a second signature on an
+         already-linked wallet costs nothing. */
       if (C().linked() === false) {
-        html = '<div class="linkme"><p>One signature, free. It lets markets you open pay you.</p>'
-          + '<button class="go" id="linkme" type="button">Link this wallet</button></div>' + html;
+        html += '<div class="linkme"><p>One signature, free. It is what lets a market you open pay you.</p>'
+          + '<button class="go" id="linkme" type="button">Link this wallet</button></div>';
       }
+      html += "</section>";
 
       view.innerHTML = html;
 
@@ -534,6 +588,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         : Promise.resolve(null),
     ]).then(function (r) {
       var status = r[0], me = r[1];
+      CHAIN_STATUS = status;
       C().init(status && status.cluster);
       // Gate closed and no X on this device: ask for X. An unreachable
       // /api/auth/me is NOT treated as "no X" — that would lock out somebody
