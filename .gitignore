@@ -15,3 +15,12 @@ dist/
 
 # Rendered card previews (local only)
 cards/
+
+# Brand source art. brand/v3-stickers is 85 MB of generated PNGs and the deck is
+# another 8 MB: too heavy for the repo, and once in, git history keeps them
+# forever. Back them up off this machine -- being untracked is not being safe.
+# The exception is the source of an asset the site actually ships.
+brand/v3-stickers/*
+!brand/v3-stickers/oracle.png
+brand/oddie-deck.pdf
+brand/oddie-deck.html

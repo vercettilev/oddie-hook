@@ -324,6 +324,23 @@ function b64ToBytes(b64) {
     return { signature: out.signature, confirmed: out.confirmed, url: txUrl(out.signature, CLUSTER) };
   }
 
+  /**
+   * THE WAY HOME FROM A MONEY RECEIPT.
+   *
+   * Both receipts ended on "Done", which closes the sheet and leaves you on
+   * whatever page you were on -- fine when that page is the profile, and a
+   * dead end when you arrived from a market link and the thing you now want
+   * to see is what you hold. Lev, on the fee collect screen: "profile a geri
+   * donus yok."
+   *
+   * Suppressed when we are ALREADY on the profile, because a link back to the
+   * page under the sheet is noise. Relative, so it stays on this host.
+   */
+  function homeLink() {
+    if (/^\/(profile|positions|you)\/?$/.test(location.pathname)) return "";
+    return '<p class="cnote chain-home"><a href="/profile">Back to your profile &rarr;</a></p>';
+  }
+
   function short(s) {
     return s.length > 10 ? s.slice(0, 4) + "…" + s.slice(-4) : s;
   }
@@ -484,6 +501,7 @@ function b64ToBytes(b64) {
           <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${confirmed ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>
           <p class="cnote" style="margin-top:10px"><a href="/w/${encodeURIComponent(wallet.publicKey)}" target="_blank" rel="noopener">your whole record →</a></p>` : ""}
+          ${homeLink()}
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       } catch (e) {
@@ -795,6 +813,7 @@ function b64ToBytes(b64) {
             <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
             <a class="cbtn cbtn--share" id="chainshare" href="#" rel="noopener">Post your call</a>
             <div id="chainname"></div>
+            ${homeLink()}
             <button class="cclose">Done</button>`;
           body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
           // "Tag it. Bet it. Get paid." — the third verb starts here. Every

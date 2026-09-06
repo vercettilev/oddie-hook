@@ -182,3 +182,11 @@
 }
 .cbtn--share:hover{background:#fff;color:var(--ink,#0B0D04);transform:translate(-2px,-2px);
   box-shadow:7px 8px 0 var(--ink,#0B0D04)}
+
+/* The way home from a receipt. Quiet: the loud thing on a receipt is the
+   receipt. */
+.chain-home{margin-top:12px;text-align:center}
+.chain-home a{font-family:var(--mono,monospace);font-size:12px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#0B0D04);
+  text-decoration:underline;text-underline-offset:3px}
+.chain-home a:hover{color:var(--pink,#FF2D78)}

@@ -113,7 +113,7 @@ const isAppHost = (req: express.Request): boolean => Boolean(APP_HOST) && req.ho
 const homeFor = (path: string): string => (APP_HOST && hostFor(path) === "app" ? APP_BASE_URL : BASE_URL);
 /** Which host a path belongs on. "shared" is served by both (APIs, assets). */
 function hostFor(path: string): "app" | "apex" | "shared" {
-  if (/^\/(m|market|w)\//.test(path) || /^\/(you|positions|board|leaderboard|markets)\/?$/.test(path) || path.startsWith("/@")) return "app";
+  if (/^\/(m|market|w)\//.test(path) || /^\/(you|positions|profile|board|leaderboard|markets)\/?$/.test(path) || path.startsWith("/@")) return "app";
   if (path === "/" || /^\/(genesis|g|card)(\/|$)/.test(path)) return "apex";
   return "shared";
 }
@@ -352,7 +352,10 @@ async function renderLanding(): Promise<string> {
     parts.push(`<b>${community.length.toLocaleString("en-US")}</b> market${community.length === 1 ? "" : "s"} tagged so far`);
   }
   if (activity && activity.callsToday > 0) {
-    parts.push(`<b>${activity.callsToday.toLocaleString("en-US")}</b> call${activity.callsToday === 1 ? "" : "s"} today`);
+    // Sayfa "take a side" diyor; bu satir tek basina "call" demeye devam
+    // ediyordu. Alan adi callsToday, degistirmek veri sozlesmesini kirar --
+    // degisen yalniz okunan kelime.
+    parts.push(`<b>${activity.callsToday.toLocaleString("en-US")}</b> side${activity.callsToday === 1 ? "" : "s"} taken today`);
   }
   const proof = parts.join(" · ");
   // The one hard status claim on the page, rendered per cluster so it cannot
@@ -675,7 +678,7 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
  * personal in the URL: everything on it comes from the wallet the visitor
  * connects, and the server never links a wallet to a device.
  */
-app.get("/positions", (req, res) => {
+app.get("/profile", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampApp(YOU_HTML));
 });
@@ -690,7 +693,7 @@ app.get("/positions", (req, res) => {
  * "you|" out of it while this redirect lives would reclassify /you as shared,
  * stop the apex-to-app 301 firing for it, and land old links on the wrong
  * host with no error anywhere. */
-app.get("/you", (_req, res) => res.redirect(301, "/positions"));
+app.get(["/you", "/positions"], (_req, res) => res.redirect(301, "/profile"));
 
 /**
  * The list. Public and indexable.

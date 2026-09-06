@@ -42,6 +42,6 @@
       if (!tw || !tw.handle) return;
       a.className = "mechip";
       a.textContent = "@" + String(tw.handle).replace(/^@+/, "");
-      a.href = "/positions";
+      a.href = "/profile";
     });
 })();
