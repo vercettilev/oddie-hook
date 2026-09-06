@@ -150,6 +150,26 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
 .peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
   width:auto;transform:rotate(7deg);pointer-events:none;
   filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
+
+/* who you are, in the masthead: a name when we know it, an invitation when
+   we do not. Ink pill on the lime band so it reads as a control, not a label. */
+.top .mechip[hidden]{display:none}
+.top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
+  text-transform:uppercase;background:var(--ink);color:var(--yellow);
+  padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
+.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+.top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
+.top .mechip--go:hover{background:var(--pink);color:#fff}
+.top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+/* Phone masthead: logo and chip share the top row, the links wrap under them.
+   Appended to nav instead, the chip took a third row of its own. */
+@media (max-width:560px){
+  .top .wrap{flex-wrap:wrap;gap:10px 14px}
+  .top .mark{order:1}
+  .top .mechip{order:2;margin-left:auto}
+  .top nav{order:3;width:100%;margin-left:0;justify-content:flex-start;gap:6px 14px}
+}
 </style>
 
 <header class="top">
@@ -175,6 +195,8 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
+<script src="/app/id.js"></script>
+<script src="/app/me.js" defer></script>
 <script>
 (function () {
   var view = document.getElementById("view");

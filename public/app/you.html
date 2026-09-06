@@ -202,6 +202,26 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
   width:auto;transform:rotate(7deg);pointer-events:none;
   filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
+
+/* who you are, in the masthead: a name when we know it, an invitation when
+   we do not. Ink pill on the lime band so it reads as a control, not a label. */
+.top .mechip[hidden]{display:none}
+.top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
+  text-transform:uppercase;background:var(--ink);color:var(--yellow);
+  padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
+.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+.top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
+.top .mechip--go:hover{background:var(--pink);color:#fff}
+.top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+/* Phone masthead: logo and chip share the top row, the links wrap under them.
+   Appended to nav instead, the chip took a third row of its own. */
+@media (max-width:560px){
+  .top .wrap{flex-wrap:wrap;gap:10px 14px}
+  .top .mark{order:1}
+  .top .mechip{order:2;margin-left:auto}
+  .top nav{order:3;width:100%;margin-left:0;justify-content:flex-start;gap:6px 14px}
+}
 </style>
 
 <header class="top">
@@ -225,6 +245,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
 <link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
+<script src="/app/me.js" defer></script>
 <script src="/chain.js"></script>
 <script>
 (function () {
@@ -247,6 +268,10 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
     sub.textContent = "Your name on the board";
+    // The gate IS the ask. A "Connect X" pill above it is the same question
+    // twice on one screen.
+    var chip = document.querySelector(".top .mechip");
+    if (chip) chip.hidden = true;
     view.innerHTML = '<div class="gate">'
       + '<img class="gsticker" src="/brand/st-main.webp" alt="">'
       + "<p>Your calls, under your name. The wallet comes later.</p>"
@@ -259,6 +284,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
     document.getElementById("later").addEventListener("click", function () {
       if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
       sub.textContent = "What you have riding";
+      if (chip) chip.hidden = false;
       load();
     });
   }

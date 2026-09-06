@@ -152,10 +152,25 @@ const APP_OPEN = (process.env.APP_OPEN ?? "false").toLowerCase() === "true";
  * the Genesis season is an env change, not a deploy.
  */
 const APP_X_GATE = (process.env.APP_X_GATE ?? "true").toLowerCase() === "true";
-/** Stamp a shell so its own script knows the gate is on. A meta tag rather
- *  than a body attribute because the shells have no explicit <body>. */
-const stampGate = (html: string): string =>
-  APP_X_GATE ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="oddie-xgate" content="1">') : html;
+/**
+ * THE GENESIS SEASON, INSIDE THE APP.
+ *
+ * The app links to /genesis in its nav, which is a destination, not a reason to
+ * go. While the season is running there is a live campaign with a fixed number
+ * of tickets per person, and somebody who only ever lands on app.oddie.fun has
+ * no way to learn that. One line on the app's front door says it; when the
+ * season ends this is an env change, not a deploy, exactly like the gate.
+ */
+const GENESIS_SEASON = (process.env.GENESIS_SEASON ?? "true").toLowerCase() === "true";
+
+/** Stamp a shell so its own script knows which season/gate flags are on. Meta
+ *  tags rather than body attributes because the shells have no explicit
+ *  <body>. Both stamps ride the same charset anchor. */
+const stampApp = (html: string): string => {
+  const metas = (APP_X_GATE ? '\n<meta name="oddie-xgate" content="1">' : "")
+    + (GENESIS_SEASON ? '\n<meta name="oddie-genesis" content="1">' : "");
+  return metas ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + metas) : html;
+};
 
 /**
  * THE OPERATOR'S DOOR INTO THE CLOSED APP.
@@ -361,7 +376,7 @@ app.get("/", async (req, res) => {
   // the front door Lev felt was missing ("the app has no home").
   if (isAppHost(req)) {
     if (!appOpenFor(req)) return appClosed(res);
-    return res.set("Cache-Control", "no-cache").type("html").send(stampGate(MARKETS_HTML));
+    return res.set("Cache-Control", "no-cache").type("html").send(stampApp(MARKETS_HTML));
   }
   res.set("Cache-Control", "no-cache");
   try {
@@ -647,7 +662,7 @@ app.get(["/genesis", "/genesis/how"], (_req, res) => {
  */
 app.get(["/you", "/positions"], (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
-  res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampGate(YOU_HTML));
+  res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampApp(YOU_HTML));
 });
 
 /**
@@ -697,7 +712,7 @@ app.get("/feed", (_req, res) => res.redirect(301, "/markets"));
 
 app.get("/markets", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
-  res.set("Cache-Control", "no-cache").type("html").send(stampGate(MARKETS_HTML));
+  res.set("Cache-Control", "no-cache").type("html").send(stampApp(MARKETS_HTML));
 });
 
 /** The board. Public and indexable: it is the page that answers "who should I

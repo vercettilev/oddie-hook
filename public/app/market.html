@@ -280,6 +280,38 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    float in the gap, so the judge is pinned to the label's right. */
 .terms summary{align-items:center}
 .terms summary .psticker{margin-right:auto}
+
+/* who you are, in the masthead: a name when we know it, an invitation when
+   we do not. Ink pill on the lime band so it reads as a control, not a label. */
+.top .mechip[hidden]{display:none}
+.top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
+  text-transform:uppercase;background:var(--ink);color:var(--yellow);
+  padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
+.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+.top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
+.top .mechip--go:hover{background:var(--pink);color:#fff}
+.top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+/* THE OPENER IS A PERSON, NOT A BYLINE. Lime on the black field, ink on the
+   cream source sticker: one chip, two grounds, contrast kept in both. */
+.eyebrow .by{display:inline-block;background:var(--yellow);color:var(--ink);
+  padding:4px 12px 3px;border-radius:999px;text-decoration:none;font-weight:400;
+  letter-spacing:.02em;text-transform:none}
+.eyebrow .by:hover{background:var(--yellow-hi)}
+.src__who .by{display:inline-block;background:var(--ink);color:var(--cream);
+  padding:3px 10px 2px;border-radius:999px;text-decoration:none;font-weight:400;
+  letter-spacing:.02em;text-transform:none}
+.src__who .by:hover{background:var(--pink);color:#fff}
+.eyebrow .by:focus-visible,.src__who .by:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+
+/* Phone masthead: logo and chip share the top row, the links wrap under them.
+   Appended to nav instead, the chip took a third row of its own. */
+@media (max-width:560px){
+  .top .wrap{flex-wrap:wrap;gap:10px 14px}
+  .top .mark{order:1}
+  .top .mechip{order:2;margin-left:auto}
+  .top nav{order:3;width:100%;margin-left:0;justify-content:flex-start;gap:6px 14px}
+}
 </style>
 
 <header class="top">
@@ -303,6 +335,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
      it paints until somebody taps a side, so it cannot cause the first-paint
      flash that forces the fonts above to be embedded. -->
 <link rel="stylesheet" href="/app/money.css">
+<script src="/app/id.js"></script>
+<script src="/app/me.js" defer></script>
 <script src="/chain.js" defer></script>
 <script>
 (function () {
@@ -331,12 +365,20 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     return past ? "closed" : t + " left";
   }
 
+  /* The opener, as a person. Same rule as the list: a pill that leaves for
+     their X profile, so "who called this" is answerable in one tap. */
+  function byChip(handle) {
+    var h = String(handle).replace(/^@+/, "");
+    return '<a class="by" href="https://x.com/' + encodeURIComponent(h)
+      + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
+  }
+
   function render(m) {
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
-    if (m.taggedBy) bits.push("<b>@" + esc(m.taggedBy) + "</b>");
+    if (m.taggedBy) bits.push(byChip(m.taggedBy));
     var w = when(m.closesAt);
     if (w) bits.push(esc(w));
 
@@ -368,7 +410,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url)) {
       var sp = m.sourcePost;
       html += '<blockquote class="src">'
-        + '<p class="src__who">' + (sp.author ? "From <b>" + esc(sp.author) + "</b>" : (m.taggedBy ? "From <b>@" + esc(m.taggedBy) + "</b>" : "The claim")) + "</p>"
+        + '<p class="src__who">' + (sp.author ? "From <b>" + esc(sp.author) + "</b>" : (m.taggedBy ? "From " + byChip(m.taggedBy) : "The claim")) + "</p>"
         + (sp.text ? '<p class="src__t">' + esc(sp.text) + "</p>" : "")
         + (sp.url ? '<a class="src__a" href="' + esc(sp.url) + '" target="_blank" rel="noopener noreferrer">See the post</a>' : "")
         + "</blockquote>";

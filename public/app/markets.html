@@ -195,6 +195,48 @@ h1{color:var(--cream)}
 .peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
   width:auto;transform:rotate(7deg);pointer-events:none;
   filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
+
+/* who you are, in the masthead: a name when we know it, an invitation when
+   we do not. Ink pill on the lime band so it reads as a control, not a label. */
+.top .mechip[hidden]{display:none}
+.top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
+  text-transform:uppercase;background:var(--ink);color:var(--yellow);
+  padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
+.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+.top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
+.top .mechip--go:hover{background:var(--pink);color:#fff}
+.top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+/* THE OPENER IS A PERSON, NOT A BYLINE. Ink pill on the cream sticker so it
+   reads as somebody's name at card-scanning distance, and leaves for X. */
+.card__m .by{display:inline-block;background:var(--ink);color:var(--cream);
+  padding:4px 11px 3px;border-radius:999px;text-decoration:none;font-weight:400;
+  letter-spacing:.02em;text-transform:none}
+.card__m .by:hover{background:var(--pink);color:#fff}
+.card__m .by:focus-visible{outline:3px solid var(--pink-deep);outline-offset:2px}
+
+/* THE SEASON STRIP. A pink band under the lime masthead: loud enough to be a
+   second door, one line so it never competes with the markets. [hidden] is
+   restated because .season sets display and would otherwise beat the attribute
+   -- the same collision that once made .chain-amt unhideable. */
+.season{display:flex;align-items:center;justify-content:center;gap:10px;
+  background:var(--pink);color:var(--cream);text-decoration:none;
+  font-family:var(--display);font-weight:400;font-size:clamp(15px,2.6vw,19px);
+  letter-spacing:.04em;text-transform:uppercase;padding:11px 16px 9px;
+  border-bottom:3px solid var(--black);position:relative;z-index:2}
+.season[hidden]{display:none}
+.season img{width:26px;height:26px;transform:rotate(-8deg)}
+.season:hover{background:var(--pink-deep);color:#fff}
+.season:focus-visible{outline:3px solid var(--yellow);outline-offset:-6px}
+
+/* Phone masthead: logo and chip share the top row, the links wrap under them.
+   Appended to nav instead, the chip took a third row of its own. */
+@media (max-width:560px){
+  .top .wrap{flex-wrap:wrap;gap:10px 14px}
+  .top .mark{order:1}
+  .top .mechip{order:2;margin-left:auto}
+  .top nav{order:3;width:100%;margin-left:0;justify-content:flex-start;gap:6px 14px}
+}
 </style>
 
 <header class="top">
@@ -209,6 +251,11 @@ h1{color:var(--cream)}
   </div>
 </header>
 
+<!-- THE SEASON, IN ONE LINE. Somebody who only ever lands on the app has no
+     way to learn a campaign is running; the nav's "Genesis" is a destination,
+     not a reason. Shown only while the server stamps oddie-genesis. -->
+<a class="season" id="season" href="/genesis" hidden>Genesis season is live<img src="/brand/st-first.webp" alt=""></a>
+
 <main class="wrap">
   <h1>Open markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
   <p class="sub" id="sub">Every one started as a tweet.</p>
@@ -217,6 +264,7 @@ h1{color:var(--cream)}
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <script src="/app/id.js"></script>
+<script src="/app/me.js" defer></script>
 <script>
 (function () {
   var view = document.getElementById("view");
@@ -226,6 +274,10 @@ h1{color:var(--cream)}
      Public market pages are NOT gated: they are what the bot links to and what
      X unfurls. Off when the server did not stamp the page (APP_X_GATE=false). */
   var XGATE = !!document.querySelector('meta[name="oddie-xgate"]');
+  if (document.querySelector('meta[name="oddie-genesis"]')) {
+    var seasonEl = document.getElementById("season");
+    if (seasonEl) seasonEl.hidden = false;
+  }
   function esc(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
@@ -246,6 +298,8 @@ h1{color:var(--cream)}
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
     document.getElementById("sub").textContent = "Every one started as a tweet.";
+    var chip = document.querySelector(".top .mechip");
+    if (chip) chip.hidden = true;
     view.innerHTML = '<div class="gate">'
       + "<p>Markets from people you follow. Your name on the board.</p>"
       + '<a class="big" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">Continue with X</a>'
@@ -257,6 +311,7 @@ h1{color:var(--cream)}
     document.getElementById("later").addEventListener("click", function () {
       if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
       document.getElementById("sub").textContent = "Every one started as a tweet.";
+      if (chip) chip.hidden = false;
       loadMarkets();
     });
   }
@@ -275,6 +330,16 @@ h1{color:var(--cream)}
     return loadMarkets();
   });
 
+  /* The opener, as a person: a pill that leaves for their X profile. encodeURI
+     for the href, esc for the text -- the same handle, two different escapes,
+     because a handle in an attribute and a handle in markup are not the same
+     hazard. */
+  function byChip(handle) {
+    var h = String(handle).replace(/^@+/, "");
+    return '<a class="by" href="https://x.com/' + encodeURIComponent(h)
+      + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
+  }
+
   function loadMarkets() {
   fetch("/api/v1/markets?limit=50")
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
@@ -290,7 +355,10 @@ h1{color:var(--cream)}
       }
       view.innerHTML = ms.map(function (m) {
         var bits = [];
-        if (m.taggedBy) bits.push("<b>@" + esc(m.taggedBy) + "</b>");
+        // WHO OPENED IT IS THE POINT. This was four grey characters, which is
+        // how a social market reads as a ticker. A pill linked to their X
+        // profile makes the opener a person you can go look at.
+        if (m.taggedBy) bits.push(byChip(m.taggedBy));
         var w = when(m.closesAt);
         if (w) bits.push(esc(w));
 
