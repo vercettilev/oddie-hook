@@ -46,10 +46,13 @@ preflight() {
   command -v solana >/dev/null && good "solana $(solana --version | awk '{print $2}')" || bad "solana is not installed"
 
   head_ "the tree"
-  if [ -z "$(git status --porcelain)" ]; then
+  # Tracked files only. Untracked brand sources (decks, sticker PNGs) sit in
+  # the tree on purpose and cannot change what anchor builds; counting them
+  # made this a permanent false blocker.
+  if [ -z "$(git status --porcelain --untracked-files=no)" ]; then
     good "working tree is clean, so this deploy is reproducible from $(git rev-parse --short HEAD)"
   else
-    bad "working tree is dirty. Commit first: a deployed binary you cannot rebuild is a binary you cannot audit"
+    bad "tracked files are modified. Commit first: a deployed binary you cannot rebuild is a binary you cannot audit"
   fi
 
   head_ "the program id, in all three places it is written down"
