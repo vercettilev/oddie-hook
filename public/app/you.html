@@ -275,6 +275,24 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
    only what would make it personal. */
 .empty--quiet{display:block;width:100%;font-family:var(--body);font-weight:600;
   font-size:14px;letter-spacing:0;text-transform:none;color:var(--fg-3);margin-top:12px}
+
+/* THE TWO THINGS TO DO, when there is nothing to report. A block with controls
+   in it, not a third sentence about an absence. */
+.start{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 22px;align-items:center;
+  border:3px solid var(--yellow);box-shadow:8px 9px 0 var(--yellow-deep);
+  padding:20px 22px;transform:rotate(-.4deg)}
+.start .ssticker{grid-row:1 / span 2;align-self:center;width:min(150px,32vw);height:auto}
+.start p{margin:0;font-size:15px;line-height:1.5;color:var(--fg-2);max-width:40ch}
+.start__go{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px;margin-top:12px}
+.start__go .big{text-decoration:none}
+.start__go .alt{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--fg-3);text-decoration:underline;text-underline-offset:3px}
+.start__go .alt:hover{color:var(--yellow)}
+@media (max-width:560px){
+  .start{grid-template-columns:1fr;gap:12px;justify-items:center;text-align:center}
+  .start .ssticker{grid-row:auto;width:min(180px,46vw)}
+  .start__go{grid-column:1;justify-content:center}
+}
 </style>
 
 <header class="top">
@@ -297,7 +315,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        them. Same pattern the Genesis page already uses. -->
   <p class="idstrip" id="idstrip" hidden>
     <b class="idstrip__chip" id="idhandle">@you</b>
-    <button class="idstrip__out" id="idout" type="button">Disconnect</button>
+    <button class="idstrip__out" id="idout" type="button">Sign out</button>
   </p>
   <div id="view"><p class="load">Checking for a wallet…</p></div>
 </main>
@@ -473,9 +491,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     var fs = (fees && fees.fees) || [];
     var unreadable = fees && fees.unreadable;
     var feeRate = (CHAIN_STATUS && CHAIN_STATUS.creatorFeeBps) || 0;
+    // Six words instead of a sentence. It still carries the qualifier that
+    // matters -- the TAG is what opens a market that can pay you, and a market
+    // with no tagger handle is minted at 0 bps and never pays anyone.
     var rule = feeRate
-      ? "Tag <b>@oddiefun</b> on a claim and the market it opens pays you <b>" + (feeRate / 100) + "%</b> of the pool when it settles."
-      : "Tag <b>@oddiefun</b> on a claim and the market it opens pays you a cut of the pool when it settles.";
+      ? "Tag <b>@oddiefun</b>, keep <b>" + (feeRate / 100) + "%</b> of the pool."
+      : "Tag <b>@oddiefun</b>, keep a cut of the pool.";
 
     var out = "<section><h2>Your fees</h2>" + blind(unreadable, "settled market(s)");
 
@@ -485,7 +506,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // what would make it personal.
       out += '<p class="empty">' + rule
         + '<img class="psticker" src="/brand/st-waiting.webp" alt="">'
-        + '<span class="empty--quiet">Connect your wallet to see fees you can collect.</span></p>';
+        + '<span class="empty--quiet">Connect your wallet to check yours.</span></p>';
       return out + "</section>";
     }
 
@@ -493,8 +514,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // Suppressed when blind() is already saying we could not read some of
       // them: "nothing to collect" and "we could not check N" side by side is
       // two answers to one question.
-      if (!unreadable) out += '<p class="empty">No fees waiting. ' + rule
-        + '<img class="psticker" src="/brand/st-first.webp" alt=""></p>';
+      if (!unreadable) out += '<p class="empty">Nothing to collect yet.'
+        + '<img class="psticker" src="/brand/st-first.webp" alt="">'
+        + '<span class="empty--quiet">' + rule + '</span></p>';
     } else {
       out += fs.map(function (f) {
         // A row that names an amount owed MUST carry the control that collects
@@ -531,7 +553,23 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   function load() {
     var w = C().wallet();
     if (!w) return gate("Connect the wallet you staked from. We never hold your funds.");
-    sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b> on this device";
+    /* TWO CONTROLS, BECAUSE THEY ARE TWO THINGS.
+       The identity control below signs this browser out of its account, which
+       takes the X handle AND the wallet's signature link with it, because
+       device_account is keyed by device_id alone and the whole graph hangs off
+       one row. It does NOT disconnect the wallet, and never did: nothing ever
+       called provider.disconnect(), so Phantom's approval survived and the
+       trusted probe reconnected on the next load.
+       This one is the missing half. It revokes the browser's approval and
+       forgets the address, which is what somebody switching wallets or handing
+       over a laptop is actually asking for. */
+    sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b> on this device"
+      + ' <button class="idstrip__out" id="wout" type="button">Disconnect</button>';
+    var wo = document.getElementById("wout");
+    if (wo) wo.addEventListener("click", function () {
+      wo.disabled = true;
+      C().forgetWallet().then(function () { sub.textContent = ""; load(); });
+    }, { once: true });
     view.innerHTML = '<p class="load">Reading the chain…</p>';
 
     var pk = encodeURIComponent(w.publicKey);
@@ -548,21 +586,43 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       var html = "";
 
       var cl = (claim && claim.claimable) || [];
-      var wins = cl.filter(function (o) { return o.won; });
-      html += "<section><h2>Ready to collect" + (wins.length ? " <b>" + wins.length + "</b>" : "") + "</h2>"
-        + blind(claim && claim.unreadable, cl.length ? "more settled market(s)" : "settled market(s)")
-        + (cl.length ? cl.map(function (o) { return row(o, "claim"); }).join("")
-                     : '<p class="empty">Nothing to collect right now.</p>')
-        + "</section>";
-
       var op = (open && open.open) || [];
-      var riding = op.reduce(function (a, o) { return a + o.lamports; }, 0);
-      html += "<section><h2>On the line" + (riding ? " <b>" + SOL(riding) + " SOL</b>" : "") + "</h2>"
-        + blind(open && open.unreadable, "of your position(s)")
-        + (op.length ? op.map(function (o) { return row(o, "open"); }).join("")
-                     : '<p class="empty">Nothing riding. Tag @oddiefun on a claim.'
-                       + '<img class="psticker" src="/brand/st-grass.webp" alt=""></p>')
-        + "</section>";
+      var blindClaim = claim && claim.unreadable, blindOpen = open && open.unreadable;
+
+      /* NOTHING AT ALL: ONE BLOCK WITH THE TWO THINGS TO DO.
+         Lev: "cuzdan baglayinca neler yapabilecegimi gosteren ekran daha
+         obvious olmali. suan anlasilmiyor." A wallet with no history was
+         getting three empty dashed boxes in a row, each of which described
+         an absence and none of which said what to do about it. When BOTH
+         position lists are genuinely empty they collapse into one block that
+         names the two actions and gives them buttons.
+
+         Only when the reads were CLEAN. An unreadable position is not an
+         absent one, so if either count is non-zero the real sections render
+         and blind() gets to say so. */
+      if (!cl.length && !op.length && !blindClaim && !blindOpen) {
+        html += '<section><h2>Nothing riding yet</h2>'
+          + '<div class="start"><img class="ssticker" src="/brand/st-grass.webp" alt="">'
+          + '<p>Take a side and it shows up here.</p>'
+          + '<div class="start__go"><a class="big" href="/markets">See open markets</a>'
+          + '<a class="alt" href="/genesis">Open your own &rarr;</a></div></div>'
+          + "</section>";
+      } else {
+        var wins = cl.filter(function (o) { return o.won; });
+        html += "<section><h2>Ready to collect" + (wins.length ? " <b>" + wins.length + "</b>" : "") + "</h2>"
+          + blind(blindClaim, cl.length ? "more settled market(s)" : "settled market(s)")
+          + (cl.length ? cl.map(function (o) { return row(o, "claim"); }).join("")
+                       : '<p class="empty">Nothing to collect right now.</p>')
+          + "</section>";
+
+        var riding = op.reduce(function (a, o) { return a + o.lamports; }, 0);
+        html += "<section><h2>On the line" + (riding ? " <b>" + SOL(riding) + " SOL</b>" : "") + "</h2>"
+          + blind(blindOpen, "of your position(s)")
+          + (op.length ? op.map(function (o) { return row(o, "open"); }).join("")
+                       : '<p class="empty">Nothing riding. Tag @oddiefun on a claim.'
+                         + '<img class="psticker" src="/brand/st-grass.webp" alt=""></p>')
+          + "</section>";
+      }
 
       html += feesSection(fees, true);
 

@@ -325,6 +325,31 @@ function b64ToBytes(b64) {
   }
 
   /**
+   * FORGET THIS WALLET, ON THIS BROWSER.
+   *
+   * The page had a "Disconnect" that signed the browser out of its IDENTITY
+   * (the device_account row) and left the WALLET exactly where it was: nothing
+   * in this file has ever called provider.disconnect(), so Phantom's approval
+   * for this site survived and the trusted probe reconnected it silently on the
+   * very next load. Somebody handing over a laptop, or switching wallets, had
+   * no way to do either.
+   *
+   * Client-side only, and deliberately so. Nothing on the server is keyed to a
+   * "currently connected" wallet -- positions live on chain under the address,
+   * and the signature link is a separate thing with its own control. This
+   * revokes the browser's approval and clears what this module remembers.
+   * Phantom is not required to implement disconnect(), so a wallet that lacks
+   * it still gets the local half.
+   */
+  async function forgetWallet() {
+    const provider = window.solana;
+    try { if (provider && typeof provider.disconnect === "function") await provider.disconnect(); }
+    catch (e) { /* the local clear below is what the page actually reads */ }
+    wallet = null;
+    linked = null;   // null = unknown again, NOT false: we have not checked this device's next wallet
+  }
+
+  /**
    * THE WAY HOME FROM A MONEY RECEIPT.
    *
    * Both receipts ended on "Done", which closes the sheet and leaves you on
@@ -1249,6 +1274,7 @@ function b64ToBytes(b64) {
     linked: function () { return linked; },
     link: relinkWallet,
     collectCreatorFee: collectCreatorFee,
+    forgetWallet: forgetWallet,
     short: short,
   };
 })();
