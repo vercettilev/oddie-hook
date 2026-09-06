@@ -190,6 +190,81 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .poster p b{color:var(--cream)} .poster a{color:var(--yellow)}
 .gate img.gsticker{width:min(230px,58vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
   filter:drop-shadow(0 10px 22px rgba(0,0,0,.5))}
+
+/* ================================================================= SKIN ==
+   The app was a terminal: thin outlines on flat black, mono everywhere.
+   The landing is not — it alternates LOUD COLOUR FIELDS (lime, black, pink,
+   cream) torn apart by paper seams, with sticker panels on top. That
+   structure, not decoration, is what makes it read as a movement instead of
+   a Bloomberg screen, so the app borrows it verbatim:
+
+     lime masthead band  ->  torn paper seam  ->  black field, cream stickers
+
+   Mono survives only on NUMBERS, where tabular figures are the point. Every
+   label that was mono-uppercase is now the display face or plain bold: mono
+   text at label size is the single loudest terminal signal there is.        */
+:root{--tear-1:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t1' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042 0.05' numOctaves='2' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='54'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t1)'/%3E%3C/svg%3E");--seam-h:clamp(26px,3.6vw,52px)}
+
+.top{position:relative;background:var(--yellow);border-bottom:0;z-index:2}
+.top .wrap{position:relative;z-index:3}
+.mark{color:var(--ink)}
+.mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
+.top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
+  color:rgba(11,13,4,.7)}
+.top nav a:hover{color:var(--ink)}
+/* the seam: the lime band tears into the black field below it */
+.top::after{content:"";position:absolute;left:-3%;right:-3%;bottom:calc(-1 * var(--seam-h) + 1px);
+  height:var(--seam-h);background:var(--yellow);pointer-events:none;z-index:2;
+  -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1);
+  -webkit-mask-size:100% 100%;mask-size:100% 100%;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+main.wrap{padding-top:calc(var(--seam-h) + 18px)}
+
+/* Panels stop being outlines and become STICKERS: cream fill, black edge,
+   hard offset shadow, a degree or two of tilt. */
+.sticker{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+  box-shadow:7px 8px 0 var(--pink-deep)}
+
+/* ---- one market: the question stays neon on black (the hero), everything
+       that carries a fact becomes a cream sticker ---- */
+.eyebrow{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
+  text-transform:uppercase;color:var(--fg-3)}
+.eyebrow b{color:var(--yellow);font-weight:400}
+.src{background:var(--cream);color:var(--ink);border:3px solid var(--black);border-left-width:3px;
+  box-shadow:7px 8px 0 var(--yellow-deep);padding:16px 18px;transform:rotate(-.4deg)}
+.src__who{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
+  color:rgba(11,13,4,.6);text-transform:uppercase}
+.src__who b{color:var(--pink-deep);font-weight:400}
+.src__t{color:var(--ink);font-weight:600}
+.src__a{color:var(--pink-deep);font-family:var(--display);font-weight:400;font-size:15px;
+  letter-spacing:.02em}
+.pool{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+  box-shadow:7px 8px 0 var(--pink-deep);transform:rotate(.4deg)}
+.pool__n{color:var(--ink)}
+.pool__n span{color:rgba(11,13,4,.55)}
+.pool__k{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
+  color:rgba(11,13,4,.6)}
+.pool--quiet{border-style:solid;border-color:var(--black);box-shadow:7px 8px 0 var(--yellow-deep)}
+.pool--quiet .pool__n{color:var(--ink)}
+.bar{border:2px solid var(--black)}
+.split .y{color:var(--yellow-deep)} .split .n{color:var(--pink-deep)}
+.terms{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+  box-shadow:7px 8px 0 var(--yellow-deep);transform:rotate(-.3deg)}
+.terms summary{color:var(--ink);font-family:var(--display);font-weight:400;font-size:15px;
+  letter-spacing:.03em}
+.terms summary::after{color:var(--pink-deep)}
+.terms__b{color:rgba(11,13,4,.78)}
+.terms__b b{color:var(--ink)}
+.rail{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.02em;
+  color:var(--fg-3);text-transform:uppercase}
+.rail b{color:var(--yellow);font-weight:400}
+.rail a{color:var(--fg-2)}
+.share{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em}
+
+/* The crowd, at the foot of every page: this is a movement, and a page that
+   ends in a void does not say so. Lazy: it is decoration, never the point. */
+.crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
+  pointer-events:none;user-select:none}
 </style>
 
 <header class="top">
@@ -207,6 +282,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 <main class="wrap">
   <div id="view"><p class="load">Loading the market…</p></div>
 </main>
+<img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <!-- The money sheet chain.js builds. Linked rather than inlined: nothing in
      it paints until somebody taps a side, so it cannot cause the first-paint

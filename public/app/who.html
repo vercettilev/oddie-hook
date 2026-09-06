@@ -117,6 +117,39 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 .poster p b{color:var(--cream)} .poster a{color:var(--yellow)}
 .gate img.gsticker{width:min(230px,58vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
   filter:drop-shadow(0 10px 22px rgba(0,0,0,.5))}
+
+/* ================================================================= SKIN ==
+   Same structure as the list and the market page: a lime band torn into the
+   black field, cream stickers on top, mono kept only for numbers. See
+   public/app/markets.html for the reasoning.                               */
+:root{--tear-1:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t1' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042 0.05' numOctaves='2' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='54'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t1)'/%3E%3C/svg%3E");--seam-h:clamp(26px,3.6vw,52px)}
+.top{position:relative;background:var(--yellow);border-bottom:0;z-index:2}
+.top .wrap{position:relative;z-index:3}
+.mark{color:var(--ink)}
+.mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
+.top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
+  color:rgba(11,13,4,.7)}
+.top nav a:hover{color:var(--ink)}
+.top::after{content:"";position:absolute;left:-3%;right:-3%;bottom:calc(-1 * var(--seam-h) + 1px);
+  height:var(--seam-h);background:var(--yellow);pointer-events:none;z-index:2;
+  -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1);
+  -webkit-mask-size:100% 100%;mask-size:100% 100%;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+main.wrap{padding-top:calc(var(--seam-h) + 18px)}
+.sub{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.02em;
+  color:var(--fg-3);text-transform:uppercase}
+.crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
+  pointer-events:none;user-select:none}
+
+.hero{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+  box-shadow:8px 9px 0 var(--pink-deep);padding:20px 22px;transform:rotate(-.3deg)}
+.stat span{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.04em;
+  color:rgba(11,13,4,.6)}
+.stat--up b{color:var(--ink)} .stat--flat b{color:rgba(11,13,4,.5)}
+.stat--rec b{color:rgba(11,13,4,.75)} .stat--pts b{color:var(--pink-deep)}
+.addr{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em}
+h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04em;color:var(--fg-3)}
+.rec__m{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em}
 </style>
 
 <header class="top">
@@ -134,6 +167,7 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 <main class="wrap">
   <div id="view"><p class="load">Reading settled calls…</p></div>
 </main>
+<img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <script>
 (function () {
