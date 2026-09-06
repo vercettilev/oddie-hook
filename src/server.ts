@@ -359,9 +359,16 @@ async function renderLanding(): Promise<string> {
   // lie. "Real SOL" is only written where the SOL is real; on devnet the chip
   // says devnet, because a landing that calls test money real is the exact
   // kind of page this product must never be.
+  // Devnet satiri Lev'in karariyla kaldirildi: yayinda olmayan bir ag adini on
+  // kapida duyurmak istemedi. Yuva ve mantik DURUYOR, cunku itiraz devnet
+  // satirinaydi, mainnet satirina degil: cluster mainnet olunca cip kendiliginden
+  // gelir ve o zaman soyleyecek olumlu bir seyi olur. Devnet'te bos dize basar,
+  // .netfact:empty onu gizler. Sessizlik bir iddia degil, ve agin gercekten
+  // onemli oldugu yer zaten app: chain.js clusterLabel'i sunucudan gelen
+  // cluster ile yaziyor, orada hicbir sey degismedi.
   const netChip = cluster() === "mainnet-beta"
     ? '<span class="livechip"><i></i>Real SOL · live on Solana</span>'
-    : '<span class="livechip"><i></i>Live on Solana devnet · mainnet next</span>';
+    : '';
 
   const html = LANDING_HTML
     .replace("<!--PROOF-->", proof)
@@ -3022,7 +3029,16 @@ function noteGeoForCommunity(req: express.Request): void {
  */
 app.get("/api/chain/status", (req, res) => {
   noteGeoForCommunity(req);
-  res.json({ enabled: realStakesReady, cluster: cluster() });
+  // The rate rides along so no page has to hard-code it. It is a POLICY
+  // number, not a measurement of anybody: what a market opened by an X tag is
+  // minted to pay its creator. The rate is written per market at creation and
+  // never rewritten, so a change here can never reprice an open pool -- which
+  // is exactly why the page must read it from the server rather than print a
+  // constant that will drift.
+  res.json({
+    enabled: realStakesReady, cluster: cluster(),
+    creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+  });
 });
 
 if (realStakesReady) {

@@ -876,6 +876,8 @@
   .netfact{font-family:var(--mono);font-size:10.5px;font-weight:700;
     letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2)}
   .netfact .livechip i{background:var(--pink-deep)}
+  /* Devnet'te sunucu bos dize basiyor; bos kalan kap satir kutusu birakmasin. */
+  .netfact:empty{display:none}
   @media (max-width:760px){
     .facts{rotate:-.6deg}
     .fact{flex:1 1 100%;min-width:0}
@@ -1116,8 +1118,7 @@
                  once aciklanir, tarihli kanit kapatir, baska hicbir sey kapatmaz
                  (yani bekleyen market normaldir, hata degil). -->
             <p class="lede">The rule goes up when the market opens, before anyone
-              takes a side. Dated evidence closes it. Nothing else does, so some
-              markets wait.</p>
+              takes a side. Dated evidence closes it.</p>
           </div>
         </div>
       </div>
@@ -1187,7 +1188,6 @@
       <div class="close col col--mid reveal">
         <h2 class="h2"><span>Find a fight.</span><span class="lo">Tag it.</span></h2>
         <a class="btn btn--light" href="/genesis">Tag your first claim <i aria-hidden="true">&rarr;</i></a>
-        <p class="close__fine">Free. No wallet needed to start.</p>
       </div>
     </div>
 
