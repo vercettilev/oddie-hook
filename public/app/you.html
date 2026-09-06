@@ -170,9 +170,31 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
   pointer-events:none;user-select:none}
 
-.gate{background:var(--cream);color:var(--ink);border:3px solid var(--black);
-  box-shadow:8px 9px 0 var(--pink-deep);transform:rotate(-.4deg)}
-.gate p{color:rgba(11,13,4,.75)}
+/* THE ASK, NOT A POSTER.
+   This was a cream slab the width of the page with a 230px mascot centred in
+   it, so the loudest object on the screen was the container and the thing to
+   press was small inside it. Now the panel stays on the black field (the way
+   the market list's own gate always has), the sticker moves to the side at
+   half the size, and the button is the loud part. The lime edge and the hard
+   offset shadow keep it in the same visual family without it being a white
+   rectangle dropped on a black page. */
+.gate{background:transparent;color:var(--fg);border:3px solid var(--yellow);
+  box-shadow:8px 9px 0 var(--yellow-deep);transform:rotate(-.4deg);
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 22px;
+  align-items:center;padding:20px 22px}
+.gate p{color:var(--fg-2);margin:0 0 12px}
+.gate img.gsticker{grid-row:1 / span 2;align-self:center;
+  width:min(150px,32vw);margin:0}
+/* Everything after the sticker belongs in column 2. The mascot spans both
+   rows, so anything not pinned here gets auto-placed into a third row under
+   it -- which is where "I'll do this later" landed. */
+.gate .big{justify-self:start;text-decoration:none}
+.gate .deep,.gate .later{grid-column:2;justify-self:start}
+@media (max-width:560px){
+  .gate{grid-template-columns:1fr;gap:10px;justify-items:center;text-align:center}
+  .gate img.gsticker{grid-row:auto;width:min(180px,46vw)}
+  .gate .big,.gate .deep,.gate .later{justify-self:center}
+}
 .row{background:var(--cream);color:var(--ink);border:3px solid var(--black);
   box-shadow:7px 8px 0 var(--yellow-deep);margin:0 0 22px}
 .row--win{border-color:var(--black);box-shadow:7px 8px 0 var(--pink-deep)}
