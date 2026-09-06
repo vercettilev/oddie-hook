@@ -265,8 +265,7 @@
      altindaki 1/2/3 etiketleri tasiyor. */
   
   /* ================================================== C · PINK · reputation ==
-     Two columns so the field is not a headline over a void, and the three
-     figures are sticker chips rather than a second card grid. */
+     Two columns so the field is not a headline over a void. */
   .C{position:relative;background:var(--pink-field);
     overflow:hidden;                    /* eski tarayici icin geri dusus */
     overflow-x:clip;overflow-y:visible; /* maskot siyah/pembe dikisini kessin */
@@ -274,15 +273,6 @@
   .C__top{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);
     gap:clamp(24px,4vw,64px);align-items:center}
   .C__ghost{justify-self:end;width:min(100%,340px);transform:rotate(-2deg)}
-  .chips{display:flex;flex-wrap:wrap;gap:clamp(20px,2.8vw,44px);
-    margin-top:clamp(30px,3.6vw,52px)}
-  .chip{flex:1 1 220px;min-width:200px}
-  .chip__n{display:inline-block;font-family:var(--display);font-weight:400;
-    font-size:clamp(38px,4.6vw,64px);line-height:1;color:var(--ink);background:var(--yellow);
-    padding:7px 15px 6px;box-shadow:5px 6px 0 rgba(11,13,4,.5)}
-  .chip__t{margin-top:16px;font-family:var(--display);font-weight:400;font-size:18px;
-    text-transform:uppercase;color:var(--ink)}
-  .chip__b{margin:6px 0 0;font-size:14px;font-weight:600;line-height:1.5;color:var(--ink)}
   @media (max-width:900px){
     .C__top{grid-template-columns:1fr}
     .C__ghost{justify-self:start;width:min(70%,260px)}
@@ -481,30 +471,6 @@
     rotate:-4.5deg;
     filter:drop-shadow(8px 10px 0 rgba(2,3,2,.35))}
 
-  /* pullar: esit uclu satir biter, uc farkli genislik/ofset/egim ve iki
-     gercek kolon cakismasi (1/6 ile 5/10, 5/10 ile 9/13) */
-  /* giris ile pullar arasi: ikisi ayri dusunce, ust uste yigilmasinlar */
-  .chips{margin-top:clamp(36px,5.4vw,88px);position:relative;display:grid;
-    grid-template-columns:repeat(12,minmax(0,1fr));
-    column-gap:clamp(8px,1.4vw,20px);row-gap:0;
-    margin-top:clamp(10px,1.6vw,26px);padding-bottom:clamp(16px,2.2vw,34px)}
-  .chip{position:relative;flex:none;min-width:0;grid-row:1}
-  .chip:nth-child(1){grid-column:1/6;margin-top:clamp(10px,1.4vw,22px);rotate:-1.9deg;z-index:3}
-  .chip:nth-child(2){grid-column:5/10;margin-top:clamp(44px,6vw,98px);rotate:1.5deg;z-index:4}
-  .chip:nth-child(3){grid-column:9/13;margin-top:0;
-    margin-right:calc(-1 * clamp(0px,3vw,52px));rotate:-1.1deg;z-index:2}
-  .chip__n{display:inline-block;position:relative;z-index:2;
-    margin-left:calc(-1 * clamp(8px,1.4vw,22px));
-    font-size:clamp(38px,5.4vw,86px);padding:6px 16px 5px;
-    box-shadow:6px 7px 0 var(--black);rotate:-4deg}
-  .chip:nth-child(2) .chip__n{font-size:clamp(46px,6.6vw,110px);rotate:3.2deg;
-    margin-left:calc(-1 * clamp(14px,2.4vw,38px));
-    background:var(--black);color:var(--yellow)}
-  .chip:nth-child(3) .chip__n{font-size:clamp(32px,4.2vw,68px);rotate:-2deg}
-  .chip__t{display:inline-block;margin-top:12px;background:var(--black);color:var(--yellow);
-    padding:6px 12px;font-size:clamp(15px,1.4vw,19px);rotate:-1.2deg}
-  .chip__b{max-width:30ch;font-size:14px}
-
   /* ---------------------------------------------------- C · kapanis --
      Kalabalik alt kenarina sabitlenip kirpilir (goruntunun ust yarisi zaten
      bos), viewport'tan genis yapilip iki yandan kesilir, ve negatif alt
@@ -542,7 +508,7 @@
     --m-star-p:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Cpath d='M30 3 37 24 58 24 41 37 48 58 30 45 12 58 19 37 2 24 23 24Z' fill='none' stroke='%23FF2D78' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
   .A__hero::before,.A__hero::after,.A__hero .h1::after,.B__mani::after,.B__head::after,
-  .B__fig::before,.C__top::after,.chips::before,.chip:nth-child(2)::after{
+  .B__fig::before,.C__top::after{
     content:"";position:absolute;pointer-events:none;z-index:5;
     background-repeat:no-repeat;background-position:center;background-size:contain}
 
@@ -568,11 +534,6 @@
   /* C — pembe uzerinde sari/siyah, maskotun ve pulun konturundan */
   .C__top::after{width:clamp(46px,5vw,76px);aspect-ratio:64/56;background-image:var(--m-dash-y);
     right:clamp(2px,6vw,92px);bottom:calc(-1 * clamp(6px,1.4vw,22px));rotate:-11deg}
-  .chips::before{width:clamp(30px,3.2vw,52px);aspect-ratio:1;background-image:var(--m-star-i);
-    left:clamp(-8px,-.8vw,0px);top:clamp(2px,1vw,14px);rotate:9deg}
-  .chip:nth-child(2)::after{width:clamp(34px,3.6vw,56px);aspect-ratio:64/56;
-    background-image:var(--m-dash-p);
-    right:calc(-1 * clamp(12px,1.6vw,26px));bottom:calc(-1 * clamp(10px,1.2vw,20px));rotate:16deg}
 
   /* --------------------------------------------------------- mobil --
      ZORUNLU, secenek degil: dosyadaki mevcut media query'leri bu bloktan
@@ -612,17 +573,10 @@
       margin:calc(-1 * clamp(28px,8vw,64px)) calc(-1 * clamp(6px,3vw,18px)) clamp(4px,2vw,12px) 0}
   }
   @media (max-width:740px){
-    .chips{grid-template-columns:1fr;row-gap:clamp(24px,6vw,36px)}
-    .chip:nth-child(1),.chip:nth-child(2),.chip:nth-child(3){
-      grid-column:1;grid-row:auto;margin-top:0;margin-right:0}
-    .chip:nth-child(2){margin-left:clamp(10px,4vw,24px)}
-    .chip__n,.chip:nth-child(2) .chip__n,.chip:nth-child(3) .chip__n{
-      margin-left:calc(-1 * clamp(6px,2vw,12px))}
     .crowd{width:110%;margin-left:-5%}
   }
   @media (max-width:560px){
-    .A__hero::before,.A__hero::after,.B__head::after,.B__fig::before,
-    .chips::before,.chip:nth-child(2)::after{display:none}
+    .A__hero::before,.A__hero::after,.B__head::after,.B__fig::before{display:none}
     :root{--seam-h:34px}
     .crowd img{height:clamp(130px,32vw,170px)}
   }
@@ -733,14 +687,6 @@
   .B__head .lo::after{display:none}
   .B__head .lede{max-width:44ch}
 
-  /* Pullar zikzak okunuyordu: dikey kayma yarilaniyor ve sayilar birbirine
-     yaklasiyor, cunku uc pul esit agirlikta uc olgu. */
-  .chip:nth-child(1){margin-top:clamp(6px,1vw,14px)}
-  .chip:nth-child(2){margin-top:clamp(20px,3vw,46px)}
-  .chip:nth-child(3){margin-top:0}
-  .chip:nth-child(2) .chip__n{font-size:clamp(40px,5.6vw,90px)}
-  .chip:nth-child(3) .chip__n{font-size:clamp(36px,4.8vw,78px)}
-
   /* ================================================== masthead · sticky ==
      Chomp'un tek istegi 6886px boyunca ekrandan cikmiyor; bizim istegimiz
      y=367 ile y=2697 arasinda, yani 2.6 ekran boyunca ekranda degildi.
@@ -750,12 +696,6 @@
   .topbar .nav__in{padding-top:clamp(9px,1.1vw,14px);
     padding-bottom:clamp(9px,1.1vw,14px)}
   .A > .shell{padding-top:clamp(26px,3.6vw,58px)}
-
-  /* pul rakamlari: ucu de siyah kutu, sari yazi. Boyut/egim/ofset farki
-     zaten var; renk farki uc esit olguya sahte bir hiyerarsi veriyordu. */
-  .chip__n{background:var(--ink);color:var(--yellow);
-    box-shadow:6px 7px 0 rgba(2,3,2,.42)}
-  .chip:nth-child(2) .chip__n{background:var(--ink);color:var(--yellow)}
 
   /* Sticky masthead capa hedeflerinin ustune oturuyordu: #how ve #board'a
      tiklayinca bolum basligi barin altinda kaliyordu. */
@@ -1157,9 +1097,10 @@
   </section>
 
   <!-- ================================================ C · PINK · REPUTATION ==
-       Two columns so the ground is not a headline over a void, and the three
-       figures are sticker chips rather than a second card grid. Every number
-       here is the one the product actually pays. -->
+       Two columns so the ground is not a headline over a void. The three
+       sticker chips this comment used to describe are long gone; their CSS
+       outlived them by a while and is gone now too. The closing ask sits in
+       their place, because this is the loudest field on the page. -->
   <section class="C f--pink" id="board">
     <div class="shell">
       <div class="C__top">
