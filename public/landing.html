@@ -1133,14 +1133,19 @@
              altinda hic yazilmaz. -->
         <span class="fact proof"><!--PROOF--></span>
       </div>
-      <!-- Ag cipi geri geldi. Cikarilmisti ama .replace("<!--NET_CHIP-->") hala
-           server.ts'te duruyordu, yani mantik dogru calisiyor ve hicbir yere
-           basilmiyordu: sayfa "a real market on Solana with its own vault" der
-           ve "0.28 SOL in" gosterirken hangi agda oldugunu hic soylemiyordu.
-           App bunu zaten dogru yapiyor (chain.js clusterLabel, sunucudan gelen
-           cluster, asla tahmin degil); eksik olan yalniz on kapiydi.
+      <!-- Ag cipi geri geldi. Yer tutucu HTML'den cikarilmisti ama onu arayan
+           .replace() hala server.ts'te duruyordu: mantik dogru calisiyor ve
+           hicbir yere basmiyordu. Sayfa "a real market on Solana with its own
+           vault" der, SOL tutarlari gosterir, ve hangi agda oldugunu hic
+           soylemezdi. App bunu zaten dogru yapiyor (chain.js clusterLabel,
+           sunucudan gelen cluster, asla tahmin degil); eksik olan on kapiydi.
            Cip kendi kendini duzeltiyor: mainnet'e gecince metin
-           "Real SOL · live on Solana" olur, burada duzenlenecek sey yok. -->
+           "Real SOL · live on Solana" olur, burada duzenlenecek sey yok.
+
+           DIKKAT: yer tutucunun birebir yazimini bu yorumun ICINE YAZMA.
+           String.replace ilk eslesmeyi degistirir; burada gecerse cip gorunmez
+           bir yorumun icine basilir ve asagidaki gercek yuva bos kalir. Bir kez
+           oldu, uretime de gitti. -->
       <div class="shell netfact"><!--NET_CHIP--></div>
     </div>
   </section>
