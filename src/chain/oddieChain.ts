@@ -1250,8 +1250,14 @@ export async function prepareRefundTx(args: { marketPubkey: string; userPubkey: 
     const userPk = new c.web3.PublicKey(args.userPubkey);
     const ix = await c.program.methods
       .refundAfterDeadline()
+      // accountsStrict resolves NOTHING for you: every account the program
+      // declares has to be listed, system_program included. It was missing
+      // here, so this builder threw "Account `systemProgram` not provided" on
+      // every call and the refund route answered 502 from the day it shipped.
+      // Found by simulating one on devnet; pinned by test-accounts-strict.
       .accountsStrict({
         owner: userPk, market: marketPk, vault: vaultPda(c, marketPk), position: positionPda(c, marketPk, userPk),
+        systemProgram: c.web3.SystemProgram.programId,
       })
       .instruction();
     const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
