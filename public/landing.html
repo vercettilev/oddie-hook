@@ -806,15 +806,29 @@
     /* Olculen sorun: panel, butonun 2.3 kati siyah alandi ve istekten daha
        yuksek sesle konusuyordu. Bir kademe asagi: okuma katmani sessizlesir,
        eylem katmani onune gecer. */
-    font-size:clamp(14px,1.5vw,21px);line-height:1.22;letter-spacing:.004em;
+    /* 1.22 was tighter than Anton's own content box, so consecutive lines
+       already overlapped by 7px before anything was drawn, and the rule under
+       @oddiefun (hung .13em BELOW that box) landed 11.9px inside the line
+       below, measured at 1440. Room for the lines, and the rule pulled back
+       inside the word's own box so it can never reach the next one. */
+    font-size:clamp(14px,1.5vw,21px);line-height:1.44;letter-spacing:.004em;
     padding:clamp(12px,1.3vw,17px) clamp(16px,1.8vw,26px) clamp(13px,1.5vw,19px);
     rotate:-.8deg;
     -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='160'%3E%3Cfilter id='pz'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.035 .32' numOctaves='2' seed='11'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='9'/%3E%3C/filter%3E%3Crect x='4' y='5' width='392' height='150' rx='5' fill='%23fff' filter='url(%23pz)'/%3E%3C/svg%3E");
     mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='160'%3E%3Cfilter id='pz'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.035 .32' numOctaves='2' seed='11'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='9'/%3E%3C/filter%3E%3Crect x='4' y='5' width='392' height='150' rx='5' fill='%23fff' filter='url(%23pz)'/%3E%3C/svg%3E");
     -webkit-mask-size:100% 100%;mask-size:100% 100%}
   .pitch span{display:block}
-  .pitch b{position:relative;font-weight:inherit;color:var(--yellow)}
-  .pitch b::after{content:"";position:absolute;left:-.03em;right:-.09em;bottom:-.13em;
+  /* THE RULE IS ANCHORED TO THE WORD, NOT TO ANTON'S BOX.
+     Measured at 1440: Anton's content box is 1.56em tall against a 1.34em line
+     box, so the word's own box already hung 5.8px into the line below and the
+     rule, positioned from that box's bottom edge, was drawn inside the next
+     line's text. Loosening line-height enough to clear it needs 1.62, which is
+     airy for a two-line panel.
+     inline-block with line-height:1 shrinks the box to the word itself, so the
+     rule sits just under @oddiefun and cannot reach anything. */
+  .pitch b{position:relative;font-weight:inherit;color:var(--yellow);
+    display:inline-block;line-height:1}
+  .pitch b::after{content:"";position:absolute;left:-.03em;right:-.09em;bottom:-.02em;
     height:.085em;background:var(--pink);rotate:-.7deg}
 
   /* ------------------------------------------------------ bilgi bandi --
@@ -829,8 +843,10 @@
     -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='120' preserveAspectRatio='none'%3E%3Cfilter id='fb' x='-10%25' y='-40%25' width='120%25' height='190%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.05' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='17'/%3E%3C/filter%3E%3Crect x='-40' y='11' width='1520' height='98' fill='%23fff' filter='url(%23fb)'/%3E%3C/svg%3E");
     mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='120' preserveAspectRatio='none'%3E%3Cfilter id='fb' x='-10%25' y='-40%25' width='120%25' height='190%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.05' numOctaves='2' seed='5'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='17'/%3E%3C/filter%3E%3Crect x='-40' y='11' width='1520' height='98' fill='%23fff' filter='url(%23fb)'/%3E%3C/svg%3E");
     -webkit-mask-size:100% 100%;mask-size:100% 100%}
-  .facts__in{display:flex;flex-wrap:wrap;align-items:baseline;
-    gap:clamp(14px,2.4vw,44px)}
+  /* Centred on both axes (Lev): the cells were baseline-aligned and left-packed,
+     so the shorter one left a column of empty cream under it. */
+  .facts__in{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
+    text-align:center;gap:clamp(14px,2.4vw,44px)}
   .fact{flex:1 1 200px;min-width:180px;font-size:clamp(12.5px,1.05vw,14.5px);
     font-weight:600;line-height:1.4;color:var(--ink-2)}
   .fact b{display:block;font-family:var(--display);font-weight:400;
@@ -1076,16 +1092,11 @@
            page. What the picture cannot say is that the money is real and that
            somebody is on the other side of it, so that line survives as its
            caption. -->
-      <div class="B__head col col--mid">
-        <p class="kicker reveal">The move</p>
-        <!-- The first sentence used to repeat the heading directly above it and
-             the hero above that. What only this line can say is that the money
-             is real and that other people are on the other side of it. The 2%
-             moved out because the band below already prints it as a number,
-             which is louder than a clause. -->
-        <p class="lede reveal">Real money, on Solana, in a vault of its own.
-          Anyone can take the other side.</p>
-      </div>
+<!-- "THE MOVE" AND ITS LINE ARE GONE (Lev). The figure below carries the
+           whole explanation, including the three numbered steps, which are
+           baked into flow-market.webp rather than the DOM. A kicker and a
+           sentence in front of a picture that already says it is the page
+           clearing its throat. -->
 
       <figure class="B__fig reveal">
         <img src="/brand/flow-market.webp" width="1600" height="900" loading="lazy"
@@ -1145,7 +1156,12 @@
              false; it was the only number on the page, so the natural reading
              was that the take is 2%, and it is double that. Same wording as the
              stake sheet, so the two surfaces cannot drift apart again. -->
-        <span class="fact"><b>Winners split the pool.</b> <b>2%</b> to whoever started it, <b>2%</b> to oddie</span>
+        <!-- ONE <b> PER CELL. .fact b is display:block and sized as a display
+             headline, so writing three of them stacked "Winners split the
+             pool." / "2%" / "2%" into four ragged lines and blew the band's
+             height out to 478px. The headline is the block; the numbers are
+             caption text, exactly like the cell beside it. -->
+        <span class="fact"><b>Winners split the pool.</b>2% to whoever started it, 2% to oddie</span>
         <span class="fact"><b>Every argument.</b> X today. Telegram and Discord soon.</span>
         <!-- "Settled in SOL / never holds your funds" Lev'in kararıyla cikti:
              escrow zaten isin dogasi, ilan etmeye deger bilgi degil. Canli
@@ -1197,8 +1213,7 @@
                It is NOT true of Genesis, which pays recruitment and nothing
                else. Two words of scope let the heading keep describing the
                product while the body describes the season. -->
-          <p class="lede reveal">This season, Genesis counts one thing: how many new
-            people put real money on the markets you opened. Each person counts once, ever.</p>
+          <!-- The Genesis scoring line is gone (Lev). -->
         </div>
         <img class="C__ghost reveal" src="/brand/mascot-trophy.webp" alt="" aria-hidden="true"
           width="940" height="803" loading="lazy">
