@@ -964,6 +964,13 @@ function b64ToBytes(b64) {
       // asks for next, so there is never a disabled control with no
       // explanation of what would enable it.
       const refresh = () => {
+        /* THE BUTTON IS THE SIDE. The confirm line above turns pink for NO and
+           the button underneath it stayed yellow, so the loudest control on the
+           sheet was quietly disagreeing with the choice it was about to place.
+           Set from `side` rather than inside the final branch, because it is
+           true from the moment a side exists, whatever the label happens to
+           say while a wallet is still missing. */
+        stakeBtn.classList.toggle("claimbtn--no", side === "no");
         if (!side) { stakeBtn.disabled = true; stakeBtn.textContent = "Pick a side"; }
         else if (!(sol > 0)) { stakeBtn.disabled = true; stakeBtn.textContent = "Choose an amount"; }
         else if (!wallet) { stakeBtn.disabled = false; stakeBtn.textContent = "Connect wallet to bet"; }

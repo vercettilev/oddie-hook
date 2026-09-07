@@ -222,6 +222,18 @@
   transform:translate(5px,6px);
   box-shadow:0 0 0 var(--pink-deep,#A3053F),
              inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
+/* NO is pink everywhere else on this sheet, so it is pink here too. Same
+   colour-on-deeper-colour pairing the side buttons use, so the two read as one
+   control rather than two opinions. */
+.claimbtn--no{background:var(--pink,#FF2D78);
+  box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
+             inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
+.claimbtn--no:hover:not(:disabled){background:var(--pink,#FF2D78);transform:translate(-2px,-3px);
+  box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
+             inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
+.claimbtn--no:active:not(:disabled){transform:translate(5px,6px);
+  box-shadow:0 0 0 var(--pink-deep,#A3053F),
+             inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
 .claimbtn:focus-visible,.cbtn:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:4px}
 .claimbtn:disabled,.cbtn:disabled{
   opacity:.45;cursor:not-allowed;transform:none;box-shadow:3px 4px 0 rgba(11,13,4,.35)}
