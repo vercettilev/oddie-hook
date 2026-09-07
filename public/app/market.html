@@ -388,9 +388,15 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
   /* The opener, as a person. Same rule as the list: a pill that leaves for
      their X profile, so "who called this" is answerable in one tap. */
-  function byChip(handle) {
+  /* Feed'deki cip ile AYNI kural: gonderi bu handle'a aitse cip gonderiye
+     gider, degilse profile. Iki yuzey ayni cipi farkli yerlere goturemez. */
+  function byChip(handle, sourceUrl) {
     var h = String(handle).replace(/^@+/, "");
-    return '<a class="by" href="https://x.com/' + encodeURIComponent(h)
+    var href = "https://x.com/" + encodeURIComponent(h);
+    var m = String(sourceUrl || "").match(
+      /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^\/?#]+)\/status\/\d+/i);
+    if (m && m[1].toLowerCase() === h.toLowerCase()) href = sourceUrl;
+    return '<a class="by" href="' + esc(href)
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
 
@@ -399,40 +405,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
      only ever speak about what it watched happen. Never invented. */
   var youAreIn = null;
 
-  /* THE TWEET, WITHOUT THE PASTE.
-     The stored text is X's verbatim body, so it arrives carrying the tails a
-     tweet has and a quotation does not: the t.co shortlink X appends for any
-     attachment, and the pic.twitter.com token for media. Neither is readable
-     and neither is the claim. Stripped only from the END, because a link in
-     the middle of a sentence can be part of what is being claimed, and only
-     from the display -- the row keeps the original. "See the post" is still
-     right there for anyone who wants the whole thing. */
-  function tidyPost(t) {
-    var out = String(t == null ? "" : t)
-      .replace(/(?:\s+(?:https?:\/\/t\.co\/\S+|pic\.twitter\.com\/\S+|https?:\/\/pic\.x\.com\/\S+))+\s*$/i, "")
-      .trim();
-    // A media-only tweet is all tail and no claim. Blanked rather than printed
-    // as one junk token: the block already renders link-only correctly, and an
-    // empty quote is more honest than "pic.twitter.com/x9UNEvg13U" under the
-    // word "From".
-    return /^(?:https?:\/\/t\.co\/\S+|pic\.twitter\.com\/\S+|https?:\/\/pic\.x\.com\/\S+|\s)+$/i.test(out) ? "" : out;
-  }
-
-  /* ALINTININ ISI KANIT, TAM METIN DEGIL.
-     Buradaki blok "iddia gercekten atilmis ve iste baglami" diyor; tweet'i
-     bastan sona okutmak degil. 322 karakterlik bir gonderi telefonda alintiyi
-     195px yapiyordu ve sorunun kendisiyle yer icin yarisiyordu. Tamami zaten
-     bir tik uzakta: "See the post". Kesme kelime sinirinda, cunku kelimenin
-     ortasindan kesilmis bir alinti okuyana alintinin bozuk oldugunu dusundurur. */
-  var POST_MAX = 110;
-  function shortPost(t) {
-    var x = tidyPost(t);
-    if (x.length <= POST_MAX) return x;
-    var cut = x.slice(0, POST_MAX);
-    var sp = cut.lastIndexOf(" ");
-    if (sp > POST_MAX * 0.6) cut = cut.slice(0, sp);
-    return cut.replace(/[\s.,;:!?\u2013\u2014-]+$/, "") + "\u2026";
-  }
 
   /* BIR KISI, BIR ISIM.
      API "author" olarak GORUNEN ADI veriyor ("wyne"), tepedeki cip ise
@@ -450,9 +422,19 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
-    if (m.taggedBy) bits.push(byChip(m.taggedBy));
+    if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourcePost && m.sourcePost.url));
     var w = when(m.closesAt);
     if (w) bits.push(esc(w));
+    /* ALINTI GITTI, KAYNAK KALDI.
+       Gonderinin iki satiri kimsenin YES/NO kararini degistirmiyordu ama
+       koca bir kart kaplayip havuzu ve butonlari asagi itiyordu. Giden
+       ALINTI; iddianin nereden geldigi kanit oldugu icin kaliyor, sadece
+       kart olmaktan cikip bu satira giriyor. Cip de ayni yere goturuyor
+       (kisiyi bilen tiklar), bu ise etiketli hali (tahmin etmeyen tiklar). */
+    if (m.sourcePost && m.sourcePost.url) {
+      bits.push('<a class="src__a" href="' + esc(m.sourcePost.url)
+        + '" target="_blank" rel="noopener noreferrer">See the post</a>');
+    }
 
     // Separate spans, not one joined string: .eyebrow is a flex row with a gap,
     // so the gap is what separates them and no punctuation has to.
@@ -473,20 +455,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       html += '<div class="verdict verdict--' + (yes ? "y" : "n") + '">Resolved ' + (yes ? "YES" : "NO")
         + '<p>Backed ' + (yes ? "YES" : "NO") + "? Your share is waiting.</p>"
         + '<button class="collect" id="collect" type="button">Collect winnings</button></div>';
-    }
-
-    /* THE CLAIM AT SOURCE. A market is a claim somebody made on X, and this is
-       the page money is put against it on. "Opened by @handle" is a name, not
-       a source. When we hold the post text it is quoted; when we hold only
-       the url it is linked; when we hold neither, nothing is invented. */
-    if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url)) {
-      var sp = m.sourcePost;
-      var ph = postHandle(sp, m.taggedBy);
-      html += '<blockquote class="src">'
-        + '<p class="src__who">' + (ph ? "From <b>@" + esc(ph) + "</b>" : "The claim") + "</p>"
-        + (shortPost(sp.text) ? '<p class="src__t">' + esc(shortPost(sp.text)) + "</p>" : "")
-        + (sp.url ? '<a class="src__a" href="' + esc(sp.url) + '" target="_blank" rel="noopener noreferrer">See the post</a>' : "")
-        + "</blockquote>";
     }
 
     /* THE POOL, AND THE THREE THINGS IT CAN BE.

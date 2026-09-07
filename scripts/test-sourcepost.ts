@@ -118,24 +118,25 @@ console.log("\nthe market page never invents an anonymous person");
   // handle). What is pinned is the GUARD, not the phrasing.
   check("the eyebrow only names an opener when one is recorded",
     body.includes('if (m.taggedBy) bits.push('));
-  check("the source card only renders when a post is actually known",
-    body.includes("if (m.sourcePost && (m.sourcePost.text || m.sourcePost.url))"));
-  // Pinned on the GUARD, not the expression: the condition moved from sp.text
-  // to tidyPost(sp.text) when the display started stripping X's trailing
-  // t.co/pic tails, which also means a media-only post now renders no quote at
-  // all rather than one junk token under the word "From".
-  check("...and quotes text only when text survives cleaning, never a placeholder",
-    body.includes("(tidyPost(sp.text) ? '<p class=\"src__t\">'"));
-  // tidyPost lives OUTSIDE render(), so this one reads the whole page. The
-  // anchor is the load-bearing part: without the trailing $ the cleaner would
-  // eat a t.co link in the middle of a sentence, which can be the very thing
-  // being claimed.
-  check("...and the cleaner strips only TRAILING tails, so an inline link stays in the claim",
-    page.includes("function tidyPost(") && /\)\)\+\\s\*\$\/i/.test(page));
-  // The point of the row: the claim is checkable at source. A person who
-  // cannot be clicked is a label, and a label is what this replaced.
-  check("the source is a link to the post on X",
-    body.includes("sp.url ? '<a class=\"src__a\"") && body.includes("See the post"));
+  // THE QUOTE IS GONE, ON PURPOSE (the market page's own comment: "ALINTI
+  // GITTI, KAYNAK KALDI"). Two lines of somebody's tweet were not changing
+  // anybody's YES/NO and were pushing the pool and the buttons down the page,
+  // so the claim's provenance moved out of a card and into one link on the
+  // eyebrow. These checks were pinned to the quote's exact expression and went
+  // red the moment it left, which is a stale guard rather than a regression.
+  //
+  // What still has to hold is the rule underneath, and it is NARROWER than
+  // before: with no quote on the page, the link is the ONLY way to check the
+  // claim at source. The question above it is an LLM rewrite of the post, not
+  // the post, so losing this link would leave a market whose claim cannot be
+  // verified without guessing. It is therefore pinned harder than the quote
+  // ever was.
+  check("the source row only renders when a post url is actually known",
+    body.includes("if (m.sourcePost && m.sourcePost.url)"));
+  check("the source is a link to the post on X, and it is the ONLY way left to check the claim",
+    body.includes("'<a class=\"src__a\" href=\"' + esc(m.sourcePost.url)") && body.includes("See the post"));
+  check("no code path prints the post's text any more, so nothing can half-quote it",
+    !/sourcePost\.text|\bsp\.text\b/.test(page));
   check("...in a new tab, without leaking the referrer chain",
     body.includes('target="_blank" rel="noopener noreferrer"'));
 }
