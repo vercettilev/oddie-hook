@@ -16,7 +16,7 @@ import { resolvedOnchainMarkets } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls } from "./store/markets.js";
+import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
@@ -2671,12 +2671,14 @@ app.get("/api/v1/markets", async (req, res) => {
   // One batched read for the whole page instead of one per row. The old shape
   // was the exact request pattern a public RPC throttles, and being throttled
   // did not slow this endpoint down, it published zeroes.
-  const [states, openers] = await Promise.all([
+  const [states, openers, stakers] = await Promise.all([
     readMarkets(live.map((m) => m.onchainPubkey).filter(Boolean) as string[], { maxAgeMs: 4_000 })
       .catch(() => new Map<string, MarketRead>()),
     // Who opened it: the handle the 2% is paid to, and the reason the market
     // exists. One query for the page, not one per row.
     surfacersFor(live.map((m) => m.slug)).catch(() => ({} as Record<string, SurfacerInfo>)),
+    // Kac cuzdan girdi. Ayni sayfa icin tek sorgu, satir basina bir tane degil.
+    stakerCounts(live.map((m) => m.slug)).catch(() => ({} as Record<string, number>)),
   ]);
   const items = live.map((m) => {
     const r = m.onchainPubkey ? states.get(m.onchainPubkey) : { ok: false as const, reason: "absent" as const };
@@ -2700,6 +2702,13 @@ app.get("/api/v1/markets", async (req, res) => {
       outcome: m.resolvedOutcome ?? null,
       hook: m.hook ?? null,
       taggedBy: openers[m.slug]?.handle ?? null,
+      /* KAC KISI GIRDI -- BIZIM KAYDIMIZDAN, ZINCIRDEN DEGIL.
+         chain_entry cuzdan basina tek satir tutuyor, yani bu insan sayar,
+         bahis degil. Ama yalnizca onaylanmis islemler yaziliyor, o yuzden
+         GERCEGIN ALTINDA kalabilir, ustunde asla. Bunu havuzun yaninda
+         basan istemcinin kurali: sifirsa hic yazma. Dolu bir havuzun
+         yaninda "0 in" yazmak, parayi yalanlamaktir. */
+      stakers: stakers[m.slug] ?? 0,
       // Kartin @handle cipi bir profile degil, iddianin GELDIGI gonderiye
       // gidebilsin diye. Veri zaten yukarida okundu (surfacersFor), tek eksik
       // onu yayinlamakti. Istemci yazari URL'den cikarip handle ile
@@ -2742,6 +2751,7 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
   // somebody made on X, and the page that takes money against it has to let
   // the claim be checked at source, not reduce provenance to a handle.
   const src = (await surfacersFor([req.params.slug]).catch(() => ({} as Record<string, SurfacerInfo>)))[req.params.slug] ?? null;
+  const heads = (await stakerCounts([req.params.slug]).catch(() => ({} as Record<string, number>)))[req.params.slug] ?? 0;
   const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
   const total = yes + no;
   res.json({
@@ -2751,6 +2761,9 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     // Headline, not terms. A client may lead with this; `question` is still
     // the wording the stake is against and every surface must keep it.
     hook: detail.hook ?? null,
+    // Bkz. liste ucundaki not: bizim kaydimizdan gelir, gercegin altinda
+    // kalabilir, ve sifirsa dolu bir havuzun yaninda BASILMAZ.
+    stakers: heads,
     url: `${APP_BASE_URL}/m/${detail.slug}`,
     closesAt: detail.closesAt,
     resolutionCriteria: detail.resolutionCriteria ?? null,

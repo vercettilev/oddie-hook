@@ -82,6 +82,8 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .pool__n span{font-size:.42em;letter-spacing:.1em;margin-left:.35em;color:var(--fg-2)}
 .pool__k{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;
   text-transform:uppercase;color:var(--fg-3);margin-top:6px}
+/* Kac kisi girdi. Rakam one ciksin, etiketi degil: ikna eden sey sayidir. */
+.pool__k b{color:var(--yellow);font-weight:700}
 /* A state, not a number. Same box, different voice: nothing here may be
    mistaken for a measured quantity. */
 .pool--quiet .pool__n{font-family:var(--body);font-size:19px;font-weight:800;
@@ -258,6 +260,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .pool__n span{color:rgba(11,13,4,.55)}
 .pool__k{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
   color:rgba(11,13,4,.6)}
+/* Kisi sayisi bu katmanda KREM kart uzerinde duruyor ve sari orada 1.37:1
+   veriyor -- olculdu, esik 4.5. Ayni kartin golgesinde zaten kullanilan
+   pembe-koyu 4.81:1. Rakam one cikacaksa once okunmali. */
+.pool__k b{color:var(--pink-deep)}
 .pool--quiet{border-style:solid;border-color:var(--black);box-shadow:7px 8px 0 var(--yellow-deep)}
 .pool--quiet .pool__n{color:var(--ink)}
 .bar{border:2px solid var(--black)}
@@ -592,8 +598,16 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       var y = m.pool.yesLamports, n = m.pool.noLamports, tot = y + n;
       var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
       poolNow = { lamports: tot, yesPct: yp };
+      /* KAC KISI GIRDI.
+         "0.4 SOL" bir miktardir; "7 in" bir kalabaliktir, ve insani ikna
+         eden ikincisidir. Sadece SIFIRDAN BUYUKSE yaziliyor: sayim yalnizca
+         onaylanmis islemlerden geliyor (bkz. stakerCounts), yani dolu bir
+         havuzun yaninda sifir cikabilir ve o durumda "0 in" yazmak parayi
+         yalanlamak olurdu. Bilmiyorsak susuyoruz. */
+      var heads = Number(m.stakers || 0);
       html += '<div class="pool"><div class="pool__n">' + SOL(tot) + "<span>SOL</span></div>"
-        + '<div class="pool__k">in the pool</div>'
+        + '<div class="pool__k">in the pool'
+        + (heads > 0 ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
         + '<div class="bar" role="img" aria-label="' + yp + ' percent yes, ' + (100 - yp) + ' percent no">'
         + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>'
         + '<div class="split"><span class="y">YES ' + yp + "%</span><span class=\"n\">NO " + (100 - yp) + "%</span></div></div>";

@@ -66,6 +66,8 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .card__full{margin:6px 0 0;font-size:13.5px;line-height:1.45;color:var(--fg-3)}
 .card__q a:hover{color:var(--yellow)}
 
+/* Kac kisi girdi: rakam one cikar, etiket geride kalir. */
+.heads b{color:var(--yellow);font-weight:700}
 .pool{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;
   font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-3);font-variant-numeric:tabular-nums}
@@ -247,6 +249,15 @@ h1{color:var(--cream)}
    wraps and the sticker keeps the right edge on its own line. */
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .hsticker{height:clamp(80px,11vw,132px);margin-left:auto;transform:rotate(4deg)}
+
+/* A side that cannot be taken. Rendered as a <span>, so there is nothing to
+   click and nothing to navigate to; this only has to make it LOOK inert too.
+   Same treatment the market page gives its disabled buttons. */
+.side--off{opacity:.42;cursor:not-allowed;transform:none !important;
+  box-shadow:4px 5px 0 rgba(0,0,0,.5) !important}
+.side--off:hover{transform:none;box-shadow:4px 5px 0 rgba(0,0,0,.5)}
+.side small{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
+  letter-spacing:.1em;margin-top:6px;opacity:.75;text-transform:uppercase}
 </style>
 
 <header class="top">
@@ -386,7 +397,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         // profile makes the opener a person you can go look at.
         if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
         var w = when(m.closesAt);
-        if (w) bits.push(esc(w));
+        // when() answers "closed" for a past deadline, and the sides now say
+        // that too -- in the place where it decides something. One word, one
+        // place: the time slot keeps "3 hours left" and gives up "closed".
+        if (w && w !== "closed") bits.push(esc(w));
 
         // The same three-way rule the market page uses. An unreadable pool is
         // never drawn as an empty one: a card that says "nothing staked" over
@@ -400,12 +414,42 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
           var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
           pool = '<p class="pool"><b>' + (tot / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
-            + "</b> SOL in the pool</p>"
+            + "</b> SOL in the pool"
+            // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
+            // parayi yalanlar.
+            + (Number(m.stakers || 0) > 0 ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
+            + "</p>"
             + '<div class="bar" role="img" aria-label="' + yp + ' percent yes"><i class="bar__y" style="width:'
             + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>';
         }
         var pct = (m.oddsSource === "vault" && m.yesPct != null) ? m.yesPct : null;
         var href = "/m/" + encodeURIComponent(m.slug);
+
+        /* A SIDE YOU CANNOT TAKE MUST NOT LOOK TAKEABLE.
+           The list filters on resolved and retired, never on close time, so a
+           market past its deadline sat here with two full-strength buttons and
+           one grey word "closed" beside the opener. The word loses to the
+           buttons. Somebody picked a side, waited through a loading sheet,
+           CONNECTED A WALLET, and was refused at the last step with "Betting on
+           this one has closed."
+           An unreadable pool is the same shape: the sheet refuses it too, with
+           an internal reason code. Neither is a market you can bet on, so
+           neither gets a button.
+           The market page has always done this (market.html:645). It renders a
+           real <button disabled>; here the sides are anchors, and a disabled
+           anchor is not a thing, so an unavailable side becomes a <span> with
+           no href at all. Nothing to tap, nothing to navigate. */
+        var shut = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
+        var blind = m.oddsSource === "unreadable";
+        var offNote = shut ? "closed" : blind ? "can't read this one" : "";
+        function sideEl(side, cls, label, pctText) {
+          var inner = label + (pctText === null ? "" : "<span>" + pctText + "%</span>")
+            + (offNote ? "<small>" + esc(offNote) + "</small>" : "");
+          return offNote
+            ? '<span class="side ' + cls + ' side--off" aria-disabled="true">' + inner + "</span>"
+            : '<a class="side ' + cls + '" data-slug="' + esc(m.slug) + '" data-side="' + side
+              + '" href="' + href + "?side=" + side + '">' + inner + "</a>";
+        }
         var hook = String(m.hook || "").trim();
         return '<article class="card">'
           + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
@@ -421,10 +465,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
                 + '<a href="' + href + '">' + esc(m.question) + "</a></h2>")
           + pool
           + '<div class="sides">'
-          + '<a class="side side--y" data-slug="' + esc(m.slug) + '" data-side="yes" href="' + href + '?side=yes">YES'
-          + (pct === null ? "" : "<span>" + pct + "%</span>") + "</a>"
-          + '<a class="side side--n" data-slug="' + esc(m.slug) + '" data-side="no" href="' + href + '?side=no">NO'
-          + (pct === null ? "" : "<span>" + (100 - pct) + "%</span>") + "</a>"
+          + sideEl("yes", "side--y", "YES", pct)
+          + sideEl("no", "side--n", "NO", pct === null ? null : 100 - pct)
           + "</div></article>";
       }).join("");
       document.getElementById("sub").textContent =

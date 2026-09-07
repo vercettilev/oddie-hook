@@ -6381,6 +6381,38 @@ export async function walletsInMarket(slug: string): Promise<Array<{ wallet: str
   return rows.map((r) => ({ wallet: r.wallet, side: r.side, entryPct: r.entry_pct, lamports: Number(r.lamports) }));
 }
 
+/** HOW MANY WALLETS ARE IN, per slug, batched for a feed.
+ *
+ *  One row per wallet per market (see the table's primary key), so counting
+ *  rows counts people, not stakes: a top-up never inflates it.
+ *
+ *  THIS NUMBER IS A FLOOR, NOT THE TRUTH. recordChainEntry writes only on
+ *  `confirmed === true`, deliberately: a send whose confirmation we could not
+ *  read may well have landed, and the money is real either way, but a
+ *  fabricated row on a public board cannot be taken back. So the count can sit
+ *  BELOW the pool's reality, never above it.
+ *
+ *  Which is why every caller has one rule: never print this next to a pool it
+ *  contradicts. A market holding SOL with zero rows here says nothing about
+ *  people; it does not say "0 in".
+ */
+export async function stakerCounts(slugs: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (slugs.length === 0) return out;
+  if (!PERSISTENT) {
+    for (const slug of slugs) {
+      out[slug] = new Set(memChainEntries.filter((e) => e.slug === slug).map((e) => e.wallet)).size;
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; n: number }>(
+    `SELECT slug, count(*)::int AS n FROM chain_entry WHERE slug = ANY($1) GROUP BY slug`, [slugs]);
+  for (const r of rows) out[r.slug] = r.n;
+  for (const s of slugs) out[s] ??= 0;
+  return out;
+}
+
 /** The markets a wallet has stamped an entry on that are still OPEN. These are
  *  the candidates for its open-positions list; the authoritative amount comes
  *  from the chain, not from here, because a stamp records only a first stake. */
