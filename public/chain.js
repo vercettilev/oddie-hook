@@ -967,7 +967,19 @@ function b64ToBytes(b64) {
         if (!side) { stakeBtn.disabled = true; stakeBtn.textContent = "Pick a side"; }
         else if (!(sol > 0)) { stakeBtn.disabled = true; stakeBtn.textContent = "Choose an amount"; }
         else if (!wallet) { stakeBtn.disabled = false; stakeBtn.textContent = "Connect wallet to bet"; }
-        else if (sol > spendable()) { stakeBtn.disabled = true; stakeBtn.textContent = `Not enough SOL`; }
+        /* A WALLET WITH NOTHING ON THIS CLUSTER IS A DIFFERENT PROBLEM.
+           "Not enough SOL" is true for a wallet holding 0.05 and true for a
+           wallet holding nothing at all, but only the first one is about the
+           amount. On a test cluster the second has a specific and very common
+           cause -- Phantom is pointed at mainnet, where this program does not
+           exist -- and it is the same cause that makes Phantom refuse to
+           simulate the transaction and put a red wall in front of it. Naming
+           it here is the only place we can, because by the time that wall
+           appears the app is no longer on screen. */
+        else if (sol > spendable()) {
+          stakeBtn.disabled = true;
+          stakeBtn.textContent = (testnet && balSol === 0) ? "No test SOL in this wallet" : "Not enough SOL";
+        }
         else { stakeBtn.disabled = false; stakeBtn.textContent = `${side.toUpperCase()} · ${sol} SOL`; }
         // Ternary, not `a && b && f()`. That short-circuits to the boolean
         // `false` when either test fails, and textContent renders it as the
@@ -975,7 +987,9 @@ function b64ToBytes(b64) {
         // invisible to every check that does not actually look at the sheet.
         if (line) {
           line.textContent = (side && sol > 0 && sol > spendable())
-            ? `This wallet holds ${solText(balSol)} SOL. Leave about ${HEADROOM_SOL} SOL on top for Solana's own deposit and fee.`
+            ? (testnet && balSol === 0
+                ? `Switch Phantom to ${label} (Settings, Developer Settings, Testnet Mode), then use a devnet faucet. On mainnet this bet cannot be checked and Phantom will block it.`
+                : `This wallet holds ${solText(balSol)} SOL. Leave about ${HEADROOM_SOL} SOL on top for Solana's own deposit and fee.`)
             : (side && sol > 0)
               ? payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps)
               : "";
