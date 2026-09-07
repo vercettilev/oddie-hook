@@ -68,7 +68,7 @@
       const s = document.createElement("script");
       s.src = "https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.js";
       s.onload = resolve;
-      s.onerror = () => reject(new Error("Couldn't load the Solana library. Check your connection and try again."));
+      s.onerror = () => reject(new Error("Could not load what we need to sign this. Check your connection and try again."));
       document.head.appendChild(s);
     });
     web3 = window.solanaWeb3;
@@ -96,12 +96,12 @@
  * a retry over a stake that is already on chain costs real money.
  */
 const SUBMIT_ERROR = {
-  "insufficient-funds": "Not enough SOL in this wallet for that stake plus the account rent and network fee.",
-  "preflight-failed": "Solana would not accept this one. The market may have just closed or settled.",
+  "insufficient-funds": "Not enough SOL in this wallet. Leave a little on top of your bet for Solana's own deposit and fee.",
+  "preflight-failed": "Solana turned this one down, so nothing left your wallet. The market may have just closed.",
   "expired": "That took too long to reach the network. Nothing was staked, so you can try again.",
-  "malformed": "Something went wrong building that transaction. Try again.",
-  "not-our-program": "That transaction is not one of ours.",
-  "unsigned": "Your wallet did not sign it. Try again.",
+  "malformed": "Something went wrong on our side. Nothing left your wallet. Try again.",
+  "not-our-program": "We could not confirm this was an oddie bet, so we did not send it. Nothing left your wallet.",
+  "unsigned": "Your wallet did not sign it, so nothing was sent. Try again.",
   "rejected": "Solana rejected it, so nothing was staked.",
   "unavailable": "Solana is not answering right now. Try again in a moment.",
 };
@@ -109,7 +109,7 @@ async function signAndSubmit(tx, onSigned){
   const w = window.solana;
   if (!w) throw new Error("No Solana wallet found. Install Phantom to put real SOL on a market.");
   if (typeof w.signTransaction !== "function") {
-    throw new Error("This wallet cannot sign without sending. Phantom can.");
+    throw new Error("This wallet will not work here. Use Phantom.");
   }
   const signed = await w.signTransaction(tx);
   if (onSigned) onSigned();
@@ -138,19 +138,19 @@ async function signAndSubmit(tx, onSigned){
  */
 const PREPARE_REASON = {
   "closed": "Betting on this one has closed. The result is being settled.",
-  "already-resolved": "This market has already settled.",
+  "already-resolved": "This one settled while you were deciding. Open it again to collect if you were in.",
   "other-side": "You are already on the other side of this market. One side per wallet.",
   "not-resolved": "This market has not settled yet.",
   // After a claim the position account is CLOSED (that is what returns its
   // rent), so "no position" and "already collected" look identical from here.
   // The copy has to be true of both.
-  "no-position": "Nothing to collect here. If you already claimed, it is in your wallet.",
+  "no-position": "Nothing to collect here. If you already collected, it is in your wallet.",
   "already-claimed": "Already collected. It is in your wallet.",
   "lost": "This one went the other way, so there is nothing to collect.",
-  "not-creator": "This market was tagged by a different wallet.",
+  "not-creator": "A different wallet started this market, so the fee is theirs.",
   "nothing-owed": "No fee on this one: nobody backed the winning side.",
-  "not-minted": "This market is not on chain yet.",
-  "chain-unreachable": "Solana is not answering right now. Try again in a moment.",
+  "not-minted": "This market is not open for bets yet. Try again in a moment.",
+  "chain-unreachable": "Solana is not answering. Nothing has changed with your money. Try again in a moment.",
   // Refund-only. "resolved" is a redirection rather than a refusal: the market
   // DID settle, so there is money here, just behind the other button.
   "not-yet-open": "The 30 day window has not opened on this one yet.",
@@ -239,7 +239,7 @@ function b64ToBytes(b64) {
     const did = deviceId();
     if (!did) return false;                      // no identity on this page: nothing to link to
     const cr = await fetch(`/api/auth/wallet/challenge?deviceId=${encodeURIComponent(did)}&address=${encodeURIComponent(address)}`);
-    if (!cr.ok) throw new Error("Couldn't start the wallet link.");
+    if (!cr.ok) throw new Error("Could not start linking your wallet. Try again.");
     const { nonce, message } = await cr.json();
     const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
     // Hex keeps the signature ASCII-safe over JSON without a base58 encoder.
@@ -249,7 +249,8 @@ function b64ToBytes(b64) {
       body: JSON.stringify({ deviceId: did, address, nonce, signature: sig }),
     });
     const out = await vr.json().catch(() => ({}));
-    if (!vr.ok) throw new Error(out.error || "The wallet link did not verify.");
+    if (!vr.ok) { if (out.error) console.warn("[chain] wallet link refused:", out.error);
+      throw new Error("That did not check out. Try linking again."); }
     return true;
   }
 
@@ -321,7 +322,7 @@ function b64ToBytes(b64) {
     // "Unexpected token '<'" straight into the row a person is looking at.
     // Seen in review against a fixture; the real server can do it too.
     const pj = await prep.json().catch(() => ({}));
-    if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare the transaction.");
+    if (!prep.ok || !pj.ok) throw prepareError(pj, "Could not set this up. Nothing left your wallet. Try again.");
     const w3 = await loadWeb3();
     const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
     say("Confirm in your wallet…");
@@ -418,7 +419,7 @@ function b64ToBytes(b64) {
     const take = (mine / same) * distributable / 1e9;
     // A market with nothing on the other side pays you back your own stake
     // minus the fee, which is not a win and should not be dressed as one.
-    if (other <= 0) return `Nothing on the other side yet, so this only pays if someone takes it.`;
+    if (other <= 0) return `Nobody is on the other side yet. If it stays that way and you win, the fee still comes off, so you get back less than you put in.`;
     return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
   }
 
@@ -444,7 +445,7 @@ function b64ToBytes(b64) {
   async function renderClaim(body, slug, marketState) {
     const won = (marketState.winningSide || "").toUpperCase();
     const shell = (inner) => {
-      body.innerHTML = `<h3>Market resolved ${won}</h3>${inner}`;
+      body.innerHTML = `<h3>The answer was ${won}</h3>${inner}`;
       const c = body.querySelector(".cclose");
       if (c) c.onclick = () => body.closest(".cdim").remove();
     };
@@ -467,7 +468,7 @@ function b64ToBytes(b64) {
       return;
     }
 
-    shell(`<p class="cnote">Checking your position…</p>`);
+    shell(`<p class="cnote">Checking your bet…</p>`);
     let position = null, reachable = true;
     try {
       const r = await fetch(`/api/chain/position?slug=${encodeURIComponent(slug)}&userPubkey=${encodeURIComponent(wallet.publicKey)}`);
@@ -476,12 +477,12 @@ function b64ToBytes(b64) {
     } catch (e) { reachable = false; }
 
     if (!reachable) {
-      shell(`<p class="cnote">Couldn't read your position from ${clusterLabel(CLUSTER)} just now. Your funds are unaffected, try again in a moment.</p>
+      shell(`<p class="cnote">We could not reach ${clusterLabel(CLUSTER)} to check. Nothing has changed with your money. Try again in a moment.</p>
         <button class="cclose">Close</button>`);
       return;
     }
     if (!position) {
-      shell(`<p class="cnote">This wallet didn't have real SOL on this market. Nothing to collect.</p>
+      shell(`<p class="cnote">Nothing to collect with this wallet. If you already collected, it is in your wallet.</p>
         <button class="cclose">Close</button>`);
       return;
     }
@@ -534,18 +535,18 @@ function b64ToBytes(b64) {
         btn.textContent = "Confirm in wallet…";
         // The label has to move off "Confirm in wallet" the moment the wallet
         // is done, or it sits there stale while the server broadcasts.
-        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Broadcasting…"; });
+        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Sending…"; });
         // The receipt is offered at the exact moment they feel like a genius,
         // because that is the moment they will actually post it. It opens as
         // its own page: the og image puts the card in the tweet, and posting it
         // is an ORIGINAL post, which is the format X actually ranks. The bot is
         // stuck in the replies; the winner is not.
         const receiptUrl = `/r/${encodeURIComponent(slug)}/${encodeURIComponent(wallet.publicKey)}`;
-        body.innerHTML = `<h3>${confirmed ? "Collected ✓" : "Sent"}</h3>
+        body.innerHTML = `<h3>${confirmed ? "Collected ✓" : "Sent, still confirming"}</h3>
           <p class="cnote">${confirmed
-            ? `${isWinner ? "Your winnings are" : "Your deposit is"} on their way to your wallet, on ${clusterLabel(CLUSTER)}.`
-            : "It is on the network and we lost sight of it while it settled. Follow the link before collecting again."}</p>
-          <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+            ? `${isWinner ? "Your winnings are" : "Your deposit is"} on the way to your wallet${CLUSTER === "mainnet-beta" ? "" : `, on ${clusterLabel(CLUSTER)}`}.`
+            : "It is on Solana. We could not watch it land. Open the link below before you collect again."}</p>
+          <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${confirmed && isWinner ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
           ${confirmed ? `<p class="cnote" style="margin-top:10px"><a href="/w/${encodeURIComponent(wallet.publicKey)}" target="_blank" rel="noopener">your whole record →</a></p>` : ""}
           ${homeLink()}
@@ -624,13 +625,13 @@ function b64ToBytes(b64) {
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         btn.textContent = "Confirm in wallet…";
-        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Broadcasting…"; });
+        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Sending…"; });
         const sol = pj.lamports ? (pj.lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") : null;
         body.innerHTML = `<h3>${confirmed ? "Back in your wallet ✓" : "Sent"}</h3>
           <p class="cnote">${confirmed
             ? `${sol ? `${sol} SOL` : "Your stake"} is on its way back, on ${clusterLabel(CLUSTER)}.`
             : "It is on the network and we lost sight of it while it settled. Follow the link before trying again."}</p>
-          <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${homeLink()}
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
@@ -701,8 +702,22 @@ function b64ToBytes(b64) {
       marketState = { ok: false, reason: "unreachable" };
     }
     if (!marketState.ok) {
+      /* AN INTERNAL REASON CODE IS NOT A SENTENCE. This printed the route's own
+         word in brackets -- "(not-minted)", "(unreadable)", "(unreachable)" --
+         to somebody who had just picked a side. Each of those is a different
+         situation with a different answer, and one of them is not even a
+         problem: a market with no on-chain account yet gets one the moment
+         anybody stakes, so "try again in a moment" is true advice rather than
+         a shrug. The unknown fallback keeps no code at all, because a word we
+         did not plan to show is a word we cannot vouch for. */
+      const why = {
+        "not-minted": "This market is not open for bets yet. Try again in a moment.",
+        "unreadable": "We cannot read this market's pool right now, so we will not take a bet on it. Nothing is wrong with your money.",
+        "unreachable": "Solana is not answering right now. Nothing is wrong with your money. Try again in a moment.",
+        "no such market": "We could not find this market.",
+      }[marketState.reason] || "This market is not taking bets right now.";
       body.innerHTML = `<h3>Make it real</h3>
-        <p class="cnote">This market isn't available for real stakes right now (${esc(marketState.reason || "unknown")}).</p>
+        <p class="cnote">${esc(why)}</p>
         <button class="cclose">Close</button>`;
       body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
       return;
@@ -854,7 +869,7 @@ function b64ToBytes(b64) {
         // invisible to every check that does not actually look at the sheet.
         if (line) {
           line.textContent = (side && sol > 0 && sol > spendable())
-            ? `This wallet holds ${solText(balSol)} SOL. A bet also needs about ${HEADROOM_SOL} SOL for account rent and the network fee.`
+            ? `This wallet holds ${solText(balSol)} SOL. Leave about ${HEADROOM_SOL} SOL on top for Solana's own deposit and fee.`
             : (side && sol > 0)
               ? payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps)
               : "";
@@ -956,11 +971,11 @@ function b64ToBytes(b64) {
           });
           const pj = await prep.json();
           if (prep.status === 451) throw new Error("Real-money stakes aren't available in your region.");
-          if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare the transaction.");
+          if (!prep.ok || !pj.ok) throw prepareError(pj, "Could not set this up. Nothing left your wallet. Try again.");
           const w3 = await loadWeb3();
           const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
           stakeBtn.textContent = "Confirm in wallet…";
-          const { signature, confirmed } = await signAndSubmit(tx, () => { stakeBtn.textContent = "Broadcasting…"; });
+          const { signature, confirmed } = await signAndSubmit(tx, () => { stakeBtn.textContent = "Sending…"; });
           // confirmed:false means it WAS broadcast and we could not watch it
           // land. Never render that as a failure: the program allows adding to
           // a position on the same side, so a retry over a stake that is
@@ -969,7 +984,7 @@ function b64ToBytes(b64) {
             <p class="cnote">${confirmed
               ? `${sol} SOL on ${side.toUpperCase()}${testnet ? `, on ${label}` : ""}.`
               : `${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.`}</p>
-            <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+            <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
             <a class="cbtn cbtn--share" id="chainshare" href="#" rel="noopener">Post your call</a>
             <div id="chainname"></div>
             ${homeLink()}
@@ -1113,7 +1128,7 @@ function b64ToBytes(b64) {
       const total = (yes + no) / 1e9;
       poolEl.textContent = total > 0
         ? `${total.toFixed(total < 1 ? 3 : 2)} SOL in the pool`
-        : "real SOL, winners split the pool";
+        : "Nothing in the pool yet. First in sets the line.";
     }
 
     const rows = card.querySelectorAll(".duel .orow");
@@ -1234,7 +1249,7 @@ function b64ToBytes(b64) {
 
     const paint = (html) => { box.innerHTML = html; };
     if (!wallet) {
-      paint(`<div class="cc-row"><span class="cc-text">Staked real SOL on a market? Check if you have winnings to collect.</span>
+      paint(`<div class="cc-row"><span class="cc-text">Bet real SOL somewhere? See if you won.</span>
         <button class="cc-go" type="button">Check</button></div>`);
       box.querySelector(".cc-go").onclick = async () => {
         const b = box.querySelector(".cc-go");
@@ -1265,15 +1280,15 @@ function b64ToBytes(b64) {
     const head = wins.length
       ? (wins.length === list.length
           ? "You have winnings to collect"
-          : "You have winnings to collect, and rent to get back")
-      : "Nothing won, but your rent is still yours";
+          : "You have winnings to collect, and deposits to get back")
+      : "No wins here. Your deposits come back.";
     box.innerHTML = `<div class="cc-head">${head}</div>` + list.map((c) => `
       <div class="cc-item">
         <span class="cc-q">${esc(c.question)}</span>
         <span class="cc-meta">called ${c.side.toUpperCase()} · ${(c.lamports / 1e9).toFixed(3)} SOL staked${
-          c.won === false ? " · lost, this returns your rent only" : ""}</span>
+          c.won === false ? " · lost, this returns your deposit only" : ""}</span>
         <button class="cc-claim" type="button" data-slug="${esc(c.slug)}">${
-          c.won === false ? "Get rent back" : "Claim"}</button>
+          c.won === false ? "Get your deposit back" : "Collect"}</button>
       </div>`).join("");
     box.querySelectorAll(".cc-claim").forEach((b) => b.onclick = () => openStakeSheet(b.dataset.slug));
   }
@@ -1370,13 +1385,13 @@ function b64ToBytes(b64) {
           body: JSON.stringify({ slug: b.dataset.slug, creatorPubkey: wallet.publicKey }),
         });
         const pj = await prep.json();
-        if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare the transaction.");
+        if (!prep.ok || !pj.ok) throw prepareError(pj, "Could not set this up. Nothing left your wallet. Try again.");
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
-        b.textContent = "Confirm…";
+        b.textContent = "Confirm in your wallet…";
         const { signature, confirmed } = await signAndSubmit(tx, () => { b.textContent = "Sending…"; });
         const row = b.closest(".cc-item");
-        row.innerHTML = `<span class="cc-q">${confirmed ? "Collected ✓" : "Sent"}</span>
+        row.innerHTML = `<span class="cc-q">${confirmed ? "Collected ✓" : "Sent, still confirming"}</span>
           <span class="cc-meta"><a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></span>`;
       } catch (e) {
         b.disabled = false; b.textContent = "Collect";
