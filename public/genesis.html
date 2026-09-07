@@ -727,17 +727,16 @@
              what to DO; this says what it is FOR. -->
         <!-- SPELLED OUT, AND EVERY CLAUSE CHECKED AGAINST creditFundedBettor
              (src/genesis/season.ts:151).
-             "Somebody else" -- the ledger refuses a point when the bettor's own
+             "Someone else" -- the ledger refuses a point when the bettor's own
              handle owns the market (":174, kendi cuzdanin sayilmaz").
              "real money" -- it is credited off a confirmed stake on the money
              path (src/server.ts:3732), never a visit.
-             "counts once, ever" -- the insert is ON CONFLICT (wallet) DO
+             "Once per person, ever" -- the insert is ON CONFLICT (wallet) DO
              NOTHING, and the comment beside it says first touch means the
              credit never moves, so a wallet scores for one market and one time
              in the whole season. -->
-        <p class="lede">Somebody else puts real money on a market you opened.
-          That is <span class="mk">1 Genesis point</span>, and each person counts
-          once, ever.</p>
+        <p class="lede">Someone else bets real money on your market:
+          <span class="mk">1 Genesis point</span>. Once per person, ever.</p>
         <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
              ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
              birakmak "butona bastim, hicbir sey olmadi"nin ta kendisiydi. -->
