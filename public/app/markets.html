@@ -80,16 +80,26 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .bar__n{background:var(--pink)}
 
 .sides{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* Same bevel as the market page's pair, at card density: a light inset on top
+   and a dark one underneath, so the surface has something to press INTO. The
+   card keeps its own smaller type and no tilt -- the cards are already stacked
+   at angles, and a tilted button inside a tilted card reads as a mistake. */
 .side{display:block;text-align:center;text-decoration:none;
-  font-family:var(--display);font-size:19px;letter-spacing:.03em;text-transform:uppercase;
-  line-height:1;border:3px solid var(--black);padding:13px 10px;color:var(--black);
-  transition:transform .12s ease,box-shadow .12s ease}
-.side--y{background:var(--yellow);box-shadow:5px 6px 0 var(--yellow-deep)}
-.side--n{background:var(--pink);box-shadow:5px 6px 0 var(--pink-deep)}
-.side:hover{transform:translate(-2px,-2px)}
-.side--y:hover{background:var(--yellow-hi);box-shadow:7px 8px 0 var(--yellow-deep)}
-.side--n:hover{box-shadow:7px 8px 0 var(--pink-deep)}
-.side:active{transform:translate(2px,3px)}
+  font-family:var(--display);font-size:23px;letter-spacing:.03em;text-transform:uppercase;
+  line-height:1;border:3px solid var(--black);padding:16px 10px 17px;color:var(--black);
+  transition:transform .13s cubic-bezier(.3,1.4,.5,1),box-shadow .13s ease,background .13s ease}
+.side--y{background:var(--yellow);
+  box-shadow:6px 7px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
+.side--n{background:var(--pink);
+  box-shadow:6px 7px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
+.side:hover{transform:translate(-2px,-3px) scale(1.02)}
+.side--y:hover{background:var(--yellow-hi);
+  box-shadow:9px 11px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
+.side--n:hover{box-shadow:9px 11px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
+.side:active{transform:translate(6px,7px) scale(.985)}
+.side--y:active{box-shadow:0 0 0 var(--yellow-deep),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
+.side--n:active{box-shadow:0 0 0 var(--pink-deep),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
+@media (prefers-reduced-motion:reduce){ .side,.side:hover,.side:active{transform:none;transition:none} }
 .side:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
 .side span{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
   letter-spacing:.1em;margin-top:6px;opacity:.72}
@@ -491,7 +501,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         if (m.oddsSource === "unreadable") {
           pool = '<p class="pool pool--quiet">Can\'t read this pool. Your money is safe.</p>';
         } else if (!m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
-          pool = '<p class="pool pool--quiet">Nothing on this yet. First one sets the odds.</p>';
+          // Named for what is on offer, not for what is missing. Same sentence
+          // as the market page, so a card and the page it opens agree.
+          pool = '<p class="pool pool--quiet">First one in sets the odds.</p>';
         } else {
           var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
           var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;

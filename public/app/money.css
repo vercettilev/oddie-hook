@@ -106,6 +106,9 @@
   color:var(--ink,#0B0D04);margin:0 0 12px;
 }
 .chain-amt:focus{outline:3px solid var(--pink,#FF2D78);outline-offset:2px}
+/* Same reasoning as the page's own field: a stake is typed once, not stepped. */
+.chain-amt::-webkit-outer-spin-button,.chain-amt::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.chain-amt{-moz-appearance:textfield}
 /* `display:block` above OUTRANKS the hidden attribute's UA rule, so the custom
    amount field sat open before anybody chose "Other". Any rule in this file
    that sets display on an element chain.js toggles needs this partner; today

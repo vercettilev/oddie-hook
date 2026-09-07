@@ -83,11 +83,19 @@ console.log("\nthe bucket refills, rather than resetting on a schedule");
 {
   _resetApiLedgers();
   const KEY = "refill-key";
-  const opts = { capacity: 2, perHour: 3_600_000 }; // 1000/sec: refills within the test
+  // ONE TOKEN PER 60ms, NOT PER 1ms.
+  // At 3_600_000/hour a token refilled every millisecond, so "third is
+  // refused" only held if the three calls finished inside 1ms of wall clock.
+  // Under any load -- the full suite running, a dev server on the same box --
+  // they do not, a token refills mid-test, and the third call SUCCEEDS. It
+  // failed exactly once in a full-suite run here and passed six times alone,
+  // which is what a timing race looks like from the outside. 60ms of headroom
+  // makes the refusal deterministic; the wait below still only costs 120ms.
+  const opts = { capacity: 2, perHour: 60_000 };
   check("spend one", (await takeQuotaToken(KEY, "chat:R", opts)).ok);
   check("spend two", (await takeQuotaToken(KEY, "chat:R", opts)).ok);
   check("third is refused", !(await takeQuotaToken(KEY, "chat:R", opts)).ok);
-  await new Promise((r) => setTimeout(r, 30));
+  await new Promise((r) => setTimeout(r, 120));
   check("it comes back on its own, with no scheduler", (await takeQuotaToken(KEY, "chat:R", opts)).ok);
 }
 

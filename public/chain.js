@@ -918,12 +918,24 @@ function b64ToBytes(b64) {
       });
       amtInput.oninput = () => { sol = parseFloat(amtInput.value) || 0; refresh(); };
 
-      /* Sayfadan gelen tutar, sayfadaki secili chip ile ayni. Sadece bilinen
-         bir preset kabul ediliyor: sheet'in kendi chip'lerinden biri "on"
-         gorunmeliyse, o chip gercekten var olmali. */
+      /* Sayfadan gelen tutar, sayfadaki secili chip ile ayni.
+         SERBEST TUTAR DA GECIYOR. Bu yalnizca bilinen bir preset kabul
+         ediyordu, yani sayfada "Other" secip 0.3 yazan biri onu burada
+         BASTAN yaziyordu: rakam sessizce dusuyor, sheet "Choose an amount"
+         diye aciliyordu. Preset'e uymayan tutar artik custom chip'i secip
+         alanı dolduruyor -- ayni sayi, tek kez giriliyor. */
       if (presetSol > 0) {
         const chip = chips.find((c) => c.dataset.sol !== "custom" && parseFloat(c.dataset.sol) === Number(presetSol));
-        if (chip) { sol = parseFloat(chip.dataset.sol); chips.forEach((x) => x.classList.toggle("on", x === chip)); }
+        if (chip) {
+          sol = parseFloat(chip.dataset.sol);
+          chips.forEach((x) => x.classList.toggle("on", x === chip));
+        } else {
+          const other = chips.find((c) => c.dataset.sol === "custom");
+          sol = Number(presetSol);
+          amtInput.value = String(sol);
+          amtInput.hidden = false;
+          if (other) chips.forEach((x) => x.classList.toggle("on", x === other));
+        }
       }
 
       // Run once now, not only on the next interaction. The button ships from

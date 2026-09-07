@@ -2926,6 +2926,13 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
     resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
     resolvability: req.body?.resolvability != null ? String(req.body.resolvability) : null,
     hook: req.body?.hook != null ? String(req.body.hook) : null,
+    // The lazy mint the bot has always used, reachable by hand. Every market
+    // @oddiefun opens is born this way -- no vault until somebody actually
+    // wants to stake -- but this route hard-required a mint, so an admin (or
+    // anybody running the app with the chain off) could not open a market at
+    // all. Same code path, same guarantees; opt-in per request, so the default
+    // stays mint-first.
+    mint: req.body?.mint === "on-demand" ? "on-demand" : undefined,
   });
   if (!out.ok) return res.status(out.status).json({ error: out.error, chainEnabled: isChainEnabled() });
   res.json({
