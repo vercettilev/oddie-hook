@@ -63,7 +63,7 @@
    an empty pool is not one: it is the reason to press a button. Reads as the
    sentence it is, in the same words the page and the card use. */
 .chain-pool-empty{
-  border:0;padding:0;margin:0 0 14px;
+  border:0;padding:0;margin:0 0 13px;
   font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:16px;
   letter-spacing:.02em;color:var(--ink-2,#494E2D);
 }
@@ -90,7 +90,7 @@
    to be: the side that was taken, the market it was taken on, and the way out
    if the tap was wrong. It states rather than asks, and it is the smallest
    thing on the sheet, because the only decision left here is the amount. */
-.chain-took{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.chain-took{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 14px}
 .chain-took__s{
   font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:19px;
   letter-spacing:.03em;line-height:1;color:var(--black,#020302);
@@ -154,11 +154,9 @@
   .chain-side,.chain-side:hover,.chain-side:active{transform:none;transition:none}
 }
 
-/* ---- how much ---- */
-.chain-amt-lab{
-  font-family:var(--mono,monospace);font-size:10.5px;font-weight:800;
-  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2,#494E2D);margin:0 0 8px;
-}
+/* ---- how much ----
+   No label above these. Four buttons reading "0.1 SOL", "0.5 SOL", "1 SOL",
+   "Other" do not need a caption announcing that they are amounts. */
 .chain-amt-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
 .chain-chip{
   font-family:var(--mono,monospace);font-size:12.5px;font-weight:700;
@@ -240,12 +238,19 @@
 .cclose:focus-visible{outline:2px solid var(--ink,#0B0D04);outline-offset:2px}
 
 .chain-wallet{
-  font-family:var(--mono,monospace);font-size:11px;letter-spacing:.08em;
-  color:var(--ink-2,#494E2D);margin:12px 0 0;word-break:break-all;
+  font-family:var(--mono,monospace);font-size:10.5px;letter-spacing:.08em;
+  color:var(--ink-2,#494E2D);margin:7px 0 0;word-break:break-all;
 }
-.chain-fee-note{
-  font-size:12px;line-height:1.5;color:var(--ink-2,#494E2D);margin:12px 0 0;
+/* THE SMALL PRINT, SET AS SMALL PRINT.
+   Everything true about the money that is not the decision: which cluster,
+   how winners are paid, the fee, the refund. It used to be three body-size
+   paragraphs stacked around the button, which is how a game turns into a
+   contract. Nothing was cut; it was sized. */
+.chain-fine{
+  font-family:var(--mono,monospace);font-size:10.5px;line-height:1.65;
+  letter-spacing:.02em;color:var(--ink-2,#494E2D);margin:11px 0 0;
 }
+.chain-fine b{color:var(--ink,#0B0D04);font-weight:700}
 .chain-sig{
   font-family:var(--mono,monospace);font-size:11.5px;margin:12px 0 0;word-break:break-all;
 }

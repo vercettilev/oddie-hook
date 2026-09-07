@@ -427,7 +427,13 @@ function b64ToBytes(b64) {
     // fee is the only thing that happens to a pool nobody joins, so name the
     // fee and name the consequence and stop. The warning is not softened --
     // it is the one case where winning still costs money.
-    if (other <= 0) return `You are first. If nobody takes the other side, the ${(totalBps / 100).toFixed(0)}% fee still comes off, so you get back less than you staked.`;
+    // Silent on an empty pool. The line directly above it already says "first
+    // one in sets the odds", so this repeated "you are first" in a second
+    // voice, and the fee it warned about is named in the small print under the
+    // button. Two sentences for one fact, in the gap between choosing an
+    // amount and pressing the button, is exactly where a sheet stops feeling
+    // like a game.
+    if (other <= 0) return "";
     return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
   }
 
@@ -792,12 +798,33 @@ function b64ToBytes(b64) {
     // somebody who had already staked. A footnote is the right place for a rule
     // that only matters when something goes wrong, and the wrong place for it
     // is nowhere.
-    const feeNoteHTML = feeBps
-      ? `<p class="chain-fee-note">${(feeBps / 100).toFixed(0)}% of the pool goes to whoever started this market${protoBps ? `, ${(protoBps / 100).toFixed(0)}% to oddie` : ""}. Winners split the rest. If nobody settles it, your stake comes back after 30 days.</p>`
-      : "";
-
+    /* ONE LINE OF SMALL PRINT, NOT THREE PARAGRAPHS OF BODY TEXT.
+       Between the confirm line and the button this sheet was carrying: which
+       cluster the SOL is on, that winners split the pool, that an empty pool
+       still pays the fee, who the fee goes to, and the refund rule -- five
+       facts in five separate blocks at reading size, all of them competing
+       with the one button they surround. Not one of them is dropped. They are
+       set as a footnote, which is what they are: true, worth having, and not
+       the thing anybody is here to do.
+       The split between the opener and oddie is the one detail that goes. The
+       number that changes what a bettor gets back is the TOTAL, and the market
+       page behind this sheet states the split in full, a tap away. */
+    // Declared HERE, above their first use. They used to sit below this block,
+    // which was fine while nothing above them read them; the moment the fee
+    // note started naming the cluster it became a temporal-dead-zone throw
+    // that fired only after the market read resolved -- so the sheet paints,
+    // says "Checking this market…", and stops forever. `const` at module
+    // top-level parses cleanly and node --check is happy: the only thing that
+    // finds this is opening the sheet.
     const label = clusterLabel(CLUSTER);
     const testnet = CLUSTER !== "mainnet-beta";
+
+    const totalPct = ((feeBps + protoBps) / 100).toFixed(0);
+    const feeNoteHTML = `<p class="chain-fine">`
+      + `<b>${testnet ? `Test SOL on ${label}` : "Real SOL"}.</b> `
+      + `Winners split the pool${feeBps || protoBps ? `, less a ${totalPct}% fee` : ""}. `
+      + `Nobody settles it in 30 days, you get your stake back.`
+      + `</p>`;
 
     const render = () => {
       // ORDER MATTERS, and it is the opposite of what this sheet used to do.
@@ -826,15 +853,18 @@ function b64ToBytes(b64) {
           <span class="chain-took__q">${esc(hook || question || "on this market")}</span>
           <button class="chain-swap" type="button">Switch to ${otherOf(presetSide).toUpperCase()}</button>
         </p>`;
+      /* The cluster line and the "How much?" label are both gone from the body.
+         The first is a money fact and moved into the small print under the
+         button, where it is still the first thing that line says. The second
+         was a label over four buttons that already read "0.1 SOL", "0.5 SOL",
+         "1 SOL": a caption naming what the thing under it plainly is. */
       body.innerHTML = `
         ${taken ? tookHTML : titleHTML}
-        <p class="cnote">${testnet ? `Test SOL on ${label}` : "Real SOL"}. Winners split the pool.</p>
         ${onchainOddsHTML}
         <div class="chain-side-row"${taken ? " hidden" : ""}>
           <button class="chain-side" data-side="yes" type="button">YES</button>
           <button class="chain-side" data-side="no" type="button">NO</button>
         </div>
-        <div class="chain-amt-lab">How much?</div>
         <div class="chain-amt-row">
           ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p} SOL</button>`).join("")}
           <button class="chain-chip chain-chip--other" data-sol="custom" type="button">Other</button>
