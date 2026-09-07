@@ -2357,6 +2357,26 @@ async function openMarketFromClaim(input: {
    * Bos birakildiginda eski davranis aynen surer (Telegram, admin, agent).
    */
   taggerHandle?: string | null;
+  /**
+   * WHO OPENED IT, WHEN THE OPENER IS NOT ON X AT ALL.
+   *
+   * taggerHandle above works because the reply-tag flow knows a handle and a
+   * handle eventually meets a wallet: the person connects, and
+   * nameCreatorOnTaggedMarkets writes their address on chain. An API caller
+   * has neither. It has no device row, so nothing ever binds it to a wallet,
+   * and the fee fell through to handleFromSourceUrl -- i.e. to the author of
+   * the tweet, who did nothing but write a tweet. Somebody paying us to open a
+   * market was paying to hand 2% to a stranger.
+   *
+   * A wallet given here IS the creator, written at mint time rather than named
+   * later. That is strictly better than the handle path even where both would
+   * work: no set_creator transaction, no window where the fee accrues to an
+   * address nobody holds, nothing stranded if they never come back.
+   *
+   * Naming somebody else can only ever give money away, never take it, so this
+   * needs no proof of ownership beyond being a well-formed pubkey.
+   */
+  creatorWallet?: string | null;
   category?: string;
   yesPct?: number;
   resolutionCriteria?: string | null;
@@ -2427,7 +2447,11 @@ async function openMarketFromClaim(input: {
   // gercek ama alicinin bilinmedigi bir marketi mumkun kilardi: %2 kazanandan
   // kesilir ve hicbir zaman talep edilemezdi.
   const payeeHandle = input.taggerHandle ?? handleFromSourceUrl(sourceUrl);
-  const creatorFeeBps = creatorFeeBpsForHandle(payeeHandle);
+  /* A WALLET OUTRANKS A HANDLE, because it is the thing the program can pay.
+     Present, the fee is real and its recipient is already known; absent, the
+     old handle rule stands unchanged for the bot, the admin and Telegram. */
+  const creatorWallet = isValidPubkeyString(input.creatorWallet) ? input.creatorWallet : null;
+  const creatorFeeBps = creatorWallet ? CREATOR_FEE_BPS_REAL : creatorFeeBpsForHandle(payeeHandle);
 
   // The vault comes first. Written the other way round, a Solana failure
   // returned "was not published" to the caller while the row it had already
@@ -2438,7 +2462,7 @@ async function openMarketFromClaim(input: {
   const lazy = input.mint === "on-demand";
   const minted = lazy
     ? null
-    : await mintMarket({ marketId, question, closeTime, creator: null,
+    : await mintMarket({ marketId, question, closeTime, creator: creatorWallet,
         creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
   if (!lazy && !minted) {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
@@ -2493,7 +2517,14 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   const minted = await mintMarket({
     marketId: detail.marketId, question: detail.question,
     closeTime: Math.floor(new Date(detail.closesAt ?? Date.now()).getTime() / 1000),
-    creator: null, creatorFeeBps: detail.creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+    // The creator comes off the ROW, for exactly the reason the rate above
+    // does. The claims route mints on demand, so this function is where an API
+    // caller's market actually reaches the chain; a wallet passed at create
+    // time and not stored would have been silently dropped here, and the fix
+    // would have looked complete while doing nothing on the one route it was
+    // written for. Still null for tag-driven markets: those name their creator
+    // when the person connects, which is unchanged.
+    creator: detail.creatorWallet, creatorFeeBps: detail.creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
   }).catch(() => null);
 
   if (minted) {
@@ -2688,6 +2719,11 @@ app.post("/api/v1/claims", async (req, res) => {
       resolutionCriteria: ex.resolution_criteria || null,
       resolvability: ex.resolvability,
       hook: ex.hook || null,
+      // The caller opened this market, so the caller is owed the 2%. Without
+      // it the fee fell through to the author of the tweet, and an integrator
+      // paying us to open markets was paying to hand a stranger a revenue
+      // share. Optional: a caller who omits it gets exactly the old behaviour.
+      creatorWallet: req.body?.creator_wallet != null ? String(req.body.creator_wallet) : null,
       mint: "on-demand",
     });
     if (!out.ok) {
@@ -2893,6 +2929,7 @@ app.post("/api/v1/markets", async (req, res) => {
   if (overLimit("v1create:global", 100)) {
     return res.status(429).json({ ok: false, error: "rate limit: the shared daily ceiling is full, try tomorrow" });
   }
+  const creatorWallet = req.body?.creator_wallet != null ? String(req.body.creator_wallet) : null;
   const out = await openMarketFromClaim({
     question: String(req.body?.question ?? ""),
     closeInput: req.body?.close_time ?? req.body?.closeTime,
@@ -2901,6 +2938,7 @@ app.post("/api/v1/markets", async (req, res) => {
     yesPct: req.body?.yesPct != null ? Number(req.body.yesPct) : undefined,
     resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
     hook: req.body?.hook != null ? String(req.body.hook) : null,
+    creatorWallet,
   });
   if (!out.ok) return res.status(out.status).json({ ok: false, error: out.error });
   // Recorded here and nowhere else: the market exists, so it cost us rent.
@@ -2909,7 +2947,12 @@ app.post("/api/v1/markets", async (req, res) => {
   res.json({
     ok: true, slug: out.slug, url: `${APP_BASE_URL}/m/${out.slug}`,
     onchain: out.onchain, cluster: cluster(),
-    note: `Anyone can now take a side with real SOL. ${(CREATOR_FEE_BPS_REAL / 100).toFixed(0)}% of the pool goes to the handle in source_url.`,
+    // The note names the ACTUAL payee. It said "the handle in source_url"
+    // unconditionally, which becomes a false statement the moment a caller
+    // names its own wallet -- and it is a statement about money.
+    note: isValidPubkeyString(creatorWallet)
+      ? `Anyone can now take a side with real SOL. ${(CREATOR_FEE_BPS_REAL / 100).toFixed(0)}% of the pool is reserved for ${creatorWallet}.`
+      : `Anyone can now take a side with real SOL. ${(CREATOR_FEE_BPS_REAL / 100).toFixed(0)}% of the pool goes to the handle in source_url.`,
   });
 });
 
@@ -2926,6 +2969,7 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
     resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
     resolvability: req.body?.resolvability != null ? String(req.body.resolvability) : null,
     hook: req.body?.hook != null ? String(req.body.hook) : null,
+    creatorWallet: req.body?.creator_wallet != null ? String(req.body.creator_wallet) : null,
     // The lazy mint the bot has always used, reachable by hand. Every market
     // @oddiefun opens is born this way -- no vault until somebody actually
     // wants to stake -- but this route hard-required a mint, so an admin (or

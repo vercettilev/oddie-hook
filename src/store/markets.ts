@@ -367,6 +367,24 @@ ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolvability       text;
 -- crisp"; every reader falls back to question, so nothing depends on it.
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS hook text;
 
+-- THE WALLET THE CREATOR FEE IS OWED TO, WHEN IT IS KNOWN AT BIRTH.
+--
+-- The reply-tag flow does not know one: somebody tags an argument on X and is
+-- usually not present, so the market mints with the program's unnamed sentinel
+-- and set_creator fills it in when they connect. An API caller is the opposite
+-- case. It has no device row, so nothing ever binds it to a wallet, and the fee
+-- fell through to the author of the tweet -- an integrator paying us to open
+-- markets was paying to hand 2% to a stranger.
+--
+-- Stored rather than passed, because the claims route mints ON DEMAND: the
+-- market reaches the chain later, inside ensureMinted, and anything not on this
+-- row is gone by then. That is the same reason creator_fee_bps lives here, and
+-- the same bug it was added to fix.
+--
+-- NULL means "nobody named at creation", which is every market that existed
+-- before this column and every market the bot opens. Unchanged behaviour.
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS creator_wallet text;
+
 -- The creator fee rate this market will be minted with, decided ONCE and
 -- carried by the same row that makes the market visible.
 --
@@ -3097,6 +3115,8 @@ interface CommunityMeta {
   retiredAt?: string | null;
   /** The rate this market will be minted at. See the DDL note on the column. */
   creatorFeeBps?: number;
+  /** The wallet named at creation, when there is one. See the DDL note. */
+  creatorWallet?: string | null;
 }
 const memCommunity = new Map<string, CommunityMeta>();
 
@@ -3473,6 +3493,10 @@ export async function createCommunityMarket(input: {
    *  to re-derive it from a row that may not exist yet. Defaults to the full
    *  rate, which is what every caller that has a creator wants. */
   creatorFeeBps?: number;
+  /** The wallet the creator fee is owed to, when the opener is known at
+   *  creation. Null for every tag-driven market: those name their creator
+   *  later, when the person connects. See the column comment. */
+  creatorWallet?: string | null;
 }): Promise<{ slug: string; marketId: number; market: Market }> {
   const marketId = input.marketId ?? Date.now(); // unique-per-ms; also the on-chain market_id (u64)
   const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
@@ -3483,6 +3507,7 @@ export async function createCommunityMarket(input: {
   // long one cannot quietly become the page's body text.
   const hook = input.hook?.trim().slice(0, 60) || null;
   const creatorFeeBps = Number.isInteger(input.creatorFeeBps) ? input.creatorFeeBps! : CREATOR_FEE_BPS_REAL;
+  const creatorWallet = input.creatorWallet?.trim() || null;
   const market: Market = {
     venue: "community",
     venueId: String(marketId),
@@ -3498,15 +3523,15 @@ export async function createCommunityMarket(input: {
   if (!PERSISTENT) {
     memCommunity.set(rec.slug, {
       slug: rec.slug, marketId, category, resolvedOutcome: null, onchainPubkey: null, onchainSig: null,
-      resolutionCriteria, resolvability, hook, creatorFeeBps,
+      resolutionCriteria, resolvability, hook, creatorFeeBps, creatorWallet,
     });
     return { slug: rec.slug, marketId, market };
   }
   await ensureSchema();
   await db().query(
-    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability, hook, creator_fee_bps)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (slug) DO NOTHING`,
-    [rec.slug, marketId, category, resolutionCriteria, resolvability, hook, creatorFeeBps],
+    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability, hook, creator_fee_bps, creator_wallet)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (slug) DO NOTHING`,
+    [rec.slug, marketId, category, resolutionCriteria, resolvability, hook, creatorFeeBps, creatorWallet],
   );
   return { slug: rec.slug, marketId, market };
 }
@@ -5004,6 +5029,10 @@ export interface CommunityMarketDetail {
    *  written before the column existed reads as the full rate, which is what it
    *  was minted with. */
   creatorFeeBps: number;
+  /** The wallet named at creation, or null when the creator is named later (or
+   *  never). ensureMinted reads this: a market minted on demand has no other
+   *  way to learn who opened it. */
+  creatorWallet: string | null;
   positions: CommunityDetailPosition[];
 }
 
@@ -5022,12 +5051,13 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
       marketId: meta.marketId, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
       resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
       hook: meta.hook ?? null,
-      creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL, positions,
+      creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+      creatorWallet: meta.creatorWallet ?? null, positions,
     };
   }
   await ensureSchema();
-  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null }>(`
-    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps
+  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null; creator_wallet: string | null }>(`
+    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.creator_wallet
       FROM community_market c JOIN market_slug s ON s.slug = c.slug WHERE c.slug = $1`, [slug]);
   if (!meta.rows.length) return null;
   const m = meta.rows[0];
@@ -5039,6 +5069,7 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
     resolutionCriteria: m.resolution_criteria, resolvability: m.resolvability,
     hook: m.hook,
     creatorFeeBps: m.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
+    creatorWallet: m.creator_wallet,
     positions: pos.rows.map((r) => ({ deviceId: r.device_id, side: r.side, tokens: r.tokens, entryPct: r.pct_at, closed: Boolean(r.closed_at), proceeds: r.proceeds })),
   };
 }
