@@ -16,6 +16,10 @@ import { resolvedOnchainMarkets } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
 import type { SurfacerInfo } from "./store/markets.js";
+import { oracleSweep } from "./oracle/sweep.js";
+import { decide } from "./oracle/oracle.js";
+import { oracleAvailable } from "./oracle/verdict.js";
+import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
 import type { PricedCall, Standing } from "./store/standings.js";
@@ -3034,12 +3038,23 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
 });
 
 // Manual resolution: mark resolved, then settle every open position on the slug.
-app.post("/api/community/resolve", requireAdmin, async (req, res) => {
-  const slug = String(req.body?.slug ?? "");
-  const outcome = req.body?.outcome;
-  if (!slug || (outcome !== "yes" && outcome !== "no")) return res.status(400).json({ error: "slug and outcome (yes|no) required" });
+/**
+ * SETTLING A MARKET, IN ONE PLACE.
+ *
+ * This was the body of the admin resolve route, and it stayed there for as long
+ * as a person was the only thing that could settle anything. The oracle sweep
+ * needs the same tail -- the off-chain settlement, the on-chain resolve, the fee
+ * log, the reply in the X thread -- and a second copy of it is a second set of
+ * rules to keep in step, where the first thing to drift would be the one nobody
+ * watches.
+ *
+ * Returns null when the market is unknown or already resolved, which the row
+ * decides: markCommunityResolved latches on `resolved_outcome IS NULL`, so two
+ * callers arriving together settle exactly once and the loser gets null.
+ */
+async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Promise<{ settled: number } | null> {
   const ok = await markCommunityResolved(slug, outcome);
-  if (!ok) return res.status(409).json({ error: "unknown or already-resolved community market" });
+  if (!ok) return null;
   const settled = await settleMarket(slug, outcome);
   // Settlement is announced on X (the resolution reply). The email path went
   // with Google sign-in, which had no door outside the retired feed.
@@ -3110,7 +3125,16 @@ app.post("/api/community/resolve", requireAdmin, async (req, res) => {
     },
   }).catch((e) => console.error("[resolution] announce failed:", (e as Error).message));
 
-  res.json({ ok: true, slug, outcome, settled: settled.length });
+  return { settled: settled.length };
+}
+
+app.post("/api/community/resolve", requireAdmin, async (req, res) => {
+  const slug = String(req.body?.slug ?? "");
+  const outcome = req.body?.outcome;
+  if (!slug || (outcome !== "yes" && outcome !== "no")) return res.status(400).json({ error: "slug and outcome (yes|no) required" });
+  const out = await resolveCommunityMarket(slug, outcome);
+  if (!out) return res.status(409).json({ error: "unknown or already-resolved community market" });
+  res.json({ ok: true, slug, outcome, settled: out.settled });
 });
 
 /**
@@ -4022,6 +4046,111 @@ setTimeout(sweepClosingSoon, 60_000).unref(); // first pass shortly after boot
  * neutral, is this the right close time) and a mocked mint would review none
  * of it.
  */
+/**
+ * THE ORACLE, ACTUALLY RUNNING.
+ *
+ * src/oracle has existed, been tested and been measured for a while, and
+ * nothing in src/ imported it: only a hand-run script, its test and a backtest
+ * did. So in production no market was ever closed by anything but a person
+ * clicking resolve, while the landing said dated evidence closes it. This is
+ * that wire.
+ *
+ * THREE SWITCHES, deliberately separate, and the same shape as the X bot's,
+ * because they answer the same three questions:
+ *
+ *   ORACLE_ENABLED   the timer runs at all. Off by default, so a deploy that
+ *                    happens to carry an API key does not start settling.
+ *   ORACLE_DRY_RUN   defaults to TRUE. Every market is read, every gate is
+ *                    applied, every decision is reached and RECORDED. It just
+ *                    stops before settling. Not a mock: the thing worth
+ *                    watching is the judgement, and a mocked decision shows
+ *                    none of it.
+ *   ORACLE_MAX_PER_SWEEP  most decisions cost a model call, so an unbounded
+ *                    sweep is an unbounded bill: the first tick after a quiet
+ *                    week would ask about every market closed since. Counts
+ *                    markets ASKED ABOUT, so a board of held markets does not
+ *                    consume it.
+ *
+ * The interval is slow on purpose. Settlement is not urgent -- a market closes
+ * and the evidence appears over hours, not seconds -- and every tick that finds
+ * nothing new still pays to find that out.
+ */
+const ORACLE_ENABLED = (process.env.ORACLE_ENABLED ?? "false").toLowerCase() === "true";
+const ORACLE_DRY_RUN = (process.env.ORACLE_DRY_RUN ?? "true").toLowerCase() !== "false";
+const ORACLE_MAX_PER_SWEEP = (() => {
+  const raw = Number(process.env.ORACLE_MAX_PER_SWEEP ?? 5);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 5;
+})();
+// Same NaN trap the X poll documents: Number("30m") is NaN, Math.max(_, NaN) is
+// NaN, and Node coerces a NaN interval to ONE MILLISECOND. A value we cannot
+// read is the default.
+const ORACLE_POLL_MS = (() => {
+  const raw = Number(process.env.ORACLE_POLL_MS ?? 1_800_000);
+  if (!Number.isFinite(raw)) {
+    console.error(`[oracle] ORACLE_POLL_MS=${JSON.stringify(process.env.ORACLE_POLL_MS)} is not a number. Using 1800000.`);
+    return 1_800_000;
+  }
+  return Math.max(300_000, raw);
+})();
+
+let oracleSweepRunning = false;
+async function sweepOracle(): Promise<void> {
+  // Re-entrancy guard, not politeness: a sweep can hold the loop through
+  // minutes of model calls, and two overlapping sweeps would ask about the same
+  // markets twice and pay twice.
+  if (oracleSweepRunning) return;
+  oracleSweepRunning = true;
+  try {
+    const r = await oracleSweep({
+      board: () => adminListCommunity(),
+      criteria: async (slug) => {
+        try {
+          const d = await communityMarketDetail(slug);
+          return { ok: true as const, criteria: d?.resolutionCriteria ?? null };
+        } catch (e) {
+          return { ok: false as const, error: (e as Error).message };
+        }
+      },
+      attempt: (slug) => oracleAttemptFor(slug),
+      decide: (m, asOf) => decide(m, asOf),
+      record: (d) => recordOracleDecision({
+        slug: d.slug, settle: d.settle, gate: d.gate, reason: d.reason,
+        confidence: d.proposal?.confidence ?? null,
+        secondOpinion: d.secondOpinion ?? null,
+        citations: d.audit?.citations ?? [],
+        verified: d.audit?.verified ?? 0, undated: d.audit?.undated ?? 0, stale: d.audit?.stale ?? 0,
+        absent: d.audit?.absent ?? 0, unreachable: d.audit?.unreachable ?? 0,
+        paid: d.paid,
+      }),
+      // The SAME function the admin route calls, so the whole tail happens once
+      // and in one place: off-chain settlement, the on-chain resolve, the fee
+      // log and the reply in the X thread.
+      settle: ORACLE_DRY_RUN ? null : async (slug, outcome) => Boolean(await resolveCommunityMarket(slug, outcome)),
+      limit: ORACLE_MAX_PER_SWEEP,
+      on: {
+        decided: (d) => console.log(JSON.stringify({
+          evt: "oracle_decision", slug: d.slug, gate: d.gate,
+          settle: d.settle, dryRun: ORACLE_DRY_RUN, reason: d.reason,
+        })),
+        settled: (slug, outcome) => console.log(JSON.stringify({ evt: "oracle_settled", slug, outcome })),
+        failed: (slug, outcome) => console.error(JSON.stringify({ evt: "oracle_settle_failed", slug, outcome })),
+        unreadable: (slug, error) => console.error(JSON.stringify({ evt: "oracle_unreadable", slug, error })),
+      },
+    });
+    // Logged every sweep, including the empty ones: a loop that only speaks
+    // when it acts is a loop you cannot tell apart from a stopped one.
+    console.log(JSON.stringify({
+      evt: "oracle_sweep", seen: r.seen, decided: r.decided.length, held: r.held,
+      unreadable: r.unreadable, truncated: r.truncated,
+      settled: r.settled, failed: r.failed, dryRun: ORACLE_DRY_RUN,
+    }));
+  } catch (e) {
+    console.error("[oracle] sweep failed:", (e as Error).message);
+  } finally {
+    oracleSweepRunning = false;
+  }
+}
+
 const X_BOT_ENABLED = (process.env.X_BOT_ENABLED ?? "false").toLowerCase() === "true";
 const X_BOT_DRY_RUN = (process.env.X_BOT_DRY_RUN ?? "true").toLowerCase() !== "false";
 // Number("2m") is NaN, Math.max(60_000, NaN) is NaN, and Node coerces a NaN
@@ -4133,6 +4262,24 @@ app.get("/api/admin/x/status", requireAdmin, async (_req, res) => {
     sinceId: await botStateGet(X.SINCE_KEY),
   });
 });
+
+if (ORACLE_ENABLED) {
+  // Same shape as the bot's credential check below, and for the same reason: a
+  // loop that starts without what it needs does not fail, it fails QUIETLY,
+  // once per tick, in a log nobody reads. oracleAvailable also catches the case
+  // that matters most here -- a key that works but a model that cannot search,
+  // which would return an error gate for every market and record it.
+  const avail = oracleAvailable();
+  if (!avail.ok) {
+    console.error(`[oracle] ORACLE_ENABLED is set but the oracle cannot run: ${avail.why}. The loop will not start.`);
+  } else {
+    setInterval(sweepOracle, ORACLE_POLL_MS).unref();
+    // Not at boot. A deploy restarts the process, and a sweep that runs on
+    // every restart turns a bad afternoon of deploys into a bill.
+    setTimeout(sweepOracle, 120_000).unref();
+    console.log(`[oracle] settle loop ON, every ${Math.round(ORACLE_POLL_MS / 60_000)}m, up to ${ORACLE_MAX_PER_SWEEP} per sweep, ${ORACLE_DRY_RUN ? "DRY RUN (nothing is settled)" : "SETTLING FOR REAL"} — ${avail.why}`);
+  }
+}
 
 if (X_BOT_ENABLED) {
   if (!X.xConfigured()) {

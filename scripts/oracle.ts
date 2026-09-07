@@ -26,7 +26,8 @@
 // and ODDIE_ADMIN_TOKEN, and the token is only ever sent as a header.
 
 import { adminListCommunity, communityMarketDetail, oracleAttemptFor, recordOracleDecision } from "../src/store/markets.js";
-import { decide, shouldRetry, decisionWasPaid, type OracleDecision } from "../src/oracle/oracle.js";
+import { decide } from "../src/oracle/oracle.js";
+import { oracleSweep } from "../src/oracle/sweep.js";
 import { oracleAvailable } from "../src/oracle/verdict.js";
 
 const args = process.argv.slice(2);
@@ -104,70 +105,72 @@ if (slugArg && board.length === 0) {
 
 console.log(`  ${board.length} open market(s)${APPLY ? ", APPLYING" : ", dry run"}${AS_OF ? `, as of ${AS_OF.toISOString()}` : ""}.\n`);
 
-const decisions: OracleDecision[] = [];
-let skipped = 0;
-for (const m of board) {
-  // A database error here is NOT the same as a market created without criteria,
-  // and swallowing it into null said exactly that: an operator reading
-  // "this market carries no resolution criteria" would go and rewrite criteria
-  // that were sitting in the database all along. The loop holds a connection
-  // through minutes of model calls per market, so a mid-run reset is realistic.
-  let detail: Awaited<ReturnType<typeof communityMarketDetail>> | null = null;
-  let detailError: string | null = null;
-  try {
-    detail = await communityMarketDetail(m.slug);
-  } catch (e) {
-    detailError = (e as Error).message;
-  }
-  if (detailError) {
-    console.log(`     ${"could not be read".padEnd(28 - 5)} ${m.slug.slice(0, 44)}`);
-    console.log(`      the database did not answer: ${detailError}`);
-    console.log("");
-    continue;
-  }
-
-  // Ask the record before spending anything. A market whose criteria the model
-  // has already judged uncheckable will answer the same way at the same price
-  // every run until a person rewrites them.
-  const attempt = await oracleAttemptFor(m.slug).catch(() => ({ lastGate: null, lastDecidedAt: null, paidAttempts: 0 }));
-  const again = shouldRetry(attempt);
-  if (!again.retry && !FORCE) {
-    skipped++;
-    console.log(`     ${"held".padEnd(23)} ${m.slug.slice(0, 44)}`);
-    console.log(`      ${again.why}`);
-    console.log("");
-    continue;
-  }
-
-  const d = await decide({
-    slug: m.slug,
-    question: m.question,
-    criteria: detail?.resolutionCriteria ?? null,
-    closeTime: m.closesAt,
-  }, AS_OF ?? undefined);
-  decisions.push(d);
-
-  // Recorded before anything is announced, and best-effort by construction: the
-  // log going down must not take a settlement with it.
-  await recordOracleDecision({
+// THE LOOP IS NOT HERE ANY MORE. It moved to src/oracle/sweep.ts so the server
+// can run the same one: two copies would be two sets of gates to keep in step
+// (the retired filter, the retry record, the order the decision is written
+// down), and the first to drift would be the one nobody watches. What stays
+// here is what a hand-run tool should own -- how it prints, and the fact that
+// it settles over HTTP against a deployment rather than in-process.
+const result = await oracleSweep({
+  board: async () => board,
+  criteria: async (slug) => {
+    try {
+      const d = await communityMarketDetail(slug);
+      return { ok: true as const, criteria: d?.resolutionCriteria ?? null };
+    } catch (e) {
+      return { ok: false as const, error: (e as Error).message };
+    }
+  },
+  attempt: (slug) => oracleAttemptFor(slug),
+  decide: (m, asOf) => decide(m, asOf),
+  record: (d) => recordOracleDecision({
     slug: d.slug, settle: d.settle, gate: d.gate, reason: d.reason,
     confidence: d.proposal?.confidence ?? null,
     secondOpinion: d.secondOpinion ?? null,
     citations: d.audit?.citations ?? [],
     verified: d.audit?.verified ?? 0, undated: d.audit?.undated ?? 0, stale: d.audit?.stale ?? 0,
     absent: d.audit?.absent ?? 0, unreachable: d.audit?.unreachable ?? 0,
-    paid: decisionWasPaid(d),
-  });
-
-  const head = d.settle ? `-> ${d.settle.toUpperCase()}` : `   ${d.gate}`;
-  console.log(`  ${head.padEnd(28)} ${m.slug.slice(0, 44)}`);
-  console.log(`      ${d.reason}`);
-  for (const c of d.audit?.citations ?? []) {
-    console.log(`      [${c.status}] ${c.url.slice(0, 78)}`);
-    if (c.status === "quote-absent") console.log(`         quoted: "${c.quote.slice(0, 90)}"`);
-  }
-  console.log("");
-}
+    paid: d.paid,
+  }),
+  settle: APPLY
+    ? async (slug, outcome) => {
+        const res = await fetch(`${BASE}/api/community/resolve`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-oddie-admin": TOKEN },
+          body: JSON.stringify({ slug, outcome }),
+        }).catch(() => null);
+        if (!res?.ok) console.error(`  ! ${slug} did not settle: ${res ? `http ${res.status}` : "request failed"}`);
+        return Boolean(res?.ok);
+      }
+    : null,
+  force: FORCE,
+  asOf: AS_OF ?? undefined,
+  on: {
+    unreadable: (slug, error) => {
+      console.log(`     ${"could not be read".padEnd(28 - 5)} ${slug.slice(0, 44)}`);
+      console.log(`      the database did not answer: ${error}`);
+      console.log("");
+    },
+    held: (slug, why) => {
+      console.log(`     ${"held".padEnd(23)} ${slug.slice(0, 44)}`);
+      console.log(`      ${why}`);
+      console.log("");
+    },
+    decided: (d) => {
+      const head = d.settle ? `-> ${d.settle.toUpperCase()}` : `   ${d.gate}`;
+      console.log(`  ${head.padEnd(28)} ${d.slug.slice(0, 44)}`);
+      console.log(`      ${d.reason}`);
+      for (const c of d.audit?.citations ?? []) {
+        console.log(`      [${c.status}] ${c.url.slice(0, 78)}`);
+        if (c.status === "quote-absent") console.log(`         quoted: "${c.quote.slice(0, 90)}"`);
+      }
+      console.log("");
+    },
+    settled: (slug, outcome) => console.log(`  settled ${slug} -> ${outcome}`),
+  },
+});
+const decisions = result.decided;
+const skipped = result.held;
 
 const settleable = decisions.filter((d) => d.settle);
 // A citation that fetched cleanly and did not contain its own quote gets its own
@@ -206,20 +209,5 @@ if (!APPLY) {
   process.exit(0);
 }
 
-let done = 0, failed = 0;
-for (const d of settleable) {
-  const res = await fetch(`${BASE}/api/community/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-oddie-admin": TOKEN },
-    body: JSON.stringify({ slug: d.slug, outcome: d.settle }),
-  }).catch(() => null);
-  if (res?.ok) {
-    done++;
-    console.log(`  settled ${d.slug} -> ${d.settle}`);
-  } else {
-    failed++;
-    console.error(`  ! ${d.slug} did not settle: ${res ? `http ${res.status}` : "request failed"}`);
-  }
-}
-console.log(`\n  ${done} settled, ${failed} failed, ${decisions.length - settleable.length} left for a person.\n`);
-if (failed) process.exit(1);
+console.log(`\n  ${result.settled} settled, ${result.failed} failed, ${decisions.length - settleable.length} left for a person.\n`);
+if (result.failed) process.exit(1);
