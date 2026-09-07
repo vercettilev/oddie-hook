@@ -424,6 +424,13 @@ function b64ToBytes(b64) {
   }
 
   function sheetShell() {
+    // ONE SHEET AT A TIME. This appended without clearing, so every reopen left
+    // the previous one in the DOM. With the stylesheet present they simply
+    // covered each other and nobody noticed; without it they stacked visibly
+    // down the page, which is how the missing stylesheet was found at all.
+    // Orphan money dialogs are worth removing either way: each one holds live
+    // handlers over a wallet.
+    document.querySelectorAll(".cdim.chaindim").forEach((el) => el.remove());
     const dim = document.createElement("div");
     dim.className = "cdim chaindim";
     dim.innerHTML = `<div class="csheet chainsheet" role="dialog" aria-label="Make it real"></div>`;

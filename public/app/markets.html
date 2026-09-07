@@ -326,6 +326,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
+<!-- THE MONEY SHEET'S STYLESHEET. This page loads chain.js and its cards call
+     OddieChain.openStake, so tapping YES here opens the sheet that takes real
+     SOL -- and without this it opened as RAW HTML: no overlay, no dialog, no
+     buttons, the amount chips as bare browser controls, and every reopen
+     stacking down the page instead of covering it, because .cdim's
+     position:fixed lives in here too.
+     Loaded late for the same reason market.html loads it late: nothing it
+     styles paints until somebody taps a side, so it cannot cause a
+     first-paint flash. -->
+<link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
 <script src="/app/me.js"></script>
 <!-- Para tabakasi. market.html ile AYNI dosya: feed'de bahis alan sheet ile
