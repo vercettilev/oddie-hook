@@ -295,6 +295,19 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   .gate .big,.gate .later{justify-self:center}
   .big--2l{text-align:center}
 }
+
+/* The ask, wearing the same sticker panel as a market so it reads as the next
+   row in the list and not a banner bolted under it. */
+.card--invite{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 20px;
+  align-items:center;box-shadow:8px 9px 0 var(--pink-deep)}
+.card--invite .invite__st{width:min(120px,26vw);height:auto;margin:0}
+.card--invite .card__q{margin:0 0 6px}
+.card--invite .pool{margin:0}
+.crowd[hidden]{display:none}
+@media (max-width:560px){
+  .card--invite{grid-template-columns:1fr;justify-items:center;text-align:center;gap:12px}
+  .card--invite .invite__st{width:min(150px,40vw)}
+}
 </style>
 
 <header class="top">
@@ -443,6 +456,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     .then(function (j) {
       if (!j.ok) throw new Error("bad response");
       var ms = j.markets || [];
+      /* The strip is a closer, and there is nothing to close under an empty or
+         near-empty list. Set before the empty branch returns, because that
+         branch is the THINNEST list there is and it was the one still carrying
+         600px of crowd. */
+      var THIN = 3;
+      var crowd = document.querySelector(".crowd");
+      if (crowd) crowd.hidden = ms.length < THIN;
       if (!ms.length) {
         view.innerHTML = '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
           + '<h3>Nothing open yet</h3>'
@@ -536,6 +556,24 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           + sideEl("no", "side--n", "NO", pct === null ? null : 100 - pct)
           + "</div></article>";
       }).join("");
+
+      /* WHEN THE LIST IS THIN, THE PAGE STOPS DECORATING AND STARTS ASKING.
+         Measured at 1920 with one market on it: the page was 1352px and the
+         crowd strip was 600 of them -- 44%, two and a half times the height of
+         the only market the product had. A closing illustration is right under
+         a full list and wrong under a short one, where it is simply bigger
+         than the thing it is closing.
+         Under three markets the strip stands down and the space becomes the
+         ask, built as one more card so it reads as the next row rather than a
+         banner. At three the list fills a screen on its own and the strip
+         comes back to close it. */
+      if (ms.length < THIN) {
+        view.innerHTML += '<article class="card card--invite">'
+          + '<img class="invite__st" src="/brand/st-tag.webp" alt="">'
+          + '<div><h2 class="card__q">Open your own</h2>'
+          + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
+          + 'Keep <b>2%</b> of its pool.</p></div></article>';
+      }
       document.getElementById("sub").textContent =
         ms.length + (ms.length === 1 ? " market open" : " markets open");
 
