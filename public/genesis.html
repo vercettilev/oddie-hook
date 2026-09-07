@@ -168,6 +168,14 @@
      word. Browsers without it just wrap normally, so there is nothing to lose. */
   .lede,.step p,.fine{text-wrap:balance}
   .lede{font-size:clamp(16px,1.35vw,19px);line-height:1.62;color:var(--ink-2);margin:14px 0 0;max-width:46ch}
+  /* PINK UNDER THE THING BEING NAMED.
+     A background gradient rather than an absolutely-positioned ::after, and
+     deliberately: the landing had exactly that, anchored to the font's content
+     box, and it painted 11.9px INSIDE the line below because Anton's box is
+     taller than the line box. A background paints inside the element's own
+     box and follows line wrapping on its own, so it cannot reach anything. */
+  .mk{background-image:linear-gradient(var(--pink),var(--pink));background-repeat:no-repeat;
+    background-size:100% .1em;background-position:0 100%;padding-bottom:.08em}
   .on-dark .lede{color:var(--fg-2)}
 
   /* --------------------------------------------------------------- masthead -- */
@@ -713,7 +721,7 @@
              So the reward is named here in one body line, and the block deeper
              down stays as the full explanation. The display line above says
              what to DO; this says what it is FOR. -->
-        <p class="lede">Every person who bets on your market is a Genesis point.</p>
+        <p class="lede">Every person who bets on your market is a <span class="mk">Genesis point.</span></p>
         <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
              ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
              birakmak "butona bastim, hicbir sey olmadi"nin ta kendisiydi. -->
