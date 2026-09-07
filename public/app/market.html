@@ -262,7 +262,12 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
 .psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
   transform:rotate(-5deg);flex:0 0 auto}
-.peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
+/* Pul kartin ustune SORUYLA ARASINDAKI BOSLUK KADAR cikar, daha fazla degil.
+   Eskisi 74px yukseliyordu ve sorunun son satirina biniyordu (olculdu: 46px
+   yatay cakisma, son satirdaki soru isaretinin uzeri). Yukselisi 18px'e
+   cekildi; bosluk 23px oldugu icin bu, sorunun kac satir surdugunden
+   BAGIMSIZ olarak metne degmez. Cerceveyi kirma karakteri duruyor. */
+.peek{position:absolute;right:-6px;bottom:calc(100% - 68px);height:clamp(54px,7.5vw,86px);
   width:auto;transform:rotate(7deg);pointer-events:none;
   filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
 .sides{position:relative}
@@ -365,15 +370,15 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
   /* The opener, as a person. Same rule as the list: a pill that leaves for
      their X profile, so "who called this" is answerable in one tap. */
-  /* Feed'deki cip ile AYNI kural: gonderi bu handle'a aitse cip gonderiye
-     gider, degilse profile. Iki yuzey ayni cipi farkli yerlere goturemez. */
-  function byChip(handle, sourceUrl) {
+  /* BIR YUZEYDE GONDERIYE GIDEN TEK BIR SEY OLUR.
+     Feed'de cip gonderiye gidiyor, cunku orada baska hicbir sey gitmiyor.
+     Burada "See the post" var, yani cipin de oraya gitmesi ayni satirda ayni
+     hedefe iki baglanti demekti. Kural su: gonderiye giden yol her yuzeyde
+     BIR tane; ikinci bir baglanti varsa cip kisiye doner. Burada cip = insan,
+     "See the post" = iddia. */
+  function byChip(handle) {
     var h = String(handle).replace(/^@+/, "");
-    var href = "https://x.com/" + encodeURIComponent(h);
-    var m = String(sourceUrl || "").match(
-      /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^\/?#]+)\/status\/\d+/i);
-    if (m && m[1].toLowerCase() === h.toLowerCase()) href = sourceUrl;
-    return '<a class="by" href="' + esc(href)
+    return '<a class="by" href="https://x.com/' + encodeURIComponent(h)
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
 
@@ -388,7 +393,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
-    if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourcePost && m.sourcePost.url));
+    if (m.taggedBy) bits.push(byChip(m.taggedBy));
     var w = when(m.closesAt);
     if (w) bits.push(esc(w));
     /* ALINTI GITTI, KAYNAK KALDI.
@@ -431,12 +436,12 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       html += '<div class="pool pool--quiet"><div class="pool__n">Can\'t read this pool.</div>'
         + '<div class="pool__k">Your money is safe. Try again in a moment.</div></div>';
     } else if (!m.onchain) {
-      html += '<div class="pool pool--quiet"><div class="pool__n">No stakes yet.</div>'
-        + '<div class="pool__k">Opens on Solana with the first stake</div></div>';
+      html += '<div class="pool pool--quiet"><div class="pool__n">Nobody\'s in yet.</div>'
+        + '<div class="pool__k">First stake puts it on Solana</div></div>';
     } else if (src === "unpriced" || !m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
-      html += '<div class="pool pool--quiet"><img class="peek" src="/brand/st-first.webp" alt="">'
-        + '<div class="pool__n">No stakes yet.</div>'
-        + '<div class="pool__k">First one sets the price</div></div>';
+      html += '<div class="pool pool--quiet"><img class="peek" src="/brand/st-rocket.webp" alt="">'
+        + '<div class="pool__n">Nobody\'s in yet.</div>'
+        + '<div class="pool__k">Go first, set the price</div></div>';
     } else {
       var y = m.pool.yesLamports, n = m.pool.noLamports, tot = y + n;
       var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
@@ -486,7 +491,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
          metin; katlanmis halde "onemli degil" diye okunuyordu. Landing'de
          "kim karar veriyor" sorusunu one cikardik, paranin konuldugu sayfada
          saklamak tutarsizdi. Katlanabilir kaliyor, kapatmak isteyen kapatir. */
-      html += '<details class="terms" open><summary>How this settles'
+      /* Kapali aciliyor. Acik hali sartlari okumadan gecilemeyen bir duvar
+         yapiyordu; asil isi merak edene TEK TIKLA acilmak, herkese pesinen
+         dayatilmak degil. Baslik gorunur kaldigi icin varligi hala belli. */
+      html += '<details class="terms"><summary>How this settles'
         + '<img class="psticker" src="/brand/st-judge.webp" alt=""></summary>'
         + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
     }
