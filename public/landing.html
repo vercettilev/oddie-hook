@@ -120,7 +120,21 @@
   /* kutusunu sagdan tasan, elle cekilmis gibi duran alti cizgi */
   .lo::after{content:"";position:absolute;left:-.04em;right:-.14em;bottom:-.12em;
     height:.075em;background:var(--ink);rotate:-.9deg;pointer-events:none}
-  .on-dark .lo::after{background:var(--pink)}
+  /* NO UNDERLINE ON DARK, because it was reading as a STRIKETHROUGH.
+     `.on-dark .lo` casts a solid PINK copy of every glyph 6px down, and the
+     rule was the SAME pink arriving 1.7px under the box on "BEFORE THE MONEY
+     MOVES." Same colour, overlapping: the lime letters looked crossed out.
+     Moving the rule down does not fix it, and the reason is worth keeping.
+     The shadow offset is in ABSOLUTE px (5px 6px) while the rule offset is in
+     em, so they scale differently: pushing the rule to .30em cleared the
+     shadow on a 36px heading and still collided at 21px, where .30em is 6.3px
+     and the shadow is still 6px. Any em-based gap has a viewport width where
+     it fails.
+     So the rule simply does not run on dark. The offset shadow is already the
+     emphasis there, and two pink marks on one lime word were always one too
+     many. Light sections keep it: their shadow is a 2px outline, not a 6px
+     offset, so nothing can merge. */
+  .on-dark .lo::after{display:none}
   .f--pink .lo::after{background:var(--black)}
 
   .kicker{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;
@@ -995,17 +1009,13 @@
              market" uygulamayla birlikte geri gelir; sheet kodu #ctacreate'i
              bulamayinca kendini kapattigi icin uyur durumda bekliyor. -->
         <a class="btn" href="/genesis">Tag your first claim <i aria-hidden="true">&rarr;</i></a>
-        <span class="rails">
-          <b>Works on</b>
-          <!-- Ikonun yaninda metin YOKTU: Telegram ve Discord "Soon" diye
-               duyurulurken gercekten calisan tek platform ekran okuyucuda
-               hicbir sey soylemiyordu. Gorsel degismiyor. -->
-          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-7 8 8.2 12h-6.4l-5-7.3L6 22H2.9l7.5-8.6L2.5 2h6.6l4.5 6.6L18.9 2z"/></svg><span class="a11y">X</span></span>
-          <span class="sep">/</span>
-          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.9 3.3 2.9 10.6c-1.3.5-1.3 1.3-.2 1.6l4.8 1.5 1.8 5.6c.2.6.4.8 1 .8.5 0 .7-.2 1-.5l2.4-2.3 5 3.7c.9.5 1.6.2 1.8-.9l3.3-15.4c.3-1.3-.5-1.9-1.9-1.4z"/></svg>Telegram <small>Soon</small></span>
-          <span class="sep">/</span>
-          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 5.3A16 16 0 0 0 15.6 4l-.3.6a15 15 0 0 1 3.4 1.2 12 12 0 0 0-9.5 0A15 15 0 0 1 12.6 4.6L12.4 4a16 16 0 0 0-4 1.3C5.5 9.5 4.7 13.6 5.1 17.6a16 16 0 0 0 4.9 2.5l1-1.6c-.5-.2-1.1-.5-1.6-.8l.4-.3a11.5 11.5 0 0 0 9.8 0l.4.3c-.5.3-1 .6-1.6.8l1 1.6a16 16 0 0 0 4.9-2.5c.5-4.6-.8-8.7-3-12.3zM9.7 15.2c-1 0-1.7-.9-1.7-1.9s.8-1.9 1.7-1.9 1.8.9 1.7 1.9c0 1-.8 1.9-1.7 1.9zm4.6 0c-1 0-1.7-.9-1.7-1.9s.8-1.9 1.7-1.9 1.8.9 1.7 1.9c0 1-.7 1.9-1.7 1.9z"/></svg>Discord <small>Soon</small></span>
-        </span>
+        <!-- THE "WORKS ON X / TELEGRAM SOON / DISCORD SOON" ROW IS GONE.
+             Both halves already existed elsewhere: X is named in the hero
+             sentence directly above ("under any argument on X"), and the
+             roadmap is in the stats band further down ("X today. Telegram
+             and Discord soon."). So the row added nothing and its only net
+             effect in the hero was to announce, under the call to action,
+             that two thirds of the product is not built yet. -->
       </div>
 
       <div class="A__art" aria-hidden="true">
@@ -1027,9 +1037,17 @@
            (baslik + tweet->market figuru). Manifesto blogu hero'nun tekrariydi,
            telefon maketi de figurun; ikisi de cikti (Lev'in sadelestirme
            karari, "tek anlatim" secenegi). -->
+      <!-- THE HEADING WENT, THE PICTURE STAYED.
+           flow-market.webp is not an illustration of the explanation, it IS the
+           explanation: the three numbered steps ("See a claim / Tag Oddie /
+           Market opens") are baked into the image, not the DOM. So the page was
+           stating one idea four times -- hero sentence, this heading, this
+           lede, and then the picture -- across 1552px, which is 44% of a 3493px
+           page. What the picture cannot say is that the money is real and that
+           somebody is on the other side of it, so that line survives as its
+           caption. -->
       <div class="B__head col col--mid">
         <p class="kicker reveal">The move</p>
-        <h2 class="h2 reveal"><span>You argue.</span><span class="lo">Oddie makes it a market.</span></h2>
         <!-- The first sentence used to repeat the heading directly above it and
              the hero above that. What only this line can say is that the money
              is real and that other people are on the other side of it. The 2%
@@ -1133,8 +1151,14 @@
                said Genesis counts ONE thing. Both cannot be true, and the vague
                one was first, so that is the one a skimmer took away. Only the
                countable claim survives. -->
-          <p class="lede reveal">Genesis counts one thing: how many people put
-            money on the markets you opened. One person, one point.</p>
+          <!-- "Be right. Be early." is TRUE of the product: /board ranks by being
+               right when the room disagreed, weighted by how far against the
+               consensus the call was (receiptWeight in src/store/standings.ts).
+               It is NOT true of Genesis, which pays recruitment and nothing
+               else. Two words of scope let the heading keep describing the
+               product while the body describes the season. -->
+          <p class="lede reveal">This season, Genesis counts one thing: how many
+            people put money on the markets you opened. One person, one point.</p>
         </div>
         <img class="C__ghost reveal" src="/brand/mascot-trophy.webp" alt="" aria-hidden="true"
           width="940" height="803" loading="lazy">
