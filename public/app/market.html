@@ -58,6 +58,13 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   text-transform:uppercase;color:var(--fg-3);margin:0 0 14px;
   display:flex;flex-wrap:wrap;gap:6px 14px}
 .eyebrow b{color:var(--yellow);font-weight:700}
+/* Sayac. tabular-nums ZORUNLU: son saatte saniye saniye degisen orantili
+   rakamlar satiri titretiyor ve goz sayiya degil oynamaya takiliyor. */
+.clock{display:inline-block;padding:3px 10px 2px;border-radius:999px;
+  border:2px solid rgba(255,255,255,.26);color:var(--fg-2);
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+/* 24 saatin altinda: dolu pembe. Handle'in sari hapiyla kasitli bir cift. */
+.clock--soon{background:var(--pink);border-color:var(--pink);color:var(--cream)}
 .q{font-family:var(--display);font-weight:400;
   font-size:clamp(28px,5.1vw,44px);line-height:1.04;letter-spacing:.005em;
   text-transform:uppercase;text-wrap:balance;margin:0 0 26px;color:var(--cream)}
@@ -410,17 +417,32 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
   /** "in 3 days" / "2 hours ago". Never a bare timestamp: the only thing
    *  anybody wants from a close time is how much time is left. */
-  function when(iso) {
+  /* SESSIZKEN SESSIZ, ACELEYKEN YUKSEK.
+     Sayac sayfadaki tek aciliyet unsuruydu ve en kucuk seydi. Ama surekli
+     bagiran bir sayac da gurultudur: 24 gun kalmis bir markette aciliyet
+     yoktur ve varmis gibi yapmak yalandir. O yuzden hassasiyet ve ses
+     BIRLIKTE artiyor -- gunlerce varken tek satirlik sakin bir rakam, 24
+     saatin altinda dolu pembe hap, son saatte saniye saniye.
+     Tek kaynak: hem ilk cizim hem her tik bunu cagiriyor. */
+  function leftOf(iso) {
     if (!iso) return null;
     var d = new Date(iso).getTime();
     if (!isFinite(d)) return null;
-    var s = Math.round((d - Date.now()) / 1000), past = s < 0;
-    var n = Math.abs(s), unit, v;
-    if (n < 3600) { v = Math.max(1, Math.round(n / 60)); unit = "minute"; }
-    else if (n < 86400) { v = Math.round(n / 3600); unit = "hour"; }
-    else { v = Math.round(n / 86400); unit = "day"; }
-    var t = v + " " + unit + (v === 1 ? "" : "s");
-    return past ? "closed" : t + " left";
+    var ms = d - Date.now();
+    if (ms <= 0) return { text: "closed", soon: false, done: true };
+    var s = Math.floor(ms / 1000);
+    // Gun katmaninda YUVARLIYORUZ: 24 gunluk bir market acilir acilmaz
+    // "23 days left" diyorsa bu kullaniciya eksik sayma gibi okunur, ve gun
+    // hassasiyetinde yarim gun zaten kimsenin kararini degistirmiyor. Saat ve
+    // dakika katmanlari asagi yuvarliyor, cunku orada hassasiyet kararı
+    // etkiliyor ve kalan sureyi FAZLA gostermek yanlis tarafta hata yapmaktir.
+    if (s >= 172800) return { text: Math.round(s / 86400) + " days left", soon: false, done: false };
+    if (s >= 3600) {
+      return { text: Math.floor(s / 3600) + "h " + Math.floor(s % 3600 / 60) + "m left",
+               soon: s < 86400, done: false };
+    }
+    var m = Math.floor(s / 60), ss = s % 60;
+    return { text: m + ":" + (ss < 10 ? "0" : "") + ss + " left", soon: true, done: false };
   }
 
   /* The opener, as a person. Same rule as the list: a pill that leaves for
@@ -464,6 +486,35 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     return P.length > 1 ? P[1] : P[0];   // ortadaki, yoksa ilki
   }
 
+  /* Sayaci canli tutan tek zamanlayici. Her cizim onceki zamanlayiciyi
+     kapatiyor: render tum DOM'u degistirdigi icin eski eleman referansi olu
+     kaliyor ve temizlenmezse her cizimde bir zamanlayici daha birikiyordu. */
+  var clockTimer = null;
+  function mountClock(m) {
+    if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+    var el = view.querySelector(".clock");
+    if (!el || !el.dataset.closes) return;
+    var iso = el.dataset.closes;
+    // 48 saatten uzaksa hic zamanlayici yok: "24 days left" icin saniye
+    // saymak bosa is ve pil.
+    if (new Date(iso).getTime() - Date.now() > 172800000) return;
+    var last = el.textContent;
+    clockTimer = setInterval(function () {
+      var lf = leftOf(iso);
+      if (!lf) return;
+      // Metin degismedikce DOM'a dokunmuyoruz; saniyede bir yazmak "8h 12m"
+      // gosterirken hicbir sey degistirmez ama her seferinde yeniden boyar.
+      if (lf.text !== last) { el.textContent = lf.text; last = lf.text; }
+      el.classList.toggle("clock--soon", lf.soon);
+      if (lf.done) {
+        clearInterval(clockTimer); clockTimer = null;
+        // Sifiri gecti: sayfa hala acik market arayuzunu gosteriyor. Sunucudan
+        // tazeleyip kapali haline gecmesi, elle yenilemeyi beklemekten iyi.
+        load(false);
+      }
+    }, 1000);
+  }
+
   function render(m) {
     var poolNow = null;   // okunabilir ve dolu bir havuz varsa asagida doluyor
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
@@ -471,8 +522,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var src = m.oddsSource;
     var bits = [];
     if (m.taggedBy) bits.push(byChip(m.taggedBy));
-    var w = when(m.closesAt);
-    if (w) bits.push(esc(w));
+    /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
+       vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre
+       hicbir zaman hicbir sey elemiyordu ve cozulmus market de geri sayiyordu. */
+    var lf = resolved ? null : leftOf(m.closesAt);
+    if (lf) {
+      bits.push('<span class="clock' + (lf.soon ? " clock--soon" : "") + '" data-closes="'
+        + esc(m.closesAt || "") + '">' + esc(lf.text) + "</span>");
+    }
     /* ALINTI GITTI, KAYNAK KALDI.
        Gonderinin iki satiri kimsenin YES/NO kararini degistirmiyordu ama
        koca bir kart kaplayip havuzu ve butonlari asagi itiyordu. Giden
@@ -486,7 +543,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
     // Separate spans, not one joined string: .eyebrow is a flex row with a gap,
     // so the gap is what separates them and no punctuation has to.
-    if (resolved) bits = bits.filter(function (b) { return b.indexOf("closes in") === -1; });
     var html = bits.length
       ? '<p class="eyebrow"><span>' + bits.join("</span><span>") + "</span></p>"
       : "";
@@ -618,6 +674,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       + "</div>";
 
     view.innerHTML = html;
+    mountClock(m);
     // Cizimden SONRA: elemanlar artik var, eski degerden yeniye gecebiliriz.
     animatePool(prevPool, poolNow);
     prevPool = poolNow;
