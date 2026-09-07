@@ -273,25 +273,27 @@ app.use(express.static(path.join(__dirname, "../public"), {
  *  - The share card, title and description that oddie.fun throws on X belong to
  *    the landing; the app's belong to the app.
  *
- * The old app lived at /feed until 2026-09-05; the shells under public/app are the app now. Anyone whose browser already
- * carries a device id is bounced there by the landing's own first script, so a
- * returning player never has to read the pitch again.
+ * The old app lived at /feed until 2026-09-05; the shells under public/app are the app now. The landing does NOT bounce a
+ * returning player into it: the storage read that used to do that went in
+ * e4f1ef0, and `grep -c "localStorage\|OddieId" public/landing.html` is 0
+ * today. Everyone gets the pitch, every time. Said plainly because the old
+ * sentence claimed a behaviour that has not existed for two weeks, and the
+ * next person to edit this file would have believed it.
  *
  * The hero art carries no cards: the painting reads as one picture and they
- * were sitting on top of it. Real markets live in the band BELOW the fold, and
- * that band has two states.
+ * were sitting on top of it.
  *
- * A launch-day landing with a "Live on Oddie" shelf holding two markets claims
- * more than the product has, and an empty one claims it and fails. So the band
- * counts what actually exists: under LANDING_LIVE_MIN real markets it teaches
- * the loop instead ("see how a post becomes a market"), and at or above it the
- * same slot becomes proof. One number decides, and nothing about the page has
- * to be edited when it flips.
+ * There WAS a two-state band below the fold -- teach the loop under N real
+ * markets, become a shelf of live ones at or above it -- and its reasoning is
+ * still right: a launch-day landing holding two markets claims more than the
+ * product has, and an empty shelf claims it and fails. The slot was deleted
+ * from the page in e169921 and the code that fed it is gone with it (see the
+ * note at the render below). LANDING_PROOF_MIN survives because <!--PROOF-->
+ * still exists in the document; the live-cards thresholds do not, because
+ * nothing reads them any more. Bring both back together or not at all.
  */
 const LANDING_TTL_MS = 60_000;
-const LANDING_LIVE_MIN = 15;    // real markets before the band becomes a shelf
 const LANDING_PROOF_MIN = 25;   // markets before the count is worth printing
-const LANDING_LIVE_CARDS = 6;
 let landingCache: { html: string; at: number } | null = null;
 
 /** Escapes text for HTML TEXT position and for a double-quoted attribute. */
@@ -313,21 +315,27 @@ async function renderLanding(): Promise<string> {
     homeActivity().catch(() => null),
   ]);
 
-  const liveMode = community.length >= LANDING_LIVE_MIN ? "1" : "0";
-  // Only built when it will actually be shown. Newest first, same ordering the
-  // app's own feed uses for community markets.
-  const liveCards = liveMode === "0" ? "" : [...community]
-    .sort((a, b) => b.marketId - a.marketId)
-    .slice(0, LANDING_LIVE_CARDS)
-    .map((m) => {
-      const yes = Math.max(0, Math.min(100, Math.round(Number(m.yesPct ?? 0))));
-      return `<a class="lcard" href="/m/${escHtml(slugFor(m))}">
-      <div class="lcard__top"><span>${escHtml(String(m.category ?? "Market"))}</span><span class="lcard__live">Live</span></div>
-      <p class="lcard__q">${escHtml(String(m.question ?? ""))}</p>
-      <div class="lcard__bar"><i style="width:${yes}%"></i></div>
-      <div class="lcard__odds"><span class="qcard__yes">${yes}% YES</span><span class="qcard__no">${100 - yes}% NO</span></div>
-    </a>`;
-    }).join("");
+  /* THE LIVE-CARDS BAND IS GONE, AND SO IS THE CODE THAT FED IT.
+   *
+   * This built up to LANDING_LIVE_CARDS anchors and wrote them into
+   * <!--LIVE_CARDS-->, next to a <!--LIVE_MODE--> flag. Commit e169921 deleted
+   * both slots and all the .lcard CSS from public/landing.html and left this
+   * standing: `grep -c "<!--LIVE_CARDS-->" public/landing.html` is 0.
+   *
+   * Harmless today only because community.length is 0 and LANDING_LIVE_MIN is
+   * 15, so liveMode is "0" and nothing is built. On the day the 15th market
+   * opens it would have sorted, sliced, rendered six real market cards and
+   * thrown every one of them at a placeholder that is not in the document. No
+   * error, no log, no test, and the front door would go on teaching the loop
+   * forever while the code that decides when to stop believed it had flipped.
+   *
+   * This is not hypothetical: landing.html:1110 records the same bug reaching
+   * production once already with NET_CHIP. scripts/test-placeholders.ts now
+   * fails the build if any .replace("<!--NAME-->") has no matching slot.
+   *
+   * Deleted rather than rewired because the band was removed on purpose. The
+   * implementation is in e169921^ if the proof band comes back.
+   */
 
   // ODDIE'S OWN NUMBERS, not the venue catalogue's.
   //
@@ -375,8 +383,6 @@ async function renderLanding(): Promise<string> {
 
   const html = LANDING_HTML
     .replace("<!--PROOF-->", proof)
-    .replace("<!--LIVE_MODE-->", liveMode)
-    .replace("<!--LIVE_CARDS-->", liveCards)
     .replace("<!--NET_CHIP-->", netChip);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
