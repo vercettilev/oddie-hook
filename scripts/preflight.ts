@@ -21,6 +21,7 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { readFileSync } from "node:fs";
 import { cluster, onchainEnabled, isChainEnabled, adminAddress, adminBalanceSol, chainRunway } from "../src/chain/oddieChain.js";
+import { xMissing } from "../src/x/client.js";
 
 let bad = 0, warn = 0;
 const ok = (name: string, detail = "") => console.log(`  ✓ ${name}${detail ? ` — ${detail}` : ""}`);
@@ -120,7 +121,24 @@ console.log("\nauthority");
   }
 }
 
-// ---- 5. the IDL the server decodes with vs the program that was deployed ---
+// ---- 5. the product's front door -------------------------------------------
+console.log("\nx credentials");
+{
+  // X_BOT_ENABLED without these does not fail loudly, it declines to start the
+  // loop, once, in a boot line. Naming exactly which of the four is missing is
+  // the difference between "the bot is off" and a shopping list.
+  const missing = xMissing();
+  if (!missing.length) ok("all four X credentials present");
+  else no(`X cannot be reached: ${missing.length} credential(s) missing`, missing.join(", "));
+  // The seed refresh token is only a SEED: X rotates it on every refresh and
+  // the live one lives in the store, so a stale env var here is normal and is
+  // not what a check should measure.
+  if (!missing.length && (process.env.X_BOT_ENABLED ?? "false").toLowerCase() !== "true") {
+    hm("credentials are present but the loop is off", "X_BOT_ENABLED=true starts it, X_BOT_DRY_RUN=true keeps it quiet");
+  }
+}
+
+// ---- 6. the IDL the server decodes with vs the program that was deployed ---
 console.log("\nidl");
 {
   // A drifted IDL does not throw on load. It throws on the first market read,
