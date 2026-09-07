@@ -820,10 +820,25 @@ function b64ToBytes(b64) {
     const testnet = CLUSTER !== "mainnet-beta";
 
     const totalPct = ((feeBps + protoBps) / 100).toFixed(0);
+    /* Three sentences became two clauses and a tag.
+       The cluster is not a sentence -- it is a label on the money, and written
+       out ("Test SOL on Solana devnet.") it took a third of the line to say
+       one word. It is a chip now, and only on a test cluster: real SOL is what
+       everything else on this screen already implies, so a line announcing it
+       is a line spent agreeing with itself.
+       The other two are the same facts in half the words. "Nobody settles it
+       in 30 days, you get your stake back" is a story about a person; "No
+       result in 30 days: refunded" is the rule, which is what a footnote is
+       for. */
     const feeNoteHTML = `<p class="chain-fine">`
-      + `<b>${testnet ? `Test SOL on ${label}` : "Real SOL"}.</b> `
-      + `Winners split the pool${feeBps || protoBps ? `, less a ${totalPct}% fee` : ""}. `
-      + `Nobody settles it in 30 days, you get your stake back.`
+      // "TEST SOL", not "Solana devnet". The chip exists to answer one
+      // question -- is this real money -- and the cluster's NAME answers it
+      // only for somebody who already knows what a devnet is. Where the
+      // network itself matters (the explorer link on a receipt) it is named
+      // there, in full.
+      + (testnet ? `<b class="chain-net">Test SOL</b> ` : "")
+      + `Winners split the pool${feeBps || protoBps ? `, less ${totalPct}%` : ""}. `
+      + `No result in 30 days: refunded.`
       + `</p>`;
 
     const render = () => {

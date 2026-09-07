@@ -247,10 +247,21 @@
    paragraphs stacked around the button, which is how a game turns into a
    contract. Nothing was cut; it was sized. */
 .chain-fine{
-  font-family:var(--mono,monospace);font-size:10.5px;line-height:1.65;
-  letter-spacing:.02em;color:var(--ink-2,#494E2D);margin:11px 0 0;
+  font-family:var(--mono,monospace);font-size:10px;line-height:1.7;
+  letter-spacing:0;color:var(--ink-2,#494E2D);margin:11px 0 0;
 }
 .chain-fine b{color:var(--ink,#0B0D04);font-weight:700}
+/* A tag, not a word in a sentence: it is the one fact on this line somebody
+   might need at a glance, and reading a sentence is not a glance.
+   Selector carries .chain-fine because `.chain-fine b` above is MORE specific
+   than a bare `.chain-net` -- written the short way the chip inherited ink on
+   ink and rendered as a solid black rectangle with invisible text. Caught by
+   looking at it; the CSS itself is perfectly valid either way. */
+.chain-fine .chain-net{
+  display:inline-block;background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4);
+  padding:2px 6px 3px;margin-right:4px;letter-spacing:.1em;text-transform:uppercase;
+  font-size:9px;font-weight:700;vertical-align:1px;
+}
 .chain-sig{
   font-family:var(--mono,monospace);font-size:11.5px;margin:12px 0 0;word-break:break-all;
 }
