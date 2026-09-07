@@ -637,7 +637,12 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        ekran tam ifadeyi gostermeli, vitrini degil. */
     var hook = String(m.hook || "").trim();
     if (hook) {
-      html += '<h1 class="q q--hook">' + esc(hook) + "</h1>"
+      // data-oddie-hook is the sheet's headline; data-oddie-question below is
+      // still the exact wording it prints underneath. Two attributes because
+      // they are two different jobs, and welding them would make the sheet
+      // choose between a punchy title and an accurate one.
+      html += '<h1 class="q q--hook" data-oddie-hook data-slug="' + esc(m.slug || SLUG) + '">'
+        + esc(hook) + "</h1>"
         + '<p class="qfull" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</p>";
     } else {
       html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</h1>";

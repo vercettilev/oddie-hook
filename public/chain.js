@@ -422,7 +422,12 @@ function b64ToBytes(b64) {
     const take = (mine / same) * distributable / 1e9;
     // A market with nothing on the other side pays you back your own stake
     // minus the fee, which is not a win and should not be dressed as one.
-    if (other <= 0) return `Nobody is on the other side yet. If it stays that way and you win, the fee still comes off, so you get back less than you put in.`;
+    // Three grey lines sat between the amount and the button, which is exactly
+    // where momentum should be, to make ONE point. Same point, one line: the
+    // fee is the only thing that happens to a pool nobody joins, so name the
+    // fee and name the consequence and stop. The warning is not softened --
+    // it is the one case where winning still costs money.
+    if (other <= 0) return `You are first. If nobody takes the other side, the ${(totalBps / 100).toFixed(0)}% fee still comes off, so you get back less than you staked.`;
     return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
   }
 
@@ -688,7 +693,19 @@ function b64ToBytes(b64) {
     // without naming what it is for.
     const qEl = document.querySelector(`[data-oddie-question][data-slug="${slug}"]`);
     const question = qEl ? qEl.textContent.trim() : "";
-    const titleHTML = question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
+    // THE HOOK IS THE HEADLINE HERE TOO.
+    // Both shells already render a short hook above the exact question; only
+    // this sheet still led with the full sentence, in Anton caps, three lines
+    // deep -- so the screen that takes money opened with the buttons pushed
+    // off a phone. The question is not dropped: it moves under the headline,
+    // because the screen the money goes on must show what was agreed. Falls
+    // back to the question when a market has no hook, which is the old
+    // behaviour exactly.
+    const hEl = document.querySelector(`[data-oddie-hook][data-slug="${slug}"]`);
+    const hook = hEl ? hEl.textContent.trim() : "";
+    const titleHTML = hook && question
+      ? `<h3 class="chain-q">${esc(hook)}</h3><p class="chain-qfull">${esc(question)}</p>`
+      : question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
 
     // A WALLET PHANTOM ALREADY TRUSTS IS NOT A DECISION.
@@ -751,7 +768,7 @@ function b64ToBytes(b64) {
     const yesLamports = marketState.totalYesLamports ?? 0, noLamports = marketState.totalNoLamports ?? 0;
     const yesOnchainPct = poolPct(yesLamports, noLamports), noOnchainPct = yesOnchainPct == null ? null : 100 - yesOnchainPct;
     const onchainOddsHTML = yesOnchainPct == null
-      ? `<p class="chain-pool-empty">Nothing staked yet. First in sets the line.</p>`
+      ? `<p class="chain-pool-empty"><b>First one in</b> sets the odds.</p>`
       : `<div class="chain-pool-odds">
            <span class="chain-pool-side">YES <b>${yesOnchainPct}%</b> <small>${fmtMult(yesOnchainPct)}</small></span>
            <span class="chain-pool-side">NO <b>${noOnchainPct}%</b> <small>${fmtMult(noOnchainPct)}</small></span>
@@ -861,6 +878,22 @@ function b64ToBytes(b64) {
           c.disabled = over;
           c.classList.toggle("chain-chip--over", over);
         });
+        /* OURS TO FIX, NOT THEIRS TO READ.
+           The balance lands after the sheet paints, so a wallet holding 0.05
+           SOL met "Not enough SOL" under an amount WE chose for them, before
+           they had touched anything. An amount the user picked still says so
+           -- that is their decision and they are owed the truth about it --
+           but our own guess drops to the largest one this wallet can actually
+           cover. Only while the guess is untouched: the first chip tap or
+           keystroke clears autoPicked and hands the choice back. */
+        if (autoPicked && sol > max) {
+          const afford = chips.filter((c) => c.dataset.sol !== "custom" && parseFloat(c.dataset.sol) <= max);
+          const best = afford[afford.length - 1];
+          if (best) {
+            sol = parseFloat(best.dataset.sol);
+            chips.forEach((x) => x.classList.toggle("on", x === best));
+          }
+        }
         refresh();
       }
 
@@ -906,6 +939,7 @@ function b64ToBytes(b64) {
         refresh();
       });
       chips.forEach((c) => c.onclick = () => {
+        autoPicked = false;
         chips.forEach((x) => x.classList.toggle("on", x === c));
         if (c.dataset.sol === "custom") {
           amtInput.hidden = false; amtInput.focus();
@@ -916,7 +950,7 @@ function b64ToBytes(b64) {
         }
         refresh();
       });
-      amtInput.oninput = () => { sol = parseFloat(amtInput.value) || 0; refresh(); };
+      amtInput.oninput = () => { autoPicked = false; sol = parseFloat(amtInput.value) || 0; refresh(); };
 
       /* Sayfadan gelen tutar, sayfadaki secili chip ile ayni.
          SERBEST TUTAR DA GECIYOR. Bu yalnizca bilinen bir preset kabul
@@ -935,6 +969,30 @@ function b64ToBytes(b64) {
           amtInput.value = String(sol);
           amtInput.hidden = false;
           if (other) chips.forEach((x) => x.classList.toggle("on", x === other));
+        }
+      }
+
+      /* NO AMOUNT MEANT A DEAD BUTTON ON THE FIRST PAINT.
+         Opened from a feed card there is no amount to inherit, so the sheet
+         arrived with nothing chosen and the only button on it greyed out and
+         reading "Choose an amount" -- a screen whose entire job is to take a
+         bet, opening switched off. The page behind it has never done this: its
+         chips come up with one already selected. Same rule here. The value is
+         the one this person last used, or the middle preset for somebody who
+         has never staked. Nothing is spent by a chip being lit: the wallet
+         still has to be connected and the transaction still has to be signed
+         in Phantom. */
+      let autoPicked = false;
+      if (!(sol > 0)) {
+        let want = NaN;
+        try { want = parseFloat(localStorage.getItem("oddie.stake")); } catch (e) { /* private mode */ }
+        const usable = chips.filter((c) => c.dataset.sol !== "custom");
+        const chip = usable.find((c) => parseFloat(c.dataset.sol) === want)
+          || usable[Math.min(1, usable.length - 1)];
+        if (chip) {
+          sol = parseFloat(chip.dataset.sol);
+          chips.forEach((x) => x.classList.toggle("on", x === chip));
+          autoPicked = true;
         }
       }
 

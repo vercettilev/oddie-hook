@@ -43,18 +43,31 @@
   text-transform:uppercase;margin:0 0 10px;
 }
 .chain-q{text-wrap:balance}
-.cnote{font-size:14px;line-height:1.5;color:var(--ink-2,#494E2D);margin:0 0 16px}
+/* THE HOOK LEADS, THE EXACT WORDING STAYS.
+   The sheet printed the full question in Anton caps and spent three lines and
+   the whole top of the screen on it, so the two buttons somebody came here to
+   press started below the fold on a phone. The page solved this months ago --
+   short headline, precise question underneath -- and the sheet had never been
+   told. The full text does not go away: the screen the money goes on has to
+   show what was actually agreed, not the shopfront. It just stops being the
+   loudest thing in a room where the loudest thing should be a button. */
+.chain-qfull{font-size:13px;line-height:1.45;color:var(--ink-2,#494E2D);margin:-4px 0 12px}
+.cnote{font-size:14px;line-height:1.5;color:var(--ink-2,#494E2D);margin:0 0 14px}
 .cnote b{color:var(--ink,#0B0D04)}
 
 /* ---- the live pool, inside the sheet ---- */
 .chain-pool-empty,.chain-pool-odds{
   border:2px solid var(--ink,#0B0D04);padding:10px 12px;margin:0 0 16px;
 }
+/* No box. A dashed frame is what this design language uses for a WARNING, and
+   an empty pool is not one: it is the reason to press a button. Reads as the
+   sentence it is, in the same words the page and the card use. */
 .chain-pool-empty{
-  font-family:var(--mono,monospace);font-size:11.5px;font-weight:700;
-  letter-spacing:.1em;text-transform:uppercase;border-style:dashed;
-  color:var(--ink-2,#494E2D);
+  border:0;padding:0;margin:0 0 14px;
+  font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:16px;
+  letter-spacing:.02em;color:var(--ink-2,#494E2D);
 }
+.chain-pool-empty b{color:var(--ink,#0B0D04);font-weight:400}
 .chain-pool-odds{display:flex;gap:14px;justify-content:space-between}
 .chain-pool-side{
   font-family:var(--mono,monospace);font-size:11px;font-weight:700;
@@ -64,27 +77,61 @@
 .chain-pool-side small{opacity:.72}
 
 /* ---- picking a side ---- */
-.chain-side-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 18px}
+/* BOTH SIDES ARE ALWAYS THE COLOUR THEY WILL BE.
+   These were white until picked, so the sheet opened with two blank rectangles
+   where the page behind it had a yellow YES and a pink NO -- the same decision,
+   drawn as paperwork. Colour is not the selection state; it is the identity of
+   the side, and it is the whole reason the page reads as a game. The bevel is
+   the market page's, at sheet density.
+   Selection is carried by DIMMING THE OTHER ONE, which only happens once a
+   side is actually chosen: with nothing picked both stand at full height,
+   because at that moment neither is more likely than the other. */
+.chain-side-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 16px}
 .chain-side{
-  font-family:var(--display,'Anton',sans-serif);font-size:22px;letter-spacing:.03em;
-  text-transform:uppercase;line-height:1;
-  background:#fff;color:var(--ink,#0B0D04);
-  border:3px solid var(--ink,#0B0D04);padding:15px 10px;cursor:pointer;
+  font-family:var(--display,'Anton',sans-serif);font-size:clamp(24px,6vw,30px);
+  letter-spacing:.03em;text-transform:uppercase;line-height:1;
+  color:var(--black,#020302);
+  border:3px solid var(--ink,#0B0D04);padding:17px 10px 19px;cursor:pointer;
+  transition:transform .13s cubic-bezier(.3,1.4,.5,1),box-shadow .13s ease,
+             opacity .13s ease,background .13s ease;
 }
-.chain-side:hover{background:#F1F3E4}
-.chain-side[aria-pressed="true"],.chain-side.on{color:var(--black,#020302)}
-.chain-side[data-side="yes"][aria-pressed="true"],.chain-side[data-side="yes"].on{
-  background:var(--yellow,#D7DC1F);box-shadow:4px 5px 0 var(--ink,#0B0D04)}
-.chain-side[data-side="no"][aria-pressed="true"],.chain-side[data-side="no"].on{
-  background:var(--pink,#FF2D78);box-shadow:4px 5px 0 var(--ink,#0B0D04)}
-.chain-side:focus-visible{outline:3px solid var(--pink,#FF2D78);outline-offset:3px}
+.chain-side[data-side="yes"]{background:var(--yellow,#D7DC1F);
+  box-shadow:6px 7px 0 var(--yellow-deep,#5A6109),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
+.chain-side[data-side="no"]{background:var(--pink,#FF2D78);
+  box-shadow:6px 7px 0 var(--pink-deep,#A3053F),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
+.chain-side[data-side="yes"]:hover{background:var(--yellow-hi,#E7EC4E);
+  transform:translate(-2px,-3px) scale(1.02);
+  box-shadow:9px 11px 0 var(--yellow-deep,#5A6109),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
+.chain-side[data-side="no"]:hover{transform:translate(-2px,-3px) scale(1.02);
+  box-shadow:9px 11px 0 var(--pink-deep,#A3053F),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
+.chain-side:active{transform:translate(6px,7px) scale(.985)}
+.chain-side[data-side="yes"]:active{
+  box-shadow:0 0 0 var(--yellow-deep,#5A6109),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
+.chain-side[data-side="no"]:active{
+  box-shadow:0 0 0 var(--pink-deep,#A3053F),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
+/* :has() carries the "somebody has chosen" state. Where it is unsupported the
+   fallback is both buttons at full strength, which is the sheet's own opening
+   state -- readable, never broken. */
+.chain-side-row:has(.on) .chain-side:not(.on),
+.chain-side-row:has([aria-pressed="true"]) .chain-side:not([aria-pressed="true"]):not(.on){
+  /* NOT CHOSEN IS NOT DISABLED. At .4 the other side went pale enough to read
+     as switched off, and switching a side off is the one thing this sheet must
+     never imply: changing your mind is a tap away and has to look it. Pressed
+     flat into the page at .62 says "not this one" while the colour still says
+     "still yours". */
+  opacity:.62;transform:translate(4px,5px);box-shadow:none}
+.chain-side-row:has(.on) .chain-side:not(.on):hover{opacity:1;transform:translate(0,0)}
+.chain-side:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:4px}
+@media (prefers-reduced-motion:reduce){
+  .chain-side,.chain-side:hover,.chain-side:active{transform:none;transition:none}
+}
 
 /* ---- how much ---- */
 .chain-amt-lab{
   font-family:var(--mono,monospace);font-size:10.5px;font-weight:800;
   letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2,#494E2D);margin:0 0 8px;
 }
-.chain-amt-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.chain-amt-row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
 .chain-chip{
   font-family:var(--mono,monospace);font-size:12.5px;font-weight:700;
   background:#fff;color:var(--ink,#0B0D04);
@@ -117,11 +164,17 @@
 
 /* The payout line. Money arithmetic, so it gets the tabular figures that stop
    digits from shifting under their own labels as the amount changes. */
+/* min-height held an empty 1.6em line open so the sheet did not jump when the
+   payout hint appeared. With an amount now chosen on open the hint is there
+   from the first paint, so the reservation only ever showed as a gap between
+   the chips and the button. :empty keeps the anti-jump for the one case that
+   still needs it. */
 .chain-line{
   font-family:var(--mono,monospace);font-size:12px;line-height:1.6;
   font-variant-numeric:tabular-nums;color:var(--ink-2,#494E2D);
-  min-height:1.6em;margin:0 0 14px;
+  margin:0 0 12px;
 }
+.chain-line:empty{min-height:1.6em;margin:0 0 12px}
 .chain-line b{color:var(--ink,#0B0D04)}
 
 /* ---- the buttons that move money ---- */
@@ -130,15 +183,19 @@
   font-family:var(--display,'Anton',sans-serif);font-size:21px;letter-spacing:.03em;
   text-transform:uppercase;line-height:1;
   background:var(--yellow,#D7DC1F);color:var(--ink,#0B0D04);
-  border:3px solid var(--ink,#0B0D04);padding:16px 14px;cursor:pointer;
-  box-shadow:5px 6px 0 var(--pink-deep,#A3053F);
+  border:3px solid var(--ink,#0B0D04);padding:17px 14px 19px;cursor:pointer;
+  box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
+             inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13);
   transition:transform .12s ease,box-shadow .12s ease;
 }
 .claimbtn:hover:not(:disabled),.cbtn:hover:not(:disabled){
-  background:var(--yellow-hi,#E7EC4E);transform:translate(-2px,-2px);
-  box-shadow:7px 8px 0 var(--pink-deep,#A3053F)}
+  background:var(--yellow-hi,#E7EC4E);transform:translate(-2px,-3px);
+  box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
+             inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
 .claimbtn:active:not(:disabled),.cbtn:active:not(:disabled){
-  transform:translate(2px,3px);box-shadow:2px 3px 0 var(--pink-deep,#A3053F)}
+  transform:translate(5px,6px);
+  box-shadow:0 0 0 var(--pink-deep,#A3053F),
+             inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
 .claimbtn:focus-visible,.cbtn:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:4px}
 .claimbtn:disabled,.cbtn:disabled{
   opacity:.45;cursor:not-allowed;transform:none;box-shadow:3px 4px 0 rgba(11,13,4,.35)}
