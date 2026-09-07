@@ -337,7 +337,10 @@
     font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--pink-deep)}
   .doit{margin:clamp(16px,2vw,26px) 0 0;font-family:var(--display);font-weight:400;
     text-transform:uppercase;font-size:clamp(21px,2.6vw,37px);line-height:1.06;
-    color:var(--ink);max-width:21ch;text-wrap:balance}
+    /* 21ch was measured for "5 tickets. Use them wisely."; the instruction that
+       replaced it is twice as long and was breaking after "on" into three
+       ragged lines. */
+    color:var(--ink);max-width:32ch;text-wrap:balance}
 
   /* ================================================= B · BLACK · the loop == */
   .B{position:relative;background:var(--black);color:var(--fg);overflow-x:clip;
@@ -388,6 +391,8 @@
     margin-top:clamp(16px,2.2vw,28px)}
   .eq b{font-family:var(--display);font-weight:400;line-height:1;
     font-size:clamp(38px,6.2vw,88px)}
+  .eq--title{display:block;margin-top:clamp(14px,1.8vw,24px)}
+  .eq--title b{text-transform:uppercase;letter-spacing:-.01em}
   .eq__a{color:var(--fg)}
   .eq__b{color:var(--yellow)}
   .eq i{font-style:normal;font-family:var(--display);font-weight:400;line-height:1;
@@ -416,7 +421,7 @@
   .a11y{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
     overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
   .lede--lead{max-width:52ch;margin-top:0}
-  .thread{margin:clamp(22px,2.8vw,38px) 0 0;max-width:880px;position:relative}
+  .thread{margin:clamp(22px,2.8vw,38px) auto 0;max-width:880px;position:relative}
   .thread__art{display:block;width:100%;height:auto}
 
   .oneline{margin:clamp(20px,2.3vw,30px) 0 0;font-family:var(--display);font-weight:400;
@@ -684,15 +689,18 @@
              know every word and still not know what the page does. This says
              the job instead, and it carries both the campaign's constraint
              ("they", never you) and the number the board ranks by ("people"). -->
-        <h1 class="h1"><span>Tag @oddiefun</span><span>to open a market.</span></h1>
+        <!-- HIERARCHY SWAPPED (Lev): what you GET is the hero, what you DO is
+             the line under it. This is a statement of the rule -- everyone gets
+             five -- and stays true once you are in, where the pips below show
+             what you have actually got left. -->
+        <h1 class="h1"><span>You get 5 tickets.</span><span>Use them wisely.</span></h1>
         <!-- Out only: once you are in you have already claimed them, and the
              pips and the stats below say where you stand instead. -->
-        <p class="doit out-only">5 tickets. Use them wisely.</p>
+        <p class="doit">Tag @oddiefun on X to open a market about an argument.</p>
         <!-- The instruction above is what to do; this is what it is. It stays,
              small but present: the hero is the most-read part of the page and it
              must not hide that these are real markets with real money in them. -->
-        <p class="lede">Reply to any claim on X, or write your own.
-          People bet real money on YES or NO.</p>
+        <!-- The hero lede is gone (Lev). -->
         <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
              ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
              birakmak "butona bastim, hicbir sey olmadi"nin ta kendisiydi. -->
@@ -804,8 +812,7 @@
            Gorselin tasimadigi tek cumle bu: "claim" NEDIR. Gercek bir
            kullanici tam bunu bilemedigi icin @oddiefun'i etiketleyip ne
            olacagini soramamisti, o yuzden tanim gorselden ONCE duruyor. -->
-      <p class="lede lede--lead reveal">A claim can be proven true or false.
-        It needs a date or a number.</p>
+      <!-- The claim definition is gone (Lev). -->
 
       <!-- "Or with no post to reply to" karti da kalkti: gorselin 2. paneli
            zaten "Post it or reply with it." diyor. -->
@@ -822,9 +829,11 @@
 
       <div class="form">
         <p class="kicker">What you get</p>
-        <div class="eq reveal">
-          <b class="eq__a">1 person</b><i aria-hidden="true">=</i><b class="eq__b">1 point</b>
-        </div>
+        <!-- The equation was the loudest thing in this block and it was the
+             MECHANIC, not the name of the thing. Lev's call: the heading names
+             the score, and the rule that earns it moves down to where the
+             ticket copy used to be. -->
+        <p class="eq eq--title reveal"><b class="eq__b">Genesis points</b></p>
         <!-- Kitlik kampanyanin kancasi, o yuzden fisiltiyla degil pembeyle
              soylenir. Gerilim kasitli ama ORTADA IKI AYRI MALIYET VAR ve eski
              hali hangisinin sifir oldugunu soylemiyordu: "You only get 5"
@@ -832,7 +841,7 @@
              Simdi ikisi de adiyla aniliyor — bilet kit, para degil — ve
              "wisely" somut bir tarife donusuyor: tahta katilan INSANI sayar,
              o yuzden dogru bilet taraf tutturacak iddiaya harcanir. -->
-        <p class="scarce reveal">Only 5 at a time. Spend them where people will actually bet.</p>
+        <p class="scarce reveal">Bring 1 person. Get 1 point.</p>
         <p class="fine reveal">It costs a ticket, never your money.</p>
         <!-- The black section had no way forward. Hidden in the how view, where
              the block below already carries one. -->
