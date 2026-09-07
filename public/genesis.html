@@ -675,7 +675,7 @@
         <h1 class="h1"><span>Tag @oddiefun</span><span>to open a market.</span></h1>
         <!-- Out only: once you are in you have already claimed them, and the
              pips and the stats below say where you stand instead. -->
-        <p class="doit out-only">5 tickets total. Use them wisely.</p>
+        <p class="doit out-only">5 tickets. Use them wisely.</p>
         <!-- The instruction above is what to do; this is what it is. It stays,
              small but present: the hero is the most-read part of the page and it
              must not hide that these are real markets with real money in them. -->
@@ -812,7 +812,7 @@
              Simdi ikisi de adiyla aniliyor — bilet kit, para degil — ve
              "wisely" somut bir tarife donusuyor: tahta katilan INSANI sayar,
              o yuzden dogru bilet taraf tutturacak iddiaya harcanir. -->
-        <p class="scarce reveal">Only 5. Spend them where people will actually bet.</p>
+        <p class="scarce reveal">Only 5 at a time. Spend them where people will actually bet.</p>
         <p class="fine reveal">It costs a ticket, never your money.</p>
         <!-- The black section had no way forward. Hidden in the how view, where
              the block below already carries one. -->
@@ -827,9 +827,10 @@
         <div class="how-only detail">
           <h3 class="h3">The rest of the rules.</h3>
           <ul>
-            <li>One person = 1 point. Only real money counts.</li>
+            <li>You get a point for people who are new to Oddie. Each person counts once, ever.</li>
             <li>Your own wallet never counts. Bet size does not matter.</li>
             <li>Oddie decides how it will be judged, and writes your reply.</li>
+            <li>A spent ticket comes back when a new person bets on your market.</li>
           </ul>
         </div>
 
@@ -917,11 +918,10 @@
         </div>
         <div class="board__row board__row--me in-only">
           <b>#184</b><span class="who">You</span><span class="n">7</span></div>
-        <div class="board__row"><b>&mdash;</b><span class="who">Starts when Genesis starts</span>
-          <span class="n">&mdash;</span></div>
-        <div class="board__note out-only">The season has not started. Nothing here is a projection.</div>
-        <div class="board__note in-only">Design preview. The season has not started, so the row above
-          is an example rather than a standing.</div>
+        <div class="board__row"><b>&mdash;</b><span class="who">Nobody here yet</span>
+          <span class="n">0</span></div>
+        <div class="board__note out-only">Open the first market and this row is yours.</div>
+        <div class="board__note in-only">Design preview. The row above is an example, not a real standing.</div>
       </div>
     </div>
   </section>
@@ -990,7 +990,12 @@
        markup tasarim onizlemesi icin ornek tasir ve baglanan kisi kendi
        rakamindan baskasini gormemeli. */
     function applyRealZero(standing) {
-      var left = standing ? standing.ticketsLeft : 5;
+      /* Bakiye SUNUCUDAN gelir. Eskiden burada 5 varsayiliyordu, o yuzden
+         ?connected=twitter yazan herkes (ve OAuth donusu yarim kalan gercek
+         kullanici) sahibi olmadigi 5 bileti ekranda goruyordu. Bilinmeyen
+         bakiye artik bilinmeyendir: sayi yerine tire, ve "bitti" sayilmaz. */
+      var known = !!(standing && typeof standing.ticketsLeft === "number");
+      var left = known ? standing.ticketsLeft : null;
       var people = standing ? standing.peopleBrought : 0;
       var rank = standing && standing.rank ? "#" + standing.rank : "\u2014";
       /* Tahtadaki satirin ADI: "You" yerine kim oldugun. Kisisellik karttan
@@ -1001,22 +1006,22 @@
       }
       var pips = document.querySelector(".pips");
       if (pips) {
-        pips.setAttribute("aria-label", left + " tickets left of five");
+        pips.setAttribute("aria-label", known ? (left + " tickets left of five") : "checking your tickets");
         pips.querySelectorAll(".pip").forEach(function(pp, i){
           /* Harcanan biletin yeri bos kalir: kac tane oldugu degil, KAC TANE
              KALDIGI okunmali. */
-          pp.className = i < left ? "pip" : "pip pip--spent";
+          pp.className = (!known || i < left) ? "pip" : "pip pip--spent";
         });
       }
       var st = document.querySelectorAll(".stat");
       var set = function(i, b, sp){ if (st[i]) {
         st[i].querySelector("b").textContent = b;
         st[i].querySelector("span").textContent = sp; } };
-      set(0, String(left), left === 1 ? "ticket left" : "tickets left");
+      set(0, known ? String(left) : "\u2014", left === 1 ? "ticket left" : "tickets left");
       set(1, rank, standing && standing.rank ? "rank" : "rank \u00b7 nobody joined yet");
       set(2, String(people), people === 1 ? "person who bet" : "people who bet");
       var ns = document.querySelector(".navstate");
-      if (ns) ns.textContent = left + " left";
+      if (ns) ns.textContent = known ? (left + " left") : "\u2014";
       var me = document.querySelector(".board__row--me");
       if (me) {
         me.querySelector("b").textContent = rank;
@@ -1033,7 +1038,7 @@
          burada anlatiyoruz, cunku geri kazanmanin yolu var. */
       var spendBtn = document.getElementById("spend");
       if (spendBtn) {
-        var out = left <= 0;
+        var out = known && left <= 0;
         spendBtn.classList.toggle("btn--spent", out);
         spendBtn.querySelector(".btn__main").innerHTML = out
           ? "No tickets left"
@@ -1041,11 +1046,26 @@
         spendBtn.querySelector("small").textContent = out
           ? "one comes back when somebody joins a market you opened"
           : "tweet a claim, tag @oddiefun";
-        if (out) { spendBtn.setAttribute("aria-disabled", "true"); spendBtn.removeAttribute("target"); }
-        else { spendBtn.removeAttribute("aria-disabled"); spendBtn.setAttribute("target", "_blank"); }
+        /* href de gider: aria-disabled ve capture-phase tiklama dinleyicisi yalniz
+           SOL tiki durduruyordu. Orta tik ve "yeni sekmede ac" bagi kullanip
+           biletsiz kullaniciya bos bir tweet taslagi aciyordu. */
+        if (out) {
+          spendBtn.setAttribute("aria-disabled", "true");
+          spendBtn.removeAttribute("target");
+          if (spendBtn.hasAttribute("href")) {
+            spendBtn.dataset.href = spendBtn.getAttribute("href");
+            spendBtn.removeAttribute("href");
+          }
+        } else {
+          spendBtn.removeAttribute("aria-disabled");
+          spendBtn.setAttribute("target", "_blank");
+          if (!spendBtn.hasAttribute("href") && spendBtn.dataset.href) {
+            spendBtn.setAttribute("href", spendBtn.dataset.href);
+          }
+        }
       }
       var shape = document.querySelector(".spend-shape");
-      if (shape) shape.hidden = left <= 0;
+      if (shape) shape.hidden = known && left <= 0;
     }
     if (d.dataset.real) applyRealZero();
 
@@ -1100,6 +1120,11 @@
             if (!r.classList.contains("board__row--me")) r.remove();
           });
           var me = board.querySelector(".board__row--me");
+          /* Satirlar TEK SEFERDE giriyor. Eskiden her satir dogrudan
+             me.nextSibling'in onune konuyordu ve referans dugum hic
+             ilerlemedigi icin her yeni satir bir oncekinin ustune biniyordu:
+             sunucudan 1,2,3 gelen sira ekranda 3,2,1 diziliyordu. */
+          var frag = document.createDocumentFragment();
           rows.forEach(function(row){
             var el = document.createElement("div");
             el.className = "board__row";
@@ -1107,8 +1132,9 @@
             var w = document.createElement("span"); w.className = "who"; w.textContent = "@" + row.handle;
             var n = document.createElement("span"); n.className = "n"; n.textContent = String(row.peopleBrought);
             el.appendChild(b); el.appendChild(w); el.appendChild(n);
-            board.insertBefore(el, me && me.nextSibling ? me.nextSibling : null);
+            frag.appendChild(el);
           });
+          board.insertBefore(frag, me && me.nextSibling ? me.nextSibling : null);
           dedupeBoard();
           var note = board.querySelector(".board__note.out-only");
           if (note) note.textContent = "Ranked by how many people put real money into markets they opened.";
@@ -1127,12 +1153,26 @@
           "https://x.com/intent/tweet?text=" + encodeURIComponent("@oddiefun read my whole timeline and had a verdict.\n\nwhat\u2019s yours? " + location.origin + "/genesis"),
           "oddie-genesis-card.png");
       }
+      /* ?connected=twitter bir IDDIADIR, kanit degil: OAuth donusunde ekranin
+         yanip sonmemesi icin durumu erken yatiriyoruz. Kanit sunucudan gelir.
+         Gelmezse iddiayi geri aliyoruz, cunku aksi halde adres cubuguna o
+         parametreyi yazan herkes (ve OAuth'u yarim kalan gercek kullanici)
+         sahibi olmadigi bir hesabin ekraninda oturuyordu. */
+      var urlClaimed = /[?&]connected=twitter(&|$)/.test(location.search);
+      function dropClaim() {
+        if (!urlClaimed) return;
+        urlClaimed = false;
+        d.dataset.state = "out";
+        delete d.dataset.real;
+        applyRealZero(null);
+      }
+      if (!did && !designPreview) dropClaim();
       if (did && !designPreview) {
         fetch("/api/genesis/me?deviceId=" + encodeURIComponent(did))
           .then(function(r){ return r.json(); })
           .then(function(j){
             var pr = j && j.profile;
-            if (!pr) return;
+            if (!pr) { dropClaim(); return; }
             if (!d.dataset.real) {
               d.dataset.real = "1"; d.dataset.state = "in"; applyRealZero(pr.standing);
               /* Basarisiz bir YENIDEN baglanma denemesi buraya auth_error ile
@@ -1163,7 +1203,7 @@
               "https://x.com/intent/tweet?text=" + encodeURIComponent((pr.shareText || ("oddie called it: " + pr.label + ".")) + " " + pr.shareUrl),
               "oddie-genesis-" + pr.handle + ".png");
           })
-          .catch(function(){});
+          .catch(function(){ dropClaim(); });
       }
     }
 
