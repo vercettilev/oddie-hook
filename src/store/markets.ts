@@ -3835,8 +3835,10 @@ export async function backfillHooks(
   } else {
     await storeSchema();
     const { rows } = await storeDb().query<{ slug: string; question: string }>(
+      // market_slug is where the question lives; there is no "surface" table.
+      // Caught by running this against production rather than by reading it.
       `SELECT c.slug, s.question
-         FROM community_market c JOIN surface s ON s.slug = c.slug
+         FROM community_market c JOIN market_slug s ON s.slug = c.slug
         WHERE c.hook IS NULL AND c.retired_at IS NULL
         ORDER BY c.created_at DESC
         LIMIT $1`,
