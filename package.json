@@ -68,7 +68,8 @@
     "backfill-hooks": "tsx scripts/backfill-hooks.ts",
     "test-inline-scripts": "tsx scripts/test-inline-scripts.ts",
     "test-creator-wallet": "tsx scripts/test-creator-wallet.ts",
-    "test-oracle-sweep": "tsx scripts/test-oracle-sweep.ts"
+    "test-oracle-sweep": "tsx scripts/test-oracle-sweep.ts",
+    "preflight": "tsx scripts/preflight.ts"
   },
   "engines": {
     "node": ">=20"
