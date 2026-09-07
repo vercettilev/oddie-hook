@@ -443,13 +443,23 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // Omitted rather than invented when the market could not be read.
       var pool = o.pool ? o.pool.yes + o.pool.no : 0;
       if (pool > 0) bits.push(cell("now " + Math.round((100 * (o.side === "yes" ? o.pool.yes : o.pool.no)) / pool) + "%"));
-      if (o.refund && o.refund.openNow) bits.push(cell("refund open"));
+      // The label moved into the button below, because a cell reading "refund
+      // open" beside no control was the whole bug: the product announced an
+      // exit and did not give anybody the door to it.
     } else {
       bits.push(cell("resolved " + String(o.outcome || "").toUpperCase()));
       bits.push(cell(o.won ? "you were right" : "you missed this one"));
     }
+    /* AN OPEN REFUND WINDOW IS MONEY, SO IT GETS A BUTTON.
+       Nobody settled this market and the 30 day window has passed, so the
+       program's permissionless refund_after_deadline pays the whole stake back
+       plus the position deposit. That server route has existed, fully guarded,
+       with ZERO callers, while this row printed the words "refund open" and
+       offered nothing to press. */
+    var canRefund = kind === "open" && o.refund && o.refund.openNow;
     var act = kind === "open"
-      ? '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>'
+      ? (canRefund ? '<button class="go go--rent refund" data-slug="' + esc(o.slug) + '" type="button">Take your stake back</button>' : "")
+        + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>'
       : '<button class="go' + (o.won ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '" type="button">'
         + (o.won ? "Collect winnings" : "Get your deposit back") + "</button>"
         + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>';
@@ -708,7 +718,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // claim listener ON TOP of its own: pressing "Link this wallet" also
       // called openClaim(undefined, undefined) and threw a bogus resolved-market
       // sheet over the page. It is the only .go that is not a position row.
-      Array.prototype.forEach.call(view.querySelectorAll(".go:not(.fee):not(#linkme)"), function (b) {
+      Array.prototype.forEach.call(view.querySelectorAll(".go.refund"), function (b) {
+        b.addEventListener("click", function () { C().openRefund(b.dataset.slug); });
+      });
+      // .refund excluded below for the same reason #linkme is: it is a .go that
+      // is not a settled-position row, and openClaim would refuse it with
+      // "not-resolved" -- which is exactly the state a refund exists for.
+      Array.prototype.forEach.call(view.querySelectorAll(".go:not(.fee):not(.refund):not(#linkme)"), function (b) {
         b.addEventListener("click", function () {
           C().openClaim(b.dataset.slug, b.dataset.outcome);
         });

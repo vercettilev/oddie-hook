@@ -151,6 +151,11 @@ const PREPARE_REASON = {
   "nothing-owed": "No fee on this one: nobody backed the winning side.",
   "not-minted": "This market is not on chain yet.",
   "chain-unreachable": "Solana is not answering right now. Try again in a moment.",
+  // Refund-only. "resolved" is a redirection rather than a refusal: the market
+  // DID settle, so there is money here, just behind the other button.
+  "not-yet-open": "The 30 day window has not opened on this one yet.",
+  "resolved": "This market settled after all, so collect it instead of taking it back.",
+  "no such market": "We could not find that market.",
 };
 function prepareError(pj, fallback){
   return new Error(PREPARE_REASON[pj && pj.reason] || (pj && pj.error) || fallback);
@@ -554,6 +559,89 @@ function b64ToBytes(b64) {
   }
 
   /**
+   * THE WAY OUT OF A MARKET NOBODY SETTLED.
+   *
+   * Resolution is manual, so an unsettled market is an operator being asleep
+   * rather than an exotic case, and the program has a permissionless
+   * refund_after_deadline for exactly that. The server route has existed, fully
+   * guarded, with a docblock calling itself "the way out" -- and it had ZERO
+   * callers. The word "refund" appeared once in all of public/, in a text cell
+   * on the profile that said "refund open" and offered nothing to press.
+   *
+   * So the product was telling somebody their money was retrievable and not
+   * giving them the control. Same shape as the loser's deposit, and the same
+   * fix: the route was already right, it just needed a door.
+   *
+   * Mirrors the claim sheet exactly, because it is the same transaction shape:
+   * the server assembles, the user's own wallet signs, the server relays. The
+   * admin key is never involved, which is the whole point of a refund that does
+   * not need us.
+   */
+  async function openRefundSheet(slug) {
+    const body = sheetShell();
+    const shell = (inner) => {
+      body.innerHTML = `<h3>Take your stake back</h3>${inner}`;
+      const c = body.querySelector(".cclose");
+      if (c) c.onclick = () => body.closest(".cdim").remove();
+    };
+
+    if (!wallet) {
+      shell(`<p class="cnote">Nobody settled this market, so the 30 day window is open and your stake is yours to take back. Connect the wallet you staked with.</p>
+        <button class="cbtn" id="chainconnect">Connect wallet</button>
+        <button class="cclose">Not now</button>`);
+      body.querySelector("#chainconnect").onclick = async () => {
+        const b = body.querySelector("#chainconnect");
+        b.disabled = true; b.textContent = "Connecting…";
+        try { await connectWallet(); await openRefundSheet(slug); }
+        catch (e) {
+          b.disabled = false; b.textContent = "Connect wallet";
+          let err = body.querySelector(".chain-err");
+          if (!err) { err = document.createElement("p"); err.className = "chain-err"; b.after(err); }
+          err.textContent = e.message;
+        }
+      };
+      return;
+    }
+
+    shell(`<p class="cnote">Nobody settled this market, so your whole stake comes back, plus the deposit your position has been holding. Your wallet signs, we never hold it.</p>
+      <button class="claimbtn" id="chainrefund">Take your stake back</button>
+      <div class="chain-line" id="chainline"></div>
+      ${homeLink()}
+      <button class="cclose">Later</button>`);
+
+    const btn = body.querySelector("#chainrefund"), line = body.querySelector("#chainline");
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "Preparing…";
+      try {
+        const prep = await fetch("/api/chain/refund/prepare", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ slug, userPubkey: wallet.publicKey }),
+        });
+        // Same guard the stake path needed: an HTML error page from a proxy
+        // renders as "Unexpected token '<'" without it.
+        const pj = await prep.json().catch(() => ({}));
+        if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare that.");
+        const w3 = await loadWeb3();
+        const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
+        btn.textContent = "Confirm in wallet…";
+        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Broadcasting…"; });
+        const sol = pj.lamports ? (pj.lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") : null;
+        body.innerHTML = `<h3>${confirmed ? "Back in your wallet ✓" : "Sent"}</h3>
+          <p class="cnote">${confirmed
+            ? `${sol ? `${sol} SOL` : "Your stake"} is on its way back, on ${clusterLabel(CLUSTER)}.`
+            : "It is on the network and we lost sight of it while it settled. Follow the link before trying again."}</p>
+          <p class="chain-sig">tx: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          ${homeLink()}
+          <button class="cclose">Done</button>`;
+        body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = "Take your stake back";
+        if (line) line.textContent = e.message || "Something went wrong. Try again.";
+      }
+    };
+  }
+
+  /**
    * @param presetSide "yes" | "no" | null. Set when the sheet was opened by
    * tapping a side on the card itself, which is the normal path: that tap IS
    * the decision, and asking for it again inside the sheet would make the
@@ -655,8 +743,16 @@ function b64ToBytes(b64) {
     // Demoted to a footnote under the button. It is true and worth saying, but
     // it is a fact about somebody else's earnings, and it was sitting in the
     // third of three paragraphs a person had to read before reaching YES.
+    // THE FLOOR, SAID BEFORE THE MONEY MOVES.
+    // Resolution is manual, so a market nobody settles is an ordinary failure,
+    // and the program has a permissionless refund for it. Every surface a
+    // person passed on the way to staking was silent about that: "refund"
+    // appeared exactly once in all of public/, on the profile, visible only to
+    // somebody who had already staked. A footnote is the right place for a rule
+    // that only matters when something goes wrong, and the wrong place for it
+    // is nowhere.
     const feeNoteHTML = feeBps
-      ? `<p class="chain-fee-note">${(feeBps / 100).toFixed(0)}% of the pool goes to whoever started this market${protoBps ? `, ${(protoBps / 100).toFixed(0)}% to oddie` : ""}. Winners split the rest.</p>`
+      ? `<p class="chain-fee-note">${(feeBps / 100).toFixed(0)}% of the pool goes to whoever started this market${protoBps ? `, ${(protoBps / 100).toFixed(0)}% to oddie` : ""}. Winners split the rest. If nobody settles it, your stake comes back after 30 days.</p>`
       : "";
 
     const label = clusterLabel(CLUSTER);
@@ -1320,7 +1416,7 @@ function b64ToBytes(b64) {
   }
 
   window.OddieChain = {
-    init, openStake: openStakeSheet, openClaim: openClaimSheet,
+    init, openStake: openStakeSheet, openClaim: openClaimSheet, openRefund: openRefundSheet,
     /* Sayfanin kendi tutar chip'lerini cizebilmesi icin. Kopyalanmis bir dizi
        iki yerde ayrisir; sheet ile sayfa ayni rakamlari gostermek zorunda. */
     presets: PRESETS.slice(),
