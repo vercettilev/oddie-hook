@@ -1,0 +1,9 @@
+# The app is closed to the public while Genesis runs, and the operator pages
+# were never meant to be found. The campaign and the share pages are the parts
+# that should be indexed.
+User-agent: *
+Disallow: /app/
+Disallow: /preview
+Disallow: /tool
+Disallow: /genesis/roster
+Allow: /

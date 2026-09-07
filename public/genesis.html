@@ -583,6 +583,18 @@
     border:2px solid var(--ink);padding:6px 10px 5px;rotate:-.6deg}
   .spend-shape__slot{border:2px dashed var(--ink-2);color:var(--ink-2);
     padding:6px 12px 5px;rotate:.4deg}
+    /* Actigin marketler. Ayni mono/kontur dili, kendi kutusu yok: liste
+       spend blogunun devami gibi okunmali, ikinci bir panel gibi degil. */
+    .mine-open{margin:clamp(14px,1.8vw,20px) 0 0}
+    .mine-open__lead{margin:0 0 8px;font-family:var(--mono);font-size:11px;
+      font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+    .mine-open__list{list-style:none;margin:0;padding:0;display:flex;
+      flex-direction:column;gap:6px}
+    .mine-open__list a{display:block;border:2px solid var(--ink);background:var(--cream);
+      color:var(--ink);text-decoration:none;padding:9px 12px;font-family:var(--mono);
+      font-size:12.5px;font-weight:700;line-height:1.35;
+      overflow-wrap:anywhere}
+    .mine-open__list a:hover{background:var(--yellow)}
   .board-jump{display:inline-block;padding:11px 2px;
     font-family:var(--mono);font-size:13px;font-weight:700;
     letter-spacing:.1em;text-transform:uppercase;color:var(--ink);
@@ -750,6 +762,14 @@
             <b class="spend-shape__fixed">On the record @oddiefun:</b>
             <span class="spend-shape__slot">your claim + a date or a number</span>
           </p>
+          <!-- ACTIGIN MARKETLER. Kampanya bilet harcatiyordu ve karsiliginda
+               hicbir yuzeyde alinan seyi gostermiyordu: genesis_tag cevabi ilk
+               etiketten beri tutuyor, sadece parayi odeyen kisi icin geri
+               okunmuyordu. Sunucudan bos liste gelirse blok hic acilmaz. -->
+          <div class="mine-open" id="mineopen" hidden>
+            <p class="mine-open__lead">Markets you opened</p>
+            <ul class="mine-open__list" id="mineopenlist"></ul>
+          </div>
         </div>
       </div>
 
@@ -930,6 +950,8 @@
 <footer>
   <div class="shell foot">
     <a href="https://x.com/oddiefun" target="_blank" rel="noopener">Oddie on X</a>
+    <a href="/terms">Terms</a>
+    <a href="/privacy">Privacy</a>
     <!-- "No token / no airdrop" buradaydi, Lev'in karariyla kaldirildi: sezonun
          ne odedigi belirsiz kalsin istendi. Geri gelmesi gerekirse tek satir.
          Kaldirmanin bilinen riski: X 15 Ocak 2026'da paylas-kazan uygulamalarini
@@ -1185,6 +1207,25 @@
                durum yatirilmisti; gercek rakamlar simdi geldi, uzerine yaz. */
             if (pr.standing) applyRealZero(pr.standing);
             myHandle = pr.handle; dedupeBoard();
+            /* Actigin marketler. textContent ile yaziliyor: slug sunucudan
+               gelen bir degerdir ve innerHTML ile basmak, kendi acmadigin bir
+               markete ait bir slug'in sayfaya kod sokabilecegi tek delik olurdu. */
+            var mo = document.getElementById("mineopen");
+            var mol = document.getElementById("mineopenlist");
+            var opened = (pr.opened || []);
+            if (mo && mol && opened.length) {
+              mol.textContent = "";
+              opened.forEach(function(t){
+                if (!t || !t.slug) return;
+                var li = document.createElement("li");
+                var a = document.createElement("a");
+                a.href = "/m/" + encodeURIComponent(t.slug);
+                a.target = "_blank"; a.rel = "noopener";
+                a.textContent = String(t.slug).replace(/-[0-9a-f]{6}$/, "").replace(/-/g, " ");
+                li.appendChild(a); mol.appendChild(li);
+              });
+              mo.hidden = mol.children.length === 0;
+            }
             /* Kimlik seridi: kim bagli, ve tek cikis kapisi. */
             var who = document.getElementById("gwho");
             if (who) {

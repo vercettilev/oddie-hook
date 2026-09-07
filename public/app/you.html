@@ -372,7 +372,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
     });
   }
-  var SOL = function (l) { return (l / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") || "0"; };
+  /* toFixed(3) turns anything under 0.0005 SOL into "0.000", and the trailing
+     strip then leaves the literal "0". /api/chain/creator-fees only ever
+     returns fees ABOVE zero (src/server.ts drops creatorFeeLamports <= 0), so
+     that is a real amount somebody is owed being shown to them as nothing.
+     Floored instead of rounded: a small number is small, not absent. */
+  var SOL = function (l) {
+    var n = l / 1e9;
+    if (n > 0 && n < 0.001) return "<0.001";
+    return n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") || "0";
+  };
   var C = function () { return window.OddieChain || null; };
 
   /* THE X GATE. This page is the social layer, so it asks for X first: cheap,
@@ -436,19 +445,19 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     var cell = function (t) { return "<span>" + t + "</span>"; };
     var bits = [
       o.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>',
-      cell("<b>" + SOL(o.lamports) + " SOL</b>"),
+      cell((kind === "claim" ? "staked <b>" : "<b>") + SOL(o.lamports) + " SOL</b>"),
     ];
     if (kind === "open") {
       if (o.entryPct != null) bits.push(cell("in at " + o.entryPct + "%"));
       // Omitted rather than invented when the market could not be read.
       var pool = o.pool ? o.pool.yes + o.pool.no : 0;
-      if (pool > 0) bits.push(cell("now " + Math.round((100 * (o.side === "yes" ? o.pool.yes : o.pool.no)) / pool) + "%"));
+      if (pool > 0) bits.push(cell(Math.round((100 * (o.side === "yes" ? o.pool.yes : o.pool.no)) / pool) + "% on your side now"));
       // The label moved into the button below, because a cell reading "refund
       // open" beside no control was the whole bug: the product announced an
       // exit and did not give anybody the door to it.
     } else {
-      bits.push(cell("resolved " + String(o.outcome || "").toUpperCase()));
-      bits.push(cell(o.won ? "you were right" : "you missed this one"));
+      bits.push(cell("ended " + String(o.outcome || "").toUpperCase()));
+      bits.push(cell(o.won ? "you were right" : "you lost it"));
     }
     /* AN OPEN REFUND WINDOW IS MONEY, SO IT GETS A BUTTON.
        Nobody settled this market and the 30 day window has passed, so the
@@ -483,8 +492,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
   function blind(n, what) {
     if (!n) return "";
-    return '<div class="blind"><b>' + n + "</b> " + esc(what)
-      + " we could not read. Your money is safe.</div>";
+    return '<div class="blind">We could not read <b>' + n + "</b> " + esc(what)
+      + ". Your money is safe.</div>";
   }
 
   /* YOUR FEES, DRAWN IN EVERY STATE, INCLUDING BEFORE A WALLET EXISTS.
@@ -527,7 +536,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       ? "Tag <b>@oddiefun</b>, keep <b>" + (feeRate / 100) + "%</b> of the pool."
       : "Tag <b>@oddiefun</b>, keep a cut of the pool.";
 
-    var out = "<section><h2>Your fees</h2>" + blind(unreadable, "settled market(s)");
+    var out = "<section><h2>Your fees</h2>" + blind(unreadable, unreadable === 1 ? "settled market" : "settled markets");
 
     if (!connected) {
       // No wallet, so nothing about THIS person is knowable. The rule is still
@@ -577,7 +586,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        It can still be wrong in the safe direction, since a blinked
        /api/auth/me resolves to false and a second signature costs nothing. */
     if (C().linked() === false) {
-      out += '<div class="linkme"><p>One signature, free. It is what lets a market you open pay you.</p>'
+      out += '<div class="linkme"><p>One signature, free. Then markets you open can pay you.</p>'
         + '<button class="go" id="linkme" type="button">Link this wallet</button></div>';
     }
     return out + "</section>";
@@ -604,7 +613,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       var now = C().wallet();
       return myGen === loadGen && (now ? now.publicKey : null) === myPk;
     };
-    if (!w) return gate("Connect the wallet you staked from. We never hold your funds.");
+    if (!w) return gate("Connect your wallet to see what you have riding. We never hold your money.");
     /* TWO CONTROLS, BECAUSE THEY ARE TWO THINGS.
        The identity control below signs this browser out of its account, which
        takes the X handle AND the wallet's signature link with it, because
@@ -616,13 +625,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        forgets the address, which is what somebody switching wallets or handing
        over a laptop is actually asking for. */
     sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b> on this device"
-      + ' <button class="idstrip__out" id="wout" type="button">Disconnect</button>';
+      + ' <button class="idstrip__out" id="wout" type="button">Disconnect wallet</button>';
     var wo = document.getElementById("wout");
     if (wo) wo.addEventListener("click", function () {
       wo.disabled = true;
       C().forgetWallet().then(function () { sub.textContent = ""; load(); });
     }, { once: true });
-    view.innerHTML = '<p class="load">Reading the chain…</p>';
+    view.innerHTML = '<p class="load">Finding your bets…</p>';
 
     var pk = encodeURIComponent(w.publicKey);
     Promise.all([
@@ -633,7 +642,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       if (!current()) return;          // a newer load(), or a different wallet, owns the page now
       var claim = r[0], open = r[1], fees = r[2];
       if (!claim && !open && !fees) {
-        view.innerHTML = '<div class="err">We could not reach the chain just now. Nothing is wrong with your money; try again in a moment.</div>';
+        view.innerHTML = '<div class="err">We could not reach Solana just now. Nothing is wrong with your money. Try again in a moment.</div>';
         return;
       }
       var html = "";
@@ -665,12 +674,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           + '<div class="start"><img class="ssticker" src="/brand/st-grass.webp" alt="">'
           + '<p>Take a side and it shows up here.</p>'
           + '<div class="start__go"><a class="big" href="/markets">See open markets</a>'
-          + '<a class="alt" href="/genesis">Open your own &rarr;</a></div></div>'
+          + '<a class="alt" href="/genesis">Open your own market &rarr;</a></div></div>'
           + "</section>";
       } else {
         var wins = cl.filter(function (o) { return o.won; });
         html += "<section><h2>Ready to collect" + (wins.length ? " <b>" + wins.length + "</b>" : "") + "</h2>"
-          + blind(blindClaim, cl.length ? "more settled market(s)" : "settled market(s)")
+          + blind(blindClaim, (blindClaim === 1 ? "settled market" : "settled markets") + (cl.length ? " beyond these" : ""))
           + (cl.length ? cl.map(function (o) { return row(o, "claim"); }).join("")
                        : !readClaim ? unread("settled markets")
                        : '<p class="empty">Nothing to collect right now.</p>')
@@ -678,10 +687,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
         var riding = op.reduce(function (a, o) { return a + o.lamports; }, 0);
         html += "<section><h2>On the line" + (riding ? " <b>" + SOL(riding) + " SOL</b>" : "") + "</h2>"
-          + blind(blindOpen, "of your position(s)")
+          + blind(blindOpen, "of your positions")
           + (op.length ? op.map(function (o) { return row(o, "open"); }).join("")
                        : !readOpen ? unread("your positions")
-                       : '<p class="empty">Nothing riding. Tag @oddiefun on a claim.'
+                       : '<p class="empty">Nothing riding. Tag @oddiefun under a claim on X.'
                          + '<img class="psticker" src="/brand/st-grass.webp" alt=""></p>')
           + "</section>";
       }
@@ -704,7 +713,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           b.disabled = true;
           C().collectCreatorFee(b.dataset.slug, function (t) { b.textContent = t; })
             .then(function (r) {
-              b.outerHTML = '<span class="done">' + (r.confirmed ? "Collected" : "Sent")
+              b.outerHTML = '<span class="done">' + (r.confirmed ? "Collected" : "Sent, still confirming")
                 + ' &middot; <a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(C().short(r.signature)) + " &#8599;</a></span>";
             })
             .catch(function (e) {
@@ -737,7 +746,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   // sheet labels the network from chain.js's default, and a label about
   // whether this is real money is not a thing to guess.
   if (!C()) {
-    view.innerHTML = '<div class="err">The wallet layer did not load. Reload the page.</div>';
+    view.innerHTML = '<div class="err">Something did not load. Reload the page.</div>';
   } else {
     var did = (window.OddieId && window.OddieId.get()) || "";
     Promise.all([
@@ -771,7 +780,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         sub.textContent = "";
         view.innerHTML = '<div class="err">Betting is switched off right now. '
           + 'Nothing is wrong with your money, and anything you have already staked '
-          + 'is untouched on chain. <a href="/markets">See the markets</a></div>';
+          + 'is still in its market. <a href="/markets">See the markets</a></div>';
         return;
       }
       load();

@@ -45,7 +45,7 @@ import { renderBanner } from "./card/renderBanner.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
 import { classifyArchetype, ARCHETYPE_LABEL, genesisShareLine } from "./genesis/archetype.js";
 import { captureGenesisProfile, genesisProfileByHandle, genesisProfileForDevice, type GenesisProfile } from "./genesis/profileStore.js";
-import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, genesisRoster, GENESIS_TICKETS } from "./genesis/season.js";
+import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, genesisRoster, genesisOpened, GENESIS_TICKETS } from "./genesis/season.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
@@ -240,6 +240,25 @@ const GENESIS_HTML = readFileSync(path.join(__dirname, "../public/genesis.html")
  * looks applied while doing nothing. setHeaders runs last, right before the
  * send, which is the only hook that wins.
  */
+/* THE CLOSED APP WAS NOT CLOSED.
+ *
+ * Every app route opens with `if (!appOpenFor(req)) return appClosed(res)`,
+ * but the pages those routes serve are also real files in public/app, and
+ * express.static is mounted FIRST. So /markets redirected the public to the
+ * campaign while /app/markets.html handed them the whole product, 200 and
+ * 98KB of it, and with no robots.txt the four pages were indexable as well.
+ *
+ * Only the PAGES are gated. public/app also holds id.js, me.js and money.css,
+ * and public/genesis.html:941 loads /app/id.js on every single visit, so
+ * gating the directory would take the campaign page down with it. The test is
+ * therefore ".html directly under /app/", not "/app/".
+ */
+app.use((req, res, next) => {
+  if (!/^\/app\/[^/]+\.html$/.test(req.path)) return next();
+  if (appOpenFor(req)) return next();
+  return appClosed(res);
+});
+
 app.use(express.static(path.join(__dirname, "../public"), {
   index: false,
   maxAge: "7d",
@@ -603,13 +622,50 @@ async function marketShellHtml(slug: string, question: string): Promise<string> 
   return MARKET_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
 }
 
+/** The market permalink while the app is closed: an honest object instead of a
+ *  redirect. It carries the claim, the market card as its unfurl image, and one
+ *  way forward. An unknown slug still renders, without inventing a claim. */
+function closedMarketHtml(slug: string, question: string | null): string {
+  const png = `${BASE_URL}/card/${encodeURIComponent(slug)}.png`;
+  const title = question ?? "An oddie market";
+  const desc = "A real prediction market on Solana, opened by tagging @oddiefun on a claim on X.";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(title)} \u00b7 oddie</title>
+<meta property="og:title" content="${escHtml(title)}">
+<meta property="og:description" content="${escHtml(desc)}">
+<meta property="og:image" content="${png}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${png}">
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
+display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px;text-align:center}
+img{max-width:min(96vw,760px);border-radius:18px}
+h1{font-size:21px;line-height:1.35;margin:0;max-width:26ch}
+p{margin:0;color:rgba(255,255,255,.62);max-width:52ch;font-size:15px}
+a.claim{background:#D7DC1F;color:#020302;text-decoration:none;font-weight:800;
+padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
+<img src="${png}" alt="${escHtml(title)}">
+${question ? `<h1>${escHtml(question)}</h1>` : ""}
+<p>This market is open on Solana. Betting opens to everyone shortly. Genesis is running first.</p>
+<a class="claim" href="/genesis">Get your 5 tickets</a>
+</body></html>`;
+}
+
+
 // The market permalink — every market's canonical landing page. /m/{slug} is
 // the short share path; /market/{slug} (already in the wild) serves the same.
 app.get(["/m/:slug", "/market/:slug"], async (req, res) => {
-  // Market sayfasi kabugun kendisidir. Kapaliyken market linkleri de kapali;
-  // su an CANLIDA HIC MARKET YOK (dogrulandi: /api/v1/markets bos), yani bu
-  // hicbir paylasilmis baglantiyi kirmiyor. Bot acildiginda APP_OPEN=true.
-  if (!appOpenFor(req)) return appClosed(res);
+  /* Eskiden burasi appClosed() idi: her market kalici baglantisi iki hop
+   * atlayip /genesis'e dusuyordu. Ustundeki "canlida hic market yok" olcumu
+   * artik dogru degil (/api/v1/markets bir acik market donuyor) ve bot'un
+   * cevabi tam bu adresin etrafinda kuruluyor. Kapali uygulama market
+   * sayfasini acmaz, ama baglanti artik NE oldugunu soyleyen, X'te unfurl
+   * eden ve devam edilecek bir yeri olan bir sayfadir. */
+  if (!appOpenFor(req)) {
+    const q = (await communityMarketDetail(req.params.slug).catch(() => null))?.question ?? null;
+    return res.set("Cache-Control", "no-cache").type("html").send(closedMarketHtml(req.params.slug, q));
+  }
   // The ?pc= personal-share page went with feed.html: its unfurl is now the
   // wallet's record at /w/<address>, and the bot's resolution card (/card/pc)
   // still renders without it. A stale ?pc= link lands on the market, which is
@@ -723,6 +779,17 @@ button{margin-top:12px;font:800 15px ui-monospace,monospace;letter-spacing:.1em;
 .e{color:#FF2D78;font:700 12px ui-monospace,monospace;margin:10px 0 0}</style></head>
 <body><div class="s"><h1>Operator preview</h1><p>The app is closed to the public. Your admin token opens it in this browser, on both hosts, for 30 days.</p>
 <form method="post" action="/preview"><label for="t">Admin token</label><input id="t" name="token" type="password" autocomplete="off"><button type="submit">Open the app for me</button></form>${msg ? `<p class="e">${msg}</p>` : ""}</div></body></html>`;
+
+/* Terms and privacy. A product that takes an OAuth grant and puts money in a
+ * vault had neither, and both URLs answered 404, which is the one answer a
+ * legal page must never give. Read at boot like every other shell here, and
+ * routed explicitly because express.static is mounted with index:false and so
+ * never maps /terms to terms.html by itself. */
+const TERMS_HTML = readFileSync(path.join(__dirname, "../public/terms.html"), "utf8");
+const PRIVACY_HTML = readFileSync(path.join(__dirname, "../public/privacy.html"), "utf8");
+app.get(["/terms", "/terms.html"], (_req, res) => res.type("html").send(TERMS_HTML));
+app.get(["/privacy", "/privacy.html"], (_req, res) => res.type("html").send(PRIVACY_HTML));
+
 
 app.get("/preview", (_req, res) => {
   res.set("Cache-Control", "no-store").type("html").send(PREVIEW_PAGE(""));
@@ -1049,7 +1116,7 @@ app.get("/g/:handle", async (req, res) => {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escHtml(title)} · oddie</title>
 <meta property="og:title" content="${escHtml(title)}">
-<meta property="og:description" content="${escHtml(gp.headline)}">
+<meta property="og:description" content="${escHtml(gp.headline)} \u00b7 oddie turns a claim on X into a real prediction market.">
 <meta property="og:image" content="${png}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="${png}">
@@ -1057,11 +1124,14 @@ app.get("/g/:handle", async (req, res) => {
 <style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
 display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px}
 img{max-width:min(96vw,760px);border-radius:18px}
-p{margin:0;color:rgba(255,255,255,.62);max-width:60ch;text-align:center}
+h1{font-size:20px;line-height:1.35;margin:0;max-width:26ch;text-align:center}
+p{margin:0;color:rgba(255,255,255,.62);max-width:56ch;text-align:center;font-size:15px}
 a.claim{background:#D7DC1F;color:#020302;text-decoration:none;font-weight:800;
 padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
 <img src="${png}" alt="${escHtml(title)}">
-<p>oddie read this profile. Yours is one tap away.</p>
+<h1>oddie turns a claim on X into a real prediction market.</h1>
+<p>Tag @oddiefun on any claim and people bet real money on YES or NO.
+This card is what oddie read in @${escHtml(gp.handle)}. Yours is one tap away.</p>
 <a class="claim" href="/genesis">Get your 5 tickets</a>
 </body></html>`);
 });
@@ -1076,6 +1146,11 @@ app.get("/api/genesis/me", async (req, res) => {
   const gp = await genesisProfileForDevice(deviceId).catch(() => null);
   if (!gp) return res.json({ profile: null });
   const standing = await genesisStanding(gp.handle).catch(() => null);
+  /* Bilet harcandiktan sonra alinan seyi gosteren tek bir yuzey yoktu:
+   * genesis_tag ilk etiketten beri cevabi tutuyordu, ama parayi odeyen kisi
+   * icin hicbir zaman geri okunmadi. Bos dizi gecerli bir cevaptir, o yuzden
+   * standing gibi "yoksa yok" degil, "okuma coktuyse bos". */
+  const opened = await genesisOpened(gp.handle).catch(() => []);
   res.json({ profile: {
     handle: gp.handle, name: gp.name, archetype: gp.archetype,
     label: ARCHETYPE_LABEL[gp.archetype], headline: gp.headline, reason: gp.reason,
@@ -1085,6 +1160,7 @@ app.get("/api/genesis/me", async (req, res) => {
     // Absent rather than zeroed when the read failed: the page shows what it
     // knows, and a fabricated 5/5 would be a lie about somebody's balance.
     standing,
+      opened,
   } });
 });
 
@@ -2782,7 +2858,15 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     // different rate keeps it, and an agent that assumed today's numbers would
     // quote the wrong takeout for exactly the pools where it matters.
     creatorFeeBps: state?.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
-    protocolFeeBps: state?.protocolFeeBps ?? 0,
+    // BOTH HALVES FALL BACK THE SAME WAY. This read `?? 0` while the creator
+    // half fell back to the real constant, so a market whose chain state could
+    // not be read told the page the takeout was 2% when it is 4%: the market
+    // page adds the two (public/app/market.html:688) and prints the sum right
+    // above the buttons. Understating the house take by half, on the screen
+    // where the bet is placed. An unreadable market is not a free one, and if
+    // we are willing to guess one half from the constants we have to guess the
+    // other from them too.
+    protocolFeeBps: state?.protocolFeeBps ?? PROTOCOL_FEE_BPS_REAL,
     onchain: detail.onchainPubkey ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey) } : null,
     cluster: cluster(),
   });

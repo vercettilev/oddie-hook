@@ -1,0 +1,93 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terms &middot; oddie</title>
+<meta name="description" content="Terms for oddie, the product that turns a claim on X into a real prediction market.">
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="icon" href="/favicon-32.png?v=2" sizes="32x32" type="image/png">
+<style>*{box-sizing:border-box}
+body{margin:0;background:#FBFCF4;color:#0B0D04;font-family:'Nunito',system-ui,-apple-system,sans-serif;
+font-weight:600;line-height:1.6;padding:0 20px 90px}
+.s{max-width:62ch;margin:0 auto}
+header{padding:34px 0 10px}
+a.home{font:800 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;
+text-transform:uppercase;color:#A3053F;text-decoration:none}
+a.home:hover{text-decoration:underline}
+h1{font-family:'Anton','Arial Narrow','Helvetica Neue',sans-serif;font-weight:400;text-transform:uppercase;
+font-size:clamp(34px,7vw,54px);line-height:.98;letter-spacing:.01em;margin:14px 0 6px}
+.upd{font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;
+text-transform:uppercase;color:#494E2D;margin:0 0 26px}
+h2{font-family:'Anton','Arial Narrow','Helvetica Neue',sans-serif;font-weight:400;text-transform:uppercase;
+font-size:22px;letter-spacing:.02em;margin:32px 0 8px}
+p,li{font-size:16px;margin:0 0 12px}
+ul{padding-left:20px;margin:0 0 12px}
+a{color:#A3053F}
+.note{background:#D7DC1F;border:3px solid #0B0D04;box-shadow:5px 6px 0 #A3053F;padding:16px 18px;margin:22px 0}
+.note p:last-child{margin:0}
+footer{margin-top:40px;padding-top:18px;border-top:2px solid #E3E5D6;
+font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#494E2D}
+footer a{color:#494E2D;margin-right:14px}</style></head>
+<body><div class="s">
+<header><a class="home" href="/">&larr; oddie</a>
+<h1>Terms</h1>
+<p class="upd">Last updated 7 September 2026</p></header>
+<div class="note"><p><b>Read this part first.</b> oddie runs on Solana <b>devnet</b> today.
+Devnet SOL is test currency and has no market value. If oddie moves to Solana mainnet, where the
+money is real, this page will say so before it happens.</p></div>
+
+<h2>What oddie is</h2>
+<p>You tag <b>@oddiefun</b> on a claim on X. A prediction market opens on that claim, on Solana, in its
+own vault. Anyone can take the YES side or the NO side. When the claim turns out true or false, the
+pool pays out.</p>
+
+<h2>Your wallet</h2>
+<p>You sign every transaction yourself. oddie never holds your private key and cannot move your funds.
+Once you take a side, your stake sits in that market's on-chain vault until the market settles or is
+refunded.</p>
+<p>Opening a position costs a small amount of network rent, which Solana keeps. That is a cost of using
+the chain, not a fee oddie charges, and it does not come back to you.</p>
+
+<h2>Fees</h2>
+<p>A market charges <b>4% of the pool, once, at settlement</b>. Half of it (2%) goes to whoever opened
+the market. Half (2%) goes to oddie. Both rates are written into the market when it is created, so a
+later change to our rates can never reprice a market that is already open.</p>
+<p>There is no fee for placing a bet, and no fee if you lose. The 4% is taken from the pool before
+winners split it.</p>
+
+<h2>How a market is decided</h2>
+<p>The rule that decides a market is published when the market opens, before anyone takes a side. It
+does not change afterwards.</p>
+<p>Settlement is done by oddie against the public record. A claim needs a date or a number, because a
+claim nobody can check is a claim nobody can settle. If the evidence is not there yet, the market waits
+rather than guessing.</p>
+
+<h2>If a market is never settled</h2>
+<p>Thirty days after a market closes, if it has not been settled, <b>anyone</b> can trigger a full
+refund of that market on chain. It does not need a signature from oddie, and we cannot block it. Your
+stake comes back to your wallet.</p>
+
+<h2>Genesis tickets</h2>
+<p>During Genesis, connecting an X account gives you 5 tickets. One ticket opens one market. A spent
+ticket comes back when somebody new bets on a market you opened, up to the same cap of 5.</p>
+<p>Tickets are not currency. They have no cash value, cannot be bought, sold or transferred, and can be
+withdrawn if an account is used to spam. Your own wallet never scores for you.</p>
+
+<h2>What this is not</h2>
+<p>Nothing on oddie is financial, investment, or legal advice. Prediction markets can go to zero. Only
+take a side with money you are willing to lose.</p>
+<p>You are responsible for whether you are allowed to use a product like this where you live, and for
+being old enough to. If you are not, do not use it.</p>
+
+<h2>Things that will get an account cut off</h2>
+<ul>
+<li>Opening markets to spam, farm tickets, or flood the queue.</li>
+<li>Using more than one account, or somebody else's, to score for yourself.</li>
+<li>Claims targeting a private person, or content that is illegal where we operate.</li>
+</ul>
+
+<h2>Changes, and how to reach us</h2>
+<p>oddie is early and this page will change. The date at the top is when it last did. Material changes
+get said out loud on <a href="https://x.com/oddiefun">@oddiefun</a>, not slipped in.</p>
+<p>Questions, disputes, or a market you think was settled wrongly:
+<a href="mailto:lev@oddie.fun">lev@oddie.fun</a>.</p>
+<footer><a href="/">Home</a><a href="/genesis">Genesis</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
+</div></body></html>

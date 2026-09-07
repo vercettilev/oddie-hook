@@ -437,7 +437,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var d = new Date(iso).getTime();
     if (!isFinite(d)) return null;
     var ms = d - Date.now();
-    if (ms <= 0) return { text: "closed", soon: false, done: true };
+    if (ms <= 0) return { text: "Betting closed", soon: false, done: true };
     var s = Math.floor(ms / 1000);
     // Gun katmaninda YUVARLIYORUZ: 24 gunluk bir market acilir acilmaz
     // "23 days left" diyorsa bu kullaniciya eksik sayma gibi okunur, ve gun
@@ -529,7 +529,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
-    if (m.taggedBy) bits.push(byChip(m.taggedBy));
+    if (m.taggedBy) bits.push("Opened by " + byChip(m.taggedBy));
     /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
        vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre
        hicbir zaman hicbir sey elemiyordu ve cozulmus market de geri sayiyordu. */
@@ -569,6 +569,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + '<p class="qfull" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</p>";
     } else {
       html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</h1>";
+    /* THE TAB SAID "oddie" AND NOTHING ELSE. Every market anybody opened from a
+       tweet became an identical entry in their tabs, their history and their
+       bookmarks, so going back to one meant opening them until the right one
+       turned up. The question is the only thing that tells them apart. */
+    try { document.title = m.question + " · oddie"; } catch (e) {}
     }
 
     if (resolved) {
@@ -577,8 +582,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       // button this said "connect the wallet you staked with" and offered
       // nothing to connect with, which is how a winning position sits in a
       // vault forever.
-      html += '<div class="verdict verdict--' + (yes ? "y" : "n") + '">Resolved ' + (yes ? "YES" : "NO")
-        + '<p>Backed ' + (yes ? "YES" : "NO") + "? Your share is waiting.</p>"
+      html += '<div class="verdict verdict--' + (yes ? "y" : "n") + '">' + (yes ? "YES" : "NO") + " WON"
+        + '<p>Bet ' + (yes ? "YES" : "NO") + "? Your share of the pool is here.</p>"
         + '<button class="collect" id="collect" type="button">Collect winnings</button></div>';
     }
 
@@ -612,12 +617,16 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + (heads > 0 ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
         + '<div class="bar" role="img" aria-label="' + yp + ' percent yes, ' + (100 - yp) + ' percent no">'
         + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>'
-        + '<div class="split"><span class="y">YES ' + yp + "%</span><span class=\"n\">NO " + (100 - yp) + "%</span></div></div>";
+        + '<div class="split"><span class="y">' + yp + "% on YES</span><span class=\"n\">" + (100 - yp) + "% on NO</span></div></div>";
     }
 
     if (!resolved) {
       var off = closed;
-      var note = off ? "closed" : src === "unreadable" ? "no odds" : "";
+      /* The eyebrow above already says "Betting closed", and the pool block
+         below already says the odds could not be read, so the buttons were
+         saying both a third time. What a dead button owes the reader is why it
+         is dead, in the fewest words that are not already on the screen. */
+      var note = off ? "too late" : src === "unreadable" ? "" : "";
       /* You are in. The one line on this page that is about the reader rather
          than the market, and the only evidence anywhere that their money
          landed: before this, a stake closed the sheet and left the page
@@ -653,8 +662,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO"
         + (note ? "<small>" + esc(note) + "</small>" : "") + "</button></div>";
       if (closed) {
-        html += '<div class="pool pool--quiet"><div class="pool__n">Closed, not settled yet.</div>'
-          + '<div class="pool__k">Your position stays yours</div></div>';
+        html += '<div class="pool pool--quiet"><div class="pool__n">Betting is over.</div>'
+          + '<div class="pool__k">Waiting on the result. Your bet stays in the pool</div></div>';
       }
     }
 
@@ -672,7 +681,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       /* Kapali aciliyor. Acik hali sartlari okumadan gecilemeyen bir duvar
          yapiyordu; asil isi merak edene TEK TIKLA acilmak, herkese pesinen
          dayatilmak degil. Baslik gorunur kaldigi icin varligi hala belli. */
-      html += '<details class="terms"><summary>How this settles'
+      html += '<details class="terms"><summary>How we decide this'
         + '<img class="psticker" src="/brand/st-judge.webp" alt=""></summary>'
         + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
     }
@@ -693,7 +702,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       + "<span><b>" + fee + "%</b> of the pool at settle</span>"
       + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of the pool to "
           + (m.taggedBy ? "@" + esc(m.taggedBy) : "the opener") + "</span>" : "")
-      + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">Vault</a></span>' : "")
+      + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">See the money on Solana</a></span>' : "")
       + "</div>";
 
     view.innerHTML = html;
@@ -783,8 +792,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       render(m);
     })
     .catch(function (e) {
-      view.innerHTML = '<h1 class="q">' + (String(e.message) === "no such market" ? "No market here" : "We could not load this market")
-        + '</h1><p class="rail">' + esc(e.message) + '. <a href="/">Back to oddie</a></p>';
+      // e.message is "no such market" or "server said 502": the first is said by
+      // the heading and the second is ours, not theirs.
+      console.warn("[market]", e && e.message);
+      var dead = String(e.message) === "no such market";
+      view.innerHTML = '<h1 class="q">' + (dead ? "No market here" : "We could not load this market")
+        + '</h1><p class="rail">'
+        + (dead ? "This link does not point at a market." : "Try again in a moment.")
+        + ' <a href="/markets">See the open markets</a></p>';
     });
   }
   load(true);
@@ -799,7 +814,16 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   document.addEventListener("oddie:staked", function (ev) {
     var d = ev.detail || {};
     if (d.slug && d.slug !== SLUG) return;
-    if (d.side && d.sol) youAreIn = { side: d.side, sol: d.sol };
+    /* TWO BETS IN ONE SESSION SHOWED ONLY THE SECOND. This overwrote, so
+       staking 0.1 and then 0.1 again read "You are in YES for 0.1 SOL" over a
+       position of 0.2. The program allows only one side per wallet, so a later
+       bet is always the same side and always adds; if a side ever did differ,
+       the newer one is the truth we just watched land. */
+    if (d.side && d.sol) {
+      var add = Number(d.sol) || 0;
+      var had = youAreIn && youAreIn.side === d.side ? Number(youAreIn.sol) || 0 : 0;
+      youAreIn = { side: d.side, sol: Number((had + add).toFixed(4)) };
+    }
     load(false);
   });
 })();

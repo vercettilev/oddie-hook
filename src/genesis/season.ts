@@ -288,6 +288,37 @@ export async function genesisBoard(limit = 20): Promise<BoardRow[]> {
 
 /* ------------------------------------------------------------- operator -- */
 
+/**
+ * THE MARKETS THIS HANDLE OPENED.
+ *
+ * The campaign asked people to spend a ticket and then showed them nothing for
+ * it: once a tag was charged, no surface on oddie.fun ever named the market it
+ * bought. genesis_tag has held the answer since the first tag; it was simply
+ * never read back for the person who paid.
+ *
+ * Newest first, because the one you just opened is the one you are looking for.
+ */
+export interface OpenedTag { slug: string; at: string }
+
+export async function genesisOpened(rawHandle: string, limit = 10): Promise<OpenedTag[]> {
+  const handle = norm(rawHandle);
+  if (!validHandle(handle)) return [];
+  const n = Math.max(1, Math.min(50, Math.floor(limit)));
+  if (!STORE_PERSISTENT) {
+    // The in-memory tag list carries no timestamp, so insertion order IS the
+    // order. Reversed to match the persistent path's newest-first contract
+    // rather than quietly serving two different orders per environment.
+    return memTags.filter((t) => t.handle === handle).slice(-n).reverse()
+      .map((t) => ({ slug: t.slug, at: "" }));
+  }
+  await storeSchema();
+  const { rows } = await storeDb().query<{ slug: string; at: Date }>(
+    `SELECT slug, at FROM genesis_tag WHERE handle = $1 ORDER BY at DESC LIMIT $2`,
+    [handle, n],
+  );
+  return rows.map((r) => ({ slug: r.slug, at: r.at.toISOString() }));
+}
+
 export interface RosterRow {
   handle: string;
   name: string | null;
