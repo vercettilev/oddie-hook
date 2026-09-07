@@ -1251,26 +1251,31 @@
   })();
 </script>
 <script>
-  /* Landing'dekiyle ayni "coming soon" davranisi: uygulama acik degil, o
-     yuzden Launch app hover'da bunu soyler ve tiklama islemez. */
+  /* -------------------------------------------------- coming soon -------
+     The app is not open yet, so the two buttons that lead into it say so and
+     do nothing on click. The capture-phase listener runs before the dialog
+     opener below, which is why that code needs no edits to be off.
+     To relaunch: delete the data-soon attributes and this block.
+
+     SAID AT FIRST PAINT, NOT ON HOVER. This used to swap the label on
+     mouseenter and leave it reading "Launch app" until then, which meant the
+     most conventional button on the page -- boxed, top right -- looked live,
+     and the only way to learn it was dead was to press it. On a phone there is
+     no hover at all, so a tap was the ONLY way to find out. The label is
+     swapped as soon as the script runs, so nobody spends a click discovering
+     it, and the original is kept so relaunching is still one deletion. */
   (function(){
     document.querySelectorAll("[data-soon]").forEach(function(el){
-      var orig = el.innerHTML;
-      /* landing ile ayni: kilit swap aninda, cikista birakilir */
-      function on(){ el.style.minWidth = el.offsetWidth + "px"; el.innerHTML = "Coming soon"; }
-      function off(){ el.innerHTML = orig; el.style.minWidth = ""; }
-      el.addEventListener("mouseenter", on);
-      el.addEventListener("mouseleave", off);
-      el.addEventListener("focus", on);
-      el.addEventListener("blur", off);
-    });
-    document.addEventListener("click", function(e){
-      var el = e.target.closest && e.target.closest("[data-soon]");
-      if (!el) return;
-      e.preventDefault(); e.stopPropagation();
-      el.style.minWidth = el.offsetWidth + "px";
+      el.dataset.soonLabel = el.innerHTML;
       el.innerHTML = "Coming soon";
-    }, true);
+      el.setAttribute("aria-disabled", "true");
+      el.setAttribute("title", "The app opens soon");
+    });
+    document.addEventListener("click",function(e){
+      var el=e.target.closest&&e.target.closest("[data-soon]");
+      if(!el)return;
+      e.preventDefault();e.stopPropagation();
+    },true);
   })();
 </script>
 <script>

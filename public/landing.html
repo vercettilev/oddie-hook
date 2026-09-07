@@ -985,8 +985,18 @@
          "Launch app" konturlu kalarak ikinci sirada duruyor. -->
     <a class="gcta" href="/genesis">
       <span class="gcta__pill">
-        <b class="gcta__tag">Tickets</b>
-        <b class="gcta__hd">Genesis is live.</b>
+        <!-- NO STATUS CLAIM, AND THE PROPER NOUN SURVIVES THE PHONE.
+             This said "Genesis is live." It is not: the campaign has not been
+             announced, and Genesis's own leaderboard says "Starts when Genesis
+             starts" in its zero state. Saying what Genesis IS costs nothing and
+             cannot go stale; saying it is live is a fact about today, and facts
+             about today have to be true, the same way numbers do.
+             The halves also swapped. .gcta__hd is display:none under 820px, so
+             the phone was keeping the generic word ("Tickets") and dropping the
+             name. Now the name is the half that survives. 5 is GENESIS_TICKETS
+             in src/genesis/season.ts. -->
+        <b class="gcta__tag">Genesis</b>
+        <b class="gcta__hd">5 free tickets.</b>
         <i aria-hidden="true">&rarr;</i>
       </span>
     </a>
@@ -1226,30 +1236,29 @@
    and the app teach different products. */
 (function(){
   /* -------------------------------------------------- coming soon -------
-     The app is not open yet, so the two buttons that lead into it say so on
-     hover and do nothing on click. The capture-phase listener runs before the
-     dialog opener below, which is why that code needs no edits to be off.
-     To relaunch: delete the data-soon attributes and this block. */
+     The app is not open yet, so the two buttons that lead into it say so and
+     do nothing on click. The capture-phase listener runs before the dialog
+     opener below, which is why that code needs no edits to be off.
+     To relaunch: delete the data-soon attributes and this block.
+
+     SAID AT FIRST PAINT, NOT ON HOVER. This used to swap the label on
+     mouseenter and leave it reading "Launch app" until then, which meant the
+     most conventional button on the page -- boxed, top right -- looked live,
+     and the only way to learn it was dead was to press it. On a phone there is
+     no hover at all, so a tap was the ONLY way to find out. The label is
+     swapped as soon as the script runs, so nobody spends a click discovering
+     it, and the original is kept so relaunching is still one deletion. */
   (function(){
     document.querySelectorAll("[data-soon]").forEach(function(el){
-      var orig=el.innerHTML;
-      /* Genislik kilidi SWAP ANINDA atilir ve cikista birakilir. Yuklemede
-         atmak iki tuzak birden kurdu: font yarisi (yedek font olcusu
-         kilitleniyor, iki sayfada 136 vs 126 olculdu) ve resize yapiskanligi
-         (genis pencerede kilitlenen olcu dar pencerede kaliyor). */
-      function on(){el.style.minWidth=el.offsetWidth+"px";el.innerHTML="Coming soon";}
-      function off(){el.innerHTML=orig;el.style.minWidth="";}
-      el.addEventListener("mouseenter",on);
-      el.addEventListener("mouseleave",off);
-      el.addEventListener("focus",on);
-      el.addEventListener("blur",off);
+      el.dataset.soonLabel = el.innerHTML;
+      el.innerHTML = "Coming soon";
+      el.setAttribute("aria-disabled", "true");
+      el.setAttribute("title", "The app opens soon");
     });
     document.addEventListener("click",function(e){
       var el=e.target.closest&&e.target.closest("[data-soon]");
       if(!el)return;
       e.preventDefault();e.stopPropagation();
-      el.style.minWidth=el.offsetWidth+"px";
-      el.innerHTML="Coming soon";              /* touch has no hover */
     },true);
   })();
 
