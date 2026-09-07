@@ -43,6 +43,19 @@ check("it styles .cdim, which is what makes the sheet an overlay",
   /\.cdim\s*\{/.test(cssText) && /position\s*:\s*fixed/.test(cssText));
 check("it styles .csheet, the dialog itself", /\.csheet/.test(cssText));
 
+/* HIDDEN HAS TO MEAN HIDDEN.
+   chain.js hides elements by setting the `hidden` attribute, and every
+   `display:` in this stylesheet outranks the UA rule that would honour it. The
+   partner rule was forgotten twice -- the custom amount field sat open before
+   anybody chose "Other", and the collapsed side buttons carried on being drawn
+   under the confirm line that replaced them. Both times the sheet looked
+   plausible and did the wrong thing, which is the hardest kind of wrong to
+   notice. The blanket rule at the foot of the file closes it; this makes sure
+   nobody removes it. */
+check("[hidden] beats every display: in the file",
+  /\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/.test(cssText),
+  "money.css must end with a blanket [hidden]{display:none !important}");
+
 const shells = readdirSync(appDir).filter((f) => f.endsWith(".html"));
 check("there are app shells to check", shells.length > 0, `found ${shells.length}`);
 

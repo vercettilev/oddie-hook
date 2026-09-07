@@ -558,9 +558,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
              bahis sheet'ine yaziyor. Tek kopya: ayni soruyu bir gorunur bir
              gizli olarak iki kere yazmak, ikisinin ayrisabilecegi demektir. */
           + (hook
-              ? '<h2 class="card__q" data-oddie-hook data-slug="' + esc(m.slug) + '">'
-                + '<a href="' + href + '">' + esc(hook) + "</a></h2>"
-                + '<p class="card__full" data-oddie-question data-slug="' + esc(m.slug) + '">' + esc(m.question) + "</p>"
+              ? '<h2 class="card__q"><a href="' + href + '">' + esc(hook) + "</a></h2>"
+                + '<p class="card__full" data-oddie-question data-oddie-hook="' + esc(hook)
+                + '" data-slug="' + esc(m.slug) + '">' + esc(m.question) + "</p>"
               : '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
                 + '<a href="' + href + '">' + esc(m.question) + "</a></h2>")
           + pool

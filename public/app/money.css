@@ -86,6 +86,34 @@
    Selection is carried by DIMMING THE OTHER ONE, which only happens once a
    side is actually chosen: with nothing picked both stand at full height,
    because at that moment neither is more likely than the other. */
+/* THE CONFIRM LINE. One row where a headline, a question and two buttons used
+   to be: the side that was taken, the market it was taken on, and the way out
+   if the tap was wrong. It states rather than asks, and it is the smallest
+   thing on the sheet, because the only decision left here is the amount. */
+.chain-took{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.chain-took__s{
+  font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:19px;
+  letter-spacing:.03em;line-height:1;color:var(--black,#020302);
+  border:2px solid var(--ink,#0B0D04);padding:6px 11px 7px;
+}
+.chain-took__s--yes{background:var(--yellow,#D7DC1F);box-shadow:3px 4px 0 var(--yellow-deep,#5A6109)}
+.chain-took__s--no{background:var(--pink,#FF2D78);box-shadow:3px 4px 0 var(--pink-deep,#A3053F)}
+.chain-took__q{
+  flex:1 1 120px;min-width:0;
+  font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:16px;
+  letter-spacing:.02em;line-height:1.15;color:var(--ink,#0B0D04);
+}
+/* Always reachable, never competing: a mis-tap has to be one tap to undo, and
+   an undo that shouts is an undo that gets pressed by mistake. */
+.chain-swap{
+  flex:none;background:none;border:0;padding:4px 2px;cursor:pointer;
+  font-family:var(--mono,monospace);font-size:10.5px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2,#494E2D);
+  text-decoration:underline;text-underline-offset:3px;
+}
+.chain-swap:hover{color:var(--ink,#0B0D04)}
+.chain-swap:focus-visible{outline:2px solid var(--ink,#0B0D04);outline-offset:2px}
+
 .chain-side-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 16px}
 .chain-side{
   font-family:var(--display,'Anton',sans-serif);font-size:clamp(24px,6vw,30px);
@@ -250,3 +278,20 @@
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#0B0D04);
   text-decoration:underline;text-underline-offset:3px}
 .chain-home a:hover{color:var(--pink,#FF2D78)}
+
+/* ---- hidden means hidden ----
+ *
+ * Every `display:` in this file outranks the hidden attribute's UA rule, so
+ * any element chain.js hides by setting `hidden` reappears unless somebody
+ * remembers to write a `[hidden]` partner for it. That has now been forgotten
+ * twice: once by .chain-amt, which sat open before anybody chose "Other", and
+ * once by .chain-side-row, where the two side buttons the sheet had just
+ * collapsed carried on being drawn. Both times the page looked plausible and
+ * simply did the wrong thing.
+ *
+ * Remembering is the wrong mechanism. One rule, last in the file, and the
+ * class of bug is closed: !important because `hidden` is not a style
+ * preference to be outvoted, it is the author saying this element is not on
+ * the screen.
+ */
+[hidden]{display:none !important}

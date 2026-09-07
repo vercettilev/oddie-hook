@@ -637,13 +637,15 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        ekran tam ifadeyi gostermeli, vitrini degil. */
     var hook = String(m.hook || "").trim();
     if (hook) {
-      // data-oddie-hook is the sheet's headline; data-oddie-question below is
-      // still the exact wording it prints underneath. Two attributes because
-      // they are two different jobs, and welding them would make the sheet
-      // choose between a punchy title and an accurate one.
-      html += '<h1 class="q q--hook" data-oddie-hook data-slug="' + esc(m.slug || SLUG) + '">'
-        + esc(hook) + "</h1>"
-        + '<p class="qfull" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</p>";
+      /* Hook ve soru AYNI elemanda: biri oznitelik degeri, digeri metin.
+         Ayri elemanlarda dururken sheet ikisini iki ayri sorguyla ariyordu ve
+         yalnizca biri eski oldugunda (onbellekten gelen bir kabuk, yarim bir
+         deploy) sessizce uzun soruya dusuyordu -- yani hata tam da en zor fark
+         edilen bicimde, "calisiyor ama cirkin" olarak cikiyordu. Tek eleman
+         boyle bir uyusmazligi imkansiz kiliyor. */
+      html += '<h1 class="q q--hook">' + esc(hook) + "</h1>"
+        + '<p class="qfull" data-oddie-question data-oddie-hook="' + esc(hook)
+        + '" data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</p>";
     } else {
       html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</h1>";
     /* THE TAB SAID "oddie" AND NOTHING ELSE. Every market anybody opened from a

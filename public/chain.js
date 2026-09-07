@@ -701,8 +701,7 @@ function b64ToBytes(b64) {
     // because the screen the money goes on must show what was agreed. Falls
     // back to the question when a market has no hook, which is the old
     // behaviour exactly.
-    const hEl = document.querySelector(`[data-oddie-hook][data-slug="${slug}"]`);
-    const hook = hEl ? hEl.textContent.trim() : "";
+    const hook = qEl ? (qEl.getAttribute("data-oddie-hook") || "").trim() : "";
     const titleHTML = hook && question
       ? `<h3 class="chain-q">${esc(hook)}</h3><p class="chain-qfull">${esc(question)}</p>`
       : question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
@@ -808,11 +807,30 @@ function b64ToBytes(b64) {
       // sides are always here, the amount is always here, and the wallet is
       // asked for at the last possible moment, by the same button that places
       // the bet.
+      /* A SIDE ALREADY TAKEN IS NOT A QUESTION.
+         Somebody who tapped YES on a card had already read the market and
+         decided. The sheet then opened with the full question across the top
+         and the same two buttons underneath -- asking, in the loudest type on
+         the screen, a thing they had just answered. That is a form. What is
+         left to settle is HOW MUCH, and everything else on the way to it is a
+         toll gate.
+         So when a side arrives with the request, the sides collapse into one
+         line that confirms rather than asks: which side, on which market, with
+         a way back if the tap was wrong. The two big buttons return only when
+         nobody has chosen -- the claim path, or a card that could not say. */
+      const taken = presetSide === "yes" || presetSide === "no";
+      const otherOf = (x) => (x === "yes" ? "no" : "yes");
+      const tookHTML = `
+        <p class="chain-took">
+          <b class="chain-took__s chain-took__s--${presetSide}">${String(presetSide).toUpperCase()}</b>
+          <span class="chain-took__q">${esc(hook || question || "on this market")}</span>
+          <button class="chain-swap" type="button">Switch to ${otherOf(presetSide).toUpperCase()}</button>
+        </p>`;
       body.innerHTML = `
-        ${titleHTML}
+        ${taken ? tookHTML : titleHTML}
         <p class="cnote">${testnet ? `Test SOL on ${label}` : "Real SOL"}. Winners split the pool.</p>
         ${onchainOddsHTML}
-        <div class="chain-side-row">
+        <div class="chain-side-row"${taken ? " hidden" : ""}>
           <button class="chain-side" data-side="yes" type="button">YES</button>
           <button class="chain-side" data-side="no" type="button">NO</button>
         </div>
@@ -917,6 +935,23 @@ function b64ToBytes(b64) {
               ? payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps)
               : "";
         }
+      };
+
+      /* The way back. It drives the hidden side button rather than setting the
+         side itself, so the warm-ups, the "on" class and refresh() all run
+         exactly as they do for a visible tap -- one code path, not two that
+         will drift. */
+      const swap = body.querySelector(".chain-swap");
+      if (swap) swap.onclick = () => {
+        const next = side === "yes" ? "no" : "yes";
+        const btn = sideBtns.find((b) => b.dataset.side === next);
+        if (btn) btn.click();
+        const lab = body.querySelector(".chain-took__s");
+        if (lab) {
+          lab.textContent = next.toUpperCase();
+          lab.className = `chain-took__s chain-took__s--${next}`;
+        }
+        swap.textContent = `Switch to ${(next === "yes" ? "no" : "yes").toUpperCase()}`;
       };
 
       sideBtns.forEach((b) => b.onclick = () => {
