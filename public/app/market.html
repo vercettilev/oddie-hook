@@ -92,6 +92,13 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .split .n{color:var(--pink)}
 
 /* ---- the two buttons: the whole product, twice ---- */
+.stakes{display:flex;gap:9px;margin:0 0 12px;flex-wrap:wrap}
+.stake{font-family:var(--mono);font-size:12.5px;font-weight:700;letter-spacing:.06em;
+  cursor:pointer;padding:8px 14px;border-radius:999px;
+  background:transparent;color:var(--fg-2);border:2px solid rgba(255,255,255,.22)}
+.stake:hover{color:var(--cream);border-color:rgba(255,255,255,.45)}
+.stake.on{background:var(--cream);color:var(--ink);border-color:var(--cream)}
+.stake:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
 .sides{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:0 0 22px}
 .side{
   font-family:var(--display);font-size:clamp(22px,5vw,30px);letter-spacing:.03em;
@@ -394,6 +401,27 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   var youAreIn = null;
 
 
+  /* KAC TIK EDIYOR.
+     Onceden: sayfada YES -> sheet -> tutar chip'i -> onay = BIZIM sordugumuz
+     uc soru. Tutar sayfaya cikinca ve biri secili gelince YES'in kendisi onay
+     oluyor: bir tik, sonra Phantom. Phantom yerinde duruyor, yani para hala
+     kullanicinin imzasiyla kimildiyor; kisalan sey bizim formumuz.
+     Son secim hatirlaniyor, cunku ikinci bahis birincisinden hizli olmali. */
+  /* CIZIM ANINDA okunuyor, betik anında degil. Bu satir içi script ayristirma
+     sirasinda calisir; chain.js ise defer'li, yani SONRA. Bir kez yakalanan
+     liste her zaman bos cikiyordu ve chip'ler hic cizilmiyordu -- sessizce,
+     cunku bos liste zaten "chip yok" demek. */
+  function presets() { return (window.OddieChain && window.OddieChain.presets) || []; }
+  var stake = null;
+  function pickStake(P) {
+    if (!P.length) return null;
+    if (stake !== null && P.indexOf(stake) !== -1) return stake;   // bu oturumdaki secim
+    var saved = null;
+    try { saved = parseFloat(localStorage.getItem("oddie.stake")); } catch (e) { saved = null; }
+    if (saved && P.indexOf(saved) !== -1) return saved;
+    return P.length > 1 ? P[1] : P[0];   // ortadaki, yoksa ilki
+  }
+
   function render(m) {
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
     var resolved = Boolean(m.resolved && m.outcome);
@@ -487,7 +515,22 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
          Iki renkli buton vardi ve basinca ne olacagini hicbir yer yazmiyordu:
          parayi kim aliyor, kazanan neye gore belli oluyor. Eylemin ONUNDE
          duruyor, cunku eylemden sonra aciklama aciklama degil mazerettir. */
-      if (!off) html += '<p class="how">Put SOL on <b>YES</b> or <b>NO</b>. Winners split the pool.</p>';
+      var P = presets();
+      stake = pickStake(P);
+      if (!off) {
+        html += P.length
+          ? '<p class="how">Putting <b>' + esc(String(stake)) + ' SOL</b>. Winners split the pool.</p>'
+            + '<div class="stakes" role="group" aria-label="Stake amount">'
+            + P.map(function (v) {
+                return '<button class="stake' + (v === stake ? " on" : "") + '" type="button" data-sol="'
+                  + esc(String(v)) + '">' + esc(String(v)) + " SOL</button>";
+              }).join("")
+            + "</div>"
+          /* chain.js yuklenmediyse hic chip cizmiyoruz: rakamlari burada
+             tekrar yazmak, iki yerde ayrisacak ikinci bir kaynak demek. O
+             durumda butonlar bugunku gibi sheet'i form olarak aciyor. */
+          : '<p class="how">Put SOL on <b>YES</b> or <b>NO</b>. Winners split the pool.</p>';
+      }
       html += '<div class="sides">'
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES"
         + (note ? "<small>" + esc(note) + "</small>" : "") + "</button>"
@@ -565,9 +608,23 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       b.setAttribute("aria-live", "polite");
       setTimeout(function () { b.innerHTML = was; }, 4000);
     }
+    Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (b) {
+      b.addEventListener("click", function () {
+        stake = parseFloat(b.dataset.sol);
+        try { localStorage.setItem("oddie.stake", String(stake)); } catch (e) { /* private mode */ }
+        Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (x) { x.classList.toggle("on", x === b); });
+        var hb = view.querySelector(".how b");
+        if (hb) hb.textContent = stake + " SOL";
+      });
+    });
+
     Array.prototype.forEach.call(view.querySelectorAll(".side"), function (b) {
       b.addEventListener("click", function () {
-        if (window.OddieChain && window.OddieChain.openStake) return window.OddieChain.openStake(SLUG, b.dataset.side);
+        // Tutar SADECE sayfada gercekten secilebiliyorsa gonderiliyor. Chip
+        // yoksa ucuncu argüman undefined kalir ve sheet eskisi gibi sorar.
+        if (window.OddieChain && window.OddieChain.openStake) {
+          return window.OddieChain.openStake(SLUG, b.dataset.side, stake || undefined);
+        }
         noMoneyLayer(b, b.dataset.side === "yes" ? "YES" : "NO");
       });
     });

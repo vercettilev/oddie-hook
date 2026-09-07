@@ -575,7 +575,12 @@ function b64ToBytes(b64) {
     } catch (e) { /* nothing to offer */ }
   }
 
-  async function openStakeSheet(slug, presetSide) {
+  /* presetSol: SAYFADAN GELEN TUTAR.
+     Sayfa hem tarafi hem tutari gonderdiginde bu sheet artik bir form degil,
+     bir ilerleme ekranidir: asagida, cuzdan zaten baglıysa, kendi kendine
+     onaya gecer. Onay yine Phantom'dadir, yani hicbir para kullanicinin
+     imzasi olmadan kimildamaz -- degisen sadece BIZIM sordugumuz soru sayisi. */
+  async function openStakeSheet(slug, presetSide, presetSol) {
     const body = sheetShell();
     // The question the money is going on. The sheet covers the page, so
     // without this the screen that takes a stake never states what the stake
@@ -688,7 +693,15 @@ function b64ToBytes(b64) {
 
       let side = presetSide === "yes" || presetSide === "no" ? presetSide : null, sol = 0;
       const sideBtns = [...body.querySelectorAll(".chain-side")];
-      if (side) sideBtns.forEach((b) => b.classList.toggle("on", b.dataset.side === side));
+      if (side) {
+        sideBtns.forEach((b) => b.classList.toggle("on", b.dataset.side === side));
+        /* Isinmalar taraf TIKLAMASINA bagliydi, yani karttan hazir gelen taraf
+           onlari hic tetiklemiyordu: tam da en hizli olmasi gereken yolda mint
+           ve web3 yuklemesi para adiminin icine dusuyordu. Ayni niyet, ayni
+           an -- sadece tiklama degil, secilmis olmak da sayiliyor. */
+        ensureOnChain(slug);
+        void loadWeb3().catch(() => {});
+      }
       const chips = [...body.querySelectorAll(".chain-chip")];
       const amtInput = body.querySelector(".chain-amt");
       const stakeBtn = body.querySelector("#chainstake");
@@ -783,6 +796,14 @@ function b64ToBytes(b64) {
         refresh();
       });
       amtInput.oninput = () => { sol = parseFloat(amtInput.value) || 0; refresh(); };
+
+      /* Sayfadan gelen tutar, sayfadaki secili chip ile ayni. Sadece bilinen
+         bir preset kabul ediliyor: sheet'in kendi chip'lerinden biri "on"
+         gorunmeliyse, o chip gercekten var olmali. */
+      if (presetSol > 0) {
+        const chip = chips.find((c) => c.dataset.sol !== "custom" && parseFloat(c.dataset.sol) === Number(presetSol));
+        if (chip) { sol = parseFloat(chip.dataset.sol); chips.forEach((x) => x.classList.toggle("on", x === chip)); }
+      }
 
       // Run once now, not only on the next interaction. The button ships from
       // innerHTML reading "Pick a side", which is right when nothing is chosen
@@ -909,6 +930,25 @@ function b64ToBytes(b64) {
           }
         }
       };
+
+      /* TEK TIK: sayfa zaten sordu, biz bir daha sormuyoruz.
+         Kosullar dar ve hepsi zorunlu:
+           - tutar SAYFADAN geldi (feed karti tutar gondermez, orada sheet
+             form olarak kalir),
+           - taraf belli,
+           - cuzdan ZATEN bagli (sessiz yeniden baglanma). Soguk bir cuzdanda
+             asla otomatik tetiklemeyiz: beklenmedik bir Phantom penceresi
+             kullanicinin istemedigi bir seydir,
+           - bakiye yetiyor. showBalance bekleniyor, cunku yetersiz bakiyeyi
+             preflight hatasina birakmak yerine burada durup uyariyi
+             gostermek daha durust.
+         Durdugu her durumda sheet zaten dogru secimlerle acik kaliyor, yani
+         geri dusus "tek tik yerine iki tik", hata degil. */
+      if (presetSol > 0 && side && sol > 0 && wallet) {
+        Promise.resolve(showBalance()).catch(() => {}).then(() => {
+          if (sol <= spendable()) stakeBtn.click();
+        });
+      }
     };
     render();
   }
@@ -1281,6 +1321,9 @@ function b64ToBytes(b64) {
 
   window.OddieChain = {
     init, openStake: openStakeSheet, openClaim: openClaimSheet,
+    /* Sayfanin kendi tutar chip'lerini cizebilmesi icin. Kopyalanmis bir dizi
+       iki yerde ayrisir; sheet ile sayfa ayni rakamlari gostermek zorunda. */
+    presets: PRESETS.slice(),
     // The positions page needs the wallet before it can ask a single question,
     // and connectWallet carries things a page must not reimplement: the Phantom
     // check, the mobile universal link that reopens the page inside Phantom
