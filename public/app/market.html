@@ -237,6 +237,16 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   color:rgba(11,13,4,.7)}
 .top nav a:hover{color:var(--ink)}
 /* the seam: the lime band tears into the black field below it */
+/* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
+   .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
+   at both ends. A negative LEFT costs nothing in a left-to-right page, but the
+   right overhang extends the scroll width: measured 1483 against a 1440
+   viewport, on every app page, so all five scrolled sideways by 3% of their
+   own width. On a phone that is an 11px wobble under the thumb.
+   overflow-x:clip and NOT hidden: hidden forces the other axis to auto and
+   would cut the seam off, since it hangs BELOW the bar by design. clip takes
+   the x axis alone and leaves y visible. */
+.top{overflow-x:clip}
 .top::after{content:"";position:absolute;left:-3%;right:-3%;bottom:calc(-1 * var(--seam-h) + 1px);
   height:var(--seam-h);background:var(--yellow);pointer-events:none;z-index:2;
   -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1);

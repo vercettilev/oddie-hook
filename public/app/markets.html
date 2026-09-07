@@ -153,6 +153,16 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   color:rgba(11,13,4,.7)}
 .top nav a:hover{color:var(--ink)}
 /* the seam: the lime band tears into the black field below it */
+/* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
+   .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
+   at both ends. A negative LEFT costs nothing in a left-to-right page, but the
+   right overhang extends the scroll width: measured 1483 against a 1440
+   viewport, on every app page, so all five scrolled sideways by 3% of their
+   own width. On a phone that is an 11px wobble under the thumb.
+   overflow-x:clip and NOT hidden: hidden forces the other axis to auto and
+   would cut the seam off, since it hangs BELOW the bar by design. clip takes
+   the x axis alone and leaves y visible. */
+.top{overflow-x:clip}
 .top::after{content:"";position:absolute;left:-3%;right:-3%;bottom:calc(-1 * var(--seam-h) + 1px);
   height:var(--seam-h);background:var(--yellow);pointer-events:none;z-index:2;
   -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1);
@@ -258,6 +268,33 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .side--off:hover{transform:none;box-shadow:4px 5px 0 rgba(0,0,0,.5)}
 .side small{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
   letter-spacing:.1em;margin-top:6px;opacity:.75;text-transform:uppercase}
+
+/* THE FRONT DOOR WAS THE LEAST DESIGNED OBJECT IN THE APP.
+   Measured against the profile's gate, which was rebuilt two days ago: this one
+   still had the base rule and nothing else -- box-shadow none, transform none,
+   no sticker, a plain cream rectangle on a page whose every other object is a
+   sticker with a hard offset shadow. A page you reach LATER was better dressed
+   than the one everybody lands on. Same skin as the profile, so the two gates
+   are one thing and not two. */
+.gate{background:transparent;color:var(--fg);border:3px solid var(--yellow);
+  box-shadow:8px 9px 0 var(--yellow-deep);transform:rotate(-.5deg);
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 22px;
+  align-items:center;padding:20px 22px}
+.gate p{color:var(--fg-2);margin:0 0 12px}
+.gate img.gsticker{grid-row:1 / span 2;align-self:center;width:min(150px,32vw);margin:0}
+.gate .big{justify-self:start;text-decoration:none}
+.gate .later{grid-column:2;justify-self:start}
+/* Two-line button: the label acts, the line under it says why. */
+.big--2l{display:block;text-align:left;padding:14px 22px 12px}
+.big--2l .big__main{display:block}
+.big--2l small{display:block;margin-top:6px;font-family:var(--mono);font-size:11px;
+  font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--yellow-deep)}
+@media (max-width:560px){
+  .gate{grid-template-columns:1fr;gap:10px;justify-items:center;text-align:center}
+  .gate img.gsticker{grid-row:auto;width:min(180px,46vw)}
+  .gate .big,.gate .later{justify-self:center}
+  .big--2l{text-align:center}
+}
 </style>
 
 <header class="top">
@@ -331,9 +368,17 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     document.getElementById("sub").textContent = "Every market started as a tweet.";
     var chip = document.querySelector(".top .mechip");
     if (chip) chip.hidden = true;
+    /* THE DECISION, NOT A PARAGRAPH ABOUT IT.
+       This asked somebody to read 13 words of 15px body text at 68% opacity
+       before it showed them a button, on the app's front door. The reason
+       belongs ON the control that acts on it, which is the pattern the genesis
+       page already uses, and the promise is the concrete one: without X you
+       are a base58 address on the board, with it you are your handle. */
     view.innerHTML = '<div class="gate">'
-      + "<p>Your name on the markets you open, and on the board when you win.</p>"
-      + '<a class="big" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">Continue with X</a>'
+      + '<img class="gsticker" src="/brand/st-called.webp" alt="">'
+      + '<a class="big big--2l" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">'
+      + '<span class="big__main">Continue with X</span>'
+      + '<small>Your name on the board, not a wallet address</small></a>'
       + '<button class="later" id="later" type="button">Just show me the markets</button>'
       + "</div>";
     // Skipping is a first-class outcome, not a failure. Remembered for a week
