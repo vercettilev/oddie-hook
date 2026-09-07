@@ -176,18 +176,20 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   white-space:pre-wrap;overflow-wrap:anywhere}
 .terms__b b{color:var(--cream)}
 
-/* ---- share ---- */
-.share{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+/* ---- share: eylem, dipnot degil ---- */
+.act{margin:0 0 20px}
+.share{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:var(--cream);text-decoration:none;
-  border:2px solid var(--cream);padding:9px 13px;display:inline-block;cursor:pointer;
+  border:2px solid var(--cream);padding:13px 26px;display:inline-block;cursor:pointer;
   background:none}
 .share:hover{background:var(--cream);color:var(--black)}
 .share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 
-/* ---- the money rail ---- */
-.rail{border-top:1px solid var(--line);padding-top:16px;
-  font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--fg-3);
-  display:flex;flex-wrap:wrap;gap:4px 18px}
+/* ---- the money rail: dipnot. Okunur kalir -- ucret ifsasi sayfanin
+       kisilmasi gereken yeri degil -- ama artik eylemle ayni ses degil. ---- */
+.rail{border-top:1px solid var(--line);padding-top:14px;
+  font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--fg-3);
+  display:flex;flex-wrap:wrap;gap:4px 16px}
 .rail b{color:var(--fg-2);font-weight:700}
 .rail a{color:var(--fg-2)}
 
@@ -275,11 +277,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .terms summary::after{color:var(--pink-deep)}
 .terms__b{color:rgba(11,13,4,.78)}
 .terms__b b{color:var(--ink)}
-.rail{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.02em;
+.rail{font-family:var(--display);font-weight:400;font-size:12.5px;letter-spacing:.02em;
   color:var(--fg-3);text-transform:uppercase}
 .rail b{color:var(--yellow);font-weight:400}
 .rail a{color:var(--fg-2)}
-.share{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em}
+.share{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.04em}
 
 /* The crowd, at the foot of every page: this is a movement, and a page that
    ends in a void does not say so. Lazy: it is decoration, never the point. */
@@ -675,6 +677,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
     }
 
+    /* HEPSI AYNI AGIRLIKTAYDI, OYSA AYNI SEY DEGILLER.
+       Share bir BUYUME EYLEMI: her bahis bir gonderi, ve bir sonraki
+       yabanciyi getiren sey o. Yuzdeler ise ifsa; okunmalari gerekir ama
+       tiklanmalari gerekmez. Vault bir kanit baglantisi, yine eylem degil.
+       Eylem kendi satirina cikiyor, kalan ucu dipnot oluyor -- ifsanin
+       kendisi kucultulmuyor, sadece eylemle ayni sesle konusmayi birakiyor. */
+    html += '<div class="act"><button class="share" id="share" type="button">Share</button></div>';
+
     var fee = ((m.creatorFeeBps + m.protocolFeeBps) / 100);
     html += '<div class="rail">'
       /* "4% at resolve" ve "2% to the opener" yan yana %6 gibi okunuyordu.
@@ -684,7 +694,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of the pool to "
           + (m.taggedBy ? "@" + esc(m.taggedBy) : "the opener") + "</span>" : "")
       + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">Vault</a></span>' : "")
-      + '<span><button class="share" id="share" type="button">Share</button></span>'
       + "</div>";
 
     view.innerHTML = html;
