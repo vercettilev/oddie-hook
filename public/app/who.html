@@ -51,6 +51,8 @@ a{color:inherit}
 main.wrap{padding-top:34px;padding-bottom:80px}
 .who{font-family:var(--display);font-weight:400;font-size:clamp(28px,6vw,46px);
   line-height:1;text-transform:uppercase;margin:0 0 4px;color:var(--cream);word-break:break-all}
+.who--addr{text-transform:none;font-family:var(--mono);font-size:clamp(18px,3.4vw,28px);
+  letter-spacing:.02em}
 .addr{font-family:var(--mono);font-size:11.5px;letter-spacing:.09em;color:var(--fg-3);
   margin:0 0 26px;word-break:break-all}
 .addr a{color:var(--fg-3)}
@@ -195,7 +197,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 </header>
 
 <main class="wrap">
-  <div id="view"><p class="load">Reading settled calls…</p></div>
+  <div id="view"><p class="load">Reading every call…</p></div>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
@@ -220,21 +222,37 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       var net = typeof j.realizedSol === "number" ? j.realizedSol : null;
       var recs = j.receipts || [];
 
-      var html = '<h1 class="who">' + (j.handle ? "@" + esc(j.handle) : esc(short)) + "</h1>"
+      /* .who uppercases, which is right for a handle and wrong for an address:
+         a base58 key is case-SIGNIFICANT and shouting it makes it unreadable
+         and un-checkable against a wallet. The modifier keeps the real case. */
+      var html = '<h1 class="who' + (j.handle ? '' : ' who--addr') + '">'
+        + (j.handle ? "@" + esc(j.handle) : esc(short)) + "</h1>"
         + '<p class="addr">' + (j.handle ? esc(short) + " &middot; " : "")
-        + "every call stamped on chain</p>";
+        + "every call stamped the second it was made. No edits, ever.</p>";
 
       if (recs.length) {
+        /* THE SAME UNMEASURED-ZERO HOLE THE BOARD HAD. realizedLamports only
+           accumulates over calls the chain could price, so a wallet whose
+           settled calls are ALL unreadable arrives with realizedSol exactly 0
+           and this printed a confident "0.00" under the word SOL. When nothing
+           could be priced there is no figure to show, only the admission. */
+        var settledCount = (j.wins || 0) + (j.losses || 0);
+        var nothingPriced = settledCount > 0 && (j.unpriced || 0) >= settledCount;
+        if (nothingPriced) net = null;
         // Money first: "+4.21 SOL" needs no explanation and "341 points" does.
+        // The label says which direction, because a bare "SOL, settled" leaves
+        // the reader to work out what the sign means.
         var cls = net === null ? "flat" : net > 0 ? "up" : net < 0 ? "dn" : "flat";
+        var moneyLabel = net === null ? "SOL, could not read"
+          : net > 0 ? "SOL ahead" : net < 0 ? "SOL down" : "SOL, even";
         html += '<div class="hero">'
           + '<div class="stat stat--' + cls + '"><b>'
-          + (net === null ? "n/a" : (net > 0 ? "+" : "") + net.toFixed(2))
-          + "</b><span>SOL, settled</span></div>"
+          + (net === null ? "—" : (net > 0 ? "+" : "") + net.toFixed(2))
+          + "</b><span>" + moneyLabel + "</span></div>"
           + '<div class="stat stat--rec"><b>' + j.wins + "/" + (j.wins + j.losses)
           + "</b><span>calls right</span></div>"
           + '<div class="stat stat--pts"><b>' + j.points + "</b><span>points"
-          + (j.rank ? " &middot; #" + j.rank : "") + "</span></div>"
+          + (j.rank ? ' &middot; <a href="/board">#' + j.rank + " on the board</a>" : "") + "</span></div>"
           + "</div>";
       }
 
@@ -246,25 +264,25 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
         // Precise about WHICH total is missing: the record below still counts
         // these calls, because whether they were right is known from the
         // settlement. Only the money and the points needed the chain.
-        html += '<div class="blind">Totals leave out <b>' + j.unpriced + "</b> call"
-          + (j.unpriced === 1 ? "" : "s") + " we could not read. The record still counts them.</div>";
+        html += '<div class="blind"><b>' + j.unpriced + "</b> call" + (j.unpriced === 1 ? "" : "s")
+          + " could not be read just now. They still count as right or wrong. They are not in the SOL or the points.</div>";
       }
 
       if (!recs.length) {
         html += '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
-          + '<h3>No settled calls yet</h3><p>'
+          + '<h3>No finished calls yet</h3><p>'
           + "Nothing here can be edited after the fact.</p></div>";
       } else {
-        html += "<h2>Every settled call</h2>" + recs.map(function (r) {
+        html += "<h2>Every finished call</h2>" + recs.map(function (r) {
           var side = r.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>';
-          var bits = [side, "<span>at " + r.entryPct + "%</span>", "<span>" + r.stakeSol + " SOL</span>",
-                      "<span>settled " + String(r.outcome).toUpperCase() + "</span>"];
+          var bits = [side, "<span>crowd said " + r.entryPct + "%</span>", "<span>bet " + r.stakeSol + " SOL</span>",
+                      "<span>ended " + String(r.outcome).toUpperCase() + "</span>"];
           // Null, never zero: an unreadable market must not read as break-even.
           bits.push(r.pnlSol === null
-            ? '<span class="na">result not readable right now</span>'
+            ? '<span class="na">money not readable right now</span>'
             : '<span class="' + (r.pnlSol > 0 ? "up" : r.pnlSol < 0 ? "dn" : "") + '">'
               + (r.pnlSol > 0 ? "+" : "") + r.pnlSol + " SOL</span>");
-          if (r.won && r.weight) bits.push("<span>+" + r.weight + " pts</span>");
+          if (r.won && r.weight !== null && r.weight !== undefined) bits.push("<span>+" + r.weight + " pts</span>");
           return '<div class="rec rec--' + (r.won ? "w" : "l") + '">'
             + '<p class="rec__q"><a href="/m/' + encodeURIComponent(r.slug) + '">' + esc(r.question) + "</a></p>"
             + '<p class="rec__m">' + bits.join("") + "</p></div>";
@@ -284,8 +302,15 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       });
     })
     .catch(function (e) {
-      view.innerHTML = '<h1 class="who">' + (String(e.message) === "unknown wallet" ? "No such wallet" : "Could not load this page")
-        + '</h1><p class="addr">' + esc(e.message) + '. <a href="/board">See the board</a></p>';
+      // e.message here is "unknown wallet" or "server said 502": the first is
+      // already said by the heading and the second is ours, not theirs.
+      console.warn("[who]", e && e.message);
+      var unknown = String(e.message) === "unknown wallet";
+      view.innerHTML = '<h1 class="who who--addr">'
+        + (unknown ? "That is not a wallet address" : "This page did not load")
+        + '</h1><p class="addr">'
+        + (unknown ? "Check the link." : "Try again in a moment.")
+        + ' <a href="/board">See the board</a></p>';
     });
 })();
 </script>
