@@ -275,11 +275,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 <!-- THE SEASON, IN ONE LINE. Somebody who only ever lands on the app has no
      way to learn a campaign is running; the nav's "Genesis" is a destination,
      not a reason. Shown only while the server stamps oddie-genesis. -->
-<a class="season" id="season" href="/genesis" hidden>Genesis season is live<img src="/brand/st-rocket.webp" alt=""></a>
+<!-- NO STATUS CLAIM. This said "Genesis season is live", and it is not: the
+     campaign has not been announced and its own leaderboard says "Starts when
+     Genesis starts". Saying what Genesis IS costs nothing and cannot go stale;
+     saying it is live is a fact about today, and facts about today have to be
+     true. 5 is GENESIS_TICKETS in src/genesis/season.ts. -->
+<a class="season" id="season" href="/genesis" hidden>Genesis: 5 tickets to open markets<img src="/brand/st-rocket.webp" alt=""></a>
 
 <main class="wrap">
   <h1>Open markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
-  <p class="sub" id="sub">Every one started as a tweet.</p>
+  <p class="sub" id="sub">Every market started as a tweet.</p>
   <div id="view"><p class="load">Loading markets…</p></div>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
@@ -323,20 +328,20 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
-    document.getElementById("sub").textContent = "Every one started as a tweet.";
+    document.getElementById("sub").textContent = "Every market started as a tweet.";
     var chip = document.querySelector(".top .mechip");
     if (chip) chip.hidden = true;
     view.innerHTML = '<div class="gate">'
-      + "<p>Markets from people you follow. Your name on the board.</p>"
+      + "<p>Your name on the markets you open, and on the board when you win.</p>"
       + '<a class="big" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">Continue with X</a>'
-      + '<button class="later" id="later" type="button">I\'ll do this later</button>'
+      + '<button class="later" id="later" type="button">Just show me the markets</button>'
       + "</div>";
     // Skipping is a first-class outcome, not a failure. Remembered for a week
     // on the cross-host cookie so the next page is not the same question; the
     // ask comes back where it pays, after a call lands.
     document.getElementById("later").addEventListener("click", function () {
       if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
-      document.getElementById("sub").textContent = "Every one started as a tweet.";
+      document.getElementById("sub").textContent = "Every market started as a tweet.";
       if (chip) chip.hidden = false;
       loadMarkets();
     });
@@ -386,7 +391,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       if (!ms.length) {
         view.innerHTML = '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
           + '<h3>Nothing open yet</h3>'
-          + '<p>Tag <b>@oddiefun</b> on a claim. The first market is yours. '
+          + '<p>Tag <b>@oddiefun</b> on X, under anything that ends up true or false. The first market is yours. '
           + '<a href="/genesis">How it works</a></p></div>';
         return;
       }
@@ -395,7 +400,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         // WHO OPENED IT IS THE POINT. This was four grey characters, which is
         // how a social market reads as a ticker. A pill linked to their X
         // profile makes the opener a person you can go look at.
-        if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
+        // Same two words the market page uses: a bare handle beside a countdown
+        // could be the opener, the claim's author, or the person it is about.
+        if (m.taggedBy) bits.push("Opened by " + byChip(m.taggedBy, m.sourceUrl));
         var w = when(m.closesAt);
         // when() answers "closed" for a past deadline, and the sides now say
         // that too -- in the place where it decides something. One word, one
@@ -407,13 +414,18 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         // real money is the lie this whole read layer exists to stop.
         var pool = "";
         if (m.oddsSource === "unreadable") {
-          pool = '<p class="pool pool--quiet">Can\'t read this pool</p>';
+          pool = '<p class="pool pool--quiet">Can\'t read this pool. Your money is safe.</p>';
         } else if (!m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
-          pool = '<p class="pool pool--quiet">No stakes yet</p>';
+          pool = '<p class="pool pool--quiet">Nothing on this yet. First one sets the odds.</p>';
         } else {
           var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
           var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
-          pool = '<p class="pool"><b>' + (tot / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
+          /* toFixed(3) then stripping trailing zeros turns anything under 0.0005
+             SOL into the bare string "0", so a card that exists BECAUSE money
+             is in it announced an empty pool. Floored, not rounded away. */
+          var totSol = tot / 1e9;
+          pool = '<p class="pool"><b>'
+            + (totSol < 0.001 ? "<0.001" : totSol.toFixed(3).replace(/0+$/, "").replace(/\.$/, ""))
             + "</b> SOL in the pool"
             // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
             // parayi yalanlar.
@@ -443,7 +455,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         var blind = m.oddsSource === "unreadable";
         var offNote = shut ? "closed" : blind ? "can't read this one" : "";
         function sideEl(side, cls, label, pctText) {
-          var inner = label + (pctText === null ? "" : "<span>" + pctText + "%</span>")
+          var inner = label + (pctText === null ? "" : "<span>" + pctText + "% of the pool</span>")
             + (offNote ? "<small>" + esc(offNote) + "</small>" : "");
           return offNote
             ? '<span class="side ' + cls + ' side--off" aria-disabled="true">' + inner + "</span>"
@@ -483,7 +495,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       }
     })
     .catch(function (e) {
-      view.innerHTML = '<div class="err">We could not load the markets just now (' + esc(e.message) + ").</div>";
+      console.warn("[markets]", e && e.message);
+      view.innerHTML = '<div class="err">We could not load the markets just now. Try again in a moment.</div>';
     });
   }
 
