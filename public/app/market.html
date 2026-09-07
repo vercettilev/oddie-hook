@@ -357,6 +357,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .in-strip--y{background:var(--yellow);box-shadow:6px 7px 0 var(--yellow-deep)}
 .in-strip--n{background:var(--pink);color:var(--cream);box-shadow:6px 7px 0 var(--pink-deep)}
 
+
+/* The way back to the list, above everything, in the page's quiet voice. */
+.backfeed{display:inline-block;margin:0 0 14px;font-family:var(--mono);font-size:11.5px;
+  font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3);
+  text-decoration:none}
+.backfeed:hover{color:var(--yellow)}
+.backfeed:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.stake--other{letter-spacing:.06em}
 </style>
 
 <header class="top">
@@ -561,7 +569,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
     // Separate spans, not one joined string: .eyebrow is a flex row with a gap,
     // so the gap is what separates them and no punctuation has to.
-    var html = bits.length
+    /* THE WAY BACK. Every market link off X lands here cold, and the only
+       route to the rest of the product was the masthead, which is scrolled
+       away the moment somebody reads the question. */
+    var html = '<a class="backfeed" href="/markets">&larr; All markets</a>';
+    html += bits.length
       ? '<p class="eyebrow"><span>' + bits.join("</span><span>") + "</span></p>"
       : "";
     // data-oddie-question is chain.js's second home for "which market is this
@@ -654,12 +666,18 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       stake = pickStake(P);
       if (!off) {
         html += P.length
-          ? '<p class="how">Putting <b>' + esc(String(stake)) + ' SOL</b>. Winners split the pool.</p>'
+          ? '<p class="how">Putting <b>' + (stake === null ? "any amount" : esc(String(stake)) + " SOL") + '</b>. Winners split the pool.</p>'
             + '<div class="stakes" role="group" aria-label="Stake amount">'
             + P.map(function (v) {
                 return '<button class="stake' + (v === stake ? " on" : "") + '" type="button" data-sol="'
                   + esc(String(v)) + '">' + esc(String(v)) + " SOL</button>";
               }).join("")
+            /* ANY OTHER AMOUNT. The three chips are the common bets, not the
+               limits: the server takes anything from 0.001 to 5 SOL. This
+               clears the page's pick so YES/NO opens the sheet as a form,
+               where the amount field already lives. No second input to keep
+               in step with the first. */
+            + '<button class="stake stake--other' + (stake === null ? " on" : "") + '" type="button" data-sol="other">Other</button>'
             + "</div>"
           /* chain.js yuklenmediyse hic chip cizmiyoruz: rakamlari burada
              tekrar yazmak, iki yerde ayrisacak ikinci bir kaynak demek. O
@@ -756,10 +774,18 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     }
     Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (b) {
       b.addEventListener("click", function () {
-        stake = parseFloat(b.dataset.sol);
-        try { localStorage.setItem("oddie.stake", String(stake)); } catch (e) { /* private mode */ }
         Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (x) { x.classList.toggle("on", x === b); });
         var hb = view.querySelector(".how b");
+        if (b.dataset.sol === "other") {
+          // No amount from the page, so YES/NO opens the sheet as a form and
+          // its own field takes the number. Not remembered: "other" is a
+          // decision to make now, not a default to restore next time.
+          stake = null;
+          if (hb) hb.textContent = "any amount";
+          return;
+        }
+        stake = parseFloat(b.dataset.sol);
+        try { localStorage.setItem("oddie.stake", String(stake)); } catch (e) { /* private mode */ }
         if (hb) hb.textContent = stake + " SOL";
       });
     });

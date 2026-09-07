@@ -23,7 +23,10 @@
 // load: looking at odds should not cost a library fetch.
 (function () {
   /** Stake sizes, in SOL. Small enough that the first one is not a decision. */
-  const PRESETS = [0.05, 0.1, 0.25];
+  /* Lev's amounts. One source: the market page reads these off
+     OddieChain.presets rather than printing its own, so the sheet and the page
+     can never disagree about what a bet costs. */
+  const PRESETS = [0.1, 0.5, 1];
 
   /**
    * The network, from the server, never guessed here.
