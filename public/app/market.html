@@ -130,13 +130,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .collect:active{transform:translate(2px,2px);box-shadow:none}
 .collect:focus-visible{outline:3px solid var(--black);outline-offset:4px}
 
-/* ---- the claim, at source ---- */
-.src{border-left:3px solid var(--fg-3);padding:4px 0 4px 16px;margin:0 0 22px}
-.src__who{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--fg-3);margin:0 0 6px}
-.src__who b{color:var(--fg-2)}
-.src__t{font-size:15.5px;line-height:1.5;color:var(--fg-2);margin:0 0 8px;
-  overflow-wrap:anywhere}
+/* ---- the claim, at source: artik bir kart degil, ust satirdaki bir baglanti ---- */
 .src__a{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--yellow);text-decoration:none}
 .src__a:hover{text-decoration:underline}
@@ -232,12 +226,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .eyebrow{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   text-transform:uppercase;color:var(--fg-3)}
 .eyebrow b{color:var(--yellow);font-weight:400}
-.src{background:var(--cream);color:var(--ink);border:3px solid var(--black);border-left-width:3px;
-  box-shadow:7px 8px 0 var(--yellow-deep);padding:16px 18px;transform:rotate(-.4deg)}
-.src__who{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
-  color:rgba(11,13,4,.6);text-transform:uppercase}
-.src__who b{color:var(--pink-deep);font-weight:400}
-.src__t{color:var(--ink);font-weight:600}
 .src__a{color:var(--pink-deep);font-family:var(--display);font-weight:400;font-size:15px;
   letter-spacing:.02em}
 .pool{position:relative;background:var(--cream);color:var(--ink);border:3px solid var(--black);
@@ -300,11 +288,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   padding:4px 12px 3px;border-radius:999px;text-decoration:none;font-weight:400;
   letter-spacing:.02em;text-transform:none}
 .eyebrow .by:hover{background:var(--yellow-hi)}
-.src__who .by{display:inline-block;background:var(--ink);color:var(--cream);
-  padding:3px 10px 2px;border-radius:999px;text-decoration:none;font-weight:400;
-  letter-spacing:.02em;text-transform:none}
-.src__who .by:hover{background:var(--pink);color:#fff}
-.eyebrow .by:focus-visible,.src__who .by:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+.eyebrow .by:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
    Appended to nav instead, the chip took a third row of its own. */
@@ -326,13 +310,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .in-strip--y{background:var(--yellow);box-shadow:6px 7px 0 var(--yellow-deep)}
 .in-strip--n{background:var(--pink);color:var(--cream);box-shadow:6px 7px 0 var(--pink-deep)}
 
-/* THE QUOTE IS EVIDENCE, NOT THE PAGE. It is here so nobody bets on our
-   paraphrase of somebody's claim -- m.question is an LLM rewrite of this text,
-   so removing it would mean "trust our restatement" on a real-money market.
-   But it is the source, not the headline, so it gets four lines and the link
-   is the way to the rest. */
-.src__t{display:-webkit-box;-webkit-line-clamp:4;line-clamp:4;-webkit-box-orient:vertical;
-  overflow:hidden;margin:0 0 10px}
 </style>
 
 <header class="top">
@@ -405,17 +382,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
      only ever speak about what it watched happen. Never invented. */
   var youAreIn = null;
 
-
-  /* BIR KISI, BIR ISIM.
-     API "author" olarak GORUNEN ADI veriyor ("wyne"), tepedeki cip ise
-     handle'i ("@smolwyne"): ayni ekranda ayni insan iki farkli isimle
-     duruyordu. Handle gonderinin KENDI URL'sinden cikariliyor, cunku dogru
-     cevap "bu gonderiyi kim atti" -- etiketleyen baskasi olabilir. */
-  function postHandle(sp, taggedBy) {
-    var m = String((sp && sp.url) || "").match(
-      /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^\/?#]+)\/status\/\d+/i);
-    return m ? m[1] : (taggedBy || null);
-  }
 
   function render(m) {
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
