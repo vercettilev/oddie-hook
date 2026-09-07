@@ -3797,6 +3797,84 @@ export async function recordSurfacer(slug: string, input: { handle?: string | nu
  *
  * Returns what it did so a caller can report honestly rather than guess.
  */
+/**
+ * FILL IN THE HOOK FOR MARKETS OPENED BEFORE THE COLUMN EXISTED.
+ *
+ * extractClaim has always produced a hook and it was dropped on the floor until
+ * the column landed; every market opened before that carries NULL and every
+ * surface falls back to the full question, which is the 15-word legal rewrite
+ * rather than the headline the tweet already used.
+ *
+ * Deliberately DOES NOT invent one. It re-runs the same extractor the market
+ * was born from, over the question we already stored, and takes only what that
+ * returns. A blank stays blank: NULL means "the model had nothing crisp", which
+ * is a legitimate answer and is exactly what every reader already handles.
+ *
+ * Costs a model call per row, so it is bounded, resumable and dry by default,
+ * like backfillSourcePosts beside it.
+ */
+export async function backfillHooks(
+  /** The same extractor the market was born from. Passed IN rather than
+   *  imported, so the store keeps no dependency on the model layer. */
+  extract: (text: string) => Promise<{ hook: string }>,
+  limit = 25,
+  opts: { apply?: boolean; pauseMs?: number } = {},
+): Promise<{ candidates: number; produced: number; written: number; blank: number; failed: number }> {
+  const apply = opts.apply ?? false;
+  const pauseMs = opts.pauseMs ?? 250;
+  const n = Math.max(1, Math.min(500, Math.floor(limit)));
+  const out = { candidates: 0, produced: 0, written: 0, blank: 0, failed: 0 };
+
+  let targets: Array<{ slug: string; question: string }>;
+  if (!PERSISTENT) {
+    targets = [...memCommunity.values()]
+      .filter((c) => !c.hook)
+      .slice(0, n)
+      .map((c) => ({ slug: c.slug, question: mem.get(c.slug)?.market.question ?? "" }))
+      .filter((t) => t.question);
+  } else {
+    await storeSchema();
+    const { rows } = await storeDb().query<{ slug: string; question: string }>(
+      `SELECT c.slug, s.question
+         FROM community_market c JOIN surface s ON s.slug = c.slug
+        WHERE c.hook IS NULL AND c.retired_at IS NULL
+        ORDER BY c.created_at DESC
+        LIMIT $1`,
+      [n],
+    );
+    targets = rows;
+  }
+  out.candidates = targets.length;
+
+  for (const t of targets) {
+    try {
+      const ex = await extract(t.question);
+      const hook = (ex.hook || "").trim().slice(0, 60);
+      if (!hook) { out.blank++; continue; }
+      out.produced++;
+      console.log(`  ${t.slug}\n    ${t.question.slice(0, 70)}\n    -> ${hook}`);
+      if (!apply) continue;
+      if (!PERSISTENT) {
+        const c = memCommunity.get(t.slug);
+        if (c) { c.hook = hook; out.written++; }
+      } else {
+        // hook IS NULL in the predicate too: a concurrent write wins over this
+        // one, because it was made with more information than a re-extraction.
+        const r = await storeDb().query(
+          `UPDATE community_market SET hook = $2 WHERE slug = $1 AND hook IS NULL`,
+          [t.slug, hook],
+        );
+        if (r.rowCount) out.written++;
+      }
+    } catch (e) {
+      out.failed++;
+      console.error(`  ${t.slug} — ${(e as Error).message}`);
+    }
+    if (pauseMs) await new Promise((r) => setTimeout(r, pauseMs));
+  }
+  return out;
+}
+
 export async function backfillSourcePosts(
   limit = 25,
   opts: { apply?: boolean; pauseMs?: number } = {},

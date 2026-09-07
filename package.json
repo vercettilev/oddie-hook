@@ -64,7 +64,8 @@
     "test-handle-door": "tsx scripts/test-handle-door.ts",
     "test-accounts-strict": "tsx scripts/test-accounts-strict.ts",
     "test-placeholders": "tsx scripts/test-placeholders.ts",
-    "test-money-css": "tsx scripts/test-money-css.ts"
+    "test-money-css": "tsx scripts/test-money-css.ts",
+    "backfill-hooks": "tsx scripts/backfill-hooks.ts"
   },
   "engines": {
     "node": ">=20"
