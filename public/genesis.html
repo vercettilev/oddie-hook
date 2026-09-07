@@ -174,7 +174,11 @@
      box, and it painted 11.9px INSIDE the line below because Anton's box is
      taller than the line box. A background paints inside the element's own
      box and follows line wrapping on its own, so it cannot reach anything. */
-  .mk{background-image:linear-gradient(var(--pink),var(--pink));background-repeat:no-repeat;
+  /* Pink and bold for the thing being named, with the rule under it in ink:
+     pink text over a pink rule would swallow the rule, and this is the same
+     inversion the landing uses for its own marked words. */
+  .mk{color:var(--pink);font-weight:800;
+    background-image:linear-gradient(var(--ink),var(--ink));background-repeat:no-repeat;
     background-size:100% .1em;background-position:0 100%;padding-bottom:.08em}
   .on-dark .lede{color:var(--fg-2)}
 
@@ -721,7 +725,19 @@
              So the reward is named here in one body line, and the block deeper
              down stays as the full explanation. The display line above says
              what to DO; this says what it is FOR. -->
-        <p class="lede">Every person who bets on your market is a <span class="mk">Genesis point.</span></p>
+        <!-- SPELLED OUT, AND EVERY CLAUSE CHECKED AGAINST creditFundedBettor
+             (src/genesis/season.ts:151).
+             "Somebody else" -- the ledger refuses a point when the bettor's own
+             handle owns the market (":174, kendi cuzdanin sayilmaz").
+             "real money" -- it is credited off a confirmed stake on the money
+             path (src/server.ts:3732), never a visit.
+             "counts once, ever" -- the insert is ON CONFLICT (wallet) DO
+             NOTHING, and the comment beside it says first touch means the
+             credit never moves, so a wallet scores for one market and one time
+             in the whole season. -->
+        <p class="lede">Somebody else puts real money on a market you opened.
+          That is <span class="mk">1 Genesis point</span>, and each person counts
+          once, ever.</p>
         <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
              ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
              birakmak "butona bastim, hicbir sey olmadi"nin ta kendisiydi. -->
