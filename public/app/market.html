@@ -61,6 +61,12 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .q{font-family:var(--display);font-weight:400;
   font-size:clamp(28px,5.1vw,44px);line-height:1.04;letter-spacing:.005em;
   text-transform:uppercase;text-wrap:balance;margin:0 0 26px;color:var(--cream)}
+/* Baslik hook oldugunda tam soru BURADA duruyor ve gitmiyor: paranin
+   baglandigi sozlesme bu kelimeler, hook yalnizca vitrin. Sessiz ama
+   okunur -- kucultulmus degil, ikincil. */
+.q--hook{margin-bottom:10px}
+.qfull{margin:0 0 26px;font-size:15px;line-height:1.5;color:var(--fg-2);
+  max-width:60ch}
 
 /* ---- the pool ---- */
 .pool{border:3px solid var(--cream);background:transparent;padding:18px 20px 20px;margin:0 0 22px}
@@ -415,7 +421,20 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       : "";
     // data-oddie-question is chain.js's second home for "which market is this
     // money going on"; its first is feed.html's card, which this page has not.
-    html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</h1>";
+    /* HOOK BASLIK, SORU SOZLESME.
+       extractClaim her iddia icin ~28 karakterlik bir hook uretiyor ve bu
+       bugune kadar sadece X yanitina gidip atiliyordu: tweet, uygulamadan
+       daha punchy okunuyordu. Artik basligi o tasiyor.
+       data-oddie-question SORUDA kaliyor, hook'ta degil: chain.js o elemanin
+       metnini bahis sheet'inin basligina yaziyor ve paranin uzerine gittigi
+       ekran tam ifadeyi gostermeli, vitrini degil. */
+    var hook = String(m.hook || "").trim();
+    if (hook) {
+      html += '<h1 class="q q--hook">' + esc(hook) + "</h1>"
+        + '<p class="qfull" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</p>";
+    } else {
+      html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</h1>";
+    }
 
     if (resolved) {
       var yes = m.outcome === "yes";

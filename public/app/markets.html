@@ -62,6 +62,8 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .card__q{font-family:var(--display);font-weight:400;font-size:clamp(19px,4vw,27px);
   line-height:1.1;text-transform:uppercase;margin:0 0 14px;text-wrap:balance}
 .card__q a{color:var(--cream);text-decoration:none}
+/* Kartta da hook baslik, tam soru altinda. Ayni kural: sozlesme gorunur. */
+.card__full{margin:6px 0 0;font-size:13.5px;line-height:1.45;color:var(--fg-3)}
 .card__q a:hover{color:var(--yellow)}
 
 .pool{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;
@@ -404,10 +406,19 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         }
         var pct = (m.oddsSource === "vault" && m.yesPct != null) ? m.yesPct : null;
         var href = "/m/" + encodeURIComponent(m.slug);
+        var hook = String(m.hook || "").trim();
         return '<article class="card">'
           + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
-          + '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
-          + '<a href="' + href + '">' + esc(m.question) + "</a></h2>"
+          /* Hook varsa baslik odur ve tam soru ALTINDA gorunur kalir; yoksa
+             baslik zaten sorunun kendisidir. data-oddie-question her iki
+             durumda da SORUYU tasiyan elemanda, cunku chain.js onun metnini
+             bahis sheet'ine yaziyor. Tek kopya: ayni soruyu bir gorunur bir
+             gizli olarak iki kere yazmak, ikisinin ayrisabilecegi demektir. */
+          + (hook
+              ? '<h2 class="card__q"><a href="' + href + '">' + esc(hook) + "</a></h2>"
+                + '<p class="card__full" data-oddie-question data-slug="' + esc(m.slug) + '">' + esc(m.question) + "</p>"
+              : '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
+                + '<a href="' + href + '">' + esc(m.question) + "</a></h2>")
           + pool
           + '<div class="sides">'
           + '<a class="side side--y" data-slug="' + esc(m.slug) + '" data-side="yes" href="' + href + '?side=yes">YES'

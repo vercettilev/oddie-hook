@@ -2279,6 +2279,9 @@ async function openMarketFromClaim(input: {
   yesPct?: number;
   resolutionCriteria?: string | null;
   resolvability?: string | null;
+  /** extractClaim's short headline. Carried so the app can show the same
+   *  punchy line the tweet does; the question stays the terms. */
+  hook?: string | null;
   /**
    * WHEN THE RENT GETS SPENT.
    *
@@ -2359,7 +2362,7 @@ async function openMarketFromClaim(input: {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
 
-  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability, marketId, creatorFeeBps });
+  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability, hook: input.hook ?? null, marketId, creatorFeeBps });
   if (minted) await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
@@ -2602,6 +2605,7 @@ app.post("/api/v1/claims", async (req, res) => {
       category: ex.category,
       resolutionCriteria: ex.resolution_criteria || null,
       resolvability: ex.resolvability,
+      hook: ex.hook || null,
       mint: "on-demand",
     });
     if (!out.ok) {
@@ -2688,6 +2692,7 @@ app.get("/api/v1/markets", async (req, res) => {
       closesAt: m.closesAt,
       resolved: Boolean(m.resolvedOutcome),
       outcome: m.resolvedOutcome ?? null,
+      hook: m.hook ?? null,
       taggedBy: openers[m.slug]?.handle ?? null,
       // Kartin @handle cipi bir profile degil, iddianin GELDIGI gonderiye
       // gidebilsin diye. Veri zaten yukarida okundu (surfacersFor), tek eksik
@@ -2737,6 +2742,9 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     ok: true,
     slug: detail.slug,
     question: detail.question,
+    // Headline, not terms. A client may lead with this; `question` is still
+    // the wording the stake is against and every surface must keep it.
+    hook: detail.hook ?? null,
     url: `${APP_BASE_URL}/m/${detail.slug}`,
     closesAt: detail.closesAt,
     resolutionCriteria: detail.resolutionCriteria ?? null,
@@ -2789,6 +2797,7 @@ app.post("/api/v1/markets", async (req, res) => {
     category: req.body?.category != null ? String(req.body.category) : undefined,
     yesPct: req.body?.yesPct != null ? Number(req.body.yesPct) : undefined,
     resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
+    hook: req.body?.hook != null ? String(req.body.hook) : null,
   });
   if (!out.ok) return res.status(out.status).json({ ok: false, error: out.error });
   // Recorded here and nowhere else: the market exists, so it cost us rent.
@@ -2813,6 +2822,7 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
     yesPct: req.body?.yesPct != null ? Number(req.body.yesPct) : undefined,
     resolutionCriteria: req.body?.resolution_criteria != null ? String(req.body.resolution_criteria) : null,
     resolvability: req.body?.resolvability != null ? String(req.body.resolvability) : null,
+    hook: req.body?.hook != null ? String(req.body.hook) : null,
   });
   if (!out.ok) return res.status(out.status).json({ error: out.error, chainEnabled: isChainEnabled() });
   res.json({
@@ -3890,6 +3900,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
         category: input.category,
         resolutionCriteria: input.resolutionCriteria,
         resolvability: input.resolvability,
+        hook: input.hook ?? null,
         // The bot is the volume, so the bot is where the rent goes. A tagged
         // claim used to cost a deposit out of our own wallet whether or not one
         // human ever opened it, and a market nobody stakes in has an empty vault

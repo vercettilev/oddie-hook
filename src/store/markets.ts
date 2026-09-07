@@ -353,6 +353,20 @@ CREATE TABLE IF NOT EXISTS community_market (
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolution_criteria text;
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolvability       text;
 
+-- THE SHORT HEADLINE, THE ONE THE TWEET ALREADY USES.
+--
+-- extractClaim has produced a hook since the first version ("BTC to 100k?",
+-- max ~28 chars) and it went straight into the X reply and was then dropped on
+-- the floor: never stored, never served, never shown. So the tweet announcing a
+-- market read punchier than the market itself, which renders the 15-word legal
+-- rewrite instead.
+--
+-- The hook is a HEADLINE, never the terms. question stays the exact wording
+-- money is placed on and stays reachable on every surface that shows a hook.
+-- NULL means "written before this column existed, or the model had nothing
+-- crisp"; every reader falls back to question, so nothing depends on it.
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS hook text;
+
 -- The creator fee rate this market will be minted with, decided ONCE and
 -- carried by the same row that makes the market visible.
 --
@@ -3060,6 +3074,8 @@ export type CommunityMarket = Market & {
   onchainSig: string | null;
   resolutionCriteria: string | null;
   resolvability: string | null;
+  /** Short punchy headline from extraction. Null falls back to question. */
+  hook: string | null;
   /** The rate this market is (or will be) minted with. Carried on the list
    *  so the feed shows the fee actually charged, without a second lookup
    *  that can be empty or fail. */
@@ -3075,6 +3091,8 @@ interface CommunityMeta {
   onchainSig: string | null;
   resolutionCriteria: string | null;
   resolvability: string | null;
+  /** Short punchy headline from extraction. Null falls back to question. */
+  hook?: string | null;
   /** Set when the market was taken off the board. See the DDL note. */
   retiredAt?: string | null;
   /** The rate this market will be minted at. See the DDL note on the column. */
@@ -3444,6 +3462,9 @@ export async function createCommunityMarket(input: {
   yesPct?: number; // starting odds; default 50
   resolutionCriteria?: string | null; // the "Resolves by: …" rules bettors see
   resolvability?: string | null; // gate grade: clean | fuzzy | unresolvable
+  /** Short punchy headline (extractClaim's `hook`). Headline only, never the
+   *  terms: `question` remains the wording the money is placed on. */
+  hook?: string | null;
   // Supplied by callers that must mint on-chain BEFORE they are willing to
   // publish a row, since the same id has to address both. Defaults to the
   // clock, which is what every other caller wants.
@@ -3458,6 +3479,9 @@ export async function createCommunityMarket(input: {
   const category = input.category?.trim() || "Community";
   const resolutionCriteria = input.resolutionCriteria?.trim() || null;
   const resolvability = input.resolvability?.trim() || null;
+  // 60 is well above the model's ~28-char brief and still short enough that a
+  // long one cannot quietly become the page's body text.
+  const hook = input.hook?.trim().slice(0, 60) || null;
   const creatorFeeBps = Number.isInteger(input.creatorFeeBps) ? input.creatorFeeBps! : CREATOR_FEE_BPS_REAL;
   const market: Market = {
     venue: "community",
@@ -3474,15 +3498,15 @@ export async function createCommunityMarket(input: {
   if (!PERSISTENT) {
     memCommunity.set(rec.slug, {
       slug: rec.slug, marketId, category, resolvedOutcome: null, onchainPubkey: null, onchainSig: null,
-      resolutionCriteria, resolvability, creatorFeeBps,
+      resolutionCriteria, resolvability, hook, creatorFeeBps,
     });
     return { slug: rec.slug, marketId, market };
   }
   await ensureSchema();
   await db().query(
-    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability, creator_fee_bps)
-     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (slug) DO NOTHING`,
-    [rec.slug, marketId, category, resolutionCriteria, resolvability, creatorFeeBps],
+    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability, hook, creator_fee_bps)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (slug) DO NOTHING`,
+    [rec.slug, marketId, category, resolutionCriteria, resolvability, hook, creatorFeeBps],
   );
   return { slug: rec.slug, marketId, market };
 }
@@ -4765,6 +4789,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
         ...rec.market, yesPct: crowdPct(rec.market.yesPct, yes, no),
         marketId: meta.marketId, category: meta.category, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
         resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
+        hook: meta.hook ?? null,
         creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
       });
     }
@@ -4774,18 +4799,18 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
   const { rows } = await db().query<{
     venue_id: string; question: string; yes_pct: number; closes_at: Date | null; volume_usd: number; venue_url: string;
     market_id: string; category: string; onchain_pubkey: string | null; onchain_sig: string | null;
-    resolution_criteria: string | null; resolvability: string | null; creator_fee_bps: number | null;
+    resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null;
     yes_pool: number; no_pool: number;
   }>(`
     SELECT s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.creator_fee_bps,
+           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps,
            count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes' AND mc.closed_at IS NULL)::int AS yes_pool,
            count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no'  AND mc.closed_at IS NULL)::int AS no_pool
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
      WHERE c.resolved_outcome IS NULL AND c.retired_at IS NULL
      GROUP BY s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-              c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.creator_fee_bps, c.created_at
+              c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
     venue: "community", venueId: r.venue_id, question: r.question, yesPct: crowdPct(r.yes_pct, r.yes_pool, r.no_pool),
@@ -4793,6 +4818,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
     venueUrl: r.venue_url, tags: [], marketId: Number(r.market_id), category: r.category,
     onchainPubkey: r.onchain_pubkey, onchainSig: r.onchain_sig,
     resolutionCriteria: r.resolution_criteria, resolvability: r.resolvability,
+    hook: r.hook,
     creatorFeeBps: r.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
   }));
 }
@@ -4801,6 +4827,8 @@ export interface CommunityListItem {
   slug: string; question: string; yesPct: number;
   resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; closesAt: string | null;
   yesTokens: number; noTokens: number; yesPlayers: number; noPlayers: number;
+  /** Short punchy headline from extraction. Null falls back to question. */
+  hook: string | null;
   /** Set when the market was taken off the board. This list is the ADMIN view
    *  and deliberately still returns retired markets, so every caller that
    *  presents markets to the public has to filter on this itself. Missing that
@@ -4854,28 +4882,30 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
         slug: meta.slug, question: rec.market.question, yesPct: rec.market.yesPct,
         resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, closesAt: rec.market.closesAt,
         yesTokens: tokens("yes"), noTokens: tokens("no"), yesPlayers: players("yes"), noPlayers: players("no"),
+        hook: meta.hook ?? null,
         retiredAt: meta.retiredAt ?? null, creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
       };
     });
   }
   await ensureSchema();
   const { rows } = await db().query<{
-    slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null; creator_fee_bps: number | null;
+    slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null; hook: string | null; creator_fee_bps: number | null;
     yes_tokens: number; no_tokens: number; yes_players: number; no_players: number; retired_at: Date | null;
   }>(`
-    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.creator_fee_bps,
+    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes'), 0)::int AS yes_tokens,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'), 0)::int  AS no_tokens,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes')::int AS yes_players,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no')::int  AS no_players
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
-     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.creator_fee_bps, c.created_at
+     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
     slug: r.slug, question: r.question, yesPct: r.yes_pct, resolvedOutcome: r.resolved_outcome,
     onchainPubkey: r.onchain_pubkey, closesAt: r.closes_at ? r.closes_at.toISOString() : null,
     yesTokens: r.yes_tokens, noTokens: r.no_tokens, yesPlayers: r.yes_players, noPlayers: r.no_players,
+    hook: r.hook,
     retiredAt: r.retired_at ? r.retired_at.toISOString() : null,
     creatorFeeBps: r.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
   }));
@@ -4888,6 +4918,8 @@ export interface CommunityMarketDetail {
   slug: string; question: string; closesAt: string | null; yesPct: number; marketId: number;
   resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; onchainSig: string | null;
   resolutionCriteria: string | null; resolvability: string | null;
+  /** Short punchy headline from extraction. Null falls back to question. */
+  hook: string | null;
   /** The creator fee this market is (or will be) minted with. Never null: a row
    *  written before the column existed reads as the full rate, which is what it
    *  was minted with. */
@@ -4909,12 +4941,13 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
       slug, question: rec.market.question, closesAt: rec.market.closesAt, yesPct: rec.market.yesPct,
       marketId: meta.marketId, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
       resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
+      hook: meta.hook ?? null,
       creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL, positions,
     };
   }
   await ensureSchema();
-  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; creator_fee_bps: number | null }>(`
-    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.creator_fee_bps
+  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null }>(`
+    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps
       FROM community_market c JOIN market_slug s ON s.slug = c.slug WHERE c.slug = $1`, [slug]);
   if (!meta.rows.length) return null;
   const m = meta.rows[0];
@@ -4924,6 +4957,7 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
     slug, question: m.question, closesAt: m.closes_at ? m.closes_at.toISOString() : null, yesPct: m.yes_pct,
     marketId: Number(m.market_id), resolvedOutcome: m.resolved_outcome, onchainPubkey: m.onchain_pubkey, onchainSig: m.onchain_sig,
     resolutionCriteria: m.resolution_criteria, resolvability: m.resolvability,
+    hook: m.hook,
     creatorFeeBps: m.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
     positions: pos.rows.map((r) => ({ deviceId: r.device_id, side: r.side, tokens: r.tokens, entryPct: r.pct_at, closed: Boolean(r.closed_at), proceeds: r.proceeds })),
   };

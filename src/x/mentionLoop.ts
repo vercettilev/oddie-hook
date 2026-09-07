@@ -51,6 +51,9 @@ export interface SweepDeps {
     category?: string;
     resolutionCriteria?: string | null;
     resolvability?: string | null;
+    /** The extraction's short headline, carried so the app can show the same
+     *  punchy line this loop already puts in the reply. */
+    hook?: string | null;
   }): Promise<MintResult>;
   /** The share card for a market, as PNG bytes. */
   cardPng(slug: string): Promise<Buffer | null>;
@@ -267,6 +270,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         category: ex.category,
         resolutionCriteria: ex.resolution_criteria || null,
         resolvability: ex.resolvability,
+        hook: ex.hook || null,
       });
       if (!minted.ok) {
         await settleMention(m.id, "failed", { reason: `mint:${minted.status} ${minted.error}` });
