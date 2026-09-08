@@ -1161,12 +1161,31 @@ function b64ToBytes(b64) {
           // land. Never render that as a failure: the program allows adding to
           // a position on the same side, so a retry over a stake that is
           // already on chain would take their money twice.
-          body.innerHTML = `<h3>${confirmed ? "You're in ✓" : "Sent"}</h3>
-            <p class="cnote">${confirmed
-              ? `${sol} SOL on ${side.toUpperCase()}${testnet ? `, on ${label}` : ""}.`
-              : `${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.`}</p>
-            <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          /* THE RECEIPT, AS A RESULT RATHER THAN A STATEMENT.
+             This read like a bank confirmation: a heading, a sentence naming
+             the side and the amount in the same grey as everything else, and
+             the share button below the fold of the eye. The moment it is
+             describing is the best one in the product -- money just went on a
+             side of an argument -- and the page it lands on has to look like
+             that. Side badge in its own colour, amount as the biggest thing on
+             the screen, and one sticker.
+             FIRST IN GETS ITS OWN STICKER, because being first is a different
+             feeling from joining, and the pool totals here are the ones from
+             BEFORE this bet, so the test is exact rather than flattering. */
+          const wasEmpty = (yesLamports + noLamports) === 0;
+          body.innerHTML = `${confirmed ? `
+            <p class="rin">
+              <b class="rin__s rin__s--${side}">${side.toUpperCase()}</b>
+              <span class="rin__a">${sol} <i>SOL</i></span>
+              <img class="rin__st" src="${wasEmpty ? "/brand/st-first.webp" : "/brand/st-called.webp"}" alt="">
+            </p>
+            <p class="rin__l">${wasEmpty
+              ? "You set the odds. Whoever comes next has to take your price."
+              : "Your call is on chain now."}${testnet ? ` On ${label}.` : ""}</p>`
+            : `<h3>Sent</h3>
+            <p class="cnote">${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.</p>`}
             <a class="cbtn cbtn--share" id="chainshare" href="#" rel="noopener">Post your call</a>
+            <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
             <div id="chainname"></div>
             ${homeLink()}
             <button class="cclose">Done</button>`;
@@ -1177,8 +1196,38 @@ function b64ToBytes(b64) {
           // things that make a call worth screenshotting, and the market link.
           {
             const url = `${location.origin}/m/${encodeURIComponent(slug)}`;
-            const pct = yesOnchainPct == null ? null : (side === "yes" ? yesOnchainPct : noOnchainPct);
-            const text = `Called ${side.toUpperCase()}${pct == null ? "" : ` at ${pct}%`} on: ${question || "this"}. Stamped on chain.`;
+            /* THE POST IS THE PRODUCT'S THIRD VERB, and it was written like a
+               receipt: "Called YES at 100% on: <the full 15-word question>.
+               Stamped on chain." Nobody stops scrolling for that. What makes a
+               call worth reading is the argument, that somebody has money on
+               it, and that the other side is open -- in that order, because the
+               first line is the only one a stranger is guaranteed to see.
+               THE QUESTION LEADS, in its short form. It is the curiosity, and
+               burying it behind our own verb wasted the one line that works.
+               THE LAST LINE IS AN INVITATION, and it is TRUE either way: an
+               empty other side is named as empty, and a taken one is named
+               with the share it actually holds. Both are read from the pool as
+               it stood BEFORE this bet, so neither can be a boast about money
+               this person just put in themselves.
+               No @-mention: X penalises a post that pairs one with a link, and
+               this post has to carry a link. */
+            const SIDE = side.toUpperCase(), OTHER = side === "yes" ? "NO" : "YES";
+            const otherLam = side === "yes" ? noLamports : yesLamports;
+            const total = yesLamports + noLamports;
+            const otherPct = total > 0 ? Math.round((otherLam / total) * 100) : 0;
+            const head = (hook || question || "").trim();
+            // Rotated so a feed of oddie calls does not read as one bot. Three
+            // sentences, same fact, different mouth.
+            const stakeLines = [
+              `I'm ${SIDE} with ${sol} SOL. On chain, not vibes.`,
+              `${sol} SOL on ${SIDE}. Receipts, not opinions.`,
+              `Put ${sol} SOL behind ${SIDE}.`,
+            ];
+            const stake = stakeLines[Math.floor(Math.random() * stakeLines.length)];
+            const invite = otherLam > 0
+              ? `${otherPct}% are on ${OTHER}. One of us is wrong.`
+              : `${OTHER} is wide open. Come take it.`;
+            const text = `${head ? head + "\n\n" : ""}${stake}\n${invite}`;
             const a = body.querySelector("#chainshare");
             a.href = `https://x.com/intent/tweet?text=${encodeURIComponent(`${text} ${url}`)}`;
             a.target = "_blank";

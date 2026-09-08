@@ -279,6 +279,31 @@
 }
 .chain-sig a{color:var(--pink-deep,#A3053F)}
 
+/* ---- YOU ARE IN ----
+   The best moment in the product, drawn like one. The amount is the biggest
+   thing on the sheet because it is the thing that just became true, the side
+   keeps the colour it has carried since the card, and the sticker is the only
+   place this design language celebrates anything. */
+.rin{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 8px}
+.rin__s{
+  font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:22px;
+  letter-spacing:.03em;line-height:1;color:var(--black,#020302);
+  border:3px solid var(--ink,#0B0D04);padding:8px 13px 9px;
+}
+.rin__s--yes{background:var(--yellow,#D7DC1F);box-shadow:4px 5px 0 var(--yellow-deep,#5A6109)}
+.rin__s--no{background:var(--pink,#FF2D78);box-shadow:4px 5px 0 var(--pink-deep,#A3053F)}
+.rin__a{
+  font-family:var(--display,'Anton',sans-serif);font-weight:400;
+  font-size:clamp(34px,9vw,46px);line-height:1;letter-spacing:.01em;
+  color:var(--ink,#0B0D04);
+}
+.rin__a i{font-style:normal;font-size:.42em;letter-spacing:.1em;color:var(--ink-2,#494E2D)}
+/* Pushed to the end of the row and allowed to break the box a little, the way
+   every other sticker in this product does. */
+.rin__st{margin-left:auto;height:clamp(54px,13vw,74px);width:auto;transform:rotate(6deg);
+  filter:drop-shadow(0 6px 14px rgba(2,3,2,.28))}
+.rin__l{font-size:13.5px;line-height:1.5;color:var(--ink-2,#494E2D);margin:0 0 14px}
+
 /* ---- the receipt moment: the one X ask on the cold path ---- */
 .chain-name{margin:14px 0 4px;padding-top:12px;border-top:1px dashed var(--ink,#0B0D04)}
 .chain-name b{font-family:var(--mono,monospace);font-weight:700}
@@ -291,13 +316,24 @@
   box-shadow:7px 8px 0 var(--pink,#FF2D78)}
 
 /* ---- post your call, from the receipt ---- */
+/* THE LOUDEST THING ON THE RECEIPT, because it is the only thing left to do.
+   Cream on cream made the one growth action on the whole money path look like
+   a footnote under the amount. Same yellow bevel as the button that took the
+   bet: the sentence is "you are in, now go say it". */
 .cbtn--share{
-  display:block;margin-top:12px;text-align:center;text-decoration:none;
-  background:var(--cream,#FBFCF4);color:var(--ink,#0B0D04);
-  box-shadow:5px 6px 0 var(--ink,#0B0D04);font-size:17px;padding:13px 14px;
+  display:block;margin-top:0;text-align:center;text-decoration:none;
+  background:var(--yellow,#D7DC1F);color:var(--ink,#0B0D04);
+  font-size:19px;padding:16px 14px 18px;
+  box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
+             inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13);
 }
-.cbtn--share:hover{background:#fff;color:var(--ink,#0B0D04);transform:translate(-2px,-2px);
-  box-shadow:7px 8px 0 var(--ink,#0B0D04)}
+.cbtn--share:hover{background:var(--yellow-hi,#E7EC4E);color:var(--ink,#0B0D04);
+  transform:translate(-2px,-3px);
+  box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
+             inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
+.cbtn--share:active{transform:translate(5px,6px);
+  box-shadow:0 0 0 var(--pink-deep,#A3053F),
+             inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
 
 /* The way home from a receipt. Quiet: the loud thing on a receipt is the
    receipt. */
