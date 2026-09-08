@@ -1224,10 +1224,7 @@ function b64ToBytes(b64) {
                this person just put in themselves.
                No @-mention: X penalises a post that pairs one with a link, and
                this post has to carry a link. */
-            const SIDE = side.toUpperCase(), OTHER = side === "yes" ? "NO" : "YES";
-            const otherLam = side === "yes" ? noLamports : yesLamports;
-            const total = yesLamports + noLamports;
-            const otherPct = total > 0 ? Math.round((otherLam / total) * 100) : 0;
+            const SIDE = side.toUpperCase();
             const head = (hook || question || "").trim();
             /* NO AMOUNT. It read like a receipt for a purchase, and a number
                with a decimal point in it is the least interesting thing a
@@ -1236,13 +1233,16 @@ function b64ToBytes(b64) {
                that somebody planted a flag. The money is still visible one tap
                away, on the card this link unfurls into, which is where a number
                belongs -- next to the pool it is part of. */
+            /* AND NOTHING AFTER IT. The second line explained the market
+               ("64% say YES", "NO is wide open") to a reader who is one tap
+               from the market itself, and every word after the claim weakens
+               it: a flat "I say NO." is a person taking a position, the same
+               sentence with a statistic attached is a person justifying one.
+               The card this link unfurls into carries the pool, the split and
+               the question, so the post does not have to. */
             const calls = [`I say ${SIDE}.`, `Hard ${SIDE}.`, `${SIDE}. Calling it now.`];
             const call = calls[Math.floor(Math.random() * calls.length)];
-            // Still true either way, and still read from the pool as it stood
-            // BEFORE this bet, so it can never be a boast about money this
-            // person just put in themselves.
-            const jab = otherLam > 0 ? `${otherPct}% say ${OTHER}.` : `${OTHER} is wide open.`;
-            const text = `${head ? head + "\n\n" : ""}${call} ${jab}`;
+            const text = `${head ? head + "\n\n" : ""}${call}`;
             const a = body.querySelector("#chainshare");
             a.href = `https://x.com/intent/tweet?text=${encodeURIComponent(`${text} ${url}`)}`;
             a.target = "_blank";
