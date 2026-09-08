@@ -1,0 +1,66 @@
+{
+  "takenAt": "2026-09-08T07:49:41.364Z",
+  "cluster": "devnet",
+  "programId": "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu",
+  "neverMinted": 0,
+  "markets": [
+    {
+      "slug": "test-live-onchain-proof-claude-will-a9f2d2",
+      "marketId": "1784138523966",
+      "question": "TEST — live on-chain proof (Claude will resolve this)",
+      "expectedPubkey": "7cWNxT651cMPzkTTNJMB6fgwkkmCv5KsHLp9RCC4noGE",
+      "closeTime": 0,
+      "authority": "J3bEmhdy7CeZeJRXHSJe2JEDyC39kmEWfBKUrYCQuPVY",
+      "creator": "5CaSJBeDHTnXLqjzmtBvk5zAjy9TuVvwTqG5GXLi26YG",
+      "creatorFeeBps": 0,
+      "protocolFeeBps": 0,
+      "resolved": false,
+      "resolvedOutcome": "yes"
+    },
+    {
+      "slug": "will-world-worldxyz-officially-announce-a-54f6b9",
+      "marketId": "1788686864977",
+      "question": "Will World (@world_xyz) officially announce a $319M airdrop for Solana users by September 30, 2026?",
+      "expectedPubkey": "6Ypk8jZiSNgFiwxnyUvWNtv8ni77wQEv8oThbVsiGzz2",
+      "closeTime": 1790812740,
+      "authority": "J3bEmhdy7CeZeJRXHSJe2JEDyC39kmEWfBKUrYCQuPVY",
+      "creator": null,
+      "creatorFeeBps": 200,
+      "protocolFeeBps": 200,
+      "resolved": false,
+      "resolvedOutcome": null
+    }
+  ],
+  "unreadable": [
+    {
+      "slug": "will-superteam-germany-and-superteam-turkey-1bab29",
+      "expectedPubkey": "7GkEwDe84Y2xbbfoTP2EG4Z3mNuzRGErcQNcu5ifXwxG",
+      "owner": "Ao8tBMVCUMMYAm8cbq2qehP78RCK5xNAPyaXv9TH5FZT",
+      "reason": "owned by Ao8tBMVCUMMYAm8cbq2qehP78RCK5xNAPyaXv9TH5FZT, a different program"
+    },
+    {
+      "slug": "will-the-ansemhack-clawrena-hackathon-have-3d42ff",
+      "expectedPubkey": "21A9BvhiiMzWN8RNSrCouAbLweakvxiZ1UTcPKYmXz8S",
+      "owner": "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu",
+      "reason": "owned by THIS program but would not decode"
+    },
+    {
+      "slug": "will-clawpumps-ansem-token-be-trading-12f122",
+      "expectedPubkey": "AMR5hJUiU99wdKc4eYzhbK7GSzj4GitttbJgTxDhfAt6",
+      "owner": "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu",
+      "reason": "owned by THIS program but would not decode"
+    },
+    {
+      "slug": "will-at-least-one-solo-builder-7ab709",
+      "expectedPubkey": "A7QJfFA9oZJh5RUMZkoxVBE9CrDwqx1kKUotEj1NT2Vk",
+      "owner": "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu",
+      "reason": "owned by THIS program but would not decode"
+    },
+    {
+      "slug": "will-oddie-take-a-protocol-fee-ab131c",
+      "expectedPubkey": "4iB2ejt7X5qrjwvt4qagF2yGRPHq1JvpC2NwS7AGyYVp",
+      "owner": "3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu",
+      "reason": "owned by THIS program but would not decode"
+    }
+  ]
+}
