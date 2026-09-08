@@ -1016,7 +1016,17 @@ function b64ToBytes(b64) {
         if (lab) {
           lab.textContent = next.toUpperCase();
           lab.className = `chain-took__s chain-took__s--${next}`;
+          // Restart rather than add: the class is already there on the second
+          // switch, and an animation that is already applied does not replay.
+          // Reading offsetWidth between the two is what forces the style
+          // recalculation that makes the removal count.
+          lab.classList.remove("chain-took__s--pop");
+          void lab.offsetWidth;
+          lab.classList.add("chain-took__s--pop");
         }
+        stakeBtn.classList.remove("claimbtn--flash");
+        void stakeBtn.offsetWidth;
+        stakeBtn.classList.add("claimbtn--flash");
         swap.textContent = `Switch to ${(next === "yes" ? "no" : "yes").toUpperCase()}`;
       };
 

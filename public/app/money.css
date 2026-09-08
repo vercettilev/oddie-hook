@@ -112,6 +112,31 @@
   text-decoration:underline;text-underline-offset:3px;
 }
 .chain-swap:hover{color:var(--ink,#0B0D04)}
+.chain-swap:active{transform:translateY(1px)}
+
+/* THE SWITCH, AS A THING THAT HAPPENS.
+   Changing sides rewrote a word and a colour with no motion at all, so the one
+   moment in this sheet where the user changes their mind looked like a typo
+   correcting itself. Two beats, on the two things that actually changed: the
+   badge takes a spring overshoot with a kick of rotation, and the button it
+   commands flashes once so the eye follows the colour across the sheet instead
+   of noticing later that it moved. */
+@keyframes rin-pop{
+  0%{transform:scale(.72) rotate(-9deg)}
+  55%{transform:scale(1.14) rotate(4deg)}
+  78%{transform:scale(.97) rotate(-1.5deg)}
+  100%{transform:scale(1) rotate(0)}
+}
+.chain-took__s--pop{animation:rin-pop .34s cubic-bezier(.2,1.5,.4,1)}
+@keyframes side-flash{
+  0%{transform:scale(1)}
+  40%{transform:scale(1.035)}
+  100%{transform:scale(1)}
+}
+.claimbtn--flash{animation:side-flash .28s ease-out}
+@media (prefers-reduced-motion:reduce){
+  .chain-took__s--pop,.claimbtn--flash{animation:none}
+}
 .chain-swap:focus-visible{outline:2px solid var(--ink,#0B0D04);outline-offset:2px}
 
 .chain-side-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 16px}
@@ -212,7 +237,10 @@
   border:3px solid var(--ink,#0B0D04);padding:17px 14px 19px;cursor:pointer;
   box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
              inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13);
-  transition:transform .12s ease,box-shadow .12s ease;
+  /* background is in the list on purpose. Switching sides recolours this
+     button, and with only transform and box-shadow easing, the one thing that
+     actually changed was the one thing that snapped. */
+  transition:transform .12s ease,box-shadow .12s ease,background .18s ease;
 }
 .claimbtn:hover:not(:disabled),.cbtn:hover:not(:disabled){
   background:var(--yellow-hi,#E7EC4E);transform:translate(-2px,-3px);
