@@ -427,12 +427,15 @@ function b64ToBytes(b64) {
     // fee is the only thing that happens to a pool nobody joins, so name the
     // fee and name the consequence and stop. The warning is not softened --
     // it is the one case where winning still costs money.
-    // Silent on an empty pool. The line directly above it already says "first
-    // one in sets the odds", so this repeated "you are first" in a second
-    // voice, and the fee it warned about is named in the small print under the
-    // button. Two sentences for one fact, in the gap between choosing an
-    // amount and pressing the button, is exactly where a sheet stops feeling
-    // like a game.
+    // Silent on an empty pool, and it must STAY silent. What used to be here
+    // was "if nobody takes the other side, the fee still comes off, so you get
+    // back less than you staked", and that is FALSE: resolve_market returns 0
+    // for both fees when `pool == winning_total`, with a comment saying that
+    // charging there would be charging winners on their own returned stake. It
+    // also returns 0 when `winning_total == 0`, and claim_winnings refunds
+    // everybody. So a person alone in a market cannot lose to the fee on
+    // either outcome, and the warning invented a cost the program refuses to
+    // take. Cut for length; kept out for being untrue.
     if (other <= 0) return "";
     return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
   }
@@ -1226,18 +1229,20 @@ function b64ToBytes(b64) {
             const total = yesLamports + noLamports;
             const otherPct = total > 0 ? Math.round((otherLam / total) * 100) : 0;
             const head = (hook || question || "").trim();
-            // Rotated so a feed of oddie calls does not read as one bot. Three
-            // sentences, same fact, different mouth.
-            const stakeLines = [
-              `I'm ${SIDE} with ${sol} SOL. On chain, not vibes.`,
-              `${sol} SOL on ${SIDE}. Receipts, not opinions.`,
-              `Put ${sol} SOL behind ${SIDE}.`,
-            ];
-            const stake = stakeLines[Math.floor(Math.random() * stakeLines.length)];
-            const invite = otherLam > 0
-              ? `${otherPct}% are on ${OTHER}. One of us is wrong.`
-              : `${OTHER} is wide open. Come take it.`;
-            const text = `${head ? head + "\n\n" : ""}${stake}\n${invite}`;
+            /* NO AMOUNT. It read like a receipt for a purchase, and a number
+               with a decimal point in it is the least interesting thing a
+               person can say about an argument. What travels is the POSITION:
+               a stranger scrolling does not care that it was 0.1 SOL, they care
+               that somebody planted a flag. The money is still visible one tap
+               away, on the card this link unfurls into, which is where a number
+               belongs -- next to the pool it is part of. */
+            const calls = [`I say ${SIDE}.`, `Hard ${SIDE}.`, `${SIDE}. Calling it now.`];
+            const call = calls[Math.floor(Math.random() * calls.length)];
+            // Still true either way, and still read from the pool as it stood
+            // BEFORE this bet, so it can never be a boast about money this
+            // person just put in themselves.
+            const jab = otherLam > 0 ? `${otherPct}% say ${OTHER}.` : `${OTHER} is wide open.`;
+            const text = `${head ? head + "\n\n" : ""}${call} ${jab}`;
             const a = body.querySelector("#chainshare");
             a.href = `https://x.com/intent/tweet?text=${encodeURIComponent(`${text} ${url}`)}`;
             a.target = "_blank";
