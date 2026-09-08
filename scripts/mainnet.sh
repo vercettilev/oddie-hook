@@ -24,6 +24,21 @@ SO="onchain/target/deploy/oddie_chain.so"
 DEPLOY_WALLET="${DEPLOY_WALLET:-$HOME/.config/solana/id.json}"
 ADMIN_PUBKEY="J3bEmhdy7CeZeJRXHSJe2JEDyC39kmEWfBKUrYCQuPVY"
 MAINNET="${MAINNET_RPC:-mainnet-beta}"
+# ANCHOR AND SOLANA DO NOT SPEAK THE SAME DIALECT.
+#
+# `solana --url` takes mainnet-beta. `anchor --provider.cluster` does not: its
+# aliases are localnet, testnet, mainnet, devnet, and anything else has to be a
+# full http(s) url. So every check in this script passed against mainnet-beta
+# and the deploy itself died on the one line that hands the name to anchor,
+# AFTER the confirmation prompt and with the wallets already funded. Nothing was
+# spent, which is the only reason this was a nuisance rather than an incident.
+#
+# Resolved once, here, into the spelling each tool actually accepts. A custom
+# MAINNET_RPC is already a url, and anchor takes urls, so it passes through.
+case "$MAINNET" in
+  mainnet-beta|mainnet) ANCHOR_CLUSTER="mainnet" ;;
+  *)                    ANCHOR_CLUSTER="$MAINNET" ;;
+esac
 BASE="https://oddie.fun"
 
 # Headroom for future upgrades, as a multiple of the current binary. A program
@@ -150,7 +165,7 @@ case "${1:-check}" in
     [ "$confirm" = "mainnet" ] || { say "Aborted."; exit 1; }
 
     ( cd onchain && anchor deploy \
-        --provider.cluster "$MAINNET" \
+        --provider.cluster "$ANCHOR_CLUSTER" \
         --program-name oddie_chain \
         -- --max-len "$MAX_LEN" )
 
