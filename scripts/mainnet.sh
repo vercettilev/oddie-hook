@@ -222,7 +222,23 @@ case "${1:-check}" in
     # looks completely healthy from here.
     if [ -f mainnet-backfill.json ]; then
       head_ "every existing market, on the new cluster"
-      if npm run --silent mainnet-backfill -- verify; then
+      # UNDER THE DEPLOYMENT'S OWN ENVIRONMENT, not this shell's.
+      #
+      # This ran a bare `npm run`, which inherits an operator laptop where
+      # SOLANA_RPC_URL and DATABASE_URL are unset. So it read the DEFAULT
+      # cluster -- devnet, the one we just left -- and reported the mainnet
+      # board as missing. The sub-script even says so out loud ("this snapshot
+      # came from devnet and that is the cluster this script is pointed at"),
+      # and the line above it still printed a red MISS about the move having
+      # failed. A check that cannot see the thing it checks does not return
+      # "unknown", it returns whatever the fallback happens to be, and here the
+      # fallback is the wrong chain.
+      #
+      # DATABASE_URL is overridden AFTER railway injects it, because the value
+      # railway supplies is postgres.railway.internal, which only resolves from
+      # inside their network.
+      db_pub=$(railway variables --service Postgres --kv 2>/dev/null | grep '^DATABASE_PUBLIC_URL=' | cut -d= -f2-)
+      if railway run --service oddie-hook -- env DATABASE_URL="$db_pub" npm run --silent mainnet-backfill -- verify; then
         good "every snapshotted market is live with identical terms"
       else
         bad "markets are missing or changed. See above, then: npm run mainnet-backfill -- replay --apply"
