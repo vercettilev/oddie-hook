@@ -331,7 +331,16 @@
     padding-top:clamp(30px,4.4vw,66px);padding-bottom:clamp(34px,4.6vw,72px)}
   .A__in{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.62fr);
     gap:clamp(22px,3.6vw,58px);align-items:center}
-  .A__art{justify-self:end}
+  /* PINNED TO THE TOP, because the column beside it changes size.
+     Connecting X unhides the handle strip, the Genesis card and the pips, so
+     the text column roughly doubles -- and a centred art column answers that by
+     sliding down half the growth. Measured: 361px, in one jump, immediately
+     after an OAuth redirect, which is the worst possible moment to move the
+     page under somebody who has just come back from another site.
+     align-self:start costs nothing where it already looks right: the ticket is
+     the tallest thing in the row while signed out, so its top and the grid's
+     top are already the same pixel. This only removes the jump. */
+  .A__art{justify-self:end;align-self:start}
 
   /* ------------------------------------------------- brand stickers -- */
   /* Each sticker states its own section's idea, so these are content and not
