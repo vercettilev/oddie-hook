@@ -986,14 +986,47 @@ export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
     // now put it there ourselves: without a priority fee a mainnet transaction
     // is dropped under congestion. It can move no money and touch no account,
     // so admitting it costs the guard nothing.
+    //
+    // LIGHTHOUSE IS THE SECOND PASSENGER, and it is Phantom that puts it there.
+    //
+    // Phantom augments transactions it signs with Lighthouse guard
+    // instructions: assertions that the state after execution matches the
+    // preview the user was shown, so a transaction cannot say one thing in the
+    // wallet and do another on chain. They can only make a transaction FAIL.
+    // Lighthouse asserts and reverts; it cannot move the signer's funds.
+    // Program L2TEx… is the same address on devnet and mainnet-beta.
+    //
+    // Found the hard way, and only after the wall came down. On devnet Phantom
+    // refused to simulate against a chain where this program did not exist, so
+    // the bet died at the wallet and no Phantom-signed transaction ever reached
+    // this relay. The first one that did, minutes after the mainnet deploy, was
+    // refused BY US -- "we could not confirm this was an oddie bet" -- for
+    // carrying the wallet's own safety instructions. Fixing the outer problem
+    // is what exposed this one.
+    //
+    // Refusing it is not a safe default here: it makes the majority wallet on
+    // Solana unable to place a bet at all, while protecting against a program
+    // that by construction cannot take anything.
     const mine = c.programId.toBase58();
     const COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111";
+    const LIGHTHOUSE = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
+    const PASSENGERS = new Set([COMPUTE_BUDGET, LIGHTHOUSE]);
     const ours = tx.instructions.filter((i) => i.programId.toBase58() === mine);
     const strangers = tx.instructions.filter((i) => {
       const pid = i.programId.toBase58();
-      return pid !== mine && pid !== COMPUTE_BUDGET;
+      return pid !== mine && !PASSENGERS.has(pid);
     });
     if (ours.length !== 1 || strangers.length > 0) {
+      // SAID OUT LOUD. This refusal wrote nothing, anywhere: the user got "we
+      // could not confirm this was an oddie bet" and the server log was
+      // silent, so the one refusal on the money path that needs diagnosing was
+      // the one carrying no evidence. Program ids only -- they are public, and
+      // they are the entire question.
+      console.error(JSON.stringify({
+        evt: "relay_refused", reason: "not-our-program",
+        ours: ours.length,
+        strangers: strangers.map((i) => i.programId.toBase58()),
+      }));
       return { ok: false, error: "not-our-program", badRequest: true };
     }
     // The wallet is the only thing that can sign, so an unsigned envelope is a

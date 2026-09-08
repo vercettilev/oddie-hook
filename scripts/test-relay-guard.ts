@@ -21,15 +21,22 @@ const check = (name: string, ok: boolean, extra?: unknown) => {
 
 const OURS = new web3.PublicKey("3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu");
 const COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111";
+/* Phantom augments every transaction it signs with Lighthouse guard
+   instructions: assertions that what happens on chain matches the preview the
+   user was shown. They can only make a transaction fail, never move the
+   signer's funds, and refusing them means the majority wallet on Solana cannot
+   place a bet at all. Same address on devnet and mainnet-beta. */
+const LIGHTHOUSE = "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95";
 const SOMEBODY_ELSE = web3.SystemProgram.programId; // a real, very dangerous passenger
 
 /** The guard's predicate, exactly as src/chain/oddieChain.ts applies it. */
 function accepted(tx: web3.Transaction): boolean {
   const mine = OURS.toBase58();
   const ours = tx.instructions.filter((i) => i.programId.toBase58() === mine);
+  const PASSENGERS = new Set([COMPUTE_BUDGET, LIGHTHOUSE]);
   const strangers = tx.instructions.filter((i) => {
     const pid = i.programId.toBase58();
-    return pid !== mine && pid !== COMPUTE_BUDGET;
+    return pid !== mine && !PASSENGERS.has(pid);
   });
   return ours.length === 1 && strangers.length === 0;
 }
@@ -82,6 +89,23 @@ check("the decoder finds our instruction behind a priority fee",
   Boolean(found) && found!.programId.toBase58() === OURS.toBase58());
 check("and it is NOT the first instruction, which is why index 0 was wrong",
   withFee.instructions[0].programId.toBase58() === COMPUTE_BUDGET);
+
+/* THE SHAPE PHANTOM ACTUALLY SENDS BACK.
+   This is not hypothetical: it is what arrived at the relay minutes after the
+   mainnet deploy, and the guard refused it, so the first real bet on mainnet
+   was stopped by us rather than by the wallet. */
+const lighthouseIx = () => new web3.TransactionInstruction({
+  programId: new web3.PublicKey(LIGHTHOUSE), keys: [], data: Buffer.from([2]),
+});
+check("a Phantom-signed transaction is accepted (fee + ours + lighthouse)",
+  accepted(tx().add(feeIx()).add(ourIx()).add(lighthouseIx())));
+check("lighthouse in front of ours is accepted too",
+  accepted(tx().add(lighthouseIx()).add(ourIx())));
+check("lighthouse alone is still refused, because none of it is ours",
+  !accepted(tx().add(lighthouseIx())));
+check("and a real passenger is STILL refused alongside lighthouse",
+  !accepted(tx().add(ourIx()).add(lighthouseIx()).add(
+    new web3.TransactionInstruction({ programId: SOMEBODY_ELSE, keys: [], data: Buffer.from([3]) }))));
 
 console.log(failed === 0 ? "\nall relay guard checks passed.\n" : `\n${failed} FAILED\n`);
 if (failed > 0) process.exit(1);
