@@ -4357,6 +4357,16 @@ async function sweepMentions(overrides: Partial<SweepDeps> = {}): Promise<SweepR
   sweeping = true;
   try {
     const r = await runMentionSweep(sweepDeps(overrides));
+    /* A QUIET LOOP AND A STOPPED LOOP LOOK IDENTICAL.
+       This logged only when there was something to look at, so a healthy bot
+       with no new mentions writes nothing for hours and the only evidence it
+       is alive is a boot line from whenever the container last restarted. That
+       is the same failure the oracle sweep was given a heartbeat for. One line
+       every ten minutes, and it costs nothing: the X read has already been
+       paid for by the time we get here. */
+    if (r.looked === 0) {
+      console.log(JSON.stringify({ evt: "x_sweep", looked: 0, dryRun: sweepDeps(overrides).dryRun }));
+    }
     if (r.looked > 0) {
       /* WHY, not just how many.
          This dropped `decisions` to keep the line short, and the line it kept
