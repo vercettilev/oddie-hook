@@ -33,6 +33,7 @@ import {
   walletBalanceLamports,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
+  prepareListTx, prepareCancelListingTx, prepareTakeListingTx, listingsFor,
   takePositionFromTx, entryShareOf, chainHealth, readMarket, readMarkets, readPositions, forgetMarket,
 } from "./chain/oddieChain.js";
 import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
@@ -3567,6 +3568,107 @@ if (realStakesReady) {
       };
     });
     res.json({ ok: true, claimable: found.filter(Boolean), unreadable });
+  });
+
+  /**
+   * THE SEAT SWAP. Three prepares and one read, and none of them touches the
+   * vault: the buyer pays the seller directly, so `total_yes` and `total_no`
+   * never move and the multiple every other staker is counting on is what it
+   * was a block earlier.
+   *
+   * Every guard the program enforces is checked here FIRST, for the same reason
+   * the stake route does it: a prepare that hands over a transaction certain to
+   * revert costs the user a fee and manufactures the wallet's red banner
+   * ourselves.
+   */
+  type SeatMarket =
+    | { pubkey: string; closeTime: number }
+    | { err: 404 | 409 | 503; reason: string; closeTime?: number };
+  const openMarketForSeat = async (slug: string): Promise<SeatMarket> => {
+    const detail = await communityMarketDetail(slug).catch(() => null);
+    if (!detail?.onchainPubkey) return { err: 404 as const, reason: "not-minted" };
+    if (detail.resolvedOutcome) return { err: 409 as const, reason: "already-resolved" };
+    const state = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
+    if (!state) return { err: 503 as const, reason: "chain-unreachable" };
+    if (state.resolved) return { err: 409 as const, reason: "already-resolved" };
+    const now = Math.floor(Date.now() / 1000);
+    if (state.closeTime > 0 && now >= state.closeTime) {
+      return { err: 409 as const, reason: "closed", closeTime: state.closeTime };
+    }
+    return { pubkey: detail.onchainPubkey, closeTime: state.closeTime };
+  };
+
+  app.get("/api/chain/listings/:slug", async (req, res) => {
+    const detail = await communityMarketDetail(String(req.params.slug)).catch(() => null);
+    if (!detail?.onchainPubkey) return res.json({ ok: true, listings: [] });
+    res.json({ ok: true, listings: await listingsFor(detail.onchainPubkey) });
+  });
+
+  app.post("/api/chain/listing/prepare", async (req, res) => {
+    const slug = String(req.body?.slug ?? "");
+    const sellerPubkey = String(req.body?.sellerPubkey ?? "");
+    const side = req.body?.side;
+    const lamports = Number(req.body?.lamports ?? 0);
+    const expiresAt = Number(req.body?.expiresAt ?? 0);
+    if (!isValidPubkeyString(sellerPubkey)) return res.status(400).json({ ok: false, reason: "invalid-seller" });
+    if (side !== "yes" && side !== "no") return res.status(400).json({ ok: false, reason: "bad-side" });
+    if (!Number.isInteger(lamports) || lamports <= 0) return res.status(400).json({ ok: false, reason: "bad-amount" });
+
+    const m = await openMarketForSeat(slug);
+    if ("err" in m) return res.status(m.err).json({ ok: false, ...m });
+
+    // The program refuses a listing that outlives the market, so a UI that
+    // offers "a week" on a market closing in three days would be handing over a
+    // certain revert. Clamped rather than refused: the user asked to stand for
+    // a while, and standing until close is the honest most we can give them.
+    const now = Math.floor(Date.now() / 1000);
+    const wanted = Number.isFinite(expiresAt) && expiresAt > now ? expiresAt : now + 86_400;
+    const capped = Math.min(wanted, m.closeTime - 1);
+    if (capped <= now) return res.status(409).json({ ok: false, reason: "closed", closeTime: m.closeTime });
+
+    // The seat has to exist before we offer to sell it.
+    const held = await fetchPosition(m.pubkey, sellerPubkey).catch(() => null);
+    const leg = !held ? 0 : side === "yes" ? held.amountYes : held.amountNo;
+    if (leg < lamports) return res.status(409).json({ ok: false, reason: "not-enough", held: leg });
+
+    const txBase64 = await prepareListTx({ marketPubkey: m.pubkey, sellerPubkey, side, lamports, expiresAt: capped });
+    if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
+    res.json({ ok: true, txBase64, expiresAt: capped });
+  });
+
+  app.post("/api/chain/listing/cancel", async (req, res) => {
+    const slug = String(req.body?.slug ?? "");
+    const sellerPubkey = String(req.body?.sellerPubkey ?? "");
+    if (!isValidPubkeyString(sellerPubkey)) return res.status(400).json({ ok: false, reason: "invalid-seller" });
+    const detail = await communityMarketDetail(slug).catch(() => null);
+    // Cancelling is the one of the three that must work on a CLOSED market too:
+    // a seller whose offer never filled should always be able to take it down
+    // and get their rent back, and the program allows it.
+    if (!detail?.onchainPubkey) return res.status(404).json({ ok: false, reason: "not-minted" });
+    const txBase64 = await prepareCancelListingTx({ marketPubkey: detail.onchainPubkey, sellerPubkey });
+    if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
+    res.json({ ok: true, txBase64 });
+  });
+
+  app.post("/api/chain/listing/take", async (req, res) => {
+    const slug = String(req.body?.slug ?? "");
+    const sellerPubkey = String(req.body?.sellerPubkey ?? "");
+    const buyerPubkey = String(req.body?.buyerPubkey ?? "");
+    if (!isValidPubkeyString(sellerPubkey)) return res.status(400).json({ ok: false, reason: "invalid-seller" });
+    if (!isValidPubkeyString(buyerPubkey)) return res.status(400).json({ ok: false, reason: "invalid-buyer" });
+    if (sellerPubkey === buyerPubkey) return res.status(409).json({ ok: false, reason: "self-fill" });
+
+    const m = await openMarketForSeat(slug);
+    if ("err" in m) return res.status(m.err).json({ ok: false, ...m });
+
+    // Somebody else may have taken it between the page rendering and this call.
+    const seats = await listingsFor(m.pubkey);
+    const seat = seats.find((l) => l.seller === sellerPubkey);
+    if (!seat) return res.status(409).json({ ok: false, reason: "seat-gone" });
+
+    const txBase64 = await prepareTakeListingTx({ marketPubkey: m.pubkey, sellerPubkey, buyerPubkey });
+    if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
+    res.json({ ok: true, txBase64, lamports: seat.lamports, side: seat.side });
   });
 
   app.post("/api/chain/claim/prepare", async (req, res) => {

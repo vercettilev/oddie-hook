@@ -332,6 +332,25 @@
   filter:drop-shadow(0 6px 14px rgba(2,3,2,.28))}
 .rin__l{font-size:13.5px;line-height:1.5;color:var(--ink-2,#494E2D);margin:0 0 14px}
 
+/* ---- a seat on sale ----
+   Offered rather than buried, because it is the one place in this product
+   where two people both come out ahead: the buyer gets a larger share for the
+   same money, and the side they join is not diluted. Drawn as an alternative
+   to the button below it, not as a warning: outlined, not filled, so it reads
+   as another door rather than a problem. */
+.seat{
+  display:block;width:100%;text-align:left;cursor:pointer;
+  background:transparent;color:var(--ink,#0B0D04);
+  border:2px dashed var(--ink,#0B0D04);padding:11px 13px;margin:0 0 12px;
+  transition:background .13s ease,border-color .13s ease;
+}
+.seat b{display:block;font-family:var(--display,'Anton',sans-serif);font-weight:400;
+  font-size:16px;letter-spacing:.02em}
+.seat span{display:block;font-size:11.5px;line-height:1.45;color:var(--ink-2,#494E2D);margin-top:2px}
+.seat:hover:not(:disabled){background:rgba(215,220,31,.28);border-style:solid}
+.seat:disabled{opacity:.6;cursor:default}
+.seat:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:3px}
+
 /* ---- the receipt moment: the one X ask on the cold path ---- */
 .chain-name{margin:14px 0 4px;padding-top:12px;border-top:1px dashed var(--ink,#0B0D04)}
 .chain-name b{font-family:var(--mono,monospace);font-weight:700}

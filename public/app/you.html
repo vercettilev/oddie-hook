@@ -491,8 +491,25 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        with ZERO callers, while this row printed the words "refund open" and
        offered nothing to press. */
     var canRefund = kind === "open" && o.refund && o.refund.openNow;
+    /* THE WAY OUT BEFORE THE MARKET ENDS, and the only one a pari-mutuel can
+       have. Paying somebody out of the vault takes the money from whoever was
+       right, so this is a transfer: the next person who wants that side pays
+       face for the seat and the pool does not move. It is an OFFER, not an
+       exit -- if nobody comes, the money stays here -- and the sheet says so.
+       One side per button: a wallet holding both gets two, because "sell your
+       seat" has to mean one seat. */
+    var sellBtns = "";
+    if (kind === "open") {
+      [["yes", yesLeg], ["no", noLeg]].forEach(function (pair) {
+        if (pair[1] <= 0) return;
+        sellBtns += '<button class="go go--rent sell" data-slug="' + esc(o.slug)
+          + '" data-side="' + pair[0] + '" data-lamports="' + pair[1] + '" type="button">Sell your '
+          + pair[0].toUpperCase() + " seat</button>";
+      });
+    }
     var act = kind === "open"
       ? (canRefund ? '<button class="go go--rent refund" data-slug="' + esc(o.slug) + '" type="button">Take your stake back</button>' : "")
+        + sellBtns
         + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>'
       : '<button class="go' + (o.won ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '" type="button">'
         + (o.won ? "Collect winnings" : "Get your deposit back") + "</button>"
@@ -752,13 +769,21 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // claim listener ON TOP of its own: pressing "Link this wallet" also
       // called openClaim(undefined, undefined) and threw a bogus resolved-market
       // sheet over the page. It is the only .go that is not a position row.
+      Array.prototype.forEach.call(view.querySelectorAll(".go.sell"), function (b) {
+        b.addEventListener("click", function () {
+          C().openSell(b.dataset.slug, b.dataset.side, Number(b.dataset.lamports));
+        });
+      });
       Array.prototype.forEach.call(view.querySelectorAll(".go.refund"), function (b) {
         b.addEventListener("click", function () { C().openRefund(b.dataset.slug); });
       });
       // .refund excluded below for the same reason #linkme is: it is a .go that
       // is not a settled-position row, and openClaim would refuse it with
       // "not-resolved" -- which is exactly the state a refund exists for.
-      Array.prototype.forEach.call(view.querySelectorAll(".go:not(.fee):not(.refund):not(#linkme)"), function (b) {
+      // .sell joins .refund and #linkme in the exclusion list for the same
+      // reason: it is a .go that must not be wired to the claim handler, which
+      // would answer "not-resolved" for a market that is deliberately open.
+      Array.prototype.forEach.call(view.querySelectorAll(".go:not(.fee):not(.refund):not(.sell):not(#linkme)"), function (b) {
         b.addEventListener("click", function () {
           C().openClaim(b.dataset.slug, b.dataset.outcome);
         });

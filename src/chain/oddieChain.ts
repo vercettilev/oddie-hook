@@ -507,6 +507,9 @@ function vaultPda(c: ChainClient, market: InstanceType<typeof c.web3.PublicKey>)
 function positionPda(c: ChainClient, market: InstanceType<typeof c.web3.PublicKey>, user: InstanceType<typeof c.web3.PublicKey>) {
   return c.web3.PublicKey.findProgramAddressSync([Buffer.from("position"), market.toBuffer(), user.toBuffer()], c.programId)[0];
 }
+function listingPda(c: ChainClient, market: InstanceType<typeof c.web3.PublicKey>, seller: InstanceType<typeof c.web3.PublicKey>) {
+  return c.web3.PublicKey.findProgramAddressSync([Buffer.from("listing"), market.toBuffer(), seller.toBuffer()], c.programId)[0];
+}
 
 /** Mark a market resolved on-chain — the authority-only counterpart to the
  *  off-chain settleMarket, so claim_winnings has a real outcome to pay against.
@@ -1259,6 +1262,124 @@ export async function preparePositionTx(args: {
   } catch (e) {
     console.error("[chain] preparePositionTx failed:", (e as Error).message);
     return null;
+  }
+}
+
+/**
+ * THE SEAT SWAP, in three transactions the user signs themselves.
+ *
+ * Nothing here touches the vault: the buyer pays the seller directly and the
+ * seat changes hands, so `total_yes` and `total_no` do not move and the
+ * multiple everybody else is counting on is what it was a block earlier. That
+ * is the property that makes this the only exit shape a pari-mutuel can have,
+ * and the reason none of these three needs a vault account at all.
+ */
+export async function prepareListTx(args: {
+  marketPubkey: string; sellerPubkey: string; side: "yes" | "no"; lamports: number; expiresAt: number;
+}): Promise<string | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    const marketPk = new c.web3.PublicKey(args.marketPubkey);
+    const sellerPk = new c.web3.PublicKey(args.sellerPubkey);
+    const ix = await c.program.methods
+      .listPosition(args.side === "yes" ? 0 : 1, new c.BN(args.lamports), new c.BN(args.expiresAt))
+      .accountsStrict({
+        seller: sellerPk, market: marketPk,
+        position: positionPda(c, marketPk, sellerPk),
+        listing: listingPda(c, marketPk, sellerPk),
+        systemProgram: c.web3.SystemProgram.programId,
+      })
+      .instruction();
+    const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
+    return buildUserTx(c, ix, sellerPk, blockhash);
+  } catch (e) {
+    console.error("[chain] prepareListTx failed:", (e as Error).message);
+    return null;
+  }
+}
+
+export async function prepareCancelListingTx(args: {
+  marketPubkey: string; sellerPubkey: string;
+}): Promise<string | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    const marketPk = new c.web3.PublicKey(args.marketPubkey);
+    const sellerPk = new c.web3.PublicKey(args.sellerPubkey);
+    const ix = await c.program.methods
+      .cancelListing()
+      .accountsStrict({ seller: sellerPk, listing: listingPda(c, marketPk, sellerPk) })
+      .instruction();
+    const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
+    return buildUserTx(c, ix, sellerPk, blockhash);
+  } catch (e) {
+    console.error("[chain] prepareCancelListingTx failed:", (e as Error).message);
+    return null;
+  }
+}
+
+export async function prepareTakeListingTx(args: {
+  marketPubkey: string; sellerPubkey: string; buyerPubkey: string;
+}): Promise<string | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    const marketPk = new c.web3.PublicKey(args.marketPubkey);
+    const sellerPk = new c.web3.PublicKey(args.sellerPubkey);
+    const buyerPk = new c.web3.PublicKey(args.buyerPubkey);
+    const ix = await c.program.methods
+      .takeListing()
+      .accountsStrict({
+        buyer: buyerPk, seller: sellerPk, market: marketPk,
+        listing: listingPda(c, marketPk, sellerPk),
+        sellerPosition: positionPda(c, marketPk, sellerPk),
+        buyerPosition: positionPda(c, marketPk, buyerPk),
+        systemProgram: c.web3.SystemProgram.programId,
+      })
+      .instruction();
+    const { blockhash } = await c.connection.getLatestBlockhash("confirmed");
+    return buildUserTx(c, ix, buyerPk, blockhash);
+  } catch (e) {
+    console.error("[chain] prepareTakeListingTx failed:", (e as Error).message);
+    return null;
+  }
+}
+
+export interface SeatForSale {
+  seller: string;
+  side: "yes" | "no";
+  lamports: number;
+  expiresAt: number;
+}
+
+/**
+ * Every seat on sale in one market.
+ *
+ * EXPIRED LISTINGS ARE FILTERED OUT HERE, not left for the caller. The program
+ * refuses them, so showing one is offering a button that cannot work, and the
+ * account survives its own expiry because only the seller can close it.
+ */
+export async function listingsFor(marketPubkey: string): Promise<SeatForSale[]> {
+  const c = await load();
+  if (!c) return [];
+  try {
+    const marketPk = new c.web3.PublicKey(marketPubkey);
+    const rows = await (c.program.account as any).listing.all([
+      { memcmp: { offset: 8, bytes: marketPk.toBase58() } },
+    ]);
+    const now = Math.floor(Date.now() / 1000);
+    return rows
+      .map((r: any) => ({
+        seller: String(r.account.seller),
+        side: Number(r.account.side) === 0 ? ("yes" as const) : ("no" as const),
+        lamports: Number(r.account.amount),
+        expiresAt: Number(r.account.expiresAt),
+      }))
+      .filter((l: SeatForSale) => l.expiresAt > now && l.lamports > 0);
+  } catch (e) {
+    console.error("[chain] listingsFor failed:", (e as Error).message);
+    return [];
   }
 }
 

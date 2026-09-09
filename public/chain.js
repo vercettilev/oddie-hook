@@ -148,6 +148,13 @@ const PREPARE_REASON = {
   // wrong answer rather than an unhelpful one. Reworded because the rule it
   // described is gone.
   "other-side": "This market already settled for you. Nothing left to do here.",
+  // The seat swap's own refusals. "seat-gone" is a race the buyer lost, not a
+  // problem with their money, and the sheet stays open on the ordinary stake
+  // they can still make.
+  "seat-gone": "Somebody took that seat first. You can still take the side yourself.",
+  "self-fill": "That is your own seat.",
+  "not-enough": "You do not hold that much on that side any more.",
+  "closed": "Betting on this market has closed.",
   "not-resolved": "This market has not settled yet.",
   // After a claim the position account is CLOSED (that is what returns its
   // rent), so "no position" and "already collected" look identical from here.
@@ -684,6 +691,157 @@ function b64ToBytes(b64) {
   }
 
   /**
+   * SELL YOUR SEAT.
+   *
+   * The only exit a pari-mutuel can have, and the sheet has to be honest about
+   * what it is: not a promise of liquidity, an offer. If nobody wants that side
+   * at that size the offer expires and the money stays where it is, and saying
+   * so up front is the difference between a feature and a broken button.
+   *
+   * The window is the seller's decision and it is the only price signal this
+   * design has: standing longer fills more often and hands the buyer more of a
+   * free option, standing briefly does the opposite. Said plainly, because a
+   * person choosing between one day and one week is choosing between those two
+   * things whether or not anybody tells them.
+   */
+  async function openSellSheet(slug, side, lamports) {
+    const body = sheetShell();
+    const shell = (inner) => {
+      body.innerHTML = `<h3>Sell your seat</h3>${inner}`;
+      const c = body.querySelector(".cclose");
+      if (c) c.onclick = () => body.closest(".cdim").remove();
+    };
+    if (!wallet) {
+      shell(`<p class="cnote">Connect the wallet holding this position and we can offer it.</p>
+        <button class="claimbtn" id="cw">Connect wallet</button>
+        <button class="cclose">Not now</button>`);
+      body.querySelector("#cw").onclick = async () => {
+        try { await connectWallet(); await openSellSheet(slug, side, lamports); } catch (e) { /* the sheet stays */ }
+      };
+      return;
+    }
+
+    const SIDE = String(side).toUpperCase();
+    const sol = (lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+    shell(`
+      <p class="chain-took">
+        <b class="chain-took__s chain-took__s--${side}">${SIDE}</b>
+        <span class="rin__a">${sol} <i>SOL</i></span>
+      </p>
+      <p class="rin__l">Offered at face to whoever takes ${SIDE} next. The pool does not move, so nobody else's odds change.</p>
+      <div class="chain-amt-row" id="seatwin">
+        <button class="chain-chip on" data-h="24" type="button">1 day</button>
+        <button class="chain-chip" data-h="72" type="button">3 days</button>
+        <button class="chain-chip" data-h="168" type="button">1 week</button>
+      </div>
+      <button class="claimbtn" id="seatgo">Offer it</button>
+      <div class="chain-line" id="chainline"></div>
+      <p class="chain-fine">Nobody has to take it. If it expires you still hold the seat, and you can take the offer down any time.</p>
+      <button class="cclose">Not now</button>`);
+
+    let hours = 24;
+    const chips = [...body.querySelectorAll("#seatwin .chain-chip")];
+    chips.forEach((c) => c.onclick = () => {
+      chips.forEach((x) => x.classList.toggle("on", x === c));
+      hours = Number(c.dataset.h);
+    });
+
+    const btn = body.querySelector("#seatgo"), line = body.querySelector("#chainline");
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "Preparing…";
+      try {
+        const prep = await fetch("/api/chain/listing/prepare", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            slug, sellerPubkey: wallet.publicKey, side, lamports,
+            expiresAt: Math.floor(Date.now() / 1000) + hours * 3600,
+          }),
+        });
+        const pj = await prep.json().catch(() => ({}));
+        if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't prepare that.");
+        const w3 = await loadWeb3();
+        const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
+        btn.textContent = "Confirm in wallet…";
+        const { signature } = await signAndSubmit(tx, () => { btn.textContent = "Sending…"; });
+        // The server may have shortened the window to the market's own close,
+        // because the program refuses a listing that outlives the market. Say
+        // the date it actually stands until rather than the one that was asked
+        // for.
+        const until = pj.expiresAt
+          ? new Date(pj.expiresAt * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+          : null;
+        body.innerHTML = `<h3>Your seat is up ✓</h3>
+          <p class="cnote">${sol} SOL of ${SIDE}, at face${until ? `, until ${until}` : ""}. You still hold it until somebody takes it.</p>
+          <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+          ${homeLink()}
+          <button class="cclose">Done</button>`;
+        body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = "Offer it";
+        if (line) line.textContent = e.message || "Something went wrong. Try again.";
+      }
+    };
+  }
+
+  /**
+   * Buy the seat. The money goes wallet to wallet and the vault is untouched,
+   * so this is a change of owner rather than a change of pool.
+   *
+   * Somebody else can fill it between the sheet drawing and this call, which is
+   * the one failure worth naming precisely: "seat-gone" is not an error about
+   * the buyer's money, it is a race they lost, and the sheet says so and stays
+   * open on the ordinary stake they can still make.
+   */
+  async function takeSeat(body, slug, seat) {
+    const host = body.querySelector("#chainseat");
+    const btn = host && host.querySelector(".seat");
+    if (btn) { btn.disabled = true; btn.querySelector("b").textContent = "Preparing…"; }
+    try {
+      if (!wallet) await connectWallet();
+      const prep = await fetch("/api/chain/listing/take", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slug, sellerPubkey: seat.seller, buyerPubkey: wallet.publicKey }),
+      });
+      const pj = await prep.json().catch(() => ({}));
+      if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't take that seat.");
+      const w3 = await loadWeb3();
+      const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
+      if (btn) btn.querySelector("b").textContent = "Confirm in wallet…";
+      const { signature, confirmed } = await signAndSubmit(tx);
+      const s = (pj.lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+      body.innerHTML = `<p class="rin">
+          <b class="rin__s rin__s--${pj.side}">${String(pj.side).toUpperCase()}</b>
+          <span class="rin__a">${s} <i>SOL</i></span>
+          <img class="rin__st" src="/brand/st-called.webp" alt="">
+        </p>
+        <p class="rin__l">${confirmed ? "You took somebody's seat. The pool did not move, so your share is the one they had." : "It is on the network. Follow the link before trying again."}</p>
+        <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
+        ${homeLink()}
+        <button class="cclose">Done</button>`;
+      body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+    } catch (e) {
+      if (host) host.innerHTML = "";
+      const line = body.querySelector("#chainline");
+      if (line) line.textContent = e.message || "That seat is gone. You can still take the side yourself.";
+    }
+  }
+
+  /** Take the offer down. The rent comes back, so changing your mind costs a
+   *  transaction fee and nothing else. */
+  async function cancelSeat(slug, onDone) {
+    if (!wallet) { try { await connectWallet(); } catch (e) { return; } }
+    const prep = await fetch("/api/chain/listing/cancel", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug, sellerPubkey: wallet.publicKey }),
+    });
+    const pj = await prep.json().catch(() => ({}));
+    if (!prep.ok || !pj.ok) throw prepareError(pj, "Couldn't take it down.");
+    const w3 = await loadWeb3();
+    await signAndSubmit(w3.Transaction.from(b64ToBytes(pj.txBase64)));
+    if (onDone) onDone();
+  }
+
+  /**
    * @param presetSide "yes" | "no" | null. Set when the sheet was opened by
    * tapping a side on the card itself, which is the normal path: that tap IS
    * the decision, and asking for it again inside the sheet would make the
@@ -921,6 +1079,7 @@ function b64ToBytes(b64) {
           <button class="chain-chip chain-chip--other" data-sol="custom" type="button">Other</button>
         </div>
         <input class="chain-amt" type="number" min="0.001" step="0.001" placeholder="SOL amount" inputmode="decimal" hidden>
+        <div id="chainseat"></div>
         <div class="chain-line" id="chainline"></div>
         <button class="claimbtn" id="chainstake" disabled>Pick a side</button>
         ${feeNoteHTML}
@@ -1149,6 +1308,34 @@ function b64ToBytes(b64) {
       // for a decision the user had already made one tap earlier.
       refresh();
       void showBalance();   // no-op without a wallet; instant for a trusted one
+
+      /* A SEAT ON SALE IS A BETTER DEAL THAN FRESH MONEY, and the arithmetic is
+         not close. Staking 1 SOL into a 10 SOL YES side puts you in an 11 SOL
+         side; buying somebody's 1 SOL seat puts you in the 10 SOL side that
+         already existed. Same price, larger share, and the people already on
+         that side are not diluted either. So it is offered rather than buried:
+         it is the one place in this product where two people both come out
+         ahead.
+         Only for the side actually chosen, and only at the seat's own size,
+         because the program fills a listing in full or not at all. */
+      void seatsP.then((seats) => {
+        const host = body.querySelector("#chainseat");
+        if (!host || !Array.isArray(seats) || !seats.length) return;
+        const draw = () => {
+          const seat = side ? seats.find((l) => l.side === side) : null;
+          if (!seat) { host.innerHTML = ""; return; }
+          const s = (seat.lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+          host.innerHTML = '<button class="seat" type="button">'
+            + "<b>Take a seat instead</b>"
+            + `<span>${s} SOL of ${String(seat.side).toUpperCase()}, at face. The pool does not grow, so your share is bigger.</span>`
+            + "</button>";
+          host.querySelector(".seat").onclick = () => void takeSeat(body, slug, seat);
+        };
+        draw();
+        sideBtns.forEach((b) => b.addEventListener("click", draw));
+        const sw = body.querySelector(".chain-swap");
+        if (sw) sw.addEventListener("click", () => setTimeout(draw, 0));
+      });
 
       stakeBtn.onclick = async () => {
         // The connect step is folded into the same button rather than being a
@@ -1710,6 +1897,7 @@ function b64ToBytes(b64) {
 
   window.OddieChain = {
     init, openStake: openStakeSheet, openClaim: openClaimSheet, openRefund: openRefundSheet,
+    openSell: openSellSheet, cancelSeat,
     /* Sayfanin kendi tutar chip'lerini cizebilmesi icin. Kopyalanmis bir dizi
        iki yerde ayrisir; sheet ile sayfa ayni rakamlari gostermek zorunda. */
     presets: PRESETS.slice(),
