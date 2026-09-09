@@ -127,7 +127,18 @@ preflight() {
     # fees, and asking for the full first-deploy figure would have sent somebody
     # to fund 2.4 SOL for a 0.16 SOL operation.
     if [ -n "${ON_CHAIN_LEN:-}" ]; then
-      need=$(python3 -c "print(round(${EXTEND_SOL:-0} + 0.05, 4))")
+      # THE BUFFER IS THE BIG NUMBER, AND IT COMES BACK.
+      #
+      # A program this size cannot be written in one transaction, so the CLI
+      # stages the whole binary in a temporary BUFFER account first, and that
+      # account has to be rent exempt for its full length. The lamports are
+      # returned to the fee payer the moment the upgrade consumes the buffer,
+      # so it is working capital rather than a cost -- but the wallet has to
+      # hold it, and a check that ignores it lets a deploy die halfway with the
+      # extension already paid for. Which is exactly what happened.
+      BUFFER_SOL=$(rent_for "$bytes")
+      say "the upgrade also needs ${BUFFER_SOL} SOL of TEMPORARY capital for the write buffer, refunded when it lands"
+      need=$(python3 -c "print(round(${EXTEND_SOL:-0} + ${BUFFER_SOL:-0} + 0.05, 4))")
     else
       need=$(python3 -c "print(round($RENT + 0.05, 4))")   # rent plus transaction fees
     fi
