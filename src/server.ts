@@ -1481,11 +1481,21 @@ app.get("/w/:wallet", async (req, res) => {
     .send(WHO_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`));
 });
 
+/** Distinct confirmed wallets on a market, for the card. Best-effort by design:
+ *  a count we could not read is omitted from the card rather than drawn as 0,
+ *  which would be the same lie the pool reads refuse to tell. */
+async function cardStakers(slug: string): Promise<number> {
+  const counts = await stakerCounts([slug]).catch(() => ({} as Record<string, number>));
+  return counts[slug] ?? 0;
+}
+
 app.get("/card/:slug.svg", async (req, res) => {
   const { all } = await liveMarketData();
   const rec = await getSlug(req.params.slug, all);
   if (!rec) return res.status(404).send("unknown market");
-  res.type("image/svg+xml").send(renderCard(rec.market, { unpriced: await marketIsUnpriced(req.params.slug) }));
+  res.type("image/svg+xml").send(renderCard(rec.market, {
+    unpriced: await marketIsUnpriced(req.params.slug), stakers: await cardStakers(req.params.slug),
+  }));
 });
 
 /**
@@ -1543,7 +1553,9 @@ app.get("/card/:slug.png", async (req, res) => {
   // somebody had staked it. A chain that will not answer degrades to the
   // unpriced card, which is the safe direction to be wrong in: it invites a
   // stake instead of quoting odds nobody set.
-  const png = renderCardPng(renderCard(rec.market, { unpriced: await marketIsUnpriced(slug) }));
+  const png = renderCardPng(renderCard(rec.market, {
+    unpriced: await marketIsUnpriced(slug), stakers: await cardStakers(slug),
+  }));
   pngCache.set(slug, { png, at: now });
   if (pngCache.size > 300) for (const [k, v] of pngCache) if (now - v.at > PNG_TTL_MS) pngCache.delete(k);
   res.type("image/png").set("Cache-Control", "public, max-age=300").send(png);
@@ -3108,7 +3120,7 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
     cardPng: async (s2, o) => {
       const { all } = await liveMarketData();
       const rec = await getSlug(s2, all);
-      return rec ? renderCardPng(renderCard(rec.market, { settled: o })) : null;
+      return rec ? renderCardPng(renderCard(rec.market, { settled: o, stakers: await cardStakers(s2) })) : null;
     },
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
@@ -3250,6 +3262,15 @@ if (realStakesReady) {
     res.json({
       ok: true, pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey),
       resolved: state.resolved, winningSide: state.winningSide,
+      // WHEN THIS ENDS, on the screen where the money moves.
+      //
+      // The market page has carried a countdown for a while and the sheet that
+      // takes the bet has never said a word about it, so the last thing a
+      // person sees before signing is silent on the one fact that decides when
+      // they see their money again. Read from the MARKET account rather than
+      // our row, for the same reason the fee rates are: this is the timestamp
+      // the program will enforce.
+      closeTime: state.closeTime,
       totalYesLamports: state.totalYesLamports, totalNoLamports: state.totalNoLamports,
       // READ FROM THE MARKET, not from our constants, and that distinction is
       // the whole reason the program stores both rates per market. This used
@@ -4196,7 +4217,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     cardPng: async (slug) => {
       const { all } = await liveMarketData();
       const rec = await getSlug(slug, all);
-      return rec ? renderCardPng(renderCard(rec.market)) : null;
+      return rec ? renderCardPng(renderCard(rec.market, { stakers: await cardStakers(slug) })) : null;
     },
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),

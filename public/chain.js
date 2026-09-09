@@ -823,6 +823,10 @@ function b64ToBytes(b64) {
     const testnet = CLUSTER !== "mainnet-beta";
 
     const totalPct = ((feeBps + protoBps) / 100).toFixed(0);
+    const closeMs = Number(marketState.closeTime) * 1000;
+    const settles = Number.isFinite(closeMs) && closeMs > 0
+      ? new Date(closeMs).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+      : "";
     /* Three sentences became two clauses and a tag.
        The cluster is not a sentence -- it is a label on the money, and written
        out ("Test SOL on Solana devnet.") it took a third of the line to say
@@ -840,6 +844,18 @@ function b64ToBytes(b64) {
       // network itself matters (the explorer link on a receipt) it is named
       // there, in full.
       + (testnet ? `<b class="chain-net">Test SOL</b> ` : "")
+      /* WHEN IT ENDS, said as information rather than as a warning.
+         This footnote told people what happens at settle and what happens
+         after 30 unsettled days, and never once said WHEN settle is. The page
+         behind the sheet has carried a countdown for a while; the screen that
+         actually takes the money was silent on the one fact that decides when
+         somebody sees it again.
+         A DATE, NOT A LOCK. "You cannot withdraw" invents a fear in a product
+         where a bet running to its answer is the expected thing, and it would
+         be the loudest new word on the quietest line. A date is the fact
+         somebody needs in order to decide. Omitted rather than guessed when
+         the chain read carries no close time. */
+      + (settles ? `Settles ${settles}. ` : "")
       + `Winners split the pool${feeBps || protoBps ? `, less ${totalPct}%` : ""}. `
       + `No result in 30 days: refunded.`
       + `</p>`;

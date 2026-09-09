@@ -417,7 +417,10 @@ export const BADGE_POOL = [
  * take it back. Unpriced markets now say so and invite the first stake, which
  * is also the better ask.
  */
-export function renderCard(m: Market, opts: { unpriced?: boolean; settled?: "yes" | "no" } = {}): string {
+export function renderCard(
+  m: Market,
+  opts: { unpriced?: boolean; settled?: "yes" | "no"; stakers?: number } = {},
+): string {
   const settled = opts.settled;
   // A settled market has an answer, so it is never unpriced and never invites a
   // stake. The two states cannot both be true and settled wins.
@@ -455,7 +458,26 @@ export function renderCard(m: Market, opts: { unpriced?: boolean; settled?: "yes
   const udPct = udSide === "yes" ? yes : no;
   const mRaw = 100 / Math.max(1, udPct);
   const mult = mRaw >= 10 ? Math.round(mRaw) : Math.round(mRaw * 10) / 10;
-  const metaText = settled ? "settled on chain" : unpriced ? "first in sets the line" : `${udSide} pays ${mult}\u00d7`;
+  /* HOW MANY PEOPLE MADE THAT NUMBER.
+     The card's hero is a percentage and it travels on X with nothing beside it,
+     so a split one wallet paid a few cents to draw looks exactly like a split
+     forty people argued into place. Measured: two wallets can put any figure on
+     this card for about 0.011 SOL, and that is true today, with no change to
+     the program. A percentage presented as consensus, on the one surface that
+     leaves the product, is the number worth qualifying.
+     Counted from chain_entry, which is distinct CONFIRMED wallets, so it can
+     read zero next to a funded pool and is omitted rather than drawn as 0. The
+     market page has said this for a while ("N in"); the card is where it
+     actually matters. */
+  const heads = Math.max(0, Math.floor(opts.stakers ?? 0));
+  const odds = `${udSide} pays ${mult}\u00d7`;
+  const metaText = settled
+    ? "settled on chain"
+    : unpriced
+      ? "first in sets the line"
+      : heads > 0
+        ? `${odds} \u00b7 ${heads} in`
+        : odds;
 
   // A settled market has nothing to invite. The CTA becomes the receipt.
   const inviteText = settled ? "see it" : pick(INVITE_POOL, `${voiceSeed}:invite`);
