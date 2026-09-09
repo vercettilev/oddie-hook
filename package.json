@@ -70,7 +70,8 @@
     "test-creator-wallet": "tsx scripts/test-creator-wallet.ts",
     "test-oracle-sweep": "tsx scripts/test-oracle-sweep.ts",
     "preflight": "tsx scripts/preflight.ts",
-    "test-migration": "tsx scripts/test-migration.ts"
+    "test-migration": "tsx scripts/test-migration.ts",
+    "migrate-positions": "tsx scripts/migrate-positions.ts"
   },
   "engines": {
     "node": ">=20"
