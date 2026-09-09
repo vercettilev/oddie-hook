@@ -28,6 +28,8 @@ import type { Mention } from "../src/x/client.js";
 import { runExtract } from "../src/matching/extractClaim.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
 import { _resetBotState } from "../src/store/markets.js";
+import { renderCardPng } from "../src/card/renderPng.js";
+import { renderTeachCard } from "../src/card/renderTeachCard.js";
 
 const args = process.argv.slice(2);
 let handle = "someone";
@@ -119,6 +121,11 @@ async function main() {
       cardBytes = Buffer.from(await res.arrayBuffer());
       return cardBytes;
     },
+    // The unmarketable path is half of what a preview is for: an unresolvable
+    // claim now produces a real reply, and this is where it is read before X
+    // ever sees it.
+    teachPng: async () => { cardBytes = renderCardPng(renderTeachCard()); return cardBytes; },
+    refusalsUsed: async () => 0,
     uploadMedia: async () => "preview-media",
     postReply: async () => ({ id: "preview-reply" }),
     baseUrl: BASE,

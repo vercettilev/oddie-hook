@@ -5928,7 +5928,13 @@ export async function botStateSet(key: string, value: string): Promise<void> {
 
 export type MentionOutcome = "claimed" | "replied" | "skipped" | "failed";
 
-interface MentionRow { tweetId: string; outcome: MentionOutcome; reason: string | null; slug: string | null }
+interface MentionRow {
+  tweetId: string; outcome: MentionOutcome; reason: string | null; slug: string | null;
+  /** Carried in memory as well as in Postgres, because the per-handle refusal
+   *  cap is read from here in tests and dev, and a cap that only exists in
+   *  production is a cap nobody can exercise before it matters. */
+  author: string | null;
+}
 const memMentions = new Map<string, MentionRow>();
 
 /**
@@ -5939,10 +5945,38 @@ const memMentions = new Map<string, MentionRow>();
  * "the model returned nonsense" and "Solana was down", and a loop that retries
  * the first one forever burns money on every poll. Requeue by hand.
  */
+/**
+ * How many times we have already explained ourselves to one handle.
+ *
+ * A refusal reply is a public post under somebody else's tweet, which is the
+ * single most muteable thing this bot can do. Explaining once teaches a person
+ * what oddie prices; explaining every time turns the account into the thing
+ * that argues under strangers' posts, and being muted or marked as spam would
+ * cost the product its only distribution channel.
+ *
+ * Counted from the ledger rather than kept in memory, because the cap has to
+ * survive a redeploy. Case-insensitive: X handles are.
+ */
+export async function refusalRepliesTo(handle: string | null): Promise<number> {
+  if (!handle) return 0;
+  const h = handle.replace(/^@/, "").toLowerCase();
+  if (!PERSISTENT) {
+    return [...memMentions.values()].filter((m) => (m.author ?? "").replace(/^@/, "").toLowerCase() === h
+      && String(m.reason ?? "").startsWith("taught")).length;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM x_mention
+      WHERE lower(ltrim(author, '@')) = $1 AND reason LIKE 'taught%'`,
+    [h],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 export async function claimMention(tweetId: string, author: string | null): Promise<boolean> {
   if (!PERSISTENT) {
     if (memMentions.has(tweetId)) return false;
-    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null });
+    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null, author });
     return true;
   }
   await ensureSchema();
@@ -5986,7 +6020,14 @@ export async function settleMention(
   extra: { reason?: string | null; slug?: string | null; replyId?: string | null } = {},
 ): Promise<void> {
   if (!PERSISTENT) {
-    memMentions.set(tweetId, { tweetId, outcome, reason: extra.reason ?? null, slug: extra.slug ?? null });
+    // The author is carried forward from the claim row: settleMention is not
+    // given one, and dropping it here would make the refusal cap unreachable in
+    // memory while working in Postgres.
+    const prev = memMentions.get(tweetId);
+    memMentions.set(tweetId, {
+      tweetId, outcome, reason: extra.reason ?? null, slug: extra.slug ?? null,
+      author: prev?.author ?? null,
+    });
     return;
   }
   await ensureSchema();
@@ -6009,6 +6050,12 @@ export function _memSeasonCredit(deviceId: string, amount: number, daysAgo = 0):
 
 export function _memMentionOutcome(tweetId: string): MentionOutcome | null {
   return memMentions.get(tweetId)?.outcome ?? null;
+}
+
+/** Test seam: the reason string, which the teaching cap reads rather than
+ *  merely logs, so a test can prove the marker it counts is actually written. */
+export function _memMentionReason(tweetId: string): string | null {
+  return memMentions.get(tweetId)?.reason ?? null;
 }
 
 /** Test seam: forget everything the in-memory bot layer knows. */

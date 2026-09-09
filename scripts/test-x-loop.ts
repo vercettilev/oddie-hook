@@ -23,9 +23,9 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-import { runMentionSweep, stripLeadingMentions, stripBotHandle, tweetUrl, SWEEP_CAP } from "../src/x/mentionLoop.js";
+import { runMentionSweep, stripLeadingMentions, stripBotHandle, tweetUrl, SWEEP_CAP, TEACH_CAP } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
-import { botStateGet, _memMentionOutcome, _resetBotState } from "../src/store/markets.js";
+import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState } from "../src/store/markets.js";
 import { SINCE_KEY } from "../src/x/client.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
 import type { Mention } from "../src/x/client.js";
@@ -200,6 +200,67 @@ async function main() {
     });
     await runMentionSweep(deps);
     check("a resolvable but inappropriate claim is refused too", spy.minted.length === 0 && spy.posted.length === 0);
+  }
+
+  /* -------------------------------------------------- the gate teaches once */
+  // The gate stays silent above because those harnesses carry no teachPng, which
+  // IS the contract: teaching is opt-in and its absence must behave exactly as
+  // the loop did before it existed. With the card wired, the same tag answers.
+  {
+    _resetBotState();
+    let taught = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("620")], newestId: "620" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => { taught++; return Buffer.from("teach"); },
+      refusalsUsed: async () => 0,
+    });
+    const r = await runMentionSweep(deps);
+    check("an unmarketable tag gets a reply instead of silence", spy.posted.length === 1 && r.skipped === 1);
+    check("...and still no market", spy.minted.length === 0);
+    check("...with the teaching card attached", taught === 1 && spy.posted[0]?.mediaIds?.length === 1);
+    check("...and NO link, because there is nothing to link to",
+      !/https?:\/\//.test(spy.posted[0]?.text ?? "x"), spy.posted[0]?.text);
+    check("...recorded under a reason the cap can count",
+      String(_memMentionReason("620")).startsWith("taught"), _memMentionReason("620") ?? "");
+  }
+  {
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("630")], newestId: "630" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => TEACH_CAP,
+    });
+    await runMentionSweep(deps);
+    check("a handle already taught its fill hears nothing further", spy.posted.length === 0);
+  }
+  {
+    // The one refusal that is never taught: there is no version of a public
+    // reply under a post we refused on content grounds that does not read as
+    // oddie commenting on it.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("640")], newestId: "640" }),
+      extract: async () => ({ ...goodExtraction("Will X be fired?"), appropriate: false }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+    });
+    await runMentionSweep(deps);
+    check("an inappropriate tag stays silent even with the card wired", spy.posted.length === 0);
+  }
+  {
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("650")], newestId: "650" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      dryRun: true,
+    });
+    const r = await runMentionSweep(deps);
+    check("a dry run composes the teaching without posting it",
+      spy.posted.length === 0 && !!r.decisions[0]?.text, r.decisions[0]?.text);
   }
 
   /* ------------------------------------------- a mint failure costs no reply */

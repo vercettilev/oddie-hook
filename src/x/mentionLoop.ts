@@ -23,7 +23,7 @@
 
 import type { Extraction } from "../matching/extractClaim.js";
 import type { Mention } from "./client.js";
-import { buildTweetReply } from "../matching/tweetReply.js";
+import { buildRefusalReply, buildTweetReply } from "../matching/tweetReply.js";
 import { claimMention, settleMention, botStateGet, botStateSet, PERSISTENT } from "../store/markets.js";
 import { SINCE_KEY } from "./client.js";
 
@@ -57,6 +57,15 @@ export interface SweepDeps {
   }): Promise<MintResult>;
   /** The share card for a market, as PNG bytes. */
   cardPng(slug: string): Promise<Buffer | null>;
+  /**
+   * The card that goes under a tag we could not price: what a marketable claim
+   * looks like, not a scolding. Optional, and its absence is what keeps the
+   * gate silent — every existing caller and test that never heard of teaching
+   * behaves exactly as it did before.
+   */
+  teachPng?(): Promise<Buffer | null>;
+  /** How many teaching replies this handle has already had. */
+  refusalsUsed?(handle: string | null): Promise<number>;
   uploadMedia(png: Buffer): Promise<string>;
   postReply(opts: { text: string; inReplyTo: string; mediaIds?: string[] }): Promise<{ id: string }>;
   /** Our own handle, without the @. Used only to strip routing out of the
@@ -108,6 +117,16 @@ export interface SweepResult {
  * bounded by this number times the poll rate rather than by whatever X returns.
  */
 export const SWEEP_CAP = 5;
+
+/**
+ * How many times one handle is taught before oddie goes quiet on them.
+ *
+ * Small because the downside is asymmetric. A tagger who never gets the recipe
+ * costs us one market; an account that replies to every unmarketable tag from
+ * the same person gets reported, muted or filtered, and that costs us every
+ * market. Two replies is enough to be a lesson and too few to be a habit.
+ */
+export const TEACH_CAP = 2;
 
 /** Strip the @handles X puts at the front of a reply, so the claim text we
  *  grade is the sentence and not the routing. */
@@ -253,12 +272,57 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // on a call that already carries a 1.5k-token system prompt.
       const ex = await deps.extract(claimText.slice(0, 4000));
       if (ex.resolvability === "unresolvable" || !ex.appropriate || !ex.question) {
-        // Silence, not an explanation. A public "I can't make a market out of
-        // that" is a reply that helps nobody, lands under someone's post, and
-        // is exactly the kind of thing that gets an account muted. The reason
-        // is recorded where we can read it instead.
-        await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}${ex.appropriate ? "" : "/inappropriate"}` });
-        decide("skipped", { reason: `gate:${ex.resolvability}` });
+        // INAPPROPRIATE IS ALWAYS SILENT. There is no version of a public reply
+        // under a post we refused on content grounds that reads as anything but
+        // oddie commenting on it, and the reason is recorded where we can read
+        // it instead.
+        const teachPng = deps.teachPng;
+        if (!ex.appropriate || !teachPng) {
+          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}${ex.appropriate ? "" : "/inappropriate"}` });
+          decide("skipped", { reason: `gate:${ex.resolvability}` });
+          continue;
+        }
+
+        // TEACH, THEN GO QUIET. The tagger went to the trouble; silence teaches
+        // them nothing and they tag us the same wrong way next time. But the
+        // reply is capped PER HANDLE, and the cap is small on purpose: an
+        // account that answers every unmarketable tag forever is an account
+        // that gets muted, and a muted account ends the product. Two is the
+        // whole budget — the first tag learns the recipe, the second is the
+        // reminder, and after that we are just silence to that handle.
+        const used = deps.refusalsUsed ? await deps.refusalsUsed(m.authorHandle).catch(() => TEACH_CAP) : 0;
+        if (used >= TEACH_CAP) {
+          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/taught-out` });
+          decide("skipped", { reason: "taught-out" });
+          continue;
+        }
+
+        const teachText = buildRefusalReply(m.id);
+        if (deps.dryRun) {
+          await settleMention(m.id, "skipped", { reason: "dry-run" });
+          decide("skipped", { reason: "dry-run:teach", text: teachText });
+          log("dry-run teach reply", { tweetId: m.id, text: teachText });
+          continue;
+        }
+
+        // The card is the teaching; the text is the sentence under it. If the
+        // upload fails the words still stand on their own, so a card failure
+        // downgrades the reply rather than cancelling it.
+        let mediaIds: string[] | undefined;
+        try {
+          const png = await teachPng();
+          if (png) mediaIds = [await deps.uploadMedia(png)];
+        } catch (e) {
+          log("teach card failed, replying without it", { tweetId: m.id, err: (e as Error).message });
+        }
+        // No permalink, ever. There is no market to link to, and a reply
+        // carrying a URL is priced at a different tier by X than a plain one.
+        const posted = await deps.postReply({ text: teachText, inReplyTo: m.id, mediaIds });
+        // "taught" is the marker refusalsUsed counts, so the reason string is
+        // load-bearing rather than a log line.
+        await settleMention(m.id, "skipped", { reason: `taught:${ex.resolvability}`, replyId: posted.id });
+        decide("skipped", { reason: "taught", text: teachText });
+        log("taught instead of staying silent", { tweetId: m.id, handle: m.authorHandle, used: used + 1 });
         continue;
       }
 

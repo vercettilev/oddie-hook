@@ -126,6 +126,45 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
   return prefix + q + suffix;
 }
 
+/**
+ * WHAT WE SAY WHEN WE CANNOT PRICE IT.
+ *
+ * The alternative was silence, and silence has a real argument behind it: a
+ * public "I can't make a market out of that" lands under somebody else's post
+ * and is exactly how an account gets muted. Losing the ability to reply on X
+ * would cost oddie its only distribution channel, so this is the most dangerous
+ * sentence the product can write.
+ *
+ * It survives on three rules.
+ *
+ * NO LINK. A reply that pairs an @-mention with a URL is the shape X's spam
+ * rules are written about, and it is also the difference between $0.015 and
+ * $0.200 a post. The one place where the safe choice and the cheap choice are
+ * the same choice.
+ *
+ * IT TEACHES INSTEAD OF APOLOGISING. "I can't do that" is noise. Naming what
+ * WOULD work turns a dead end into an instruction, and the person's second
+ * attempt is a market. That is the only justification for saying anything at
+ * all.
+ *
+ * THE FAILURE IS OURS. The line is written as oddie not finding a side, never
+ * as the person having tagged the wrong thing. The sticker that rides with it
+ * is the ghost stuck between YES and NO for the same reason: every other one in
+ * the set either celebrates or mocks, and mockery under a stranger's post is
+ * the mute-bait this whole comment exists to avoid.
+ */
+const CANNOT_PRICE = [
+  "no side to take here.\n\ntag me on something that settles: a price, a date, a result. i'll open the market.",
+  "nothing here i can call.\n\ngive me a claim with a deadline and an answer somebody can check.",
+  "can't find a yes or a no in this one.\n\ntag me on something with a result, and there's a market in it.",
+];
+
+/** Deterministic per tweet, so the same post never gets two different answers,
+ *  and a timeline seeing several refusals does not see one canned string. */
+export function buildRefusalReply(tweetId: string): string {
+  return pick(CANNOT_PRICE, tweetId);
+}
+
 export function buildTweetReply(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
   // Same voice and the same pool as the quote builder below, capitalised: a

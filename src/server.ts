@@ -10,6 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
+import { refusalRepliesTo } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
 import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
@@ -46,6 +47,7 @@ import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
 import type { SweepDeps, SweepResult } from "./x/mentionLoop.js";
 import * as X from "./x/client.js";
 import { renderCardPng } from "./card/renderPng.js";
+import { renderTeachCard } from "./card/renderTeachCard.js";
 import { renderBanner } from "./card/renderBanner.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
 import { classifyArchetype, ARCHETYPE_LABEL, genesisShareLine } from "./genesis/archetype.js";
@@ -993,6 +995,8 @@ const HOME_FEATURED_POOL = 12;
  * back to refresh one should find the current brand there, not a missing image.
  */
 let bannerPng: Buffer | null = null;
+/** The teach card, likewise drawn once: it carries no per-tweet content. */
+let teachPngCache: Buffer | null = null;
 const sendBanner = (_req: express.Request, res: express.Response) => {
   bannerPng ??= renderCardPng(renderBanner());
   res.type("image/png").set("Cache-Control", "public, max-age=86400").send(bannerPng);
@@ -4347,6 +4351,10 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
       const rec = await getSlug(slug, all);
       return rec ? renderCardPng(renderCard(rec.market, { stakers: await cardStakers(slug) })) : null;
     },
+    // One card for every unmarketable tag, so it is rasterised once for the
+    // life of the process rather than per reply: nothing on it is per-tweet.
+    teachPng: async () => (teachPngCache ??= renderCardPng(renderTeachCard())),
+    refusalsUsed: (handle) => refusalRepliesTo(handle),
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
     // The Genesis season. A tag is a ticket, checked before the model call and
