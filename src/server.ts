@@ -4358,7 +4358,25 @@ async function sweepMentions(overrides: Partial<SweepDeps> = {}): Promise<SweepR
   try {
     const r = await runMentionSweep(sweepDeps(overrides));
     if (r.looked > 0) {
-      console.log(JSON.stringify({ evt: "x_sweep", ...r, decisions: undefined, dryRun: sweepDeps(overrides).dryRun }));
+      /* WHY, not just how many.
+         This dropped `decisions` to keep the line short, and the line it kept
+         says "skipped=5" without a word about what was skipped or why. The dry
+         run exists for exactly one purpose, which is reading the bot's
+         JUDGEMENT before trusting it with a voice, and the judgement was the
+         part being thrown away.
+         A histogram always: it is a handful of short words, bounded by the
+         sweep cap, and it turns "skipped=5" into something a person can act on.
+         The per-mention list only in DRY RUN, where somebody is actually
+         reading, so a live loop does not print a paragraph every ten minutes. */
+      const reasons: Record<string, number> = {};
+      for (const d of r.decisions) {
+        const why = String((d as { reason?: string }).reason ?? d.outcome);
+        reasons[why] = (reasons[why] ?? 0) + 1;
+      }
+      const dryRun = sweepDeps(overrides).dryRun;
+      console.log(JSON.stringify({
+        evt: "x_sweep", ...r, decisions: dryRun ? r.decisions : undefined, reasons, dryRun,
+      }));
     }
     return r;
   } catch (err) {
