@@ -6,3 +6,8 @@ resolver = "2"
 overflow-checks = true
 lto = "fat"
 codegen-units = 1
+# SIZE, NOT SPEED. A Solana program account is sized at deploy and growing it
+# later costs about 6,960 lamports a byte, permanently. This program does
+# arithmetic on six numbers and is nowhere near the compute budget, so trading
+# instruction-level speed for bytes is free here and the bytes are not.
+opt-level = "z"
