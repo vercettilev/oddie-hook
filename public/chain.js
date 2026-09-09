@@ -142,7 +142,12 @@ async function signAndSubmit(tx, onSigned){
 const PREPARE_REASON = {
   "closed": "Betting on this one has closed. The result is being settled.",
   "already-resolved": "This one settled while you were deciding. Open it again to collect if you were in.",
-  "other-side": "You are already on the other side of this market. One side per wallet.",
+  // Kept though the server no longer sends it: an old page in somebody's tab
+  // can still receive it from a deployment mid-rollout, and a code with no
+  // sentence renders as the generic "unavailable" message, which would be a
+  // wrong answer rather than an unhelpful one. Reworded because the rule it
+  // described is gone.
+  "other-side": "This market already settled for you. Nothing left to do here.",
   "not-resolved": "This market has not settled yet.",
   // After a claim the position account is CLOSED (that is what returns its
   // rent), so "no position" and "already collected" look identical from here.
@@ -532,14 +537,26 @@ function b64ToBytes(b64) {
      *
      * Same transaction either way, so the flow below is shared and only the
      * sentence and the button change. */
-    const isWinner = (position.side || "").toUpperCase() === won;
-    const sol = (position.lamports / 1e9).toFixed(3);
+    /* THE WINNING LEG, not the side. A wallet can hold both now, and `side` is
+       null when it does, so this comparison quietly answered "you lost" for
+       somebody who was half right and offered them the rent-back button. What
+       decides whether there is a payout is whether the winning leg holds
+       anything, which is exactly what claim_winnings asks. */
+    const yesLeg = Number(position.amountYes ?? (position.side === "yes" ? position.lamports : 0));
+    const noLeg = Number(position.amountNo ?? (position.side === "no" ? position.lamports : 0));
+    const winningLeg = won === "YES" ? yesLeg : noLeg;
+    const isWinner = winningLeg > 0;
+    // The number in the sentence is what was on the WINNING side, not the total
+    // staked: telling a hedger they "called YES with 0.15 SOL" when 0.05 of it
+    // was on NO would be a wrong number about their own money.
+    const sol = (winningLeg / 1e9).toFixed(3);
+    const bothSides = yesLeg > 0 && noLeg > 0;
     shell(isWinner
-      ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>, and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
+      ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>${bothSides ? " (your other side pays nothing)" : ""}, and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
       <button class="claimbtn" id="chainclaim">Collect winnings</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`
-      : `<p class="cnote">You called <b>${(position.side || "").toUpperCase()}</b> and it went <b>${won}</b>, so there are no winnings here. The deposit your bet has been holding is still yours. Take it back; your wallet signs, we never hold it.</p>
+      : `<p class="cnote">You called <b>${won === "YES" ? "NO" : "YES"}</b> and it went <b>${won}</b>, so there are no winnings here. The deposit your bet has been holding is still yours. Take it back; your wallet signs, we never hold it.</p>
       <button class="claimbtn" id="chainclaim">Get your deposit back</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`);

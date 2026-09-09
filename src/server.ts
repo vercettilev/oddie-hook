@@ -3377,13 +3377,15 @@ if (realStakesReady) {
      * EVERY RULE take_position ENFORCES, CHECKED HERE FIRST.
      *
      * This route used to consult only our own database's resolvedOutcome and
-     * then hand over a signable transaction. The program enforces two more
-     * things (lib.rs: `clock < close_time` -> MarketClosed, and
-     * `pos.side == side` -> SideAlreadyTaken), and nothing checked either, so
-     * a wallet already holding YES that tapped NO, or anyone staking a market
-     * past its on-chain close that our resolver had not caught up to, was
-     * handed a transaction guaranteed to revert. Measured: 3 of 15 live
-     * markets were past close and unresolved, one by more than a month.
+     * then hand over a signable transaction, while the program enforced
+     * `clock < close_time` and nothing here checked it: anyone staking a market
+     * past its on-chain close that our resolver had not caught up to was handed
+     * a transaction guaranteed to revert. Measured: 3 of 15 live markets were
+     * past close and unresolved, one by more than a month.
+     *
+     * It also mirrored a side rule that no longer exists. take_position accepts
+     * both sides from one wallet now, so the check that used to live here would
+     * be this server inventing a restriction the program does not have.
      *
      * A guaranteed revert is not just a wasted fee. Phantom's documented
      * fourth cause of "This dApp could be malicious" is a transaction that
@@ -3415,9 +3417,14 @@ if (realStakesReady) {
       if (chainState.closeTime > 0 && now >= chainState.closeTime) {
         return res.status(409).json({ ok: false, reason: "closed", closeTime: chainState.closeTime });
       }
+      // THE SIDE GUARD IS GONE, because the rule it mirrored is. take_position
+      // accepts both sides from one wallet now, so refusing here would be this
+      // server inventing a restriction the program does not have. What the
+      // guard was actually for -- never handing over a transaction that is
+      // guaranteed to revert -- is still done by the two checks above.
       const held = await fetchPosition(ready.pubkey, userPubkey).catch(() => null);
-      if (held && held.side !== side) {
-        return res.status(409).json({ ok: false, reason: "other-side", side: held.side });
+      if (held && held.claimed) {
+        return res.status(409).json({ ok: false, reason: "already-resolved" });
       }
     }
     const txBase64 = await preparePositionTx({ marketPubkey: ready.pubkey, userPubkey, side, lamports });
@@ -3507,6 +3514,9 @@ if (realStakesReady) {
         : null;
       return {
         slug: c.slug, question: c.question, side: pos.side, lamports: pos.lamports,
+        // Both legs, because side is null when a wallet holds each of them and
+        // a page that only reads `side` would show nothing at all.
+        amountYes: pos.amountYes, amountNo: pos.amountNo,
         entryPct: c.entryPct, closesAt: c.closesAt,
         explorer: explorerUrl(pk),
         // The pool as it stands, so the trader can see the line move against or
@@ -3542,9 +3552,15 @@ if (realStakesReady) {
       // holding since the bet was placed. The program's own comment says this
       // is "the first reason a loser has ever had to come back and press the
       // button"; filtering them out here meant they never saw one.
-      const won = position.side === m.resolvedOutcome;
+      // THE WINNING LEG, not the side. A wallet can hold both, and `side` is
+      // null when it does, so comparing it to the outcome quietly answered
+      // "you lost" for somebody who was half right. That would have told a
+      // winner their button returns rent only.
+      const winningLeg = m.resolvedOutcome === "yes" ? position.amountYes : position.amountNo;
+      const won = winningLeg > 0;
       return {
         slug: m.slug, question: m.question, side: position.side,
+        amountYes: position.amountYes, amountNo: position.amountNo,
         lamports: position.lamports, outcome: m.resolvedOutcome,
         // What pressing the button actually does, so the UI never has to guess.
         won, returns: won ? "winnings-and-rent" : "rent-only",

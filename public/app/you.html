@@ -453,15 +453,30 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     // separates element children, so a bare string joins onto its neighbour
     // with nothing between them ("RESOLVED YESYOU WERE RIGHT").
     var cell = function (t) { return "<span>" + t + "</span>"; };
-    var bits = [
-      o.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>',
-      cell((kind === "claim" ? "staked <b>" : "<b>") + SOL(o.lamports) + " SOL</b>"),
-    ];
+    /* BOTH LEGS, when there are two. A wallet can hold each side of a market
+       now, and `side` comes back null when it does, so the old ternary drew
+       the NO pill for a hedger and then printed their TOTAL beside it: the
+       wrong side and a number that belongs to neither. Each leg gets its own
+       pill and its own figure, which is also the only honest way to show a
+       position that is deliberately on both. */
+    var yesLeg = Number(o.amountYes != null ? o.amountYes : (o.side === "yes" ? o.lamports : 0));
+    var noLeg = Number(o.amountNo != null ? o.amountNo : (o.side === "no" ? o.lamports : 0));
+    var bits = [];
+    if (yesLeg > 0 && noLeg > 0) {
+      bits.push('<span class="y">YES</span>', cell("<b>" + SOL(yesLeg) + " SOL</b>"),
+                '<span class="n">NO</span>', cell("<b>" + SOL(noLeg) + " SOL</b>"));
+    } else {
+      bits.push(noLeg > 0 ? '<span class="n">NO</span>' : '<span class="y">YES</span>');
+      bits.push(cell((kind === "claim" ? "staked <b>" : "<b>") + SOL(o.lamports) + " SOL</b>"));
+    }
     if (kind === "open") {
       if (o.entryPct != null) bits.push(cell("in at " + o.entryPct + "%"));
       // Omitted rather than invented when the market could not be read.
       var pool = o.pool ? o.pool.yes + o.pool.no : 0;
-      if (pool > 0) bits.push(cell(Math.round((100 * (o.side === "yes" ? o.pool.yes : o.pool.no)) / pool) + "% on your side now"));
+      // Only when there IS one side. "% on your side" means nothing to somebody
+      // holding both, and picking one of them would be a number about a
+      // position they do not have.
+      if (pool > 0 && o.side) bits.push(cell(Math.round((100 * (o.side === "yes" ? o.pool.yes : o.pool.no)) / pool) + "% on your side now"));
       // The label moved into the button below, because a cell reading "refund
       // open" beside no control was the whole bug: the product announced an
       // exit and did not give anybody the door to it.

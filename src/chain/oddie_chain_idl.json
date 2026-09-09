@@ -8,6 +8,63 @@
   },
   "instructions": [
     {
+      "name": "cancel_listing",
+      "docs": [
+        "Take the offer down. Rent goes back to the seller, so changing your mind",
+        "costs nothing but the fee on the transaction."
+      ],
+      "discriminator": [
+        41,
+        183,
+        50,
+        232,
+        230,
+        233,
+        157,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "listing"
+          ]
+        },
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.market",
+                "account": "Listing"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "claim_creator_fee",
       "docs": [
         "The creator's cut, pulled by the person it belongs to.",
@@ -490,6 +547,238 @@
       ]
     },
     {
+      "name": "list_position",
+      "docs": [
+        "Offer a seat, at face, to whoever wants that side next.",
+        "",
+        "See the `Listing` doc for why this is the only exit shape a pari-mutuel",
+        "can have. The listing may never outlive the market: an offer that is",
+        "still standing when betting closes is an offer to sell a settled result."
+      ],
+      "discriminator": [
+        252,
+        73,
+        186,
+        182,
+        15,
+        2,
+        202,
+        83
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "docs": [
+            "One standing offer per seller per market. A second call overwrites the",
+            "first rather than stacking, so a seller can never have two seats on sale",
+            "that together exceed what they hold."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "side",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "expires_at",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "migrate_position",
+      "docs": [
+        "ONE-OFF: convert a Position written before the two-sided layout.",
+        "",
+        "The old account is 83 bytes (side: u8, amount: u64); the new one is 90",
+        "(amount_yes: u64, amount_no: u64). Anchor cannot read the first as the",
+        "second, so an un-migrated position is unreachable by every other",
+        "instruction here, including refund. That is why this exists and why it is",
+        "PERMISSIONLESS: anybody may pay to convert anybody's position, because",
+        "the conversion cannot move a lamport of the stake, and leaving somebody",
+        "else's money stranded behind a format change would be the worse failure.",
+        "",
+        "It is deliberately narrow. It refuses anything that is not exactly the",
+        "old length, so it can never run twice on the same account and can never",
+        "touch an account written in the new shape.",
+        "",
+        "The payer funds the rent on the seven extra bytes. Tested against a",
+        "GENUINE old account: the previous program is deployed to a local",
+        "validator, a position is opened through it, the program is upgraded in",
+        "place, and the account is migrated and then claimed."
+      ],
+      "discriminator": [
+        15,
+        132,
+        59,
+        50,
+        199,
+        6,
+        251,
+        46
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "the body. Read and rewritten byte by byte, never deserialized."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "refund_after_deadline",
       "docs": [
         "Take what you are owed: a share of the pool if you were right, or your",
@@ -772,6 +1061,163 @@
       ]
     },
     {
+      "name": "take_listing",
+      "docs": [
+        "Buy the seat. The buyer pays the seller DIRECTLY and the vault is never",
+        "touched: this is a change of owner, not a change of pool.",
+        "",
+        "`total_yes` and `total_no` do not move, so the multiple every other",
+        "staker is counting on is exactly what it was a block earlier. That is",
+        "the property that makes this survivable and every withdraw-shaped exit",
+        "not: paying somebody out of the vault takes the money from the people",
+        "who were right."
+      ],
+      "discriminator": [
+        10,
+        40,
+        220,
+        64,
+        162,
+        73,
+        122,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "seller",
+          "writable": true,
+          "relations": [
+            "listing"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "docs": [
+            "Closed to the SELLER, who paid for it. Closing it to the buyer handed",
+            "the seller's own rent deposit to the person buying their seat, so a seat",
+            "sold at face came back about 0.0015 SOL short. Caught by asserting the",
+            "seller is paid at face rather than by reading the constraint."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "take_position",
       "docs": [
         "Stake on a side. One position account per (market, user), so a second",
@@ -779,10 +1225,12 @@
         "a rival one: two positions for one person on one market would make the",
         "payout maths ambiguous and the UI worse.",
         "",
-        "Switching sides is refused rather than silently re-staking. Someone who",
-        "wants the other side of their own call is asking for something this",
-        "program does not do, and quietly moving their money is the wrong answer",
-        "to that."
+        "BOTH SIDES ARE ALLOWED. This used to refuse a second side outright, and",
+        "the refusal bought nothing: a second wallet does the same thing at the",
+        "same cost, so the rule only ever charged an account switch. Holding both",
+        "legs is a guaranteed loss of the fee on the pool, which is a price the",
+        "person can see, and seeding your own market so it is not a one-sided",
+        "card is a thing we WANT people to be able to do."
       ],
       "discriminator": [
         33,
@@ -893,6 +1341,19 @@
     }
   ],
   "accounts": [
+    {
+      "name": "Listing",
+      "discriminator": [
+        218,
+        32,
+        50,
+        73,
+        43,
+        134,
+        26,
+        58
+      ]
+    },
     {
       "name": "Market",
       "discriminator": [
@@ -1038,9 +1499,86 @@
       "code": 6020,
       "name": "RefundNotYetOpen",
       "msg": "the refund window has not opened yet"
+    },
+    {
+      "code": 6021,
+      "name": "NotOldPosition",
+      "msg": "this position is not in the old format, so there is nothing to migrate"
+    },
+    {
+      "code": 6022,
+      "name": "BadExpiry",
+      "msg": "a listing must expire in the future and never after the market closes"
+    },
+    {
+      "code": 6023,
+      "name": "ListingExpired",
+      "msg": "this listing has expired"
+    },
+    {
+      "code": 6024,
+      "name": "SelfFill",
+      "msg": "you cannot buy your own seat"
+    },
+    {
+      "code": 6025,
+      "name": "NotEnoughToList",
+      "msg": "this position does not hold that much on that side"
     }
   ],
   "types": [
+    {
+      "name": "Listing",
+      "docs": [
+        "A seat offered for sale, at face, to whoever wants that side next.",
+        "",
+        "THE ONLY EXIT A PARI-MUTUEL CAN HAVE. Paying somebody out of the vault takes",
+        "the money from the people who were right: the other side's multiple falls by",
+        "0.96 x p x a / T_other, and there is no penalty rate below 96% that leaves",
+        "them whole. So nothing here touches the vault. An incoming staker's lamports",
+        "go straight to the outgoing one, the seat changes hands, `total_yes` and",
+        "`total_no` do not move, and the pool the winners are counting on is exactly",
+        "what it was a block earlier.",
+        "",
+        "It is not a promise of liquidity. If nobody wants that side at that size,",
+        "the listing expires and the money stays where it is. The seller chooses how",
+        "long to stand there, which is the only price signal this design has: a long",
+        "window fills more often and hands the buyer more of a free option, a short",
+        "one does the opposite.",
+        "",
+        "Its own account rather than fields on Position, so a person who never lists",
+        "pays no rent for the feature."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "Market",
       "type": {
@@ -1154,6 +1692,26 @@
     },
     {
       "name": "Position",
+      "docs": [
+        "ONE POSITION, BOTH SIDES.",
+        "",
+        "This held `side` and one `amount`, so a wallet could take exactly one side",
+        "of a market and `take_position` refused to switch. That rule protected",
+        "nothing: a second wallet does the same thing today at the same price, so it",
+        "only ever cost somebody an account switch. What it did prevent was the one",
+        "legitimate use anybody actually asked for, which is shaping your own",
+        "exposure (5 on YES, 3 on NO) and seeding your own market so it is not a",
+        "one-sided card.",
+        "",
+        "Two amounts rather than two accounts: a second Position per side would",
+        "double the rent, double the address space and need a legacy claim path for",
+        "positions written before it. The sum of `amount_yes` across every position",
+        "still equals `market.total_yes`, which is the invariant every payout is",
+        "derived from, and the seat swap below is written to preserve it.",
+        "",
+        "LAYOUT CHANGED. Accounts written before this are 7 bytes shorter and cannot",
+        "be read as this struct; `migrate_position` converts them."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -1166,11 +1724,11 @@
             "type": "pubkey"
           },
           {
-            "name": "side",
-            "type": "u8"
+            "name": "amount_yes",
+            "type": "u64"
           },
           {
-            "name": "amount",
+            "name": "amount_no",
             "type": "u64"
           },
           {

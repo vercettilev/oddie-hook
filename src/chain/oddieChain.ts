@@ -928,8 +928,22 @@ export async function fetchMarketOnChain(marketPubkey: string): Promise<OnChainM
   return r.ok ? r.state : null;
 }
 
+/**
+ * TWO LEGS, NOT A SIDE.
+ *
+ * A wallet can now hold both sides of a market, so "which side are you on" is
+ * no longer a question a position can always answer. `side` and `lamports`
+ * survive as DERIVED conveniences for the overwhelmingly common case of one
+ * leg, and they are deliberately null and 0 when both are held: a caller that
+ * has not thought about the two-sided case gets nothing to print rather than
+ * half the truth.
+ */
 export interface OnChainPosition {
-  side: "yes" | "no";
+  amountYes: number;
+  amountNo: number;
+  /** The only side held, or null when both are. */
+  side: "yes" | "no" | null;
+  /** Everything this wallet has in the market, both legs. */
   lamports: number;
   claimed: boolean;
 }
@@ -1092,8 +1106,19 @@ export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
 }
 
 /** A user's position on a market, or null if they have never staked. */
-const decodePosition = (a: Record<string, unknown>): OnChainPosition =>
-  ({ side: Number(a.side) === 0 ? "yes" : "no", lamports: Number(a.amount), claimed: Boolean(a.claimed) });
+const decodePosition = (a: Record<string, unknown>): OnChainPosition => {
+  const amountYes = Number(a.amountYes ?? 0);
+  const amountNo = Number(a.amountNo ?? 0);
+  return {
+    amountYes,
+    amountNo,
+    // Null when both legs are held: there is no single side to report, and
+    // guessing one would put a wrong word next to somebody's money.
+    side: amountYes > 0 && amountNo > 0 ? null : amountYes > 0 ? "yes" : amountNo > 0 ? "no" : null,
+    lamports: amountYes + amountNo,
+    claimed: Boolean(a.claimed),
+  };
+};
 
 /**
  * A person's stake in one market, with the same three answers a market read
