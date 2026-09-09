@@ -4302,7 +4302,17 @@ const X_POLL_MS = (() => {
     console.error(`[x] X_POLL_MS=${JSON.stringify(process.env.X_POLL_MS)} is not a number. Using 120000.`);
     return 120_000;
   }
-  return Math.max(60_000, raw);
+  /* THE FLOOR IS 10 SECONDS, NOT 60, BECAUSE FREQUENCY IS FREE.
+     X bills reads PER RESOURCE RETURNED ("Charged per resource returned in the
+     response", docs.x.com/x-api/getting-started/pricing), and this poll sends
+     since_id, so an idle sweep returns nothing and costs nothing. Polling more
+     often does not cost more; it returns the same mention exactly once either
+     way, and the 24h dedup window backstops that even if the cursor slips.
+     What the floor protects is the rate limit, which is 300 requests per 15
+     minutes in user context. 10s is 90 per 15 minutes, 30% of it, with room
+     for retries. The old 60s floor was priced against a per-request billing
+     model that does not exist. */
+  return Math.max(10_000, raw);
 })();
 
 function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
