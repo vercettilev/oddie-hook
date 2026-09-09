@@ -89,7 +89,28 @@ preflight() {
     good "built, $bytes bytes"
     MAX_LEN=$(python3 -c "print(int($bytes * $HEADROOM))")
     RENT=$(rent_for "$MAX_LEN")
-    say "will allocate ${MAX_LEN} bytes (${HEADROOM}x) costing ${RENT} SOL in rent"
+    # AN UPGRADE ASKS A DIFFERENT MONEY QUESTION THAN A FIRST DEPLOY.
+    #
+    # A program account is sized when it is created and cannot grow on its own.
+    # If the new binary is bigger than the account holding the old one, the
+    # deploy fails, and the fix costs rent on the difference, permanently. The
+    # first deploy of this program landed at EXACTLY its own size, because
+    # anchor's deprecated path dropped --max-len, so the very next upgrade of
+    # any size runs into this.
+    ON_CHAIN_LEN=$(solana program show "$PROGRAM_ID" --url "$MAINNET" 2>/dev/null | awk '/Data Length/{print $3}')
+    if [ -n "$ON_CHAIN_LEN" ]; then
+      if [ "$bytes" -gt "$ON_CHAIN_LEN" ]; then
+        EXTEND_BY=$(python3 -c "print($bytes - $ON_CHAIN_LEN)")
+        EXTEND_SOL=$(python3 -c "print(round($EXTEND_BY * 6960 / 1e9, 4))")
+        say "the account on chain holds ${ON_CHAIN_LEN} bytes and this binary is ${bytes}"
+        say "so the upgrade must EXTEND it by ${EXTEND_BY} bytes, costing ${EXTEND_SOL} SOL in rent, permanently"
+      else
+        EXTEND_BY=0
+        say "the account on chain holds ${ON_CHAIN_LEN} bytes and this binary is ${bytes}: it fits, no extension"
+      fi
+    else
+      say "will allocate ${MAX_LEN} bytes (${HEADROOM}x) costing ${RENT} SOL in rent"
+    fi
     say "that rent is RECOVERABLE with: solana program close $PROGRAM_ID --url $MAINNET"
   else
     bad "$SO is missing. Run: cd onchain && anchor build"
@@ -101,7 +122,15 @@ preflight() {
   dep_pk=$(solana address -k "$DEPLOY_WALLET" 2>/dev/null || echo "")
   if [ -z "$dep_pk" ]; then bad "no deploy wallet at $DEPLOY_WALLET"; else
     dep_bal=$(sol_of "$dep_pk" "$MAINNET")
-    need=$(python3 -c "print(round($RENT + 0.05, 4))")   # rent plus transaction fees
+    # AN UPGRADE DOES NOT PAY THE PROGRAM'S RENT AGAIN. The account already
+    # holds it. What an upgrade costs is rent on the bytes it grows by, plus
+    # fees, and asking for the full first-deploy figure would have sent somebody
+    # to fund 2.4 SOL for a 0.16 SOL operation.
+    if [ -n "${ON_CHAIN_LEN:-}" ]; then
+      need=$(python3 -c "print(round(${EXTEND_SOL:-0} + 0.05, 4))")
+    else
+      need=$(python3 -c "print(round($RENT + 0.05, 4))")   # rent plus transaction fees
+    fi
     say "deploy wallet  $dep_pk"
     if python3 -c "import sys; sys.exit(0 if float('$dep_bal') >= float('$need') else 1)"; then
       good "has $dep_bal SOL on mainnet, needs $need"
@@ -117,6 +146,11 @@ preflight() {
   say "admin wallet   $ADMIN_PUBKEY  (mints markets)"
   if python3 -c "import sys; sys.exit(0 if float('$admin_bal') >= 0.1 else 1)"; then
     good "has $admin_bal SOL, about $(python3 -c "print(int(float('$admin_bal')/0.004))") markets' worth of rent"
+  elif [ -n "${ON_CHAIN_LEN:-}" ] && python3 -c "import sys; sys.exit(0 if float('$admin_bal') >= 0.02 else 1)"; then
+    # An upgrade mints nothing, so a thin admin wallet must not block it. Still
+    # said out loud, because a deployment that cannot open a market is a broken
+    # product either way.
+    say "  ! has $admin_bal SOL, about $(python3 -c "print(int(float('$admin_bal')/0.004))") markets left. Top it up soon; it does not block an upgrade"
   else
     bad "has $admin_bal SOL. Every market costs ~0.004 SOL to mint, so at this balance nothing can be created"
   fi
@@ -164,10 +198,27 @@ case "${1:-check}" in
     read -r confirm
     [ "$confirm" = "mainnet" ] || { say "Aborted."; exit 1; }
 
-    ( cd onchain && anchor deploy \
-        --provider.cluster "$ANCHOR_CLUSTER" \
-        --program-name oddie_chain \
-        -- --max-len "$MAX_LEN" )
+    # Extend FIRST. anchor's auto-extend uses ExtendProgram, which this
+    # cluster's loader replaced with ExtendProgramChecked, so it fails with
+    # "invalid instruction data" after the confirmation prompt and on a funded
+    # wallet. Doing it ourselves with the solana CLI uses the instruction the
+    # loader actually accepts.
+    if [ "${EXTEND_BY:-0}" -gt 0 ]; then
+      head_ "extending the program account by ${EXTEND_BY} bytes"
+      solana program extend "$PROGRAM_ID" "$EXTEND_BY" --url "$MAINNET"
+    fi
+
+    if [ -n "${ON_CHAIN_LEN:-}" ]; then
+      # An upgrade, not a create: --max-len is only meaningful when the account
+      # is being made, and passing it to an upgrade is how the first deploy's
+      # headroom silently went missing.
+      solana program deploy "$SO" --program-id "$KEYPAIR" --url "$MAINNET"
+    else
+      ( cd onchain && anchor deploy \
+          --provider.cluster "$ANCHOR_CLUSTER" \
+          --program-name oddie_chain \
+          -- --max-len "$MAX_LEN" )
+    fi
 
     head_ "what landed"
     solana program show "$PROGRAM_ID" --url "$MAINNET"
