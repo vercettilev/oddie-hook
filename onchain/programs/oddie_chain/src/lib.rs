@@ -188,10 +188,12 @@ pub mod oddie_chain {
     /// a rival one: two positions for one person on one market would make the
     /// payout maths ambiguous and the UI worse.
     ///
-    /// Switching sides is refused rather than silently re-staking. Someone who
-    /// wants the other side of their own call is asking for something this
-    /// program does not do, and quietly moving their money is the wrong answer
-    /// to that.
+    /// BOTH SIDES ARE ALLOWED. This used to refuse a second side outright, and
+    /// the refusal bought nothing: a second wallet does the same thing at the
+    /// same cost, so the rule only ever charged an account switch. Holding both
+    /// legs is a guaranteed loss of the fee on the pool, which is a price the
+    /// person can see, and seeding your own market so it is not a one-sided
+    /// card is a thing we WANT people to be able to do.
     pub fn take_position(ctx: Context<TakePosition>, side: u8, amount: u64) -> Result<()> {
         require!(side == SIDE_YES || side == SIDE_NO, OddieError::BadSide);
         require!(amount > 0, OddieError::ZeroAmount);
@@ -201,14 +203,12 @@ pub mod oddie_chain {
         require!(clock.unix_timestamp < ctx.accounts.market.close_time, OddieError::MarketClosed);
 
         let pos = &mut ctx.accounts.position;
-        if pos.amount == 0 {
+        if pos.amount_yes == 0 && pos.amount_no == 0 {
             pos.market = ctx.accounts.market.key();
             pos.owner = ctx.accounts.user.key();
-            pos.side = side;
             pos.claimed = false;
             pos.bump = ctx.bumps.position;
         } else {
-            require!(pos.side == side, OddieError::SideAlreadyTaken);
             require!(!pos.claimed, OddieError::AlreadyClaimed);
         }
 
@@ -225,13 +225,198 @@ pub mod oddie_chain {
             amount,
         )?;
 
-        pos.amount = pos.amount.checked_add(amount).ok_or(OddieError::MathOverflow)?;
         let m = &mut ctx.accounts.market;
         if side == SIDE_YES {
+            pos.amount_yes = pos.amount_yes.checked_add(amount).ok_or(OddieError::MathOverflow)?;
             m.total_yes = m.total_yes.checked_add(amount).ok_or(OddieError::MathOverflow)?;
         } else {
+            pos.amount_no = pos.amount_no.checked_add(amount).ok_or(OddieError::MathOverflow)?;
             m.total_no = m.total_no.checked_add(amount).ok_or(OddieError::MathOverflow)?;
         }
+        Ok(())
+    }
+
+    /// Offer a seat, at face, to whoever wants that side next.
+    ///
+    /// See the `Listing` doc for why this is the only exit shape a pari-mutuel
+    /// can have. The listing may never outlive the market: an offer that is
+    /// still standing when betting closes is an offer to sell a settled result.
+    pub fn list_position(ctx: Context<ListPosition>, side: u8, amount: u64, expires_at: i64) -> Result<()> {
+        require!(side == SIDE_YES || side == SIDE_NO, OddieError::BadSide);
+        require!(amount > 0, OddieError::ZeroAmount);
+
+        let clock = Clock::get()?;
+        let m = &ctx.accounts.market;
+        require!(!m.resolved, OddieError::AlreadyResolved);
+        require!(clock.unix_timestamp < m.close_time, OddieError::MarketClosed);
+        require!(expires_at > clock.unix_timestamp, OddieError::BadExpiry);
+        require!(expires_at <= m.close_time, OddieError::BadExpiry);
+
+        let pos = &ctx.accounts.position;
+        require!(!pos.claimed, OddieError::AlreadyClaimed);
+        let held = if side == SIDE_YES { pos.amount_yes } else { pos.amount_no };
+        require!(held >= amount, OddieError::NotEnoughToList);
+
+        let l = &mut ctx.accounts.listing;
+        l.market = m.key();
+        l.seller = ctx.accounts.seller.key();
+        l.side = side;
+        l.amount = amount;
+        l.expires_at = expires_at;
+        l.bump = ctx.bumps.listing;
+        Ok(())
+    }
+
+    /// Take the offer down. Rent goes back to the seller, so changing your mind
+    /// costs nothing but the fee on the transaction.
+    pub fn cancel_listing(_ctx: Context<CancelListing>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Buy the seat. The buyer pays the seller DIRECTLY and the vault is never
+    /// touched: this is a change of owner, not a change of pool.
+    ///
+    /// `total_yes` and `total_no` do not move, so the multiple every other
+    /// staker is counting on is exactly what it was a block earlier. That is
+    /// the property that makes this survivable and every withdraw-shaped exit
+    /// not: paying somebody out of the vault takes the money from the people
+    /// who were right.
+    pub fn take_listing(ctx: Context<TakeListing>) -> Result<()> {
+        let clock = Clock::get()?;
+        let m = &ctx.accounts.market;
+        require!(!m.resolved, OddieError::AlreadyResolved);
+        require!(clock.unix_timestamp < m.close_time, OddieError::MarketClosed);
+
+        let side = ctx.accounts.listing.side;
+        let amount = ctx.accounts.listing.amount;
+        require!(clock.unix_timestamp <= ctx.accounts.listing.expires_at, OddieError::ListingExpired);
+        // A self-fill moves money in a circle and burns two rents doing it.
+        // Anchor gets here first in practice: buyer and seller resolve to the
+        // same position PDA and it rejects the duplicate mutable account. Kept
+        // anyway, because a guard that depends on another layer's incidental
+        // behaviour is a guard that disappears when that layer changes.
+        require!(ctx.accounts.buyer.key() != ctx.accounts.listing.seller, OddieError::SelfFill);
+
+        // The seat has to still be there. Nothing else in the program can move
+        // it while a listing stands, but a second listing filled first can.
+        {
+            let sp = &ctx.accounts.seller_position;
+            require!(!sp.claimed, OddieError::AlreadyClaimed);
+            let held = if side == SIDE_YES { sp.amount_yes } else { sp.amount_no };
+            require!(held >= amount, OddieError::NotEnoughToList);
+        }
+
+        // Money first, exactly as take_position does: a failed transfer must
+        // never leave a seat recorded as sold.
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                system_program::Transfer {
+                    from: ctx.accounts.buyer.to_account_info(),
+                    to: ctx.accounts.seller.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
+        let sp = &mut ctx.accounts.seller_position;
+        if side == SIDE_YES {
+            sp.amount_yes = sp.amount_yes.checked_sub(amount).ok_or(OddieError::MathOverflow)?;
+        } else {
+            sp.amount_no = sp.amount_no.checked_sub(amount).ok_or(OddieError::MathOverflow)?;
+        }
+
+        let bp = &mut ctx.accounts.buyer_position;
+        if bp.amount_yes == 0 && bp.amount_no == 0 {
+            bp.market = m.key();
+            bp.owner = ctx.accounts.buyer.key();
+            bp.claimed = false;
+            bp.bump = ctx.bumps.buyer_position;
+        } else {
+            require!(!bp.claimed, OddieError::AlreadyClaimed);
+        }
+        if side == SIDE_YES {
+            bp.amount_yes = bp.amount_yes.checked_add(amount).ok_or(OddieError::MathOverflow)?;
+        } else {
+            bp.amount_no = bp.amount_no.checked_add(amount).ok_or(OddieError::MathOverflow)?;
+        }
+
+        // A SEAT SOLD IN FULL LEAVES AN EMPTY ACCOUNT, and every exit in this
+        // program returns the rent that opened it. Without this the seller pays
+        // 0.00147 SOL for the privilege of leaving, and claim_winnings can
+        // never collect it: it refuses a position holding nothing.
+        if ctx.accounts.seller_position.amount_yes == 0 && ctx.accounts.seller_position.amount_no == 0 {
+            ctx.accounts
+                .seller_position
+                .close(ctx.accounts.seller.to_account_info())?;
+        }
+        Ok(())
+    }
+
+    /// ONE-OFF: convert a Position written before the two-sided layout.
+    ///
+    /// The old account is 83 bytes (side: u8, amount: u64); the new one is 90
+    /// (amount_yes: u64, amount_no: u64). Anchor cannot read the first as the
+    /// second, so an un-migrated position is unreachable by every other
+    /// instruction here, including refund. That is why this exists and why it is
+    /// PERMISSIONLESS: anybody may pay to convert anybody's position, because
+    /// the conversion cannot move a lamport of the stake, and leaving somebody
+    /// else's money stranded behind a format change would be the worse failure.
+    ///
+    /// It is deliberately narrow. It refuses anything that is not exactly the
+    /// old length, so it can never run twice on the same account and can never
+    /// touch an account written in the new shape.
+    ///
+    /// The payer funds the rent on the seven extra bytes. Tested against a
+    /// GENUINE old account: the previous program is deployed to a local
+    /// validator, a position is opened through it, the program is upgraded in
+    /// place, and the account is migrated and then claimed.
+    pub fn migrate_position(ctx: Context<MigratePosition>) -> Result<()> {
+        const OLD_LEN: usize = 8 + 32 + 32 + 1 + 8 + 1 + 1;
+        let info = ctx.accounts.position.to_account_info();
+        let new_len = 8 + Position::INIT_SPACE;
+
+        let (market, owner, side, amount, claimed, bump) = {
+            let d = info.try_borrow_data()?;
+            require!(d.len() == OLD_LEN, OddieError::NotOldPosition);
+            require!(d[0..8] == Position::DISCRIMINATOR[..], OddieError::NotOldPosition);
+            let mut mk = [0u8; 32];
+            mk.copy_from_slice(&d[8..40]);
+            let mut ow = [0u8; 32];
+            ow.copy_from_slice(&d[40..72]);
+            let mut am = [0u8; 8];
+            am.copy_from_slice(&d[73..81]);
+            (Pubkey::new_from_array(mk), Pubkey::new_from_array(ow), d[72], u64::from_le_bytes(am), d[81] != 0, d[82])
+        };
+        require!(side == SIDE_YES || side == SIDE_NO, OddieError::BadSide);
+
+        // The extra bytes have to be rent-exempt too, or the runtime will not
+        // let the account survive the resize.
+        let rent = Rent::get()?;
+        let need = rent.minimum_balance(new_len);
+        let have = info.lamports();
+        if need > have {
+            system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.key(),
+                    system_program::Transfer {
+                        from: ctx.accounts.payer.to_account_info(),
+                        to: info.clone(),
+                    },
+                ),
+                need - have,
+            )?;
+        }
+        info.resize(new_len)?;
+
+        let mut d = info.try_borrow_mut_data()?;
+        d[8..40].copy_from_slice(market.as_ref());
+        d[40..72].copy_from_slice(owner.as_ref());
+        let (y, n) = if side == SIDE_YES { (amount, 0u64) } else { (0u64, amount) };
+        d[72..80].copy_from_slice(&y.to_le_bytes());
+        d[80..88].copy_from_slice(&n.to_le_bytes());
+        d[88] = u8::from(claimed);
+        d[89] = bump;
         Ok(())
     }
 
@@ -334,13 +519,19 @@ pub mod oddie_chain {
 
         let pos = &mut ctx.accounts.position;
         require!(!pos.claimed, OddieError::AlreadyClaimed);
-        require!(pos.amount > 0, OddieError::ZeroAmount);
+        // BOTH LEGS. A position can now hold each side, and an unsettled market
+        // owes back everything that went into it, not the side that happens to
+        // be first in the struct.
+        let amount = pos
+            .amount_yes
+            .checked_add(pos.amount_no)
+            .ok_or(OddieError::MathOverflow)?;
+        require!(amount > 0, OddieError::ZeroAmount);
 
         // Marked before the transfer, exactly as claim_winnings does: if the
         // transfer fails the whole instruction reverts and the flag goes with
         // it, so this can never strand a position as refunded-but-unpaid.
         pos.claimed = true;
-        let amount = pos.amount;
         pay_from_vault(
             &ctx.accounts.vault.to_account_info(),
             &ctx.accounts.owner.to_account_info(),
@@ -355,14 +546,24 @@ pub mod oddie_chain {
 
         let pos = &mut ctx.accounts.position;
         require!(!pos.claimed, OddieError::AlreadyClaimed);
-        require!(pos.amount > 0, OddieError::ZeroAmount);
+        let staked = pos
+            .amount_yes
+            .checked_add(pos.amount_no)
+            .ok_or(OddieError::MathOverflow)?;
+        require!(staked > 0, OddieError::ZeroAmount);
 
         let winning_total = if m.winning_side == SIDE_YES { m.total_yes } else { m.total_no };
         let pool = m.total_yes.checked_add(m.total_no).ok_or(OddieError::MathOverflow)?;
+        // ONLY THE WINNING LEG PAYS. A wallet holding both sides is paid on the
+        // side that was right and nothing on the side that was not, which is
+        // the same rule as before applied to one account instead of two. The
+        // losing leg is not refunded: it is in the pool the winners split, and
+        // it is the whole reason holding both sides costs the fee.
+        let winning_leg = if m.winning_side == SIDE_YES { pos.amount_yes } else { pos.amount_no };
 
         let payout: u64 = if winning_total == 0 {
-            pos.amount // nobody won: everyone is refunded, no fee was taken
-        } else if pos.side != m.winning_side {
+            staked // nobody won: everyone is refunded in full, no fee was taken
+        } else if winning_leg == 0 {
             0
         } else {
             let distributable = pool
@@ -372,7 +573,7 @@ pub mod oddie_chain {
                 .ok_or(OddieError::MathOverflow)?;
             // Truncating division, deliberately: see the header. The dust this
             // leaves is what guarantees the last claimant is payable.
-            let share = (pos.amount as u128)
+            let share = (winning_leg as u128)
                 .checked_mul(distributable as u128)
                 .ok_or(OddieError::MathOverflow)?
                 / winning_total as u128;
@@ -586,6 +787,109 @@ pub struct TakePosition<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ListPosition<'info> {
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    #[account(seeds = [b"market", market.market_id.to_le_bytes().as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    #[account(
+        seeds = [b"position", market.key().as_ref(), seller.key().as_ref()],
+        bump = position.bump,
+        constraint = position.owner == seller.key() @ OddieError::WrongOwner
+    )]
+    pub position: Account<'info, Position>,
+    /// One standing offer per seller per market. A second call overwrites the
+    /// first rather than stacking, so a seller can never have two seats on sale
+    /// that together exceed what they hold.
+    #[account(
+        init_if_needed,
+        payer = seller,
+        space = 8 + Listing::INIT_SPACE,
+        seeds = [b"listing", market.key().as_ref(), seller.key().as_ref()],
+        bump
+    )]
+    pub listing: Account<'info, Listing>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct CancelListing<'info> {
+    #[account(mut)]
+    pub seller: Signer<'info>,
+    #[account(
+        mut,
+        close = seller,
+        seeds = [b"listing", listing.market.as_ref(), seller.key().as_ref()],
+        bump = listing.bump,
+        has_one = seller @ OddieError::WrongOwner
+    )]
+    pub listing: Account<'info, Listing>,
+}
+
+#[derive(Accounts)]
+pub struct TakeListing<'info> {
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    /// CHECK: paid directly and pinned by the listing's own `has_one`.
+    #[account(mut)]
+    pub seller: UncheckedAccount<'info>,
+    #[account(seeds = [b"market", market.market_id.to_le_bytes().as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    /// Closed to the SELLER, who paid for it. Closing it to the buyer handed
+    /// the seller's own rent deposit to the person buying their seat, so a seat
+    /// sold at face came back about 0.0015 SOL short. Caught by asserting the
+    /// seller is paid at face rather than by reading the constraint.
+    #[account(
+        mut,
+        close = seller,
+        seeds = [b"listing", market.key().as_ref(), seller.key().as_ref()],
+        bump = listing.bump,
+        has_one = seller @ OddieError::WrongOwner,
+        constraint = listing.market == market.key() @ OddieError::WrongOwner
+    )]
+    pub listing: Account<'info, Listing>,
+    #[account(
+        mut,
+        seeds = [b"position", market.key().as_ref(), seller.key().as_ref()],
+        bump = seller_position.bump
+    )]
+    pub seller_position: Account<'info, Position>,
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        space = 8 + Position::INIT_SPACE,
+        seeds = [b"position", market.key().as_ref(), buyer.key().as_ref()],
+        bump
+    )]
+    pub buyer_position: Account<'info, Position>,
+    pub system_program: Program<'info, System>,
+}
+
+/// The position is UNCHECKED on purpose: it is in the old format, so Anchor
+/// cannot deserialize it as `Position`, which is the entire problem this
+/// instruction solves. It is pinned by the PDA seeds, by the program owning it,
+/// by its discriminator and by its exact old length, all checked in the body.
+#[derive(Accounts)]
+pub struct MigratePosition<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(seeds = [b"market", market.market_id.to_le_bytes().as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    /// CHECK: only used to derive the position PDA below.
+    pub owner: UncheckedAccount<'info>,
+    /// CHECK: validated by seeds here and by owner, discriminator and length in
+    /// the body. Read and rewritten byte by byte, never deserialized.
+    #[account(
+        mut,
+        owner = crate::ID @ OddieError::NotOldPosition,
+        seeds = [b"position", market.key().as_ref(), owner.key().as_ref()],
+        bump
+    )]
+    pub position: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct RefundAfterDeadline<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -754,12 +1058,59 @@ pub struct Market {
 
 #[account]
 #[derive(InitSpace)]
+/// ONE POSITION, BOTH SIDES.
+///
+/// This held `side` and one `amount`, so a wallet could take exactly one side
+/// of a market and `take_position` refused to switch. That rule protected
+/// nothing: a second wallet does the same thing today at the same price, so it
+/// only ever cost somebody an account switch. What it did prevent was the one
+/// legitimate use anybody actually asked for, which is shaping your own
+/// exposure (5 on YES, 3 on NO) and seeding your own market so it is not a
+/// one-sided card.
+///
+/// Two amounts rather than two accounts: a second Position per side would
+/// double the rent, double the address space and need a legacy claim path for
+/// positions written before it. The sum of `amount_yes` across every position
+/// still equals `market.total_yes`, which is the invariant every payout is
+/// derived from, and the seat swap below is written to preserve it.
+///
+/// LAYOUT CHANGED. Accounts written before this are 7 bytes shorter and cannot
+/// be read as this struct; `migrate_position` converts them.
 pub struct Position {
     pub market: Pubkey,
     pub owner: Pubkey,
+    pub amount_yes: u64,
+    pub amount_no: u64,
+    pub claimed: bool,
+    pub bump: u8,
+}
+
+/// A seat offered for sale, at face, to whoever wants that side next.
+///
+/// THE ONLY EXIT A PARI-MUTUEL CAN HAVE. Paying somebody out of the vault takes
+/// the money from the people who were right: the other side's multiple falls by
+/// 0.96 x p x a / T_other, and there is no penalty rate below 96% that leaves
+/// them whole. So nothing here touches the vault. An incoming staker's lamports
+/// go straight to the outgoing one, the seat changes hands, `total_yes` and
+/// `total_no` do not move, and the pool the winners are counting on is exactly
+/// what it was a block earlier.
+///
+/// It is not a promise of liquidity. If nobody wants that side at that size,
+/// the listing expires and the money stays where it is. The seller chooses how
+/// long to stand there, which is the only price signal this design has: a long
+/// window fills more often and hands the buyer more of a free option, a short
+/// one does the opposite.
+///
+/// Its own account rather than fields on Position, so a person who never lists
+/// pays no rent for the feature.
+#[account]
+#[derive(InitSpace)]
+pub struct Listing {
+    pub market: Pubkey,
+    pub seller: Pubkey,
     pub side: u8,
     pub amount: u64,
-    pub claimed: bool,
+    pub expires_at: i64,
     pub bump: u8,
 }
 
@@ -791,6 +1142,10 @@ pub enum OddieError {
     #[msg("market is closed to new positions")]
     MarketClosed,
     #[msg("this wallet already holds the other side of this market")]
+    /// DEAD, and kept on purpose. Anchor numbers errors by position from 6000,
+    /// so deleting a variant renumbers every one after it and silently changes
+    /// what an old client's error code means. Two-sided positions are allowed
+    /// now, so nothing raises this.
     SideAlreadyTaken,
     #[msg("already claimed")]
     AlreadyClaimed,
@@ -819,4 +1174,15 @@ pub enum OddieError {
     MarketStillOpen,
     #[msg("the refund window has not opened yet")]
     RefundNotYetOpen,
+    /// Appended at the END so no existing error code moves.
+    #[msg("this position is not in the old format, so there is nothing to migrate")]
+    NotOldPosition,
+    #[msg("a listing must expire in the future and never after the market closes")]
+    BadExpiry,
+    #[msg("this listing has expired")]
+    ListingExpired,
+    #[msg("you cannot buy your own seat")]
+    SelfFill,
+    #[msg("this position does not hold that much on that side")]
+    NotEnoughToList,
 }

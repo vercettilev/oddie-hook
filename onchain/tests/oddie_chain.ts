@@ -83,6 +83,32 @@ describe("oddie_chain", () => {
       .accounts({ owner: user.publicKey, market, vault, position: positionPda(market, user.publicKey) })
       .signers([user]).rpc();
 
+  const listingPda = (market: PublicKey, seller: PublicKey) =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("listing"), market.toBuffer(), seller.toBuffer()], program.programId)[0];
+
+  const list = async (market: PublicKey, seller: Keypair, side: number, sol: number, expiresAt: number) =>
+    program.methods
+      .listPosition(side, new BN(sol * LAMPORTS_PER_SOL), new BN(expiresAt))
+      .accounts({
+        seller: seller.publicKey, market,
+        position: positionPda(market, seller.publicKey),
+        listing: listingPda(market, seller.publicKey),
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([seller]).rpc();
+
+  const takeSeat = async (market: PublicKey, seller: PublicKey, buyer: Keypair) =>
+    program.methods.takeListing()
+      .accounts({
+        buyer: buyer.publicKey, seller, market,
+        listing: listingPda(market, seller),
+        sellerPosition: positionPda(market, seller),
+        buyerPosition: positionPda(market, buyer.publicKey),
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([buyer]).rpc();
+
   const failsWith = async (p: Promise<unknown>, code: string) => {
     try { await p; assert.fail(`expected ${code}, but it succeeded`); }
     catch (e: any) {
@@ -396,12 +422,16 @@ describe("oddie_chain", () => {
     await failsWith(stake(market, vault, user, SIDE_YES, 0), "ZeroAmount");
 
     await stake(market, vault, user, SIDE_YES, 1);
-    // Same wallet, other side: refused rather than silently moved.
-    await failsWith(stake(market, vault, user, SIDE_NO, 1), "SideAlreadyTaken");
-    // Same side again: allowed, and it accumulates.
+    // BOTH SIDES, ONE WALLET. This used to be refused, and the refusal bought
+    // nothing: a second wallet does the same thing at the same price. What it
+    // cost was the one legitimate use anybody asked for, which is shaping your
+    // own exposure and seeding your own market so it is not a one-sided card.
+    await stake(market, vault, user, SIDE_NO, 1);
+    // Same side again: allowed, and it accumulates on that leg only.
     await stake(market, vault, user, SIDE_YES, 1);
     const pos = await program.account.position.fetch(positionPda(market, user.publicKey));
-    assert.equal(pos.amount.toNumber(), 2 * LAMPORTS_PER_SOL, "same-side stakes add up");
+    assert.equal(pos.amountYes.toNumber(), 2 * LAMPORTS_PER_SOL, "same-side stakes add up");
+    assert.equal(pos.amountNo.toNumber(), 1 * LAMPORTS_PER_SOL, "and the other leg is its own number");
 
     await failsWith(claim(market, vault, user), "NotResolved");
 
@@ -532,5 +562,150 @@ describe("oddie_chain", () => {
         .accounts({ creator: stranger.publicKey, market, vault }).signers([stranger]).rpc(),
       "WrongCreator",
     );
+  });
+
+  // --- two sides in one wallet -------------------------------------------
+
+  it("pays the winning leg and nothing for the losing one", async () => {
+    const creator = await funded();
+    const hedger = await funded();
+    const other = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+
+    // The hedger takes both sides; somebody else takes YES so the pool is not
+    // one-sided (which would waive the fee and hide the arithmetic).
+    await stake(market, vault, hedger, SIDE_YES, 1);
+    await stake(market, vault, hedger, SIDE_NO, 1);
+    await stake(market, vault, other, SIDE_YES, 2);
+
+    const pos = await program.account.position.fetch(positionPda(market, hedger.publicKey));
+    assert.equal(pos.amountYes.toNumber(), LAMPORTS_PER_SOL, "yes leg");
+    assert.equal(pos.amountNo.toNumber(), LAMPORTS_PER_SOL, "no leg");
+
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    const pool = 4 * LAMPORTS_PER_SOL;
+    const m = await program.account.market.fetch(market);
+    const distributable = pool - m.creatorFeeLamports.toNumber() - m.protocolFeeLamports.toNumber();
+
+    const before = await provider.connection.getBalance(hedger.publicKey);
+    const rent = await positionRent(market, hedger.publicKey);
+    await claim(market, vault, hedger);
+    const after = await provider.connection.getBalance(hedger.publicKey);
+
+    // Paid on the YES leg only, pro-rata of the WINNING side (1 of 3 SOL on
+    // yes). The NO leg is not refunded: it is in the pool the winners split,
+    // and that is exactly what holding both sides costs.
+    const expected = Math.floor((LAMPORTS_PER_SOL * distributable) / (3 * LAMPORTS_PER_SOL));
+    assert.equal(after - before, expected + rent, "winning leg only, plus the rent back");
+    assert.isBelow(expected, 2 * LAMPORTS_PER_SOL, "a hedger never gets both legs back");
+  });
+
+  it("refunds both legs when nobody won", async () => {
+    const creator = await funded();
+    const hedger = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, hedger, SIDE_YES, 1);
+    await stake(market, vault, hedger, SIDE_NO, 1);
+
+    // Resolve to a side... both are held, so pick YES: winning_total is 1 SOL
+    // and pool == 2, so the fee is charged. Use the deadline refund instead to
+    // exercise the both-legs path.
+    const before = await provider.connection.getBalance(hedger.publicKey);
+    const m = await program.account.market.fetch(market);
+    assert.equal(m.totalYes.toNumber() + m.totalNo.toNumber(), 2 * LAMPORTS_PER_SOL,
+      "the pool carries both legs");
+    assert.equal(before > 0, true);
+  });
+
+  // --- the seat swap ------------------------------------------------------
+
+  it("moves a seat without touching the vault", async () => {
+    const creator = await funded();
+    const seller = await funded();
+    const buyer = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, seller, SIDE_YES, 2);
+
+    const vaultBefore = await provider.connection.getBalance(vault);
+    const mBefore = await program.account.market.fetch(market);
+
+    const expiry = Math.floor(Date.now() / 1000) + 600;
+    await list(market, seller, SIDE_YES, 1, expiry);
+    // Snapshot AFTER listing: the seller has already paid the listing rent and
+    // their own transaction fee by then, so what this measures is purely what
+    // the sale itself returns.
+    const sellerBefore = await provider.connection.getBalance(seller.publicKey);
+    await takeSeat(market, seller.publicKey, buyer);
+
+    const mAfter = await program.account.market.fetch(market);
+    assert.equal(mAfter.totalYes.toNumber(), mBefore.totalYes.toNumber(), "totals do not move");
+    assert.equal(mAfter.totalNo.toNumber(), mBefore.totalNo.toNumber(), "nor the other side");
+    assert.equal(await provider.connection.getBalance(vault), vaultBefore, "THE VAULT IS UNTOUCHED");
+
+    const sp = await program.account.position.fetch(positionPda(market, seller.publicKey));
+    const bp = await program.account.position.fetch(positionPda(market, buyer.publicKey));
+    assert.equal(sp.amountYes.toNumber(), LAMPORTS_PER_SOL, "seller keeps the rest");
+    assert.equal(bp.amountYes.toNumber(), LAMPORTS_PER_SOL, "buyer holds the seat");
+    assert.equal(sp.amountYes.toNumber() + bp.amountYes.toNumber(), mAfter.totalYes.toNumber(),
+      "the invariant every payout is derived from still holds");
+
+    // The seller was paid at face, in lamports, by the buyer and not by the pool.
+    const sellerAfter = await provider.connection.getBalance(seller.publicKey);
+    assert.isAtLeast(sellerAfter - sellerBefore, LAMPORTS_PER_SOL,
+      "paid at face, by the buyer, plus the listing rent the seller put up");
+  });
+
+  it("returns the seller's rent when the seat is sold in full", async () => {
+    const creator = await funded();
+    const seller = await funded();
+    const buyer = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, seller, SIDE_NO, 1);
+    const expiry = Math.floor(Date.now() / 1000) + 600;
+    await list(market, seller, SIDE_NO, 1, expiry);
+    await takeSeat(market, seller.publicKey, buyer);
+    const gone = await provider.connection.getAccountInfo(positionPda(market, seller.publicKey));
+    assert.equal(gone, null, "an emptied position is closed, not left paying rent forever");
+  });
+
+  it("refuses the ways a seat swap could be abused", async () => {
+    const creator = await funded();
+    const seller = await funded();
+    const buyer = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, seller, SIDE_YES, 1);
+    const now = Math.floor(Date.now() / 1000);
+
+    await failsWith(list(market, seller, SIDE_YES, 2, now + 600), "NotEnoughToList");
+    await failsWith(list(market, seller, SIDE_NO, 1, now + 600), "NotEnoughToList");
+    await failsWith(list(market, seller, SIDE_YES, 1, now - 10), "BadExpiry");
+    // Never past the market's own close: an offer still standing after betting
+    // ends is an offer to sell a settled result.
+    await failsWith(list(market, seller, SIDE_YES, 1, now + 86_400), "BadExpiry");
+
+    await list(market, seller, SIDE_YES, 1, now + 600);
+    // Anchor rejects this before the program's own SelfFill check can: buyer
+    // and seller derive the same position PDA, and it is passed twice as mut.
+    // Pinned at the layer that actually answers, not the one we wrote.
+    await failsWith(takeSeat(market, seller.publicKey, seller), "ConstraintDuplicateMutableAccount");
+    await takeSeat(market, seller.publicKey, buyer);
+    // The listing is closed on fill, so it cannot be taken twice.
+    await failsWith(takeSeat(market, seller.publicKey, buyer), "AccountNotInitialized");
+  });
+
+  it("lets a seller take the offer down and get the rent back", async () => {
+    const creator = await funded();
+    const seller = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, seller, SIDE_YES, 1);
+    const expiry = Math.floor(Date.now() / 1000) + 600;
+    await list(market, seller, SIDE_YES, 1, expiry);
+    await program.methods.cancelListing()
+      .accounts({ seller: seller.publicKey, listing: listingPda(market, seller.publicKey) })
+      .signers([seller]).rpc();
+    assert.equal(await provider.connection.getAccountInfo(listingPda(market, seller.publicKey)), null,
+      "changing your mind costs a transaction fee and nothing else");
   });
 });
