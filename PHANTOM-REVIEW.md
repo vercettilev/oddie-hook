@@ -170,11 +170,13 @@ linked above.
    transaction which would fail on chain triggers the warning. All three endpoints now
    mirror the program's own guards and refuse with an explanation instead.
 
-3. Public betting is currently gated while we run a closed beta, so a reviewer visiting
-   the site today will reach a market page that says betting opens shortly rather than a
-   stake sheet. The linked transaction is a real mainnet stake through the exact flow in
-   question. If it would help the review to walk that flow yourselves, tell us and we will
-   open access immediately.
+3. The dApp is open, and we would rather you walked it than took our word for it. Go to
+   https://oddie.fun, open the live market, pick a side and connect a wallet: that is the
+   exact flow the linked transaction came out of, on mainnet, with real SOL. Two notes on
+   what you will find. Volume is small because we are early, and market creation is
+   currently manual while the X tagging bot finishes its dry run, so markets are opened by
+   us rather than by tags today. Everything downstream of that (staking, claiming, fee
+   collection) is live and is what the linked transaction exercises.
 
 The domain is new (registered 2026-07-13), which we understand accounts for the new
 domain notice on its own.
