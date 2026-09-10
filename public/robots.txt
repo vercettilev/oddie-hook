@@ -1,6 +1,6 @@
-# The app is closed to the public while Genesis runs, and the operator pages
-# were never meant to be found. The campaign and the share pages are the parts
-# that should be indexed.
+# The app is open. What stays out of the index is the operator surface, which
+# was never meant to be found, and the preview and roster pages. Market pages
+# and the campaign ARE the share targets and must stay indexable.
 User-agent: *
 Disallow: /app/
 Disallow: /preview

@@ -334,6 +334,30 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         continue;
       }
 
+      /* A DRY RUN THAT MINTS IS NOT A DRY RUN.
+         This check used to sit four steps lower, under the mint and under the
+         ticket spend, on the reading that the only thing worth suppressing was
+         the post. It was not. Reaching this line spends a rent deposit out of
+         oddie's own wallet, creates a market that is real and stakeable and
+         appears in the public list, and burns one of the tagger's five season
+         tickets - and then says nothing, so the person who paid the ticket is
+         never told the market exists and cannot find it. That is the worst
+         possible combination: every cost of a live bot with none of its effect.
+         So the dry run now stops BEFORE the world changes. What it reports is
+         the extraction and the reply it would have sent; the slug is the one
+         thing it cannot know, because openMarket is what mints it. */
+      if (deps.dryRun) {
+        const wouldSay = buildTweetReply({
+          question: ex.question,
+          permalink: `${deps.baseUrl.replace(/\/+$/, "")}/m/<slug>`,
+          hook: ex.hook,
+        });
+        await settleMention(m.id, "skipped", { reason: "dry-run" });
+        decide("skipped", { reason: "dry-run", text: wouldSay.primary });
+        log("dry run: would open a market and reply", { tweetId: m.id, question: ex.question, text: wouldSay.primary });
+        continue;
+      }
+
       const minted = await deps.openMarket({
         taggerHandle: m.authorHandle,
         question: ex.question,
@@ -363,12 +387,6 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // quoting a 50 nobody set.
       const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook });
 
-      if (deps.dryRun) {
-        await settleMention(m.id, "skipped", { reason: "dry-run", slug: minted.slug });
-        decide("skipped", { reason: "dry-run", slug: minted.slug, text: reply.primary });
-        log("dry-run reply", { tweetId: m.id, slug: minted.slug, text: reply.primary });
-        continue;
-      }
 
       // The card is the thing that stops a scroll, but a reply with no card is
       // still a working reply. An image failure must not cost the market a

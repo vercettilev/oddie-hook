@@ -1028,7 +1028,7 @@ async function createMarket() {
   if (datePending) { cout.innerHTML = '<div class="box error"><p class="why">confirm the suggested close time first (or edit it)</p></div>'; return; }
   if (!closeLocal) { cout.innerHTML = '<div class="box error"><p class="why">pick a close time</p></div>'; return; }
   $("#cgo").disabled = true; $("#cgo").textContent = "Creating…";
-  cout.innerHTML = '<div class="box"><p class="why">creating market' + (chainEnabled ? ' + minting on devnet…' : '…') + '</p></div>';
+  cout.innerHTML = '<div class="box"><p class="why">creating market' + (chainEnabled ? ' + minting on chain…' : '…') + '</p></div>';
   try {
     const r = await fetch("/api/community/create", {
       method: "POST", headers: admHeaders({ "content-type": "application/json" }),

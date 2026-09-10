@@ -338,6 +338,12 @@ async function main() {
     });
     const r = await runMentionSweep(deps);
     check("dry run posts nothing", spy.posted.length === 0 && spy.uploads === 0);
+    // The one that was missing, and it cost a rent deposit and a season ticket
+    // every time a tag arrived: a dry run must not change the world either. A
+    // minted market is real, stakeable and listed, and the tagger who paid for
+    // it is never told it exists, because the reply is the part being suppressed.
+    check("dry run mints NOTHING", spy.minted.length === 0, spy.minted.join(" | "));
+    check("...and spends no ticket", spy.taggers.length === 0);
     check("dry run still shows the exact text it would have posted",
       Boolean(r.decisions[0]?.text?.includes("https://oddie.fun/m/")), r.decisions[0]?.text);
     check("dry run marks the mention decided, so a later real run does not repost it",

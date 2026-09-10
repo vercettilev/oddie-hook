@@ -1026,7 +1026,7 @@
     <div class="nav__links">
       <a href="#how">How it works</a>
       <a href="https://x.com/oddiefun" target="_blank" rel="noopener">Follow on X</a>
-      <a class="btn" data-soon href="/markets">Launch app <i aria-hidden="true">&rarr;</i></a>
+      <a class="btn" href="/markets">Launch app <i aria-hidden="true">&rarr;</i></a>
     </div>
   </nav>
 </div>
@@ -1266,32 +1266,6 @@
    if the copy or the order of options drifts between the two, the front door
    and the app teach different products. */
 (function(){
-  /* -------------------------------------------------- coming soon -------
-     The app is not open yet, so the two buttons that lead into it say so and
-     do nothing on click. The capture-phase listener runs before the dialog
-     opener below, which is why that code needs no edits to be off.
-     To relaunch: delete the data-soon attributes and this block.
-
-     SAID AT FIRST PAINT, NOT ON HOVER. This used to swap the label on
-     mouseenter and leave it reading "Launch app" until then, which meant the
-     most conventional button on the page -- boxed, top right -- looked live,
-     and the only way to learn it was dead was to press it. On a phone there is
-     no hover at all, so a tap was the ONLY way to find out. The label is
-     swapped as soon as the script runs, so nobody spends a click discovering
-     it, and the original is kept so relaunching is still one deletion. */
-  (function(){
-    document.querySelectorAll("[data-soon]").forEach(function(el){
-      el.dataset.soonLabel = el.innerHTML;
-      el.innerHTML = "Coming soon";
-      el.setAttribute("aria-disabled", "true");
-      el.setAttribute("title", "The app opens soon");
-    });
-    document.addEventListener("click",function(e){
-      var el=e.target.closest&&e.target.closest("[data-soon]");
-      if(!el)return;
-      e.preventDefault();e.stopPropagation();
-    },true);
-  })();
 
   var btn=document.getElementById("ctacreate");
   if(!btn)return;
