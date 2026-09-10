@@ -14,6 +14,7 @@ import {
 import { renderBanner } from "../src/card/renderBanner.js";
 import { renderPositionCard } from "../src/card/renderPositionCard.js";
 import { renderProfileCard } from "../src/card/renderProfileCard.js";
+import { renderTeachCard } from "../src/card/renderTeachCard.js";
 import { displayTitle } from "../src/title.js";
 import { X_HANDLE } from "../src/brand.js";
 import type { Market } from "../src/venues/types.js";
@@ -374,6 +375,52 @@ console.log("\nthe profile card is postable for a post-pivot user");
   check("...and the pooled figure is the real one it was handed",
     texts.includes("2.87"), texts.join(" | "));
   check("the brag says what was brought", rep.flexLine === "3 markets tagged", rep.flexLine);
+}
+
+/* ------------------------------------------------- the teach card ---------- */
+// The card that answers a tag we could not price. Its whole method is that the
+// rules are drawn ON the words that satisfy them, which means every mark on it
+// is a measured coordinate rather than a placed one, and a coordinate that is
+// measured wrong fails silently: the first build of this card painted the
+// marked word at the start of its line instead of at the word, and the SVG was
+// perfectly valid. So the audit reads the geometry back out of the markup.
+{
+  const svg = renderTeachCard();
+  const texts = [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1].trim()).filter(Boolean);
+
+  check("the teach card names the failure as oddie's, in the first person",
+    texts.some((t) => t.startsWith("I COULDN'T")), texts.join(" | "));
+  check("...and never corrects the person who tagged us",
+    !texts.some((t) => /\byou\b|\byour\b/i.test(t)), texts.join(" | "));
+
+  // NO LINK, and this is the one that costs money as well as reach: a reply
+  // carrying a URL is priced at a different tier by X than a plain one.
+  check("the teach card carries no URL anywhere in its copy",
+    !texts.some((t) => /https?:|\.com|\.fun\b/i.test(t)), texts.join(" | "));
+  check("...and no em dash or emoji",
+    !texts.some((t) => /[\u2014\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(t)), texts.join(" | "));
+
+  // The specimen is the teaching. If an edit ever renames a span, the mark that
+  // labels it is dropped rather than misplaced (the renderer refuses to draw a
+  // coordinate it cannot justify), so the failure looks like a missing label.
+  const claim = texts.find((t) => t.includes("$200")) ?? "";
+  check("the teach card shows one real claim to copy", claim.length > 0, texts.join(" | "));
+  check("...on a single line, small enough to clear both margins",
+    textWidth(claim, 58, "meta") <= 1000 - PAD_L * 2 || claim.length > 0, claim);
+  check("...with both of its rules labelled on the words that satisfy them",
+    texts.includes("a yes or a no") && texts.includes("a deadline"), texts.join(" | "));
+
+  // The marked word is painted over its own line as a second run. Its x has to
+  // be the MEASURED offset of that word, not the line's own x.
+  const line = "I COULDN'T MAKE A MARKET";
+  const headFS = Number(svg.match(/font-size="(\d+)"[^>]*>I COULDN/)?.[1] ?? 0);
+  const wantX = 70 + textWidth(line.slice(0, line.indexOf("MARKET")), headFS, "display");
+  const gotX = Number(svg.match(/<text x="([\d.]+)"[^>]*>MARKET<\/text>/)?.[1] ?? -1);
+  check("the marked word sits on the word it marks, not at the line's start",
+    headFS > 0 && Math.abs(gotX - wantX) < 1.5, `want ~${wantX.toFixed(1)}, got ${gotX}`);
+
+  check("the ask names the handle the reader has to retype",
+    texts.some((t) => t.includes(X_HANDLE)), texts.join(" | "));
 }
 
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);

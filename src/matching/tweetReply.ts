@@ -142,10 +142,14 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
  * $0.200 a post. The one place where the safe choice and the cheap choice are
  * the same choice.
  *
- * IT TEACHES INSTEAD OF APOLOGISING. "I can't do that" is noise. Naming what
- * WOULD work turns a dead end into an instruction, and the person's second
- * attempt is a market. That is the only justification for saying anything at
- * all.
+ * IT TEACHES INSTEAD OF APOLOGISING. "I can't do that" is noise. Something that
+ * turns a dead end into an instruction is the only justification for saying
+ * anything at all. But the TEACHING LIVES ON THE CARD, not here: the card shows
+ * a real claim with the two spans that make it a market underlined on the words
+ * themselves, which is a thing 200 characters of text cannot do. So these lines
+ * deliberately do NOT restate the recipe. They carry the one thing an image
+ * cannot, which is that oddie wants the next attempt, and they get out of the
+ * way. Two versions of the same lesson stacked on each other read as a lecture.
  *
  * THE FAILURE IS OURS. The line is written as oddie not finding a side, never
  * as the person having tagged the wrong thing. The sticker that rides with it
@@ -154,9 +158,9 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
  * the mute-bait this whole comment exists to avoid.
  */
 const CANNOT_PRICE = [
-  "no side to take here.\n\ntag me on something that settles: a price, a date, a result. i'll open the market.",
-  "nothing here i can call.\n\ngive me a claim with a deadline and an answer somebody can check.",
-  "can't find a yes or a no in this one.\n\ntag me on something with a result, and there's a market in it.",
+  "not one i can call. come back at me with another and i'll open it in a minute.",
+  "no side to take in that one. i want the market more than you do, so try me again.",
+  "couldn't find the market in that. give me one more and i'll do the rest.",
 ];
 
 /** Deterministic per tweet, so the same post never gets two different answers,
