@@ -696,10 +696,18 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
          onaylanmis islemlerden geliyor (bkz. stakerCounts), yani dolu bir
          havuzun yaninda sifir cikabilir ve o durumda "0 in" yazmak parayi
          yalanlamak olurdu. Bilmiyorsak susuyoruz. */
+      /* Same gate and the same reason as the list (see public/app/markets.html):
+         under three, the count is the pool restated and it is drawn as nothing
+         rather than as a small number.
+         There is a second reason it has to hold on THIS page. Fifteen lines
+         below, the in-strip tells the reader "You are in YES for 0.1 SOL". At
+         one, the page was counting the reader to themselves and then
+         introducing them. */
+      var MIN_HEADS_LIST = 3;
       var heads = Number(m.stakers || 0);
       html += '<div class="pool"><div class="pool__n">' + SOL(tot) + "<span>SOL</span></div>"
         + '<div class="pool__k">in the pool'
-        + (heads > 0 ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
+        + (heads >= MIN_HEADS_LIST ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
         + '<div class="bar" role="img" aria-label="' + yp + ' percent yes, ' + (100 - yp) + ' percent no">'
         + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>'
         + '<div class="split"><span class="y">' + yp + "% on YES</span><span class=\"n\">" + (100 - yp) + "% on NO</span></div></div>";

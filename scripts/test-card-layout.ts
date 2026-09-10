@@ -15,6 +15,7 @@ import { renderBanner } from "../src/card/renderBanner.js";
 import { renderPositionCard } from "../src/card/renderPositionCard.js";
 import { renderProfileCard } from "../src/card/renderProfileCard.js";
 import { renderTeachCard } from "../src/card/renderTeachCard.js";
+import { MIN_HEADS_CARD } from "../src/card/renderCard.js";
 import { displayTitle } from "../src/title.js";
 import { X_HANDLE } from "../src/brand.js";
 import type { Market } from "../src/venues/types.js";
@@ -426,6 +427,44 @@ console.log("\nthe profile card is postable for a post-pivot user");
 
   check("the ask names the handle the reader has to retype",
     texts.some((t) => t.includes(X_HANDLE)), texts.join(" | "));
+}
+
+/* ------------------------------------------- the crowd count is gated ------ */
+// The count is upside-only: free to withhold, expensive to print badly. Absence
+// leaves a stranger in "unknown"; a low digit moves them to "empty", which is
+// terminal inside a scroll. So the card names people only once there are enough
+// of them to be a claim, and below that the meta line simply ends at the odds -
+// no gap, no dash, nothing new to read. Asserted at the boundary in both
+// directions, because an off-by-one here is invisible until it is on a timeline.
+{
+  const base: Market = { ...mk("Will the count show up when it should?", 50), venue: "community" };
+  const metaOf = (n: number) => {
+    const svg = renderCard(base, { stakers: n });
+    return [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1].trim()).find((t) => /pays/.test(t)) ?? "";
+  };
+  check("the share card gates the crowd count above zero, not at it", MIN_HEADS_CARD > 1, String(MIN_HEADS_CARD));
+  check(`...at ${MIN_HEADS_CARD}, so a forgeable two never sits beside a percentage`, MIN_HEADS_CARD > 2);
+  check("one below the line, the meta line ends at the odds",
+    !/\bin\b/.test(metaOf(MIN_HEADS_CARD - 1)), metaOf(MIN_HEADS_CARD - 1));
+  check("...and nothing is drawn in its place",
+    metaOf(MIN_HEADS_CARD - 1) === metaOf(0), `${metaOf(MIN_HEADS_CARD - 1)} vs ${metaOf(0)}`);
+  check("on the line, the count is named", metaOf(MIN_HEADS_CARD).includes(`${MIN_HEADS_CARD} in`),
+    metaOf(MIN_HEADS_CARD));
+  check("the live market today (one wallet, both sides) says nothing about people",
+    !/\bin\b/.test(metaOf(1)), metaOf(1));
+
+  // The app surfaces gate lower on purpose: beside a POOL the count is a
+  // composition fact to somebody already inside, not a credibility claim to a
+  // stranger. Lower, but never at zero, and never below the card's own
+  // forgeable-two floor.
+  for (const f of ["public/app/markets.html", "public/app/market.html"]) {
+    const src = readFileSync(f, "utf8");
+    const n = Number(src.match(/var MIN_HEADS_LIST = (\d+);/)?.[1] ?? 0);
+    check(`${f} gates the count too`, n >= 3, String(n));
+    check(`...below the share card's ${MIN_HEADS_CARD}, because it is a different claim`, n < MIN_HEADS_CARD);
+    check(`...and no code path there still tests it against zero`,
+      !/stakers[^)]*\)\s*>\s*0|heads > 0/.test(src));
+  }
 }
 
 console.log(failures === 0 ? "\nall card-layout checks passed.\n" : `\n${failures} card-layout check(s) FAILED.\n`);

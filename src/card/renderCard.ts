@@ -417,6 +417,29 @@ export const BADGE_POOL = [
  * take it back. Unpriced markets now say so and invite the first stake, which
  * is also the better ask.
  */
+/**
+ * How many confirmed wallets a market needs before the SHARE CARD names them.
+ *
+ * Higher than the in-app list's three (public/app/markets.html, market.html) and
+ * deliberately so: the same figure is doing two different jobs. Beside a pool,
+ * to somebody already inside, the count is a COMPOSITION fact - 0.2 SOL across
+ * three wallets is a different object from 0.2 SOL from one - and three is
+ * enough to be that. Beside a payout multiple, on a timeline, to somebody who
+ * has never heard of oddie, it is a CREDIBILITY claim about the product itself,
+ * and a credibility claim needs a bigger number than a composition fact.
+ *
+ * Five rather than three because three is quote-tweetable as dead and five is
+ * not obviously so, and the tail this gate buys insurance against is being
+ * screenshotted as empty. Not ten, because a gate that cannot fire for months
+ * teaches nothing and rots, and this repo has shipped dead fields before.
+ *
+ * Five is reasoned, not measured. Move it on evidence: the first single-digit
+ * count that gets dunked on raises it, and a median peak below five across
+ * closed markets means the branch is decoration and the slot should carry the
+ * pool instead, which the image is genuinely missing on X.
+ */
+export const MIN_HEADS_CARD = 5;
+
 export function renderCard(
   m: Market,
   opts: { unpriced?: boolean; settled?: "yes" | "no"; stakers?: number } = {},
@@ -468,14 +491,29 @@ export function renderCard(
      Counted from chain_entry, which is distinct CONFIRMED wallets, so it can
      read zero next to a funded pool and is omitted rather than drawn as 0. The
      market page has said this for a while ("N in"); the card is where it
-     actually matters. */
+     actually matters.
+
+     AND IT IS GATED HIGHER THAN ZERO, which is the correction to the paragraph
+     above. Omitting only at zero assumed the count's problem was being absent.
+     Its problem is being SMALL. Absence leaves a stranger in "unknown", which
+     is a workable state and leaves the claim and the multiple to do the work;
+     a low digit moves them to "empty", which is terminal and cannot be argued
+     with inside a scroll. That asymmetry makes the count upside-only: free to
+     withhold, expensive to print badly, so it is gated rather than defaulted.
+
+     Two below the line is out on this file's own measurement: if two wallets
+     can forge any percentage here for 0.011 SOL, then "2 in" beside a
+     percentage is printing the price of faking it. Nothing replaces the count
+     below the line. The meta line simply ends at the odds, exactly as it
+     already does at zero, so there is no slot to notice as empty and no new
+     copy on the one surface that leaves the product. */
   const heads = Math.max(0, Math.floor(opts.stakers ?? 0));
   const odds = `${udSide} pays ${mult}\u00d7`;
   const metaText = settled
     ? "settled on chain"
     : unpriced
       ? "first in sets the line"
-      : heads > 0
+      : heads >= MIN_HEADS_CARD
         ? `${odds} \u00b7 ${heads} in`
         : odds;
 

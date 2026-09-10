@@ -470,6 +470,18 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          near-empty list. Set before the empty branch returns, because that
          branch is the THINNEST list there is and it was the one still carrying
          600px of crowd. */
+      /* HOW MANY PEOPLE, ONLY ONCE IT IS A DIFFERENT FACT FROM THE MONEY.
+         At one the count is the pool restated: all of it is one wallet. At two
+         it is the minimum a market needs to exist at all, and it is the exact
+         shape src/card/renderCard.ts measured as forgeable for 0.011 SOL. At
+         three it is the first value a reader cannot reconstruct from the SOL
+         beside it, and it is this product's own existing answer to "when does a
+         small count stop embarrassing the page" (THIN, below).
+         Nothing takes its place underneath: the line ends after the pool,
+         exactly as it does at zero. The share card gates higher, at five, for a
+         reason written at MIN_HEADS_CARD - there it is a claim about the
+         product to a stranger, here it is inventory to somebody already in. */
+      var MIN_HEADS_LIST = 3;
       var THIN = 3;
       var crowd = document.querySelector(".crowd");
       if (crowd) crowd.hidden = ms.length < THIN;
@@ -516,7 +528,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
             + "</b> SOL in the pool"
             // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
             // parayi yalanlar.
-            + (Number(m.stakers || 0) > 0 ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
+            + (Number(m.stakers || 0) >= MIN_HEADS_LIST ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
             + "</p>"
             + '<div class="bar" role="img" aria-label="' + yp + ' percent yes"><i class="bar__y" style="width:'
             + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>';
