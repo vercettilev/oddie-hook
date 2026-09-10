@@ -10,31 +10,36 @@ import { X_HANDLE } from "../brand.js";
  *
  * Silence was the old answer and it was the safe one: a public "I can't make a
  * market out of that" is a reply that helps nobody. This card is the reason to
- * break that rule. It does not announce the refusal, it shows the sentence that
- * would have worked, so the person who already went to the trouble of tagging
- * us gets something back and their next tag is one we can mint.
+ * break that rule. It does not announce the refusal, it says how low the bar
+ * actually is, so the person who went to the trouble of tagging us gets
+ * something back and their next tag is one we can mint.
  *
- * TWO THINGS THE FIRST VERSION GOT WRONG, both fixed here.
+ * TWO DESIGNS WERE WRONG BEFORE THIS ONE, in opposite directions.
  *
- * It was not understandable. It set out three abstract requirements and left
- * the reader to match a sentence of their own against them. A list asks you to
- * hold three rules in your head and do the work; this one puts ONE real claim
- * on the card and underlines the two spans that make it a market. The rule sits
- * on top of the words that satisfy it, so there is nothing left to match.
+ * The first was a list: three requirements in body text, which is something a
+ * reader has to hold in their head and match their own sentence against. It was
+ * rejected for being unreadable, and it was.
  *
- * It did not look like the product. The landing shouts in Anton caps and tears
- * its fields apart with paper seams; the card whispered in rounded lowercase on
- * a flat field. So the shell is the landing's own: chartreuse above the tear
- * for what just happened, black below it for what to do instead. The seam
- * carries the turn, which is why no word on the card has to say "but".
+ * The second fixed that with a worked example - a real claim with the two spans
+ * that make it a market underlined on the words themselves - and it taught
+ * well. It was replaced anyway, because of what the example SAID. It was a
+ * price with a date, which is exactly what every prediction market on the
+ * internet already lists, so the one card that leaves this product was teaching
+ * people to send us the shape our competitors are built around. oddie's markets
+ * come out of arguments on X. No example we could pick was worth that risk, and
+ * picking none is not the same as going back to the list.
  *
- * The failure stays oddie's, stated first person and without an apology: "I
- * couldn't", never "that wasn't" and never "you should have". Same reason the
- * mascot is the one sweating between its own two buttons. A card that reads as
- * a correction of the tagger is the fastest way to get the account muted, and a
- * muted account ends the product.
+ * What is left is not a list and not a specimen: it is the whole rule in six
+ * words, in display type, as the biggest object on the card. Two lines you pass
+ * or fail rather than three you check yourself against. And because it answers
+ * "what does it take" rather than "what did you get wrong", it pairs with every
+ * line the reply might carry instead of hinging on one of them - which the
+ * example version did, while the reply text is chosen at random.
+ *
+ * The failure stays oddie's, and the mascot is the one sweating between its own
+ * two buttons. A card that reads as a correction of the tagger is the fastest
+ * way to get the account muted, and a muted account ends the product.
  */
-
 const W = 1000;
 const H = 524;
 const PAD_L = 70;
@@ -87,36 +92,16 @@ function artHref(): string {
  * COULD carries the landing's marked-word treatment because it is the hinge
  * between the two halves. The reply's last word was couldn't.
  */
-const SAID = ["HERE'S ONE I COULD."];
-const MARK = "COULD";
+const SAID = ["THIS IS ALL IT TAKES."];
+const MARK = "ALL";
 
-/**
- * The specimen.
- *
- * A price rather than a fixture or a release date, and that is a durability
- * decision as much as a teaching one: a dated real-world event makes the card
- * wrong the week it resolves, and this asset sits in a reply queue for months.
- * "Dec 31" reads as this year whatever year it is.
- *
- * It is labelled as an example by the kicker above it, so it is not read as a
- * call oddie is making. Nothing on this card is a forecast.
- */
-const CLAIM = "SOL closes above $200 on Dec 31";
-
-/**
- * The two spans that made it a market, and the rule each one satisfies.
- *
- * "a yes or a no" sits under the threshold rather than under the whole line,
- * because the threshold is the thing that creates the yes and the no, and that
- * is exactly the part people leave out when they tag us.
- */
-const MARKS: ReadonlyArray<{ span: string; label: string }> = [
-  { span: "above $200", label: "a yes or a no" },
-  { span: "on Dec 31", label: "a deadline" },
-];
+/** The whole rule, as two phrases rather than three sentences.
+ *  A list is something a reader has to match their own sentence against; two
+ *  lines in display type are a stamp they either pass or do not. */
+const RULE = ["A YES OR A NO.", "AND A DATE."];
 
 /** The only ask on the card, and the string the reader has to retype. */
-const ASK = `tag ${X_HANDLE} under one like it`;
+const ASK = `tag ${X_HANDLE} under one`;
 
 /* ----------------------------------------------------------------- type ---- */
 
@@ -182,36 +167,14 @@ export function renderTeachCard(): string {
 
   /* --- below the tear ----------------------------------------------------- */
 
-  // Step the claim down until it holds ONE line. Wrapping it would cost the one
-  // property that makes it teach: a sentence you take in with a single sweep and
-  // can retype from memory.
-  let claimFS = 70;
-  while (claimFS > 34 && metaW(CLAIM, claimFS) > W - PAD_L * 2) claimFS -= 2;
-  const claimBase = 344;
-
-  const underY = claimBase + 16;
-  const stemBottom = underY + 17;
-  const labelFS = 26;
-  const labelBase = stemBottom + Math.round(0.72 * labelFS);
-
-  const marks = MARKS.map(({ span, label }, i) => {
-    const at = CLAIM.indexOf(span);
-    // A span missing from the claim would silently place its mark at the left
-    // edge of the line. Drop it instead: nothing here draws a coordinate it
-    // cannot justify.
-    if (at < 0) return "";
-    const x = PAD_L + metaW(CLAIM.slice(0, at), claimFS);
-    const w = metaW(span, claimFS);
-    const cx = x + w / 2;
-    // Labels alternate their tilt by a degree and a half. Nothing in this brand
-    // rests at zero, and a hand-set annotation is where that reads as intent
-    // rather than as a rendering accident.
-    const rot = i % 2 === 0 ? -1.6 : 1.6;
-    return `<rect x="${Math.round(x)}" y="${underY}" width="${Math.round(w)}" height="6" rx="3" fill="${C.echo}"/>
-  <rect x="${Math.round(cx - 2)}" y="${underY + 6}" width="4" height="11" fill="${C.echo}"/>
-  <text x="${Math.round(cx)}" y="${labelBase}" font-family="${META}" font-size="${labelFS}" font-weight="700"
-        letter-spacing="0.6" fill="${C.echo}" text-anchor="middle"
-        transform="rotate(${rot} ${Math.round(cx)} ${labelBase})">${esc(label)}</text>`;
+  const ruleFS = fitDisplay(RULE, W - PAD_L * 2, [96, 88, 80, 72, 64]);
+  const ruleTop = 316;
+  const ruleStep = Math.round(ruleFS * 1.02);
+  const rules = RULE.map((line, i) => {
+    // The second line steps in, the way the landing steps its headline stack.
+    const x = PAD_L + (i === 1 ? 22 : 0);
+    return `<text x="${x}" y="${ruleTop + i * ruleStep}" font-family="${DISPLAY}" font-size="${ruleFS}"
+      fill="${i === 0 ? C.white : C.accent}">${esc(line)}</text>`;
   }).join("\n  ");
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${FONT}">
@@ -242,11 +205,9 @@ export function renderTeachCard(): string {
   ${said}
   ${underline}
 
-  <text x="${PAD_L}" y="${claimBase}" font-family="${META}" font-size="${claimFS}" font-weight="700"
-        fill="${C.white}">${esc(CLAIM)}</text>
-  ${marks}
+  ${rules}
 
-  <text x="${PAD_L}" y="470" font-family="${META}" font-size="28" font-weight="700"
+  <text x="${PAD_L}" y="486" font-family="${META}" font-size="28" font-weight="700"
         fill="${C.white}" fill-opacity="0.76">${esc(ASK)}</text>
 
   <!-- The one object that lives in both fields. Tilted off square and hung so

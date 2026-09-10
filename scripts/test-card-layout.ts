@@ -393,8 +393,12 @@ console.log("\nthe profile card is postable for a post-pivot user");
   // and X always puts the words above the picture. Restating the refusal here
   // spent the biggest type on the artboard on a line the reader has already
   // read, which is how the specimen ended up in the bottom third.
+  // It answers "what does it take" rather than "what did you get wrong", which
+  // is also why it can pair with any of the reply's three lines instead of
+  // hinging on one - the earlier headline answered exactly one of them and the
+  // line is chosen at random.
   check("the teach card answers the reply instead of repeating it",
-    texts.some((t) => t.startsWith("HERE'S ONE I COULD")) && !texts.some((t) => /COULDN'T/.test(t)),
+    texts.some((t) => t.startsWith("THIS IS ALL IT TAKES")) && !texts.some((t) => /COULDN'T/.test(t)),
     texts.join(" | "));
   check("...and never corrects the person who tagged us",
     !texts.some((t) => /\byou\b|\byour\b/i.test(t)), texts.join(" | "));
@@ -409,19 +413,24 @@ console.log("\nthe profile card is postable for a post-pivot user");
   // The specimen is the teaching. If an edit ever renames a span, the mark that
   // labels it is dropped rather than misplaced (the renderer refuses to draw a
   // coordinate it cannot justify), so the failure looks like a missing label.
-  const claim = texts.find((t) => t.includes("$200")) ?? "";
-  check("the teach card shows one real claim to copy", claim.length > 0, texts.join(" | "));
-  check("...on a single line, small enough to clear both margins",
-    textWidth(claim, 58, "meta") <= 1000 - PAD_L * 2 || claim.length > 0, claim);
-  check("...with both of its rules labelled on the words that satisfy them",
-    texts.includes("a yes or a no") && texts.includes("a deadline"), texts.join(" | "));
+  // NO WORKED EXAMPLE, deliberately. The version that carried one taught well
+  // and taught the wrong thing: a dated price target is what every prediction
+  // market already lists, and this is the one card that leaves the product.
+  check("the teach card carries both halves of the rule",
+    texts.some((t) => /A YES OR A NO/.test(t)) && texts.some((t) => /A DATE/.test(t)),
+    texts.join(" | "));
+  check("...and no specimen claim to copy the wrong shape from",
+    !texts.some((t) => /\$\d|SOL closes|Dec 31/.test(t)), texts.join(" | "));
+  check("...said in display type, not as a list in body text",
+    /font-family="'Anton'[^"]*"\s+font-size="(\d+)"[^>]*>A YES OR A NO/.test(svg)
+    || /font-size="(\d+)"[^>]*>A YES OR A NO/.test(svg), "the rule is not set in the display face");
 
   // The marked word is painted over its own line as a second run. Its x has to
   // be the MEASURED offset of that word, not the line's own x.
-  const line = "HERE'S ONE I COULD.";
-  const headFS = Number(svg.match(/font-size="(\d+)"[^>]*>HERE'S ONE/)?.[1] ?? 0);
-  const wantX = 70 + textWidth(line.slice(0, line.indexOf("COULD")), headFS, "display");
-  const gotX = Number(svg.match(/<text x="([\d.]+)"[^>]*>COULD<\/text>/)?.[1] ?? -1);
+  const line = "THIS IS ALL IT TAKES.";
+  const headFS = Number(svg.match(/font-size="(\d+)"[^>]*>THIS IS ALL/)?.[1] ?? 0);
+  const wantX = 70 + textWidth(line.slice(0, line.indexOf("ALL")), headFS, "display");
+  const gotX = Number(svg.match(/<text x="([\d.]+)"[^>]*>ALL<\/text>/)?.[1] ?? -1);
   check("the marked word sits on the word it marks, not at the line's start",
     headFS > 0 && Math.abs(gotX - wantX) < 1.5, `want ~${wantX.toFixed(1)}, got ${gotX}`);
 
