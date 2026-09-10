@@ -187,6 +187,34 @@ for (const f of shells) {
     /view\.appendChild\(/.test(src) && !/view\.innerHTML\s*=\s*'<div class="gate"/.test(src));
 }
 
+/* ------------------------------------- rent is spent on intent, not looks --- */
+// Minting a market costs the admin wallet 0.0029 SOL of rent, and it used to
+// fire the moment the stake sheet OPENED - before an amount, before a wallet,
+// before any signature. A tap on a card is not a decision, and with the app
+// public that made every idle look at a market cost real money. The mint now
+// waits for an explicit amount, which is the first action in this sheet that
+// cannot happen by accident.
+{
+  const js = readFileSync("public/chain.js", "utf8");
+  // The semicolon is the point: `function ensureOnChain(slug) {` is the
+  // definition and matched the loose pattern, so the first version of this
+  // check counted two and failed against correct code.
+  const calls = [...js.matchAll(/ensureOnChain\(slug\);/g)].length;
+  check("the mint is fired from exactly one place", calls === 1, String(calls));
+
+  const chipAt = js.indexOf("chips.forEach((c) => c.onclick");
+  const mintAt = js.indexOf("ensureOnChain(slug);");
+  const sideAt = js.indexOf("sideBtns.forEach((b) => b.onclick");
+  check("...and that place is the amount handler, not the side handler",
+    chipAt > 0 && mintAt > chipAt && (sideAt < 0 || mintAt > sideAt),
+    `chips@${chipAt} mint@${mintAt} sides@${sideAt}`);
+
+  // Free warm-ups are a different thing and must NOT move with it: fetching a
+  // library from a CDN costs nothing and only ever saves a wait.
+  check("the free web3 warm-up still runs as soon as a side exists",
+    /if \(side\) \{[\s\S]{0,900}?loadWeb3\(\)/.test(js));
+}
+
 console.log(failures === 0
   ? "\nall money-stylesheet checks passed.\n"
   : `\n${failures} money-stylesheet check(s) FAILED.\n`);

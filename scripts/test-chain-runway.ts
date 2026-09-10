@@ -14,7 +14,17 @@ import { chainRunway } from "../src/chain/oddieChain.js";
 const SOL = 1_000_000_000;
 const FLOOR = 0.01 * SOL;
 const WARN = 0.05 * SOL;
-const PER_MARKET = 4_257_000;
+/* THE TEST HELD THE OLD NUMBER AND KEPT IT ALIVE.
+   This was 4,257,000, taken when Market was 314 bytes. The struct dropped to
+   162 when the question became a hash, the real cost fell to 2,911,847, and
+   this line went on asserting the stale figure - so the constant could not be
+   corrected without the suite calling the correction a regression. A test that
+   restates a number rather than checking a relationship does that.
+   Kept as a number because chainRunway's whole job is arithmetic on one, but
+   imported from the source of truth would be better still if it were exported.
+   Measured with getMinimumBalanceForRentExemption on mainnet, 2026-09-10:
+   1,836,570 (162B market) + 1,070,277 (41B vault) + 5,000 signature. */
+const PER_MARKET = 2_911_847;
 
 let failed = 0;
 const check = (name: string, ok: boolean, extra?: unknown) => {
@@ -69,7 +79,11 @@ check("a partial market is not counted (floor, not round)",
 // The recommended starting balance from the funding plan, restated as runway
 // so the two can never drift apart silently.
 const quarter = 0.25 * SOL;
-check("0.25 SOL is about 56 markets", chainRunway(quarter).marketsLeft === 56,
+// 82, not the 56 this said, and the difference is the whole point of the
+// correction: a quarter of a SOL buys half again as many markets as the wallet
+// was being told, because the number it was told was measured against an
+// account that is no longer that size.
+check("0.25 SOL is about 82 markets", chainRunway(quarter).marketsLeft === 82,
   chainRunway(quarter).marketsLeft);
 check("0.25 SOL is comfortably ok, not low", chainRunway(quarter).state === "ok");
 

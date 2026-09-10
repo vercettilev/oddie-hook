@@ -71,10 +71,15 @@ for (const r of rows) {
   }
 }
 
-// The estimate uses the CURRENT struct's rent. A market opened under the older,
-// larger Market account holds more than this, so a dry run understates what
-// closing it actually returns.
-const RENT_PER_MARKET = (128 + 162) * 6960 + (128 + 41) * 6960;
+// MEASURED, not computed. This was (128 + bytes) * 6960 per account, and 6,960
+// is not the rate: getMinimumBalanceForRentExemption on mainnet returns
+// 1,836,570 for 162 bytes and 1,070,277 for 41, which works out at 6,333 per
+// byte including the 128-byte header. The formula overstated the return by
+// 9.9%, and the comment above it said it UNDERSTATED - so both the number and
+// the sentence describing the number were wrong in opposite directions.
+// A market opened under the older, larger Market account does hold more than
+// this, so for those the dry run still understates.
+const RENT_PER_MARKET = 1_836_570 + 1_070_277;
 if (!CLOSE) {
   console.log(`\n  ${closable} closable, ${held} staying open, ${unreadable} unreadable.`);
   console.log(`  About ${((closable * RENT_PER_MARKET) / 1e9).toFixed(5)} SOL, at least. Pass --close to take it back.\n`);

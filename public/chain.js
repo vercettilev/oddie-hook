@@ -1091,11 +1091,17 @@ function b64ToBytes(b64) {
       const sideBtns = [...body.querySelectorAll(".chain-side")];
       if (side) {
         sideBtns.forEach((b) => b.classList.toggle("on", b.dataset.side === side));
-        /* Isinmalar taraf TIKLAMASINA bagliydi, yani karttan hazir gelen taraf
-           onlari hic tetiklemiyordu: tam da en hizli olmasi gereken yolda mint
-           ve web3 yuklemesi para adiminin icine dusuyordu. Ayni niyet, ayni
-           an -- sadece tiklama degil, secilmis olmak da sayiliyor. */
-        ensureOnChain(slug);
+        /* WEB3 WARMS HERE, THE MINT NO LONGER DOES.
+           Both used to fire the moment the sheet opened with a side already
+           chosen. They are not the same kind of thing. Fetching 1MB of
+           JavaScript from a CDN costs us nothing and saves a wait; minting
+           spends 0.0029 SOL of rent out of our own wallet, and opening a sheet
+           is not a decision - it is the tap that arrives from a card, which is
+           just as often curiosity or a mis-tap. With the app public, that made
+           every idle look at a market cost us real money.
+           The mint moved to the first EXPLICIT amount (see the chip handler),
+           which is a second deliberate action and still leaves the whole
+           wallet-approval window for the transaction to land. */
         void loadWeb3().catch(() => {});
       }
       const chips = [...body.querySelectorAll(".chain-chip")];
@@ -1227,14 +1233,11 @@ function b64ToBytes(b64) {
 
       sideBtns.forEach((b) => b.onclick = () => {
         side = b.dataset.side;
-        // Picking a side is the earliest moment we know somebody means it, and
-        // markets the bot opened have no on-chain account until somebody does.
-        // Fired here, the mint happens while they are still typing an amount and
-        // approving in Phantom, so nobody ever waits on it. Not awaited and its
-        // failure is not shown: the stake path mints on its own if this did not,
-        // so the only thing lost is a head start.
-        ensureOnChain(slug);
-        // Same reasoning, same moment: web3.js is ~1MB from a CDN and was
+        // The mint used to fire here too, on the reasoning that picking a side is
+        // the earliest moment somebody means it. It is the earliest, and it is
+        // too early: switching sides is something people do while reading. Only
+        // the amount below commits us to rent.
+        // web3.js is ~1MB from a CDN and was
         // fetched AFTER prepare succeeded, i.e. inside the money action, where
         // its latency lands on top of the wait for a wallet popup and where a
         // blocked CDN stops somebody who has already committed. Warmed here it
@@ -1245,6 +1248,15 @@ function b64ToBytes(b64) {
         refresh();
       });
       chips.forEach((c) => c.onclick = () => {
+        /* THE MINT LIVES HERE NOW, and this is the first line of the first
+           handler that cannot fire by accident: a chip click is a person
+           choosing how much of their own money to put down. Markets the bot
+           opened carry no on-chain account until somebody does this, so the
+           rent is spent on intent rather than on attention.
+           Still not awaited and still not surfaced: prepare mints on its own if
+           this did not, so the only thing at stake is a head start, and there is
+           a whole wallet popup left to spend it in. */
+        ensureOnChain(slug);
         autoPicked = false;
         chips.forEach((x) => x.classList.toggle("on", x === c));
         if (c.dataset.sol === "custom") {

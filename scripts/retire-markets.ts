@@ -19,10 +19,19 @@
 //
 // WHAT REMOVAL MEANS. It deletes the market_slug row; community_market,
 // market_surfacer and market_call follow through ON DELETE CASCADE. For an
-// unminted market that is the whole story. For a MINTED one it also orphans the
-// on-chain account: the program has no close instruction, so its rent is gone
-// for good and /m/{slug} starts answering 404. That is why minted markets can
-// only be removed by naming them.
+// unminted market that is the whole story.
+//
+// FOR A MINTED ONE, RECLAIM THE RENT FIRST. This used to say "the program has
+// no close instruction, so its rent is gone for good", and that stopped being
+// true when close_market shipped. It is still true that deleting the row
+// strands the rent, but now for a different and more annoying reason: the rent
+// IS recoverable, and scripts/reclaim-rent.ts finds what to close by reading
+// these rows. Delete the row and you have thrown away the only pointer to
+// 0.0029 SOL that was still yours to take back.
+//   npm run reclaim-rent -- --close     then     npm run retire -- --slugs X --delete
+// close_market refuses a market whose totals are non-zero, so a market anybody
+// ever bet in cannot be reclaimed at all and this ordering costs nothing there.
+// /m/{slug} answers 404 after removal either way.
 //
 // Needs DATABASE_URL on production; --unminted works without the chain layer,
 // and a minted market needs it so the pool can be read before anything is

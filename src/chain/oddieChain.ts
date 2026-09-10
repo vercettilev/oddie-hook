@@ -81,22 +81,39 @@ const SECRET = process.env.SOLANA_ADMIN_SECRET_KEY;
  */
 const IDL_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "oddie_chain_idl.json");
 
-// A create needs ~0.00426 SOL (Market + Vault rent + fee). Refuse below a small
+// A create needs ~0.00291 SOL (Market + Vault rent + fee). Refuse below a small
 // buffer so we fail fast+soft rather than eating a doomed tx fee.
 const MIN_LAMPORTS = 10_000_000; // 0.01 SOL
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 /**
- * What one market actually costs the admin wallet, measured against real
- * accounts rather than estimated: Market (314 bytes) 0.003076 + Vault (41
- * bytes) 0.001176 + the signature 0.000005.
+ * What one market actually costs the admin wallet.
  *
- * Nearly all of it is rent, and rent is refundable only through close_market,
- * which refuses any market whose totals are non-zero. Since mints happen
- * on-demand -- at the moment somebody is about to stake -- almost every minted
- * market carries stakes. So treat this as SPENT per market, not as a deposit.
+ * RE-MEASURED, because the old number outlived the account it described. It was
+ * taken against a 314-byte Market, which is what the struct was before the
+ * question text came out of it and became a 32-byte hash. The account is 162
+ * bytes now and has been for a while; the constant stayed at the old size and
+ * so the wallet has been reporting 46% less runway than it has. At today's
+ * balance that is the difference between "20 markets left" and 33.
+ *
+ * From getMinimumBalanceForRentExemption on mainnet, 2026-09-10:
+ *   Market, 162 bytes   1,836,570
+ *   Vault,   41 bytes   1,070,277
+ *   signature               5,000
+ *                       ---------
+ *                       2,911,847
+ *
+ * Not derived from a formula on purpose. The rent rate is a chain parameter and
+ * the repo's own copy of it (6,960 lamports/byte) is stale too: the measured
+ * figure works out at 6,333. Re-measure with that RPC call rather than
+ * recomputing, and say when you did.
+ *
+ * Nearly all of it is rent, and rent comes back only through close_market,
+ * which refuses any market whose totals are non-zero. Mints happen on demand,
+ * so most minted markets carry stakes and never become closable. Treat it as
+ * SPENT per market, not as a deposit, unless a reclaim actually runs.
  */
-const COST_PER_MARKET_LAMPORTS = 4_257_000;
+const COST_PER_MARKET_LAMPORTS = 2_911_847;
 
 /**
  * The band between "still working" and "already stopped".
