@@ -79,8 +79,35 @@ let cached: Access | null = null;
 /** Refresh a minute early. A token that expires mid-flight costs a retry. */
 const SKEW_MS = 60_000;
 
+/** Which seed produced the token now in the store. Written beside it so a NEW
+ *  seed can be told apart from the one already spent. */
+const SEED_KEY = "x_refresh_seed";
+
 async function currentRefreshToken(): Promise<string> {
   const stored = await botStateGet(REFRESH_KEY);
+
+  /* A NEW SEED BEATS A STORED TOKEN, and without this rule re-authorising the
+     bot is impossible.
+     The store wins normally, and it has to: X rotates the refresh token on
+     every use and revokes the previous one, so the env var is a seed that dies
+     the first time it is spent. But that made the documented recovery a lie.
+     When the stored token goes bad - revoked, scope changed, the account
+     re-authorised to add media.write - the fix is to run scripts/x-authorize.ts
+     again and paste the new seed, and the new seed was then never read, because
+     the dead stored token still won. The bot failed with the same
+     invalid_request forever and the only cure was deleting a database row by
+     hand, which nothing in the repo told anyone to do.
+     So the seed is remembered next to the token. A seed that does not match the
+     recorded one is a deliberate re-authorisation and takes precedence. */
+  if (SEED_REFRESH) {
+    const seedUsed = await botStateGet(SEED_KEY);
+    if (seedUsed !== SEED_REFRESH) {
+      await botStateSet(SEED_KEY, SEED_REFRESH);
+      await botStateSet(REFRESH_KEY, SEED_REFRESH);
+      return SEED_REFRESH;
+    }
+  }
+
   const token = stored ?? SEED_REFRESH;
   if (!token) throw new XError(0, "no refresh token: set X_BOT_REFRESH_TOKEN once, then it rotates itself");
   return token;

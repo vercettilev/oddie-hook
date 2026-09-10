@@ -794,6 +794,23 @@ function cacheGet(pubkey: string, maxAgeMs: number): OnChainMarketState | null {
   return hit.state;
 }
 
+/**
+ * The last good read, at any age, for a caller whose read just failed.
+ *
+ * ONLY FOR A CALLER THAT ALREADY ACCEPTED STALENESS. maxAgeMs is how a caller
+ * says whether it is painting a list or pricing money. A list paint passing a
+ * few seconds of tolerance is saying the number may lag; when the RPC then
+ * refuses, more lag is obviously better than what it got instead, which was the
+ * card printing "Can't read this pool. Your money is safe." with both sides
+ * greyed out over a pool we had read correctly forty seconds earlier. A money
+ * path passes nothing, gets nothing here, and still fails honestly: a bet must
+ * never be priced against a number we could not confirm.
+ */
+function cacheGetStale(pubkey: string, maxAgeMs: number): OnChainMarketState | null {
+  if (maxAgeMs <= 0) return null;
+  return marketCache.get(pubkey)?.state ?? null;
+}
+
 function cachePut(pubkey: string, state: OnChainMarketState): void {
   // Crude bound, not an LRU: this exists so a long-running process cannot grow
   // a map without limit, and the cost of dropping a warm entry is one RPC call.
@@ -894,7 +911,16 @@ export async function readMarkets(
       // gets its chance rather than the whole page going dark on one blip.
       const error = (e as Error).message;
       console.error(`[chain] readMarkets chunk of ${slice.length} unreadable:`, error);
-      for (const pk of slice) out.set(pk, { ok: false, reason: "unreadable", error });
+      // A public RPC answering 429 is the common case, not an exotic one, and
+      // it took the whole product dark: one market, one failed chunk, and every
+      // card said the pool could not be read while both sides sat disabled.
+      let served = 0;
+      for (const pk of slice) {
+        const stale = cacheGetStale(pk, maxAge);
+        if (stale) { out.set(pk, { ok: true, state: stale }); served++; }
+        else out.set(pk, { ok: false, reason: "unreadable", error });
+      }
+      if (served) console.warn(`[chain] served ${served} of ${slice.length} from the last good read`);
       continue;
     }
     slice.forEach((pk, idx) => {
