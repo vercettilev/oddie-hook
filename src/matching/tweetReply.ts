@@ -142,14 +142,20 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
  * $0.200 a post. The one place where the safe choice and the cheap choice are
  * the same choice.
  *
- * IT TEACHES INSTEAD OF APOLOGISING. "I can't do that" is noise. Something that
- * turns a dead end into an instruction is the only justification for saying
- * anything at all. But the TEACHING LIVES ON THE CARD, not here: the card shows
- * a real claim with the two spans that make it a market underlined on the words
- * themselves, which is a thing 200 characters of text cannot do. So these lines
- * deliberately do NOT restate the recipe. They carry the one thing an image
- * cannot, which is that oddie wants the next attempt, and they get out of the
- * way. Two versions of the same lesson stacked on each other read as a lecture.
+ * IT IS WRITTEN FOR SOMEONE WHO HAS NEVER HEARD OF US. That is the constraint
+ * these lines are actually under, and an earlier pass failed it badly: "not one
+ * i can call, come back at me with another" is fluent and says nothing to a
+ * stranger, because "call" is our jargon and the rest is idiom. Every line here
+ * now uses the plainest word available (bet, real money, true or false, yes or
+ * no) and spends its first clause saying WHAT THIS ACCOUNT DOES, because the
+ * reader has no other way to find out and most of them will never open the card.
+ *
+ * Which is also why these lines restate part of what the card says. Avoiding
+ * the overlap was the earlier instinct and it was wrong: the card is a picture
+ * some readers never look at, and a reply that is only comprehensible once you
+ * have studied the attachment is not comprehensible. The card goes deeper (it
+ * underlines the two spans on a real claim, which text cannot do); the text has
+ * to stand on its own.
  *
  * THE FAILURE IS OURS. The line is written as oddie not finding a side, never
  * as the person having tagged the wrong thing. The sticker that rides with it
@@ -158,9 +164,9 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
  * the mute-bait this whole comment exists to avoid.
  */
 const CANNOT_PRICE = [
-  "not one i can call. come back at me with another and i'll open it in a minute.",
-  "no side to take in that one. i want the market more than you do, so try me again.",
-  "couldn't find the market in that. give me one more and i'll do the rest.",
+  "i turn arguments into markets and people bet real money on them. that one had no yes or no in it.\n\nthe picture shows one that works.",
+  "i couldn't make a market out of that one. a market needs an answer that ends up true or false.\n\ntag me on one like the picture.",
+  "people bet real money on the claims i open. that one had nothing to win or lose on.\n\nthe picture is the shape i need.",
 ];
 
 /** Deterministic per tweet, so the same post never gets two different answers,

@@ -79,8 +79,12 @@ function artHref(): string {
 const SAID = ["I COULDN'T MAKE A MARKET", "OUT OF THAT ONE."];
 const MARK = "MARKET";
 
-/** Below the tear, and the turn the seam already made. */
-const KICKER = "HERE'S ONE I CAN PRICE.";
+/** Below the tear, and the turn the seam already made.
+ *
+ * "I could", not "I can price". Pricing is our word for it and it is dead
+ * weight to a stranger, where the plain echo of the headline's "I couldn't"
+ * needs nothing explained and no vocabulary the reader does not already have. */
+const KICKER = "HERE'S ONE I COULD.";
 
 /**
  * The specimen.
