@@ -388,8 +388,13 @@ console.log("\nthe profile card is postable for a post-pivot user");
   const svg = renderTeachCard();
   const texts = [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1].trim()).filter(Boolean);
 
-  check("the teach card names the failure as oddie's, in the first person",
-    texts.some((t) => t.startsWith("I COULDN'T")), texts.join(" | "));
+  // The card is the SECOND half of a sentence the post's text already started,
+  // and X always puts the words above the picture. Restating the refusal here
+  // spent the biggest type on the artboard on a line the reader has already
+  // read, which is how the specimen ended up in the bottom third.
+  check("the teach card answers the reply instead of repeating it",
+    texts.some((t) => t.startsWith("HERE'S ONE I COULD")) && !texts.some((t) => /COULDN'T/.test(t)),
+    texts.join(" | "));
   check("...and never corrects the person who tagged us",
     !texts.some((t) => /\byou\b|\byour\b/i.test(t)), texts.join(" | "));
 
@@ -412,10 +417,10 @@ console.log("\nthe profile card is postable for a post-pivot user");
 
   // The marked word is painted over its own line as a second run. Its x has to
   // be the MEASURED offset of that word, not the line's own x.
-  const line = "I COULDN'T MAKE A MARKET";
-  const headFS = Number(svg.match(/font-size="(\d+)"[^>]*>I COULDN/)?.[1] ?? 0);
-  const wantX = 70 + textWidth(line.slice(0, line.indexOf("MARKET")), headFS, "display");
-  const gotX = Number(svg.match(/<text x="([\d.]+)"[^>]*>MARKET<\/text>/)?.[1] ?? -1);
+  const line = "HERE'S ONE I COULD.";
+  const headFS = Number(svg.match(/font-size="(\d+)"[^>]*>HERE'S ONE/)?.[1] ?? 0);
+  const wantX = 70 + textWidth(line.slice(0, line.indexOf("COULD")), headFS, "display");
+  const gotX = Number(svg.match(/<text x="([\d.]+)"[^>]*>COULD<\/text>/)?.[1] ?? -1);
   check("the marked word sits on the word it marks, not at the line's start",
     headFS > 0 && Math.abs(gotX - wantX) < 1.5, `want ~${wantX.toFixed(1)}, got ${gotX}`);
 

@@ -45,7 +45,7 @@ const PAD_L = 70;
 const CREAM = "#FBFCF4";
 
 /** Where the lime ends and the black begins, before the tear displaces it. */
-const SEAM_Y = 232;
+const SEAM_Y = 206;
 /** The cream showing below the lime teeth. The landing uses 9px at 1440 wide;
  *  a touch more here because this artboard is 1000 and X downscales it again. */
 const DECKLE = 13;
@@ -73,18 +73,22 @@ function artHref(): string {
 
 /* ------------------------------------------------------------------ copy -- */
 
-/** Above the tear. Split where the sense splits, long line then short, so the
- *  two lines make a staircase instead of a paragraph. MARK gets the landing's
- *  marked-word treatment. */
-const SAID = ["I COULDN'T MAKE A MARKET", "OUT OF THAT ONE."];
-const MARK = "MARKET";
-
-/** Below the tear, and the turn the seam already made.
+/**
+ * Above the tear, and the second half of a sentence the reply already started.
  *
- * "I could", not "I can price". Pricing is our word for it and it is dead
- * weight to a stranger, where the plain echo of the headline's "I couldn't"
- * needs nothing explained and no vocabulary the reader does not already have. */
-const KICKER = "HERE'S ONE I COULD.";
+ * The text of the post says "i couldn't make a market out of that one." The
+ * card answers it. Saying the refusal again up here, which is what an earlier
+ * pass did, spent the biggest type on the artboard restating a line the reader
+ * has already read two inches higher up, and pushed everything that actually
+ * teaches into the bottom third. So the card no longer states the problem at
+ * all: X always puts the words above the picture, so the setup is guaranteed to
+ * be there, and the card gets its whole surface for the answer.
+ *
+ * COULD carries the landing's marked-word treatment because it is the hinge
+ * between the two halves. The reply's last word was couldn't.
+ */
+const SAID = ["HERE'S ONE I COULD."];
+const MARK = "COULD";
 
 /**
  * The specimen.
@@ -112,7 +116,7 @@ const MARKS: ReadonlyArray<{ span: string; label: string }> = [
 ];
 
 /** The only ask on the card, and the string the reader has to retype. */
-const ASK = `tag ${X_HANDLE} under a line like that`;
+const ASK = `tag ${X_HANDLE} under one like it`;
 
 /* ----------------------------------------------------------------- type ---- */
 
@@ -138,8 +142,8 @@ function fitDisplay(lines: readonly string[], maxW: number, sizes: readonly numb
 export function renderTeachCard(): string {
   /* --- above the tear ----------------------------------------------------- */
 
-  const headFS = fitDisplay(SAID, HEAD_R - PAD_L, [54, 50, 46, 42, 38]);
-  const headBase = [150, 150 + Math.round(headFS * 1.02)];
+  const headFS = fitDisplay(SAID, HEAD_R - PAD_L, [68, 62, 56, 50, 44]);
+  const headBase = [172];
 
   // The marked word is painted OVER its own line rather than the line being cut
   // into three runs: one run keeps the shaping and the advance widths identical
@@ -178,14 +182,12 @@ export function renderTeachCard(): string {
 
   /* --- below the tear ----------------------------------------------------- */
 
-  const kickFS = fitDisplay([KICKER], 520, [34, 31, 28]);
-
   // Step the claim down until it holds ONE line. Wrapping it would cost the one
   // property that makes it teach: a sentence you take in with a single sweep and
   // can retype from memory.
-  let claimFS = 58;
+  let claimFS = 70;
   while (claimFS > 34 && metaW(CLAIM, claimFS) > W - PAD_L * 2) claimFS -= 2;
-  const claimBase = 392;
+  const claimBase = 344;
 
   const underY = claimBase + 16;
   const stemBottom = underY + 17;
@@ -240,21 +242,19 @@ export function renderTeachCard(): string {
   ${said}
   ${underline}
 
-  <text x="${PAD_L}" y="300" font-family="${DISPLAY}" font-size="${kickFS}" fill="${C.accent}">${esc(KICKER)}</text>
-
   <text x="${PAD_L}" y="${claimBase}" font-family="${META}" font-size="${claimFS}" font-weight="700"
         fill="${C.white}">${esc(CLAIM)}</text>
   ${marks}
 
-  <text x="${PAD_L}" y="496" font-family="${META}" font-size="28" font-weight="700"
+  <text x="${PAD_L}" y="470" font-family="${META}" font-size="28" font-weight="700"
         fill="${C.white}" fill-opacity="0.76">${esc(ASK)}</text>
 
   <!-- The one object that lives in both fields. Tilted off square and hung so
        the tear crosses it at the wrists: the ghost's head is on the lime and the
        two buttons it cannot choose between are on the black, which is also the
        only arrangement where the yellow YES button has a ground to read against. -->
-  <g transform="rotate(-3 782 190)">
-    <image href="${artHref()}" x="646" y="40" width="272" height="278"
+  <g transform="rotate(-3 779 144)">
+    <image href="${artHref()}" x="654" y="16" width="250" height="256"
            preserveAspectRatio="xMidYMid meet"/>
   </g>
 </svg>`;

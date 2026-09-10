@@ -142,20 +142,22 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
  * $0.200 a post. The one place where the safe choice and the cheap choice are
  * the same choice.
  *
- * IT IS WRITTEN FOR SOMEONE WHO HAS NEVER HEARD OF US. That is the constraint
- * these lines are actually under, and an earlier pass failed it badly: "not one
- * i can call, come back at me with another" is fluent and says nothing to a
- * stranger, because "call" is our jargon and the rest is idiom. Every line here
- * now uses the plainest word available (bet, real money, true or false, yes or
- * no) and spends its first clause saying WHAT THIS ACCOUNT DOES, because the
- * reader has no other way to find out and most of them will never open the card.
+ * ONE SENTENCE, PLAIN WORDS, AND THEN IT STOPS. Two earlier passes failed in
+ * opposite directions and the second was the more instructive. The first was
+ * jargon ("not one i can call") and taught nobody. The second overcorrected
+ * into three clauses that explained the product, named the fault and pointed at
+ * the picture, which is a paragraph under someone else's post, and a paragraph
+ * is a lecture however plain its words are.
  *
- * Which is also why these lines restate part of what the card says. Avoiding
- * the overlap was the earlier instinct and it was wrong: the card is a picture
- * some readers never look at, and a reply that is only comprehensible once you
- * have studied the attachment is not comprehensible. The card goes deeper (it
- * underlines the two spans on a real claim, which text cannot do); the text has
- * to stand on its own.
+ * What is left says the only thing text has to say. The picture rides directly
+ * under it carrying the rest, and it can do a thing sentences cannot: underline
+ * the two spans of a real claim on the words themselves.
+ *
+ * Three of them rather than one string, because X's automation policy names
+ * "duplicative or substantially similar posts" as manipulation. Three
+ * paraphrases of one sentence do not make that go away, and nothing about this
+ * reply pretends otherwise; the per-handle cap in the sweep is what actually
+ * bounds it.
  *
  * THE FAILURE IS OURS. The line is written as oddie not finding a side, never
  * as the person having tagged the wrong thing. The sticker that rides with it
@@ -164,9 +166,9 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
  * the mute-bait this whole comment exists to avoid.
  */
 const CANNOT_PRICE = [
-  "i turn arguments into markets and people bet real money on them. that one had no yes or no in it.\n\nthe picture shows one that works.",
-  "i couldn't make a market out of that one. a market needs an answer that ends up true or false.\n\ntag me on one like the picture.",
-  "people bet real money on the claims i open. that one had nothing to win or lose on.\n\nthe picture is the shape i need.",
+  "i couldn't make a market out of that one.",
+  "no market in that one, and i did try.",
+  "that one didn't have a market in it.",
 ];
 
 /** Deterministic per tweet, so the same post never gets two different answers,
