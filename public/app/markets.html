@@ -195,10 +195,29 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .card__m b{color:var(--pink-deep);font-weight:400}
 .card__q a{color:var(--ink)}
 .card__q a:hover{color:var(--pink-deep)}
+/* THE ONE RULE THE CREAM REDESIGN LEFT BEHIND. The card used to be dark and
+   every text on it came from the --fg-* ramp, which is white at three opacities.
+   When the card became cream, .card__m, .card__m b and .card__q a were all
+   re-coloured to ink and .card__full was not, so the market's actual QUESTION
+   has been rendering as white at 50% on a cream ground: a contrast ratio of
+   about 1.01 to 1, which is not faint, it is absent. Measured on a phone at
+   375px, where the card shows a headline, a pool and a blank space where the
+   claim should be.
+   Darker than .card__m on purpose. The meta line is furniture; this sentence is
+   the thing the market is about, and it was the only part a reader could not
+   see. */
+.card__full{color:rgba(11,13,4,.78)}
 .pool{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   color:rgba(11,13,4,.6)}
 .pool b{color:var(--ink)}
-.pool--quiet{font-family:var(--body);font-weight:600;color:rgba(11,13,4,.72);font-size:14.5px}
+/* NOT A FLEX ROW. .pool is display:flex with a 10px gap, which is right for the
+   two things it was built for - a number and its label - and wrong for the only
+   other place it is used, which is a SENTENCE. Every child of a flex container
+   is a flex item, so "Tag @oddiefun under any claim on X. Keep 2% of its pool."
+   was being laid out as five independent items with gaps between them, wrapping
+   where the boxes ran out rather than where the words do. On a 375px phone that
+   is six lines for eleven words, and it is the product's core instruction. */
+.pool--quiet{display:block;font-family:var(--body);font-weight:600;color:rgba(11,13,4,.72);font-size:14.5px}
 .bar{border:2px solid var(--black)}
 .side{border:3px solid var(--black)}
 h1{color:var(--cream)}

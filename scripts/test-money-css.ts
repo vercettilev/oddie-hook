@@ -137,6 +137,38 @@ for (const f of shells) {
   }
 }
 
+/* ------------------------------- text that survived a palette migration ---- */
+// markets.html carries TWO card palettes: an early dark one whose text comes
+// from the --fg-* ramp (white at three opacities) and a later cream one that
+// re-colours each rule to ink. When the card went cream, one rule was missed,
+// and the market's actual question rendered as white at 50% on cream - about
+// 1.01:1, which is not faint, it is invisible. It shipped, and it took a phone
+// screenshot to find, because on a big screen nobody reads the small line under
+// a headline they can already read.
+//
+// The check is the shape of the mistake, not the instance: the card is cream,
+// so no rule that paints text ON the card may take its colour from the ramp
+// built for the dark one.
+{
+  const src = readFileSync("public/app/markets.html", "utf8");
+  const creamCard = /\.card\{background:var\(--cream\)/.test(src);
+  check("markets.html still draws its cards on cream", creamCard);
+
+  // Rules after the cream .card declaration are the ones that land on it.
+  const from = src.indexOf(".card{background:var(--cream)");
+  const after = from > 0 ? src.slice(from) : "";
+  const onCream = [...after.matchAll(/^(\.card[^{]*|\.pool[^{]*)\{([^}]*)\}/gm)]
+    .filter((m) => /color:\s*var\(--fg/.test(m[2]));
+  check("...and no text on a cream card is coloured from the dark card's ramp",
+    onCream.length === 0, onCream.map((m) => m[1].trim()).join(" | "));
+
+  // The same class is reused for a number-plus-label row and for a sentence.
+  // Only the first one wants to be a flex container.
+  const quiet = after.match(/\.pool--quiet\{([^}]*)\}/)?.[1] ?? "";
+  check("the sentence variant of .pool is not laid out as a flex row",
+    /display:\s*block/.test(quiet), quiet);
+}
+
 console.log(failures === 0
   ? "\nall money-stylesheet checks passed.\n"
   : `\n${failures} money-stylesheet check(s) FAILED.\n`);
