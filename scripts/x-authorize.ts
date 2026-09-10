@@ -29,7 +29,12 @@ const REDIRECT = process.env.X_AUTH_REDIRECT ?? `http://127.0.0.1:${PORT}/callba
 
 // tweet.write is the point. offline.access is what yields a refresh token at
 // all, and without it the bot works for two hours and then stops for good.
-const SCOPES = "tweet.read tweet.write users.read offline.access";
+// media.write is what lets the bot attach a card. It is a SEPARATE grant from
+// tweet.write, it cannot be added to a refresh token that was issued without
+// it, and a token missing it fails the upload with a 403 that looks exactly
+// like a broken endpoint. Adding it here means an existing bot has to walk
+// this flow again before its replies can carry an image.
+const SCOPES = "tweet.read tweet.write media.write users.read offline.access";
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error("Set TWITTER_CLIENT_ID and TWITTER_CLIENT_SECRET first.");
@@ -140,7 +145,7 @@ Put these in Railway (oddie-hook service), then redeploy:
   X_BOT_DRY_RUN=true
 
 Granted scopes: ${body.scope ?? "(not reported)"}
-${body.scope && !body.scope.includes("tweet.write") ? "\n  WARNING: tweet.write is NOT in that list. The bot can read and will never be able to post.\n" : ""}${body.scope && !body.scope.includes("offline.access") ? "\n  WARNING: offline.access is NOT in that list, so this refresh token will not work.\n" : ""}
+${body.scope && !body.scope.includes("tweet.write") ? "\n  WARNING: tweet.write is NOT in that list. The bot can read and will never be able to post.\n" : ""}${body.scope && !body.scope.includes("media.write") ? "\n  WARNING: media.write is NOT in that list. Replies will post, but every card will fail to attach with a 403.\n" : ""}${body.scope && !body.scope.includes("offline.access") ? "\n  WARNING: offline.access is NOT in that list, so this refresh token will not work.\n" : ""}
 Leave X_BOT_DRY_RUN=true until you have read a few sweeps of what it would say:
 
   curl -s -H "authorization: Bearer $ODDIE_ADMIN_TOKEN" -X POST https://oddie.fun/api/admin/x/sweep | jq

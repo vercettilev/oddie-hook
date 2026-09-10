@@ -23,6 +23,7 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+import { readFileSync } from "node:fs";
 import { runMentionSweep, stripLeadingMentions, stripBotHandle, tweetUrl, SWEEP_CAP, TEACH_CAP } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
 import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState } from "../src/store/markets.js";
@@ -248,6 +249,21 @@ async function main() {
     });
     await runMentionSweep(deps);
     check("an inappropriate tag stays silent even with the card wired", spy.posted.length === 0);
+  }
+  {
+    // The card carries the entire lesson now that the text is one sentence, so
+    // a reply without it is a bare public "no" - the exact post this branch was
+    // written to avoid. An upload failure has to end in silence, not in text.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("660")], newestId: "660" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      uploadMedia: async () => { throw new Error("403 media.write missing"); },
+    });
+    await runMentionSweep(deps);
+    check("a card that will not upload sends nothing at all", spy.posted.length === 0);
   }
   {
     _resetBotState();
@@ -546,6 +562,25 @@ async function main() {
     check("the composer prefill shape mints a market", spy.minted.length === 1 && r.replied === 1);
     check("with our handle out and the claim intact",
       graded === "On the record : GTA 6 ships before 2027.", JSON.stringify(graded));
+  }
+
+  /* ------------------------------------------------- the wire, statically -- */
+  // Both of these were wrong for the whole life of the bot and neither could be
+  // caught by a test that fakes the X client: the endpoint was retired in June
+  // 2025 and the grant never asked for the scope that endpoint needs. Read off
+  // the source, because that is where the mistake lives.
+  {
+    const client = readFileSync("src/x/client.ts", "utf8");
+    // Matched on the CONSTANT, not on the file: the comment above it names the
+    // retired host on purpose, so that a future reader knows what this replaced.
+    const uploadUrl = client.match(/const UPLOAD_URL = "([^"]+)"/)?.[1] ?? "";
+    check("media uploads go to the v2 endpoint, not the sunset v1.1 one",
+      uploadUrl === "https://api.x.com/2/media/upload", uploadUrl);
+    check("...and declare a media_category, which v2 rejects the request without",
+      /media_category/.test(client));
+    const authz = readFileSync("scripts/x-authorize.ts", "utf8");
+    check("the OAuth grant asks for media.write, or no card can ever attach",
+      /SCOPES = "[^"]*\bmedia\.write\b/.test(authz));
   }
 
   /* --------------------------------------------------------------- helpers -- */

@@ -305,15 +305,23 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
           continue;
         }
 
-        // The card is the teaching; the text is the sentence under it. If the
-        // upload fails the words still stand on their own, so a card failure
-        // downgrades the reply rather than cancelling it.
-        let mediaIds: string[] | undefined;
+        // THE CARD IS THE REPLY. The text is one sentence and it says only that
+        // we could not open a market; every word of the teaching - the specimen
+        // claim, the two spans underlined on it, the way back in - is drawn on
+        // the image. So a failed upload does not downgrade this reply, it
+        // empties it, and what would go out is the bare public refusal this
+        // whole branch exists to avoid posting. Silence is the correct failure.
+        let mediaIds: string[];
         try {
           const png = await teachPng();
-          if (png) mediaIds = [await deps.uploadMedia(png)];
+          if (!png) throw new Error("no card");
+          mediaIds = [await deps.uploadMedia(png)];
         } catch (e) {
-          log("teach card failed, replying without it", { tweetId: m.id, err: (e as Error).message });
+          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/no-card` });
+          decide("skipped", { reason: "no-card" });
+          log("teach card unavailable, staying silent rather than posting a bare refusal",
+            { tweetId: m.id, err: (e as Error).message });
+          continue;
         }
         // No permalink, ever. There is no market to link to, and a reply
         // carrying a URL is priced at a different tier by X than a plain one.

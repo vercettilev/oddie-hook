@@ -30,7 +30,16 @@ import { botStateGet, botStateSet, PERSISTENT } from "../store/markets.js";
 const TOKEN_URL = "https://api.x.com/2/oauth2/token";
 const API = "https://api.x.com/2";
 /** Media upload is not on api.x.com/2 and has no v2 equivalent for this flow. */
-const UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
+// The v2 one-shot upload. The v1.1 endpoint this used to call
+// (upload.twitter.com/1.1/media/upload.json) was SUNSET on 9 June 2025 and the
+// call had never once run for real, because the bot has been in dry run since
+// the day it was written: every card would have failed to attach and every
+// reply would have quietly gone out as bare text.
+//
+// One-shot rather than the initialize/append/finalize flow: X reserved this
+// path for images and subtitles when it retired the `command` parameter, and
+// our cards are ~150KB PNGs. Chunking them would be ceremony.
+const UPLOAD_URL = "https://api.x.com/2/media/upload";
 
 const REFRESH_KEY = "x_refresh_token";
 export const SINCE_KEY = "x_since_id";
@@ -215,17 +224,30 @@ export async function mentions(sinceId: string | null, max = 20): Promise<{ item
 export async function uploadMedia(png: Buffer): Promise<string> {
   const token = await accessToken();
   const form = new FormData();
-  form.append("media", new Blob([new Uint8Array(png)], { type: "image/png" }));
+  form.append("media", new Blob([new Uint8Array(png)], { type: "image/png" }), "card.png");
+  // Required on v2, and its absence is a 400 rather than a default.
+  form.append("media_category", "tweet_image");
   const res = await fetch(UPLOAD_URL, {
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
     body: form,
   });
-  const body = (await res.json().catch(() => ({}))) as { media_id_string?: string; errors?: unknown };
-  if (!res.ok || !body.media_id_string) {
+  const body = (await res.json().catch(() => ({}))) as {
+    data?: { id?: string; media_key?: string };
+    media_id_string?: string;
+    errors?: unknown;
+  };
+  // `id` first: media_ids has always taken the numeric id, and v2 returns both.
+  // The docs annotate media_key as the reference to use, and the forums say
+  // either works, so the fallback is here rather than a coin flip in the code.
+  const id = body.data?.id ?? body.data?.media_key ?? body.media_id_string;
+  if (!res.ok || !id) {
+    // A 403 here with an otherwise-working token means the OAuth grant is
+    // missing media.write. It cannot be added to an existing refresh token;
+    // the bot has to be re-authorised. See scripts/x-authorize.ts.
     throw new XError(res.status, `media upload -> ${res.status}`, body);
   }
-  return body.media_id_string;
+  return id;
 }
 
 export interface PostedTweet { id: string; text: string }
