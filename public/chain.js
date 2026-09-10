@@ -1380,14 +1380,16 @@ function b64ToBytes(b64) {
              BEFORE this bet, so the test is exact rather than flattering. */
           const wasEmpty = (yesLamports + noLamports) === 0;
           body.innerHTML = `${confirmed ? `
-            <p class="rin">
-              <b class="rin__s rin__s--${side}">${side.toUpperCase()}</b>
-              <span class="rin__a">${sol} <i>SOL</i></span>
-              <img class="rin__st" src="${wasEmpty ? "/brand/st-first.webp" : "/brand/st-called.webp"}" alt="">
-            </p>
-            <p class="rin__l">${wasEmpty
-              ? "You set the odds. Whoever comes next has to take your price."
-              : "Your call is on chain now."}${testnet ? ` On ${label}.` : ""}</p>`
+            <div class="rcpt rcpt--${side}">
+              <p class="rin">
+                <b class="rin__s rin__s--${side}">${side.toUpperCase()}</b>
+                <span class="rin__a">${sol} <i>SOL</i></span>
+                <img class="rin__st" src="${wasEmpty ? "/brand/st-first.webp" : "/brand/st-called.webp"}" alt="">
+              </p>
+              <p class="rin__l">${wasEmpty
+                ? "You set the odds. Whoever comes next has to take your price."
+                : "Your call is on chain now."}${testnet ? ` On ${label}.` : ""}</p>
+            </div>`
             : `<h3>Sent</h3>
             <p class="cnote">${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.</p>`}
             <a class="cbtn cbtn--share" id="chainshare" href="#" rel="noopener">Post your call</a>
@@ -1437,13 +1439,19 @@ function b64ToBytes(b64) {
             const call = calls[Math.floor(Math.random() * calls.length)];
             const text = `${head ? head + "\n\n" : ""}${call}`;
             const a = body.querySelector("#chainshare");
+            /* STRAIGHT TO X, ON EVERY DEVICE.
+               This used to hand off to navigator.share when the browser had it,
+               on the theory that a phone's native sheet is the fastest way into
+               the X app. On a phone that is arguable. On a Mac it is simply
+               wrong: navigator.share exists in Safari and Chrome there too, so
+               a button that says POST YOUR CALL opened AirDrop, Messages, Notes,
+               Freeform and Reminders, and X was not among them. The one thing
+               the button promises was the one thing the menu could not do.
+               The intent link needs no special case. On a phone x.com/intent
+               is a universal link and opens the app when it is installed; on a
+               desktop it opens the composer with the post already written. */
             a.href = `https://x.com/intent/tweet?text=${encodeURIComponent(`${text} ${url}`)}`;
             a.target = "_blank";
-            a.onclick = (ev) => {
-              if (!navigator.share) return; // the intent link does the job
-              ev.preventDefault();
-              navigator.share({ title: "oddie", text, url }).catch(() => {});
-            };
           }
           // THE RECEIPT MOMENT. The one place X is asked for on the cold path,
           // and the only moment it has something to sell: the call just landed,

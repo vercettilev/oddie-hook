@@ -72,7 +72,8 @@
     "preflight": "tsx scripts/preflight.ts",
     "test-migration": "tsx scripts/test-migration.ts",
     "migrate-positions": "tsx scripts/migrate-positions.ts",
-    "test-undeclared-names": "tsx scripts/test-undeclared-names.ts"
+    "test-undeclared-names": "tsx scripts/test-undeclared-names.ts",
+    "preview-sheet": "tsx scripts/preview-sheet.ts"
   },
   "engines": {
     "node": ">=20"

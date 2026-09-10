@@ -312,6 +312,67 @@
    thing on the sheet because it is the thing that just became true, the side
    keeps the colour it has carried since the card, and the sticker is the only
    place this design language celebrates anything. */
+/* ---- the receipt, as a moment rather than a summary ----
+   This screen is the only time the product gets to celebrate, and it was
+   drawing the celebration in the same cream, at the same size, in the same
+   column as the form that preceded it: a side chip, a number, a grey sentence.
+   Nothing about it said something just happened.
+
+   So the head of the receipt is now a field of its own. It bleeds past the
+   sheet's padding to both edges, it is the app's near-black, and it tears along
+   the bottom the way every field change on the landing page does -- fractal
+   noise displacing a rectangle, the same technique, so the app and the site
+   change fields the same way. The sticker breaks out of it, as stickers do
+   everywhere else here.
+
+   The tear is a mask, so a browser that cannot do it gets a straight edge and a
+   band that still reads. Nothing about the receipt depends on it. */
+.rcpt{
+  /* The sheet's own padding, inverted. Bleeding to the edge is what makes this
+     a field rather than a box inside a box. */
+  margin:-22px -20px 18px;
+  padding:24px 20px 30px;
+  background:var(--black,#020302);
+  -webkit-mask-image:var(--rcpt-tear);mask-image:var(--rcpt-tear);
+  -webkit-mask-size:100% 100%;mask-size:100% 100%;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  animation:rcpt-in .3s cubic-bezier(.22,.9,.3,1) both;
+}
+:root{
+  /* Same construction as the landing's --tear-*: a white rectangle whose bottom
+     edge is displaced by fractal noise, used as a mask. Only the BOTTOM tears:
+     the rect starts well outside the box on the other three sides so the
+     displacement has nothing to chew there. */
+  --rcpt-tear:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='210' preserveAspectRatio='none'%3E%3Cfilter id='rt' x='-60' y='-60' width='740' height='420' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.013 0.05' numOctaves='2' seed='11'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='24'/%3E%3C/filter%3E%3Crect x='-50' y='-50' width='620' height='232' fill='%23fff' filter='url(%23rt)'/%3E%3C/svg%3E");
+}
+@keyframes rcpt-in{from{transform:translateY(-10px);opacity:0}to{transform:none;opacity:1}}
+
+/* On the dark field the amount is the trophy, so it takes the contrast and the
+   size, and the unit under it takes the side's colour. Two objects in the side
+   hue (the chip and the unit) with the number in cream between them, rather
+   than one flat block of pink. */
+.rcpt .rin__a{color:var(--cream,#FBFCF4);font-size:clamp(46px,15vw,74px);
+  animation:rcpt-amt .42s cubic-bezier(.34,1.56,.64,1) .05s both}
+.rcpt--yes .rin__a i{color:var(--yellow,#D7DC1F)}
+.rcpt--no .rin__a i{color:var(--pink,#FF2D78)}
+.rcpt .rin__l{color:var(--cream,#FBFCF4);opacity:.74;font-size:14.5px;margin:10px 0 0}
+/* The chip is read against a 74px number now, and at its form-sheet size it
+   looked like a footnote to it rather than the other half of the same fact. */
+.rcpt .rin__s{font-size:27px;padding:9px 15px 10px}
+/* Bigger, and hung over the top edge. Every sticker in this product breaks the
+   box it is in; this one was sitting politely inside it. */
+.rcpt .rin__st{height:clamp(78px,20vw,104px);margin-top:-16px;margin-bottom:-8px;
+  animation:rcpt-stick .46s cubic-bezier(.34,1.56,.64,1) .12s both}
+@keyframes rcpt-amt{from{transform:scale(.66);opacity:0}to{transform:none;opacity:1}}
+@keyframes rcpt-stick{from{transform:rotate(-18deg) scale(.55);opacity:0}
+  to{transform:rotate(6deg) scale(1);opacity:1}}
+/* The whole point of the band is that it lands. Take the landing away and the
+   band still has to be legible and correctly coloured, so only the motion goes. */
+@media (prefers-reduced-motion:reduce){
+  .rcpt,.rcpt .rin__a,.rcpt .rin__st{animation:none}
+  .rcpt .rin__st{transform:rotate(6deg)}
+}
+
 .rin{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 8px}
 .rin__s{
   font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:22px;
