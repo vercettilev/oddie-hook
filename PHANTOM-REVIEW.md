@@ -62,12 +62,20 @@ lev@oddie.fun
 ## Transaction Link
 
 ```
-https://solscan.io/tx/4RDF2VcJHWZ1WmdBBt9aLgyWjBZcfLnPEPy2s6ugwKDf9kw4tEJQ2eNCWyUdjJnrRJnDPEufxa9XxRzV6BUCUPhM
+https://solscan.io/tx/4YMR3gX5cU4pEYvsg13UeNos116c47DiQsF752yEWmLeG6aZzVRPN2ur4WivdKn5W7kpbNEamUesqHZkygTc4Cg5
 ```
 
-Mainnet, 8 Eylül 2026, başarılı. 0.1 SOL'lük bir YES pozisyonu: kullanıcının kendi
-cüzdanı imzaladı, `oddie_chain` programını çağırdı, pozisyon hesabını açtı ve parayı
-market vault'una taşıdı. `?cluster=` eki YOK, çünkü mainnet.
+Mainnet, 10 Eylül 2026 08:55 UTC, SUCCESS. Solscan'de açılıp doğrulandı: imzalayan
+`NYRhPxg68SvTR8XjEcEmXrjaB9uspeYaSuks3mxM1yc` yani kullanıcının kendi cüzdanı, tek
+transfer 0.1 SOL kullanıcıdan market vault'una (`H58xTnbG712CN2fbyiTp9vwPMGgJQeVRZAWco1mUuuwW`),
+çağrılan talimat `take_position`. `?cluster=` eki YOK, çünkü mainnet.
+
+Marketteki dört imzanın ikisi bizim sunucu anahtarımızın (`create_market` ve
+`migrate_position`) ve incelemeye gönderilemez. Kullanıcının imzaladığı iki tanesi var,
+ikisi de geçerli; bu yenisi seçildi çünkü bugünkü, yani şu an yayında olan kodun ürünü,
+ve Solscan'de tek bir temiz transfer olarak okunuyor. Eskisi (8 Eylül, aynı şekilde
+geçerli, iki transfer çünkü pozisyon hesabını da o açtı):
+`4RDF2VcJHWZ1WmdBBt9aLgyWjBZcfLnPEPy2s6ugwKDf9kw4tEJQ2eNCWyUdjJnrRJnDPEufxa9XxRzV6BUCUPhM`
 
 Bu alanın neden bu kadar önemli olduğu: incelemeciye "uyarıyı kaldırın" demiyoruz,
 tarayıcısının taradığı şeyin temiz olduğunu gösteriyoruz. Devnet linki bunu yapmaz,
@@ -79,9 +87,23 @@ setComputeUnitPrice (10.000 microLamports) ve `oddie_chain` çağrısı; diğer 
 Phantom'un kendi Lighthouse koruma talimatları. Bir önceki sürüm bu alanda "tek talimat,
 319 bayt, kendi ComputeBudget talimatımız yok" diyordu; üçü de artık yanlış.
 
-İlgili diğer imzalar, sorulursa:
+İlgili diğer imzalar, sorulursa (ikisi de sunucu anahtarıyla):
 - Market açılışı: `5h6GLLDPxW96bUpMwYrz6vMXLXimjDNJZAUfut9LovL73t3zfQgHMUivHFuwsmgcPFqm5iB2CiH6Wnd6fJ8bovWK`
 - Hesap düzeni göçü: `2s4J2gxZHWZjM3qg9EgfzeJhMgZWE6KbuBPXB24pktuX35GJ3fwQnvp3BZxC37U1K2x3twso8a9nf46b5LbcUCqw`
+
+## Solscan bizim talimatımızı ADIYLA göstermiyor
+
+İncelemeci o sayfayı açtığında altı talimatın beşini isimleriyle görüyor (Compute Budget,
+dört Lighthouse) ve bizimkini `#5 Unknown: Unknown` olarak görüyor. Sebep, IDL'in zincire
+hiç yayınlanmamış olması; Solscan adı oradan okuyor.
+
+Bu kritik değil, program id zaten açıklamada yazıyor, ama cüzdan incelemecisinin işi tam
+olarak "bu ne" diye bakmak ve orada okuduğu kelime "Unknown". `anchor idl init` ile
+yayınlanırsa aynı satır `take_position` yazar.
+
+Bedeli ölçüldü: IDL 46KB, sıkıştırılmış 8.636 bayt, hesap ~8.680 bayt, **yaklaşık 0.12 SOL
+kira**. Admin cüzdanında şu an 0.0970 SOL var, yani önce yükleme gerekiyor. Formu
+göndermeyi bunun için bekletme; sonradan yayınlanınca aynı sayfa kendiliğinden düzelir.
 
 ## Team Information
 
