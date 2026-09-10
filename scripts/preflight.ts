@@ -53,7 +53,7 @@ console.log("cluster");
 console.log("\nswitches");
 {
   onchainEnabled() ? ok("ONCHAIN_ENABLED is on") : no("ONCHAIN_ENABLED is off", "no market can mint and no stake can be taken");
-  isChainEnabled() ? ok("the chain layer is usable") : no("the chain layer is not usable", "onchain flag on but the client will not load; check ODDIE_CHAIN_SECRET");
+  isChainEnabled() ? ok("the chain layer is usable") : no("the chain layer is not usable", "onchain flag on but the client will not load; check SOLANA_ADMIN_SECRET_KEY");
   const appOpen = (process.env.APP_OPEN ?? "false").toLowerCase() === "true";
   appOpen ? ok("APP_OPEN is true", "the app serves; /markets is reachable")
           : hm("APP_OPEN is false", "every app route redirects to /genesis, so nobody can reach a market");
@@ -103,7 +103,7 @@ console.log("\nauthority");
 {
   const addr = await adminAddress().catch(() => null);
   if (!addr) {
-    no("no authority key loaded", "ODDIE_CHAIN_SECRET is missing or unreadable; nothing can mint or resolve");
+    no("no authority key loaded", "SOLANA_ADMIN_SECRET_KEY is missing or unreadable; nothing can mint or resolve");
   } else {
     ok(`authority ${addr}`);
     const sol = await adminBalanceSol().catch(() => null);
