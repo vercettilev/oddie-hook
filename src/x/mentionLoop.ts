@@ -310,13 +310,22 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         // whole budget — the first tag learns the recipe, the second is the
         // reminder, and after that we are just silence to that handle.
         const used = deps.refusalsUsed ? await deps.refusalsUsed(m.authorHandle).catch(() => TEACH_CAP) : 0;
-        if (used >= TEACH_CAP) {
+        /* SPENDING THE LAST TAG ALWAYS GETS AN ANSWER, cap or no cap.
+           Everything after this point is silence forever: the ticket gate sits
+           above the model call, so their next tag is dropped before anything
+           reads it. If the cap swallowed this one too, the product would simply
+           stop responding to somebody with no way for them to learn why. One
+           reply, once, at the only moment it can still be said. */
+        const lastTag = tagsLeft !== null && tagsLeft <= 0;
+        if (used >= TEACH_CAP && !lastTag) {
           await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/taught-out` });
           decide("skipped", { reason: "taught-out" });
           continue;
         }
 
-        const teachText = buildRefusalReply(m.id, tagsLeft);
+        // The warning rides on the last reply we will send, so nobody is
+        // charged in silence without having been told silence is coming.
+        const teachText = buildRefusalReply(m.id, tagsLeft, used === TEACH_CAP - 1 && !lastTag);
         if (deps.dryRun) {
           await settleMention(m.id, "skipped", { reason: "dry-run" });
           decide("skipped", { reason: "dry-run:teach", text: teachText });

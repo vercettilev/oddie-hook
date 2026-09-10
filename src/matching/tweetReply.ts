@@ -184,14 +184,25 @@ const CANNOT_PRICE = [
  * running, a handle we could not read, a store that failed. A sentence about
  * somebody's remaining chances has to be true or it must not be said.
  */
-export function buildRefusalReply(tweetId: string, tagsLeft?: number | null): string {
+export function buildRefusalReply(
+  tweetId: string, tagsLeft?: number | null, lastExplanation = false,
+): string {
   const line = pick(CANNOT_PRICE, tweetId);
   if (tagsLeft === null || tagsLeft === undefined) return line;
   // Zero is not "0 tags left", which reads as a scoreboard. It is the end of
   // the road and it should say so, because the next tag gets silence and the
   // person would otherwise never learn why.
   if (tagsLeft <= 0) return `${line} that was your last tag.`;
-  return `${line} ${tagsLeft} ${tagsLeft === 1 ? "tag" : "tags"} left.`;
+  const n = `${tagsLeft} ${tagsLeft === 1 ? "tag" : "tags"} left`;
+  /* THE WARNING GOES ON THE LAST ONE WE ANSWER.
+     Replies are capped per handle, and misses cost a tag whether or not we
+     answer. Those two rules together were quietly charging somebody three more
+     times after we stopped speaking to them - which is the exact thing this
+     file refuses to do to an inappropriate tag, done to a spammer instead.
+     Nobody is charged in silence without being told that silence is what comes
+     next. One clause, on the one reply where it is still true. */
+  if (lastExplanation) return `${line} ${n}, and this is the last one i'll explain.`;
+  return `${line} ${n}.`;
 }
 
 export function buildTweetReply(input: TweetReplyInput): TweetReply {

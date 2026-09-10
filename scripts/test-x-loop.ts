@@ -270,6 +270,42 @@ async function main() {
       Boolean(spy.posted[0]?.text.includes("that was your last tag")), spy.posted[0]?.text);
   }
 
+  /* ------------------------------- nobody is charged in silence unannounced -- */
+  {
+    // The last reply we will send carries the warning, because everything after
+    // it is silence AND still costs a tag. Charging three more times after we
+    // stop speaking is the exact thing this loop refuses to do to an
+    // inappropriate tag.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("740")], newestId: "740" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => TEACH_CAP - 1,
+      spendMiss: async () => ({ spent: true, left: 3 }),
+    });
+    await runMentionSweep(deps);
+    check("the last reply says it is the last one",
+      Boolean(spy.posted[0]?.text.includes("last one i'll explain")), spy.posted[0]?.text);
+  }
+  {
+    // And the very last tag is answered whatever the cap says: after it, the
+    // ticket gate drops every tag before anything reads it, so this is the only
+    // moment the silence can still be explained.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("750")], newestId: "750" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => TEACH_CAP + 3,
+      spendMiss: async () => ({ spent: true, left: 0 }),
+    });
+    await runMentionSweep(deps);
+    check("spending the last tag is answered even past the cap",
+      spy.posted.length === 1 && Boolean(spy.posted[0]?.text.includes("that was your last tag")),
+      spy.posted[0]?.text ?? "(silent)");
+  }
+
   /* -------------------------------------------------- the gate teaches once */
   // The gate stays silent above because those harnesses carry no teachPng, which
   // IS the contract: teaching is opt-in and its absence must behave exactly as
