@@ -398,7 +398,7 @@ console.log("\nthe profile card is postable for a post-pivot user");
   // hinging on one - the earlier headline answered exactly one of them and the
   // line is chosen at random.
   check("the teach card answers the reply instead of repeating it",
-    texts.some((t) => t.startsWith("THIS IS ALL IT TAKES")) && !texts.some((t) => /COULDN'T/.test(t)),
+    texts.some((t) => /IS ALL IT TAKES/.test(t)) && !texts.some((t) => /COULDN'T/.test(t)),
     texts.join(" | "));
   check("...and never corrects the person who tagged us",
     !texts.some((t) => /\byou\b|\byour\b/i.test(t)), texts.join(" | "));
@@ -417,19 +417,26 @@ console.log("\nthe profile card is postable for a post-pivot user");
   // and taught the wrong thing: a dated price target is what every prediction
   // market already lists, and this is the one card that leaves the product.
   check("the teach card carries both halves of the rule",
-    texts.some((t) => /A YES OR A NO/.test(t)) && texts.some((t) => /A DATE/.test(t)),
+    texts.some((t) => /A YES OR NO/.test(t)) && texts.some((t) => /A DATE/.test(t)),
     texts.join(" | "));
   check("...and no specimen claim to copy the wrong shape from",
     !texts.some((t) => /\$\d|SOL closes|Dec 31/.test(t)), texts.join(" | "));
   check("...said in display type, not as a list in body text",
-    /font-family="'Anton'[^"]*"\s+font-size="(\d+)"[^>]*>A YES OR A NO/.test(svg)
-    || /font-size="(\d+)"[^>]*>A YES OR A NO/.test(svg), "the rule is not set in the display face");
+    /font-size="(\d+)"[^>]*>A YES OR NO/.test(svg), "the rule is not set in the display face");
+  // It fits the band it is in. Sizing on width alone picked a face so large the
+  // three rows ran straight through the ask underneath them.
+  const ruleFS = Number(svg.match(/font-size="(\d+)"[^>]*>A YES OR NO/)?.[1] ?? 0);
+  const askY = Number(svg.match(/<text x="\d+" y="(\d+)"[^>]*>tag @/)?.[1] ?? 0);
+  check("...and the sentence clears the ask underneath it",
+    ruleFS > 0 && askY > 0 && 252 + 2 * Math.round(ruleFS * 0.98) + 12 < askY,
+    `fs=${ruleFS} lastBaseline=${252 + 2 * Math.round(ruleFS * 0.98)} ask=${askY}`);
 
   // The marked word is painted over its own line as a second run. Its x has to
   // be the MEASURED offset of that word, not the line's own x.
-  const line = "THIS IS ALL IT TAKES.";
-  const headFS = Number(svg.match(/font-size="(\d+)"[^>]*>THIS IS ALL/)?.[1] ?? 0);
-  const wantX = 70 + textWidth(line.slice(0, line.indexOf("ALL")), headFS, "display");
+  const line = "IS ALL IT TAKES.";
+  const headFS = Number(svg.match(/font-size="(\d+)"[^>]*>IS ALL IT TAKES/)?.[1] ?? 0);
+  // +20: the verdict row steps in, and the mark steps with it.
+  const wantX = 70 + 20 + textWidth(line.slice(0, line.indexOf("ALL")), headFS, "display");
   const gotX = Number(svg.match(/<text x="([\d.]+)"[^>]*>ALL<\/text>/)?.[1] ?? -1);
   check("the marked word sits on the word it marks, not at the line's start",
     headFS > 0 && Math.abs(gotX - wantX) < 1.5, `want ~${wantX.toFixed(1)}, got ${gotX}`);

@@ -45,30 +45,23 @@ const H = 524;
 const PAD_L = 70;
 
 /** The cream deckle inside the tear. The landing's --cream: the seam is not a
- *  colour change, it is a piece of paper lifted off another piece of paper, and
- *  the strip of cream along the rip is the whole reason it reads that way. */
+ *  colour change, it is a piece of paper lifted off another piece of paper. */
 const CREAM = "#FBFCF4";
 
-/** Where the lime ends and the black begins, before the tear displaces it. */
-const SEAM_Y = 206;
-/** The cream showing below the lime teeth. The landing uses 9px at 1440 wide;
- *  a touch more here because this artboard is 1000 and X downscales it again. */
-const DECKLE = 13;
+/** Where the lime ends and the black begins, before the tear displaces it.
+ *  High, because the lime field now carries only the lockup: the sentence is
+ *  the card and it takes the room. */
+const SEAM_Y = 150;
+const DECKLE = 12;
 /** The teeth swing about half of this. 54 across 1440 on the landing is 1.9% of
- *  the width; 40 across 1000 is the same rip at this size. An earlier pass at
- *  26 read as a wobbly divider rule rather than as paper. */
+ *  the width; 40 across 1000 is the same rip at this size. */
 const TEAR_SCALE = 40;
-
-/** The headline's right edge. The mascot's box starts at 636 but its ink does
- *  not, so the measure runs a little past that. */
-const HEAD_R = 618;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ART = path.join(here, "../../assets/st-decide.png");
 
 // resvg reads png/jpeg and silently drops webp - a webp <image> renders as a
 // hole with no warning - so the sticker ships as an already-converted PNG.
-// Embedded once per process; the SVG is thrown away after each raster.
 let artCache: string | null = null;
 function artHref(): string {
   if (artCache) return artCache;
@@ -76,47 +69,30 @@ function artHref(): string {
   return artCache;
 }
 
-/* ------------------------------------------------------------------ copy -- */
-
 /**
- * Above the tear, and the second half of a sentence the reply already started.
+ * The whole rule, in one sentence.
  *
- * The text of the post says "i couldn't make a market out of that one." The
- * card answers it. Saying the refusal again up here, which is what an earlier
- * pass did, spent the biggest type on the artboard restating a line the reader
- * has already read two inches higher up, and pushed everything that actually
- * teaches into the bottom third. So the card no longer states the problem at
- * all: X always puts the words above the picture, so the setup is guaranteed to
- * be there, and the card gets its whole surface for the answer.
+ * It was a headline plus two lines, and the headline was a pointer at the thing
+ * underneath it: "this is all it takes" says nothing the two lines do not
+ * already say by being short. One sentence carries both jobs and buys the space
+ * back for type.
  *
- * COULD carries the landing's marked-word treatment because it is the hinge
- * between the two halves. The reply's last word was couldn't.
+ * Not a list, which is what the first version was and what got it rejected: a
+ * list is three claims a reader has to check their own sentence against, one at
+ * a time. This is one sentence they pass or fail.
+ *
+ * Broken where the sense breaks, not where the line runs out, so each row is a
+ * phrase: the two halves of the rule, then the verdict on how small it is.
  */
-const SAID = ["THIS IS ALL IT TAKES."];
+const RULE = ["A YES OR NO", "AND A DATE", "IS ALL IT TAKES."];
+/** The landing's marked-word treatment, on the word that does the work. */
 const MARK = "ALL";
-
-/** The whole rule, as two phrases rather than three sentences.
- *  A list is something a reader has to match their own sentence against; two
- *  lines in display type are a stamp they either pass or do not. */
-const RULE = ["A YES OR A NO.", "AND A DATE."];
 
 /** The only ask on the card, and the string the reader has to retype. */
 const ASK = `tag ${X_HANDLE} under one`;
 
-/* ----------------------------------------------------------------- type ---- */
-
-/** Nunito, and only Nunito, for anything whose pixel width this card has to
- *  know. textWidth's "meta" mode reads real advance widths off the shipped TTF;
- *  the faceless legacy mode is a deliberately generous approximation, fine for
- *  keeping a line inside a budget and nowhere near good enough to land a 6px
- *  underline under two exact words. The two modes are never mixed. */
-function metaW(s: string, fs: number): number {
-  return textWidth(s, fs, "meta");
-}
-
-/** Largest size at which every line of a display block clears the budget. The
- *  copy is fixed, but it is the kind of copy that gets edited in a hurry, and a
- *  hand-placed headline overflows silently the first time someone adds a word. */
+/** Largest size at which every line clears the budget. The copy is fixed, but a
+ *  hand-placed size overflows silently the first time somebody adds a word. */
 function fitDisplay(lines: readonly string[], maxW: number, sizes: readonly number[]): number {
   for (const fs of sizes) {
     if (lines.every((l) => textWidth(l, fs, "display") <= maxW)) return fs;
@@ -125,67 +101,44 @@ function fitDisplay(lines: readonly string[], maxW: number, sizes: readonly numb
 }
 
 export function renderTeachCard(): string {
-  /* --- above the tear ----------------------------------------------------- */
-
-  const headFS = fitDisplay(SAID, HEAD_R - PAD_L, [68, 62, 56, 50, 44]);
-  const headBase = [172];
+  /* SIZED AGAINST THE BAND, NOT THE MARGIN. Fitting on width alone picked 104
+     and the three lines then ran straight through the footer: Anton is narrow,
+     so the widest line cleared the margin long before the block cleared the
+     space under the seam. The ladder tops out at what three rows actually fit
+     between the tear and the ask. */
+  const fs = fitDisplay(RULE, W - PAD_L * 2 - 40, [84, 78, 72, 66]);
+  const step = Math.round(fs * 0.98);
+  const top = 252;
 
   // The marked word is painted OVER its own line rather than the line being cut
-  // into three runs: one run keeps the shaping and the advance widths identical
-  // to what was measured. Its x comes off the run that precedes it, so editing
-  // the copy cannot leave the mark behind.
-  const markAt = SAID.findIndex((l) => l.includes(MARK));
-  const markLine = SAID[markAt] ?? "";
-  const markX = PAD_L + textWidth(markLine.slice(0, markLine.indexOf(MARK)), headFS, "display");
-  const markW = textWidth(MARK, headFS, "display");
-  const markBase = headBase[markAt] ?? headBase[0];
+  // into runs: one run keeps the shaping and the advance widths identical to
+  // what was measured, and the x comes off the run before it, so editing the
+  // copy cannot leave the mark behind.
+  const markRow = RULE.findIndex((l) => l.includes(MARK));
+  const markLine = RULE[markRow] ?? "";
+  const markX = PAD_L + textWidth(markLine.slice(0, markLine.indexOf(MARK)), fs, "display");
+  const markW = textWidth(MARK, fs, "display");
+  const markBase = top + markRow * step;
 
-  const said = SAID.map((line, i) => {
-    // Line two is nudged in: the landing sets each headline line as its own
-    // fit-width block precisely so the stack can step rather than align.
-    const x = PAD_L + (i === 1 ? 18 : 0);
-    const base = `<text x="${x}" y="${headBase[i]}" font-family="${DISPLAY}" font-size="${headFS}"
-        fill="${C.ink}">${esc(line)}</text>`;
-    if (i !== markAt) return base;
-    // Pink on chartreuse measures 2.40:1 and falls apart unmodified, so the
-    // marked word carries a real ink stroke rather than the landing's
-    // eight-shadow hack, which resvg would draw as eight offset copies.
+  const lines = RULE.map((line, i) => {
+    // The last row is the verdict rather than a half of the rule, so it takes
+    // the accent and steps in, the way the landing steps a headline stack.
+    const x = PAD_L + (i === 2 ? 20 : 0);
+    const fill = i === 2 ? C.accent : C.white;
+    const base = `<text x="${x}" y="${top + i * step}" font-family="${DISPLAY}" font-size="${fs}"
+      fill="${fill}">${esc(line)}</text>`;
+    if (i !== markRow) return base;
     return `${base}
-      <text x="${markX}" y="${markBase}" font-family="${DISPLAY}" font-size="${headFS}"
-        fill="${C.echo}" stroke="${C.ink}" stroke-width="${Math.round(headFS * 0.08)}"
-        stroke-linejoin="round" paint-order="stroke">${esc(MARK)}</text>`;
-  }).join("\n  ");
-
-  // The rule under the marked word overshoots to the right, and that overshoot
-  // is the whole trick: a rule stopping level with the word reads as a
-  // text-decoration, one running past it reads as a pen.
-  const ulY = markBase + Math.round(headFS * 0.13);
-  const ulH = Math.max(6, Math.round(headFS * 0.1));
-  const underline = `<g transform="rotate(-0.9 ${(markX + markW / 2).toFixed(1)} ${ulY})">
-    <rect x="${(markX - 3).toFixed(1)}" y="${ulY}" width="${(markW + 10).toFixed(1)}" height="${ulH}" fill="${C.ink}"/>
-  </g>`;
-
-  /* --- below the tear ----------------------------------------------------- */
-
-  const ruleFS = fitDisplay(RULE, W - PAD_L * 2, [96, 88, 80, 72, 64]);
-  const ruleTop = 316;
-  const ruleStep = Math.round(ruleFS * 1.02);
-  const rules = RULE.map((line, i) => {
-    // The second line steps in, the way the landing steps its headline stack.
-    const x = PAD_L + (i === 1 ? 22 : 0);
-    return `<text x="${x}" y="${ruleTop + i * ruleStep}" font-family="${DISPLAY}" font-size="${ruleFS}"
-      fill="${i === 0 ? C.white : C.accent}">${esc(line)}</text>`;
+    <text x="${markX + (markRow === 2 ? 20 : 0)}" y="${markBase}" font-family="${DISPLAY}" font-size="${fs}"
+      fill="${C.echo}">${esc(MARK)}</text>`;
   }).join("\n  ");
 
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${FONT}">
   <defs>
     <!-- The seam. Not an image and not a clip-path: fractal noise displacing a
          rectangle, exactly as the landing builds it, so the page and the card
-         tear off the same press. The rect starts 80px off-canvas left, right and
-         top, so only its BOTTOM edge is ragged. The y frequency is deliberately
-         slow - the cream is a second copy of this same rect sitting 13px lower,
-         and if the noise field turned over inside those 13px the deckle would
-         vanish in patches. -->
+         tear off the same press. Only the rect's BOTTOM edge is ragged; it
+         starts off-canvas on the other three sides. -->
     <filter id="tc_tear" filterUnits="userSpaceOnUse" x="-140" y="-140" width="1280" height="620">
       <feTurbulence type="fractalNoise" baseFrequency="0.011 0.02" numOctaves="2" seed="7" result="tc_n"/>
       <feDisplacementMap in="SourceGraphic" in2="tc_n" scale="${TEAR_SCALE}"
@@ -193,7 +146,6 @@ export function renderTeachCard(): string {
     </filter>
   </defs>
 
-  <!-- Ground two is the whole card; ground one is torn off the top of it. -->
   <rect width="${W}" height="${H}" fill="${C.ground}"/>
   <rect x="-80" y="-80" width="1160" height="${SEAM_Y + DECKLE + 80}" fill="${CREAM}" filter="url(#tc_tear)"/>
   <rect x="-80" y="-80" width="1160" height="${SEAM_Y + 80}" fill="${C.accent}" filter="url(#tc_tear)"/>
@@ -202,20 +154,17 @@ export function renderTeachCard(): string {
   <text x="${PAD_L + 77}" y="77" font-family="${DISPLAY}" font-size="44" fill="${C.echo}">oddie</text>
   <text x="${PAD_L + 74}" y="74" font-family="${DISPLAY}" font-size="44" fill="${C.ink}">oddie</text>
 
-  ${said}
-  ${underline}
-
-  ${rules}
+  ${lines}
 
   <text x="${PAD_L}" y="486" font-family="${META}" font-size="28" font-weight="700"
         fill="${C.white}" fill-opacity="0.76">${esc(ASK)}</text>
 
-  <!-- The one object that lives in both fields. Tilted off square and hung so
-       the tear crosses it at the wrists: the ghost's head is on the lime and the
-       two buttons it cannot choose between are on the black, which is also the
-       only arrangement where the yellow YES button has a ground to read against. -->
-  <g transform="rotate(-3 779 144)">
-    <image href="${artHref()}" x="654" y="16" width="250" height="256"
+  <!-- The one object that lives in both fields, hung so the tear crosses it at
+       the wrists: the ghost's head is on the lime and the two buttons it cannot
+       choose between are on the black, which is also the only arrangement where
+       the yellow YES button has a ground to read against. -->
+  <g transform="rotate(-3 812 118)">
+    <image href="${artHref()}" x="700" y="14" width="240" height="246"
            preserveAspectRatio="xMidYMid meet"/>
   </g>
 </svg>`;
