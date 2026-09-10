@@ -50,13 +50,13 @@ https://oddie.fun
 ## Your Name
 
 ```
-<senin adın>
+Levent Acar
 ```
 
 ## Your E-mail
 
 ```
-<formda zaten seçili olan adres>
+lev@oddie.fun
 ```
 
 ## Transaction Link
@@ -72,6 +72,12 @@ market vault'una taşıdı. `?cluster=` eki YOK, çünkü mainnet.
 Bu alanın neden bu kadar önemli olduğu: incelemeciye "uyarıyı kaldırın" demiyoruz,
 tarayıcısının taradığı şeyin temiz olduğunu gösteriyoruz. Devnet linki bunu yapmaz,
 başarısız bir işlem linki ise tam tersini yapar.
+
+İşlemin ölçülmüş içeriği (yukarıdaki 1. maddenin dayanağı, zincirden okundu):
+1 imza, 1 zorunlu imzacı, 6 talimat. Bizim olan iki tanesi ComputeBudget
+setComputeUnitPrice (10.000 microLamports) ve `oddie_chain` çağrısı; diğer dördü
+Phantom'un kendi Lighthouse koruma talimatları. Bir önceki sürüm bu alanda "tek talimat,
+319 bayt, kendi ComputeBudget talimatımız yok" diyordu; üçü de artık yanlış.
 
 İlgili diğer imzalar, sorulursa:
 - Market açılışı: `5h6GLLDPxW96bUpMwYrz6vMXLXimjDNJZAUfut9LovL73t3zfQgHMUivHFuwsmgcPFqm5iB2CiH6Wnd6fJ8bovWK`
@@ -122,14 +128,17 @@ repository. The main application repository is private.
 ## Any additional information you'd like to share?
 
 ```
-Two things that may help the review, both verifiable.
+Three things that may help the review. The first two are verifiable in the transaction
+linked above.
 
-1. Our transactions are deliberately minimal. A stake is one required signature, one
-   instruction, 319 bytes serialized, with the user as fee payer. We add no compute
-   budget instructions of our own. Every developer remedy in your domain and transaction
-   warnings documentation (single signer, signTransaction over signAndSendTransaction for
-   multi-signer flows, splitting oversized transactions) is already satisfied, so there
-   is no multi-signer or size condition behind the simulation warning we were seeing.
+1. Our side of the transaction is minimal, and it is a single signer. The linked stake
+   carries one signature and one required signer, with the user as fee payer. Two of its
+   six instructions are ours: a ComputeBudget setComputeUnitPrice at 10,000 microLamports,
+   and one call to our own program. The other four are Lighthouse guard instructions your
+   own wallet adds at signing time. There is no multi-signer flow and no oversized
+   transaction anywhere in this dApp, so the developer remedies in your domain and
+   transaction warning documentation do not apply to us: we already use a single signer
+   and signTransaction rather than signAndSendTransaction.
 
 2. We found and fixed a real cause on our side rather than only asking for a review. Our
    prepare endpoints did not validate on-chain preconditions before returning a signable
@@ -138,6 +147,12 @@ Two things that may help the review, both verifiable.
    wallet a transaction that was guaranteed to revert. Your documentation notes that a
    transaction which would fail on chain triggers the warning. All three endpoints now
    mirror the program's own guards and refuse with an explanation instead.
+
+3. Public betting is currently gated while we run a closed beta, so a reviewer visiting
+   the site today will reach a market page that says betting opens shortly rather than a
+   stake sheet. The linked transaction is a real mainnet stake through the exact flow in
+   question. If it would help the review to walk that flow yourselves, tell us and we will
+   open access immediately.
 
 The domain is new (registered 2026-07-13), which we understand accounts for the new
 domain notice on its own.
