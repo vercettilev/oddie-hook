@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
 import { refusalRepliesTo } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
-import { recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
+import { adoptSurfacedMarkets, recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
@@ -1954,6 +1954,24 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
     console.log(JSON.stringify({ evt: "auth_link", provider: p, seeded: result.seeded }));
     // The Genesis card. Best-effort ON PURPOSE: the sign-in is complete and a
     // storage hiccup must not turn a successful link into an auth_error page.
+    if (identity.provider === "twitter" && identity.handle) {
+      /* THE MARKETS THEY ALREADY OPENED BECOME THEIRS HERE.
+         Their 2% is paid to an on-chain creator, and the step that writes it
+         finds markets by device. Until now that link was only ever made at tag
+         time, so anybody who tagged BEFORE connecting - which is every person
+         the product's own headline describes - left a row with a null device
+         and could never be named or paid. Adopting them at connect time is the
+         other half of that link, and it is the half that was missing.
+         Best-effort like the card below: a failed backfill must not turn a
+         completed sign-in into an error page. It is idempotent, so the next
+         connect picks up whatever this missed. */
+      try {
+        const adopted = await adoptSurfacedMarkets(identity.handle, pendingAuth.deviceId);
+        if (adopted) console.log(JSON.stringify({ evt: "surfacer_adopted", handle: identity.handle, count: adopted }));
+      } catch (err) {
+        console.error("[surfacer] adopting earlier markets failed:", (err as Error).message);
+      }
+    }
     if (identity.provider === "twitter" && identity.xProfile && identity.handle) {
       try {
         const gp = await captureGenesisProfile(

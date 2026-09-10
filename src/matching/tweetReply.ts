@@ -167,7 +167,7 @@ function fit(prefix: string, question: string, suffix: string, limit: number): s
  */
 const CANNOT_PRICE = [
   "i couldn't make a market out of that one.",
-  "no market in that one, and i did try.",
+  "no market in that one, and i looked.",
   "that one didn't have a market in it.",
 ];
 

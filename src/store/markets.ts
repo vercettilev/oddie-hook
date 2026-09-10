@@ -3767,6 +3767,47 @@ export function _resetExcludedHandleCache(): void { excludedHandleCache = null; 
 const isExcludedHandle = (h: string | null | undefined): boolean =>
   !!h && h.replace(/^@+/, "").toLowerCase() === EXCLUDED_LEADERBOARD_HANDLE;
 
+/**
+ * CLAIM THE MARKETS THIS HANDLE ALREADY OPENED.
+ *
+ * The 2% a market opener earns is paid to an on-chain `creator`, and that field
+ * is written by nameCreatorOnTaggedMarkets, which finds a person's markets by
+ * DEVICE. recordSurfacer resolves handle to device once, at tag time, and never
+ * again - so the row for somebody who had not yet connected X carried a null
+ * device forever, and their markets were invisible to the naming step even
+ * after they connected and linked a wallet.
+ *
+ * That made the product's own headline undeliverable. "Tag @oddiefun under any
+ * claim on X. Keep 2% of its pool" describes tagging FIRST, and tagging first
+ * was exactly the order that could never be paid: the fee still accrues on
+ * resolve, to the all-zero sentinel, and sits in the vault where nobody can
+ * reach it. The only people who could earn were the ones who had connected
+ * before their own market existed.
+ *
+ * So the link is made in the other direction too. Called when a handle connects
+ * X, it adopts every row that handle left behind. Idempotent, and it never
+ * overwrites a device that is already there: the first writer still wins, this
+ * only fills a hole.
+ */
+export async function adoptSurfacedMarkets(handle: string, deviceId: string): Promise<number> {
+  const h = handle.replace(/^@+/, "").toLowerCase();
+  if (!h || !deviceId) return 0;
+  if (!PERSISTENT) {
+    let n = 0;
+    for (const [, row] of memSurfacer) {
+      if (row.handle === h && !row.deviceId) { row.deviceId = deviceId; n++; }
+    }
+    return n;
+  }
+  await ensureSchema();
+  const { rowCount } = await db().query(
+    `UPDATE market_surfacer SET device_id = $2
+      WHERE lower(ltrim(handle, '@')) = $1 AND device_id IS NULL`,
+    [h, deviceId],
+  );
+  return rowCount ?? 0;
+}
+
 /** Record who surfaced a market — once per slug (the first writer wins). Safe to
  *  call repeatedly (every reply generation does). Resolves the handle→device at
  *  write time as a convenience; awards resolve again in case they sign up later. */
