@@ -17,28 +17,29 @@ oddie
 
 ## Describe your dApp
 
+> Kısaltıldı ve bir cüzdan incelemecisinin sorduğu soruya göre yeniden yazıldı. O soru
+> "ürününüz nedir" değil, "bu site bir cüzdana ne yaptırıyor". O yüzden komisyon oranları,
+> oranların markette saklanması ve ekran envanteri çıkarıldı: doğrular ama incelemenin
+> konusu değiller. Kalanların hepsi ölçüldü: yedi kullanıcı imzalı yol var, hiçbirinde
+> SPL token programı, approve veya delegate yok, ve her işlem tek imzacı.
+
 ```
-oddie turns arguments on X into real prediction markets.
+oddie turns arguments on X into prediction markets on Solana. People take a side of a
+claim with SOL from their own wallet, and when it settles, winners split the pool.
 
-Someone tags @oddiefun under a claim on X. That mints a pari-mutuel market on our own
-Anchor program on Solana, and the market appears in a feed where anyone can take a side
-with SOL from their own wallet. When it settles, winners split the pool.
+What matters for a wallet: oddie is non-custodial. It never holds user funds, never asks
+for a seed phrase or a private key, and never requests a token approval or a delegation
+of any kind. It is SOL only and touches no SPL token program.
 
-oddie is non-custodial by design. It never holds user funds and never takes custody of a
-key. Every stake, claim and fee collection is a transaction the user's own wallet signs
-and broadcasts. The vault is a program-derived account; we cannot move what is in it
-outside the program's rules.
-
-Fees are 4% of the pool, taken once at settlement, never per trade: 2% to the person who
-tagged the market into existence and 2% to the protocol. Both rates are stored on the
-market at creation, so changing a rate later can never reprice a market people have
-already staked into.
-
-Main surfaces: a feed of live markets, a stake sheet, a claim flow for winners, and a
-creator fee collection flow for the person who started the market.
+Every transaction it asks a wallet to sign is the user acting on their own money: staking
+a side, claiming winnings, taking a refund after a deadline, collecting the creator fee,
+or listing and buying a position from another user. Each one is a single call to our own
+Anchor program alongside a ComputeBudget priority fee instruction, with one signer and the
+user as fee payer. The vault holding the pool is a program-derived account, so we cannot
+move what is in it outside the program's rules.
 
 Program id: 3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu
-Deployed and live on mainnet-beta, with real SOL staked.
+Live on mainnet-beta with real SOL staked.
 ```
 
 ## dApp website URL
