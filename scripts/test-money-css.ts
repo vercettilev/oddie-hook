@@ -56,13 +56,25 @@ check("[hidden] beats every display: in the file",
   /\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/.test(cssText),
   "money.css must end with a blanket [hidden]{display:none !important}");
 
+/** A <script> TAG, not a mention. This was `html.includes("/chain.js")`, so a
+ *  COMMENT naming the file counted as loading it, and the first comment that
+ *  pointed a reader at public/chain.js turned a passing shell into a failure
+ *  with a message about stylesheets. A test that cannot tell a reference from a
+ *  load gets worked around instead of read. */
+const loadsChain = (html: string): boolean =>
+  /<script[^>]+src=["'][^"']*\/chain\.js/i.test(html);
+
 const shells = readdirSync(appDir).filter((f) => f.endsWith(".html"));
 check("there are app shells to check", shells.length > 0, `found ${shells.length}`);
 
 for (const f of shells) {
   const html = readFileSync(path.join(appDir, f), "utf8");
-  const usesChain = html.includes("/chain.js");
-  if (!usesChain) {
+  // A <script> TAG, not a mention. This read `html.includes("/chain.js")`, so a
+  // COMMENT naming the file counted as loading it, and the first comment that
+  // pointed a reader at public/chain.js turned a passing shell into a failure
+  // with a message about stylesheets. A test that cannot tell a reference from
+  // a load will eventually be worked around instead of read.
+  if (!loadsChain(html)) {
     console.log(`  ·  ${f} does not load chain.js, so it cannot open a sheet`);
     continue;
   }
@@ -73,7 +85,7 @@ for (const f of shells) {
 // The other direction is not a bug, only waste, so it is reported not failed.
 for (const f of shells) {
   const html = readFileSync(path.join(appDir, f), "utf8");
-  if (html.includes("/app/money.css") && !html.includes("/chain.js")) {
+  if (html.includes("/app/money.css") && !loadsChain(html)) {
     console.log(`  ·  ${f} loads money.css but never chain.js (harmless, unused)`);
   }
 }
@@ -97,6 +109,32 @@ for (const f of shells) {
     seatAt > handlerAt, `handler at ${handlerAt}, seat at ${seatAt}`);
   check("...and the seat block is wrapped, so a throw there is contained",
     /try \{[\s\S]{0,400}void seatsP\.then/.test(js));
+}
+
+/* ------------------------------------------- share goes where it says ------ */
+// navigator.share exists on desktop Safari and Chrome, where it offers AirDrop,
+// Messages, Notes, Freeform and Reminders. A button reading POST YOUR CALL
+// opened that menu, and X was not in it. The rule that came out of it:
+//   a control naming ONE destination goes straight there, always;
+//   a control saying only "Share" may use the OS sheet, but only on a device
+//   where that sheet is any good, which is a coarse pointer, not the mere
+//   presence of the API.
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  // Comments may name it; a call may not.
+  const calls = (l: string) => /(?<!\/\/.*)navigator\.share\s*\(/.test(l) || /if\s*\(\s*navigator\.share/.test(l);
+  const chainCalls = chain.split("\n").filter((l) => calls(l) && !l.trim().startsWith("*") && !l.trim().startsWith("//"));
+  check("the post-your-call button never hands off to the OS share sheet",
+    chainCalls.length === 0, chainCalls.join(" | "));
+
+  for (const f of ["public/app/market.html", "public/app/who.html"]) {
+    const src = readFileSync(f, "utf8");
+    const uses = src.includes("navigator.share");
+    const guarded = /navigator\.share\s*&&\s*matchMedia\("\(pointer:coarse\)"\)\.matches/.test(src);
+    check(`${f} offers the OS sheet only on a touch device`, !uses || guarded);
+    check(`...and still falls through to the X composer`,
+      !uses || /x\.com\/intent\/tweet/.test(src));
+  }
 }
 
 console.log(failures === 0

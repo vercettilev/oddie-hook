@@ -307,7 +307,17 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
         var who = j.handle ? "@" + j.handle : shortOf(j.wallet);
         var text = who + ": " + j.wins + "/" + (j.wins + j.losses) + " calls right"
           + (net === null ? "" : ", " + (net > 0 ? "+" : "") + net.toFixed(2) + " SOL") + ", every one stamped on chain.";
-        if (navigator.share) { navigator.share({ title: "oddie", text: text, url: url }).catch(function () {}); return; }
+        /* THE NATIVE SHEET ONLY WHERE IT IS ANY GOOD.
+           navigator.share exists in desktop Safari and Chrome too, and there it
+           offers AirDrop, Messages, Notes, Freeform and Reminders. None of those
+           is the reason this button exists. On a touch device the same sheet
+           reaches the X app, Telegram and WhatsApp in one tap, which is better
+           than anything we can do, so the test is the device rather than the
+           API: a coarse pointer means a finger, and a finger means the sheet is
+           worth offering. Everything else goes straight to the X composer.
+           The button that says POST YOUR CALL never asks this question at all
+           (see public/chain.js) because it names one destination. */
+        if (navigator.share && matchMedia("(pointer:coarse)").matches) { navigator.share({ title: "oddie", text: text, url: url }).catch(function () {}); return; }
         window.open("https://x.com/intent/tweet?text=" + encodeURIComponent(text + " " + url), "_blank", "noopener");
       });
     })

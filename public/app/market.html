@@ -811,14 +811,24 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     animatePool(prevPool, poolNow);
     prevPool = poolNow;
 
-    /* Share: the native sheet where there is one (phones), the X intent
-       everywhere else. The text is the question and the link, nothing about
-       odds: a shared number goes stale, a shared question does not. */
+    /* Share: the native sheet on a phone, the X intent everywhere else. The
+       text is the question and the link, nothing about odds: a shared number
+       goes stale, a shared question does not. */
     var sh = view.querySelector("#share");
     if (sh) sh.addEventListener("click", function () {
       var url = location.origin + location.pathname;
       var text = m.question;
-      if (navigator.share) {
+      /* THE NATIVE SHEET ONLY WHERE IT IS ANY GOOD.
+         navigator.share exists in desktop Safari and Chrome too, and there it
+         offers AirDrop, Messages, Notes, Freeform and Reminders. None of those
+         is the reason this button exists. On a touch device the same sheet
+         reaches the X app, Telegram and WhatsApp in one tap, which is better
+         than anything we can do, so the test is the device rather than the
+         API: a coarse pointer means a finger, and a finger means the sheet is
+         worth offering. Everything else goes straight to the X composer.
+         The button that says POST YOUR CALL never asks this question at all
+       (see public/chain.js) because it names one destination. */
+      if (navigator.share && matchMedia("(pointer:coarse)").matches) {
         navigator.share({ title: "oddie", text: text, url: url }).catch(function () {});
         return;
       }
