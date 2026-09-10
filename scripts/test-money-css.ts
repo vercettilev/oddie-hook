@@ -78,6 +78,27 @@ for (const f of shells) {
   }
 }
 
+/* ---------------------------------- the money control is attached first ---- */
+// A dead confirm button is the worst bug this sheet can have, because it is the
+// one the user cannot tell from a slow network: the page looks right and does
+// nothing. It has happened once, and the cause was an OPTIONAL feature sitting
+// above the handler and throwing, so the assignment under it never ran.
+//
+// The invariant is ordering: whatever is attached first cannot be taken down by
+// what is attached after it, so the button that moves money goes first and the
+// seat offer, which is an extra, goes last. Asserted on the source because the
+// two lines are hundreds apart and nothing else makes their order look load-bearing.
+{
+  const js = readFileSync("public/chain.js", "utf8");
+  const handlerAt = js.indexOf("stakeBtn.onclick = async");
+  const seatAt = js.indexOf("void seatsP.then");
+  check("the stake sheet attaches its confirm handler", handlerAt > 0);
+  check("the seat offer is attached AFTER it, so an extra cannot kill the button",
+    seatAt > handlerAt, `handler at ${handlerAt}, seat at ${seatAt}`);
+  check("...and the seat block is wrapped, so a throw there is contained",
+    /try \{[\s\S]{0,400}void seatsP\.then/.test(js));
+}
+
 console.log(failures === 0
   ? "\nall money-stylesheet checks passed.\n"
   : `\n${failures} money-stylesheet check(s) FAILED.\n`);

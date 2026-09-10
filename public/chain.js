@@ -1309,33 +1309,6 @@ function b64ToBytes(b64) {
       refresh();
       void showBalance();   // no-op without a wallet; instant for a trusted one
 
-      /* A SEAT ON SALE IS A BETTER DEAL THAN FRESH MONEY, and the arithmetic is
-         not close. Staking 1 SOL into a 10 SOL YES side puts you in an 11 SOL
-         side; buying somebody's 1 SOL seat puts you in the 10 SOL side that
-         already existed. Same price, larger share, and the people already on
-         that side are not diluted either. So it is offered rather than buried:
-         it is the one place in this product where two people both come out
-         ahead.
-         Only for the side actually chosen, and only at the seat's own size,
-         because the program fills a listing in full or not at all. */
-      void seatsP.then((seats) => {
-        const host = body.querySelector("#chainseat");
-        if (!host || !Array.isArray(seats) || !seats.length) return;
-        const draw = () => {
-          const seat = side ? seats.find((l) => l.side === side) : null;
-          if (!seat) { host.innerHTML = ""; return; }
-          const s = (seat.lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-          host.innerHTML = '<button class="seat" type="button">'
-            + "<b>Take a seat instead</b>"
-            + `<span>${s} SOL of ${String(seat.side).toUpperCase()}, at face. The pool does not grow, so your share is bigger.</span>`
-            + "</button>";
-          host.querySelector(".seat").onclick = () => void takeSeat(body, slug, seat);
-        };
-        draw();
-        sideBtns.forEach((b) => b.addEventListener("click", draw));
-        const sw = body.querySelector(".chain-swap");
-        if (sw) sw.addEventListener("click", () => setTimeout(draw, 0));
-      });
 
       stakeBtn.onclick = async () => {
         // The connect step is folded into the same button rather than being a
@@ -1506,6 +1479,51 @@ function b64ToBytes(b64) {
           }
         }
       };
+
+      /* A SEAT ON SALE IS A BETTER DEAL THAN FRESH MONEY, and the arithmetic is
+         not close. Staking 1 SOL into a 10 SOL YES side puts you in an 11 SOL
+         side; buying somebody's 1 SOL seat puts you in the 10 SOL side that
+         already existed. Same price, larger share, and the people already on
+         that side are not diluted either. So it is offered rather than buried:
+         it is the one place in this product where two people both come out
+         ahead.
+         Only for the side actually chosen, and only at the seat's own size,
+         because the program fills a listing in full or not at all.
+
+         AFTER THE BUTTON, ALWAYS. This block used to sit ABOVE the handler and
+         it read a promise that was never declared anywhere in the file. So it
+         threw on every single open, the assignment under it never ran, and the
+         sheet painted perfectly with a dead confirm button: correct odds,
+         correct label, correct payout line, and nothing at all on press. The
+         seat offer is an extra; the button under it moves money. An extra must
+         never be able to take the money control down with it, so it is attached
+         last and it is wrapped. */
+      try {
+        // In flight while the sheet paints, and it resolves to [] on any
+        // failure: no seat on offer is the ordinary case, not an error.
+        const seatsP = fetch(`/api/chain/listings/${encodeURIComponent(slug)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((j) => (j && j.ok && Array.isArray(j.listings) ? j.listings : []))
+          .catch(() => []);
+        void seatsP.then((seats) => {
+          const host = body.querySelector("#chainseat");
+          if (!host || !Array.isArray(seats) || !seats.length) return;
+          const draw = () => {
+            const seat = side ? seats.find((l) => l.side === side) : null;
+            if (!seat) { host.innerHTML = ""; return; }
+            const s = (seat.lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+            host.innerHTML = '<button class="seat" type="button">'
+              + "<b>Take a seat instead</b>"
+              + `<span>${s} SOL of ${String(seat.side).toUpperCase()}, at face. The pool does not grow, so your share is bigger.</span>`
+              + "</button>";
+            host.querySelector(".seat").onclick = () => void takeSeat(body, slug, seat);
+          };
+          draw();
+          sideBtns.forEach((b) => b.addEventListener("click", draw));
+          const sw = body.querySelector(".chain-swap");
+          if (sw) sw.addEventListener("click", () => setTimeout(draw, 0));
+        }).catch(() => {});
+      } catch { /* an extra that cannot be drawn is not a reason to break the sheet */ }
 
       /* TEK TIK: sayfa zaten sordu, biz bir daha sormuyoruz.
          Kosullar dar ve hepsi zorunlu:
