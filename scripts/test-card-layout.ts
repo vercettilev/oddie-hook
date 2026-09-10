@@ -428,8 +428,8 @@ console.log("\nthe profile card is postable for a post-pivot user");
   const ruleFS = Number(svg.match(/font-size="(\d+)"[^>]*>A YES OR NO/)?.[1] ?? 0);
   const askY = Number(svg.match(/<text x="\d+" y="(\d+)"[^>]*>tag @/)?.[1] ?? 0);
   check("...and the sentence clears the ask underneath it",
-    ruleFS > 0 && askY > 0 && 252 + 2 * Math.round(ruleFS * 0.98) + 12 < askY,
-    `fs=${ruleFS} lastBaseline=${252 + 2 * Math.round(ruleFS * 0.98)} ask=${askY}`);
+    ruleFS > 0 && askY > 0 && 228 + 2 * Math.round(ruleFS * 0.98) + 12 < askY,
+    `fs=${ruleFS} lastBaseline=${228 + 2 * Math.round(ruleFS * 0.98)} ask=${askY}`);
 
   // The marked word is painted over its own line as a second run. Its x has to
   // be the MEASURED offset of that word, not the line's own x.

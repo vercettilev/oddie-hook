@@ -49,9 +49,11 @@ const PAD_L = 70;
 const CREAM = "#FBFCF4";
 
 /** Where the lime ends and the black begins, before the tear displaces it.
- *  High, because the lime field now carries only the lockup: the sentence is
- *  the card and it takes the room. */
-const SEAM_Y = 150;
+ *  High, because the lime field carries only the lockup and the sentence is the
+ *  card. It was 150 and the band was pressing down on the type: a field that
+ *  holds one word of wordmark does not need a third of the artboard, and every
+ *  pixel it gives back goes into the only thing anybody reads. */
+const SEAM_Y = 118;
 const DECKLE = 12;
 /** The teeth swing about half of this. 54 across 1440 on the landing is 1.9% of
  *  the width; 40 across 1000 is the same rip at this size. */
@@ -106,9 +108,9 @@ export function renderTeachCard(): string {
      so the widest line cleared the margin long before the block cleared the
      space under the seam. The ladder tops out at what three rows actually fit
      between the tear and the ask. */
-  const fs = fitDisplay(RULE, W - PAD_L * 2 - 40, [84, 78, 72, 66]);
+  const fs = fitDisplay(RULE, W - PAD_L * 2 - 40, [96, 90, 84, 78, 72]);
   const step = Math.round(fs * 0.98);
-  const top = 252;
+  const top = 228;
 
   // The marked word is painted OVER its own line rather than the line being cut
   // into runs: one run keeps the shaping and the advance widths identical to
