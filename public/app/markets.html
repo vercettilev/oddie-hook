@@ -479,9 +479,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        thing nobody has seen yet is a toll on curiosity.
        So the list loads for everybody and the ask is appended UNDER it, where
        it is read by somebody who now knows what the product is. */
-    loadMarkets();
-    if (XGATE && me && !hasX && !skipped) xgate();
-    return;
+    var listed = loadMarkets();
+    if (XGATE && me && !hasX && !skipped) listed.then(xgate);
+    return listed;
   });
 
   /* The opener, as a person: a pill that leaves for their X profile. encodeURI
@@ -506,7 +506,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   }
 
   function loadMarkets() {
-  fetch("/api/v1/markets?limit=50")
+  /* RETURNS THE PROMISE. It did not, and the first caller that needed to append
+     something after the list silently lost it: this function ASSIGNS
+     view.innerHTML when the fetch resolves, so a gate appended while the
+     request was still in flight was overwritten a moment later, with no error
+     and nothing in the console. A render that owns a container has to be
+     awaitable or nothing can ever be put next to what it draws. */
+  return fetch("/api/v1/markets?limit=50")
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
     .then(function (j) {
       if (!j.ok) throw new Error("bad response");

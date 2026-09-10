@@ -169,6 +169,24 @@ for (const f of shells) {
     /display:\s*block/.test(quiet), quiet);
 }
 
+/* ------------------------- a render that owns a container must be awaited -- */
+// loadMarkets ASSIGNS view.innerHTML when its fetch resolves. The first change
+// that needed to put something beside the list appended the X ask and then
+// watched it vanish a moment later, silently: no error, nothing in the console,
+// the element simply overwritten by the render it was racing. It was only found
+// by reading the live DOM on a phone-width browser.
+{
+  const src = readFileSync("public/app/markets.html", "utf8");
+  check("loadMarkets hands back its promise, so anything can be drawn after it",
+    /function loadMarkets\(\)\s*\{(?:\s*\/\*[\s\S]*?\*\/)?\s*return fetch\(/.test(src));
+  check("...and the X ask waits for it rather than racing it",
+    /loadMarkets\(\);?[\s\S]{0,200}?\.then\(xgate\)/.test(src) || /listed\.then\(xgate\)/.test(src));
+  // Appended, never assigned: an assignment here would wipe the list it is
+  // supposed to sit under, which is the same collision in the other direction.
+  check("the X ask is appended under the markets, not written over them",
+    /view\.appendChild\(/.test(src) && !/view\.innerHTML\s*=\s*'<div class="gate"/.test(src));
+}
+
 console.log(failures === 0
   ? "\nall money-stylesheet checks passed.\n"
   : `\n${failures} money-stylesheet check(s) FAILED.\n`);
