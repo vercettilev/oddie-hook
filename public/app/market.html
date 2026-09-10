@@ -982,3 +982,17 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   });
 })();
 </script>
+<script>
+/* NOBODY HAS BEEN RIGHT YET, SO DO NOT SEND ANYONE TO LOOK.
+   The board is a list of settled calls and no market has ever settled, so its
+   only possible content today is one sentence saying so. The server stamps
+   oddie-noboard when it knows the count is zero; unknown leaves the link alone,
+   because hiding a board that has real names on it is the worse mistake.
+   The link, not the page: /board still answers, so a shared link keeps working
+   and the moment the first market settles the item comes back on its own. */
+(function(){
+  if (!document.querySelector('meta[name="oddie-noboard"]')) return;
+  var a = document.querySelector('.top a[href="/board"], nav a[href="/board"], a[href="/board"]');
+  if (a) a.hidden = true;
+})();
+</script>

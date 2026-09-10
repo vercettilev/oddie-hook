@@ -126,7 +126,17 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .load{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--fg-3);padding:40px 0}
 .err{border:3px solid var(--pink);padding:15px 17px;font-size:14px;color:var(--cream)}
-@media (max-width:460px){ .sides{grid-template-columns:1fr} }
+/* THE PAIR STAYS A PAIR. Stacking these put two 80px slabs down the page and
+   turned one binary choice into two separate buttons; measured at 375px, each
+   was 286 wide and 80 tall, and the pool figure above them was smaller than
+   either. Side by side is what says "two sides of one thing", and at 375px the
+   pair still gets 138px each, which is far past a comfortable target. What
+   gives instead is the type and the padding. */
+@media (max-width:460px){
+  .sides{grid-template-columns:1fr 1fr;gap:8px}
+  .side{font-size:19px;padding:13px 6px 14px}
+  .side small{font-size:9px;letter-spacing:.06em;margin-top:5px}
+}
 
 /* ---- brand: a movement, not a terminal ---- */
 .mark{display:inline-flex;align-items:center;gap:10px}
@@ -264,9 +274,10 @@ h1{color:var(--cream)}
    -- the same collision that once made .chain-amt unhideable. */
 .season{display:flex;align-items:center;justify-content:center;gap:10px;
   background:var(--pink);color:var(--cream);text-decoration:none;
-  font-family:var(--display);font-weight:400;font-size:clamp(15px,2.6vw,19px);
-  letter-spacing:.04em;text-transform:uppercase;padding:11px 16px 9px;
-  border-bottom:3px solid var(--black);position:relative;z-index:2}
+  font-family:var(--display);font-weight:400;font-size:clamp(14px,2.4vw,17px);
+  letter-spacing:.04em;text-transform:uppercase;padding:13px 16px 11px;
+  border:3px solid var(--black);box-shadow:6px 7px 0 var(--pink-deep);
+  margin:26px 0 34px;position:relative;z-index:2}
 .season[hidden]{display:none}
 .season img{width:26px;height:26px;transform:rotate(-8deg)}
 .season:hover{background:var(--pink-deep);color:#fff}
@@ -359,12 +370,17 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      Genesis starts". Saying what Genesis IS costs nothing and cannot go stale;
      saying it is live is a fact about today, and facts about today have to be
      true. 5 is GENESIS_TICKETS in src/genesis/season.ts. -->
-<a class="season" id="season" href="/genesis" hidden>Genesis: 5 tickets to open markets<img src="/brand/st-rocket.webp" alt=""></a>
-
 <main class="wrap">
   <h1>Open markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
   <p class="sub" id="sub">Every market started as a tweet.</p>
   <div id="view"><p class="load">Loading markets…</p></div>
+  <!-- MOVED OUT FROM ABOVE THE MASTHEAD. It was a full-bleed pink band sitting
+       over the product on every page: the loudest object on the screen, in the
+       first position, saying "5 tickets" to somebody who does not yet know what
+       a market is. Tickets are the right offer to the WRONG reader up there.
+       Down here it is read by somebody who has seen the list, which is the only
+       point at which "you can open one of these" means anything. -->
+  <a class="season" id="season" href="/genesis" hidden>Genesis: 5 tickets to open markets<img src="/brand/st-rocket.webp" alt=""></a>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
@@ -417,30 +433,31 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
-    document.getElementById("sub").textContent = "Every market started as a tweet.";
     var chip = document.querySelector(".top .mechip");
-    if (chip) chip.hidden = true;
     /* THE DECISION, NOT A PARAGRAPH ABOUT IT.
        This asked somebody to read 13 words of 15px body text at 68% opacity
        before it showed them a button, on the app's front door. The reason
        belongs ON the control that acts on it, which is the pattern the genesis
        page already uses, and the promise is the concrete one: without X you
        are a base58 address on the board, with it you are your handle. */
-    view.innerHTML = '<div class="gate">'
-      + '<img class="gsticker" src="/brand/st-called.webp" alt="">'
+    // Appended, never assigned: loadMarkets() has already written the list and
+    // this sits under it. There is no "just show me the markets" button any
+    // more, because the markets are already on the screen; what is left is a
+    // way to put the ask away.
+    var g = document.createElement("div");
+    g.className = "gate";
+    g.innerHTML = '<img class="gsticker" src="/brand/st-called.webp" alt="">'
       + '<a class="big big--2l" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">'
       + '<span class="big__main">Continue with X</span>'
       + '<small>Your name on the board, not a wallet address</small></a>'
-      + '<button class="later" id="later" type="button">Just show me the markets</button>'
-      + "</div>";
+      + '<button class="later" id="later" type="button">Not now</button>';
+    view.appendChild(g);
     // Skipping is a first-class outcome, not a failure. Remembered for a week
     // on the cross-host cookie so the next page is not the same question; the
     // ask comes back where it pays, after a call lands.
     document.getElementById("later").addEventListener("click", function () {
       if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
-      document.getElementById("sub").textContent = "Every market started as a tweet.";
-      if (chip) chip.hidden = false;
-      loadMarkets();
+      g.remove();
     });
   }
 
@@ -454,8 +471,17 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     // than locking out somebody who is connected because a request blinked.
     var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
     var skipped = !!(window.OddieId && window.OddieId.recall && window.OddieId.recall("xlater"));
-    if (XGATE && me && !hasX && !skipped) return xgate();
-    return loadMarkets();
+    /* THE MARKETS COME FIRST, ALWAYS. This used to RETURN xgate(), so a
+       stranger's first screen was a sign-up card and the product was behind it.
+       Three separate asks were stacked above anything worth seeing (the pink
+       CONNECT X in the header, the Genesis strip, and this), and the way past
+       them was a grey two-line link in a corner. A toll gate in front of a
+       thing nobody has seen yet is a toll on curiosity.
+       So the list loads for everybody and the ask is appended UNDER it, where
+       it is read by somebody who now knows what the product is. */
+    loadMarkets();
+    if (XGATE && me && !hasX && !skipped) xgate();
+    return;
   });
 
   /* The opener, as a person: a pill that leaves for their X profile. encodeURI
@@ -659,5 +685,19 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      bunu firlatiyor ve sunucu o an onbellegini birakiyor, yani yeniden
      okuma bu bahsi de iceriyor. market.html ile ayni sozlesme. */
   document.addEventListener("oddie:staked", function () { loadMarkets(); });
+})();
+</script>
+<script>
+/* NOBODY HAS BEEN RIGHT YET, SO DO NOT SEND ANYONE TO LOOK.
+   The board is a list of settled calls and no market has ever settled, so its
+   only possible content today is one sentence saying so. The server stamps
+   oddie-noboard when it knows the count is zero; unknown leaves the link alone,
+   because hiding a board that has real names on it is the worse mistake.
+   The link, not the page: /board still answers, so a shared link keeps working
+   and the moment the first market settles the item comes back on its own. */
+(function(){
+  if (!document.querySelector('meta[name="oddie-noboard"]')) return;
+  var a = document.querySelector('.top a[href="/board"], nav a[href="/board"], a[href="/board"]');
+  if (a) a.hidden = true;
 })();
 </script>

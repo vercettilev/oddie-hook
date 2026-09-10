@@ -174,9 +174,40 @@ const GENESIS_SEASON = (process.env.GENESIS_SEASON ?? "true").toLowerCase() === 
 /** Stamp a shell so its own script knows which season/gate flags are on. Meta
  *  tags rather than body attributes because the shells have no explicit
  *  <body>. Both stamps ride the same charset anchor. */
+/**
+ * HAS ANYBODY EVER BEEN RIGHT?
+ *
+ * "Who was right" is a board of settled calls, and not one market has ever
+ * settled, so today it is a nav item whose only possible content is the
+ * sentence "nobody has been right yet". Sending a first-time visitor there is
+ * sending them to a room we know is empty.
+ *
+ * Cached rather than queried per request: this decides one nav link and it is
+ * on every app page, so it must never put a database round trip in front of a
+ * paint. Refreshed at most once a minute, and once it flips true it stays true
+ * for the life of the process, because settlements do not un-happen.
+ *
+ * UNKNOWN MEANS SHOW IT. A cold cache or a failed query must not hide a board
+ * that has real names on it; the page renders its own honest empty state, so
+ * showing it too early costs a shrug and hiding it too long costs the record
+ * people came for.
+ */
+let anySettled: boolean | null = null;
+let anySettledAt = 0;
+function refreshAnySettled(): void {
+  if (anySettled === true) return;
+  if (Date.now() - anySettledAt < 60_000) return;
+  anySettledAt = Date.now();
+  void settledLedger()
+    .then(({ calls }) => { if (calls.length > 0) anySettled = true; else anySettled = false; })
+    .catch(() => { /* leave it unknown; unknown shows the link */ });
+}
+
 const stampApp = (html: string): string => {
+  refreshAnySettled();
   const metas = (APP_X_GATE ? '\n<meta name="oddie-xgate" content="1">' : "")
-    + (GENESIS_SEASON ? '\n<meta name="oddie-genesis" content="1">' : "");
+    + (GENESIS_SEASON ? '\n<meta name="oddie-genesis" content="1">' : "")
+    + (anySettled === false ? '\n<meta name="oddie-noboard" content="1">' : "");
   return metas ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + metas) : html;
 };
 
