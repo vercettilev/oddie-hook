@@ -171,10 +171,27 @@ const CANNOT_PRICE = [
   "that one didn't have a market in it.",
 ];
 
-/** Deterministic per tweet, so the same post never gets two different answers,
- *  and a timeline seeing several refusals does not see one canned string. */
-export function buildRefusalReply(tweetId: string): string {
-  return pick(CANNOT_PRICE, tweetId);
+/**
+ * Deterministic per tweet, so the same post never gets two different answers,
+ * and a timeline seeing several refusals does not see one canned string.
+ *
+ * THE COUNT IS THE SECOND SENTENCE AND IT EARNS ITS PLACE. Everything else here
+ * was cut to one line, but this one is personal, it is the consequence, and it
+ * is the only thing on the reply that changes if they do this again. It is also
+ * the only number in the product a reader can act on immediately.
+ *
+ * Omitted rather than guessed when the balance is unknown: a season that is not
+ * running, a handle we could not read, a store that failed. A sentence about
+ * somebody's remaining chances has to be true or it must not be said.
+ */
+export function buildRefusalReply(tweetId: string, tagsLeft?: number | null): string {
+  const line = pick(CANNOT_PRICE, tweetId);
+  if (tagsLeft === null || tagsLeft === undefined) return line;
+  // Zero is not "0 tags left", which reads as a scoreboard. It is the end of
+  // the road and it should say so, because the next tag gets silence and the
+  // person would otherwise never learn why.
+  if (tagsLeft <= 0) return `${line} that was your last tag.`;
+  return `${line} ${tagsLeft} ${tagsLeft === 1 ? "tag" : "tags"} left.`;
 }
 
 export function buildTweetReply(input: TweetReplyInput): TweetReply {

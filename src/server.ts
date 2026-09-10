@@ -52,7 +52,7 @@ import { renderBanner } from "./card/renderBanner.js";
 import { renderGenesisCard } from "./card/renderGenesisCard.js";
 import { classifyArchetype, ARCHETYPE_LABEL, genesisShareLine } from "./genesis/archetype.js";
 import { captureGenesisProfile, genesisProfileByHandle, genesisProfileForDevice, type GenesisProfile } from "./genesis/profileStore.js";
-import { ticketsLeft, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, genesisRoster, genesisOpened, GENESIS_TICKETS } from "./genesis/season.js";
+import { ticketsLeft, spendTicketForMiss, spendTicketForTag, creditFundedBettor, genesisStanding, genesisBoard, genesisRoster, genesisOpened, GENESIS_TICKETS } from "./genesis/season.js";
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
@@ -4404,6 +4404,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     // life of the process rather than per reply: nothing on it is per-tweet.
     teachPng: async () => (teachPngCache ??= renderCardPng(renderTeachCard())),
     refusalsUsed: (handle) => refusalRepliesTo(handle),
+    spendMiss: (tweetId, handle) => spendTicketForMiss(tweetId, handle),
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
     // The Genesis season. A tag is a ticket, checked before the model call and

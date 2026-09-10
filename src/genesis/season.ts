@@ -134,6 +134,70 @@ export async function spendTicketForTag(
 }
 
 /**
+ * A TAG THAT COULD NOT BECOME A MARKET COSTS A TAG.
+ *
+ * It used to cost nothing, on the reasoning that a person should not pay for a
+ * failure they did not understand. The teaching reply is what makes that
+ * reasoning obsolete: they are told exactly what was missing, they keep four
+ * more, and a market that brings a new human hands one back. Five free swings
+ * with an explanation after each is not a punishment.
+ *
+ * Charged whether or not we answer. The reply is capped at two per handle, and
+ * if only answered misses cost anything then everyone past the cap taps a free
+ * opus call forever. This is also the cheapest possible defence: the balance is
+ * checked BEFORE the model call, so somebody who spends their five drops from
+ * about six cents a tag to a tenth of one.
+ *
+ * Keyed on the TWEET, because there is no market to key on. Same ledger, same
+ * lock, different dedup namespace: a miss and a mint can never collide.
+ *
+ * Returns what is left AFTER the charge, so the reply can say a true number
+ * instead of a plausible one.
+ */
+export async function spendTicketForMiss(
+  tweetId: string, rawTagger: string,
+): Promise<{ spent: boolean; left: number }> {
+  const handle = norm(rawTagger);
+  if (!validHandle(handle) || !tweetId) return { spent: false, left: 0 };
+  const key = `miss:${tweetId}`;
+
+  if (!STORE_PERSISTENT) {
+    if (memLog.some((l) => l.dedupKey === key)) return { spent: false, left: memBalance(handle) };
+    if (memBalance(handle) <= 0) return { spent: false, left: 0 };
+    memLog.push({ handle, delta: -1, reason: "miss", dedupKey: key });
+    return { spent: true, left: Math.max(0, memBalance(handle)) };
+  }
+
+  await storeSchema();
+  const client = await storeDb().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`genesis:${handle}`]);
+    const bal = await client.query<{ bal: string }>(
+      `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log WHERE handle = $1`,
+      [handle, GENESIS_TICKETS],
+    );
+    const before = Number(bal.rows[0]?.bal ?? GENESIS_TICKETS);
+    if (before <= 0) { await client.query("COMMIT"); return { spent: false, left: 0 }; }
+    const ins = await client.query(
+      `INSERT INTO genesis_ticket_log (handle, delta, reason, dedup_key)
+       VALUES ($1, -1, 'miss', $2) ON CONFLICT (dedup_key) DO NOTHING`,
+      [handle, key],
+    );
+    await client.query("COMMIT");
+    // A second sweep over the same tweet must not charge twice and must not
+    // report a number that moved when nothing did.
+    const charged = (ins.rowCount ?? 0) > 0;
+    return { spent: charged, left: Math.max(0, charged ? before - 1 : before) };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * A real-money bet just landed. If this wallet has never funded anything
  * before, it is a NEW HUMAN and the person whose market got them in is
  * credited: +1 on the board, and +1 ticket back if they are under the cap.

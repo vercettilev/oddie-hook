@@ -203,6 +203,73 @@ async function main() {
     check("a resolvable but inappropriate claim is refused too", spy.minted.length === 0 && spy.posted.length === 0);
   }
 
+  /* ------------------------------------------- a miss costs a tag ---------- */
+  // It used to cost nothing, and the reply is capped at two per handle, so
+  // everybody past the cap tapped a free opus call forever. The charge sits
+  // above the cap for exactly that reason.
+  {
+    _resetBotState();
+    const spent: string[] = [];
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("700")], newestId: "700" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 4 }; },
+    });
+    await runMentionSweep(deps);
+    check("a tag that missed costs a tag", spent.length === 1 && spent[0] === "700", spent.join(","));
+    check("...and the reply says how many are left, truthfully",
+      Boolean(spy.posted[0]?.text.includes("4 tags left")), spy.posted[0]?.text);
+  }
+  {
+    // Past the cap there is no reply, and that is precisely when a free tag
+    // would be exploitable, so the charge still happens.
+    _resetBotState();
+    const spent: string[] = [];
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("710")], newestId: "710" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => TEACH_CAP,
+      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 3 }; },
+    });
+    await runMentionSweep(deps);
+    check("a silent miss is charged too", spent.length === 1, spent.join(","));
+    check("...and still says nothing", spy.posted.length === 0);
+  }
+  {
+    // A refusal on content is not a mistake they can fix, and we never explain
+    // it. Charging silently for a judgement we will not defend is unfair.
+    _resetBotState();
+    const spent: string[] = [];
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("720")], newestId: "720" }),
+      extract: async () => ({ ...goodExtraction("Will X be fired?"), appropriate: false }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 4 }; },
+    });
+    await runMentionSweep(deps);
+    check("an inappropriate tag is never charged", spent.length === 0, spent.join(","));
+    check("...and never answered", spy.posted.length === 0);
+  }
+  {
+    // The last one says so. Silence is what comes next and nothing else would
+    // tell them why.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("730")], newestId: "730" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      spendMiss: async () => ({ spent: true, left: 0 }),
+    });
+    await runMentionSweep(deps);
+    check("spending the last tag says so instead of printing a zero",
+      Boolean(spy.posted[0]?.text.includes("that was your last tag")), spy.posted[0]?.text);
+  }
+
   /* -------------------------------------------------- the gate teaches once */
   // The gate stays silent above because those harnesses carry no teachPng, which
   // IS the contract: teaching is opt-in and its absence must behave exactly as

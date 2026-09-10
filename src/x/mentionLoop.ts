@@ -66,6 +66,9 @@ export interface SweepDeps {
   teachPng?(): Promise<Buffer | null>;
   /** How many teaching replies this handle has already had. */
   refusalsUsed?(handle: string | null): Promise<number>;
+  /** Charge a tag that could not become a market, and report what is left.
+   *  Optional, so a caller that never heard of the season behaves as before. */
+  spendMiss?(tweetId: string, handle: string): Promise<{ spent: boolean; left: number }>;
   uploadMedia(png: Buffer): Promise<string>;
   postReply(opts: { text: string; inReplyTo: string; mediaIds?: string[] }): Promise<{ id: string }>;
   /** Our own handle, without the @. Used only to strip routing out of the
@@ -276,6 +279,22 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         // under a post we refused on content grounds that reads as anything but
         // oddie commenting on it, and the reason is recorded where we can read
         // it instead.
+        /* A TAG THAT MISSED COSTS A TAG, answered or not.
+           Answered or not is the part that matters: the reply is capped at two
+           per handle, so if only answered misses cost anything then everybody
+           past the cap taps a free opus call forever. Charged here, before the
+           cap is consulted, and it is the cheapest defence there is - the
+           balance is checked before the model call, so somebody who spends
+           their five drops from about six cents a tag to a tenth of one.
+           NOT for an inappropriate tag. That is a refusal on content, we say
+           nothing at all about it, and a silent charge for a judgement we will
+           not explain is the one version of this that is unfair. */
+        let tagsLeft: number | null = null;
+        if (ex.appropriate && deps.spendMiss && m.authorHandle) {
+          const r = await deps.spendMiss(m.id, m.authorHandle).catch(() => null);
+          if (r) tagsLeft = r.left;
+        }
+
         const teachPng = deps.teachPng;
         if (!ex.appropriate || !teachPng) {
           await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}${ex.appropriate ? "" : "/inappropriate"}` });
@@ -297,7 +316,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
           continue;
         }
 
-        const teachText = buildRefusalReply(m.id);
+        const teachText = buildRefusalReply(m.id, tagsLeft);
         if (deps.dryRun) {
           await settleMention(m.id, "skipped", { reason: "dry-run" });
           decide("skipped", { reason: "dry-run:teach", text: teachText });
