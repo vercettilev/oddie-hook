@@ -129,6 +129,9 @@
   [data-view="how"] #loop::after{display:none}
   [data-view="how"] #loop{padding-top:clamp(28px,3.6vw,54px)}
   .how-only{margin-top:clamp(26px,3.4vw,46px)}
+  /* Quiet on purpose: it is a reassurance, not an offer, and it must never
+     compete with the count it sits under. */
+  .backnote{margin:10px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink-3,#6E7450);max-width:44ch}
 
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -804,6 +807,17 @@
             <div class="stat"><b>#184</b><span>rank</span></div>
             <div class="stat"><b>7</b><span>people who bet</span></div>
           </div>
+          <!-- THE COUNTERWEIGHT, NEXT TO THE COUNT.
+               This rule was filed under "the rest of the rules", in the how
+               view, as the fourth bullet, and that was the right place for it
+               while a ticket could only be spent by SUCCEEDING. It is not any
+               more: a tag that fails to become a market now costs one too, so
+               the number above can go down without anything to show for it, and
+               a count that only falls is a countdown. The way back up has to be
+               readable from the same glance as the number, or the mechanic
+               reads as a penalty and people stop tagging rather than aim
+               better - which is the opposite of why it was made to cost. -->
+          <p class="backnote">A spent ticket comes back when a new person bets on a market you opened.</p>
           <!-- Bilet X'TE harcanir, burada degil; butonun isi seni en az
                surtunmeyle composer'a birakmak. Eski hali once bir modal acip
                link YAPISTIRTIYORDU — tam da "genesis'in hizini keser" diye
@@ -923,7 +937,6 @@
             <li>You get a point for people who are new to Oddie. Each person counts once, ever.</li>
             <li>Your own wallet never counts. Bet size does not matter.</li>
             <li>Oddie decides how it will be judged, and writes your reply.</li>
-            <li>A spent ticket comes back when a new person bets on your market.</li>
           </ul>
         </div>
 
