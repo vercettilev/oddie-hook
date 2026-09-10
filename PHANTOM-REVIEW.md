@@ -1,10 +1,11 @@
 # Phantom dApp Review, hazır cevaplar
 
-Form: https://docs.google.com/forms/d/1JgIxdmolgh_80xMfQKBKx9-QPC7LRdN6LHpFFW8BlKM/viewform
+Form: https://docs.google.com/forms/d/e/1FAIpQLSeoSDtQc9CEHG-dC2EUO6ZkDCaFQXq3M92M1csH4WrdCCW-QQ/viewform
 
-**Göndermeden önce oku:** zorunlu "Transaction Link" alanı tamamlanmış bir işlem istiyor.
-Başarısız bir işlemin linkini vermek, incelemecinin taradığı şeyin kanıtını sunmak olur.
-Önce bir tane temiz işlem üret (aşağıda "Transaction Link" bölümü), sonra gönder.
+(Eski `/forms/d/1JgIxdmolgh.../viewform` adresi buraya 301 veriyor; ikisi de aynı forma çıkıyor.)
+
+Zorunlu "Transaction Link" alanı tamamlanmış bir işlem istiyordu ve artık elimizde var:
+mainnet'te, kullanıcının kendi cüzdanının imzaladığı, başarılı bir bahis. Aşağıda.
 
 ---
 
@@ -37,7 +38,7 @@ Main surfaces: a feed of live markets, a stake sheet, a claim flow for winners, 
 creator fee collection flow for the person who started the market.
 
 Program id: 3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu
-Currently deployed on devnet. Mainnet deploy is next.
+Deployed and live on mainnet-beta, with real SOL staked.
 ```
 
 ## dApp website URL
@@ -60,21 +61,21 @@ https://oddie.fun
 
 ## Transaction Link
 
-**Bu alan için önce bir işlem gerekiyor.** Şu an elimizde temiz bir tane yok, sebebi ve
-çözümü aşağıda. Üretince Solscan linkini buraya koy:
-
 ```
-https://solscan.io/tx/<signature>?cluster=devnet
+https://solscan.io/tx/4RDF2VcJHWZ1WmdBBt9aLgyWjBZcfLnPEPy2s6ugwKDf9kw4tEJQ2eNCWyUdjJnrRJnDPEufxa9XxRzV6BUCUPhM
 ```
 
-Nasıl üretilir:
-1. Phantom'u devnet'e al (Settings, Developer Settings, Change Network, Devnet)
-2. Devnet SOL al (https://faucet.solana.com)
-3. oddie.fun/feed üzerinden bir markete bahis koy
-4. İşlem başarılı olunca Solscan linkini al
+Mainnet, 8 Eylül 2026, başarılı. 0.1 SOL'lük bir YES pozisyonu: kullanıcının kendi
+cüzdanı imzaladı, `oddie_chain` programını çağırdı, pozisyon hesabını açtı ve parayı
+market vault'una taşıdı. `?cluster=` eki YOK, çünkü mainnet.
 
-Mainnet'e geçtikten sonra doldurmayı tercih edersen, o zaman `?cluster=devnet` ekini
-kaldır. Mainnet işlemi daha güçlü bir kanıt olur.
+Bu alanın neden bu kadar önemli olduğu: incelemeciye "uyarıyı kaldırın" demiyoruz,
+tarayıcısının taradığı şeyin temiz olduğunu gösteriyoruz. Devnet linki bunu yapmaz,
+başarısız bir işlem linki ise tam tersini yapar.
+
+İlgili diğer imzalar, sorulursa:
+- Market açılışı: `5h6GLLDPxW96bUpMwYrz6vMXLXimjDNJZAUfut9LovL73t3zfQgHMUivHFuwsmgcPFqm5iB2CiH6Wnd6fJ8bovWK`
+- Hesap düzeni göçü: `2s4J2gxZHWZjM3qg9EgfzeJhMgZWE6KbuBPXB24pktuX35GJ3fwQnvp3BZxC37U1K2x3twso8a9nf46b5LbcUCqw`
 
 ## Team Information
 
