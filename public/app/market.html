@@ -347,6 +347,36 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
   pointer-events:none;user-select:none}
 
+/*
+ * THE NAV IS NOT WHAT A STRANGER CAME FOR.
+ *
+ * This page is the only one in the app that people land on cold, from a link in
+ * somebody else's tweet, on a phone. Its job is one decision. The masthead was
+ * spending a whole second row on four links to places nobody has yet been given
+ * a reason to visit - 32px of a 667px screen, above the fold, before the claim.
+ *
+ * Hidden rather than deleted, and moved rather than dropped: the links are real
+ * and somebody who has just bet may well want them. They belong AFTER the thing
+ * the page exists for. "All markets" is already at the top of the content,
+ * which is the one navigational affordance this page owes a visitor.
+ *
+ * Phone only. Above 640px the masthead row never wrapped and the links cost
+ * nothing, so there a second copy at the foot would only be noise.
+ */
+.foot{display:none}
+@media (max-width:640px){
+  .top nav{display:none}
+  .foot{
+    display:flex;flex-wrap:wrap;gap:10px 18px;
+    margin:26px auto 0;padding-top:18px;
+    border-top:1px solid var(--line);
+  }
+  .foot a{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--fg-3);text-decoration:none}
+  .foot a:hover{color:var(--fg)}
+  .foot a[hidden]{display:none}
+}
+
 /* One sticker per moment, never the same one twice: the pool is wide enough
    that reusing a single mascot everywhere is a wasted vocabulary. */
 .hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
@@ -504,6 +534,17 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 <main class="wrap">
   <div id="view"><p class="load">Loading the market…</p></div>
 </main>
+<!-- THE NAV, AFTER THE THING YOU CAME FOR.
+     Phone only: above 640px the masthead still carries it and a second copy
+     would be noise. Under it, the masthead's row costs 32px of the one screen
+     a stranger from a tweet ever sees, to offer four places to go before they
+     have been given a reason to go anywhere. -->
+<nav class="foot wrap" aria-label="Site">
+  <a href="/markets">Markets</a>
+  <a href="/board">Who was right</a>
+  <a href="/profile">Profile</a>
+  <a href="/genesis">Genesis</a>
+</nav>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <!-- The money sheet chain.js builds. Linked rather than inlined: nothing in
@@ -1099,7 +1140,12 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    and the moment the first market settles the item comes back on its own. */
 (function(){
   if (!document.querySelector('meta[name="oddie-noboard"]')) return;
-  var a = document.querySelector('.top a[href="/board"], nav a[href="/board"], a[href="/board"]');
-  if (a) a.hidden = true;
+  // ALL of them, not the first. The market page carries a second copy of the
+  // nav at the foot now (the masthead's is gone on a phone), and a singular
+  // query hid the one at the top and left the one at the bottom pointing at an
+  // empty board. Every page gets the plural form, because the next page to grow
+  // a second link should not have to rediscover this.
+  var links = document.querySelectorAll('.top a[href="/board"], nav a[href="/board"], a[href="/board"]');
+  Array.prototype.forEach.call(links, function (a) { a.hidden = true; });
 })();
 </script>
