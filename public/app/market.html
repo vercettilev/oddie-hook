@@ -880,17 +880,24 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     if (src === "unreadable") {
       html += '<div class="pool pool--quiet"><div class="pool__n">Can\'t read this pool.</div>'
         + '<div class="pool__k">Your money is safe. Try again in a moment.</div></div>';
-    } else if (!m.onchain) {
+    } else if (!m.onchain || src === "unpriced" || !m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
       /* AN EMPTY POOL IS AN OPPORTUNITY, AND IT WAS DRAWN AS AN OBITUARY.
          "Nobody's in yet" is a sentence about absence, on the tallest cream
          card of the page, directly above the buttons it is meant to feed. Two
          faults in one block: it spends the most space on the least news, and
          it names the thing missing rather than the thing on offer. The pool
          being empty is exactly what makes the next tap worth taking -- first
-         money in owns the price -- so it is one line, and it says that. */
-      html += '<p class="first"><img src="/brand/st-rocket.webp" alt="">'
-        + "<b>First bet</b> opens this on Solana.</p>";
-    } else if (src === "unpriced" || !m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
+         money in owns the price -- so it is one line, and it says that.
+         ONE LINE, NOT TWO, and the split that used to be here was ours rather
+         than theirs. A market with no account yet said "first bet opens this on
+         Solana" and a minted one with an empty vault said "first one in sets
+         the odds" - the same fact to whoever is reading, told once as a
+         sentence about them and once as a status report about our own
+         plumbing. Lazy minting is invisible to a bettor: oddie's key signs the
+         mint, server side, and the first staker pays nothing for it and signs
+         nothing extra. There is no version of that they can act on, and the
+         screen where somebody is deciding to risk money is the last place to
+         narrate our deployment. */
       html += '<p class="first"><img src="/brand/st-rocket.webp" alt="">'
         + "<b>First one in</b> sets the odds.</p>";
     } else {
