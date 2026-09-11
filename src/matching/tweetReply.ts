@@ -104,6 +104,11 @@ export interface TweetReplyInput {
   /** Optional short teaser above the question (e.g. "PSG or not?"). Included only
    *  when the whole reply still fits under the limit with the FULL question. */
   hook?: string;
+  /** What this tag left the tagger, AFTER it was paid for. Omitted rather than
+   *  guessed when there is no season running or the ledger could not be read:
+   *  a sentence about somebody's remaining chances has to be true or it must
+   *  not be said at all. */
+  tagsLeft?: number | null;
   // Retained for caller compatibility only — the copy no longer varies by odds,
   // market state, or close date, so none of these affect the output.
   yesPct?: number;
@@ -184,25 +189,42 @@ const CANNOT_PRICE = [
  * running, a handle we could not read, a store that failed. A sentence about
  * somebody's remaining chances has to be true or it must not be said.
  */
-export function buildRefusalReply(
-  tweetId: string, tagsLeft?: number | null, lastExplanation = false,
-): string {
+export function buildRefusalReply(tweetId: string, tagsLeft?: number | null): string {
   const line = pick(CANNOT_PRICE, tweetId);
   if (tagsLeft === null || tagsLeft === undefined) return line;
-  // Zero is not "0 tags left", which reads as a scoreboard. It is the end of
-  // the road and it should say so, because the next tag gets silence and the
-  // person would otherwise never learn why.
+  /* THE COUNTDOWN IS THE WHOLE WARNING, so there is no longer a warning clause.
+     There used to be one ("and this is the last one i'll explain"), because
+     replies were capped at two per handle while a miss cost a tag answered or
+     not, and somebody had to be told that the charges would outlive the
+     conversation. They do not any more: a tag buys a reply and a reply spends a
+     tag, so this number IS how many answers are left, and the fifth one says so
+     in plain words instead of promising a silence three tags early. */
   if (tagsLeft <= 0) return `${line} that was your last tag.`;
-  const n = `${tagsLeft} ${tagsLeft === 1 ? "tag" : "tags"} left`;
-  /* THE WARNING GOES ON THE LAST ONE WE ANSWER.
-     Replies are capped per handle, and misses cost a tag whether or not we
-     answer. Those two rules together were quietly charging somebody three more
-     times after we stopped speaking to them - which is the exact thing this
-     file refuses to do to an inappropriate tag, done to a spammer instead.
-     Nobody is charged in silence without being told that silence is what comes
-     next. One clause, on the one reply where it is still true. */
-  if (lastExplanation) return `${line} ${n}, and this is the last one i'll explain.`;
-  return `${line} ${n}.`;
+  return `${line} ${tagsLeft} ${tagsLeft === 1 ? "tag" : "tags"} left.`;
+}
+
+/**
+ * THE SAME COUNT, UNDER A MARKET THAT ACTUALLY OPENED.
+ *
+ * The refusal reply can leave the count bare because the sentence above it is
+ * written in the first person and the reader is obviously the person being
+ * answered. A success reply has no such sentence: it is question, call to
+ * action, link, read by the whole thread, and a naked "4 tags left" hanging off
+ * the bottom of it could as easily be read as a property of the market. So this
+ * one is addressed.
+ *
+ * AND IT IS THE ONE PLACE THE REFUND RULE CAN BE SAID. Tickets come back - one
+ * per new wallet that bets, up to the five you started with - and until now
+ * that was written down nowhere a tagger would ever see it. Under a market they
+ * just opened, "one new bettor here" is not a rule being explained, it is an
+ * instruction they can act on in the next ten seconds, so it rides only on the
+ * two replies where it is urgent: the last tag, and the one before it.
+ */
+export function tagsLeftLine(tagsLeft: number): string {
+  const back = "one new bettor here brings it back.";
+  if (tagsLeft <= 0) return `that was your last tag. ${back}`;
+  if (tagsLeft === 1) return `you have 1 tag left. ${back}`;
+  return `you have ${tagsLeft} tags left.`;
 }
 
 export function buildTweetReply(input: TweetReplyInput): TweetReply {
@@ -221,7 +243,16 @@ export function buildTweetReply(input: TweetReplyInput): TweetReply {
   // caller has no live price rather than invented.
   const yes = Number.isFinite(input.yesPct) ? Math.max(1, Math.min(99, Math.round(input.yesPct as number))) : null;
   const odds = yes === null ? "" : `\n\nmarket says ${yes}% yes. you?`;
-  const suffix = `${odds}\n\n${cta} ↓\n${link}`;
+  /* THE COUNT IS PART OF THE SUFFIX, not an optional extra like the hook, and
+     that placement is the whole point: fit() protects the suffix and trims the
+     QUESTION, so a very long claim loses its tail before this line does.
+     Backwards from how the rest of this file ranks things, on purpose. The hook
+     is a flourish and gives way first; the count is the only thing in the reply
+     that is owed to anybody, because the tag it describes was just charged for.
+     A reply that quietly spends somebody's ticket and has no room left to
+     mention it is the exact failure two commits went into removing. */
+  const tail = typeof input.tagsLeft === "number" ? `\n\n${tagsLeftLine(input.tagsLeft)}` : "";
+  const suffix = `${odds}\n\n${cta} ↓\n${link}${tail}`;
   const hook = (input.hook ?? "").trim();
 
   // The hook rides on top ONLY if the whole reply — hook + the FULL (untruncated)

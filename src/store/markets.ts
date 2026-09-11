@@ -6014,6 +6014,37 @@ export async function refusalRepliesTo(handle: string | null): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
+/**
+ * HAVE WE ALREADY POINTED THIS HANDLE AT THIS MARKET?
+ *
+ * Several people tagging the same hot take is the distribution model, so the
+ * branch that answers them stays free and uncapped by design. The SAME person
+ * tagging the same post ten times is a different thing entirely, and it used to
+ * get ten near-identical replies out of us: the one path in the sweep with no
+ * per-handle bound of any kind, posting exactly the shape X's automation policy
+ * names as duplicative.
+ *
+ * Bounded here instead of by charging a ticket, because the forty strangers who
+ * amplified one take did nothing wrong and taxing them would price the
+ * behaviour we want. One answer per person per market; the second tag is
+ * silence.
+ */
+export async function toldAboutMarket(handle: string | null, slug: string): Promise<boolean> {
+  if (!handle || !slug) return false;
+  const h = handle.replace(/^@/, "").toLowerCase();
+  if (!PERSISTENT) {
+    return [...memMentions.values()].some((m) => (m.author ?? "").replace(/^@/, "").toLowerCase() === h
+      && m.slug === slug && m.outcome === "replied");
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM x_mention
+      WHERE lower(ltrim(author, '@')) = $1 AND slug = $2 AND outcome = 'replied'`,
+    [h, slug],
+  );
+  return (rows[0]?.n ?? 0) > 0;
+}
+
 export async function claimMention(tweetId: string, author: string | null): Promise<boolean> {
   if (!PERSISTENT) {
     if (memMentions.has(tweetId)) return false;

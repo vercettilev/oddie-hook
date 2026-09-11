@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
-import { refusalRepliesTo } from "./store/markets.js";
+import { refusalRepliesTo, toldAboutMarket } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
 import { adoptSurfacedMarkets, recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
@@ -4405,10 +4405,11 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     teachPng: async () => (teachPngCache ??= renderCardPng(renderTeachCard())),
     refusalsUsed: (handle) => refusalRepliesTo(handle),
     spendMiss: (tweetId, handle) => spendTicketForMiss(tweetId, handle),
+    alreadyTold: (handle, slug) => toldAboutMarket(handle, slug),
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
-    // The Genesis season. A tag is a ticket, checked before the model call and
-    // charged only once the market exists.
+    // The Genesis season. A reply is a ticket: the balance is read before any
+    // of the expensive work and charged only once the reply has gone out.
     ticketsLeft: (handle) => ticketsLeft(handle),
     spendTicket: (slug, tagger, source) => spendTicketForTag(slug, tagger, source),
     baseUrl: APP_BASE_URL, // the app host: the bot's link must not 301 through the apex

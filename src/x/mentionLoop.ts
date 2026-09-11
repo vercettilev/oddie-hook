@@ -64,11 +64,17 @@ export interface SweepDeps {
    * behaves exactly as it did before.
    */
   teachPng?(): Promise<Buffer | null>;
-  /** How many teaching replies this handle has already had. */
+  /** How many teaching replies this handle has already had. Only consulted when
+   *  there is no season wired at all; with tickets running, the ticket book IS
+   *  the cap. */
   refusalsUsed?(handle: string | null): Promise<number>;
-  /** Charge a tag that could not become a market, and report what is left.
-   *  Optional, so a caller that never heard of the season behaves as before. */
+  /** Charge a tag that we answered but could not turn into a market. Called
+   *  AFTER the reply is posted, never before. Optional, so a caller that never
+   *  heard of the season behaves as before. */
   spendMiss?(tweetId: string, handle: string): Promise<{ spent: boolean; left: number }>;
+  /** Have we already pointed this handle at this market? The only bound on the
+   *  branch that answers the second, third and tenth person to tag one post. */
+  alreadyTold?(handle: string, slug: string): Promise<boolean>;
   uploadMedia(png: Buffer): Promise<string>;
   postReply(opts: { text: string; inReplyTo: string; mediaIds?: string[] }): Promise<{ id: string }>;
   /** Our own handle, without the @. Used only to strip routing out of the
@@ -122,12 +128,20 @@ export interface SweepResult {
 export const SWEEP_CAP = 5;
 
 /**
- * How many times one handle is taught before oddie goes quiet on them.
+ * The teaching cap FOR A CALLER WITH NO SEASON WIRED, and nothing else.
  *
- * Small because the downside is asymmetric. A tagger who never gets the recipe
- * costs us one market; an account that replies to every unmarketable tag from
- * the same person gets reported, muted or filtered, and that costs us every
- * market. Two replies is enough to be a lesson and too few to be a habit.
+ * It used to be the live rule, running alongside a second counter that charged
+ * a tag whether or not we answered. Two counters that disagree is one counter
+ * too many: replies stopped at two, charges ran to five, and the gap was three
+ * tags taken in silence. There is one counter now and it is the ticket book —
+ * a reply spends a tag, a tag buys a reply, five of them, and the sixth tag
+ * meets the gate at the top of the sweep before anything reads it.
+ *
+ * This survives for the case where `ticketsLeft` is absent or its ledger threw:
+ * no balance to count down, and something still has to stop us posting under a
+ * stranger's tweet forever. Deliberately far below five, because an unbounded
+ * version of this branch is how an account gets muted, and a muted account ends
+ * the product.
  */
 export const TEACH_CAP = 2;
 
@@ -201,6 +215,33 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
     if (!fresh) { decide("skipped", { reason: "already-decided" }); continue; }
 
     try {
+      /* THE TICKET GATE, AND IT RUNS BEFORE ANYTHING ELSE.
+         A reply costs a tag and silence costs nothing, so at zero tags there is
+         nothing left to buy and no work worth paying for. It sits above the
+         parent read, above the duplicate lookup, above the model call and above
+         the mint: an exhausted handle now costs us nothing at all rather than
+         an X read and a card render.
+         The balance is read ONCE here and carried down, because all three
+         branches below have to print what this tag leaves behind, and reading
+         it again after the charge would print a number one lower than the one
+         the person actually has. */
+      let balance: number | null = null;
+      if (deps.ticketsLeft && m.authorHandle) {
+        // A ledger that throws must never stop the bot answering. Null means
+        // "unknown", which downstream reads as "say no number" rather than as
+        // "say zero" — and the spend itself is what enforces the real floor.
+        balance = await deps.ticketsLeft(m.authorHandle).catch(() => null);
+        if (balance !== null && balance <= 0) {
+          await settleMention(m.id, "skipped", { reason: "no-tickets" });
+          decide("skipped", { reason: "no-tickets" });
+          continue;
+        }
+      }
+      /** What this tag leaves them once it is paid for. Null when no season is
+       *  wired or the ledger could not be read: a sentence about somebody's
+       *  remaining chances has to be true or it must not be said. */
+      const tagsLeft = balance === null ? null : Math.max(0, balance - 1);
+
       // The claim is the tweet being replied to, not the mention. "@oddiefun"
       // under someone's take means "price THAT", and grading the mention text
       // would grade the word "@oddiefun".
@@ -232,6 +273,24 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // a second rent deposit out of our own wallet.
       const already = deps.existingMarket ? await deps.existingMarket(sourceUrl).catch(() => null) : null;
       if (already) {
+        /* ONE ANSWER PER PERSON PER MARKET.
+           This branch stays FREE, and that is a deliberate exception to "a
+           reply costs a tag". Forty people tagging the same hot take is the
+           distribution model rather than an abuse of it: they opened nothing,
+           they earn nothing, and charging each of them a fifth of their season
+           for a pointer would tax the one behaviour we most want. What had to
+           go is the other half of free — unbounded. The same handle tagging the
+           same post ten times got ten near-identical replies out of us, on the
+           only branch in this sweep with no per-handle limit of any kind, in
+           exactly the shape X's automation policy calls duplicative. */
+        if (deps.alreadyTold && m.authorHandle) {
+          const told = await deps.alreadyTold(m.authorHandle, already.slug).catch(() => false);
+          if (told) {
+            await settleMention(m.id, "skipped", { reason: "already-told", slug: already.slug });
+            decide("skipped", { reason: "already-told", slug: already.slug });
+            continue;
+          }
+        }
         const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${already.slug}`;
         const reply = buildTweetReply({ question: already.question, permalink, hook: "" });
         if (deps.dryRun) {
@@ -256,19 +315,6 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         continue;
       }
 
-      // OUT OF TICKETS: checked BEFORE the model call and before the mint, so
-      // an exhausted tagger costs neither an opus call nor a rent deposit.
-      // Silent, like every other gate here, and their own page is where the
-      // balance lives, so there is somewhere honest to go and see it.
-      if (deps.ticketsLeft && m.authorHandle) {
-        const left = await deps.ticketsLeft(m.authorHandle).catch(() => 1);
-        if (left <= 0) {
-          await settleMention(m.id, "skipped", { reason: "no-tickets" });
-          decide("skipped", { reason: "no-tickets" });
-          continue;
-        }
-      }
-
       // Capped for the same reason the admin route caps at 4000: the parent's
       // full text goes into an opus prompt with adaptive thinking, and X's post
       // limit is not our budget. A long-form post was a ~6k-token user message
@@ -279,22 +325,6 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         // under a post we refused on content grounds that reads as anything but
         // oddie commenting on it, and the reason is recorded where we can read
         // it instead.
-        /* A TAG THAT MISSED COSTS A TAG, answered or not.
-           Answered or not is the part that matters: the reply is capped at two
-           per handle, so if only answered misses cost anything then everybody
-           past the cap taps a free opus call forever. Charged here, before the
-           cap is consulted, and it is the cheapest defence there is - the
-           balance is checked before the model call, so somebody who spends
-           their five drops from about six cents a tag to a tenth of one.
-           NOT for an inappropriate tag. That is a refusal on content, we say
-           nothing at all about it, and a silent charge for a judgement we will
-           not explain is the one version of this that is unfair. */
-        let tagsLeft: number | null = null;
-        if (ex.appropriate && deps.spendMiss && m.authorHandle) {
-          const r = await deps.spendMiss(m.id, m.authorHandle).catch(() => null);
-          if (r) tagsLeft = r.left;
-        }
-
         const teachPng = deps.teachPng;
         if (!ex.appropriate || !teachPng) {
           await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}${ex.appropriate ? "" : "/inappropriate"}` });
@@ -302,30 +332,28 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
           continue;
         }
 
-        // TEACH, THEN GO QUIET. The tagger went to the trouble; silence teaches
-        // them nothing and they tag us the same wrong way next time. But the
-        // reply is capped PER HANDLE, and the cap is small on purpose: an
-        // account that answers every unmarketable tag forever is an account
-        // that gets muted, and a muted account ends the product. Two is the
-        // whole budget — the first tag learns the recipe, the second is the
-        // reminder, and after that we are just silence to that handle.
-        const used = deps.refusalsUsed ? await deps.refusalsUsed(m.authorHandle).catch(() => TEACH_CAP) : 0;
-        /* SPENDING THE LAST TAG ALWAYS GETS AN ANSWER, cap or no cap.
-           Everything after this point is silence forever: the ticket gate sits
-           above the model call, so their next tag is dropped before anything
-           reads it. If the cap swallowed this one too, the product would simply
-           stop responding to somebody with no way for them to learn why. One
-           reply, once, at the only moment it can still be said. */
-        const lastTag = tagsLeft !== null && tagsLeft <= 0;
-        if (used >= TEACH_CAP && !lastTag) {
-          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/taught-out` });
-          decide("skipped", { reason: "taught-out" });
-          continue;
+        /* TEACH, THEN GO QUIET, AND THE TICKET BOOK IS WHAT DECIDES WHEN.
+           The tagger went to the trouble; silence teaches them nothing and they
+           tag us the same wrong way next time. But an account that answers
+           every unmarketable tag forever is an account that gets muted, and a
+           muted account ends the product, so the answering has to stop
+           somewhere. It used to stop at two while the charging ran to five,
+           which is how three tags got taken after we had gone quiet.
+           One counter now, and it is the balance read at the top of this item:
+           five tags, five answers, the fifth one saying it was the last, and
+           the sixth tag meeting the gate before the model ever reads it.
+           TEACH_CAP is the floor for a caller with no season at all — no
+           balance to count down, and something still has to stop us. */
+        if (balance === null) {
+          const used = deps.refusalsUsed ? await deps.refusalsUsed(m.authorHandle).catch(() => TEACH_CAP) : 0;
+          if (used >= TEACH_CAP) {
+            await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/taught-out` });
+            decide("skipped", { reason: "taught-out" });
+            continue;
+          }
         }
 
-        // The warning rides on the last reply we will send, so nobody is
-        // charged in silence without having been told silence is coming.
-        const teachText = buildRefusalReply(m.id, tagsLeft, used === TEACH_CAP - 1 && !lastTag);
+        const teachText = buildRefusalReply(m.id, tagsLeft);
         if (deps.dryRun) {
           await settleMention(m.id, "skipped", { reason: "dry-run" });
           decide("skipped", { reason: "dry-run:teach", text: teachText });
@@ -354,11 +382,24 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         // No permalink, ever. There is no market to link to, and a reply
         // carrying a URL is priced at a different tier by X than a plain one.
         const posted = await deps.postReply({ text: teachText, inReplyTo: m.id, mediaIds });
+        /* CHARGED HERE, AFTER THE POST, AND NOWHERE ELSE.
+           Lev's rule, in one line: nothing is spent that we did not answer.
+           Every exit above this point now ends free — the content refusal, the
+           card that would not render, the upload that failed, the dry run, the
+           handle we could not read — which is the only reading of "a tag buys a
+           reply" that survives its own failure cases. The charge is idempotent
+           on the tweet id, so a sweep that dies between the post and this line
+           cannot bill twice on the retry; and if the charge itself fails they
+           simply keep the tag, which is the direction to fail in. */
+        if (deps.spendMiss && m.authorHandle) {
+          await deps.spendMiss(m.id, m.authorHandle).catch((e) =>
+            log("miss charge failed, they keep the tag", { tweetId: m.id, err: (e as Error).message }));
+        }
         // "taught" is the marker refusalsUsed counts, so the reason string is
         // load-bearing rather than a log line.
         await settleMention(m.id, "skipped", { reason: `taught:${ex.resolvability}`, replyId: posted.id });
         decide("skipped", { reason: "taught", text: teachText });
-        log("taught instead of staying silent", { tweetId: m.id, handle: m.authorHandle, used: used + 1 });
+        log("taught instead of staying silent", { tweetId: m.id, handle: m.authorHandle, tagsLeft });
         continue;
       }
 
@@ -379,6 +420,9 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
           question: ex.question,
           permalink: `${deps.baseUrl.replace(/\/+$/, "")}/m/<slug>`,
           hook: ex.hook,
+          // The count too, or the dry run stops being a preview of the reply
+          // exactly where the reply started saying something new.
+          tagsLeft,
         });
         await settleMention(m.id, "skipped", { reason: "dry-run" });
         decide("skipped", { reason: "dry-run", text: wouldSay.primary });
@@ -402,18 +446,19 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         continue;
       }
 
-      // The market exists, so the ticket is spent. After the mint on purpose:
-      // a tag that failed to become a market costs the tagger nothing.
-      if (deps.spendTicket && m.authorHandle) {
-        await deps.spendTicket(minted.slug, m.authorHandle, sourceHandle).catch((e) =>
-          log("ticket spend failed (market still stands)", { tweetId: m.id, err: (e as Error).message }));
-      }
-
       const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
       // No yesPct: a market minted a second ago has an empty vault and
       // therefore no price. The reply says nothing about odds rather than
       // quoting a 50 nobody set.
-      const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook });
+      /* THE COUNT GOES ON THE GOOD NEWS TOO.
+         The tag was charged either way, and a reply that spends somebody's
+         ticket without mentioning it is silent charging with a market attached
+         — the same fault as the silence this whole rule was written to remove,
+         just wearing a nicer outfit. It also happens to be the only surface in
+         the product where the refund rule can be stated as an instruction
+         rather than as documentation: under a market they just opened, "one new
+         bettor here brings it back" is something they can go and do. */
+      const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook, tagsLeft });
 
 
       // The card is the thing that stops a scroll, but a reply with no card is
@@ -428,6 +473,17 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       }
 
       const posted = await deps.postReply({ text: reply.primary, inReplyTo: m.id, mediaIds });
+      /* AFTER THE POST, like the miss branch and for the same reason. It used
+         to sit directly under the mint, on the reading that the market existing
+         is what the ticket bought. But a market nobody was told about is a
+         market its own opener cannot find, and charging for one is charging for
+         our failure to post. The mint stands either way; the market is theirs,
+         it is on their profile, and it stays uncharged until the reply that
+         announces it actually goes out. */
+      if (deps.spendTicket && m.authorHandle) {
+        await deps.spendTicket(minted.slug, m.authorHandle, sourceHandle).catch((e) =>
+          log("ticket spend failed (market still stands)", { tweetId: m.id, err: (e as Error).message }));
+      }
       await settleMention(m.id, "replied", { slug: minted.slug, replyId: posted.id });
       decide("replied", { slug: minted.slug, text: reply.primary });
       log("replied", { tweetId: m.id, slug: minted.slug, replyId: posted.id });

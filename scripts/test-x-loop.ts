@@ -203,10 +203,12 @@ async function main() {
     check("a resolvable but inappropriate claim is refused too", spy.minted.length === 0 && spy.posted.length === 0);
   }
 
-  /* ------------------------------------------- a miss costs a tag ---------- */
-  // It used to cost nothing, and the reply is capped at two per handle, so
-  // everybody past the cap tapped a free opus call forever. The charge sits
-  // above the cap for exactly that reason.
+  /* --------------------------------- a reply costs a tag, silence is free -- */
+  // ONE COUNTER, and it is the ticket book. There used to be two that
+  // disagreed: the reply stopped at two per handle while the charge ran to
+  // five, so tags three, four and five were taken after we had gone quiet -
+  // the exact thing this loop refuses to do to an inappropriate tag, done to a
+  // spammer instead.
   {
     _resetBotState();
     const spent: string[] = [];
@@ -214,40 +216,42 @@ async function main() {
       mentions: async () => ({ items: [mention("700")], newestId: "700" }),
       extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
       teachPng: async () => Buffer.from("teach"),
-      refusalsUsed: async () => 0,
+      ticketsLeft: async () => 5,
       spendMiss: async (id) => { spent.push(id); return { spent: true, left: 4 }; },
     });
     await runMentionSweep(deps);
-    check("a tag that missed costs a tag", spent.length === 1 && spent[0] === "700", spent.join(","));
-    check("...and the reply says how many are left, truthfully",
+    check("a miss we answered costs a tag", spent.length === 1 && spent[0] === "700", spent.join(","));
+    check("...and the reply says what it left them", 
       Boolean(spy.posted[0]?.text.includes("4 tags left")), spy.posted[0]?.text);
   }
   {
-    // Past the cap there is no reply, and that is precisely when a free tag
-    // would be exploitable, so the charge still happens.
+    // THE RULE, as a test. The card carries the entire lesson, so an upload
+    // failure ends in silence - and silence is free however much it cost us to
+    // arrive at it.
     _resetBotState();
     const spent: string[] = [];
     const { deps, spy } = harness({
       mentions: async () => ({ items: [mention("710")], newestId: "710" }),
       extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
       teachPng: async () => Buffer.from("teach"),
-      refusalsUsed: async () => TEACH_CAP,
-      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 3 }; },
+      ticketsLeft: async () => 5,
+      uploadMedia: async () => { throw new Error("403 media.write missing"); },
+      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 4 }; },
     });
     await runMentionSweep(deps);
-    check("a silent miss is charged too", spent.length === 1, spent.join(","));
-    check("...and still says nothing", spy.posted.length === 0);
+    check("a miss we stayed silent on costs nothing",
+      spent.length === 0 && spy.posted.length === 0, spent.join(","));
   }
   {
-    // A refusal on content is not a mistake they can fix, and we never explain
-    // it. Charging silently for a judgement we will not defend is unfair.
+    // A refusal on content is not a mistake they can fix, we never explain it,
+    // and a silent charge for a judgement we will not defend is unfair.
     _resetBotState();
     const spent: string[] = [];
     const { deps, spy } = harness({
       mentions: async () => ({ items: [mention("720")], newestId: "720" }),
       extract: async () => ({ ...goodExtraction("Will X be fired?"), appropriate: false }),
       teachPng: async () => Buffer.from("teach"),
-      refusalsUsed: async () => 0,
+      ticketsLeft: async () => 5,
       spendMiss: async (id) => { spent.push(id); return { spent: true, left: 4 }; },
     });
     await runMentionSweep(deps);
@@ -255,55 +259,162 @@ async function main() {
     check("...and never answered", spy.posted.length === 0);
   }
   {
-    // The last one says so. Silence is what comes next and nothing else would
-    // tell them why.
+    // A dry run changes nothing in the world, and a ticket is part of the world.
     _resetBotState();
+    const spent: string[] = [];
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("725")], newestId: "725" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      ticketsLeft: async () => 5,
+      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 4 }; },
+      dryRun: true,
+    });
+    await runMentionSweep(deps);
+    check("a dry run charges no tag", spent.length === 0 && spy.posted.length === 0, spent.join(","));
+  }
+  {
+    // THE FIFTH ONE STILL GETS ITS ANSWER, and it says so. After it the gate at
+    // the top of the sweep drops every tag before anything reads it, so this is
+    // the only moment the silence that follows can still be explained.
+    _resetBotState();
+    const spent: string[] = [];
     const { deps, spy } = harness({
       mentions: async () => ({ items: [mention("730")], newestId: "730" }),
       extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
       teachPng: async () => Buffer.from("teach"),
-      refusalsUsed: async () => 0,
-      spendMiss: async () => ({ spent: true, left: 0 }),
+      ticketsLeft: async () => 1,
+      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 0 }; },
     });
     await runMentionSweep(deps);
-    check("spending the last tag says so instead of printing a zero",
+    check("the last tag is answered, not swallowed by a cap", spy.posted.length === 1 && spent.length === 1);
+    check("...and says so instead of printing a zero",
       Boolean(spy.posted[0]?.text.includes("that was your last tag")), spy.posted[0]?.text);
   }
-
-  /* ------------------------------- nobody is charged in silence unannounced -- */
   {
-    // The last reply we will send carries the warning, because everything after
-    // it is silence AND still costs a tag. Charging three more times after we
-    // stop speaking is the exact thing this loop refuses to do to an
-    // inappropriate tag.
+    // And the sixth costs nothing, because nothing is read: the gate is the
+    // first thing in the item, above the parent read and the model call.
     _resetBotState();
+    const spent: string[] = [];
+    let extracted = 0;
     const { deps, spy } = harness({
-      mentions: async () => ({ items: [mention("740")], newestId: "740" }),
-      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      mentions: async () => ({ items: [mention("735")], newestId: "735" }),
+      extract: async () => { extracted++; return { ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }; },
       teachPng: async () => Buffer.from("teach"),
-      refusalsUsed: async () => TEACH_CAP - 1,
-      spendMiss: async () => ({ spent: true, left: 3 }),
+      ticketsLeft: async () => 0,
+      spendMiss: async (id) => { spent.push(id); return { spent: true, left: 0 }; },
     });
     await runMentionSweep(deps);
-    check("the last reply says it is the last one",
-      Boolean(spy.posted[0]?.text.includes("last one i'll explain")), spy.posted[0]?.text);
+    check("an empty ticket book is silent, free, and pays for no extraction",
+      spy.posted.length === 0 && spent.length === 0 && extracted === 0);
   }
   {
-    // And the very last tag is answered whatever the cap says: after it, the
-    // ticket gate drops every tag before anything reads it, so this is the only
-    // moment the silence can still be explained.
+    // The cap that is left: a caller with no season wired has no balance to
+    // count down, and something still has to stop us posting under strangers'
+    // tweets forever.
     _resetBotState();
     const { deps, spy } = harness({
-      mentions: async () => ({ items: [mention("750")], newestId: "750" }),
+      mentions: async () => ({ items: [mention("745")], newestId: "745" }),
       extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
       teachPng: async () => Buffer.from("teach"),
-      refusalsUsed: async () => TEACH_CAP + 3,
-      spendMiss: async () => ({ spent: true, left: 0 }),
+      refusalsUsed: async () => TEACH_CAP,
     });
     await runMentionSweep(deps);
-    check("spending the last tag is answered even past the cap",
-      spy.posted.length === 1 && Boolean(spy.posted[0]?.text.includes("that was your last tag")),
-      spy.posted[0]?.text ?? "(silent)");
+    check("with no ticket book the old cap still stops us", spy.posted.length === 0);
+  }
+
+  /* ------------------------------ the good news says what it cost, too ----- */
+  {
+    // The tag was charged either way. A reply that spends somebody's ticket and
+    // never mentions it is silent charging with a market attached.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("760")], newestId: "760" }),
+      ticketsLeft: async () => 5,
+      spendTicket: async () => true,
+    });
+    await runMentionSweep(deps);
+    check("a market that opened says what the tag left them",
+      Boolean(spy.posted[0]?.text.includes("you have 4 tags left")), spy.posted[0]?.text);
+  }
+  {
+    // The one surface where the refund rule is an instruction rather than
+    // documentation, and it rides only where it is urgent.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("761")], newestId: "761" }),
+      ticketsLeft: async () => 1,
+      spendTicket: async () => true,
+    });
+    await runMentionSweep(deps);
+    check("the last tag is told how to get it back",
+      Boolean(spy.posted[0]?.text.includes("one new bettor here brings it back")), spy.posted[0]?.text);
+  }
+  {
+    // Nothing is charged for a reply that never went out, on this branch either.
+    // The market stands; it is theirs and it is on their profile. What it is
+    // not is announced, and charging for our own failure to announce it is the
+    // same fault the miss branch just had removed.
+    _resetBotState();
+    const spends: string[] = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("762")], newestId: "762" }),
+      ticketsLeft: async () => 5,
+      spendTicket: async (slug) => { spends.push(slug); return true; },
+      postReply: async () => { throw new Error("X 503"); },
+    });
+    await runMentionSweep(deps);
+    check("a market minted but never announced costs no ticket", spends.length === 0, spends.join(","));
+  }
+  {
+    // No season, no number: a sentence about somebody's remaining chances has
+    // to be true or it must not be said.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("763")], newestId: "763" }),
+    });
+    await runMentionSweep(deps);
+    check("with no ticket book the reply names no count",
+      !/tags? left/.test(spy.posted[0]?.text ?? ""), spy.posted[0]?.text);
+  }
+
+  /* --------------------------- one answer per person per market ------------ */
+  {
+    // The branch that answers the second, third and fortieth person to tag one
+    // post stays free - they opened nothing and taxing the behaviour we want is
+    // absurd. What it stopped being is unbounded: the SAME handle tagging the
+    // same post ten times got ten near-identical replies out of us, which is
+    // the shape X's automation policy is written about.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("770")], newestId: "770" }),
+      existingMarket: async () => ({ slug: "already-open", question: "Will it?" }),
+      alreadyTold: async () => true,
+    });
+    const r = await runMentionSweep(deps);
+    check("tagging the same post twice gets one answer, not two",
+      spy.posted.length === 0 && r.decisions[0]?.reason === "already-told", JSON.stringify(r.decisions));
+  }
+  {
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("771")], newestId: "771" }),
+      existingMarket: async () => ({ slug: "already-open", question: "Will it?" }),
+      alreadyTold: async () => false,
+    });
+    await runMentionSweep(deps);
+    check("...but somebody new tagging it still gets one", spy.posted.length === 1);
+  }
+  {
+    // A lookup failure must not silence a legitimate answer.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("772")], newestId: "772" }),
+      existingMarket: async () => ({ slug: "already-open", question: "Will it?" }),
+      alreadyTold: async () => { throw new Error("db down"); },
+    });
+    await runMentionSweep(deps);
+    check("a failed dedup lookup falls through to answering", spy.posted.length === 1);
   }
 
   /* -------------------------------------------------- the gate teaches once */
