@@ -6,18 +6,31 @@
 // front of exactly the people who saw the argument, from @oddiefun, needing
 // nobody's permission and touching nobody's account.
 //
-// A REPLY, NOT A QUOTE. A quote starts a new post on our own timeline and
-// detaches from the audience that cared; a reply lands in the thread and
-// notifies the person who made the claim, because our card is sitting under
-// their tweet. The result belongs where the argument was.
+// A REPLY **AND** A QUOTE, which is a correction of what this header used to
+// say. "A quote detaches from the audience that cared" was true and beside the
+// point: the reply cannot reach any audience at all. X's published ranking code
+// filters replies out for anyone who does not follow us, discounts them again
+// for anyone who does, and gates the mutual-follow boost on not being a reply.
+// So a result posted only as a reply is a result nobody outside that one thread
+// will ever see, and an outcome is the single most postable thing this product
+// ever produces.
 //
-// WHAT IT MAY AND MAY NOT SAY. The public post is about the MARKET: it settled,
-// here is the side. It never says who won, never names anybody, never implies
-// the claimer was wrong. "You lost" under a stranger's tweet is a bad look even
-// when it is true, and it can land on somebody who never staked at all. The
-// personal half belongs in the app, where it already lives as a notice.
+// They do different jobs and both are wanted. The REPLY lands where the
+// argument was, under our own card, notifying the people in it. The QUOTE is an
+// original post against the claim that provoked it, and it is the only shape
+// that travels.
+//
+// WHAT THEY MAY AND MAY NOT SAY. Both are about the MARKET. Neither ever names
+// a bettor: not the winners, not the side, not the size. A wallet's owner
+// connected X to see their own page, which is not consent to be published to
+// their followers as somebody who gambles, and none of it was public to begin
+// with. The one person named is the OPENER, who tagged a stranger's take in
+// public and asked for it to be priced.
+//
+// "You lost" is never posted anywhere. The personal half belongs in the app.
 
 import { replyIdForSlug, communityMarketDetail } from "../store/markets.js";
+import { buildResolutionQuote } from "../matching/tweetReply.js";
 
 export interface ResolutionDeps {
   /** Public origin for the /m/{slug} link the reply carries. Optional so every
@@ -33,14 +46,34 @@ export interface ResolutionDeps {
   postReply(opts: { text: string; inReplyTo: string; mediaIds?: string[] }): Promise<{ id: string }>;
   log(msg: string, extra?: Record<string, unknown>): void;
   /**
-   * The take's author and what they earned, for the credit reply below. Both
-   * seams so the test can drive the crediting path without a chain or a store:
-   * the handle is the source author (surfacerFor), the lamports are the market's
-   * on-chain creator_fee_lamports, which is zero until resolve and zero forever
-   * if nobody backed the winning side.
+   * WHO THE CREATOR CUT IS OWED TO, and it is the OPENER, not the author of the
+   * claim. This was called `authorHandle` and described as "the source author",
+   * which is a stale description of a payee that moved: openMarket writes
+   * market_surfacer.handle from `taggerHandle` explicitly, precisely so the 2%
+   * follows whoever tagged the post rather than whoever wrote it. The code was
+   * already right; the name and the comment were pointing at the wrong person,
+   * which is the kind of pair that gets "fixed" in the wrong direction later.
+   *
+   * The lamports are the market's on-chain creator_fee_lamports: zero until
+   * resolve, and zero forever if nobody backed the winning side.
    */
-  authorHandle?(slug: string): Promise<string | null>;
-  authorFeeLamports?(slug: string): Promise<number>;
+  payeeHandle?(slug: string): Promise<string | null>;
+  payeeFeeLamports?(slug: string): Promise<number>;
+  /**
+   * The crowd, for the quote. Counts and one price, never identities: see
+   * buildResolutionQuote for why no bettor is ever named.
+   */
+  crowd?(slug: string, outcome: "yes" | "no"): Promise<{ stakers: number; winners: number; bestEntryPct: number | null }>;
+  /**
+   * The post to quote, as a tweet id. Null when the claim did not come from X
+   * at all (Telegram, the app, the API), in which case there is nothing to
+   * quote and the thread reply is the whole announcement.
+   */
+  quoteTarget?(slug: string): Promise<string | null>;
+  /** An ORIGINAL post quoting that claim. Separate from postReply because it is
+   *  a different endpoint shape and, per X's own ranking code, the only one of
+   *  the two that can reach anybody outside the thread. */
+  postQuote?(opts: { text: string; quoteTweetId: string; mediaIds?: string[] }): Promise<{ id: string }>;
 }
 
 export interface ResolutionOutcome {
@@ -48,9 +81,12 @@ export interface ResolutionOutcome {
   reason?: "no-thread" | "no-market" | "dry-run" | "post-failed";
   replyId?: string;
   text?: string;
-  /** The author-credit reply, when one was owed and posted. */
+  /** The payee-credit reply, when one was owed and posted. */
   creditReplyId?: string;
   creditText?: string;
+  /** The quote post, when the claim came from X and the seam was wired. */
+  quoteId?: string;
+  quoteText?: string;
 }
 
 /** The public sentence. Deliberately about the market and not about a person. */
@@ -64,10 +100,12 @@ export function resolutionText(question: string, outcome: "yes" | "no", url: str
 /**
  * The ONE @-mention oddie ever sends, and the one place it is not spam.
  *
- * The result reply lands under oddie's own reply to whoever TAGGED it, so the
- * tagger is in the thread and the person whose take actually earned the 2% —
- * the source author — is two levels up and never notified. They are the one
- * with money to claim, and this is how they hear about it.
+ * IT GOES TO THE OPENER. The reply chain notifies whoever is IN it, and the
+ * payee may not be: a tagger who opened the market from a reply is in the
+ * thread, but the credit has to work either way and the @-mention is what makes
+ * it reliable. This used to be documented as going to "the source author",
+ * which was a description left over from before the 2% moved to the tagger;
+ * market_surfacer.handle has been written from `taggerHandle` since.
  *
  * It fires ONLY when there is a fee owed (someone backed the winning side), so
  * it never sprays a tag at a market nobody staked. It is a payout notice and
@@ -80,7 +118,11 @@ export function resolutionText(question: string, outcome: "yes" | "no", url: str
  */
 export function authorCreditText(handle: string, url: string): string {
   const at = `@${handle.replace(/^@+/, "")}`;
-  return `${at}, your take drew a crowd and real SOL moved on it, so it earned you a creator cut.\n\nConnect a wallet to collect it: ${url}`;
+  // "The market you opened", not "your take". On a reply-tag the payee did not
+  // write the claim - they picked it out of somebody else's timeline and asked
+  // for it to be priced - and telling them their take earned a cut is simply
+  // false for the majority of the markets this product makes.
+  return `${at}, the market you opened drew real SOL, so it earned you a creator cut.\n\nConnect a wallet to collect it: ${url}`;
 }
 
 /**
@@ -138,18 +180,54 @@ export async function postResolution(
   // owed simply does not get one. Best-effort throughout, because a payout
   // notice failing must never unwind a resolution that already posted.
   const out: ResolutionOutcome = { posted: true, replyId, text };
+
+  /* THE QUOTE, which is the half of this that anybody outside the thread can
+     see. Posted AFTER the reply and never awaited into it: the reply is the
+     announcement and it has already succeeded by the time we get here, so a
+     quote that fails must not turn a posted resolution into a failed one.
+     Skipped silently when the claim did not come from X (nothing to quote) or
+     when the caller never wired the seam, which keeps every existing test and
+     the Telegram path behaving exactly as before.
+     ITS OWN UPLOAD. A media id is spent by the post it is attached to, so the
+     card is rendered once and uploaded twice rather than reused; a reuse that
+     silently failed would drop the image off the one post that travels. */
   try {
-    const handle = deps.authorHandle ? await deps.authorHandle(slug) : null;
-    const lamports = deps.authorFeeLamports ? await deps.authorFeeLamports(slug) : 0;
+    const quoteId = deps.quoteTarget && deps.postQuote ? await deps.quoteTarget(slug) : null;
+    if (quoteId) {
+      const c = deps.crowd ? await deps.crowd(slug, outcome).catch(() => null) : null;
+      const opener = deps.payeeHandle ? await deps.payeeHandle(slug).catch(() => null) : null;
+      const quoteText = buildResolutionQuote({
+        outcome, permalink: url, opener,
+        stakers: c?.stakers ?? 0, winners: c?.winners ?? 0, bestEntryPct: c?.bestEntryPct ?? null,
+      });
+      let qMedia: string[] | undefined;
+      try {
+        const png = await deps.cardPng(slug, outcome);
+        if (png) qMedia = [await deps.uploadMedia(png)];
+      } catch (e) {
+        deps.log("resolution: quote card failed, quoting without it", { slug, err: (e as Error).message });
+      }
+      const q = await deps.postQuote!({ text: quoteText, quoteTweetId: quoteId, mediaIds: qMedia });
+      out.quoteId = q.id;
+      out.quoteText = quoteText;
+      deps.log("resolution quoted the claim", { slug, quoteId: q.id, quotedTweet: quoteId });
+    }
+  } catch (e) {
+    deps.log("resolution: quote failed (non-fatal)", { slug, err: (e as Error).message });
+  }
+
+  try {
+    const handle = deps.payeeHandle ? await deps.payeeHandle(slug) : null;
+    const lamports = deps.payeeFeeLamports ? await deps.payeeFeeLamports(slug) : 0;
     if (handle && lamports > 0) {
       const creditText = authorCreditText(handle, url);
       const credit = await deps.postReply({ text: creditText, inReplyTo: replyId });
       out.creditReplyId = credit.id;
       out.creditText = creditText;
-      deps.log("resolution credited author", { slug, handle, creditReplyId: credit.id });
+      deps.log("resolution credited the opener", { slug, handle, creditReplyId: credit.id });
     }
   } catch (e) {
-    deps.log("resolution: author credit failed (non-fatal)", { slug, err: (e as Error).message });
+    deps.log("resolution: opener credit failed (non-fatal)", { slug, err: (e as Error).message });
   }
   return out;
 }

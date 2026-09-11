@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
-import { refusalRepliesTo, toldAboutMarket } from "./store/markets.js";
+import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
 import { adoptSurfacedMarkets, recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
@@ -3183,16 +3183,42 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
     },
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
+    postQuote: (o) => X.postTweet({ text: o.text, quoteTweetId: o.quoteTweetId, mediaIds: o.mediaIds }),
     log: (line, extra) => console.log(JSON.stringify({ evt: "x_resolution", line, ...extra })),
-    // The take's author and their cut, for the one @-mention oddie sends: the
-    // result reply reaches whoever TAGGED the market, and the person who earned
-    // the fee is the source author, two levels up and otherwise never told.
-    authorHandle: async (s2) => (await surfacerFor(s2).catch(() => null))?.handle ?? null,
-    authorFeeLamports: async (s2) => {
+    // WHO IS OWED THE 2%, which is the OPENER. market_surfacer.handle is
+    // written from `taggerHandle` at mint time precisely so the cut follows
+    // whoever tagged the post rather than whoever wrote it, and this reads that
+    // same row back.
+    payeeHandle: async (s2: string) => (await surfacerFor(s2).catch(() => null))?.handle ?? null,
+    payeeFeeLamports: async (s2: string) => {
       const d = await communityMarketDetail(s2).catch(() => null);
       if (!d?.onchainPubkey) return 0;
       const st = await fetchMarketOnChain(d.onchainPubkey).catch(() => null);
       return st?.creatorFeeLamports ?? 0;
+    },
+    /* THE CROWD, AS COUNTS AND ONE PRICE. Read off chain_entry, which is the
+       table the real-money path actually writes; the operator's verdict
+       worklist reads market_call, which nothing has written since the product
+       stopped using play money, and that is why "resolution as content" has
+       never once produced a post.
+       entry_pct is the share THEIR side held just before their stake landed, so
+       the MINIMUM among the winners is the keenest price anybody paid for the
+       side that turned out to be right: low means early and alone. */
+    crowd: async (s2: string, o: "yes" | "no") => {
+      const entries = await walletsInMarket(s2).catch(() => []);
+      const winners = entries.filter((e) => e.side === o);
+      const best = winners.reduce<number | null>(
+        (lo, e) => (lo === null || e.entryPct < lo ? e.entryPct : lo), null);
+      return { stakers: entries.length, winners: winners.length, bestEntryPct: best };
+    },
+    /* The claim to quote. Null for a market that never came from X, which is
+       not a failure: there is simply nothing to quote and the thread reply is
+       the whole announcement. sourcePostKey does the parsing, so a Telegram
+       source produces a `tg:` key here and is correctly skipped. */
+    quoteTarget: async (s2: string) => {
+      const info = (await surfacersFor([s2]).catch(() => ({} as Record<string, SurfacerInfo>)))[s2];
+      const key = sourcePostKey(info?.sourceUrl ?? null);
+      return key && key.startsWith("x:") ? key.slice(2) : null;
     },
   }).catch((e) => console.error("[resolution] announce failed:", (e as Error).message));
 

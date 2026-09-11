@@ -5,6 +5,7 @@
 if (process.env.DATABASE_URL) { console.error("refusing to run against a database"); process.exit(1); }
 
 import { postResolution, resolutionText, authorCreditText, type ResolutionDeps } from "../src/x/resolutionReply.js";
+import { buildResolutionQuote } from "../src/matching/tweetReply.js";
 import { createCommunityMarket, openCommunityMarkets, _setMemReplyId, _resetMemReplyId } from "../src/store/markets.js";
 import { renderCard, VOICE_SETTLED, VOICE_ANY, VOICE_UNPRICED } from "../src/card/renderCard.js";
 import type { Market } from "../src/venues/types.js";
@@ -84,27 +85,27 @@ console.log("\nTHE AUTHOR CREDIT: the one @-mention, and only when there is mone
     dryRun: false, cardPng: async () => null, uploadMedia: async () => "media",
     postReply: async (o) => { posts.push({ text: o.text, inReplyTo: o.inReplyTo }); return { id: `id-${posts.length}` }; },
     log: () => {},
-    authorHandle: async () => "takeguy",
-    authorFeeLamports: async () => 4_000_000,
+    payeeHandle: async () => "takeguy",
+    payeeFeeLamports: async () => 4_000_000,
     ...over,
   });
 
   const r = await postResolution(m.slug, "yes", base());
   check("the result announcement posts", r.posted && posts.some((p) => p.text.startsWith("Settled: YES")), JSON.stringify(posts));
-  check("the author gets a credit reply", Boolean(r.creditReplyId) && posts.some((p) => p.text.startsWith("@takeguy")), JSON.stringify(posts));
+  check("the opener gets a credit reply", Boolean(r.creditReplyId) && posts.some((p) => p.text.startsWith("@takeguy")), JSON.stringify(posts));
   check("the credit is a SEPARATE reply, under the announcement", posts.length === 2 && posts[1].inReplyTo === "id-1");
 
   // No fee owed (nobody backed the winner): no tag. This is what stops us
   // spraying a mention at every market that resolved on an empty side.
   posts.length = 0;
-  const r2 = await postResolution(m.slug, "yes", base({ authorFeeLamports: async () => 0 }));
+  const r2 = await postResolution(m.slug, "yes", base({ payeeFeeLamports: async () => 0 }));
   check("no fee owed means no @-mention", !r2.creditReplyId && posts.length === 1, JSON.stringify(posts));
 
   // No author handle (a market made in the app, not from a tag): nobody to
   // credit, and still just the announcement.
   posts.length = 0;
-  const r3 = await postResolution(m.slug, "no", base({ authorHandle: async () => null }));
-  check("no known author means no @-mention", !r3.creditReplyId && posts.length === 1);
+  const r3 = await postResolution(m.slug, "no", base({ payeeHandle: async () => null }));
+  check("no known opener means no @-mention", !r3.creditReplyId && posts.length === 1);
 
   // The credit is best-effort: if it throws, the resolution still counts as
   // posted, because the announcement already went out.
@@ -121,6 +122,83 @@ console.log("\nTHE AUTHOR CREDIT: the one @-mention, and only when there is mone
   _resetMemReplyId();
 }
 
+
+console.log("\nthe quote is the only half of this that can reach anybody");
+{
+  /* A reply cannot travel: X's own ranking code filters it out for non-followers,
+     discounts it for followers, and gates the mutual-follow boost on not being
+     one. So the result was landing in exactly one thread and nowhere else. */
+  _resetMemReplyId();
+  const m = await createCommunityMarket({ question: "Will it hold?", category: "Other", yesPct: 50, closeTime: Math.floor(Date.now() / 1000) + 86400 });
+  _setMemReplyId(m.slug, "oddie-reply-9");
+  const replies: string[] = [];
+  const quotes: Array<{ text: string; quoteTweetId: string; mediaIds?: string[] }> = [];
+  const base = (over: Partial<ResolutionDeps> = {}): ResolutionDeps => ({
+    dryRun: false, cardPng: async () => Buffer.from("png"), uploadMedia: async () => "media",
+    postReply: async (o) => { replies.push(o.text); return { id: `r-${replies.length}` }; },
+    postQuote: async (o) => { quotes.push(o); return { id: `q-${quotes.length}` }; },
+    quoteTarget: async () => "2096291092820062429",
+    crowd: async () => ({ stakers: 7, winners: 3, bestEntryPct: 12 }),
+    payeeHandle: async () => "smolwyne",
+    payeeFeeLamports: async () => 0,
+    log: () => {},
+    ...over,
+  });
+
+  const r = await postResolution(m.slug, "yes", base());
+  check("the claim is quoted, not just replied to",
+    Boolean(r.quoteId) && quotes.length === 1 && quotes[0].quoteTweetId === "2096291092820062429",
+    JSON.stringify(quotes));
+  check("...and the quote carries its own card",
+    quotes[0]?.mediaIds?.length === 1, JSON.stringify(quotes[0]?.mediaIds));
+  check("...and credits the opener by name", quotes[0].text.includes("@smolwyne"), quotes[0].text);
+  check("...and tells the price story without naming who paid it",
+    quotes[0].text.includes("12%") && !/\b(won|lost|winner)\b/i.test(quotes[0].text), quotes[0].text);
+  check("the thread still gets its own reply", replies.length === 1 && replies[0].startsWith("Settled: YES"));
+
+  /* A claim that never came from X has nothing to quote, and that is not a
+     failure: the thread reply is the whole announcement. */
+  replies.length = 0; quotes.length = 0;
+  const r2 = await postResolution(m.slug, "no", base({ quoteTarget: async () => null }));
+  check("a market with no X claim is not quoted, and still announces",
+    r2.posted && !r2.quoteId && quotes.length === 0 && replies.length === 1);
+
+  // Best-effort, exactly like the credit: the announcement has already gone out.
+  replies.length = 0; quotes.length = 0;
+  const r3 = await postResolution(m.slug, "yes", base({ postQuote: async () => { throw new Error("x down"); } }));
+  check("a failed quote never unwinds a posted resolution", r3.posted && !r3.quoteId);
+
+  replies.length = 0; quotes.length = 0;
+  const r4 = await postResolution(m.slug, "yes", base({ dryRun: true }));
+  check("a dry run quotes nothing", !r4.posted && quotes.length === 0 && replies.length === 0);
+  _resetMemReplyId();
+}
+
+console.log("\nno bettor is ever named, in any shape the quote can take");
+{
+  /* Connecting X to see your own page is not consent to be published to your
+     followers as somebody who gambles, and neither the side nor the size was
+     ever public. The market's numbers are on chain; the people are not. */
+  const shapes = [
+    { outcome: "yes" as const, permalink: "https://oddie.fun/m/a", opener: "opener1", stakers: 7, winners: 3, bestEntryPct: 12 },
+    { outcome: "no" as const, permalink: "https://oddie.fun/m/a", opener: "opener1", stakers: 7, winners: 5, bestEntryPct: 61 },
+    { outcome: "yes" as const, permalink: "https://oddie.fun/m/a", opener: null, stakers: 1, winners: 1, bestEntryPct: 50 },
+    { outcome: "yes" as const, permalink: "https://oddie.fun/m/a", opener: "opener1", stakers: 4, winners: 0, bestEntryPct: null },
+  ];
+  for (const sh of shapes) {
+    const t = buildResolutionQuote(sh);
+    const ats = t.match(/@[A-Za-z0-9_]+/g) ?? [];
+    check(`only the opener is @-mentioned (${sh.stakers} in, ${sh.winners} right)`,
+      ats.length === (sh.opener ? 1 : 0) && (!sh.opener || ats[0] === "@opener1"), t);
+    check("...and it fits in a post", t.length <= 280, String(t.length));
+    check("...and never says anybody lost",
+      !/\b(lost|loser|you)\b/i.test(t), t);
+  }
+  // A market nobody backed the winner of took no fee, and the post says so
+  // rather than implying a payout that did not happen.
+  check("a market with no winners says nobody was paid",
+    buildResolutionQuote(shapes[3]).includes("no fee was taken"), buildResolutionQuote(shapes[3]));
+}
 
 console.log(failures === 0 ? "\nall resolution-reply checks passed.\n" : `\n${failures} check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

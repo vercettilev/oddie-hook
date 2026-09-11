@@ -380,6 +380,92 @@ export function buildVerdict(v: VerdictInput): Verdict {
   };
 }
 
+/**
+ * THE RESOLUTION AS A POST THAT CAN ACTUALLY TRAVEL.
+ *
+ * The settlement already answers the thread it came from, and that reply is the
+ * right shape for the people who were in the argument. It is the wrong shape
+ * for everybody else: this file's own header, read off X's published ranking
+ * code, says a reply is filtered for anyone who does not follow us, discounted
+ * again for anyone who does, and can never earn the mutual-follow boost. A
+ * resolution posted only as a reply is a result nobody outside that thread will
+ * ever see.
+ *
+ * A QUOTE of the original claim is an original post as far as ranking goes, and
+ * it is the only shape that carries the one thing an open market never has: an
+ * outcome, against the sentence that provoked it, with the receipt attached.
+ *
+ * WHO IT NAMES, AND WHO IT NEVER NAMES.
+ *
+ * The opener is named. They tagged a stranger's take in public and asked for it
+ * to be priced; being credited for that is the thing they did it for.
+ *
+ * NO BETTOR IS EVER NAMED. Not the winners, not the size, not the side. A
+ * wallet's owner connected X to see their own page, which is not consent to be
+ * published to their followers as somebody who gambles, and the amount and the
+ * side were never public to begin with. The market's own numbers are public -
+ * the pool is on chain - so the crowd is described and never enumerated.
+ *
+ * What survives of the drama is the PRICE, which belongs to the market rather
+ * than to a person: "YES was trading at 12% when somebody took it" is the whole
+ * story of a longshot with nobody exposed in it.
+ */
+export interface ResolutionQuoteInput {
+  outcome: "yes" | "no";
+  permalink: string;
+  /** Who opened the market by tagging the claim, @-less. Omitted when unknown;
+   *  never guessed, because the credit is also a payout pointer. */
+  opener?: string | null;
+  /** Distinct wallets that took a side. */
+  stakers: number;
+  /** How many of them were on the side that won. */
+  winners: number;
+  /** The keenest price anybody paid for the winning side (their side's share of
+   *  the pool just before their stake landed, 1-99). Low means they were early
+   *  and alone. Null when nothing was recorded. */
+  bestEntryPct?: number | null;
+}
+
+/** Four times your money or better is where a call stops being an opinion. The
+ *  same threshold buildVerdict uses, for the same reason. */
+const LONGSHOT_PCT = Math.round(100 / LONGSHOT_MULT);
+
+export function buildResolutionQuote(i: ResolutionQuoteInput): string {
+  const side = i.outcome.toUpperCase();
+  const opener = (i.opener ?? "").replace(/^@+/, "").trim();
+  const lines: string[] = [`Settled: ${side}.`];
+
+  // The credit, and it is deliberately about the ACT rather than the take: on a
+  // reply-tag the opener did not write the claim, they picked it.
+  if (/^[A-Za-z0-9_]{1,15}$/.test(opener)) lines.push(`@${opener} opened this one.`);
+
+  /* The crowd, described and never enumerated. Each branch says only what the
+     numbers actually support: no crowd line at all rather than "0 of 0", and
+     no percentage unless a real entry was recorded. */
+  const pct = typeof i.bestEntryPct === "number" && i.bestEntryPct >= 1 && i.bestEntryPct <= 99
+    ? Math.round(i.bestEntryPct) : null;
+  if (i.stakers > 0 && i.winners === 0) {
+    lines.push(`Nobody backed it, so nobody was paid and no fee was taken.`);
+  } else if (pct !== null && pct <= LONGSHOT_PCT) {
+    // The longshot IS the story, and it is a fact about the price rather than
+    // about whoever paid it.
+    lines.push(`${side} was trading at ${pct}% when somebody took it.`);
+    if (i.stakers > 1) lines.push(`${i.winners} of ${i.stakers} called it. Paid from the pool, on chain.`);
+    else lines.push(`Paid from the pool, on chain.`);
+  } else if (i.stakers > 1) {
+    lines.push(`${i.winners} of ${i.stakers} called it. Paid from the pool, on chain.`);
+  } else if (i.stakers === 1) {
+    lines.push(`Paid from the pool, on chain.`);
+  }
+
+  const body = lines.join("\n\n");
+  const tail = `\n\n${i.permalink}`;
+  // The claim is in the quoted post and the numbers are on the card, so there
+  // is nothing here worth truncating a link for; the guard is a guard, not a
+  // plan.
+  return (body.length + tail.length <= TWEET_LIMIT ? body : body.slice(0, TWEET_LIMIT - tail.length - 1).trimEnd()) + tail;
+}
+
 export function buildTweetQuote(input: TweetReplyInput): TweetReply {
   const link = input.permalink;
   // Two picks, two pools, seeded off the same permalink with different
