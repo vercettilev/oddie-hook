@@ -74,7 +74,8 @@
     "migrate-positions": "tsx scripts/migrate-positions.ts",
     "test-undeclared-names": "tsx scripts/test-undeclared-names.ts",
     "preview-sheet": "tsx scripts/preview-sheet.ts",
-    "test-creator-adoption": "tsx scripts/test-creator-adoption.ts"
+    "test-creator-adoption": "tsx scripts/test-creator-adoption.ts",
+    "test-exit-path": "tsx scripts/test-exit-path.ts"
   },
   "engines": {
     "node": ">=20"
