@@ -591,7 +591,25 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
    */
   function pushAsk(hasSkin) {
     var box = document.getElementById("pushask");
-    if (!box || !hasSkin) return;
+    if (!box) return;
+    /* A LIVE WALLET CONNECTION IS THE WRONG TEST, AND ON IPHONE IT IS A DEAD
+       END. Positions are read from the wallet injected into THIS browser, and
+       iOS only injects one inside Phantom's own browser - which has no "Add to
+       Home Screen", which is the only way iOS grants push at all. So the one
+       browser where somebody can see they have money is the one browser where
+       they can never be told about it.
+       A LINKED wallet is the honest test instead: it says this person bets,
+       it is answered by the server from the device rather than from an injected
+       provider, and connecting X on both browsers is what already bridges them
+       (device_account collapses to one canonical account). */
+    if (!hasSkin && window.OddieMe) {
+      window.OddieMe.then(function (j) {
+        var w = (j && j.accounts || []).some(function (a) { return a.provider === "phantom"; });
+        if (w) pushAsk(true);
+      });
+      return;
+    }
+    if (!hasSkin) return;
     var P = window.OddiePush;
     var ios = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
     var standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
