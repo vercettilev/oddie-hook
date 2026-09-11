@@ -842,6 +842,36 @@ export function forgetMarket(pubkey: string): void {
 }
 
 /**
+ * A PRETEND CHAIN, FOR A LAPTOP WITH NO KEY.
+ *
+ * The money page renders its most important state - a pool with SOL in it, the
+ * odds bar, the crowd - entirely from what this module reads off Solana. With
+ * no admin key and no RPC there is nothing to read, so every local market is
+ * "unpriced" forever and the one layout worth judging is the one layout that
+ * could not be looked at.
+ *
+ * Answered here rather than faked in the API, deliberately: this is the module
+ * that speaks for the chain, so a stub of the chain belongs behind the same
+ * door every consumer already knocks on. The detail route, the list, the card
+ * renderer and the resolve path all see one consistent world instead of four
+ * different opinions about whether the pool exists.
+ *
+ * GENESIS_DEV_SEED is the gate, the same flag the seed routes sit behind, and
+ * production never sets it. Empty by default even when the flag is on: nothing
+ * appears here unless something deliberately put it there.
+ */
+const DEV_CHAIN = (process.env.GENESIS_DEV_SEED ?? "") === "1";
+const devMarkets = new Map<string, OnChainMarketState>();
+
+/** Dev-only. Stand a market up at `pubkey` with the totals given. */
+export function _devPutMarket(pubkey: string, state: OnChainMarketState): void {
+  if (!DEV_CHAIN) return;
+  devMarkets.set(pubkey, state);
+}
+const devRead = (pubkey: string): MarketRead | null =>
+  DEV_CHAIN && devMarkets.has(pubkey) ? { ok: true, state: devMarkets.get(pubkey)! } : null;
+
+/**
  * One market, with the three-way answer.
  *
  * `maxAgeMs` defaults to 0: fresh unless a caller explicitly says otherwise.
@@ -850,6 +880,8 @@ export function forgetMarket(pubkey: string): void {
 export async function readMarket(
   marketPubkey: string, opts: { maxAgeMs?: number } = {},
 ): Promise<MarketRead> {
+  const dev = devRead(marketPubkey);
+  if (dev) return dev;
   const maxAge = opts.maxAgeMs ?? 0;
   const cached = cacheGet(marketPubkey, maxAge);
   if (cached) return { ok: true, state: cached };
@@ -901,6 +933,8 @@ export async function readMarkets(
   const wanted: string[] = [];
   for (const pk of marketPubkeys) {
     if (out.has(pk)) continue;
+    const dev = devRead(pk);
+    if (dev) { out.set(pk, dev); continue; }
     const cached = cacheGet(pk, maxAge);
     if (cached) { out.set(pk, { ok: true, state: cached }); continue; }
     if (!wanted.includes(pk)) wanted.push(pk);

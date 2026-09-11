@@ -31,7 +31,7 @@ import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
-  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee, closeMarketOnChain,
+  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee, closeMarketOnChain, _devPutMarket,
   walletBalanceLamports,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
@@ -1324,13 +1324,13 @@ if (process.env.GENESIS_DEV_SEED === "1") {
    * It writes the row and the provenance and nothing else. No mint, no vault,
    * no stake: the page reads the pool off the chain and degrades to "unpriced"
    * on its own, which is a state worth being able to see anyway. */
-  app.post("/api/genesis/_seedMarket", express.json(), async (req, res) => {
-    const b = req.body ?? {};
+  /** The seed itself, so the route and the boot below cannot drift apart. */
+  const devSeedMarket = async (b: Record<string, unknown>) => {
     const closeIso = String(b.closeTime ?? new Date(Date.now() + 19 * 86_400_000).toISOString());
-    /* THE DEFAULTS ARE THE POINT. A bare `-d '{}'` has to produce a market that
+    /* THE DEFAULTS ARE THE POINT. A bare call has to produce a market that
        looks like the ones the bot actually opens - a hook, a long question, a
-       tagger and a source post - because a market missing any of those is
-       missing exactly the rows whose layout is being judged. */
+       tagger, a source post and a pool - because a market missing any of those
+       is missing exactly the rows whose layout is being judged. */
     const out = await createCommunityMarket({
       question: String(b.question
         ?? "Will World (@world_xyz) officially announce a $319M airdrop for Solana users by September 30, 2026?"),
@@ -1346,8 +1346,60 @@ if (process.env.GENESIS_DEV_SEED === "1") {
       sourceUrl: String(b.sourceUrl ?? "https://x.com/smolwyne/status/2096291092820062429"),
       handle: String(b.handle ?? "smolwyne"),
     }).catch(() => {});
-    res.json({ ok: true, slug: out.slug, url: `${APP_BASE_URL}/m/${out.slug}` });
+
+    /* AND A POOL, WHICH IS THE WHOLE REASON THIS EXISTS.
+       "First bet opens this on Solana" is a real state and a rare one: the
+       market a stranger arrives at from a tweet almost always has SOL in it
+       already, and the pool card is the tallest, loudest block on the page.
+       Designing the money page against its empty state is designing against
+       the market nobody will ever see.
+       The pubkey is made up and so are the totals; _devPutMarket answers for
+       them at the one door every consumer already knocks on, so the detail
+       route, the list, the card and the resolve path all see one world. Pass
+       yes and no as 0 to look at the empty state on purpose. */
+    const yesL = Math.round(Number(b.yes ?? 0.12) * 1e9);
+    const noL = Math.round(Number(b.no ?? 0.08) * 1e9);
+    if (yesL > 0 || noL > 0) {
+      const pubkey = `Dev${out.slug.replace(/[^A-Za-z0-9]/g, "").slice(0, 40)}`;
+      await setCommunityOnchain(out.slug, pubkey, "dev-no-signature");
+      _devPutMarket(pubkey, {
+        resolved: false, authority: null,
+        closeTime: Math.floor(new Date(closeIso).getTime() / 1000),
+        winningSide: null, totalYesLamports: yesL, totalNoLamports: noL,
+        creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL,
+        creatorFeeLamports: 0, creatorFeeClaimed: false,
+        protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+        protocolFeeLamports: 0, protocolFeeClaimed: false,
+      });
+    }
+    return { slug: out.slug, url: `${APP_BASE_URL}/m/${out.slug}` };
+  };
+
+  app.post("/api/genesis/_seedMarket", express.json(), async (req, res) => {
+    res.json({ ok: true, ...(await devSeedMarket((req.body ?? {}) as Record<string, unknown>)) });
   });
+
+  /* ONE COMMAND, NOT TWO.
+     The store is in memory without a DATABASE_URL, so it empties on every
+     restart - and tsx watch restarts on every save, which is every few seconds
+     while somebody is actually designing. Re-running a curl by hand after each
+     one is the kind of friction that ends with the page being judged on
+     production instead. Two markets: the ordinary one with SOL in it, and the
+     empty one, because both states are real and only one of them was ever
+     reachable here. */
+  void (async () => {
+    try {
+      const a = await devSeedMarket({});
+      const b = await devSeedMarket({
+        question: "Will oddie open a hundred markets before the end of the season?",
+        hook: "100 markets?", yes: 0, no: 0,
+      });
+      console.log(`[dev] seeded a market with a pool: ${a.url}`);
+      console.log(`[dev] and one nobody has bet on:   ${b.url}`);
+    } catch (e) {
+      console.error("[dev] seed failed:", (e as Error).message);
+    }
+  })();
 
   /* Season seeding for the same dev-only purpose: drive the connected page
    * through spent/ranked states without a bot sweep or an on-chain stake. */
