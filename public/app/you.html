@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Your profile · oddie</title>
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="manifest" href="/site.webmanifest?v=3">
 <style>
 /* Fonts are EMBEDDED, not linked. A preload plus font-display:swap still
    paints thin fallback text first and pops; only a data: URI is ready at the
@@ -281,6 +282,24 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .idstrip__out:hover{color:var(--pink)}
 .idstrip__out:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 
+/* THE ONLY WAY TO REACH SOMEBODY WHO IS NOT LOOKING.
+   Quiet on purpose, and below the money: this is a request, and a request that
+   shouts over the thing somebody came to see is how a permission gets denied
+   out of reflex. One line, one control, and it disappears the moment it is
+   answered either way. */
+.pushask[hidden]{display:none}
+.pushask{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;
+  margin:0 0 26px;padding:14px 16px;border:1px dashed var(--line);border-radius:4px;
+  font-size:14px;line-height:1.45;color:var(--fg-2)}
+.pushask b{color:var(--fg);font-weight:800}
+.pushask button{font-family:var(--display);font-weight:400;font-size:16px;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+  background:var(--yellow);color:var(--ink);border:0;border-radius:3px;
+  padding:9px 16px 7px;margin-left:auto}
+.pushask button:hover{background:var(--yellow-hi)}
+.pushask button:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.pushask button[disabled]{opacity:.55;cursor:default}
+
 /* MONEY WAITING, AND IT IS THE LOUDEST THING ON THE PAGE.
    It was a section heading in the middle of a list of sections. A market
    settling on chain told the winner nothing anywhere, so the only way to find
@@ -401,6 +420,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        every state of this page rewrites #view wholesale. Money outranks the
        ticket book, so it sits above it. -->
   <section class="payout" id="payout" hidden></section>
+  <p class="pushask" id="pushask" hidden></p>
   <!-- OUTSIDE #view on purpose. Every state of this page rewrites #view
        wholesale - the X gate, the wallet gate, the error, the list - and a
        balance that only survives one of them is a balance nobody sees. It is
@@ -422,6 +442,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
 <link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
+<script src="/app/push.js"></script>
 <script src="/app/me.js"></script>
 <script src="/chain.js"></script>
 <script>
@@ -549,6 +570,67 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         body: JSON.stringify({ deviceId: did }),
       }).catch(function () {});
     }
+  }
+
+  /**
+   * ASK FOR THE ONE THING THAT REACHES SOMEBODY WHO IS NOT LOOKING.
+   *
+   * A market settles weeks after the bet. By then there is no page open, so the
+   * only ways a winner learns are coming back unprompted or a notification.
+   *
+   * NEVER CALLS THE BROWSER'S PROMPT ON ITS OWN. A permission dialog is
+   * answered once and a denial is close to permanent, so the real API fires
+   * only from a tap on this line; somebody who is not interested just does not
+   * tap, and the door stays open for a better day.
+   *
+   * IPHONE GETS A DIFFERENT SENTENCE BECAUSE IT HAS A DIFFERENT ANSWER. Safari
+   * exposes neither Notification nor PushManager until a site has been added to
+   * the home screen, so there is no permission to ask for yet and the honest
+   * thing is to say what the actual step is. Not shown inside X's browser,
+   * where that step does not exist either.
+   */
+  function pushAsk(hasSkin) {
+    var box = document.getElementById("pushask");
+    if (!box || !hasSkin) return;
+    var P = window.OddiePush;
+    var ios = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
+    var standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+    if (ios && !standalone) {
+      // Safari's own share sheet is the only place that step exists; X's
+      // in-app browser has no "Add to Home Screen" at all, so telling somebody
+      // there to look for it sends them hunting for a menu item that is not
+      // on their screen.
+      var inApp = /FBAN|FBAV|Instagram|Twitter|Line\//i.test(navigator.userAgent || "");
+      box.innerHTML = inApp
+        ? "<span>A market can settle weeks after you bet. Open this in Safari and add it to your home screen, and oddie can tell you when yours does.</span>"
+        : "<span>A market can settle weeks after you bet. Tap <b>Share</b>, then <b>Add to Home Screen</b>, and oddie can tell you when yours does.</span>";
+      box.hidden = false;
+      return;
+    }
+    if (!P || !P.supported) return;
+
+    P.askable().then(function (ok) {
+      if (!ok) return;
+      box.innerHTML = "<span>A market can settle weeks after you bet. Get told when yours does.</span>"
+        + '<button type="button" id="pushgo">Turn on</button>';
+      box.hidden = false;
+      document.getElementById("pushgo").addEventListener("click", function () {
+        var b = document.getElementById("pushgo");
+        b.disabled = true; b.textContent = "Asking…";
+        P.ask().then(function (done) {
+          /* SUBSCRIBED, not merely permitted. A browser can grant and then fail
+             to subscribe, and telling somebody they will be notified when
+             nothing is listening is worse than never asking. */
+          if (done) {
+            box.innerHTML = "<span>Done. You will hear from us when one of your markets settles.</span>";
+            try { localStorage.removeItem("oddie.push.owed"); } catch (e) { /* private mode */ }
+          } else {
+            box.hidden = true;
+          }
+        });
+      }, { once: true });
+    });
   }
 
   function gate(msg, deepLink) {
@@ -826,6 +908,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          carry, and a figure invented here would be a figure about somebody's
          money. The count is true and the button is the action. */
       payoutAlert(cl);
+      /* Asked of somebody who HAS something in the product, and nobody else. A
+         wallet with no history has nothing to be notified about, and a
+         permission spent on them is a permission gone. */
+      pushAsk(cl.length > 0 || op.length > 0);
       var op = (open && open.open) || [];
       var blindClaim = claim && claim.unreadable, blindOpen = open && open.unreadable;
       // A NULL PAYLOAD IS A FAILED FETCH, NOT AN EMPTY LIST. Both are [] after

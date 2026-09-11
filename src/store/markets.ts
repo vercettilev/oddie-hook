@@ -863,6 +863,26 @@ CREATE TABLE IF NOT EXISTS payout_notice (
 );
 CREATE INDEX IF NOT EXISTS payout_notice_unseen_idx ON payout_notice (wallet) WHERE seen_at IS NULL;
 
+-- PERMISSION TO KNOCK ON A DOOR.
+--
+-- The endpoint is the primary key because the browser owns it: one browser has
+-- exactly one, it changes when permission is revoked and re-granted, and it is
+-- the thing the push service addresses. Keyed on the DEVICE and not on a wallet
+-- or a handle for the same reason everything else about payouts is: a bettor is
+-- guaranteed to have a browser, and is guaranteed nothing else.
+--
+-- p256dh and auth are the browser's half of the encryption. They are not
+-- secrets of ours and they are useless without the endpoint, but they are
+-- somebody's, so nothing here is ever printed.
+CREATE TABLE IF NOT EXISTS push_subscription (
+  endpoint  text PRIMARY KEY,
+  device_id text NOT NULL,
+  p256dh    text NOT NULL,
+  auth      text NOT NULL,
+  at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS push_subscription_device_idx ON push_subscription (device_id);
+
 -- First touch, once per wallet FOREVER: the board counts humans who put real
 -- money in, so one wallet funding ten markets is one person, credited to the
 -- market that got them in.
@@ -6665,6 +6685,68 @@ export async function slugForOnchainPubkey(pubkey: string): Promise<string | nul
 
 /** Test seam: clear the entry stamps. */
 export function _resetChainEntries(): void { memChainEntries.length = 0; }
+
+interface MemPush { endpoint: string; deviceId: string; p256dh: string; auth: string }
+const memPush: MemPush[] = [];
+/** Test seam: the in-memory subscription list. */
+export function _resetPushSubscriptions(): void { memPush.length = 0; }
+
+export interface StoredPushSubscription {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+/**
+ * Remember a browser's permission to be told about its own money.
+ *
+ * Upserted on the endpoint: a browser re-subscribing after a permission reset
+ * hands back the same endpoint with fresh keys, and two rows for one browser
+ * means two notifications for one person.
+ */
+export async function savePushSubscription(
+  deviceId: string, sub: StoredPushSubscription,
+): Promise<void> {
+  if (!deviceId || !sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) return;
+  if (!PERSISTENT) {
+    const i = memPush.findIndex((x) => x.endpoint === sub.endpoint);
+    const row = { endpoint: sub.endpoint, deviceId, p256dh: sub.keys.p256dh, auth: sub.keys.auth };
+    if (i >= 0) memPush[i] = row; else memPush.push(row);
+    return;
+  }
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO push_subscription (endpoint, device_id, p256dh, auth) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (endpoint) DO UPDATE SET device_id = $2, p256dh = $3, auth = $4, at = now()`,
+    [sub.endpoint, deviceId, sub.keys.p256dh, sub.keys.auth],
+  );
+}
+
+/** Every browser these devices have granted permission on. */
+export async function pushSubscriptionsFor(deviceIds: string[]): Promise<StoredPushSubscription[]> {
+  const list = [...new Set(deviceIds.filter(Boolean))];
+  if (list.length === 0) return [];
+  if (!PERSISTENT) {
+    return memPush.filter((x) => list.includes(x.deviceId))
+      .map((x) => ({ endpoint: x.endpoint, keys: { p256dh: x.p256dh, auth: x.auth } }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ endpoint: string; p256dh: string; auth: string }>(
+    `SELECT endpoint, p256dh, auth FROM push_subscription WHERE device_id = ANY($1::text[])`, [list]);
+  return rows.map((r) => ({ endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }));
+}
+
+/** A push service said this subscription is gone. Keeping it means trying
+ *  forever, so the row goes; the person simply has no permission again. */
+export async function dropPushSubscription(endpoint: string): Promise<void> {
+  if (!endpoint) return;
+  if (!PERSISTENT) {
+    const i = memPush.findIndex((x) => x.endpoint === endpoint);
+    if (i >= 0) memPush.splice(i, 1);
+    return;
+  }
+  await ensureSchema();
+  await db().query(`DELETE FROM push_subscription WHERE endpoint = $1`, [endpoint]);
+}
 
 interface MemPayoutNotice { wallet: string; slug: string; seen: boolean }
 const memPayoutNotices: MemPayoutNotice[] = [];

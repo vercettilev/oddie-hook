@@ -11,7 +11,9 @@ import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
-  recordPayoutNotices, unseenPayouts, markPayoutsSeen } from "./store/markets.js";
+  recordPayoutNotices, unseenPayouts, markPayoutsSeen,
+  savePushSubscription, pushSubscriptionsFor, dropPushSubscription } from "./store/markets.js";
+import { sendPush, vapidFromEnv } from "./push/webpush.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
 import { adoptSurfacedMarkets, recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
@@ -57,7 +59,7 @@ import { ticketsLeft, spendTicketForMiss, spendTicketForTag, creditFundedBettor,
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice } from "./store/accounts.js";
+import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice, devicesForWallets } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
 
@@ -1249,6 +1251,51 @@ app.get("/api/admin/chain/health", requireAdmin, async (req, res) => {
 
 /** The season board. Public: it is a leaderboard. */
 /**
+ * KNOCK ON THE DOOR OF EVERY BROWSER THAT ASKED TO BE TOLD.
+ *
+ * Wallets to devices to subscriptions, in that order, because those are three
+ * genuinely different things: the money belongs to a wallet, permission belongs
+ * to a browser, and one person can have both a phone and a laptop and should
+ * hear once on each.
+ *
+ * BEST-EFFORT BY CONTRACT, and more firmly than most things wearing that label.
+ * The money has already moved on chain by the time this runs. A push is an
+ * announcement, the profile says the same thing forever whether or not it
+ * arrives, and nothing here may hold up or fail a settlement.
+ *
+ * A 404 or 410 is the push service saying that subscription no longer exists,
+ * which is the one failure worth acting on: the row is deleted, because keeping
+ * it means trying forever for a browser that will never answer.
+ */
+async function pushPayoutNotice(slug: string, outcome: "yes" | "no", wallets: string[]): Promise<void> {
+  const keys = vapidFromEnv();
+  if (!keys || wallets.length === 0) return;
+  const devices = await devicesForWallets(wallets).catch(() => []);
+  const subs = await pushSubscriptionsFor(devices).catch(() => []);
+  if (subs.length === 0) return;
+
+  /* WHAT IT MAY SAY. The same rule the public post follows: it is about the
+     MARKET, never about a person. This lands on a lock screen that anybody
+     standing nearby can read, and "you won" on somebody's lock screen is their
+     business becoming the room's. It settled, there is something to collect,
+     the app says the rest behind whatever lock the phone has. */
+  const payload = {
+    title: "oddie",
+    body: `A market you were in settled ${outcome.toUpperCase()}. There is something to collect.`,
+    url: `${APP_BASE_URL}/profile`,
+    tag: `payout:${slug}`,
+  };
+  let sent = 0, gone = 0;
+  for (const sub of subs) {
+    const r = await sendPush(sub, payload, keys);
+    if (r.ok) { sent++; continue; }
+    if (r.gone) { gone++; await dropPushSubscription(sub.endpoint).catch(() => {}); }
+    else console.error(JSON.stringify({ evt: "push_failed", slug, status: r.status, error: r.error }));
+  }
+  console.log(JSON.stringify({ evt: "payout_push", slug, outcome, sent, gone, subscriptions: subs.length }));
+}
+
+/**
  * IS THERE MONEY WAITING FOR THIS BROWSER?
  *
  * Keyed on the DEVICE and answered from the wallets linked to it, which is the
@@ -1274,6 +1321,43 @@ app.get("/api/chain/payouts", async (req, res) => {
   if (!wallets.length) return res.json({ count: 0 });
   const count = await unseenPayouts(wallets).catch(() => 0);
   res.set("Cache-Control", "no-store").json({ count });
+});
+
+/**
+ * THE PUBLIC HALF OF THE VAPID PAIR.
+ *
+ * Not a secret: every browser that subscribes is handed it, and a subscription
+ * is bound to it forever. Null when push is simply not configured, which the
+ * client reads as "do not ask anybody for permission" rather than as an error.
+ */
+app.get("/api/push/key", (_req, res) => {
+  const keys = vapidFromEnv();
+  res.set("Cache-Control", "no-store").json({ key: keys?.publicKey ?? null });
+});
+
+/** A browser granting permission. Endpoint-keyed upsert, so a re-subscribe
+ *  after a permission reset replaces the row instead of doubling it. */
+app.post("/api/push/subscribe", express.json(), async (req, res) => {
+  const deviceId = typeof req.body?.deviceId === "string" && DEVICE_ID.test(req.body.deviceId) ? req.body.deviceId : null;
+  const sub = req.body?.subscription;
+  if (!deviceId || typeof sub?.endpoint !== "string" || !sub.keys?.p256dh || !sub.keys?.auth) {
+    return res.status(400).json({ ok: false });
+  }
+  // An endpoint is a URL the server will later POST to, so it is checked like
+  // one: https only, and no shape we did not expect.
+  if (!/^https:\/\/[^\s]+$/.test(sub.endpoint)) return res.status(400).json({ ok: false });
+  await savePushSubscription(deviceId, {
+    endpoint: sub.endpoint,
+    keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) },
+  }).catch(() => {});
+  res.json({ ok: true });
+});
+
+/** Permission withdrawn, or the browser rotated its endpoint. */
+app.post("/api/push/unsubscribe", express.json(), async (req, res) => {
+  const endpoint = typeof req.body?.endpoint === "string" ? req.body.endpoint : "";
+  if (endpoint) await dropPushSubscription(endpoint).catch(() => {});
+  res.json({ ok: true });
 });
 
 /** They have been shown it. Called by the profile once it has actually drawn
@@ -3279,8 +3363,15 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
      Best-effort: the money has already moved and no bookkeeping failure gets to
      hold up a settlement. */
   void walletsInMarket(slug)
-    .then((entries) => recordPayoutNotices(slug, entries.map((e) => e.wallet)))
-    .then((n) => { if (n > 0) console.log(JSON.stringify({ evt: "payout_notices", slug, outcome, people: n })); })
+    .then(async (entries) => {
+      const wallets = entries.map((e) => e.wallet);
+      const n = await recordPayoutNotices(slug, wallets);
+      if (n > 0) console.log(JSON.stringify({ evt: "payout_notices", slug, outcome, people: n }));
+      // The badge is the durable half and is written first; the push is the
+      // half that reaches somebody who is not looking. One cannot wait on the
+      // other, and neither may hold up a settlement.
+      await pushPayoutNotice(slug, outcome, wallets);
+    })
     .catch((e) => console.error("[payout] notice write failed (non-fatal):", (e as Error).message));
   // Settlement is announced on X (the resolution reply). The email path went
   // with Google sign-in, which had no door outside the retired feed.

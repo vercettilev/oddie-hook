@@ -343,6 +343,36 @@ export async function walletsForDevice(deviceId: string): Promise<string[]> {
   return rows.map((r) => r.provider_uid);
 }
 
+/**
+ * EVERY BROWSER THESE WALLETS ARE SIGNED IN ON.
+ *
+ * The inverse of walletsForDevice, and it exists for one job: a market settles,
+ * the settlement knows which WALLETS were in it, and a push subscription is
+ * per-BROWSER. Somebody with a phone and a laptop should be told once on each,
+ * so this is deliberately many-to-many rather than a lookup.
+ */
+export async function devicesForWallets(wallets: string[]): Promise<string[]> {
+  const list = [...new Set(wallets.filter(Boolean))];
+  if (list.length === 0) return [];
+  if (!STORE_PERSISTENT) {
+    const canon = new Set(memAccounts.filter((a) => a.provider === "phantom" && list.includes(a.uid))
+      .map((a) => a.canonicalDevice));
+    const out = new Set<string>();
+    for (const [device, c] of _memDeviceAccount) if (canon.has(c)) out.add(device);
+    return [...out];
+  }
+  await storeSchema();
+  const { rows } = await storeDb().query<{ device_id: string }>(
+    `SELECT DISTINCT da.device_id
+       FROM account w
+       JOIN account a ON a.canonical_device = w.canonical_device
+       JOIN device_account da ON da.account_id = a.id
+      WHERE w.provider = 'phantom' AND w.provider_uid = ANY($1::text[])`,
+    [list],
+  );
+  return rows.map((r) => r.device_id);
+}
+
 export async function accountsFor(deviceId: string): Promise<Account[]> {
   if (!STORE_PERSISTENT) {
     const canon = _memDeviceAccount.get(deviceId);

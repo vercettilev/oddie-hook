@@ -17,7 +17,9 @@ if (process.env.DATABASE_URL) { console.error("refusing to run against a databas
 
 import {
   recordPayoutNotices, unseenPayouts, markPayoutsSeen, _resetPayoutNotices,
+  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, _resetPushSubscriptions,
 } from "../src/store/markets.js";
+import { linkAccount, walletsForDevice, devicesForWallets } from "../src/store/accounts.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -85,6 +87,49 @@ async function main() {
     check("asking about no wallets is zero, not an error", (await unseenPayouts([])) === 0);
     await markPayoutsSeen([]);
     check("...and clearing none is a no-op", true);
+  }
+
+  /* ------------------------------------------- money to browser, both ways -- */
+  {
+    /* THE WHOLE LOOKUP A SETTLEMENT HAS TO WALK: the money belongs to a WALLET,
+       the permission belongs to a BROWSER, and the two are joined only through
+       the account a person signed in on. Three different things, and every one
+       of them is somewhere a notification can be lost. */
+    _resetPushSubscriptions();
+    const phone = "aaaaaaaa-1111-4111-8111-111111111111";
+    const laptop = "bbbbbbbb-2222-4222-8222-222222222222";
+    const wallet = "WalletDDDD4444";
+    await linkAccount(phone, { provider: "phantom", uid: wallet, handle: "Wall…4444", name: null });
+    await linkAccount(laptop, { provider: "phantom", uid: wallet, handle: "Wall…4444", name: null });
+
+    check("a wallet is reachable from the browser it signed in on",
+      (await walletsForDevice(phone)).includes(wallet));
+    /* ONE PERSON, TWO SCREENS. Somebody with a phone and a laptop should hear
+       once on each, which is why this is many-to-many rather than a lookup. */
+    const devices = await devicesForWallets([wallet]);
+    check("...and every browser is reachable from the wallet",
+      devices.includes(phone) && devices.includes(laptop), devices.join(","));
+
+    await savePushSubscription(phone, { endpoint: "https://push.test/p1", keys: { p256dh: "k1", auth: "a1" } });
+    await savePushSubscription(laptop, { endpoint: "https://push.test/p2", keys: { p256dh: "k2", auth: "a2" } });
+    const subs = await pushSubscriptionsFor(devices);
+    check("a settlement finds both of that wallet's browsers", subs.length === 2, String(subs.length));
+
+    /* A BROWSER RE-SUBSCRIBING AFTER A PERMISSION RESET hands back the same
+       endpoint with fresh keys. Two rows for one browser is two notifications
+       for one person. */
+    await savePushSubscription(phone, { endpoint: "https://push.test/p1", keys: { p256dh: "k1b", auth: "a1b" } });
+    const again = await pushSubscriptionsFor(devices);
+    check("re-subscribing replaces the row rather than doubling it", again.length === 2, String(again.length));
+    check("...with the new keys", again.some((x) => x.keys.p256dh === "k1b"));
+
+    await dropPushSubscription("https://push.test/p1");
+    check("a dead subscription is removed", (await pushSubscriptionsFor(devices)).length === 1);
+
+    check("a wallet nobody signed in with reaches no browser",
+      (await devicesForWallets(["WalletNobody"])).length === 0);
+    check("asking about no devices is empty, not an error",
+      (await pushSubscriptionsFor([])).length === 0);
   }
 
   console.log(failures === 0 ? "\nall payout notice checks passed.\n" : `\n${failures} check(s) FAILED.\n`);
