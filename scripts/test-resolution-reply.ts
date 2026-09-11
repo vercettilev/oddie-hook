@@ -203,6 +203,56 @@ console.log("\nthe quote is the only half of this that can reach anybody");
   _resetMemReplyId();
 }
 
+console.log("\na market nobody entered says nothing at all");
+{
+  /* Two posts at the URL tier to announce that nothing happened, on the one
+     surface where strangers meet the product, under somebody else's tweet. The
+     money is the smaller half: "settled, and it was empty" is a public
+     statement that our markets are empty. */
+  _resetMemReplyId();
+  const m = await createCommunityMarket({ question: "Will anyone care?", category: "Other", yesPct: 50, closeTime: Math.floor(Date.now() / 1000) + 86400 });
+  _setMemReplyId(m.slug, "oddie-reply-7");
+  const replies: string[] = [];
+  const quotes: string[] = [];
+  const base = (over: Partial<ResolutionDeps> = {}): ResolutionDeps => ({
+    dryRun: false, cardPng: async () => Buffer.from("png"), uploadMedia: async () => "media",
+    postReply: async (o) => { replies.push(o.text); return { id: `r-${replies.length}` }; },
+    postQuote: async (o) => { quotes.push(o.text); return { id: `q-${quotes.length}` }; },
+    quoteTarget: async () => "2096291092820062429",
+    crowd: async () => ({ stakers: 0, winners: 0, bestEntryPct: null }),
+    payeeHandle: async () => "smolwyne",
+    payeeFeeLamports: async () => 0,
+    log: () => {},
+    ...over,
+  });
+
+  const r = await postResolution(m.slug, "yes", base({ poolLamports: async () => 0 }));
+  check("an empty pool posts nothing, anywhere",
+    !r.posted && r.reason === "empty" && replies.length === 0 && quotes.length === 0,
+    JSON.stringify({ r, replies, quotes }));
+
+  /* AN UNREADABLE POOL IS NOT AN EMPTY ONE. chain_entry is a floor and an RPC
+     can blink; the wrong way to fail here is silence over somebody's money. */
+  replies.length = 0; quotes.length = 0;
+  const r2 = await postResolution(m.slug, "yes", base({ poolLamports: async () => null }));
+  check("a pool we could not read still announces", r2.posted && replies.length === 1);
+
+  replies.length = 0; quotes.length = 0;
+  const r3 = await postResolution(m.slug, "yes", base({ poolLamports: async () => { throw new Error("rpc down"); } }));
+  check("...and so does one whose read threw", r3.posted && replies.length === 1);
+
+  // One lamport is not empty.
+  replies.length = 0; quotes.length = 0;
+  const r4 = await postResolution(m.slug, "yes", base({ poolLamports: async () => 1 }));
+  check("a pool with anything in it announces", r4.posted && replies.length === 1 && quotes.length === 1);
+
+  // And a caller that never wired the seam behaves exactly as before.
+  replies.length = 0; quotes.length = 0;
+  const r5 = await postResolution(m.slug, "yes", base());
+  check("a caller with no pool seam is unchanged", r5.posted && replies.length === 1);
+  _resetMemReplyId();
+}
+
 console.log("\nno bettor is ever named, in any shape the quote can take");
 {
   /* Connecting X to see your own page is not consent to be published to your

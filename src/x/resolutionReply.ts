@@ -74,11 +74,25 @@ export interface ResolutionDeps {
    *  a different endpoint shape and, per X's own ranking code, the only one of
    *  the two that can reach anybody outside the thread. */
   postQuote?(opts: { text: string; quoteTweetId: string; mediaIds?: string[] }): Promise<{ id: string }>;
+  /**
+   * WHAT IS ACTUALLY IN THE VAULT, read off the chain.
+   *
+   * Deliberately not the crowd count. chain_entry is written only on a
+   * CONFIRMED send and its own docs call it a floor rather than the truth, so a
+   * stake whose confirmation we could not read shows up there as nobody — and
+   * deciding to stay quiet on that would be going silent about a market with
+   * real money in it. The pool is the runtime's own number and cannot be
+   * misread.
+   *
+   * Null means unreadable, which is NOT empty: an unreadable pool announces,
+   * because the wrong way to fail here is silence over somebody's money.
+   */
+  poolLamports?(slug: string): Promise<number | null>;
 }
 
 export interface ResolutionOutcome {
   posted: boolean;
-  reason?: "no-thread" | "no-market" | "dry-run" | "post-failed";
+  reason?: "no-thread" | "no-market" | "dry-run" | "post-failed" | "empty";
   replyId?: string;
   text?: string;
   /** The payee-credit reply, when one was owed and posted. */
@@ -145,6 +159,20 @@ export async function postResolution(
   // by the API. There is nothing to answer and that is not a failure.
   const inReplyTo = await replyIdForSlug(slug).catch(() => null);
   if (!inReplyTo) { deps.log("resolution: no thread to answer", { slug }); return { posted: false, reason: "no-thread" }; }
+
+  /* NOBODY CAME, SO THERE IS NOTHING TO ANNOUNCE.
+     A market that resolved with an empty vault has no winners, no losers, no
+     fee and nobody owed anything, and the announcement it would have posted is
+     two posts at the URL tier saying that nothing happened. Worse than the
+     money: it is a public statement that our markets are empty, made on the one
+     surface where strangers meet the product, under somebody else's tweet.
+     And it is not silence about a result somebody is waiting for. Nobody staked.
+     There is no one to tell. */
+  const pool = deps.poolLamports ? await deps.poolLamports(slug).catch(() => null) : null;
+  if (pool === 0) {
+    deps.log("resolution: nobody staked, so nothing is announced", { slug, outcome });
+    return { posted: false, reason: "empty" };
+  }
 
   const url = `${(deps.baseUrl ?? "https://oddie.fun").replace(/\/+$/, "")}/m/${slug}`;
   const text = resolutionText(detail.question, outcome, url);

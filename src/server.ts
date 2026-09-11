@@ -30,7 +30,7 @@ import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import {
-  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee,
+  mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee, closeMarketOnChain,
   walletBalanceLamports,
   prepareRefundTx, refundOpensAt,
   resolveMarketOnChain, fetchMarketOnChain, fetchPosition, preparePositionTx, prepareClaimTx, submitSignedTx, isValidPubkeyString,
@@ -3142,18 +3142,40 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       // pay against. The row still latches; what changed is that a chain that
       // did not get the verdict is now LOUD, and `npm run resolve-reconcile`
       // is the way back.
-      void resolveMarketOnChain(detail.onchainPubkey, outcome).then((r) => {
-        if (r.ok) return;
-        console.error(JSON.stringify({
-          evt: "resolve_chain_gap", slug, outcome, reason: r.reason, error: r.error,
-          onChainOutcome: r.onChainOutcome ?? null,
-          fix: "npm run resolve-reconcile",
-        }));
+      void resolveMarketOnChain(detail.onchainPubkey, outcome).then(async (r) => {
+        if (!r.ok) {
+          console.error(JSON.stringify({
+            evt: "resolve_chain_gap", slug, outcome, reason: r.reason, error: r.error,
+            onChainOutcome: r.onChainOutcome ?? null,
+            fix: "npm run resolve-reconcile",
+          }));
+          return;
+        }
+        /* AN EMPTY MARKET IS CLOSED THE MOMENT IT CAN BE CLOSED.
+           Rent is the largest fixed cost this product has and close_market is
+           the only thing that ever gives it back, but it refuses any market
+           that took a bet — so the one window where it works is a market nobody
+           entered, once it is over. Resolving is what makes it over.
+           Until now that residue was swept by hand, by a script nobody has run,
+           so every ignored market was a permanent loss of both rents.
+           Called unconditionally rather than behind our own emptiness check:
+           closeMarketOnChain reads the chain, refuses on has-stakes before
+           sending anything, and the program checks the vault balance again on
+           its own side. One RPC read on a path that already does several, and
+           no second copy of the rule to drift. */
+        if (!detail.onchainPubkey) return;
+        const closed = await closeMarketOnChain(detail.onchainPubkey).catch(() => null);
+        if (closed?.ok) {
+          console.log(JSON.stringify({
+            evt: "market_rent_reclaimed", slug, lamports: closed.lamports, signature: closed.signature,
+          }));
+        }
       }).catch(() => {});
-      // Real-money creator/protocol fee: logged as an audit-trail "intended
-      // fee" only, never actually deducted — the deployed Solana program has
-      // no fee instruction (see economy.ts + logRealFee). Read the
-      // vault total straight from chain rather than trusting a stale value.
+      // Real-money creator/protocol fee, logged as an audit trail of what the
+      // program fixed at resolve. The fee instructions are real and proven
+      // (npm run test-exit-path): claim_creator_fee and claim_protocol_fee both
+      // pay, once each, to the creator and the authority. Read the vault total
+      // straight from chain rather than trusting a stale value.
       void fetchMarketOnChain(detail.onchainPubkey).then((state) => {
         // state.creatorFeeBps, not the constant: the ledger must record what the
         // program fixed on THIS market, which is 0 for one with no creator.
@@ -3184,6 +3206,17 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
     postQuote: (o) => X.postTweet({ text: o.text, quoteTweetId: o.quoteTweetId, mediaIds: o.mediaIds }),
+    /* THE VAULT, not the crowd table. chain_entry is a floor by its own
+       documentation (it is written only on a confirmed send), so a stake we
+       could not confirm reads there as nobody — and going quiet on that would
+       be silence about a market holding real money. Null on any failure, which
+       the announcement treats as "not empty" and posts. */
+    poolLamports: async (s2: string) => {
+      const d = await communityMarketDetail(s2).catch(() => null);
+      if (!d?.onchainPubkey) return null;
+      const st = await fetchMarketOnChain(d.onchainPubkey).catch(() => null);
+      return st ? st.totalYesLamports + st.totalNoLamports : null;
+    },
     log: (line, extra) => console.log(JSON.stringify({ evt: "x_resolution", line, ...extra })),
     // WHO IS OWED THE 2%, which is the OPENER. market_surfacer.handle is
     // written from `taggerHandle` at mint time precisely so the cut follows
