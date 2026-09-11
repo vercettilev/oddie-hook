@@ -1315,6 +1315,40 @@ if (process.env.GENESIS_DEV_SEED === "1") {
     res.json({ ok: true, profile: gp });
   });
 
+  /* A MARKET, WITHOUT A CHAIN.
+   * Dev-only, and the reason it exists is that the money page could not be
+   * looked at locally at all: /api/v1/markets mints before it publishes, so
+   * with no admin key every attempt answered "no vault, not published" and the
+   * one page worth designing carefully was the one page nobody could open
+   * without pointing at production.
+   * It writes the row and the provenance and nothing else. No mint, no vault,
+   * no stake: the page reads the pool off the chain and degrades to "unpriced"
+   * on its own, which is a state worth being able to see anyway. */
+  app.post("/api/genesis/_seedMarket", express.json(), async (req, res) => {
+    const b = req.body ?? {};
+    const closeIso = String(b.closeTime ?? new Date(Date.now() + 19 * 86_400_000).toISOString());
+    /* THE DEFAULTS ARE THE POINT. A bare `-d '{}'` has to produce a market that
+       looks like the ones the bot actually opens - a hook, a long question, a
+       tagger and a source post - because a market missing any of those is
+       missing exactly the rows whose layout is being judged. */
+    const out = await createCommunityMarket({
+      question: String(b.question
+        ?? "Will World (@world_xyz) officially announce a $319M airdrop for Solana users by September 30, 2026?"),
+      closeTime: Math.floor(new Date(closeIso).getTime() / 1000),
+      category: String(b.category ?? "Crypto"),
+      yesPct: 50,
+      resolutionCriteria: String(b.resolutionCriteria
+        ?? "Resolves YES if an official post from the @world_xyz X account or the World (world.org) website announces an airdrop totalling approximately $319 million designated for Solana users on or before September 30, 2026. Resolves NO otherwise."),
+      resolvability: "clean",
+      hook: String(b.hook ?? "$319M Solana airdrop?"),
+    });
+    await recordSurfacer(out.slug, {
+      sourceUrl: String(b.sourceUrl ?? "https://x.com/smolwyne/status/2096291092820062429"),
+      handle: String(b.handle ?? "smolwyne"),
+    }).catch(() => {});
+    res.json({ ok: true, slug: out.slug, url: `${APP_BASE_URL}/m/${out.slug}` });
+  });
+
   /* Season seeding for the same dev-only purpose: drive the connected page
    * through spent/ranked states without a bot sweep or an on-chain stake. */
   app.post("/api/genesis/_seedSeason", express.json(), async (req, res) => {

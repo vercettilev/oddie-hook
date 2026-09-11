@@ -348,6 +348,56 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   pointer-events:none;user-select:none}
 
 /*
+ * THE CLAIM COMES FIRST, AND ON A PHONE THAT IS NOT WHERE IT WAS.
+ *
+ * The page opened with an eyebrow: who tagged it, how long is left, and a link
+ * to the post it came from. That is a fine editorial device with a screen to
+ * spare, and on a phone it is 60 pixels of context in front of the sentence the
+ * whole page is about, read by somebody who arrived from a tweet and has not
+ * yet been told what they are being asked.
+ *
+ * "SEE THE POST" IS THE ONE OUTBOUND LINK ON THIS PAGE, and above the fold it
+ * pointed a visitor who had just arrived from that post straight back to it.
+ * It stays - the provenance is the evidence that the claim is real - but it
+ * belongs with the terms, under the decision, not in front of it.
+ *
+ * THE DEADLINE IS NOT LOST WITH IT. The clock is a convenience restatement: the
+ * question itself carries the date, in the contract, in the second line of the
+ * page. A market is only genuinely urgent in its last hours, and that is what
+ * .clock--soon is for.
+ *
+ * WHAT IT BUYS. 74px back above the bar, which is exactly enough to lift the
+ * stake chips out from under it: the amount is now visible and changeable on
+ * the first screen instead of hidden behind the buttons that spend it.
+ *
+ * Ordered rather than re-rendered, so the markup keeps one sequence and the
+ * desktop keeps the layout it already reads correctly in. The default is 5, the
+ * middle: anything this list has not thought of lands with the action rather
+ * than at the end of the page.
+ */
+@media (max-width:640px){
+  /* EVERY ONE OF THESE IS ID-SCOPED, and it has to be. The default below is
+     `#view > *`, which carries an id and therefore out-specifies any bare
+     class: written as `.eyebrow{order:7}` the rule computed to 5 and the page
+     rendered in its original sequence while looking, in the stylesheet, as
+     though it had been reordered. */
+  #view{display:flex;flex-direction:column}
+  #view > *{order:5}
+  #view > .backfeed{order:1}
+  #view > .q{order:2}
+  #view > .qfull{order:3}
+  #view > .pool,#view > .first{order:4}
+  #view > .sides{order:6}
+  /* "Betting is over" renders after the buttons and has to stay there; it is
+     also a .pool, which would otherwise hoist it above the question. */
+  #view > .pool--quiet{order:6}
+  #view > .eyebrow{order:7;margin:22px 0 0}
+  #view > .terms{order:8}
+  #view > .act{order:9}
+  #view > .rail{order:10}
+}
+
+/*
  * THE NAV IS NOT WHAT A STRANGER CAME FOR.
  *
  * This page is the only one in the app that people land on cold, from a link in
