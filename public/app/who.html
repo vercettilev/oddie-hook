@@ -151,7 +151,24 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .sub{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.02em;
   color:var(--fg-3);text-transform:uppercase}
+/* HEIGHT:AUTO IS LOAD-BEARING, and its absence was measured rather than
+   guessed: the tag carries width="1800" height="600", so with only `width:100%`
+   in CSS the HEIGHT ATTRIBUTE still applies. On a 375px phone the strip
+   rendered 375x600 where the ratio wants 125 - the artwork stretched nearly
+   five times vertically, and 475px of empty sky above it that somebody has to
+   scroll through to reach the bottom of the page. Both, from one missing
+   declaration, on five pages. */
 .crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
+  /* CROPPED TO THE BAND THE CROWD IS ACTUALLY IN, which is what the landing has
+     always done and what never reached these five pages.
+     Without a height the tag's own height="600" applied - measured at 375px:
+     the strip rendered 375x600 where the ratio wants 125, so the artwork was
+     stretched nearly five times vertically with 475px of empty sky above it to
+     scroll past. height:auto fixes the stretch and replaces it with a 125px
+     ribbon in which 1800px of figures are about four pixels wide each, which is
+     noise rather than a crowd. Covering to the bottom edge keeps them at a size
+     somebody can see. */
+  height:clamp(90px,14vw,180px);object-fit:cover;object-position:50% 100%;
   pointer-events:none;user-select:none}
 
 .hero{background:var(--cream);color:var(--ink);border:3px solid var(--black);

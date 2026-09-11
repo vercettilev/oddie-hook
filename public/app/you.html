@@ -178,7 +178,24 @@ h2 b{color:var(--yellow);font-weight:800}
 main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .sub{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.02em;
   color:var(--fg-3);text-transform:uppercase}
+/* HEIGHT:AUTO IS LOAD-BEARING, and its absence was measured rather than
+   guessed: the tag carries width="1800" height="600", so with only `width:100%`
+   in CSS the HEIGHT ATTRIBUTE still applies. On a 375px phone the strip
+   rendered 375x600 where the ratio wants 125 - the artwork stretched nearly
+   five times vertically, and 475px of empty sky above it that somebody has to
+   scroll through to reach the bottom of the page. Both, from one missing
+   declaration, on five pages. */
 .crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
+  /* CROPPED TO THE BAND THE CROWD IS ACTUALLY IN, which is what the landing has
+     always done and what never reached these five pages.
+     Without a height the tag's own height="600" applied - measured at 375px:
+     the strip rendered 375x600 where the ratio wants 125, so the artwork was
+     stretched nearly five times vertically with 475px of empty sky above it to
+     scroll past. height:auto fixes the stretch and replaces it with a 125px
+     ribbon in which 1800px of figures are about four pixels wide each, which is
+     noise rather than a crowd. Covering to the bottom edge keeps them at a size
+     somebody can see. */
+  height:clamp(90px,14vw,180px);object-fit:cover;object-position:50% 100%;
   pointer-events:none;user-select:none}
 
 /* THE ASK, NOT A POSTER.
@@ -201,7 +218,13 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    it -- which is where "I'll do this later" landed. */
 .gate .big{justify-self:start;text-decoration:none}
 .gate .deep,.gate .later{grid-column:2;justify-self:start}
-@media (max-width:560px){
+/* STACKED UNTIL THERE IS GENUINELY ROOM FOR TWO COLUMNS, which is further up
+   than it looks. Side by side needs the sticker (150), the gap (22), the
+   padding (44) and a column of text wide enough to read - call it 300 - so the
+   old 560 was about eighty pixels short of its own layout and spent them on
+   the text. Measured on a phone: "Open this in / Phantom to / stake." at three
+   words a line. */
+@media (max-width:700px){
   .gate{grid-template-columns:1fr;gap:10px;justify-items:center;text-align:center}
   .gate img.gsticker{grid-row:auto;width:min(180px,46vw)}
   .gate .big,.gate .deep,.gate .later{justify-self:center}
@@ -387,6 +410,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   .start .ssticker{grid-row:auto;width:min(180px,46vw)}
   .start__go{grid-column:1;justify-content:center}
 }
+
+/* The way out of a failed read. Sized like the sentence it sits in, because it
+   is a repair and not an invitation. */
+.errgo{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;
+  text-transform:uppercase;cursor:pointer;background:none;color:var(--yellow);
+  border:1px solid var(--yellow);border-radius:3px;padding:5px 10px;margin-left:6px}
+.errgo:hover{background:var(--yellow);color:var(--ink)}
+.errgo:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 
 /* An .err can carry a link out. Without this it inherits the body link colour
    and disappears into the sentence. */
@@ -703,6 +734,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       + (deepLink ? '<a class="deep" href="' + esc(deepLink) + '">Open in Phantom</a>' : "")
       + "</div>"
       + feesSection(null, false);
+    /* THE ASK RAN ONLY ON THE ONE PATH THAT NEEDS IT LEAST.
+       pushAsk was called from inside the loaded-positions branch, so it never
+       ran for anybody sitting at a connect gate - which on iPhone is where
+       almost everybody sits, because a wallet cannot be injected into Safari at
+       all. The one instruction that opens the whole thing was reachable only by
+       people who had already got past the wall it unlocks. */
     document.getElementById("connect").addEventListener("click", function () {
       var b = document.getElementById("connect");
       b.disabled = true; b.textContent = "Connecting…";
@@ -914,6 +951,31 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      Every read carries the generation it was issued in and the address it was
      issued for, and a stale one throws its answer away. */
   var loadGen = 0;
+  /** How many times a stranded read has re-entered load(). Bounded so a wallet
+   *  that keeps changing cannot turn recovery into a spin. */
+  var heals = 0;
+
+  /**
+   * A CHAIN READ THAT NEVER ANSWERS IS THE COMMONEST FAILURE ON A PHONE, and
+   * fetch has no timeout of its own.
+   *
+   * The three reads on this page are fast against the server (measured: under a
+   * second each) and can still hang in a mobile WebView - suspended while the
+   * wallet app is in front, a network that dropped between the request and the
+   * response. With no timeout the promise simply never settles, which is
+   * indistinguishable on screen from a read still in progress, forever.
+   *
+   * Twelve seconds, then null, which is the same thing a refusal produces and
+   * which the caller already knows how to say out loud.
+   */
+  function getJSON(url, ms) {
+    var ctl = ("AbortController" in window) ? new AbortController() : null;
+    var t = setTimeout(function () { if (ctl) ctl.abort(); }, ms || 12000);
+    return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+      .then(function (r) { return r.json(); })
+      .catch(function () { return null; })
+      .then(function (v) { clearTimeout(t); return v; });
+  }
 
   function load() {
     var w = C().wallet();
@@ -945,14 +1007,32 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
     var pk = encodeURIComponent(w.publicKey);
     Promise.all([
-      fetch("/api/chain/claimable?userPubkey=" + pk).then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch("/api/chain/open?userPubkey=" + pk).then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch("/api/chain/creator-fees?creatorPubkey=" + pk).then(function (r) { return r.json(); }).catch(function () { return null; }),
+      getJSON("/api/chain/claimable?userPubkey=" + pk),
+      getJSON("/api/chain/open?userPubkey=" + pk),
+      getJSON("/api/chain/creator-fees?creatorPubkey=" + pk),
     ]).then(function (r) {
-      if (!current()) return;          // a newer load(), or a different wallet, owns the page now
+      /* A STALE ANSWER MUST NOT BE PAINTED, AND A STRANDED PAGE MUST NOT BE
+         LEFT EITHER. This used to return and nothing else, on the assumption
+         that whatever made it stale is now rendering in its place. That holds
+         when a newer load() is running; it does NOT hold when the wallet simply
+         changed underneath, and then "Finding your bets…" sits there forever
+         with no error, no retry and no way out but a reload. Measured on a
+         phone: the wallet named above the line, the line below it, permanently.
+         Healed once, and only when nothing newer is in flight, so a flickering
+         wallet cannot spin this. */
+      if (!current()) {
+        if (myGen === loadGen && heals < 2) { heals++; load(); }
+        return;
+      }
       var claim = r[0], open = r[1], fees = r[2];
       if (!claim && !open && !fees) {
-        view.innerHTML = '<div class="err">We could not reach Solana just now. Nothing is wrong with your money. Try again in a moment.</div>';
+        /* AND A BUTTON, because "try again in a moment" with nothing to press
+           is an instruction to reload a page somebody may not realise they can
+           reload. */
+        view.innerHTML = '<div class="err">We could not reach Solana just now. Nothing is wrong with your money. '
+          + '<button class="errgo" id="retry" type="button">Try again</button></div>';
+        var rb = document.getElementById("retry");
+        if (rb) rb.addEventListener("click", function () { heals = 0; load(); }, { once: true });
         return;
       }
       var html = "";
@@ -1116,6 +1196,18 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       load();
     });
   }
+
+  /* ASKED FROM ONE PLACE THAT ALWAYS RUNS, and the alternative is why this took
+     three goes. load() has five exits - the X gate, the wallet gate, the
+     chain-is-off notice, the unreachable-chain error, the positions render -
+     and the ask was called from the last of them, which is the one iPhone users
+     never reach. Every attempt to fix it by adding another call site added
+     another branch to forget. It needs nothing from the render: the wallet, the
+     platform and the install state are all things it can see for itself.
+     load() still calls it again with what it learned, because having positions
+     is better evidence than any of that, and a second call simply redraws the
+     same box. */
+  pushAsk(false);
 
   /* THE TAG BALANCE, ON ITS OWN REQUEST AND ITS OWN TIMELINE.
      Deliberately not joined to the Promise.all above. That chain can end in
