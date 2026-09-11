@@ -592,28 +592,22 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   function pushAsk(hasSkin) {
     var box = document.getElementById("pushask");
     if (!box) return;
-    /* A LIVE WALLET CONNECTION IS THE WRONG TEST, AND ON IPHONE IT IS A DEAD
-       END. Positions are read from the wallet injected into THIS browser, and
-       iOS only injects one inside Phantom's own browser - which has no "Add to
-       Home Screen", which is the only way iOS grants push at all. So the one
-       browser where somebody can see they have money is the one browser where
-       they can never be told about it.
-       A LINKED wallet is the honest test instead: it says this person bets,
-       it is answered by the server from the device rather than from an injected
-       provider, and connecting X on both browsers is what already bridges them
-       (device_account collapses to one canonical account). */
-    if (!hasSkin && window.OddieMe) {
-      window.OddieMe.then(function (j) {
-        var w = (j && j.accounts || []).some(function (a) { return a.provider === "phantom"; });
-        if (w) pushAsk(true);
-      });
-      return;
-    }
-    if (!hasSkin) return;
     var P = window.OddiePush;
     var ios = /iPad|iPhone|iPod/.test(navigator.userAgent || "");
     var standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 
+    /* ON IPHONE, EVERY ROUTE TO "THIS PERSON BETS" IS CLOSED IN THE ONE PLACE
+       THEY COULD BE ASKED, and the order of these checks is the whole fix.
+       A wallet is only injected inside Phantom's browser. Push only exists in
+       standalone Safari. The bridge between those two storage contexts is an X
+       sign-in - and Safari does not share a session with the X app, while X
+       does not hand its own OAuth page to its own app, so that bridge is the
+       hardest thing on the platform. Three conditions that can never be true at
+       once.
+       So the instruction that unlocks it comes FIRST and is not gated on
+       anything. It was behind the very check it exists to make passable, which
+       meant the only iOS route to push was closed by the page that was trying
+       to open it. */
     if (ios && !standalone) {
       // Safari's own share sheet is the only place that step exists; X's
       // in-app browser has no "Add to Home Screen" at all, so telling somebody
@@ -626,7 +620,27 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       box.hidden = false;
       return;
     }
+
     if (!P || !P.supported) return;
+
+    /* ADDING US TO A HOME SCREEN IS A STRONGER SIGNAL THAN A WALLET, and it is
+       the only one available here. Somebody who put an icon on their home
+       screen has already said they mean to come back, which is the thing the
+       wallet check was ever a proxy for. */
+    if (standalone) hasSkin = true;
+
+    /* A LIVE WALLET CONNECTION IS THE WRONG TEST even where one is possible:
+       positions are read from the wallet injected into THIS browser, while a
+       LINKED wallet is answered by the server from the device. Same person,
+       one fewer thing that has to be true at this instant. */
+    if (!hasSkin && window.OddieMe) {
+      window.OddieMe.then(function (j) {
+        var w = (j && j.accounts || []).some(function (a) { return a.provider === "phantom"; });
+        if (w) pushAsk(true);
+      });
+      return;
+    }
+    if (!hasSkin) return;
 
     /** The "it is on" state, with the one control that proves it. A person who
      *  has granted permission has no other way to find out whether a
@@ -654,25 +668,25 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     P.subscribed().then(function (on) {
       if (on) return showOn();
       return P.askable().then(function (ok) {
-      if (!ok) return;
-      box.innerHTML = "<span>A market can settle weeks after you bet. Get told when yours does.</span>"
-        + '<button type="button" id="pushgo">Turn on</button>';
-      box.hidden = false;
-      document.getElementById("pushgo").addEventListener("click", function () {
-        var b = document.getElementById("pushgo");
-        b.disabled = true; b.textContent = "Asking…";
-        P.ask().then(function (done) {
-          /* SUBSCRIBED, not merely permitted. A browser can grant and then fail
-             to subscribe, and telling somebody they will be notified when
-             nothing is listening is worse than never asking. */
-          if (done) {
-            showOn();
-            try { localStorage.removeItem("oddie.push.owed"); } catch (e) { /* private mode */ }
-          } else {
-            box.hidden = true;
-          }
-        });
-      }, { once: true });
+        if (!ok) return;
+        box.innerHTML = "<span>A market can settle weeks after you bet. Get told when yours does.</span>"
+          + '<button type="button" id="pushgo">Turn on</button>';
+        box.hidden = false;
+        document.getElementById("pushgo").addEventListener("click", function () {
+          var b = document.getElementById("pushgo");
+          b.disabled = true; b.textContent = "Asking…";
+          P.ask().then(function (done) {
+            /* SUBSCRIBED, not merely permitted. A browser can grant and then
+               fail to subscribe, and telling somebody they will be notified
+               when nothing is listening is worse than never asking. */
+            if (done) {
+              showOn();
+              try { localStorage.removeItem("oddie.push.owed"); } catch (e) { /* private mode */ }
+            } else {
+              box.hidden = true;
+            }
+          });
+        }, { once: true });
       });
     });
   }
