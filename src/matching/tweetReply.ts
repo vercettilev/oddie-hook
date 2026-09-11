@@ -199,8 +199,14 @@ export function buildRefusalReply(tweetId: string, tagsLeft?: number | null): st
      conversation. They do not any more: a tag buys a reply and a reply spends a
      tag, so this number IS how many answers are left, and the fifth one says so
      in plain words instead of promising a silence three tags early. */
-  if (tagsLeft <= 0) return `${line} that was your last tag.`;
-  return `${line} ${tagsLeft} ${tagsLeft === 1 ? "tag" : "tags"} left.`;
+  /* "TICKET", NOT "TAG", AND ONE WORD FOR THE WHOLE PRODUCT.
+     This said "4 tags left" while the Genesis page - which has an illustrated
+     thermal ticket as its hero, says "You get 5 tickets" in its og:title, and
+     draws five pips - said tickets. Same counter, two nouns, and the person
+     reading this reply is one tap from that page. The campaign's word wins
+     because it has the artwork behind it; a tag is what you spend one ON. */
+  if (tagsLeft <= 0) return `${line} that was your last ticket.`;
+  return `${line} ${tagsLeft} ${tagsLeft === 1 ? "ticket" : "tickets"} left.`;
 }
 
 /**
@@ -222,9 +228,9 @@ export function buildRefusalReply(tweetId: string, tagsLeft?: number | null): st
  */
 export function tagsLeftLine(tagsLeft: number): string {
   const back = "one new bettor here brings it back.";
-  if (tagsLeft <= 0) return `that was your last tag. ${back}`;
-  if (tagsLeft === 1) return `you have 1 tag left. ${back}`;
-  return `you have ${tagsLeft} tags left.`;
+  if (tagsLeft <= 0) return `that was your last ticket. ${back}`;
+  if (tagsLeft === 1) return `you have 1 ticket left. ${back}`;
+  return `you have ${tagsLeft} tickets left.`;
 }
 
 export function buildTweetReply(input: TweetReplyInput): TweetReply {

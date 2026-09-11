@@ -281,6 +281,47 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .idstrip__out:hover{color:var(--pink)}
 .idstrip__out:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 
+/* YOUR TICKETS, AND THIS PAGE IS WHERE THEY LIVE.
+   The bot has been telling people "4 tickets left" under their own tweets and
+   there was nowhere on oddie.fun to go and check it. A number you
+   are quoted and cannot verify is worse than no number.
+   A CREAM SLAB, by this page's own rule: an ASK is outlined on the black
+   field, a RECORD is a cream sticker, and a balance is a record. The pips are
+   lifted exactly from the Genesis page so the two surfaces are visibly the
+   same object rather than two designs for one idea. */
+.tix[hidden]{display:none}
+.tix{background:var(--cream);color:var(--ink);border-radius:4px;
+  padding:clamp(16px,2.4vw,22px) clamp(16px,2.6vw,24px);margin:0 0 30px;
+  box-shadow:5px 5px 0 var(--yellow-deep)}
+.tix--out{box-shadow:5px 5px 0 var(--pink-deep)}
+.tix__row{display:flex;align-items:center;gap:clamp(14px,2.6vw,22px);flex-wrap:wrap}
+.tix .pips{display:flex;gap:7px;margin:0}
+.tix .pip{width:26px;height:26px;background:var(--ink);border:3px solid var(--ink);
+  border-radius:3px;rotate:-2deg}
+.tix .pip:nth-child(even){rotate:2deg}
+/* The spent ones are LEFT EMPTY rather than marked: what has to read off this
+   row in one glance is how many are still there, not how many are gone. */
+.tix .pip--spent{background:transparent}
+.tix__n{margin:0;display:flex;align-items:baseline;gap:8px}
+.tix__n b{font-family:var(--display);font-weight:400;font-size:clamp(30px,5vw,40px);
+  line-height:.9;letter-spacing:.01em}
+.tix__n span{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-2)}
+.tix--out .tix__n b{color:var(--pink-deep)}
+/* What became of the spent ones. Opened and missed are opposite outcomes and
+   a balance that only says "3 left" hides which of the two you have been
+   doing, which is the entire lesson the charge exists to teach. */
+.tix__spent{margin:14px 0 0;display:flex;flex-wrap:wrap;gap:5px 8px;
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2)}
+.tix__spent b{color:var(--ink);font-weight:800}
+/* The separator is drawn between the facts rather than typed into them, so a
+   row that wraps never starts a line with a dot. */
+.tix__spent span + span::before{content:"\00b7";margin-right:8px;color:rgba(11,13,4,.35)}
+.tix__why{margin:12px 0 0;font-size:14px;line-height:1.45;color:rgba(11,13,4,.78)}
+.tix__why a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.tix--out .tix__why{color:var(--ink);font-weight:700}
+
 /* The second line of a two-line empty state: the rule is the point, this is
    only what would make it personal. */
 .empty--quiet{display:block;width:100%;font-family:var(--body);font-weight:600;
@@ -332,6 +373,21 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <b class="idstrip__chip" id="idhandle">@you</b>
     <button class="idstrip__out" id="idout" type="button">Sign out</button>
   </p>
+  <!-- OUTSIDE #view on purpose. Every state of this page rewrites #view
+       wholesale - the X gate, the wallet gate, the error, the list - and a
+       balance that only survives one of them is a balance nobody sees. It is
+       also wallet-independent: tags are keyed to the X handle, so somebody
+       who has never connected a wallet still has five. -->
+  <section class="tix" id="tix" hidden>
+    <div class="tix__row">
+      <div class="pips" id="tixpips" role="img" aria-label="checking your tickets">
+        <b class="pip"></b><b class="pip"></b><b class="pip"></b><b class="pip"></b><b class="pip"></b>
+      </div>
+      <p class="tix__n"><b id="tixn">&mdash;</b> <span id="tixlabel">tickets left</span></p>
+    </div>
+    <p class="tix__spent" id="tixspent" hidden></p>
+    <p class="tix__why" id="tixwhy"></p>
+  </section>
   <div id="view"><p class="load">Checking for a wallet…</p></div>
 </main>
 <img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
@@ -836,6 +892,82 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       load();
     });
   }
+
+  /* THE TAG BALANCE, ON ITS OWN REQUEST AND ITS OWN TIMELINE.
+     Deliberately not joined to the Promise.all above. That chain can end in
+     four different returns - the X gate, the chain-off notice, an error - and
+     hanging the balance off it would mean the number vanished in exactly the
+     states where somebody is most likely to be looking for it. It is also the
+     one thing on this page that does not need a wallet or a chain: tags are
+     keyed to the X handle, so they are readable the moment you have connected
+     X and nothing else.
+     Silent on failure. A balance we could not read is not zero, and a page
+     that guesses at somebody's remaining chances is worse than one that says
+     nothing. */
+  (function tags() {
+    var did = (window.OddieId && window.OddieId.get()) || "";
+    if (!did) return;
+    fetch("/api/genesis/me?deviceId=" + encodeURIComponent(did))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var st = j && j.profile && j.profile.standing;
+        if (!st || typeof st.ticketsLeft !== "number") return;
+        var left = st.ticketsLeft;
+        var box = document.getElementById("tix");
+        var pips = document.getElementById("tixpips");
+
+        pips.setAttribute("aria-label", left + " of five tickets left");
+        var ps = pips.querySelectorAll(".pip");
+        for (var i = 0; i < ps.length; i++) ps[i].className = i < left ? "pip" : "pip pip--spent";
+
+        document.getElementById("tixn").textContent = String(left);
+        document.getElementById("tixlabel").textContent = left === 1 ? "ticket left" : "tickets left";
+        if (left === 0) box.className = "tix tix--out";
+
+        /* WHAT BECAME OF THE SPENT ONES. Opening a market and burning a tag on
+           a take we could not price are opposite outcomes, and a bare "3 left"
+           hides which of the two somebody has been doing - which is the whole
+           lesson the charge was added to teach. Only the non-zero parts, so a
+           clean record reads as one short line rather than three zeroes. */
+        var parts = [];
+        if (st.marketsOpened) parts.push("<b>" + st.marketsOpened + "</b> became markets");
+        if (st.tagsBurnt) parts.push("<b>" + st.tagsBurnt + "</b> missed");
+        if (st.ticketsBack) parts.push("<b>" + st.ticketsBack + "</b> came back");
+        var spent = document.getElementById("tixspent");
+        // One span per fact, so the flex row wraps BETWEEN them. Joined as one
+        // text run it wrapped mid-phrase and left a stranded "1" at the end of
+        // a line on a phone.
+        if (parts.length) {
+          spent.innerHTML = parts.map(function (t) { return "<span>" + t + "</span>"; }).join("");
+          spent.hidden = false;
+        }
+
+        /* THE REFUND RULE, WRITTEN DOWN SOMEWHERE AT LAST.
+           Tags come back when a market you opened brings somebody new in, and
+           until this line that fact existed only in the ledger code and in one
+           clause of one reply. At zero it stops being a rule and becomes the
+           only thing left to do, so it is said as an instruction and the slab
+           turns. */
+        var mine = (j.profile.opened || []);
+        document.getElementById("tixwhy").innerHTML = left > 0
+          ? "Every new bettor in a market you opened brings one back, up to five. "
+            + "Tag <b>@oddiefun</b> under a claim with a yes-or-no and a date to spend one."
+          : mine.length
+            /* There IS a way back, and it is one specific market rather than a
+               vague gesture at the board: the newest one they opened, linked,
+               because "share the ones you opened" with no link is a chore and
+               this is the moment they most want to do it. */
+            ? "You are out. One new bettor in a market you opened brings a ticket back. "
+              + '<a href="/m/' + encodeURIComponent(mine[0].slug) + '">Share the last one you opened</a>'
+            /* And sometimes there is not one. Five tickets spent without a
+               single market means nothing can bring one back, and telling this
+               person otherwise would be the one lie on the page. */
+            : "You are out. All five went on takes we could not price. "
+              + "Tickets come back when a market you opened brings somebody new in.";
+        box.hidden = false;
+      })
+      .catch(function () {});
+  })();
 })();
 </script>
 <script>

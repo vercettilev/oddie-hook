@@ -36,6 +36,19 @@ export interface GenesisStanding {
   ticketsLeft: number;
   /** Markets this handle opened by tagging. */
   marketsOpened: number;
+  /**
+   * Tags spent on something that never became a market.
+   *
+   * The number the whole rule exists to make real, and until now it lived only
+   * in the ledger: the balance said "3 left" and nothing anywhere said whether
+   * two had bought markets or been burnt on takes we could not price. Those are
+   * opposite outcomes and telling somebody apart from their own spending is the
+   * entire lesson.
+   */
+  tagsBurnt: number;
+  /** Tickets handed back because a market this handle opened brought somebody
+   *  new in. The other half of the arithmetic, and the half nobody was told. */
+  ticketsBack: number;
   /** Distinct wallets whose FIRST real-money bet landed in one of them. */
   peopleBrought: number;
   /** Dense rank by peopleBrought among everyone who brought at least one. */
@@ -142,11 +155,12 @@ export async function spendTicketForTag(
  * more, and a market that brings a new human hands one back. Five free swings
  * with an explanation after each is not a punishment.
  *
- * Charged whether or not we answer. The reply is capped at two per handle, and
- * if only answered misses cost anything then everyone past the cap taps a free
- * opus call forever. This is also the cheapest possible defence: the balance is
- * checked BEFORE the model call, so somebody who spends their five drops from
- * about six cents a tag to a tenth of one.
+ * CHARGED ONLY WHEN WE ANSWERED, and the caller enforces that by calling this
+ * after the reply has gone out. It used to be charged either way, which paired
+ * with a two-reply cap to take three tags in silence. One counter now: five
+ * tags buy five answers, and the sixth meets the balance check that sits above
+ * the model call, so somebody who spends their five drops from about six cents
+ * a tag to a tenth of one.
  *
  * Keyed on the TWEET, because there is no market to key on. Same ledger, same
  * lock, different dedup namespace: a miss and a mint can never collide.
@@ -271,7 +285,10 @@ export async function creditFundedBettor(
 /** Everything the connected page shows about one person. */
 export async function genesisStanding(rawHandle: string): Promise<GenesisStanding> {
   const handle = norm(rawHandle);
-  const empty: GenesisStanding = { handle, ticketsLeft: GENESIS_TICKETS, marketsOpened: 0, peopleBrought: 0, rank: null };
+  const empty: GenesisStanding = {
+    handle, ticketsLeft: GENESIS_TICKETS, marketsOpened: 0,
+    tagsBurnt: 0, ticketsBack: 0, peopleBrought: 0, rank: null,
+  };
   if (!validHandle(handle)) return empty;
 
   if (!STORE_PERSISTENT) {
@@ -282,26 +299,39 @@ export async function genesisStanding(rawHandle: string): Promise<GenesisStandin
     // above this one, so two people tied at four are both fourth and the next
     // person is fifth. Counting rows instead made the two backends disagree.
     const better = new Set([...counts.values()].filter((c) => c > people)).size;
+    const mine = memLog.filter((l) => l.handle === handle);
     return {
       handle,
       ticketsLeft: Math.max(0, Math.min(GENESIS_TICKETS, memBalance(handle))),
       marketsOpened: memTags.filter((t) => t.handle === handle).length,
+      tagsBurnt: mine.filter((l) => l.reason === "miss").length,
+      ticketsBack: mine.filter((l) => l.reason === "bettor").length,
       peopleBrought: people,
       rank: people > 0 ? better + 1 : null,
     };
   }
 
   await storeSchema();
-  const { rows } = await storeDb().query<{ tickets: string; opened: string; people: string; rank: string | null }>(
+  const { rows } = await storeDb().query<{
+    tickets: string; opened: string; burnt: string; back: string; people: string; rank: string | null;
+  }>(
     `WITH me AS (SELECT $1::text AS handle),
      bal AS (SELECT COALESCE(SUM(delta), 0) + $2 AS t FROM genesis_ticket_log WHERE handle = (SELECT handle FROM me)),
      opened AS (SELECT COUNT(*) AS c FROM genesis_tag WHERE handle = (SELECT handle FROM me)),
+     -- Counted off the LOG rather than off genesis_tag, because a miss has no
+     -- market to be a row of. Negated: the log stores the movement, the page
+     -- shows the count.
+     burnt AS (SELECT COALESCE(-SUM(delta), 0) AS c FROM genesis_ticket_log
+                WHERE handle = (SELECT handle FROM me) AND reason = 'miss'),
+     back AS (SELECT COALESCE(SUM(delta), 0) AS c FROM genesis_ticket_log
+               WHERE handle = (SELECT handle FROM me) AND reason = 'bettor'),
      people AS (SELECT COUNT(*) AS c FROM genesis_bettor WHERE handle = (SELECT handle FROM me)),
      board AS (SELECT handle, COUNT(*) AS c FROM genesis_bettor WHERE handle IS NOT NULL GROUP BY handle),
      -- DENSE_RANK: two people who each brought four are both fourth, and the
      -- next number is fifth, not seventh.
      ranked AS (SELECT handle, DENSE_RANK() OVER (ORDER BY c DESC) AS r FROM board)
      SELECT (SELECT t FROM bal) AS tickets, (SELECT c FROM opened) AS opened,
+            (SELECT c FROM burnt) AS burnt, (SELECT c FROM back) AS back,
             (SELECT c FROM people) AS people,
             (SELECT r FROM ranked WHERE handle = (SELECT handle FROM me)) AS rank`,
     [handle, GENESIS_TICKETS],
@@ -312,6 +342,8 @@ export async function genesisStanding(rawHandle: string): Promise<GenesisStandin
     handle,
     ticketsLeft: Math.max(0, Math.min(GENESIS_TICKETS, Number(r.tickets))),
     marketsOpened: Number(r.opened),
+    tagsBurnt: Number(r.burnt),
+    ticketsBack: Number(r.back),
     peopleBrought: Number(r.people),
     rank: r.rank === null ? null : Number(r.rank),
   };

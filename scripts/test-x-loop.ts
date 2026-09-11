@@ -259,7 +259,7 @@ async function main() {
     await runMentionSweep(deps);
     check("a miss we answered costs a tag", spent.length === 1 && spent[0] === "700", spent.join(","));
     check("...and the reply says what it left them", 
-      Boolean(spy.posted[0]?.text.includes("4 tags left")), spy.posted[0]?.text);
+      Boolean(spy.posted[0]?.text.includes("4 tickets left")), spy.posted[0]?.text);
   }
   {
     // THE RULE, as a test. The card carries the entire lesson, so an upload
@@ -324,9 +324,9 @@ async function main() {
       spendMiss: async (id) => { spent.push(id); return { spent: true, left: 0 }; },
     });
     await runMentionSweep(deps);
-    check("the last tag is answered, not swallowed by a cap", spy.posted.length === 1 && spent.length === 1);
+    check("the last ticket is answered, not swallowed by a cap", spy.posted.length === 1 && spent.length === 1);
     check("...and says so instead of printing a zero",
-      Boolean(spy.posted[0]?.text.includes("that was your last tag")), spy.posted[0]?.text);
+      Boolean(spy.posted[0]?.text.includes("that was your last ticket")), spy.posted[0]?.text);
   }
   {
     // And the sixth costs nothing, because nothing is read: the gate is the
@@ -372,7 +372,7 @@ async function main() {
     });
     await runMentionSweep(deps);
     check("a market that opened says what the tag left them",
-      Boolean(spy.posted[0]?.text.includes("you have 4 tags left")), spy.posted[0]?.text);
+      Boolean(spy.posted[0]?.text.includes("you have 4 tickets left")), spy.posted[0]?.text);
   }
   {
     // The one surface where the refund rule is an instruction rather than
@@ -384,7 +384,7 @@ async function main() {
       spendTicket: async () => true,
     });
     await runMentionSweep(deps);
-    check("the last tag is told how to get it back",
+    check("the last ticket is told how to get it back",
       Boolean(spy.posted[0]?.text.includes("one new bettor here brings it back")), spy.posted[0]?.text);
   }
   {
@@ -412,7 +412,7 @@ async function main() {
     });
     await runMentionSweep(deps);
     check("with no ticket book the reply names no count",
-      !/tags? left/.test(spy.posted[0]?.text ?? ""), spy.posted[0]?.text);
+      !/tickets? left/.test(spy.posted[0]?.text ?? ""), spy.posted[0]?.text);
   }
 
   /* --------------------------- one answer per person per market ------------ */
@@ -617,7 +617,7 @@ async function main() {
       spy.posted.length === 1 && Boolean(spy.posted[0]?.mediaIds?.length), spy.posted[0]?.text);
     check("...without paying for an extraction to find that out", extracted === 0);
     check("...and it counts down like any other answer",
-      Boolean(spy.posted[0]?.text.includes("4 tags left")), spy.posted[0]?.text);
+      Boolean(spy.posted[0]?.text.includes("4 tickets left")), spy.posted[0]?.text);
   }
 
   /* ------------------------------------- a card failure still gets a reply -- */

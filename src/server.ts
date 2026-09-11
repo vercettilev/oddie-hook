@@ -1282,7 +1282,12 @@ if (process.env.GENESIS_DEV_SEED === "1") {
     const handle = String(b.handle ?? "levvercetti");
     const tags = Math.max(0, Math.min(5, Number(b.tags ?? 0)));
     const bettors = Math.max(0, Math.min(50, Number(b.bettors ?? 0)));
+    // Misses too, or the one state the profile block exists to make visible
+    // (a ticket burnt on a take we could not price) is the one state dev
+    // cannot reach.
+    const misses = Math.max(0, Math.min(5, Number(b.misses ?? 0)));
     for (let i = 0; i < tags; i++) await spendTicketForTag(`dev-${handle}-${i}`, handle, "somebodyelse");
+    for (let i = 0; i < misses; i++) await spendTicketForMiss(`devmiss-${handle}-${i}`, handle);
     for (let i = 0; i < bettors; i++) await creditFundedBettor(`dev-${handle}-0`, `devwallet-${handle}-${i}`, null);
     res.json({ ok: true, standing: await genesisStanding(handle) });
   });
