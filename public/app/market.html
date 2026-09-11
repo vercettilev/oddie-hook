@@ -233,7 +233,14 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   text-transform:uppercase;color:var(--fg-3);padding:60px 0}
 
 @media (max-width:520px){
-  .sides{grid-template-columns:1fr}
+  /* THEY USED TO STACK, and stacking is what put one side off the screen.
+     Measured on a 375x667 phone, which is what X's in-app browser leaves you
+     on anything smaller than a Pro Max: YES began at 696px and NO at 803px,
+     both below a 667px fold. On a binary market, on the device every single
+     one of our visitors arrives on, one side was visible and the other was a
+     scroll away. That is a thumb on the scale before anybody has touched
+     anything. Side by side at 375px each button is about 172 wide and the word
+     inside it is 60. There was never a width problem. */
   .top .wrap{gap:12px}
   .top nav{gap:12px}
 }
@@ -352,6 +359,71 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    cekildi; bosluk 23px oldugu icin bu, sorunun kac satir surdugunden
    BAGIMSIZ olarak metne degmez. Cerceveyi kirma karakteri duruyor. */
 .sides{position:relative}
+
+/*
+ * THE ACTION FOLLOWS THE THUMB.
+ *
+ * Everything above this bar is preamble: who opened it, how long is left, the
+ * claim, the pool, the stake chips. Measured, that preamble is 696px on a
+ * phone, and the page's only purpose starts underneath it. Someone arriving
+ * from a tweet - which is every single one of them - landed on a market they
+ * could not bet on without scrolling first.
+ *
+ * STICKY, NOT FIXED, and the difference is the whole trick. A sticky element
+ * keeps its place in the flow, so it needs no body padding, no measured offset
+ * and no JavaScript: it pins itself to the bottom of the screen while its
+ * natural position is still below the fold, and settles into the page as you
+ * reach it. One rule, and it cannot drift out of step with a layout it does
+ * not know about.
+ *
+ * THE AMOUNT COMES WITH IT, and that is not decoration. YES is itself the
+ * confirmation here - one tap, then Phantom - and the default stake is the
+ * middle preset. A pinned button with no figure on it would hand somebody a
+ * signature request for an amount they had never been shown. The figure is
+ * also the control: pressing it goes to the chips.
+ */
+/* Off on a desktop, where the same sentence is already two lines above in
+   .how and the buttons are never out of reach. */
+.sides__amt{
+  display:none;grid-column:1/-1;justify-self:start;
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--fg-3);
+  background:none;border:0;padding:2px 0 6px;cursor:pointer;
+}
+.sides__amt b{color:var(--fg);font-weight:800}
+.sides__amt span{color:var(--yellow);text-decoration:underline;text-underline-offset:3px}
+.sides__amt:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+
+@media (max-width:640px){
+  .sides{
+    position:sticky;
+    /* The home indicator's strip is not ours to draw under. */
+    bottom:0;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    /* Bleeds to the screen edges, against .wrap's 20px, so the bar reads as a
+       layer of the app rather than a card that happens to be low down. */
+    margin:6px -20px 24px;
+    padding:8px 20px calc(10px + env(safe-area-inset-bottom,0px));
+    background:var(--black);
+    /* A soft lift instead of a rule: a hard line under a page this dark reads
+       as a seam in the background rather than as something in front of it. */
+    box-shadow:0 -1px 0 rgba(255,255,255,.07);
+    z-index:5;
+  }
+  /* Text does not get cut in half by an edge; it goes into the ground. The
+     shadow alone left the sentence above the bar sliced through its x-height,
+     which reads as a rendering fault rather than as a layer. */
+  .sides::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:34px;
+    background:linear-gradient(to top,var(--black),rgba(2,3,2,0));pointer-events:none}
+  .side{font-size:clamp(24px,6.4vw,30px);padding:16px 10px 18px}
+  /* Halved with the button: the full 9x10 offset under a 64px control is a
+     shadow taller than the gap it sits in. */
+  .side--y{box-shadow:5px 6px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
+  .side--n{box-shadow:5px 6px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
+  .sides__amt{display:flex;align-items:baseline;gap:6px}
+}
+
 
 /* THE EMPTY POOL, AS ONE LINE.
    It used to be the tallest cream sticker on the page for the page's smallest
@@ -763,6 +835,17 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
           : '<p class="how">Put SOL on <b>YES</b> or <b>NO</b>. Winners split the pool.</p>';
       }
       html += '<div class="sides">'
+        /* The figure rides WITH the buttons, because on a phone the buttons
+           are pinned to the bottom of the screen and the sentence that named
+           the amount is six hundred pixels above them. Only when there is a
+           figure to name: with no chips (chain.js absent) the sheet asks for
+           the amount itself, and a label saying nothing would be worse than
+           none. */
+        + (!off && P.length
+            ? '<button class="sides__amt" type="button" id="amtjump">'
+              + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b> on the line")
+              + " <span>change</span></button>"
+            : "")
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES"
         + (note ? "<small>" + esc(note) + "</small>" : "") + "</button>"
         + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO"
@@ -862,10 +945,23 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       b.setAttribute("aria-live", "polite");
       setTimeout(function () { b.innerHTML = was; }, 4000);
     }
+    /* ONE WRITER FOR THE FIGURE, because there are now two places it shows:
+       the sentence above the chips and the label pinned to the buttons. Three
+       different handlers were already setting .how b by hand, and adding a
+       second target to each of them is how the two end up disagreeing. */
+    function showStake() {
+      var hb = view.querySelector(".how b");
+      if (hb) hb.textContent = stake ? stake + " SOL" : "any amount";
+      var amt = view.querySelector(".sides__amt");
+      if (amt) {
+        amt.innerHTML = (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b> on the line")
+          + " <span>change</span>";
+      }
+    }
+
     Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (b) {
       b.addEventListener("click", function () {
         Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (x) { x.classList.toggle("on", x === b); });
-        var hb = view.querySelector(".how b");
         var xf = view.querySelector("#stakex");
         if (b.dataset.sol === "other") {
           // Not remembered: "other" is a decision to make now, not a default
@@ -878,13 +974,13 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
           } else {
             stake = null;
           }
-          if (hb) hb.textContent = stake ? stake + " SOL" : "any amount";
+          showStake();
           return;
         }
         if (xf) xf.hidden = true;
         stake = parseFloat(b.dataset.sol);
         try { localStorage.setItem("oddie.stake", String(stake)); } catch (e) { /* private mode */ }
-        if (hb) hb.textContent = stake + " SOL";
+        showStake();
       });
     });
 
@@ -893,8 +989,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       stakeX.addEventListener("input", function () {
         var v = parseFloat(stakeX.value);
         stake = v > 0 ? v : null;
-        var hb = view.querySelector(".how b");
-        if (hb) hb.textContent = stake ? stake + " SOL" : "any amount";
+        showStake();
       });
       // Enter is what a number field trains people to press, and there is
       // nothing to submit here, so it means "I am done typing": go to the
@@ -907,6 +1002,18 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         if (y) y.focus();
       });
     }
+
+    /* The figure is the control. Pressing it goes to the chips rather than
+       opening a second amount input: one source for the number, and the row
+       that changes it is already on the page. */
+    var amtjump = document.getElementById("amtjump");
+    if (amtjump) amtjump.addEventListener("click", function () {
+      var chips = view.querySelector(".stakes");
+      if (!chips) return;
+      chips.scrollIntoView({ block: "center", behavior: "smooth" });
+      var on = chips.querySelector(".stake.on") || chips.querySelector(".stake");
+      if (on) on.focus({ preventScroll: true });
+    });
 
     Array.prototype.forEach.call(view.querySelectorAll(".side"), function (b) {
       b.addEventListener("click", function () {
