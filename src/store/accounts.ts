@@ -314,6 +314,35 @@ export async function twitterHandleForWallet(wallet: string): Promise<string | n
 }
 
 /** Every account this browser is signed in to. Empty for an anonymous device. */
+/**
+ * THE WALLETS THIS BROWSER IS SIGNED IN TO.
+ *
+ * Keyed on the device rather than on an X handle, deliberately: a person can
+ * bet without ever connecting X, and every surface that only knows how to find
+ * somebody through their handle is a surface that silently excludes them. The
+ * wallet is the only identity a bettor is guaranteed to have.
+ *
+ * Plural because a canonical device can carry more than one linked wallet, and
+ * money in either of them is money that belongs to whoever is reading.
+ */
+export async function walletsForDevice(deviceId: string): Promise<string[]> {
+  if (!deviceId) return [];
+  if (!STORE_PERSISTENT) {
+    const canon = _memDeviceAccount.get(deviceId);
+    if (!canon) return [];
+    return memAccounts.filter((a) => a.provider === "phantom" && a.canonicalDevice === canon).map((a) => a.uid);
+  }
+  await storeSchema();
+  const { rows } = await storeDb().query<{ provider_uid: string }>(
+    `SELECT a.provider_uid FROM account a
+      WHERE a.provider = 'phantom' AND a.canonical_device = (
+        SELECT a2.canonical_device FROM device_account da JOIN account a2 ON a2.id = da.account_id
+         WHERE da.device_id = $1)`,
+    [deviceId],
+  );
+  return rows.map((r) => r.provider_uid);
+}
+
 export async function accountsFor(deviceId: string): Promise<Account[]> {
   if (!STORE_PERSISTENT) {
     const canon = _memDeviceAccount.get(deviceId);

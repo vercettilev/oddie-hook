@@ -10,7 +10,8 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
-import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey } from "./store/markets.js";
+import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
+  recordPayoutNotices, unseenPayouts, markPayoutsSeen } from "./store/markets.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
 import { adoptSurfacedMarkets, recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
@@ -56,7 +57,7 @@ import { ticketsLeft, spendTicketForMiss, spendTicketForTag, creditFundedBettor,
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle } from "./store/accounts.js";
+import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
 
@@ -1247,6 +1248,45 @@ app.get("/api/admin/chain/health", requireAdmin, async (req, res) => {
 });
 
 /** The season board. Public: it is a leaderboard. */
+/**
+ * IS THERE MONEY WAITING FOR THIS BROWSER?
+ *
+ * Keyed on the DEVICE and answered from the wallets linked to it, which is the
+ * only shape that works for everybody: a bettor is guaranteed to have a wallet
+ * and is not guaranteed to have connected X, so anything routed through a
+ * handle would quietly skip the people who arrived from a tweet and bet.
+ *
+ * A pure database read on purpose. The masthead asks this on every page, and a
+ * live getMultipleAccounts per page view would be a chain read per visitor per
+ * navigation. What it counts is settlements this browser has not been SHOWN,
+ * not what is still unclaimed; the profile's own claimable list is the
+ * authority on what is actually owed.
+ *
+ * Registered OUTSIDE the real-stakes gate, deliberately. Those routes disappear
+ * when the chain layer is off, and money that already moved is exactly the
+ * thing somebody must still be able to hear about on a deploy with betting
+ * switched off.
+ */
+app.get("/api/chain/payouts", async (req, res) => {
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  if (!deviceId) return res.json({ count: 0 });
+  const wallets = await walletsForDevice(deviceId).catch(() => []);
+  if (!wallets.length) return res.json({ count: 0 });
+  const count = await unseenPayouts(wallets).catch(() => 0);
+  res.set("Cache-Control", "no-store").json({ count });
+});
+
+/** They have been shown it. Called by the profile once it has actually drawn
+ *  the money on screen, never by the masthead: a badge that cleared itself by
+ *  being counted would vanish before anybody read it. */
+app.post("/api/chain/payouts/seen", express.json(), async (req, res) => {
+  const deviceId = typeof req.body?.deviceId === "string" && DEVICE_ID.test(req.body.deviceId) ? req.body.deviceId : null;
+  if (!deviceId) return res.json({ ok: false });
+  const wallets = await walletsForDevice(deviceId).catch(() => []);
+  if (wallets.length) await markPayoutsSeen(wallets).catch(() => {});
+  res.json({ ok: true });
+});
+
 app.get("/api/genesis/board", async (req, res) => {
   const limit = Number(req.query.limit);
   const rows = await genesisBoard(Number.isFinite(limit) ? limit : 20).catch(() => []);
@@ -3127,6 +3167,21 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
   const ok = await markCommunityResolved(slug, outcome);
   if (!ok) return null;
   const settled = await settleMarket(slug, outcome);
+
+  /* TELL THE PEOPLE WHOSE MONEY IT IS.
+     Winning on chain told the winner nothing, anywhere: not X, not the app, not
+     mail. The money sat in the vault and the only way to learn about it was to
+     wander back to the profile unprompted. settleMarket above writes the
+     settle_win notices of the play-money era, which hang off market_call, and
+     nothing has written that table since the product stopped using play money.
+     One insert off the entry stamps, no chain read, because the whole reason to
+     store this is that a badge on every page cannot be a live position read.
+     Best-effort: the money has already moved and no bookkeeping failure gets to
+     hold up a settlement. */
+  void walletsInMarket(slug)
+    .then((entries) => recordPayoutNotices(slug, entries.map((e) => e.wallet)))
+    .then((n) => { if (n > 0) console.log(JSON.stringify({ evt: "payout_notices", slug, outcome, people: n })); })
+    .catch((e) => console.error("[payout] notice write failed (non-fatal):", (e as Error).message));
   // Settlement is announced on X (the resolution reply). The email path went
   // with Google sign-in, which had no door outside the retired feed.
   // Real-stakes counterpart: resolve the SAME market on-chain so claim_winnings

@@ -832,6 +832,37 @@ CREATE TABLE IF NOT EXISTS genesis_tag (
 );
 CREATE INDEX IF NOT EXISTS genesis_tag_handle_idx ON genesis_tag (handle);
 
+-- A MARKET YOU WERE IN HAS SETTLED, AND NOBODY TOLD YOU.
+--
+-- Winning on chain told the winner nothing, anywhere. Not X, not the app, not
+-- mail: the money sat in the vault and the only way to find out was to wander
+-- back to /profile on your own. The play-money era had settle_win notices, but
+-- those hang off market_call, which nothing has written since the product
+-- stopped using play money.
+--
+-- Keyed on the WALLET, because that is the only identity a bettor is guaranteed
+-- to have. Plenty of them never connect X, and a notice that can only find
+-- somebody through their handle silently excludes exactly the people who came
+-- straight from a tweet and bet.
+--
+-- WHAT IT DELIBERATELY DOES NOT STORE IS WHO WON. chain_entry holds one row per
+-- wallet per market carrying the side of their FIRST stake, so a wallet holding
+-- both sides would be labelled with one of them, and "you won" shown to
+-- somebody who did not is worse than no notice at all. This records that a
+-- market they were in is over; the chain is asked what that means.
+--
+-- seen_at is what the badge counts down. It marks having been SHOWN the
+-- money, not having taken it: the profile's own claimable list stays the
+-- authority on what is still owed.
+CREATE TABLE IF NOT EXISTS payout_notice (
+  wallet  text NOT NULL,
+  slug    text NOT NULL,
+  at      timestamptz NOT NULL DEFAULT now(),
+  seen_at timestamptz,
+  PRIMARY KEY (wallet, slug)
+);
+CREATE INDEX IF NOT EXISTS payout_notice_unseen_idx ON payout_notice (wallet) WHERE seen_at IS NULL;
+
 -- First touch, once per wallet FOREVER: the board counts humans who put real
 -- money in, so one wallet funding ten markets is one person, credited to the
 -- market that got them in.
@@ -6634,6 +6665,72 @@ export async function slugForOnchainPubkey(pubkey: string): Promise<string | nul
 
 /** Test seam: clear the entry stamps. */
 export function _resetChainEntries(): void { memChainEntries.length = 0; }
+
+interface MemPayoutNotice { wallet: string; slug: string; seen: boolean }
+const memPayoutNotices: MemPayoutNotice[] = [];
+/** Test seam: the in-memory notice list. */
+export function _resetPayoutNotices(): void { memPayoutNotices.length = 0; }
+
+/**
+ * A MARKET SETTLED AND THESE WALLETS WERE IN IT.
+ *
+ * Written at resolve, from the entry stamps, which costs one insert and no
+ * chain read: the whole point of storing this is that a badge on every page
+ * cannot be a live getMultipleAccounts.
+ *
+ * Idempotent on (wallet, slug), so a re-resolve or a retried sweep cannot
+ * resurrect a notice somebody has already dismissed.
+ *
+ * Best-effort by contract. The caller is the settlement path and no bookkeeping
+ * failure may hold up money that has already moved on chain.
+ */
+export async function recordPayoutNotices(slug: string, wallets: string[]): Promise<number> {
+  const list = [...new Set(wallets.filter(Boolean))];
+  if (!slug || list.length === 0) return 0;
+  if (!PERSISTENT) {
+    let n = 0;
+    for (const wallet of list) {
+      if (memPayoutNotices.some((x) => x.wallet === wallet && x.slug === slug)) continue;
+      memPayoutNotices.push({ wallet, slug, seen: false });
+      n++;
+    }
+    return n;
+  }
+  await ensureSchema();
+  const { rowCount } = await db().query(
+    `INSERT INTO payout_notice (wallet, slug)
+     SELECT unnest($1::text[]), $2 ON CONFLICT DO NOTHING`,
+    [list, slug],
+  );
+  return rowCount ?? 0;
+}
+
+/** How many settled markets these wallets have not been shown yet. */
+export async function unseenPayouts(wallets: string[]): Promise<number> {
+  const list = wallets.filter(Boolean);
+  if (list.length === 0) return 0;
+  if (!PERSISTENT) return memPayoutNotices.filter((x) => list.includes(x.wallet) && !x.seen).length;
+  await ensureSchema();
+  const { rows } = await db().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM payout_notice
+      WHERE wallet = ANY($1::text[]) AND seen_at IS NULL`, [list]);
+  return rows[0]?.n ?? 0;
+}
+
+/** They have now been shown it. Dismisses the badge, never the money: the
+ *  profile's claimable list is what says whether anything is still owed. */
+export async function markPayoutsSeen(wallets: string[]): Promise<void> {
+  const list = wallets.filter(Boolean);
+  if (list.length === 0) return;
+  if (!PERSISTENT) {
+    for (const x of memPayoutNotices) if (list.includes(x.wallet)) x.seen = true;
+    return;
+  }
+  await ensureSchema();
+  await db().query(
+    `UPDATE payout_notice SET seen_at = now()
+      WHERE wallet = ANY($1::text[]) AND seen_at IS NULL`, [list]);
+}
 
 
 
