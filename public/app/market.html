@@ -348,6 +348,50 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   pointer-events:none;user-select:none}
 
 /*
+ * A PHONE'S RHYTHM, NOT A DESKTOP'S, AND ONE CONTROL NOBODY COULD REACH.
+ *
+ * THE CHIPS WRAPPED, AND THE SECOND LINE WAS UNDER THE BUTTONS. Measured at
+ * 375px: the four pills come to 326px plus 27px of gaps against 335px of room,
+ * over by eighteen. "Other" fell to a second row at 547 with the action bar
+ * pinned at 553, so the one control that lets somebody bet an amount we did not
+ * choose for them was permanently behind the buttons that spend it.
+ *
+ * A four-column grid rather than narrower pills: flex-wrap fixed at one width
+ * is a fix that breaks again the first time a preset gains a digit, and equal
+ * columns also read as a deliberate row instead of a ragged one.
+ *
+ * THE POOL SAID ITS OWN NAME ON A SECOND LINE. "0.2 SOL" and "IN THE POOL" were
+ * stacked, which is right where a card has a column to itself and wasteful on a
+ * screen where that card is a quarter of everything. On one baseline they are a
+ * sentence, and the bar and the split keep their own rows because those are two
+ * different facts.
+ *
+ * The margins that follow are a trim, not a squeeze. Desktop rhythm on a phone
+ * reads as slack; a phone with no rhythm at all reads as a spreadsheet.
+ */
+@media (max-width:640px){
+  main.wrap{padding-top:36px}
+  #view > .backfeed{margin-bottom:10px}
+  #view > .qfull{margin-bottom:18px}
+  #view > .pool{margin-bottom:16px}
+  #view > .how{margin-bottom:10px}
+
+  .pool{display:grid;grid-template-columns:auto 1fr;align-items:baseline;
+    column-gap:10px;padding:14px 16px 16px}
+  .pool__n{grid-column:1}
+  .pool__k{grid-column:2;margin-top:0}
+  .bar{grid-column:1/-1;margin-top:12px}
+  .split{grid-column:1/-1}
+  /* "Betting is over" is one sentence in the same box and has no number, no
+     bar and no split, so the two-column header would leave it hanging in a
+     grid it does not use. */
+  .pool--quiet{display:block}
+
+  .stakes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+  .stake{padding:9px 4px;font-size:12px;letter-spacing:.04em;text-align:center}
+}
+
+/*
  * THE CLAIM COMES FIRST, AND ON A PHONE THAT IS NOT WHERE IT WAS.
  *
  * The page opened with an eyebrow: who tagged it, how long is left, and a link

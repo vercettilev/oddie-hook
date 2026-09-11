@@ -1387,6 +1387,19 @@ if (process.env.GENESIS_DEV_SEED === "1") {
      production instead. Two markets: the ordinary one with SOL in it, and the
      empty one, because both states are real and only one of them was ever
      reachable here. */
+  /* A URL THAT SURVIVES THE RESTART.
+     The watcher now reloads on an HTML save, which is the only way a stylesheet
+     edit can reach a page whose file is read once at boot - and every reload
+     empties the in-memory store and mints a new slug. Without a fixed entry
+     point that means fishing the new URL out of the terminal after every single
+     save, which is worse than the trap it fixes. /dev and /dev/empty always
+     point at whatever the current boot seeded. */
+  let devSlugs = { pooled: "", empty: "" };
+  app.get("/dev", (_req, res) =>
+    devSlugs.pooled ? res.redirect(`/m/${devSlugs.pooled}`) : res.status(503).type("text").send("still seeding"));
+  app.get("/dev/empty", (_req, res) =>
+    devSlugs.empty ? res.redirect(`/m/${devSlugs.empty}`) : res.status(503).type("text").send("still seeding"));
+
   void (async () => {
     try {
       const a = await devSeedMarket({});
@@ -1394,8 +1407,9 @@ if (process.env.GENESIS_DEV_SEED === "1") {
         question: "Will oddie open a hundred markets before the end of the season?",
         hook: "100 markets?", yes: 0, no: 0,
       });
-      console.log(`[dev] seeded a market with a pool: ${a.url}`);
-      console.log(`[dev] and one nobody has bet on:   ${b.url}`);
+      devSlugs = { pooled: a.slug, empty: b.slug };
+      console.log(`[dev] a market with a pool:     ${APP_BASE_URL}/dev`);
+      console.log(`[dev] one nobody has bet on:    ${APP_BASE_URL}/dev/empty`);
     } catch (e) {
       console.error("[dev] seed failed:", (e as Error).message);
     }
