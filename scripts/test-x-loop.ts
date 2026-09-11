@@ -163,8 +163,11 @@ async function main() {
       spy.posted.length === 1 && r2.replied === 0, `posted=${spy.posted.length}`);
   }
 
-  /* ------------------------------ a crash after claiming does not re-post -- */
+  /* ------------------------------------ where it threw is the whole question */
   {
+    // BEFORE we hand X anything, a throw is the world failing and the claim
+    // deserves another go. This used to be swallowed: one bad minute on Solana
+    // and a perfectly good take was decided "failed" forever, with nobody told.
     _resetBotState();
     let attempt = 0;
     const { deps, spy } = harness({
@@ -175,11 +178,45 @@ async function main() {
         return { ok: true, slug: "later" };
       },
     });
-    await runMentionSweep(deps);
+    const r1 = await runMentionSweep(deps);
+    check("a crash before any post leaves the tag for the next sweep",
+      r1.retried === 1 && spy.posted.length === 0, JSON.stringify(r1.decisions));
+    check("...and the watermark does not step over it",
+      (await botStateGet(SINCE_KEY)) === null, String(await botStateGet(SINCE_KEY)));
     const r2 = await runMentionSweep(deps);
-    check("a failure is not retried into a duplicate reply on the next sweep",
-      spy.posted.length === 0 && r2.replied === 0, `posted=${spy.posted.length}`);
-    check("the failure is recorded as such", _memMentionOutcome("500") === "failed");
+    check("...and the next sweep lands it, exactly once",
+      r2.replied === 1 && spy.posted.length === 1, `posted=${spy.posted.length}`);
+  }
+  {
+    // AFTER we hand X a reply it is terminal and stays terminal. postReply
+    // throwing does NOT prove the post did not land - a timeout on a successful
+    // write throws exactly the same way - and double-posting is the one failure
+    // this file treats as unrecoverable.
+    _resetBotState();
+    let attempts = 0;
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("505")], newestId: "505" }),
+      postReply: async () => { attempts++; throw new Error("X 504 gateway timeout"); },
+    });
+    const r1 = await runMentionSweep(deps);
+    const r2 = await runMentionSweep(deps);
+    check("a post that may have landed is never sent again",
+      r1.failed === 1 && r2.replied === 0 && attempts === 1, `attempts=${attempts}`);
+    check("...and is recorded as failed, not as a retry", _memMentionOutcome("505") === "failed");
+  }
+  {
+    // A claim that fails the same way three times is not going to work on the
+    // fourth, and an unbounded retry pins the watermark and stops the bot dead.
+    _resetBotState();
+    let calls = 0;
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("506")], newestId: "506" }),
+      openMarket: async () => { calls++; throw new Error("solana unreachable"); },
+    });
+    for (let i = 0; i < 6; i++) await runMentionSweep(deps);
+    check("a tag that keeps failing is given up on after three goes", calls === 3, `calls=${calls}`);
+    check("...and the watermark is released so the bot is not stuck",
+      (await botStateGet(SINCE_KEY)) === "506", String(await botStateGet(SINCE_KEY)));
   }
 
   /* --------------------------------------------------- the gate is silent -- */
@@ -495,13 +532,92 @@ async function main() {
 
   /* ------------------------------------------- a mint failure costs no reply */
   {
+    // Nothing was posted, provably, so picking it back up cannot double-post -
+    // and what was lost was a real market on a claim we had already paid to
+    // read. Silence was right; terminal was not.
     _resetBotState();
+    let tries = 0;
     const { deps, spy } = harness({
-      mentions: async () => ({ items: [mention("700")], newestId: "700" }),
-      openMarket: async () => ({ ok: false, status: 502, error: "no vault" }),
+      mentions: async () => ({ items: [mention("707")], newestId: "707" }),
+      openMarket: async () => {
+        tries++;
+        return tries === 1 ? { ok: false, status: 502, error: "no vault" } : { ok: true, slug: "second-go" };
+      },
     });
     const r = await runMentionSweep(deps);
-    check("a market that could not be minted is never advertised", r.failed === 1 && spy.posted.length === 0);
+    check("a market that could not be minted is never advertised",
+      r.retried === 1 && spy.posted.length === 0, JSON.stringify(r.decisions));
+    const r2 = await runMentionSweep(deps);
+    check("...and is tried again rather than dropped on the floor",
+      r2.replied === 1 && tries === 2, JSON.stringify(r2.decisions));
+  }
+  {
+    // A media upload that 403'd once used to cost somebody an answer for good.
+    // A renderer is the world, not a verdict on their claim.
+    _resetBotState();
+    let uploads = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("708")], newestId: "708" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      uploadMedia: async () => { uploads++; if (uploads === 1) throw new Error("403 media.write"); return "media-1"; },
+    });
+    const r = await runMentionSweep(deps);
+    check("a teach card that would not upload leaves the tag for next time",
+      r.retried === 1 && spy.posted.length === 0, JSON.stringify(r.decisions));
+    const r2 = await runMentionSweep(deps);
+    check("...and the lesson lands on the second go", spy.posted.length === 1, JSON.stringify(r2.decisions));
+  }
+
+  /* ------------------------- the claim can be in the mention, not the parent */
+  {
+    // A post can be an image, a chart, or four words. The parent branch used to
+    // take its text unconditionally and throw the mention's own away, so a
+    // perfectly marketable sentence sitting right there in the tweet we were
+    // reading was dropped because of WHERE it was written.
+    _resetBotState();
+    let graded = "";
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("1400", { text: "@oddiefun will this ship before June 2027?" })], newestId: "1400" }),
+      tweet: async (id) => ({ id, text: "lmao", authorHandle: "someoneelse" }),
+      extract: async (t) => { graded = t; return goodExtraction("Will it ship before June 2027?"); },
+    });
+    await runMentionSweep(deps);
+    check("a textless parent falls back to the sentence in the tag itself",
+      graded === "will this ship before June 2027?", graded);
+    check("...and it opens a market instead of being dropped", spy.minted.length === 1);
+  }
+  {
+    // The fallback must never displace a real take with "@oddiefun price this".
+    _resetBotState();
+    let graded = "";
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("1401")], newestId: "1401" }),
+      extract: async (t) => { graded = t; return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
+    });
+    await runMentionSweep(deps);
+    check("a parent with a real take is still what gets graded",
+      graded === "Bitcoin will never hit $200k, cope harder.", graded);
+  }
+  {
+    // The likeliest first tag a newcomer ever sends, and the one we answered
+    // least: a bare @oddiefun under a picture. It costs no model call, so this
+    // is the cheapest reply in the product.
+    _resetBotState();
+    let extracted = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("1402", { repliedToId: null, text: "@oddiefun" })], newestId: "1402" }),
+      extract: async () => { extracted++; return goodExtraction("x"); },
+      teachPng: async () => Buffer.from("teach"),
+      ticketsLeft: async () => 5,
+    });
+    await runMentionSweep(deps);
+    check("a tag with nothing to price is taught, not ignored",
+      spy.posted.length === 1 && Boolean(spy.posted[0]?.mediaIds?.length), spy.posted[0]?.text);
+    check("...without paying for an extraction to find that out", extracted === 0);
+    check("...and it counts down like any other answer",
+      Boolean(spy.posted[0]?.text.includes("4 tags left")), spy.posted[0]?.text);
   }
 
   /* ------------------------------------- a card failure still gets a reply -- */

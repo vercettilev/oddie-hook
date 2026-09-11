@@ -607,6 +607,16 @@ CREATE TABLE IF NOT EXISTS x_mention (
   at         timestamptz NOT NULL DEFAULT now()
 );
 
+-- How many times we have picked this tweet back up. A row only ever gets one
+-- shot at the world and then it is decided forever, which is right for the two
+-- failures that decide themselves ("the model returned nonsense", "the claim
+-- was not marketable") and wrong for the ones where the WORLD failed: Solana
+-- unreachable, a card that would not render, a media upload that 403'd. Those
+-- dropped a good claim on the floor in silence and never looked at it again.
+-- CREATE TABLE IF NOT EXISTS never alters an existing table, so the column has
+-- to be added explicitly or production quietly keeps the old shape.
+ALTER TABLE x_mention ADD COLUMN IF NOT EXISTS attempts int NOT NULL DEFAULT 0;
+
 -- Every decision the oracle has ever reached, settled or refused. Append-only,
 -- one row per decide() call, including the runs that changed nothing: the
 -- REFUSALS are the record here. A market that quietly abstains looks exactly
@@ -5967,7 +5977,20 @@ export async function botStateSet(key: string, value: string): Promise<void> {
   );
 }
 
-export type MentionOutcome = "claimed" | "replied" | "skipped" | "failed";
+/**
+ * `retry` is the one non-terminal state: WE failed, not the claim.
+ *
+ * Everything else here is a verdict about the tweet and is final. A retry says
+ * the tweet never got a fair hearing — the chain was down, a card would not
+ * render, an upload was refused — and it is the difference between "we decided
+ * no" and "we dropped it". Bounded by `attempts`, because a claim that fails
+ * the same way three times is not going to work the fourth, and an unbounded
+ * version pins the watermark and stops the bot dead.
+ */
+export type MentionOutcome = "claimed" | "replied" | "skipped" | "failed" | "retry";
+
+/** How many goes one tweet gets before the retry state becomes the terminal one. */
+export const MENTION_ATTEMPTS = 3;
 
 interface MentionRow {
   tweetId: string; outcome: MentionOutcome; reason: string | null; slug: string | null;
@@ -5975,6 +5998,7 @@ interface MentionRow {
    *  cap is read from here in tests and dev, and a cap that only exists in
    *  production is a cap nobody can exercise before it matters. */
   author: string | null;
+  attempts: number;
 }
 const memMentions = new Map<string, MentionRow>();
 
@@ -6047,15 +6071,27 @@ export async function toldAboutMarket(handle: string | null, slug: string): Prom
 
 export async function claimMention(tweetId: string, author: string | null): Promise<boolean> {
   if (!PERSISTENT) {
-    if (memMentions.has(tweetId)) return false;
-    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null, author });
+    const prev = memMentions.get(tweetId);
+    if (prev) {
+      // A row in `retry` is the one kind that may be picked back up, and only
+      // while it has goes left. Everything else is decided forever.
+      if (prev.outcome !== "retry" || prev.attempts >= MENTION_ATTEMPTS) return false;
+      memMentions.set(tweetId, { ...prev, outcome: "claimed", author: prev.author ?? author });
+      return true;
+    }
+    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null, author, attempts: 0 });
     return true;
   }
   await ensureSchema();
+  // DO UPDATE ... WHERE, not DO NOTHING: the conflict action runs only for a
+  // row we are allowed to reopen, and is skipped (rowCount 0, i.e. "somebody
+  // already decided this") for every other. One statement, no read-then-write
+  // race between two sweeps.
   const { rowCount } = await db().query(
     `INSERT INTO x_mention (tweet_id, author, outcome) VALUES ($1,$2,'claimed')
-     ON CONFLICT (tweet_id) DO NOTHING`,
-    [tweetId, author],
+     ON CONFLICT (tweet_id) DO UPDATE SET outcome = 'claimed', at = now()
+       WHERE x_mention.outcome = 'retry' AND x_mention.attempts < $3`,
+    [tweetId, author, MENTION_ATTEMPTS],
   );
   return rowCount === 1;
 }
@@ -6099,12 +6135,17 @@ export async function settleMention(
     memMentions.set(tweetId, {
       tweetId, outcome, reason: extra.reason ?? null, slug: extra.slug ?? null,
       author: prev?.author ?? null,
+      // Counted on the way OUT, so a row that is never picked back up does not
+      // silently spend a go it never got.
+      attempts: (prev?.attempts ?? 0) + (outcome === "retry" ? 1 : 0),
     });
     return;
   }
   await ensureSchema();
   await db().query(
-    `UPDATE x_mention SET outcome=$2, reason=$3, slug=$4, reply_id=$5, at=now() WHERE tweet_id=$1`,
+    `UPDATE x_mention SET outcome=$2, reason=$3, slug=$4, reply_id=$5, at=now(),
+            attempts = attempts + (CASE WHEN $2 = 'retry' THEN 1 ELSE 0 END)
+      WHERE tweet_id=$1`,
     [tweetId, outcome, extra.reason ?? null, extra.slug ?? null, extra.replyId ?? null],
   );
 }

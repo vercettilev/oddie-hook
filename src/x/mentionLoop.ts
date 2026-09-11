@@ -105,10 +105,12 @@ export interface SweepResult {
   replied: number;
   skipped: number;
   failed: number;
+  /** Left for the next sweep because the WORLD failed, not the claim. */
+  retried: number;
   /** What each mention became, in order. The dry-run output, and the test's assertion surface. */
   decisions: Array<{
     tweetId: string;
-    outcome: "replied" | "skipped" | "failed";
+    outcome: "replied" | "skipped" | "failed" | "retry";
     reason?: string;
     slug?: string;
     text?: string;
@@ -177,7 +179,15 @@ export function tweetUrl(handle: string | null, id: string): string {
 
 export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
   const log = deps.log ?? (() => {});
-  const result: SweepResult = { looked: 0, replied: 0, skipped: 0, failed: 0, decisions: [], newestId: null };
+  const result: SweepResult = { looked: 0, replied: 0, skipped: 0, failed: 0, retried: 0, decisions: [], newestId: null };
+  /** The position of the earliest tweet this sweep means to pick back up. The
+   *  watermark must not move past it or X will never serve that mention again
+   *  and the retry would be a retry in name only. */
+  let retryFrom: number | null = null;
+  /** What the cap actually counts: mentions that reached real work. A row we
+   *  already decided costs one indexed lookup and mints nothing, and counting
+   *  those was how a held watermark could starve the tweet it was held for. */
+  let acted = 0;
 
   // Posting for real without a database would mean the "exactly once" ledger
   // and the rotated refresh token both live in a map that dies with the
@@ -193,12 +203,18 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
   // reads as a bot even when every individual reply is right.
   const ordered = [...items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-  for (const m of ordered) {
-    if (result.looked >= SWEEP_CAP) break;
+  for (let idx = 0; idx < ordered.length; idx++) {
+    const m = ordered[idx];
+    if (acted >= SWEEP_CAP) break;
     result.looked++;
 
-    const decide = (outcome: "replied" | "skipped" | "failed", extra: Record<string, unknown> = {}) => {
-      result[outcome === "replied" ? "replied" : outcome === "skipped" ? "skipped" : "failed"]++;
+    const decide = (outcome: "replied" | "skipped" | "failed" | "retry", extra: Record<string, unknown> = {}) => {
+      if (outcome === "replied") result.replied++;
+      else if (outcome === "skipped") result.skipped++;
+      else if (outcome === "retry") {
+        result.retried++;
+        if (retryFrom === null) retryFrom = idx;
+      } else result.failed++;
       result.decisions.push({ tweetId: m.id, outcome, ...extra } as SweepResult["decisions"][number]);
     };
 
@@ -213,6 +229,15 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
 
     const fresh = await claimMention(m.id, m.authorHandle);
     if (!fresh) { decide("skipped", { reason: "already-decided" }); continue; }
+    acted++;
+
+    /* DID WE ALREADY HAND X A POST FOR THIS TWEET?
+       The one failure this file calls unrecoverable is double-posting, and a
+       retry is exactly how that happens: postReply throwing does NOT mean the
+       post did not land, because a timeout on a successful write throws too.
+       So the moment we hand X a reply this tweet stops being retryable, and
+       everything that fails before that point stays retryable. */
+    let postAttempted = false;
 
     try {
       /* THE TICKET GATE, AND IT RUNS BEFORE ANYTHING ELSE.
@@ -242,19 +267,127 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
        *  remaining chances has to be true or it must not be said. */
       const tagsLeft = balance === null ? null : Math.max(0, balance - 1);
 
+      /* THE TEACHING REPLY, REACHED FROM TWO PLACES NOW.
+         It used to live inside the extraction gate and could therefore only
+         answer a claim the model had read. The other caller is the one this
+         file used to drop on the floor without a word: a tag under a post with
+         no text in it at all. That person gets the identical lesson, and it is
+         the cheapest reply in the product because no model was ever called.
+         `why` is recorded on the row and is load-bearing: refusalsUsed counts
+         rows whose reason starts with "taught". */
+      const teach = async (why: string): Promise<void> => {
+        const teachPng = deps.teachPng;
+        if (!teachPng) {
+          await settleMention(m.id, "skipped", { reason: `gate:${why}` });
+          decide("skipped", { reason: `gate:${why}` });
+          return;
+        }
+
+        /* TEACH, THEN GO QUIET, AND THE TICKET BOOK IS WHAT DECIDES WHEN.
+           The tagger went to the trouble; silence teaches them nothing and they
+           tag us the same wrong way next time. But an account that answers
+           every unmarketable tag forever is an account that gets muted, and a
+           muted account ends the product, so the answering has to stop
+           somewhere. It used to stop at two while the charging ran to five,
+           which is how three tags got taken after we had gone quiet.
+           One counter now, and it is the balance read at the top of this item:
+           five tags, five answers, the fifth one saying it was the last, and
+           the sixth tag meeting the gate before the model ever reads it.
+           TEACH_CAP is the floor for a caller with no season at all — no
+           balance to count down, and something still has to stop us. */
+        if (balance === null) {
+          const used = deps.refusalsUsed ? await deps.refusalsUsed(m.authorHandle).catch(() => TEACH_CAP) : 0;
+          if (used >= TEACH_CAP) {
+            await settleMention(m.id, "skipped", { reason: `gate:${why}/taught-out` });
+            decide("skipped", { reason: "taught-out" });
+            return;
+          }
+        }
+
+        const teachText = buildRefusalReply(m.id, tagsLeft);
+        if (deps.dryRun) {
+          await settleMention(m.id, "skipped", { reason: "dry-run" });
+          decide("skipped", { reason: "dry-run:teach", text: teachText });
+          log("dry-run teach reply", { tweetId: m.id, text: teachText });
+          return;
+        }
+
+        /* THE CARD IS THE REPLY. The text is one sentence and it says only that
+           we could not open a market; every word of the teaching - the specimen
+           claim, the two spans underlined on it, the way back in - is drawn on
+           the image. So a failed upload does not downgrade this reply, it
+           empties it, and what would go out is the bare public refusal this
+           whole branch exists to avoid posting.
+           SILENCE IS THE RIGHT POST AND THE WRONG ENDING. It used to be both:
+           the row was settled and that tag was never looked at again, so a
+           media upload that 403'd once cost somebody an answer permanently.
+           A renderer and an upload endpoint are the world, not a verdict on the
+           claim, so this leaves the tweet for the next sweep instead. */
+        let mediaIds: string[];
+        try {
+          const png = await teachPng();
+          if (!png) throw new Error("no card");
+          mediaIds = [await deps.uploadMedia(png)];
+        } catch (e) {
+          await settleMention(m.id, "retry", { reason: `no-card:${why}` });
+          decide("retry", { reason: "no-card" });
+          log("teach card unavailable, leaving the tag for the next sweep",
+            { tweetId: m.id, err: (e as Error).message });
+          return;
+        }
+        // No permalink, ever. There is no market to link to, and a reply
+        // carrying a URL is priced at a different tier by X than a plain one.
+        postAttempted = true;
+        const posted = await deps.postReply({ text: teachText, inReplyTo: m.id, mediaIds });
+        /* CHARGED HERE, AFTER THE POST, AND NOWHERE ELSE.
+           Lev's rule, in one line: nothing is spent that we did not answer.
+           Every exit above this point now ends free — the content refusal, the
+           card that would not render, the upload that failed, the dry run, the
+           handle we could not read — which is the only reading of "a tag buys a
+           reply" that survives its own failure cases. The charge is idempotent
+           on the tweet id, so a sweep that dies between the post and this line
+           cannot bill twice on the retry; and if the charge itself fails they
+           simply keep the tag, which is the direction to fail in. */
+        if (deps.spendMiss && m.authorHandle) {
+          await deps.spendMiss(m.id, m.authorHandle).catch((e) =>
+            log("miss charge failed, they keep the tag", { tweetId: m.id, err: (e as Error).message }));
+        }
+        // "taught" is the marker refusalsUsed counts, so the reason string is
+        // load-bearing rather than a log line.
+        await settleMention(m.id, "skipped", { reason: `taught:${why}`, replyId: posted.id });
+        decide("skipped", { reason: "taught", text: teachText });
+        log("taught instead of staying silent", { tweetId: m.id, handle: m.authorHandle, tagsLeft });
+      };
+
       // The claim is the tweet being replied to, not the mention. "@oddiefun"
       // under someone's take means "price THAT", and grading the mention text
       // would grade the word "@oddiefun".
+      const bot = deps.botHandle ?? "oddiefun";
       const parent = m.repliedToId ? await deps.tweet(m.repliedToId) : null;
+      const parentText = parent ? stripBotHandle(parent.text, bot).trim() : "";
       // Tagging is not required to be a reply. With no parent the mention IS
       // the claim, so the person's own post becomes the market.
-      const claimText = stripBotHandle(
-        parent ? parent.text : stripLeadingMentions(m.text),
-        deps.botHandle ?? "oddiefun",
-      );
-      if (!claimText || claimText.length < 12) {
-        await settleMention(m.id, "skipped", { reason: "no-claim" });
-        decide("skipped", { reason: "no-claim" });
+      const ownText = stripBotHandle(stripLeadingMentions(m.text), bot).trim();
+
+      /* THE CLAIM IS THE PARENT, UNTIL THE PARENT IS A PHOTO.
+         A post can be an image, a video, a chart or four words, and the parent
+         branch used to take its text unconditionally and throw the mention's
+         own away. So "@oddiefun will this ship before June?" under a
+         screenshot graded the screenshot's empty caption, found nothing, and
+         was dropped in silence — a perfectly marketable sentence, sitting
+         right there in the tweet we were reading, discarded because of where
+         it was written rather than what it said.
+         The fallback only fires when the parent has nothing gradeable in it, so
+         a real take is still never displaced by "@oddiefun price this". */
+      const usable = (t: string) => t.length >= 12;
+      const onParent = usable(parentText);
+      const claimText = onParent ? parentText : ownText;
+      if (!usable(claimText)) {
+        /* NOTHING TO PRICE ANYWHERE, and that used to be the end of it: settled,
+           silent, never explained, and free. Free was right and silent was not.
+           This is the likeliest first tag a newcomer ever sends — a bare
+           @oddiefun under a picture — and it is the one we answered least. */
+        await teach("no-claim");
         continue;
       }
 
@@ -262,8 +395,10 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // it is what the card quotes and what the one-post-one-market rule reads.
       // It is NOT the payee. The 2% goes to whoever OPENED the market, which on
       // a reply-tag is the tagger, and that handle is carried separately.
-      const sourceHandle = parent ? parent.authorHandle : m.authorHandle;
-      const sourceId = parent ? parent.id : m.id;
+      // It also has to follow the text we ACTUALLY graded: when the fallback
+      // above priced the mention, the parent is not the source of anything.
+      const sourceHandle = onParent && parent ? parent.authorHandle : m.authorHandle;
+      const sourceId = onParent && parent ? parent.id : m.id;
       const sourceUrl = tweetUrl(sourceHandle, sourceId);
 
       // ONE POST, ONE MARKET. Checked before a token is spent, because several
@@ -308,6 +443,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         } catch (e) {
           log("card failed, replying without it", { tweetId: m.id, err: (e as Error).message });
         }
+        postAttempted = true;
         const posted = await deps.postReply({ text: reply.primary, inReplyTo: m.id, mediaIds });
         await settleMention(m.id, "replied", { slug: already.slug, replyId: posted.id });
         decide("replied", { reason: "existing", slug: already.slug, text: reply.primary });
@@ -324,82 +460,14 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         // INAPPROPRIATE IS ALWAYS SILENT. There is no version of a public reply
         // under a post we refused on content grounds that reads as anything but
         // oddie commenting on it, and the reason is recorded where we can read
-        // it instead.
-        const teachPng = deps.teachPng;
-        if (!ex.appropriate || !teachPng) {
-          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}${ex.appropriate ? "" : "/inappropriate"}` });
+        // it instead. Never charged either: a silent bill for a judgement we
+        // will not defend is the one version of this rule that is unfair.
+        if (!ex.appropriate) {
+          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/inappropriate` });
           decide("skipped", { reason: `gate:${ex.resolvability}` });
           continue;
         }
-
-        /* TEACH, THEN GO QUIET, AND THE TICKET BOOK IS WHAT DECIDES WHEN.
-           The tagger went to the trouble; silence teaches them nothing and they
-           tag us the same wrong way next time. But an account that answers
-           every unmarketable tag forever is an account that gets muted, and a
-           muted account ends the product, so the answering has to stop
-           somewhere. It used to stop at two while the charging ran to five,
-           which is how three tags got taken after we had gone quiet.
-           One counter now, and it is the balance read at the top of this item:
-           five tags, five answers, the fifth one saying it was the last, and
-           the sixth tag meeting the gate before the model ever reads it.
-           TEACH_CAP is the floor for a caller with no season at all — no
-           balance to count down, and something still has to stop us. */
-        if (balance === null) {
-          const used = deps.refusalsUsed ? await deps.refusalsUsed(m.authorHandle).catch(() => TEACH_CAP) : 0;
-          if (used >= TEACH_CAP) {
-            await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/taught-out` });
-            decide("skipped", { reason: "taught-out" });
-            continue;
-          }
-        }
-
-        const teachText = buildRefusalReply(m.id, tagsLeft);
-        if (deps.dryRun) {
-          await settleMention(m.id, "skipped", { reason: "dry-run" });
-          decide("skipped", { reason: "dry-run:teach", text: teachText });
-          log("dry-run teach reply", { tweetId: m.id, text: teachText });
-          continue;
-        }
-
-        // THE CARD IS THE REPLY. The text is one sentence and it says only that
-        // we could not open a market; every word of the teaching - the specimen
-        // claim, the two spans underlined on it, the way back in - is drawn on
-        // the image. So a failed upload does not downgrade this reply, it
-        // empties it, and what would go out is the bare public refusal this
-        // whole branch exists to avoid posting. Silence is the correct failure.
-        let mediaIds: string[];
-        try {
-          const png = await teachPng();
-          if (!png) throw new Error("no card");
-          mediaIds = [await deps.uploadMedia(png)];
-        } catch (e) {
-          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/no-card` });
-          decide("skipped", { reason: "no-card" });
-          log("teach card unavailable, staying silent rather than posting a bare refusal",
-            { tweetId: m.id, err: (e as Error).message });
-          continue;
-        }
-        // No permalink, ever. There is no market to link to, and a reply
-        // carrying a URL is priced at a different tier by X than a plain one.
-        const posted = await deps.postReply({ text: teachText, inReplyTo: m.id, mediaIds });
-        /* CHARGED HERE, AFTER THE POST, AND NOWHERE ELSE.
-           Lev's rule, in one line: nothing is spent that we did not answer.
-           Every exit above this point now ends free — the content refusal, the
-           card that would not render, the upload that failed, the dry run, the
-           handle we could not read — which is the only reading of "a tag buys a
-           reply" that survives its own failure cases. The charge is idempotent
-           on the tweet id, so a sweep that dies between the post and this line
-           cannot bill twice on the retry; and if the charge itself fails they
-           simply keep the tag, which is the direction to fail in. */
-        if (deps.spendMiss && m.authorHandle) {
-          await deps.spendMiss(m.id, m.authorHandle).catch((e) =>
-            log("miss charge failed, they keep the tag", { tweetId: m.id, err: (e as Error).message }));
-        }
-        // "taught" is the marker refusalsUsed counts, so the reason string is
-        // load-bearing rather than a log line.
-        await settleMention(m.id, "skipped", { reason: `taught:${ex.resolvability}`, replyId: posted.id });
-        decide("skipped", { reason: "taught", text: teachText });
-        log("taught instead of staying silent", { tweetId: m.id, handle: m.authorHandle, tagsLeft });
+        await teach(ex.resolvability);
         continue;
       }
 
@@ -441,8 +509,18 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         hook: ex.hook || null,
       });
       if (!minted.ok) {
-        await settleMention(m.id, "failed", { reason: `mint:${minted.status} ${minted.error}` });
-        decide("failed", { reason: `mint:${minted.status}` });
+        /* THE EXPENSIVE SILENCE, AND IT WAS TERMINAL.
+           The claim was good. We read the tweet, paid for the extraction, and
+           then Solana was unreachable or the wallet was dry — and the row was
+           settled `failed`, which meant that tweet was never looked at again.
+           A real market, lost, with nobody told anything. Nothing was posted
+           here, provably, so picking it back up cannot double-post; what a
+           retry costs is one more extraction, which is why it is bounded at
+           three goes rather than left to run. */
+        await settleMention(m.id, "retry", { reason: `mint:${minted.status} ${minted.error}` });
+        decide("retry", { reason: `mint:${minted.status}` });
+        log("mint failed, leaving the tag for the next sweep",
+          { tweetId: m.id, status: minted.status, error: minted.error });
         continue;
       }
 
@@ -472,6 +550,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         log("card failed, replying without it", { tweetId: m.id, err: (e as Error).message });
       }
 
+      postAttempted = true;
       const posted = await deps.postReply({ text: reply.primary, inReplyTo: m.id, mediaIds });
       /* AFTER THE POST, like the miss branch and for the same reason. It used
          to sit directly under the mint, on the reading that the market existing
@@ -488,16 +567,34 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       decide("replied", { slug: minted.slug, text: reply.primary });
       log("replied", { tweetId: m.id, slug: minted.slug, replyId: posted.id });
     } catch (e) {
-      await settleMention(m.id, "failed", { reason: (e as Error).message.slice(0, 300) });
-      decide("failed", { reason: (e as Error).message.slice(0, 120) });
-      log("sweep item failed", { tweetId: m.id, err: (e as Error).message });
+      /* WHERE IT THREW IS THE WHOLE QUESTION.
+         Before we handed X anything, a throw is the world failing — the tweet
+         read, the model, the store — and the tweet deserves another go, because
+         the alternative is what this branch used to do: swallow a good claim on
+         one bad minute and never look at it again.
+         After we handed X a reply, it is terminal and stays terminal. A
+         postReply that throws has NOT proved the post did not land (a timeout
+         on a successful write throws exactly the same way), and re-posting is
+         the one failure this file treats as unrecoverable. */
+      const outcome = postAttempted ? "failed" : "retry";
+      await settleMention(m.id, outcome, { reason: (e as Error).message.slice(0, 300) });
+      decide(outcome, { reason: (e as Error).message.slice(0, 120) });
+      log(postAttempted ? "sweep item failed after posting, not retrying" : "sweep item failed before posting, will retry",
+        { tweetId: m.id, err: (e as Error).message });
     }
   }
 
-  // Advance only over what was actually looked at. Taking X's `newest_id`
-  // wholesale would skip every mention past the cap, permanently: they are
-  // older than the new watermark and no later poll would ever return them.
-  const lastLooked = ordered.slice(0, result.looked).at(-1)?.id ?? null;
+  /* Advance only over what was actually looked at. Taking X's `newest_id`
+     wholesale would skip every mention past the cap, permanently: they are
+     older than the new watermark and no later poll would ever return them.
+     AND NEVER PAST A TWEET WE MEAN TO PICK BACK UP. `retry` is only a retry if
+     X will serve that mention again, and X serves by since_id, so a watermark
+     that stepped over it would have left a row promising a second attempt that
+     could never physically happen. The cost is re-reading the handful of
+     mentions after it, which are skipped by their own claim rows for a single
+     indexed lookup each. */
+  const upto = retryFrom === null ? result.looked : retryFrom;
+  const lastLooked = ordered.slice(0, upto).at(-1)?.id ?? null;
   if (lastLooked) await botStateSet(SINCE_KEY, lastLooked);
 
   return result;
