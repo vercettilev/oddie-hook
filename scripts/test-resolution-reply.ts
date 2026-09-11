@@ -171,6 +171,35 @@ console.log("\nthe quote is the only half of this that can reach anybody");
   replies.length = 0; quotes.length = 0;
   const r4 = await postResolution(m.slug, "yes", base({ dryRun: true }));
   check("a dry run quotes nothing", !r4.posted && quotes.length === 0 && replies.length === 0);
+
+  /* THE THIRD POST IS GONE. The credit used to be its own reply, which meant a
+     resolution cost three posts at the URL tier to tell one person something
+     the quote is already @-mentioning them about. */
+  replies.length = 0; quotes.length = 0;
+  const r5 = await postResolution(m.slug, "yes", base({ payeeFeeLamports: async () => 4_000_000 }));
+  check("a fee owed does not buy a third post",
+    replies.length === 1 && quotes.length === 1 && !r5.creditReplyId,
+    `${replies.length} replies, ${quotes.length} quotes`);
+  check("...the quote carries the credit instead",
+    quotes[0].text.includes("@smolwyne") && quotes[0].text.includes("creator cut"), quotes[0].text);
+
+  /* But a market with nothing to quote must not silently drop somebody's payout
+     notice: that opener is reachable by no other means. */
+  replies.length = 0; quotes.length = 0;
+  const r6 = await postResolution(m.slug, "yes", base({
+    quoteTarget: async () => null, payeeFeeLamports: async () => 4_000_000,
+  }));
+  check("with nothing to quote, the credit reply still goes out",
+    Boolean(r6.creditReplyId) && replies.length === 2 && replies[1].startsWith("@smolwyne"),
+    JSON.stringify(replies));
+
+  /* And a quote that FAILED told nobody anything, so the fallback has to fire. */
+  replies.length = 0; quotes.length = 0;
+  const r7 = await postResolution(m.slug, "yes", base({
+    postQuote: async () => { throw new Error("x down"); }, payeeFeeLamports: async () => 4_000_000,
+  }));
+  check("a quote that failed does not swallow the payout notice",
+    Boolean(r7.creditReplyId) && replies.length === 2, JSON.stringify(replies));
   _resetMemReplyId();
 }
 

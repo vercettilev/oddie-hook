@@ -191,13 +191,19 @@ export async function postResolution(
      ITS OWN UPLOAD. A media id is spent by the post it is attached to, so the
      card is rendered once and uploaded twice rather than reused; a reuse that
      silently failed would drop the image off the one post that travels. */
+  const handle = deps.payeeHandle ? await deps.payeeHandle(slug).catch(() => null) : null;
+  const lamports = deps.payeeFeeLamports ? await deps.payeeFeeLamports(slug).catch(() => 0) : 0;
+  const feeOwed = Boolean(handle) && lamports > 0;
+  /** Set by the quote when it carried the credit itself, so the separate reply
+   *  below does not say the same thing to the same person at the URL tier. */
+  let creditCarried = false;
+
   try {
     const quoteId = deps.quoteTarget && deps.postQuote ? await deps.quoteTarget(slug) : null;
     if (quoteId) {
       const c = deps.crowd ? await deps.crowd(slug, outcome).catch(() => null) : null;
-      const opener = deps.payeeHandle ? await deps.payeeHandle(slug).catch(() => null) : null;
       const quoteText = buildResolutionQuote({
-        outcome, permalink: url, opener,
+        outcome, permalink: url, opener: handle, feeOwed,
         stakers: c?.stakers ?? 0, winners: c?.winners ?? 0, bestEntryPct: c?.bestEntryPct ?? null,
       });
       let qMedia: string[] | undefined;
@@ -210,16 +216,23 @@ export async function postResolution(
       const q = await deps.postQuote!({ text: quoteText, quoteTweetId: quoteId, mediaIds: qMedia });
       out.quoteId = q.id;
       out.quoteText = quoteText;
+      // Only once it actually posted. A quote that threw has told nobody
+      // anything, and the reply below is then the payout notice again.
+      creditCarried = feeOwed;
       deps.log("resolution quoted the claim", { slug, quoteId: q.id, quotedTweet: quoteId });
     }
   } catch (e) {
     deps.log("resolution: quote failed (non-fatal)", { slug, err: (e as Error).message });
   }
 
+  /* THE FALLBACK PAYOUT NOTICE, and it is now only a fallback.
+     The quote above already @-mentions the opener and says a cut was earned, so
+     sending this as well would be a third post at the URL tier telling one
+     person something they have already been notified about. It still fires when
+     there was no quote - a claim that never came from X has nothing to quote,
+     and that opener would otherwise never be told at all. */
   try {
-    const handle = deps.payeeHandle ? await deps.payeeHandle(slug) : null;
-    const lamports = deps.payeeFeeLamports ? await deps.payeeFeeLamports(slug) : 0;
-    if (handle && lamports > 0) {
+    if (handle && lamports > 0 && !creditCarried) {
       const creditText = authorCreditText(handle, url);
       const credit = await deps.postReply({ text: creditText, inReplyTo: replyId });
       out.creditReplyId = credit.id;

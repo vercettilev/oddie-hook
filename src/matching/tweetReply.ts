@@ -424,6 +424,17 @@ export interface ResolutionQuoteInput {
    *  the pool just before their stake landed, 1-99). Low means they were early
    *  and alone. Null when nothing was recorded. */
   bestEntryPct?: number | null;
+  /**
+   * Whether the opener is owed a creator cut, which folds their payout notice
+   * into THIS post instead of a third one.
+   *
+   * It used to be its own reply under the announcement, which cost a third post
+   * at the URL tier to tell one person something this post is already
+   * @-mentioning them about. Folded in, it is also better placed: buried in a
+   * thread, "opening a market pays you" reaches the people already convinced;
+   * on the post that travels, it is the recruitment line.
+   */
+  feeOwed?: boolean;
 }
 
 /** Four times your money or better is where a call stops being an opinion. The
@@ -437,7 +448,11 @@ export function buildResolutionQuote(i: ResolutionQuoteInput): string {
 
   // The credit, and it is deliberately about the ACT rather than the take: on a
   // reply-tag the opener did not write the claim, they picked it.
-  if (/^[A-Za-z0-9_]{1,15}$/.test(opener)) lines.push(`@${opener} opened this one.`);
+  if (/^[A-Za-z0-9_]{1,15}$/.test(opener)) {
+    lines.push(i.feeOwed
+      ? `@${opener} opened this one and earned a creator cut on it.`
+      : `@${opener} opened this one.`);
+  }
 
   /* The crowd, described and never enumerated. Each branch says only what the
      numbers actually support: no crowd line at all rather than "0 of 0", and
