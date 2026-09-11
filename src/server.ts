@@ -1353,6 +1353,46 @@ app.post("/api/push/subscribe", express.json(), async (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * PROVE IT ON THE DEVICE, BEFORE A PAYOUT DEPENDS ON IT.
+ *
+ * Everything about this path is verified except the last inch, and the last
+ * inch is the one that cannot be tested from a server: whether a notification
+ * actually appears, on a real phone, from a real push service. The alternative
+ * to this route is finding out the first time somebody wins.
+ *
+ * It only ever reaches subscriptions the CALLING DEVICE registered, so there is
+ * nothing here to abuse: making your own browser show a notification is
+ * something you can already do. Device ids are unguessable and the text is
+ * fixed, so the worst a guessed id buys is one fixed buzz, and the rate limit
+ * bounds even that.
+ */
+app.post("/api/push/test", express.json(), async (req, res) => {
+  if (!meteredRoute(req, res, "push-test", 20)) return;
+  const deviceId = typeof req.body?.deviceId === "string" && DEVICE_ID.test(req.body.deviceId) ? req.body.deviceId : null;
+  if (!deviceId) return res.status(400).json({ ok: false });
+  const keys = vapidFromEnv();
+  if (!keys) return res.json({ ok: false, reason: "push is not configured" });
+  const subs = await pushSubscriptionsFor([deviceId]).catch(() => []);
+  if (subs.length === 0) return res.json({ ok: false, reason: "this browser has not subscribed" });
+
+  let sent = 0;
+  for (const sub of subs) {
+    const r = await sendPush(sub, {
+      title: "oddie",
+      // Deliberately shaped like the real thing, because what is being proven
+      // is the whole delivery and not a string: same icon, same landing page,
+      // same lock screen.
+      body: "This is what a settled market will look like.",
+      url: `${APP_BASE_URL}/profile`,
+      tag: "push-test",
+    }, keys);
+    if (r.ok) sent++;
+    else if (r.gone) await dropPushSubscription(sub.endpoint).catch(() => {});
+  }
+  res.json({ ok: sent > 0, sent, subscriptions: subs.length });
+});
+
 /** Permission withdrawn, or the browser rotated its endpoint. */
 app.post("/api/push/unsubscribe", express.json(), async (req, res) => {
   const endpoint = typeof req.body?.endpoint === "string" ? req.body.endpoint : "";

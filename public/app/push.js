@@ -89,6 +89,35 @@
     }).catch(function () { return false; });
   };
 
+  /** Whether this browser already has a live subscription. Not the same as
+   *  permission being granted: a granted browser whose subscription was
+   *  dropped (permission reset, profile cleared) shows "on" and hears nothing,
+   *  which is the failure worth catching. */
+  api.subscribed = function () {
+    if (Notification.permission !== "granted") return Promise.resolve(false);
+    return api.ready.then(function (reg) {
+      return reg ? reg.pushManager.getSubscription() : null;
+    }).then(function (s) { return Boolean(s); }).catch(function () { return false; });
+  };
+
+  /**
+   * ONE REAL NOTIFICATION, ON A REAL DEVICE.
+   *
+   * Everything else about this path can be proven from a server. Whether a
+   * notification actually appears on a phone cannot, and the alternative to a
+   * button is finding out the first time somebody wins.
+   */
+  api.test = function () {
+    var did = (window.OddieId && window.OddieId.get && window.OddieId.get()) || "";
+    if (!did) return Promise.resolve(false);
+    return fetch("/api/push/test", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ deviceId: did }),
+    }).then(function (r) { return r.json(); })
+      .then(function (j) { return Boolean(j && j.ok); })
+      .catch(function () { return false; });
+  };
+
   /* A STAKE IS THE MOMENT SOMEBODY ACQUIRES A REASON TO BE TOLD, and chain.js
      already announces it. Remembered rather than acted on: the receipt sheet is
      open at that instant and stacking a system dialog on top of it is how a

@@ -610,7 +610,32 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     }
     if (!P || !P.supported) return;
 
-    P.askable().then(function (ok) {
+    /** The "it is on" state, with the one control that proves it. A person who
+     *  has granted permission has no other way to find out whether a
+     *  notification will actually arrive, and the alternative to a button is
+     *  discovering it the first time they win. */
+    function showOn() {
+      box.innerHTML = "<span>Notifications are on. You will hear from us when one of your markets settles.</span>"
+        + '<button type="button" id="pushtest">Send a test</button>';
+      box.hidden = false;
+      document.getElementById("pushtest").addEventListener("click", function () {
+        var b = document.getElementById("pushtest");
+        b.disabled = true; b.textContent = "Sending…";
+        P.test().then(function (sent) {
+          b.textContent = sent ? "Sent" : "Did not send";
+          // Re-enabled either way: a failure is exactly when somebody wants to
+          // try again, and a dead button after one is a dead end.
+          setTimeout(function () { b.disabled = false; b.textContent = "Send a test"; }, 3000);
+        });
+      });
+    }
+
+    /* ALREADY ON IS ITS OWN STATE, and askable() returns false for it, so
+       without this the line simply vanished for everybody who had said yes -
+       with no way left to check it still worked. */
+    P.subscribed().then(function (on) {
+      if (on) return showOn();
+      return P.askable().then(function (ok) {
       if (!ok) return;
       box.innerHTML = "<span>A market can settle weeks after you bet. Get told when yours does.</span>"
         + '<button type="button" id="pushgo">Turn on</button>';
@@ -623,13 +648,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
              to subscribe, and telling somebody they will be notified when
              nothing is listening is worse than never asking. */
           if (done) {
-            box.innerHTML = "<span>Done. You will hear from us when one of your markets settles.</span>";
+            showOn();
             try { localStorage.removeItem("oddie.push.owed"); } catch (e) { /* private mode */ }
           } else {
             box.hidden = true;
           }
         });
       }, { once: true });
+      });
     });
   }
 
