@@ -211,7 +211,18 @@ const stampApp = (html: string): string => {
   const metas = (APP_X_GATE ? '\n<meta name="oddie-xgate" content="1">' : "")
     + (GENESIS_SEASON ? '\n<meta name="oddie-genesis" content="1">' : "")
     + (anySettled === false ? '\n<meta name="oddie-noboard" content="1">' : "");
-  return metas ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + metas) : html;
+  const stamped = metas ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + metas) : html;
+  /* AND THE LINK ITSELF, NOT JUST THE META THAT DESCRIBES IT.
+     The board link was hidden by a script after the page painted, so on a phone
+     "Who was right" appeared in the nav and then vanished a moment later - a
+     flash of a destination that does not exist, on every app page, every load.
+     The server already knows the answer here, before a single byte goes out, so
+     the link ships hidden and nothing ever flashes. The client script stays as
+     the fallback for a page served before this knew, and setting hidden on
+     something already hidden costs nothing. */
+  return anySettled === false
+    ? stamped.split('<a href="/board">Who was right</a>').join('<a href="/board" hidden>Who was right</a>')
+    : stamped;
 };
 
 /**

@@ -566,7 +566,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     var chip = document.querySelector(".top .mechip");
     if (chip) chip.hidden = true;
     view.innerHTML = '<div class="gate">'
-      + '<img class="gsticker" src="/brand/st-main.webp" alt="">'
+      /* NOT AN ARCHETYPE STICKER. st-main is THE MAIN CHARACTER, which is one
+         of the nine things Genesis tells somebody they are AFTER they connect.
+         On the screen that asks them to connect it does two wrong things at
+         once: it claims a result nobody has earned, and it spoils the reveal
+         that is the entire reason to press the button. This one is about the
+         @ and the tag, which is what connecting X is FOR, and it says nothing
+         about who the reader turns out to be. */
+      + '<img class="gsticker" src="/brand/st-tag.webp" alt="">'
       + "<p>Your calls, under your name. The wallet comes later.</p>"
       + '<a class="big" id="xconnect" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did)
       + '&return=%2Fprofile">Continue with X</a>'
