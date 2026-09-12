@@ -465,7 +465,12 @@ async function renderLanding(): Promise<string> {
     ? '<span class="livechip"><i></i>Real SOL · live on Solana</span>'
     : '';
 
-  const html = LANDING_HTML
+  refreshAnySettled();
+  const boardSentence = anySettled === false
+    ? LANDING_HTML.split('The <a href="/board">board</a> ranks').join("The board ranks")
+    : LANDING_HTML;
+
+  const html = boardSentence
     .replace("<!--PROOF-->", proof)
     .replace("<!--NET_CHIP-->", netChip);
 
