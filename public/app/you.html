@@ -422,6 +422,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   .start__go{grid-column:1;justify-content:center}
 }
 
+/* Same as the market page's, so the way back reads the same everywhere. */
+.backfeed{display:inline-block;margin:0 0 10px;font-family:var(--mono);font-size:11px;
+  font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);
+  text-decoration:none}
+.backfeed:hover{color:var(--fg)}
+
 /* The way out of a failed read. Sized like the sentence it sits in, because it
    is a repair and not an invitation. */
 .errgo{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;
@@ -449,6 +455,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 </header>
 
 <main class="wrap">
+  <!-- THE WAY BACK, which this page alone did not have. Every other page
+       carries one; the profile is also the page most often reached through a
+       wallet's in-app browser, opened by a deep link that starts a fresh
+       session - so the browser's own back chevron has nothing behind it and
+       somebody who came to check their money is simply stranded. -->
+  <a class="backfeed" href="/markets">&larr; All markets</a>
   <h1>Your profile <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
   <p class="sub" id="sub"></p>
   <!-- Signed in as, and the way out. The masthead chip says who you are on
@@ -1004,11 +1016,42 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
    */
   function getJSON(url, ms) {
     var ctl = ("AbortController" in window) ? new AbortController() : null;
-    var t = setTimeout(function () { if (ctl) ctl.abort(); }, ms || 12000);
-    return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+    var timer = null;
+    /* RACED, NOT JUST ABORTED, and the difference is the whole point. Aborting
+       assumes the abort makes fetch REJECT, which a WKWebView suspended behind
+       a wallet app does not reliably do: the signal fires, the request is
+       dropped, and the promise settles never. Then the timeout is as stuck as
+       the thing it was guarding. A timer that RESOLVES cannot be ignored. */
+    var timeout = new Promise(function (res) {
+      timer = setTimeout(function () { if (ctl) { try { ctl.abort(); } catch (e) {} } res(null); }, ms || 12000);
+    });
+    var live = fetch(url, ctl ? { signal: ctl.signal } : undefined)
       .then(function (r) { return r.json(); })
-      .catch(function () { return null; })
-      .then(function (v) { clearTimeout(t); return v; });
+      .catch(function () { return null; });
+    return Promise.race([live, timeout]).then(function (v) { clearTimeout(timer); return v; });
+  }
+
+  /**
+   * AND A WATCHDOG ON THE WORDS THEMSELVES, because every guarantee above is a
+   * guarantee about a promise.
+   *
+   * "Finding your bets…" has now outlived two separate fixes on a real phone.
+   * Each one closed the failure it was written for and the sentence stayed, so
+   * the next one is not another theory about which promise misbehaved: it
+   * watches the SCREEN. If that line is still the whole of the view some
+   * seconds after it was written, whatever was supposed to replace it is not
+   * coming, and the page says so instead of implying work still in progress.
+   */
+  function watchLoading(gen) {
+    setTimeout(function () {
+      if (gen !== loadGen) return;                       // a newer load owns the page
+      var l = view.querySelector(".load");
+      if (!l || view.children.length !== 1) return;      // something rendered
+      view.innerHTML = '<div class="err">We could not read your bets just now. Nothing is wrong with your money. '
+        + '<button class="errgo" id="retry" type="button">Try again</button></div>';
+      var rb = document.getElementById("retry");
+      if (rb) rb.addEventListener("click", function () { heals = 0; load(); }, { once: true });
+    }, 16000);
   }
 
   function load() {
@@ -1038,6 +1081,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       C().forgetWallet().then(function () { sub.textContent = ""; load(); });
     }, { once: true });
     view.innerHTML = '<p class="load">Finding your bets…</p>';
+    watchLoading(myGen);
 
     var pk = encodeURIComponent(w.publicKey);
     Promise.all([
