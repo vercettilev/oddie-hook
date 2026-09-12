@@ -212,6 +212,30 @@ function b64ToBytes(b64) {
   }
 
   /**
+   * WHAT A CONNECT CONTROL SHOULD SAY, AND DO, ON THIS DEVICE.
+   *
+   * Six places in this file draw a button that says some form of "Connect
+   * wallet", and on a phone arriving from X not one of them can ever succeed:
+   * iOS injects a provider only inside a wallet's own browser. Each of them
+   * called connectWallet, caught the refusal, and restored the same label - so
+   * the control was a lie before the tap and looked broken after it, six times
+   * over, and in the stake sheet it also grew a new button per attempt.
+   *
+   * A label that names the real action, and a tap that performs it. Sending
+   * somebody to another app unasked is not ours to do; sending them there when
+   * they have tapped a button reading "Open in Phantom" is keeping a promise.
+   */
+  function connectLabel(fallback) {
+    return isMobileNoWallet() ? "Open in Phantom" : (fallback || "Connect wallet");
+  }
+  /** Handled it? True means the caller must stop: the page is leaving. */
+  function connectHere() {
+    if (!isMobileNoWallet()) return false;
+    window.location.href = phantomDeepLink();
+    return true;
+  }
+
+  /**
    * THE LINK, and why a bare connect is not enough.
    *
    * provider.connect() proves nothing to the server: it hands the page a
@@ -490,12 +514,14 @@ function b64ToBytes(b64) {
       shell(`<p class="cnote">This market settled <b>${won}</b> on ${clusterLabel(CLUSTER)}. If you had real SOL on it, connect the wallet you staked with to collect.</p>
         <button class="cbtn" id="chainconnect">Connect wallet to check</button>
         <button class="cclose">Not now</button>`);
+      body.querySelector("#chainconnect").textContent = connectLabel("Connect wallet to check");
       body.querySelector("#chainconnect").onclick = async () => {
         const b = body.querySelector("#chainconnect");
+        if (connectHere()) return;
         b.disabled = true; b.textContent = "Connecting…";
         try { await connectWallet(); await renderClaim(body, slug, marketState); }
         catch (e) {
-          b.disabled = false; b.textContent = "Connect wallet to check";
+          b.disabled = false; b.textContent = connectLabel("Connect wallet to check");
           let err = body.querySelector(".chain-err");
           if (!err) { err = document.createElement("p"); err.className = "chain-err"; b.after(err); }
           err.textContent = e.message;
@@ -638,12 +664,14 @@ function b64ToBytes(b64) {
       shell(`<p class="cnote">Nobody settled this market, so the 30 day window is open and your stake is yours to take back. Connect the wallet you staked with.</p>
         <button class="cbtn" id="chainconnect">Connect wallet</button>
         <button class="cclose">Not now</button>`);
+      body.querySelector("#chainconnect").textContent = connectLabel();
       body.querySelector("#chainconnect").onclick = async () => {
         const b = body.querySelector("#chainconnect");
+        if (connectHere()) return;
         b.disabled = true; b.textContent = "Connecting…";
         try { await connectWallet(); await openRefundSheet(slug); }
         catch (e) {
-          b.disabled = false; b.textContent = "Connect wallet";
+          b.disabled = false; b.textContent = connectLabel();
           let err = body.querySelector(".chain-err");
           if (!err) { err = document.createElement("p"); err.className = "chain-err"; b.after(err); }
           err.textContent = e.message;
@@ -715,7 +743,9 @@ function b64ToBytes(b64) {
       shell(`<p class="cnote">Connect the wallet holding this position and we can offer it.</p>
         <button class="claimbtn" id="cw">Connect wallet</button>
         <button class="cclose">Not now</button>`);
+      body.querySelector("#cw").textContent = connectLabel();
       body.querySelector("#cw").onclick = async () => {
+        if (connectHere()) return;
         try { await connectWallet(); await openSellSheet(slug, side, lamports); } catch (e) { /* the sheet stays */ }
       };
       return;
@@ -1174,7 +1204,15 @@ function b64ToBytes(b64) {
         stakeBtn.classList.toggle("claimbtn--no", side === "no");
         if (!side) { stakeBtn.disabled = true; stakeBtn.textContent = "Pick a side"; }
         else if (!(sol > 0)) { stakeBtn.disabled = true; stakeBtn.textContent = "Choose an amount"; }
-        else if (!wallet) { stakeBtn.disabled = false; stakeBtn.textContent = "Connect wallet to bet"; }
+        /* "CONNECT WALLET TO BET" IS A LIE ON A PHONE, and it was the loudest
+           thing on the sheet. iOS injects a provider only inside a wallet's own
+           browser, so there is nothing here to connect to and there never will
+           be: every tap called connectWallet, got refused, and offered a second
+           button. The button names what it can actually do. */
+        else if (!wallet) {
+          stakeBtn.disabled = false;
+          stakeBtn.textContent = isMobileNoWallet() ? "Open in Phantom to bet" : "Connect wallet to bet";
+        }
         /* A WALLET WITH NOTHING ON THIS CLUSTER IS A DIFFERENT PROBLEM.
            "Not enough SOL" is true for a wallet holding 0.05 and true for a
            wallet holding nothing at all, but only the first one is about the
@@ -1328,6 +1366,12 @@ function b64ToBytes(b64) {
         // has decided, and the wallet prompt is now a confirmation of that
         // decision instead of a toll gate in front of it.
         if (!wallet) {
+          /* THE TAP IS THE CONSENT. Sending somebody to another app unasked is
+             not ours to do, which is why the fallback below offers a link
+             rather than redirecting - but a button that says "Open in Phantom
+             to bet" has been tapped on exactly that promise, so performing it
+             is keeping the promise, not taking a liberty. */
+          if (connectHere()) return;
           stakeBtn.disabled = true; stakeBtn.textContent = "Check your wallet…";
           try { await connectWallet(); }
           catch (e) {
@@ -1337,13 +1381,22 @@ function b64ToBytes(b64) {
             // reopens this page inside Phantom, where the flow just continues.
             // Offered as a link the user taps rather than a redirect we perform,
             // because sending somebody to another app unasked is not ours to do.
+            /* ONE LINK, NOT ONE PER TAP. This built a fresh anchor on every
+               failure and inserted it after the same line, and on a phone the
+               connect fails EVERY time - so five taps left five identical
+               "Open in Phantom" buttons stacked down the sheet, pushing the
+               real controls off the screen. Reused now, so a repeat tap
+               refreshes the link it already offered. */
             if (e.deepLink && line) {
-              const a = document.createElement("a");
+              let a = body.querySelector(".chain-deep");
+              if (!a) {
+                a = document.createElement("a");
+                a.className = "cbtn chain-deep";
+                a.style.cssText = "display:block;text-align:center;text-decoration:none;margin-top:8px";
+                a.textContent = "Open in Phantom";
+                line.after(a);
+              }
               a.href = e.deepLink;
-              a.className = "cbtn";
-              a.style.cssText = "display:block;text-align:center;text-decoration:none;margin-top:8px";
-              a.textContent = "Open in Phantom";
-              line.after(a);
             }
             return;
           }
@@ -1754,11 +1807,13 @@ function b64ToBytes(b64) {
     if (!wallet) {
       paint(`<div class="cc-row"><span class="cc-text">Bet real SOL somewhere? See if you won.</span>
         <button class="cc-go" type="button">Check</button></div>`);
+      box.querySelector(".cc-go").textContent = connectLabel("Check");
       box.querySelector(".cc-go").onclick = async () => {
         const b = box.querySelector(".cc-go");
+        if (connectHere()) return;
         b.disabled = true; b.textContent = "Connecting…";
         try { await connectWallet(); await refreshClaimable(box); }
-        catch (e) { b.disabled = false; b.textContent = "Check"; paint(`<div class="cc-row"><span class="cc-text">${esc(e.message)}</span></div>`); }
+        catch (e) { b.disabled = false; b.textContent = connectLabel("Check"); paint(`<div class="cc-row"><span class="cc-text">${esc(e.message)}</span></div>`); }
       };
       return;
     }
@@ -1849,12 +1904,14 @@ function b64ToBytes(b64) {
     // where a creator came deliberately to look.
     box.innerHTML = `<div class="cc-row"><span class="cc-text">Markets you started pay you 2% when they resolve. Connect the wallet you want paid to.</span>
       <button class="cc-go" type="button">Connect</button></div>`;
+    box.querySelector(".cc-go").textContent = connectLabel("Connect");
     box.querySelector(".cc-go").onclick = async () => {
       const b = box.querySelector(".cc-go");
+      if (connectHere()) return;
       b.disabled = true; b.textContent = "Connecting…";
       try { await connectWallet(); await refreshCreatorFees(box); }
       catch (e) {
-        b.disabled = false; b.textContent = "Connect";
+        b.disabled = false; b.textContent = connectLabel("Connect");
         box.innerHTML = `<div class="cc-row"><span class="cc-text">${esc(e.message)}</span></div>`;
       }
     };
