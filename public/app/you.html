@@ -227,6 +227,17 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 @media (max-width:700px){
   .gate{grid-template-columns:1fr;gap:10px;justify-items:center;text-align:center}
   .gate img.gsticker{grid-row:auto;width:min(180px,46vw)}
+  /* GRID-COLUMN:AUTO IS THE WHOLE FIX, and its absence is why raising the
+     breakpoint changed nothing. The stacked rule sets ONE explicit column, but
+     `.gate .deep, .gate .later{grid-column:2}` above stays in force here - and
+     an item pinned to column 2 makes the grid grow an IMPLICIT second column,
+     whatever the template says. Measured at 375px: "1fr" computing to
+     "172.5px 102.5px".
+     So the gate stacked correctly only when it happened to contain neither a
+     deep link nor a later button, which is exactly the one variant that ever
+     looked right on a phone. Every gate that offered a way out squeezed its own
+     text into a hundred pixels. */
+  .gate .deep,.gate .later{grid-column:auto}
   .gate .big,.gate .deep,.gate .later{justify-self:center}
 }
 .row{background:var(--cream);color:var(--ink);border:3px solid var(--black);
@@ -723,31 +734,54 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   }
 
   function gate(msg, deepLink) {
+    /* A BUTTON THAT CANNOT SUCCEED MUST NOT BE THE LOUD ONE.
+       "Connect wallet" was drawn unconditionally. On a phone arriving from X
+       there is no injected provider and there never will be - iOS gives one
+       only inside a wallet's own browser - so the tap called connect(), got the
+       mobile refusal, and re-rendered the gate with the same button still on
+       it. Lev, on his phone: "connect wallet tetiklenmiyor, open in phantom
+       çalışıyor." It was firing perfectly and failing invisibly, which is
+       worse than a dead button, because a dead button at least looks dead.
+       Asked up front now. Where a provider can exist, Connect is the loud
+       control and the deep link is the fallback. Where one cannot, they swap:
+       the thing that works is the button, and Connect is not offered at all. */
+    var canConnect = C() && C().canConnectHere ? C().canConnectHere() : true;
+    var link = deepLink || (C() && C().deepLink && !canConnect ? C().deepLink() : null);
+
     // The fee block rides along BELOW the ask. Somebody who has not connected
     // anything is exactly the person who does not yet know that opening a
     // market pays them, and putting that behind the wallet gate meant it only
     // ever reached people who had already gone through it.
     view.innerHTML = '<div class="gate">'
       + '<img class="gsticker" src="/brand/st-decide.webp" alt="">'
-      + "<p>" + esc(msg) + "</p>"
-      + '<button class="big" id="connect" type="button">Connect wallet</button>'
-      + (deepLink ? '<a class="deep" href="' + esc(deepLink) + '">Open in Phantom</a>' : "")
+      + "<p>" + esc(canConnect ? msg
+          : "Your wallet lives in its own app on a phone. Open oddie inside Phantom and it picks up right here.") + "</p>"
+      + (canConnect
+          ? '<button class="big" id="connect" type="button">Connect wallet</button>'
+            + (link ? '<a class="deep" href="' + esc(link) + '">Open in Phantom</a>' : "")
+          : (link ? '<a class="big" href="' + esc(link) + '">Open in Phantom</a>' : "")
+            + '<button class="later" id="tryanyway" type="button">Try connecting here instead</button>')
       + "</div>"
       + feesSection(null, false);
-    /* THE ASK RAN ONLY ON THE ONE PATH THAT NEEDS IT LEAST.
-       pushAsk was called from inside the loaded-positions branch, so it never
-       ran for anybody sitting at a connect gate - which on iPhone is where
-       almost everybody sits, because a wallet cannot be injected into Safari at
-       all. The one instruction that opens the whole thing was reachable only by
-       people who had already got past the wall it unlocks. */
-    document.getElementById("connect").addEventListener("click", function () {
-      var b = document.getElementById("connect");
-      b.disabled = true; b.textContent = "Connecting…";
+
+    var cb = document.getElementById("connect");
+    if (cb) cb.addEventListener("click", function () {
+      cb.disabled = true; cb.textContent = "Connecting…";
       C().connect().then(load).catch(function (e) {
-        // The deep link rides on the error for a reason: on a phone arriving
-        // from X there is no wallet to inject, and "install Phantom" is a dead
-        // end when Phantom is very likely already installed.
         gate(e.message, e.deepLink || null);
+      });
+    });
+
+    /* THE ESCAPE HATCH STAYS, quietly. isMobileNoWallet is a user-agent guess
+       plus the absence of window.solana, and a guess that is wrong strands
+       somebody who does have a provider we failed to see. Small, and it does
+       exactly what the old loud button did. */
+    var ta = document.getElementById("tryanyway");
+    if (ta) ta.addEventListener("click", function () {
+      ta.disabled = true; ta.textContent = "Connecting…";
+      C().connect().then(load).catch(function (e) {
+        ta.disabled = false;
+        ta.textContent = "No wallet answered here";
       });
     });
   }

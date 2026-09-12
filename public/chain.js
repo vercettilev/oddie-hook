@@ -1945,6 +1945,18 @@ function b64ToBytes(b64) {
     // (a plain "install Phantom" is a dead end for a click arriving from X on
     // a phone), and the session-shared `wallet` every sheet reads.
     connect: connectWallet,
+    /* WHETHER CONNECTING CAN WORK HERE AT ALL, asked BEFORE the button rather
+       than discovered by pressing it.
+       A page had no way to know, so it drew "Connect wallet", somebody tapped
+       it, connectWallet threw the mobile message, and the page re-rendered with
+       the same button still on it. Indistinguishable from a dead button, and on
+       a phone arriving from X it can never be anything else: iOS injects a
+       provider only inside a wallet's own browser. A control that cannot
+       succeed should not be the loud one. */
+    canConnectHere: function () { return !isMobileNoWallet(); },
+    /** Phantom's universal link to THIS page, for a surface that wants to offer
+     *  it up front instead of behind a failure. */
+    deepLink: phantomDeepLink,
     wallet: function () { return wallet; },
     linked: function () { return linked; },
     link: relinkWallet,
