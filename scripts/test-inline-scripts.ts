@@ -16,43 +16,17 @@
  * new Function() is the whole test. It parses without executing, so nothing
  * here touches the DOM, the network, or the store.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { filesUnder, inlineBlocks } from "./inline-blocks.js";
 
-function htmlFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    if (statSync(p).isDirectory()) out.push(...htmlFiles(p));
-    else if (name.endsWith(".html")) out.push(p);
-  }
-  return out;
-}
-
-/** Inline blocks only: <script src=...> is fetched, not embedded, and is
- *  parsed by its own file. A block with a non-JS type (JSON-LD, a template)
- *  is not JavaScript and must not be handed to the parser. */
-function inlineBlocks(html: string): string[] {
-  const out: string[] = [];
-  const re = /<script([^>]*)>([\s\S]*?)<\/script\s*>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) {
-    const attrs = m[1] ?? "";
-    if (/\bsrc\s*=/i.test(attrs)) continue;
-    const type = /\btype\s*=\s*["']?([^"'\s>]+)/i.exec(attrs)?.[1]?.toLowerCase();
-    if (type && !/^(module|text\/javascript|application\/javascript)$/.test(type)) continue;
-    if (m[2].trim()) out.push(m[2]);
-  }
-  return out;
-}
-
-const files = htmlFiles("public");
+const files = filesUnder("public", ".html");
 let blocks = 0;
 const bad: string[] = [];
 
 for (const f of files) {
   const html = readFileSync(f, "utf8");
-  for (const [i, code] of inlineBlocks(html).entries()) {
+  for (const [i, block] of inlineBlocks(html).entries()) {
+    const code = block.code;
     blocks++;
     try {
       // eslint-disable-next-line no-new-func
