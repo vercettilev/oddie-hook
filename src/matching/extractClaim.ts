@@ -62,7 +62,7 @@ Return ONLY the structured object. Fields:
 
 - question: a neutral, unambiguous YES/NO question derived from the EXACT claim in dispute — the specific falsifiable assertion, not a vibe paraphrase. Name the concrete subject, threshold, and (if the text implies one) the timeframe. A reader who never saw the tweet must be able to answer it. Leave "" when unresolvable.
 - resolution_criteria: 1–3 sentences stating exactly what evidence settles YES vs NO, and the specific source to check (e.g. "the final score on the Premier League site", "the official announcement on the @company X account", "the BTC/USD close on CoinMarketCap"). Name a source a stranger could go verify, and prefer one whose page can simply be opened and read: a public article, an official results page, a documentation page, a plain API endpoint. Sites that refuse automated readers (Reuters, Coinbase, DexScreener, Binance, CoinGecko's web pages) cannot be checked later, however respectable they are. Leave "" when unresolvable.
-- close_time: the claim's natural deadline in ISO 8601 (e.g. "2026-08-01T23:59:00Z"), computed RELATIVE TO the current date/time given in the user message. It must be in the FUTURE — never output a past date, and get the YEAR right by anchoring to the current date provided ("tonight" = later today, "this week" = within 7 days of now, etc.). If the text states or clearly implies a deadline, use it. If not, BIAS TOWARD THE SHORTEST REASONABLE WINDOW the claim supports, and set close_time_inferred true — a market that resolves soon brings the person back for the result; one that resolves in months kills the loop. Concretely: hours to a few days for anything time-sensitive (a game, a launch, a price move, "today/this week"); a week or two only when the claim genuinely needs it; do NOT infer months. Reserve far-out deadlines for claims that explicitly carry one ("by end of year", "in 2027", "before the election"). When unsure between a shorter and a longer window, choose the shorter. Use null only when no timeframe is possible at all (which usually also means unresolvable).
+- close_time: the claim's natural deadline in ISO 8601 (e.g. "2026-08-01T23:59:00Z"), computed RELATIVE TO the current date/time given in the user message. It must be in the FUTURE — never output a past date, and get the YEAR right by anchoring to the current date provided ("tonight" = later today, "this week" = within 7 days of now, etc.). If the text states or clearly implies a deadline, use it. If not, BIAS TOWARD THE SHORTEST REASONABLE WINDOW the claim supports, and set close_time_inferred true — a market that resolves soon brings the person back for the result; one that resolves in months kills the loop. Concretely: hours to a few days for anything time-sensitive (a game, a launch, a price move, "today/this week"); a week or two only when the claim genuinely needs it; do NOT infer months. Reserve far-out deadlines for claims that explicitly carry one ("by end of year", "in 2027", "before the election"). When unsure between a shorter and a longer window, choose the shorter. Use null only when no timeframe is possible at all (which usually also means unresolvable). NEVER output a close_time earlier than the current date/time in the user message: relative words take their meaning from THAT date and not from your own sense of the present, so if the user message says 2026-09-12 then "this year" ends 2026-12-31, "by year end" is 2026-12-31 and "next year" is 2027. Before you answer, compare the year you wrote against the year in the user message; if it is smaller, you got it wrong.
 - close_time_inferred: true if you chose the deadline rather than reading it from the text.
 - category: one of Crypto, Sports, Politics, Culture, Tech — the single best fit. There is no "Other". If nothing fits, that is itself a sign the claim may not be a clean market.
 - resolvability: one of clean | fuzzy | unresolvable.
@@ -117,8 +117,18 @@ const SCHEMA = {
 
 /** One round trip to the engine. Throws on anything unusable — no key, timeout,
  *  malformed reply — so the caller can report a single clean "unavailable". */
-export async function extractClaim(text: string): Promise<Extraction> {
-  if (!extractEnabled()) throw new Error(`extraction unavailable — set ${API_KEY_ENV}`);
+/* THE MODEL HAS A YEAR OF ITS OWN, AND IT IS NOT THIS ONE.
+   Measured against the live prompt: "I don't think it will hit 100k this year",
+   asked on 2026-09-12 with that date in the message, came back three times out
+   of three with close_time 2025-12-31 — the training-prior year, not the one it
+   was handed. The route refuses a past deadline (server.ts: "close_time must be
+   in the future") and the chain refuses it again, so the tag dies after three
+   retries with nothing on screen to explain it.
+   The rule now in the system prompt fixed all eight measured cases, but a
+   prompt is a request and this is a correctness question, so the answer is
+   checked. One corrective turn, quoting the model its own date: it keeps
+   ownership of the deadline and we do no guessing. */
+async function callEngine(messages: unknown[]): Promise<Record<string, unknown>> {
   const res = await fetch(messagesUrl(), {
     method: "POST",
     headers: authHeaders(),
@@ -135,7 +145,7 @@ export async function extractClaim(text: string): Promise<Extraction> {
       // The model has no clock — give it one, or it dates undated claims ("tonight",
       // "this week") to its training-prior year and every inferred close lands in
       // the past. All relative deadlines are computed from this.
-      messages: [{ role: "user", content: `Current date and time (UTC): ${new Date().toISOString()}\n\nArgument to convert:\n\n${text}` }],
+      messages,
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
@@ -149,7 +159,39 @@ export async function extractClaim(text: string): Promise<Extraction> {
   const raw = body.content?.find((b) => b.type === "text")?.text ?? "";
   const json = raw.trim().startsWith("{") ? raw : raw.match(/\{[\s\S]*\}/)?.[0];
   if (!json) throw new Error("extract returned no JSON");
-  const v = JSON.parse(json) as Record<string, unknown>;
+  return JSON.parse(json) as Record<string, unknown>;
+}
+
+const inThePast = (v: Record<string, unknown>): boolean => {
+  const t = typeof v.close_time === "string" ? Date.parse(v.close_time) : NaN;
+  return Number.isFinite(t) && t <= Date.now();
+};
+
+export async function extractClaim(text: string): Promise<Extraction> {
+  if (!extractEnabled()) throw new Error(`extraction unavailable — set ${API_KEY_ENV}`);
+  const now = new Date();
+  const first = [{
+    role: "user",
+    content: `Current date and time (UTC): ${now.toISOString()}\n\nArgument to convert:\n\n${text}`,
+  }];
+  let v = await callEngine(first);
+  if (inThePast(v)) {
+    const said = String(v.close_time);
+    const second = await callEngine([
+      ...first,
+      { role: "assistant", content: JSON.stringify(v) },
+      {
+        role: "user",
+        content: `close_time ${said} is in the PAST. The current date is ${now.toISOString()}, so the current year is `
+          + `${now.getUTCFullYear()}. Recompute the deadline relative to that date so it falls in the future, keep every `
+          + `other field as you judged it, and return the object again.`,
+      },
+    ]);
+    // Only if the retry actually repaired it. A second past date means we could
+    // not pin a future deadline, and rule 3 already calls that unresolvable.
+    v = inThePast(second) ? { ...second, close_time: null, resolvability: "unresolvable",
+      reason: "we could not pin a deadline in the future for this one" } : second;
+  }
   return normalize(v);
 }
 

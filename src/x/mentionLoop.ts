@@ -369,19 +369,26 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // the claim, so the person's own post becomes the market.
       const ownText = stripBotHandle(stripLeadingMentions(m.text), bot).trim();
 
-      /* THE CLAIM IS THE PARENT, UNTIL THE PARENT IS A PHOTO.
-         A post can be an image, a video, a chart or four words, and the parent
-         branch used to take its text unconditionally and throw the mention's
-         own away. So "@oddiefun will this ship before June?" under a
-         screenshot graded the screenshot's empty caption, found nothing, and
-         was dropped in silence — a perfectly marketable sentence, sitting
-         right there in the tweet we were reading, discarded because of where
-         it was written rather than what it said.
-         The fallback only fires when the parent has nothing gradeable in it, so
-         a real take is still never displaced by "@oddiefun price this". */
+      /* THE ARGUMENT IS BOTH POSTS, NOT WHICHEVER ONE WE PICKED.
+         This was an either/or: the parent won whenever it had twelve
+         characters, and the tagger's own sentence was thrown away. Measured on
+         the live case that reported this, "Just buy Bitcoin." under a video,
+         tagged with "I don't think it will hit 100k this year": the parent
+         alone grades unresolvable ("general investment advice, no threshold or
+         timeframe"), the mention alone grades unresolvable ("never says what
+         'it' is"), and the two together grade CLEAN, because the parent names
+         the subject and the tagger names the threshold and the date. That is
+         the ordinary shape of a disagreement, and we were dropping half of it.
+         The engine was always built for this: its own first line says it
+         converts "a tweet, or a few tweets of a disagreement".
+         Either alone still works: a bare "@oddiefun price this" is too short to
+         reach the model, and a photo parent leaves the mention standing. */
       const usable = (t: string) => t.length >= 12;
       const onParent = usable(parentText);
-      const claimText = onParent ? parentText : ownText;
+      const withOwn = usable(ownText);
+      const claimText = onParent && withOwn && parent
+        ? `@${parent.authorHandle}: ${parentText}\n\n@${m.authorHandle}: ${ownText}`
+        : onParent ? parentText : ownText;
       if (!usable(claimText)) {
         /* NOTHING TO PRICE ANYWHERE, and that used to be the end of it: settled,
            silent, never explained, and free. Free was right and silent was not.

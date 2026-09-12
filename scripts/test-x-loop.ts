@@ -125,6 +125,29 @@ async function main() {
       seen[0] === "Bitcoin will never hit $200k, cope harder.", seen[0]);
   }
 
+  /* ------------------------------ the argument is BOTH posts, when both -- */
+  {
+    /* The live case that found this: "Just buy Bitcoin." under a video, tagged
+       with "I don't think it will hit 100k this year". Measured against the
+       real engine, each half alone grades unresolvable (the parent names no
+       threshold, the mention never says what "it" is) and the two together
+       grade clean. The loop used to send the parent alone and answer "no
+       market in that one". */
+    _resetBotState();
+    const seen: string[] = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("205", {
+        text: "I don't think it will hit 100k this year @oddiefun",
+        authorHandle: "levvercetti",
+      })], newestId: "205" }),
+      tweet: async (id) => ({ id, text: "Just buy Bitcoin.", authorHandle: "saylor" }),
+      extract: async (text) => { seen.push(text); return goodExtraction("Will Bitcoin reach $100k in 2026?"); },
+    });
+    await runMentionSweep(deps);
+    check("it grades the parent and the tagger's own sentence together",
+      seen[0] === "@saylor: Just buy Bitcoin.\n\n@levvercetti: I don't think it will hit 100k this year", seen[0]);
+  }
+
   /* ------------------------- provenance follows the claim, not the tagger -- */
   {
     _resetBotState();
