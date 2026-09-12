@@ -48,6 +48,7 @@ a{color:inherit}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
 .top nav a:hover{color:var(--fg)}
+.top nav a[aria-current="page"]{color:var(--fg);pointer-events:none}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
@@ -100,7 +101,7 @@ tbody tr:hover td{background:rgba(251,252,244,.04)}
 .mark{display:inline-flex;align-items:center;gap:10px}
 .mark img{width:30px;height:30px;border-radius:7px;transform:rotate(-4deg)}
 .poster{text-align:center;max-width:540px;margin:8px auto 0;padding:14px 20px 26px}
-.poster img{width:min(320px,74vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
+.poster img{width:min(160px,40vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
   filter:drop-shadow(0 12px 26px rgba(0,0,0,.55))}
 .poster h3{font-family:var(--display);font-weight:400;font-size:clamp(22px,5vw,30px);line-height:1.05;
   text-transform:uppercase;color:var(--cream);margin:0 0 8px;text-wrap:balance}
@@ -121,6 +122,7 @@ tbody tr:hover td{background:rgba(251,252,244,.04)}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
 .top nav a:hover{color:var(--ink)}
+.top nav a[aria-current="page"]{color:var(--ink)}
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
    at both ends. A negative LEFT costs nothing in a left-to-right page, but the
@@ -146,24 +148,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    five times vertically, and 475px of empty sky above it that somebody has to
    scroll through to reach the bottom of the page. Both, from one missing
    declaration, on five pages. */
-.crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
-  /* CROPPED TO THE BAND THE CROWD IS ACTUALLY IN, which is what the landing has
-     always done and what never reached these five pages.
-     Without a height the tag's own height="600" applied - measured at 375px:
-     the strip rendered 375x600 where the ratio wants 125, so the artwork was
-     stretched nearly five times vertically with 475px of empty sky above it to
-     scroll past. height:auto fixes the stretch and replaces it with a 125px
-     ribbon in which 1800px of figures are about four pixels wide each, which is
-     noise rather than a crowd. Covering to the bottom edge keeps them at a size
-     somebody can see. */
-  height:clamp(90px,14vw,180px);object-fit:cover;object-position:50% 100%;
-  pointer-events:none;user-select:none}
 
-.rule{background:var(--cream);color:var(--ink);border:3px solid var(--black);border-left-width:3px;
-  box-shadow:7px 8px 0 var(--yellow-deep);padding:16px 18px;transform:rotate(-.3deg)}
-.rule b{color:var(--pink-deep)}
+/* A caption, not a poster: the rule explains the number, it is not the news. */
+.rule b{color:var(--yellow)}
 .rule .ex{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
-  color:rgba(11,13,4,.6)}
+  color:var(--fg-3)}
 thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.04em;
   color:var(--fg-3)}
 .who a{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.02em}
@@ -205,7 +194,7 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
    one, so market.html's question h1 is untouched. On a narrow screen the row
    wraps and the sticker keeps the right edge on its own line. */
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
-.hsticker{height:clamp(80px,11vw,132px);margin-left:auto;transform:rotate(4deg)}
+.hsticker{height:clamp(46px,7vw,74px);margin-left:auto;transform:rotate(4deg)}
 
 /* The other board, named. Quiet: it is a signpost, not a competing offer. */
 .other-board{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.11em;
@@ -219,7 +208,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
-      <a href="/board">Who was right</a>
+      <a href="/board" aria-current="page">Who was right</a>
       <a href="/profile">Profile</a>
       <a href="/genesis">Genesis</a>
     </nav>
@@ -229,9 +218,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 <main class="wrap">
   <h1>Who was right <img class="hsticker" src="/brand/st-called.webp" alt=""></h1>
   <p class="rule" id="rule">
-    Being right <b>when the room disagreed</b>. Bet with only 20% of the money
-    on your side and being right is worth four times being right with 90% of it.
-    Ranked by points, never by money.
+    Points for being right <b>when the room disagreed</b>: right with 20% of the
+    money on your side is worth eight times right with 90%. Ranked by points,
+    never by money.
     <span class="ex" id="ex">Thin pool, fewer points. Full points at 5 SOL.</span>
   </p>
   <!-- TWO BOARDS, TWO UNITS. The Genesis page has its own ranking and it counts
@@ -240,11 +229,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        person seeing #3 here and #184 there has no way to know they are
        unrelated unless one of them says so. One line, here, where the
        confusion would start. -->
-  <p class="other-board">Different board, different number.
-    <a href="/genesis">Genesis</a> ranks who brings new people in.</p>
   <div id="view"><p class="load">Counting who was right…</p></div>
 </main>
-<img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <script src="/app/id.js"></script>
 <script src="/app/push.js"></script>
@@ -271,11 +257,15 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         // first lie this page tells.
         view.innerHTML = '<div class="poster"><img src="/brand/mascot-trophy.webp" alt="">'
           + '<h3>Nobody has been right yet</h3>'
-          + '<p>Tag <b>@oddiefun</b> under a claim on X. First one right lands here.</p></div>';
+          + '<p><a href="https://x.com/intent/tweet?text=' + encodeURIComponent("@oddiefun ") + '" target="_blank" rel="noopener">Tag <b>@oddiefun</b> under a claim on X</a></p></div>';
         return;
       }
-      view.innerHTML = "<table><thead><tr>"
-        + '<th class="r">#</th><th>Who</th>'
+      // The signpost lives with the number it disambiguates, so an empty
+      // board does not warn about a confusion it cannot cause.
+      view.innerHTML = '<p class="other-board">Different board, different number. '
+        + '<a href="/genesis">Genesis</a> ranks who brings new people in.</p>'
+        + "<table><thead><tr>"
+        + '<th class="r"></th><th>Who</th>'
         + '<th class="num hide-sm">Record</th><th class="num">Money</th><th class="num">Points</th>'
         + "</tr></thead><tbody>"
         + rows.map(function (w) {

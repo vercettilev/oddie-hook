@@ -99,14 +99,10 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
   background:none;margin:0 0 26px}
 .share:hover{background:var(--cream);color:var(--black)}
 .share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
-.blind{border:2px dashed var(--pink);padding:12px 15px;margin:0 0 20px;
-  font-size:13.5px;line-height:1.5;color:var(--cream)}
 .blind b{color:var(--pink)}
-.empty{border:2px dashed var(--fg-3);padding:22px 20px;font-size:15px;line-height:1.6;color:var(--fg-2)}
 .empty b{color:var(--cream)}
 .load{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--fg-3);padding:40px 0}
-.err{border:3px solid var(--pink);padding:15px 17px;font-size:14px;color:var(--cream)}
 
 /* ---- brand: a movement, not a terminal ---- */
 .mark{display:inline-flex;align-items:center;gap:10px}
@@ -118,8 +114,6 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
   text-transform:uppercase;color:var(--cream);margin:0 0 8px;text-wrap:balance}
 .poster p{margin:0 auto;max-width:44ch;font-size:15px;line-height:1.6;color:var(--fg-2)}
 .poster p b{color:var(--cream)} .poster a{color:var(--yellow)}
-.gate img.gsticker{width:min(230px,58vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
-  filter:drop-shadow(0 10px 22px rgba(0,0,0,.5))}
 
 /* ================================================================= SKIN ==
    Same structure as the list and the market page: a lime band torn into the
@@ -149,8 +143,6 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
   -webkit-mask-size:100% 100%;mask-size:100% 100%;
   -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
 main.wrap{padding-top:calc(var(--seam-h) + 18px)}
-.sub{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.02em;
-  color:var(--fg-3);text-transform:uppercase}
 /* HEIGHT:AUTO IS LOAD-BEARING, and its absence was measured rather than
    guessed: the tag carries width="1800" height="600", so with only `width:100%`
    in CSS the HEIGHT ATTRIBUTE still applies. On a 375px phone the strip
@@ -158,18 +150,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    five times vertically, and 475px of empty sky above it that somebody has to
    scroll through to reach the bottom of the page. Both, from one missing
    declaration, on five pages. */
-.crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
-  /* CROPPED TO THE BAND THE CROWD IS ACTUALLY IN, which is what the landing has
-     always done and what never reached these five pages.
-     Without a height the tag's own height="600" applied - measured at 375px:
-     the strip rendered 375x600 where the ratio wants 125, so the artwork was
-     stretched nearly five times vertically with 475px of empty sky above it to
-     scroll past. height:auto fixes the stretch and replaces it with a 125px
-     ribbon in which 1800px of figures are about four pixels wide each, which is
-     noise rather than a crowd. Covering to the bottom edge keeps them at a size
-     somebody can see. */
-  height:clamp(90px,14vw,180px);object-fit:cover;object-position:50% 100%;
-  pointer-events:none;user-select:none}
 
 .hero{background:var(--cream);color:var(--ink);border:3px solid var(--black);
   box-shadow:8px 9px 0 var(--pink-deep);padding:20px 22px;transform:rotate(-.3deg)}
@@ -183,13 +163,6 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
 /* One sticker per moment, never the same one twice: the pool is wide enough
    that reusing a single mascot everywhere is a wasted vocabulary. */
-.hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
-  transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
-.psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
-  transform:rotate(-5deg);flex:0 0 auto}
-.peek{position:absolute;right:-6px;bottom:calc(100% - 22px);height:clamp(60px,9vw,96px);
-  width:auto;transform:rotate(7deg);pointer-events:none;
-  filter:drop-shadow(0 8px 18px rgba(0,0,0,.6))}
 
 /* who you are, in the masthead: a name when we know it, an invitation when
    we do not. Ink pill on the lime band so it reads as a control, not a label. */
@@ -227,7 +200,6 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 <main class="wrap">
   <div id="view"><p class="load">Reading every call…</p></div>
 </main>
-<img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <script src="/app/id.js"></script>
 <script src="/app/push.js"></script>
@@ -256,8 +228,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
          and un-checkable against a wallet. The modifier keeps the real case. */
       var html = '<h1 class="who' + (j.handle ? '' : ' who--addr') + '">'
         + (j.handle ? "@" + esc(j.handle) : esc(short)) + "</h1>"
-        + '<p class="addr">' + (j.handle ? esc(short) + " &middot; " : "")
-        + "every call stamped the second it was made. No edits, ever.</p>";
+        + (j.handle ? '<p class="addr">' + esc(short) + "</p>" : "");
 
       if (recs.length) {
         /* THE SAME UNMEASURED-ZERO HOLE THE BOARD HAD. realizedLamports only
@@ -274,14 +245,16 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
         var cls = net === null ? "flat" : net > 0 ? "up" : net < 0 ? "dn" : "flat";
         var moneyLabel = net === null ? "SOL, could not read"
           : net > 0 ? "SOL ahead" : net < 0 ? "SOL down" : "SOL, even";
+        // Precise about what is missing: the record still counts unread calls,
+        // only the money needed the chain. Said on the label, not in a box.
+        if (j.unpriced && net !== null) moneyLabel += " &middot; " + j.unpriced + " unread";
         html += '<div class="hero">'
           + '<div class="stat stat--' + cls + '"><b>'
           + (net === null ? "—" : (net > 0 ? "+" : "") + net.toFixed(2))
           + "</b><span>" + moneyLabel + "</span></div>"
           + '<div class="stat stat--rec"><b>' + j.wins + "/" + (j.wins + j.losses)
           + "</b><span>calls right</span></div>"
-          + '<div class="stat stat--pts"><b>' + j.points + "</b><span>points"
-          + (j.rank ? ' &middot; <a href="/board">#' + j.rank + " on the board</a>" : "") + "</span></div>"
+          + (j.rank ? '<div class="stat stat--pts"><b>#' + j.rank + '</b><span><a href="/board">on the board</a></span></div>' : "")
           + "</div>";
       }
 
@@ -289,29 +262,20 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       // "THE SHAREABLE ARTIFACT" and until now it had no share control.
       if (recs.length) html += '<button class="share" id="share" type="button">Share this record</button>';
 
-      if (j.unpriced) {
-        // Precise about WHICH total is missing: the record below still counts
-        // these calls, because whether they were right is known from the
-        // settlement. Only the money and the points needed the chain.
-        html += '<div class="blind"><b>' + j.unpriced + "</b> call" + (j.unpriced === 1 ? "" : "s")
-          + " could not be read just now. They still count as right or wrong. They are not in the SOL or the points.</div>";
-      }
 
       if (!recs.length) {
         html += '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
-          + '<h3>No finished calls yet</h3><p>'
-          + "Nothing here can be edited after the fact.</p></div>";
+          + '<h3>No finished calls yet</h3><p><a href="/markets">See the markets</a></p></div>';
       } else {
         html += "<h2>Every finished call</h2>" + recs.map(function (r) {
           var side = r.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>';
-          var bits = [side, "<span>crowd said " + r.entryPct + "%</span>", "<span>bet " + r.stakeSol + " SOL</span>",
-                      "<span>ended " + String(r.outcome).toUpperCase() + "</span>"];
+          var bits = [side, "<span>crowd said " + r.entryPct + "%</span>", "<span>" + r.stakeSol + " SOL in</span>",
+                      "<span>" + (r.won ? "right" : "wrong") + "</span>"];
           // Null, never zero: an unreadable market must not read as break-even.
           bits.push(r.pnlSol === null
             ? '<span class="na">money not readable right now</span>'
             : '<span class="' + (r.pnlSol > 0 ? "up" : r.pnlSol < 0 ? "dn" : "") + '">'
               + (r.pnlSol > 0 ? "+" : "") + r.pnlSol + " SOL</span>");
-          if (r.won && r.weight !== null && r.weight !== undefined) bits.push("<span>+" + r.weight + " pts</span>");
           return '<div class="rec rec--' + (r.won ? "w" : "l") + '">'
             + '<p class="rec__q"><a href="/m/' + encodeURIComponent(r.slug) + '">' + esc(r.question) + "</a></p>"
             + '<p class="rec__m">' + bits.join("") + "</p></div>";

@@ -48,6 +48,7 @@ a{color:inherit}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
 .top nav a:hover{color:var(--fg)}
+.top nav a[aria-current="page"]{color:var(--fg);pointer-events:none}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
@@ -173,6 +174,7 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
 .top nav a:hover{color:var(--ink)}
+.top nav a[aria-current="page"]{color:var(--ink)}
 /* the seam: the lime band tears into the black field below it */
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
@@ -244,18 +246,6 @@ h1{color:var(--cream)}
    five times vertically, and 475px of empty sky above it that somebody has to
    scroll through to reach the bottom of the page. Both, from one missing
    declaration, on five pages. */
-.crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
-  /* CROPPED TO THE BAND THE CROWD IS ACTUALLY IN, which is what the landing has
-     always done and what never reached these five pages.
-     Without a height the tag's own height="600" applied - measured at 375px:
-     the strip rendered 375x600 where the ratio wants 125, so the artwork was
-     stretched nearly five times vertically with 475px of empty sky above it to
-     scroll past. height:auto fixes the stretch and replaces it with a 125px
-     ribbon in which 1800px of figures are about four pixels wide each, which is
-     noise rather than a crowd. Covering to the bottom edge keeps them at a size
-     somebody can see. */
-  height:clamp(90px,14vw,180px);object-fit:cover;object-position:50% 100%;
-  pointer-events:none;user-select:none}
 
 /* One sticker per moment, never the same one twice: the pool is wide enough
    that reusing a single mascot everywhere is a wasted vocabulary. */
@@ -316,7 +306,7 @@ h1{color:var(--cream)}
    one, so market.html's question h1 is untouched. On a narrow screen the row
    wraps and the sticker keeps the right edge on its own line. */
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
-.hsticker{height:clamp(80px,11vw,132px);margin-left:auto;transform:rotate(4deg)}
+.hsticker{height:clamp(46px,7vw,74px);margin-left:auto;transform:rotate(4deg)}
 
 /* A side that cannot be taken. Rendered as a <span>, so there is nothing to
    click and nothing to navigate to; this only has to make it LOOK inert too.
@@ -364,7 +354,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .crowd[hidden]{display:none}
 @media (max-width:560px){
   .card--invite{grid-template-columns:1fr;justify-items:center;text-align:center;gap:12px}
-  .card--invite .invite__st{width:min(150px,40vw)}
 }
 </style>
 
@@ -372,7 +361,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   <div class="wrap">
     <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
-      <a href="/markets">Markets</a>
+      <a href="/markets" aria-current="page">Markets</a>
       <a href="/board">Who was right</a>
       <a href="/profile">Profile</a>
       <a href="/genesis">Genesis</a>
@@ -390,17 +379,15 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      true. 5 is GENESIS_TICKETS in src/genesis/season.ts. -->
 <main class="wrap">
   <h1>Open markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
-  <p class="sub" id="sub">Every market started as a tweet.</p>
-  <div id="view"><p class="load">Loading markets…</p></div>
+    <div id="view"><p class="load">Loading markets…</p></div>
   <!-- MOVED OUT FROM ABOVE THE MASTHEAD. It was a full-bleed pink band sitting
        over the product on every page: the loudest object on the screen, in the
        first position, saying "5 tickets" to somebody who does not yet know what
        a market is. Tickets are the right offer to the WRONG reader up there.
        Down here it is read by somebody who has seen the list, which is the only
        point at which "you can open one of these" means anything. -->
-  <a class="season" id="season" href="/genesis" hidden>Genesis: 5 tickets to open markets<img src="/brand/st-rocket.webp" alt=""></a>
+  <a class="season" id="season" href="/genesis" hidden>Genesis: 5 tickets to open markets</a>
 </main>
-<img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <!-- THE MONEY SHEET'S STYLESHEET. This page loads chain.js and its cards call
      OddieChain.openStake, so tapping YES here opens the sheet that takes real
@@ -465,10 +452,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     // way to put the ask away.
     var g = document.createElement("div");
     g.className = "gate";
-    g.innerHTML = '<img class="gsticker" src="/brand/st-called.webp" alt="">'
-      + '<a class="big big--2l" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">'
+    g.innerHTML = '<a class="big big--2l" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">'
       + '<span class="big__main">Continue with X</span>'
-      + '<small>Your name on the board, not a wallet address</small></a>'
+      + '<small>Your handle on every call, not a wallet address</small></a>'
       + '<button class="later" id="later" type="button">Not now</button>';
     view.appendChild(g);
     // Skipping is a first-class outcome, not a failure. Remembered for a week
@@ -599,9 +585,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
             // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
             // parayi yalanlar.
             + (Number(m.stakers || 0) >= MIN_HEADS_LIST ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
-            + "</p>"
-            + '<div class="bar" role="img" aria-label="' + yp + ' percent yes"><i class="bar__y" style="width:'
-            + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>';
+            + "</p>";
         }
         var pct = (m.oddsSource === "vault" && m.yesPct != null) ? m.yesPct : null;
         var href = "/m/" + encodeURIComponent(m.slug);
@@ -624,7 +608,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         var blind = m.oddsSource === "unreadable";
         var offNote = shut ? "closed" : blind ? "can't read this one" : "";
         function sideEl(side, cls, label, pctText) {
-          var inner = label + (pctText === null ? "" : "<span>" + pctText + "% of the pool</span>")
+          var inner = label + (pctText === null ? "" : "<span>" + pctText + "%</span>")
             + (offNote ? "<small>" + esc(offNote) + "</small>" : "");
           return offNote
             ? '<span class="side ' + cls + ' side--off" aria-disabled="true">' + inner + "</span>"
@@ -665,12 +649,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       if (ms.length < THIN) {
         view.innerHTML += '<article class="card card--invite">'
           + '<img class="invite__st" src="/brand/st-tag.webp" alt="">'
-          + '<div><h2 class="card__q">Open your own</h2>'
+          + '<div><h2 class="card__q"><a href="/genesis">Open your own</a></h2>'
           + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
           + 'Keep <b>2%</b> of its pool.</p></div></article>';
       }
-      document.getElementById("sub").textContent =
-        ms.length + (ms.length === 1 ? " market open" : " markets open");
 
       /* Ag adi sunucudan gelir, burada tahmin edilmez. Liste yaniti zaten
          cluster tasiyor, yani ekstra bir istek yok. */

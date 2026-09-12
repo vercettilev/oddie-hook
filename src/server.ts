@@ -220,9 +220,12 @@ const stampApp = (html: string): string => {
      the link ships hidden and nothing ever flashes. The client script stays as
      the fallback for a page served before this knew, and setting hidden on
      something already hidden costs nothing. */
-  return anySettled === false
+  const board = anySettled === false
     ? stamped.split('<a href="/board">Who was right</a>').join('<a href="/board" hidden>Who was right</a>')
     : stamped;
+  // Same treatment for Genesis when the season is off: one place, every nav.
+  return GENESIS_SEASON ? board
+    : board.split('<a href="/genesis">Genesis</a>').join('<a href="/genesis" hidden>Genesis</a>');
 };
 
 /**
@@ -1794,7 +1797,7 @@ app.get("/w/:wallet", async (req, res) => {
     `<meta name="twitter:description" content="Every call stamped on chain the moment it was made, priced by the pool it settled against.">`,
   ].join("\n");
   res.set("Cache-Control", "no-cache").type("html")
-    .send(WHO_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`));
+    .send(stampApp(WHO_HTML).replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`));
 });
 
 /** Distinct confirmed wallets on a market, for the card. Best-effort by design:

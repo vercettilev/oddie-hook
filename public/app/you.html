@@ -185,18 +185,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    five times vertically, and 475px of empty sky above it that somebody has to
    scroll through to reach the bottom of the page. Both, from one missing
    declaration, on five pages. */
-.crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
-  /* CROPPED TO THE BAND THE CROWD IS ACTUALLY IN, which is what the landing has
-     always done and what never reached these five pages.
-     Without a height the tag's own height="600" applied - measured at 375px:
-     the strip rendered 375x600 where the ratio wants 125, so the artwork was
-     stretched nearly five times vertically with 475px of empty sky above it to
-     scroll past. height:auto fixes the stretch and replaces it with a 125px
-     ribbon in which 1800px of figures are about four pixels wide each, which is
-     noise rather than a crowd. Covering to the bottom edge keeps them at a size
-     somebody can see. */
-  height:clamp(90px,14vw,180px);object-fit:cover;object-position:50% 100%;
-  pointer-events:none;user-select:none}
 
 /* THE ASK, NOT A POSTER.
    This was a cream slab the width of the page with a 230px mascot centred in
@@ -301,7 +289,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
    one, so market.html's question h1 is untouched. On a narrow screen the row
    wraps and the sticker keeps the right edge on its own line. */
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
-.hsticker{height:clamp(80px,11vw,132px);margin-left:auto;transform:rotate(4deg)}
+.hsticker{height:clamp(46px,7vw,74px);margin-left:auto;transform:rotate(4deg)}
 
 /* Signed in as / the way out. Quiet on purpose: it is the exit, not an offer.
    [hidden] restated because .idstrip sets display. */
@@ -315,6 +303,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   color:var(--fg-3);text-decoration:underline;text-underline-offset:3px}
 .idstrip__out:hover{color:var(--pink)}
 .idstrip__out:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
+/* The masthead's handle chip links to this very page and restates the strip
+   under the heading. The ask state (Connect X) and the money state (N to
+   collect) are different things and stay. */
+.top .mechip:not(.mechip--go):not(.mechip--cash){display:none}
 
 /* THE ONLY WAY TO REACH SOMEBODY WHO IS NOT LOOKING.
    Quiet on purpose, and below the money: this is a request, and a request that
@@ -474,7 +466,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        every state of this page rewrites #view wholesale. Money outranks the
        ticket book, so it sits above it. -->
   <section class="payout" id="payout" hidden></section>
-  <p class="pushask" id="pushask" hidden></p>
+  <div id="view"><p class="load">Checking for a wallet…</p></div>
   <!-- OUTSIDE #view on purpose. Every state of this page rewrites #view
        wholesale - the X gate, the wallet gate, the error, the list - and a
        balance that only survives one of them is a balance nobody sees. It is
@@ -490,9 +482,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <p class="tix__spent" id="tixspent" hidden></p>
     <p class="tix__why" id="tixwhy"></p>
   </section>
-  <div id="view"><p class="load">Checking for a wallet…</p></div>
+  <p class="pushask" id="pushask" hidden></p>
 </main>
-<img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
@@ -942,9 +933,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // No wallet, so nothing about THIS person is knowable. The rule is still
       // true and is the whole reason the block is here; the second line says
       // what would make it personal.
-      out += '<p class="empty">' + rule
-        + '<img class="psticker" src="/brand/st-waiting.webp" alt="">'
-        + '<span class="empty--quiet">Connect your wallet to check yours.</span></p>';
+      out += '<p class="empty">' + rule + "</p>";
       return out + "</section>";
     }
 
@@ -1039,6 +1028,22 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   }
 
   /**
+   * ONE SENTENCE, ONE BUTTON, AND ONE PLACE THAT WRITES THEM.
+   *
+   * Three callers need the same thing: take the loading line down, say what
+   * went wrong, and leave something to press. It had already been typed out by
+   * hand twice, and the third copy is what turned it into a function. Only the
+   * sentence differs; the reassurance about the money and the retry are the
+   * same promise every time, and they are not the part to get creative with.
+   */
+  function failView(sentence) {
+    view.innerHTML = '<div class="err">' + sentence + ' Nothing is wrong with your money. '
+      + '<button class="errgo" id="retry" type="button">Try again</button></div>';
+    var rb = document.getElementById("retry");
+    if (rb) rb.addEventListener("click", function () { heals = 0; load(); }, { once: true });
+  }
+
+  /**
    * AND A WATCHDOG ON THE WORDS THEMSELVES, because every guarantee above is a
    * guarantee about a promise.
    *
@@ -1054,10 +1059,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       if (gen !== loadGen) return;                       // a newer load owns the page
       var l = view.querySelector(".load");
       if (!l || view.children.length !== 1) return;      // something rendered
-      view.innerHTML = '<div class="err">We could not read your bets just now. Nothing is wrong with your money. '
-        + '<button class="errgo" id="retry" type="button">Try again</button></div>';
-      var rb = document.getElementById("retry");
-      if (rb) rb.addEventListener("click", function () { heals = 0; load(); }, { once: true });
+      failView("We could not read your bets just now.");
     }, 16000);
   }
 
@@ -1114,10 +1116,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         /* AND A BUTTON, because "try again in a moment" with nothing to press
            is an instruction to reload a page somebody may not realise they can
            reload. */
-        view.innerHTML = '<div class="err">We could not reach Solana just now. Nothing is wrong with your money. '
-          + '<button class="errgo" id="retry" type="button">Try again</button></div>';
-        var rb = document.getElementById("retry");
-        if (rb) rb.addEventListener("click", function () { heals = 0; load(); }, { once: true });
+        failView("We could not reach Solana just now.");
         return;
       }
       var html = "";
@@ -1166,18 +1165,22 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       if (readClaim && readOpen && !cl.length && !op.length && !blindClaim && !blindOpen) {
         html += '<section><h2>Nothing riding yet</h2>'
           + '<div class="start"><img class="ssticker" src="/brand/st-grass.webp" alt="">'
-          + '<p>Take a side and it shows up here.</p>'
+          + '<p>Take a side.</p>'
           + '<div class="start__go"><a class="big" href="/markets">See open markets</a>'
           + '<a class="alt" href="/genesis">Open your own market &rarr;</a></div></div>'
           + "</section>";
       } else {
         var wins = cl.filter(function (o) { return o.won; });
-        html += '<section id="collect"><h2>Ready to collect' + (wins.length ? " <b>" + wins.length + "</b>" : "") + "</h2>"
-          + blind(blindClaim, (blindClaim === 1 ? "settled market" : "settled markets") + (cl.length ? " beyond these" : ""))
-          + (cl.length ? cl.map(function (o) { return row(o, "claim"); }).join("")
-                       : !readClaim ? unread("settled markets")
-                       : '<p class="empty">Nothing to collect right now.</p>')
-          + "</section>";
+        /* Only when there is something to say. A heading over "Nothing to
+           collect right now" was a section whose entire content was its own
+           absence; the read was clean and the list was empty, so nothing. */
+        if (cl.length || !readClaim || blindClaim) {
+          html += '<section id="collect"><h2>Ready to collect' + (wins.length ? " <b>" + wins.length + "</b>" : "") + "</h2>"
+            + blind(blindClaim, (blindClaim === 1 ? "settled market" : "settled markets") + (cl.length ? " beyond these" : ""))
+            + (cl.length ? cl.map(function (o) { return row(o, "claim"); }).join("")
+                         : unread("settled markets"))
+            + "</section>";
+        }
 
         var riding = op.reduce(function (a, o) { return a + o.lamports; }, 0);
         html += "<section><h2>On the line" + (riding ? " <b>" + SOL(riding) + " SOL</b>" : "") + "</h2>"
@@ -1240,6 +1243,20 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           C().openClaim(b.dataset.slug, b.dataset.outcome);
         });
       });
+    }).catch(function (e) {
+      /* A NET UNDER THE RENDER, AND THE BUG ABOVE IS WHY IT EXISTS.
+         Nothing here can arrive from a failed request: getJSON catches its own
+         fetch and hands back null, and the all-three-null case is answered
+         forty lines up. The only way into this handler is an exception thrown
+         while DRAWING the page - which is exactly what `op.length` on a
+         hoisted-but-unassigned var did, and the whole .then() died mid-render
+         with "Finding your bets…" still on screen. The watchdog would have
+         said so eventually, sixteen seconds later. This says it now.
+         It also says it to the console, because what made that bug expensive
+         was not the throw. It was that nothing, anywhere, reported it. */
+      if (myGen !== loadGen) return;                     // a newer load owns the page
+      if (window.console && console.error) console.error("[you] the page failed to draw", e);
+      failView("We could not read your bets just now.");
     });
   }
 
@@ -1359,18 +1376,18 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         var mine = (j.profile.opened || []);
         document.getElementById("tixwhy").innerHTML = left > 0
           ? "Every new bettor in a market you opened brings one back, up to five. "
-            + "Tag <b>@oddiefun</b> under a claim with a yes-or-no and a date to spend one."
+            + "A yes-or-no with a date spends one."
           : mine.length
             /* There IS a way back, and it is one specific market rather than a
                vague gesture at the board: the newest one they opened, linked,
                because "share the ones you opened" with no link is a chore and
                this is the moment they most want to do it. */
-            ? "You are out. One new bettor in a market you opened brings a ticket back. "
+            ? "One new bettor in a market you opened brings a ticket back. "
               + '<a href="/m/' + encodeURIComponent(mine[0].slug) + '">Share the last one you opened</a>'
             /* And sometimes there is not one. Five tickets spent without a
                single market means nothing can bring one back, and telling this
                person otherwise would be the one lie on the page. */
-            : "You are out. All five went on takes we could not price. "
+            : "All five went on takes we could not price. "
               + "Tickets come back when a market you opened brings somebody new in.";
         box.hidden = false;
       })

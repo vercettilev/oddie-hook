@@ -352,18 +352,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    five times vertically, and 475px of empty sky above it that somebody has to
    scroll through to reach the bottom of the page. Both, from one missing
    declaration, on five pages. */
-.crowd{display:block;width:100%;max-width:1100px;margin:26px auto 0;opacity:.9;
-  /* CROPPED TO THE BAND THE CROWD IS ACTUALLY IN, which is what the landing has
-     always done and what never reached these five pages.
-     Without a height the tag's own height="600" applied - measured at 375px:
-     the strip rendered 375x600 where the ratio wants 125, so the artwork was
-     stretched nearly five times vertically with 475px of empty sky above it to
-     scroll past. height:auto fixes the stretch and replaces it with a 125px
-     ribbon in which 1800px of figures are about four pixels wide each, which is
-     noise rather than a crowd. Covering to the bottom edge keeps them at a size
-     somebody can see. */
-  height:clamp(90px,14vw,180px);object-fit:cover;object-position:50% 100%;
-  pointer-events:none;user-select:none}
 
 /*
  * A PHONE'S RHYTHM, NOT A DESKTOP'S, AND ONE CONTROL NOBODY COULD REACH.
@@ -657,7 +645,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   <a href="/profile">Profile</a>
   <a href="/genesis">Genesis</a>
 </nav>
-<img class="crowd" src="/brand/crowd-strip.webp" alt="" width="1800" height="600" loading="lazy" decoding="async">
 
 <!-- The money sheet chain.js builds. Linked rather than inlined: nothing in
      it paints until somebody taps a side, so it cannot cause the first-paint
