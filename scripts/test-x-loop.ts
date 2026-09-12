@@ -24,7 +24,7 @@ if (process.env.DATABASE_URL) {
 }
 
 import { readFileSync } from "node:fs";
-import { runMentionSweep, stripLeadingMentions, stripBotHandle, tweetUrl, SWEEP_CAP, TEACH_CAP } from "../src/x/mentionLoop.js";
+import { runMentionSweep, stripLeadingMentions, stripBotHandle, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
 import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState } from "../src/store/markets.js";
 import { SINCE_KEY } from "../src/x/client.js";
@@ -146,6 +146,65 @@ async function main() {
     await runMentionSweep(deps);
     check("it grades the parent and the tagger's own sentence together",
       seen[0] === "@saylor: Just buy Bitcoin.\n\n@levvercetti: I don't think it will hit 100k this year", seen[0]);
+  }
+
+  /* ---------------------------- it walks up the thread, but only when lost -- */
+  {
+    /* The subject sits two posts up: the parent is noise, the grandparent names
+       what "it" is. One climb, one extra model call, and the market opens. */
+    _resetBotState();
+    const seen: string[] = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("215", {
+        text: "I don't think it will hit 100k this year @oddiefun",
+        authorHandle: "levvercetti",
+      })], newestId: "215" }),
+      tweet: async (id) => id === "parent-215"
+        ? { id, text: "cope harder honestly", authorHandle: "someone", repliedToId: "gp-215" }
+        : { id, text: "Just buy Bitcoin.", authorHandle: "saylor", repliedToId: null },
+      extract: async (text) => {
+        seen.push(text);
+        return seen.length === 1
+          ? { ...goodExtraction(""), resolvability: "unresolvable" as const, question: "", reason: "no subject" }
+          : goodExtraction("Will Bitcoin reach $100k in 2026?");
+      },
+    });
+    await runMentionSweep(deps);
+    check("an unresolvable grade climbs one more level", seen.length === 2, String(seen.length));
+    check("the climb puts the grandparent above the two it already had",
+      seen[1] === "@saylor: Just buy Bitcoin.\n\n@someone: cope harder honestly\n\n@levvercetti: I don't think it will hit 100k this year",
+      seen[1]);
+  }
+
+  {
+    /* A clean first grade is never handed more context to be distracted by. */
+    _resetBotState();
+    let calls = 0;
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("216")], newestId: "216" }),
+      tweet: async (id) => ({ id, text: "Bitcoin will never hit $200k, cope harder.", authorHandle: "cryptonate", repliedToId: "gp-216" }),
+      extract: async () => { calls++; return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
+    });
+    await runMentionSweep(deps);
+    check("a clean claim never climbs", calls === 1, String(calls));
+  }
+
+  {
+    /* MAX_CLIMB stops it: a long thread cannot bury the post the tagger pointed
+       at, and the bill cannot run away on a junk tag deep in a chain. */
+    _resetBotState();
+    const fetched: string[] = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("217")], newestId: "217" }),
+      tweet: async (id) => {
+        fetched.push(id);
+        return { id, text: `a post that names nothing ${id}`, authorHandle: "someone", repliedToId: `up-${fetched.length}` };
+      },
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable" as const, question: "", reason: "no subject" }),
+    });
+    await runMentionSweep(deps);
+    check("it climbs at most MAX_CLIMB levels above the parent",
+      fetched.length === 1 + MAX_CLIMB, String(fetched.length));
   }
 
   /* ------------------------- provenance follows the claim, not the tagger -- */

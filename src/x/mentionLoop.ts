@@ -36,8 +36,10 @@ export type MintResult = MintedMarket | { ok: false; status: number; error: stri
 export interface SweepDeps {
   /** Read mentions newer than `sinceId`. */
   mentions(sinceId: string | null, max?: number): Promise<{ items: Mention[]; newestId: string | null }>;
-  /** Read one tweet, for the parent claim a mention is replying to. */
-  tweet(id: string): Promise<{ id: string; text: string; authorHandle: string | null } | null>;
+  /** Read one tweet, for the parent claim a mention is replying to. It carries
+   *  its own parent id so the loop can walk up a thread when two posts did not
+   *  name the subject; absent means "stop climbing here". */
+  tweet(id: string): Promise<{ id: string; text: string; authorHandle: string | null; repliedToId?: string | null } | null>;
   extract(text: string): Promise<Extraction>;
   /** An OPEN market already made from this source post, if there is one. */
   existingMarket?(sourceUrl: string): Promise<{ slug: string; question: string } | null>;
@@ -128,6 +130,13 @@ export interface SweepResult {
  * bounded by this number times the poll rate rather than by whatever X returns.
  */
 export const SWEEP_CAP = 5;
+
+/* How far up a reply chain we will walk when two posts did not name the
+   subject. Three, by Lev's call: deep enough for an argument that started a few
+   replies back, shallow enough that a long unrelated thread cannot bury the
+   claim the tagger actually pointed at. Only ever spent on an unresolvable
+   grade, so the normal path reads one parent and stops. */
+export const MAX_CLIMB = 3;
 
 /**
  * The teaching cap FOR A CALLER WITH NO SEASON WIRED, and nothing else.
@@ -462,7 +471,42 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // full text goes into an opus prompt with adaptive thinking, and X's post
       // limit is not our budget. A long-form post was a ~6k-token user message
       // on a call that already carries a 1.5k-token system prompt.
-      const ex = await deps.extract(claimText.slice(0, 4000));
+      let ex = await deps.extract(claimText.slice(0, 4000));
+
+      /* WHEN TWO POSTS DID NOT NAME THE THING, WALK UP THE THREAD.
+         The parent usually carries the subject and the tagger carries the
+         threshold, but in a longer argument the subject can sit further up, and
+         a claim about "it" is unresolvable for exactly that reason. So on an
+         unresolvable grade, and only then, climb the reply chain and ask ONCE
+         more with the fuller thread.
+         Once, not once per level: fetching three ancestors and asking again is
+         one extra model call, where asking after each fetch would be three, and
+         the model call is the expensive half. Reads are cheap by comparison and
+         X charges a resource once per day however often it is asked for.
+         The climb is gated on unresolvable, so a claim that already graded
+         clean is never handed extra context it could be distracted by — this
+         module's whole bias is precision over recall. An inappropriate grade
+         does not climb either: more context cannot make a subject allowed. */
+      if (ex.resolvability === "unresolvable" && ex.appropriate && onParent && parent) {
+        const above: string[] = [];
+        let cursor: string | null = parent.repliedToId ?? null;
+        for (let up = 0; up < MAX_CLIMB && cursor; up++) {
+          const a = await deps.tweet(cursor).catch(() => null);
+          if (!a) break;
+          const t = stripBotHandle(a.text, bot).trim();
+          if (usable(t)) above.unshift(`@${a.authorHandle ?? "someone"}: ${t}`);
+          cursor = a.repliedToId ?? null;
+        }
+        if (above.length > 0) {
+          const deeper = `${above.join("\n\n")}\n\n${claimText}`;
+          const retry = await deps.extract(deeper.slice(0, 4000));
+          log("climbed the thread for context", {
+            tweetId: m.id, levels: above.length, was: ex.resolvability, now: retry.resolvability,
+          });
+          ex = retry;
+        }
+      }
+
       if (ex.resolvability === "unresolvable" || !ex.appropriate || !ex.question) {
         // INAPPROPRIATE IS ALWAYS SILENT. There is no version of a public reply
         // under a post we refused on content grounds that reads as anything but

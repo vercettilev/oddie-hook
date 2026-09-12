@@ -309,16 +309,22 @@ export async function postTweet(opts: { text: string; quoteTweetId?: string; med
   return body.data;
 }
 
-/** One tweet by id, for reading the claim a mention was replying to. */
-export async function tweet(id: string): Promise<{ id: string; text: string; authorHandle: string | null } | null> {
+/** One tweet by id, for reading the claim a mention was replying to.
+ *  It also carries its OWN parent, so the loop can walk up a thread when two
+ *  posts were not enough to name what the argument is about. Asking for
+ *  referenced_tweets costs nothing extra: it is a field on a resource we are
+ *  already being charged for. */
+export async function tweet(id: string): Promise<{ id: string; text: string; authorHandle: string | null; repliedToId: string | null } | null> {
   try {
     const body = await call<{
-      data?: { id: string; text: string; author_id: string };
+      data?: { id: string; text: string; author_id: string;
+               referenced_tweets?: Array<{ type: string; id: string }> };
       includes?: { users?: Array<{ id: string; username: string }> };
-    }>(`/tweets/${id}?expansions=author_id&user.fields=username`);
+    }>(`/tweets/${id}?expansions=author_id&user.fields=username&tweet.fields=referenced_tweets`);
     if (!body.data) return null;
     const u = body.includes?.users?.find((x) => x.id === body.data!.author_id);
-    return { id: body.data.id, text: body.data.text, authorHandle: u?.username ?? null };
+    const up = body.data.referenced_tweets?.find((r) => r.type === "replied_to")?.id ?? null;
+    return { id: body.data.id, text: body.data.text, authorHandle: u?.username ?? null, repliedToId: up };
   } catch (e) {
     // A deleted or protected parent is a normal outcome, not an error worth
     // aborting a poll over. The caller decides whether it can proceed without.
