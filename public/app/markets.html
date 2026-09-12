@@ -65,7 +65,7 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   line-height:1.1;text-transform:uppercase;margin:0 0 14px;text-wrap:balance}
 .card__q a{color:var(--cream);text-decoration:none}
 /* Kartta da hook baslik, tam soru altinda. Ayni kural: sozlesme gorunur. */
-.card__full{margin:6px 0 0;font-size:13.5px;line-height:1.45;color:var(--fg-3)}
+.card__full{margin:4px 0 0;font-size:13px;line-height:1.38;color:var(--fg-3)}
 .card__q a:hover{color:var(--yellow)}
 
 /* Kac kisi girdi: rakam one cikar, etiket geride kalir. */
@@ -107,7 +107,6 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   letter-spacing:.1em;margin-top:6px;opacity:.72}
 
 .gate{border:3px solid var(--cream);padding:22px 20px;margin:0 0 26px}
-.gate p{margin:0 0 16px;font-size:15px;line-height:1.55;color:var(--fg-2);max-width:52ch}
 .big{display:inline-block;text-decoration:none;font-family:var(--display);font-size:21px;
   letter-spacing:.03em;text-transform:uppercase;line-height:1;background:var(--yellow);
   color:var(--ink);border:3px solid var(--black);padding:16px 22px;cursor:pointer;
@@ -150,8 +149,6 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   text-transform:uppercase;color:var(--cream);margin:0 0 8px;text-wrap:balance}
 .poster p{margin:0 auto;max-width:44ch;font-size:15px;line-height:1.6;color:var(--fg-2)}
 .poster p b{color:var(--cream)} .poster a{color:var(--yellow)}
-.gate img.gsticker{width:min(230px,58vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
-  filter:drop-shadow(0 10px 22px rgba(0,0,0,.5))}
 
 /* ================================================================= SKIN ==
    The app was a terminal: thin outlines on flat black, mono everywhere.
@@ -301,8 +298,8 @@ h1{color:var(--cream)}
 }
 
 /* THE HEADING STICKER OWNS THE RIGHT EDGE. Trailing the words, it read as
-   punctuation; at the end of the row and at nearly twice the size it reads as
-   the page's mascot. :has() scopes this to the headings that actually carry
+   punctuation; at the end of the row it reads as the page's mascot rather
+   than as part of the heading. :has() scopes this to the headings that actually carry
    one, so market.html's question h1 is untouched. On a narrow screen the row
    wraps and the sticker keeps the right edge on its own line. */
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
@@ -328,8 +325,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   box-shadow:8px 9px 0 var(--yellow-deep);transform:rotate(-.5deg);
   display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 22px;
   align-items:center;padding:20px 22px}
-.gate p{color:var(--fg-2);margin:0 0 12px}
-.gate img.gsticker{grid-row:1 / span 2;align-self:center;width:min(150px,32vw);margin:0}
 .gate .big{justify-self:start;text-decoration:none}
 .gate .later{grid-column:2;justify-self:start}
 /* Two-line button: the label acts, the line under it says why. */
@@ -339,22 +334,15 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--yellow-deep)}
 @media (max-width:560px){
   .gate{grid-template-columns:1fr;gap:10px;justify-items:center;text-align:center}
-  .gate img.gsticker{grid-row:auto;width:min(180px,46vw)}
   .gate .big,.gate .later{justify-self:center}
   .big--2l{text-align:center}
 }
 
 /* The ask, wearing the same sticker panel as a market so it reads as the next
    row in the list and not a banner bolted under it. */
-.card--invite{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 20px;
-  align-items:center;box-shadow:8px 9px 0 var(--pink-deep)}
-.card--invite .invite__st{width:min(120px,26vw);height:auto;margin:0}
+.card--invite{box-shadow:8px 9px 0 var(--pink-deep)}
 .card--invite .card__q{margin:0 0 6px}
 .card--invite .pool{margin:0}
-.crowd[hidden]{display:none}
-@media (max-width:560px){
-  .card--invite{grid-template-columns:1fr;justify-items:center;text-align:center;gap:12px}
-}
 </style>
 
 <header class="top">
@@ -439,7 +427,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
-    var chip = document.querySelector(".top .mechip");
     /* THE DECISION, NOT A PARAGRAPH ABOUT IT.
        This asked somebody to read 13 words of 15px body text at 68% opacity
        before it showed them a button, on the app's front door. The reason
@@ -539,12 +526,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          product to a stranger, here it is inventory to somebody already in. */
       var MIN_HEADS_LIST = 3;
       var THIN = 3;
-      var crowd = document.querySelector(".crowd");
-      if (crowd) crowd.hidden = ms.length < THIN;
       if (!ms.length) {
         view.innerHTML = '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
           + '<h3>Nothing open yet</h3>'
-          + '<p>Tag <b>@oddiefun</b> on X, under anything that ends up true or false. The first market is yours. '
+          + '<p>Tag <b>@oddiefun</b> on X, under anything that ends up true or false. '
           + '<a href="/genesis">How it works</a></p></div>';
         return;
       }
@@ -555,7 +540,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         // profile makes the opener a person you can go look at.
         // Same two words the market page uses: a bare handle beside a countdown
         // could be the opener, the claim's author, or the person it is about.
-        if (m.taggedBy) bits.push("Opened by " + byChip(m.taggedBy, m.sourceUrl));
+        if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
         var w = when(m.closesAt);
         // when() answers "closed" for a past deadline, and the sides now say
         // that too -- in the place where it decides something. One word, one
@@ -648,10 +633,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          comes back to close it. */
       if (ms.length < THIN) {
         view.innerHTML += '<article class="card card--invite">'
-          + '<img class="invite__st" src="/brand/st-tag.webp" alt="">'
-          + '<div><h2 class="card__q"><a href="/genesis">Open your own</a></h2>'
+          + '<h2 class="card__q"><a href="/genesis">Open your own</a></h2>'
           + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
-          + 'Keep <b>2%</b> of its pool.</p></div></article>';
+          + 'Keep <b>2%</b> of its pool.</p></article>';
+        // Two asks under a thin list is one too many, and this one says how.
+        var season = document.getElementById("season");
+        if (season) season.hidden = true;
       }
 
       /* Ag adi sunucudan gelir, burada tahmin edilmez. Liste yaniti zaten

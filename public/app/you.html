@@ -357,22 +357,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
    there was nowhere on oddie.fun to go and check it. A number you
    are quoted and cannot verify is worse than no number.
    A CREAM SLAB, by this page's own rule: an ASK is outlined on the black
-   field, a RECORD is a cream sticker, and a balance is a record. The pips are
-   lifted exactly from the Genesis page so the two surfaces are visibly the
-   same object rather than two designs for one idea. */
+   field, a RECORD is a cream sticker, and a balance is a record. The digit
+   carries the balance: "4 tickets left" is the same sentence a screen reader
+   was getting from the squares, in the place a sighted reader was already
+   getting it. */
 .tix[hidden]{display:none}
 .tix{background:var(--cream);color:var(--ink);border-radius:4px;
   padding:clamp(16px,2.4vw,22px) clamp(16px,2.6vw,24px);margin:0 0 30px;
   box-shadow:5px 5px 0 var(--yellow-deep)}
 .tix--out{box-shadow:5px 5px 0 var(--pink-deep)}
 .tix__row{display:flex;align-items:center;gap:clamp(14px,2.6vw,22px);flex-wrap:wrap}
-.tix .pips{display:flex;gap:7px;margin:0}
-.tix .pip{width:26px;height:26px;background:var(--ink);border:3px solid var(--ink);
-  border-radius:3px;rotate:-2deg}
-.tix .pip:nth-child(even){rotate:2deg}
-/* The spent ones are LEFT EMPTY rather than marked: what has to read off this
-   row in one glance is how many are still there, not how many are gone. */
-.tix .pip--spent{background:transparent}
 .tix__n{margin:0;display:flex;align-items:baseline;gap:8px}
 .tix__n b{font-family:var(--display);font-weight:400;font-size:clamp(30px,5vw,40px);
   line-height:.9;letter-spacing:.01em}
@@ -476,9 +470,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        who has never connected a wallet still has five. -->
   <section class="tix" id="tix" hidden>
     <div class="tix__row">
-      <div class="pips" id="tixpips" role="img" aria-label="checking your tickets">
-        <b class="pip"></b><b class="pip"></b><b class="pip"></b><b class="pip"></b><b class="pip"></b>
-      </div>
       <p class="tix__n"><b id="tixn">&mdash;</b> <span id="tixlabel">tickets left</span></p>
     </div>
     <p class="tix__spent" id="tixspent" hidden></p>
@@ -701,7 +692,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      *  notification will actually arrive, and the alternative to a button is
      *  discovering it the first time they win. */
     function showOn() {
-      box.innerHTML = "<span>Notifications are on. You will hear from us when one of your markets settles.</span>"
+      box.innerHTML = "<span>Notifications on. You will hear when one of your markets settles.</span>"
         + '<button type="button" id="pushtest">Send a test</button>';
       box.hidden = false;
       document.getElementById("pushtest").addEventListener("click", function () {
@@ -767,7 +758,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     view.innerHTML = '<div class="gate">'
       + '<img class="gsticker" src="/brand/st-decide.webp" alt="">'
       + "<p>" + esc(canConnect ? msg
-          : "Your wallet lives in its own app on a phone. Open oddie inside Phantom and it picks up right here.") + "</p>"
+          : "Open oddie inside Phantom to see what you have riding. It picks up right here.") + "</p>"
       + (canConnect
           ? '<button class="big" id="connect" type="button">Connect wallet</button>'
             + (link ? '<a class="deep" href="' + esc(link) + '">Open in Phantom</a>' : "")
@@ -1341,12 +1332,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         if (!st || typeof st.ticketsLeft !== "number") return;
         var left = st.ticketsLeft;
         var box = document.getElementById("tix");
-        var pips = document.getElementById("tixpips");
-
-        pips.setAttribute("aria-label", left + " of five tickets left");
-        var ps = pips.querySelectorAll(".pip");
-        for (var i = 0; i < ps.length; i++) ps[i].className = i < left ? "pip" : "pip pip--spent";
-
         document.getElementById("tixn").textContent = String(left);
         document.getElementById("tixlabel").textContent = left === 1 ? "ticket left" : "tickets left";
         if (left === 0) box.className = "tix tix--out";
