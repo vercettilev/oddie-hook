@@ -140,7 +140,6 @@ async function signAndSubmit(tx, onSigned){
  * that was always going to revert. Each one is a real answer, not an error.
  */
 const PREPARE_REASON = {
-  "closed": "Betting on this one has closed. The result is being settled.",
   "already-resolved": "This one settled while you were deciding. Open it again to collect if you were in.",
   // Kept though the server no longer sends it: an old page in somebody's tab
   // can still receive it from a deployment mid-rollout, and a code with no
@@ -661,7 +660,7 @@ function b64ToBytes(b64) {
     };
 
     if (!wallet) {
-      shell(`<p class="cnote">Nobody settled this market, so the 30 day window is open and your stake is yours to take back. Connect the wallet you staked with.</p>
+      shell(`<p class="cnote">Nobody settled this in 30 days, so your stake comes back. Connect the wallet you staked with.</p>
         <button class="cbtn" id="chainconnect">Connect wallet</button>
         <button class="cclose">Not now</button>`);
       body.querySelector("#chainconnect").textContent = connectLabel();

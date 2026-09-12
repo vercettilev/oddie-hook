@@ -220,10 +220,20 @@ const stampApp = (html: string): string => {
      the link ships hidden and nothing ever flashes. The client script stays as
      the fallback for a page served before this knew, and setting hidden on
      something already hidden costs nothing. */
+  /* The board page marks its own nav entry with aria-current, so the plain
+     anchor above does not match there and /board's nav kept the link while
+     every other page hid it. Both spellings are hidden, not one. */
   const board = anySettled === false
-    ? stamped.split('<a href="/board">Who was right</a>').join('<a href="/board" hidden>Who was right</a>')
+    ? stamped
+        .split('<a href="/board">Who was right</a>').join('<a href="/board" hidden>Who was right</a>')
+        .split('<a href="/board" aria-current="page">Who was right</a>')
+        .join('<a href="/board" aria-current="page" hidden>Who was right</a>')
     : stamped;
-  // Same treatment for Genesis when the season is off: one place, every nav.
+  /* Same treatment for Genesis when the season is off: one place, every nav.
+     The anchor text has to be exactly "Genesis" for this to be a nav link and
+     not prose, which is why board.html says "The Genesis board" in its
+     signpost sentence: a bare <a href="/genesis">Genesis</a> inside a sentence
+     would be hidden mid-sentence and leave the prose broken. */
   return GENESIS_SEASON ? board
     : board.split('<a href="/genesis">Genesis</a>').join('<a href="/genesis" hidden>Genesis</a>');
 };
