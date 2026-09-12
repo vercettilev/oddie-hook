@@ -276,6 +276,17 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
        *  remaining chances has to be true or it must not be said. */
       const tagsLeft = balance === null ? null : Math.max(0, balance - 1);
 
+      /* WHAT WE GRADED, CARRIED TO THE LEDGER.
+         A refusal row said "gate:unresolvable" and nothing about the sentence,
+         so the only way to ask whether a refusal was right was to re-read the
+         post: an X call each, the bot's rotating credentials, and nothing at
+         all once somebody deletes it. Twelve refusals in a row is exactly when
+         that question gets asked, and exactly when it could not be answered.
+         Filled below, the moment the claim text exists; null before that,
+         because a tag we refused for being our own or for having no tickets
+         was never graded. */
+      let graded: string | null = null;
+
       /* THE TEACHING REPLY, REACHED FROM TWO PLACES NOW.
          It used to live inside the extraction gate and could therefore only
          answer a claim the model had read. The other caller is the one this
@@ -287,7 +298,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       const teach = async (why: string): Promise<void> => {
         const teachPng = deps.teachPng;
         if (!teachPng) {
-          await settleMention(m.id, "skipped", { reason: `gate:${why}` });
+          await settleMention(m.id, "skipped", { reason: `gate:${why}`, claimText: graded });
           decide("skipped", { reason: `gate:${why}` });
           return;
         }
@@ -307,7 +318,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         if (balance === null) {
           const used = deps.refusalsUsed ? await deps.refusalsUsed(m.authorHandle).catch(() => TEACH_CAP) : 0;
           if (used >= TEACH_CAP) {
-            await settleMention(m.id, "skipped", { reason: `gate:${why}/taught-out` });
+            await settleMention(m.id, "skipped", { reason: `gate:${why}/taught-out`, claimText: graded });
             decide("skipped", { reason: "taught-out" });
             return;
           }
@@ -363,7 +374,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         }
         // "taught" is the marker refusalsUsed counts, so the reason string is
         // load-bearing rather than a log line.
-        await settleMention(m.id, "skipped", { reason: `taught:${why}`, replyId: posted.id });
+        await settleMention(m.id, "skipped", { reason: `taught:${why}`, replyId: posted.id, claimText: graded });
         decide("skipped", { reason: "taught", text: teachText });
         log("taught instead of staying silent", { tweetId: m.id, handle: m.authorHandle, tagsLeft });
       };
@@ -398,6 +409,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       const claimText = onParent && withOwn && parent
         ? `@${parent.authorHandle}: ${parentText}\n\n@${m.authorHandle}: ${ownText}`
         : onParent ? parentText : ownText;
+      graded = claimText.slice(0, 2000);
       if (!usable(claimText)) {
         /* NOTHING TO PRICE ANYWHERE, and that used to be the end of it: settled,
            silent, never explained, and free. Free was right and silent was not.
@@ -499,6 +511,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         }
         if (above.length > 0) {
           const deeper = `${above.join("\n\n")}\n\n${claimText}`;
+          graded = deeper.slice(0, 2000);
           const retry = await deps.extract(deeper.slice(0, 4000));
           log("climbed the thread for context", {
             tweetId: m.id, levels: above.length, was: ex.resolvability, now: retry.resolvability,
@@ -514,7 +527,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         // it instead. Never charged either: a silent bill for a judgement we
         // will not defend is the one version of this rule that is unfair.
         if (!ex.appropriate) {
-          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/inappropriate` });
+          await settleMention(m.id, "skipped", { reason: `gate:${ex.resolvability}/inappropriate`, claimText: graded });
           decide("skipped", { reason: `gate:${ex.resolvability}` });
           continue;
         }
@@ -568,7 +581,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
            here, provably, so picking it back up cannot double-post; what a
            retry costs is one more extraction, which is why it is bounded at
            three goes rather than left to run. */
-        await settleMention(m.id, "retry", { reason: `mint:${minted.status} ${minted.error}` });
+        await settleMention(m.id, "retry", { reason: `mint:${minted.status} ${minted.error}`, claimText: graded });
         decide("retry", { reason: `mint:${minted.status}` });
         log("mint failed, leaving the tag for the next sweep",
           { tweetId: m.id, status: minted.status, error: minted.error });

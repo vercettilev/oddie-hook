@@ -606,6 +606,16 @@ CREATE TABLE IF NOT EXISTS x_mention (
   reply_id   text,
   at         timestamptz NOT NULL DEFAULT now()
 );
+-- WHAT WE ACTUALLY GRADED, KEPT.
+--
+-- Twelve people tagged this bot and all twelve were refused, and when it came
+-- time to ask whether those were bad claims or our own bug, the answer was
+-- unreachable: the row says "gate:unresolvable" and nothing about what the
+-- sentence was. Reading the tweets back costs an X call each, needs the bot's
+-- rotating credentials, and stops working the moment somebody deletes a post.
+-- The text we graded is the one piece of evidence that makes a refusal
+-- auditable, it is public when we read it, and it is free to keep.
+ALTER TABLE x_mention ADD COLUMN IF NOT EXISTS claim_text text;
 
 -- How many times we have picked this tweet back up. A row only ever gets one
 -- shot at the world and then it is decided forever, which is right for the two
@@ -6050,6 +6060,9 @@ interface MentionRow {
    *  production is a cap nobody can exercise before it matters. */
   author: string | null;
   attempts: number;
+  /** The exact text the engine graded, so a refusal can be re-read later
+   *  without an X call and without depending on the post still existing. */
+  claimText: string | null;
 }
 const memMentions = new Map<string, MentionRow>();
 
@@ -6130,7 +6143,7 @@ export async function claimMention(tweetId: string, author: string | null): Prom
       memMentions.set(tweetId, { ...prev, outcome: "claimed", author: prev.author ?? author });
       return true;
     }
-    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null, author, attempts: 0 });
+    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null, author, attempts: 0, claimText: null });
     return true;
   }
   await ensureSchema();
@@ -6176,7 +6189,8 @@ export async function replyIdForSlug(slug: string): Promise<string | null> {
 export async function settleMention(
   tweetId: string,
   outcome: Exclude<MentionOutcome, "claimed">,
-  extra: { reason?: string | null; slug?: string | null; replyId?: string | null } = {},
+  extra: { reason?: string | null; slug?: string | null; replyId?: string | null;
+           claimText?: string | null } = {},
 ): Promise<void> {
   if (!PERSISTENT) {
     // The author is carried forward from the claim row: settleMention is not
@@ -6185,7 +6199,7 @@ export async function settleMention(
     const prev = memMentions.get(tweetId);
     memMentions.set(tweetId, {
       tweetId, outcome, reason: extra.reason ?? null, slug: extra.slug ?? null,
-      author: prev?.author ?? null,
+      author: prev?.author ?? null, claimText: extra.claimText ?? prev?.claimText ?? null,
       // Counted on the way OUT, so a row that is never picked back up does not
       // silently spend a go it never got.
       attempts: (prev?.attempts ?? 0) + (outcome === "retry" ? 1 : 0),
@@ -6195,9 +6209,11 @@ export async function settleMention(
   await ensureSchema();
   await db().query(
     `UPDATE x_mention SET outcome=$2, reason=$3, slug=$4, reply_id=$5, at=now(),
+            claim_text = COALESCE($6, claim_text),
             attempts = attempts + (CASE WHEN $2 = 'retry' THEN 1 ELSE 0 END)
       WHERE tweet_id=$1`,
-    [tweetId, outcome, extra.reason ?? null, extra.slug ?? null, extra.replyId ?? null],
+    [tweetId, outcome, extra.reason ?? null, extra.slug ?? null, extra.replyId ?? null,
+     extra.claimText ?? null],
   );
 }
 

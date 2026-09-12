@@ -79,7 +79,8 @@
     "test-exit-path": "tsx scripts/test-exit-path.ts",
     "test-payout-notice": "tsx scripts/test-payout-notice.ts",
     "test-push": "tsx scripts/test-push.ts",
-    "push-keys": "tsx scripts/push-keys.ts"
+    "push-keys": "tsx scripts/push-keys.ts",
+    "peek-mentions": "tsx scripts/peek-mentions.ts"
   },
   "engines": {
     "node": ">=20"
