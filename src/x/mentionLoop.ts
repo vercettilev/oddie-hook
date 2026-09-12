@@ -282,9 +282,10 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
          post: an X call each, the bot's rotating credentials, and nothing at
          all once somebody deletes it. Twelve refusals in a row is exactly when
          that question gets asked, and exactly when it could not be answered.
-         Filled below, the moment the claim text exists; null before that,
-         because a tag we refused for being our own or for having no tickets
-         was never graded. */
+         Carried on every outcome that followed a grading, a market included:
+         the question the engine wrote is only checkable against the sentence it
+         was given. Null before that, because a tag we refused for being our own
+         or for having no tickets was never graded. */
       let graded: string | null = null;
 
       /* THE TEACHING REPLY, REACHED FROM TWO PLACES NOW.
@@ -473,7 +474,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         }
         postAttempted = true;
         const posted = await deps.postReply({ text: reply.primary, inReplyTo: m.id, mediaIds });
-        await settleMention(m.id, "replied", { slug: already.slug, replyId: posted.id });
+        await settleMention(m.id, "replied", { slug: already.slug, replyId: posted.id, claimText: graded });
         decide("replied", { reason: "existing", slug: already.slug, text: reply.primary });
         log("replied with the market this post already has", { tweetId: m.id, slug: already.slug });
         continue;
@@ -627,7 +628,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         await deps.spendTicket(minted.slug, m.authorHandle, sourceHandle).catch((e) =>
           log("ticket spend failed (market still stands)", { tweetId: m.id, err: (e as Error).message }));
       }
-      await settleMention(m.id, "replied", { slug: minted.slug, replyId: posted.id });
+      await settleMention(m.id, "replied", { slug: minted.slug, replyId: posted.id, claimText: graded });
       decide("replied", { slug: minted.slug, text: reply.primary });
       log("replied", { tweetId: m.id, slug: minted.slug, replyId: posted.id });
     } catch (e) {
