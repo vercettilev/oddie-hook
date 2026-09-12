@@ -585,11 +585,11 @@ function b64ToBytes(b64) {
     const sol = (winningLeg / 1e9).toFixed(3);
     const bothSides = yesLeg > 0 && noLeg > 0;
     shell(isWinner
-      ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>${bothSides ? " (your other side pays nothing)" : ""}, and you were right. Collect your winnings; your wallet signs, we never hold them.</p>
+      ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>${bothSides ? " (your other side pays nothing)" : ""}. Your wallet signs, we never hold your winnings.</p>
       <button class="claimbtn" id="chainclaim">Collect winnings</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`
-      : `<p class="cnote">You called <b>${won === "YES" ? "NO" : "YES"}</b> and it went <b>${won}</b>, so there are no winnings here. The deposit your bet has been holding is still yours. Take it back; your wallet signs, we never hold it.</p>
+      : `<p class="cnote">You called <b>${won === "YES" ? "NO" : "YES"}</b>. The deposit your bet holds is still yours; your wallet signs, we never hold it.</p>
       <button class="claimbtn" id="chainclaim">Get your deposit back</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`);
@@ -680,10 +680,9 @@ function b64ToBytes(b64) {
       return;
     }
 
-    shell(`<p class="cnote">Nobody settled this market, so your whole stake comes back, plus the deposit your position has been holding. Your wallet signs, we never hold it.</p>
+    shell(`<p class="cnote">Nobody settled this in 30 days. Your stake and deposit come back; your wallet signs, we never hold it.</p>
       <button class="claimbtn" id="chainrefund">Take your stake back</button>
       <div class="chain-line" id="chainline"></div>
-      ${homeLink()}
       <button class="cclose">Later</button>`);
 
     const btn = body.querySelector("#chainrefund"), line = body.querySelector("#chainline");
@@ -889,7 +888,7 @@ function b64ToBytes(b64) {
       if (Array.isArray(j.accounts) && j.accounts.some((a) => a.provider === "twitter")) return;
       const back = encodeURIComponent(location.pathname);
       host.innerHTML = `<p class="cnote chain-name">This call is on chain as <b>${wallet ? shortAddr(wallet.publicKey) : "your wallet"}</b>.
-        <a class="cbtn cbtn--x" href="/api/auth/twitter/start?deviceId=${encodeURIComponent(did)}&return=${back}">Put your name on it with X</a></p>`;
+        <a class="chain-name__x" href="/api/auth/twitter/start?deviceId=${encodeURIComponent(did)}&return=${back}">Put your name on it with X &rarr;</a></p>`;
     } catch (e) { /* nothing to offer */ }
   }
 

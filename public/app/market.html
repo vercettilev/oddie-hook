@@ -176,7 +176,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 /* Inverted on purpose: the verdict block is already the loud colour, so its
    button has to be the quiet one or the two shout over each other. */
 .collect{
-  margin-top:14px;font-family:var(--display);font-size:19px;letter-spacing:.03em;
+  display:block;margin-top:14px;font-family:var(--display);font-size:19px;letter-spacing:.03em;
   text-transform:uppercase;line-height:1;
   background:var(--black);color:var(--cream);
   border:3px solid var(--black);padding:14px 20px;cursor:pointer;
@@ -205,13 +205,13 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   white-space:pre-wrap;overflow-wrap:anywhere}
 .terms__b b{color:var(--cream)}
 
-/* ---- share: eylem, dipnot degil ---- */
-.act{margin:0 0 20px}
-.share{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--cream);text-decoration:none;
-  border:2px solid var(--cream);padding:13px 26px;display:inline-block;cursor:pointer;
-  background:none}
-.share:hover{background:var(--cream);color:var(--black)}
+/* ---- share: a footnote now. Every bet is a post and a post is what brings
+   the next stranger, but it is not this reader's move on this screen: after
+   a bet the receipt already offers POST YOUR CALL. ---- */
+.share{font:inherit;letter-spacing:inherit;text-transform:inherit;
+  color:var(--fg-2);text-decoration:underline;border:0;padding:0;
+  background:none;cursor:pointer}
+.share:hover{color:var(--cream)}
 .share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 
 /* ---- the money rail: dipnot. Okunur kalir -- ucret ifsasi sayfanin
@@ -332,7 +332,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   color:var(--fg-3);text-transform:uppercase}
 .rail b{color:var(--yellow);font-weight:400}
 .rail a{color:var(--fg-2)}
-.share{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.04em}
 
 /* The crowd, at the foot of every page: this is a movement, and a page that
    ends in a void does not say so. Lazy: it is decoration, never the point. */
@@ -564,8 +563,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   text-transform:uppercase;background:var(--ink);color:var(--yellow);
   padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
 .top .mechip:hover{background:#000;color:var(--yellow-hi)}
-.top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
-.top .mechip--go:hover{background:var(--pink);color:#fff}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* THE OPENER IS A PERSON, NOT A BYLINE. Lime on the black field, ink on the
@@ -924,8 +921,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       /* The price rides on the buttons, the way the cards do it. A dead
          button says nothing extra: it is disabled, and the card under it
          says betting is over. */
-      var pctY = poolNow ? "<small>" + poolNow.yesPct + "%</small>" : "";
-      var pctN = poolNow ? "<small>" + (100 - poolNow.yesPct) + "%</small>" : "";
+      var pctY = off ? "<small>too late</small>"
+        : poolNow ? "<small>" + poolNow.yesPct + "%</small>" : "";
+      var pctN = off ? "<small>too late</small>"
+        : poolNow ? "<small>" + (100 - poolNow.yesPct) + "%</small>" : "";
       /* You are in. The one line on this page that is about the reader rather
          than the market, and the only evidence anywhere that their money
          landed: before this, a stake closed the sheet and left the page
@@ -977,7 +976,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
            none. */
         + (!off && P.length
             ? '<button class="sides__amt" type="button" id="amtjump">'
-              + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b> on the line")
+              + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>")
               + " <span>change</span></button>"
             : "")
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES" + pctY + "</button>"
@@ -1012,10 +1011,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        tiklanmalari gerekmez. Vault bir kanit baglantisi, yine eylem degil.
        Eylem kendi satirina cikiyor, kalan ucu dipnot oluyor -- ifsanin
        kendisi kucultulmuyor, sadece eylemle ayni sesle konusmayi birakiyor. */
-    html += '<div class="act"><button class="share" id="share" type="button">Share</button></div>';
 
     var fee = ((m.creatorFeeBps + m.protocolFeeBps) / 100);
-    html += '<div class="rail">'
+    html += '<div class="rail"><span><button class="share" id="share" type="button">Share</button></span>'
       /* "4% at resolve" ve "2% to the opener" yan yana %6 gibi okunuyordu.
          Ikisini de "of the pool" yapmak paydayi esitledi ama ICERMEYI hala
          okuyucunun cikarmasi gerekiyordu: iki ayri kesinti de ayni cumleyi
@@ -1023,7 +1021,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
          yapar -- toplama ihtimali kalmiyor. */
       + "<span><b>" + fee + "%</b> of the pool at settle</span>"
       + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of it to "
-          + (m.taggedBy ? "@" + esc(m.taggedBy) : "the opener") + "</span>" : "")
+          + "the opener</span>" : "")
       + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">See the money on Solana</a></span>' : "")
       + "</div>";
 
@@ -1082,7 +1080,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     function showStake() {
       var amt = view.querySelector(".sides__amt");
       if (amt) {
-        amt.innerHTML = (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b> on the line")
+        amt.innerHTML = (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>")
           + " <span>change</span>";
       }
     }
