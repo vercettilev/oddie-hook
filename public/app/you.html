@@ -49,6 +49,7 @@ a{color:inherit}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
 .top nav a:hover{color:var(--fg)}
+.top nav a[aria-current="page"]{color:var(--fg);pointer-events:none}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
@@ -160,6 +161,7 @@ h2 b{color:var(--yellow);font-weight:800}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
 .top nav a:hover{color:var(--ink)}
+.top nav a[aria-current="page"]{color:var(--ink)}
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
    at both ends. A negative LEFT costs nothing in a left-to-right page, but the
@@ -440,7 +442,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <nav>
       <a href="/markets">Markets</a>
       <a href="/board">Who was right</a>
-      <a href="/profile">Profile</a>
+      <a href="/profile" aria-current="page">Profile</a>
       <a href="/genesis">Genesis</a>
     </nav>
   </div>

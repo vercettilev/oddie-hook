@@ -99,11 +99,6 @@ main.wrap{padding-top:34px;padding-bottom:72px}
    stille yaziliyor, gecisi veren bu kural. */
 .bar__y,.bar__n{transition:width .62s cubic-bezier(.16,1,.3,1)}
 @media (prefers-reduced-motion:reduce){.bar__y,.bar__n{transition:none}}
-.split{display:flex;justify-content:space-between;margin-top:8px;
-  font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.12em;
-  text-transform:uppercase}
-.split .y{color:var(--yellow)}
-.split .n{color:var(--pink)}
 
 /* ---- the two buttons: the whole product, twice ---- */
 .stakes{display:flex;gap:9px;margin:0 0 12px;flex-wrap:wrap}
@@ -178,8 +173,6 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   text-transform:uppercase;color:var(--black)}
 .verdict--y{background:var(--yellow)}
 .verdict--n{background:var(--pink)}
-.verdict p{font-family:var(--body);font-size:14px;font-weight:700;line-height:1.45;
-  text-transform:none;margin:8px 0 0;letter-spacing:0}
 /* Inverted on purpose: the verdict block is already the loud colour, so its
    button has to be the quiet one or the two shout over each other. */
 .collect{
@@ -200,7 +193,6 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 
 /* ---- the terms this settles by ---- */
 .how{font-size:15px;line-height:1.55;color:var(--fg-2);margin:0 0 14px;max-width:46ch}
-.how b{color:var(--cream);font-weight:700}
 .terms{border:2px solid var(--fg-3);margin:0 0 22px}
 .terms summary{cursor:pointer;list-style:none;padding:12px 16px;
   font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.14em;
@@ -323,7 +315,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .pool--quiet{border-style:solid;border-color:var(--black);box-shadow:7px 8px 0 var(--yellow-deep)}
 .pool--quiet .pool__n{color:var(--ink)}
 .bar{border:2px solid var(--black)}
-.split .y{color:var(--yellow-deep)} .split .n{color:var(--pink-deep)}
 /* A CREAM STICKER IS THIS PAGE'S WAY OF SHOUTING, and it was shouting a
    footnote: the resolution rule is a detail almost nobody opens, sitting in
    the same costume as the pool and the buttons. Outlined on black it keeps
@@ -387,7 +378,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   .pool__n{grid-column:1}
   .pool__k{grid-column:2;margin-top:0}
   .bar{grid-column:1/-1;margin-top:12px}
-  .split{grid-column:1/-1}
   /* "Betting is over" is one sentence in the same box and has no number, no
      bar and no split, so the two-column header would leave it hanging in a
      grid it does not use. */
@@ -481,8 +471,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    that reusing a single mascot everywhere is a wasted vocabulary. */
 .hsticker{height:clamp(46px,7vw,74px);width:auto;vertical-align:-14%;margin-left:12px;
   transform:rotate(4deg);filter:drop-shadow(0 6px 14px rgba(0,0,0,.55))}
-.psticker{height:clamp(40px,6vw,62px);width:auto;vertical-align:middle;margin-left:10px;
-  transform:rotate(-5deg);flex:0 0 auto}
 /* Pul kartin ustune SORUYLA ARASINDAKI BOSLUK KADAR cikar, daha fazla degil.
    Eskisi 74px yukseliyordu ve sorunun son satirina biniyordu (olculdu: 46px
    yatay cakisma, son satirdaki soru isaretinin uzeri). Yukselisi 18px'e
@@ -568,7 +556,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 /* summary is a space-between flex row (label ... +). A third child would
    float in the gap, so the judge is pinned to the label's right. */
 .terms summary{align-items:center}
-.terms summary .psticker{margin-right:auto}
 
 /* who you are, in the masthead: a name when we know it, an invitation when
    we do not. Ink pill on the lime band so it reads as a control, not a label. */
@@ -680,7 +667,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     if (from.lamports === to.lamports && from.yesPct === to.yesPct) return;
     var nEl = view.querySelector(".pool__n");
     var yBar = view.querySelector(".bar__y"), nBar = view.querySelector(".bar__n");
-    var sy = view.querySelector(".split .y"), sn = view.querySelector(".split .n");
+    var sy = view.querySelector(".side--y small"), sn = view.querySelector(".side--n small");
     if (yBar && nBar) {
       yBar.style.width = from.yesPct + "%";
       nBar.style.width = (100 - from.yesPct) + "%";
@@ -697,8 +684,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         nEl.firstChild.nodeValue = SOL(Math.round(from.lamports + (to.lamports - from.lamports) * e));
       }
       var p = Math.round(from.yesPct + (to.yesPct - from.yesPct) * e);
-      if (sy) sy.textContent = "YES " + p + "%";
-      if (sn) sn.textContent = "NO " + (100 - p) + "%";
+      if (sy) sy.textContent = p + "%";
+      if (sn) sn.textContent = (100 - p) + "%";
       if (k < 1) requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
@@ -814,7 +801,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
        vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre
        hicbir zaman hicbir sey elemiyordu ve cozulmus market de geri sayiyordu. */
-    var lf = resolved ? null : leftOf(m.closesAt);
+    // Closed is not counted down either: the card under the buttons says it.
+    var lf = (resolved || closed) ? null : leftOf(m.closesAt);
     if (lf) {
       bits.push('<span class="clock' + (lf.soon ? " clock--soon" : "") + '" data-closes="'
         + esc(m.closesAt || "") + '">' + esc(lf.text) + "</span>");
@@ -875,7 +863,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       // nothing to connect with, which is how a winning position sits in a
       // vault forever.
       html += '<div class="verdict verdict--' + (yes ? "y" : "n") + '">' + (yes ? "YES" : "NO") + " WON"
-        + '<p>Bet ' + (yes ? "YES" : "NO") + "? Your share of the pool is here.</p>"
         + '<button class="collect" id="collect" type="button">Collect winnings</button></div>';
     }
 
@@ -929,17 +916,16 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + '<div class="pool__k">in the pool'
         + (heads >= MIN_HEADS_LIST ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
         + '<div class="bar" role="img" aria-label="' + yp + ' percent yes, ' + (100 - yp) + ' percent no">'
-        + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div>'
-        + '<div class="split"><span class="y">' + yp + "% on YES</span><span class=\"n\">" + (100 - yp) + "% on NO</span></div></div>";
+        + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div></div>';
     }
 
     if (!resolved) {
       var off = closed;
-      /* The eyebrow above already says "Betting closed", and the pool block
-         below already says the odds could not be read, so the buttons were
-         saying both a third time. What a dead button owes the reader is why it
-         is dead, in the fewest words that are not already on the screen. */
-      var note = off ? "too late" : src === "unreadable" ? "" : "";
+      /* The price rides on the buttons, the way the cards do it. A dead
+         button says nothing extra: it is disabled, and the card under it
+         says betting is over. */
+      var pctY = poolNow ? "<small>" + poolNow.yesPct + "%</small>" : "";
+      var pctN = poolNow ? "<small>" + (100 - poolNow.yesPct) + "%</small>" : "";
       /* You are in. The one line on this page that is about the reader rather
          than the market, and the only evidence anywhere that their money
          landed: before this, a stake closed the sheet and left the page
@@ -957,7 +943,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       stake = pickStake(P);
       if (!off) {
         html += P.length
-          ? '<p class="how">Putting <b>' + (stake === null ? "any amount" : esc(String(stake)) + " SOL") + '</b>. Winners split the pool.</p>'
+          ? '<p class="how">Winners split the pool.</p>'
             + '<div class="stakes" role="group" aria-label="Stake amount">'
             + P.map(function (v) {
                 return '<button class="stake' + (v === stake ? " on" : "") + '" type="button" data-sol="'
@@ -980,7 +966,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
           /* chain.js yuklenmediyse hic chip cizmiyoruz: rakamlari burada
              tekrar yazmak, iki yerde ayrisacak ikinci bir kaynak demek. O
              durumda butonlar bugunku gibi sheet'i form olarak aciyor. */
-          : '<p class="how">Put SOL on <b>YES</b> or <b>NO</b>. Winners split the pool.</p>';
+          : '<p class="how">Winners split the pool.</p>';
       }
       html += '<div class="sides">'
         /* The figure rides WITH the buttons, because on a phone the buttons
@@ -994,10 +980,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
               + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b> on the line")
               + " <span>change</span></button>"
             : "")
-        + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES"
-        + (note ? "<small>" + esc(note) + "</small>" : "") + "</button>"
-        + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO"
-        + (note ? "<small>" + esc(note) + "</small>" : "") + "</button></div>";
+        + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES" + pctY + "</button>"
+        + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO" + pctN + "</button></div>";
       if (closed) {
         html += '<div class="pool pool--quiet"><div class="pool__n">Betting is over.</div>'
           + '<div class="pool__k">Waiting on the result. Your bet stays in the pool</div></div>';
@@ -1018,8 +1002,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       /* Kapali aciliyor. Acik hali sartlari okumadan gecilemeyen bir duvar
          yapiyordu; asil isi merak edene TEK TIKLA acilmak, herkese pesinen
          dayatilmak degil. Baslik gorunur kaldigi icin varligi hala belli. */
-      html += '<details class="terms"><summary>How this resolves'
-        + '<img class="psticker" src="/brand/st-judge.webp" alt=""></summary>'
+      html += '<details class="terms"><summary>How this resolves</summary>'
         + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
     }
 
@@ -1093,13 +1076,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       b.setAttribute("aria-live", "polite");
       setTimeout(function () { b.innerHTML = was; }, 4000);
     }
-    /* ONE WRITER FOR THE FIGURE, because there are now two places it shows:
-       the sentence above the chips and the label pinned to the buttons. Three
-       different handlers were already setting .how b by hand, and adding a
-       second target to each of them is how the two end up disagreeing. */
+    /* ONE WRITER FOR THE FIGURE. It used to show twice, in a sentence above
+       the chips and on the label pinned to the buttons; the sentence is gone
+       and the label is the only place the amount is named. */
     function showStake() {
-      var hb = view.querySelector(".how b");
-      if (hb) hb.textContent = stake ? stake + " SOL" : "any amount";
       var amt = view.querySelector(".sides__amt");
       if (amt) {
         amt.innerHTML = (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b> on the line")
