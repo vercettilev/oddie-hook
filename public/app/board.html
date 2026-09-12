@@ -80,13 +80,9 @@ tbody tr:hover td{background:rgba(251,252,244,.04)}
 .wl{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
   color:var(--fg-3)}
 .wl b{color:var(--fg-2)}
-/* The same standing, said in money. Deliberately quieter than the points: the
-   points are what the board is ORDERED by, and making the money louder would
-   imply it is what wins. */
+/* What the number could not include, under the number. Quieter than the
+   points by design: it qualifies them, it is not a second score. */
 .net{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.02em}
-.net--up{color:var(--cream)}
-.net--dn{color:var(--pink)}
-.net--flat{color:var(--fg-3)}
 .net--none{color:var(--fg-3);font-size:11.5px;letter-spacing:.09em}
 
 .empty{border:2px dashed var(--fg-3);padding:22px 20px;font-size:15px;line-height:1.6;
@@ -265,7 +261,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         + '<a href="/genesis">The Genesis board</a> ranks who brings new people in.</p>'
         + "<table><thead><tr>"
         + '<th class="r"></th><th>Who</th>'
-        + '<th class="num hide-sm">Record</th><th class="num">Money</th><th class="num">Points</th>'
+        + '<th class="num hide-sm">Record</th><th class="num">Points</th>'
         + "</tr></thead><tbody>"
         + rows.map(function (w) {
             // A linked X handle is the identity; a wallet is one too, just a
@@ -277,31 +273,26 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
             // calls are in no total. Saying so beats a confident number built
             // on a failed request.
             /* A ZERO WE NEVER MEASURED IS NOT A ZERO.
-               realizedLamports starts at 0 and only accumulates over calls the
-               chain could price (src/store/standings.ts:73,79). So a caller
-               whose settled markets are ALL unreadable arrives here with
-               realizedSol exactly 0, and this column printed a confident
-               "0.00 SOL" beside "3 we could not read" -- an absence rendered as
-               a number, which is the one thing the whole read layer exists to
-               stop. When nothing was priced, the figure does not appear at all
-               and the admission stands alone. */
+               points only accumulate over calls the chain could price, so a
+               caller whose settled markets are ALL unreadable arrives here
+               with a real 0 that means "we could not look", not "nothing was
+               earned". The partial case is the same defect, smaller: points
+               built on some of the calls, presented as if built on all.
+               Both are said on the number itself, because the money column
+               that used to carry this admission has gone: the rule card one
+               line up says the board is ranked by points and never by money,
+               and a column of SOL beside that sentence argued the opposite. */
             var settled = (w.wins || 0) + (w.losses || 0);
             var nothingPriced = settled > 0 && w.unpriced >= settled;
-            var n = typeof w.realizedSol === "number" ? w.realizedSol : null;
-            var net;
-            if (n === null || nothingPriced) {
-              net = '<span class="net net--none">could not read</span>';
-            } else {
-              net = '<span class="net ' + (n > 0 ? "net--up" : n < 0 ? "net--dn" : "net--flat") + '">'
-                + (n > 0 ? "+" : "") + n.toFixed(2) + " SOL</span>";
-              if (w.unpriced) net += '<span class="net net--none"><br>' + w.unpriced + " we could not read</span>";
-            }
+            var pts = nothingPriced
+              ? '<span class="net net--none">could not read</span>'
+              : '<span class="pts">' + w.points + "</span>"
+                + (w.unpriced ? '<span class="net net--none"><br>' + w.unpriced + " unread</span>" : "");
             return "<tr>"
               + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">#' + w.rank + "</td>"
               + '<td class="who"><a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a></td>"
               + '<td class="num hide-sm wl"><b>' + w.wins + "</b> right &middot; " + w.losses + " wrong</td>"
-              + '<td class="num">' + net + "</td>"
-              + '<td class="num"><span class="pts">' + w.points + "</span></td>"
+              + '<td class="num">' + pts + "</td>"
               + "</tr>";
           }).join("")
         + "</tbody></table>";

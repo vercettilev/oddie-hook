@@ -1075,7 +1075,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        This one is the missing half. It revokes the browser's approval and
        forgets the address, which is what somebody switching wallets or handing
        over a laptop is actually asking for. */
-    sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b> on this device"
+    sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b>"
       + ' <button class="idstrip__out" id="wout" type="button">Disconnect wallet</button>';
     var wo = document.getElementById("wout");
     if (wo) wo.addEventListener("click", function () {
