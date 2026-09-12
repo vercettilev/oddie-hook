@@ -794,7 +794,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
-    if (m.taggedBy) bits.push("Opened by " + byChip(m.taggedBy));
+    if (m.taggedBy) bits.push(byChip(m.taggedBy));
     /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
        vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre
        hicbir zaman hicbir sey elemiyordu ve cozulmus market de geri sayiyordu. */
