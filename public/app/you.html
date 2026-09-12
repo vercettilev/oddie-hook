@@ -1123,6 +1123,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       var html = "";
 
       var cl = (claim && claim.claimable) || [];
+      /* DECLARED HERE, NOT FORTY LINES DOWN, AND THE DIFFERENCE WAS A CRASH.
+         `var op` used to be assigned after pushAsk read op.length. var hoists
+         the DECLARATION, not the assignment, so at that line op was undefined,
+         .length threw, the whole .then() died, nothing rendered - and "Finding
+         your bets…" sat on a phone forever. Three fixes chased that sentence
+         (a timeout, a heal, a watchdog) and each treated a symptom of this one
+         line, which was mine. */
+      var op = (open && open.open) || [];
       /* THE ALERT, drawn from the read this page was already doing.
          No new request and no new number: `won` comes off the chain via
          /api/chain/claimable, which is the only thing that knows whether a
@@ -1135,7 +1143,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          wallet with no history has nothing to be notified about, and a
          permission spent on them is a permission gone. */
       pushAsk(cl.length > 0 || op.length > 0);
-      var op = (open && open.open) || [];
       var blindClaim = claim && claim.unreadable, blindOpen = open && open.unreadable;
       // A NULL PAYLOAD IS A FAILED FETCH, NOT AN EMPTY LIST. Both are [] after
       // the `|| []` above, and `unreadable` is null rather than a count, so
