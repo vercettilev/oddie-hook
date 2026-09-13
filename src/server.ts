@@ -3358,8 +3358,36 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
 // ONCHAIN_ENABLED is on; the underlying pubkeys stay stored regardless.
 app.get("/api/community/list", requireAdmin, async (_req, res) => {
   const items = await adminListCommunity();
+  /* THE ONLY NUMBERS THIS LIST CARRIED WERE THE DEAD ONES.
+     yesTokens/noTokens/yesPlayers/noPlayers are SUM(market_call.tokens), and
+     nothing has written market_call since the product stopped using play
+     money, so the operator console read "YES 0 (0p) · NO 0 (0p)" over a market
+     holding 0.2 SOL. The real pool is on chain and the real head count is in
+     chain_entry, both of which /api/v1/markets already reads for the public
+     feed. One batched read for the page, same as there. */
+  const pubkeys = items.map((i) => i.onchainPubkey).filter(Boolean) as string[];
+  const [states, heads] = await Promise.all([
+    readMarkets(pubkeys, { maxAgeMs: 4_000 }).catch(() => new Map<string, MarketRead>()),
+    stakerCounts(items.map((i) => i.slug)).catch(() => ({} as Record<string, number>)),
+  ]);
   res.json({
-    items: items.map((i) => ({ ...i, explorer: onchainEnabled() && i.onchainPubkey ? explorerUrl(i.onchainPubkey) : null })),
+    items: items.map((i) => {
+      const r = i.onchainPubkey ? states.get(i.onchainPubkey) : undefined;
+      const st = r?.ok ? r.state : null;
+      // Unreadable is not empty: say so rather than publishing a zero nobody
+      // measured, the same rule the public feed follows.
+      const unreadable = Boolean(r && !r.ok && r.reason === "unreadable");
+      const yes = st?.totalYesLamports ?? 0, no = st?.totalNoLamports ?? 0;
+      return {
+        ...i,
+        explorer: onchainEnabled() && i.onchainPubkey ? explorerUrl(i.onchainPubkey) : null,
+        poolSol: unreadable || !st ? null : (yes + no) / 1e9,
+        yesSol: unreadable || !st ? null : yes / 1e9,
+        noSol: unreadable || !st ? null : no / 1e9,
+        bettors: heads[i.slug] ?? 0,
+        unreadable,
+      };
+    }),
     chain: { enabled: isChainEnabled(), admin: await adminAddress(), balanceSol: await adminBalanceSol() },
   });
 });

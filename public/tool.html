@@ -97,6 +97,13 @@
   summary.verdict:focus-visible{outline:3px solid var(--accent); outline-offset:3px}
   .why{font-size:13.5px; color:var(--muted); line-height:1.5; margin:0}
   .why + .why{margin-top:6px}
+  /* Featuring is a preference; settling is the job. A link-shaped control
+     stops it competing with the one button on the row that moves money. */
+  .linky{border:0; background:none; padding:0; font:inherit; font-size:13px;
+    color:var(--muted); text-decoration:underline; cursor:pointer}
+  .linky:hover{color:var(--ink)}
+  /* A market past its close is the only row that has to be found in a list. */
+  .mkt--due{border-color:var(--accent)}
 
   .q{font-size:15px; font-weight:600; line-height:1.4; margin:0 0 10px}
 
@@ -183,6 +190,20 @@
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/** "in 3 days" / "2 hours ago". A deadline is only ever read as a distance from
+ *  now, and a bare timestamp makes the reader do that subtraction by hand. */
+function ago(iso) {
+  const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+  const past = mins < 0, n = Math.abs(mins);
+  const hrs = Math.round(n / 60), days = Math.round(n / 1440);
+  const say = n < 60 ? n + (n === 1 ? " minute" : " minutes")
+    : n < 1440 ? hrs + (hrs === 1 ? " hour" : " hours")
+    : days + (days === 1 ? " day" : " days");
+  return past ? say + " ago" : "in " + say;
+}
+/** Trailing zeros off: 0.2000 reads 0.2, and 0.0295 keeps what it needs. */
+const sol = (n) => String(Number(n.toFixed(4)));
 
 // The card SVG's natural size, used when a browser reports naturalWidth 0 for
 // an SVG <img> (Safari does, intermittently).
@@ -276,6 +297,17 @@ async function loadCommunity() {
        market is still a real row and still resolvable, so it goes to the
        history beside the resolved ones rather than disappearing. */
     const live = j.items.filter((m) => !m.resolvedOutcome && !m.retiredAt);
+    /* SETTLEABLE FIRST. The one thing this page is for is closing a market that
+       has closed, and those were sorted in with the rest, so finding them meant
+       reading every row. Closed and unsettled to the top, then the ones closing
+       soonest, because that is the order the work arrives in. */
+    const closedAt = (m) => (m.closesAt ? new Date(m.closesAt).getTime() : Infinity);
+    live.sort((a, b) => {
+      const now = Date.now(), ca = closedAt(a), cb = closedAt(b);
+      const da = ca <= now, db = cb <= now;
+      if (da !== db) return da ? -1 : 1;   // needs settling, first
+      return ca - cb;                       // then whatever closes soonest
+    });
     const resolved = j.items.filter((m) => m.resolvedOutcome);
     const retired = j.items.filter((m) => !m.resolvedOutcome && m.retiredAt);
     count.textContent = `· ${live.length} live`
@@ -287,20 +319,38 @@ async function loadCommunity() {
       // that's the one case where it can differ row to row. Off, it is the
       // same word repeated on every card, already said once in the banner
       // above; this used to print "on-chain: skipped" on every single row.
-      const minted = !chainEnabled ? "" : m.explorer
-        ? ' · <a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">minted ✓ ↗</a>'
-        : ' · on-chain: skipped';
-      const pool = 'YES <b>' + m.yesTokens + '</b> (' + m.yesPlayers + 'p) · NO <b>' + m.noTokens + '</b> (' + m.noPlayers + 'p)';
+      /* THE LINE THAT DECIDES WHETHER YOU TOUCH THIS ROW.
+         It used to read "YES 0 (0p) · NO 0 (0p)", which is SUM(market_call),
+         the play-money table nothing has written since real SOL arrived: four
+         zeros over a market holding 0.2 SOL. The pool and the head count come
+         off the chain now, and the deadline is stated, because "has it closed"
+         is the entire question this page exists to answer and it was the one
+         fact not on the card. */
+      const due = m.closesAt && new Date(m.closesAt).getTime() <= Date.now();
+      const when = m.closesAt
+        ? (due ? 'closed ' + ago(m.closesAt) + ' — ready to settle' : 'closes ' + ago(m.closesAt))
+        : 'no close time';
+      const money = m.unreadable ? "could not read the pool"
+        : m.poolSol === null ? (chainEnabled ? "not on chain yet — the first bet opens it" : "")
+        : m.poolSol === 0 ? "no bets yet"
+        : sol(m.poolSol) + ' SOL · ' + m.bettors + (m.bettors === 1 ? ' bettor' : ' bettors')
+          + ' · ' + Math.round((m.yesSol / m.poolSol) * 100) + '% on YES';
       const isFeatured = featuredSlugs.includes(m.slug);
-      const featureBtn = isFeatured
-        ? '<button class="ghost unfeature" data-slug="' + esc(m.slug) + '" style="border-color:var(--accent)">★ featured — remove</button>'
-        : '<button class="ghost feature" data-slug="' + esc(m.slug) + '">☆ feature this market</button>';
-      return '<div class="box mkt" data-slug="' + esc(m.slug) + '" style="margin-bottom:10px' + (isFeatured ? ';border-color:var(--accent)' : '') + '">'
+      const featureLink = isFeatured
+        ? '<button class="linky unfeature" data-slug="' + esc(m.slug) + '">★ featured — remove</button>'
+        : '<button class="linky feature" data-slug="' + esc(m.slug) + '">☆ feature on the homepage</button>';
+      const open = m.explorer
+        ? ' · <a href="' + esc(m.explorer) + '" target="_blank" rel="noopener">on Solana ↗</a>' : '';
+      return '<div class="box mkt' + (due ? ' mkt--due' : '') + '" data-slug="' + esc(m.slug) + '" style="margin-bottom:10px'
+          + (isFeatured ? ';border-color:var(--accent)' : '') + '">'
         + '<p class="why" style="color:var(--ink);font-weight:700">' + (isFeatured ? '★ ' : '') + esc(m.question) + '</p>'
-        + '<p class="why">' + pool + minted + '</p>'
-        + '<div class="row" style="margin-top:6px">'
-        + '<button class="ghost manage" data-slug="' + esc(m.slug) + '">manage / view positions ▾</button>'
-        + featureBtn
+        + '<p class="why"' + (due ? ' style="color:var(--ink);font-weight:700"' : '') + '>' + when + '</p>'
+        + (money ? '<p class="why">' + money + open + '</p>' : '')
+        + '<div class="row" style="margin-top:6px;align-items:center">'
+        + '<button class="ghost manage" data-slug="' + esc(m.slug) + '" data-label="'
+          + (due ? 'settle this market ▾' : 'positions ▾') + '">'
+          + (due ? 'settle this market ▾' : 'positions ▾') + '</button>'
+        + featureLink
         + '</div>'
         + '<div class="mktdetail" style="margin-top:10px"></div>'
         + '</div>';
@@ -347,7 +397,7 @@ async function setFeatured(slugs) {
 
 async function toggleDetail(btn) {
   const mkt = btn.closest(".mkt"), panel = mkt.querySelector(".mktdetail");
-  if (panel.dataset.open === "1") { panel.style.display = "none"; panel.dataset.open = ""; btn.textContent = "manage / view positions ▾"; return; }
+  if (panel.dataset.open === "1") { panel.style.display = "none"; panel.dataset.open = ""; btn.textContent = btn.dataset.label; return; }
   panel.style.display = "block"; panel.dataset.open = "1"; btn.textContent = "hide ▴";
   await loadMarketDetail(btn.dataset.slug, panel);
 }
