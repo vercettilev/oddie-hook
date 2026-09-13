@@ -614,13 +614,20 @@ function b64ToBytes(b64) {
         // its own page: the og image puts the card in the tweet, and posting it
         // is an ORIGINAL post, which is the format X actually ranks. The bot is
         // stuck in the replies; the winner is not.
+        //
+        // NOT TO A HEDGER, THOUGH. The card says "called NO at 50%", and a
+        // wallet holding both sides took no side to be right about. The page
+        // agrees: it is served only when the recorded entry matches the
+        // outcome, so offering the button to somebody on both sides sent them
+        // to "no such receipt" at the exact moment they were meant to feel
+        // like a genius. Measured on the first real settlement.
         const receiptUrl = `/r/${encodeURIComponent(slug)}/${encodeURIComponent(wallet.publicKey)}`;
         body.innerHTML = `<h3>${confirmed ? "Collected ✓" : "Sent, still confirming"}</h3>
           <p class="cnote">${confirmed
             ? `${isWinner ? "Your winnings are" : "Your deposit is"} on the way to your wallet${CLUSTER === "mainnet-beta" ? "" : `, on ${clusterLabel(CLUSTER)}`}.`
             : "It is on Solana. We could not watch it land. Open the link below before you collect again."}</p>
           <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
-          ${confirmed && isWinner ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
+          ${confirmed && isWinner && !bothSides ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
           ${confirmed ? `<p class="cnote" style="margin-top:10px"><a href="/w/${encodeURIComponent(wallet.publicKey)}" target="_blank" rel="noopener">your whole record →</a></p>` : ""}
           ${homeLink()}
           <button class="cclose">Done</button>`;
