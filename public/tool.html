@@ -56,11 +56,6 @@
 
   /* The jump bar: five stops, in the order the job runs. Sticky so "where am I"
      is never a scroll away — the whole point of the console being one page. */
-  .quicknav{position:sticky; top:0; z-index:6; display:flex; gap:6px; flex-wrap:wrap;
-    background:var(--wash); padding:10px 0 8px; margin:0 0 4px}
-  .quicknav a{font-size:12.5px; font-weight:700; color:var(--ink); text-decoration:none;
-    border:2px solid var(--ink); border-radius:999px; padding:5px 12px; background:var(--white)}
-  .quicknav a:hover{background:var(--accent)}
 
   .row{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap}
   button{
@@ -71,14 +66,10 @@
   button:active{transform:translateY(1px)}
   button:disabled{opacity:.45; cursor:default}
   button:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
-  .primary{background:var(--accent); flex:1 1 190px}
   .ghost{background:var(--white)}
   /* A one-way action deliberately styled BELOW button weight: no border, no
      fill, small and muted. It sits next to buttons that matter more (post,
      mark sent) and should never be the thing the eye lands on first. */
-  .quiet{border:none;background:none;font-weight:600;font-size:12.5px;
-    color:var(--muted);padding:6px 4px;border-radius:8px}
-  .quiet:hover{color:var(--ink);text-decoration:underline}
   /* Inside a result box the two actions are peers; let them share the row
      rather than dropping "Download card" onto a line of its own. */
   .box .row button{flex:1 1 138px; padding:12px 10px}
@@ -108,13 +99,6 @@
   .why + .why{margin-top:6px}
 
   .q{font-size:15px; font-weight:600; line-height:1.4; margin:0 0 10px}
-  .meta{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px}
-  .chip{
-    font-size:12px; font-weight:700; padding:5px 11px; border-radius:999px;
-    border:2px solid var(--ink); background:var(--wash); white-space:nowrap;
-    font-variant-numeric:tabular-nums;
-  }
-  .chip.thin{background:var(--warn)}
 
   .link{
     display:block; word-break:break-all; font-size:13.5px; font-weight:600;
@@ -130,8 +114,6 @@
   .variant{display:flex; align-items:center; gap:10px;
     border:2px solid var(--ink); border-radius:12px; padding:9px 12px; background:var(--wash)}
   .vtext{flex:1; min-width:0; font-size:14px; font-weight:600; line-height:1.35}
-  .vcopy{flex:none; padding:7px 14px; font-size:13px}
-  .hidden{display:none !important}
 
   /* The at-a-glance count in a section title. Answers "is there anything to do
      here" without opening the section — the thing an operator scanning five
@@ -147,8 +129,6 @@
   .donerow{display:flex; align-items:center; gap:8px; font-size:13px; padding:4px 0;
     border-bottom:1px solid var(--bar)}
   .donerow:last-child{border-bottom:none}
-  .donewho{flex:none; font-weight:700; color:var(--muted); max-width:120px;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .donewhat{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     color:var(--ink); text-decoration:none}
   a.donewhat:hover{text-decoration:underline}
@@ -168,16 +148,12 @@
   <header>
     <h1>oddie</h1><span class="tag">operator console · internal</span>
   </header>
-  <!-- The five-line flow narration this used to open with is now just this one
-       fact: the one thing not already said by the nav pills and the five
-       section headers below. Run daily by one person, this page doesn't need
-       to re-teach its own shape every time it's opened. -->
-  <p class="lede">Nothing here posts itself. Every tweet leaves from @oddiefun, by hand.</p>
-
-  <nav class="quicknav">
-    <a href="#community">1 · open</a>
-    <a href="#resolve">2 · markets</a>
-  </nav>
+  <!-- The tags answer themselves now: the mention loop opens markets and posts
+       the reply without anybody here. What is left for a person is the half a
+       machine must not do on its own, which is deciding an outcome and paying
+       people. One section, so no nav to it. -->
+  <p class="lede">The bot opens markets and answers tags on its own. This is where a
+    person settles one.</p>
 
   <!-- One token unlocks everything. It lives up here because every panel below
        is admin-gated — the server fails closed without it. -->
@@ -187,70 +163,16 @@
         style="flex:1 1 240px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
       <button class="ghost" id="admsave" style="flex:0 0 auto;padding:9px 16px;font-size:14px">save</button>
     </div>
-    <p class="hint" style="margin-top:8px">one token unlocks both panels below · saving reloads them.</p>
+    <p class="hint" style="margin-top:8px">the panel below is admin-gated · saving reloads it.</p>
   </div>
 
-  <!-- 1 · The daily move: a tagged tweet in, a market + ready reply out. Venue
-       markets are checked first so nothing gets duplicated; only a claim nothing
-       covers becomes a new Community market. -->
-  <!-- Open by default; the other four are not. This is the one section used on
-       EVERY visit (paste a tweet, get a market), and it is already short after
-       the earlier trim, so the friction of a closed-by-default section falls
-       on the four that were actually the source of the crowding: long lists,
-       not this form. -->
-  <details class="box" id="community" style="margin-top:22px" open>
-    <summary class="verdict" style="font-size:17px">1 · open a market</summary>
-    <p class="why" style="margin:0 0 10px">Paste the tweet. Matches a live venue market first, or drafts a new one.</p>
-
-    <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
-      <textarea id="cx" placeholder="paste the tagged tweet (+ optional thread context)…"
-        style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:66px;resize:vertical"></textarea>
-      <input id="csrc" type="url" required placeholder="source tweet URL — REQUIRED (x.com/…/status/…)"
-        style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;border:2px solid var(--ink);border-radius:10px;padding:8px 11px;margin:6px 0 0">
-      <!-- Kept visible, not moved into a comment: this is error prevention, not
-           background theory, and it needs to be read BEFORE the mistake. The
-           historical footnote it used to carry ("markets published before this
-           rule…") was theory. Cut. -->
-      <p class="hint" style="margin:5px 0 0">Required. Names the card and decides who gets the 3% creator fee. <b>The server refuses a market without it.</b></p>
-      <div class="row" style="margin:8px 0 0">
-        <button class="ghost" id="cxgo" style="padding:9px 16px;font-size:14px">Extract market →</button>
-        <span class="why" id="cxstat" style="align-self:center;margin:0"></span>
-      </div>
-      <div id="cxout" style="margin-top:8px"></div>
-      <div id="creply" style="margin-top:8px"></div>
-    </div>
-
-    <p class="vhead" style="margin:12px 0 6px">the draft: edit or fill from scratch, then Create</p>
-    <input id="cq" type="text" maxlength="180" placeholder="question (≤180 chars, e.g. Will oddie hit 1k users by Aug 1?)"
-      style="width:100%;box-sizing:border-box;font:inherit;font-size:15px;border:2px solid var(--ink);border-radius:12px;padding:10px 12px;margin:6px 0">
-    <textarea id="ccrit" placeholder="resolution criteria — exactly what evidence settles YES vs NO, and the source to check"
-      style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px;margin:0 0 6px;min-height:54px;resize:vertical"></textarea>
-    <div class="row" style="margin:0">
-      <input id="cclose" type="datetime-local" title="close time"
-        style="flex:1 1 180px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
-      <input id="ccat" type="text" value="Community" placeholder="category"
-        style="flex:1 1 120px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
-      <input id="cyes" type="number" min="1" max="99" value="50" title="starting YES %"
-        style="flex:0 0 90px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
-    </div>
-    <!-- Retention flag (soft, never blocks): a market that resolves months out
-         kills the come-back-for-the-result loop. -->
-    <div id="clongwarn" style="display:none;background:var(--warn);border:2px solid var(--ink);border-radius:10px;padding:8px 12px;margin-top:8px;font-size:13px;font-weight:700"></div>
-    <!-- Date assist: if the question text carries a deadline, we PRE-FILL the
-         close time as a suggestion and require a look/confirm before Create. -->
-    <div class="box" id="datehint" style="display:none;background:var(--warn);margin-top:8px;padding:10px 12px"></div>
-    <div class="row" style="margin-top:10px">
-      <button class="primary" id="cgo">Create market</button>
-    </div>
-    <div class="out" id="cout" aria-live="polite"></div>
-  </details>
-
-  <!-- 4 · The markets themselves: feature onto the homepage, inspect positions,
-       resolve with a payout preview. Resolve settles real user positions.
-       Closed by default; the summary's own count says whether it's worth
-       opening. -->
-  <details class="box" id="resolve" style="margin-top:22px">
-    <summary class="verdict" style="font-size:17px">2 · markets <span id="rcount" class="count"></span></summary>
+  <!-- The markets themselves: feature onto the homepage, inspect positions,
+       resolve with a payout preview. Resolve settles real user positions and
+       pays them, which is why it is the one thing left here. Open by default:
+       it is the only section, so a closed one would just be a door in front of
+       the page. -->
+  <details class="box" id="resolve" style="margin-top:22px" open>
+    <summary class="verdict" style="font-size:17px">markets <span id="rcount" class="count"></span></summary>
     <p class="why" id="chainstat">—</p>
     <p class="why" id="featstat" style="margin-top:2px">—</p>
     <div id="rlist" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
@@ -261,21 +183,6 @@
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-// The sections are <details> (see the top of this file). Left alone, a
-// nav-pill click still scrolls to the right place.
-// Browsers position a fragment link at the ELEMENT with that id whether or
-// not it's visible, but a closed <details> has almost no height, so it
-// scrolls you to a title bar sitting on a section you still have to open by
-// hand. Opening it here, synchronously, before the browser's own scroll runs,
-// means the scroll lands on the section already expanded, in one motion
-// instead of two.
-document.querySelectorAll(".quicknav a[href^='#']").forEach((a) => {
-  a.addEventListener("click", () => {
-    const target = document.querySelector(a.getAttribute("href"));
-    if (target && target.tagName === "DETAILS") target.open = true;
-  });
-});
 
 // The card SVG's natural size, used when a browser reports naturalWidth 0 for
 // an SVG <img> (Safari does, intermittently).
@@ -297,78 +204,11 @@ const CARD_W = 1000, CARD_H = 524;
 // still render — the sent date and the 24h-return signal are real information
 // — just as one line each, in a collapsed list that starts closed.
 /** Fetch a same-origin PNG and hand it to the browser as a download. */
-async function saveCard(url, name, btn) {
-  const was = btn.textContent;
-  btn.disabled = true; btn.textContent = "Saving…";
-  try {
-    const blob = await (await fetch(url)).blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    btn.textContent = "Saved";
-  } catch {
-    btn.textContent = "Failed";
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => (btn.textContent = was), 1400);
-  }
-}
-
-async function copy(text, btn) {
-  const was = btn.textContent;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // Insecure origins and older iOS have no clipboard API. Select it instead so
-    // one long-press copies, rather than silently doing nothing.
-    const t = document.createElement("textarea");
-    t.value = text; document.body.appendChild(t); t.select();
-    try { document.execCommand("copy"); } catch {}
-    t.remove();
-  }
-  btn.textContent = "Copied";
-  setTimeout(() => (btn.textContent = was), 1200);
-}
-
 /**
  * SVG -> PNG in the page. X rejects SVG uploads, so the download button has to
  * hand over a raster. The card embeds no external image or webfont, so the
  * canvas is never tainted and toBlob() is allowed.
  */
-async function downloadPng(slug, btn) {
-  const was = btn.textContent;
-  btn.disabled = true; btn.textContent = "Rendering…";
-  try {
-    const svg = await (await fetch(`/card/${encodeURIComponent(slug)}.svg`)).text();
-    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
-    const img = new Image();
-    await new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error("svg failed to decode")); img.src = url; });
-
-    const scale = 2; // 2000x1048 — comfortably above X's downscale threshold
-    const c = document.createElement("canvas");
-    c.width = (img.naturalWidth || CARD_W) * scale;
-    c.height = (img.naturalHeight || CARD_H) * scale;
-    const g = c.getContext("2d");
-    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); // PNG alpha renders black in some X clients
-    g.drawImage(img, 0, 0, c.width, c.height);
-    URL.revokeObjectURL(url);
-
-    const blob = await new Promise((r) => c.toBlob(r, "image/png"));
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${slug}.png`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    btn.textContent = "Downloaded";
-  } catch (e) {
-    btn.textContent = "Failed — long-press the card";
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => (btn.textContent = was), 1600);
-  }
-}
-
 // ---- community markets (admin) --------------------------------------------
 // Every call carries the admin token as x-oddie-admin. The server fails closed:
 // no token / wrong token / unset ODDIE_ADMIN_TOKEN => 401.
@@ -379,331 +219,6 @@ const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getI
 $("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); };
 
 let chainEnabled = false;
-
-// --- date assist: suggest a close time parsed from the question text --------
-// We PRE-FILL a parsed date as a suggestion but never submit it silently: while
-// an unconfirmed suggestion is showing, Create is disabled until you confirm it
-// or edit the field. No clear date found -> the field is left empty, as before.
-let datePending = false;
-const cqEl = $("#cq"), ccloseEl = $("#cclose"), dhintEl = $("#datehint");
-const setCreateEnabled = () => { $("#cgo").disabled = datePending; };
-
-function parseDeadline(text) {
-  if (!text) return null;
-  const t = text.toLowerCase();
-  const M = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
-  let y=null, mo=null, d=null, m;
-  if ((m = t.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/))) { y=+m[1]; mo=+m[2]-1; d=+m[3]; }
-  if (mo===null && (m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(20\d{2}))?/)))
-    { mo=M[m[1]]; d=+m[2]; if (m[3]) y=+m[3]; }
-  if (mo===null && (m = t.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:,?\s*(20\d{2}))?/)))
-    { d=+m[1]; mo=M[m[2]]; if (m[3]) y=+m[3]; }
-  if (mo===null && (m = t.match(/\b(20\d{2})\b/))) { y=+m[1]; mo=11; d=31; } // bare year -> end of that year
-  if (mo===null) return null;
-  const now = new Date();
-  if (y===null) { y=now.getFullYear(); if (new Date(y,mo,d,23,59) < now) y++; } // undated month/day -> next occurrence
-  if (d===null) d=31;
-  const dt = new Date(y, mo, d, 23, 59);
-  if (isNaN(dt.getTime()) || dt <= now) return null; // only a future date is a useful suggestion
-  const p = (n) => String(n).padStart(2,"0");
-  return {
-    local: `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`,
-    human: dt.toLocaleString(undefined, { dateStyle:"medium", timeStyle:"short" }),
-  };
-}
-function clearDateSuggestion() { datePending = false; ccloseEl.dataset.auto = ""; dhintEl.style.display = "none"; setCreateEnabled(); }
-let cqTimer = null;
-cqEl.addEventListener("input", () => {
-  clearTimeout(cqTimer);
-  cqTimer = setTimeout(() => {
-    const p = parseDeadline(cqEl.value);
-    if (!p) return;                                        // no clear date -> leave field as-is
-    if (ccloseEl.value && ccloseEl.dataset.auto !== "1") return; // never clobber a manual entry
-    ccloseEl.value = p.local; ccloseEl.dataset.auto = "1";
-    checkLongClose();
-    datePending = true;
-    dhintEl.innerHTML = '📅 suggested close time from the question: <b>' + esc(p.human) + '</b>'
-      + ' — check it, then <button class="ghost dconf" style="padding:6px 12px;font-size:13px;margin-left:4px">confirm date</button>'
-      + ' <span style="color:var(--muted);font-size:12px">(or edit it above)</span>';
-    dhintEl.style.display = "block";
-    dhintEl.querySelector(".dconf").onclick = clearDateSuggestion;
-    setCreateEnabled();
-  }, 350);
-});
-// A manual edit of the close field IS the user seeing/confirming it.
-ccloseEl.addEventListener("input", () => { ccloseEl.dataset.auto = ""; if (datePending) clearDateSuggestion(); checkLongClose(); });
-
-// Soft retention flag: warn (never block) when the close time is far out. A
-// market that resolves in months means nobody comes back for the notification.
-const LONG_CLOSE_DAYS = 14;
-function checkLongClose() {
-  const w = $("#clongwarn");
-  const v = ccloseEl.value;
-  if (!v) { w.style.display = "none"; return; }
-  const t = new Date(v).getTime();
-  if (isNaN(t)) { w.style.display = "none"; return; }
-  const days = (t - Date.now()) / 86400000;
-  if (days > LONG_CLOSE_DAYS) {
-    w.innerHTML = '⚠️ closes ~' + Math.round(days) + ' days out — long-close markets weaken retention (nobody returns for a result months away). Consider narrowing this, unless the claim genuinely needs that long.';
-    w.style.display = "block";
-  } else {
-    w.style.display = "none";
-  }
-}
-
-// --- claim-extraction engine: paste an argument -> drafted market (or refusal).
-// The gate grade rides along in a hidden var so Create can send it (and so an
-// unresolvable verdict blocks Create outright). Every field the engine fills is
-// editable — the operator has the last word before anything is published.
-let lastResolvability = null, lastMatchPath = "none", lastMatch = null, lastAppropriate = true, lastHook = "";
-function toLocalInput(iso) {
-  const dt = new Date(iso);
-  if (isNaN(dt.getTime())) return "";
-  const p = (n) => String(n).padStart(2, "0");
-  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
-}
-$("#cxgo").onclick = extractMarket;
-// The source URL is checked at the FRONT of the flow, not at Create. Everything
-// downstream (the draft, the reply, the market) is built from a tweet, so a
-// missing URL is a fact about this run that is better known before three
-// minutes of work than after.
-const SOURCE_URL_RE = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/[A-Za-z0-9_]{1,15}\/status(?:es)?\/\d{5,25}/;
-
-async function extractMarket() {
-  const text = $("#cx").value.trim();
-  const stat = $("#cxstat"), out = $("#cxout");
-  if (!text) { stat.textContent = "paste an argument first."; return; }
-  const src = $("#csrc").value.trim();
-  if (!SOURCE_URL_RE.test(src)) {
-    stat.textContent = src ? "that isn't an x.com/…/status/… link." : "paste the source tweet URL first — it's what names the card.";
-    $("#csrc").focus();
-    return;
-  }
-  $("#cxgo").disabled = true; stat.textContent = "checking venue markets + extracting… (a few seconds)"; out.innerHTML = "";
-  try {
-    const r = await fetch("/api/community/extract", {
-      method: "POST", headers: admHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ text }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { stat.textContent = "admin token missing or wrong — save it above."; return; }
-    if (!r.ok || !j.ok) { stat.textContent = ""; out.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "extraction failed") + '</p></div>'; return; }
-    stat.textContent = "";
-    renderOutcome(j.extraction, j.match || { path: "none" }, j.venuesAvailable !== false);
-  } catch (e) { stat.textContent = ""; out.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
-  finally { $("#cxgo").disabled = false; }
-}
-
-// Three clearly-labeled outcomes. A venue match hands back the existing market
-// and creates nothing; a closest match is shown for review but never auto-used;
-// no match falls through to the resolvability gate + community create form.
-function renderOutcome(x, match, venuesAvailable) {
-  lastResolvability = x.resolvability;
-  lastAppropriate = x.appropriate !== false;
-  lastMatchPath = match.path;
-  lastMatch = match;
-  lastHook = x.hook || ""; // the extraction's teaser — reused across all three outcomes
-  $("#creply").innerHTML = ""; // clear any reply from a previous run
-  // The card button rides on both match panels: the PNG is what gets attached
-  // to the post, so it belongs wherever a postable market appears.
-  const wireCards = () => document.querySelectorAll("#cxout .cardl").forEach((b) => {
-    b.onclick = (e) => downloadPng(b.dataset.slug, e.target);
-  });
-  let html = matchPanel(match, venuesAvailable);
-  if (match.path === "venue") {
-    clearCreateForm(); // no new market — leave nothing for Create to submit
-    $("#cxout").innerHTML = html;
-    wireCards();
-    // venue match is auto-accepted — generate the ready-to-post reply now
-    generateReply({ slug: match.market.slug, question: match.market.question, marketId: match.market.id, matchType: "venue", hook: lastHook });
-    return;
-  }
-  html += fillFromExtraction(x); // closest & none both allow minting a new one
-  $("#cxout").innerHTML = html;
-  wireCards();
-  if (match.path === "closest") {
-    // Medium confidence: nothing auto-fires. The operator approves first.
-    const btn = document.getElementById("approveClosest");
-    if (btn) btn.onclick = () => generateReply({ slug: match.market.slug, question: match.market.question, marketId: match.market.id, matchType: "closest", hook: lastHook });
-  }
-}
-
-function matchPanel(match, venuesAvailable) {
-  if (match.path === "venue" || match.path === "closest") {
-    const m = match.market, conf = match.confidence;
-    const venue = m.venue.charAt(0).toUpperCase() + m.venue.slice(1);
-    // Status-badge colours are a traffic-light trio (green/amber/red) rather
-    // than the brand's own lime, on purpose: these need to read as a SYSTEM
-    // signal at a glance, distinguishable from the accent lime used
-    // everywhere else on the page for ordinary emphasis. All three are tuned
-    // for contrast against this file's near-black ground. The originals
-    // (#0a7d2c forest, #a56a00 brown, #3c570b olive) were tuned for white and
-    // were close to unreadable here.
-    const header = match.path === "venue"
-      ? ['#4ADE80', '✅ VENUE MATCH: already live, no new market']
-      : ['#FBBF24', '🟡 CLOSEST MATCH: needs review, not auto-published'];
-    return '<div class="box" style="border-color:' + header[0] + '"><p class="verdict" style="font-size:15px;color:' + header[0] + '">' + esc(header[1]) + '</p>'
-      + '<p class="why" style="color:var(--ink);font-weight:700">' + esc(m.question) + '</p>'
-      + '<p class="why"><b>' + esc(venue) + '</b> · ' + m.yesPct + '% yes · confidence <b>' + conf + '/100</b> · <code>' + esc(m.id) + '</code></p>'
-      + '<p class="why">' + esc(match.reason) + '</p>'
-      + '<p class="why">' + (m.venueUrl ? '<a href="' + esc(m.venueUrl) + '" target="_blank" rel="noopener">open on ' + esc(venue) + ' ↗</a> · ' : '')
-      + '<a href="/m/' + esc(m.slug) + '" target="_blank" rel="noopener">preview on oddie ↗</a></p>'
-      + (match.path === "venue"
-        ? '<p class="why" style="color:var(--muted)">this claim is already covered — nothing was created.</p>'
-          + '<div class="row" style="margin-top:8px"><button class="ghost cardl" data-slug="' + esc(m.slug) + '" style="padding:8px 14px;font-size:13px">card ↓ — PNG to attach to the post</button></div>'
-        : '<p class="why" style="color:var(--muted)">eyeball it: if this is the same market, approve it for a reply. If not, edit the draft below and Create a new one.</p>'
-          + '<div class="row" style="margin-top:8px"><button class="ghost" id="approveClosest" style="padding:8px 14px;font-size:13px">✓ approve this match &amp; generate reply</button>'
-          + '<button class="ghost cardl" data-slug="' + esc(m.slug) + '" style="padding:8px 14px;font-size:13px">card ↓</button></div>')
-      + '</div>';
-  }
-  // no match
-  return '<div class="box"><p class="verdict" style="font-size:15px">🆕 NO MATCH — creating new</p>'
-    + '<p class="why">' + (venuesAvailable ? 'no live venue market clears the confidence bar' : '⚠ venue markets unavailable right now — could not dedup') + ' → drafting a Community market below.</p></div>';
-}
-
-// Fill the create form from the extraction and return the gate-badge HTML.
-function fillFromExtraction(x) {
-  // Same traffic-light trio as matchPanel above, tuned for near-black.
-  const badge = { clean: ["#4ADE80", "CLEAN: eligible to publish"], fuzzy: ["#FBBF24", "FUZZY: review before posting"], unresolvable: ["#FF8B78", "UNRESOLVABLE: cannot be a market"] }[x.resolvability] || ["var(--muted)", x.resolvability];
-  // Appropriateness block takes precedence over resolvability — the subject is
-  // off-limits regardless of whether it could be settled.
-  if (x.appropriate === false) {
-    clearCreateForm();
-    return '<div class="box error"><p class="verdict" style="font-size:15px;color:#FF8B78">🚫 BLOCKED: inappropriate subject</p>'
-      + '<p class="why">' + esc(x.reason) + '</p>'
-      + '<p class="why" style="color:var(--muted)">no market was drafted — this subject isn\'t allowed (private individual, real-person harm/health, or harassment).</p></div>';
-  }
-  if (x.resolvability === "unresolvable") {
-    clearCreateForm();
-    return '<div class="box error"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">✕ ' + esc(badge[1]) + '</p>'
-      + '<p class="why">' + esc(x.reason) + '</p>'
-      + '<p class="why" style="color:var(--muted)">no market was drafted — this argument has nothing a settlement can check.</p></div>';
-  }
-  $("#cq").value = x.question;
-  $("#ccrit").value = x.resolution_criteria;
-  $("#ccat").value = (x.category || "Community");
-  if (x.close_time) { ccloseEl.value = toLocalInput(x.close_time); ccloseEl.dataset.auto = ""; }
-  clearDateSuggestion();
-  checkLongClose(); // flag if the inferred/entered close is far out
-  return '<div class="box"><p class="verdict" style="font-size:15px;color:' + badge[0] + '">' + (x.resolvability === "clean" ? "✓ " : "⚠ ") + esc(badge[1]) + '</p>'
-    + '<p class="why">' + esc(x.reason) + '</p>'
-    + (x.close_time_inferred ? '<p class="why" style="color:var(--muted)">📅 close time was inferred — double-check it.</p>' : '')
-    + '<p class="why" style="color:var(--muted)">edit anything below, then Create.</p></div>';
-}
-
-function clearCreateForm() {
-  $("#cq").value = ""; $("#ccrit").value = ""; $("#ccat").value = "Community";
-  ccloseEl.value = ""; clearDateSuggestion(); checkLongClose();
-}
-
-// --- reply generator: a confirmed market -> a ready-to-paste X reply ---------
-// Called for a venue match (auto), an approved closest match, or a freshly
-// created Community market. Server owns the wording + logging (buildTweetReply),
-// so the exact same call drops into an automated listener later.
-async function generateReply(info) {
-  const box = $("#creply");
-  box.innerHTML = '<div class="box"><p class="why">generating reply…</p></div>';
-  try {
-    const r = await fetch("/api/tweet/generate", {
-      method: "POST", headers: admHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({
-        source_url: $("#csrc").value.trim() || null,
-        match_type: info.matchType, slug: info.slug, question: info.question,
-        market_id: info.marketId || null, hook: info.hook || "",
-      }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { box.innerHTML = '<div class="box error"><p class="why">admin token missing or wrong — save it above.</p></div>'; return; }
-    if (!r.ok || !j.ok) { box.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "reply generation failed") + '</p></div>'; return; }
-    renderReply(j);
-  } catch (e) { box.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
-}
-
-function renderReply(j) {
-  // QUOTE LEADS, and the order is not a preference. In X's published ranking
-  // code a reply is dropped outright for anyone who does not follow us, is
-  // discounted 0.75 even for those who do, and is barred from the +15
-  // mutual-follow boost; a quote is an original post on all three counts. So
-  // the quote is the post that can travel and the reply is the one that talks
-  // to the thread — both are useful, in that order.
-  const hasQuote = typeof j.quote === "string" && j.quote.length;
-  $("#creply").innerHTML =
-    '<div class="box hit">'
-    + (hasQuote
-        ? '<p class="verdict" style="font-size:15px">🔁 quote — post this one</p>'
-          + '<p class="why" style="margin:0 0 6px">Quote the tweet from @oddiefun. It ranks as an original post: it reaches people who don\'t follow us, a reply does not.</p>'
-          + replyRow("cquote", j.quote)
-          + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
-          + replyRow("cquotefb", j.quoteFallback)
-          + '<p class="why" style="margin-top:8px"><b>' + j.quote.length + '</b>/280 chars</p>'
-          + '<hr style="border:none;border-top:2px dashed var(--line);margin:16px 0">'
-        : "")
-    + '<p class="verdict" style="font-size:15px">📋 reply — for the thread itself</p>'
-    + '<p class="why" style="margin:0 0 6px">Only the people already reading that thread will see it, so it carries the question and the number in the text.</p>'
-    + replyRow("cprimary", j.primary)
-    + '<p class="why" style="color:var(--muted);margin:10px 0 0">plain-text fallback (no special characters):</p>'
-    + replyRow("cfallback", j.fallback)
-    + '<p class="why" style="margin-top:8px"><b>' + j.primary.length + '</b>/280 chars</p>'
-    + '<p class="why" style="margin-top:8px">market · <a href="' + esc(j.permalink) + '" target="_blank" rel="noopener">' + esc(j.permalink) + '</a></p></div>';
-  wireCopy("cprimary", j.primary);
-  wireCopy("cfallback", j.fallback);
-  if (hasQuote) {
-    wireCopy("cquote", j.quote);
-    wireCopy("cquotefb", j.quoteFallback);
-  }
-}
-function replyRow(id, text) {
-  return '<div style="display:flex;gap:8px;align-items:flex-start;margin-top:6px">'
-    + '<textarea readonly rows="2" style="flex:1;box-sizing:border-box;font:inherit;font-size:13px;border:2px solid var(--ink);border-radius:10px;padding:8px 10px;resize:vertical">' + esc(text) + '</textarea>'
-    + '<button class="ghost" id="' + id + 'btn" style="flex:0 0 auto;padding:8px 14px;font-size:13px">Copy</button></div>';
-}
-function wireCopy(id, text) { const b = document.getElementById(id + "btn"); if (b) b.onclick = () => copy(text, b); }
-
-$("#cgo").onclick = createMarket;
-async function createMarket() {
-  const q = $("#cq").value.trim();
-  const closeLocal = $("#cclose").value;
-  const category = $("#ccat").value.trim() || "Community";
-  const yesPct = Number($("#cyes").value || 50);
-  const criteria = $("#ccrit").value.trim();
-  const cout = $("#cout");
-  if (!q) { cout.innerHTML = '<div class="box error"><p class="why">question required</p></div>'; return; }
-  if (lastMatchPath === "venue") { cout.innerHTML = '<div class="box error"><p class="why">a live venue market already covers this — no new market needed. Re-extract with different text to override.</p></div>'; return; }
-  if (lastAppropriate === false) { cout.innerHTML = '<div class="box error"><p class="why">this subject was blocked as inappropriate — it can\'t be a market. Edit the argument and extract again, or clear the fields.</p></div>'; return; }
-  if (lastResolvability === "unresolvable") { cout.innerHTML = '<div class="box error"><p class="why">the engine graded this unresolvable — it can\'t be a market. Edit the argument and extract again, or clear the fields.</p></div>'; return; }
-  if (datePending) { cout.innerHTML = '<div class="box error"><p class="why">confirm the suggested close time first (or edit it)</p></div>'; return; }
-  if (!closeLocal) { cout.innerHTML = '<div class="box error"><p class="why">pick a close time</p></div>'; return; }
-  $("#cgo").disabled = true; $("#cgo").textContent = "Creating…";
-  cout.innerHTML = '<div class="box"><p class="why">creating market' + (chainEnabled ? ' + minting on chain…' : '…') + '</p></div>';
-  try {
-    const r = await fetch("/api/community/create", {
-      method: "POST", headers: admHeaders({ "content-type": "application/json" }),
-      // source_url rides along so provenance is recorded when the market is
-      // BORN, not only if the reply step that follows happens to succeed.
-      body: JSON.stringify({ question: q, close_time: new Date(closeLocal).toISOString(), category, yesPct, resolution_criteria: criteria || null, resolvability: lastResolvability, source_url: $("#csrc").value.trim() || null }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { cout.innerHTML = '<div class="box error"><p class="why">admin token missing or wrong — save it above.</p></div>'; return; }
-    if (!r.ok || !j.ok) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "failed") + '</p></div>'; return; }
-    const badge = j.onchain
-      ? '<a href="' + esc(j.onchain.explorer) + '" target="_blank" rel="noopener">on-chain on Solana ↗</a> (' + esc(j.onchain.pubkey.slice(0, 8)) + '…)'
-      : (j.chainEnabled ? '<b>on-chain mint failed</b> — market is live, no badge (check wallet balance / server logs)' : 'on-chain off (flag parked for the grant demo — market is virtual-only)');
-    cout.innerHTML = '<div class="box hit"><p class="verdict" style="font-size:16px">created ✓</p>'
-      + '<p class="why"><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.url) + '</a></p>'
-      + '<p class="why">' + badge + '</p>'
-      + '<p class="why">it\'s live under the <b>Community</b> chip in the feed.</p>'
-      + '<div class="row" style="margin-top:8px"><button class="ghost" id="newcard" style="padding:8px 14px;font-size:13px">card ↓ — PNG to attach to the post</button></div></div>';
-    const nc = $("#newcard");
-    if (nc) nc.onclick = (e) => downloadPng(j.slug, e.target);
-    // The market is confirmed (just created) — generate its ready-to-post reply.
-    // Read the source URL + market details BEFORE clearing the form below.
-    generateReply({ slug: j.slug, question: q, marketId: String(j.marketId), matchType: "new", hook: lastHook });
-    $("#cq").value = ""; $("#ccrit").value = ""; $("#cx").value = ""; $("#cxout").innerHTML = "";
-    ccloseEl.value = ""; lastResolvability = null; lastAppropriate = true; lastMatchPath = "none"; lastMatch = null; clearDateSuggestion(); checkLongClose();
-    loadCommunity();
-  } catch (e) { cout.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
-  finally { $("#cgo").disabled = false; $("#cgo").textContent = "Create market"; }
-}
 
 // The homepage's "Live right now" picks — the raw admin choices, in display
 // order ([] = none set, home falls back entirely to recently-active markets).
