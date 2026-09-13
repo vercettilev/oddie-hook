@@ -4067,9 +4067,15 @@ if (realStakesReady) {
     const userPubkey = String(req.query.userPubkey ?? "");
     if (!isValidPubkeyString(userPubkey)) return res.status(400).json({ error: "invalid userPubkey" });
     const markets = await resolvedOnchainMarkets(40).catch(() => []);
-    // One read for up to forty markets instead of forty.
-    const positions = await readPositions(markets.map((m) => m.onchainPubkey), userPubkey)
-      .catch(() => new Map());
+    // One read for up to forty markets instead of forty. The market states come
+    // with them because the number a winner is owed cannot be worked out from
+    // the position alone: it is their share of the pool after both fees, and
+    // only the market carries the pool and the fees.
+    const [positions, states] = await Promise.all([
+      readPositions(markets.map((m) => m.onchainPubkey), userPubkey).catch(() => new Map()),
+      readMarkets(markets.map((m) => m.onchainPubkey), { maxAgeMs: 4_000 })
+        .catch(() => new Map<string, MarketRead>()),
+    ]);
     let unreadable = 0;
     const found = markets.map((m) => {
       const pr = positions.get(m.onchainPubkey);
@@ -4093,12 +4099,38 @@ if (realStakesReady) {
       // winner their button returns rent only.
       const winningLeg = m.resolvedOutcome === "yes" ? position.amountYes : position.amountNo;
       const won = winningLeg > 0;
+      /* WHAT THE BUTTON PAYS, WORKED OUT THE WAY THE PROGRAM WORKS IT OUT.
+         Every screen where money moved said "your winnings are on the way" and
+         never a figure, on the one product whose whole subject is the figure.
+         This is claim_winnings' own arithmetic (lib.rs), not an approximation:
+         nobody on the winning side means everyone is refunded in full and no
+         fee was taken; otherwise it is the winning leg's share of the pool
+         after both fees, floored, because the program floors it too.
+         Null rather than a guess when the market could not be read: a number
+         we did not measure, printed next to somebody's money, is the one thing
+         this whole read layer exists to stop. */
+      const ms = states.get(m.onchainPubkey);
+      const mst = ms?.ok ? ms.state : null;
+      let payoutLamports: number | null = null;
+      if (mst) {
+        const pool = mst.totalYesLamports + mst.totalNoLamports;
+        const winningTotal = m.resolvedOutcome === "yes" ? mst.totalYesLamports : mst.totalNoLamports;
+        payoutLamports = winningTotal === 0
+          ? position.lamports
+          : winningLeg === 0
+            ? 0
+            : Math.floor((winningLeg * (pool - mst.creatorFeeLamports - mst.protocolFeeLamports)) / winningTotal);
+      }
       return {
         slug: m.slug, question: m.question, side: position.side,
         amountYes: position.amountYes, amountNo: position.amountNo,
         lamports: position.lamports, outcome: m.resolvedOutcome,
         // What pressing the button actually does, so the UI never has to guess.
         won, returns: won ? "winnings-and-rent" : "rent-only",
+        payoutLamports,
+        // A pool nobody backed is refunded whole, which is a different sentence
+        // from winning and has to be able to say so.
+        refund: mst ? (m.resolvedOutcome === "yes" ? mst.totalYesLamports : mst.totalNoLamports) === 0 : false,
       };
     });
     res.json({ ok: true, claimable: found.filter(Boolean), unreadable });

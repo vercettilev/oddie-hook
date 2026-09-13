@@ -430,6 +430,9 @@ function b64ToBytes(b64) {
     return Math.max(1, Math.min(99, Math.round((chosen / total) * 100)));
   }
   function fmtMult(pct) { return (100 / pct).toFixed(1) + "×"; }
+  /** Four decimals, trailing zeros off, and never rounding UP: a figure printed
+   *  beside somebody's money has to be one the chain can actually pay. */
+  function fmtSol(n) { return String(Math.floor(n * 1e4) / 1e4); }
 
   /**
    * What this bet pays if it wins, at the odds as they stand right now.
@@ -503,6 +506,9 @@ function b64ToBytes(b64) {
    */
   async function renderClaim(body, slug, marketState) {
     const won = (marketState.winningSide || "").toUpperCase();
+    // Null unless the page that opened this already asked the server. Absent,
+    // every sentence below reads exactly as it did before.
+    const paysSol = marketState.paysSol ?? null;
     const shell = (inner) => {
       body.innerHTML = `<h3>The answer was ${won}</h3>${inner}`;
       const c = body.querySelector(".cclose");
@@ -584,8 +590,9 @@ function b64ToBytes(b64) {
     const sol = (winningLeg / 1e9).toFixed(3);
     const bothSides = yesLeg > 0 && noLeg > 0;
     shell(isWinner
-      ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>${bothSides ? " (your other side pays nothing)" : ""}. Your wallet signs, we never hold your winnings.</p>
-      <button class="claimbtn" id="chainclaim">Collect winnings</button>
+      ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>${bothSides ? " (your other side pays nothing)" : ""}.${
+          paysSol != null ? ` This pays <b>${fmtSol(paysSol)} SOL</b>.` : ""} Your wallet signs, we never hold your winnings.</p>
+      <button class="claimbtn" id="chainclaim">${paysSol != null ? `Collect ${fmtSol(paysSol)} SOL` : "Collect winnings"}</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`
       : `<p class="cnote">You called <b>${won === "YES" ? "NO" : "YES"}</b>. The deposit your bet holds is still yours; your wallet signs, we never hold it.</p>
@@ -624,7 +631,9 @@ function b64ToBytes(b64) {
         const receiptUrl = `/r/${encodeURIComponent(slug)}/${encodeURIComponent(wallet.publicKey)}`;
         body.innerHTML = `<h3>${confirmed ? "Collected ✓" : "Sent, still confirming"}</h3>
           <p class="cnote">${confirmed
-            ? `${isWinner ? "Your winnings are" : "Your deposit is"} on the way to your wallet${CLUSTER === "mainnet-beta" ? "" : `, on ${clusterLabel(CLUSTER)}`}.`
+            ? `${isWinner
+                  ? (paysSol != null ? `<b>${fmtSol(paysSol)} SOL</b> is` : "Your winnings are")
+                  : "Your deposit is"} on the way to your wallet${CLUSTER === "mainnet-beta" ? "" : `, on ${clusterLabel(CLUSTER)}`}.`
             : "It is on Solana. We could not watch it land. Open the link below before you collect again."}</p>
           <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${confirmed && isWinner && !bothSides ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
@@ -1990,9 +1999,12 @@ function b64ToBytes(b64) {
    * should be able to open the collect sheet without a second round trip and
    * without pretending to offer a stake first.
    */
-  async function openClaimSheet(slug, winningSide) {
+  async function openClaimSheet(slug, winningSide, paysSol) {
     const body = sheetShell();
-    await renderClaim(body, slug, { winningSide: winningSide, resolved: true });
+    // paysSol comes from the page that already asked the server. The sheet has
+    // no pool of its own, so without it the one moment money moves could only
+    // say "your winnings" and never how much.
+    await renderClaim(body, slug, { winningSide: winningSide, resolved: true, paysSol: paysSol ?? null });
   }
 
   window.OddieChain = {

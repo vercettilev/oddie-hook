@@ -795,6 +795,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     // separates element children, so a bare string joins onto its neighbour
     // with nothing between them ("RESOLVED YESYOU WERE RIGHT").
     var cell = function (t) { return "<span>" + t + "</span>"; };
+    /* Trailing zeros off, and never rounding UP: a figure printed beside
+       somebody's money has to be one the chain can actually pay. */
+    var sol4 = function (n) { return String(Math.floor(n * 1e4) / 1e4); };
     /* BOTH LEGS, when there are two. A wallet can hold each side of a market
        now, and `side` comes back null when it does, so the old ternary drew
        the NO pill for a hedger and then printed their TOTAL beside it: the
@@ -824,7 +827,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // exit and did not give anybody the door to it.
     } else {
       bits.push(cell("ended " + String(o.outcome || "").toUpperCase()));
-      bits.push(cell(o.won ? "you were right" : "you lost it"));
+      /* "YOU WERE RIGHT" IS A CLAIM ABOUT A CALL, AND A HEDGE MADE NONE.
+         Measured on the first real settlement: a wallet holding 0.1 on each
+         side was told it was right, two cells after the row printed both legs.
+         The record's honesty is the only thing this product sells, so it does
+         not get to flatter a position that took both sides. */
+      var hedged = o.amountYes > 0 && o.amountNo > 0;
+      bits.push(cell(hedged ? "you held both sides" : o.won ? "you were right" : "you lost it"));
     }
     /* AN OPEN REFUND WINDOW IS MONEY, SO IT GETS A BUTTON.
        Nobody settled this market and the 30 day window has passed, so the
@@ -853,8 +862,21 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       ? (canRefund ? '<button class="go go--rent refund" data-slug="' + esc(o.slug) + '" type="button">Take your stake back</button>' : "")
         + sellBtns
         + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>'
-      : '<button class="go' + (o.won ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '" type="button">'
-        + (o.won ? "Collect winnings" : "Get your deposit back") + "</button>"
+      /* THE FIGURE, ON THE CONTROL THAT PAYS IT.
+         The one screen where money moves said "Collect winnings" and never how
+         much, while the operator console two tabs away could state it to four
+         decimals. The server works it out with claim_winnings' own arithmetic
+         and sends it; null means the chain could not be read, and then the
+         button says what it has always said rather than a number nobody
+         measured. */
+      : '<button class="go' + (o.won ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '"'
+        + (o.payoutLamports != null ? ' data-pay="' + (o.payoutLamports / 1e9) + '"' : "")
+        + ' type="button">'
+        + (o.won
+            ? (o.payoutLamports != null
+                ? (o.refund ? "Take back " : "Collect ") + sol4(o.payoutLamports / 1e9) + " SOL"
+                : "Collect winnings")
+            : "Get your deposit back") + "</button>"
         + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>';
     return '<div class="row' + (kind === "claim" && o.won ? " row--win" : "") + '">'
       + '<p class="row__q">' + esc(o.question) + "</p>"
@@ -1233,7 +1255,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // would answer "not-resolved" for a market that is deliberately open.
       Array.prototype.forEach.call(view.querySelectorAll(".go:not(.fee):not(.refund):not(.sell):not(#linkme)"), function (b) {
         b.addEventListener("click", function () {
-          C().openClaim(b.dataset.slug, b.dataset.outcome);
+          // The figure travels with the click: the profile already asked the
+          // server what this pays, and the sheet has no pool of its own to
+          // work it out from.
+          C().openClaim(b.dataset.slug, b.dataset.outcome,
+            b.dataset.pay ? Number(b.dataset.pay) : null);
         });
       });
     }).catch(function (e) {
