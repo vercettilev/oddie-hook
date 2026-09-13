@@ -1107,9 +1107,19 @@ async function loadCommunity() {
     // market ever run, resolved or not, TEST rows included. Live keeps the
     // working list working-sized; resolved goes to a closed history below it,
     // one line each, with a link out rather than a rebuilt admin view.
-    const live = j.items.filter((m) => !m.resolvedOutcome);
+    /* RETIRED IS NOT LIVE, AND THIS PANEL SAID IT WAS.
+       The public list filters on `!resolvedOutcome && !retiredAt`
+       (server.ts, /api/v1/markets) and this one only checked the first half,
+       so a board cleanup that retired five markets left them here counted and
+       listed as live: "7 live" over an app that was serving 2. A retired
+       market is still a real row and still resolvable, so it goes to the
+       history beside the resolved ones rather than disappearing. */
+    const live = j.items.filter((m) => !m.resolvedOutcome && !m.retiredAt);
     const resolved = j.items.filter((m) => m.resolvedOutcome);
-    count.textContent = `· ${live.length} live` + (resolved.length ? ` · ${resolved.length} resolved` : "");
+    const retired = j.items.filter((m) => !m.resolvedOutcome && m.retiredAt);
+    count.textContent = `· ${live.length} live`
+      + (retired.length ? ` · ${retired.length} retired` : "")
+      + (resolved.length ? ` · ${resolved.length} resolved` : "");
 
     box.innerHTML = (live.length ? live.map((m) => {
       // Per-row on-chain status is only informative when chain is ENABLED —
@@ -1134,6 +1144,16 @@ async function loadCommunity() {
         + '<div class="mktdetail" style="margin-top:10px"></div>'
         + '</div>';
     }).join("") : '<p class="why">no live markets — everything so far has resolved.</p>')
+      + (retired.length
+        ? `<details class="rec" style="margin-top:14px">
+             <summary>retired, off the board — ${retired.length}</summary>
+             <div class="donelist">${retired.map((m) => `
+               <div class="donerow">
+                 <a class="donewhat" href="/market/${esc(m.slug)}" target="_blank" rel="noopener" title="${esc(m.question)}">${esc(m.question)}</a>
+                 <span class="donewhen">${m.yesTokens + m.noTokens} played · ${m.yesPlayers + m.noPlayers}p</span>
+               </div>`).join("")}</div>
+           </details>`
+        : "")
       + (resolved.length
         ? `<details class="rec" style="margin-top:14px">
              <summary>resolved — ${resolved.length}</summary>
