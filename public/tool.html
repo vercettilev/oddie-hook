@@ -96,11 +96,11 @@
   details.rec summary:hover{color:var(--accentDeep)}
 
   .verdict{font-size:20px; font-weight:700; line-height:1.3; margin:0 0 6px}
-  /* All five top-level sections are <details>, .verdict doubling as their
+  /* Both top-level sections are <details>, .verdict doubling as their
      <summary>. Native marker kept (no reason to rebuild a disclosure
      triangle this file already gets for free); the outline on focus and the
-     hover colour are the same signal .rec summary already gives the nested
-     panels in section 5, one size up since this is the primary toggle. */
+     hover colour are the same signal .rec summary gives the nested history
+     lists, one size up since this is the primary toggle. */
   summary.verdict{cursor:pointer; list-style-position:outside}
   summary.verdict:hover{color:var(--accentDeep)}
   summary.verdict:focus-visible{outline:3px solid var(--accent); outline-offset:3px}
@@ -175,11 +175,8 @@
   <p class="lede">Nothing here posts itself. Every tweet leaves from @oddiefun, by hand.</p>
 
   <nav class="quicknav">
-    <a href="#community">1 · reply</a>
-    <a href="#mentions">2 · results</a>
-    <a href="#loudbox">3 · loud</a>
-    <a href="#resolve">4 · markets</a>
-    <a href="#records">5 · records</a>
+    <a href="#community">1 · open</a>
+    <a href="#resolve">2 · markets</a>
   </nav>
 
   <!-- One token unlocks everything. It lives up here because every panel below
@@ -190,7 +187,7 @@
         style="flex:1 1 240px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
       <button class="ghost" id="admsave" style="flex:0 0 auto;padding:9px 16px;font-size:14px">save</button>
     </div>
-    <p class="hint" style="margin-top:8px">one token unlocks every panel below · saving reloads them all.</p>
+    <p class="hint" style="margin-top:8px">one token unlocks both panels below · saving reloads them.</p>
   </div>
 
   <!-- 1 · The daily move: a tagged tweet in, a market + ready reply out. Venue
@@ -202,7 +199,7 @@
        on the four that were actually the source of the crowding: long lists,
        not this form. -->
   <details class="box" id="community" style="margin-top:22px" open>
-    <summary class="verdict" style="font-size:17px">1 · answer a mention</summary>
+    <summary class="verdict" style="font-size:17px">1 · open a market</summary>
     <p class="why" style="margin:0 0 10px">Paste the tweet. Matches a live venue market first, or drafts a new one.</p>
 
     <div style="border:2px dashed var(--ink);border-radius:12px;padding:10px 12px;margin:2px 0 10px">
@@ -248,88 +245,25 @@
     <div class="out" id="cout" aria-live="polite"></div>
   </details>
 
-  <!-- 2 · The result loop: every settled call whose owner connected X, ready to
-       announce. This is where the "returned in 24h" signal accumulates.
-       Closed by default: this is the section that was 18 cards deep before
-       dismiss existed, and the count in the summary already says whether
-       there's anything to open it FOR. -->
-  <details class="box" id="mentions" style="margin-top:22px">
-    <summary class="verdict" style="font-size:17px">2 · verdicts <span id="mcount" class="count"></span></summary>
-    <!-- The voice rule (loud win, flat loss, never mocking) and the X-algorithm
-         weights behind it (a reply is worth +5, a mute −58.8) used to live here
-         as a paragraph re-read on every visit. buildVerdict() already bakes the
-         rule into the generated text itself (see tweetReply.ts); this page
-         only needed to say what the buttons do. -->
-    <p class="why" style="margin:0 0 8px">Ready to post. <b>card ↓</b> saves the PNG · <b>mark sent</b> stamps it done.</p>
-    <div id="mlist"><p class="why">enter the admin token above, then this loads…</p></div>
-  </details>
-
-  <!-- 3 · Loudest Callers, phase 0: fully human. Search X for the week's best
-       posts about oddie, pick the top handful, paste the authors here. The
-       server dedups per (person, ISO week), so a resubmitted list cannot
-       double-pay. Closed by default: weekly cadence, not a daily one. -->
-  <details class="box" id="loudbox" style="margin-top:22px">
-    <summary class="verdict" style="font-size:17px">3 · loud awards</summary>
-    <p class="why" style="margin:0 0 8px">Approve real posts (<b>+150</b>), reject the rest. Sunday: best of the week gets <b>+300</b>.</p>
-
-    <p class="vhead" style="margin:2px 0 6px">review queue — submitted links, oldest first</p>
-    <div id="loudq"><p class="why">enter the admin token above, then this loads…</p></div>
-
-    <p class="vhead" style="margin:14px 0 6px">weekly picks</p>
-    <p class="why" style="margin:0 0 8px">From the approved queue, or found by searching X. One per person per week, safe to resubmit.</p>
-    <textarea id="loudh" placeholder="@handle, @handle, …" autocapitalize="off" spellcheck="false"
-      style="width:100%;box-sizing:border-box;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:10px;padding:9px 11px;min-height:54px;resize:vertical"></textarea>
-    <div class="row" style="margin-top:8px">
-      <input id="loudw" type="text" placeholder="week — blank = current (e.g. 2026-W33)"
-        style="flex:1 1 220px;font:inherit;font-size:14px;border:2px solid var(--ink);border-radius:12px;padding:9px 12px">
-      <button class="ghost" id="loudgo" style="flex:0 0 auto;padding:9px 18px;font-size:14px">Award</button>
-    </div>
-    <div id="loudout" style="margin-top:10px"></div>
-  </details>
-
   <!-- 4 · The markets themselves: feature onto the homepage, inspect positions,
        resolve with a payout preview. Resolve settles real user positions.
        Closed by default; the summary's own count says whether it's worth
        opening. -->
   <details class="box" id="resolve" style="margin-top:22px">
-    <summary class="verdict" style="font-size:17px">4 · live markets <span id="rcount" class="count"></span></summary>
+    <summary class="verdict" style="font-size:17px">2 · markets <span id="rcount" class="count"></span></summary>
     <p class="why" id="chainstat">—</p>
     <p class="why" id="featstat" style="margin-top:2px">—</p>
     <div id="rlist" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
   </details>
 
-  <!-- 5 · Read-only records: now closed two levels deep, the section AND each
-       panel inside it. Open one when you need the number; nothing here
-       changes anything. -->
-  <details class="box" id="records" style="margin-top:22px">
-    <summary class="verdict" style="font-size:17px">5 · records: read-only</summary>
-    <details class="rec">
-      <summary>wedge metrics — the funnel, all-time</summary>
-      <div class="row" style="justify-content:flex-end;margin:6px 0 0">
-        <button class="ghost" id="mrefresh" style="padding:7px 14px;font-size:13px">refresh</button>
-      </div>
-      <div id="metrics"><p class="why">enter the admin token above, then this loads…</p></div>
-    </details>
-    <details class="rec">
-      <summary>users — every device, most recent activity first</summary>
-      <div class="row" style="justify-content:flex-end;margin:6px 0 0">
-        <button class="ghost" id="urefresh" style="padding:7px 14px;font-size:13px">refresh</button>
-      </div>
-      <div id="users"><p class="why">enter the admin token above, then this loads…</p></div>
-    </details>
-    <details class="rec">
-      <summary>reply log — everything generated by 1, newest first</summary>
-      <div id="tweetlog" style="margin-top:8px"><p class="why">enter the admin token above, then this loads…</p></div>
-    </details>
-  </details>
 </div>
 
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// The five sections became <details>, closed by default (see the top of this
-// file). Left alone, a nav-pill click still scrolls to the right place.
+// The sections are <details> (see the top of this file). Left alone, a
+// nav-pill click still scrolls to the right place.
 // Browsers position a fragment link at the ELEMENT with that id whether or
 // not it's visible, but a closed <details> has almost no height, so it
 // scrolls you to a title bar sitting on a section you still have to open by
@@ -362,89 +296,6 @@ const CARD_W = 1000, CARD_H = 524;
 // scroll of finished ones repeating the same follow-back sentence. Sent items
 // still render — the sent date and the 24h-return signal are real information
 // — just as one line each, in a collapsed list that starts closed.
-async function loadMentions() {
-  const box = document.getElementById("mlist");
-  const count = document.getElementById("mcount");
-  try {
-    const r = await fetch("/api/mentions", { headers: admHeaders() });
-    if (r.status === 401) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
-    const { mentions } = await r.json();
-    if (!mentions.length) { box.innerHTML = '<p class="why">none yet — they appear when an X-connected popper\'s position settles.</p>'; count.textContent = ""; return; }
-
-    const pending = [], sentHtml = [];
-    mentions.forEach((m, i) => {
-      if (!m.mentionedAt) {
-        pending.push(`
-          <div class="variant" style="flex-direction:column;align-items:stretch">
-            <span class="vtext">
-              ${m.longshot ? '<span class="chip" style="background:var(--accent);margin:0 0 5px">🔥 longshot — post this one</span><br>' : ""}
-              <b style="white-space:pre-wrap">${esc(m.line)}</b><br>
-              <span style="color:var(--muted);font-size:12px">${esc(m.question)}</span><br>
-              <span style="font-size:12px;color:var(--muted)">
-                <a href="https://x.com/${esc(m.handle)}" target="_blank" rel="noopener">@${esc(m.handle)} ↗</a>,
-                follow back if you haven't: a mutual follow is worth 4× on every post of ours they see.
-              </span>
-            </span>
-            <span class="row" style="margin:0;align-items:center">
-              <button class="ghost mpost" data-i="${i}" style="padding:7px 14px;font-size:13px">${m.sourceUrl ? "quote the claim on X" : "post on X"}</button>
-              ${m.cardPng ? `<button class="ghost mcard" data-i="${i}" style="padding:7px 14px;font-size:13px">card ↓</button>` : ""}
-              <button class="ghost mcopy" data-i="${i}" style="padding:7px 14px;font-size:13px">copy</button>
-              <button class="ghost msent" data-id="${m.callId}" style="padding:7px 14px;font-size:13px">mark sent</button>
-              <!-- Deliberately NOT a .ghost button: same weight as "mark sent"
-                   would invite mixing up "posted" and "never posting this",
-                   and the 24h-return read trusts mentioned_at to mean the
-                   first one. Plain text, muted, pushed to the row's far end. -->
-              <button class="quiet mdismiss" data-id="${m.callId}" style="margin-left:auto">dismiss</button>
-            </span>
-          </div>`);
-      } else {
-        sentHtml.push(`
-          <div class="donerow">
-            <span class="donewho">@${esc(m.handle)}</span>
-            <span class="donewhat" title="${esc(m.question)}">${esc(m.question)}</span>
-            <span class="donebadge ${m.won ? "won" : "lost"}">${m.won ? "WON" : "lost"}</span>
-            <span class="donewhen">${esc(m.mentionedAt.slice(5, 16).replace("T", " "))} · returned ${m.returned24h ? "✓" : "—"}</span>
-            <button class="ghost mpost" data-i="${i}" style="padding:3px 10px;font-size:12px">post ↗</button>
-          </div>`);
-      }
-    });
-
-    count.textContent = pending.length ? `· ${pending.length} to post` : "· nothing pending";
-    count.className = pending.length ? "count due" : "count";
-
-    box.innerHTML = (pending.length ? pending.join("") : '<p class="why">nothing pending — every settled call has been posted.</p>')
-      + (sentHtml.length
-        ? `<details class="rec" style="margin-top:14px">
-             <summary>already posted — ${sentHtml.length}</summary>
-             <div class="donelist">${sentHtml.join("")}</div>
-           </details>`
-        : "");
-    const text = (i) => mentions[i].line;
-    // With a source tweet this composes a QUOTE of the original claim: an
-    // original post as far as ranking goes, so it clears the reply filter and
-    // is boost-eligible, and it carries the claim above the verdict instead of
-    // describing it. Without one it stays a plain post.
-    box.querySelectorAll(".mpost").forEach((b) => b.onclick = () => {
-      const m = mentions[b.dataset.i];
-      const q = m.sourceUrl ? `&url=${encodeURIComponent(m.sourceUrl)}` : "";
-      window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text(b.dataset.i))}${q}`, "_blank", "noopener");
-    });
-    box.querySelectorAll(".mcard").forEach((b) => b.onclick = (e) => {
-      const m = mentions[b.dataset.i];
-      saveCard(m.cardPng, `${m.handle}-card.png`, e.target);
-    });
-    box.querySelectorAll(".mcopy").forEach((b) => b.onclick = (e) => copy(text(b.dataset.i), e.target));
-    box.querySelectorAll(".msent").forEach((b) => b.onclick = async () => {
-      await fetch(`/api/mentions/${b.dataset.id}/sent`, { method: "POST", headers: admHeaders() });
-      loadMentions();
-    });
-    box.querySelectorAll(".mdismiss").forEach((b) => b.onclick = async () => {
-      await fetch(`/api/mentions/${b.dataset.id}/dismiss`, { method: "POST", headers: admHeaders() });
-      loadMentions();
-    });
-  } catch (err) { box.innerHTML = '<p class="why">could not load mentions.</p>'; }
-}
-
 /** Fetch a same-origin PNG and hand it to the browser as a download. */
 async function saveCard(url, name, btn) {
   const was = btn.textContent;
@@ -525,64 +376,7 @@ const ADMKEY = "oddie_admin_token";
 const admInput = $("#admtok");
 admInput.value = localStorage.getItem(ADMKEY) || "";
 const admHeaders = (extra) => Object.assign({ "x-oddie-admin": localStorage.getItem(ADMKEY) || "" }, extra || {});
-$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); loadTweetLog(); loadMetrics(); loadUsers(); loadMentions(); loadLoudQueue(); };
-
-// ---- loud awards (admin) ----------------------------------------------------
-// The review queue: players' submitted post links. Open the post, then decide —
-// approve pays SEASON_POINTS.loud_post via the same path a future API verifier
-// will use, so nothing here changes when verification automates.
-async function loadLoudQueue() {
-  const box = $("#loudq");
-  try {
-    const r = await fetch("/api/admin/loud/queue", { headers: admHeaders() });
-    if (r.status === 401) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
-    const { queue } = await r.json();
-    if (!queue.length) { box.innerHTML = '<p class="why">queue empty — submissions land here from the app\'s share flow.</p>'; return; }
-    box.innerHTML = queue.map((q) => `
-      <div class="variant" style="flex-direction:column;align-items:stretch">
-        <span class="vtext"><b>@${esc(q.handle || "?")}</b> · ${esc(q.week)}
-          · <a href="${esc(q.url)}" target="_blank" rel="noopener">open the post ↗</a></span>
-        <span class="row" style="margin:0">
-          <button class="ghost lapp" data-id="${q.id}" style="padding:7px 14px;font-size:13px">approve +150</button>
-          <button class="ghost lrej" data-id="${q.id}" style="padding:7px 14px;font-size:13px">reject</button>
-        </span>
-      </div>`).join("");
-    const decide = async (id, approve, btn) => {
-      btn.disabled = true;
-      try {
-        await fetch("/api/admin/loud/decide", {
-          method: "POST", headers: admHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({ id: Number(id), approve }),
-        });
-      } finally { loadLoudQueue(); }
-    };
-    box.querySelectorAll(".lapp").forEach((b) => b.onclick = () => decide(b.dataset.id, true, b));
-    box.querySelectorAll(".lrej").forEach((b) => b.onclick = () => decide(b.dataset.id, false, b));
-  } catch (e) { box.innerHTML = '<p class="why">could not load the queue.</p>'; }
-}
-
-$("#loudgo").onclick = async () => {
-  const out = $("#loudout"), btn = $("#loudgo");
-  const handles = $("#loudh").value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
-  const week = $("#loudw").value.trim();
-  if (!handles.length) { out.innerHTML = '<p class="why">paste at least one handle.</p>'; return; }
-  btn.disabled = true;
-  try {
-    const r = await fetch("/api/admin/loud", {
-      method: "POST",
-      headers: admHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ handles, ...(week ? { week } : {}) }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) { out.innerHTML = `<p class="why">${esc(j.error || `failed (${r.status})`)}</p>`; return; }
-    out.innerHTML = `<p class="why" style="font-weight:800;margin:0 0 6px">${esc(j.week)}</p>`
-      + '<div class="meta" style="margin:0">'
-      + j.results.map((x) => `<span class="chip"${x.ok ? "" : ' style="background:var(--bar)"'}>@${esc(x.handle)} ${
-          x.ok ? `✓ +${j.points}` : x.reason === "no_account" ? "no account" : "already this week"}</span>`).join("")
-      + "</div>";
-  } catch { out.innerHTML = '<p class="why">failed.</p>'; }
-  finally { btn.disabled = false; }
-};
+$("#admsave").onclick = () => { localStorage.setItem(ADMKEY, admInput.value.trim()); loadCommunity(); };
 
 let chainEnabled = false;
 
@@ -822,8 +616,6 @@ async function generateReply(info) {
     if (r.status === 401) { box.innerHTML = '<div class="box error"><p class="why">admin token missing or wrong — save it above.</p></div>'; return; }
     if (!r.ok || !j.ok) { box.innerHTML = '<div class="box error"><p class="why">' + esc(j.error || "reply generation failed") + '</p></div>'; return; }
     renderReply(j);
-    loadTweetLog();
-loadMetrics();
   } catch (e) { box.innerHTML = '<div class="box error"><p class="why">' + esc(String(e)) + '</p></div>'; }
 }
 
@@ -866,152 +658,6 @@ function replyRow(id, text) {
     + '<button class="ghost" id="' + id + 'btn" style="flex:0 0 auto;padding:8px 14px;font-size:13px">Copy</button></div>';
 }
 function wireCopy(id, text) { const b = document.getElementById(id + "btn"); if (b) b.onclick = () => copy(text, b); }
-
-// --- log view: everything generated so far, newest first --------------------
-// Internal wedge-metrics dashboard. Read-only; each row states its own
-// numerator/denominator so the calculation is auditable at a glance.
-$("#mrefresh").onclick = loadMetrics;
-async function loadMetrics() {
-  const box = $("#metrics");
-  if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
-  box.innerHTML = '<p class="why">loading…</p>';
-  try {
-    const r = await fetch("/api/metrics", { headers: admHeaders() });
-    if (r.status === 401) { box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
-    const m = await r.json();
-    const P = (v) => v == null ? "N/A" : v + "%";
-    const rows = [
-      ["Repeat tagger rate", P(m.replies.repeatTaggerRate),
-        `${m.replies.repeatTaggers} of ${m.replies.uniqueTaggers} identifiable taggers had &gt;1 claim processed`,
-        `${m.replies.total} replies logged · ${m.replies.unattributed} with no parseable handle`],
-      ["Click → pick rate", P(m.clickToPick.rate),
-        `${m.clickToPick.converted} of ${m.clickToPick.attributableViews} device·market permalink visits led to a pick`,
-        `${m.clickToPick.views} total permalink views logged`],
-      ["Same-session 2nd pick", P(m.secondPick.rate),
-        `${m.secondPick.withSecond} of ${m.secondPick.pickers} pickers placed a 2nd call ≤${m.secondPick.windowMin} min later`, ""],
-      ["Post-resolution return", P(m.postResolution.rate),
-        `${m.postResolution.returned} of ${m.postResolution.notified} notified users called again within ${m.postResolution.windowDays} days`, ""],
-      ["Uncontested resolutions", "N/A",
-        esc(m.uncontested.note), `${m.uncontested.resolvedCommunity} community markets resolved`],
-    ];
-    const mb = m.matchBreakdown;
-    const mbCell = mb.total
-      ? `venue <b>${mb.venue}</b> · closest <b>${mb.closest}</b> · new <b>${mb.new}</b> &nbsp;(of ${mb.total})`
-      : "no claims processed yet";
-    box.innerHTML =
-      '<table style="width:100%;border-collapse:collapse">'
-      + rows.map(([name, val, det, sub]) => `<tr style="border-top:1px solid rgba(0,0,0,.12)">
-          <td style="padding:9px 6px;vertical-align:top"><b style="font-size:13.5px">${name}</b>${sub ? `<br><span style="color:var(--muted);font-size:11px">${sub}</span>` : ""}</td>
-          <td style="padding:9px 8px;text-align:right;white-space:nowrap;font-size:17px;font-weight:800;vertical-align:top">${val}</td>
-          <td style="padding:9px 6px;color:var(--muted);font-size:11px;line-height:1.35;vertical-align:top;width:44%">${det}</td></tr>`).join("")
-      + `<tr style="border-top:1px solid rgba(0,0,0,.12)"><td style="padding:9px 6px;vertical-align:top"><b style="font-size:13.5px">Match-type breakdown</b></td><td colspan="2" style="padding:9px 6px;font-size:13px;vertical-align:top">${mbCell}</td></tr>`
-      + "</table>"
-      + `<p class="why" style="color:var(--muted);margin-top:8px">as of ${new Date(m.generatedAt).toLocaleString()}</p>`;
-  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
-}
-
-// A device only counts as a REAL user if it did something (a call, a surfaced
-// market, a resolved pick) AND isn't a known test/probe device. Everything else
-// is noise — the boot-only rows a fresh page load mints, and seeded test rows.
-let USERS_CACHE = [];
-let usersShowAll = false;
-const userHasEvents = (u) => u.totalCalls > 0 || u.surfaced > 0 || u.resolved > 0;
-const userIsNoise = (u) => u.isTest || !userHasEvents(u);
-
-$("#urefresh").onclick = loadUsers;
-async function loadUsers() {
-  const box = $("#users");
-  if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
-  box.innerHTML = '<p class="why">loading…</p>';
-  try {
-    const r = await fetch("/api/admin/users", { headers: admHeaders() });
-    if (r.status === 401) { box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
-    const { users } = await r.json();
-    USERS_CACHE = users || [];
-    renderUsersTable();
-  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
-}
-
-function renderUsersTable() {
-  const box = $("#users");
-  const users = USERS_CACHE;
-  if (!users.length) { box.innerHTML = '<p class="why">no devices yet.</p>'; return; }
-  const real = users.filter((u) => !userIsNoise(u));
-  const testN = users.filter((u) => u.isTest).length;
-  const bootN = users.filter((u) => !u.isTest && !userHasEvents(u)).length;
-  const shown = usersShowAll ? users : real;
-
-  const d = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" }); } catch { return "—"; } };
-  const tag = (t, title) => ` <span title="${esc(title)}" style="font-size:10px;font-weight:800;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;white-space:nowrap">${t}</span>`;
-  const who = (u) => {
-    const base = u.handle
-      ? `<b>@${esc(u.handle)}</b>${u.linked ? '<span title="linked X account" style="color:var(--muted)"> 𝕏</span>' : ""}`
-      : `<span style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)" title="${esc(u.deviceId)}">${esc(u.deviceId.slice(0, 10))}…</span>`;
-    return base + (u.isTest ? tag("test", "known test/probe device") : (!userHasEvents(u) ? tag("boot-only", "no calls, surfaced markets, or resolved picks — a page-load record") : ""));
-  };
-  const num = (n) => n == null ? "—" : n;
-  const th = (t, r) => `<th style="padding:7px 8px;text-align:${r ? "right" : "left"};font-size:11px;color:var(--muted);font-weight:800;white-space:nowrap">${t}</th>`;
-  const td = (v, r, extra = "") => `<td style="padding:8px 8px;text-align:${r ? "right" : "left"};font-size:12.5px;vertical-align:top;${extra}">${v}</td>`;
-
-  const summary = `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 10px">
-      <p class="why" style="margin:0"><b style="font-size:15px;color:var(--on-ground)">${real.length}</b> real user${real.length === 1 ? "" : "s"} <span style="color:var(--muted)">(with ≥1 event)</span> · <b>${users.length}</b> total devices <span style="color:var(--muted)">— ${bootN} boot-only, ${testN} test/probe</span></p>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none">
-        <input type="checkbox" id="ushowall"${usersShowAll ? " checked" : ""}> show boot-only / test devices</label>
-    </div>`;
-
-  const rows = shown.length
-    ? shown.map((u) => {
-        const dim = userIsNoise(u) ? "opacity:.5;" : "";
-        return `<tr style="border-top:1px solid rgba(0,0,0,.12);${dim}">`
-          + td(who(u))
-          + td(d(u.firstSeen), 1, "white-space:nowrap;color:var(--muted)")
-          + td(`<b>${u.tokens.toLocaleString("en-US")}</b>`, 1)
-          + td(num(u.totalCalls), 1)
-          + td(num(u.resolved), 1)
-          + td(u.accuracyPct == null ? "—" : u.accuracyPct + "%", 1)
-          + td(u.oddieScore == null ? "—" : `<b>${u.oddieScore}</b>`, 1)
-          + td(u.surfaced ? `<b>${u.surfaced}</b>` : "—", 1)
-          + td(u.seasonPoints ? `<b>${u.seasonPoints}</b>` : "—", 1)
-          + `</tr>`;
-      }).join("")
-    : `<tr><td colspan="9" style="padding:14px 8px;color:var(--muted);font-size:12.5px">no real users yet — every device so far is boot-only or test. Tick "show all" to see them.</td></tr>`;
-
-  box.innerHTML = summary
-    + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:660px">`
-    + `<tr>${th("User")}${th("First seen", 1)}${th("Points", 1)}${th("Calls", 1)}${th("Resolved", 1)}${th("Acc%", 1)}${th("Oddies", 1)}${th("Surfaced", 1)}${th("Ledger", 1)}</tr>`
-    + rows
-    + "</table></div>"
-    + `<p class="why" style="color:var(--muted);margin-top:8px">"real" = did something (call / surfaced market / resolved pick) and isn't a known test device. Ledger is the growth ledger's internal amounts — oddies pay 2× that face value, and players only ever see oddies. (Founding Caller is hidden here — at this volume every device qualifies, so it's not yet a useful signal.)</p>`;
-
-  const cb = box.querySelector("#ushowall");
-  if (cb) cb.onchange = () => { usersShowAll = cb.checked; renderUsersTable(); };
-}
-
-async function loadTweetLog() {
-  const box = $("#tweetlog");
-  if (!localStorage.getItem(ADMKEY)) { box.innerHTML = '<p class="why">enter the admin token above, then this loads…</p>'; return; }
-  try {
-    const r = await fetch("/api/tweet/log?limit=50", { headers: admHeaders() });
-    if (r.status === 401) { box.innerHTML = '<p class="why">admin token rejected.</p>'; return; }
-    const j = await r.json().catch(() => ({ items: [] }));
-    const items = j.items || [];
-    if (!items.length) { box.innerHTML = '<p class="why">nothing generated yet — extract a tweet above.</p>'; return; }
-    box.innerHTML = items.map((it) => {
-      // "new" isn't a judgment call like the other two (a market was simply
-      // created), so it borrows the brand's own accent rather than the
-      // traffic-light green/amber.
-      const tag = { venue: ["#4ADE80", "venue"], closest: ["#FBBF24", "closest"], new: ["var(--accentDeep)", "new"] }[it.matchType] || ["var(--muted)", it.matchType];
-      const when = new Date(it.createdAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
-      return '<div class="box" style="margin:0 0 8px;padding:10px 12px">'
-        + '<p class="why" style="margin:0"><b style="color:' + tag[0] + '">' + esc(tag[1]) + '</b> · ' + esc(when)
-        + (it.sourceUrl ? ' · <a href="' + esc(it.sourceUrl) + '" target="_blank" rel="noopener">source ↗</a>' : '')
-        + (it.marketId ? ' · <code style="font-size:11px">' + esc(it.marketId) + '</code>' : '') + '</p>'
-        + '<p class="why" style="margin:5px 0 0;color:var(--ink)">' + esc(it.replyText) + '</p>'
-        + (it.permalink ? '<p class="why" style="margin:2px 0 0"><a href="' + esc(it.permalink) + '" target="_blank" rel="noopener">' + esc(it.permalink) + '</a></p>' : '')
-        + '</div>';
-    }).join("");
-  } catch (e) { box.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
-}
 
 $("#cgo").onclick = createMarket;
 async function createMarket() {
@@ -1240,11 +886,6 @@ async function resolveMarket(slug, outcome, payout, winners) {
   } catch (e) { alert(String(e)); }
 }
 loadCommunity();
-loadTweetLog();
-loadMetrics();
-loadUsers();
-loadMentions();
-loadLoudQueue();
 </script>
 </body>
 </html>
