@@ -293,18 +293,18 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .hsticker{height:clamp(46px,7vw,74px);margin-left:auto;transform:rotate(4deg)}
 
-/* Signed in as / the way out. Quiet on purpose: it is the exit, not an offer.
-   [hidden] restated because .idstrip sets display. */
-.idstrip[hidden]{display:none}
-.idstrip{display:flex;align-items:center;gap:10px;margin:0 0 28px}
-.idstrip__chip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
-  text-transform:uppercase;background:var(--cream);color:var(--ink);
-  padding:5px 12px 4px;border-radius:999px}
-.idstrip__out{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
+/* The two ways out, at the foot. Quiet on purpose: an exit, not an offer, and
+   the last thing on a page about money. [hidden] restated because .wayout sets
+   display, and each button carries its own so a state can show one and not the
+   other. */
+.wayout[hidden]{display:none}
+.wayout{display:flex;gap:18px;margin:34px 0 0}
+.wayout__b[hidden]{display:none}
+.wayout__b{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;background:none;border:0;padding:6px 2px;cursor:pointer;
   color:var(--fg-3);text-decoration:underline;text-underline-offset:3px}
-.idstrip__out:hover{color:var(--pink)}
-.idstrip__out:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
+.wayout__b:hover{color:var(--pink)}
+.wayout__b:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 /* The way back to what happened, at the foot of the money. Quiet: it is a
    door, not an action. */
 .recordline{margin:18px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
@@ -455,15 +455,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        session - so the browser's own back chevron has nothing behind it and
        somebody who came to check their money is simply stranded. -->
   <a class="backfeed" href="/markets">&larr; All markets</a>
-  <h1>Your profile <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
+  <!-- WHO YOU ARE, ONCE. This was three rows: an h1 saying "Your profile",
+       a pill repeating the handle the masthead already showed, and a wallet
+       line, with a sign-out in the pill and a disconnect in the wallet line.
+       Four controls about identity stacked above the money on the one page
+       that exists to show the money. The heading is the name now; the wallet
+       line says which wallet's bets are on screen, which is the one fact
+       neither of the others carried; and the two ways out share a quiet foot
+       line, each shown only when it can do something. -->
+  <h1><span id="who">Your profile</span> <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
   <p class="sub" id="sub"></p>
-  <!-- Signed in as, and the way out. The masthead chip says who you are on
-       every page; this is the one page that also has to let you stop being
-       them. Same pattern the Genesis page already uses. -->
-  <p class="idstrip" id="idstrip" hidden>
-    <b class="idstrip__chip" id="idhandle">@you</b>
-    <button class="idstrip__out" id="idout" type="button">Sign out</button>
-  </p>
   <!-- ABOVE the tickets and outside #view, for the same reason the tickets are:
        every state of this page rewrites #view wholesale. Money outranks the
        ticket book, so it sits above it. -->
@@ -482,6 +483,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <p class="tix__why" id="tixwhy"></p>
   </section>
   <p class="pushask" id="pushask" hidden></p>
+  <!-- THE TWO WAYS OUT, TOGETHER AND LAST. They used to sit at the top, one
+       inside the handle pill and one inside the wallet line, which meant the
+       wallet's disconnect was wiped by every path that clears .sub and the
+       page could show a control for a wallet it had already forgotten. Out
+       here nothing rewrites them; each is unhidden only when it has something
+       to undo. -->
+  <p class="wayout">
+    <button class="wayout__b" id="idout" type="button" hidden>Sign out</button>
+    <button class="wayout__b" id="wout" type="button" hidden>Disconnect wallet</button>
+  </p>
 </main>
 
 <link rel="stylesheet" href="/app/money.css">
@@ -512,9 +523,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   (window.OddieMe || Promise.resolve({ accounts: [] })).then(function (me) {
     var tw = ((me && me.accounts) || []).filter(function (a) { return a.provider === "twitter"; })[0];
     if (!tw || !tw.handle) return;
-    var strip = document.getElementById("idstrip");
-    document.getElementById("idhandle").textContent = "@" + String(tw.handle).replace(/^@+/, "");
-    strip.hidden = false;
+    // The heading IS the name now. Written into its own span so the sticker
+    // beside it survives, which a plain h1.textContent would have eaten.
+    var handle = "@" + String(tw.handle).replace(/^@+/, "");
+    var who = document.getElementById("who");
+    if (who) who.textContent = handle;
+    document.title = handle + " · oddie";
+    var out = document.getElementById("idout");
+    if (out) out.hidden = false;
     document.getElementById("idout").addEventListener("click", function () {
       var did = (window.OddieId && window.OddieId.get()) || "";
       fetch("/api/auth/disconnect", {
@@ -550,7 +566,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   var XGATE = !!document.querySelector('meta[name="oddie-xgate"]');
   function xgate() {
     var did = (window.OddieId && window.OddieId.get()) || "";
-    sub.textContent = "";
+    noWallet();
     // The gate IS the ask. A "Connect X" pill above it is the same question
     // twice on one screen.
     var chip = document.querySelector(".top .mechip");
@@ -573,7 +589,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     // anyway; X only adds the name. Remembered for a week, cross-host.
     document.getElementById("later").addEventListener("click", function () {
       if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
-      sub.textContent = "";
+      noWallet();
       if (chip) chip.hidden = false;
       load();
     });
@@ -741,7 +757,17 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     });
   }
 
+  /* NO WALLET, NO DISCONNECT. The control used to live inside .sub, so every
+     path that cleared that line removed it by accident. It lives at the foot
+     now, which is the point, so each of those paths has to say so. */
+  function noWallet() {
+    sub.textContent = "";
+    var wo = document.getElementById("wout");
+    if (wo) { wo.hidden = true; wo.disabled = false; }
+  }
+
   function gate(msg, deepLink) {
+    noWallet();
     /* A BUTTON THAT CANNOT SUCCEED MUST NOT BE THE LOUD ONE.
        "Connect wallet" was drawn unconditionally. On a phone arriving from X
        there is no injected provider and there never will be - iOS gives one
@@ -1102,13 +1128,25 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        This one is the missing half. It revokes the browser's approval and
        forgets the address, which is what somebody switching wallets or handing
        over a laptop is actually asking for. */
-    sub.innerHTML = "Wallet <b>" + esc(C().short(w.publicKey)) + "</b>"
-      + ' <button class="idstrip__out" id="wout" type="button">Disconnect wallet</button>';
+    // Which wallet's bets are on screen. The one fact neither the heading nor
+    // the masthead carries, so it is the only thing left on this line.
+    sub.textContent = "Wallet " + C().short(w.publicKey);
+    /* The control itself lives at the foot, outside #view and outside .sub.
+       Bound once and unhidden here, because a disconnect button is only ever
+       honest while a wallet is actually connected: every path that clears .sub
+       used to take it with them by accident, and rebinding on every load was
+       stacking a listener per render. */
     var wo = document.getElementById("wout");
-    if (wo) wo.addEventListener("click", function () {
-      wo.disabled = true;
-      C().forgetWallet().then(function () { sub.textContent = ""; load(); });
-    }, { once: true });
+    if (wo) {
+      wo.hidden = false;
+      if (!wo.dataset.bound) {
+        wo.dataset.bound = "1";
+        wo.addEventListener("click", function () {
+          wo.disabled = true;
+          C().forgetWallet().then(function () { load(); });
+        });
+      }
+    }
     view.innerHTML = '<p class="load">Finding your bets…</p>';
     watchLoading(myGen);
 
@@ -1331,7 +1369,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          undefined, and the page proceeds exactly as it did, because a blinked
          request is not evidence that trading is off. */
       if (status && status.enabled === false) {
-        sub.textContent = "";
+        noWallet();
         view.innerHTML = '<div class="err">Betting is switched off right now. '
           + 'Nothing is wrong with your money, and anything you have already staked '
           + 'is still in its market. <a href="/markets">See the markets</a></div>';
