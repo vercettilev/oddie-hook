@@ -78,6 +78,31 @@ console.log("\nmarkets: the worklist is what still needs a decision");
     /chainEnabled/.test(fn.slice(declStart, fn.indexOf(";", idx) + 1)));
 }
 
+console.log("\nthe detail panel: the screen that settles real money");
+{
+  const fn = bodyOf(tool, "async function loadMarketDetail");
+  check("loadMarketDetail is where the test thinks it is", fn.length > 0);
+
+  // The bug this guards: the panel read market_call, so a market holding
+  // 0.2 SOL showed "0 tok (0 players)", "POSITIONS (0)", and a button saying
+  // "resolve YES (pays 0 to 0)". The settlement was right; the preview lied,
+  // and the preview is the only thing read before deciding.
+  check("no play-money tokens anywhere on the panel",
+    !/ tok\b/.test(fn) && !/totalPayout/.test(fn) && !/payoutIfWin/.test(fn),
+    (fn.match(/.{0,30}(tok\b|totalPayout|payoutIfWin).{0,20}/g) ?? []).join(" | "));
+  check("the pool is the chain's", /d\.pool\.totalSol/.test(fn) && /SOL/.test(fn));
+  check("the resolve button states what it pays, in SOL",
+    /resolve .*pays .*SOL/.test(fn.replace(/\s+/g, " ")), fn.slice(fn.indexOf("const btn"), fn.indexOf("const btn") + 300));
+
+  // A side nobody backed is refunded in full and takes no fee (lib.rs), so a
+  // preview that shows it as a payout would overstate what winners receive.
+  check("a no-winner side previews as a refund, not a payout", /refund/.test(fn));
+
+  // Settling on numbers we could not read is the one mistake with no undo.
+  check("resolve is withheld when the pool is unreadable",
+    /d\.pool\.unreadable\s*\n?\s*\?/.test(fn) || /unreadable[\s\S]{0,200}Resolve is hidden/.test(fn));
+}
+
 // The server has to send what the card reads.
 {
   const srv = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
@@ -87,6 +112,20 @@ console.log("\nmarkets: the worklist is what still needs a decision");
     /readMarkets\(/.test(route) && /stakerCounts\(/.test(route), route.slice(0, 200));
   check("...and sends poolSol, bettors and unreadable",
     /poolSol/.test(route) && /bettors/.test(route) && /unreadable/.test(route));
+}
+
+{
+  const srv = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  const route = srv.slice(srv.indexOf('app.get("/api/community/market/:slug"'),
+                          srv.indexOf("// Manual resolution: mark resolved"));
+  check("the detail route reads the market state and the positions off the chain",
+    /readMarket\(/.test(route) && /readPositions\(/.test(route) && /walletsInMarket\(/.test(route));
+  check("...and never sends a payout built on market_call",
+    !/winBonus/.test(route) && !/\.tokens/.test(route), (route.match(/.{0,30}(winBonus|\.tokens).{0,20}/g) ?? []).join(" | "));
+  check("the fee comes from the market's own stored rate, not today's",
+    /detail\.creatorFeeBps/.test(route));
+  check("a pool with no winners previews as a full refund, no fee",
+    /winningLam === 0 \? poolLam/.test(route));
 }
 
 console.log(failures === 0 ? "\nall tool checks passed.\n" : `\n${failures} tool check(s) FAILED.\n`);

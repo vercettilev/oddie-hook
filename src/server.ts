@@ -3398,34 +3398,83 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   const detail = await communityMarketDetail(req.params.slug);
   if (!detail) return res.status(404).json({ error: "unknown community market" });
 
-  // Resolve handles once per distinct device (few positions, so this is cheap).
-  const devices = [...new Set(detail.positions.map((p) => p.deviceId).filter((d): d is string => Boolean(d)))];
-  const handleList = await Promise.all(devices.map(async (d) => [d, (await displayHandle(d)).handle] as const));
-  const handles = new Map(handleList);
+  /* THE SCREEN THAT SETTLES REAL MONEY WAS READING THE PLAY-MONEY TABLE.
+     communityMarketDetail draws its positions from market_call, and nothing has
+     written market_call since real SOL arrived. On a market holding 0.2 SOL
+     this panel said "YES 0 tok (0 players)", "POSITIONS (0) — no positions
+     yet", and, on the button that settles it, "resolve YES (pays 0 to 0)".
+     The settlement itself was never wrong: resolve_market computes payouts from
+     the chain. It was the PREVIEW that lied, which is worse in its own way,
+     because the preview is the only thing the operator reads before deciding.
+     Pool and payout come off the chain now. Who is in comes from chain_entry,
+     and each wallet's stake from its own Position account, so a top-up or a
+     sold seat shows its real size rather than the first stamp. */
+  const pubkey = detail.onchainPubkey;
+  const state = pubkey ? await readMarket(pubkey, { maxAgeMs: 4_000 }).catch(() => null) : null;
+  const live = state?.ok ? state.state : null;
+  const unreadable = Boolean(state && !state.ok && state.reason === "unreadable");
 
-  let totalYes = 0, totalNo = 0, payoutIfYes = 0, payoutIfNo = 0, winnersYes = 0, winnersNo = 0;
-  const pYes = new Set<string>(), pNo = new Set<string>();
-  const positions = detail.positions.map((p) => {
-    const entry = p.entryPct ?? 0;
-    const payoutIfWin = entry > 0 ? winBonus(entry) : 0; // what settlement will actually pay — see economy.winBonus
-    if (p.side === "yes") { totalYes += p.tokens; if (p.deviceId) pYes.add(p.deviceId); payoutIfYes += payoutIfWin; if (payoutIfWin > 0) winnersYes++; }
-    else { totalNo += p.tokens; if (p.deviceId) pNo.add(p.deviceId); payoutIfNo += payoutIfWin; if (payoutIfWin > 0) winnersNo++; }
-    return {
-      handle: p.deviceId ? (handles.get(p.deviceId) ?? p.deviceId.slice(0, 10) + "…") : "anon",
-      deviceId: p.deviceId, side: p.side, tokens: p.tokens, entryPct: p.entryPct, payoutIfWin, closed: p.closed, proceeds: p.proceeds,
-    };
-  });
-  const total = totalYes + totalNo;
+  const entries = pubkey ? await walletsInMarket(detail.slug).catch(() => []) : [];
+  // An admin screen, so exactness is worth a round trip per wallet, but not an
+  // unbounded number of them. Past the cap the list says what it left out.
+  const CAP = 60;
+  const shown = entries.slice(0, CAP);
+  const stakes = new Map<string, { yes: number; no: number; claimed: boolean }>();
+  if (pubkey && shown.length) {
+    await Promise.all(shown.map(async (e) => {
+      const r = await readPositions([pubkey], e.wallet).catch(() => null);
+      const p = r?.get(pubkey);
+      if (p?.ok && p.position) {
+        stakes.set(e.wallet, { yes: p.position.amountYes, no: p.position.amountNo, claimed: p.position.claimed });
+      }
+    }));
+  }
+
+  const yesLam = live?.totalYesLamports ?? 0, noLam = live?.totalNoLamports ?? 0;
+  const poolLam = yesLam + noLam;
+  // Both fees are stored per market, so a rate change never reprices an open
+  // pool; the preview has to use the market's own numbers, not today's.
+  const feeBps = (detail.creatorFeeBps ?? CREATOR_FEE_BPS_REAL) + PROTOCOL_FEE_BPS_REAL;
+  // A pool with no winners is refunded in full and takes no fee at all, which
+  // is the program's rule (lib.rs: winning_total == 0 -> both fees zero).
+  const payout = (winningLam: number) =>
+    winningLam === 0 ? poolLam : poolLam - Math.floor((poolLam * feeBps) / 10_000);
+  const wallets = (side: "yes" | "no") => new Set(entries.filter((e) => e.side === side).map((e) => e.wallet));
+  const yesW = wallets("yes"), noW = wallets("no");
+
+  const positions = shown.map((e) => ({
+    wallet: e.wallet,
+    short: e.wallet.slice(0, 4) + "…" + e.wallet.slice(-4),
+    side: e.side,
+    entryPct: e.entryPct,
+    // The stamp is their FIRST stake; the Position account is what they hold
+    // now, both legs, because a wallet is allowed to sit on both sides.
+    firstSol: e.lamports / 1e9,
+    yesSol: stakes.has(e.wallet) ? (stakes.get(e.wallet) as { yes: number }).yes / 1e9 : null,
+    noSol: stakes.has(e.wallet) ? (stakes.get(e.wallet) as { no: number }).no / 1e9 : null,
+    claimed: stakes.get(e.wallet)?.claimed ?? null,
+  }));
 
   res.json({
     slug: detail.slug, question: detail.question, closesAt: detail.closesAt, yesPct: detail.yesPct, marketId: detail.marketId,
     resolvedOutcome: detail.resolvedOutcome, resolutionCriteria: detail.resolutionCriteria, resolvability: detail.resolvability,
-    onchain: onchainEnabled() && detail.onchainPubkey
-      ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey), signature: detail.onchainSig, minted: true }
+    onchain: onchainEnabled() && pubkey
+      ? { pubkey, explorer: explorerUrl(pubkey), signature: detail.onchainSig, minted: true }
       : { minted: false },
-    pool: { totalYes, totalNo, playersYes: pYes.size, playersNo: pNo.size, poolYesPct: total > 0 ? Math.round((100 * totalYes) / total) : null },
-    preview: { ifYes: { totalPayout: payoutIfYes, winners: winnersYes }, ifNo: { totalPayout: payoutIfNo, winners: winnersNo } },
+    pool: unreadable || !live ? { unreadable: true }
+      : {
+          yesSol: yesLam / 1e9, noSol: noLam / 1e9, totalSol: poolLam / 1e9,
+          poolYesPct: poolLam > 0 ? Math.round((100 * yesLam) / poolLam) : null,
+          walletsYes: yesW.size, walletsNo: noW.size,
+        },
+    preview: unreadable || !live ? { unreadable: true }
+      : {
+          feePct: feeBps / 100,
+          ifYes: { paysSol: payout(yesLam) / 1e9, winners: yesLam === 0 ? yesW.size + noW.size : yesW.size, refund: yesLam === 0 },
+          ifNo: { paysSol: payout(noLam) / 1e9, winners: noLam === 0 ? yesW.size + noW.size : noW.size, refund: noLam === 0 },
+        },
     positions,
+    truncated: Math.max(0, entries.length - shown.length),
   });
 });
 

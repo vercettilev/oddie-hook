@@ -410,35 +410,68 @@ async function loadMarketDetail(slug, panel) {
     const r = await fetch("/api/community/market/" + encodeURIComponent(slug), { headers: admHeaders() });
     const d = await r.json();
     if (!r.ok) { panel.innerHTML = '<p class="why">' + esc(d.error || "failed") + '</p>'; return; }
+
+    /* EVERYTHING HERE IS THE CHAIN NOW. It used to be market_call, the
+       play-money table, so a funded market showed an empty pool, no positions,
+       and a resolve button reading "pays 0 to 0" on money that was really
+       there. The settlement was never wrong; the preview was, which is worse,
+       because the preview is the only thing read before deciding. */
     const oc = d.onchain && d.onchain.minted
-      ? 'minted ✓ — <a href="' + esc(d.onchain.explorer) + '" target="_blank" rel="noopener">' + esc(d.onchain.pubkey) + ' ↗</a>'
-      : 'skipped (no Solana artifact)';
-    const close = d.closesAt ? new Date(d.closesAt).toLocaleString() : '—';
-    const split = d.pool.poolYesPct == null ? 'no bets yet' : (d.pool.poolYesPct + '% YES / ' + (100 - d.pool.poolYesPct) + '% NO');
+      ? '<a href="' + esc(d.onchain.explorer) + '" target="_blank" rel="noopener">' + esc(d.onchain.pubkey) + ' ↗</a>'
+      : 'not on chain yet — the first bet opens it';
+
+    const pool = d.pool.unreadable
+      ? '<p class="why"><b>Pool</b> — could not read the chain just now. Nothing below is safe to act on.</p>'
+      : '<p class="why" style="margin-top:6px"><b>Pool</b> — ' + sol(d.pool.totalSol) + ' SOL'
+        + (d.pool.totalSol > 0
+            ? ' · YES ' + sol(d.pool.yesSol) + ' (' + d.pool.walletsYes + ') · NO ' + sol(d.pool.noSol)
+              + ' (' + d.pool.walletsNo + ') · ' + d.pool.poolYesPct + '% on YES'
+            : ' · no bets yet')
+        + '</p>';
+
+    // What each outcome actually pays, and to how many wallets. A side with
+    // nothing on it refunds the whole pool and takes no fee, which is the
+    // program's own rule, so the preview says "refund" rather than a payout.
+    const leg = (x, name) => x.refund
+      ? 'if <b>' + name + '</b>: nobody backed it — <b>' + sol(x.paysSol) + ' SOL</b> refunded to ' + x.winners + ', no fee'
+      : 'if <b>' + name + '</b>: <b>' + sol(x.paysSol) + ' SOL</b> to ' + x.winners + (x.winners === 1 ? ' wallet' : ' wallets');
+    const preview = d.preview.unreadable ? ''
+      : '<p class="why"><b>Pays</b> — ' + leg(d.preview.ifYes, 'YES') + ' · ' + leg(d.preview.ifNo, 'NO')
+        + ' <span class="quiet">(after ' + d.preview.feePct + '% fee)</span></p>';
+
     const rows = d.positions.length
-      ? d.positions.map((p) => '<div class="variant"><span class="vtext">' + esc(p.handle)
-          + ' · <b>' + p.side.toUpperCase() + '</b> · ' + p.tokens + ' tok @ ' + (p.entryPct == null ? '?' : p.entryPct + '%') + '</span>'
-          + '<span class="why" style="white-space:nowrap">' + (p.closed ? ('paid ' + (p.proceeds || 0)) : ('→ ' + p.payoutIfWin + ' if ' + p.side.toUpperCase() + ' wins')) + '</span></div>').join("")
-      : '<p class="why">no positions yet.</p>';
+      ? d.positions.map((p) => {
+          const held = p.yesSol === null ? sol(p.firstSol) + ' SOL (first stake)'
+            : [p.yesSol > 0 ? sol(p.yesSol) + ' YES' : '', p.noSol > 0 ? sol(p.noSol) + ' NO' : '']
+                .filter(Boolean).join(' + ') + ' SOL';
+          return '<div class="variant"><span class="vtext">' + esc(p.short)
+            + ' · <b>' + p.side.toUpperCase() + '</b> at ' + (p.entryPct == null ? '?' : p.entryPct + '%') + '</span>'
+            + '<span class="why" style="white-space:nowrap">' + held + (p.claimed ? ' · collected' : '') + '</span></div>';
+        }).join("")
+      : '<p class="why">nobody has bet yet.</p>';
+
     const done = d.resolvedOutcome;
+    const btn = (o, x) => '<button class="ghost rz" data-slug="' + esc(d.slug) + '" data-o="' + o + '"'
+      + ' data-pay="' + (x ? sol(x.paysSol) : '') + '" data-win="' + (x ? x.winners : '') + '">'
+      + 'resolve ' + o.toUpperCase() + (x ? ' — pays ' + sol(x.paysSol) + ' SOL to ' + x.winners : '') + '</button>';
+
     panel.innerHTML =
-        '<p class="why">slug <b>' + esc(d.slug) + '</b> · closes ' + esc(close) + '</p>'
-      + '<p class="why">on-chain: ' + oc + '</p>'
-      + '<p class="why" style="margin-top:6px"><b>Pool</b> — YES ' + d.pool.totalYes + ' tok (' + d.pool.playersYes + ' players) · NO ' + d.pool.totalNo + ' tok (' + d.pool.playersNo + ' players) · split ' + split + ' · set odds ' + d.yesPct + '% YES</p>'
-      + '<p class="why"><b>Payout preview</b> — if <b>YES</b> resolves: ' + d.preview.ifYes.totalPayout + ' tok to ' + d.preview.ifYes.winners + ' winner(s) · if <b>NO</b>: ' + d.preview.ifNo.totalPayout + ' tok to ' + d.preview.ifNo.winners + ' winner(s)</p>'
-      + '<p class="vhead" style="margin-top:8px">positions (' + d.positions.length + ')</p><div class="variants">' + rows + '</div>'
+        '<p class="why">on-chain: ' + oc + '</p>'
+      + pool + preview
+      + '<p class="vhead" style="margin-top:8px">who is in (' + d.positions.length
+        + (d.truncated ? ', ' + d.truncated + ' more not shown' : '') + ')</p>'
+      + '<div class="variants">' + rows + '</div>'
       + (done
           ? '<p class="why" style="margin-top:6px"><b>Resolved ' + String(done).toUpperCase() + '</b> — positions settled.</p>'
-          : '<div class="row" style="margin-top:8px">'
-            + '<button class="ghost rz" data-slug="' + esc(d.slug) + '" data-o="yes" data-pay="' + d.preview.ifYes.totalPayout + '" data-win="' + d.preview.ifYes.winners + '">resolve YES (pays ' + d.preview.ifYes.totalPayout + ' to ' + d.preview.ifYes.winners + ')</button>'
-            + '<button class="ghost rz" data-slug="' + esc(d.slug) + '" data-o="no" data-pay="' + d.preview.ifNo.totalPayout + '" data-win="' + d.preview.ifNo.winners + '">resolve NO (pays ' + d.preview.ifNo.totalPayout + ' to ' + d.preview.ifNo.winners + ')</button>'
-            + '</div>');
-    panel.querySelectorAll(".rz").forEach((b) => { b.onclick = () => resolveMarket(b.dataset.slug, b.dataset.o, Number(b.dataset.pay), Number(b.dataset.win)); });
+          : d.pool.unreadable
+            ? '<p class="why" style="margin-top:8px">Resolve is hidden while the pool is unreadable: settling on numbers we could not read is the one mistake with no undo.</p>'
+            : '<div class="row" style="margin-top:8px">' + btn('yes', d.preview.ifYes) + btn('no', d.preview.ifNo) + '</div>');
+    panel.querySelectorAll(".rz").forEach((b) => { b.onclick = () => resolveMarket(b.dataset.slug, b.dataset.o, b.dataset.pay, b.dataset.win); });
   } catch (e) { panel.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
 }
 
 async function resolveMarket(slug, outcome, payout, winners) {
-  const summary = Number.isFinite(payout) ? ('\n\nThis pays ' + payout + ' tokens to ' + winners + ' winner(s).') : '';
+  const summary = payout ? ('\n\nThis pays ' + payout + ' SOL to ' + winners + ' wallet(s).') : '';
   if (!confirm('Resolve ' + outcome.toUpperCase() + '?' + summary + '\nSettles all positions and cannot be undone.')) return;
   try {
     const r = await fetch("/api/community/resolve", {
