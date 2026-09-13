@@ -3412,6 +3412,14 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   const pubkey = detail.onchainPubkey;
   const state = pubkey ? await readMarket(pubkey, { maxAgeMs: 4_000 }).catch(() => null) : null;
   const live = state?.ok ? state.state : null;
+  /* NOT THERE YET IS NOT UNREADABLE, AND THIS PANEL SAID IT WAS.
+     A market waits for its first bet before it exists on Solana, so there is
+     nothing to read and that is the normal, healthy state. Folding it in with
+     a failed RPC printed "could not read the chain just now, nothing below is
+     safe to act on" over a market that was simply new, and withheld resolve
+     for a danger that was not there. Three states, because there are three:
+     no chain account, an account we could not reach, and a pool. */
+  const notOnChain = !pubkey;
   const unreadable = Boolean(state && !state.ok && state.reason === "unreadable");
 
   const entries = pubkey ? await walletsInMarket(detail.slug).catch(() => []) : [];
@@ -3474,13 +3482,17 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
     onchain: onchainEnabled() && pubkey
       ? { pubkey, explorer: explorerUrl(pubkey), signature: detail.onchainSig, minted: true }
       : { minted: false },
-    pool: unreadable || !live ? { unreadable: true }
+    pool: notOnChain ? { notOnChain: true, totalSol: 0 }
+      : unreadable || !live ? { unreadable: true }
       : {
           yesSol: yesLam / 1e9, noSol: noLam / 1e9, totalSol: poolLam / 1e9,
           poolYesPct: poolLam > 0 ? Math.round((100 * yesLam) / poolLam) : null,
           walletsYes: yesW.size, walletsNo: noW.size,
         },
-    preview: unreadable || !live ? { unreadable: true }
+    // Nothing is on chain, so nothing can be owed: resolving closes the record
+    // and pays nobody, which the buttons have to say rather than imply.
+    preview: notOnChain ? { notOnChain: true }
+      : unreadable || !live ? { unreadable: true }
       : {
           feePct: feeBps / 100,
           ifYes: { paysSol: payout(yesLam) / 1e9, winners: yesLam === 0 ? yesW.size + noW.size : yesW.size, refund: yesLam === 0 },

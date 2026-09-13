@@ -101,6 +101,14 @@ console.log("\nthe detail panel: the screen that settles real money");
   // Settling on numbers we could not read is the one mistake with no undo.
   check("resolve is withheld when the pool is unreadable",
     /d\.pool\.unreadable\s*\n?\s*\?/.test(fn) || /unreadable[\s\S]{0,200}Resolve is hidden/.test(fn));
+
+  // A market waits for its first bet before it exists on Solana. Folding that
+  // in with a failed RPC printed "could not read the chain just now" over a
+  // market that was simply new, and withheld resolve for a danger not there.
+  check("not-on-chain is its own state, not filed under unreadable",
+    /d\.pool\.notOnChain/.test(fn) && /d\.preview\.notOnChain/.test(fn));
+  check("...and resolving it says it pays nobody, rather than implying a payout",
+    /pays nobody/.test(fn) && /only closes the record/.test(fn));
 }
 
 // The server has to send what the card reads.
@@ -129,6 +137,8 @@ console.log("\nthe detail panel: the screen that settles real money");
   // chain_entry files a wallet under the side of its FIRST stake, so counting
   // winners from it said "pays 0.192 SOL to 0 wallets" on a market where one
   // wallet held 0.1 on each side: a payout with nobody to pay.
+  check("the route separates no-chain-account from a failed read",
+    /const notOnChain = !pubkey/.test(route) && /notOnChain \? \{ notOnChain: true/.test(route));
   check("winners are counted from the position accounts, not the first-stake stamp",
     /const holds = /.test(route) && /stakes\.get\(w\)/.test(route), route.slice(route.indexOf("const wallets"), route.indexOf("const wallets") + 200));
 }

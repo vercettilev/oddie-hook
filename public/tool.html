@@ -417,10 +417,13 @@ async function loadMarketDetail(slug, panel) {
        there. The settlement was never wrong; the preview was, which is worse,
        because the preview is the only thing read before deciding. */
     const oc = d.onchain && d.onchain.minted
-      ? '<a href="' + esc(d.onchain.explorer) + '" target="_blank" rel="noopener">' + esc(d.onchain.pubkey) + ' ↗</a>'
-      : 'not on chain yet — the first bet opens it';
+      ? '<p class="why">on-chain: <a href="' + esc(d.onchain.explorer) + '" target="_blank" rel="noopener">'
+        + esc(d.onchain.pubkey) + ' ↗</a></p>'
+      : '';   // the row above already said it, and there is no address to open
 
-    const pool = d.pool.unreadable
+    const pool = d.pool.notOnChain
+      ? '<p class="why" style="margin-top:6px"><b>Pool</b> — nothing yet. The market reaches Solana on its first bet.</p>'
+      : d.pool.unreadable
       ? '<p class="why"><b>Pool</b> — could not read the chain just now. Nothing below is safe to act on.</p>'
       : '<p class="why" style="margin-top:6px"><b>Pool</b> — ' + sol(d.pool.totalSol) + ' SOL'
         + (d.pool.totalSol > 0
@@ -435,7 +438,7 @@ async function loadMarketDetail(slug, panel) {
     const leg = (x, name) => x.refund
       ? 'if <b>' + name + '</b>: nobody backed it — <b>' + sol(x.paysSol) + ' SOL</b> refunded to ' + x.winners + ', no fee'
       : 'if <b>' + name + '</b>: <b>' + sol(x.paysSol) + ' SOL</b> to ' + x.winners + (x.winners === 1 ? ' wallet' : ' wallets');
-    const preview = d.preview.unreadable ? ''
+    const preview = d.preview.notOnChain || d.preview.unreadable ? ''
       : '<p class="why"><b>Pays</b> — ' + leg(d.preview.ifYes, 'YES') + ' · ' + leg(d.preview.ifNo, 'NO')
         + ' <span class="quiet">(after ' + d.preview.feePct + '% fee)</span></p>';
 
@@ -453,11 +456,10 @@ async function loadMarketDetail(slug, panel) {
     const done = d.resolvedOutcome;
     const btn = (o, x) => '<button class="ghost rz" data-slug="' + esc(d.slug) + '" data-o="' + o + '"'
       + ' data-pay="' + (x ? sol(x.paysSol) : '') + '" data-win="' + (x ? x.winners : '') + '">'
-      + 'resolve ' + o.toUpperCase() + (x ? ' — pays ' + sol(x.paysSol) + ' SOL to ' + x.winners : '') + '</button>';
+      + 'resolve ' + o.toUpperCase()
+      + (x ? ' — pays ' + sol(x.paysSol) + ' SOL to ' + x.winners : ' — pays nobody') + '</button>';
 
-    panel.innerHTML =
-        '<p class="why">on-chain: ' + oc + '</p>'
-      + pool + preview
+    panel.innerHTML = oc + pool + preview
       + '<p class="vhead" style="margin-top:8px">who is in (' + d.positions.length
         + (d.truncated ? ', ' + d.truncated + ' more not shown' : '') + ')</p>'
       + '<div class="variants">' + rows + '</div>'
@@ -465,7 +467,13 @@ async function loadMarketDetail(slug, panel) {
           ? '<p class="why" style="margin-top:6px"><b>Resolved ' + String(done).toUpperCase() + '</b> — positions settled.</p>'
           : d.pool.unreadable
             ? '<p class="why" style="margin-top:8px">Resolve is hidden while the pool is unreadable: settling on numbers we could not read is the one mistake with no undo.</p>'
-            : '<div class="row" style="margin-top:8px">' + btn('yes', d.preview.ifYes) + btn('no', d.preview.ifNo) + '</div>');
+            : d.pool.notOnChain
+              // Nobody can be owed anything, so resolving is safe; it just
+              // closes the record. Say that on the buttons rather than let
+              // "pays" imply money that was never there.
+              ? '<p class="why" style="margin-top:8px">Nobody has bet, so resolving only closes the record.</p>'
+                + '<div class="row" style="margin-top:6px">' + btn('yes', null) + btn('no', null) + '</div>'
+              : '<div class="row" style="margin-top:8px">' + btn('yes', d.preview.ifYes) + btn('no', d.preview.ifNo) + '</div>');
     panel.querySelectorAll(".rz").forEach((b) => { b.onclick = () => resolveMarket(b.dataset.slug, b.dataset.o, b.dataset.pay, b.dataset.win); });
   } catch (e) { panel.innerHTML = '<p class="why">' + esc(String(e)) + '</p>'; }
 }
