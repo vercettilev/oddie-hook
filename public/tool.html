@@ -361,7 +361,7 @@ async function loadCommunity() {
              <div class="donelist">${retired.map((m) => `
                <div class="donerow">
                  <a class="donewhat" href="/market/${esc(m.slug)}" target="_blank" rel="noopener" title="${esc(m.question)}">${esc(m.question)}</a>
-                 <span class="donewhen">${m.yesTokens + m.noTokens} played · ${m.yesPlayers + m.noPlayers}p</span>
+                 <span class="donewhen">${m.poolSol === null ? "pool unreadable" : m.poolSol === 0 ? "no bets" : sol(m.poolSol) + " SOL · " + m.bettors + "p"}</span>
                </div>`).join("")}</div>
            </details>`
         : "")
@@ -372,7 +372,7 @@ async function loadCommunity() {
                <div class="donerow">
                  <a class="donewhat" href="/market/${esc(m.slug)}" target="_blank" rel="noopener" title="${esc(m.question)}">${esc(m.question)}</a>
                  <span class="donebadge ${String(m.resolvedOutcome).toLowerCase() === "yes" ? "won" : "lost"}">${esc(String(m.resolvedOutcome).toUpperCase())}</span>
-                 <span class="donewhen">${m.yesTokens + m.noTokens} played · ${m.yesPlayers + m.noPlayers}p</span>
+                 <span class="donewhen">${m.poolSol === null ? "pool unreadable" : m.poolSol === 0 ? "no bets" : sol(m.poolSol) + " SOL · " + m.bettors + "p"}</span>
                </div>`).join("")}</div>
            </details>`
         : "");

@@ -1,17 +1,17 @@
-// The operator console's two worklists, guarded structurally.
+// The operator console's one worklist, guarded structurally.
 //
-// Both sections used to render EVERY item they ever held, at full card size,
-// forever — a settled verdict from weeks ago took the same space as one
-// waiting to be posted, and a resolved market repeated "on-chain: skipped" on
-// every row when the banner above already said on-chain was off for the whole
-// page. The console became unmanageable exactly there: the actual worklist (a
-// handful of items) was buried in an unbounded scroll of finished ones.
+// The console used to be five sections and is now one, because the mention
+// loop took the other four: the bot opens markets and answers tags on its own,
+// and what is left for a person is deciding an outcome and paying people. The
+// verdict queue and its dismiss state went with market_call, the play-money
+// table nothing has written since real SOL arrived.
 //
-// The fix has no pure function to lift and run (loadMentions/loadCommunity are
-// fetch+DOM, not calculations), so this pins the SHAPE of the fix in the
-// source instead: pending/live render in full, sent/resolved collapse into a
-// closed-by-default <details>, and the redundant per-row on-chain text is
-// gated on chain actually being enabled.
+// What this pins is the shape of the section that survived. There is no pure
+// function to lift and run (loadCommunity is fetch+DOM, not a calculation), so
+// the assertions read the source: resolved and retired history collapse out of
+// the live worklist, a market past its close sorts to the top and is named for
+// the action it needs, and the money on the card comes from the chain rather
+// than from the dead table that printed four zeros over a funded market.
 //
 // Run with: npm run test-tool
 
@@ -40,74 +40,53 @@ const bodyOf = (src: string, fnStart: string): string => {
 
 const tool = readFileSync(new URL("../public/tool.html", import.meta.url), "utf8");
 
-console.log("\nverdicts: pending and sent are two different renders");
-{
-  const fn = bodyOf(tool, "async function loadMentions");
-  check("loadMentions is where the test thinks it is", fn.length > 0);
-  check("splits on mentionedAt rather than rendering one list",
-    /if \(!m\.mentionedAt\)/.test(fn) || /!m\.mentionedAt/.test(fn), fn.slice(0, 200));
-  check("sent items collapse into a details.rec, not a full card list",
-    /sentHtml/.test(fn) && /<details class="rec"/.test(fn));
-  check("the collapsed list has no open attribute (closed by default)",
-    !/<details class="rec"[^>]*\bopen\b/.test(fn));
-  check("the section title carries a live count, not a static label",
-    /count\.textContent/.test(fn));
-}
-
-console.log("\nlive markets: resolved history is not the live worklist");
+console.log("\nmarkets: the worklist is what still needs a decision");
 {
   const fn = bodyOf(tool, "async function loadCommunity");
   check("loadCommunity is where the test thinks it is", fn.length > 0);
-  check("splits items on resolvedOutcome into live vs resolved",
-    /filter\(\(m\) => !m\.resolvedOutcome\)/.test(fn) && /filter\(\(m\) => m\.resolvedOutcome\)/.test(fn));
-  check("resolved markets collapse into a details.rec",
-    /details class="rec"/.test(fn) && /resolved\.map/.test(fn));
-  check("the collapsed list has no open attribute (closed by default)",
+
+  // Retired is not live. The public list filters on both, and this one checked
+  // only resolvedOutcome, so a board cleanup left five markets counted and
+  // listed as live over an app that was serving two.
+  check("live excludes BOTH resolved and retired",
+    /!m\.resolvedOutcome && !m\.retiredAt/.test(fn), fn.slice(0, 400));
+  check("retired and resolved each collapse into a details.rec",
+    /details class="rec"/.test(fn) && /retired\.map/.test(fn) && /resolved\.map/.test(fn));
+  check("the collapsed lists have no open attribute (closed by default)",
     !/<details class="rec"[^>]*\bopen\b/.test(fn));
-  // The bug this guards: "on-chain: skipped" used to print on every live row
-  // unconditionally. It may still appear, but ONLY inside the statement that
-  // gates it on chainEnabled — the one case where it can differ row to row.
-  // The string also appears once in the comment explaining this, ABOVE the
-  // code (the whole point of that comment) — lastIndexOf, not indexOf, to
-  // land on the code's own occurrence rather than the prose describing it.
-  // Bounded by the enclosing `const minted = …;` rather than a fixed
-  // character window, since the real gate sits a four-line comment away.
-  const skippedIdx = fn.lastIndexOf("on-chain: skipped");
-  const declStart = fn.lastIndexOf("const minted", skippedIdx);
-  const declEnd = fn.indexOf(";", skippedIdx);
-  check("'on-chain: skipped' appears at all (chain-off row copy still exists)", declStart > 0);
-  const stmt = fn.slice(declStart, declEnd + 1);
+
+  // The one question this page answers is "has it closed", so a market past
+  // its close has to be findable without reading every row.
+  check("closed-and-unsettled sorts to the top", /live\.sort\(/.test(fn) && /closedAt/.test(fn));
+  check("a past close is named for the action it needs",
+    /ready to settle/.test(fn) && /settle this market/.test(fn));
+
+  // The money. yesTokens/noTokens are SUM(market_call.tokens) and read zero
+  // forever; the pool has to come off the chain, and an unreadable pool must
+  // say so rather than print a zero nobody measured.
+  check("the card reads the chain pool, not the play-money columns",
+    /m\.poolSol/.test(fn) && !/m\.yesTokens/.test(fn), (fn.match(/m\.(yes|no)Tokens/g) ?? []).join(" "));
+  check("an unreadable pool is stated, never rendered as zero",
+    /m\.unreadable/.test(fn) && /could not read the pool/.test(fn));
+
+  // Per-row on-chain copy is only informative when chain is ENABLED; off, it
+  // is the same word on every row that the banner above already said once.
+  const idx = fn.lastIndexOf("not on chain yet");
+  const declStart = fn.lastIndexOf("const money", idx);
+  check("the not-yet-minted line exists", declStart > 0);
   check("...and is reached through a chainEnabled check, not unconditionally",
-    /chainEnabled/.test(stmt), stmt.replace(/\s+/g, " "));
+    /chainEnabled/.test(fn.slice(declStart, fn.indexOf(";", idx) + 1)));
 }
 
-console.log("\nverdicts: dismiss is a real third state, not \"mark sent\" in disguise");
+// The server has to send what the card reads.
 {
-  // Trigger: 18 pending verdicts turned out to be the operator's own repeated
-  // test calls from weeks earlier (the same market called 5 times while
-  // dogfooding), sitting in the "N to post" count forever because
-  // mentionCandidates had no way to remove a row except mentioned_at, which
-  // means "this actually went out on X" and feeds the 24h-return read. Using
-  // it to mean "I'm not posting this" would have logged a post that never
-  // happened.
-  const fn = bodyOf(tool, "async function loadMentions");
-  check("the pending card renders a dismiss control, separate from mark sent",
-    /mdismiss/.test(fn));
-  check("dismiss is styled below button weight (class=\"quiet\", not \"ghost\")",
-    /class="quiet mdismiss"/.test(fn), (fn.match(/.{0,40}mdismiss.{0,10}/g) ?? []).join(" | "));
-  check("dismiss calls its own endpoint, not /sent",
-    /\/api\/mentions\/\$\{b\.dataset\.id\}\/dismiss/.test(fn));
-
   const srv = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
-  check("the server exposes a distinct /dismiss route", /"\/api\/mentions\/:id\/dismiss"/.test(srv));
-
-  const store = readFileSync(new URL("../src/store/markets.ts", import.meta.url), "utf8");
-  const dismissFn = bodyOf(store, "export async function dismissMention");
-  check("dismissMention is where the test thinks it is", dismissFn.length > 0);
-  check("...and refuses to touch a row that already went out (guards on mentioned_at IS NULL)",
-    /mentioned_at\s+IS\s+NULL/i.test(dismissFn), dismissFn);
-  check("dismissed rows are excluded from the worklist query",
-    /dismissed_at\s+IS\s+NULL/i.test(bodyOf(store, "export async function mentionCandidates")));
+  const route = srv.slice(srv.indexOf('app.get("/api/community/list"'),
+                          srv.indexOf('app.get("/api/community/market/:slug"'));
+  check("the admin list reads the chain for the whole page, batched",
+    /readMarkets\(/.test(route) && /stakerCounts\(/.test(route), route.slice(0, 200));
+  check("...and sends poolSol, bettors and unreadable",
+    /poolSol/.test(route) && /bettors/.test(route) && /unreadable/.test(route));
 }
 
 console.log(failures === 0 ? "\nall tool checks passed.\n" : `\n${failures} tool check(s) FAILED.\n`);
