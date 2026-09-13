@@ -305,6 +305,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   color:var(--fg-3);text-decoration:underline;text-underline-offset:3px}
 .idstrip__out:hover{color:var(--pink)}
 .idstrip__out:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
+/* The way back to what happened, at the foot of the money. Quiet: it is a
+   door, not an action. */
+.recordline{margin:18px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase}
+.recordline a{color:var(--fg-3)}
+.recordline a:hover{color:var(--fg)}
 /* The masthead's handle chip links to this very page and restates the strip
    under the heading. The ask state (Connect X) and the money state (N to
    collect) are different things and stay. */
@@ -604,8 +610,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       line = "That side did not come in, so there is nothing from the pool. Your position deposit is still"
         + " sitting there though, and collecting gives it back.";
     }
-    box.innerHTML = "<h2>" + esc(head) + "</h2><p>" + esc(line) + "</p>"
-      + '<a class="go" href="#collect">See what is waiting</a>';
+    box.innerHTML = "<h2>" + esc(head) + "</h2><p>" + esc(line) + "</p>";
     box.hidden = false;
 
     var did = (window.OddieId && window.OddieId.get()) || "";
@@ -1208,6 +1213,17 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       }
 
       html += feesSection(fees, true);
+
+      /* WHERE WHAT YOU JUST COLLECTED WENT.
+         Collecting emptied this page: the section vanished, the empty state
+         said "nothing riding yet", and the only page that still knew what had
+         happened was linked from a dialog the reader had already closed. One
+         line, always true whatever state the page is in, at the foot of the
+         money rather than inside any one section of it. */
+      if (myPk) {
+        html += '<p class="recordline"><a href="/w/' + encodeURIComponent(myPk)
+          + '">Your whole record &rarr;</a></p>';
+      }
 
       view.innerHTML = html;
 
