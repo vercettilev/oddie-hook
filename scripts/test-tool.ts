@@ -126,6 +126,11 @@ console.log("\nthe detail panel: the screen that settles real money");
     /detail\.creatorFeeBps/.test(route));
   check("a pool with no winners previews as a full refund, no fee",
     /winningLam === 0 \? poolLam/.test(route));
+  // chain_entry files a wallet under the side of its FIRST stake, so counting
+  // winners from it said "pays 0.192 SOL to 0 wallets" on a market where one
+  // wallet held 0.1 on each side: a payout with nobody to pay.
+  check("winners are counted from the position accounts, not the first-stake stamp",
+    /const holds = /.test(route) && /stakes\.get\(w\)/.test(route), route.slice(route.indexOf("const wallets"), route.indexOf("const wallets") + 200));
 }
 
 console.log(failures === 0 ? "\nall tool checks passed.\n" : `\n${failures} tool check(s) FAILED.\n`);

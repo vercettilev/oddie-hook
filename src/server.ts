@@ -3439,7 +3439,20 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   // is the program's rule (lib.rs: winning_total == 0 -> both fees zero).
   const payout = (winningLam: number) =>
     winningLam === 0 ? poolLam : poolLam - Math.floor((poolLam * feeBps) / 10_000);
-  const wallets = (side: "yes" | "no") => new Set(entries.filter((e) => e.side === side).map((e) => e.wallet));
+  /* WHO WINS IS A QUESTION ONLY THE POSITION ACCOUNT CAN ANSWER.
+     chain_entry keeps one row per wallet per market carrying the side of their
+     FIRST stake, so a wallet sitting on both sides is filed under one of them.
+     Counting winners from that said "pays 0.192 SOL to 0 wallets" on a market
+     where the same wallet held 0.1 on each side: a payout with nobody to pay.
+     Every participating wallet does appear in chain_entry exactly once, so the
+     SET is complete and only the side is unreliable; the Position account has
+     both legs, and chain_entry's side is the fallback when it cannot be read. */
+  const holds = (w: string, side: "yes" | "no", stamped: "yes" | "no") => {
+    const p = stakes.get(w);
+    return p ? (side === "yes" ? p.yes > 0 : p.no > 0) : stamped === side;
+  };
+  const wallets = (side: "yes" | "no") =>
+    new Set(entries.filter((e) => holds(e.wallet, side, e.side)).map((e) => e.wallet));
   const yesW = wallets("yes"), noW = wallets("no");
 
   const positions = shown.map((e) => ({
