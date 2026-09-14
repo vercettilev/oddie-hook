@@ -83,7 +83,8 @@
     "peek-mentions": "tsx scripts/peek-mentions.ts",
     "peek-price": "tsx scripts/peek-price.ts",
     "test-price": "tsx scripts/test-price.ts",
-    "try-price-claim": "tsx scripts/try-price-claim.ts"
+    "try-price-claim": "tsx scripts/try-price-claim.ts",
+    "peek-coverage": "tsx scripts/peek-coverage.ts"
   },
   "engines": {
     "node": ">=20"

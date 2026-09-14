@@ -69,9 +69,40 @@ export class NotFound extends Error {}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function getJson(url: string, tries = 3): Promise<any> {
+/* THE FREE TIER'S RATE LIMIT IS THE REAL CONSTRAINT, not coverage.
+   Measured 2026-09-14: of eight small Solana tokens probed, four came back with
+   candles and the other four came back 429 -- every single failure was the rate
+   limit, none was a missing token. A $4,885 market cap pump.fun coin had 183
+   hourly candles. So the source knows these tokens fine, and the only way to
+   lose them is to ask too fast.
+
+   Which the oracle would: it sweeps the whole board in one pass. Hence one
+   queue, module-wide, with a floor on the gap between GeckoTerminal calls. It
+   makes a sweep slower and it makes it work. DexScreener is not queued; its
+   limit is an order of magnitude higher and it is called once per market ever,
+   at creation. */
+const GT_MIN_GAP_MS = 2200;
+let gtQueue: Promise<unknown> = Promise.resolve();
+let gtLast = 0;
+function gtSlot(): Promise<void> {
+  const mine = gtQueue.then(async () => {
+    const wait = GT_MIN_GAP_MS - (Date.now() - gtLast);
+    if (wait > 0) await sleep(wait);
+    gtLast = Date.now();
+  });
+  gtQueue = mine.catch(() => {});
+  return mine;
+}
+
+/** Longer than the usual couple of goes, because a 429 here is ordinary and the
+ *  alternative to waiting is telling somebody their market cannot be settled. */
+const BACKOFF_MS = [2_000, 5_000, 10_000];
+
+async function getJson(url: string, tries = 4): Promise<any> {
+  const queued = url.startsWith(GECKOTERMINAL);
   let last: Error = new Error("never ran");
   for (let i = 0; i < tries; i++) {
+    if (queued) await gtSlot();
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), FEED_TIMEOUT_MS);
     try {
@@ -85,7 +116,7 @@ async function getJson(url: string, tries = 3): Promise<any> {
     } catch (e) {
       if (e instanceof NotFound) throw e;
       last = e as Error;
-      if (i < tries - 1) await sleep(1500 * (i + 1));
+      if (i < tries - 1) await sleep(BACKOFF_MS[Math.min(i, BACKOFF_MS.length - 1)]);
     } finally {
       clearTimeout(t);
     }
