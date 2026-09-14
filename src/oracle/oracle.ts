@@ -27,6 +27,7 @@
 import { auditCitations, auditSupports, type AuditResult } from "./audit.js";
 import { runPropose, type Proposal, type Side } from "./verdict.js";
 import { messagesUrl, authHeaders, MODEL } from "../inference.js";
+import { checkPrice, type PriceCheck } from "../price/index.js";
 
 const VERIFY_TIMEOUT_MS = 60_000;
 
@@ -45,6 +46,10 @@ export interface OracleInput {
   question: string;
   criteria: string | null;
   closeTime: string | null;
+  /** Present only on markets opened from a price claim. When it is here, the
+   *  answer is arithmetic over published candles and no model is consulted: see
+   *  the price branch in decide(). */
+  priceCheck?: PriceCheck | null;
 }
 
 export interface OracleDecision {
@@ -58,6 +63,8 @@ export interface OracleDecision {
     | "settled"
     | "no-criteria"
     | "not-closed"
+    | "price-unreadable"
+    | "price-undetermined"
     | "proposer-abstained"
     | "not-checkable"
     | "low-confidence"
@@ -181,6 +188,43 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
     return { ...base, settle: null, gate: "not-closed", reason: `still open until ${m.closeTime}` };
   }
 
+  // Code gate 3. A price market answers itself.
+  //
+  // This branch exists because the claim shape most likely to travel on crypto X
+  // was, until it, the shape this oracle could never close. "$BULLSHIT hits 4m
+  // this month" is not settled by a sentence on a page: the pages that show it
+  // refuse automated readers, which is why extractClaim.ts forbids naming them,
+  // and a model asked to recall a market cap is a model guessing. So the whole
+  // propose/audit/second-read apparatus below is SKIPPED here, not because it is
+  // expensive but because it is the wrong instrument. Published candles and
+  // multiplication are the right one.
+  //
+  // It runs after the close gate and before everything that costs a token: a
+  // settled price market spends nothing at all.
+  if (m.priceCheck) {
+    const v = await checkPrice(m.priceCheck).catch(
+      (e) => ({ outcome: null as null, why: (e as Error).message, observed: null, candles: 0 }),
+    );
+    if (v.outcome === null) {
+      // Two different facts, and they get two different gates because one is
+      // worth trying again in half an hour and the other never will be. A rate
+      // limit is weather; a window the published history does not cover is not.
+      const transient = v.candles === 0;
+      return {
+        ...base,
+        settle: null,
+        gate: transient ? "price-unreadable" : "price-undetermined",
+        reason: v.why,
+      };
+    }
+    return {
+      ...base,
+      settle: v.outcome,
+      gate: "settled",
+      reason: `${v.why}, read from ${v.candles} published candle(s) of ${m.priceCheck.symbol}`,
+    };
+  }
+
   // Whether inference is reachable at all is checked by the proposer itself and
   // reported to the operator by scripts/oracle.ts before the run starts. It was
   // briefly checked HERE too, which quietly made the proposer's test seam
@@ -281,13 +325,13 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
 
 /** Gates decided before a token is spent. Re-asking costs nothing, so they
  *  never back off: decide() will simply re-check for free. */
-const FREE_GATES = new Set<OracleDecision["gate"]>(["no-criteria", "not-closed"]);
+const FREE_GATES = new Set<OracleDecision["gate"]>(["no-criteria", "not-closed", "price-unreadable"]);
 
 /** The model looked and said the QUESTION cannot be checked by anyone. Waiting
  *  does not change that; only a person editing the criteria does. Retrying it
  *  on a schedule buys the same sentence at full price every time, so it stops
  *  and asks for a human instead. */
-const PERMANENT_GATES = new Set<OracleDecision["gate"]>(["not-checkable"]);
+const PERMANENT_GATES = new Set<OracleDecision["gate"]>(["not-checkable", "price-undetermined"]);
 
 /** First retry after six hours, doubling, capped at a week. A market that is
  *  going to resolve usually resolves early; one that has refused six times is

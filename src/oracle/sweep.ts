@@ -16,6 +16,7 @@
  * model and no chain. That is also what makes it testable without either.
  */
 import { shouldRetry, decisionWasPaid, type OracleDecision } from "./oracle.js";
+import type { PriceCheck } from "../price/index.js";
 
 export interface OracleSweepMarket {
   slug: string;
@@ -39,9 +40,9 @@ export interface OracleSweepDeps {
    * were in the database all along. The sweep holds a connection through
    * minutes of model calls, so a mid-run reset is realistic.
    */
-  criteria: (slug: string) => Promise<{ ok: true; criteria: string | null } | { ok: false; error: string }>;
+  criteria: (slug: string) => Promise<{ ok: true; criteria: string | null; priceCheck?: PriceCheck | null } | { ok: false; error: string }>;
   attempt: (slug: string) => Promise<{ lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number }>;
-  decide: (m: { slug: string; question: string; criteria: string | null; closeTime: string | null }, asOf?: Date) => Promise<OracleDecision>;
+  decide: (m: { slug: string; question: string; criteria: string | null; closeTime: string | null; priceCheck?: PriceCheck | null }, asOf?: Date) => Promise<OracleDecision>;
   record: (d: OracleDecision & { paid: boolean }) => Promise<void>;
   /**
    * Null means DRY RUN, and dry run is not a mock: every market is read, every
@@ -113,7 +114,7 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
     }
 
     const d = await deps.decide(
-      { slug: m.slug, question: m.question, criteria: read.criteria, closeTime: m.closesAt },
+      { slug: m.slug, question: m.question, criteria: read.criteria, closeTime: m.closesAt, priceCheck: read.priceCheck ?? null },
       deps.asOf,
     );
     out.decided.push(d);

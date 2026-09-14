@@ -16,6 +16,7 @@
 // with no key the engine is simply unavailable (the /tool UI says so).
 
 import { messagesUrl, authHeaders, inferenceEnabled, API_KEY_ENV, MODEL } from "../inference.js";
+import type { PriceClaim } from "../price/index.js";
 const TIMEOUT_MS = 45_000; // interactive admin paste; opus + thinking is slow but not latency-critical
 
 export const extractEnabled = (): boolean => inferenceEnabled();
@@ -37,6 +38,11 @@ export interface Extraction {
   /** 1–3 sentences: exactly what evidence resolves YES vs NO, and the source to
    *  check. Empty when unresolvable. */
   resolution_criteria: string;
+  /** Set when the claim is about a token's price or market cap. The model says
+   *  WHAT was claimed; it is never asked which token that ticker is, because a
+   *  hallucinated mint is a plausible string that moves money to the wrong
+   *  answer. Identity is resolved from live liquidity in src/price. */
+  price_claim: PriceClaim | null;
   /** The claim's natural deadline as ISO 8601, or null when none is stated. */
   close_time: string | null;
   /** True when close_time was inferred (the claim named no explicit deadline). */
@@ -62,6 +68,7 @@ Return ONLY the structured object. Fields:
 
 - question: a neutral, unambiguous YES/NO question derived from the EXACT claim in dispute — the specific falsifiable assertion, not a vibe paraphrase. Name the concrete subject, threshold, and (if the text implies one) the timeframe. A reader who never saw the tweet must be able to answer it. Leave "" when unresolvable.
 - resolution_criteria: 1–3 sentences stating exactly what evidence settles YES vs NO, and the specific source to check (e.g. "the final score on the Premier League site", "the official announcement on the @company X account", "the BTC/USD close on CoinMarketCap"). Name a source a stranger could go verify, and prefer one whose page can simply be opened and read: a public article, an official results page, a documentation page, a plain API endpoint. Sites that refuse automated readers (Reuters, Coinbase, DexScreener, Binance, CoinGecko's web pages) cannot be checked later, however respectable they are. Leave "" when unresolvable.
+- price_claim: fill this ONLY when the claim is about the PRICE or MARKET CAP of a token named by its ticker (e.g. "$BULLSHIT hits 4m this month", "$WIF stays under a dollar all week", "$BONK does 2x by Friday"). Otherwise return null. Give: symbol (the ticker WITHOUT the $), metric ("mc" for market cap, "price" for unit price), op (">=", ">", "<=", "<"), target (the number in PLAIN USD — "4m" is 4000000, "50 cents" is 0.5), and mode ("touch" if reaching the level at ANY moment counts, which is what "hits"/"does"/"gets to" mean; "at-close" if only the value on the deadline counts, which is what "will be above X on <date>" means; "always" if the claim is that it holds the whole time, which is what "stays under"/"holds above" mean). NEVER guess a contract or mint address — you are not asked for one and must not invent one. When you fill price_claim you may leave resolution_criteria "": the criteria for these are written from the token itself, not by you. Still write the question and the close_time as normal.
 - close_time: the claim's natural deadline in ISO 8601 (e.g. "2026-08-01T23:59:00Z"), computed RELATIVE TO the current date/time given in the user message. It must be in the FUTURE — never output a past date, and get the YEAR right by anchoring to the current date provided ("tonight" = later today, "this week" = within 7 days of now, etc.). If the text states or clearly implies a deadline, use it. If not, BIAS TOWARD THE SHORTEST REASONABLE WINDOW the claim supports, and set close_time_inferred true — a market that resolves soon brings the person back for the result; one that resolves in months kills the loop. Concretely: hours to a few days for anything time-sensitive (a game, a launch, a price move, "today/this week"); a week or two only when the claim genuinely needs it; do NOT infer months. Reserve far-out deadlines for claims that explicitly carry one ("by end of year", "in 2027", "before the election"). When unsure between a shorter and a longer window, choose the shorter. Use null only when no timeframe is possible at all (which usually also means unresolvable). NEVER output a close_time earlier than the current date/time in the user message: relative words take their meaning from THAT date and not from your own sense of the present, so if the user message says 2026-09-12 then "this year" ends 2026-12-31, "by year end" is 2026-12-31 and "next year" is 2027. Before you answer, compare the year you wrote against the year in the user message; if it is smaller, you got it wrong.
 - close_time_inferred: true if you chose the deadline rather than reading it from the text.
 - category: one of Crypto, Sports, Politics, Culture, Tech — the single best fit. There is no "Other". If nothing fits, that is itself a sign the claim may not be a clean market.
@@ -92,6 +99,18 @@ const SCHEMA = {
   properties: {
     question: { type: "string" },
     resolution_criteria: { type: "string" },
+    price_claim: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      properties: {
+        symbol: { type: "string" },
+        metric: { type: "string", enum: ["mc", "price"] },
+        op: { type: "string", enum: [">=", ">", "<=", "<"] },
+        target: { type: "number" },
+        mode: { type: "string", enum: ["touch", "at-close", "always"] },
+      },
+      required: ["symbol", "metric", "op", "target", "mode"],
+    },
     close_time: { type: ["string", "null"] },
     close_time_inferred: { type: "boolean" },
     category: { type: "string", enum: EXTRACT_CATEGORIES as unknown as string[] },
@@ -104,6 +123,7 @@ const SCHEMA = {
   required: [
     "question",
     "resolution_criteria",
+    "price_claim",
     "close_time",
     "close_time_inferred",
     "category",
@@ -211,6 +231,7 @@ function normalize(v: Record<string, unknown>): Extraction {
   let question = str(v.question).slice(0, 180); // 180 = the on-chain question limit
   let resolution_criteria = str(v.resolution_criteria).slice(0, 600);
   const close_time = typeof v.close_time === "string" && v.close_time.trim() ? v.close_time.trim() : null;
+  const price_claim = parsePriceClaim(v.price_claim);
 
   // Appropriateness gate: separate from resolvability, either one blocks. Fail
   // closed on a non-true value.
@@ -237,6 +258,7 @@ function normalize(v: Record<string, unknown>): Extraction {
   return {
     question,
     resolution_criteria,
+    price_claim: blocked ? null : price_claim,
     close_time,
     close_time_inferred: Boolean(v.close_time_inferred),
     category,
@@ -245,6 +267,31 @@ function normalize(v: Record<string, unknown>): Extraction {
     reason,
     hook,
   };
+}
+
+/**
+ * A price claim, or nothing. Every field is re-checked here rather than trusted
+ * from the schema: structured output guarantees the SHAPE, not that the numbers
+ * mean anything, and this one decides which token a market settles against.
+ *
+ * The ticker is deliberately narrow. A symbol with punctuation or spaces in it
+ * is not a ticker, it is the model having improvised, and the safe answer to
+ * that is no price market rather than a lookup on a made-up string.
+ */
+function parsePriceClaim(raw: unknown): PriceClaim | null {
+  if (!raw || typeof raw !== "object") return null;
+  const v = raw as Record<string, unknown>;
+  const symbol = String(v.symbol ?? "").replace(/^\$/, "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{2,16}$/.test(symbol)) return null;
+  const metric = v.metric === "price" ? "price" : v.metric === "mc" ? "mc" : null;
+  if (!metric) return null;
+  const op = v.op === ">=" || v.op === ">" || v.op === "<=" || v.op === "<" ? v.op : null;
+  if (!op) return null;
+  const target = typeof v.target === "number" ? v.target : Number(v.target);
+  if (!Number.isFinite(target) || target <= 0) return null;
+  const mode = v.mode === "touch" || v.mode === "at-close" || v.mode === "always" ? v.mode : null;
+  if (!mode) return null;
+  return { symbol, metric, op, target, mode };
 }
 
 type ExtractFn = typeof extractClaim;

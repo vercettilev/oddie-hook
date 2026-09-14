@@ -116,7 +116,7 @@ const result = await oracleSweep({
   criteria: async (slug) => {
     try {
       const d = await communityMarketDetail(slug);
-      return { ok: true as const, criteria: d?.resolutionCriteria ?? null };
+      return { ok: true as const, criteria: d?.resolutionCriteria ?? null, priceCheck: d?.priceCheck ?? null };
     } catch (e) {
       return { ok: false as const, error: (e as Error).message };
     }

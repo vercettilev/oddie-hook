@@ -22,6 +22,7 @@
  */
 
 import type { Extraction } from "../matching/extractClaim.js";
+import type { PriceClaim } from "../price/index.js";
 import type { Mention } from "./client.js";
 import { buildRefusalReply, buildTweetReply } from "../matching/tweetReply.js";
 import { claimMention, settleMention, botStateGet, botStateSet, PERSISTENT } from "../store/markets.js";
@@ -52,6 +53,9 @@ export interface SweepDeps {
     taggerHandle: string | null;
     category?: string;
     resolutionCriteria?: string | null;
+    /** Set when the tag was about a token's price. The opener pins the ticker to
+     *  a specific mint; this loop only carries what the model read. */
+    priceClaim?: PriceClaim | null;
     resolvability?: string | null;
     /** The extraction's short headline, carried so the app can show the same
      *  punchy line this loop already puts in the reply. */
@@ -570,6 +574,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         sourceUrl,
         category: ex.category,
         resolutionCriteria: ex.resolution_criteria || null,
+        priceClaim: ex.price_claim,
         resolvability: ex.resolvability,
         hook: ex.hook || null,
       });

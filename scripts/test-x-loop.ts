@@ -52,6 +52,7 @@ const mention = (id: string, over: Partial<Mention> = {}): Mention => ({
 const goodExtraction = (q: string): Extraction => ({
   question: q,
   resolution_criteria: "Coinbase BTC-USD daily close.",
+  price_claim: null,
   close_time: "2027-01-01T00:00:00Z",
   close_time_inferred: false,
   category: "Crypto",

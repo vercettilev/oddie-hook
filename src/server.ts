@@ -26,6 +26,7 @@ import { oracleAvailable } from "./oracle/verdict.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
+import { resolvePriceClaim, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
@@ -2749,6 +2750,10 @@ async function openMarketFromClaim(input: {
   yesPct?: number;
   resolutionCriteria?: string | null;
   resolvability?: string | null;
+  /** Set when the claim was about a token's price or market cap. The ticker is
+   *  resolved to a specific token HERE, once, and frozen onto the market: see
+   *  the block below. */
+  priceClaim?: PriceClaim | null;
   /** extractClaim's short headline. Carried so the app can show the same
    *  punchy line the tweet does; the question stays the terms. */
   hook?: string | null;
@@ -2821,6 +2826,39 @@ async function openMarketFromClaim(input: {
   const creatorWallet = isValidPubkeyString(input.creatorWallet) ? input.creatorWallet : null;
   const creatorFeeBps = creatorWallet ? CREATOR_FEE_BPS_REAL : creatorFeeBpsForHandle(payeeHandle);
 
+  /* PRICE CLAIMS GET THEIR TOKEN PINNED HERE, BEFORE ANYTHING IS MINTED.
+     Three things happen in this block and each one is load-bearing.
+
+     ONE: the ticker becomes a mint. Fifteen tokens answer to BULLSHIT on
+     DexScreener right now, so a market that stored only "$BULLSHIT" would be
+     settled later against whichever one happened to be biggest that day. The
+     mint, the pool and the supply are decided once, in front of the people
+     about to bet, and the settle path never looks the symbol up again.
+
+     TWO: the window starts NOW, not at the start of whatever month the tweet
+     said. Backdating it would let somebody tag a level the token already
+     touched and open a market that was already decided, which is not a market.
+
+     THREE: the criteria we write REPLACE the model's. extractClaim is told it
+     may leave them empty for these, because the sources that show a memecoin's
+     market cap are the ones it is forbidden to cite. If the token could not be
+     pinned and the model left nothing, there is no rule to settle by and the
+     market is refused rather than opened blind. */
+  let priceCheck: PriceCheck | null = null;
+  let criteria = resolutionCriteria;
+  if (input.priceClaim) {
+    const r = await resolvePriceClaim(input.priceClaim, {
+      from: new Date().toISOString(),
+      to: new Date(closeTime * 1000).toISOString(),
+    });
+    if (r.ok) {
+      priceCheck = r.check;
+      criteria = r.sentence;
+    } else if (!criteria) {
+      return bad(422, `this price claim could not be pinned to a token: ${r.why}`);
+    }
+  }
+
   // The vault comes first. Written the other way round, a Solana failure
   // returned "was not published" to the caller while the row it had already
   // created went on being served by the feed: a market nobody could ever take a
@@ -2836,7 +2874,7 @@ async function openMarketFromClaim(input: {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
 
-  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria, resolvability, hook: input.hook ?? null, marketId, creatorFeeBps });
+  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria: criteria, resolvability, hook: input.hook ?? null, marketId, creatorFeeBps, priceCheck });
   if (minted) await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
@@ -3085,6 +3123,7 @@ app.post("/api/v1/claims", async (req, res) => {
       sourceUrl: permalink,
       category: ex.category,
       resolutionCriteria: ex.resolution_criteria || null,
+      priceClaim: ex.price_claim,
       resolvability: ex.resolvability,
       hook: ex.hook || null,
       // The caller opened this market, so the caller is owed the 2%. Without
@@ -4811,7 +4850,7 @@ async function sweepOracle(): Promise<void> {
       criteria: async (slug) => {
         try {
           const d = await communityMarketDetail(slug);
-          return { ok: true as const, criteria: d?.resolutionCriteria ?? null };
+          return { ok: true as const, criteria: d?.resolutionCriteria ?? null, priceCheck: d?.priceCheck ?? null };
         } catch (e) {
           return { ok: false as const, error: (e as Error).message };
         }
@@ -4897,6 +4936,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
         taggerHandle: input.taggerHandle ?? null,
         category: input.category,
         resolutionCriteria: input.resolutionCriteria,
+        priceClaim: input.priceClaim ?? null,
         resolvability: input.resolvability,
         hook: input.hook ?? null,
         // The bot is the volume, so the bot is where the rent goes. A tagged

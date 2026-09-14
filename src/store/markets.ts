@@ -11,6 +11,7 @@ import { categorizeText } from "../matching/categorize.js";
 import { Market } from "../venues/types.js";
 import { randomHandle, validateHandle } from "./handles.js";
 import { fetchSourcePost } from "../venues/xOembed.js";
+import type { PriceCheck } from "../price/index.js";
 
 // Slugs are the product. One gets tweeted on day 1 and a stranger opens it on
 // day 6, after however many redeploys happened in between. So they have to
@@ -416,6 +417,13 @@ ALTER TABLE community_market ADD COLUMN IF NOT EXISTS creator_fee_bps integer;
 -- money in is hiding their money. A market with anything in its vault is refused
 -- outright.
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS retired_at timestamptz;
+
+-- Price markets ("$X hits 4m this month") carry the token they were opened
+-- against, frozen at creation. It is stored rather than re-derived because a
+-- ticker is not an identity: fifteen tokens answer to BULLSHIT today, and
+-- looking the symbol up again at settle would let a copycat deployed mid-market
+-- rewrite what everybody bet on. See src/price/index.ts.
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS price_check jsonb;
 
 -- Every extraction, logged for later prompt tuning: the input argument, the
 -- engine's structured output, and (on publish) the operator's final edits.
@@ -3186,6 +3194,8 @@ interface CommunityMeta {
   retiredAt?: string | null;
   /** The rate this market will be minted at. See the DDL note on the column. */
   creatorFeeBps?: number;
+  /** Frozen token identity for price markets. See the DDL note on the column. */
+  priceCheck?: PriceCheck | null;
   /** The wallet named at creation, when there is one. See the DDL note. */
   creatorWallet?: string | null;
 }
@@ -3568,6 +3578,10 @@ export async function createCommunityMarket(input: {
    *  creation. Null for every tag-driven market: those name their creator
    *  later, when the person connects. See the column comment. */
   creatorWallet?: string | null;
+  /** Set only for markets opened from a price claim. Frozen here at creation:
+   *  the oracle settles from this token, not from whatever the ticker resolves
+   *  to later. */
+  priceCheck?: PriceCheck | null;
 }): Promise<{ slug: string; marketId: number; market: Market }> {
   const marketId = input.marketId ?? Date.now(); // unique-per-ms; also the on-chain market_id (u64)
   const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
@@ -3579,6 +3593,7 @@ export async function createCommunityMarket(input: {
   const hook = input.hook?.trim().slice(0, 60) || null;
   const creatorFeeBps = Number.isInteger(input.creatorFeeBps) ? input.creatorFeeBps! : CREATOR_FEE_BPS_REAL;
   const creatorWallet = input.creatorWallet?.trim() || null;
+  const priceCheck = input.priceCheck ?? null;
   const market: Market = {
     venue: "community",
     venueId: String(marketId),
@@ -3594,15 +3609,16 @@ export async function createCommunityMarket(input: {
   if (!PERSISTENT) {
     memCommunity.set(rec.slug, {
       slug: rec.slug, marketId, category, resolvedOutcome: null, onchainPubkey: null, onchainSig: null,
-      resolutionCriteria, resolvability, hook, creatorFeeBps, creatorWallet,
+      resolutionCriteria, resolvability, hook, creatorFeeBps, creatorWallet, priceCheck,
     });
     return { slug: rec.slug, marketId, market };
   }
   await ensureSchema();
   await db().query(
-    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability, hook, creator_fee_bps, creator_wallet)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (slug) DO NOTHING`,
-    [rec.slug, marketId, category, resolutionCriteria, resolvability, hook, creatorFeeBps, creatorWallet],
+    `INSERT INTO community_market (slug, market_id, category, resolution_criteria, resolvability, hook, creator_fee_bps, creator_wallet, price_check)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (slug) DO NOTHING`,
+    [rec.slug, marketId, category, resolutionCriteria, resolvability, hook, creatorFeeBps, creatorWallet,
+     priceCheck ? JSON.stringify(priceCheck) : null],
   );
   return { slug: rec.slug, marketId, market };
 }
@@ -5135,6 +5151,9 @@ export interface CommunityMarketDetail {
   slug: string; question: string; closesAt: string | null; yesPct: number; marketId: number;
   resolvedOutcome: "yes" | "no" | null; onchainPubkey: string | null; onchainSig: string | null;
   resolutionCriteria: string | null; resolvability: string | null;
+  /** Present only on price markets. The oracle settles from this by arithmetic
+   *  over published candles, without consulting a model. */
+  priceCheck?: PriceCheck | null;
   /** Short punchy headline from extraction. Null falls back to question. */
   hook: string | null;
   /** The creator fee this market is (or will be) minted with. Never null: a row
@@ -5162,14 +5181,15 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
       slug, question: rec.market.question, closesAt: rec.market.closesAt, yesPct: rec.market.yesPct,
       marketId: meta.marketId, resolvedOutcome: meta.resolvedOutcome, onchainPubkey: meta.onchainPubkey, onchainSig: meta.onchainSig,
       resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
+      priceCheck: meta.priceCheck ?? null,
       hook: meta.hook ?? null,
       creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
       creatorWallet: meta.creatorWallet ?? null, positions,
     };
   }
   await ensureSchema();
-  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null; creator_wallet: string | null }>(`
-    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.creator_wallet
+  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null; creator_wallet: string | null; price_check: PriceCheck | null }>(`
+    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.creator_wallet, c.price_check
       FROM community_market c JOIN market_slug s ON s.slug = c.slug WHERE c.slug = $1`, [slug]);
   if (!meta.rows.length) return null;
   const m = meta.rows[0];
@@ -5179,6 +5199,7 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
     slug, question: m.question, closesAt: m.closes_at ? m.closes_at.toISOString() : null, yesPct: m.yes_pct,
     marketId: Number(m.market_id), resolvedOutcome: m.resolved_outcome, onchainPubkey: m.onchain_pubkey, onchainSig: m.onchain_sig,
     resolutionCriteria: m.resolution_criteria, resolvability: m.resolvability,
+    priceCheck: m.price_check ?? null,
     hook: m.hook,
     creatorFeeBps: m.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
     creatorWallet: m.creator_wallet,
