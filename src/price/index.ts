@@ -94,6 +94,18 @@ const DAY = 86_400;
 export interface ResolveOk { ok: true; check: PriceCheck; sentence: string }
 export interface ResolveNo { ok: false; why: string }
 
+/** Base58 strings the length of a Solana mint. Deliberately loose: every
+ *  candidate is then verified against the ticker that was actually claimed, so
+ *  a coincidental match cannot become the market's token. Tweet ids and status
+ *  URLs are digits and too short to reach 32 base58 characters. */
+export function mintsIn(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/[1-9A-HJ-NP-Za-km-z]{32,44}/g)) {
+    if (!out.includes(m[0])) out.push(m[0]);
+  }
+  return out.slice(0, 4);
+}
+
 /**
  * Symbol -> a specific token, or a refusal naming what was ambiguous.
  *
@@ -103,10 +115,42 @@ export interface ResolveNo { ok: false; why: string }
 export async function resolvePriceClaim(
   claim: PriceClaim,
   window: { from: string; to: string },
+  opts: { text?: string | null } = {},
 ): Promise<ResolveOk | ResolveNo> {
   const symbol = claim.symbol.replace(/^\$/, "").trim();
   if (!symbol) return { ok: false, why: "no ticker to look up" };
   if (!(claim.target > 0)) return { ok: false, why: "the target is not a positive number" };
+
+  /* AN ADDRESS IN THE TEXT BEATS EVERY HEURISTIC BELOW, and this room pastes
+     addresses constantly. Everything after this point is inference about which
+     token a ticker means -- inference that correctly refuses eleven of thirty
+     measured tickers and still picks a different issuer on some of the rest,
+     because a ticker is not an identity. A contract address IS one. So if the
+     claim carries one, the guessing is skipped entirely.
+
+     It is still VERIFIED rather than trusted: the address must belong to a
+     token whose symbol is the one that was claimed. Otherwise a stray base58
+     string, or a pasted pair address, would quietly become the coin somebody's
+     money settles against. */
+  for (const candidate of opts.text ? mintsIn(opts.text) : []) {
+    let info;
+    try {
+      info = await priceFeed().tokenInfo(CHAIN, candidate);
+    } catch {
+      break; // the source is down; fall through to the search path
+    }
+    if (!info) continue;
+    if (info.symbol.replace(/^\$/, "").toUpperCase() !== symbol.toUpperCase()) continue;
+    if (claim.metric === "mc" && !(info.totalSupply && info.totalSupply > 0)) continue;
+    const pool = info.topPools[0];
+    if (!pool) continue;
+    const named: PriceCheck = {
+      chain: CHAIN, mint: info.mint, symbol: info.symbol.replace(/^\$/, ""), name: info.name, pool,
+      supply: info.totalSupply ?? 0, metric: claim.metric, op: claim.op, target: claim.target,
+      mode: claim.mode, from: window.from, to: window.to,
+    };
+    return { ok: true, check: named, sentence: criteriaSentence(named) };
+  }
 
   /* TWO INDEXES, UNIONED, AND THE UNION IS A SAFETY DEVICE.
      DexScreener's search and GeckoTerminal's search disagree about how many

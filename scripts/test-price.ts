@@ -14,7 +14,7 @@
 if (process.env.DATABASE_URL) { console.error("refusing to run against a database"); process.exit(1); }
 
 import { _setPriceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
-import { resolvePriceClaim, checkPrice, criteriaSentence, type PriceCheck } from "../src/price/index.js";
+import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, type PriceCheck } from "../src/price/index.js";
 import { decide } from "../src/oracle/oracle.js";
 import { _setProposer } from "../src/oracle/verdict.js";
 
@@ -162,6 +162,29 @@ serve(
 r = await resolvePriceClaim(claim(), WINDOW);
 check("a rival the other index can see stops a false-confident match",
   !r.ok && /none of them clearly is the one/.test((r as any).why), r.ok ? (r as any).check.mint : "");
+
+console.log("\nAn address in the text");
+
+// Three tokens that all pass as "TOK" -- the search path would refuse. The
+// address says which one, so it opens.
+serve(
+  [pair({ baseMint: "A1", baseSymbol: "TOK", volumeH24: 500_000 }), pair({ baseMint: "A2", baseSymbol: "TOK", volumeH24: 480_000 })],
+  {
+    A1: info({ mint: "A1", symbol: "TOK" }),
+    So11111111111111111111111111111111111111112: info({ mint: "So11111111111111111111111111111111111111112", symbol: "TOK", name: "The one they meant" }),
+  },
+);
+r = await resolvePriceClaim(claim(), WINDOW);
+check("without an address, look-alikes refuse", !r.ok, r.ok ? (r as any).check.mint : "");
+r = await resolvePriceClaim(claim(), WINDOW, { text: "$TOK hits 4m this month, CA So11111111111111111111111111111111111111112" });
+check("an address in the text pins the token outright",
+  r.ok && r.check.mint === "So11111111111111111111111111111111111111112", r.ok ? "" : (r as any).why);
+
+// A pasted address for a DIFFERENT coin must not become this market's token.
+r = await resolvePriceClaim(claim(), WINDOW, { text: "compare it to 4nKiBzUscGCKkEpz1Jz8upgbaRySigVF94FcDZ6RN5u5 lol" });
+check("an address whose token is not the claimed ticker is ignored", !r.ok, r.ok ? (r as any).check.mint : "");
+
+check("a tweet id is never mistaken for a mint", mintsIn("https://x.com/a/status/1966549201234567890").length === 0);
 
 console.log("\nReading the window");
 

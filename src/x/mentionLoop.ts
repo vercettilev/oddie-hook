@@ -56,6 +56,9 @@ export interface SweepDeps {
     /** Set when the tag was about a token's price. The opener pins the ticker to
      *  a specific mint; this loop only carries what the model read. */
     priceClaim?: PriceClaim | null;
+    /** The words this was graded from, carried only so an address in the tweet
+     *  can pin the token instead of a ticker being guessed at. */
+    claimText?: string | null;
     resolvability?: string | null;
     /** The extraction's short headline, carried so the app can show the same
      *  punchy line this loop already puts in the reply. */
@@ -575,6 +578,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         category: ex.category,
         resolutionCriteria: ex.resolution_criteria || null,
         priceClaim: ex.price_claim,
+        claimText: graded,
         resolvability: ex.resolvability,
         hook: ex.hook || null,
       });

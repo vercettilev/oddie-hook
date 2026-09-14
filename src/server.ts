@@ -2754,6 +2754,9 @@ async function openMarketFromClaim(input: {
    *  resolved to a specific token HERE, once, and frozen onto the market: see
    *  the block below. */
   priceClaim?: PriceClaim | null;
+  /** The words the claim was graded from. Read ONLY to look for a contract
+   *  address: a ticker is not an identity and an address is. */
+  claimText?: string | null;
   /** extractClaim's short headline. Carried so the app can show the same
    *  punchy line the tweet does; the question stays the terms. */
   hook?: string | null;
@@ -2847,10 +2850,11 @@ async function openMarketFromClaim(input: {
   let priceCheck: PriceCheck | null = null;
   let criteria = resolutionCriteria;
   if (input.priceClaim) {
-    const r = await resolvePriceClaim(input.priceClaim, {
-      from: new Date().toISOString(),
-      to: new Date(closeTime * 1000).toISOString(),
-    });
+    const r = await resolvePriceClaim(
+      input.priceClaim,
+      { from: new Date().toISOString(), to: new Date(closeTime * 1000).toISOString() },
+      { text: input.claimText ?? null },
+    );
     if (r.ok) {
       priceCheck = r.check;
       criteria = r.sentence;
@@ -3124,6 +3128,7 @@ app.post("/api/v1/claims", async (req, res) => {
       category: ex.category,
       resolutionCriteria: ex.resolution_criteria || null,
       priceClaim: ex.price_claim,
+      claimText,
       resolvability: ex.resolvability,
       hook: ex.hook || null,
       // The caller opened this market, so the caller is owed the 2%. Without
@@ -4937,6 +4942,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
         category: input.category,
         resolutionCriteria: input.resolutionCriteria,
         priceClaim: input.priceClaim ?? null,
+        claimText: input.claimText ?? null,
         resolvability: input.resolvability,
         hook: input.hook ?? null,
         // The bot is the volume, so the bot is where the rent goes. A tagged
