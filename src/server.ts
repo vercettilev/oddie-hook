@@ -14,6 +14,7 @@ import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
   savePushSubscription, pushSubscriptionsFor, dropPushSubscription } from "./store/markets.js";
 import { sendPush, vapidFromEnv } from "./push/webpush.js";
+import { findDuplicate } from "./matching/duplicate.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
 import { adoptSurfacedMarkets, recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
@@ -2675,7 +2676,11 @@ function recordHit(key: string, windowMs: number): void {
 type OpenMarketResult =
   // `onchain` is null for a market opened on-demand: the row exists, the rent
   // has not been spent, and ensureMinted spends it when somebody turns up.
-  | { ok: true; slug: string; marketId: number; onchain: { pubkey: string; explorer: string; signature: string } | null }
+  | { ok: true; slug: string; marketId: number; onchain: { pubkey: string; explorer: string; signature: string } | null;
+      /** Set when nothing was opened because this claim already had a market.
+       *  The slug above is that market's: every caller then links the one that
+       *  exists instead of minting a twin beside it. */
+      existed?: true }
   | { ok: false; status: number; error: string };
 
 /**
@@ -2861,6 +2866,25 @@ async function openMarketFromClaim(input: {
     } else if (!criteria) {
       return bad(422, `this price claim could not be pinned to a token: ${r.why}`);
     }
+  }
+
+  /* ALREADY A MARKET? Then this is that market, and nothing is minted.
+     Checked HERE rather than in the mention loop because the loop's own check
+     is keyed on the source POST, which cannot see two different tweets making
+     the same claim -- and that is precisely how the live board ended up with
+     Saylor's "will BTC reach 100k" and @Bitcoin's "will BTC reach 100k" open
+     beside each other, splitting one crowd across two pools. Every opener comes
+     through this function, so every opener gets the check. */
+  const openNow = await adminListCommunity().catch(() => [] as Awaited<ReturnType<typeof adminListCommunity>>);
+  const twin = await findDuplicate(
+    { question, closesAt: new Date(closeTime * 1000).toISOString(), priceCheck },
+    openNow
+      .filter((m) => !m.resolvedOutcome && !m.retiredAt)
+      .map((m) => ({ slug: m.slug, question: m.question, closesAt: m.closesAt, priceCheck: m.priceCheck ?? null })),
+  ).catch(() => null);
+  if (twin) {
+    void logExtraction("duplicate", question, { slug: twin.slug, question, existing: twin.question });
+    return { ok: true, slug: twin.slug, marketId: 0, onchain: null, existed: true };
   }
 
   // The vault comes first. Written the other way round, a Solana failure

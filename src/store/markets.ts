@@ -3177,6 +3177,9 @@ export type CommunityMarket = Market & {
    *  so the feed shows the fee actually charged, without a second lookup
    *  that can be empty or fail. */
   creatorFeeBps: number;
+  /** Carried on the list so the duplicate check can compare price markets
+   *  structurally without a per-row lookup. Null on every other market. */
+  priceCheck?: PriceCheck | null;
 };
 
 interface CommunityMeta {
@@ -4692,7 +4695,7 @@ export async function usersActivity(): Promise<UserActivity[]> {
  *  operator's final, possibly-edited values at create time). Best-effort: a log
  *  failure must never block extraction or market creation. */
 const memExtractionLog: { kind: string; input: string; output: unknown; createdAt: string }[] = [];
-export async function logExtraction(kind: "extract" | "match" | "publish", input: string, output: unknown): Promise<void> {
+export async function logExtraction(kind: "extract" | "match" | "publish" | "duplicate", input: string, output: unknown): Promise<void> {
   try {
     if (!PERSISTENT) {
       memExtractionLog.push({ kind, input, output, createdAt: new Date().toISOString() });
@@ -5024,6 +5027,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
         resolutionCriteria: meta.resolutionCriteria, resolvability: meta.resolvability,
         hook: meta.hook ?? null,
         creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+        priceCheck: meta.priceCheck ?? null,
       });
     }
     return out;
@@ -5033,17 +5037,18 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
     venue_id: string; question: string; yes_pct: number; closes_at: Date | null; volume_usd: number; venue_url: string;
     market_id: string; category: string; onchain_pubkey: string | null; onchain_sig: string | null;
     resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null;
+    price_check: PriceCheck | null;
     yes_pool: number; no_pool: number;
   }>(`
     SELECT s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps,
+           c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.price_check,
            count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes' AND mc.closed_at IS NULL)::int AS yes_pool,
            count(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no'  AND mc.closed_at IS NULL)::int AS no_pool
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
      WHERE c.resolved_outcome IS NULL AND c.retired_at IS NULL
      GROUP BY s.venue_id, s.question, s.yes_pct, s.closes_at, s.volume_usd, s.venue_url,
-              c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.created_at
+              c.market_id, c.category, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.price_check, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
     venue: "community", venueId: r.venue_id, question: r.question, yesPct: crowdPct(r.yes_pct, r.yes_pool, r.no_pool),
@@ -5053,6 +5058,7 @@ export async function openCommunityMarkets(): Promise<CommunityMarket[]> {
     resolutionCriteria: r.resolution_criteria, resolvability: r.resolvability,
     hook: r.hook,
     creatorFeeBps: r.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
+    priceCheck: r.price_check ?? null,
   }));
 }
 
@@ -5072,6 +5078,9 @@ export interface CommunityListItem {
    *  quote the fee it actually charges per market instead of one constant for
    *  the whole response. */
   creatorFeeBps: number;
+  /** Frozen token identity for price markets, so the duplicate check can compare
+   *  two price bets structurally without a lookup per row. Null elsewhere. */
+  priceCheck?: PriceCheck | null;
 }
 
 /** Every community market with resolution + on-chain state + pool totals, for the /tool admin panel. */
@@ -5124,15 +5133,16 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
   const { rows } = await db().query<{
     slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null; hook: string | null; creator_fee_bps: number | null;
     yes_tokens: number; no_tokens: number; yes_players: number; no_players: number; retired_at: Date | null;
+    price_check: PriceCheck | null;
   }>(`
-    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps,
+    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps, c.price_check,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes'), 0)::int AS yes_tokens,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'), 0)::int  AS no_tokens,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes')::int AS yes_players,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'no')::int  AS no_players
       FROM community_market c JOIN market_slug s ON s.slug = c.slug
       LEFT JOIN market_call mc ON mc.slug = c.slug
-     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps, c.created_at
+     GROUP BY c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps, c.price_check, c.created_at
      ORDER BY c.created_at DESC`);
   return rows.map((r) => ({
     slug: r.slug, question: r.question, yesPct: r.yes_pct, resolvedOutcome: r.resolved_outcome,
@@ -5141,6 +5151,7 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
     hook: r.hook,
     retiredAt: r.retired_at ? r.retired_at.toISOString() : null,
     creatorFeeBps: r.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
+    priceCheck: r.price_check ?? null,
   }));
 }
 
