@@ -13,7 +13,7 @@
 // Run with: npm run test-price
 if (process.env.DATABASE_URL) { console.error("refusing to run against a database"); process.exit(1); }
 
-import { _setPriceFeed, type Candle, type Pair, type TokenInfo } from "../src/price/feed.js";
+import { _setPriceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
 import { resolvePriceClaim, checkPrice, criteriaSentence, type PriceCheck } from "../src/price/index.js";
 import { decide } from "../src/oracle/oracle.js";
 import { _setProposer } from "../src/oracle/verdict.js";
@@ -36,9 +36,10 @@ const info = (o: Partial<TokenInfo> & { mint: string }): TokenInfo => ({
 });
 
 /** A feed serving one search result set and one candle list. */
-function serve(pairs: Pair[], infos: Record<string, TokenInfo | null>, candles: Candle[] = [], exhausted = true) {
+function serve(pairs: Pair[], infos: Record<string, TokenInfo | null>, candles: Candle[] = [], exhausted = true, hits: PoolHit[] = []) {
   _setPriceFeed({
     async searchPairs() { return pairs; },
+    async searchPools() { return hits; },
     async tokenInfo(_c, mint) { return infos[mint] ?? null; },
     async ohlcv(_c, _p, _tf, limit) {
       // "exhausted" means the source had nothing older: it returns FEWER rows
@@ -69,7 +70,18 @@ serve(
   { AAA: info({ mint: "AAA" }) },
 );
 let r = await resolvePriceClaim(claim(), WINDOW);
-check("the deepest token wins when it dominates", r.ok && r.check.mint === "AAA", r.ok ? "" : r.why);
+check("the most traded token wins when it dominates", r.ok && r.check.mint === "AAA", r.ok ? "" : r.why);
+
+// The pool the candles come from is the busiest one, not the deepest.
+serve(
+  [
+    pair({ baseMint: "AAA", baseSymbol: "TOK", pairAddress: "deep-dead", liquidityUsd: 900_000, volumeH24: 100 }),
+    pair({ baseMint: "AAA", baseSymbol: "TOK", pairAddress: "busy", liquidityUsd: 0, volumeH24: 400_000 }),
+  ],
+  { AAA: info({ mint: "AAA", topPools: [] }) },
+);
+r = await resolvePriceClaim(claim(), WINDOW);
+check("candles are read from the busiest pool, not the deepest", r.ok && r.check.pool === "busy", r.ok ? r.check.pool : (r as any).why);
 
 serve(
   [pair({ baseMint: "AAA", baseSymbol: "TOK", liquidityUsd: 150_000 }), pair({ baseMint: "BBB", baseSymbol: "TOK", liquidityUsd: 100_000 })],
@@ -78,9 +90,12 @@ serve(
 r = await resolvePriceClaim(claim(), WINDOW);
 check("two tokens of similar size under one ticker are refused, not guessed", !r.ok && /none of them clearly is the one/.test((r as any).why));
 
-serve([pair({ baseMint: "AAA", baseSymbol: "TOK", liquidityUsd: 900 })], { AAA: info({ mint: "AAA" }) });
+// Measured: DexScreener reports zero liquidity for pumpswap and bonding-curve
+// pools, so $NVIDA showed 0 depth against $153M of daily volume. A liquidity
+// floor refused the busiest tokens on the chain.
+serve([pair({ baseMint: "AAA", baseSymbol: "TOK", liquidityUsd: 0, volumeH24: 153_000_000 })], { AAA: info({ mint: "AAA" }) });
 r = await resolvePriceClaim(claim(), WINDOW);
-check("a token too thin to price is refused", !r.ok && /too little liquidity|enough real volume/.test((r as any).why));
+check("a heavily traded token whose pool reports no liquidity still opens", r.ok, r.ok ? "" : (r as any).why);
 
 // The measured attack: a billion dollars of posted liquidity and four dollars
 // of actual trading. Ranking by depth handed this token the ticker.
@@ -95,6 +110,7 @@ r = await resolvePriceClaim(claim(), WINDOW);
 check("a fake pool cannot buy a ticker with posted liquidity alone", r.ok && r.check.mint === "REAL", r.ok ? r.check.mint : (r as any).why);
 
 serve([pair({ baseMint: "QUIET", baseSymbol: "TOK", liquidityUsd: 500_000, volumeH24: 40 })], { QUIET: info({ mint: "QUIET" }) });
+// (a deep pool nobody trades is still refused: depth is not the signal)
 r = await resolvePriceClaim(claim(), WINDOW);
 check("a ticker nobody is trading is refused rather than guessed", !r.ok && /enough real volume/.test((r as any).why));
 
@@ -132,6 +148,20 @@ const CHECK: PriceCheck = {
   chain: "solana", mint: "AAA", symbol: "TOK", name: "Token", pool: "pool-AAA", supply: 1_000_000,
   metric: "mc", op: ">=", target: 4_000_000, mode: "touch", from: WINDOW.from, to: WINDOW.to,
 };
+
+// The measured defect: one index sees two GOOGLs and the other sees ten.
+serve(
+  [
+    pair({ baseMint: "ISSUER_A", baseSymbol: "TOK", volumeH24: 34_000_000, liquidityUsd: 0 }),
+    pair({ baseMint: "TINY", baseSymbol: "TOK", volumeH24: 2_800, liquidityUsd: 0 }),
+  ],
+  { ISSUER_A: info({ mint: "ISSUER_A" }), ISSUER_B: info({ mint: "ISSUER_B" }) },
+  [], true,
+  [{ mint: "ISSUER_B", symbol: "TOK", pool: "pool-b", volumeH24: 37_800_000 }],
+);
+r = await resolvePriceClaim(claim(), WINDOW);
+check("a rival the other index can see stops a false-confident match",
+  !r.ok && /none of them clearly is the one/.test((r as any).why), r.ok ? (r as any).check.mint : "");
 
 console.log("\nReading the window");
 

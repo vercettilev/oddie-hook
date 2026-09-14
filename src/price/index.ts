@@ -65,10 +65,14 @@ export interface PriceCheck {
    answered with the wrong coin. */
 const CHAIN = "solana";
 
-/** A token is not identifiable below this much liquidity: the price is whatever
- *  the last trader decided, and the candle history is noise around it. */
-export const MIN_LIQUIDITY_USD = 10_000;
-/** And below this much real trading it is not the token anybody meant. */
+/* LIQUIDITY IS NOT A GATE HERE, AND MEASURING IT IS WHY.
+   DexScreener reports liquidity.usd as 0 for pumpswap and several bonding-curve
+   pools -- the exact venues Solana memecoins are born on. $NVIDA, doing
+   $153,248,387 of volume in twenty-four hours, reports zero liquidity on its
+   main pool. A floor on that field therefore refused the most heavily traded
+   tokens on the chain while letting quiet ones through, which is backwards. The
+   field is used only where it exists and never to reject. Volume is reported
+   everywhere and is the harder number to fake, so it carries the gate alone. */
 export const MIN_VOLUME_24H_USD = 10_000;
 /** The leader must be this many times the runner-up. 15 tokens answer to
  *  "BULLSHIT" and 21 to "WIF"; picking among them by a nose would mean settling
@@ -104,24 +108,39 @@ export async function resolvePriceClaim(
   if (!symbol) return { ok: false, why: "no ticker to look up" };
   if (!(claim.target > 0)) return { ok: false, why: "the target is not a positive number" };
 
-  let pairs;
+  /* TWO INDEXES, UNIONED, AND THE UNION IS A SAFETY DEVICE.
+     DexScreener's search and GeckoTerminal's search disagree about how many
+     tokens answer to a ticker, and measuring that disagreement is what exposed
+     the real defect. Searching "GOOGL" on DexScreener returns two Solana
+     tokens, one of them 12,000x the other, so the dominance test below passed
+     and a market opened. GeckoTerminal returns TEN, three of them within 10% of
+     each other at $34-38M of daily volume apiece. The ticker never identified a
+     token; one index simply could not see that.
+
+     Unioning is fail-safe by construction: more candidates can only make
+     dominance harder to reach, never easier. A token that still dominates the
+     union dominates everything either source knows about. */
+  let pairs, hits;
   try {
-    pairs = await priceFeed().searchPairs(symbol);
+    [pairs, hits] = await Promise.all([priceFeed().searchPairs(symbol), priceFeed().searchPools(symbol)]);
   } catch (e) {
     return { ok: false, why: `the token search failed: ${(e as Error).message}` };
   }
 
   // One entry per token: volume and liquidity summed across its pools, deepest
   // pool kept as the one to read history from.
-  const byMint = new Map<string, { chain: string; mint: string; name: string; symbol: string; liq: number; vol: number; mc: number | null; fdv: number | null; pool: string; poolLiq: number }>();
+  const byMint = new Map<string, { chain: string; mint: string; name: string; symbol: string; liq: number; vol: number; mc: number | null; fdv: number | null; pool: string; poolVol: number }>();
   for (const p of pairs) {
     if (p.chainId !== CHAIN) continue;
     if (p.baseSymbol.replace(/^\$/, "").toUpperCase() !== symbol.toUpperCase()) continue;
     const key = `${p.chainId}:${p.baseMint}`;
-    const e = byMint.get(key) ?? { chain: p.chainId, mint: p.baseMint, name: p.baseName, symbol: p.baseSymbol, liq: 0, vol: 0, mc: p.marketCap, fdv: p.fdv, pool: "", poolLiq: -1 };
+    const e = byMint.get(key) ?? { chain: p.chainId, mint: p.baseMint, name: p.baseName, symbol: p.baseSymbol, liq: 0, vol: 0, mc: p.marketCap, fdv: p.fdv, pool: "", poolVol: -1 };
     e.liq += p.liquidityUsd;
     e.vol += p.volumeH24;
-    if (p.liquidityUsd > e.poolLiq) { e.poolLiq = p.liquidityUsd; e.pool = p.pairAddress; }
+    // The pool to read candles from is the BUSIEST, not the deepest, for the
+    // same reason: depth reads 0 on the venues that matter and picking by it
+    // chose an arbitrary dead pool whose candles say nothing.
+    if (p.volumeH24 > e.poolVol) { e.poolVol = p.volumeH24; e.pool = p.pairAddress; }
     if (e.mc === null) e.mc = p.marketCap;
     if (e.fdv === null) e.fdv = p.fdv;
     byMint.set(key, e);
@@ -143,15 +162,29 @@ export async function resolvePriceClaim(
      still buy volume. What stands behind this is that the chosen mint is printed
      in the criteria on the market page, so anybody staking can see which coin
      they are staking on before they do it. */
+  // The candle source's own view, merged in. Volume is taken as the MAX of what
+  // the two report rather than the sum: they index the same pools, so adding
+  // them would double-count a token into looking dominant.
+  for (const h of hits) {
+    if (h.symbol.replace(/^\$/, "").toUpperCase() !== symbol.toUpperCase()) continue;
+    const key = `${CHAIN}:${h.mint}`;
+    const e = byMint.get(key);
+    if (!e) {
+      byMint.set(key, { chain: CHAIN, mint: h.mint, name: h.symbol, symbol: h.symbol, liq: 0, vol: h.volumeH24, mc: null, fdv: null, pool: h.pool, poolVol: h.volumeH24 });
+      continue;
+    }
+    e.vol = Math.max(e.vol, h.volumeH24);
+    // Prefer a pool the candle source itself named: reading history from a pool
+    // that index does not know is how a market ends up with no candles at all.
+    if (h.volumeH24 >= e.poolVol) { e.poolVol = h.volumeH24; e.pool = h.pool; }
+  }
+
   const ranked = [...byMint.values()].sort((a, b) => b.vol - a.vol);
   if (ranked.length === 0) return { ok: false, why: `no Solana token trading as $${symbol} was found` };
 
   const top = ranked[0];
   if (top.vol < MIN_VOLUME_24H_USD) {
     return { ok: false, why: `nothing trading as $${symbol} has enough real volume to say which one is meant` };
-  }
-  if (top.liq < MIN_LIQUIDITY_USD) {
-    return { ok: false, why: `$${symbol} has too little liquidity to price reliably` };
   }
   const second = ranked[1];
   if (second && top.vol < second.vol * DOMINANCE) {

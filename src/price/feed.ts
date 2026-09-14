@@ -56,8 +56,21 @@ export interface TokenInfo {
 /** One candle: [start (unix seconds), open, high, low, close, volume]. */
 export type Candle = [number, number, number, number, number, number];
 
+/** A candidate from GeckoTerminal's own search: the same index the candles come
+ *  from, which is why its pool address is the one worth keeping. */
+export interface PoolHit {
+  mint: string;
+  symbol: string;
+  pool: string;
+  volumeH24: number;
+}
+
 export interface PriceFeed {
   searchPairs(query: string): Promise<Pair[]>;
+  /** Candidates from the candle source. Separate from searchPairs because the
+   *  two indexes disagree, and the disagreement is the whole point: see the
+   *  union in resolvePriceClaim. */
+  searchPools(query: string): Promise<PoolHit[]>;
   tokenInfo(chain: string, mint: string): Promise<TokenInfo | null>;
   ohlcv(chain: string, pool: string, timeframe: "day" | "hour", limit: number, beforeUnix?: number): Promise<Candle[]>;
 }
@@ -81,6 +94,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
    makes a sweep slower and it makes it work. DexScreener is not queued; its
    limit is an order of magnitude higher and it is called once per market ever,
    at creation. */
+const CHAIN_GT = "solana";
 const GT_MIN_GAP_MS = 2200;
 let gtQueue: Promise<unknown> = Promise.resolve();
 let gtLast = 0;
@@ -106,7 +120,10 @@ async function getJson(url: string, tries = 4): Promise<any> {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), FEED_TIMEOUT_MS);
     try {
-      const r = await fetch(url, { signal: ctl.signal, headers: { accept: "application/json" } });
+      // GeckoTerminal answers 403 to some endpoints without a user agent, and it
+      // does it on the pool LIST and SEARCH routes rather than the ones probed
+      // first, so this was invisible until the candidate union went in.
+      const r = await fetch(url, { signal: ctl.signal, headers: { accept: "application/json", "user-agent": "oddie/1.0 (+https://oddie.fun)" } });
       if (r.status === 404) throw new NotFound(`${url} answered 404`);
       // GeckoTerminal's free tier is ~30 calls a minute and the oracle sweeps a
       // whole board in one go, so 429 is an ordinary event here, not an error.
@@ -147,6 +164,26 @@ const liveFeed: PriceFeed = {
         marketCap: num(p.marketCap),
         fdv: num(p.fdv),
       }));
+  },
+
+  async searchPools(query) {
+    let d: any;
+    try {
+      d = await getJson(`${GECKOTERMINAL}/search/pools?query=${encodeURIComponent(query)}&network=${CHAIN_GT}&page=1`);
+    } catch {
+      return [];
+    }
+    const out: PoolHit[] = [];
+    for (const p of (d?.data ?? []) as any[]) {
+      const a = p?.attributes ?? {};
+      const mint = String(p?.relationships?.base_token?.data?.id ?? "").replace(/^[a-z0-9-]+_/i, "");
+      // Pools are named "GOOGL / SOL"; the base side is the token searched for.
+      const symbol = String(a.name ?? "").split("/")[0].trim();
+      const pool = String(a.address ?? "");
+      if (!mint || !symbol || !pool) continue;
+      out.push({ mint, symbol, pool, volumeH24: num(a?.volume_usd?.h24) ?? 0 });
+    }
+    return out;
   },
 
   async tokenInfo(chain, mint) {
