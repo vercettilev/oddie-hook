@@ -56,6 +56,15 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .sub{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.13em;
   text-transform:uppercase;color:var(--fg-3);margin:0 0 28px}
 
+.filter{margin:0 0 18px}
+.filter input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;
+  padding:11px 14px;border:3px solid var(--cream);background:transparent;color:var(--cream);
+  border-radius:0;-webkit-appearance:none}
+/* 16px above is not a taste: anything smaller makes iOS zoom the page on focus. */
+.filter input::placeholder{color:var(--fg-3)}
+.filter input:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+.linky{font:inherit;color:inherit;background:none;border:0;padding:0;
+  text-decoration:underline;cursor:pointer}
 .card{border:3px solid var(--cream);padding:18px 20px 16px;margin:0 0 16px}
 .card__m{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:var(--fg-3);
@@ -196,6 +205,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   box-shadow:7px 8px 0 var(--pink-deep)}
 
 /* ---- list: every market is a sticker on the black field ---- */
+.filter input{border-color:var(--black);color:var(--ink);background:var(--cream)}
+.filter input::placeholder{color:rgba(11,13,4,.5)}
+.filter input:focus-visible{outline-color:var(--pink-deep)}
 .card{background:var(--cream);color:var(--ink);border:3px solid var(--black);
   box-shadow:8px 9px 0 var(--pink-deep);padding:20px 22px 18px;margin:0 0 30px}
 .card:nth-of-type(odd){transform:rotate(-.5deg)}
@@ -367,6 +379,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      true. 5 is GENESIS_TICKETS in src/genesis/season.ts. -->
 <main class="wrap">
   <h1>Open markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
+    <!-- A CONTROL ON A SHORT LIST IS CLUTTER, so this one is hidden until the
+         list is long enough that scanning it beats reading it. See FILTER_FROM
+         in the script: the input only appears above that many markets. -->
+    <form class="filter" id="filter" hidden onsubmit="return false">
+      <input id="q" type="search" autocomplete="off" placeholder="Filter markets" aria-label="Filter markets by word">
+    </form>
     <div id="view"><p class="load">Loading markets…</p></div>
   <!-- MOVED OUT FROM ABOVE THE MASTHEAD. It was a full-bleed pink band sitting
        over the product on every page: the loudest object on the screen, in the
@@ -497,6 +515,166 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
 
+  var MIN_HEADS_LIST = 3;
+  var THIN = 3;
+  var all = [];
+
+  /* SHOWN ONLY WHEN THE LIST IS LONGER THAN THE EYE. Below this, typing is
+     slower than looking, and a search box over five cards is the kind of
+     control that makes a small product look like a form. */
+  var FILTER_FROM = 6;
+  var filterBox = document.getElementById("filter");
+  var q = document.getElementById("q");
+
+  function setFilterVisibility() {
+    filterBox.hidden = all.length < FILTER_FROM;
+    if (filterBox.hidden) q.value = "";
+  }
+
+  /* Matches the question, the headline and the opener's handle -- the three
+     things actually printed on a card. Matching anything a reader cannot see
+     would make results look arbitrary. Every word must hit, so two words
+     narrow instead of widen. */
+  function matches(m, terms) {
+    var hay = ((m.question || "") + " " + (m.hook || "") + " " + (m.taggedBy || "")).toLowerCase();
+    for (var i = 0; i < terms.length; i++) if (hay.indexOf(terms[i]) === -1) return false;
+    return true;
+  }
+
+  function applyFilter() {
+    var terms = q.value.toLowerCase().split(/\s+/).filter(function (t) { return t; });
+    if (!terms.length) { draw(all, false); return; }
+    draw(all.filter(function (m) { return matches(m, terms); }), true);
+  }
+
+  /* DRAWING IS SEPARATE FROM FETCHING, so filtering a list costs nothing
+     and cannot race a request. loadMarkets keeps `all`; this only ever
+     reads it. */
+  function draw(ms, filtering) {
+    if (!ms.length) {
+      /* Two different nothings. "Nothing open yet" is a fact about the
+         product and an invitation; under a filter it is a lie about it, and
+         the reader who typed a word needs the word back, not onboarding. */
+      view.innerHTML = filtering
+        ? '<div class="poster"><h3>Nothing matches that</h3>'
+          + '<p>Try a shorter word, or <button type="button" class="linky" id="clearq">show everything</button>.</p></div>'
+        : '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
+          + '<h3>Nothing open yet</h3>'
+          + '<p>Tag <b>@oddiefun</b> on X, under anything that ends up true or false. '
+          + '<a href="/genesis">How it works</a></p></div>';
+      var cq = document.getElementById("clearq");
+      if (cq) cq.addEventListener("click", function () { q.value = ""; draw(all, false); q.focus(); });
+      return;
+    }
+    view.innerHTML = ms.map(function (m) {
+      var bits = [];
+      // WHO OPENED IT IS THE POINT. This was four grey characters, which is
+      // how a social market reads as a ticker. A pill linked to their X
+      // profile makes the opener a person you can go look at.
+      // Same two words the market page uses: a bare handle beside a countdown
+      // could be the opener, the claim's author, or the person it is about.
+      if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
+      var w = when(m.closesAt);
+      // when() answers "closed" for a past deadline, and the sides now say
+      // that too -- in the place where it decides something. One word, one
+      // place: the time slot keeps "3 hours left" and gives up "closed".
+      if (w && w !== "closed") bits.push(esc(w));
+
+      // The same three-way rule the market page uses. An unreadable pool is
+      // never drawn as an empty one: a card that says "nothing staked" over
+      // real money is the lie this whole read layer exists to stop.
+      var pool = "";
+      if (m.oddsSource === "unreadable") {
+        pool = '<p class="pool pool--quiet">Can\'t read this pool. Your money is safe.</p>';
+      } else if (!m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
+        // Named for what is on offer, not for what is missing. Same sentence
+        // as the market page, so a card and the page it opens agree.
+        pool = '<p class="pool pool--quiet">First one in sets the odds.</p>';
+      } else {
+        var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
+        var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
+        /* toFixed(3) then stripping trailing zeros turns anything under 0.0005
+           SOL into the bare string "0", so a card that exists BECAUSE money
+           is in it announced an empty pool. Floored, not rounded away. */
+        var totSol = tot / 1e9;
+        pool = '<p class="pool"><b>'
+          + (totSol < 0.001 ? "<0.001" : totSol.toFixed(3).replace(/0+$/, "").replace(/\.$/, ""))
+          + "</b> SOL in the pool"
+          // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
+          // parayi yalanlar.
+          + (Number(m.stakers || 0) >= MIN_HEADS_LIST ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
+          + "</p>";
+      }
+      var pct = (m.oddsSource === "vault" && m.yesPct != null) ? m.yesPct : null;
+      var href = "/m/" + encodeURIComponent(m.slug);
+
+      /* A SIDE YOU CANNOT TAKE MUST NOT LOOK TAKEABLE.
+         The list filters on resolved and retired, never on close time, so a
+         market past its deadline sat here with two full-strength buttons and
+         one grey word "closed" beside the opener. The word loses to the
+         buttons. Somebody picked a side, waited through a loading sheet,
+         CONNECTED A WALLET, and was refused at the last step with "Betting on
+         this one has closed."
+         An unreadable pool is the same shape: the sheet refuses it too, with
+         an internal reason code. Neither is a market you can bet on, so
+         neither gets a button.
+         The market page has always done this (market.html:645). It renders a
+         real <button disabled>; here the sides are anchors, and a disabled
+         anchor is not a thing, so an unavailable side becomes a <span> with
+         no href at all. Nothing to tap, nothing to navigate. */
+      var shut = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
+      var blind = m.oddsSource === "unreadable";
+      var offNote = shut ? "closed" : blind ? "can't read this one" : "";
+      function sideEl(side, cls, label, pctText) {
+        var inner = label + (pctText === null ? "" : "<span>" + pctText + "%</span>")
+          + (offNote ? "<small>" + esc(offNote) + "</small>" : "");
+        return offNote
+          ? '<span class="side ' + cls + ' side--off" aria-disabled="true">' + inner + "</span>"
+          : '<a class="side ' + cls + '" data-slug="' + esc(m.slug) + '" data-side="' + side
+            + '" href="' + href + "?side=" + side + '">' + inner + "</a>";
+      }
+      var hook = String(m.hook || "").trim();
+      return '<article class="card">'
+        + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
+        /* Hook varsa baslik odur ve tam soru ALTINDA gorunur kalir; yoksa
+           baslik zaten sorunun kendisidir. data-oddie-question her iki
+           durumda da SORUYU tasiyan elemanda, cunku chain.js onun metnini
+           bahis sheet'ine yaziyor. Tek kopya: ayni soruyu bir gorunur bir
+           gizli olarak iki kere yazmak, ikisinin ayrisabilecegi demektir. */
+        + (hook
+            ? '<h2 class="card__q"><a href="' + href + '">' + esc(hook) + "</a></h2>"
+              + '<p class="card__full" data-oddie-question data-oddie-hook="' + esc(hook)
+              + '" data-slug="' + esc(m.slug) + '">' + esc(m.question) + "</p>"
+            : '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
+              + '<a href="' + href + '">' + esc(m.question) + "</a></h2>")
+        + pool
+        + '<div class="sides">'
+        + sideEl("yes", "side--y", "YES", pct)
+        + sideEl("no", "side--n", "NO", pct === null ? null : 100 - pct)
+        + "</div></article>";
+    }).join("");
+
+    /* WHEN THE LIST IS THIN, THE PAGE STOPS DECORATING AND STARTS ASKING.
+       Measured at 1920 with one market on it: the page was 1352px and the
+       crowd strip was 600 of them -- 44%, two and a half times the height of
+       the only market the product had. A closing illustration is right under
+       a full list and wrong under a short one, where it is simply bigger
+       than the thing it is closing.
+       Under three markets the strip stands down and the space becomes the
+       ask, built as one more card so it reads as the next row rather than a
+       banner. At three the list fills a screen on its own and the strip
+       comes back to close it. */
+    if (!filtering && ms.length < THIN) {
+      view.innerHTML += '<article class="card card--invite">'
+        + '<h2 class="card__q"><a href="/genesis">Open your own</a></h2>'
+        + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
+        + 'Keep <b>2%</b> of its pool.</p></article>';
+      // Two asks under a thin list is one too many, and this one says how.
+      var season = document.getElementById("season");
+      if (season) season.hidden = true;
+    }
+  }
+
   function loadMarkets() {
   /* RETURNS THE PROMISE. It did not, and the first caller that needed to append
      something after the list silently lost it: this function ASSIGNS
@@ -524,122 +702,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          exactly as it does at zero. The share card gates higher, at five, for a
          reason written at MIN_HEADS_CARD - there it is a claim about the
          product to a stranger, here it is inventory to somebody already in. */
-      var MIN_HEADS_LIST = 3;
-      var THIN = 3;
-      if (!ms.length) {
-        view.innerHTML = '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
-          + '<h3>Nothing open yet</h3>'
-          + '<p>Tag <b>@oddiefun</b> on X, under anything that ends up true or false. '
-          + '<a href="/genesis">How it works</a></p></div>';
-        return;
-      }
-      view.innerHTML = ms.map(function (m) {
-        var bits = [];
-        // WHO OPENED IT IS THE POINT. This was four grey characters, which is
-        // how a social market reads as a ticker. A pill linked to their X
-        // profile makes the opener a person you can go look at.
-        // Same two words the market page uses: a bare handle beside a countdown
-        // could be the opener, the claim's author, or the person it is about.
-        if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
-        var w = when(m.closesAt);
-        // when() answers "closed" for a past deadline, and the sides now say
-        // that too -- in the place where it decides something. One word, one
-        // place: the time slot keeps "3 hours left" and gives up "closed".
-        if (w && w !== "closed") bits.push(esc(w));
-
-        // The same three-way rule the market page uses. An unreadable pool is
-        // never drawn as an empty one: a card that says "nothing staked" over
-        // real money is the lie this whole read layer exists to stop.
-        var pool = "";
-        if (m.oddsSource === "unreadable") {
-          pool = '<p class="pool pool--quiet">Can\'t read this pool. Your money is safe.</p>';
-        } else if (!m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
-          // Named for what is on offer, not for what is missing. Same sentence
-          // as the market page, so a card and the page it opens agree.
-          pool = '<p class="pool pool--quiet">First one in sets the odds.</p>';
-        } else {
-          var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
-          var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
-          /* toFixed(3) then stripping trailing zeros turns anything under 0.0005
-             SOL into the bare string "0", so a card that exists BECAUSE money
-             is in it announced an empty pool. Floored, not rounded away. */
-          var totSol = tot / 1e9;
-          pool = '<p class="pool"><b>'
-            + (totSol < 0.001 ? "<0.001" : totSol.toFixed(3).replace(/0+$/, "").replace(/\.$/, ""))
-            + "</b> SOL in the pool"
-            // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
-            // parayi yalanlar.
-            + (Number(m.stakers || 0) >= MIN_HEADS_LIST ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
-            + "</p>";
-        }
-        var pct = (m.oddsSource === "vault" && m.yesPct != null) ? m.yesPct : null;
-        var href = "/m/" + encodeURIComponent(m.slug);
-
-        /* A SIDE YOU CANNOT TAKE MUST NOT LOOK TAKEABLE.
-           The list filters on resolved and retired, never on close time, so a
-           market past its deadline sat here with two full-strength buttons and
-           one grey word "closed" beside the opener. The word loses to the
-           buttons. Somebody picked a side, waited through a loading sheet,
-           CONNECTED A WALLET, and was refused at the last step with "Betting on
-           this one has closed."
-           An unreadable pool is the same shape: the sheet refuses it too, with
-           an internal reason code. Neither is a market you can bet on, so
-           neither gets a button.
-           The market page has always done this (market.html:645). It renders a
-           real <button disabled>; here the sides are anchors, and a disabled
-           anchor is not a thing, so an unavailable side becomes a <span> with
-           no href at all. Nothing to tap, nothing to navigate. */
-        var shut = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
-        var blind = m.oddsSource === "unreadable";
-        var offNote = shut ? "closed" : blind ? "can't read this one" : "";
-        function sideEl(side, cls, label, pctText) {
-          var inner = label + (pctText === null ? "" : "<span>" + pctText + "%</span>")
-            + (offNote ? "<small>" + esc(offNote) + "</small>" : "");
-          return offNote
-            ? '<span class="side ' + cls + ' side--off" aria-disabled="true">' + inner + "</span>"
-            : '<a class="side ' + cls + '" data-slug="' + esc(m.slug) + '" data-side="' + side
-              + '" href="' + href + "?side=" + side + '">' + inner + "</a>";
-        }
-        var hook = String(m.hook || "").trim();
-        return '<article class="card">'
-          + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
-          /* Hook varsa baslik odur ve tam soru ALTINDA gorunur kalir; yoksa
-             baslik zaten sorunun kendisidir. data-oddie-question her iki
-             durumda da SORUYU tasiyan elemanda, cunku chain.js onun metnini
-             bahis sheet'ine yaziyor. Tek kopya: ayni soruyu bir gorunur bir
-             gizli olarak iki kere yazmak, ikisinin ayrisabilecegi demektir. */
-          + (hook
-              ? '<h2 class="card__q"><a href="' + href + '">' + esc(hook) + "</a></h2>"
-                + '<p class="card__full" data-oddie-question data-oddie-hook="' + esc(hook)
-                + '" data-slug="' + esc(m.slug) + '">' + esc(m.question) + "</p>"
-              : '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
-                + '<a href="' + href + '">' + esc(m.question) + "</a></h2>")
-          + pool
-          + '<div class="sides">'
-          + sideEl("yes", "side--y", "YES", pct)
-          + sideEl("no", "side--n", "NO", pct === null ? null : 100 - pct)
-          + "</div></article>";
-      }).join("");
-
-      /* WHEN THE LIST IS THIN, THE PAGE STOPS DECORATING AND STARTS ASKING.
-         Measured at 1920 with one market on it: the page was 1352px and the
-         crowd strip was 600 of them -- 44%, two and a half times the height of
-         the only market the product had. A closing illustration is right under
-         a full list and wrong under a short one, where it is simply bigger
-         than the thing it is closing.
-         Under three markets the strip stands down and the space becomes the
-         ask, built as one more card so it reads as the next row rather than a
-         banner. At three the list fills a screen on its own and the strip
-         comes back to close it. */
-      if (ms.length < THIN) {
-        view.innerHTML += '<article class="card card--invite">'
-          + '<h2 class="card__q"><a href="/genesis">Open your own</a></h2>'
-          + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
-          + 'Keep <b>2%</b> of its pool.</p></article>';
-        // Two asks under a thin list is one too many, and this one says how.
-        var season = document.getElementById("season");
-        if (season) season.hidden = true;
-      }
+      all = ms;
+      draw(ms, false);
+      setFilterVisibility();
 
       /* Ag adi sunucudan gelir, burada tahmin edilmez. Liste yaniti zaten
          cluster tasiyor, yani ekstra bir istek yok. */
@@ -678,6 +743,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   /* Para hareket etti, liste de hareket etsin: chain.js bahis dustugu anda
      bunu firlatiyor ve sunucu o an onbellegini birakiyor, yani yeniden
      okuma bu bahsi de iceriyor. market.html ile ayni sozlesme. */
+  q.addEventListener("input", applyFilter);
+  // Escape clears rather than blurs: the list coming back is what the key is
+  // for, and a cleared box that still holds focus keeps the next word cheap.
+  q.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && q.value) { ev.preventDefault(); q.value = ""; applyFilter(); }
+  });
+
   document.addEventListener("oddie:staked", function () { loadMarkets(); });
 })();
 </script>
