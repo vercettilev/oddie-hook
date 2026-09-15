@@ -163,12 +163,26 @@ r = await resolvePriceClaim(claim(), WINDOW);
 check("a rival the other index can see stops a false-confident match",
   !r.ok && /none of them clearly is the one/.test((r as any).why), r.ok ? (r as any).check.mint : "");
 
+console.log("\nA price claim that cannot be pinned");
+
+// Measured on the live ledger: "@levvercetti: it wont pass 100k this year" under
+// a Bitcoin post graded as a price claim, correctly, and BTC is not a Solana
+// token. The market was then refused OUTRIGHT, because the extractor had been
+// told it could leave the criteria empty and let the price path write them. A
+// new capability had silently removed an old one: the same claim opened an
+// ordinary citation-settled market two hours earlier.
+serve([], { }, [], true, []);
+r = await resolvePriceClaim(claim({ symbol: "BTC", metric: "price", target: 100_000 }), WINDOW);
+check("a major asset's price claim finds no Solana token, and says so plainly",
+  !r.ok && /no Solana token/.test((r as any).why), r.ok ? "" : (r as any).why);
+check("the refusal is a REASON, not an exception: the caller can fall back", !r.ok && typeof (r as any).why === "string");
+
 console.log("\nAn address in the text");
 
 // Three tokens that all pass as "TOK" -- the search path would refuse. The
 // address says which one, so it opens.
 serve(
-  [pair({ baseMint: "A1", baseSymbol: "TOK", volumeH24: 500_000 }), pair({ baseMint: "A2", baseSymbol: "TOK", volumeH24: 480_000 })],
+  [pair({ baseMint: "A1", baseSymbol: "TOK", liquidityUsd: 0, volumeH24: 500_000 }), pair({ baseMint: "A2", baseSymbol: "TOK", liquidityUsd: 0, volumeH24: 480_000 })],
   {
     A1: info({ mint: "A1", symbol: "TOK" }),
     So11111111111111111111111111111111111111112: info({ mint: "So11111111111111111111111111111111111111112", symbol: "TOK", name: "The one they meant" }),

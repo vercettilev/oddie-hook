@@ -2864,7 +2864,19 @@ async function openMarketFromClaim(input: {
       priceCheck = r.check;
       criteria = r.sentence;
     } else if (!criteria) {
-      return bad(422, `this price claim could not be pinned to a token: ${r.why}`);
+      /* THIS REFUSAL COST A REAL TAG, and the shape of the mistake is worth
+         keeping. A claim about BTC reads as a price claim, correctly, and BTC
+         is not a Solana token, so nothing could be pinned. Before the price
+         path existed that same claim opened an ordinary citation-settled
+         market; after it, the market was refused outright, because the model
+         had been told it could leave the criteria empty and let this block
+         write them. A new capability silently removed an old one.
+
+         The prompt now asks for criteria ALWAYS, so this branch should be
+         unreachable for anything a model produced. It stays as the guard it
+         reads like: a market with no rule at all is the one thing that must
+         never open. */
+      return bad(422, `this price claim could not be pinned to a token and it carries no other rule: ${r.why}`);
     }
   }
 
