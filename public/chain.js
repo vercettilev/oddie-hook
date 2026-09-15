@@ -948,13 +948,41 @@ function b64ToBytes(b64) {
           .catch(() => {})
       : Promise.resolve();
 
-    let marketState;
-    try {
-      const r = await fetch(`/api/chain/market/${encodeURIComponent(slug)}`);
-      marketState = await r.json();
-    } catch (e) {
-      marketState = { ok: false, reason: "unreachable" };
+    const readMarket = async () => {
+      try {
+        const r = await fetch(`/api/chain/market/${encodeURIComponent(slug)}`);
+        return await r.json();
+      } catch (e) {
+        return { ok: false, reason: "unreachable" };
+      }
+    };
+
+    let marketState = await readMarket();
+
+    /* THE DEAD END THIS FIXES, WHICH BLOCKED EVERY MARKET THE BOT OPENED.
+       A tagged market carries no on-chain account until somebody stakes -- that
+       is the whole point of on-demand minting, and the rent is meant to be
+       spent on intent rather than on attention. Minting was wired to the first
+       amount-chip click, and to prepare as a backstop. Neither is reachable
+       from here: this read runs when the sheet OPENS, "not-minted" rendered the
+       apology below and returned, so the chips were never drawn and prepare was
+       never called. The market could not be bet on at all, by anyone, ever, and
+       the message told the reader to try again in a moment -- which would do
+       exactly the same thing forever.
+       Choosing a side IS the intent the rent was waiting for. So the sheet
+       spends it here, once, and reads again. */
+    if (!marketState.ok && marketState.reason === "not-minted") {
+      body.innerHTML = `<h3>Make it real</h3><p class="cnote">Opening this market on Solana…</p>`;
+      try {
+        await fetch("/api/chain/ensure", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ slug }),
+        });
+        marketState = await readMarket();
+      } catch (e) { /* fall through to the message below */ }
     }
+
     if (!marketState.ok) {
       /* AN INTERNAL REASON CODE IS NOT A SENTENCE. This printed the route's own
          word in brackets -- "(not-minted)", "(unreadable)", "(unreachable)" --
@@ -965,7 +993,10 @@ function b64ToBytes(b64) {
          a shrug. The unknown fallback keeps no code at all, because a word we
          did not plan to show is a word we cannot vouch for. */
       const why = {
-        "not-minted": "This market is not open for bets yet. Try again in a moment.",
+        // Reached only AFTER the block above asked Solana to open this market
+        // and it did not take, so "try again in a moment" would be advice that
+        // has already been followed once.
+        "not-minted": "We could not open this market on Solana just now. Nothing is wrong with your money. Try again shortly.",
         "unreadable": "We cannot read this market's pool right now, so we will not take a bet on it. Nothing is wrong with your money.",
         "unreachable": "Solana is not answering right now. Nothing is wrong with your money. Try again in a moment.",
         "no such market": "We could not find this market.",
