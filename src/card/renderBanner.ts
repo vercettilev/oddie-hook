@@ -28,12 +28,20 @@ const PAD_L = 70;
 const COL_R = 566;
 const CONTENT_W = COL_R - PAD_L;
 
-const HEAD = ["start markets.", "earn when they spread."];
+/* THE UNFURL IS THE MOST-SEEN SURFACE THERE IS, and it was the last one still
+   selling the old story. "start markets. earn when they spread. / being loud
+   pays." is a creator-economy pitch: it says what you get for being noisy. The
+   product's claim is not about the poster, it is about who decides what becomes
+   a market at all, and that is the half no competitor can copy. Anyone sharing
+   oddie.fun on X sees this rectangle before they see a word of the page, so it
+   says the same thing the page does or the page argues with itself. */
+const HEAD = ["the people\u2019s", "prediction market."];
 const HEAD_FS_MAX = 82;
 const CAP = 0.72;
 
-/** The mechanic, stated in the two words the product is about. */
-const SUB = [`tag ${X_HANDLE} on X.`, "being loud pays."];
+/** The mechanic, then the claim. "no listing desk" is the differentiator stated
+ *  the shortest way it can be: every rival runs one, one of them by law. */
+const SUB = [`tag ${X_HANDLE} on X.`, "no listing desk."];
 const SUB_FS = 26;
 
 /** A chip: the yes/no pair is the fastest way to say "prediction market"
