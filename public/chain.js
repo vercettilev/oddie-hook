@@ -1494,7 +1494,13 @@ function b64ToBytes(b64) {
               <p class="rin">
                 <b class="rin__s rin__s--${side}">${side.toUpperCase()}</b>
                 <span class="rin__a">${sol} <i>SOL</i></span>
-                <img class="rin__st" src="${wasEmpty ? "/brand/st-first.webp" : "/brand/st-called.webp"}" alt="">
+                <!-- Lev'in karari: sade roket, bitcoinsiz. st-first.webp oddie'yi
+                     bir bitcoin madeni parasina bindiriyordu, ve bu makbuz her
+                     marketin ilk bahsinde cikiyor: cogu bitcoin hakkinda degil.
+                     st-rocket.webp ayni cizim dilinde ve zaten market
+                     sayfasindaki "first one in sets the odds" satirinin yaninda
+                     duruyor, yani davet ile odul ayni sekli tasiyor. -->
+                <img class="rin__st" src="${wasEmpty ? "/brand/st-rocket.webp" : "/brand/st-called.webp"}" alt="">
               </p>
               <p class="rin__l">${wasEmpty
                 ? "You set the odds. Whoever comes next has to take your price."

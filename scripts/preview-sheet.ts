@@ -53,7 +53,7 @@ ${money}
 body{background:#0C0D0B;margin:0}
 </style>
 ${receipt("no", "0.1", "st-called.webp", "Your call is on chain now.")}
-${receipt("yes", "2.5", "st-first.webp", "You set the odds. Whoever comes next has to take your price.")}
+${receipt("yes", "2.5", "st-rocket.webp", "You set the odds. Whoever comes next has to take your price.")}
 `;
 
 const path = `${OUT}/sheet-preview.html`;
