@@ -2880,7 +2880,7 @@ async function openMarketFromClaim(input: {
     { question, closesAt: new Date(closeTime * 1000).toISOString(), priceCheck },
     openNow
       .filter((m) => !m.resolvedOutcome && !m.retiredAt)
-      .map((m) => ({ slug: m.slug, question: m.question, closesAt: m.closesAt, priceCheck: m.priceCheck ?? null })),
+      .map((m) => ({ slug: m.slug, question: m.question, closesAt: m.closesAt, priceCheck: m.priceCheck ?? null, createdAt: m.createdAt })),
   ).catch(() => null);
   if (twin) {
     void logExtraction("duplicate", question, { slug: twin.slug, question, existing: twin.question });

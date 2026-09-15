@@ -35,6 +35,9 @@ export interface OpenMarketRow {
   question: string;
   closesAt: string | null;
   priceCheck?: PriceCheck | null;
+  /** When it was opened. Ties are broken toward the OLDEST, so a claim always
+   *  lands on the market people are already in. */
+  createdAt?: string | null;
 }
 
 /** Same stemmer the matcher uses, kept local so a change there is a change here
@@ -108,7 +111,15 @@ export function contenders(
     if (overlap < MIN_OVERLAP) continue;
     out.push({ row, overlap, certain: false });
   }
-  return out.sort((a, b) => Number(b.certain) - Number(a.certain) || b.overlap - a.overlap);
+  /* THE ORIGINAL WINS THE TIE, and the default was the opposite. The board
+     query hands rows back newest-first, and a stable sort keeps that order
+     through an overlap tie, so an equally good match sent people to the most
+     recent twin: the one with no pool, no stakers and no history, while the
+     market everyone is actually in sat one row below. Whoever opened it first
+     also owns its 2%. */
+  const born = (r: OpenMarketRow) => (r.createdAt ? Date.parse(r.createdAt) : Number.MAX_SAFE_INTEGER);
+  return out.sort((a, b) =>
+    Number(b.certain) - Number(a.certain) || b.overlap - a.overlap || born(a.row) - born(b.row));
 }
 
 const SYSTEM = `Two prediction market questions are given. Answer whether a person who bet YES on one would, on any outcome, be paid exactly when a YES on the other is paid.

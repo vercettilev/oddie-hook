@@ -24,8 +24,8 @@ const END = "2026-12-31T23:59:00.000Z";
 const SAYLOR = "Will Bitcoin (BTC/USD) trade at or above $100,000 at any point before the end of 2026?";
 const BITCOIN = "Will Bitcoin (BTC/USD) reach $100,000 at any point before the end of 2026?";
 
-const row = (question: string, closesAt: string | null = END, priceCheck: PriceCheck | null = null): OpenMarketRow =>
-  ({ slug: "existing", question, closesAt, priceCheck });
+const row = (question: string, closesAt: string | null = END, priceCheck: PriceCheck | null = null, slug = "existing", createdAt: string | null = null): OpenMarketRow =>
+  ({ slug, question, closesAt, priceCheck, createdAt });
 
 let judged = 0;
 const judgeSays = (verdict: boolean) => _setSameBetJudge(async () => { judged++; return verdict; });
@@ -61,6 +61,15 @@ check("a different asset is asked about, and the judge's no is final", d === nul
 _setSameBetJudge(async () => { throw new Error("inference down"); });
 d = await findDuplicate({ question: SAYLOR, closesAt: END }, [row(BITCOIN)]);
 check("an unreachable judge opens a second market rather than merging", d === null);
+
+// The board hands rows back newest-first. An equally good match must still send
+// people to the market that already has the pool, the stakers and the 2%.
+judged = 0; judgeSays(true);
+d = await findDuplicate({ question: SAYLOR, closesAt: END }, [
+  row(BITCOIN, END, null, "the-twin", "2026-09-14T10:00:00.000Z"),
+  row(BITCOIN, END, null, "the-original", "2026-09-01T10:00:00.000Z"),
+]);
+check("an equally good match points at the original, not the newest twin", d?.slug === "the-original", d?.slug);
 
 console.log("\nPrice markets need no judge at all");
 

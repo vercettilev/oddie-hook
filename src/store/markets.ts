@@ -5081,6 +5081,10 @@ export interface CommunityListItem {
   /** Frozen token identity for price markets, so the duplicate check can compare
    *  two price bets structurally without a lookup per row. Null elsewhere. */
   priceCheck?: PriceCheck | null;
+  /** When the market was opened. Carried so the duplicate check can send people
+   *  to the ORIGINAL rather than to whichever twin a query happened to return
+   *  first. */
+  createdAt: string | null;
 }
 
 /** Every community market with resolution + on-chain state + pool totals, for the /tool admin panel. */
@@ -5126,6 +5130,11 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
         yesTokens: tokens("yes"), noTokens: tokens("no"), yesPlayers: players("yes"), noPlayers: players("no"),
         hook: meta.hook ?? null,
         retiredAt: meta.retiredAt ?? null, creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+        priceCheck: meta.priceCheck ?? null,
+        // The in-memory store has no clock of its own; the market id IS the
+        // millisecond it was opened (see createCommunityMarket), so it is the
+        // honest answer rather than a fabricated one.
+        createdAt: new Date(meta.marketId).toISOString(),
       };
     });
   }
@@ -5133,9 +5142,9 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
   const { rows } = await db().query<{
     slug: string; question: string; yes_pct: number; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; closes_at: Date | null; hook: string | null; creator_fee_bps: number | null;
     yes_tokens: number; no_tokens: number; yes_players: number; no_players: number; retired_at: Date | null;
-    price_check: PriceCheck | null;
+    price_check: PriceCheck | null; created_at: Date | null;
   }>(`
-    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps, c.price_check,
+    SELECT c.slug, s.question, s.yes_pct, c.resolved_outcome, c.onchain_pubkey, s.closes_at, c.retired_at, c.hook, c.creator_fee_bps, c.price_check, c.created_at,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'yes'), 0)::int AS yes_tokens,
            COALESCE(SUM(mc.tokens) FILTER (WHERE mc.side = 'no'), 0)::int  AS no_tokens,
            COUNT(DISTINCT mc.device_id) FILTER (WHERE mc.side = 'yes')::int AS yes_players,
@@ -5152,6 +5161,7 @@ export async function adminListCommunity(): Promise<CommunityListItem[]> {
     retiredAt: r.retired_at ? r.retired_at.toISOString() : null,
     creatorFeeBps: r.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
     priceCheck: r.price_check ?? null,
+    createdAt: r.created_at ? r.created_at.toISOString() : null,
   }));
 }
 
