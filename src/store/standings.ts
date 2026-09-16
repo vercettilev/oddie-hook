@@ -32,6 +32,8 @@ export interface MarketTotals {
 
 export interface PricedCall {
   wallet: string; slug: string; question: string;
+  /** Carried through so the board can order moments by when they settled. */
+  resolvedAt?: string | null;
   side: "yes" | "no"; outcome: "yes" | "no"; won: boolean;
   lamports: number; entryPct: number;
   poolLamports: number | null;
@@ -49,7 +51,7 @@ export interface Standing {
 
 export function priceCall(c: SettledCall, m: MarketTotals | null): PricedCall {
   const base = {
-    wallet: c.wallet, slug: c.slug, question: c.question, side: c.side,
+    wallet: c.wallet, slug: c.slug, question: c.question, resolvedAt: c.resolvedAt ?? null, side: c.side,
     outcome: c.outcome, won: c.won, lamports: c.lamports, entryPct: c.entryPct,
   };
   if (!m || !m.resolved || !m.winningSide) {

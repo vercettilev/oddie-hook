@@ -425,6 +425,13 @@ ALTER TABLE community_market ADD COLUMN IF NOT EXISTS retired_at timestamptz;
 -- rewrite what everybody bet on. See src/price/index.ts.
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS price_check jsonb;
 
+-- WHEN it settled, which the board needs and nothing recorded. resolved_outcome
+-- says WHAT happened and the row's created_at says when the market opened; the
+-- moment in between, the only one anybody wants to read about, was never
+-- written down. Null on every row settled before this column existed, and the
+-- page says "settled" without a date rather than guessing one.
+ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolved_at timestamptz;
+
 -- Every extraction, logged for later prompt tuning: the input argument, the
 -- engine's structured output, and (on publish) the operator's final edits.
 CREATE TABLE IF NOT EXISTS extraction_log (
@@ -3199,6 +3206,8 @@ interface CommunityMeta {
   creatorFeeBps?: number;
   /** Frozen token identity for price markets. See the DDL note on the column. */
   priceCheck?: PriceCheck | null;
+  /** When it settled. See the DDL note on the column. */
+  resolvedAt?: string | null;
   /** The wallet named at creation, when there is one. See the DDL note. */
   creatorWallet?: string | null;
 }
@@ -5235,11 +5244,12 @@ export async function markCommunityResolved(slug: string, outcome: "yes" | "no")
     const m = memCommunity.get(slug);
     if (!m || m.resolvedOutcome) return false;
     m.resolvedOutcome = outcome;
+    m.resolvedAt = new Date().toISOString();
     return true;
   }
   await ensureSchema();
   const { rowCount } = await db().query(
-    `UPDATE community_market SET resolved_outcome=$2 WHERE slug=$1 AND resolved_outcome IS NULL`,
+    `UPDATE community_market SET resolved_outcome=$2, resolved_at=now() WHERE slug=$1 AND resolved_outcome IS NULL`,
     [slug, outcome],
   );
   return (rowCount ?? 0) > 0;
@@ -6683,6 +6693,9 @@ export interface SettledCall {
   wallet: string; slug: string; question: string; onchainPubkey: string | null;
   side: "yes" | "no"; lamports: number; entryPct: number;
   outcome: "yes" | "no"; won: boolean;
+  /** When the market settled, or null for rows settled before the column
+   *  existed. See the DDL note. */
+  resolvedAt?: string | null;
 }
 
 export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
@@ -6698,6 +6711,7 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
         onchainPubkey: meta.onchainPubkey ?? null,
         side: e.side, lamports: e.lamports, entryPct: e.entryPct,
         outcome: meta.resolvedOutcome, won: e.side === meta.resolvedOutcome,
+        resolvedAt: meta.resolvedAt ?? null,
       });
       if (out.length >= n) break;
     }
@@ -6707,9 +6721,10 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
   const { rows } = await db().query<{
     wallet: string; slug: string; question: string; onchain_pubkey: string | null;
     side: "yes" | "no"; lamports: string; entry_pct: number; resolved_outcome: "yes" | "no";
+    resolved_at: Date | null;
   }>(
     `SELECT ce.wallet, ce.slug, s.question, cm.onchain_pubkey, ce.side, ce.lamports,
-            ce.entry_pct, cm.resolved_outcome
+            ce.entry_pct, cm.resolved_outcome, cm.resolved_at
        FROM chain_entry ce
        JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL
        JOIN market_slug s ON s.slug = ce.slug
@@ -6723,6 +6738,7 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
     wallet: r.wallet, slug: r.slug, question: r.question, onchainPubkey: r.onchain_pubkey,
     side: r.side, lamports: Number(r.lamports), entryPct: r.entry_pct,
     outcome: r.resolved_outcome, won: r.side === r.resolved_outcome,
+    resolvedAt: r.resolved_at ? r.resolved_at.toISOString() : null,
   }));
 }
 

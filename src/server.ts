@@ -1744,7 +1744,7 @@ async function settledLedger(): Promise<{ calls: PricedCall[]; standings: Standi
  */
 app.get("/api/board", async (req, res) => {
   const limit = Math.max(1, Math.min(100, Number(req.query.limit ?? 20) || 20));
-  const { standings } = await settledLedger().catch(() => ({ standings: [] as Standing[], calls: [] }));
+  const { standings, calls } = await settledLedger().catch(() => ({ standings: [] as Standing[], calls: [] as PricedCall[] }));
   const top = standings.slice(0, limit);
   // A board of base58 strings is not a social object. One query for the lot.
   const handles = await twitterHandlesForWallets(top.map((b) => b.wallet)).catch(() => new Map<string, string>());
@@ -1762,8 +1762,71 @@ app.get("/api/board", async (req, res) => {
       unpriced: b.unpriced,
     };
   });
+  /* THE MOMENTS, WHICH THIS ROUTE ALREADY COMPUTED AND THREW AWAY.
+     settledLedger() returns one priced call per person per settled market --
+     who, which side, THE PRICE THEY TOOK IT AT, and what it paid. All of that
+     was collapsed into a standings row and dropped, and the page was left
+     ranking people on a board that needs hundreds of settled calls before a
+     rank means anything. With one, it put somebody who had been wrong once at
+     number one with zero points.
+
+     A moment needs no volume to be worth reading. One settled argument, with
+     two named sides and the price between them, is a whole story on its own and
+     it is the same story at scale. So the ledger's own rows are published. */
+  const grouped = new Map<string, PricedCall[]>();
+  for (const c of calls) {
+    const g = grouped.get(c.slug);
+    if (g) g.push(c); else grouped.set(c.slug, [c]);
+  }
+  const momentWallets = [...new Set(calls.map((c) => c.wallet))];
+  const allHandles = momentWallets.length
+    ? await twitterHandlesForWallets(momentWallets).catch(() => new Map<string, string>())
+    : new Map<string, string>();
+  const person = (c: PricedCall) => ({
+    wallet: c.wallet,
+    short: `${c.wallet.slice(0, 4)}…${c.wallet.slice(-4)}`,
+    handle: allHandles.get(c.wallet) ?? handles.get(c.wallet) ?? null,
+    side: c.side,
+    entryPct: c.entryPct,
+    sol: Number((c.lamports / 1e9).toFixed(4)),
+    pnlSol: c.pnlLamports === null ? null : Number((c.pnlLamports / 1e9).toFixed(4)),
+  });
+  // NAMED, NOT ALL OF THEM. A moment is a sentence, and a sentence with forty
+  // names in it is a table again. The rest are a count, which is the part that
+  // makes the sentence land anyway ("and 11 others were wrong").
+  const NAMED = 3;
+  const moments = [...grouped.entries()].map(([slug, cs]) => {
+    const won = cs.filter((c) => c.won);
+    const lost = cs.filter((c) => !c.won);
+    const first = cs[0];
+    return {
+      slug, question: first.question, outcome: first.outcome,
+      settledAt: first.resolvedAt ?? null,
+      poolSol: first.poolLamports === null ? null : Number((first.poolLamports / 1e9).toFixed(4)),
+      right: won.slice(0, NAMED).map(person), rightCount: won.length,
+      wrong: lost.slice(0, NAMED).map(person), wrongCount: lost.length,
+    };
+  }).sort((a, b) => {
+    // Newest settle first. A moment with no timestamp predates the column and
+    // sinks to the bottom rather than claiming to be recent.
+    const t = (x: string | null) => (x ? Date.parse(x) : 0);
+    return t(b.settledAt) - t(a.settledAt);
+  });
+
+  /* WHAT IS ABOUT TO BE ANSWERED. An empty board is the state this page is in
+     today and will be in for days, and a leaderboard has nothing to say in it.
+     A countdown does: the arguments are already live and already have
+     deadlines, so the page can be about what is coming rather than apologise
+     for having nothing behind it. */
+  const open = await adminListCommunity().catch(() => [] as Awaited<ReturnType<typeof adminListCommunity>>);
+  const pending = open
+    .filter((m) => !m.resolvedOutcome && !m.retiredAt && m.closesAt)
+    .sort((a, b) => Date.parse(a.closesAt!) - Date.parse(b.closesAt!))
+    .slice(0, 3)
+    .map((m) => ({ slug: m.slug, question: m.question, closesAt: m.closesAt, hook: m.hook }));
+
   res.json({
-    ok: true, rows,
+    ok: true, rows, moments, pending,
     // The denominator the weight uses, published so the page can explain the
     // number instead of asking people to trust it.
     fullCreditSol: FULL_CREDIT_LAMPORTS / 1e9,

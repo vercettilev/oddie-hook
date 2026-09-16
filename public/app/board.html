@@ -197,6 +197,74 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   text-transform:uppercase;color:var(--fg-3);margin:-16px 0 28px}
 .other-board a{color:var(--yellow)}
 .other-board a:hover{color:var(--yellow-hi)}
+
+/* ============================================================== MOMENTS ==
+   A STANDINGS TABLE NEEDS VOLUME AND THIS PRODUCT DOES NOT HAVE IT YET.
+   With one settled call the old page put somebody who had been wrong once at
+   number one with zero points, under three lines explaining a weighting
+   formula that was longer than the data it weighted. Styling cannot fix that:
+   a rank is a statement about many results and there was one.
+   A MOMENT needs no volume. One settled argument, two named sides and the
+   price between them, is a whole story on its own and it is the same story at
+   scale. So the page answers its own title one claim at a time. The board
+   survives underneath, gated until enough people have a settled call for a
+   rank to mean anything.                                                    */
+.next{font-family:var(--display);font-weight:400;font-size:clamp(15px,3.4vw,18px);
+  letter-spacing:.02em;text-transform:uppercase;color:var(--fg-2);
+  margin:0 0 26px;line-height:1.35}
+.next a{color:var(--yellow);text-decoration:none}
+.next a:hover{color:var(--yellow-hi)}
+.next b{color:var(--cream);font-weight:400}
+
+.mom{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+  box-shadow:8px 9px 0 var(--pink-deep);padding:16px 18px 14px;margin:0 0 18px}
+.mom:nth-of-type(even){box-shadow:8px 9px 0 var(--yellow-deep)}
+.mom__h{display:flex;align-items:center;gap:10px;margin:0 0 6px}
+.mom__o{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.06em;
+  padding:3px 10px;border:3px solid var(--black);background:var(--yellow);color:var(--ink)}
+.mom__o--no{background:var(--pink);color:#fff}
+.mom__w{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:rgba(11,13,4,.55)}
+.mom__q{font-family:var(--display);font-weight:400;font-size:clamp(18px,4vw,25px);
+  line-height:1.08;text-transform:uppercase;margin:0 0 12px;text-wrap:balance}
+.mom__q a{color:var(--ink);text-decoration:none}
+.mom__q a:hover{color:var(--pink-deep)}
+
+/* One line per person, and the shape of the line IS the verdict: the name, what
+   they took and at what price, then the money. No icons and no colour-only
+   signal -- "right"/"wrong" is written. */
+/* SIDE IS A DATA ATTRIBUTE, NOT A CLASS, and that is not a style preference.
+   This first shipped as li.r / li.w, and this same stylesheet already carries
+   `.r{...;width:1%}` for the rank CELL of the table below. Every "right" row
+   silently inherited a 1% width and collapsed to four pixels on a phone, with
+   its four words stacked one per line, while the "wrong" rows beside it laid
+   out correctly. An attribute selector cannot collide with a class rule that
+   was written years apart from it. */
+.mom__s{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.mom__s li{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  font-size:14px;line-height:1.45;color:rgba(11,13,4,.82)}
+.mom__v{font-family:var(--display);font-weight:400;font-size:13px;letter-spacing:.05em;
+  min-width:62px;color:var(--ink)}
+.mom__s li[data-v="w"] .mom__v{color:var(--pink-deep)}
+.mom__s li b{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.02em;color:var(--ink)}
+.mom__s li b a{color:inherit;text-decoration:none}
+.mom__s li b a:hover{color:var(--pink-deep)}
+.mom__s li i{font-family:var(--mono);font-size:13px;font-weight:700;font-style:normal;
+  margin-left:auto;font-variant-numeric:tabular-nums}
+.mom__s li[data-v="r"] i{color:#1d7a3a}
+.mom__s li[data-v="w"] i{color:var(--pink-deep)}
+/* YOU, WHEREVER YOU TURN UP. The one thing that makes a public record worth
+   opening twice is finding yourself in it. */
+.mom__s li[data-you]{background:var(--yellow);margin:0 -8px;padding:2px 8px}
+.mom__more{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:rgba(11,13,4,.55);margin:10px 0 0}
+
+/* The board, demoted. It is the summary of the feed above it, so it reads
+   after, and only once there is something to summarise. */
+.stand{margin:34px 0 0;border-top:3px solid rgba(240,238,224,.18);padding-top:20px}
+.stand h2{font-family:var(--display);font-weight:400;font-size:clamp(20px,4.4vw,26px);
+  text-transform:uppercase;color:var(--cream);margin:0 0 4px}
+.stand .rule{margin:0 0 14px}
 </style>
 
 <header class="top">
@@ -213,11 +281,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 
 <main class="wrap">
   <h1>Who was right <img class="hsticker" src="/brand/st-called.webp" alt=""></h1>
-  <p class="rule" id="rule">
-    Points for being right <b>when the room disagreed</b>: right at 20% is worth
-    eight times right at 90%. Ranked by points, never by money.
-    <span class="ex" id="ex">Thin pool, fewer points. Full points at 5 SOL.</span>
-  </p>
+  <!-- THE RULE MOVED. It used to open the page: three lines explaining how a
+       point is weighted, above a board with one row on it. A formula is a
+       footnote to a number, and the number is now further down, so the
+       explanation went with it. See .stand in the stylesheet. -->
+  <p class="next" id="next" hidden></p>
   <!-- TWO BOARDS, TWO UNITS. The Genesis page has its own ranking and it counts
        something else entirely: not whether you were right, but how many people
        put money into markets you opened. Both show "#rank @name number", so a
@@ -239,63 +307,132 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     });
   }
 
-  fetch("/api/board?limit=50")
-    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
-    .then(function (j) {
+  var nextEl = document.getElementById("next");
+
+  /** "3 days ago", or "" when the row predates the resolved_at column. */
+  function ago(iso) {
+    if (!iso) return "";
+    var s = (Date.now() - Date.parse(iso)) / 1000;
+    if (!isFinite(s) || s < 0) return "";
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    var d = Math.round(s / 86400);
+    return d === 1 ? "yesterday" : d + " days ago";
+  }
+  /** "in 2 days" for something still to come. */
+  function until(iso) {
+    var s = (Date.parse(iso) - Date.now()) / 1000;
+    if (!isFinite(s)) return "";
+    if (s <= 0) return "any moment";
+    if (s < 3600) return "in " + Math.max(1, Math.round(s / 60)) + " minutes";
+    if (s < 86400) return "in " + Math.round(s / 3600) + " hours";
+    var d = Math.round(s / 86400);
+    return d === 1 ? "tomorrow" : "in " + d + " days";
+  }
+  var sol = function (n) { return (n >= 0 ? "+" : "") + String(Math.round(n * 1e4) / 1e4) + " SOL"; };
+
+  function personLine(p, won, me) {
+    var name = p.handle ? "@" + esc(p.handle) : esc(p.short);
+    var mine = me && p.handle && p.handle.toLowerCase() === me;
+    /* THE PRICE THEY TOOK IT AT IS THE WHOLE POINT and it is why this is not a
+       results table. "Right" is cheap; "right at 24% while the room said no" is
+       the thing worth reading, and it teaches the weighting without a formula
+       anywhere on the page. */
+    var bits = '<span class="mom__v">' + (won ? "Right" : "Wrong") + "</span>"
+      + "<b><a href=\"/w/" + encodeURIComponent(p.wallet) + "\">" + name + "</a></b>"
+      + "<span>took " + esc(String(p.side).toUpperCase())
+      + (typeof p.entryPct === "number" ? " at " + p.entryPct + "%" : "") + "</span>";
+    if (p.pnlSol !== null && p.pnlSol !== undefined) bits += "<i>" + esc(sol(p.pnlSol)) + "</i>";
+    return '<li data-v="' + (won ? "r" : "w") + '"' + (mine ? " data-you" : "") + ">" + bits + "</li>";
+  }
+
+  function moment(m, me) {
+    var people = m.right.map(function (p) { return personLine(p, true, me); })
+      .concat(m.wrong.map(function (p) { return personLine(p, false, me); })).join("");
+    var hidden = (m.rightCount - m.right.length) + (m.wrongCount - m.wrong.length);
+    var when = ago(m.settledAt);
+    return '<article class="mom">'
+      + '<p class="mom__h"><b class="mom__o mom__o--' + esc(m.outcome) + '">' + esc(String(m.outcome).toUpperCase()) + "</b>"
+      + '<span class="mom__w">' + (when ? "settled " + esc(when) : "settled") + "</span></p>"
+      + '<h2 class="mom__q"><a href="/m/' + encodeURIComponent(m.slug) + '">' + esc(m.question) + "</a></h2>"
+      + '<ul class="mom__s">' + people + "</ul>"
+      + (hidden > 0 ? '<p class="mom__more">and ' + hidden + (hidden === 1 ? " other" : " others") + "</p>" : "")
+      + "</article>";
+  }
+
+  Promise.all([
+    fetch("/api/board?limit=50").then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); }),
+    window.OddieMe || Promise.resolve({ accounts: [] }),
+  ])
+    .then(function (both) {
+      var j = both[0];
       if (!j.ok) throw new Error("bad response");
-      if (j.fullCreditSol) document.getElementById("ex").textContent =
-        "Thin pool, fewer points. Full points at " + j.fullCreditSol + " SOL.";
+      var tw = ((both[1] || {}).accounts || []).filter(function (x) { return x.provider === "twitter"; })[0];
+      var me = tw && tw.handle ? String(tw.handle).replace(/^@+/, "").toLowerCase() : null;
+      var moments = j.moments || [];
       var rows = j.rows || [];
-      if (!rows.length) {
-        // Honest rather than seeded. An empty board is what "no market has
-        // settled yet" looks like, and inventing rows to fill it would be the
-        // first lie this page tells.
-        view.innerHTML = '<div class="poster"><img src="/brand/mascot-trophy.webp" alt="">'
-          + '<h3>Nobody has been right yet</h3>'
-          + '<p><a href="https://x.com/intent/tweet?text=' + encodeURIComponent("@oddiefun ") + '" target="_blank" rel="noopener">Tag <b>@oddiefun</b> under a claim on X</a></p></div>';
+      var pending = j.pending || [];
+
+      /* WHAT IS ABOUT TO BE ANSWERED, ABOVE WHAT ALREADY WAS.
+         This page is empty today and will be for days. A leaderboard has
+         nothing to say in that state and an apology has less. A countdown has
+         something: the arguments are live, they have deadlines, and the next
+         one is the reason to come back. */
+      if (pending.length) {
+        var p0 = pending[0];
+        nextEl.hidden = false;
+        nextEl.innerHTML = "Next: <a href=\"/m/" + encodeURIComponent(p0.slug) + "\">"
+          + esc(p0.hook || p0.question) + "</a> <b>" + esc(until(p0.closesAt)) + "</b>"
+          + (pending.length > 1 ? " &middot; " + (pending.length - 1) + " more waiting" : "");
+      }
+
+      if (!moments.length) {
+        view.innerHTML = '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
+          + "<h3>Nothing has been settled yet</h3>"
+          + "<p>When an argument reaches its deadline it is answered here, with the name of "
+          + "whoever was right and the price they took it at. "
+          + '<a href="/markets">See what is open</a></p></div>';
         return;
       }
-      // The signpost lives with the number it disambiguates, so an empty
-      // board does not warn about a confusion it cannot cause.
-      view.innerHTML = '<p class="other-board">Different board, different number. '
-        + '<a href="/genesis">The Genesis board</a> ranks who brings new people in.</p>'
-        + "<table><thead><tr>"
-        + '<th class="r"></th><th>Who</th>'
-        + '<th class="num hide-sm">Record</th><th class="num">Points</th>'
-        + "</tr></thead><tbody>"
-        + rows.map(function (w) {
-            // A linked X handle is the identity; a wallet is one too, just a
-            // quieter one. Never a placeholder in place of either.
-            var name = w.handle
-              ? "@" + esc(w.handle)
-              : '<span class="anon">' + esc(w.short) + "</span>";
-            // A market we could not read is priced as nothing at all, so its
-            // calls are in no total. Saying so beats a confident number built
-            // on a failed request.
-            /* A ZERO WE NEVER MEASURED IS NOT A ZERO.
-               points only accumulate over calls the chain could price, so a
-               caller whose settled markets are ALL unreadable arrives here
-               with a real 0 that means "we could not look", not "nothing was
-               earned". The partial case is the same defect, smaller: points
-               built on some of the calls, presented as if built on all.
-               Both are said on the number itself, because the money column
-               that used to carry this admission has gone: the rule card one
-               line up says the board is ranked by points and never by money,
-               and a column of SOL beside that sentence argued the opposite. */
-            var settled = (w.wins || 0) + (w.losses || 0);
-            var nothingPriced = settled > 0 && w.unpriced >= settled;
-            var pts = nothingPriced
-              ? '<span class="net net--none">could not read</span>'
-              : '<span class="pts">' + w.points + "</span>"
-                + (w.unpriced ? '<span class="net net--none"><br>' + w.unpriced + " unread</span>" : "");
-            return "<tr>"
-              + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">#' + w.rank + "</td>"
-              + '<td class="who"><a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a></td>"
-              + '<td class="num hide-sm wl"><b>' + w.wins + "</b> right &middot; " + w.losses + " wrong</td>"
-              + '<td class="num">' + pts + "</td>"
-              + "</tr>";
-          }).join("")
-        + "</tbody></table>";
+
+      var html = moments.map(function (m) { return moment(m, me); }).join("");
+
+      /* THE BOARD APPEARS WHEN A RANK MEANS SOMETHING. Below three people it
+         ranks a crowd too small to be a crowd, and the top of it is whoever
+         happened to go first. The feed above says everything it would say. */
+      if (rows.length >= 3) {
+        html += '<section class="stand"><h2>The board</h2>'
+          + '<p class="rule">Points for being right <b>when the room disagreed</b>: right at 20% is '
+          + "worth eight times right at 90%. Ranked by points, never by money. "
+          + '<span class="ex">Thin pool, fewer points. Full points at ' + esc(String(j.fullCreditSol)) + ' SOL.</span></p>'
+          + '<p class="other-board">Different board, different number. '
+          + '<a href="/genesis">The Genesis board</a> ranks who brings new people in.</p>'
+          + "<table><thead><tr>"
+          + '<th class="r"></th><th>Who</th>'
+          + '<th class="num hide-sm">Record</th><th class="num">Points</th>'
+          + "</tr></thead><tbody>"
+          + rows.map(function (w) {
+              var name = w.handle ? "@" + esc(w.handle) : '<span class="anon">' + esc(w.short) + "</span>";
+              /* A ZERO WE NEVER MEASURED IS NOT A ZERO. points accumulate only
+                 over calls the chain could price, so a caller whose settled
+                 markets are ALL unreadable arrives with a real 0 that means "we
+                 could not look". Said on the number itself. */
+              var settled = (w.wins || 0) + (w.losses || 0);
+              var nothingPriced = settled > 0 && w.unpriced >= settled;
+              var pts = nothingPriced
+                ? '<span class="net net--none">could not read</span>'
+                : '<span class="pts">' + w.points + "</span>"
+                  + (w.unpriced ? '<span class="net net--none"><br>' + w.unpriced + " unread</span>" : "");
+              return "<tr>"
+                + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">#' + w.rank + "</td>"
+                + '<td class="who"><a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a></td>"
+                + '<td class="num hide-sm wl"><b>' + w.wins + "</b> right &middot; " + w.losses + " wrong</td>"
+                + '<td class="num">' + pts + "</td>"
+                + "</tr>";
+            }).join("")
+          + "</tbody></table></section>";
+      }
+      view.innerHTML = html;
     })
     .catch(function (e) {
       console.warn("[board]", e && e.message);
