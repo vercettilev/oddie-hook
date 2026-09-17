@@ -87,7 +87,8 @@
     "peek-coverage": "tsx scripts/peek-coverage.ts",
     "test-duplicate": "tsx scripts/test-duplicate.ts",
     "try-duplicate": "tsx scripts/try-duplicate.ts",
-    "dev-open": "APP_OPEN=true PORT=3100 tsx watch --include \"./public/**\" src/server.ts"
+    "dev-open": "APP_OPEN=true PORT=3100 tsx watch --include \"./public/**\" src/server.ts",
+    "deck": "tsx scripts/deck-build.ts"
   },
   "engines": {
     "node": ">=20"
