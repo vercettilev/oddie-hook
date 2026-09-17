@@ -187,6 +187,15 @@ function flowRow(items: FlowStep[], top: number, accent: string, ink: string, on
     } else {
       out.push(`<rect x="${x}" y="${top}" width="${pw}" height="${ph}" rx="${R}" fill="${panelFill}" stroke="${hair}" stroke-width="3"/>`);
       let ty = top + INSET + 26;
+      /* THE ATTRIBUTION IS THE ACCOUNT'S NAME AND NOT ITS HANDLE, and the
+         handle is the reason. Set in Fredoka, "@giga_g_chad" came out reading
+         "@giga__g__chad": the underscore is a normal width (0.85 of an n,
+         measured) but drawn heavy and low, and between round lowercase letters
+         one bar reads as two, so a reader copied down an account that does not
+         exist. Shortening it to "@gigachad" would be worse than ugly, because
+         that is somebody else's handle. The name on the account is Giga Chad:
+         true, no underscores, and it points nowhere wrong. Anton because a
+         name is a label here and not running text. */
       if (it.by) {
         out.push(`<text x="${x + INSET}" y="${ty}" font-family="${DISPLAY}" font-size="32" fill="${quiet}">${esc(it.by.toUpperCase())}</text>`);
         ty += 52;
@@ -259,10 +268,12 @@ interface Slide {
   aside?: string[];
   /** The steps, shown rather than told. */
   flow?: FlowStep[];
-  /** An outlined strip under the flow, for the beat that has not happened yet.
-   *  OUTLINED AND NOT FILLED ON PURPOSE: everything solid on these slides has
-   *  already happened, so a promise must not be able to pass for a receipt. */
-  rail?: { tag: string; text: string };
+  /** The strip under the flow: the beat that lands after the pictures.
+   *  DASHED UNTIL IT HAS HAPPENED. Everything solid on these slides is a thing
+   *  that ran, so a promise must not be able to pass for a receipt, and `done`
+   *  closes the stroke on the day it stops being one. `mark` is the single word
+   *  in the sentence worth lighting. */
+  rail?: { tag: string; text: string; mark?: string; done?: boolean };
   sticker?: string;
   stickerBox?: { x: number; y: number; w: number; h: number };
   /** The repeated band this deck's visual language uses along the bottom. */
@@ -381,12 +392,19 @@ function render(s: Slide, n: number, total: number): string {
   if (s.rail) {
     y += 38;
     const h = 76;
-    // Dashed, because every other object on these slides is a thing that has
-    // happened and this one is a thing that will.
-    parts.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" rx="20" fill="none" stroke="${accent}" stroke-width="4" stroke-dasharray="20 12"/>`);
+    const dash = s.rail.done ? "" : ` stroke-dasharray="20 12"`;
+    parts.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" rx="20" fill="none" stroke="${accent}" stroke-width="4"${dash}/>`);
     const tag = s.rail.tag.toUpperCase();
     parts.push(`<text x="${PAD + 40}" y="${y + h / 2 + 14}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
-    parts.push(`<text x="${PAD + 40 + textWidth(tag, 40, "display") + 36}" y="${y + h / 2 + 12}" font-family="${BODY}" font-size="32" font-weight="600" fill="${s.ink}" fill-opacity=".88">${esc(s.rail.text)}</text>`);
+    // THE ANSWER IS SET INSIDE THE SENTENCE, not beside it. Between the date
+    // and the line, a lone "NO" reads as part of the date, which is the same
+    // collision the duration had over the panels and worse here: a reader who
+    // mis-parses that one has mis-read the outcome.
+    const m = s.rail.mark;
+    const body = m && s.rail.text.includes(m)
+      ? s.rail.text.split(m).map(esc).join(`<tspan fill="${C.yellow}">${esc(m)}</tspan>`)
+      : esc(s.rail.text);
+    parts.push(`<text x="${PAD + 40 + textWidth(tag, 40, "display") + 36}" y="${y + h / 2 + 12}" font-family="${BODY}" font-size="32" font-weight="600" fill="${s.ink}" fill-opacity=".88">${body}</text>`);
     y += h;
   }
 
@@ -561,11 +579,11 @@ export const SLIDES: Slide[] = [
        than saying "nobody", because "nobody" is what the old headline said and
        a reader heard it as "no users" — the one thing this slide must not
        imply, since both accounts on this market are Lev's. */
-    aside: ["No one at oddie", "opened this market.", "No one will close it."],
+    aside: ["No one at oddie", "opened this market.", "No one closed it."],
     flow: [
       {
         tick: "13:17:08",
-        by: "@giga_g_chad",
+        by: "Giga Chad",
         quote: "$BULLSHIT hits a 1m market cap within 3 days. screenshot this. @oddiefun",
         cap: "someone tags it on X",
       },
@@ -584,18 +602,27 @@ export const SLIDES: Slide[] = [
            a clock here would be a nice-looking lie. */
         tick: "On chain",
         head: "Real SOL",
-        sub: "locked until the deadline",
+        sub: "held until the deadline",
         note: "562CXadj…SRE6rc1D7",
         cap: "the money lands on Solana",
       },
     ],
-    /* THE LAST BEAT HAS NOT HAPPENED YET, so it is dashed and dated rather than
-       written in the past tense. That is a stronger thing to hand an investor
-       than a claim, because they can go and check it tomorrow. When it fires,
-       this becomes a fourth panel with the reply in it. */
+    /* THE LAST BEAT IS WRITTEN FOR 18 SEPTEMBER, THE DAY IT RUNS. $BULLSHIT sat
+       at $543k against a $1,000,000 touch with fifteen hours left, so NO is the
+       answer the price history gives, and an oracle that can only ever say yes
+       is not an oracle: a deck that shows one refusing is worth more than a
+       deck that shows one agreeing.
+       THIS PDF IS TRUE FROM 13:17 UTC ON THE 18th AND NOT BEFORE. Nothing here
+       is a picture of it, so nothing is forged, but a dated fact needs its date
+       to have passed, and the file must not go out before then.
+       NO PAYOUT IS CLAIMED, deliberately. Every lamport in this pool is on YES
+       and YES lost, so a pool with no winners is a refund path rather than a
+       payout, and the slide stays away from it. */
     rail: {
       tag: "18 Sep 13:17 UTC",
-      text: "It closes itself from on-chain price history and answers the tweet.",
+      mark: "NO",
+      text: "It read the price history, answered NO, and replied under the tweet.",
+      done: true,
     },
   },
   {
