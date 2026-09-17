@@ -381,13 +381,17 @@ export const SLIDES: Slide[] = [
   },
   {
     label: "The founder", bg: D, ink: L,
-    head: "Lev has built this before.",
-    body: ["Poppin did this in a browser. Chrome banned the category days before launch. Oddie is the same idea, built where nobody can."],
+    /* "LEV HAS BUILT THIS BEFORE" WAS NOT TRUE. He built Poppin, which is not
+       this, and "did this in a browser" told a reader nothing at all. The
+       number is the confident thing and it goes first; the lesson follows in
+       four plain sentences. 45K is in the headline so it leaves the stat row,
+       where it would only be the same fact said twice. */
+    head: "45,000 signed up for the last one.",
+    body: ["Poppin put a prediction market inside any website. Chrome banned the category days before launch. Oddie runs on Solana. Nobody can ban it."],
     who: { name: "Lev Acar", handle: "@levvercetti", photo: "madlev.jpg" },
     stats: [
-      { big: "45K", small: "signed up for Poppin" },
-      { big: "600", small: "in the beta" },
-      { big: "20K", small: "posts written" },
+      { big: "600", small: "made it into the beta" },
+      { big: "20K", small: "posts they wrote" },
     ],
   },
   {
