@@ -37,7 +37,18 @@ const C = {
 };
 const DISPLAY = "Anton", BODY = "Fredoka";
 
-const esc = (s: string) => s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
+/* THE LIGATURE TRAP, AND IT IS NOT THEORETICAL HERE: this deck shipped a slide
+   reading "approved frst. By law." and another reading "Confdence costs
+   nothing." resvg applies the font's fi/fl/ff ligature and then draws a glyph
+   that is missing its second letter, silently, so the word simply loses a
+   character and the slide still looks finished.
+   A zero-width non-joiner between the pair stops the substitution. It is
+   invisible, it costs nothing in any other face, and it goes in the escaper so
+   no caller can forget it. */
+const ZWNJ = "\u200c";
+const esc = (s: string) =>
+  s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!))
+   .replace(/f(?=[fil])/gi, (m) => m + ZWNJ);
 
 /** Stickers are webp on disk; resvg needs something it can actually decode. */
 const shelf = mkdtempSync(path.join(tmpdir(), "oddie-deck-"));
@@ -111,11 +122,20 @@ function render(s: Slide, n: number, total: number): string {
 
   // The headline steps DOWN until it fits its column, so a copy edit can never
   // push a word off the slide silently. Same rule as the market card.
-  let fs = s.headSize ?? 118;
-  let lines = wrapToWidth(s.head, colW, fs, 4, "display").lines;
-  while (fs > 48 && (lines.length > 3 || Math.max(...lines.map((l) => textWidth(l, fs, "display"))) > colW)) {
+  /* A ONE-WORD HEADLINE IS NEVER WRAPPED. "$250,000" at 300px was wider than
+     its column, and the wrapper did what it is built to do with a word that
+     cannot fit: it split it. The slide went out reading "$250,00" over "0".
+     A number is one object. It shrinks or it is wrong. */
+  const oneWord = !/\s/.test(s.head.trim());
+  const maxLines = oneWord ? 1 : 3;
+  let fs = s.headSize ?? 150;
+  let lines = wrapToWidth(s.head, colW, fs, maxLines + 1, "display").lines;
+  const tooWide = () => Math.max(...lines.map((l) => textWidth(l, fs, "display"))) > colW;
+  while (fs > 48 && (lines.length > maxLines || tooWide())) {
     fs -= 4;
-    lines = wrapToWidth(s.head, colW, fs, 4, "display").lines;
+    lines = oneWord
+      ? [s.head]
+      : wrapToWidth(s.head, colW, fs, maxLines + 1, "display").lines;
   }
   const lh = Math.round(fs * 1.02);
   /* THE HEADLINE IS CENTRED ON 300 BUT IT MAY NOT CLIMB PAST THE HEADER, and a
@@ -123,7 +143,7 @@ function render(s: Slide, n: number, total: number): string {
      straight through "09 / 11  ROADMAP", which then could not be read at all.
      Anton's caps stand about 0.74em over the baseline, so this is the highest
      that first baseline can sit and still leave the label alone. */
-  const headFloor = PAD - 8 + 44 + fs * 0.74;
+  const headFloor = PAD - 8 + 56 + fs * 0.78;
   y = Math.max(headFloor, 300 - (lines.length - 1) * lh * 0.5);
   for (const l of lines) {
     parts.push(`<text x="${PAD}" y="${y}" font-family="${DISPLAY}" font-size="${fs}" fill="${s.ink}">${esc(l.toUpperCase())}</text>`);
@@ -132,12 +152,12 @@ function render(s: Slide, n: number, total: number): string {
 
   y += 44;
   for (const b of s.body ?? []) {
-    const wrapped = wrapToWidth(b, colW, 36, 6, "meta").lines;
+    const wrapped = wrapToWidth(b, colW, 42, 4, "meta").lines;
     for (const l of wrapped) {
-      parts.push(`<text x="${PAD}" y="${y}" font-family="${BODY}" font-size="36" font-weight="600" fill="${s.ink}" fill-opacity=".86">${esc(l)}</text>`);
-      y += 50;
+      parts.push(`<text x="${PAD}" y="${y}" font-family="${BODY}" font-size="42" font-weight="600" fill="${s.ink}" fill-opacity=".86">${esc(l)}</text>`);
+      y += 58;
     }
-    y += 18;
+    y += 22;
   }
 
   if (s.steps?.length) {
@@ -145,9 +165,9 @@ function render(s: Slide, n: number, total: number): string {
     let x = PAD;
     for (let i = 0; i < s.steps.length; i++) {
       const t = s.steps[i].toUpperCase();
-      const w = textWidth(t, 44, "display");
-      parts.push(`<text x="${x}" y="${y}" font-family="${DISPLAY}" font-size="44" fill="${s.ink}">${esc(t)}</text>`);
-      x += w + 34;
+      const w = textWidth(t, 56, "display");
+      parts.push(`<text x="${x}" y="${y}" font-family="${DISPLAY}" font-size="56" fill="${s.ink}">${esc(t)}</text>`);
+      x += w + 40;
       if (i < s.steps.length - 1) {
         // DRAWN, NOT TYPED. Anton has no arrow glyph and resvg renders a missing
         // one as a tofu box, silently: the slide looked finished and shipped a
@@ -180,15 +200,21 @@ function render(s: Slide, n: number, total: number): string {
     y += 10;
     let x = PAD;
     for (const st of s.stats) {
-      parts.push(`<text x="${x}" y="${y + 60}" font-family="${DISPLAY}" font-size="96" fill="${accent}">${esc(st.big)}</text>`);
-      const wrapped = wrapToWidth(st.small, 380, 28, 3, "meta").lines;
-      let yy = y + 108;
+      parts.push(`<text x="${x}" y="${y + 80}" font-family="${DISPLAY}" font-size="128" fill="${accent}">${esc(st.big)}</text>`);
+      const wrapped = wrapToWidth(st.small, 400, 30, 3, "meta").lines;
+      let yy = y + 132;
       for (const l of wrapped) {
-        parts.push(`<text x="${x}" y="${yy}" font-family="${BODY}" font-size="28" font-weight="600" fill="${s.ink}" fill-opacity=".8">${esc(l)}</text>`);
-        yy += 38;
+        parts.push(`<text x="${x}" y="${yy}" font-family="${BODY}" font-size="30" font-weight="600" fill="${s.ink}" fill-opacity=".8">${esc(l)}</text>`);
+        yy += 40;
       }
-      x += 440;
+      x += 470;
     }
+  }
+
+  if (y > H - 70) {
+    // Not a silent truncation: a slide that ran past its own edge is a copy
+    // problem, and the only way to find one in a PNG is to be told.
+    console.warn(`  ! slide "${s.label || s.head}" runs ${Math.round(y - (H - 70))}px past the bottom`);
   }
 
   if (s.band) {
@@ -235,106 +261,96 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
    again: cream against a viewer's own white chrome (every PDF viewer surrounds
    a page in grey, so the edge holds), and the stickers' white outline
    disappearing on cream (their black line carries them; measured at full size). */
+/* SHORT, LOUD, AND WITHOUT A WORD ANYBODY HAS TO LOOK UP.
+   The first cut explained itself: two or three paragraphs a slide, and words
+   like settlement, on-chain, regulated exchange and unit economics doing the
+   explaining. A deck is read in about eight minutes by somebody who is not
+   going to ask what a term means, they are going to skim past it.
+   So every slide is one idea, a headline, and at most a line under it. The
+   grounds alternate lime and black the way the brand itself does, and the one
+   pink is spent on the only slide that asks for anything. */
 const D = C.black, L = C.cream;
+const Y = C.yellow, I = C.ink;
 export const SLIDES: Slide[] = [
   {
-    label: "", bg: C.yellow, ink: C.ink,
+    label: "", bg: Y, ink: I,
     head: "The people\u2019s prediction market.",
-    body: ["Tag a claim on X. It opens in seconds.", "oddie.fun   @oddiefun"],
-    sticker: "sticker-hero", stickerBox: { x: 1090, y: 380, w: 760, h: 620 },
+    body: ["oddie.fun   @oddiefun"],
+    sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
     band: "no listing desk.",
   },
   {
     label: "The problem", bg: D, ink: L,
     head: "Being right pays. Just not where you argue.",
-    body: [
-      "Polymarket and Kalshi pay the right call. The thread still crowns the loudest.",
-      "Confidence costs nothing where it is spent, because nobody keeps the receipts.",
-    ],
-    sticker: "crowd-strip", stickerBox: { x: 0, y: 760, w: 1920, h: 320 },
+    body: ["The loudest wins the thread. Nobody pays out."],
+    sticker: "crowd-strip", stickerBox: { x: 0, y: 740, w: 1920, h: 340 },
   },
   {
-    label: "The solution", bg: C.yellow, ink: C.ink,
-    head: "You argue. Oddie makes it a market.",
-    steps: ["Tag", "Tap a side", "Oddie settles"],
-    body: ["Seconds, not a listing process. And the settling is not a person: a coin market resolves from on-chain price history, with no operator and no model call."],
-    sticker: "st-tag", stickerBox: { x: 1240, y: 560, w: 600, h: 460 },
+    label: "The solution", bg: Y, ink: I,
+    head: "Tag it. It\u2019s a market.",
+    steps: ["Tag", "Pick a side", "Get paid"],
+    body: ["No referee. The deadline hits and it pays."],
+    sticker: "st-tag", stickerBox: { x: 1200, y: 520, w: 660, h: 500 },
   },
   {
     label: "Why now", bg: D, ink: L,
-    head: "That zero is the whole company.",
-    body: ["Every market on those apps is approved by a team before it exists, and Kalshi has no choice: approval is what makes it a legal exchange. The argument in your replies will never clear a desk."],
+    head: "None of it happened in a thread.",
     stats: [
-      { big: "$22B", small: "Kalshi\u2019s closed round, May 2026" },
-      { big: "$40B+", small: "traded in one month across two apps" },
-      { big: "0", small: "of it traded inside a thread" },
+      { big: "$22B", small: "what Kalshi is worth" },
+      { big: "$40B", small: "traded in one month" },
+      { big: "0", small: "of it inside a thread" },
     ],
   },
   {
-    label: "The founder", bg: C.cream, ink: C.ink,
+    label: "Why they can\u2019t", bg: Y, ink: I,
+    head: "They have to ask permission. We don\u2019t.",
+    body: ["Every market they open is approved first. By law."],
+    sticker: "st-judge", stickerBox: { x: 1280, y: 540, w: 560, h: 480 },
+  },
+  {
+    label: "The founder", bg: D, ink: L,
     head: "Two years in. Now he can build it.",
-    body: ["Lev spent two years on Poppin, a Chrome extension that put a prediction market on any website, and made Polymarket\u2019s builders program. Chrome banned the category days before launch. Oddie is the bigger idea he wanted all along, built where no company can switch it off."],
+    body: ["Chrome banned his last one. Nobody can switch this one off."],
     stats: [
-      { big: "45K+", small: "signed up for Poppin" },
-      { big: "600+", small: "in the beta" },
-      { big: "20K+", small: "posts written" },
+      { big: "45K", small: "signed up for Poppin" },
+      { big: "600", small: "in the beta" },
+      { big: "20K", small: "posts written" },
     ],
   },
   {
-    label: "Business model", bg: C.yellow, ink: C.ink,
-    head: "4% of the pool. Once.",
-    body: [
-      "2% to whoever opened it. That is distribution.  2% to Oddie, at settlement.",
-      "Nothing is taken while a market is open, so an unresolved market costs its participants nothing. Both rates are frozen per market when it opens, so changing them never reprices a pool that is already live.",
-    ],
-    sticker: "st-riding", stickerBox: { x: 1300, y: 580, w: 540, h: 440 },
+    label: "The money", bg: Y, ink: I,
+    head: "4% when it is over. Nothing before.",
+    body: ["Half of it goes to whoever opened the market."],
+    sticker: "st-riding", stickerBox: { x: 1260, y: 540, w: 600, h: 480 },
   },
   {
-    label: "Go to market", bg: D, ink: L,
-    head: "The board ranks who brings people.",
-    body: [
-      "Connect X, get 5 tickets. One ticket opens one market. A spent ticket comes back when a new person bets on a market you opened.",
-      "You score when someone new puts money in, not when you are right. So the people who rank are the people who bring the room, and they keep 2% of every pool they opened.",
-    ],
-    sticker: "genesis-ticket", stickerBox: { x: 1320, y: 520, w: 520, h: 520 },
+    label: "How it spreads", bg: D, ink: L,
+    head: "Bring the room, own the room.",
+    body: ["Open a market and keep 2% of it. Forever."],
+    sticker: "genesis-ticket", stickerBox: { x: 1300, y: 480, w: 560, h: 560 },
   },
   {
-    label: "The moat", bg: C.cream, ink: C.ink,
-    head: "There is no desk to copy.",
-    body: [
-      "Their approval step is not a feature they chose. Kalshi is a regulated exchange; Polymarket curates. Neither can open a market on a tweet posted ten seconds ago.",
-      "And every tag settles on chain under a handle. Give it a year and every account is a public track record, right and wrong both. Code copies. Records do not.",
-    ],
-    sticker: "st-called", stickerBox: { x: 1340, y: 560, w: 500, h: 460 },
-  },
-  {
-    label: "Roadmap", bg: D, ink: L,
-    head: "One market engine. Every surface is a door in.",
-    // The stage words are labels, so they are set as labels. They were prose in
-    // all caps, where Fredoka sets "IV" tight enough that LIVE reads as LNE.
+    label: "Where it goes", bg: Y, ink: I,
+    head: "Every argument is a market.",
     rows: [
-      { tag: "Live", text: "X and Solana mainnet. Real money, and a tag becomes a market with no human in the loop. First fully autonomous settlement scheduled 18 September." },
-      { tag: "Next", text: "Telegram. The bot is built and tested." },
-      { tag: "Then", text: "Discord. Same engine, new crowd." },
-      { tag: "Everywhere", text: "Partners. Any app opens markets with one key." },
+      { tag: "Now", text: "X. Live, with real money in it." },
+      { tag: "Next", text: "Telegram. Built and tested." },
+      { tag: "Then", text: "Discord." },
+      { tag: "After", text: "Any app, with one key." },
     ],
-    sticker: "st-rocket", stickerBox: { x: 1360, y: 560, w: 480, h: 440 },
+    sticker: "st-rocket", stickerBox: { x: 1360, y: 560, w: 500, h: 460 },
   },
   {
     label: "The ask", bg: C.pinkField, ink: C.cream,
-    head: "$250,000", headSize: 240,
-    body: [
-      "30% TEAM, first hires so shipping never stops.      30% CREATORS, puts Oddie in every feed.",
-      "30% RUNWAY, founder, counsel, compliance.      10% INFRA, measured not estimated.",
-      "What one tag costs us: $0.04 when nobody bets, $0.38 when somebody does, $0.00 for a second tag on the same post. The difference is Solana rent for the market account, spent only on a market that actually takes money.",
-    ],
-    sticker: "genesis-podium", stickerBox: { x: 1360, y: 520, w: 480, h: 500 },
+    head: "$250,000", headSize: 260,
+    body: ["38 cents opens a market. This buys a lot of them."],
+    sticker: "genesis-podium", stickerBox: { x: 1380, y: 520, w: 460, h: 500 },
   },
   {
-    label: "", bg: C.yellow, ink: C.ink,
+    label: "", bg: D, ink: L,
     head: "Be right. Be early. Be oddie.",
-    body: ["oddie.fun   @oddiefun   lev@oddie.fun"],
-    sticker: "st-main", stickerBox: { x: 1240, y: 480, w: 600, h: 540 },
+    body: ["lev@oddie.fun"],
+    sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
     band: "be oddie.",
   },
 ];
