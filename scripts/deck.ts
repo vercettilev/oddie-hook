@@ -115,6 +115,30 @@ function portrait(file: string, cx: number, cy: number, r: number): string {
     + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${C.black}" stroke-width="8"/>`;
 }
 
+/** A screenshot, fitted inside its box and given the hard offset every other
+ *  object on these slides has. Returns "" when the file is not there yet, so
+ *  the slide falls back to its sticker rather than to a hole. */
+function placeShot(file: string, box: { x: number; y: number; w: number; h: number }, bg: string): string {
+  const stem = file.replace(/\.[^.]+$/, "");
+  const src = [".png", ".jpg", ".jpeg", ".webp", ".PNG", ".JPG"]
+    .map((ext) => path.join(ROOT, "brand", stem + ext))
+    .find((f) => existsSync(f));
+  if (!src) return "";
+  const png = path.join(shelf, `shot-${stem}.png`);
+  execFileSync("sips", ["-s", "format", "png", src, "--out", png], { stdio: "ignore" });
+  const info = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", png]).toString();
+  const iw = Number(/pixelWidth: (\d+)/.exec(info)?.[1] ?? 1);
+  const ih = Number(/pixelHeight: (\d+)/.exec(info)?.[1] ?? 1);
+  const k = Math.min(box.w / iw, box.h / ih);
+  const w = Math.round(iw * k), h = Math.round(ih * k);
+  const x = Math.round(box.x + box.w - w), y = Math.round(box.y + box.h - h);
+  const uri = `data:image/png;base64,${readFileSync(png).toString("base64")}`;
+  const off = 14;
+  return `<rect x="${x + off}" y="${y + off}" width="${w}" height="${h}" rx="18" fill="${C.pink}"/>`
+    + `<image href="${uri}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0 round 18)"/>`
+    + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="none" stroke="${C.black}" stroke-width="6"/>`;
+}
+
 interface Slide {
   label: string;
   bg: string;
@@ -127,6 +151,10 @@ interface Slide {
   steps?: string[];
   /** A labelled row: the stage in display caps, the sentence in body case. */
   rows?: { tag: string; text: string }[];
+  /** A real screenshot, framed. Shown instead of the slide's sticker when the
+   *  file is there, because a photograph of the thing happening outranks any
+   *  drawing of it. */
+  shot?: string;
   sticker?: string;
   stickerBox?: { x: number; y: number; w: number; h: number };
   /** The repeated band this deck's visual language uses along the bottom. */
@@ -145,7 +173,13 @@ function render(s: Slide, n: number, total: number): string {
   const accent = s.bg === C.pinkField ? C.yellow : C.pink;
   const parts: string[] = [`<rect width="${W}" height="${H}" fill="${s.bg}"/>`];
 
-  if (s.sticker && s.stickerBox) parts.push(placeSticker(s.sticker, s.stickerBox));
+  if (s.shot && s.stickerBox) {
+    const framed = placeShot(s.shot, s.stickerBox, s.bg);
+    if (framed) parts.push(framed);
+    else if (s.sticker) parts.push(placeSticker(s.sticker, s.stickerBox));
+  } else if (s.sticker && s.stickerBox) {
+    parts.push(placeSticker(s.sticker, s.stickerBox));
+  }
   if (s.who) {
     const r = 205, cx = 1555, cy = 560;
     const face = s.who.photo ? portrait(s.who.photo, cx, cy, r) : "";
@@ -371,15 +405,24 @@ export const SLIDES: Slide[] = [
        and the slide must not imply any. What it does prove is that the machine
        runs unattended end to end, which no competitor can say, and which is
        the only thing worth showing before there are users. */
+    /* "THE LOOP RUNS WITH NOBODY IN IT" SAID THE WRONG THING. It was meant as
+       no operator; it reads just as easily as no users, which is the one thing
+       this deck is careful not to advertise, and it planted that idea in the
+       reader itself. The claim is that it is automatic, so say that.
+       AND A DATED LIST TELLS, IT DOES NOT SHOW. The artifact is the thread on
+       X: the tag, the bot opening the market, and the bot returning with the
+       result and a Solana link. Drop that screenshot in as brand/thread.png
+       and it takes the slide; until then the sticker holds the space. */
     label: "It works", bg: D, ink: L,
-    head: "The loop runs with nobody in it.",
+    head: "It runs itself.",
+    shot: "thread.png",
     rows: [
       { tag: "15 Sep", text: "A tag on X. The market opened in seconds, unattended." },
       { tag: "15 Sep", text: "Real SOL in the pool, on Solana mainnet." },
       { tag: "18 Sep", text: "It settled itself from on-chain price history. No operator, no model call." },
       { tag: "18 Sep", text: "The bot answered the original tweet with the receipt." },
     ],
-    sticker: "st-called", stickerBox: { x: 1420, y: 600, w: 420, h: 400 },
+    sticker: "st-called", stickerBox: { x: 1090, y: 240, w: 760, h: 790 },
   },
   {
     label: "Why now", bg: Y, ink: I,
