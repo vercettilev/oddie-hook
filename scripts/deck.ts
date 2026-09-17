@@ -217,12 +217,24 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
    long slide. The brand runs on four grounds and the landing page moves through
    all of them. So does this:
 
-     yellow  black  cream  black  cream  yellow  black  cream  black  PINK  yellow
+     yellow  black  YELLOW  black  cream  yellow  black  cream  black  PINK  yellow
 
    No two neighbours share a ground, every ground is used, and the highest
    chroma is spent once, on the ask, which is the only slide asking for
    anything. The closer returns to the cover's yellow so the deck shuts the way
-   it opened. */
+   it opened.
+
+   CREAM IS EARNED, NOT ALTERNATED, and the first cut got that wrong twice. It
+   ran three cream slides, and one of them was the SOLUTION: the moment the
+   product arrives was the quietest ground in the deck, which is a hierarchy
+   error however good the slide looks on its own. A problem slide is dark and a
+   turn is loud. Cream now falls only on the two densest slides, the founder and
+   the moat, where a light ground actually buys the reader something.
+
+   Two worries that did NOT survive checking, recorded so they are not raised
+   again: cream against a viewer's own white chrome (every PDF viewer surrounds
+   a page in grey, so the edge holds), and the stickers' white outline
+   disappearing on cream (their black line carries them; measured at full size). */
 const D = C.black, L = C.cream;
 export const SLIDES: Slide[] = [
   {
@@ -242,7 +254,7 @@ export const SLIDES: Slide[] = [
     sticker: "crowd-strip", stickerBox: { x: 0, y: 760, w: 1920, h: 320 },
   },
   {
-    label: "The solution", bg: C.cream, ink: C.ink,
+    label: "The solution", bg: C.yellow, ink: C.ink,
     head: "You argue. Oddie makes it a market.",
     steps: ["Tag", "Tap a side", "Oddie settles"],
     body: ["Seconds, not a listing process. And the settling is not a person: a coin market resolves from on-chain price history, with no operator and no model call."],
