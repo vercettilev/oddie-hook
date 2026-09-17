@@ -386,7 +386,7 @@ export const SLIDES: Slide[] = [
        number is the confident thing and it goes first; the lesson follows in
        four plain sentences. 45K is in the headline so it leaves the stat row,
        where it would only be the same fact said twice. */
-    head: "45,000 signed up for the last one.",
+    head: "45,000 signed up for the last one.", headSize: 124,
     /* "NOBODY CAN BAN IT" WAS AN OVERCLAIM, and the wrong one to leave standing
        on the slide about being banned. The program, the pools and the record
        are on chain and no third party can take those down. The TAG, though,
@@ -395,7 +395,11 @@ export const SLIDES: Slide[] = [
        invites them to.
        What is true, and still the confident thing: the markets cannot be
        deleted. A door can close; the roadmap already has more doors. */
-    body: ["Poppin put a prediction market inside any website. Chrome banned the category days before launch. Oddie is the idea he wanted all along, built where nobody can delete it."],
+    /* THE OLD PRODUCT IS EVIDENCE, NOT A BRAND TO PROMOTE. Naming Poppin put a
+       second company's name on a slide about this one, and it invites the
+       question a founder slide should not raise: what happened to it, is it
+       still running, who owns it. Describing it keeps the slide about Lev. */
+    body: ["He built a Chrome extension that put prediction markets on any website. Chrome banned the category days before launch. Oddie is the idea he wanted all along, built where nobody can delete it."],
     who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
     stats: [
       { big: "600", small: "made it into the beta" },
