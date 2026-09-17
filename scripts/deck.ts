@@ -33,6 +33,7 @@ const W = 1920, H = 1080, PAD = 120;
 const C = {
   ink: "#0B0D04", black: "#020302", cream: "#FBFCF4",
   yellow: "#D7DC1F", yellowHi: "#E7EC4E", pink: "#FF2D78", pinkDeep: "#A3053F",
+  pinkField: "#E13774",
 };
 const DISPLAY = "Anton", BODY = "Fredoka";
 
@@ -79,6 +80,8 @@ interface Slide {
   body?: string[];
   stats?: { big: string; small: string }[];
   steps?: string[];
+  /** A labelled row: the stage in display caps, the sentence in body case. */
+  rows?: { tag: string; text: string }[];
   sticker?: string;
   stickerBox?: { x: number; y: number; w: number; h: number };
   /** The repeated band this deck's visual language uses along the bottom. */
@@ -86,8 +89,13 @@ interface Slide {
 }
 
 function render(s: Slide, n: number, total: number): string {
-  const onDark = s.bg !== C.yellow && s.bg !== C.cream;
+  // Which grounds are dark decides the muted ink, and pink counts as dark: it
+  // is the app's own field colour and it carries cream type, not ink.
+  const onDark = s.bg === C.black || s.bg === C.pinkField;
   const dim = onDark ? "rgba(251,252,244,.62)" : "rgba(11,13,4,.62)";
+  // Pink numbers on a pink field are no numbers at all. The accent flips to the
+  // one colour that is always the other side of this palette from the ground.
+  const accent = s.bg === C.pinkField ? C.yellow : C.pink;
   const parts: string[] = [`<rect width="${W}" height="${H}" fill="${s.bg}"/>`];
 
   if (s.sticker && s.stickerBox) parts.push(placeSticker(s.sticker, s.stickerBox));
@@ -110,7 +118,13 @@ function render(s: Slide, n: number, total: number): string {
     lines = wrapToWidth(s.head, colW, fs, 4, "display").lines;
   }
   const lh = Math.round(fs * 1.02);
-  y = 300 - (lines.length - 1) * lh * 0.5;
+  /* THE HEADLINE IS CENTRED ON 300 BUT IT MAY NOT CLIMB PAST THE HEADER, and a
+     three-line head did: its cap height reached above the slide number and drew
+     straight through "09 / 11  ROADMAP", which then could not be read at all.
+     Anton's caps stand about 0.74em over the baseline, so this is the highest
+     that first baseline can sit and still leave the label alone. */
+  const headFloor = PAD - 8 + 44 + fs * 0.74;
+  y = Math.max(headFloor, 300 - (lines.length - 1) * lh * 0.5);
   for (const l of lines) {
     parts.push(`<text x="${PAD}" y="${y}" font-family="${DISPLAY}" font-size="${fs}" fill="${s.ink}">${esc(l.toUpperCase())}</text>`);
     y += lh;
@@ -139,18 +153,34 @@ function render(s: Slide, n: number, total: number): string {
         // one as a tofu box, silently: the slide looked finished and shipped a
         // rectangle. The market card draws its arrow the same way.
         const ay = y - 14;
-        parts.push(`<path d="M ${x} ${ay} h 30 m -11 -11 l 11 11 l -11 11" fill="none" stroke="${C.pink}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`);
+        parts.push(`<path d="M ${x} ${ay} h 30 m -11 -11 l 11 11 l -11 11" fill="none" stroke="${accent}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`);
         x += 62;
       }
     }
     y += 70;
   }
 
+  if (s.rows?.length) {
+    y += 6;
+    for (const r of s.rows) {
+      const tag = r.tag.toUpperCase();
+      parts.push(`<text x="${PAD}" y="${y}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
+      const tx = PAD + Math.max(textWidth(tag, 40, "display") + 30, 230);
+      const wrapped = wrapToWidth(r.text, colW - (tx - PAD), 34, 4, "meta").lines;
+      let yy = y;
+      for (const l of wrapped) {
+        parts.push(`<text x="${tx}" y="${yy}" font-family="${BODY}" font-size="34" font-weight="600" fill="${s.ink}" fill-opacity=".86">${esc(l)}</text>`);
+        yy += 46;
+      }
+      y = yy + 22;
+    }
+  }
+
   if (s.stats?.length) {
     y += 10;
     let x = PAD;
     for (const st of s.stats) {
-      parts.push(`<text x="${x}" y="${y + 60}" font-family="${DISPLAY}" font-size="96" fill="${C.pink}">${esc(st.big)}</text>`);
+      parts.push(`<text x="${x}" y="${y + 60}" font-family="${DISPLAY}" font-size="96" fill="${accent}">${esc(st.big)}</text>`);
       const wrapped = wrapToWidth(st.small, 380, 28, 3, "meta").lines;
       let yy = y + 108;
       for (const l of wrapped) {
@@ -181,6 +211,18 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
 /* THE COPY. Every claim here is one the repo can be asked about, and nothing
    that has not happened is written in the past tense: the autonomous settle is
    named with its date rather than claimed as a track record. */
+/* THE GROUNDS ARE A SEQUENCE, NOT A DEFAULT, and the first cut of this deck
+   proved why it matters: nine of eleven slides came out black because black was
+   what I reached for each time, and eleven slides of one colour read as one
+   long slide. The brand runs on four grounds and the landing page moves through
+   all of them. So does this:
+
+     yellow  black  cream  black  cream  yellow  black  cream  black  PINK  yellow
+
+   No two neighbours share a ground, every ground is used, and the highest
+   chroma is spent once, on the ask, which is the only slide asking for
+   anything. The closer returns to the cover's yellow so the deck shuts the way
+   it opened. */
 const D = C.black, L = C.cream;
 export const SLIDES: Slide[] = [
   {
@@ -200,7 +242,7 @@ export const SLIDES: Slide[] = [
     sticker: "crowd-strip", stickerBox: { x: 0, y: 760, w: 1920, h: 320 },
   },
   {
-    label: "The solution", bg: D, ink: L,
+    label: "The solution", bg: C.cream, ink: C.ink,
     head: "You argue. Oddie makes it a market.",
     steps: ["Tag", "Tap a side", "Oddie settles"],
     body: ["Seconds, not a listing process. And the settling is not a person: a coin market resolves from on-chain price history, with no operator and no model call."],
@@ -217,7 +259,7 @@ export const SLIDES: Slide[] = [
     ],
   },
   {
-    label: "The founder", bg: D, ink: L,
+    label: "The founder", bg: C.cream, ink: C.ink,
     head: "Two years in. Now he can build it.",
     body: ["Lev spent two years on Poppin, a Chrome extension that put a prediction market on any website, and made Polymarket\u2019s builders program. Chrome banned the category days before launch. Oddie is the bigger idea he wanted all along, built where no company can switch it off."],
     stats: [
@@ -227,7 +269,7 @@ export const SLIDES: Slide[] = [
     ],
   },
   {
-    label: "Business model", bg: D, ink: L,
+    label: "Business model", bg: C.yellow, ink: C.ink,
     head: "4% of the pool. Once.",
     body: [
       "2% to whoever opened it. That is distribution.  2% to Oddie, at settlement.",
@@ -245,7 +287,7 @@ export const SLIDES: Slide[] = [
     sticker: "genesis-ticket", stickerBox: { x: 1320, y: 520, w: 520, h: 520 },
   },
   {
-    label: "The moat", bg: D, ink: L,
+    label: "The moat", bg: C.cream, ink: C.ink,
     head: "There is no desk to copy.",
     body: [
       "Their approval step is not a feature they chose. Kalshi is a regulated exchange; Polymarket curates. Neither can open a market on a tweet posted ten seconds ago.",
@@ -256,16 +298,19 @@ export const SLIDES: Slide[] = [
   {
     label: "Roadmap", bg: D, ink: L,
     head: "One market engine. Every surface is a door in.",
-    body: [
-      "LIVE   X and Solana mainnet. Real money, and a tag becomes a market with no human in the loop. First fully autonomous settlement scheduled 18 September.",
-      "NEXT   Telegram, bot built and tested.      THEN   Discord, same engine.",
-      "EVERYWHERE   Partners. Any app opens markets with one key.",
+    // The stage words are labels, so they are set as labels. They were prose in
+    // all caps, where Fredoka sets "IV" tight enough that LIVE reads as LNE.
+    rows: [
+      { tag: "Live", text: "X and Solana mainnet. Real money, and a tag becomes a market with no human in the loop. First fully autonomous settlement scheduled 18 September." },
+      { tag: "Next", text: "Telegram. The bot is built and tested." },
+      { tag: "Then", text: "Discord. Same engine, new crowd." },
+      { tag: "Everywhere", text: "Partners. Any app opens markets with one key." },
     ],
     sticker: "st-rocket", stickerBox: { x: 1360, y: 560, w: 480, h: 440 },
   },
   {
-    label: "The ask", bg: C.yellow, ink: C.ink,
-    head: "$250,000",
+    label: "The ask", bg: C.pinkField, ink: C.cream,
+    head: "$250,000", headSize: 240,
     body: [
       "30% TEAM, first hires so shipping never stops.      30% CREATORS, puts Oddie in every feed.",
       "30% RUNWAY, founder, counsel, compliance.      10% INFRA, measured not estimated.",
@@ -274,7 +319,7 @@ export const SLIDES: Slide[] = [
     sticker: "genesis-podium", stickerBox: { x: 1360, y: 520, w: 480, h: 500 },
   },
   {
-    label: "", bg: D, ink: L,
+    label: "", bg: C.yellow, ink: C.ink,
     head: "Be right. Be early. Be oddie.",
     body: ["oddie.fun   @oddiefun   lev@oddie.fun"],
     sticker: "st-main", stickerBox: { x: 1240, y: 480, w: 600, h: 540 },
