@@ -182,10 +182,14 @@ function render(s: Slide, n: number, total: number): string {
 
   if (s.rows?.length) {
     y += 6;
+    // The text column aligns to the LONGEST tag on this slide, not to a fixed
+    // 230: "30%" against that minimum left a hand's width of dead space before
+    // every line, on the one slide a reader actually studies.
+    const tagCol = Math.max(...s.rows.map((r) => textWidth(r.tag.toUpperCase(), 40, "display"))) + 40;
     for (const r of s.rows) {
       const tag = r.tag.toUpperCase();
       parts.push(`<text x="${PAD}" y="${y}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
-      const tx = PAD + Math.max(textWidth(tag, 40, "display") + 30, 230);
+      const tx = PAD + tagCol;
       const wrapped = wrapToWidth(r.text, colW - (tx - PAD), 34, 4, "meta").lines;
       let yy = y;
       for (const l of wrapped) {
@@ -283,7 +287,9 @@ export const SLIDES: Slide[] = [
     label: "The problem", bg: D, ink: L,
     head: "Being right pays. Just not where you argue.",
     body: ["The loudest wins the thread. Nobody pays out."],
-    sticker: "crowd-strip", stickerBox: { x: 0, y: 740, w: 1920, h: 340 },
+    // Was crowd-strip: a wide band of hands in the air, which is a celebration,
+    // and this is the complaint slide. The sticker now says the sentence.
+    sticker: "arch-loudest", stickerBox: { x: 1260, y: 520, w: 600, h: 500 },
   },
   {
     label: "The solution", bg: Y, ink: I,
@@ -342,9 +348,21 @@ export const SLIDES: Slide[] = [
   },
   {
     label: "The ask", bg: C.pinkField, ink: C.cream,
-    head: "$250,000", headSize: 260,
-    body: ["38 cents opens a market. This buys a lot of them."],
-    sticker: "genesis-podium", stickerBox: { x: 1380, y: 520, w: 460, h: 500 },
+    head: "$100,000", headSize: 220,
+    /* THE ASK HAS TO SAY WHAT THE MONEY IS FOR. It read "38 cents opens a
+       market, this buys a lot of them", which is a true and good number and
+       the wrong job for it: it made a raise sound like a line item for tiny
+       costs. What makes a small ask on a shipped product convincing is that it
+       is not building the product, it is putting a built one in front of
+       people. So the slide says that, and then says where it goes. */
+    body: ["The product is built and live. This is for reach."],
+    rows: [
+      { tag: "30%", text: "Creators. Pays the people who bring the room." },
+      { tag: "30%", text: "Team. So shipping never stops." },
+      { tag: "30%", text: "Runway. Founder, counsel, compliance." },
+      { tag: "10%", text: "Infra. Measured, not estimated." },
+    ],
+    sticker: "genesis-podium", stickerBox: { x: 1420, y: 560, w: 420, h: 460 },
   },
   {
     label: "", bg: D, ink: L,
