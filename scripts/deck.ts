@@ -81,6 +81,34 @@ function placeSticker(name: string, box: { x: number; y: number; w: number; h: n
   return `<image href="${sticker(name)}" x="${Math.round(box.x + box.w - w)}" y="${Math.round(box.y + box.h - h)}" width="${Math.round(w)}" height="${Math.round(h)}"/>`;
 }
 
+/* A FACE, IF THERE IS ONE ON DISK.
+   The founder slide said "he" and never said who. An investor deck is the one
+   place being subtle is simply being unclear: the reader wants a name, a face
+   and a handle, and gets none of them from "two years in".
+   The name and handle are set from the copy, so the slide is concrete with or
+   without a picture. The picture is a file drop: put lev.jpg (or .png/.webp)
+   in brand/ and it appears, circle cut, with the same hard offset every sticker
+   on these slides carries. Nothing breaks when it is absent. */
+function portrait(file: string, cx: number, cy: number, r: number): string {
+  const src = path.join(ROOT, "brand", file);
+  if (!existsSync(src)) return "";
+  const png = path.join(shelf, `portrait-${file}.png`);
+  execFileSync("sips", ["-s", "format", "png", src, "--out", png], { stdio: "ignore" });
+  const info = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", png]).toString();
+  const iw = Number(/pixelWidth: (\d+)/.exec(info)?.[1] ?? 1);
+  const ih = Number(/pixelHeight: (\d+)/.exec(info)?.[1] ?? 1);
+  // Cover the circle and centre the crop, so a portrait or a landscape shot
+  // both fill it without squashing.
+  const k = Math.max((r * 2) / iw, (r * 2) / ih);
+  const w = iw * k, h = ih * k;
+  const uri = `data:image/png;base64,${readFileSync(png).toString("base64")}`;
+  const id = `clip-${file.replace(/[^a-z0-9]/gi, "")}`;
+  return `<circle cx="${cx + 14}" cy="${cy + 16}" r="${r}" fill="${C.pink}"/>`
+    + `<clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>`
+    + `<image href="${uri}" x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" clip-path="url(#${id})"/>`
+    + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${C.black}" stroke-width="8"/>`;
+}
+
 interface Slide {
   label: string;
   bg: string;
@@ -97,6 +125,8 @@ interface Slide {
   stickerBox?: { x: number; y: number; w: number; h: number };
   /** The repeated band this deck's visual language uses along the bottom. */
   band?: string;
+  /** A named person, with a face when brand/<photo> exists. */
+  who?: { name: string; handle: string; photo?: string };
 }
 
 function render(s: Slide, n: number, total: number): string {
@@ -110,6 +140,16 @@ function render(s: Slide, n: number, total: number): string {
   const parts: string[] = [`<rect width="${W}" height="${H}" fill="${s.bg}"/>`];
 
   if (s.sticker && s.stickerBox) parts.push(placeSticker(s.sticker, s.stickerBox));
+  if (s.who) {
+    const r = 205, cx = 1555, cy = 560;
+    const face = s.who.photo ? portrait(s.who.photo, cx, cy, r) : "";
+    parts.push(face);
+    // The name sits under the face when there is one, and stands on its own
+    // where the face would have been when there is not.
+    const ny = face ? cy + r + 86 : cy - 20;
+    parts.push(`<text x="${cx}" y="${ny}" text-anchor="middle" font-family="${DISPLAY}" font-size="64" fill="${s.ink}">${esc(s.who.name.toUpperCase())}</text>`);
+    parts.push(`<text x="${cx}" y="${ny + 52}" text-anchor="middle" font-family="${BODY}" font-size="32" font-weight="700" fill="${accent}">${esc(s.who.handle)}</text>`);
+  }
 
   // Slide number and section label, on one baseline.
   parts.push(`<text x="${PAD}" y="${PAD - 8}" font-family="${BODY}" font-size="26" font-weight="700" fill="${dim}" letter-spacing="6">${String(n).padStart(2, "0")} / ${total}</text>`);
@@ -118,7 +158,9 @@ function render(s: Slide, n: number, total: number): string {
   }
 
   let y = 300;
-  const colW = s.sticker ? 1060 : W - PAD * 2;
+  // A portrait takes the same right-hand column a sticker does, and forgetting
+  // that ran the body text straight under the circle.
+  const colW = s.sticker || s.who ? 1060 : W - PAD * 2;
 
   // The headline steps DOWN until it fits its column, so a copy edit can never
   // push a word off the slide silently. Same rule as the market card.
@@ -203,6 +245,7 @@ function render(s: Slide, n: number, total: number): string {
   if (s.stats?.length) {
     y += 10;
     let x = PAD;
+    let bottom = y;
     for (const st of s.stats) {
       parts.push(`<text x="${x}" y="${y + 80}" font-family="${DISPLAY}" font-size="128" fill="${accent}">${esc(st.big)}</text>`);
       const wrapped = wrapToWidth(st.small, 400, 30, 3, "meta").lines;
@@ -212,7 +255,12 @@ function render(s: Slide, n: number, total: number): string {
         yy += 40;
       }
       x += 470;
+      bottom = Math.max(bottom, yy - 40); // yy has already advanced past the last line
     }
+    // Assigned AFTER the loop. Written inside it, every stat started lower than
+    // the one before and the row came out as a staircase: y is the shared
+    // baseline the row is drawn from, so nothing may move it mid-row.
+    y = bottom;
   }
 
   if (y > H - 70) {
@@ -327,8 +375,9 @@ export const SLIDES: Slide[] = [
   },
   {
     label: "The founder", bg: D, ink: L,
-    head: "Two years in. Now he can build it.",
-    body: ["Chrome banned his last one. Nobody can switch this one off."],
+    head: "Lev has built this before.",
+    body: ["Poppin did this in a browser. Chrome banned the category days before launch. Oddie is the same idea, built where nobody can."],
+    who: { name: "Lev Acar", handle: "@levvercetti", photo: "lev.jpg" },
     stats: [
       { big: "45K", small: "signed up for Poppin" },
       { big: "600", small: "in the beta" },
