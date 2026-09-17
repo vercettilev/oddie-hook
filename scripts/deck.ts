@@ -387,8 +387,16 @@ export const SLIDES: Slide[] = [
        four plain sentences. 45K is in the headline so it leaves the stat row,
        where it would only be the same fact said twice. */
     head: "45,000 signed up for the last one.",
-    body: ["Poppin put a prediction market inside any website. Chrome banned the category days before launch. Oddie runs on Solana. Nobody can ban it."],
-    who: { name: "Lev Acar", handle: "@levvercetti", photo: "madlev.jpg" },
+    /* "NOBODY CAN BAN IT" WAS AN OVERCLAIM, and the wrong one to leave standing
+       on the slide about being banned. The program, the pools and the record
+       are on chain and no third party can take those down. The TAG, though,
+       arrives through X, which is a platform, which is the shape of the thing
+       that killed the last one. A reader spots that in a second and the slide
+       invites them to.
+       What is true, and still the confident thing: the markets cannot be
+       deleted. A door can close; the roadmap already has more doors. */
+    body: ["Poppin put a prediction market inside any website. Chrome banned the category days before launch. Oddie is the idea he wanted all along, built where nobody can delete it."],
+    who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
     stats: [
       { big: "600", small: "made it into the beta" },
       { big: "20K", small: "posts they wrote" },
