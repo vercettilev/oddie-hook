@@ -340,11 +340,21 @@ export const SLIDES: Slide[] = [
     label: "The problem", bg: D, ink: L,
     head: "Being right pays. Just not where you argue.",
     body: ["The loudest wins the thread. Nobody pays out."],
-    /* THIRD STICKER ON THIS SLIDE AND THE FIRST TWO WERE BOTH CELEBRATIONS.
-       crowd-strip is hands in the air; arch-loudest is a ghost cheering with a
-       megaphone, which matched the WORD "loudest" and none of the feeling. The
-       slide is about being right and getting nothing, so it takes the L. */
     sticker: "st-l", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
+  },
+  {
+    /* THE FOUNDER MOVED TO THREE. A hundred thousand dollars is an angel
+       cheque, and an angel cheque is written on the founder and the insight,
+       not on a market-model-moat sequence. Burying him at six made this read
+       like a business deck for a business that has not happened yet. */
+    label: "The founder", bg: C.cream, ink: I,
+    head: "45,000 signed up for the last one.", headSize: 124,
+    body: ["He built a Chrome extension that put prediction markets on any website. Chrome banned the category days before launch. Oddie is the idea he wanted all along, built where nobody can delete it."],
+    who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
+    stats: [
+      { big: "600", small: "made it into the beta" },
+      { big: "20K", small: "posts they wrote" },
+    ],
   },
   {
     label: "The solution", bg: Y, ink: I,
@@ -354,7 +364,25 @@ export const SLIDES: Slide[] = [
     sticker: "st-tag", stickerBox: { x: 1200, y: 520, w: 660, h: 500 },
   },
   {
-    label: "Why now", bg: D, ink: L,
+    /* THE SLIDE THE DECK DID NOT HAVE, and its absence was the whole problem:
+       eleven slides and not one fact about oddie itself.
+       IT IS A PROOF, NOT A METRIC, and deliberately so. The tag and the stake
+       on this market were both Lev's own accounts, so there is no demand here
+       and the slide must not imply any. What it does prove is that the machine
+       runs unattended end to end, which no competitor can say, and which is
+       the only thing worth showing before there are users. */
+    label: "It works", bg: D, ink: L,
+    head: "The loop runs with nobody in it.",
+    rows: [
+      { tag: "15 Sep", text: "A tag on X. The market opened in seconds, unattended." },
+      { tag: "15 Sep", text: "Real SOL in the pool, on Solana mainnet." },
+      { tag: "18 Sep", text: "It settled itself from on-chain price history. No operator, no model call." },
+      { tag: "18 Sep", text: "The bot answered the original tweet with the receipt." },
+    ],
+    sticker: "st-called", stickerBox: { x: 1420, y: 600, w: 420, h: 400 },
+  },
+  {
+    label: "Why now", bg: Y, ink: I,
     head: "None of it happened in a thread.",
     stats: [
       { big: "$22B", small: "what Kalshi is worth" },
@@ -363,60 +391,27 @@ export const SLIDES: Slide[] = [
     ],
   },
   {
-    /* "THEY HAVE TO ASK PERMISSION. WE DON'T." WAS NOT A MOAT and Lev caught it.
-       Permissionless market creation is ordinary: Azuro, Zeitgeist and a dozen
-       protocols already let anyone open one. What none of them do is open it
-       inside the argument, and none of them accumulate the thing that actually
-       compounds here.
-       The unit that compounds is not the market, it is the PERSON. Every tag
-       and every side settles under a handle, so a clone launches with an empty
-       board while a year of calls sits on ours. That is the moat, it is true
-       today (the board counts it, every wallet has a page), and it is the seed
-       of the social-trading read without promising a follow or copy feature the
-       app does not have. */
-    label: "The moat", bg: Y, ink: I,
-    head: "Every call has a name on it.",
-    body: ["Right or wrong, it settles under your handle. A year of that is a reputation nobody can fork."],
-    sticker: "st-called", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
-  },
-  {
-    label: "The founder", bg: D, ink: L,
-    /* "LEV HAS BUILT THIS BEFORE" WAS NOT TRUE. He built Poppin, which is not
-       this, and "did this in a browser" told a reader nothing at all. The
-       number is the confident thing and it goes first; the lesson follows in
-       four plain sentences. 45K is in the headline so it leaves the stat row,
-       where it would only be the same fact said twice. */
-    head: "45,000 signed up for the last one.", headSize: 124,
-    /* "NOBODY CAN BAN IT" WAS AN OVERCLAIM, and the wrong one to leave standing
-       on the slide about being banned. The program, the pools and the record
-       are on chain and no third party can take those down. The TAG, though,
-       arrives through X, which is a platform, which is the shape of the thing
-       that killed the last one. A reader spots that in a second and the slide
-       invites them to.
-       What is true, and still the confident thing: the markets cannot be
-       deleted. A door can close; the roadmap already has more doors. */
-    /* THE OLD PRODUCT IS EVIDENCE, NOT A BRAND TO PROMOTE. Naming Poppin put a
-       second company's name on a slide about this one, and it invites the
-       question a founder slide should not raise: what happened to it, is it
-       still running, who owns it. Describing it keeps the slide about Lev. */
-    body: ["He built a Chrome extension that put prediction markets on any website. Chrome banned the category days before launch. Oddie is the idea he wanted all along, built where nobody can delete it."],
-    who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
-    stats: [
-      { big: "600", small: "made it into the beta" },
-      { big: "20K", small: "posts they wrote" },
-    ],
-  },
-  {
-    label: "The money", bg: Y, ink: I,
+    label: "The money", bg: D, ink: L,
     head: "4% when it is over. Nothing before.",
     body: ["Half of it goes to whoever opened the market."],
     sticker: "st-riding", stickerBox: { x: 1260, y: 540, w: 600, h: 480 },
   },
   {
-    label: "How it spreads", bg: D, ink: L,
+    label: "How it spreads", bg: Y, ink: I,
     head: "Bring the room, own the room.",
     body: ["Open a market and keep 2% of it. Forever."],
     sticker: "genesis-ticket", stickerBox: { x: 1300, y: 480, w: 560, h: 560 },
+  },
+  {
+    /* PRESENT TENSE, because the old version was entirely future: "give it a
+       year and every account is a track record" is a moat in year two of a
+       company in week one, and an investor discounts that to nothing. The
+       record starts on the first settled call, and the first one is dated on
+       slide five. */
+    label: "The moat", bg: D, ink: L,
+    head: "Every call already has a name on it.",
+    body: ["It settles on chain under your handle, right or wrong. That record is the product, and a clone starts at zero."],
+    sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
   },
   {
     label: "Where it goes", bg: Y, ink: I,
@@ -427,17 +422,11 @@ export const SLIDES: Slide[] = [
       { tag: "Then", text: "Discord." },
       { tag: "After", text: "Any app, with one key." },
     ],
-    sticker: "st-rocket", stickerBox: { x: 1360, y: 560, w: 500, h: 460 },
+    sticker: "st-rocket", stickerBox: { x: 1400, y: 580, w: 440, h: 440 },
   },
   {
     label: "The ask", bg: C.pinkField, ink: C.cream,
     head: "$100,000", headSize: 220,
-    /* THE ASK HAS TO SAY WHAT THE MONEY IS FOR. It read "38 cents opens a
-       market, this buys a lot of them", which is a true and good number and
-       the wrong job for it: it made a raise sound like a line item for tiny
-       costs. What makes a small ask on a shipped product convincing is that it
-       is not building the product, it is putting a built one in front of
-       people. So the slide says that, and then says where it goes. */
     body: ["The product is built and live. This is for reach."],
     rows: [
       { tag: "30%", text: "Creators. Pays the people who bring the room." },
@@ -445,10 +434,10 @@ export const SLIDES: Slide[] = [
       { tag: "30%", text: "Runway. Founder, counsel, compliance." },
       { tag: "10%", text: "Infra. Measured, not estimated." },
     ],
-    sticker: "genesis-podium", stickerBox: { x: 1420, y: 560, w: 420, h: 460 },
+    sticker: "genesis-podium", stickerBox: { x: 1440, y: 580, w: 400, h: 440 },
   },
   {
-    label: "", bg: D, ink: L,
+    label: "", bg: Y, ink: I,
     head: "Be right. Be early. Be oddie.",
     body: ["lev@oddie.fun"],
     sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
