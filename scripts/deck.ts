@@ -151,6 +151,8 @@ interface Slide {
   steps?: string[];
   /** A labelled row: the stage in display caps, the sentence in body case. */
   rows?: { tag: string; text: string }[];
+  /** A quiet line under everything, for a caveat or a link a reader can check. */
+  foot?: string;
   /** A real screenshot, framed. Shown instead of the slide's sticker when the
    *  file is there, because a photograph of the thing happening outranks any
    *  drawing of it. */
@@ -303,6 +305,14 @@ function render(s: Slide, n: number, total: number): string {
     y = bottom;
   }
 
+  if (s.foot) {
+    y += 14;
+    for (const l of wrapToWidth(s.foot, colW, 28, 3, "meta").lines) {
+      parts.push(`<text x="${PAD}" y="${y}" font-family="${BODY}" font-size="28" font-weight="600" fill="${s.ink}" fill-opacity=".62">${esc(l)}</text>`);
+      y += 38;
+    }
+  }
+
   if (y > H - 70) {
     // Not a silent truncation: a slide that ran past its own edge is a copy
     // problem, and the only way to find one in a PNG is to be told.
@@ -416,12 +426,21 @@ export const SLIDES: Slide[] = [
     label: "It works", bg: D, ink: L,
     head: "It runs itself.",
     shot: "thread.png",
+    /* THE LAST TWO LINES HAVE NOT HAPPENED YET, so they are written as what
+       they are: a dated commitment with a public link under it. That is a
+       stronger thing to hand an investor than a past-tense claim, because it is
+       falsifiable and they can go and check it themselves tomorrow. When it
+       fires, the tense changes and brand/thread.png takes the right half. */
     rows: [
       { tag: "15 Sep", text: "A tag on X. The market opened in seconds, unattended." },
-      { tag: "15 Sep", text: "Real SOL in the pool, on Solana mainnet." },
-      { tag: "18 Sep", text: "It settled itself from on-chain price history. No operator, no model call." },
-      { tag: "18 Sep", text: "The bot answered the original tweet with the receipt." },
+      { tag: "15 Sep", text: "Real SOL went into the pool, on Solana mainnet." },
+      { tag: "18 Sep", text: "It settles itself from on-chain price history. No operator, no model call." },
+      { tag: "18 Sep", text: "The bot answers the original tweet with the receipt." },
     ],
+    // A nineteen-digit tweet id set in Fredoka is not a link anybody follows: its
+    // underscores read as doubled and nobody types that off a PDF. The thread is
+    // findable from the handle and the date, which is the part that matters.
+    foot: "The last two are scheduled, not yet run. The thread is public: @giga_g_chad on X, 15 September.",
     sticker: "st-called", stickerBox: { x: 1090, y: 240, w: 760, h: 790 },
   },
   {
