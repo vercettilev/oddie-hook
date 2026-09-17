@@ -90,9 +90,15 @@ function placeSticker(name: string, box: { x: number; y: number; w: number; h: n
    in brand/ and it appears, circle cut, with the same hard offset every sticker
    on these slides carries. Nothing breaks when it is absent. */
 function portrait(file: string, cx: number, cy: number, r: number): string {
-  const src = path.join(ROOT, "brand", file);
-  if (!existsSync(src)) return "";
-  const png = path.join(shelf, `portrait-${file}.png`);
+  // Any of the usual spellings, because the failure mode is somebody dropping
+  // lev.png next to code that only looks for lev.jpg and getting a slide with a
+  // hole in it and no explanation.
+  const stem = file.replace(/\.[^.]+$/, "");
+  const src = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".JPG", ".PNG"]
+    .map((ext) => path.join(ROOT, "brand", stem + ext))
+    .find((f) => existsSync(f));
+  if (!src) return "";
+  const png = path.join(shelf, `portrait-${stem}.png`);
   execFileSync("sips", ["-s", "format", "png", src, "--out", png], { stdio: "ignore" });
   const info = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", png]).toString();
   const iw = Number(/pixelWidth: (\d+)/.exec(info)?.[1] ?? 1);
@@ -102,7 +108,7 @@ function portrait(file: string, cx: number, cy: number, r: number): string {
   const k = Math.max((r * 2) / iw, (r * 2) / ih);
   const w = iw * k, h = ih * k;
   const uri = `data:image/png;base64,${readFileSync(png).toString("base64")}`;
-  const id = `clip-${file.replace(/[^a-z0-9]/gi, "")}`;
+  const id = `clip-${stem.replace(/[^a-z0-9]/gi, "")}`;
   return `<circle cx="${cx + 14}" cy="${cy + 16}" r="${r}" fill="${C.pink}"/>`
     + `<clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${r}"/></clipPath>`
     + `<image href="${uri}" x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" clip-path="url(#${id})"/>`
