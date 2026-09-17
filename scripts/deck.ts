@@ -115,28 +115,130 @@ function portrait(file: string, cx: number, cy: number, r: number): string {
     + `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${C.black}" stroke-width="8"/>`;
 }
 
-/** A screenshot, fitted inside its box and given the hard offset every other
- *  object on these slides has. Returns "" when the file is not there yet, so
- *  the slide falls back to its sticker rather than to a hole. */
-function placeShot(file: string, box: { x: number; y: number; w: number; h: number }, bg: string): string {
+/** A file in brand/, decoded into something resvg will actually draw, with the
+ *  size it really is. Null when it is not there, so every caller can fall back
+ *  rather than leave a hole. */
+function loadShot(file: string): { uri: string; w: number; h: number } | null {
   const stem = file.replace(/\.[^.]+$/, "");
   const src = [".png", ".jpg", ".jpeg", ".webp", ".PNG", ".JPG"]
     .map((ext) => path.join(ROOT, "brand", stem + ext))
     .find((f) => existsSync(f));
-  if (!src) return "";
+  if (!src) return null;
   const png = path.join(shelf, `shot-${stem}.png`);
   execFileSync("sips", ["-s", "format", "png", src, "--out", png], { stdio: "ignore" });
   const info = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", png]).toString();
-  const iw = Number(/pixelWidth: (\d+)/.exec(info)?.[1] ?? 1);
-  const ih = Number(/pixelHeight: (\d+)/.exec(info)?.[1] ?? 1);
-  const k = Math.min(box.w / iw, box.h / ih);
-  const w = Math.round(iw * k), h = Math.round(ih * k);
-  const x = Math.round(box.x + box.w - w), y = Math.round(box.y + box.h - h);
-  const uri = `data:image/png;base64,${readFileSync(png).toString("base64")}`;
-  const off = 14;
-  return `<rect x="${x + off}" y="${y + off}" width="${w}" height="${h}" rx="18" fill="${C.pink}"/>`
-    + `<image href="${uri}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice" clip-path="inset(0 round 18)"/>`
-    + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="none" stroke="${C.black}" stroke-width="6"/>`;
+  return {
+    uri: `data:image/png;base64,${readFileSync(png).toString("base64")}`,
+    w: Number(/pixelWidth: (\d+)/.exec(info)?.[1] ?? 1),
+    h: Number(/pixelHeight: (\d+)/.exec(info)?.[1] ?? 1),
+  };
+}
+
+/* THE STEPS ARE DRAWN, NOT LISTED, and the slide they replaced is the reason.
+   It carried four dated sentences in a column, which is a CLAIM about a machine
+   on the one slide in the deck whose whole job is EVIDENCE. The machine's own
+   artifacts are the evidence: the tweet as it was written, the card exactly as
+   it was posted, and the account the money sits in. Each panel holds one, and
+   the reader gets the whole loop at a glance instead of reading four lines and
+   deciding whether to believe them. */
+interface FlowStep {
+  /** The pink line over the panel. A clock time where there is one. */
+  tick: string;
+  /** The quiet line under it, in plain words. */
+  cap: string;
+  /** A real file in brand/, filling the panel. */
+  img?: string;
+  /** Somebody's real words, set as they were written. */
+  quote?: string;
+  by?: string;
+  /** A drawn panel: one loud line, one quiet one, and a value to check. */
+  head?: string;
+  sub?: string;
+  note?: string;
+  /** Set on the gap BEFORE this panel: the only number this slide needs. */
+  gapLabel?: string;
+}
+
+/** The row of panels, sized off the one real image in it so nothing is
+ *  letterboxed and every panel shares a baseline. */
+function flowRow(items: FlowStep[], top: number, accent: string, ink: string, onDark: boolean): { svg: string; bottom: number } {
+  const GAP = 130, R = 22, INSET = 36;
+  const pw = Math.round((W - PAD * 2 - GAP * (items.length - 1)) / items.length);
+  const shot = items.map((it) => (it.img ? loadShot(it.img) : null));
+  const real = shot.find((x) => x);
+  const ph = real ? Math.round((pw * real.h) / real.w) : 300;
+  // A drawn panel has to lift off its ground or it is a hole, and a stroke in
+  // the ink colour is the only lift that works on all four of this deck's
+  // grounds.
+  const panelFill = onDark ? "#1C1F0E" : "rgba(11,13,4,.05)";
+  const hair = onDark ? "rgba(251,252,244,.28)" : "rgba(11,13,4,.18)";
+  const quiet = onDark ? "rgba(251,252,244,.60)" : "rgba(11,13,4,.60)";
+  const out: string[] = [];
+  let capBottom = top + ph;
+
+  items.forEach((it, i) => {
+    const x = PAD + i * (pw + GAP);
+    const img = shot[i];
+    out.push(`<rect x="${x + 14}" y="${top + 14}" width="${pw}" height="${ph}" rx="${R}" fill="${accent}"/>`);
+    if (img) {
+      const id = `fp${i}`;
+      out.push(`<clipPath id="${id}"><rect x="${x}" y="${top}" width="${pw}" height="${ph}" rx="${R}"/></clipPath>`);
+      out.push(`<image href="${img.uri}" x="${x}" y="${top}" width="${pw}" height="${ph}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/>`);
+    } else {
+      out.push(`<rect x="${x}" y="${top}" width="${pw}" height="${ph}" rx="${R}" fill="${panelFill}" stroke="${hair}" stroke-width="3"/>`);
+      let ty = top + INSET + 26;
+      if (it.by) {
+        out.push(`<text x="${x + INSET}" y="${ty}" font-family="${DISPLAY}" font-size="32" fill="${quiet}">${esc(it.by.toUpperCase())}</text>`);
+        ty += 52;
+      }
+      if (it.quote) {
+        // The handle the tweet was aimed at is lit, because it is the whole
+        // interface: a reader who takes nothing else from this slide should
+        // still see that the product is summoned by typing its name.
+        const lit = (l: string) => l.split(/(@\w+)/)
+          .map((p) => (/^@\w+$/.test(p) ? `<tspan fill="${C.yellow}">${esc(p)}</tspan>` : esc(p)))
+          .join("");
+        for (const l of wrapToWidth(`“${it.quote}”`, pw - INSET * 2, 30, 4, "meta").lines) {
+          out.push(`<text x="${x + INSET}" y="${ty}" font-family="${BODY}" font-size="30" font-weight="600" fill="${ink}">${lit(l)}</text>`);
+          ty += 42;
+        }
+      }
+      // A panel with no quotation in it is a receipt, and a receipt is read
+      // from the top and the bottom: the loud line sits a third of the way
+      // down and the value a reader can check sits on the floor.
+      if (it.head) {
+        out.push(`<text x="${x + INSET}" y="${top + 110}" font-family="${DISPLAY}" font-size="66" fill="${C.yellow}">${esc(it.head.toUpperCase())}</text>`);
+      }
+      if (it.sub) {
+        out.push(`<text x="${x + INSET}" y="${top + 162}" font-family="${BODY}" font-size="30" font-weight="600" fill="${ink}" fill-opacity=".8">${esc(it.sub)}</text>`);
+      }
+      if (it.note) {
+        out.push(`<text x="${x + INSET}" y="${top + ph - 34}" font-family="${BODY}" font-size="28" font-weight="700" fill="${accent}">${esc(it.note)}</text>`);
+      }
+    }
+
+    out.push(`<text x="${x}" y="${top - 30}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(it.tick.toUpperCase())}</text>`);
+    // Stacked, not clipped: a caption that outgrows its panel pushes the row
+    // down and trips the overflow warning, rather than losing its second half
+    // where nobody would notice.
+    let cy = top + ph + 52;
+    for (const l of wrapToWidth(it.cap, pw, 28, 2, "meta").lines) {
+      out.push(`<text x="${x}" y="${cy}" font-family="${BODY}" font-size="28" font-weight="600" fill="${quiet}">${esc(l)}</text>`);
+      cy += 36;
+    }
+    capBottom = Math.max(capBottom, cy - 36);
+
+    // DRAWN, NOT TYPED, for the same reason the steps row draws its arrow:
+    // Anton has no arrow glyph and resvg puts a tofu box there without a word.
+    if (i > 0) {
+      const gx = x - GAP, gy = top + ph / 2;
+      out.push(`<path d="M ${gx + 16} ${gy} h 44 m -16 -16 l 16 16 l -16 16" fill="none" stroke="${accent}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>`);
+      if (it.gapLabel) {
+        out.push(`<text x="${gx + GAP / 2}" y="${top - 30}" text-anchor="middle" font-family="${DISPLAY}" font-size="36" fill="${C.yellow}">${esc(it.gapLabel.toUpperCase())}</text>`);
+      }
+    }
+  });
+  return { svg: out.join(""), bottom: capBottom };
 }
 
 interface Slide {
@@ -153,10 +255,14 @@ interface Slide {
   rows?: { tag: string; text: string }[];
   /** A quiet line under everything, for a caveat or a link a reader can check. */
   foot?: string;
-  /** A real screenshot, framed. Shown instead of the slide's sticker when the
-   *  file is there, because a photograph of the thing happening outranks any
-   *  drawing of it. */
-  shot?: string;
+  /** A short block set against the headline, on the right. */
+  aside?: string[];
+  /** The steps, shown rather than told. */
+  flow?: FlowStep[];
+  /** An outlined strip under the flow, for the beat that has not happened yet.
+   *  OUTLINED AND NOT FILLED ON PURPOSE: everything solid on these slides has
+   *  already happened, so a promise must not be able to pass for a receipt. */
+  rail?: { tag: string; text: string };
   sticker?: string;
   stickerBox?: { x: number; y: number; w: number; h: number };
   /** The repeated band this deck's visual language uses along the bottom. */
@@ -175,13 +281,7 @@ function render(s: Slide, n: number, total: number): string {
   const accent = s.bg === C.pinkField ? C.yellow : C.pink;
   const parts: string[] = [`<rect width="${W}" height="${H}" fill="${s.bg}"/>`];
 
-  if (s.shot && s.stickerBox) {
-    const framed = placeShot(s.shot, s.stickerBox, s.bg);
-    if (framed) parts.push(framed);
-    else if (s.sticker) parts.push(placeSticker(s.sticker, s.stickerBox));
-  } else if (s.sticker && s.stickerBox) {
-    parts.push(placeSticker(s.sticker, s.stickerBox));
-  }
+  if (s.sticker && s.stickerBox) parts.push(placeSticker(s.sticker, s.stickerBox));
   if (s.who) {
     const r = 205, cx = 1555, cy = 560;
     const face = s.who.photo ? portrait(s.who.photo, cx, cy, r) : "";
@@ -197,6 +297,14 @@ function render(s: Slide, n: number, total: number): string {
   parts.push(`<text x="${PAD}" y="${PAD - 8}" font-family="${BODY}" font-size="26" font-weight="700" fill="${dim}" letter-spacing="6">${String(n).padStart(2, "0")} / ${total}</text>`);
   if (s.label) {
     parts.push(`<text x="${PAD + 200}" y="${PAD - 8}" font-family="${BODY}" font-size="26" font-weight="700" fill="${dim}" letter-spacing="10">${esc(s.label.toUpperCase())}</text>`);
+  }
+
+  if (s.aside?.length) {
+    let ay = 300 - (s.aside.length - 1) * 26;
+    for (const l of s.aside) {
+      parts.push(`<text x="${W - PAD}" y="${ay}" text-anchor="end" font-family="${BODY}" font-size="40" font-weight="600" fill="${s.ink}" fill-opacity=".88">${esc(l)}</text>`);
+      ay += 52;
+    }
   }
 
   let y = 300;
@@ -262,6 +370,24 @@ function render(s: Slide, n: number, total: number): string {
       }
     }
     y += 70;
+  }
+
+  if (s.flow?.length) {
+    const row = flowRow(s.flow, y + 30, accent, s.ink, onDark);
+    parts.push(row.svg);
+    y = row.bottom;
+  }
+
+  if (s.rail) {
+    y += 38;
+    const h = 76;
+    // Dashed, because every other object on these slides is a thing that has
+    // happened and this one is a thing that will.
+    parts.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" rx="20" fill="none" stroke="${accent}" stroke-width="4" stroke-dasharray="20 12"/>`);
+    const tag = s.rail.tag.toUpperCase();
+    parts.push(`<text x="${PAD + 40}" y="${y + h / 2 + 14}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
+    parts.push(`<text x="${PAD + 40 + textWidth(tag, 40, "display") + 36}" y="${y + h / 2 + 12}" font-family="${BODY}" font-size="32" font-weight="600" fill="${s.ink}" fill-opacity=".88">${esc(s.rail.text)}</text>`);
+    y += h;
   }
 
   if (s.rows?.length) {
@@ -418,30 +544,59 @@ export const SLIDES: Slide[] = [
     /* "THE LOOP RUNS WITH NOBODY IN IT" SAID THE WRONG THING. It was meant as
        no operator; it reads just as easily as no users, which is the one thing
        this deck is careful not to advertise, and it planted that idea in the
-       reader itself. The claim is that it is automatic, so say that.
-       AND A DATED LIST TELLS, IT DOES NOT SHOW. The artifact is the thread on
-       X: the tag, the bot opening the market, and the bot returning with the
-       result and a Solana link. Drop that screenshot in as brand/thread.png
-       and it takes the slide; until then the sticker holds the space. */
+       reader itself. The claim is that it is automatic, so say that. */
+    /* AND THEN IT WAS STILL A LIST. Four dated sentences in a column tell a
+       reader that a machine ran; they do not show it, and a list is exactly
+       what a founder writes when there is nothing to show. There is something
+       to show. The panels hold the real objects: the words that were tweeted,
+       the card exactly as it went out on X, and the account the money is in.
+       THE NUMBER ON THE ARROW IS THE WHOLE SLIDE. Both posts are snowflake
+       ids, so the gap between them is not a claim, it is arithmetic anyone can
+       redo: 2099850003501969749 at 13:17:08.818Z, 2099850105037926466 at
+       13:17:33.026Z. Twenty-four seconds, and nobody was awake for them. */
     label: "It works", bg: D, ink: L,
     head: "It runs itself.",
-    shot: "thread.png",
-    /* THE LAST TWO LINES HAVE NOT HAPPENED YET, so they are written as what
-       they are: a dated commitment with a public link under it. That is a
-       stronger thing to hand an investor than a past-tense claim, because it is
-       falsifiable and they can go and check it themselves tomorrow. When it
-       fires, the tense changes and brand/thread.png takes the right half. */
-    rows: [
-      { tag: "15 Sep", text: "A tag on X. The market opened in seconds, unattended." },
-      { tag: "15 Sep", text: "Real SOL went into the pool, on Solana mainnet." },
-      { tag: "18 Sep", text: "It settles itself from on-chain price history. No operator, no model call." },
-      { tag: "18 Sep", text: "The bot answers the original tweet with the receipt." },
+    /* THE PICTURES SHOW WHAT HAPPENED; THEY CANNOT SHOW WHO DID NOT. That is
+       the claim, so it is the one sentence on the slide. It names oddie rather
+       than saying "nobody", because "nobody" is what the old headline said and
+       a reader heard it as "no users" — the one thing this slide must not
+       imply, since both accounts on this market are Lev's. */
+    aside: ["No one at oddie", "opened this market.", "No one will close it."],
+    flow: [
+      {
+        tick: "13:17:08",
+        by: "@giga_g_chad",
+        quote: "$BULLSHIT hits a 1m market cap within 3 days. screenshot this. @oddiefun",
+        cap: "someone tags it on X",
+      },
+      {
+        /* THE CARD IS THE ONE THAT WAS POSTED, not one generated for the deck:
+           it is pulled from the tweet's own media and frozen in brand/, which
+           is why it still reads "2d left" instead of whatever the live market
+           would say today. A deck that re-renders its evidence has no evidence. */
+        tick: "13:17:33", gapLabel: "24 sec",
+        img: "step-market.png",
+        cap: "the bot opens it and replies",
+      },
+      {
+        /* NO TIME ON THIS ONE, and that is not an oversight. The Solana account
+           is minted when the first stake lands, not when the market opens, so
+           a clock here would be a nice-looking lie. */
+        tick: "On chain",
+        head: "Real SOL",
+        sub: "locked until the deadline",
+        note: "562CXadj…SRE6rc1D7",
+        cap: "the money lands on Solana",
+      },
     ],
-    // A nineteen-digit tweet id set in Fredoka is not a link anybody follows: its
-    // underscores read as doubled and nobody types that off a PDF. The thread is
-    // findable from the handle and the date, which is the part that matters.
-    foot: "The last two are scheduled, not yet run. The thread is public: @giga_g_chad on X, 15 September.",
-    sticker: "st-called", stickerBox: { x: 1090, y: 240, w: 760, h: 790 },
+    /* THE LAST BEAT HAS NOT HAPPENED YET, so it is dashed and dated rather than
+       written in the past tense. That is a stronger thing to hand an investor
+       than a claim, because they can go and check it tomorrow. When it fires,
+       this becomes a fourth panel with the reply in it. */
+    rail: {
+      tag: "18 Sep 13:17 UTC",
+      text: "It closes itself from on-chain price history and answers the tweet.",
+    },
   },
   {
     label: "Why now", bg: Y, ink: I,
