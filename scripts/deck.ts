@@ -396,7 +396,7 @@ export const SLIDES: Slide[] = [
     body: ["He built a Chrome extension that put prediction markets on any website. Chrome banned the category days before launch. Oddie is the idea he wanted all along, built where nobody can delete it."],
     who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
     stats: [
-      { big: "600", small: "made it into the beta" },
+      { big: "600", small: "in the closed beta" },
       { big: "20K", small: "posts they wrote" },
     ],
   },
@@ -446,22 +446,30 @@ export const SLIDES: Slide[] = [
   {
     label: "Why now", bg: Y, ink: I,
     head: "None of it happened in a thread.",
+    /* $40B TRADED IN ONE MONTH CAME OUT. It was the load-bearing number on the
+       slide whose whole weight is a contrast, and it was unsourced through
+       three asks. An unverifiable figure on a fundraising document does not
+       fail quietly: a reader who checks it and cannot confirm it stops
+       trusting every other number here. Put it back the day there is a link. */
     stats: [
       { big: "$22B", small: "what Kalshi is worth" },
-      { big: "$40B", small: "traded in one month" },
-      { big: "0", small: "of it inside a thread" },
+      { big: "0", small: "markets you can open from a reply" },
     ],
   },
   {
     label: "The money", bg: D, ink: L,
     head: "4% when it is over. Nothing before.",
-    body: ["Half of it goes to whoever opened the market."],
+    body: ["Half goes to whoever opened the market, for as long as it exists."],
     sticker: "st-riding", stickerBox: { x: 1260, y: 540, w: 600, h: 480 },
   },
   {
+    /* THIS SLIDE SAID THE FEE AGAIN. "Open a market and keep 2% of it" is the
+       previous slide's "half goes to whoever opened it", one screen later, in
+       a deck that cuts restatements everywhere else. The fee is the model; this
+       slide is the growth loop, which is a different claim. */
     label: "How it spreads", bg: Y, ink: I,
     head: "Bring the room, own the room.",
-    body: ["Open a market and keep 2% of it. Forever."],
+    body: ["Whoever opens a market is paid to bring people into it. That is the entire growth plan."],
     sticker: "genesis-ticket", stickerBox: { x: 1300, y: 480, w: 560, h: 560 },
   },
   {
@@ -471,8 +479,15 @@ export const SLIDES: Slide[] = [
        record starts on the first settled call, and the first one is dated on
        slide five. */
     label: "The moat", bg: D, ink: L,
-    head: "Every call already has a name on it.",
-    body: ["It settles on chain under your handle, right or wrong. That record is the product, and a clone starts at zero."],
+    head: "Every call already has a name on it.", headSize: 118,
+    /* A CLONE WAS THE ONLY THING THIS ANSWERED, and the platform is the bigger
+       risk: the founder slide establishes that one already killed his last
+       product, three slides earlier, and a reader joins those two on their own.
+       The deck has to close that loop itself. */
+    body: [
+      "It settles on chain under your handle, right or wrong. A clone starts at zero.",
+      "A platform can close a door. The markets and the record are on Solana, and the next door is built.",
+    ],
     sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
   },
   {
@@ -488,20 +503,29 @@ export const SLIDES: Slide[] = [
   },
   {
     label: "The ask", bg: C.pinkField, ink: C.cream,
-    head: "$100,000", headSize: 220,
-    body: ["The product is built and live. This is for reach."],
+    /* AN ALLOCATION IS NOT A MILESTONE. Percentages say where money goes; an
+       angel is buying the next step, and the next step here is an answer:
+       whether strangers tag it. Saying that out loud is stronger than a
+       forecast nobody believes, because the product being built is what makes
+       the question the only remaining risk. */
+    head: "$100,000", headSize: 196,
+    body: ["Everything is built. This buys the year that finds out how far it goes."],
     rows: [
-      { tag: "30%", text: "Creators. Pays the people who bring the room." },
+      { tag: "30%", text: "Creators. Paid to open markets and bring their rooms." },
       { tag: "30%", text: "Team. So shipping never stops." },
-      { tag: "30%", text: "Runway. Founder, counsel, compliance." },
+      { tag: "30%", text: "Runway. Twelve months of founder time." },
       { tag: "10%", text: "Infra. Measured, not estimated." },
     ],
     sticker: "genesis-podium", stickerBox: { x: 1440, y: 580, w: 400, h: 440 },
   },
   {
     label: "", bg: Y, ink: I,
+    /* THE LAST SLIDE OF A RAISE SHOULD MAKE THE NEXT ACTION TRIVIAL, and this
+       one was a brand sign-off with an address under it. The best next action
+       for this product is not a reply, it is a tag: an investor who opens a
+       market converts on a different curve from one who reads about it. */
     head: "Be right. Be early. Be oddie.",
-    body: ["lev@oddie.fun"],
+    body: ["Try it: tag @oddiefun under any claim on X.", "lev@oddie.fun"],
     sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
   },
 ];
