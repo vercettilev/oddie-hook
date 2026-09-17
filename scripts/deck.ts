@@ -281,15 +281,16 @@ export const SLIDES: Slide[] = [
     head: "The people\u2019s prediction market.",
     body: ["oddie.fun   @oddiefun"],
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
-    band: "no listing desk.",
   },
   {
     label: "The problem", bg: D, ink: L,
     head: "Being right pays. Just not where you argue.",
     body: ["The loudest wins the thread. Nobody pays out."],
-    // Was crowd-strip: a wide band of hands in the air, which is a celebration,
-    // and this is the complaint slide. The sticker now says the sentence.
-    sticker: "arch-loudest", stickerBox: { x: 1260, y: 520, w: 600, h: 500 },
+    /* THIRD STICKER ON THIS SLIDE AND THE FIRST TWO WERE BOTH CELEBRATIONS.
+       crowd-strip is hands in the air; arch-loudest is a ghost cheering with a
+       megaphone, which matched the WORD "loudest" and none of the feeling. The
+       slide is about being right and getting nothing, so it takes the L. */
+    sticker: "st-l", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
   },
   {
     label: "The solution", bg: Y, ink: I,
@@ -308,10 +309,21 @@ export const SLIDES: Slide[] = [
     ],
   },
   {
-    label: "Why they can\u2019t", bg: Y, ink: I,
-    head: "They have to ask permission. We don\u2019t.",
-    body: ["Every market they open is approved first. By law."],
-    sticker: "st-judge", stickerBox: { x: 1280, y: 540, w: 560, h: 480 },
+    /* "THEY HAVE TO ASK PERMISSION. WE DON'T." WAS NOT A MOAT and Lev caught it.
+       Permissionless market creation is ordinary: Azuro, Zeitgeist and a dozen
+       protocols already let anyone open one. What none of them do is open it
+       inside the argument, and none of them accumulate the thing that actually
+       compounds here.
+       The unit that compounds is not the market, it is the PERSON. Every tag
+       and every side settles under a handle, so a clone launches with an empty
+       board while a year of calls sits on ours. That is the moat, it is true
+       today (the board counts it, every wallet has a page), and it is the seed
+       of the social-trading read without promising a follow or copy feature the
+       app does not have. */
+    label: "The moat", bg: Y, ink: I,
+    head: "Every call has a name on it.",
+    body: ["Right or wrong, it settles under your handle. A year of that is a reputation nobody can fork."],
+    sticker: "st-called", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
   },
   {
     label: "The founder", bg: D, ink: L,
@@ -369,7 +381,6 @@ export const SLIDES: Slide[] = [
     head: "Be right. Be early. Be oddie.",
     body: ["lev@oddie.fun"],
     sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
-    band: "be oddie.",
   },
 ];
 export { C, W, H, PAD, shelf };
