@@ -383,7 +383,7 @@ export const SLIDES: Slide[] = [
     label: "The founder", bg: D, ink: L,
     head: "Lev has built this before.",
     body: ["Poppin did this in a browser. Chrome banned the category days before launch. Oddie is the same idea, built where nobody can."],
-    who: { name: "Lev Acar", handle: "@levvercetti", photo: "lev.jpg" },
+    who: { name: "Lev Acar", handle: "@levvercetti", photo: "madlev.jpg" },
     stats: [
       { big: "45K", small: "signed up for Poppin" },
       { big: "600", small: "in the beta" },
