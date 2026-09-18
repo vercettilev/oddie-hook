@@ -266,6 +266,9 @@ interface Slide {
   foot?: string;
   /** A short block set against the headline, on the right. */
   aside?: string[];
+  /** Hold the text column at a sticker's width on a slide that has no art, so
+   *  a bare slide reads as composed instead of merely wide. */
+  narrow?: boolean;
   /** The steps, shown rather than told. */
   flow?: FlowStep[];
   /** The strip under the flow: the beat that lands after the pictures.
@@ -321,7 +324,7 @@ function render(s: Slide, n: number, total: number): string {
   let y = 300;
   // A portrait takes the same right-hand column a sticker does, and forgetting
   // that ran the body text straight under the circle.
-  const colW = s.sticker || s.who ? 1060 : W - PAD * 2;
+  const colW = s.sticker || s.who || s.narrow ? 1060 : W - PAD * 2;
 
   // The headline steps DOWN until it fits its column, so a copy edit can never
   // push a word off the slide silently. Same rule as the market card.
@@ -739,7 +742,15 @@ export const SLIDES: Slide[] = [
       { tag: "60%", text: "Founder. Twelve months, full time, shipping." },
       { tag: "10%", text: "Infra. Measured, not estimated." },
     ],
-    sticker: "genesis-podium", stickerBox: { x: 1440, y: 580, w: 400, h: 440 },
+    /* NO STICKER, AND IT IS THE ONLY SLIDE WITHOUT ONE ON PURPOSE. A ghost on a
+       number-one podium holding a trophy, next to the number being asked for,
+       says the round is already won and the reader has not decided anything
+       yet. Nine of twelve slides carry art and the deck is better for it; this
+       is the one where the room goes quiet. The pink is already the loudest
+       thing in the deck, spent once, here — a celebration on top of it was
+       shouting twice. The column stays at a sticker's width so the empty half
+       reads as composure and not as a slide that lost its picture. */
+    narrow: true,
   },
   {
     label: "", bg: Y, ink: I,
@@ -747,7 +758,15 @@ export const SLIDES: Slide[] = [
        one was a brand sign-off with an address under it. The best next action
        for this product is not a reply, it is a tag: an investor who opens a
        market converts on a different curve from one who reads about it. */
-    head: "Be right. Be early. Be oddie.",
+    /* AND THE HEADLINE RETURNS TO THE COVER'S. "Be right. Be early. Be oddie."
+       was three imperatives carrying no information, on the slide that stays on
+       screen while you talk and the one a reader screenshots. The positioning
+       line is the thing worth leaving up there, and saying it twice is not a
+       repetition to cut: it is the frame closing. The ground already does this
+       — the closer is the cover's yellow for the same reason — so the words
+       may as well agree with it. The body changes underneath from who we are
+       to what to do next, which is what makes it a close and not a copy. */
+    head: "The people\u2019s prediction market.",
     body: ["Try it: tag @oddiefun under any claim on X.", "lev@oddie.fun"],
     sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
   },
