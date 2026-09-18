@@ -626,22 +626,45 @@ export const SLIDES: Slide[] = [
     },
   },
   {
+    /* THIS SLIDE DID NOT ANSWER ITS OWN TITLE. It had a comp and a zero and
+       named no CHANGE, which is the only thing "why now" asks for: why 2026 and
+       not 2023. The change is the cost. A listing desk is not a business
+       decision, it is what you build when opening a market costs enough that
+       someone has to ration them, and on Solana it costs the rent on two
+       accounts.
+       THE NUMBER IS DATED ON PURPOSE. 0.00291 SOL is fixed (oddieChain.ts:84);
+       the dollars are not. At SOL $105.81 that is $0.308, so the stat is the
+       measured figure today and the small line says which SOL it was measured
+       at, rather than a round number that quietly stops being true. */
     label: "Why now", bg: Y, ink: I,
-    head: "None of it happened in a thread.",
+    head: "Nobody has to pick the markets any more.",
+    body: ["A listing desk exists because opening a market used to cost something."],
     /* $40B TRADED IN ONE MONTH CAME OUT. It was the load-bearing number on the
        slide whose whole weight is a contrast, and it was unsourced through
        three asks. An unverifiable figure on a fundraising document does not
        fail quietly: a reader who checks it and cannot confirm it stops
        trusting every other number here. Put it back the day there is a link. */
     stats: [
+      { big: "$0.31", small: "to open one on Solana" },
       { big: "$22B", small: "what Kalshi is worth" },
       { big: "0", small: "markets you can open from a reply" },
     ],
   },
   {
     label: "The money", bg: D, ink: L,
-    head: "4% when it is over. Nothing before.",
-    body: ["Half goes to whoever opened the market, for as long as it exists."],
+    /* SIZED SO THE HEAD BREAKS ON ITS OWN FULL STOP. At 150 the wrapper split
+       it three ways as "4% when it is / over. Nothing / before.", which reads as
+       two half-sentences; 132 fits "4% when it is over." on one line and lets
+       the second sentence have the second. */
+    head: "4% when it is over. Nothing before.", headSize: 132,
+    /* A RATE IS NOT AN ECONOMIC. "4%" with no volume anywhere in the deck
+       leaves the reader to do the arithmetic, and a reader doing arithmetic is
+       a reader deciding what the number probably is. One worked line costs a
+       sentence and removes the guess. */
+    body: [
+      "Half of it goes to whoever opened the market, for as long as it exists.",
+      "A pool of $1,000 pays its opener $20, and us $20.",
+    ],
     sticker: "st-riding", stickerBox: { x: 1260, y: 540, w: 600, h: 480 },
   },
   {
@@ -667,7 +690,11 @@ export const SLIDES: Slide[] = [
        product, three slides earlier, and a reader joins those two on their own.
        The deck has to close that loop itself. */
     body: [
-      "It settles on chain under your handle, right or wrong. A clone starts at zero.",
+      /* THE THREAT GETS A NAME. "A clone" is the abstraction a founder reaches
+         for when they would rather not say it out loud, and every investor in
+         this category is already thinking the name. Saying it first, and then
+         answering it, is worth more than the sentence costs. */
+      "It settles on chain under your handle, right or wrong. Polymarket can copy the button. It cannot copy your record.",
       "A platform can close a door. The markets and the record are on Solana, and the next door is built.",
     ],
     sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
@@ -677,7 +704,14 @@ export const SLIDES: Slide[] = [
     head: "Every argument is a market.",
     rows: [
       { tag: "Now", text: "X. Live, with real money in it." },
-      { tag: "Next", text: "Telegram. Built and tested." },
+      /* NOT "BUILT AND TESTED". There is no Telegram bot in this repo: no
+         client, no token, no send path. What does exist is the market side —
+         a t.me link is a valid source, sourcePostKey parses it, and
+         resolutionReply already handles a market with no X handle on it. So
+         the row says the half that is true. An investor who asks and gets
+         "actually it only accepts the link" stops believing the three rows
+         under it as well. */
+      { tag: "Next", text: "Telegram. The market side is done. The bot is the work." },
       { tag: "Then", text: "Discord." },
       { tag: "After", text: "Any app, with one key." },
     ],
@@ -692,10 +726,17 @@ export const SLIDES: Slide[] = [
        the question the only remaining risk. */
     head: "$100,000", headSize: 196,
     body: ["Everything is built. This buys the year that finds out how far it goes."],
+    /* "TEAM" AND "RUNWAY" WERE THE SAME LINE. Thirty per cent so shipping never
+       stops and thirty per cent of founder time is sixty per cent of people
+       under two names, and a reader adds them anyway. Worse, the deck budgeted
+       for a team it never shows: there is one person in it, and the slide
+       created the "who else?" question by itself. The split is unchanged —
+       30/60/10, exactly what it was — it just stops pretending to be four
+       things. One founder, named and faced three slides earlier, is a cleaner
+       answer than a team nobody can see. */
     rows: [
       { tag: "30%", text: "Creators. Paid to open markets and bring their rooms." },
-      { tag: "30%", text: "Team. So shipping never stops." },
-      { tag: "30%", text: "Runway. Twelve months of founder time." },
+      { tag: "60%", text: "Founder. Twelve months, full time, shipping." },
       { tag: "10%", text: "Infra. Measured, not estimated." },
     ],
     sticker: "genesis-podium", stickerBox: { x: 1440, y: 580, w: 400, h: 440 },
