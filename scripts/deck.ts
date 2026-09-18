@@ -269,6 +269,10 @@ interface Slide {
   /** Hold the text column at a sticker's width on a slide that has no art, so
    *  a bare slide reads as composed instead of merely wide. */
   narrow?: boolean;
+  /** Markets that do not exist, drawn as the markets they are not: the same
+   *  dashed outline this deck uses everywhere for a thing that has not
+   *  happened. Solid is a receipt, dashed is a hole. */
+  ghosts?: string[];
   /** The steps, shown rather than told. */
   flow?: FlowStep[];
   /** The strip under the flow: the beat that lands after the pictures.
@@ -390,6 +394,20 @@ function render(s: Slide, n: number, total: number): string {
     const row = flowRow(s.flow, y + 30, accent, s.ink, onDark);
     parts.push(row.svg);
     y = row.bottom;
+  }
+
+  if (s.ghosts?.length) {
+    y += 34;
+    const h = 84, gap = 22;
+    for (const g of s.ghosts) {
+      parts.push(`<rect x="${PAD}" y="${y}" width="${colW}" height="${h}" rx="18" fill="none" stroke="${accent}" stroke-width="3" stroke-dasharray="16 10" stroke-opacity=".85"/>`);
+      parts.push(`<text x="${PAD + 34}" y="${y + h / 2 + 13}" font-family="${BODY}" font-size="34" font-weight="600" fill="${s.ink}" fill-opacity=".92">${esc(g)}</text>`);
+      y += h + gap;
+    }
+    // NOT `y -= gap`. A caption's y is its BASELINE, so leaving y on the last
+    // chip's bottom edge drew the foot line straight through it: the sentence
+    // and the dashes shared the same pixels and both were unreadable.
+    y += 24;
   }
 
   if (s.rail) {
@@ -528,9 +546,31 @@ export const SLIDES: Slide[] = [
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
   },
   {
+    /* THE PROBLEM WAS A PHILOSOPHY SLIDE. "Being right pays, just not where you
+       argue" is an observation, and an observation is a vitamin: true, mildly
+       agreeable, and nobody wakes up hurting from it. The pain people actually
+       have is narrower and much sharper, and it is the whole social-trading
+       wedge: the bet they want to place right now does not exist anywhere. No
+       venue will list a market on one memecoin's market cap, so the argument
+       running on the timeline has nowhere to settle.
+       It also earns its own answer. Slide six explains WHY nobody lists these
+       (a listing desk is what you build when opening a market costs something)
+       and slide four is the mechanism. Problem, cause, answer, in that order,
+       with no sentence doing the job twice.
+       THE TICKERS ARE REAL AND MEASURED, because a made-up example on the one
+       slide that has to feel lived-in would be obvious to this reader in
+       particular: $ORE $17.4M, $ANSEM $158M, $BONK $249M on 18 September. The
+       two shapes are the two the oracle actually settles, a touch inside a
+       window and a level on a date, so every question here is one oddie could
+       open on the spot. Lower case because that is how they are typed. */
     label: "The problem", bg: D, ink: L,
-    head: "Being right pays. Just not where you argue.",
-    body: ["The loudest wins the thread. Nobody pays out."],
+    head: "Nobody opens the market you want.", headSize: 118,
+    ghosts: [
+      "will $ORE hit 50m this month?",
+      "is $ANSEM still over 250m on 31 december?",
+      "does $BONK get back to 500m this year?",
+    ],
+    foot: "Polymarket lists elections. Kalshi lists the economy. Neither will list this.",
     sticker: "st-l", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
   },
   {
@@ -548,7 +588,9 @@ export const SLIDES: Slide[] = [
     ],
   },
   {
-    label: "The solution", bg: Y, ink: I,
+    /* "HOW IT WORKS", NOT "THE SOLUTION". One is what the slide contains, the
+       other is a deck-template word that could sit on any slide in any deck. */
+    label: "How it works", bg: Y, ink: I,
     head: "Tag it. It\u2019s a market.",
     steps: ["Tag", "Pick a side", "Get paid"],
     body: ["No referee. The deadline hits and it pays."],
@@ -575,7 +617,13 @@ export const SLIDES: Slide[] = [
        ids, so the gap between them is not a claim, it is arithmetic anyone can
        redo: 2099850003501969749 at 13:17:08.818Z, 2099850105037926466 at
        13:17:33.026Z. Twenty-four seconds, and nobody was awake for them. */
-    label: "It works", bg: D, ink: L,
+    /* "PROOF", NOT "IT WORKS" AND CERTAINLY NOT "HOW IT WORKS". How it works is
+       the slide before this one, and running the same label twice would turn an
+       exhibit into a second explanation. "It works" was closer but it is a
+       claim, and a claim as the label of the slide whose entire job is evidence
+       reads defensively. Proof names the function: everything under it is a
+       receipt for the sentence above it. */
+    label: "Proof", bg: D, ink: L,
     head: "It runs itself.",
     /* THE PICTURES SHOW WHAT HAPPENED; THEY CANNOT SHOW WHO DID NOT. That is
        the claim, so it is the one sentence on the slide. It names oddie rather
@@ -640,7 +688,12 @@ export const SLIDES: Slide[] = [
        measured figure today and the small line says which SOL it was measured
        at, rather than a round number that quietly stops being true. */
     label: "Why now", bg: Y, ink: I,
-    head: "Nobody has to pick the markets any more.",
+    /* AND IT NO LONGER OPENS THE WAY THE PROBLEM SLIDE DOES. Both headlines
+       started with "Nobody" and both were about markets, four slides apart, in
+       a deck with twelve of them. The felt one keeps the word; this one is the
+       cause, so it says the cause and nothing else. Three words, and the body
+       and the stats underneath do the rest. */
+    head: "Markets got cheap.",
     body: ["A listing desk exists because opening a market used to cost something."],
     /* $40B TRADED IN ONE MONTH CAME OUT. It was the load-bearing number on the
        slide whose whole weight is a contrast, and it was unsourced through
@@ -704,7 +757,13 @@ export const SLIDES: Slide[] = [
   },
   {
     label: "Where it goes", bg: Y, ink: I,
-    head: "Every argument is a market.",
+    /* "EVERY ARGUMENT IS A MARKET" SAT DIRECTLY UNDER "EVERY CALL ALREADY HAS A
+       NAME ON IT", and two adjacent headlines opening on the same word is the
+       kind of thing a reader feels without being able to name. It was also the
+       deck's refrain for the third time, after the cover and "Tag it. It's a
+       market." This slide is a roadmap, so its headline now says where it goes
+       and lets the four rows underneath say when. */
+    head: "It goes wherever people argue.",
     rows: [
       { tag: "Now", text: "X. Live, with real money in it." },
       /* NOT "BUILT AND TESTED". There is no Telegram bot in this repo: no
