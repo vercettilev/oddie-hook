@@ -24,3 +24,6 @@ brand/v3-stickers/*
 !brand/v3-stickers/oracle.png
 brand/oddie-deck.pdf
 brand/oddie-deck.html
+
+# a generated sample, not a source file
+deal-banner.png
