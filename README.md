@@ -1,80 +1,99 @@
-# oddie-hook
+# oddie
 
-The wedge, end to end: **tag Oddie into a take → we find the most relevant
-live market (Kalshi or Polymarket) → reply with a branded odds card → tap
-lands on `oddie.fun/market/[slug]` → make the call.**
+**Tag any claim on X and it becomes a real market on Solana.**
 
-Phase 1 = virtual tokens only. No wallet, no custody, no real-money execution
-in this skeleton — and none of it touches the Chrome Web Store, so the Google
-extension policy doesn't apply to any of this.
+Someone tags [@oddiefun](https://x.com/oddiefun) under a post. An agent reads the
+argument, decides whether it can actually be settled, writes the resolution
+criteria and a deadline, and opens a pari-mutuel market. The bot answers the
+original tweet with a card anyone can tap. People take YES or NO with real SOL.
+At the deadline the market settles itself and the bot posts the result back
+under the tweet that started it.
 
-## Pieces
+No listing desk, no operator, no model deciding who won. Settlement is the
+distribution.
+
+- Live: [oddie.fun](https://oddie.fun) · app at [app.oddie.fun](https://app.oddie.fun)
+- Program: [`3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu`](https://explorer.solana.com/address/3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu) on Solana mainnet
+
+## It has run end to end, unattended
+
+On 15 September 2026 a tag landed at `13:17:08.818Z` and the market was live and
+answering at `13:17:33.026Z`. Both are tweet ids, so the twenty-four seconds is
+arithmetic anyone can redo. On 18 September it closed itself at the deadline,
+read the token's published price history, answered NO, and posted the result
+under the original tweet.
+
+**The honest caveat:** that tag and that stake were ours. It proves the machine
+runs unattended. It does not prove demand.
+
+## The loop
 
 ```
-src/venues/     kalshi.ts + polymarket.ts read clients → one normalized Market
-src/matching/   matchTweet(): tweet text → best live market (or null)
-src/card/       renderCard(): the manila betting-slip SVG (the "ad")
-src/store/      in-memory slug store + virtual-token calls
-src/server.ts   POST /hook, /api/feed, /api/market/:slug, /card/:slug.svg, calls
-public/feed.html   THE page: oddie.fun/market/[slug] serves the feed,
-                   tagged market pinned as the top card (slug = door into feed)
-CADENCE.md      the experiment cadence doc for the Blas jam
-scripts/smoke.ts   runs the whole thing against LIVE data, no server
+mention on X
+  → extractClaim()     is there a claim here, can it be settled, by when
+  → market opens       minted on chain at the first stake, not before
+  → the bot replies    a rendered card under the original tweet
+  → people stake       their own wallet signs; we never hold or sign for funds
+  → the deadline       oracle decides, or abstains out loud
+  → the bot replies    the result, under the tweet that started it
+```
+
+## The oracle has two paths, and the cheap one is the common one
+
+A **price claim** resolves from published candles and nothing else: DexScreener
+for token identity, GeckoTerminal for hourly OHLCV, then arithmetic. No model is
+consulted and no tokens are spent. Coverage is checked as *bracketed*, not as a
+candle count, so a sparse history cannot be mistaken for a confident NO.
+
+**Anything else** goes through propose → citation audit → blind second read,
+with the gates ANDed. If any gate fails it settles nothing, writes down which
+gate stopped it, and waits for a person. It abstains far more often than it
+decides, and that is the design.
+
+## The money
+
+4% when a market is over and nothing before: 2% to whoever opened it, for as
+long as the market exists, and 2% to the protocol. Both rates are frozen into
+the market at creation, so changing the rate can never reprice an open pool.
+
+A pool with no winners is refunded in full and charged nothing, because taking a
+cut of a refund would be charging people for our own inability to price the
+question.
+
+## Layout
+
+```
+onchain/programs/oddie_chain/   the Anchor program: markets, vaults, positions,
+                                a peer-to-peer listing book (1188 lines)
+src/chain/                      client: reads, transaction assembly, resolve
+src/matching/                   tweet → claim, criteria, deadline; duplicate check
+src/oracle/                     the decision, its gates, and what it refuses
+src/price/                      DexScreener + GeckoTerminal, the deterministic path
+src/card/                       every card the bot posts, drawn as SVG server-side
+src/x/                          mentions, replies, the resolution post
+src/auth/                       Sign In With Solana
+src/store/                      Postgres, and the schema comments explaining it
+public/                         the app: hand-written HTML, no framework
+scripts/                        49 test suites, probes, and the deck generator
 ```
 
 ## Run it
 
-Both venues' read endpoints are **public, no API key**:
-- Kalshi: `https://external-api.kalshi.com/trade-api/v2/markets` (all markets)
-- Polymarket Gamma: `https://gamma-api.polymarket.com/markets`
-
 ```bash
 npm install
-npm run smoke      # live fetch + match sample tweets + write card-sample.svg
-npm run dev        # start the API on :3000
+npm test          # 49 suites, all offline
+npm run dev       # :3000
 ```
 
-Try the hook:
-```bash
-curl -s localhost:3000/hook -H 'content-type: application/json' \
-  -d '{"tweetText":"no way bitcoin closes above 150k this year"}' | jq
-# → { matched, slug, landingUrl, cardUrl, market }
-# open the cardUrl in a browser to see the slip.
-```
+`npm test` runs against fixtures and needs no network, no database and no keys.
+Everything that touches production is a separate `peek-*` script.
 
-## What's verified vs. what you must check in your env
+## Notes
 
-Endpoints and response shapes were taken from current (2026) Kalshi and
-Polymarket docs. **I couldn't run live calls from where this was built (no
-network), so before trusting it:** run `npm run smoke` once and confirm
-(a) both venues return markets, (b) the Polymarket `outcomePrices`/`outcomes`
-fields still arrive as stringified JSON arrays, (c) Kalshi markets still carry
-`title`. If a field moved, the fix is isolated to the one `normalize()` fn.
+The comments in this repo explain **why**, not what. Where a decision looks
+strange, the comment next to it is usually the story of the bug that caused it.
+`src/store/markets.ts` and `src/oracle/oracle.ts` are the two worth reading.
 
-## Deliberate design choices
-
-- **Matcher returns `null` below threshold.** Replying with an irrelevant
-  market is worse than staying silent, and the misses tell you which
-  categories to seed. Tune `minScore` in `matcher.ts` during the wedge test.
-- **Lexical matching, not embeddings — yet.** It's explainable so you can see
-  *why* a tweet matched while eyeballing results. Swap `scoreMarket()` for an
-  embedding cosine when you want quality; keep this as a cheap prefilter.
-- **In-memory store.** Virtual tokens, nothing to lose on restart. Replace with
-  Drizzle/Postgres (you already run it) when calls need to persist — only
-  `store/markets.ts` changes.
-- **Card is SVG, in Oddie brand** (blue #68C6FF, black outline, ghost eyes, no
-  venue named — shows normalized volume as the trust signal). To post as an
-  image on X, rasterize to PNG at post time (`@resvg/resvg-js`, or `satori` if
-  you'd rather build it as JSX). Embed the Fredoka + Nunito fonts when you
-  rasterize, or text falls back to a system sans.
-
-## Next steps (not built here, on purpose)
-
-1. **X bot glue.** Wire `POST /hook` to your mention webhook: read the parent
-   tweet, call the hook, post `cardUrl` (rasterized) + `landingUrl` as the reply.
-   Respect the guardrail from your brief — only reply when *tagged*.
-2. **Real-money execution (Phase 3).** The DFlow→Kalshi / Polymarket-CLOB order
-   path is intentionally absent. That's financial infra (custody, settlement,
-   KYC) and should be built piece by piece, not scaffolded in a hook skeleton.
-3. **CLOB fresh prices.** Gamma odds can lag a few seconds; read the CLOB order
-   book by token id when you want tick-fresh numbers on high-volume markets.
+Development is AI-assisted with Claude Code. The Anthropic API is used in
+production for claim extraction and the citation oracle, and for nothing on the
+price path.
