@@ -3777,6 +3777,17 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       const st = await fetchMarketOnChain(d.onchainPubkey).catch(() => null);
       return st ? st.totalYesLamports + st.totalNoLamports : null;
     },
+    // The same read, asked the question the announcement actually needs: not
+    // how much is in the pool, but how much is on the side that won. A pool of
+    // 0.1 SOL entirely on the losing side is a market with no winners, and the
+    // total alone cannot tell you that.
+    winningLamports: async (s2: string, outcome: "yes" | "no") => {
+      const d = await communityMarketDetail(s2).catch(() => null);
+      if (!d?.onchainPubkey) return null;
+      const st = await fetchMarketOnChain(d.onchainPubkey).catch(() => null);
+      if (!st) return null;
+      return outcome === "yes" ? st.totalYesLamports : st.totalNoLamports;
+    },
     log: (line, extra) => console.log(JSON.stringify({ evt: "x_resolution", line, ...extra })),
     // WHO IS OWED THE 2%, which is the OPENER. market_surfacer.handle is
     // written from `taggerHandle` at mint time precisely so the cut follows

@@ -88,6 +88,20 @@ export interface ResolutionDeps {
    * because the wrong way to fail here is silence over somebody's money.
    */
   poolLamports?(slug: string): Promise<number | null>;
+
+  /**
+   * The stake on the side that WON, which is not the pool and not a detail.
+   *
+   * A pari-mutuel has three money states, not two, and the third one actually
+   * happened on the first market this product ever settled: everybody was on
+   * one side, that side lost, and the winning side was empty. The pool was not
+   * zero, so the silence check above let it through, and the announcement said
+   * everyone who called it had been paid. Nobody called it. Nobody was paid.
+   *
+   * Null means unreadable, and an unreadable winner drops the money sentence
+   * rather than guessing at one. See resolutionText.
+   */
+  winningLamports?(slug: string, outcome: "yes" | "no"): Promise<number | null>;
 }
 
 export interface ResolutionOutcome {
@@ -103,12 +117,44 @@ export interface ResolutionOutcome {
   quoteText?: string;
 }
 
-/** The public sentence. Deliberately about the market and not about a person. */
-export function resolutionText(question: string, outcome: "yes" | "no", url: string): string {
+/**
+ * The public sentence. Deliberately about the market and not about a person.
+ *
+ * THREE MONEY STATES, NOT TWO, and this said the same thing in all of them.
+ * "Everyone who called it is paid from the pool, on chain." is true when
+ * somebody backed the winning side. On 18 September it went out under a real
+ * tweet on a market where nobody had: every lamport was on YES, YES lost, and
+ * the winning side held nothing. Nobody called it and nobody was paid.
+ *
+ * The program has always handled that case, and handled it well: claim_winnings
+ * refunds in full when the winning total is zero, and resolve_market fixes both
+ * fees at zero for exactly the same reason, because taking a cut of a refund
+ * would be charging people for our own inability to price the question. So the
+ * product did the honourable thing and then announced the opposite of it.
+ *
+ * Saying what actually happened is also the better post. A market that pays
+ * everybody back and charges nothing is the single most trust-building sentence
+ * this account can publish, and it was being thrown away.
+ *
+ * An unreadable winner prints NO money sentence at all. Silence is not a
+ * failure mode here; a confident wrong one is.
+ */
+export function resolutionText(
+  question: string,
+  outcome: "yes" | "no",
+  url: string,
+  winningLamports?: number | null,
+): string {
   const side = outcome.toUpperCase();
+  const money =
+    winningLamports === 0
+      ? "Nobody called it, so every stake goes back in full. We took no fee."
+      : typeof winningLamports === "number" && winningLamports > 0
+        ? "Everyone who called it is paid from the pool, on chain."
+        : null;
   // The question is NOT repeated: it is one tap up the thread, and repeating it
   // under itself reads as a bot filling space. The card carries it anyway.
-  return `Settled: ${side}.\n\nEveryone who called it is paid from the pool, on chain.\n\n${url}`;
+  return [`Settled: ${side}.`, money, url].filter(Boolean).join("\n\n");
 }
 
 /**
@@ -175,7 +221,10 @@ export async function postResolution(
   }
 
   const url = `${(deps.baseUrl ?? "https://oddie.fun").replace(/\/+$/, "")}/m/${slug}`;
-  const text = resolutionText(detail.question, outcome, url);
+  const won = deps.winningLamports
+    ? await deps.winningLamports(slug, outcome).catch(() => null)
+    : null;
+  const text = resolutionText(detail.question, outcome, url, won);
 
   if (deps.dryRun) {
     deps.log("resolution dry-run", { slug, outcome, inReplyTo, text });

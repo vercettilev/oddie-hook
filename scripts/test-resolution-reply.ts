@@ -37,6 +37,31 @@ console.log("\nthe public sentence is about the MARKET, never about a person");
   check("does not repeat the question back at the thread", !t.includes("Bitcoin"), t);
 }
 
+console.log("\nand it says the true thing about the money, in all three states");
+{
+  // THE STATE THAT SHIPPED WRONG. buildResolutionQuote already got this right
+  // and resolutionText did not, so the suite was green while the reply under a
+  // real tweet said everyone who called it had been paid, on a market where
+  // every lamport was on the losing side and the winning side held nothing.
+  const none = resolutionText("Q?", "no", "https://oddie.fun/m/x", 0);
+  check("no winners: refunds in full and charges nothing",
+    none.includes("goes back in full") && none.includes("no fee"), none);
+  check("...and never claims a payout", !none.includes("paid from the pool"), none);
+
+  const some = resolutionText("Q?", "no", "https://oddie.fun/m/x", 1);
+  check("winners: says they are paid", some.includes("paid from the pool"), some);
+
+  // An unreadable winner is the one case where the honest post is a shorter
+  // post: the side and the link, and no sentence about money at all.
+  for (const unknown of [resolutionText("Q?", "no", "https://oddie.fun/m/x", null),
+                         resolutionText("Q?", "no", "https://oddie.fun/m/x")]) {
+    check("unreadable: prints no money sentence rather than guessing",
+      !unknown.includes("paid") && !unknown.includes("goes back"), unknown);
+    check("...but still names the side and the link",
+      unknown.includes("NO") && unknown.includes("https://oddie.fun/m/x"), unknown);
+  }
+}
+
 console.log("\nit stays quiet in every state where there is nothing to answer");
 {
   const r1 = await postResolution("no-such-market", "yes", deps());
