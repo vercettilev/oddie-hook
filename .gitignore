@@ -27,3 +27,6 @@ brand/oddie-deck.html
 
 # a generated sample, not a source file
 deal-banner.png
+
+# the live investor deck: built by `npm run deck`, not a source file
+brand/oddie-deck-v2.pdf
