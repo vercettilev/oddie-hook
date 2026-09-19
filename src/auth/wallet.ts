@@ -50,12 +50,38 @@ function sweep(now: number): void {
 }
 
 /**
+ * SIWS needs a chain and Phantom's vocabulary is not Solana's: it says
+ * "mainnet", never "mainnet-beta". Read from the same env var the chain layer
+ * reads so the two cannot disagree, without importing it.
+ */
+const CHAIN_ID = /^devnet/.test(process.env.SOLANA_CLUSTER ?? "")
+  ? "devnet"
+  : /^testnet/.test(process.env.SOLANA_CLUSTER ?? "")
+    ? "testnet"
+    : "mainnet";
+
+/**
  * The text the wallet is asked to sign.
  *
  * Written to be read by a human in a wallet popup, because that popup is the
  * only place this string is ever seen. It names the site (so a signature
  * harvested by another origin reads as obviously foreign), states plainly that
  * it authorises nothing, and carries the nonce that makes it single-use.
+ *
+ * AND IT IS SIGN IN WITH SOLANA, ALL OF IT OR NONE OF IT. The first line is
+ * the magic one: a wallet that sees "<domain> wants you to sign in with your
+ * Solana account:" stops treating the text as text and parses it against the
+ * SIWS grammar, which requires URI, Version, Chain ID, Nonce and Issued At, in
+ * that order, after the statement. This message had the opening line and then
+ * jumped straight to Nonce, so Phantom switched into the structured renderer,
+ * failed to parse, and refused to show the request at all: "The app's
+ * signature request cannot be shown due to invalid formatting." The button
+ * looked dead and there was nothing on our side to see, because nothing had
+ * reached us yet.
+ *
+ * Emitting the missing three is the fix and it is also the better outcome: the
+ * wallet now renders its own sign-in panel with the domain it verified, which
+ * is a stronger anti-phishing surface than any sentence we could write.
  */
 function messageFor(domain: string, address: string, nonce: string, issuedAt: string): string {
   return [
@@ -64,6 +90,9 @@ function messageFor(domain: string, address: string, nonce: string, issuedAt: st
     "",
     "Signing proves you own this wallet. It does not approve a transaction and cannot move any funds.",
     "",
+    `URI: https://${domain}`,
+    "Version: 1",
+    `Chain ID: ${CHAIN_ID}`,
     `Nonce: ${nonce}`,
     `Issued At: ${issuedAt}`,
   ].join("\n");

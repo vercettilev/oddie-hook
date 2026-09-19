@@ -99,6 +99,20 @@ console.log("\nthe challenge: single use, time limited, bound to one browser");
   check("the message names the site", c.message.startsWith(`${DOMAIN} wants you to sign in`), c.message.split("\n")[0]);
   check("...carries the address being proved", c.message.includes(w.address));
   check("...carries the nonce", c.message.includes(c.nonce));
+  // THE POPUP IS THE WHOLE PRODUCT SURFACE HERE. The opening line puts every
+  // wallet into SIWS mode, and a SIWS message missing any required field is not
+  // rendered as plain text, it is refused: Phantom showed "the app's signature
+  // request cannot be shown due to invalid formatting" and the Link button
+  // looked broken. Nothing reaches the server in that state, so only this test
+  // can catch it.
+  const lines = c.message.split("\n");
+  const tail = lines.slice(-5);
+  check("...is a parseable SIWS message: URI, Version, Chain ID, Nonce, Issued At, in order",
+    tail[0].startsWith("URI: https://") && tail[1] === "Version: 1"
+    && tail[2].startsWith("Chain ID: ") && tail[3].startsWith("Nonce: ")
+    && tail[4].startsWith("Issued At: "), tail.join(" | "));
+  check("...names the same host in the URI as in the first line",
+    tail[0] === `URI: https://${DOMAIN}`, tail[0]);
   check("...and says in its own text that it authorises nothing",
     c.message.includes("does not approve a transaction"), c.message);
 
