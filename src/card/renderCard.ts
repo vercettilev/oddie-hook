@@ -485,7 +485,7 @@ export const MIN_HEADS_CARD = 5;
 
 export function renderCard(
   m: Market,
-  opts: { unpriced?: boolean; settled?: "yes" | "no"; stakers?: number } = {},
+  opts: { unpriced?: boolean; settled?: "yes" | "no"; stakers?: number; hook?: string | null } = {},
 ): string {
   const settled = opts.settled;
   // A settled market has an answer, so it is never unpriced and never invites a
@@ -494,7 +494,33 @@ export function renderCard(
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const no = 100 - yes;
 
+  /* THE HEADLINE IS THE HOOK, exactly as on the page this card opens.
+     extractClaim has written one since the first version and the card was the
+     last surface still leading with the raw question -- which on a token market
+     is a mint address set in the largest, most contrasty type on an image that
+     travels through strangers' timelines.
+     The question does not go away. It is the wording the money is placed
+     against, so it stays directly underneath, quiet, with machine ids folded.
+     Without a hook the card falls back to exactly what it did before. */
+  const hookText = (opts.hook ?? "").trim();
   const q = layoutQuestion(foldIds(displayTitle(m.question)));
+  let head: { text: string; fs: number } | null = null;
+  let sub_: { lines: string[]; fs: number; lineH: number } | null = null;
+  if (hookText) {
+    const budget = (PAD_R - QUOTE_X) - 12;
+    let hfs = 66;
+    while (hfs > 34 && textWidth(hookText.toUpperCase(), hfs, "display") > budget) hfs -= 4;
+    head = { text: hookText.toUpperCase(), fs: hfs };
+    const sfs = 25, lineH = Math.round(sfs * 1.28);
+    // Three lines, and ellipsized rather than silently truncated: wrapToWidth
+    // drops the tail without a marker, and a question that ends mid-sentence
+    // under a promise that it is "the wording the money is placed against" is
+    // worse than one that admits it was cut.
+    const w = wrapToWidth(foldIds(displayTitle(m.question)), budget, sfs, 3, "meta");
+    const lines = w.lines.slice();
+    if (w.overflow && lines.length) lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*\S*$/, "\u2026");
+    sub_ = { lines, fs: sfs, lineH };
+  }
 
   const pillRaw = volumePill(m);
   // A settled market has no time left to report. volumePill counts down from
@@ -516,8 +542,11 @@ export function renderCard(
 
   // The quote rule's height is MEASURED off the question block. A fixed height
   // hangs below a short question and reads as broken rather than as airy.
-  const firstBaseline = Q_TOP + CAP * q.fs;
-  const qHeight = CAP * q.fs + (q.lines.length - 1) * q.lineH + DESC * q.fs;
+  const firstBaseline = head ? Q_TOP + CAP * head.fs : Q_TOP + CAP * q.fs;
+  const subTop = head && sub_ ? firstBaseline + 36 : 0;
+  const qHeight = head && sub_
+    ? (firstBaseline - Q_TOP) + 36 + (sub_.lines.length - 1) * sub_.lineH + DESC * sub_.fs
+    : CAP * q.fs + (q.lines.length - 1) * q.lineH + DESC * q.fs;
 
   const heroText = settled ? settled.toUpperCase() : unpriced ? "open" : `${yes}%`;
   const udSide = yes <= 50 ? "yes" : "no";
@@ -607,9 +636,14 @@ export function renderCard(
 
   <!-- the human's claim, quoted: white behind a lime rule -->
   <rect x="68" y="${Math.round(Q_TOP - 8)}" width="6" height="${Math.round(qHeight + 16)}" rx="3" fill="${C.accent}"/>
-  <text font-size="${q.fs}" font-weight="600" fill="${C.white}">${q.lines
-    .map((l, k) => `<tspan x="${QUOTE_X}" y="${Math.round(firstBaseline + k * q.lineH)}">${esc(l)}</tspan>`)
-    .join("")}</text>
+  ${head && sub_
+    ? `<text x="${QUOTE_X}" y="${Math.round(firstBaseline)}" font-family="${DISPLAY}" font-size="${head.fs}" fill="${C.white}">${esc(head.text)}</text>
+  <text font-size="${sub_.fs}" font-weight="600" fill="${C.white}" fill-opacity=".62">${sub_.lines
+        .map((l, k) => `<tspan x="${QUOTE_X}" y="${Math.round(subTop + k * sub_!.lineH)}">${esc(l)}</tspan>`)
+        .join("")}</text>`
+    : `<text font-size="${q.fs}" font-weight="600" fill="${C.white}">${q.lines
+        .map((l, k) => `<tspan x="${QUOTE_X}" y="${Math.round(firstBaseline + k * q.lineH)}">${esc(l)}</tspan>`)
+        .join("")}</text>`}
 
   <!-- the money. The biggest colour area on the card is the button, which is
        the punchline: there is now real SOL on what you just said. -->

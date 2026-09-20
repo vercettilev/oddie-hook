@@ -30,6 +30,7 @@ import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
 import { resolvePriceClaim, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
+import { hookFor } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV, unsettleablePhrase, addressInQuestion } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
@@ -1894,6 +1895,7 @@ app.get("/card/:slug.svg", async (req, res) => {
   if (!rec) return res.status(404).send("unknown market");
   res.type("image/svg+xml").send(renderCard(rec.market, {
     unpriced: await marketIsUnpriced(req.params.slug), stakers: await cardStakers(req.params.slug),
+    hook: await hookFor(req.params.slug).catch(() => null),
   }));
 });
 
@@ -1954,6 +1956,7 @@ app.get("/card/:slug.png", async (req, res) => {
   // stake instead of quoting odds nobody set.
   const png = renderCardPng(renderCard(rec.market, {
     unpriced: await marketIsUnpriced(slug), stakers: await cardStakers(slug),
+    hook: await hookFor(slug).catch(() => null),
   }));
   pngCache.set(slug, { png, at: now });
   if (pngCache.size > 300) for (const [k, v] of pngCache) if (now - v.at > PNG_TTL_MS) pngCache.delete(k);
@@ -3776,7 +3779,7 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
     cardPng: async (s2, o) => {
       const { all } = await liveMarketData();
       const rec = await getSlug(s2, all);
-      return rec ? renderCardPng(renderCard(rec.market, { settled: o, stakers: await cardStakers(s2) })) : null;
+      return rec ? renderCardPng(renderCard(rec.market, { settled: o, stakers: await cardStakers(s2), hook: await hookFor(s2).catch(() => null) })) : null;
     },
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
@@ -5094,6 +5097,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
          the safe direction: it invites a stake instead of inventing odds. */
       return renderCardPng(renderCard(rec.market, {
         unpriced: await marketIsUnpriced(slug),
+        hook: await hookFor(slug).catch(() => null),
         stakers: await cardStakers(slug),
       }));
     },

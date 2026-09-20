@@ -5199,6 +5199,19 @@ export interface CommunityMarketDetail {
 
 /** Full inside-the-market view for the admin panel: meta + every position. The
  *  server adds handles + payout math on top (it owns handle resolution). */
+/**
+ * Just the hook, for a card.
+ *
+ * communityMarketDetail also runs a full market_call query, which is a lot of
+ * work to put in front of an image that four routes render. This is the one
+ * column those routes need and nothing else.
+ */
+export async function hookFor(slug: string): Promise<string | null> {
+  const { rows } = await db().query<{ hook: string | null }>(
+    `SELECT hook FROM community_market WHERE slug = $1`, [slug]);
+  return rows[0]?.hook?.trim() || null;
+}
+
 export async function communityMarketDetail(slug: string): Promise<CommunityMarketDetail | null> {
   if (!PERSISTENT) {
     const meta = memCommunity.get(slug);
