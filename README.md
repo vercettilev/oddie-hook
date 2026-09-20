@@ -9,8 +9,8 @@ original tweet with a card anyone can tap. People take YES or NO with real SOL.
 At the deadline the market settles itself and the bot posts the result back
 under the tweet that started it.
 
-No listing desk, no operator, no model deciding who won. Settlement is the
-distribution.
+No listing desk. On a price claim, no model decides who won: the answer is
+arithmetic over published candles. Settlement is the distribution.
 
 - Live: [oddie.fun](https://oddie.fun) · app at [app.oddie.fun](https://app.oddie.fun)
 - Program: [`3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu`](https://explorer.solana.com/address/3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu) on Solana mainnet
@@ -49,6 +49,37 @@ candle count, so a sparse history cannot be mistaken for a confident NO.
 with the gates ANDed. If any gate fails it settles nothing, writes down which
 gate stopped it, and waits for a person. It abstains far more often than it
 decides, and that is the design.
+
+## What we can and cannot do
+
+The honest version, because the code is here and anyone can check it.
+
+**We cannot take a stake.** Every lamport leaves a vault through one of five
+paths, and four of them are bounded by the caller's own position and signed by
+its owner. The authority is not even an account on `claim_winnings`.
+
+**We do sign the outcome.** `resolve_market` takes a raw outcome byte from one
+key. There is no oracle account, no evidence on chain, no challenge period. The
+oracle that produces the answer is deterministic for price claims and abstains
+rather than guess for everything else, but what the chain sees is a signature.
+
+**So the real exposure is not a drain, it is a decision.** The same key could
+stake the thin side of a market and then resolve that side as the winner.
+Nothing in the program stops it today.
+
+**And the program is upgradeable.** Upgrade authority
+`52YvH8wXqfxgdmXpPuJkwewyw4Pwzj67PSsY3GrXL77z`, which is deliberately not the
+key the server signs with. New code could do anything to money already in
+vaults, so every line above is conditional on that one key.
+
+What closes each of these, in the order we intend to do it: put the resolution
+criteria on chain so the rule cannot change after people stake; refuse a resolve
+before the deadline; forbid the authority from holding a position in a market it
+resolves; move the upgrade authority behind a multisig and a timelock; publish a
+verifiable build so the deployed bytes can be matched to this source.
+
+None of that is done yet. Saying so is the only guarantee worth anything before
+it is.
 
 ## The money
 
