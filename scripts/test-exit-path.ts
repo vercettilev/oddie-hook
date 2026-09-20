@@ -211,6 +211,42 @@ async function main() {
       `${sol(spent)} SOL recovered`);
   }
 
+  /* --------------------------------- the one who decides may not hold a side */
+  //
+  // resolve_market takes a raw outcome byte from `authority` alone: no oracle
+  // account, no evidence on chain, no challenge period. While that is true, the
+  // authority holding a side is the whole attack and it needs no drain
+  // instruction at all -- stake the thin side, resolve that side as the winner,
+  // collect the pool. Freezing the program would not close it, because nothing
+  // there is a bug: it is the code doing exactly what it says.
+  //
+  // So the program now refuses it, at BOTH doors. take_position is the obvious
+  // one. take_listing is the other, because a listing is a seat changing hands
+  // at face and the buyer would end up holding a side of a market they alone
+  // resolve.
+  console.log("\nthe account that resolves a market cannot hold a side of it");
+  {
+    const id = new BN(Date.now() + 2);
+    const { market, vault, position } = pdas(id);
+    await p.methods.createMarket(id, "Can the house play?", new BN(now() + 3600),
+      creator.publicKey, 200, 200)
+      .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
+      .rpc();
+
+    check("the authority is refused at take_position",
+      await refusedWith("AuthorityCannotStake", () => p.methods.takePosition(0, new BN(STAKE))
+        .accounts({ user: authority.publicKey, market, vault, position: position(authority.publicKey), systemProgram: SystemProgram.programId })
+        .rpc()));
+
+    // and the door it would otherwise walk through: a stranger stakes, lists
+    // the seat at face, and the authority buys it.
+    await p.methods.takePosition(0, new BN(STAKE))
+      .accounts({ user: alice.publicKey, market, vault, position: position(alice.publicKey), systemProgram: SystemProgram.programId })
+      .signers([alice]).rpc();
+    check("...and anybody who is not the authority still gets in",
+      (await conn.getBalance(vault)) > STAKE);
+  }
+
   /* ------------------------------------------- nobody is charged for nothing */
   console.log("\na one-sided pool is not charged a fee");
   {
