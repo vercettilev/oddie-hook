@@ -238,9 +238,48 @@ function noLigatures(s: string): string {
   return s.replace(/f(?=[fil])/g, "f\u200C");
 }
 
+/**
+ * A hair space between i and V. The SECOND collision in the bundled Fredoka,
+ * and it is not the ligature bug.
+ *
+ * Measured through resvg at 46px: "LIVE" draws as "LNE", "IV" draws as "N", and
+ * the mint fragment "aiVx" fuses the i into the V's left arm. The i sits inside
+ * the V's overhang and the pair reads as a single letter.
+ *
+ * U+200C does NOT fix this one. It suppresses ligature SUBSTITUTION, and this
+ * is positioning. Measured at 46px through the same renderer: U+200C no change,
+ * U+200B no change, U+2060 no change, letter-spacing="1" no change (resvg
+ * ignores it here exactly as it does for ligatures). U+200A is the narrowest
+ * character that actually separates them.
+ *
+ * LOWERCASE MATTERS MORE THAN UPPER. Base58 has no capital I at all -- the
+ * alphabet is [1-9A-HJ-NP-Za-km-z] -- so every collision a mint address can
+ * produce is the lowercase one, which is the case a rule written as /I(?=V)/
+ * would have missed entirely.
+ */
+function ivKern(s: string): string {
+  return s.replace(/[Ii](?=V)/g, "$&\u200A");
+}
+
+/**
+ * head…tail for a machine identifier.
+ *
+ * A Solana mint is 32-44 base58 characters. Set in the card's largest type it
+ * is the brightest mass on the image, it wraps mid-token because there is no
+ * space to break at, and no reader has ever gained anything from the middle of
+ * one. Folding keeps both ends, which is what a person actually checks an
+ * address by, and it is exactly how the app prints one everywhere else.
+ *
+ * Scoped to the QUESTION on purpose. The resolution criteria are where an
+ * address belongs and it must stay whole there: that string is the rule.
+ */
+export function foldIds(s: string): string {
+  return s.replace(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g, (m) => `${m.slice(0, 6)}\u2026${m.slice(-6)}`);
+}
+
 /** Escape for SVG text, and suppress the ligatures the bundled fonts cannot draw. */
 export function esc(s: string): string {
-  return noLigatures(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
+  return ivKern(noLigatures(s)).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]!));
 }
 
 export function money(n: number): string {
@@ -305,14 +344,17 @@ export function brandLockup(onDark = false): string {
  *  x/w need no adjustment at the call site. */
 export function volumePill(m: { venue: Market["venue"]; closesAt: string | null; volumeUsd: number }): { text: string; w: number; x: number } {
   const candidates = m.venue === "community"
-    ? [`community${timeLeft(m.closesAt)}`, timeLeft(m.closesAt).replace(/^ · /, "") || "community"]
+    /* "community" rode on every card this bot has ever posted -- it mints
+       nothing else -- so it carried no information while crowding out the one
+       fact in this pill a trader acts on, which is how long is left. */
+    ? [timeLeft(m.closesAt).replace(/^ · /, "") || "open"]
     : [money(m.volumeUsd) + " in play" + timeLeft(m.closesAt), money(m.volumeUsd) + " in play"];
   for (const text of candidates) {
     const w = Math.round(textWidth(text, 21) + 44);
     const x = PAD_R - w;
     if (x >= LOCKUP_RIGHT + 24) return { text, w, x };
   }
-  const text = m.venue === "community" ? "community" : money(m.volumeUsd);
+  const text = m.venue === "community" ? "open" : money(m.volumeUsd);
   const w = Math.round(textWidth(text, 21) + 44);
   return { text, w, x: PAD_R - w };
 }
@@ -452,7 +494,7 @@ export function renderCard(
   const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const no = 100 - yes;
 
-  const q = layoutQuestion(displayTitle(m.question));
+  const q = layoutQuestion(foldIds(displayTitle(m.question)));
 
   const pillRaw = volumePill(m);
   // A settled market has no time left to report. volumePill counts down from
