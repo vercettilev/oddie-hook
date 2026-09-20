@@ -2,6 +2,7 @@ import { Market } from "../venues/types.js";
 import { X_HANDLE } from "../brand.js";
 import { displayTitle } from "../title.js";
 import { logoMark } from "./logoMark.js";
+import { CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "../store/economy.js";
 
 // The card IS Oddie talking. Logo language: chunky black rounded outline,
 // white fill, brand chartreuse (#D7DC1F), the two ghost eyes as the one playful
@@ -479,7 +480,20 @@ export function renderCard(
   const heroText = settled ? settled.toUpperCase() : unpriced ? "open" : `${yes}%`;
   const udSide = yes <= 50 ? "yes" : "no";
   const udPct = udSide === "yes" ? yes : no;
-  const mRaw = 100 / Math.max(1, udPct);
+  /* NET OF THE TAKEOUT, because nobody is ever paid the gross. The chain pays
+     winning_leg x (pool - creator_fee - protocol_fee) / winning_total
+     (onchain/programs/oddie_chain/src/lib.rs, claim_winnings). At the 4% this
+     product charges, an even pool pays 1.9x, and "2x" was a number no winner
+     could ever collect. The card is the surface that travels: a multiple it
+     prints under a stranger's tweet is a promise, and it was 4% too generous
+     on every card ever posted.
+     The rate is a per-market field frozen at creation, but every market this
+     program has ever opened carries the default, and the card is not given the
+     row. Using the default is exact today and wrong only if a market is ever
+     minted at another rate, which would show up as a card promising slightly
+     less than it pays: the safe direction. */
+  const TAKEOUT = (CREATOR_FEE_BPS_REAL + PROTOCOL_FEE_BPS_REAL) / 10_000;
+  const mRaw = (100 * (1 - TAKEOUT)) / Math.max(1, udPct);
   const mult = mRaw >= 10 ? Math.round(mRaw) : Math.round(mRaw * 10) / 10;
   /* HOW MANY PEOPLE MADE THAT NUMBER.
      The card's hero is a percentage and it travels on X with nothing beside it,

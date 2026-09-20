@@ -30,7 +30,7 @@ import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
 import { resolvePriceClaim, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
-import { runExtract, extractEnabled, EXTRACT_KEY_ENV } from "./matching/extractClaim.js";
+import { runExtract, extractEnabled, EXTRACT_KEY_ENV, unsettleablePhrase, addressInQuestion } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
@@ -2943,6 +2943,21 @@ async function openMarketFromClaim(input: {
     }
   }
 
+  /* THE SAME TWO CHECKS AS normalize(), HERE BECAUSE THIS IS THE WALL.
+     normalize() covers everything a model wrote. It does not cover
+     /api/v1/markets or /api/community/create, which take `question` and
+     `resolution_criteria` as free text from a caller. Every market in this
+     product is born in this function, so this is the one place a rule that
+     cannot settle cannot walk around.
+     Run AFTER the price block above, because that block REPLACES the model's
+     criteria with ones written from the pinned token, and those are the string
+     the row stores and the oracle reads. Checking earlier would judge a
+     sentence that never reaches the market. */
+  const hedged = unsettleablePhrase(criteria ?? "") ?? unsettleablePhrase(question);
+  if (hedged) return bad(422, `this market's own rule says it cannot settle (“${hedged}”), so it must not open`);
+  const addressed = addressInQuestion(question);
+  if (addressed) return bad(422, "the question names an address instead of the thing being predicted");
+
   /* ALREADY A MARKET? Then this is that market, and nothing is minted.
      Checked HERE rather than in the mention loop because the loop's own check
      is keyed on the source POST, which cannot see two different tweets making
@@ -5067,7 +5082,20 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     cardPng: async (slug) => {
       const { all } = await liveMarketData();
       const rec = await getSlug(slug, all);
-      return rec ? renderCardPng(renderCard(rec.market, { stakers: await cardStakers(slug) })) : null;
+      if (!rec) return null;
+      /* THE SAME QUESTION THE TWO /card ROUTES ASK, and the only renderer that
+         never asked it was this one: the card that goes to X under a stranger's
+         tweet. Without `unpriced` the card quotes the seeded 50 as a hero
+         percentage with "yes pays 2x" beside it, on a pool nobody has staked
+         into. It states a price nobody set and a multiple the first staker will
+         not receive, while the page it links to says "first in sets the odds"
+         about the same market in the same tweet.
+         marketIsUnpriced degrades an unreadable chain to unpriced too, which is
+         the safe direction: it invites a stake instead of inventing odds. */
+      return renderCardPng(renderCard(rec.market, {
+        unpriced: await marketIsUnpriced(slug),
+        stakers: await cardStakers(slug),
+      }));
     },
     // One card for every unmarketable tag, so it is rasterised once for the
     // life of the process rather than per reply: nothing on it is per-tweet.

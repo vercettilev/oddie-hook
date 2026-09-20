@@ -218,6 +218,61 @@ export async function extractClaim(text: string): Promise<Extraction> {
 /** Trust the schema, but never let a malformed field become a live market: clamp
  *  every value into the contract, and force the unresolvable INVARIANT (empty
  *  question/criteria) so a "refuse" can never leak a half-built market. */
+
+/* ------------------------------------------------------------ THE BACKSTOPS
+ * SYSTEM above already forbids both of these in words. Words are a request to
+ * a model; these are checks. Measured 2026-09-20, from one real tweet.
+ *
+ * @troxqt posted "Don't think $ORE will hit 90 by the end of this week". The
+ * model graded it publishable and then wrote, as the market's ONLY rule:
+ * "...either $90 unit price or 90M market cap... Ambiguity over whether '90'
+ * means unit price or market cap must be clarified before this can settle."
+ * It opened with a seven-day clock and real money invited under a stranger's
+ * tweet. The refusal instruction and the criteria it wrote never met, because
+ * nothing in this file or downstream ever reads what the criteria SAY.
+ *
+ * The same answer also carried a 44-character mint address in the QUESTION,
+ * which SYSTEM forbids outright ("NEVER guess a contract or mint address").
+ * The question is the market's identity: it is the card in a stranger's
+ * timeline and the headline on the page. An address there is not a market.
+ */
+
+/** The shape of a rule that postpones its own decision. Sentence shapes, not
+ *  words: "ambiguous" alone is legitimate ("resolves NO if the announcement is
+ *  ambiguous"). What is never legitimate is a rule whose own text says the
+ *  rule is not finished. */
+const UNSETTLEABLE: RegExp[] = [
+  /\b(must|needs?\s+to|has\s+to|would\s+need\s+to|should)\s+(first\s+)?be\s+(clarified|confirmed|decided|determined|resolved|agreed|specified|established)\b/i,
+  /\bbefore\s+(this|it|that|the\s+\w+)\s+can\s+(be\s+)?(settle|settled|resolve|resolved)\b/i,
+  /\b(cannot|can'?t|could\s+not|couldn'?t|unable\s+to|no\s+way\s+to)\s+(be\s+)?(settle|settled|resolve|resolved|determine|determined|verif(?:y|ied))\b/i,
+  /\b(manual|human|operator|admin(?:istrator)?)\s+(review|judg(?:e)?ment|decision|interpretation|discretion|input)\b/i,
+  /\b(to\s+be\s+(determined|decided|confirmed|clarified)|TBD)\b/i,
+  /\b(poster|author|tweeter|claimant)('s)?\s+(intended|intent|meant|meaning)\b/i,
+  /\beither\b[^.]{0,80}\b(unit\s+price|price)\b[^.]{0,80}\bor\b[^.]{0,80}\b(market\s*cap|mcap|fdv)\b/i,
+  /\beither\b[^.]{0,80}\b(market\s*cap|mcap|fdv)\b[^.]{0,80}\bor\b[^.]{0,80}\b(unit\s+price|price)\b/i,
+];
+
+/** The rule that says it is not a rule. Exported so extraction and market
+ *  creation share one definition and cannot drift apart. */
+export function unsettleablePhrase(text: string): string | null {
+  for (const re of UNSETTLEABLE) {
+    const m = text.match(re);
+    if (m) return m[0].trim();
+  }
+  return null;
+}
+
+/* Base58 as Solana writes it: no 0, O, I or l. An address is 32-44 of them,
+ * and no English word is. Checked against the QUESTION only — criteria are
+ * exactly where an address belongs, and criteriaSentence() puts one there. */
+const ADDRESS_IN_TEXT = /[1-9A-HJ-NP-Za-km-z]{32,44}/;
+
+/** An address where the market's name should be. */
+export function addressInQuestion(question: string): string | null {
+  const m = question.match(ADDRESS_IN_TEXT);
+  return m ? m[0] : null;
+}
+
 function normalize(v: Record<string, unknown>): Extraction {
   const str = (x: unknown) => (typeof x === "string" ? x.trim() : "");
   const category = (EXTRACT_CATEGORIES as readonly string[]).includes(String(v.category))
@@ -239,6 +294,14 @@ function normalize(v: Record<string, unknown>): Extraction {
 
   // Invariant: a resolvable grade needs a question, and a refusal carries none.
   if (resolvability !== "unresolvable" && !question) resolvability = "unresolvable";
+  // BACKSTOP 1. A rule that postpones its own decision is not a rule, whatever
+  // grade the model put beside it. Checked on the criteria AND the question,
+  // because the hedge lands in whichever the model was writing at the time.
+  const hedge = unsettleablePhrase(resolution_criteria) ?? unsettleablePhrase(question);
+  // BACKSTOP 2. An address is an identifier, not a name. It belongs in the
+  // criteria, where a machine reads it, never in the line a person reads.
+  const address = addressInQuestion(question);
+  if (hedge || address) resolvability = "unresolvable";
   // Blocked when unresolvable OR inappropriate → carry no half-built market.
   const blocked = resolvability === "unresolvable" || !appropriate;
   if (blocked) {
@@ -250,7 +313,11 @@ function normalize(v: Record<string, unknown>): Extraction {
   // block is on subject grounds, else the resolvability reason.
   const reason = !appropriate
     ? (str(v.appropriate_reason) || "this subject isn’t appropriate for a market")
-    : (str(v.reason).slice(0, 240) || "no reason given");
+    : hedge
+      ? `the rule it wrote cannot settle itself (“${hedge}”)`
+      : address
+        ? "the question came out as an address instead of a name"
+        : (str(v.reason).slice(0, 240) || "no reason given");
 
   // The teaser rides only on a live market; a blocked claim carries nothing.
   const hook = blocked ? "" : str(v.hook).slice(0, 40);

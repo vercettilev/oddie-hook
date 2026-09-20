@@ -441,7 +441,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     var s = Math.round((d - Date.now()) / 1000), past = s < 0, n = Math.abs(s), unit, v;
     if (n < 3600) { v = Math.max(1, Math.round(n / 60)); unit = "minute"; }
     else if (n < 86400) { v = Math.round(n / 3600); unit = "hour"; }
-    else { v = Math.round(n / 86400); unit = "day"; }
+    // Gun katmani ASAGI yuvarlar: market sayfasi ve kart da oyle yapiyor, ve
+    // bir para son tarihini fazla gostermek yanlis tarafta hata yapmaktir.
+    else { v = Math.floor(n / 86400); unit = "day"; }
     var t = v + " " + unit + (v === 1 ? "" : "s");
     return past ? "closed" : t + " left";
   }

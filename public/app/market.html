@@ -704,12 +704,16 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var ms = d - Date.now();
     if (ms <= 0) return { text: "Betting closed", soon: false, done: true };
     var s = Math.floor(ms / 1000);
-    // Gun katmaninda YUVARLIYORUZ: 24 gunluk bir market acilir acilmaz
-    // "23 days left" diyorsa bu kullaniciya eksik sayma gibi okunur, ve gun
-    // hassasiyetinde yarim gun zaten kimsenin kararini degistirmiyor. Saat ve
-    // dakika katmanlari asagi yuvarliyor, cunku orada hassasiyet kararı
-    // etkiliyor ve kalan sureyi FAZLA gostermek yanlis tarafta hata yapmaktir.
-    if (s >= 172800) return { text: Math.round(s / 86400) + " days left", soon: false, done: false };
+    // HER KATMAN ASAGI YUVARLAR, GUN KATMANI DAHIL. Burasi eskiden gun
+    // katmaninda YUVARLIYORDU, ve gerekcesi suydu: "24 gunluk bir market
+    // acilir acilmaz 23 days left demesin". Makul, ama iki sey pahaliya
+    // maloldu. (1) Kart asagi yuvarliyor (src/card/renderCard.ts:255), yani
+    // ayni market ayni tweet icinde kartta "7d left", sayfada "8 days left"
+    // diyordu. Kart X'e giden bir PNG, geri alinamaz; sayfa yenilenebilir, o
+    // yuzden duzeltilemeyen yuzeye hizalandi. (2) Bu bir PARA son tarihi:
+    // kalan sureyi FAZLA gostermek birinin bahsine mal olabilir, EKSIK
+    // gostermek kimseye hicbir sey kaybettirmez.
+    if (s >= 172800) return { text: Math.floor(s / 86400) + " days left", soon: false, done: false };
     if (s >= 3600) {
       return { text: Math.floor(s / 3600) + "h " + Math.floor(s % 3600 / 60) + "m left",
                soon: s < 86400, done: false };

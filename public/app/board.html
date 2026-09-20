@@ -316,7 +316,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     if (!isFinite(s) || s < 0) return "";
     if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m ago";
     if (s < 86400) return Math.round(s / 3600) + "h ago";
-    var d = Math.round(s / 86400);
+    // Asagi yuvarlar, market sayfasi ve kartla ayni kural.
+    var d = Math.floor(s / 86400);
     return d === 1 ? "yesterday" : d + " days ago";
   }
   /** "in 2 days" for something still to come. */
