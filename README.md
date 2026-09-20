@@ -72,14 +72,27 @@ Nothing in the program stops it today.
 key the server signs with. New code could do anything to money already in
 vaults, so every line above is conditional on that one key.
 
-What closes each of these, in the order we intend to do it: put the resolution
-criteria on chain so the rule cannot change after people stake; refuse a resolve
-before the deadline; forbid the authority from holding a position in a market it
-resolves; move the upgrade authority behind a multisig and a timelock; publish a
-verifiable build so the deployed bytes can be matched to this source.
+**Written, not deployed.** The program in this repo now forbids the authority
+from holding a side of a market it resolves, through `take_position` and through
+`take_listing`, which is the other way into a seat. It also makes
+`refund_after_deadline` decrement the market totals, without which a resolve
+after a refund prices payouts against money that has already left the vault and
+strands the last winner. Neither is live: the deployed bytes are still the ones
+at the slot above, and an upgrade is a separate, deliberate act.
 
-None of that is done yet. Saying so is the only guarantee worth anything before
-it is.
+Still to do: put the resolution criteria on chain so the rule cannot change
+after people stake (this changes the account layout from 162 bytes and needs a
+migration, so it comes last); move the upgrade authority behind a multisig and a
+timelock; publish a verifiable build so the deployed bytes can be matched to
+this source.
+
+Deliberately NOT on that list: a close-time guard on `resolve_market`. It was
+there and was removed on purpose, because it locked real money for two months to
+protect against nothing the outcome changes. An authority that settles early is
+a key-custody problem and the multisig is its answer, not a `require!`.
+
+None of the deployed guarantees have changed yet. Saying so is the only one
+worth anything before they do.
 
 ## The money
 

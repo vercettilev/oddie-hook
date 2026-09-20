@@ -197,6 +197,21 @@ pub mod oddie_chain {
     pub fn take_position(ctx: Context<TakePosition>, side: u8, amount: u64) -> Result<()> {
         require!(side == SIDE_YES || side == SIDE_NO, OddieError::BadSide);
         require!(amount > 0, OddieError::ZeroAmount);
+        /* THE ONE WHO DECIDES MAY NOT PLAY.
+           resolve_market takes a raw outcome byte from `authority` alone: no
+           oracle account, no evidence on chain, no challenge period. Until that
+           changes, the authority holding a side is the whole attack, and it
+           needs no drain instruction at all: stake the thin side, resolve that
+           side as the winner, collect the pool. Freezing the program would not
+           close it, because nothing here is a bug in the code -- it is the code
+           doing exactly what it says.
+           This does not make resolution trustworthy. It removes the direct
+           financial motive, which is the part a program can enforce; the rest
+           is key custody and an on-chain rule, both of which are still to do. */
+        require!(
+            ctx.accounts.user.key() != ctx.accounts.market.authority,
+            OddieError::AuthorityCannotStake
+        );
 
         let clock = Clock::get()?;
         require!(!ctx.accounts.market.resolved, OddieError::AlreadyResolved);
@@ -286,6 +301,14 @@ pub mod oddie_chain {
         let m = &ctx.accounts.market;
         require!(!m.resolved, OddieError::AlreadyResolved);
         require!(clock.unix_timestamp < m.close_time, OddieError::MarketClosed);
+        /* THE SAME RULE AS take_position, BECAUSE THIS IS THE OTHER WAY IN.
+           Guarding only take_position would leave the authority a seat it could
+           simply buy: a listing is a position changing hands at face, and the
+           buyer ends up holding a side of a market they alone resolve. */
+        require!(
+            ctx.accounts.buyer.key() != m.authority,
+            OddieError::AuthorityCannotStake
+        );
 
         let side = ctx.accounts.listing.side;
         let amount = ctx.accounts.listing.amount;
@@ -532,6 +555,27 @@ pub mod oddie_chain {
         // transfer fails the whole instruction reverts and the flag goes with
         // it, so this can never strand a position as refunded-but-unpaid.
         pos.claimed = true;
+        /* AND THE MARKET HAS TO FORGET IT TOO.
+           The totals are what every payout is priced against: claim_winnings
+           divides by winning_total and takes fees off `pool` (see its own
+           arithmetic below). A refund moves lamports out of the vault and used
+           to leave both totals untouched, so a resolve after a refund window
+           priced payouts against money that had already left. The first
+           claimant would be paid a share of a pool that no longer exists and
+           the last one would find the vault short, which on this program means
+           a failed transfer and a winner who can never claim.
+           resolve_market checks only `!m.resolved` and has no awareness of the
+           refund window, deliberately, so the two paths can overlap and this
+           subtraction is what keeps them arithmetically exact. */
+        let m = &mut ctx.accounts.market;
+        m.total_yes = m
+            .total_yes
+            .checked_sub(pos.amount_yes)
+            .ok_or(OddieError::MathOverflow)?;
+        m.total_no = m
+            .total_no
+            .checked_sub(pos.amount_no)
+            .ok_or(OddieError::MathOverflow)?;
         pay_from_vault(
             &ctx.accounts.vault.to_account_info(),
             &ctx.accounts.owner.to_account_info(),
@@ -1185,4 +1229,8 @@ pub enum OddieError {
     SelfFill,
     #[msg("this position does not hold that much on that side")]
     NotEnoughToList,
+    /* APPENDED, never inserted: these discriminants are positional and a live
+       client maps them by index. */
+    #[msg("the account that resolves this market cannot hold a side of it")]
+    AuthorityCannotStake,
 }
