@@ -57,6 +57,11 @@ pub const SIDE_NO: u8 = 1;
 /// Matches the 180-character ceiling the off-chain create route already
 /// enforces, so a question that passes validation there can never fail here.
 pub const MAX_QUESTION_LEN: usize = 180;
+/// The rule has to fit in the transaction that opens the market, beside the
+/// question. Measured against production: the longest criteria written so far
+/// is 369 bytes and the longest question 115. The cap is checked against a
+/// worst-case serialized transaction in the on-chain tests, not guessed.
+pub const MAX_CRITERIA_LEN: usize = 512;
 
 /// Ceiling on the creator fee, enforced by the program rather than trusted from
 /// the caller. The rate is an argument so it can be tuned per market, but a
@@ -115,8 +120,10 @@ pub mod oddie_chain {
         creator: Pubkey,
         creator_fee_bps: u16,
         protocol_fee_bps: u16,
+        criteria: String,
     ) -> Result<()> {
         require!(question.len() <= MAX_QUESTION_LEN, OddieError::QuestionTooLong);
+        require!(criteria.len() <= MAX_CRITERIA_LEN, OddieError::CriteriaTooLong);
         require!(creator_fee_bps <= MAX_CREATOR_FEE_BPS, OddieError::FeeTooHigh);
         require!(protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS, OddieError::FeeTooHigh);
         // The cap that matters is the TOTAL. Two individually reasonable rates
@@ -134,6 +141,13 @@ pub mod oddie_chain {
         m.creator = creator;
         m.market_id = market_id;
         m.question_hash = hash(question.as_bytes()).to_bytes();
+        /* An EMPTY rule commits to nothing rather than to the hash of "". A
+           market can be opened without one -- the price path writes its own
+           criteria from the token and does not always have prose to pin -- and
+           hashing the empty string would put a real-looking 32 bytes on chain
+           for a rule that was never written. Zero is the honest value and it is
+           the same value a migrated market carries, so one check covers both. */
+        m.criteria_hash = if criteria.is_empty() { [0u8; 32] } else { hash(criteria.as_bytes()).to_bytes() };
         m.close_time = close_time;
         m.resolved = false;
         m.winning_side = 0;
@@ -394,6 +408,64 @@ pub mod oddie_chain {
     /// GENUINE old account: the previous program is deployed to a local
     /// validator, a position is opened through it, the program is upgraded in
     /// place, and the account is migrated and then claimed.
+    /// 162 bytes to 194: the same account, with room for the rule it settles by.
+    ///
+    /// PERMISSIONLESS, for the same reason `migrate_position` is: the
+    /// conversion cannot move a lamport, and an un-migrated market is a market
+    /// Anchor refuses to deserialize -- which would strand every stake inside
+    /// it behind a format change. Anybody may pay to convert anybody's market.
+    ///
+    /// IT IS ONLY A RESIZE. criteria_hash is the last field, so every existing
+    /// byte keeps its offset and the new tail is zeroed. Nothing is re-encoded,
+    /// so there is no path here that can transpose a balance or a fee -- the
+    /// failure mode `migrate_position` had to be careful about does not exist
+    /// in this one.
+    ///
+    /// THE ZEROED TAIL IS THE POINT, not a placeholder. A market opened before
+    /// this field existed was never committed to a rule, and writing the hash
+    /// of whatever oddie has stored today would manufacture exactly the proof
+    /// the field exists to make real. It stays zero, and the surfaces say so.
+    ///
+    /// Deliberately narrow: exact old length only, so it can never run twice on
+    /// the same account and can never touch one already written in the new
+    /// shape.
+    pub fn migrate_market(ctx: Context<MigrateMarket>) -> Result<()> {
+        const OLD_LEN: usize = 162;
+        let info = ctx.accounts.market.to_account_info();
+        let new_len = 8 + Market::INIT_SPACE;
+
+        {
+            let d = info.try_borrow_data()?;
+            require!(d.len() == OLD_LEN, OddieError::NotOldMarket);
+            require!(d[0..8] == Market::DISCRIMINATOR[..], OddieError::NotOldMarket);
+        }
+
+        // The extra bytes have to be rent-exempt too, or the runtime will not
+        // let the account survive the resize.
+        let rent = Rent::get()?;
+        let need = rent.minimum_balance(new_len);
+        let have = info.lamports();
+        if need > have {
+            system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.key(),
+                    system_program::Transfer {
+                        from: ctx.accounts.payer.to_account_info(),
+                        to: info.clone(),
+                    },
+                ),
+                need - have,
+            )?;
+        }
+        info.resize(new_len)?;
+
+        // resize() zero-fills, but the tail is written explicitly rather than
+        // trusted: this is the one field whose meaning depends on being zero.
+        let mut d = info.try_borrow_mut_data()?;
+        d[OLD_LEN..new_len].fill(0);
+        Ok(())
+    }
+
     pub fn migrate_position(ctx: Context<MigratePosition>) -> Result<()> {
         const OLD_LEN: usize = 8 + 32 + 32 + 1 + 8 + 1 + 1;
         let info = ctx.accounts.position.to_account_info();
@@ -934,6 +1006,19 @@ pub struct MigratePosition<'info> {
 }
 
 #[derive(Accounts)]
+pub struct MigrateMarket<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: validated by seeds here and by owner, discriminator and length in
+    /// the body. Read and resized, never deserialized -- Anchor cannot read a
+    /// 162-byte account as a 194-byte one, which is the whole reason this
+    /// instruction exists.
+    #[account(mut, owner = crate::ID @ OddieError::NotOldMarket)]
+    pub market: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct RefundAfterDeadline<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -1098,6 +1183,28 @@ pub struct Market {
     pub protocol_fee_claimed: bool,
     pub bump: u8,
     pub vault_bump: u8,
+    /// SHA-256 of the resolution criteria, and the reason this account grew.
+    ///
+    /// Until this field the rule a market settles by lived only in oddie's
+    /// database, which meant oddie could change it after people had staked and
+    /// nobody could prove it had. The text itself is an argument to
+    /// `create_market`, so like the question it is in that transaction's
+    /// instruction data forever: the hash is what makes the copy oddie shows
+    /// checkable against the copy the market was opened with, and the ledger is
+    /// what keeps the text readable if oddie is gone.
+    ///
+    /// ZERO MEANS "OPENED BEFORE THE RULE WAS PINNED". Markets migrated from
+    /// the 162-byte layout get zeroes rather than a hash written after the
+    /// fact, because hashing today's stored criteria and calling it a
+    /// commitment would be the exact claim this field exists to make
+    /// impossible. Every surface must say so rather than imply a guarantee
+    /// those markets never had.
+    ///
+    /// LAST FIELD, deliberately. Anchor lays the struct out in declaration
+    /// order, so appending means every existing byte keeps its offset and the
+    /// migration is a resize plus a zeroed tail -- no re-encode, nothing that
+    /// can transpose a balance.
+    pub criteria_hash: [u8; 32],
 }
 
 #[account]
@@ -1233,4 +1340,8 @@ pub enum OddieError {
        client maps them by index. */
     #[msg("the account that resolves this market cannot hold a side of it")]
     AuthorityCannotStake,
+    #[msg("the resolution criteria are too long to commit on chain")]
+    CriteriaTooLong,
+    #[msg("this market is not in the old format, so there is nothing to migrate")]
+    NotOldMarket,
 }
