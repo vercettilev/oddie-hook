@@ -817,8 +817,17 @@
        bottom has only flat cream under it. Measured at 1280px the two halves
        came out 46 above and 97 below, which is why these are not the same
        number. */
-    padding-block:clamp(26px,3.6vw,52px) clamp(12px,1.6vw,24px)}
-  .offer__st{width:clamp(108px,15vw,214px);height:auto;flex:none;
+    /* Asymmetric on purpose, and BOTH numbers account for the sticker's
+       rotation: at -7deg a 180px image's bounding box grows about 22px taller
+       than its layout box, so it eats into the padding at both ends. Measured
+       at 1280px with the old numbers the block had 35px of air above and 10px
+       below, which read as cut off. The top also sits under a 64px torn seam
+       the eye already counts as space, which is why the two are not equal. */
+    padding-block:clamp(24px,3.2vw,46px) clamp(30px,4.2vw,60px)}
+  /* Sized against the TEXT column, not against the page. The fine print left
+     with the fee line, so the words are about 160px tall at 1280 and a 214px
+     sticker made the block read as an illustration with a caption. */
+  .offer__st{width:clamp(100px,13vw,180px);height:auto;flex:none;
     rotate:-7deg;
     /* The sticker's own die-cut is its edge; a shadow under it sits on cream
        and reads as print, not as a UI card. */
