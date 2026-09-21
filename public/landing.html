@@ -477,7 +477,7 @@
     --m-star-i:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Cpath d='M30 3 37 24 58 24 41 37 48 58 30 45 12 58 19 37 2 24 23 24Z' fill='none' stroke='%23020302' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E");
     --m-star-p:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Cpath d='M30 3 37 24 58 24 41 37 48 58 30 45 12 58 19 37 2 24 23 24Z' fill='none' stroke='%23FF2D78' stroke-width='5' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
-  .A__hero::before,.A__hero::after,.A__hero .h1::after,.B__fig::before{
+  .A__hero::before,.A__hero::after,.A__hero .h1::after,.B__hd span::after{
     content:"";position:absolute;pointer-events:none;z-index:5;
     background-repeat:no-repeat;background-position:center;background-size:contain}
 
@@ -490,10 +490,11 @@
     left:clamp(6px,13vw,196px);bottom:clamp(-4px,1vw,16px);rotate:11deg}
 
   /* B — siyah uzerinde sari/pembe, metin ve panonun konturundan */
-  /* Kartlar geldikten sonra bu isaret figurun sol ustunde ilk kartin
-     uzerine biniyordu; yukari ve disari alindi. */
-  .B__fig::before{width:clamp(44px,5vw,76px);aspect-ratio:64/56;background-image:var(--m-dash-p);
-    left:clamp(-30px,-2.4vw,-12px);top:calc(-1 * clamp(30px,3.4vw,58px));rotate:-14deg}
+  /* Bu isaret figurun sol ustundeydi; orasi artik basligin yeri ve isaret
+     baslikla figur arasinda oksuz bir tik gibi duruyordu. Basligin yanina
+     tasindi: A bolumundeki yildizin h1'in yaninda durmasiyla ayni kalip. */
+  .B__hd span::after{width:clamp(36px,4vw,60px);aspect-ratio:64/56;background-image:var(--m-dash-p);
+    left:calc(100% + clamp(10px,1.2vw,24px));top:-.16em;rotate:-14deg}
 
   /* C — pembe uzerinde sari/siyah, maskotun ve pulun konturundan */
 
@@ -525,7 +526,7 @@
     .crowd{width:110%;margin-left:-5%}
   }
   @media (max-width:560px){
-    .A__hero::before,.A__hero::after,.B__fig::before{display:none}
+    .A__hero::before,.A__hero::after,.B__hd span::after{display:none}
     :root{--seam-h:34px}
     .crowd img{height:clamp(130px,32vw,170px)}
   }
@@ -1028,7 +1029,7 @@
              that was what they were looking at, and the nav had no way to send
              anybody here. A heading costs one line and turns a decoration into
              a section. -->
-        <h2 class="h2 B__hd reveal">How it works</h2>
+        <h2 class="h2 B__hd reveal"><span>How it works</span></h2>
       <figure class="B__fig reveal">
         <img src="/brand/flow-market.webp" width="1600" height="900" loading="lazy"
              alt="Three steps: somebody posts that Pump.fun will close Q4 with more revenue than Q3, you tag @oddiefun under it, and an Oddie market opens on that claim with a YES and a NO side.">
