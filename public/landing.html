@@ -380,13 +380,21 @@
 
   /* 1. dikis SARI -> SIYAH. Kayan serit kalkinca dikis dogrudan B'nin
      tepesine tasindi. */
-  .B::before,.C::before{background:var(--cream)}
+  .B::before{background:var(--cream)}
   .B::before{-webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
   .B::after{background:var(--yellow);
     -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
 
-  .C::before{-webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
-  .C::after{background:var(--black);
+  /* 4. dikis KREM -> PEMBE. Bu dikis .B'nin hemen altindayken yazildi ve
+     ustundeki alanin rengini, siyahi boyuyordu. Sayfa arada krem bir yarim
+     kazaninca o siyah serit hicbir alanin devami olmadan orada kaldi: pembe
+     bandin tepesinde, neyin yirtildigini soylemeyen bir cizgi.
+     Ust alan artik krem, o yuzden disler krem; aradaki serit de -- .Bw'deki
+     ile ayni sebeple -- krem olamaz, kalkan kagit kenarinin pembeye dusurdugu
+     golge. */
+  .C::before{background:rgba(11,13,4,.16);
+    -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
+  .C::after{background:var(--cream);
     -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
   /* 3. dikis SIYAH -> KREM. Tek pseudo, cunku ::before'un isi ustteki rengin
      disleri ile alttaki alan arasina krem bir deckle sermek; burada alttaki
