@@ -25,8 +25,27 @@
 import { storeDb, storeSchema, STORE_PERSISTENT } from "../store/markets.js";
 import { _memProfileByHandle } from "./profileStore.js";
 
-/** The campaign constant. Everybody starts here; nobody is ever handed more. */
+/**
+ * A RATE LIMIT, NOT AN ALLOCATION, and the difference is the whole positioning.
+ *
+ * This was five tags for life. The product says "any claim, any coin, ANYONE"
+ * and the landing's primary button said "get your 5 tickets", which is a
+ * rationing desk wearing a different hat. Measured before the change: nine
+ * markets had ever been opened, by six handles, and not one person had come
+ * near the cap. It was costing the thing it was meant to protect and buying
+ * nothing.
+ *
+ * What it WAS protecting is worth keeping, and it is not the vault: a market
+ * mints on demand and costs nothing on chain until somebody stakes. It is the
+ * X account. Every tag becomes a public reply under a stranger's tweet, so an
+ * uncapped bot is a spam engine wearing our name.
+ *
+ * A window keeps that and drops the contradiction. Nobody experiences "five a
+ * day" as a gate; everybody experiences "five, ever" as one.
+ */
 export const GENESIS_TICKETS = 5;
+/** How far back the count reaches. The cap is per rolling day, not per life. */
+export const TICKET_WINDOW = "24 hours";
 
 const norm = (h: string): string => h.replace(/^@+/, "").toLowerCase();
 const validHandle = (h: string): boolean => /^[a-z0-9_]{1,15}$/.test(h);
@@ -78,7 +97,10 @@ export async function ticketsLeft(rawHandle: string): Promise<number> {
   if (!STORE_PERSISTENT) return Math.max(0, Math.min(GENESIS_TICKETS, memBalance(handle)));
   await storeSchema();
   const { rows } = await storeDb().query<{ bal: string }>(
-    `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log WHERE handle = $1`,
+    // Only the rolling window counts. Rows outside it stay in the ledger,
+    // because the ledger is also the record of who showed up and when.
+    `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log
+      WHERE handle = $1 AND at > now() - interval '${TICKET_WINDOW}'`,
     [handle, GENESIS_TICKETS],
   );
   // node-postgres hands back SUM() as a STRING; Number() it or the clamp below

@@ -205,8 +205,10 @@ export function buildRefusalReply(tweetId: string, tagsLeft?: number | null): st
      draws five pips - said tickets. Same counter, two nouns, and the person
      reading this reply is one tap from that page. The campaign's word wins
      because it has the artwork behind it; a tag is what you spend one ON. */
-  if (tagsLeft <= 0) return `${line} that was your last ticket.`;
-  return `${line} ${tagsLeft} ${tagsLeft === 1 ? "ticket" : "tickets"} left.`;
+  /* SAME RULE AS THE MARKET REPLY: the number refills every day now, so
+     reciting it is noise. What is still worth saying is the moment the bot is
+     about to stop answering this handle, and only that. */
+  return tagsLeft <= 0 ? `${line} that is your last one today.` : line;
 }
 
 /**
@@ -226,11 +228,20 @@ export function buildRefusalReply(tweetId: string, tagsLeft?: number | null): st
  * instruction they can act on in the next ten seconds, so it rides only on the
  * two replies where it is urgent: the last tag, and the one before it.
  */
+/**
+ * ONLY WHEN THE LIMIT IS ABOUT TO BITE.
+ *
+ * This used to recite a balance on every reply -- "you have 4 tickets left" --
+ * under a market somebody had just opened, next to a card inviting strangers
+ * in. It read as a ration book, and it was the one sentence on that reply doing
+ * nothing for the person reading it.
+ *
+ * Now that the cap is a rolling day rather than a lifetime, a balance is not
+ * even interesting: it refills. The only version worth saying is the one that
+ * explains why the bot is about to go quiet.
+ */
 export function tagsLeftLine(tagsLeft: number): string {
-  const back = "one new bettor here brings it back.";
-  if (tagsLeft <= 0) return `that was your last ticket. ${back}`;
-  if (tagsLeft === 1) return `you have 1 ticket left. ${back}`;
-  return `you have ${tagsLeft} tickets left.`;
+  return tagsLeft <= 0 ? "that is your last one today." : "";
 }
 
 export function buildTweetReply(input: TweetReplyInput): TweetReply {
@@ -257,7 +268,8 @@ export function buildTweetReply(input: TweetReplyInput): TweetReply {
      that is owed to anybody, because the tag it describes was just charged for.
      A reply that quietly spends somebody's ticket and has no room left to
      mention it is the exact failure two commits went into removing. */
-  const tail = typeof input.tagsLeft === "number" ? `\n\n${tagsLeftLine(input.tagsLeft)}` : "";
+  const note = typeof input.tagsLeft === "number" ? tagsLeftLine(input.tagsLeft) : "";
+  const tail = note ? `\n\n${note}` : "";
   const suffix = `${odds}\n\n${cta} ↓\n${link}${tail}`;
   const hook = (input.hook ?? "").trim();
 

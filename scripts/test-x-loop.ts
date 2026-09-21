@@ -341,8 +341,11 @@ async function main() {
     });
     await runMentionSweep(deps);
     check("a miss we answered costs a tag", spent.length === 1 && spent[0] === "700", spent.join(","));
-    check("...and the reply says what it left them", 
-      Boolean(spy.posted[0]?.text.includes("4 tickets left")), spy.posted[0]?.text);
+    /* THE CAP IS A ROLLING DAY NOW, NOT A LIFETIME, so a balance is not worth
+       reciting: it refills. These used to assert the countdown; they assert the
+       silence instead, which is the behaviour that replaced it. */
+    check("...and the reply does not recite a balance nobody needs",
+      !/tickets? left/.test(spy.posted[0]?.text ?? ""), spy.posted[0]?.text);
   }
   {
     // THE RULE, as a test. The card carries the entire lesson, so an upload
@@ -408,8 +411,8 @@ async function main() {
     });
     await runMentionSweep(deps);
     check("the last ticket is answered, not swallowed by a cap", spy.posted.length === 1 && spent.length === 1);
-    check("...and says so instead of printing a zero",
-      Boolean(spy.posted[0]?.text.includes("that was your last ticket")), spy.posted[0]?.text);
+    check("...and the only number still said is the one that goes quiet",
+      Boolean(spy.posted[0]?.text.includes("that is your last one today")), spy.posted[0]?.text);
   }
   {
     // And the sixth costs nothing, because nothing is read: the gate is the
@@ -454,8 +457,8 @@ async function main() {
       spendTicket: async () => true,
     });
     await runMentionSweep(deps);
-    check("a market that opened says what the tag left them",
-      Boolean(spy.posted[0]?.text.includes("you have 4 tickets left")), spy.posted[0]?.text);
+    check("a market that opened says nothing about a balance",
+      !/tickets? left/.test(spy.posted[0]?.text ?? ""), spy.posted[0]?.text);
   }
   {
     // The one surface where the refund rule is an instruction rather than
@@ -467,8 +470,15 @@ async function main() {
       spendTicket: async () => true,
     });
     await runMentionSweep(deps);
-    check("the last ticket is told how to get it back",
-      Boolean(spy.posted[0]?.text.includes("one new bettor here brings it back")), spy.posted[0]?.text);
+    /* THE REFUND RULE WENT WITH THE LIFETIME CAP. "one new bettor here brings it
+       back" was an incentive aimed at exactly the right behaviour -- getting a
+       second person into a market -- but it could only be felt by somebody who
+       had run out, and in nine markets across six handles nobody ever did. The
+       incentive moves to the points ledger, where it does not depend on a cap
+       binding first. */
+    check("the last one today says so, and promises nothing else",
+      Boolean(spy.posted[0]?.text.includes("that is your last one today"))
+      && !/brings it back/.test(spy.posted[0]?.text ?? ""), spy.posted[0]?.text);
   }
   {
     // Nothing is charged for a reply that never went out, on this branch either.
@@ -699,8 +709,8 @@ async function main() {
     check("a tag with nothing to price is taught, not ignored",
       spy.posted.length === 1 && Boolean(spy.posted[0]?.mediaIds?.length), spy.posted[0]?.text);
     check("...without paying for an extraction to find that out", extracted === 0);
-    check("...and it counts down like any other answer",
-      Boolean(spy.posted[0]?.text.includes("4 tickets left")), spy.posted[0]?.text);
+    check("...and it carries no ration book either",
+      !/tickets? left/.test(spy.posted[0]?.text ?? ""), spy.posted[0]?.text);
   }
 
   /* ------------------------------------- a card failure still gets a reply -- */
