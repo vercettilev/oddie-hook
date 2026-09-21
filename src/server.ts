@@ -375,9 +375,10 @@ app.use(express.static(path.join(__dirname, "../public"), {
  * still right: a launch-day landing holding two markets claims more than the
  * product has, and an empty shelf claims it and fails. The slot was deleted
  * from the page in e169921 and the code that fed it is gone with it (see the
- * note at the render below). LANDING_PROOF_MIN survives because <!--PROOF-->
- * still exists in the document; the live-cards thresholds do not, because
- * nothing reads them any more. Bring both back together or not at all.
+ * note at the render below). LANDING_PROOF_MIN now survives NOTHING on the
+ * page: the slot went when the cream half became one block. It is kept as the
+ * number that reasoning arrived at, so bringing the line back does not have to
+ * re-derive it. Nothing reads it.
  */
 const LANDING_TTL_MS = 60_000;
 const LANDING_PROOF_MIN = 25;   // markets before the count is worth printing
@@ -423,36 +424,15 @@ async function renderLanding(): Promise<string> {
    * Deleted rather than rewired because the band was removed on purpose. The
    * implementation is in e169921^ if the proof band comes back.
    */
-
-  // ODDIE'S OWN NUMBERS, not the venue catalogue's.
-  //
-  // This line used to read "<N> markets live right now" off getMarketData(),
-  // which counts every bettable Polymarket market we can see — a real number,
-  // but next to Oddie's name it claims Oddie has hundreds of markets when it has
-  // the ones people actually tagged. A true number answering a question nobody
-  // asked is still the page overstating itself.
-  //
-  // So: markets people tagged here, and calls placed here. Both are Oddie's,
-  // both are checkable by clicking through to the feed. Same rule as everywhere
-  // else on this page — a fact is printed whole or not at all, and a zero is the
-  // absence of an answer rather than a smaller number to boast.
-  //
-  // Bir esik daha: DOGRU bir sayi da sayfaya zarar verebilir. "1 market tagged
-  // so far" hicbir seyi yanlis soylemiyordu ama canli bir sayac olarak tek
-  // isi ziyaretciye burayi kimsenin kullanmadigini duyurmakti. Sayiyi sismek
-  // yerine esigin altinda hic yazmiyoruz: yoklugu, 1'den iyi. Esik gecilince
-  // satir kendiliginden geri gelir, sayfada duzenlenecek bir sey yok.
-  const parts: string[] = [];
-  if (community.length >= LANDING_PROOF_MIN) {
-    parts.push(`<b>${community.length.toLocaleString("en-US")}</b> market${community.length === 1 ? "" : "s"} tagged so far`);
-  }
-  if (activity && activity.callsToday > 0) {
-    // Sayfa "take a side" diyor; bu satir tek basina "call" demeye devam
-    // ediyordu. Alan adi callsToday, degistirmek veri sozlesmesini kirar --
-    // degisen yalniz okunan kelime.
-    parts.push(`<b>${activity.callsToday.toLocaleString("en-US")}</b> side${activity.callsToday === 1 ? "" : "s"} taken today`);
-  }
-  const proof = parts.join(" · ");
+  /* THE PROOF LINE IS GONE WITH ITS SLOT. The cream half is one block now --
+     the offer, and nothing else -- so the counter that used to sit in the fee
+     band has nowhere to be printed. The placeholder and the .replace() that
+     filled it go TOGETHER: leaving the replace behind is how this file ended
+     up with a live no-op once before, which is what test-placeholders exists
+     to catch and did.
+     To bring it back, add <!--PROOF--> to a page and rebuild the two or three
+     lines below it; LANDING_PROOF_MIN is deliberately kept as the threshold
+     that reasoning arrived at. */
   // The one hard status claim on the page, rendered per cluster so it cannot
   // lie. "Real SOL" is only written where the SOL is real; on devnet the chip
   // says devnet, because a landing that calls test money real is the exact
@@ -474,7 +454,6 @@ async function renderLanding(): Promise<string> {
     : LANDING_HTML;
 
   const html = boardSentence
-    .replace("<!--PROOF-->", proof)
     .replace("<!--NET_CHIP-->", netChip);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one

@@ -267,7 +267,6 @@
      kaldi ve bolum tek bir sey yerine uc ayri parca gibi okundu. Ortalamayi
      .col--mid yapiyor -- sistemin kendi degiskeni, yeni kural yok.
      Cip tek sola yaslı sey olarak kalmasin diye o da ortaya aliniyor. */
-  .Bw .netfact{text-align:center}
   .oracle__txt{gap:clamp(9px,1.1vw,15px)}
   .oracle .lede{max-width:52ch}
   @media (max-width:820px){
@@ -804,10 +803,51 @@
   /* padding-block, KISAYOL DEGIL. Kisayol .shell'in yan dolgusunu de siliyordu
      ve 375px'te baslik 375 kutuda 366px yer kaplayip iki kenara da yapisiyordu
      -- sarmamasi tesadufi bir pikseldi. */
-  .earn{padding-block:clamp(18px,2.4vw,34px) clamp(20px,2.6vw,36px);text-align:center}
-  .earn__hd{margin:0;font-family:var(--display);font-weight:400;line-height:1.02;
-    font-size:clamp(30px,5.2vw,62px);letter-spacing:.005em;color:var(--ink)}
-  .earn__sub{margin:10px 0 0;font-size:clamp(13px,1.15vw,16px);opacity:.62;color:var(--ink)}
+  /* THE OFFER, AS ONE OBJECT. Not a centred stack: the sticker and the words
+     are a single left-to-right composition, which is the only place on the
+     page that breaks the centred spine and is why this half reads as a moment
+     rather than as more page.
+     The sticker leads on desktop because the eye lands left first and the
+     money is the point; under 760px it goes above the words, because a 2-up at
+     phone width gives the headline about nine characters a line. */
+  .offer{display:flex;align-items:center;justify-content:center;
+    gap:clamp(18px,3.4vw,54px);
+    padding-block:clamp(26px,3.6vw,52px) clamp(28px,3.8vw,56px)}
+  .offer__st{width:clamp(108px,15vw,214px);height:auto;flex:none;
+    rotate:-7deg;
+    /* The sticker's own die-cut is its edge; a shadow under it sits on cream
+       and reads as print, not as a UI card. */
+    filter:drop-shadow(7px 9px 0 rgba(11,13,4,.14))}
+  .offer__say{min-width:0}
+  .offer__hd{margin:0;font-family:var(--display);font-weight:400;line-height:.98;
+    letter-spacing:.005em;color:var(--ink);
+    font-size:clamp(32px,5.6vw,68px);text-wrap:balance}
+  /* NO UNDERLINE ON THIS ONE. .lo::after hangs .12em under the SPAN's inline
+     box, and with line-height .98 that box overflows the line it sits on:
+     measured at 1280px the bar lands at y294 while the subline's box starts at
+     y286, so it printed as a strikethrough through "You are paid either way".
+     The flourish is for a highlighted word that ENDS a headline, which is
+     where the hero and the pink band use it. Pink glyphs with an ink outline
+     on cream are emphasis enough here. */
+  .offer__hd .lo::after{display:none}
+  .offer__sub{margin:clamp(12px,1.4vw,18px) 0 0;
+    font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
+    max-width:34ch}
+  /* THE DISCLOSURE, AS FINE PRINT AND NOT AS A SECOND HEADLINE. It has to be
+     here -- "keep 2%" with no other number reads as a 2% total take, and that
+     reading has happened on this page before -- but a fee is not a promise and
+     must not be set like one. */
+  .offer__fine{margin:clamp(10px,1.1vw,14px) 0 0;
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
+    color:var(--ink-3);max-width:56ch}
+  @media (max-width:760px){
+    .offer{flex-direction:column;text-align:center;gap:clamp(14px,3vw,22px)}
+    .offer__sub,.offer__fine{margin-inline:auto}
+  }
+
+  /* the status chip closes the half, on its own line and quiet */
+  .netfact{margin-top:0;padding-bottom:clamp(20px,2.6vw,34px);text-align:center}
+
   .facts__in{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
     text-align:center;gap:clamp(14px,2.4vw,44px)}
   .fact{flex:1 1 200px;min-width:180px;font-size:clamp(12.5px,1.05vw,14.5px);
@@ -1097,87 +1137,32 @@
          stream would be a number that gets checked. The full 4% stays in the
          band below, because printing the creator half alone once made a 4%
          take read as 2%. Proposition first, disclosure under it. -->
-    <div class="shell earn reveal">
-      <p class="earn__hd">Open a market, keep 2% of it.</p>
-      <p class="earn__sub">Either side can win. You are paid either way, the day it settles.</p>
-    </div>
+    <!-- ONE MOMENT, NOT THREE. This half used to stack the offer, the
+         settlement rule and the fee band as three centred blocks with a screen
+         of cream between them, and it read as three unrelated fragments rather
+         than the page's one argument. Lev's call: the offer alone, designed.
 
-    <div class="oracle-band">
-      <div class="shell">
-        <!-- =========================================== oracle · KIM KARAR VERIYOR ==
-             Bir tahmin piyasasinda sorulan ILK soru bu ve sayfa bugune kadar hic
-             cevaplamiyordu. Cevap aslinda yazilmisti, ama /genesis'in .how-only
-             blogunda: o blok [data-view="main"]'de gizli ve ona goturen link
-             .in-only, yani kaydolup olmayacagina karar veren ziyaretci marketin
-             nasil kapandigini HIC okuyamiyordu. Metin artik girisin onunde.
-             Son iki cumle olculmus davranisi anlatiyor: oracle kanitla kapatir,
-             kanit yoksa bekler. "Oracle cozer" diye duz yazmak, kapatamadigi
-             kismi gizlemek olurdu. -->
-        <div class="oracle reveal">
-          <div class="col col--mid oracle__txt">
-            <p class="kicker">Who decides</p>
-            <!-- "ORACLE" WAS THE ONLY WORD ON THIS PAGE THAT NEEDED A GLOSSARY.
-                 It is a crypto term of art, and it was doing the work of an
-                 ANSWER: the kicker asks who decides, and the reply named an
-                 actor most readers cannot picture, on the one section that
-                 exists to make a stranger trust the settlement. What decides is
-                 not a who, it is the rule, and saying so is both plainer and
-                 stronger -- a rule published before anyone can bet is a promise
-                 you can check, where a named oracle is a thing you have to take
-                 on faith. The section's artwork and class names keep the name;
-                 only the sentence a reader meets changed. -->
-            <h3 class="h3"><span>The rule is written</span><span>before the money moves.</span></h3>
-            <!-- Govde aktoru ADLANDIRMIYOR. Baslik "the oracle" dedikten sonra
-                 govdede "Oddie closes it" demek ayni ise iki isim verirdi, ustelik
-                 Oddie etiketledigin sey, karar veren degil. Isim baslikta duruyor,
-                 govdede yalniz davranis kaliyor. Dort cumle uctu: kural aciktan
-                 once aciklanir, tarihli kanit kapatir, baska hicbir sey kapatmaz
-                 (yani bekleyen market normaldir, hata degil). -->
-            <!-- "The rule goes up before anyone takes a side" is what the
-                 heading directly above already says. This keeps the half the
-                 heading cannot say, which is also the only place the page
-                 explains how a market ends. -->
-            <p class="lede">Dated evidence closes it.</p>
-          </div>
-        </div>
+         WHAT WENT, AND WHERE IT LIVES NOW. "The rule is written before the
+         money moves" is the guarantee that went on chain today, so it is not
+         gone from the product: it is in the README, it is verifiable against
+         criteria_hash, and the market pages carry the criteria themselves. It
+         is gone from THIS page, which is a choice about the page.
+
+         WHAT COULD NOT GO. The total take. "Keep 2% of it" beside no other
+         number reads as a 2% cut, and that exact reading has happened here
+         before; the 4% stays as the block's fine print, where a disclosure
+         belongs, rather than as a second headline competing with the first. -->
+    <div class="shell offer reveal">
+      <img class="offer__st" src="/brand/st-riding.webp" width="640" height="640"
+           loading="lazy" alt="">
+      <div class="offer__say">
+        <p class="offer__hd">Open a market,<br>keep <span class="lo">2%</span> of it.</p>
+        <p class="offer__sub">Either side can win. You are paid either way, the day it settles.</p>
+        <p class="offer__fine">The pool pays 4% in all: your half, and oddie's.</p>
       </div>
     </div>
 
-    <!-- Comp'taki istatistik bandinin durust hali: uydurma metrik yerine
-         kodda dogrulanabilen ucret, her yerde olma vaadi ve gerceklesme
-         yeri. Canli sayim (.proof) veri varsa katiliyor, yoksa kendini
-         gizliyor. Yeni bir renk alani degil, siyahin uzerine serilmis
-         yirtik kagit. -->
-    <div class="facts">
-      <div class="shell facts__in">
-        <!-- BOTH HALVES, because this is the only percentage on the whole page.
-             The pool loses 4%: CREATOR_FEE_BPS_REAL = 200 and
-             PROTOCOL_FEE_BPS_REAL = 200 (src/store/economy.ts:184, :207). The
-             app says so in both places a person meets it -- "4% of the pool at
-             settle" (public/app/market.html:569) and "2% ... to whoever started
-             this market, 2% to oddie" (public/chain.js:659) -- but the landing
-             printed the creator's half alone. Nothing about that sentence was
-             false; it was the only number on the page, so the natural reading
-             was that the take is 2%, and it is double that. Same wording as the
-             stake sheet, so the two surfaces cannot drift apart again. -->
-        <!-- ONE <b> PER CELL. .fact b is display:block and sized as a display
-             headline, so writing three of them stacked "Winners split the
-             pool." / "2%" / "2%" into four ragged lines and blew the band's
-             height out to 478px. The headline is the block; the numbers are
-             caption text, exactly like the cell beside it. -->
-        <!-- IT SAID 2% THREE TIMES IN ONE SCREEN: the proposition above, its
-             own subtitle, and then this split. The disclosure still has to
-             carry the whole take -- printing the creator's half alone once made
-             a 4% cut read as 2% -- but it does not have to re-split it under a
-             line that just told you your half. Same sentence the link preview
-             has always used. -->
-        <span class="fact"><b>Winners split the pool.</b>Less 4%, when it settles</span>
-        <!-- "Settled in SOL / never holds your funds" Lev'in kararıyla cikti:
-             escrow zaten isin dogasi, ilan etmeye deger bilgi degil. Canli
-             sayim (proof) veri varsa kendi katilir, LANDING_PROOF_MIN esiginin
-             altinda hic yazilmaz. -->
-        <span class="fact proof"><!--PROOF--></span>
-      </div>
+
       <!-- Ag cipi geri geldi. Yer tutucu HTML'den cikarilmisti ama onu arayan
            .replace() hala server.ts'te duruyordu: mantik dogru calisiyor ve
            hicbir yere basmiyordu. Sayfa "a real market on Solana with its own
@@ -1191,8 +1176,7 @@
            String.replace ilk eslesmeyi degistirir; burada gecerse cip gorunmez
            bir yorumun icine basilir ve asagidaki gercek yuva bos kalir. Bir kez
            oldu, uretime de gitti. -->
-      <div class="shell netfact"><!--NET_CHIP--></div>
-    </div>
+    <div class="shell netfact"><!--NET_CHIP--></div>
   </section>
 
   <!-- ================================================ C · PINK · REPUTATION ==
