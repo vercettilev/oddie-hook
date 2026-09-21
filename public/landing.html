@@ -838,20 +838,11 @@
   .offer__sub{margin:clamp(12px,1.4vw,18px) 0 0;
     font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
     max-width:34ch}
-  /* THE DISCLOSURE, AS FINE PRINT AND NOT AS A SECOND HEADLINE. It has to be
-     here -- "keep 2%" with no other number reads as a 2% total take, and that
-     reading has happened on this page before -- but a fee is not a promise and
-     must not be set like one. */
-  .offer__fine{margin:clamp(10px,1.1vw,14px) 0 0;
-    font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
-    color:var(--ink-3);max-width:56ch}
   @media (max-width:760px){
     .offer{flex-direction:column;text-align:center;gap:clamp(14px,3vw,22px)}
-    .offer__sub,.offer__fine{margin-inline:auto}
+    .offer__sub{margin-inline:auto}
   }
 
-  /* the status chip closes the half, on its own line and quiet */
-  .netfact{margin-top:0;padding-bottom:clamp(20px,2.6vw,34px);text-align:center}
 
   .facts__in{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
     text-align:center;gap:clamp(14px,2.4vw,44px)}
@@ -862,12 +853,6 @@
     font-size:clamp(24px,2.6vw,38px);line-height:1;color:var(--ink);
     margin-bottom:5px}
   .fact.proof b{color:var(--pink-deep)}
-  /* durum chip'i alt bilgiden banda tasindi; kendi satiri var */
-  .netfact{font-family:var(--mono);font-size:10.5px;font-weight:700;
-    letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2)}
-  .netfact .livechip i{background:var(--pink-deep)}
-  /* Devnet'te sunucu bos dize basiyor; bos kalan kap satir kutusu birakmasin. */
-  .netfact:empty{display:none}
   @media (max-width:760px){
     .facts{rotate:-.6deg}
     .fact{flex:1 1 100%;min-width:0}
@@ -1161,28 +1146,13 @@
       <img class="offer__st" src="/brand/st-riding.webp" width="640" height="640"
            loading="lazy" alt="">
       <div class="offer__say">
-        <p class="offer__hd">Open a market,<br>keep <span class="lo">2%</span> of it.</p>
-        <p class="offer__sub">Either side can win. You are paid either way, the day it settles.</p>
-        <p class="offer__fine">The pool pays 4% in all: your half, and oddie's.</p>
+        <p class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of it.</p>
+        <p class="offer__sub">Either side can win. You are paid either way.</p>
       </div>
     </div>
 
 
-      <!-- Ag cipi geri geldi. Yer tutucu HTML'den cikarilmisti ama onu arayan
-           .replace() hala server.ts'te duruyordu: mantik dogru calisiyor ve
-           hicbir yere basmiyordu. Sayfa "a real market on Solana with its own
-           vault" der, SOL tutarlari gosterir, ve hangi agda oldugunu hic
-           soylemezdi. App bunu zaten dogru yapiyor (chain.js clusterLabel,
-           sunucudan gelen cluster, asla tahmin degil); eksik olan on kapiydi.
-           Cip kendi kendini duzeltiyor: mainnet'e gecince metin
-           "Real SOL · live on Solana" olur, burada duzenlenecek sey yok.
-
-           DIKKAT: yer tutucunun birebir yazimini bu yorumun ICINE YAZMA.
-           String.replace ilk eslesmeyi degistirir; burada gecerse cip gorunmez
-           bir yorumun icine basilir ve asagidaki gercek yuva bos kalir. Bir kez
-           oldu, uretime de gitti. -->
-    <div class="shell netfact"><!--NET_CHIP--></div>
-  </section>
+    </section>
 
   <!-- ================================================ C · PINK · REPUTATION ==
        Two columns so the ground is not a headline over a void. The three

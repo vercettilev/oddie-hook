@@ -433,28 +433,23 @@ async function renderLanding(): Promise<string> {
      To bring it back, add <!--PROOF--> to a page and rebuild the two or three
      lines below it; LANDING_PROOF_MIN is deliberately kept as the threshold
      that reasoning arrived at. */
-  // The one hard status claim on the page, rendered per cluster so it cannot
-  // lie. "Real SOL" is only written where the SOL is real; on devnet the chip
-  // says devnet, because a landing that calls test money real is the exact
-  // kind of page this product must never be.
-  // Devnet satiri Lev'in karariyla kaldirildi: yayinda olmayan bir ag adini on
-  // kapida duyurmak istemedi. Yuva ve mantik DURUYOR, cunku itiraz devnet
-  // satirinaydi, mainnet satirina degil: cluster mainnet olunca cip kendiliginden
-  // gelir ve o zaman soyleyecek olumlu bir seyi olur. Devnet'te bos dize basar,
-  // .netfact:empty onu gizler. Sessizlik bir iddia degil, ve agin gercekten
-  // onemli oldugu yer zaten app: chain.js clusterLabel'i sunucudan gelen
-  // cluster ile yaziyor, orada hicbir sey degismedi.
-  const netChip = cluster() === "mainnet-beta"
-    ? '<span class="livechip"><i></i>Real SOL · live on Solana</span>'
-    : '';
+  /* THE STATUS CHIP IS GONE FROM THE PAGE (Lev), and its code goes with it.
+     It printed "Real SOL · live on Solana" on mainnet and an empty string
+     anywhere else, which was the honest version of a network claim. Nothing
+     about that reasoning was wrong; the cream half is one block now and the
+     chip was the last thing still sitting outside it.
+     The placeholder and the .replace() leave TOGETHER. This file has shipped a
+     live no-op twice by deleting one and keeping the other, which is what
+     test-placeholders exists to catch. The network is still stated where it
+     decides something: chain.js writes clusterLabel from the server's cluster
+     in the app, and nothing there changed. */
 
   refreshAnySettled();
   const boardSentence = anySettled === false
     ? LANDING_HTML.split('The <a href="/board">board</a> ranks').join("The board ranks")
     : LANDING_HTML;
 
-  const html = boardSentence
-    .replace("<!--NET_CHIP-->", netChip);
+  const html = boardSentence;
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full

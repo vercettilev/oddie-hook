@@ -64,8 +64,17 @@ const haystack = htmlFiles.map((f) => readFileSync(f, "utf8")).join("\n");
 const names = [...server.matchAll(/\.replace\(\s*"<!--([A-Z_]+)-->"/g)].map((m) => m[1]);
 const unique = [...new Set(names)];
 
-check("the server replaces at least one placeholder (the scan works)", unique.length > 0,
-  `found ${unique.length}`);
+/* THE SCAN IS PROVED AGAINST A SAMPLE, NOT AGAINST PRODUCTION.
+   It used to assert that the server replaces at least one placeholder, on the
+   reasoning that a scanner finding nothing might be a broken scanner. That was
+   right until the answer legitimately became zero: both slots were removed
+   with their code, and a correct scanner reporting the truth failed the suite.
+   So the scanner now proves itself on a string this file owns, and zero
+   placeholders in the real source is an ordinary pass. */
+const SAMPLE = 'x.replace("<!--SAMPLE_SLOT-->", y)';
+check("the scan finds a placeholder it is given (the scan works)",
+  [...SAMPLE.matchAll(/\.replace\(\s*"<!--([A-Z_]+)-->"/g)].map((m) => m[1])[0] === "SAMPLE_SLOT");
+console.log(`  – ${unique.length} placeholder(s) in src/server.ts`);
 
 for (const name of unique) {
   const slot = `<!--${name}-->`;
