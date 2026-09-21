@@ -260,6 +260,13 @@
      .B > .shell yalnizca dogrudan cocugu sectigi icin .oracle-band'in icindeki
      .shell grid olmuyor ve blok kaynak sirasinda kaliyor. */
   .oracle-band{margin-top:clamp(30px,3.8vw,56px)}
+  /* Blok siyahin uzerindeyken tam genislikteki figurun altindaydi ve sola
+     yaslı olmasi bolumun ritmiyle uyumluydu. Beyaz yarida ustunde ortalanmis
+     bir baslik, altinda ortalanmis bir gercek var; sola yaslı tek parca bu
+     kaldi ve bolum tek bir sey yerine uc ayri parca gibi okundu. Ortalamayi
+     .col--mid yapiyor -- sistemin kendi degiskeni, yeni kural yok.
+     Cip tek sola yaslı sey olarak kalmasin diye o da ortaya aliniyor. */
+  .Bw .netfact{text-align:center}
   .oracle__txt{gap:clamp(9px,1.1vw,15px)}
   .oracle .lede{max-width:52ch}
   @media (max-width:820px){
@@ -1073,7 +1080,7 @@
              kanit yoksa bekler. "Oracle cozer" diye duz yazmak, kapatamadigi
              kismi gizlemek olurdu. -->
         <div class="oracle reveal">
-          <div class="col oracle__txt">
+          <div class="col col--mid oracle__txt">
             <p class="kicker">Who decides</p>
             <!-- "ORACLE" WAS THE ONLY WORD ON THIS PAGE THAT NEEDED A GLOSSARY.
                  It is a crypto term of art, and it was doing the work of an
