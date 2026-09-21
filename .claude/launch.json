@@ -4,8 +4,21 @@
     {
       "name": "oddie",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "oddie-open",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev-open"
+      ],
+      "port": 3100,
       "autoPort": true
     }
   ]

@@ -238,7 +238,11 @@
   /* The page turns over after the picture. No .on-dark here on purpose: the
      kicker and lede defaults ARE the ink ones, so the flip costs no overrides. */
   .Bw{background:var(--cream);color:var(--ink);
-    padding:clamp(34px,4vw,58px) 0 0}
+    padding:clamp(34px,4vw,58px) 0 0;
+    /* .facts is rotated -.6deg, so its box is ~52px wider than the shell. .B
+       clipped that; this section inherited the band and had to inherit the clip
+       too, or the whole page gains 26px of sideways scroll. */
+    overflow-x:clip;overflow-y:visible}
   .B__hd{margin:0 0 clamp(14px,1.8vw,26px);font-size:clamp(26px,3.4vw,46px)}
   .B__fig{max-width:1000px;margin:clamp(28px,3.6vw,52px) auto 0}
   .B__fig img{width:100%}
