@@ -718,7 +718,15 @@ export const SLIDES: Slide[] = [
        a reader deciding what the number probably is. One worked line costs a
        sentence and removes the guess. */
     body: [
-      "Half of it goes to whoever opened the market, for as long as it exists.",
+      /* NOT A STREAM, AND THIS SAID ONE. "for as long as it exists" was meant
+         as "the claim is permanently theirs, nobody can reassign it", and it
+         reads as income over time. The chain fixes creator_fee_lamports ONCE,
+         at resolve, as a share of the final pool, and claim_creator_fee pays it
+         once (onchain/programs/oddie_chain/src/lib.rs). An investor who checks
+         the program finds a single payment where the deck promised a royalty,
+         and the wrong half of that discovery is that everything else on the
+         slide was true. */
+      "Half of it goes to whoever opened the market, the day it settles.",
       "A pool of $1,000 pays its opener $20, and us $20.",
     ],
     sticker: "st-riding", stickerBox: { x: 1260, y: 540, w: 600, h: 480 },

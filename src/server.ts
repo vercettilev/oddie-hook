@@ -30,7 +30,7 @@ import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
 import { resolvePriceClaim, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
-import { hookFor } from "./store/markets.js";
+import { hookFor, viewCounts } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV, unsettleablePhrase, addressInQuestion } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
@@ -3308,11 +3308,18 @@ app.get("/api/v1/markets", async (req, res) => {
   // above is the admin view and returns them on purpose, so the filter has to be
   // here: without it the agent API kept serving markets that had already left
   // the feed.
-  const live = all.filter((m) => !m.resolvedOutcome && !m.retiredAt).slice(0, limit);
+  /* THE SLICE USED TO HAPPEN HERE, BEFORE ANYTHING WAS READ, so the page was
+     whatever order the store handed back and the busiest market could sit on
+     page two forever. Ordering by pool needs the pools, and the pools come from
+     the batched chain read below, so a wider candidate set is taken first and
+     cut to `limit` after the sort. The read is one call regardless of how many
+     accounts are in it. */
+  const CANDIDATES = Math.max(limit * 4, 60);
+  const live = all.filter((m) => !m.resolvedOutcome && !m.retiredAt).slice(0, CANDIDATES);
   // One batched read for the whole page instead of one per row. The old shape
   // was the exact request pattern a public RPC throttles, and being throttled
   // did not slow this endpoint down, it published zeroes.
-  const [states, openers, stakers] = await Promise.all([
+  const [states, openers, stakers, views] = await Promise.all([
     readMarkets(live.map((m) => m.onchainPubkey).filter(Boolean) as string[], { maxAgeMs: 4_000 })
       .catch(() => new Map<string, MarketRead>()),
     // Who opened it: the handle the 2% is paid to, and the reason the market
@@ -3320,6 +3327,8 @@ app.get("/api/v1/markets", async (req, res) => {
     surfacersFor(live.map((m) => m.slug)).catch(() => ({} as Record<string, SurfacerInfo>)),
     // Kac cuzdan girdi. Ayni sayfa icin tek sorgu, satir basina bir tane degil.
     stakerCounts(live.map((m) => m.slug)).catch(() => ({} as Record<string, number>)),
+    // Only ever a tie-break between two empty markets. See viewCounts.
+    viewCounts(live.map((m) => m.slug)).catch(() => ({} as Record<string, number>)),
   ]);
   const items = live.map((m) => {
     const r = m.onchainPubkey ? states.get(m.onchainPubkey) : { ok: false as const, reason: "absent" as const };
@@ -3367,12 +3376,27 @@ app.get("/api/v1/markets", async (req, res) => {
       creatorFeeBps: state?.creatorFeeBps ?? m.creatorFeeBps,
     };
   });
+  /* BUSIEST FIRST, AND THE TIE-BREAKS ARE THE HONEST ONES.
+     Pool is the signal a trader is actually looking for: a market with money in
+     it is a market somebody disagreed about. Stakers comes next and quietly
+     handles the unreadable case, where the pool reads as 0 but our own record
+     knows wallets went in -- an RPC we could not reach must not demote a funded
+     market below an empty one. Views break a tie only between markets that both
+     have nothing in them, which is the one place attention is the best number
+     available. Newest last, so a fresh market still outranks a stale twin. */
+  items.sort((a, b) =>
+    (b.pool?.totalSol ?? 0) - (a.pool?.totalSol ?? 0)
+    || (b.stakers ?? 0) - (a.stakers ?? 0)
+    || ((views[b.slug] ?? 0) - (views[a.slug] ?? 0))
+    || String(b.closesAt ?? "").localeCompare(String(a.closesAt ?? "")));
+  const page = items.slice(0, limit);
+
   res.json({
     ok: true, cluster: cluster(),
     // The DEFAULT rate, kept for callers that read it. Prefer the per-market
     // creatorFeeBps on each item above; this one cannot be right for every row.
     creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
-    markets: items,
+    markets: page,
   });
 });
 

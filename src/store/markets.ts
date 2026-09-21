@@ -5206,6 +5206,24 @@ export interface CommunityMarketDetail {
  * work to put in front of an image that four routes render. This is the one
  * column those routes need and nothing else.
  */
+/**
+ * How many distinct people opened each of these market pages.
+ *
+ * DEVICES, NOT ROWS. page_view writes one row per visit, so counting rows ranks
+ * a market somebody refreshed eleven times above one eleven people opened. The
+ * feed uses this only to break a tie between markets that both have no money in
+ * them, which is exactly where attention is the best signal available.
+ */
+export async function viewCounts(slugs: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (!slugs.length || !PERSISTENT) return out;
+  const { rows } = await db().query<{ slug: string; n: string }>(
+    `SELECT slug, COUNT(DISTINCT COALESCE(device_id, id::text)) AS n
+       FROM page_view WHERE slug = ANY($1::text[]) GROUP BY slug`, [slugs]);
+  for (const r of rows) out[r.slug] = Number(r.n);
+  return out;
+}
+
 export async function hookFor(slug: string): Promise<string | null> {
   const { rows } = await db().query<{ hook: string | null }>(
     `SELECT hook FROM community_market WHERE slug = $1`, [slug]);
