@@ -235,6 +235,11 @@
      the real markets sit under it as a scoreboard, NOT as a card grid: two
      three-up grids on one page is how the template creeps back. */
   .B{background:var(--black);color:var(--fg);padding:clamp(44px,5vw,68px) 0 clamp(48px,5.5vw,76px)}
+  /* The page turns over after the picture. No .on-dark here on purpose: the
+     kicker and lede defaults ARE the ink ones, so the flip costs no overrides. */
+  .Bw{background:var(--cream);color:var(--ink);
+    padding:clamp(34px,4vw,58px) 0 0}
+  .B__hd{margin:0 0 clamp(14px,1.8vw,26px);font-size:clamp(26px,3.4vw,46px)}
   .B__fig{max-width:1000px;margin:clamp(28px,3.6vw,52px) auto 0}
   .B__fig img{width:100%}
 
@@ -735,6 +740,11 @@
      bantlari var; bizde siyahtan pembeye dogrudan giriliyordu. Bu serit o
      nefesi veriyor ama alan degil, uzerine serilmis bir kagit nesnesi:
      ust ve alt kenari kendi maskesiyle yirtik. */
+  .nav__a{font-size:13px;font-weight:700;color:inherit;text-decoration:none;
+    opacity:.72;margin-right:clamp(10px,1.6vw,22px);white-space:nowrap}
+  .nav__a:hover{opacity:1}
+  @media (max-width:560px){.nav__a{display:none}}
+
   .facts{position:relative;z-index:4;margin-top:clamp(26px,3.4vw,52px);
     background:var(--cream);color:var(--ink);
     padding:clamp(20px,2.4vw,34px) 0 clamp(22px,2.6vw,38px);
@@ -748,10 +758,10 @@
      scale so it reads as a statement and not as another caption; the second
      line is the mechanism, deliberately quiet, because a reader who wants the
      headline has already had it. */
-  .earn{padding:0 0 28px;text-align:center}
+  .earn{padding:clamp(18px,2.4vw,34px) 0 clamp(20px,2.6vw,36px);text-align:center}
   .earn__hd{margin:0;font-family:var(--display);font-weight:400;line-height:1.02;
-    font-size:clamp(30px,5.2vw,62px);letter-spacing:.005em;color:var(--cream)}
-  .earn__sub{margin:10px 0 0;font-size:clamp(13px,1.15vw,16px);opacity:.62;color:var(--cream)}
+    font-size:clamp(30px,5.2vw,62px);letter-spacing:.005em;color:var(--ink)}
+  .earn__sub{margin:10px 0 0;font-size:clamp(13px,1.15vw,16px);opacity:.62;color:var(--ink)}
   .facts__in{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
     text-align:center;gap:clamp(14px,2.4vw,44px)}
   .fact{flex:1 1 200px;min-width:180px;font-size:clamp(12.5px,1.05vw,14.5px);
@@ -909,6 +919,7 @@
          app, where a leaderboard is a retention surface rather than the first
          thing a stranger is asked to do. -->
     <div class="nav__links">
+      <a class="nav__a" href="#how">How it works</a>
       <a class="btn" href="/markets">Launch app <i aria-hidden="true">&rarr;</i></a>
     </div>
   </nav>
@@ -957,8 +968,8 @@
              what happens. The second line is the same "no listing desk" claim in
              words that need no prior product to understand. -->
         <p class="pitch">
-          <span>Tag <b>@oddiefun</b> under any claim on X and a real-money market opens on it in seconds.</span>
-          <span>Nobody decides whether it deserves to exist.</span>
+          <span>Tag <b>@oddiefun</b> about anything on X.</span>
+          <span>If it can be settled, it becomes a market.</span>
         </p>
         <!-- IT USED TO LAND ON /genesis, WHICH WAS RIGHT WHILE THERE WAS A
              CAMPAIGN AND A TICKET TO CLAIM. There is neither now, so a button
@@ -1008,6 +1019,12 @@
            sentence in front of a picture that already says it is the page
            clearing its throat. -->
 
+        <!-- THE PICTURE HAD NO NAME. It carries the three numbered steps and
+             it is the only explanation on the page, but nothing told a reader
+             that was what they were looking at, and the nav had no way to send
+             anybody here. A heading costs one line and turns a decoration into
+             a section. -->
+        <h2 class="h2 B__hd reveal">How it works</h2>
       <figure class="B__fig reveal">
         <img src="/brand/flow-market.webp" width="1600" height="900" loading="lazy"
              alt="Three steps: somebody posts that Pump.fun will close Q4 with more revenue than Q3, you tag @oddiefun under it, and an Oddie market opens on that claim with a YES and a NO side.">
@@ -1015,6 +1032,15 @@
 
     </div>
 
+  </section>
+
+  <!-- WHITE FROM HERE. The black ran from the hero all the way through the fee
+       band, so the picture, the settlement rule and the money all shared one
+       ground and read as one undifferentiated block. The picture closes the
+       dark half; everything that follows is the terms, and terms belong on
+       paper. .on-dark is deliberately absent, which is also what flips .kicker
+       and .lede back to their ink defaults without a single override. -->
+  <section class="Bw sec">
     <div class="oracle-band">
       <div class="shell">
         <!-- =========================================== oracle · KIM KARAR VERIYOR ==
@@ -1097,7 +1123,13 @@
              pool." / "2%" / "2%" into four ragged lines and blew the band's
              height out to 478px. The headline is the block; the numbers are
              caption text, exactly like the cell beside it. -->
-        <span class="fact"><b>Winners split the pool.</b>2% to whoever started it, 2% to oddie</span>
+        <!-- IT SAID 2% THREE TIMES IN ONE SCREEN: the proposition above, its
+             own subtitle, and then this split. The disclosure still has to
+             carry the whole take -- printing the creator's half alone once made
+             a 4% cut read as 2% -- but it does not have to re-split it under a
+             line that just told you your half. Same sentence the link preview
+             has always used. -->
+        <span class="fact"><b>Winners split the pool.</b>Less 4%, when it settles</span>
         <!-- "Settled in SOL / never holds your funds" Lev'in kararıyla cikti:
              escrow zaten isin dogasi, ilan etmeye deger bilgi degil. Canli
              sayim (proof) veri varsa kendi katilir, LANDING_PROOF_MIN esiginin
