@@ -543,6 +543,10 @@
         {
           "name": "protocol_fee_bps",
           "type": "u16"
+        },
+        {
+          "name": "criteria",
+          "type": "string"
         }
       ]
     },
@@ -676,7 +680,7 @@
       ]
     },
     {
-      "name": "migrate_position",
+      "name": "migrate_market",
       "docs": [
         "ONE-OFF: convert a Position written before the two-sided layout.",
         "",
@@ -695,8 +699,63 @@
         "The payer funds the rent on the seven extra bytes. Tested against a",
         "GENUINE old account: the previous program is deployed to a local",
         "validator, a position is opened through it, the program is upgraded in",
-        "place, and the account is migrated and then claimed."
+        "place, and the account is migrated and then claimed.",
+        "162 bytes to 194: the same account, with room for the rule it settles by.",
+        "",
+        "PERMISSIONLESS, for the same reason `migrate_position` is: the",
+        "conversion cannot move a lamport, and an un-migrated market is a market",
+        "Anchor refuses to deserialize -- which would strand every stake inside",
+        "it behind a format change. Anybody may pay to convert anybody's market.",
+        "",
+        "IT IS ONLY A RESIZE. criteria_hash is the last field, so every existing",
+        "byte keeps its offset and the new tail is zeroed. Nothing is re-encoded,",
+        "so there is no path here that can transpose a balance or a fee -- the",
+        "failure mode `migrate_position` had to be careful about does not exist",
+        "in this one.",
+        "",
+        "THE ZEROED TAIL IS THE POINT, not a placeholder. A market opened before",
+        "this field existed was never committed to a rule, and writing the hash",
+        "of whatever oddie has stored today would manufacture exactly the proof",
+        "the field exists to make real. It stays zero, and the surfaces say so.",
+        "",
+        "Deliberately narrow: exact old length only, so it can never run twice on",
+        "the same account and can never touch one already written in the new",
+        "shape."
       ],
+      "discriminator": [
+        201,
+        113,
+        181,
+        120,
+        217,
+        60,
+        109,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "docs": [
+            "the body. Read and resized, never deserialized -- Anchor cannot read a",
+            "162-byte account as a 194-byte one, which is the whole reason this",
+            "instruction exists."
+          ],
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_position",
       "discriminator": [
         15,
         132,
@@ -1524,6 +1583,21 @@
       "code": 6025,
       "name": "NotEnoughToList",
       "msg": "this position does not hold that much on that side"
+    },
+    {
+      "code": 6026,
+      "name": "AuthorityCannotStake",
+      "msg": "the account that resolves this market cannot hold a side of it"
+    },
+    {
+      "code": 6027,
+      "name": "CriteriaTooLong",
+      "msg": "the resolution criteria are too long to commit on chain"
+    },
+    {
+      "code": 6028,
+      "name": "NotOldMarket",
+      "msg": "this market is not in the old format, so there is nothing to migrate"
     }
   ],
   "types": [
@@ -1686,6 +1760,38 @@
           {
             "name": "vault_bump",
             "type": "u8"
+          },
+          {
+            "name": "criteria_hash",
+            "docs": [
+              "SHA-256 of the resolution criteria, and the reason this account grew.",
+              "",
+              "Until this field the rule a market settles by lived only in oddie's",
+              "database, which meant oddie could change it after people had staked and",
+              "nobody could prove it had. The text itself is an argument to",
+              "`create_market`, so like the question it is in that transaction's",
+              "instruction data forever: the hash is what makes the copy oddie shows",
+              "checkable against the copy the market was opened with, and the ledger is",
+              "what keeps the text readable if oddie is gone.",
+              "",
+              "ZERO MEANS \"OPENED BEFORE THE RULE WAS PINNED\". Markets migrated from",
+              "the 162-byte layout get zeroes rather than a hash written after the",
+              "fact, because hashing today's stored criteria and calling it a",
+              "commitment would be the exact claim this field exists to make",
+              "impossible. Every surface must say so rather than imply a guarantee",
+              "those markets never had.",
+              "",
+              "LAST FIELD, deliberately. Anchor lays the struct out in declaration",
+              "order, so appending means every existing byte keeps its offset and the",
+              "migration is a resize plus a zeroed tail -- no re-encode, nothing that",
+              "can transpose a balance."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }

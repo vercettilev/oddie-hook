@@ -2803,7 +2803,9 @@ const ONE_SOL = 1_000_000_000;
  * unchecked lie that has bitten this file before.
  */
 export async function mintedMarketsForBackfill(): Promise<{
-  rows: { slug: string; marketId: string; question: string; onchainPubkey: string; resolvedOutcome: string | null }[];
+  rows: { slug: string; marketId: string; question: string; onchainPubkey: string; resolvedOutcome: string | null;
+          /** The rule, so a re-mint commits to it instead of to nothing. */
+          resolutionCriteria: string | null }[];
   /** Community markets that were never minted. Not this script's problem, but a
    *  denominator the operator needs: they answer not-minted before the move and
    *  they answer not-minted after it, and that is not a regression. */
@@ -2813,8 +2815,10 @@ export async function mintedMarketsForBackfill(): Promise<{
   await ensureSchema();
   const { rows } = await db().query<{
     slug: string; market_id: string; question: string; onchain_pubkey: string; resolved_outcome: string | null;
+    resolution_criteria: string | null;
   }>(
-    `SELECT cm.slug, cm.market_id::text AS market_id, s.question, cm.onchain_pubkey, cm.resolved_outcome
+    `SELECT cm.slug, cm.market_id::text AS market_id, s.question, cm.onchain_pubkey, cm.resolved_outcome,
+            cm.resolution_criteria
        FROM community_market cm
        JOIN market_slug s ON s.slug = cm.slug
       WHERE cm.onchain_pubkey IS NOT NULL
@@ -2827,6 +2831,7 @@ export async function mintedMarketsForBackfill(): Promise<{
     rows: rows.map((r) => ({
       slug: r.slug, marketId: r.market_id, question: r.question,
       onchainPubkey: r.onchain_pubkey, resolvedOutcome: r.resolved_outcome,
+      resolutionCriteria: r.resolution_criteria,
     })),
     neverMinted: Number(n[0]?.n ?? 0),
   };

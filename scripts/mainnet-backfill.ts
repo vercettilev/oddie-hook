@@ -62,6 +62,8 @@ interface SnapMarket {
   creator: string | null;
   creatorFeeBps: number;
   protocolFeeBps: number;
+  /** The rule, carried so a re-mint commits to it rather than to nothing. */
+  resolutionCriteria: string | null;
   resolved: boolean;         // the chain's flag
   resolvedOutcome: string | null; // ours, which moves first
 }
@@ -146,6 +148,10 @@ async function snapshot(): Promise<void> {
       slug: r.slug,
       marketId: r.marketId,
       question: r.question,
+      /* From the ROW, not the account: the chain carries only the hash and a
+         hash cannot be re-minted into a commitment. If the row has no criteria
+         the re-mint commits to nothing, which is the truth about that market. */
+      resolutionCriteria: r.resolutionCriteria,
       expectedPubkey: r.onchainPubkey,
       closeTime: st.closeTime,
       authority: st.authority,
@@ -282,6 +288,7 @@ async function replay(): Promise<void> {
       creator: m.creator,
       creatorFeeBps: m.creatorFeeBps,
       protocolFeeBps: m.protocolFeeBps,
+      criteria: m.resolutionCriteria ?? "",
     });
     if (!out) { failed++; console.error(`  ! ${m.slug} FAILED to mint`); continue; }
     // The address is the whole point. If it does not match, the market_id did

@@ -89,7 +89,8 @@
     "try-duplicate": "tsx scripts/try-duplicate.ts",
     "dev-open": "APP_OPEN=true PORT=3100 tsx watch --include \"./public/**\" src/server.ts",
     "deck": "tsx scripts/deck-build.ts",
-    "test-unsettleable": "tsx scripts/test-unsettleable.ts"
+    "test-unsettleable": "tsx scripts/test-unsettleable.ts",
+    "migrate-markets": "tsx scripts/migrate-markets.ts"
   },
   "engines": {
     "node": ">=20"
