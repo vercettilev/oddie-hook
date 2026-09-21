@@ -302,6 +302,15 @@
   .close{margin-top:clamp(26px,4vw,56px);gap:clamp(15px,2vw,26px)}
   .C__say{max-width:34ch;margin:0}
   /* Kutu ve tus tek nesne gibi dursun: ayni yukseklik, ayni golge yonu. */
+  /* align-self:start, or the hero column stretches this row to the space it
+     has left and align-items:stretch passes that down: measured, the input
+     came out 108px tall beside a 75px button. Pinned to its own content, the
+     line is as tall as the button and the box matches it. */
+  .ask--hero{justify-content:flex-start;align-self:start;
+    width:min(740px,100%);flex-wrap:nowrap}
+  .ask--hero .ask__in{flex:1 1 auto;min-width:0}
+  .ask--hero .ask__in{background:var(--cream);border-color:var(--ink);
+    box-shadow:6px 7px 0 var(--pink)}
   .ask{display:flex;flex-wrap:wrap;justify-content:center;align-items:stretch;
     gap:12px;width:min(640px,100%)}
   .ask__in{flex:1 1 300px;min-width:0;font:inherit;font-size:clamp(14px,1.3vw,16px);
@@ -652,6 +661,12 @@
      Ayni ritme cekilince buton kendi basina duran tek eylem olarak okunuyor. */
   .A__hero .btn{font-size:clamp(19px,2vw,27px);padding:17px 34px;
     margin-top:clamp(20px,2.6vw,38px)}
+  /* The gap belongs to the ROW once the button shares one with a box. A margin
+     on a flex item is added to its line's height, so the 33px that used to sit
+     above the button stretched the box beside it to 108px against a 75px
+     button. Measured; it is not visible as a spacing bug, only as a mismatch. */
+  .ask--hero .btn{margin-top:0}
+  .ask--hero{margin-top:clamp(20px,2.6vw,38px)}
   /* destek cumlesi basligin yanindaki ikinci siyah kutle olmaktan cikiyor */
   .A__hero .brush{font-size:clamp(13px,1.15vw,15.5px);padding:9px 17px}
 
@@ -1060,7 +1075,22 @@
              CAMPAIGN AND A TICKET TO CLAIM. There is neither now, so a button
              that says "tag it" was sending people to a page about an allocation.
              It goes where the words say. -->
-        <a class="btn" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">If you&rsquo;re so sure, tag it <i aria-hidden="true">&rarr;</i></a>
+        <!-- THE TWO LABELS WERE THE WRONG WAY ROUND. "Open your first market"
+             is an INSTRUCTION and instructions are for somebody who does not
+             yet know what the button does, which is here. "If you're so sure,
+             tag it" is a DARE, and a dare only lands on somebody who has been
+             told something first -- it is at the bottom now, after the three
+             steps, the 2% and the crowd.
+             The hero's own label is short because it has to be: with the box
+             beside it the button has about 160px, and measured at 1280 a
+             longer one clipped the example inside the box. It can be short,
+             because the box and its placeholder carry the instruction and the
+             button is only the verb. -->
+        <div class="ask ask--hero">
+          <input class="ask__in" data-ask type="text" autocomplete="off"
+                 aria-label="What do you think will happen?">
+          <a class="btn" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">Tag it <i aria-hidden="true">&rarr;</i></a>
+        </div>
         <!-- THE "WORKS ON X / TELEGRAM SOON / DISCORD SOON" ROW IS GONE.
              Both halves already existed elsewhere: X is named in the hero
              sentence directly above ("under any argument on X"), and the
@@ -1207,7 +1237,7 @@
         <div class="ask">
           <input class="ask__in" data-ask type="text" autocomplete="off"
                  aria-label="What do you think will happen?">
-          <a class="btn btn--light" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">Open your first market <i aria-hidden="true">&rarr;</i></a>
+          <a class="btn btn--light" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">If you&rsquo;re so sure, tag it <i aria-hidden="true">&rarr;</i></a>
         </div>
       </div>
     </div>
@@ -1264,20 +1294,29 @@
       "$BONK doubles before Friday",
       "$ORE is above a $1m mcap by Sunday"
     ];
-    var box = document.querySelector("input[data-ask]");
-    var link = box && box.parentNode.querySelector("a[data-tag]");
-    if (!box || !link) return;
+    /* EVERY box, not the first one. The page has two doors now and they are
+       ~2000px apart; wiring one and not the other ships a text field that
+       silently does nothing, which is worse than not having it. */
+    var boxes = [].slice.call(document.querySelectorAll("input[data-ask]"));
+    if (!boxes.length) return;
 
-    box.placeholder = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
-
+    /* ONE example per page view, shared. Two boxes showing two different
+       examples reads as two different things being asked for. */
+    var pick = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
     var BASE = "https://x.com/intent/post?text=";
-    function sync() {
-      var said = box.value.trim();
-      link.href = BASE + encodeURIComponent("@oddiefun" + (said ? " " + said : " "));
-    }
-    box.addEventListener("input", sync);
-    box.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); sync(); link.click(); }
+
+    boxes.forEach(function (box) {
+      var link = box.parentNode.querySelector("a[data-tag]");
+      if (!link) return;
+      box.placeholder = pick;
+      function sync() {
+        var said = box.value.trim();
+        link.href = BASE + encodeURIComponent("@oddiefun" + (said ? " " + said : " "));
+      }
+      box.addEventListener("input", sync);
+      box.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); sync(); link.click(); }
+      });
     });
   })();
 
