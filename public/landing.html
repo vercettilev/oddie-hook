@@ -744,6 +744,14 @@
     -webkit-mask-size:100% 100%;mask-size:100% 100%}
   /* Centred on both axes (Lev): the cells were baseline-aligned and left-packed,
      so the shorter one left a column of empty cream under it. */
+  /* THE PROPOSITION, SET ABOVE THE DISCLOSURE. Display face at the band's own
+     scale so it reads as a statement and not as another caption; the second
+     line is the mechanism, deliberately quiet, because a reader who wants the
+     headline has already had it. */
+  .earn{padding:0 0 28px;text-align:center}
+  .earn__hd{margin:0;font-family:var(--display);font-weight:400;line-height:1.02;
+    font-size:clamp(30px,5.2vw,62px);letter-spacing:.005em;color:var(--cream)}
+  .earn__sub{margin:10px 0 0;font-size:clamp(13px,1.15vw,16px);opacity:.62;color:var(--cream)}
   .facts__in{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
     text-align:center;gap:clamp(14px,2.4vw,44px)}
   .fact{flex:1 1 200px;min-width:180px;font-size:clamp(12.5px,1.05vw,14.5px);
@@ -892,28 +900,14 @@
       <img src="/brand/mark.webp" alt="" width="320" height="320"><span>oddie</span>
     </a>
 
-    <!-- Kampanya CTA'si. VARSAYILAN KAPALI: yayinda olmayan bir kampanyayi
-         "live" diye duyurmak vizyon degil, canli bir sey hakkinda yanlis
-         beyan. Acmak icin en ustteki <html data-genesis="1">, sonra sunucuyu
-         yeniden baslat. Kampanya suresince ANA eylem bu: dolu siyah hap,
-         "Launch app" konturlu kalarak ikinci sirada duruyor. -->
-    <a class="gcta" href="/genesis">
-      <span class="gcta__pill">
-        <!-- NO STATUS CLAIM, AND THE PROPER NOUN SURVIVES THE PHONE.
-             This said "Genesis is live." It is not: the campaign has not been
-             announced, and Genesis's own leaderboard says "Starts when Genesis
-             starts" in its zero state. Saying what Genesis IS costs nothing and
-             cannot go stale; saying it is live is a fact about today, and facts
-             about today have to be true, the same way numbers do.
-             The halves also swapped. .gcta__hd is display:none under 820px, so
-             the phone was keeping the generic word ("Tickets") and dropping the
-             name. Now the name is the half that survives. 5 is GENESIS_TICKETS
-             in src/genesis/season.ts. -->
-        <b class="gcta__tag">Genesis</b>
-        <b class="gcta__hd">5 free tickets.</b>
-        <i aria-hidden="true">&rarr;</i>
-      </span>
-    </a>
+    <!-- THE GENESIS BUTTON WENT, AND WITH IT THE CONTRADICTION.
+         The hero says "any claim, any coin, ANYONE" and the primary button, a
+         filled black pill, said "get your 5 tickets": a rationing desk wearing
+         the campaign's hat. The cap behind it is a rolling day now rather than
+         a lifetime (src/genesis/season.ts), so there is nothing to claim and
+         nothing to hand out. Genesis survives as the points ledger, inside the
+         app, where a leaderboard is a retention surface rather than the first
+         thing a stranger is asked to do. -->
     <div class="nav__links">
       <a class="btn" href="/markets">Launch app <i aria-hidden="true">&rarr;</i></a>
     </div>
@@ -1055,6 +1049,25 @@
          yeri. Canli sayim (.proof) veri varsa katiliyor, yoksa kendini
          gizliyor. Yeni bir renk alani degil, siyahin uzerine serilmis
          yirtik kagit. -->
+    <!-- THE ONE SENTENCE THIS PAGE DID NOT HAVE.
+         The 2% was on the page -- inside the fee band below, as "2% to whoever
+         started it, 2% to oddie". That is a DISCLOSURE and it reads as one:
+         beside "2% to oddie" it says how a cost splits, not that there is money
+         in this for the reader. The single most motivating fact in the product
+         was filed under terms.
+         It sits above the band rather than replacing it, because the band is
+         accurate and was made accurate deliberately: printing the creator half
+         alone once made a 4% take read as 2%. Proposition first, disclosure
+         under it.
+         NOT "forever". The fee is fixed at resolve and paid once
+         (onchain/programs/oddie_chain/src/lib.rs, resolve_market), so a
+         sentence promising a stream would be the kind of number that gets
+         checked. -->
+    <div class="shell earn reveal">
+      <p class="earn__hd">Open a market, keep 2% of it.</p>
+      <p class="earn__sub">2% of the pool, the day it settles.</p>
+    </div>
+
     <div class="facts">
       <div class="shell facts__in">
         <!-- BOTH HALVES, because this is the only percentage on the whole page.
@@ -1103,13 +1116,10 @@
        their place, because this is the loudest field on the page. -->
   <section class="C f--pink" id="board">
     <div class="shell">
-      <!-- The board is the claim this section makes, so the sentence names
-           what it ranks and links to it. What stood here was a three-beat
-           slogan ("Be right. Be early. Be Oddie."), a kicker labelling it, and
-           a trophy render, none of which a reader could check and none of
-           which reached /board. -->
-      <p class="lede reveal C__say">The <a href="/board">board</a> ranks who was
-        right when the room disagreed.</p>
+      <!-- THE BOARD MOVED INTO THE APP. A leaderboard ranks people a stranger
+           has never heard of, which makes it a retention surface and not an
+           acquisition one, and it sat between this page's argument and its last
+           ask. It is one tap away from every market page. -->
 
       <!-- ================================================ C · kapanis · SON ISTEK ==
            Ayni eylem, ayni kelimeler: hero ne diyorsa buton da onu diyor.
@@ -1126,7 +1136,11 @@
              the phrase src/server.ts already ships in the nav strip. The hero
              keeps the taunt; a second door should say something different from
              the first, not the same thing again. -->
-        <a class="btn btn--light" href="/genesis">Get your 5 tickets <i aria-hidden="true">&rarr;</i></a>
+        <!-- THE SECOND DOOR IS THE SAME DOOR NOW. It used to lead to /genesis
+             and ask for a ticket claim; there is nothing to claim any more, and
+             the only action this page has ever wanted is the tag. The hero
+             keeps the taunt, this keeps the instruction. -->
+        <a class="btn btn--light" href="https://x.com/intent/post?text=%40oddiefun%20">Open your first market <i aria-hidden="true">&rarr;</i></a>
       </div>
     </div>
 
