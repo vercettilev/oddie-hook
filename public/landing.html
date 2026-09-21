@@ -770,7 +770,10 @@
      scale so it reads as a statement and not as another caption; the second
      line is the mechanism, deliberately quiet, because a reader who wants the
      headline has already had it. */
-  .earn{padding:clamp(18px,2.4vw,34px) 0 clamp(20px,2.6vw,36px);text-align:center}
+  /* padding-block, KISAYOL DEGIL. Kisayol .shell'in yan dolgusunu de siliyordu
+     ve 375px'te baslik 375 kutuda 366px yer kaplayip iki kenara da yapisiyordu
+     -- sarmamasi tesadufi bir pikseldi. */
+  .earn{padding-block:clamp(18px,2.4vw,34px) clamp(20px,2.6vw,36px);text-align:center}
   .earn__hd{margin:0;font-family:var(--display);font-weight:400;line-height:1.02;
     font-size:clamp(30px,5.2vw,62px);letter-spacing:.005em;color:var(--ink)}
   .earn__sub{margin:10px 0 0;font-size:clamp(13px,1.15vw,16px);opacity:.62;color:var(--ink)}
