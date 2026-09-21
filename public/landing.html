@@ -812,7 +812,12 @@
      phone width gives the headline about nine characters a line. */
   .offer{display:flex;align-items:center;justify-content:center;
     gap:clamp(18px,3.4vw,54px);
-    padding-block:clamp(26px,3.6vw,52px) clamp(28px,3.8vw,56px)}
+    /* Asymmetric on purpose. The top padding sits UNDER a 64px torn seam, so
+       the eye reads the seam as the space and the padding as almost none; the
+       bottom has only flat cream under it. Measured at 1280px the two halves
+       came out 46 above and 97 below, which is why these are not the same
+       number. */
+    padding-block:clamp(26px,3.6vw,52px) clamp(12px,1.6vw,24px)}
   .offer__st{width:clamp(108px,15vw,214px);height:auto;flex:none;
     rotate:-7deg;
     /* The sticker's own die-cut is its edge; a shadow under it sits on cream
