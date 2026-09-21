@@ -990,7 +990,7 @@
              CAMPAIGN AND A TICKET TO CLAIM. There is neither now, so a button
              that says "tag it" was sending people to a page about an allocation.
              It goes where the words say. -->
-        <a class="btn" href="https://x.com/intent/post?text=%40oddiefun%20">If you&rsquo;re so sure, tag it <i aria-hidden="true">&rarr;</i></a>
+        <a class="btn" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">If you&rsquo;re so sure, tag it <i aria-hidden="true">&rarr;</i></a>
         <!-- THE "WORKS ON X / TELEGRAM SOON / DISCORD SOON" ROW IS GONE.
              Both halves already existed elsewhere: X is named in the hero
              sentence directly above ("under any argument on X"), and the
@@ -1195,7 +1195,7 @@
              and ask for a ticket claim; there is nothing to claim any more, and
              the only action this page has ever wanted is the tag. The hero
              keeps the taunt, this keeps the instruction. -->
-        <a class="btn btn--light" href="https://x.com/intent/post?text=%40oddiefun%20">Open your first market <i aria-hidden="true">&rarr;</i></a>
+        <a class="btn btn--light" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">Open your first market <i aria-hidden="true">&rarr;</i></a>
       </div>
     </div>
 
@@ -1229,6 +1229,46 @@
          switched away.
        - the hash lands in the URL after the travel, not before, or the browser
          jumps to the target and there is nothing left to animate. */
+  /* THE COMPOSER OPENED ON A BLANK PAGE. Both buttons handed X a body of
+     "@oddiefun " and a blinking caret, which is perfect for somebody who
+     already has an argument and useless for everybody arriving from a page
+     that just explained the product to them.
+
+     WHAT IT IS NOT: instruction text. X intent has no placeholder -- whatever
+     is in text= IS the tweet. "put your claim here" would be a real sentence
+     the visitor has to select and delete, and the ones who do not delete it
+     cost a model call, an X read, one of their five tickets for the day, and
+     get "i couldn't make a market out of that one" as their first contact with
+     the product. Measured: the deterministic backstops do not catch that
+     phrase, so it goes the whole way to the model before being refused.
+
+     So the prefill is a REAL claim instead. Anyone who posts it unedited opens
+     a working market rather than earning a refusal, and findDuplicate() sends
+     the second and the fiftieth to the same one -- fifty people on one market,
+     not fifty dead markets.
+
+     Client side and not server side because renderLanding() caches for a
+     minute: rotating there would rotate once a minute, here it is once a
+     visitor, and a timeline of the identical sentence is what gets a handle
+     read as a farm. With JS off the href keeps the bare handle it has today.
+
+     PRICE CLAIMS ONLY. These settle from published candles with no model in
+     the loop, so the first tag a stranger ever sends cannot land on the path
+     that abstains. */
+  (function () {
+    var EXAMPLES = [
+      "$SOL ends this week higher than it started",
+      "$BONK doubles before Friday",
+      "$ORE is above a $1m mcap by Sunday"
+    ];
+    var pick = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
+    var links = document.querySelectorAll("a[data-tag]");
+    for (var i = 0; i < links.length; i++) {
+      links[i].href = "https://x.com/intent/post?text="
+        + encodeURIComponent("@oddiefun " + pick);
+    }
+  })();
+
   (function () {
     var root = document.documentElement;
     var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
