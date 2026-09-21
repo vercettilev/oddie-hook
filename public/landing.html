@@ -82,7 +82,7 @@
   --tear-1:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t1' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042 0.05' numOctaves='2' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='54'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t1)'/%3E%3C/svg%3E");
   --tear-2:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t2' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0034 0.055' numOctaves='2' seed='23'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='44'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t2)'/%3E%3C/svg%3E");
   --tear-3:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t3' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0038 0.045' numOctaves='2' seed='41'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='62'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t3)'/%3E%3C/svg%3E");
-  --tear-4:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t4' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0046 0.048' numOctaves='2' seed='61'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='50'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t4)'/%3E%3C/svg%3E");
+  --tear-4:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t4' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0046 0.048' numOctaves='2' seed='61'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='58'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t4)'/%3E%3C/svg%3E");
   }
 
   *{box-sizing:border-box}
@@ -367,11 +367,11 @@
      ::after ustteki alanin rengi. Yukaridan asagi: ustteki rengin disleri,
      9px krem deckle, alttaki alan. Tek pseudo + drop-shadow ise CALISMAZ:
      CSS filter mask'ten ONCE uygulanir, golge de maskelenip yok olur. */
-  .B::before,.B::after,.C::before,.C::after,.Bw::after{
+  .B::before,.B::after,.C::before,.C::after,.Bw::before,.Bw::after{
     content:"";position:absolute;left:-3%;right:-3%;top:0;pointer-events:none;
     -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
-  .B::before,.C::before{
-    height:calc(var(--seam-h) + 9px);background:var(--cream);z-index:1;
+  .B::before,.C::before,.Bw::before{
+    height:calc(var(--seam-h) + 9px);z-index:1;
     -webkit-mask-size:100% var(--seam-h);mask-size:100% var(--seam-h);
     -webkit-mask-position:0 9px;mask-position:0 9px}
   .B::after,.C::after,.Bw::after{
@@ -380,6 +380,7 @@
 
   /* 1. dikis SARI -> SIYAH. Kayan serit kalkinca dikis dogrudan B'nin
      tepesine tasindi. */
+  .B::before,.C::before{background:var(--cream)}
   .B::before{-webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
   .B::after{background:var(--yellow);
     -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
@@ -391,12 +392,18 @@
      disleri ile alttaki alan arasina krem bir deckle sermek; burada alttaki
      alan ZATEN krem, yani o serit krem uzerine krem olurdu. Yirtigin kendisi
      bu sefer siyahin sokuldugu yer: altindan cikan kagit sayfanin kendisi. */
+  /* IKI KENAR, tek degil. Digerlerinde yirtigi tasiyan sey iki maske arasindaki
+     9px'lik serit; tek pseudo ile kenar yirtik degil DALGALI okunuyordu.
+     Burada o serit krem olamaz (alttaki alan zaten krem), o yuzden kalkan siyah
+     kenarin kagida dusurdugu golge: ayni mekanizma, gorunur kalan ton. */
+  .Bw::before{background:rgba(11,13,4,.16);
+    -webkit-mask-image:var(--tear-4);mask-image:var(--tear-4)}
   .Bw::after{background:var(--black);
     -webkit-mask-image:var(--tear-4);mask-image:var(--tear-4)}
   .C > .shell{position:relative;z-index:3}
 
   @media (max-width:700px){
-    .B::before,.C::before{
+    .B::before,.C::before,.Bw::before{
       -webkit-mask-size:360% var(--seam-h);mask-size:360% var(--seam-h)}
     .B::after,.C::after,.Bw::after{
       -webkit-mask-size:360% 100%;mask-size:360% 100%}
