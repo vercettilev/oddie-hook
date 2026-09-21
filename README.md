@@ -72,27 +72,33 @@ Nothing in the program stops it today.
 key the server signs with. New code could do anything to money already in
 vaults, so every line above is conditional on that one key.
 
-**Written, not deployed.** The program in this repo now forbids the authority
-from holding a side of a market it resolves, through `take_position` and through
-`take_listing`, which is the other way into a seat. It also makes
-`refund_after_deadline` decrement the market totals, without which a resolve
-after a refund prices payouts against money that has already left the vault and
-strands the last winner. Neither is live: the deployed bytes are still the ones
-at the slot above, and an upgrade is a separate, deliberate act.
+**The rule is on chain now.** A market's resolution criteria are an argument to
+`create_market`, so the text is in that transaction's instruction data forever,
+and `criteria_hash` in account state is sha256 of it. Anyone can check that the
+rule oddie shows for a market is the rule the market was opened under, and the
+ledger keeps the text readable if oddie is gone. Deployed
+[`2RfwMf4s…uju6ywQf`](https://explorer.solana.com/tx/2RfwMf4sUq7FjFwaemipsPETAHXaf9QRt7aHFhXfXss5z1zsBdTi2Eisds8YgMojsp4aSuZYZTsu1wy2uju6ywQf),
+with the deployed bytes verified identical to this source.
 
-Still to do: put the resolution criteria on chain so the rule cannot change
-after people stake (this changes the account layout from 162 bytes and needs a
-migration, so it comes last); move the upgrade authority behind a multisig and a
-timelock; publish a verifiable build so the deployed bytes can be matched to
-this source.
+**A zero hash means the market was never committed to a rule**, and three
+markets carry one: they were opened before the field existed and were migrated
+into the new 194-byte layout with their pools intact. Hashing whatever criteria
+the database holds for them today would manufacture exactly the proof this
+field exists to make real, so they keep the zero.
+
+**Still to do:** move the upgrade authority behind a multisig and a timelock,
+and publish a verifiable build so the deployed bytes can be matched to this
+source by somebody who is not us.
 
 Deliberately NOT on that list: a close-time guard on `resolve_market`. It was
 there and was removed on purpose, because it locked real money for two months to
 protect against nothing the outcome changes. An authority that settles early is
 a key-custody problem and the multisig is its answer, not a `require!`.
 
-None of the deployed guarantees have changed yet. Saying so is the only one
-worth anything before they do.
+One of these is now a deployed guarantee rather than a sentence: the rule a
+market settles by is pinned in the transaction that opened it. The rest are
+still sentences, and saying which is which is the only part of this worth
+anything.
 
 ## The money
 
