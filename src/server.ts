@@ -2990,7 +2990,17 @@ async function openMarketFromClaim(input: {
   const minted = lazy
     ? null
     : await mintMarket({ marketId, question, closeTime, creator: creatorWallet,
-        creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL });
+        creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+        /* The rule goes on chain WITH the market, in the same transaction, or
+           the commitment is worth nothing: a hash written afterwards is a hash
+           written after somebody could have staked. "" when there are no
+           criteria commits to nothing, which is the honest value.
+           `criteria`, NOT `resolutionCriteria`: the price path replaces the
+           caller's prose with criteria written from the pinned token a few
+           lines above, and those are the ones this market actually settles by.
+           Committing the pre-replacement text would pin a rule that is not the
+           rule, which is worse than pinning none. */
+        criteria: criteria ?? "" });
   if (!lazy && !minted) {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
@@ -3044,6 +3054,10 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   const minted = await mintMarket({
     marketId: detail.marketId, question: detail.question,
     closeTime: Math.floor(new Date(detail.closesAt ?? Date.now()).getTime() / 1000),
+    /* Off the ROW, like the rate and the creator beside it. This route mints on
+       demand, sometimes long after the row was written, and the row is the only
+       place the rule has ever lived. */
+    criteria: detail.resolutionCriteria ?? "",
     // The creator comes off the ROW, for exactly the reason the rate above
     // does. The claims route mints on demand, so this function is where an API
     // caller's market actually reaches the chain; a wallet passed at create

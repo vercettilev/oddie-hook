@@ -55,6 +55,7 @@ const marketId = Date.now();
 const minted = await mintMarket({
   marketId,
   question: "Does the rewired client reach the deployed program?",
+  criteria: "Settled by whether this script prints a signature.",
   closeTime: Math.floor(Date.now() / 1000) + 3600,
   creator: null,          // the normal case: tagger has no wallet yet
   creatorFeeBps: CREATOR_FEE_BPS_REAL,

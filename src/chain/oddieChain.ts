@@ -394,6 +394,21 @@ export async function mintMarket(args: {
   creator: string | null;
   creatorFeeBps: number;
   protocolFeeBps: number;
+  /**
+   * The rule this market settles by, committed as sha256 in account state and
+   * kept verbatim in this transaction's instruction data.
+   *
+   * EMPTY IS A REAL ANSWER and it is not the same as a missing one: the program
+   * writes a zero hash for it, which is the value a market migrated from the
+   * 162-byte layout also carries, and it reads as "this market was never
+   * committed to a rule". Pass the criteria whenever there are any; never pass
+   * a placeholder, because a placeholder would hash to something that looks
+   * exactly like a commitment.
+   *
+   * Longer than MAX_CRITERIA_LEN and the program refuses the market rather than
+   * committing to a truncated rule.
+   */
+  criteria: string;
 }): Promise<MintResult | null> {
   const c = await load();
   if (!c) return null;
@@ -445,7 +460,7 @@ export async function mintMarket(args: {
       : c.web3.PublicKey.default; // the program's "not named yet" sentinel
 
     const signature = await c.program.methods
-      .createMarket(marketIdBn, args.question, new c.BN(args.closeTime), creatorPk, args.creatorFeeBps, args.protocolFeeBps)
+      .createMarket(marketIdBn, args.question, new c.BN(args.closeTime), creatorPk, args.creatorFeeBps, args.protocolFeeBps, args.criteria ?? "")
       .accountsStrict({
         authority: c.admin.publicKey,
         market,
