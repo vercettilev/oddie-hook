@@ -301,6 +301,15 @@
      de artik burada. */
   .close{margin-top:clamp(26px,4vw,56px);gap:clamp(15px,2vw,26px)}
   .C__say{max-width:34ch;margin:0}
+  /* Kutu ve tus tek nesne gibi dursun: ayni yukseklik, ayni golge yonu. */
+  .ask{display:flex;flex-wrap:wrap;justify-content:center;align-items:stretch;
+    gap:12px;width:min(640px,100%)}
+  .ask__in{flex:1 1 300px;min-width:0;font:inherit;font-size:clamp(14px,1.3vw,16px);
+    padding:15px 18px;border-radius:3px;border:2px solid var(--ink);
+    background:var(--cream);color:var(--ink);box-shadow:6px 7px 0 rgba(0,0,0,.55)}
+  .ask__in::placeholder{color:var(--ink);opacity:.42}
+  .ask__in:focus{outline:3px solid var(--yellow);outline-offset:2px}
+  @media (max-width:560px){.ask__in{flex:1 1 100%}.ask .btn{width:100%;justify-content:center}}
   .C__say a{color:inherit;text-underline-offset:4px}
   .close .h2{font-size:clamp(30px,5.4vw,80px)}
   .close__fine{margin:0;font-family:var(--mono);font-size:12px;font-weight:700;
@@ -1195,7 +1204,21 @@
              and ask for a ticket claim; there is nothing to claim any more, and
              the only action this page has ever wanted is the tag. The hero
              keeps the taunt, this keeps the instruction. -->
-        <a class="btn btn--light" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">Open your first market <i aria-hidden="true">&rarr;</i></a>
+        <!-- A REAL PLACEHOLDER, WHICH IS THE ONE THING X CANNOT GIVE US.
+             Prefilling the composer with an example put a sentence in the
+             visitor's mouth: their account, their followers, a claim they do
+             not care about, and the same line repeating across strangers is
+             exactly what a farm looks like. An <input> placeholder is grey, it
+             is not text, it vanishes on the first keystroke and it can never be
+             posted. So the example is shown HERE, where showing is free, and
+             what travels to X is only what they typed.
+             The link keeps working with JS off: it carries the bare handle,
+             which is where this started. -->
+        <div class="ask">
+          <input class="ask__in" data-ask type="text" autocomplete="off"
+                 aria-label="What do you think will happen?">
+          <a class="btn btn--light" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">Open your first market <i aria-hidden="true">&rarr;</i></a>
+        </div>
       </div>
     </div>
 
@@ -1229,44 +1252,43 @@
          switched away.
        - the hash lands in the URL after the travel, not before, or the browser
          jumps to the target and there is nothing left to animate. */
-  /* THE COMPOSER OPENED ON A BLANK PAGE. Both buttons handed X a body of
-     "@oddiefun " and a blinking caret, which is perfect for somebody who
-     already has an argument and useless for everybody arriving from a page
-     that just explained the product to them.
+  /* THE COMPOSER OPENS ON A BLANK PAGE and X intent has no placeholder --
+     whatever is in text= IS the tweet. An example prefilled there is a real
+     sentence the visitor has to delete, and whoever does not delete it posts a
+     claim they do not care about from their own account, to their own
+     followers, in a line dozens of other strangers are posting the same day.
+     Measured: unsettleablePhrase() does not catch instruction text either, so
+     "put your claim here" would travel all the way to a model, spend one of
+     their five tickets for the day, and come back refused.
 
-     WHAT IT IS NOT: instruction text. X intent has no placeholder -- whatever
-     is in text= IS the tweet. "put your claim here" would be a real sentence
-     the visitor has to select and delete, and the ones who do not delete it
-     cost a model call, an X read, one of their five tickets for the day, and
-     get "i couldn't make a market out of that one" as their first contact with
-     the product. Measured: the deterministic backstops do not catch that
-     phrase, so it goes the whole way to the model before being refused.
+     So the example lives in an <input> on this page instead. A placeholder is
+     grey, it is not a value, it cannot be submitted, and it is gone on the
+     first keystroke. What reaches X is only what they typed.
 
-     So the prefill is a REAL claim instead. Anyone who posts it unedited opens
-     a working market rather than earning a refusal, and findDuplicate() sends
-     the second and the fiftieth to the same one -- fifty people on one market,
-     not fifty dead markets.
-
-     Client side and not server side because renderLanding() caches for a
-     minute: rotating there would rotate once a minute, here it is once a
-     visitor, and a timeline of the identical sentence is what gets a handle
-     read as a farm. With JS off the href keeps the bare handle it has today.
-
-     PRICE CLAIMS ONLY. These settle from published candles with no model in
-     the loop, so the first tag a stranger ever sends cannot land on the path
-     that abstains. */
+     PRICE CLAIMS ONLY in the pool: they settle from published candles with no
+     model in the loop, so the shape a first-timer copies is the shape that
+     cannot end in an abstention. */
   (function () {
     var EXAMPLES = [
       "$SOL ends this week higher than it started",
       "$BONK doubles before Friday",
       "$ORE is above a $1m mcap by Sunday"
     ];
-    var pick = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
-    var links = document.querySelectorAll("a[data-tag]");
-    for (var i = 0; i < links.length; i++) {
-      links[i].href = "https://x.com/intent/post?text="
-        + encodeURIComponent("@oddiefun " + pick);
+    var box = document.querySelector("input[data-ask]");
+    var link = box && box.parentNode.querySelector("a[data-tag]");
+    if (!box || !link) return;
+
+    box.placeholder = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
+
+    var BASE = "https://x.com/intent/post?text=";
+    function sync() {
+      var said = box.value.trim();
+      link.href = BASE + encodeURIComponent("@oddiefun" + (said ? " " + said : " "));
     }
+    box.addEventListener("input", sync);
+    box.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); sync(); link.click(); }
+    });
   })();
 
   (function () {
