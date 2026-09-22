@@ -139,6 +139,7 @@ const MARKET_HTML = readFileSync(path.join(__dirname, "../public/app/market.html
 const YOU_HTML = readFileSync(path.join(__dirname, "../public/app/you.html"), "utf8");
 /** The board: who was right when the room disagreed. */
 const BOARD_HTML = readFileSync(path.join(__dirname, "../public/app/board.html"), "utf8");
+const LEADERBOARD_HTML = readFileSync(path.join(__dirname, "../public/app/leaderboard.html"), "utf8");
 /** One wallet's record. The shareable artifact: the page somebody posts. */
 const WHO_HTML = readFileSync(path.join(__dirname, "../public/app/who.html"), "utf8");
 /** The list: every open market, newest first. The app's front door. */
@@ -232,13 +233,15 @@ const stampApp = (html: string): string => {
         .split('<a href="/board" aria-current="page">Who was right</a>')
         .join('<a href="/board" aria-current="page" hidden>Who was right</a>')
     : stamped;
-  /* Same treatment for Genesis when the season is off: one place, every nav.
-     The anchor text has to be exactly "Genesis" for this to be a nav link and
-     not prose, which is why board.html says "The Genesis board" in its
-     signpost sentence: a bare <a href="/genesis">Genesis</a> inside a sentence
-     would be hidden mid-sentence and leave the prose broken. */
+  /* THE NAV ENTRY IS "Leaderboard" NOW, and that is a word matching a page
+     rather than a rename: Genesis was the name of a season, and a person
+     reading a nav needs the name of a thing. The season switch still hides it,
+     because what it gates is the standing the page shows, not the word above
+     it.
+     Exact-string matching, and it has to stay exact: the anchor text is the
+     WHOLE link or this hides a word mid-sentence and leaves prose broken. */
   return GENESIS_SEASON ? board
-    : board.split('<a href="/genesis">Genesis</a>').join('<a href="/genesis" hidden>Genesis</a>');
+    : board.split('<a href="/leaderboard">Leaderboard</a>').join('<a href="/leaderboard" hidden>Leaderboard</a>');
 };
 
 /**
@@ -468,12 +471,14 @@ async function renderLanding(): Promise<string> {
    * board with nobody on it, and guessing between those is how a page starts
    * lying by accident. */
   const boardRows = await genesisBoard(5).catch(() => null);
-  const boardHtml = boardRows === null
+  /* EMPTY PRINTS NOTHING, same as a failed read (Lev). The apology line that
+     used to sit here said out loud that nobody was on it, which is a status
+     report where an invitation belongs -- and the headline above already IS
+     the invitation. The app's own leaderboard still carries the long version,
+     because somebody who clicked through has asked to know. */
+  const boardHtml = !boardRows || boardRows.length === 0
     ? ""
-    : boardRows.length === 0
-      ? '<p class="lead__none">Nobody has brought anybody in yet. '
-        + 'The first name here is whoever opens a market that fills.</p>'
-      : '<ol class="lead__rows">'
+    : '<ol class="lead__rows">'
         + boardRows.map((r) => '<li class="lead__row"><span class="lead__n">'
             + r.rank + '</span><span class="lead__h">@' + escHtml(r.handle) + '</span>'
             + '<span class="lead__p"><b>' + r.peopleBrought + '</b> '
@@ -899,9 +904,20 @@ app.get("/markets", (req, res) => {
 /** The board. Public and indexable: it is the page that answers "who should I
  *  listen to", which is the only question a prediction product exists to
  *  answer, and it is worth being found for. */
-app.get(["/board", "/leaderboard"], (req, res) => {
+app.get("/board", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").type("html").send(BOARD_HTML);
+});
+
+/** THE OTHER BOARD, and /leaderboard used to be an ALIAS of the one above: the
+ *  same page under two names, which is how a product ends up with one word for
+ *  two things. They rank different people by different numbers -- /board ranks
+ *  callers by being right when the room disagreed, this ranks openers by the
+ *  people they brought in. Splitting the alias is what lets the front door
+ *  link to a ranking that matches what it advertised. */
+app.get("/leaderboard", (req, res) => {
+  if (!appOpenFor(req)) return appClosed(res);
+  res.set("Cache-Control", "no-cache").type("html").send(LEADERBOARD_HTML);
 });
 
 

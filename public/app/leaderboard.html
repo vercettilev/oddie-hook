@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Nobody listed these · oddie</title>
+<title>Leaderboard · oddie</title>
 <link rel="icon" href="/favicon.ico?v=2" sizes="any">
 <link rel="manifest" href="/site.webmanifest?v=3">
 <style>
@@ -30,7 +30,7 @@
   --display:'Anton','Arial Narrow','Helvetica Neue',Helvetica,sans-serif;
   --body:'Nunito',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
-  --shell:860px;
+  --shell:760px;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -52,127 +52,65 @@ a{color:inherit}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
-  line-height:1.02;text-transform:uppercase;margin:0 0 8px;color:var(--cream)}
-.sub{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.13em;
-  text-transform:uppercase;color:var(--fg-3);margin:0 0 28px}
+  line-height:1.02;text-transform:uppercase;margin:0 0 12px;color:var(--cream)}
 
-.filter{margin:0 0 18px}
-.filter input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;
-  padding:11px 14px;border:3px solid var(--cream);background:transparent;color:var(--cream);
-  border-radius:0;-webkit-appearance:none}
-/* 16px above is not a taste: anything smaller makes iOS zoom the page on focus. */
-.filter input::placeholder{color:var(--fg-3)}
-.filter input:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
-.linky{font:inherit;color:inherit;background:none;border:0;padding:0;
-  text-decoration:underline;cursor:pointer}
-.card{border:3px solid var(--cream);padding:18px 20px 16px;margin:0 0 16px}
-.card__m{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--fg-3);
-  display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 10px}
-.card__m b{color:var(--yellow);font-weight:700}
-.card__q{font-family:var(--display);font-weight:400;font-size:clamp(19px,4vw,27px);
-  line-height:1.1;text-transform:uppercase;margin:0 0 14px;text-wrap:balance}
-.card__q a{color:var(--cream);text-decoration:none}
-/* Kartta da hook baslik, tam soru altinda. Ayni kural: sozlesme gorunur. */
-.card__full{margin:4px 0 0;font-size:13px;line-height:1.38;color:var(--fg-3)}
-.card__q a:hover{color:var(--yellow)}
+/* A number nobody understands is decoration. The rule is stated once, in
+   full, above the table that applies it. */
+.rule{border-left:3px solid var(--yellow);padding:2px 0 2px 16px;margin:0 0 28px;
+  font-size:15px;line-height:1.6;color:var(--fg-2);max-width:60ch}
+.rule b{color:var(--cream)}
+.rule .ex{display:block;margin-top:8px;font-family:var(--mono);font-size:11.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
 
-/* Kac kisi girdi: rakam one cikar, etiket geride kalir. */
-.heads b{color:var(--yellow);font-weight:700}
-.pool{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;
-  font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--fg-3);font-variant-numeric:tabular-nums}
-.pool b{font-family:var(--display);font-size:22px;letter-spacing:.01em;color:var(--yellow)}
-.pool--quiet{font-style:normal;text-transform:none;letter-spacing:.02em;font-size:13px;
-  font-family:var(--body);color:var(--fg-2)}
-.bar{display:flex;height:12px;margin:0 0 12px;border:2px solid var(--cream)}
-.bar i{display:block;font-style:normal}
-.bar__y{background:var(--yellow)}
-.bar__n{background:var(--pink)}
+table{width:100%;border-collapse:collapse}
+thead th{font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--fg-3);text-align:left;
+  padding:0 10px 10px;border-bottom:1px solid var(--line)}
+tbody td{padding:14px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:hover td{background:rgba(251,252,244,.04)}
+.r{font-family:var(--display);font-size:22px;line-height:1;color:var(--fg-3);width:1%;
+  padding-right:4px;font-variant-numeric:tabular-nums}
+.r--top{color:var(--yellow)}
+.who a{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--cream);
+  text-decoration:none;word-break:break-all}
+.who a:hover{color:var(--yellow)}
+.who .anon{color:var(--fg-2);font-weight:400}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts{font-family:var(--display);font-size:24px;line-height:1;color:var(--yellow)}
+.wl{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
+  color:var(--fg-3)}
+.wl b{color:var(--fg-2)}
+/* What the number could not include, under the number. Quieter than the
+   points by design: it qualifies them, it is not a second score. */
+.net{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.02em}
+.net--none{color:var(--fg-3);font-size:11.5px;letter-spacing:.09em}
 
-.sides{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-/* Same bevel as the market page's pair, at card density: a light inset on top
-   and a dark one underneath, so the surface has something to press INTO. The
-   card keeps its own smaller type and no tilt -- the cards are already stacked
-   at angles, and a tilted button inside a tilted card reads as a mistake. */
-.side{display:block;text-align:center;text-decoration:none;
-  font-family:var(--display);font-size:23px;letter-spacing:.03em;text-transform:uppercase;
-  line-height:1;border:3px solid var(--black);padding:16px 10px 17px;color:var(--black);
-  transition:transform .13s cubic-bezier(.3,1.4,.5,1),box-shadow .13s ease,background .13s ease}
-.side--y{background:var(--yellow);
-  box-shadow:6px 7px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
-.side--n{background:var(--pink);
-  box-shadow:6px 7px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
-.side:hover{transform:translate(-2px,-3px) scale(1.02)}
-.side--y:hover{background:var(--yellow-hi);
-  box-shadow:9px 11px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
-.side--n:hover{box-shadow:9px 11px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
-.side:active{transform:translate(6px,7px) scale(.985)}
-.side--y:active{box-shadow:0 0 0 var(--yellow-deep),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
-.side--n:active{box-shadow:0 0 0 var(--pink-deep),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
-@media (prefers-reduced-motion:reduce){ .side,.side:hover,.side:active{transform:none;transition:none} }
-.side:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
-.side span{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
-  letter-spacing:.1em;margin-top:6px;opacity:.72}
-
-.gate{border:3px solid var(--cream);padding:22px 20px;margin:0 0 26px}
-.big{display:inline-block;text-decoration:none;font-family:var(--display);font-size:21px;
-  letter-spacing:.03em;text-transform:uppercase;line-height:1;background:var(--yellow);
-  color:var(--ink);border:3px solid var(--black);padding:16px 22px;cursor:pointer;
-  box-shadow:6px 7px 0 var(--yellow-deep);transition:transform .12s ease,box-shadow .12s ease}
-.big:hover{background:var(--yellow-hi);transform:translate(-2px,-2px);box-shadow:8px 9px 0 var(--yellow-deep)}
-.big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
-/* The way past the gate. Quiet on purpose: findable, never competing with
-   the button that does the thing. */
-.later{display:block;margin-top:14px;background:none;border:0;padding:8px 0;cursor:pointer;
-  font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--fg-3)}
-.later:hover{color:var(--cream)}
-.later:focus-visible{outline:2px solid var(--cream);outline-offset:3px}
-.empty{border:2px dashed var(--fg-3);padding:24px 22px;font-size:15px;line-height:1.65;
+.empty{border:2px dashed var(--fg-3);padding:22px 20px;font-size:15px;line-height:1.6;
   color:var(--fg-2)}
 .empty b{color:var(--cream)}
-.empty a{color:var(--yellow)}
 .load{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--fg-3);padding:40px 0}
 .err{border:3px solid var(--pink);padding:15px 17px;font-size:14px;color:var(--cream)}
-/* THE PAIR STAYS A PAIR. Stacking these put two 80px slabs down the page and
-   turned one binary choice into two separate buttons; measured at 375px, each
-   was 286 wide and 80 tall, and the pool figure above them was smaller than
-   either. Side by side is what says "two sides of one thing", and at 375px the
-   pair still gets 138px each, which is far past a comfortable target. What
-   gives instead is the type and the padding. */
-@media (max-width:460px){
-  .sides{grid-template-columns:1fr 1fr;gap:8px}
-  .side{font-size:19px;padding:13px 6px 14px}
-  .side small{font-size:9px;letter-spacing:.06em;margin-top:5px}
-}
+@media (max-width:520px){ .hide-sm{display:none} tbody td{padding:12px 6px} }
 
 /* ---- brand: a movement, not a terminal ---- */
 .mark{display:inline-flex;align-items:center;gap:10px}
 .mark img{width:30px;height:30px;border-radius:7px;transform:rotate(-4deg)}
 .poster{text-align:center;max-width:540px;margin:8px auto 0;padding:14px 20px 26px}
-.poster img{width:min(320px,74vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
+.poster img{width:min(160px,40vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
   filter:drop-shadow(0 12px 26px rgba(0,0,0,.55))}
 .poster h3{font-family:var(--display);font-weight:400;font-size:clamp(22px,5vw,30px);line-height:1.05;
   text-transform:uppercase;color:var(--cream);margin:0 0 8px;text-wrap:balance}
 .poster p{margin:0 auto;max-width:44ch;font-size:15px;line-height:1.6;color:var(--fg-2)}
 .poster p b{color:var(--cream)} .poster a{color:var(--yellow)}
+.gate img.gsticker{width:min(230px,58vw);height:auto;display:block;margin:0 auto 14px;transform:rotate(-3deg);
+  filter:drop-shadow(0 10px 22px rgba(0,0,0,.5))}
 
 /* ================================================================= SKIN ==
-   The app was a terminal: thin outlines on flat black, mono everywhere.
-   The landing is not — it alternates LOUD COLOUR FIELDS (lime, black, pink,
-   cream) torn apart by paper seams, with sticker panels on top. That
-   structure, not decoration, is what makes it read as a movement instead of
-   a Bloomberg screen, so the app borrows it verbatim:
-
-     lime masthead band  ->  torn paper seam  ->  black field, cream stickers
-
-   Mono survives only on NUMBERS, where tabular figures are the point. Every
-   label that was mono-uppercase is now the display face or plain bold: mono
-   text at label size is the single loudest terminal signal there is.        */
+   Same structure as the list and the market page: a lime band torn into the
+   black field, cream stickers on top, mono kept only for numbers. See
+   public/app/markets.html for the reasoning.                               */
 :root{--tear-1:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t1' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042 0.05' numOctaves='2' seed='7'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='54'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t1)'/%3E%3C/svg%3E");--seam-h:clamp(26px,3.6vw,52px)}
-
 .top{position:relative;background:var(--yellow);border-bottom:0;z-index:2}
 .top .wrap{position:relative;z-index:3}
 .mark{color:var(--ink)}
@@ -181,7 +119,6 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   color:rgba(11,13,4,.7)}
 .top nav a:hover{color:var(--ink)}
 .top nav a[aria-current="page"]{color:var(--ink)}
-/* the seam: the lime band tears into the black field below it */
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
    at both ends. A negative LEFT costs nothing in a left-to-right page, but the
@@ -198,56 +135,8 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   -webkit-mask-size:100% 100%;mask-size:100% 100%;
   -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
 main.wrap{padding-top:calc(var(--seam-h) + 18px)}
-
-/* Panels stop being outlines and become STICKERS: cream fill, black edge,
-   hard offset shadow, a degree or two of tilt. */
-.sticker{background:var(--cream);color:var(--ink);border:3px solid var(--black);
-  box-shadow:7px 8px 0 var(--pink-deep)}
-
-/* ---- list: every market is a sticker on the black field ---- */
-.filter input{border-color:var(--black);color:var(--ink);background:var(--cream)}
-.filter input::placeholder{color:rgba(11,13,4,.5)}
-.filter input:focus-visible{outline-color:var(--pink-deep)}
-.card{background:var(--cream);color:var(--ink);border:3px solid var(--black);
-  box-shadow:8px 9px 0 var(--pink-deep);padding:20px 22px 18px;margin:0 0 30px}
-.card:nth-of-type(odd){transform:rotate(-.5deg)}
-.card:nth-of-type(even){transform:rotate(.6deg);box-shadow:8px 9px 0 var(--yellow-deep)}
-.card__m{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
-  text-transform:uppercase;color:rgba(11,13,4,.6)}
-.card__m b{color:var(--pink-deep);font-weight:400}
-.card__q a{color:var(--ink)}
-.card__q a:hover{color:var(--pink-deep)}
-/* THE ONE RULE THE CREAM REDESIGN LEFT BEHIND. The card used to be dark and
-   every text on it came from the --fg-* ramp, which is white at three opacities.
-   When the card became cream, .card__m, .card__m b and .card__q a were all
-   re-coloured to ink and .card__full was not, so the market's actual QUESTION
-   has been rendering as white at 50% on a cream ground: a contrast ratio of
-   about 1.01 to 1, which is not faint, it is absent. Measured on a phone at
-   375px, where the card shows a headline, a pool and a blank space where the
-   claim should be.
-   Darker than .card__m on purpose. The meta line is furniture; this sentence is
-   the thing the market is about, and it was the only part a reader could not
-   see. */
-.card__full{color:rgba(11,13,4,.78)}
-.pool{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
-  color:rgba(11,13,4,.6)}
-.pool b{color:var(--ink)}
-/* NOT A FLEX ROW. .pool is display:flex with a 10px gap, which is right for the
-   two things it was built for - a number and its label - and wrong for the only
-   other place it is used, which is a SENTENCE. Every child of a flex container
-   is a flex item, so "Tag @oddiefun under any claim on X. Keep 2% of its pool."
-   was being laid out as five independent items with gaps between them, wrapping
-   where the boxes ran out rather than where the words do. On a 375px phone that
-   is six lines for eleven words, and it is the product's core instruction. */
-.pool--quiet{display:block;font-family:var(--body);font-weight:600;color:rgba(11,13,4,.72);font-size:14.5px}
-.bar{border:2px solid var(--black)}
-.side{border:3px solid var(--black)}
-h1{color:var(--cream)}
 .sub{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.02em;
   color:var(--fg-3);text-transform:uppercase}
-
-/* The crowd, at the foot of every page: this is a movement, and a page that
-   ends in a void does not say so. Lazy: it is decoration, never the point. */
 /* HEIGHT:AUTO IS LOAD-BEARING, and its absence was measured rather than
    guessed: the tag carries width="1800" height="600", so with only `width:100%`
    in CSS the HEIGHT ATTRIBUTE still applies. On a 375px phone the strip
@@ -255,6 +144,15 @@ h1{color:var(--cream)}
    five times vertically, and 475px of empty sky above it that somebody has to
    scroll through to reach the bottom of the page. Both, from one missing
    declaration, on five pages. */
+
+/* A caption, not a poster: the rule explains the number, it is not the news. */
+.rule b{color:var(--yellow)}
+.rule .ex{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
+  color:var(--fg-3)}
+thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.04em;
+  color:var(--fg-3)}
+.who a{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.02em}
+.wl{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em}
 
 /* One sticker per moment, never the same one twice: the pool is wide enough
    that reusing a single mascot everywhere is a wasted vocabulary. */
@@ -277,29 +175,6 @@ h1{color:var(--cream)}
 .top .mechip--go:hover{background:var(--pink);color:#fff}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
-/* THE OPENER IS A PERSON, NOT A BYLINE. Ink pill on the cream sticker so it
-   reads as somebody's name at card-scanning distance, and leaves for X. */
-.card__m .by{display:inline-block;background:var(--ink);color:var(--cream);
-  padding:4px 11px 3px;border-radius:999px;text-decoration:none;font-weight:400;
-  letter-spacing:.02em;text-transform:none}
-.card__m .by:hover{background:var(--pink);color:#fff}
-.card__m .by:focus-visible{outline:3px solid var(--pink-deep);outline-offset:2px}
-
-/* THE SEASON STRIP. A pink band under the lime masthead: loud enough to be a
-   second door, one line so it never competes with the markets. [hidden] is
-   restated because .season sets display and would otherwise beat the attribute
-   -- the same collision that once made .chain-amt unhideable. */
-.season{display:flex;align-items:center;justify-content:center;gap:10px;
-  background:var(--pink);color:var(--cream);text-decoration:none;
-  font-family:var(--display);font-weight:400;font-size:clamp(14px,2.4vw,17px);
-  letter-spacing:.04em;text-transform:uppercase;padding:13px 16px 11px;
-  border:3px solid var(--black);box-shadow:6px 7px 0 var(--pink-deep);
-  margin:26px 0 34px;position:relative;z-index:2}
-.season[hidden]{display:none}
-.season img{width:26px;height:26px;transform:rotate(-8deg)}
-.season:hover{background:var(--pink-deep);color:#fff}
-.season:focus-visible{outline:3px solid var(--yellow);outline-offset:-6px}
-
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
    Appended to nav instead, the chip took a third row of its own. */
 @media (max-width:560px){
@@ -310,470 +185,169 @@ h1{color:var(--cream)}
 }
 
 /* THE HEADING STICKER OWNS THE RIGHT EDGE. Trailing the words, it read as
-   punctuation; at the end of the row it reads as the page's mascot rather
-   than as part of the heading. :has() scopes this to the headings that actually carry
+   punctuation; at the end of the row and at nearly twice the size it reads as
+   the page's mascot. :has() scopes this to the headings that actually carry
    one, so market.html's question h1 is untouched. On a narrow screen the row
    wraps and the sticker keeps the right edge on its own line. */
 h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .hsticker{height:clamp(46px,7vw,74px);margin-left:auto;transform:rotate(4deg)}
 
-/* A side that cannot be taken. Rendered as a <span>, so there is nothing to
-   click and nothing to navigate to; this only has to make it LOOK inert too.
-   Same treatment the market page gives its disabled buttons. */
-.side--off{opacity:.42;cursor:not-allowed;transform:none !important;
-  box-shadow:4px 5px 0 rgba(0,0,0,.5) !important}
-.side--off:hover{transform:none;box-shadow:4px 5px 0 rgba(0,0,0,.5)}
-.side small{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
-  letter-spacing:.1em;margin-top:6px;opacity:.75;text-transform:uppercase}
+/* The other board, named. Quiet: it is a signpost, not a competing offer. */
+.other-board{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--fg-3);margin:-16px 0 28px}
+.other-board a{color:var(--yellow)}
+.other-board a:hover{color:var(--yellow-hi)}
 
-/* THE FRONT DOOR WAS THE LEAST DESIGNED OBJECT IN THE APP.
-   Measured against the profile's gate, which was rebuilt two days ago: this one
-   still had the base rule and nothing else -- box-shadow none, transform none,
-   no sticker, a plain cream rectangle on a page whose every other object is a
-   sticker with a hard offset shadow. A page you reach LATER was better dressed
-   than the one everybody lands on. Same skin as the profile, so the two gates
-   are one thing and not two. */
-.gate{background:transparent;color:var(--fg);border:3px solid var(--yellow);
-  box-shadow:8px 9px 0 var(--yellow-deep);transform:rotate(-.5deg);
-  display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 22px;
-  align-items:center;padding:20px 22px}
-.gate .big{justify-self:start;text-decoration:none}
-.gate .later{grid-column:2;justify-self:start}
-/* Two-line button: the label acts, the line under it says why. */
-.big--2l{display:block;text-align:left;padding:14px 22px 12px}
-.big--2l .big__main{display:block}
-.big--2l small{display:block;margin-top:6px;font-family:var(--mono);font-size:11px;
-  font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--yellow-deep)}
-@media (max-width:560px){
-  .gate{grid-template-columns:1fr;gap:10px;justify-items:center;text-align:center}
-  .gate .big,.gate .later{justify-self:center}
-  .big--2l{text-align:center}
-}
+/* ============================================================== MOMENTS ==
+   A STANDINGS TABLE NEEDS VOLUME AND THIS PRODUCT DOES NOT HAVE IT YET.
+   With one settled call the old page put somebody who had been wrong once at
+   number one with zero points, under three lines explaining a weighting
+   formula that was longer than the data it weighted. Styling cannot fix that:
+   a rank is a statement about many results and there was one.
+   A MOMENT needs no volume. One settled argument, two named sides and the
+   price between them, is a whole story on its own and it is the same story at
+   scale. So the page answers its own title one claim at a time. The board
+   survives underneath, gated until enough people have a settled call for a
+   rank to mean anything.                                                    */
+.next{font-family:var(--display);font-weight:400;font-size:clamp(15px,3.4vw,18px);
+  letter-spacing:.02em;text-transform:uppercase;color:var(--fg-2);
+  margin:0 0 26px;line-height:1.35}
+.next a{color:var(--yellow);text-decoration:none}
+.next a:hover{color:var(--yellow-hi)}
+.next b{color:var(--cream);font-weight:400}
 
-/* The ask, wearing the same sticker panel as a market so it reads as the next
-   row in the list and not a banner bolted under it. */
-.card--invite{box-shadow:8px 9px 0 var(--pink-deep)}
-.card--invite .card__q{margin:0 0 6px}
-.card--invite .pool{margin:0}
+.mom{background:var(--cream);color:var(--ink);border:3px solid var(--black);
+  box-shadow:8px 9px 0 var(--pink-deep);padding:16px 18px 14px;margin:0 0 18px}
+.mom:nth-of-type(even){box-shadow:8px 9px 0 var(--yellow-deep)}
+.mom__h{display:flex;align-items:center;gap:10px;margin:0 0 6px}
+.mom__o{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.06em;
+  padding:3px 10px;border:3px solid var(--black);background:var(--yellow);color:var(--ink)}
+.mom__o--no{background:var(--pink);color:#fff}
+.mom__w{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:rgba(11,13,4,.55)}
+.mom__q{font-family:var(--display);font-weight:400;font-size:clamp(18px,4vw,25px);
+  line-height:1.08;text-transform:uppercase;margin:0 0 12px;text-wrap:balance}
+.mom__q a{color:var(--ink);text-decoration:none}
+.mom__q a:hover{color:var(--pink-deep)}
+
+/* One line per person, and the shape of the line IS the verdict: the name, what
+   they took and at what price, then the money. No icons and no colour-only
+   signal -- "right"/"wrong" is written. */
+/* SIDE IS A DATA ATTRIBUTE, NOT A CLASS, and that is not a style preference.
+   This first shipped as li.r / li.w, and this same stylesheet already carries
+   `.r{...;width:1%}` for the rank CELL of the table below. Every "right" row
+   silently inherited a 1% width and collapsed to four pixels on a phone, with
+   its four words stacked one per line, while the "wrong" rows beside it laid
+   out correctly. An attribute selector cannot collide with a class rule that
+   was written years apart from it. */
+.mom__s{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.mom__s li{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  font-size:14px;line-height:1.45;color:rgba(11,13,4,.82)}
+.mom__v{font-family:var(--display);font-weight:400;font-size:13px;letter-spacing:.05em;
+  min-width:62px;color:var(--ink)}
+.mom__s li[data-v="w"] .mom__v{color:var(--pink-deep)}
+.mom__s li b{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.02em;color:var(--ink)}
+.mom__s li b a{color:inherit;text-decoration:none}
+.mom__s li b a:hover{color:var(--pink-deep)}
+.mom__s li i{font-family:var(--mono);font-size:13px;font-weight:700;font-style:normal;
+  margin-left:auto;font-variant-numeric:tabular-nums}
+.mom__s li[data-v="r"] i{color:#1d7a3a}
+.mom__s li[data-v="w"] i{color:var(--pink-deep)}
+/* YOU, WHEREVER YOU TURN UP. The one thing that makes a public record worth
+   opening twice is finding yourself in it. */
+.mom__s li[data-you]{background:var(--yellow);margin:0 -8px;padding:2px 8px}
+.mom__more{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:rgba(11,13,4,.55);margin:10px 0 0}
+
+/* The board, demoted. It is the summary of the feed above it, so it reads
+   after, and only once there is something to summarise. */
+.stand{margin:34px 0 0;border-top:3px solid rgba(240,238,224,.18);padding-top:20px}
+.stand h2{font-family:var(--display);font-weight:400;font-size:clamp(20px,4.4vw,26px);
+  text-transform:uppercase;color:var(--cream);margin:0 0 4px}
+.stand .rule{margin:0 0 14px}
 </style>
 
 <header class="top">
   <div class="wrap">
     <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
-      <a href="/markets" aria-current="page">Markets</a>
+      <a href="/markets">Markets</a>
       <a href="/board">Who was right</a>
       <a href="/profile">Profile</a>
-      <a href="/leaderboard">Leaderboard</a>
+      <a href="/leaderboard" aria-current="page">Leaderboard</a>
     </nav>
   </div>
 </header>
 
-<!-- THE SEASON, IN ONE LINE. Somebody who only ever lands on the app has no
-     way to learn a campaign is running; the nav's "Genesis" is a destination,
-     not a reason. Shown only while the server stamps oddie-genesis. -->
-<!-- NO STATUS CLAIM. This said "Genesis season is live", and it is not: the
-     campaign has not been announced and its own leaderboard says "Starts when
-     Genesis starts". Saying what Genesis IS costs nothing and cannot go stale;
-     saying it is live is a fact about today, and facts about today have to be
-     true. 5 is GENESIS_TICKETS in src/genesis/season.ts. -->
 <main class="wrap">
-  <!-- "Open markets" is what a listing desk calls its board. Nobody listed
-       these: every one arrived because somebody tagged a claim on X, which is
-       the whole product and was the one thing this page never said. -->
-  <h1>Nobody listed these <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
-    <!-- A CONTROL ON A SHORT LIST IS CLUTTER, so this one is hidden until the
-         list is long enough that scanning it beats reading it. See FILTER_FROM
-         in the script: the input only appears above that many markets. -->
-    <form class="filter" id="filter" hidden onsubmit="return false">
-      <input id="q" type="search" autocomplete="off" placeholder="Filter markets" aria-label="Filter markets by word">
-    </form>
-    <div id="view"><p class="load">Loading markets…</p></div>
-  <!-- MOVED OUT FROM ABOVE THE MASTHEAD. It was a full-bleed pink band sitting
-       over the product on every page: the loudest object on the screen, in the
-       first position, saying "5 tickets" to somebody who does not yet know what
-       a market is. Tickets are the right offer to the WRONG reader up there.
-       Down here it is read by somebody who has seen the list, which is the only
-       point at which "you can open one of these" means anything. -->
-  <a class="season" id="season" href="/leaderboard" hidden>Leaderboard: open markets, bring people in</a>
+  <h1>Leaderboard <img class="hsticker" src="/brand/genesis-podium.webp" alt=""></h1>
+  <!-- ONE SENTENCE, AND IT IS THE DEFINITION. A leaderboard whose unit is not
+       stated is a list of strangers with numbers beside them. This page ranks
+       by people brought in, which is a narrower thing than it sounds and the
+       narrowness is the point: a repeat bettor does not count twice, and your
+       own wallet never counts at all. -->
+  <p class="rule">Ranked by the people you bring in: somebody whose <b>first</b>
+    real-money bet lands in a market you opened. Each person counts once, ever,
+    and your own wallet never counts.</p>
+  <p class="other-board">Different board, different number.
+    <a href="/board">Who was right</a> ranks callers by being right when the room disagreed.</p>
+  <div id="view"><p class="load">Counting who brought people in&hellip;</p></div>
 </main>
 
-<!-- THE MONEY SHEET'S STYLESHEET. This page loads chain.js and its cards call
-     OddieChain.openStake, so tapping YES here opens the sheet that takes real
-     SOL -- and without this it opened as RAW HTML: no overlay, no dialog, no
-     buttons, the amount chips as bare browser controls, and every reopen
-     stacking down the page instead of covering it, because .cdim's
-     position:fixed lives in here too.
-     Loaded late for the same reason market.html loads it late: nothing it
-     styles paints until somebody taps a side, so it cannot cause a
-     first-paint flash. -->
-<link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
 <script src="/app/push.js"></script>
 <script src="/app/me.js"></script>
-<!-- Para tabakasi. market.html ile AYNI dosya: feed'de bahis alan sheet ile
-     market sayfasindaki sheet ayni kod olmali, yoksa iki yerde iki farkli
-     urun ogretilir. chain.js zaten openStake'i disariya aciyor. -->
-<script src="/chain.js" defer></script>
 <script>
 (function () {
   var view = document.getElementById("view");
-  var inited = false;   // OddieChain.init bir kez calisir, her listelemede degil
-  /* THE X GATE, on the app's front door. Cheap (no money, no signature) and
-     already done by anyone arriving from Genesis, so for the launch cohort it
-     costs nothing and it means every row on the board has a name from day one.
-     Public market pages are NOT gated: they are what the bot links to and what
-     X unfurls. Off when the server did not stamp the page (APP_X_GATE=false). */
-  var XGATE = !!document.querySelector('meta[name="oddie-xgate"]');
-  if (document.querySelector('meta[name="oddie-genesis"]')) {
-    var seasonEl = document.getElementById("season");
-    if (seasonEl) seasonEl.hidden = false;
-  }
   function esc(s) {
-    return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
-      return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
-    });
-  }
-  function when(iso) {
-    if (!iso) return null;
-    var d = new Date(iso).getTime();
-    if (!isFinite(d)) return null;
-    var s = Math.round((d - Date.now()) / 1000), past = s < 0, n = Math.abs(s), unit, v;
-    if (n < 3600) { v = Math.max(1, Math.round(n / 60)); unit = "minute"; }
-    else if (n < 86400) { v = Math.round(n / 3600); unit = "hour"; }
-    // Gun katmani ASAGI yuvarlar: market sayfasi ve kart da oyle yapiyor, ve
-    // bir para son tarihini fazla gostermek yanlis tarafta hata yapmaktir.
-    else { v = Math.floor(n / 86400); unit = "day"; }
-    var t = v + " " + unit + (v === 1 ? "" : "s");
-    return past ? "closed" : t + " left";
-  }
-
-  function xgate() {
-    var did = (window.OddieId && window.OddieId.get()) || "";
-    /* THE DECISION, NOT A PARAGRAPH ABOUT IT.
-       This asked somebody to read 13 words of 15px body text at 68% opacity
-       before it showed them a button, on the app's front door. The reason
-       belongs ON the control that acts on it, which is the pattern the genesis
-       page already uses, and the promise is the concrete one: without X you
-       are a base58 address on the board, with it you are your handle. */
-    // Appended, never assigned: loadMarkets() has already written the list and
-    // this sits under it. There is no "just show me the markets" button any
-    // more, because the markets are already on the screen; what is left is a
-    // way to put the ask away.
-    var g = document.createElement("div");
-    g.className = "gate";
-    g.innerHTML = '<a class="big big--2l" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">'
-      + '<span class="big__main">Continue with X</span>'
-      + '<small>Your handle on every call, not a wallet address</small></a>'
-      + '<button class="later" id="later" type="button">Not now</button>';
-    view.appendChild(g);
-    // Skipping is a first-class outcome, not a failure. Remembered for a week
-    // on the cross-host cookie so the next page is not the same question; the
-    // ask comes back where it pays, after a call lands.
-    document.getElementById("later").addEventListener("click", function () {
-      if (window.OddieId && window.OddieId.remember) window.OddieId.remember("xlater", "1", 7);
-      g.remove();
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
 
-  var did = (window.OddieId && window.OddieId.get()) || "";
-  var who = XGATE && did
-    ? fetch("/api/auth/me?deviceId=" + encodeURIComponent(did)).then(function (r) { return r.json(); }).catch(function () { return null; })
-    : Promise.resolve(null);
+  Promise.all([
+    fetch("/api/genesis/board?limit=50").then(function (r) {
+      return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status));
+    }),
+    window.OddieMe || Promise.resolve({ accounts: [] }),
+  ])
+    .then(function (both) {
+      var rows = (both[0] || {}).rows || [];
+      var tw = ((both[1] || {}).accounts || []).filter(function (x) { return x.provider === "twitter"; })[0];
+      var me = tw && tw.handle ? String(tw.handle).replace(/^@+/, "").toLowerCase() : null;
 
-  who.then(function (me) {
-    // An unreachable /api/auth/me is not "no X": the list still renders rather
-    // than locking out somebody who is connected because a request blinked.
-    var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
-    var skipped = !!(window.OddieId && window.OddieId.recall && window.OddieId.recall("xlater"));
-    /* THE MARKETS COME FIRST, ALWAYS. This used to RETURN xgate(), so a
-       stranger's first screen was a sign-up card and the product was behind it.
-       Three separate asks were stacked above anything worth seeing (the pink
-       CONNECT X in the header, the Genesis strip, and this), and the way past
-       them was a grey two-line link in a corner. A toll gate in front of a
-       thing nobody has seen yet is a toll on curiosity.
-       So the list loads for everybody and the ask is appended UNDER it, where
-       it is read by somebody who now knows what the product is. */
-    var listed = loadMarkets();
-    if (XGATE && me && !hasX && !skipped) listed.then(xgate);
-    return listed;
-  });
-
-  /* The opener, as a person: a pill that leaves for their X profile. encodeURI
-     for the href, esc for the text -- the same handle, two different escapes,
-     because a handle in an attribute and a handle in markup are not the same
-     hazard. */
-  function byChip(handle, sourceUrl) {
-    var h = String(handle).replace(/^@+/, "");
-    var href = "https://x.com/" + encodeURIComponent(h);
-    /* CIP KIMIN GONDERISINI ACTIGI KONUSUNDA YALAN SOYLEYEMEZ.
-       Kaynak gonderi gosterilen handle'a AITSE cip oraya gider: okuyan kisi
-       iddiayi kendi baglaminda gorur, profile dusup aramaz. Yazar farkliysa
-       eski davranis surer, cunku taggedBy ETIKETLEYENDIR ve sourceUrl pekala
-       baskasinin gonderisi olabilir (bkz. openMarketFromClaim'deki
-       taggerHandle notu); o durumda "@smolwyne" yazan bir cipin baskasinin
-       tweetini acmasi olurdu. */
-    var m = String(sourceUrl || "").match(
-      /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^\/?#]+)\/status\/\d+/i);
-    if (m && m[1].toLowerCase() === h.toLowerCase()) href = sourceUrl;
-    return '<a class="by" href="' + esc(href)
-      + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
-  }
-
-  var MIN_HEADS_LIST = 3;
-  var THIN = 3;
-  var all = [];
-
-  /* SHOWN ONLY WHEN THE LIST IS LONGER THAN THE EYE. Below this, typing is
-     slower than looking, and a search box over five cards is the kind of
-     control that makes a small product look like a form. */
-  var FILTER_FROM = 6;
-  var filterBox = document.getElementById("filter");
-  var q = document.getElementById("q");
-
-  function setFilterVisibility() {
-    filterBox.hidden = all.length < FILTER_FROM;
-    if (filterBox.hidden) q.value = "";
-  }
-
-  /* Matches the question, the headline and the opener's handle -- the three
-     things actually printed on a card. Matching anything a reader cannot see
-     would make results look arbitrary. Every word must hit, so two words
-     narrow instead of widen. */
-  function matches(m, terms) {
-    var hay = ((m.question || "") + " " + (m.hook || "") + " " + (m.taggedBy || "")).toLowerCase();
-    for (var i = 0; i < terms.length; i++) if (hay.indexOf(terms[i]) === -1) return false;
-    return true;
-  }
-
-  function applyFilter() {
-    var terms = q.value.toLowerCase().split(/\s+/).filter(function (t) { return t; });
-    if (!terms.length) { draw(all, false); return; }
-    draw(all.filter(function (m) { return matches(m, terms); }), true);
-  }
-
-  /* DRAWING IS SEPARATE FROM FETCHING, so filtering a list costs nothing
-     and cannot race a request. loadMarkets keeps `all`; this only ever
-     reads it. */
-  function draw(ms, filtering) {
-    if (!ms.length) {
-      /* Two different nothings. "Nothing open yet" is a fact about the
-         product and an invitation; under a filter it is a lie about it, and
-         the reader who typed a word needs the word back, not onboarding. */
-      view.innerHTML = filtering
-        ? '<div class="poster"><h3>Nothing matches that</h3>'
-          + '<p>Try a shorter word, or <button type="button" class="linky" id="clearq">show everything</button>.</p></div>'
-        : '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
-          + '<h3>Nothing open yet</h3>'
-          + '<p>Tag <b>@oddiefun</b> on X, under anything that ends up true or false. '
-          + '<a href="/leaderboard">How it works</a></p></div>';
-      var cq = document.getElementById("clearq");
-      if (cq) cq.addEventListener("click", function () { q.value = ""; draw(all, false); q.focus(); });
-      return;
-    }
-    view.innerHTML = ms.map(function (m) {
-      var bits = [];
-      // WHO OPENED IT IS THE POINT. This was four grey characters, which is
-      // how a social market reads as a ticker. A pill linked to their X
-      // profile makes the opener a person you can go look at.
-      // Same two words the market page uses: a bare handle beside a countdown
-      // could be the opener, the claim's author, or the person it is about.
-      if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
-      var w = when(m.closesAt);
-      // when() answers "closed" for a past deadline, and the sides now say
-      // that too -- in the place where it decides something. One word, one
-      // place: the time slot keeps "3 hours left" and gives up "closed".
-      if (w && w !== "closed") bits.push(esc(w));
-
-      // The same three-way rule the market page uses. An unreadable pool is
-      // never drawn as an empty one: a card that says "nothing staked" over
-      // real money is the lie this whole read layer exists to stop.
-      var pool = "";
-      if (m.oddsSource === "unreadable") {
-        pool = '<p class="pool pool--quiet">Can\'t read this pool. Your money is safe.</p>';
-      } else if (!m.pool || m.pool.yesLamports + m.pool.noLamports <= 0) {
-        // Named for what is on offer, not for what is missing. Same sentence
-        // as the market page, so a card and the page it opens agree.
-        pool = '<p class="pool pool--quiet">First one in sets the odds.</p>';
-      } else {
-        var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
-        var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
-        /* toFixed(3) then stripping trailing zeros turns anything under 0.0005
-           SOL into the bare string "0", so a card that exists BECAUSE money
-           is in it announced an empty pool. Floored, not rounded away. */
-        var totSol = tot / 1e9;
-        pool = '<p class="pool"><b>'
-          + (totSol < 0.001 ? "<0.001" : totSol.toFixed(3).replace(/0+$/, "").replace(/\.$/, ""))
-          + "</b> SOL in the pool"
-          // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
-          // parayi yalanlar.
-          + (Number(m.stakers || 0) >= MIN_HEADS_LIST ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
-          + "</p>";
+      /* EMPTY IS NOT AN APOLOGY. Nobody has brought anybody in yet, and the
+         honest version of that is an invitation rather than a status report:
+         the first name here is whoever opens a market that fills. */
+      if (!rows.length) {
+        view.innerHTML = '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
+          + "<h3>Nobody is on it yet</h3>"
+          + "<p>The first name here is whoever opens a market that other people put real money into. "
+          + '<a href="/markets">See what is open</a></p></div>';
+        return;
       }
-      var pct = (m.oddsSource === "vault" && m.yesPct != null) ? m.yesPct : null;
-      var href = "/m/" + encodeURIComponent(m.slug);
 
-      /* A SIDE YOU CANNOT TAKE MUST NOT LOOK TAKEABLE.
-         The list filters on resolved and retired, never on close time, so a
-         market past its deadline sat here with two full-strength buttons and
-         one grey word "closed" beside the opener. The word loses to the
-         buttons. Somebody picked a side, waited through a loading sheet,
-         CONNECTED A WALLET, and was refused at the last step with "Betting on
-         this one has closed."
-         An unreadable pool is the same shape: the sheet refuses it too, with
-         an internal reason code. Neither is a market you can bet on, so
-         neither gets a button.
-         The market page has always done this (market.html:645). It renders a
-         real <button disabled>; here the sides are anchors, and a disabled
-         anchor is not a thing, so an unavailable side becomes a <span> with
-         no href at all. Nothing to tap, nothing to navigate. */
-      var shut = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
-      var blind = m.oddsSource === "unreadable";
-      var offNote = shut ? "closed" : blind ? "can't read this one" : "";
-      function sideEl(side, cls, label, pctText) {
-        var inner = label + (pctText === null ? "" : "<span>" + pctText + "%</span>")
-          + (offNote ? "<small>" + esc(offNote) + "</small>" : "");
-        return offNote
-          ? '<span class="side ' + cls + ' side--off" aria-disabled="true">' + inner + "</span>"
-          : '<a class="side ' + cls + '" data-slug="' + esc(m.slug) + '" data-side="' + side
-            + '" href="' + href + "?side=" + side + '">' + inner + "</a>";
-      }
-      var hook = String(m.hook || "").trim();
-      return '<article class="card">'
-        + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
-        /* Hook varsa baslik odur ve tam soru ALTINDA gorunur kalir; yoksa
-           baslik zaten sorunun kendisidir. data-oddie-question her iki
-           durumda da SORUYU tasiyan elemanda, cunku chain.js onun metnini
-           bahis sheet'ine yaziyor. Tek kopya: ayni soruyu bir gorunur bir
-           gizli olarak iki kere yazmak, ikisinin ayrisabilecegi demektir. */
-        + (hook
-            ? '<h2 class="card__q"><a href="' + href + '">' + esc(hook) + "</a></h2>"
-              + '<p class="card__full" data-oddie-question data-oddie-hook="' + esc(hook)
-              + '" data-slug="' + esc(m.slug) + '">' + esc(m.question) + "</p>"
-            : '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
-              + '<a href="' + href + '">' + esc(m.question) + "</a></h2>")
-        + pool
-        + '<div class="sides">'
-        + sideEl("yes", "side--y", "YES", pct)
-        + sideEl("no", "side--n", "NO", pct === null ? null : 100 - pct)
-        + "</div></article>";
-    }).join("");
-
-    /* WHEN THE LIST IS THIN, THE PAGE STOPS DECORATING AND STARTS ASKING.
-       Measured at 1920 with one market on it: the page was 1352px and the
-       crowd strip was 600 of them -- 44%, two and a half times the height of
-       the only market the product had. A closing illustration is right under
-       a full list and wrong under a short one, where it is simply bigger
-       than the thing it is closing.
-       Under three markets the strip stands down and the space becomes the
-       ask, built as one more card so it reads as the next row rather than a
-       banner. At three the list fills a screen on its own and the strip
-       comes back to close it. */
-    if (!filtering && ms.length < THIN) {
-      view.innerHTML += '<article class="card card--invite">'
-        + '<h2 class="card__q"><a href="/markets">Open your own</a></h2>'
-        + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
-        + 'Keep <b>2%</b> of its pool.</p></article>';
-      // Two asks under a thin list is one too many, and this one says how.
-      var season = document.getElementById("season");
-      if (season) season.hidden = true;
-    }
-  }
-
-  function loadMarkets() {
-  /* RETURNS THE PROMISE. It did not, and the first caller that needed to append
-     something after the list silently lost it: this function ASSIGNS
-     view.innerHTML when the fetch resolves, so a gate appended while the
-     request was still in flight was overwritten a moment later, with no error
-     and nothing in the console. A render that owns a container has to be
-     awaitable or nothing can ever be put next to what it draws. */
-  return fetch("/api/v1/markets?limit=50")
-    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
-    .then(function (j) {
-      if (!j.ok) throw new Error("bad response");
-      var ms = j.markets || [];
-      /* The strip is a closer, and there is nothing to close under an empty or
-         near-empty list. Set before the empty branch returns, because that
-         branch is the THINNEST list there is and it was the one still carrying
-         600px of crowd. */
-      /* HOW MANY PEOPLE, ONLY ONCE IT IS A DIFFERENT FACT FROM THE MONEY.
-         At one the count is the pool restated: all of it is one wallet. At two
-         it is the minimum a market needs to exist at all, and it is the exact
-         shape src/card/renderCard.ts measured as forgeable for 0.011 SOL. At
-         three it is the first value a reader cannot reconstruct from the SOL
-         beside it, and it is this product's own existing answer to "when does a
-         small count stop embarrassing the page" (THIN, below).
-         Nothing takes its place underneath: the line ends after the pool,
-         exactly as it does at zero. The share card gates higher, at five, for a
-         reason written at MIN_HEADS_CARD - there it is a claim about the
-         product to a stranger, here it is inventory to somebody already in. */
-      all = ms;
-      draw(ms, false);
-      setFilterVisibility();
-
-      /* Ag adi sunucudan gelir, burada tahmin edilmez. Liste yaniti zaten
-         cluster tasiyor, yani ekstra bir istek yok. */
-      if (!inited) {
-        inited = true;
-        if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(j.cluster);
-        else window.addEventListener("load", function () {
-          if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(j.cluster);
-        });
-      }
+      view.innerHTML = '<section class="stand">'
+        + "<table><thead><tr>"
+        + '<th class="r"></th><th>Who</th>'
+        + '<th class="num hide-sm">Markets</th><th class="num">People</th>'
+        + "</tr></thead><tbody>"
+        + rows.map(function (w) {
+            var h = String(w.handle || "");
+            var mine = me && h.toLowerCase() === me;
+            return "<tr" + (mine ? ' class="me"' : "") + ">"
+              + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">#' + w.rank + "</td>"
+              + '<td class="who">@' + esc(h) + "</td>"
+              + '<td class="num hide-sm wl">' + (w.marketsOpened || 0) + "</td>"
+              + '<td class="num"><span class="pts">' + (w.peopleBrought || 0) + "</span></td>"
+              + "</tr>";
+          }).join("")
+        + "</tbody></table></section>";
     })
     .catch(function (e) {
-      console.warn("[markets]", e && e.message);
-      view.innerHTML = '<div class="err">We could not load the markets just now. Try again in a moment.</div>';
+      console.warn("[leaderboard]", e && e.message);
+      view.innerHTML = '<div class="err">The leaderboard did not load. Reload the page.</div>';
     });
-  }
-
-  /* TARAF TUTMAK FEED'I TERK ETTIRMEZ.
-     YES/NO hala <a>: chain.js yuklendiyse tiklamayi biz aliyoruz ve sheet
-     kartin uzerinde aciliyor; yuklenmediyse (engellenmis script, bir aksilik)
-     preventDefault hic calismaz ve link kendi isini yapar -- markete taraf
-     secili gider. Butona cevirip "su an bahis alinamiyor" demek yerine bu
-     secildi, cunku calisan bir yedek yol bir ozurden iyidir. Ayni sebeple
-     yeni sekmede acma, orta tik ve baglanti kopyalama da bozulmadan kaliyor.
-     Delegasyon: kartlar her yuklemede yeniden ciziliyor, tek dinleyici
-     hepsini kapsiyor. */
-  view.addEventListener("click", function (ev) {
-    var a = ev.target.closest && ev.target.closest("a.side");
-    if (!a || !a.dataset.slug) return;
-    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button > 0) return;  // "yeni sekmede ac" niyeti
-    if (!(window.OddieChain && window.OddieChain.openStake)) return;       // link kendi isini yapsin
-    ev.preventDefault();
-    window.OddieChain.openStake(a.dataset.slug, a.dataset.side);
-  });
-
-  /* Para hareket etti, liste de hareket etsin: chain.js bahis dustugu anda
-     bunu firlatiyor ve sunucu o an onbellegini birakiyor, yani yeniden
-     okuma bu bahsi de iceriyor. market.html ile ayni sozlesme. */
-  q.addEventListener("input", applyFilter);
-  // Escape clears rather than blurs: the list coming back is what the key is
-  // for, and a cleared box that still holds focus keeps the next word cheap.
-  q.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape" && q.value) { ev.preventDefault(); q.value = ""; applyFilter(); }
-  });
-
-  document.addEventListener("oddie:staked", function () { loadMarkets(); });
-})();
-</script>
-<script>
-/* NOBODY HAS BEEN RIGHT YET, SO DO NOT SEND ANYONE TO LOOK.
-   The board is a list of settled calls and no market has ever settled, so its
-   only possible content today is one sentence saying so. The server stamps
-   oddie-noboard when it knows the count is zero; unknown leaves the link alone,
-   because hiding a board that has real names on it is the worse mistake.
-   The link, not the page: /board still answers, so a shared link keeps working
-   and the moment the first market settles the item comes back on its own. */
-(function(){
-  if (!document.querySelector('meta[name="oddie-noboard"]')) return;
-  // ALL of them, not the first. The market page carries a second copy of the
-  // nav at the foot now (the masthead's is gone on a phone), and a singular
-  // query hid the one at the top and left the one at the bottom pointing at an
-  // empty board. Every page gets the plural form, because the next page to grow
-  // a second link should not have to rediscover this.
-  var links = document.querySelectorAll('.top a[href="/board"], nav a[href="/board"], a[href="/board"]');
-  Array.prototype.forEach.call(links, function (a) { a.hidden = true; });
 })();
 </script>

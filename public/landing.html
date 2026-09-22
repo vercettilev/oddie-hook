@@ -878,6 +878,21 @@
     padding:calc(var(--seam-h) + clamp(16px,2vw,30px)) 0 clamp(30px,3.8vw,56px)}
   .D > .shell{position:relative;z-index:3}
   .lead{text-align:center}
+  /* Board left, sticker right: the mirror of the offer above, so the two
+     fields lean into each other instead of stacking one shape twice. */
+  .lead__body{display:flex;align-items:center;justify-content:center;
+    gap:clamp(16px,3vw,48px)}
+  .lead__list{flex:0 1 520px;min-width:0}
+  .lead__st{width:clamp(96px,12vw,168px);height:auto;flex:none;rotate:5deg;
+    filter:drop-shadow(7px 9px 0 rgba(11,13,4,.14))}
+  /* The list is EMPTY until somebody is on the board, and an empty flex child
+     still claims its basis: without this the sticker sits 260px off-centre
+     beside nothing. Collapsed, the row centres on the sticker alone. */
+  .lead__list:empty{flex:0 0 0;display:none}
+  @media (max-width:760px){
+    .lead__body{flex-direction:column-reverse;gap:clamp(14px,3vw,22px)}
+    .lead__list{flex:1 1 auto;width:100%}
+  }
   /* .h2 span is display:block;width:fit-content, so text-align does not move
      it: the two lines hug the left and only margin-inline centres them. */
   .lead__hd{margin:0 0 clamp(18px,2.2vw,28px)}
@@ -898,8 +913,6 @@
   .lead__p{font-size:clamp(13px,1.1vw,15px);color:var(--ink-2);white-space:nowrap;
     font-variant-numeric:tabular-nums}
   .lead__p b{color:var(--ink);font-weight:800}
-  .lead__none{margin:0 auto;max-width:46ch;font-size:clamp(14px,1.25vw,17px);
-    line-height:1.5;color:var(--ink-2)}
   .lead__go{display:inline-block;margin-top:clamp(14px,1.8vw,22px);
     font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.13em;
     text-transform:uppercase;color:var(--ink-2);text-decoration:none}
@@ -1282,15 +1295,21 @@
          between those is how a page starts lying by accident. -->
     <div class="shell lead">
       <h2 class="h2 lead__hd"><span>Climb the</span><span class="lo">leaderboard.</span></h2>
-      <!--BOARD-->
-      <!-- IT POINTS AT /genesis, NOT app.oddie.fun/board, and the difference
-           matters: the app's board ranks CALLERS by settled-bet weight, a
-           different quantity measured on different people. Sending a visitor
-           who just read an opener ranking to a bettor ranking would be handing
-           them a different table and calling it the same one. When the opener
-           board gets a view inside the app this href moves and nothing else
-           does. -->
-      <a class="lead__go" href="/genesis">See the whole board <i aria-hidden="true">&rarr;</i></a>
+      <!-- The sticker is on the right and the board on the left, which is the
+           mirror of the offer block above it: sticker left, words right. The
+           two fields then lean into each other rather than stacking the same
+           shape twice. On one column it goes under, because a 120px mascot
+           beside a four-row table at phone width leaves neither any room. -->
+      <div class="lead__body">
+        <div class="lead__list"><!--BOARD--></div>
+        <img class="lead__st" src="/brand/mascot-trophy.webp" width="944" height="800"
+             loading="lazy" alt="">
+      </div>
+      <!-- IT POINTS AT THE APP'S OWN LEADERBOARD. /leaderboard used to be an
+           ALIAS of /board, the caller ranking, so a visitor who had just read
+           an opener board would land on a different table under the same word.
+           The alias is split now and this href is the page that matches. -->
+      <a class="lead__go" href="https://app.oddie.fun/leaderboard">See the whole board <i aria-hidden="true">&rarr;</i></a>
     </div>
   </section>
 
