@@ -859,12 +859,18 @@
      where the hero and the pink band use it. Pink glyphs with an ink outline
      on cream are emphasis enough here. */
   .offer__hd .lo::after{display:none}
+  .offer__more{margin:clamp(7px,0.8vw,11px) 0 0;
+    font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
+    max-width:34ch}
+  .offer__more a{color:inherit;text-decoration:underline;text-underline-offset:3px;
+    text-decoration-thickness:2px;text-decoration-color:var(--pink)}
+  .offer__more a:hover{color:var(--ink)}
   .offer__sub{margin:clamp(12px,1.4vw,18px) 0 0;
     font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
     max-width:34ch}
   @media (max-width:760px){
     .offer{flex-direction:column;text-align:center;gap:clamp(14px,3vw,22px)}
-    .offer__sub{margin-inline:auto}
+    .offer__sub,.offer__more{margin-inline:auto}
   }
 
 
@@ -1193,6 +1199,13 @@
       <div class="offer__say">
         <p class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</p>
         <p class="offer__sub">Whichever side wins, the 2% is yours.</p>
+        <!-- THE SECOND REASON TO OPEN ONE, and it is a different reward from
+             the fee: the money is per market, the board is cumulative. It links
+             because a standing nobody can go and look at is a claim, and this
+             one is checkable -- /genesis ranks by exactly this and the app has
+             carried the link all along. Written to stay true on an empty board:
+             it says what the board ranks, not where you would land. -->
+        <p class="offer__more">The <a href="/genesis">board</a> ranks you by how many people you bring in.</p>
       </div>
     </div>
 
