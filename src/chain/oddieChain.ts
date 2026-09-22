@@ -205,7 +205,20 @@ async function load(): Promise<ChainClient | null> {
     const bytes = s.startsWith("[") ? Uint8Array.from(JSON.parse(s)) : bs58.decode(s);
     const admin = web3.Keypair.fromSecretKey(bytes);
 
-    const connection = new web3.Connection(RPC_URL, "confirmed");
+    /* FAIL FAST ON 429 RATHER THAN QUEUE BEHIND IT. web3.js retries a
+       rate-limited request on its own ladder -- 500ms, 1s, 2s, 4s -- and on the
+       public endpoint that turned one throttled read into an 8.3-second page
+       that STILL came back unreadable. Measured in production. Refusing the
+       retry costs nothing we were getting anyway and hands the caller its
+       answer immediately, so the stale-cache fallback below can do its job
+       while the page is still being assembled.
+       This is a mitigation, not the fix. The fix is an RPC endpoint with a key
+       on it; api.mainnet-beta.solana.com is documented as not for production
+       and will throttle whatever we do here. */
+    const connection = new web3.Connection(RPC_URL, {
+      commitment: "confirmed",
+      disableRetryOnRateLimit: true,
+    });
     const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(admin), {
       commitment: "confirmed",
       preflightCommitment: "confirmed",

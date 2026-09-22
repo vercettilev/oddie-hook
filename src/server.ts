@@ -3292,7 +3292,13 @@ app.get("/api/v1/markets", async (req, res) => {
   // was the exact request pattern a public RPC throttles, and being throttled
   // did not slow this endpoint down, it published zeroes.
   const [states, openers, stakers, views] = await Promise.all([
-    readMarkets(live.map((m) => m.onchainPubkey).filter(Boolean) as string[], { maxAgeMs: 4_000 })
+    /* 4s WAS A RATE-LIMIT GENERATOR. This is the feed: every visitor, every
+       load, every poll. Against a throttled RPC a short window means the cache
+       is always cold exactly when a 429 arrives, so the stale fallback has
+       nothing to serve and the card goes dark. A minute of staleness on a list
+       of pools is invisible; a dark card is not, and the stake path reads
+       fresh anyway. */
+    readMarkets(live.map((m) => m.onchainPubkey).filter(Boolean) as string[], { maxAgeMs: 60_000 })
       .catch(() => new Map<string, MarketRead>()),
     // Who opened it: the handle the 2% is paid to, and the reason the market
     // exists. One query for the page, not one per row.
