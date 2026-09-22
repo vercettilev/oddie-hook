@@ -353,13 +353,42 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 /* The ask, wearing the same sticker panel as a market so it reads as the next
    row in the list and not a banner bolted under it. */
 .card--invite{box-shadow:8px 9px 0 var(--pink-deep)}
+  /* The box and its button as one object: same height, the button shrink-proof.
+     Ink-on-cream here rather than the landing's yellow, because this card sits
+     on the dark feed and the card itself is the light surface. */
+  /* DO NOT "FIX" THE HEIGHTS HERE WITH getBoundingClientRect NUMBERS. The card
+     is rotated about half a degree, and that method returns the AXIS-ALIGNED
+     box of a rotated element: a 654px-wide input reads ~6px taller than it is
+     and a 107px button ~1px, so a perfectly aligned pair measures as 58 vs 53.
+     offsetHeight says 56 and 56. Measure with offsetHeight on this page. */
+  .card--invite .ask{display:flex;gap:10px;margin-top:14px;align-items:stretch;flex-wrap:wrap}
+  .card--invite .ask__in{flex:1 1 220px;min-width:0;font:inherit;font-family:var(--body);
+    font-weight:600;font-size:15px;padding:13px 15px;border-radius:3px;
+    border:2px solid var(--ink);background:#fff;color:var(--ink)}
+  .card--invite .ask__in::placeholder{color:var(--ink);opacity:.42}
+  .card--invite .ask__in:focus{outline:3px solid var(--pink-deep);outline-offset:2px}
+  .card--invite .ask__go{flex:none;display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--display);font-weight:400;font-size:17px;text-transform:uppercase;
+    padding:13px 22px;border-radius:3px;background:var(--ink);color:#fff;text-decoration:none}
+  .card--invite .ask__go i{font-style:normal;color:var(--yellow)}
+  .card--invite .ask__go:hover{background:#1a1e0a}
+  @media (max-width:480px){
+    .card--invite .ask__in{flex:1 1 100%}
+    .card--invite .ask__go{width:100%;justify-content:center}
+  }
 .card--invite .card__q{margin:0 0 6px}
 .card--invite .pool{margin:0}
 </style>
 
 <header class="top">
   <div class="wrap">
-    <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
+    <!-- THE LOGO LEAVES THE APP, on purpose. It used to point at "/", which on
+     this host IS the market list, so the logo and the nav's "Markets" were the
+     same destination and one of them was wasted. Meanwhile the bot links people
+     straight to app.oddie.fun/m/<slug>, so the whole supply-side story -- how it
+     works, the 2% of the pool, the leaderboard -- was invisible to everybody who
+     arrived the way the product intends. This is the only path back to it. -->
+      <a class="mark" href="https://oddie.fun"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets" aria-current="page">Markets</a>
       <a href="/profile">Profile</a>
@@ -425,6 +454,36 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 <script src="/chain.js" defer></script>
 <script>
 (function () {
+  /* PORTED FROM THE LANDING, and the two must not drift: same examples, same
+     one-per-view pick, same "empty means the bare handle" rule. The card is
+     rendered by script and can be re-rendered, so this wires whatever boxes
+     exist right now and is safe to call again. */
+  var ASK_EXAMPLES = [
+    "$SOL ends this week higher than it started",
+    "$BONK doubles before Friday",
+    "$ORE is above a $1m mcap by Sunday"
+  ];
+  var askPick = ASK_EXAMPLES[Math.floor(Math.random() * ASK_EXAMPLES.length)];
+  function wireAsk() {
+    var boxes = [].slice.call(document.querySelectorAll("input[data-ask]"));
+    boxes.forEach(function (box) {
+      if (box.dataset.wired) return;
+      var link = box.parentNode.querySelector("a[data-tag]");
+      if (!link) return;
+      box.dataset.wired = "1";
+      box.placeholder = askPick;
+      function sync() {
+        var said = box.value.trim();
+        link.href = "https://x.com/intent/post?text="
+          + encodeURIComponent("@oddiefun" + (said ? " " + said : " "));
+      }
+      box.addEventListener("input", sync);
+      box.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); sync(); link.click(); }
+      });
+    });
+  }
+
   var view = document.getElementById("view");
   var inited = false;   // OddieChain.init bir kez calisir, her listelemede degil
   /* THE X GATE, on the app's front door. Cheap (no money, no signature) and
@@ -678,10 +737,24 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        banner. At three the list fills a screen on its own and the strip
        comes back to close it. */
     if (!filtering && ms.length < THIN) {
+      /* THE ASK IS A DOOR NOW, not a sentence about one. It told somebody to
+         tag @oddiefun and then left them to go and do it from memory, on
+         another site, in their own words. The landing solved this with a box
+         and a button and the same thing belongs here: the placeholder shows
+         the SHAPE of a claim, and what travels to X is only what they typed.
+         Same rule as the landing: the placeholder is a real placeholder and
+         can never be posted, so nobody ships a sentence they did not write. */
       view.innerHTML += '<article class="card card--invite">'
-        + '<h2 class="card__q"><a href="/markets">Open your own</a></h2>'
+        + '<h2 class="card__q">Open your own</h2>'
         + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
-        + 'Keep <b>2%</b> of its pool.</p></article>';
+        + 'Keep <b>2%</b> of its pool.</p>'
+        + '<div class="ask">'
+        + '<input class="ask__in" data-ask type="text" autocomplete="off" '
+        + 'aria-label="What do you think will happen?">'
+        + '<a class="ask__go" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">'
+        + 'Tag it <i aria-hidden="true">&rarr;</i></a>'
+        + "</div></article>";
+      wireAsk();
       // Two asks under a thin list is one too many, and this one says how.
       var season = document.getElementById("season");
       if (season) season.hidden = true;

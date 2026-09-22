@@ -605,7 +605,13 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
 <header class="top">
   <div class="wrap">
-    <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
+    <!-- THE LOGO LEAVES THE APP, on purpose. It used to point at "/", which on
+     this host IS the market list, so the logo and the nav's "Markets" were the
+     same destination and one of them was wasted. Meanwhile the bot links people
+     straight to app.oddie.fun/m/<slug>, so the whole supply-side story -- how it
+     works, the 2% of the pool, the leaderboard -- was invisible to everybody who
+     arrived the way the product intends. This is the only path back to it. -->
+      <a class="mark" href="https://oddie.fun"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
       <a href="/profile">Profile</a>
