@@ -9,7 +9,7 @@ import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
-import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, awardLoud, isoWeekOf, loudQueue, decideLoudPost, ODDIES_PER } from "./store/markets.js";
+import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
   savePushSubscription, pushSubscriptionsFor, dropPushSubscription } from "./store/markets.js";
@@ -2501,39 +2501,17 @@ app.post("/api/mentions/:id/dismiss", requireAdmin, async (req, res) => {
 
 
 
-
-app.get("/api/admin/loud/queue", requireAdmin, async (_req, res) => {
-  res.json({ queue: await loudQueue() });
-});
-
-app.post("/api/admin/loud/decide", requireAdmin, async (req, res) => {
-  const id = Number(req.body?.id);
-  const approve = req.body?.approve === true;
-  const note = typeof req.body?.note === "string" && req.body.note.trim() ? req.body.note.trim().slice(0, 200) : null;
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: "id required" });
-  const r = await decideLoudPost(id, approve, note);
-  if (!r.ok) return res.status(r.reason === "not_found" ? 404 : 409).json({ ok: false, reason: r.reason });
-  res.json({ ok: true, status: r.status, points: r.status === "approved" ? ODDIES_PER.loud_post : 0 });
-});
-
-// Weekly Loudest Callers — phase 0 of the loudness flywheel, human all the way
-// through: the operator searches X for the week's best posts about oddie, then
-// names the authors here. +300 oddies each (ODDIES_PER.loud), one award per
-// (person, ISO week) by dedup, so resubmitting a list is safe.
-app.post("/api/admin/loud", requireAdmin, async (req, res) => {
-  const week = typeof req.body?.week === "string" && /^\d{4}-W\d{2}$/.test(req.body.week)
-    ? req.body.week
-    : isoWeekOf(new Date());
-  const handles = Array.isArray(req.body?.handles) ? req.body.handles.map(String).filter(Boolean) : [];
-  if (handles.length < 1 || handles.length > 25) {
-    return res.status(400).json({ error: "handles: 1-25 X handles required" });
-  }
-  const results = [];
-  for (const h of handles) {
-    results.push({ handle: h.replace(/^@+/, ""), ...(await awardLoud(h, week)) });
-  }
-  res.json({ week, points: ODDIES_PER.loud, results });
-});
+/* THE WEEKLY LOUDEST ROUTES ARE GONE, and this note is why nobody should
+   write them again. They paid oddies for "the week's best posts about oddie".
+   On 2026-01-15 X revoked API access for apps that reward users for posting on
+   X -- Kaito, Cookie, Wallchain, Bantr and Xeet in one sweep, and Kaito sunset
+   Yaps. Those companies lost a product line. oddie would lose the product: the
+   whole loop needs the mentions endpoint to read tags and POST /2/tweets to
+   answer them, so the key going is the machine stopping.
+   What oddie counts instead is what happens ON CHAIN after a tag: distinct
+   wallets whose first real-money bet landed in a market somebody opened. That
+   is a settlement record, not a posting reward, and it is defensible in one
+   sentence. */
 
 app.get("/tool", (_req, res) => {
   res.set("X-Robots-Tag", "noindex, nofollow");
