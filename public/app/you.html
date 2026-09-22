@@ -481,11 +481,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       <!-- THE ONE GENESIS NUMBER THE APP NEVER SHOWED. ticketsBack stops at
            five because that is all there is to hand back, so the moment
            somebody is actually good at this it saturates and says nothing
-           more. peopleBrought keeps counting, and it is the number an
+           more. takers keeps counting, and it is the number an
            allocation would ever be read off. Hidden at zero: a brand-new
            handle does not need a nought, and the line under this block
            already names the one action that moves it. -->
-      <p class="tix__n" id="brought" hidden><b id="brn">&mdash;</b> <span id="brlabel">people brought in</span></p>
+      <p class="tix__n" id="brought" hidden><b id="brn">&mdash;</b> <span id="brlabel">takers</span></p>
     </div>
     <p class="tix__spent" id="tixspent" hidden></p>
     <p class="tix__why" id="tixwhy"></p>
@@ -1436,10 +1436,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         /* Not folded into tixspent: that line is the ledger of five tickets
            and every part of it is bounded by them. This is the uncapped one
            and it belongs beside the balance, not inside the accounting. */
-        if (st.peopleBrought) {
-          document.getElementById("brn").textContent = String(st.peopleBrought);
+        if (st.takers) {
+          document.getElementById("brn").textContent = String(st.takers);
           document.getElementById("brlabel").textContent =
-            st.peopleBrought === 1 ? "person brought in" : "people brought in";
+            st.takers === 1 ? "taker" : "takers";
           document.getElementById("brought").hidden = false;
         }
 

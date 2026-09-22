@@ -100,7 +100,7 @@
         <th>Archetype</th>
         <th class="num">Tickets</th>
         <th class="num">Opened</th>
-        <th class="num">People</th>
+        <th class="num">Takers</th>
         <th class="hide-sm">Tagged</th>
       </tr></thead>
       <tbody id="rows"></tbody>
@@ -158,13 +158,13 @@
 
     var connected = roster.filter(function (r) { return r.connectedAt; }).length;
     var opened = roster.reduce(function (s, r) { return s + r.marketsOpened; }, 0);
-    var people = roster.reduce(function (s, r) { return s + r.peopleBrought; }, 0);
+    var takers = roster.reduce(function (s, r) { return s + (Number(r.takers) || 0); }, 0);
     var spent = roster.reduce(function (s, r) { return s + (cap - r.ticketsLeft); }, 0);
     document.getElementById("sums").innerHTML =
       sum(roster.length, "handles seen") +
       sum(connected, "connected X") +
       sum(opened, "markets opened") +
-      sum(people, "people brought") +
+      sum(takers, "takers") +
       sum(spent, "tickets spent");
 
     var rows = document.getElementById("rows");
@@ -192,7 +192,7 @@
         + "<td>" + (r.archetype ? '<span class="arch">' + esc(r.archetype) + "</span>" : '<span class="none">&mdash;</span>') + "</td>"
         + '<td class="num"><span class="pips">' + pips + "</span></td>"
         + '<td class="num">' + r.marketsOpened + "</td>"
-        + '<td class="num">' + r.peopleBrought + "</td>"
+        + '<td class="num">' + (Number(r.takers) || 0) + "</td>"
         + '<td class="hide-sm">' + tags + "</td>"
         + "</tr>";
     }).join("");

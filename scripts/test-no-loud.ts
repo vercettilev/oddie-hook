@@ -107,5 +107,32 @@ check("server.ts's markets.js imports were found", blocks.length > 0, `${blocks.
     missing.length === 0, missing.join(", "));
 }
 
+/* ONE WORD, ONE MEANING. "points" meant three different things in this repo at
+   once: the opener unit in genesis prose, settled-bet weight on /board, and a
+   spendable play-money balance in the ledger. The genesis page contradicted
+   ITSELF for weeks -- prose saying "Genesis points", its own board header
+   saying "People" fifty lines below. No test in this repo asserts on HTML copy,
+   which is exactly why nobody noticed. These two lines pin the separation the
+   rename exists to create. */
+console.log("\none word, one meaning\n");
+{
+  const genesis = readFileSync(path.join(ROOT, "public/genesis.html"), "utf8");
+  const withoutComments = genesis.replace(/<!--[\s\S]*?-->/g, "");
+  /* COPY ONLY. The first draft of this matched `cursor:pointer` in the
+     stylesheet and reported the page still talked about points, which is the
+     false-positive that gets a test muted. Styles and scripts come out, and the
+     needle is the WORD, not the substring. */
+  const copy = withoutComments
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "");
+  check("public/genesis.html says nothing about points",
+    !/\bpoints?\b/i.test(copy),
+    (copy.match(/[^\n]*\bpoints?\b[^\n]*/i) ?? [""])[0].trim().slice(0, 70));
+  const board = readFileSync(path.join(ROOT, "public/app/board.html"), "utf8");
+  check("public/app/board.html still has its Points column", board.includes("Points"));
+  check("the opener unit is named on the genesis board",
+    withoutComments.includes("<span>Takers</span>"));
+}
+
 console.log(failures === 0 ? "\nall shape checks passed.\n" : `\n${failures} shape check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

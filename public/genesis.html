@@ -25,11 +25,11 @@
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/genesis">
 <meta property="og:title" content="You get 5 tickets. Each one turns a claim into a real market.">
-<meta property="og:description" content="Reply @oddiefun under a claim on X, or tweet one yourself. Every tag opens a market where people pick YES or NO. The leaderboard counts one thing: people who join.">
+<meta property="og:description" content="Reply @oddiefun under a claim on X, or tweet one yourself. Every tag opens a market where people pick YES or NO. The board counts one thing: takers.">
 <meta property="og:image" content="https://oddie.fun/og-genesis.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="You get 5 tickets. Each one turns a claim into a real market.">
-<meta name="twitter:description" content="Reply @oddiefun under a claim on X, or tweet one yourself. Every tag opens a market where people pick YES or NO. The leaderboard counts one thing: people who join.">
+<meta name="twitter:description" content="Reply @oddiefun under a claim on X, or tweet one yourself. Every tag opens a market where people pick YES or NO. The board counts one thing: takers.">
 <meta name="twitter:image" content="https://oddie.fun/og-genesis.png">
 
 <script>
@@ -186,7 +186,7 @@
   a.mk:hover{color:var(--ink);background-size:100% .2em}
   a.mk:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
   /* The sticky masthead would otherwise land on top of the heading. */
-  #points{scroll-margin-top:clamp(84px,11vh,120px)}
+  #takers{scroll-margin-top:clamp(84px,11vh,120px)}
   .on-dark .lede{color:var(--fg-2)}
 
   /* --------------------------------------------------------------- masthead -- */
@@ -633,7 +633,7 @@
              was internet slang for proof somebody said something: a reader can
              know every word and still not know what the page does. This says
              the job instead, and it carries both the campaign's constraint
-             ("they", never you) and the number the board ranks by ("people"). -->
+             ("they", never you) and the number the board ranks by ("takers"). -->
         <!-- HIERARCHY SWAPPED (Lev): what you GET is the hero, what you DO is
              the line under it. This is a statement of the rule -- everyone gets
              five -- and stays true once you are in, where the stats below show
@@ -660,7 +660,7 @@
              the page was asking somebody to connect before it had told them
              what they were playing for.
              The two alternatives are worse. Moving the points block up puts the
-             score before the mechanic, so "Genesis points" arrives before the
+             score before the mechanic, so the unit name arrives before the
              reader knows what a market is. And making that block louder cannot
              fix arriving 1.7 screens after the ask -- it is already 84px of
              lime on black.
@@ -687,7 +687,7 @@
              NOT said here, deliberately: your own wallet never counts. That is
              an anti-abuse rule rather than the offer, and the rules list at
              :896 already states it. -->
-        <p class="lede"><a class="mk" href="#points">1 Genesis point</a> per new
+        <p class="lede"><a class="mk" href="#takers">1 taker</a> per new
           person on your market.</p>
         <!-- Basarisiz OAuth donusu (vazgecti, saglayici kapali...) buraya
              ?auth_error= ile gelir; alttaki betik bu satiri gosterir. Sessiz
@@ -720,7 +720,7 @@
           <div class="stats">
             <div class="stat"><b>3</b><span>tickets left</span></div>
             <div class="stat"><b>#184</b><span>rank</span></div>
-            <div class="stat"><b>7</b><span>people who bet</span></div>
+            <div class="stat"><b>7</b><span>takers</span></div>
           </div>
           <!-- THE COUNTERWEIGHT, NEXT TO THE COUNT.
                This rule was filed under "the rest of the rules", in the how
@@ -732,7 +732,7 @@
                readable from the same glance as the number, or the mechanic
                reads as a penalty and people stop tagging rather than aim
                better - which is the opposite of why it was made to cost. -->
-          <p class="backnote">A spent ticket comes back when a new person bets on a market you opened.</p>
+          <p class="backnote">A spent ticket comes back with every new taker.</p>
           <!-- Bilet X'TE harcanir, burada degil; butonun isi seni en az
                surtunmeyle composer'a birakmak. Eski hali once bir modal acip
                link YAPISTIRTIYORDU — tam da "genesis'in hizini keser" diye
@@ -806,7 +806,7 @@
            zaten "Post it or reply with it." diyor. -->
       <div class="thread reveal">
         <img class="thread__art" src="/brand/flow-genesis.webp" width="1600" height="900"
-             loading="lazy" alt="Three steps. One: connect X and get 5 tickets. Two: tag @oddiefun on a claim, posting it yourself or replying with it, which spends 1 ticket. Three: people join the market and the more who do, the higher you rank.">
+             loading="lazy" alt="Three steps. One: connect X and get 5 tickets. Two: tag @oddiefun on a claim, posting it yourself or replying with it, which spends 1 ticket. Three: the more takers you have, the higher you rank.">
       </div>
 
       <!-- Lev'in ucret karari: tesvik edilen sey marketi ACAN kisi. Sifirdan
@@ -815,12 +815,12 @@
            kural, iki sayfa ayni agizdan. -->
       <p class="oneline reveal"><span>Open the market.</span><span>Keep 2% of the money.</span></p>
 
-      <div class="form" id="points">
+      <div class="form" id="takers">
         <!-- The equation was the loudest thing in this block and it was the
              MECHANIC, not the name of the thing. Lev's call: the heading names
              the score, and the rule that earns it moves down to where the
              ticket copy used to be. -->
-        <p class="eq eq--title reveal"><b class="eq__b">Genesis points</b></p>
+        <p class="eq eq--title reveal"><b class="eq__b">Takers</b></p>
         <!-- WHAT THE HEADING NAMES, RESTORED. "Bring 1 person. Get 1 point."
              was cut from here as a restatement of the lede, which it was, and
              it was also the only line under this heading that explained it: a
@@ -849,7 +849,7 @@
         <div class="how-only detail">
           <h3 class="h3">The rest of the rules.</h3>
           <ul>
-            <li>You get a point for people who are new to Oddie. Each person counts once, ever.</li>
+            <li>A taker is somebody new to Oddie. Each person counts once, ever.</li>
             <li>Your own wallet never counts. Bet size does not matter.</li>
             <li>Oddie decides how it will be judged, and writes your reply.</li>
           </ul>
@@ -866,7 +866,7 @@
        geri kazanip kazanmadigin. Ayni dil, kucuk olcek. -->
 
   <!-- ================================================ C · PINK · the board ==
-       Ranked by people brought in, not points: the number a player optimises
+       Ranked by takers. 'Points' is retired from this page: it meant settled-bet weight on /board and a headcount here, and the page contradicted itself for weeks: the number a player optimises
        should be the same number the product needs. "Scorekeeper" is gone as a
        word because it was a fourth name for a human on a page that already had
        three. -->
@@ -880,7 +880,7 @@
 
       <div class="board reveal">
         <div class="board__hd">
-          <span>Rank</span><span>Name</span><span>People</span>
+          <span>Rank</span><span>Name</span><span>Takers</span>
         </div>
         <div class="board__row board__row--me in-only">
           <b>#184</b><span class="who">You</span><span class="n">7</span></div>
@@ -964,7 +964,7 @@
          bakiye artik bilinmeyendir: sayi yerine tire, ve "bitti" sayilmaz. */
       var known = !!(standing && typeof standing.ticketsLeft === "number");
       var left = known ? standing.ticketsLeft : null;
-      var people = standing ? standing.peopleBrought : 0;
+      var takers = Number(standing && standing.takers) || 0;
       var rank = standing && standing.rank ? "#" + standing.rank : "\u2014";
       /* Tahtadaki satirin ADI: "You" yerine kim oldugun. Kisisellik karttan
          ibaret kalmasin diye. */
@@ -977,17 +977,17 @@
         st[i].querySelector("b").textContent = b;
         st[i].querySelector("span").textContent = sp; } };
       set(0, known ? String(left) : "\u2014", left === 1 ? "ticket left" : "tickets left");
-      set(1, rank, standing && standing.rank ? "rank" : "rank \u00b7 nobody joined yet");
-      set(2, String(people), people === 1 ? "person who bet" : "people who bet");
+      set(1, rank, standing && standing.rank ? "rank" : "rank \u00b7 no takers yet");
+      set(2, String(takers), takers === 1 ? "taker" : "takers");
       var me = document.querySelector(".board__row--me");
       if (me) {
         me.querySelector("b").textContent = rank;
-        var n = me.querySelector(".n"); if (n) n.textContent = String(people);
+        var n = me.querySelector(".n"); if (n) n.textContent = String(takers);
       }
       var note = document.querySelector(".board__note.in-only");
-      if (note) note.textContent = people > 0
-        ? "Every person who put money into one of your markets counts once."
-        : "You are on the leaderboard the moment somebody joins one of your markets.";
+      if (note) note.textContent = takers > 0
+        ? "Every taker counts once, ever."
+        : "Your first taker puts you on the board.";
 
       /* Biletin bittiyse buton seni X'e atmamali: attigin etiket sunucuda
          SESSIZCE eleniyor (sweep bilet kapisini model cagrisindan once
@@ -1085,14 +1085,14 @@
             el.className = "board__row";
             var b = document.createElement("b"); b.textContent = "#" + row.rank;
             var w = document.createElement("span"); w.className = "who"; w.textContent = "@" + row.handle;
-            var n = document.createElement("span"); n.className = "n"; n.textContent = String(row.peopleBrought);
+            var n = document.createElement("span"); n.className = "n"; n.textContent = String(Number(row.takers) || 0);
             el.appendChild(b); el.appendChild(w); el.appendChild(n);
             frag.appendChild(el);
           });
           board.insertBefore(frag, me && me.nextSibling ? me.nextSibling : null);
           dedupeBoard();
           var note = board.querySelector(".board__note.out-only");
-          if (note) note.textContent = "Ranked by how many people put real money into markets they opened.";
+          if (note) note.textContent = "Ranked by takers: people whose first real money went into a market you opened.";
         })
         .catch(function(){});
     }
