@@ -49,6 +49,35 @@ const ONCHAIN = (process.env.ONCHAIN_ENABLED ?? "true").toLowerCase() === "true"
 const RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 
 /**
+ * SAY IT OUT LOUD WHEN THE ENDPOINT IS THE PUBLIC ONE.
+ *
+ * api.mainnet-beta.solana.com is documented by Solana as not for production,
+ * and this is not a theoretical warning: on 2026-09-22 it answered 429 to a
+ * server with ONE market and ONE visitor. Every card read "can't read this
+ * pool" with both sides disabled, and /api/v1/markets took 8.3 seconds, because
+ * web3.js retried each refusal on a 500ms/1s/2s/4s ladder before failing
+ * anyway. Nothing in the code was wrong; the endpoint was refusing.
+ *
+ * The failure is silent from the inside -- reads degrade to "unreadable",
+ * which the product renders honestly, so it looks like a chain problem rather
+ * than a configuration one. One line at boot is what turns an afternoon of
+ * debugging into a glance at the log.
+ *
+ * It is a warning and not a throw on purpose: local development and a first
+ * deploy both legitimately start here, and refusing to boot over it would be
+ * worse than saying so.
+ */
+if (/^https?:\/\/api\.(mainnet-beta|devnet|testnet)\.solana\.com/.test(RPC_URL)) {
+  console.warn(
+    `[chain] SOLANA_RPC_URL is Solana's PUBLIC endpoint (${new URL(RPC_URL).host}). `
+    + "It is rate limited per IP, is shared with everybody else on this host's "
+    + "egress address, and has already answered 429 here at one market and one "
+    + "visitor. Reads will intermittently come back unreadable and stakes will "
+    + "fail before the feed does. Point this at a keyed endpoint.",
+  );
+}
+
+/**
  * Which cluster the explorer links point at. Derived from the RPC URL rather
  * than set beside it, because these two drifting apart is the exact bug that
  * ships mainnet markets with devnet explorer links on them, and nobody notices

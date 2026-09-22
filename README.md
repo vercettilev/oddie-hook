@@ -127,6 +127,22 @@ public/                         the app: hand-written HTML, no framework
 scripts/                        49 test suites, probes, and the deck generator
 ```
 
+## The one piece of configuration that is not optional
+
+`SOLANA_RPC_URL` must point at a keyed endpoint. Solana's public one
+(`api.mainnet-beta.solana.com`) is documented as not for production and it does
+not degrade politely: on 2026-09-22 it answered 429 to this server with ONE
+market and ONE visitor, every card rendered "can't read this pool" with both
+sides disabled, and the feed took 8.3 seconds to say so.
+
+The read layer is cached per market and shared across visitors, so audience
+size is not what exhausts the budget -- a thousand people on the feed cost the
+same as one. What costs is markets under simultaneous view, and stakes, which
+cannot be cached because a bet must price against a fresh pool. So the failure
+at scale is not a dark feed, it is bets failing quietly.
+
+The server warns at boot if this is pointed at the public endpoint.
+
 ## Run it
 
 ```bash
