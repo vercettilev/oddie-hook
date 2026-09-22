@@ -83,6 +83,7 @@
   --tear-2:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t2' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0034 0.055' numOctaves='2' seed='23'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='44'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t2)'/%3E%3C/svg%3E");
   --tear-3:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t3' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0038 0.045' numOctaves='2' seed='41'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='62'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t3)'/%3E%3C/svg%3E");
   --tear-4:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t4' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0046 0.048' numOctaves='2' seed='61'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='58'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t4)'/%3E%3C/svg%3E");
+  --tear-5:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='100' preserveAspectRatio='none'%3E%3Cfilter id='t5' x='-100' y='-100' width='1640' height='320' filterUnits='userSpaceOnUse'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0036 0.052' numOctaves='2' seed='89'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='56'/%3E%3C/filter%3E%3Crect x='-60' y='-60' width='1560' height='105' fill='%23fff' filter='url(%23t5)'/%3E%3C/svg%3E");
   }
 
   *{box-sizing:border-box}
@@ -375,14 +376,14 @@
      ::after ustteki alanin rengi. Yukaridan asagi: ustteki rengin disleri,
      9px krem deckle, alttaki alan. Tek pseudo + drop-shadow ise CALISMAZ:
      CSS filter mask'ten ONCE uygulanir, golge de maskelenip yok olur. */
-  .B::before,.B::after,.C::before,.C::after,.Bw::before,.Bw::after{
+  .B::before,.B::after,.C::before,.C::after,.Bw::before,.Bw::after,.D::before,.D::after{
     content:"";position:absolute;left:-3%;right:-3%;top:0;pointer-events:none;
     -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
-  .B::before,.C::before,.Bw::before{
+  .B::before,.C::before,.Bw::before,.D::before{
     height:calc(var(--seam-h) + 9px);z-index:1;
     -webkit-mask-size:100% var(--seam-h);mask-size:100% var(--seam-h);
     -webkit-mask-position:0 9px;mask-position:0 9px}
-  .B::after,.C::after,.Bw::after{
+  .B::after,.C::after,.Bw::after,.D::after{
     height:var(--seam-h);z-index:2;
     -webkit-mask-size:100% 100%;mask-size:100% 100%}
 
@@ -400,9 +401,21 @@
      Ust alan artik krem, o yuzden disler krem; aradaki serit de -- .Bw'deki
      ile ayni sebeple -- krem olamaz, kalkan kagit kenarinin pembeye dusurdugu
      golge. */
+  /* 4. dikis KREM -> SARI. Krem kagit yirtiliyor, altindan sari cikiyor; serit
+     kalkan kagit kenarinin sariya dusurdugu golge. */
+  .D::before{background:rgba(11,13,4,.16);
+    -webkit-mask-image:var(--tear-5);mask-image:var(--tear-5)}
+  .D::after{background:var(--cream);
+    -webkit-mask-image:var(--tear-5);mask-image:var(--tear-5)}
+
+  /* 5. dikis SARI -> PEMBE. Bu dikis ustunde KREM varken yazilmisti; araya sari
+     bir alan girdi ve disler yine ustteki alanin rengini soylemek zorunda.
+     Ayni hata bir kez daha olmustu: siyahtan kreme gecerken bu satir hala
+     siyah boyuyordu ve pembe bandin tepesinde neyin yirtildigini soylemeyen
+     bir serit birakiyordu. */
   .C::before{background:rgba(11,13,4,.16);
     -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
-  .C::after{background:var(--cream);
+  .C::after{background:var(--yellow);
     -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
   /* 3. dikis SIYAH -> KREM. Tek pseudo, cunku ::before'un isi ustteki rengin
      disleri ile alttaki alan arasina krem bir deckle sermek; burada alttaki
@@ -419,9 +432,9 @@
   .C > .shell{position:relative;z-index:3}
 
   @media (max-width:700px){
-    .B::before,.C::before,.Bw::before{
+    .B::before,.C::before,.Bw::before,.D::before{
       -webkit-mask-size:360% var(--seam-h);mask-size:360% var(--seam-h)}
-    .B::after,.C::after,.Bw::after{
+    .B::after,.C::after,.Bw::after,.D::after{
       -webkit-mask-size:360% 100%;mask-size:360% 100%}
   }
 
@@ -859,18 +872,24 @@
      where the hero and the pink band use it. Pink glyphs with an ink outline
      on cream are emphasis enough here. */
   .offer__hd .lo::after{display:none}
-  /* THE BOARD BLOCK. Centred, unlike the offer beside it, because a ranking is
-     a list and a list wants one axis. It sits on the same cream so it reads as
-     the second half of one argument rather than a new field. */
-  .lead{padding-block:clamp(26px,3.4vw,48px) clamp(24px,3vw,40px);text-align:center}
-  .lead__hd{margin:0 0 clamp(14px,1.8vw,22px);font-family:var(--display);
-    font-weight:400;line-height:1.02;letter-spacing:.005em;color:var(--ink);
-    font-size:clamp(22px,2.9vw,38px)}
+  /* D, the board's own field. Ink on yellow, like the hero. */
+  .D{position:relative;background:var(--yellow);color:var(--ink);
+    overflow-x:clip;overflow-y:visible;
+    padding:calc(var(--seam-h) + clamp(16px,2vw,30px)) 0 clamp(30px,3.8vw,56px)}
+  .D > .shell{position:relative;z-index:3}
+  .lead{text-align:center}
+  /* .h2 span is display:block;width:fit-content, so text-align does not move
+     it: the two lines hug the left and only margin-inline centres them. */
+  .lead__hd{margin:0 0 clamp(18px,2.2vw,28px)}
+  .lead__hd span{margin-inline:auto}
+  /* The rows are ink-tinted yellow, not white: a white card on this ground
+     reads as a UI panel dropped onto a poster. */
+  .lead__row{background:rgba(11,13,4,.07)}
   .lead__rows{list-style:none;margin:0 auto;padding:0;width:min(520px,100%);
     display:flex;flex-direction:column;gap:2px}
   .lead__row{display:flex;align-items:baseline;gap:clamp(10px,1.4vw,18px);
     padding:clamp(9px,1.1vw,13px) clamp(12px,1.6vw,18px);
-    background:rgba(11,13,4,.04);border-radius:3px;text-align:left}
+    border-radius:3px;text-align:left}
   /* Tabular figures or the rank column shivers as the numbers change width. */
   .lead__n{font-family:var(--mono);font-size:12px;font-weight:800;
     color:var(--ink-3);min-width:1.6em;font-variant-numeric:tabular-nums}
@@ -1235,6 +1254,21 @@
     </div>
 
 
+
+
+    </section>
+
+  <!-- ============================================== D · YELLOW · THE BOARD ==
+       ITS OWN FIELD, not a footnote under the fee. Opening a market pays twice
+       and the two rewards are different KINDS: the 2% is money, per market,
+       settled and gone; the board is standing, cumulative, and the only thing
+       here that keeps score. Lev's call, and it is the right one -- a ranking
+       stacked under a price reads as a detail of the price.
+       YELLOW, not a third black. The page would otherwise run cream, black,
+       pink with black on both ends; yellow brings the hero's ground back for
+       the one block that is supposed to shout, and ink on yellow is the
+       loudest pairing this palette has. -->
+  <section class="D sec" id="leaderboard">
     <!-- THE BOARD, ON THE FRONT DOOR. The sentence above promises a standing,
          and this is it: nobody has to take the promise on trust or click
          through to find out whether anybody is on it.
@@ -1247,7 +1281,7 @@
          that could not be read is not a board with nobody on it, and guessing
          between those is how a page starts lying by accident. -->
     <div class="shell lead">
-      <h2 class="lead__hd">Who is bringing people in</h2>
+      <h2 class="h2 lead__hd"><span>Climb the</span><span class="lo">leaderboard.</span></h2>
       <!--BOARD-->
       <!-- IT POINTS AT /genesis, NOT app.oddie.fun/board, and the difference
            matters: the app's board ranks CALLERS by settled-bet weight, a
@@ -1258,9 +1292,7 @@
            does. -->
       <a class="lead__go" href="/genesis">See the whole board <i aria-hidden="true">&rarr;</i></a>
     </div>
-
-
-    </section>
+  </section>
 
   <!-- ================================================ C · PINK · REPUTATION ==
        Two columns so the ground is not a headline over a void. The three
