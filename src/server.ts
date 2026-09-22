@@ -449,7 +449,38 @@ async function renderLanding(): Promise<string> {
     ? LANDING_HTML.split('The <a href="/board">board</a> ranks').join("The board ranks")
     : LANDING_HTML;
 
-  const html = boardSentence;
+  /* THE OPENER BOARD, ON THE FRONT DOOR.
+   *
+   * It ranks by people brought in -- distinct wallets whose FIRST real-money
+   * bet landed in a market that handle opened -- which is the one number
+   * opening a market accumulates. The app has the same board; this is the copy
+   * that has to make a stranger want to go and look.
+   *
+   * TWO STATES, ONE IMPLEMENTATION, because the honest answer changes and the
+   * markup must not. With rows it prints them. With none it prints the dare
+   * instead, which is true on a launch and needs no edit the day it stops being
+   * true. What it must NEVER do is print an empty table: this page decided once
+   * already that a true-but-empty number ("1 market tagged so far") does
+   * nothing but announce that nobody is here, and LANDING_PROOF_MIN is the
+   * scar. An empty shelf is the same claim.
+   *
+   * Failure renders nothing at all. A board that could not be read is not a
+   * board with nobody on it, and guessing between those is how a page starts
+   * lying by accident. */
+  const boardRows = await genesisBoard(5).catch(() => null);
+  const boardHtml = boardRows === null
+    ? ""
+    : boardRows.length === 0
+      ? '<p class="lead__none">Nobody has brought anybody in yet. '
+        + 'The first name here is whoever opens a market that fills.</p>'
+      : '<ol class="lead__rows">'
+        + boardRows.map((r) => '<li class="lead__row"><span class="lead__n">'
+            + r.rank + '</span><span class="lead__h">@' + escHtml(r.handle) + '</span>'
+            + '<span class="lead__p"><b>' + r.peopleBrought + '</b> '
+            + (r.peopleBrought === 1 ? "person" : "people") + '</span></li>').join("")
+        + "</ol>";
+
+  const html = boardSentence.replace("<!--BOARD-->", boardHtml);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full

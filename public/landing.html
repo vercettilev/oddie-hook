@@ -859,12 +859,37 @@
      where the hero and the pink band use it. Pink glyphs with an ink outline
      on cream are emphasis enough here. */
   .offer__hd .lo::after{display:none}
+  /* THE BOARD BLOCK. Centred, unlike the offer beside it, because a ranking is
+     a list and a list wants one axis. It sits on the same cream so it reads as
+     the second half of one argument rather than a new field. */
+  .lead{padding-block:clamp(26px,3.4vw,48px) clamp(24px,3vw,40px);text-align:center}
+  .lead__hd{margin:0 0 clamp(14px,1.8vw,22px);font-family:var(--display);
+    font-weight:400;line-height:1.02;letter-spacing:.005em;color:var(--ink);
+    font-size:clamp(22px,2.9vw,38px)}
+  .lead__rows{list-style:none;margin:0 auto;padding:0;width:min(520px,100%);
+    display:flex;flex-direction:column;gap:2px}
+  .lead__row{display:flex;align-items:baseline;gap:clamp(10px,1.4vw,18px);
+    padding:clamp(9px,1.1vw,13px) clamp(12px,1.6vw,18px);
+    background:rgba(11,13,4,.04);border-radius:3px;text-align:left}
+  /* Tabular figures or the rank column shivers as the numbers change width. */
+  .lead__n{font-family:var(--mono);font-size:12px;font-weight:800;
+    color:var(--ink-3);min-width:1.6em;font-variant-numeric:tabular-nums}
+  .lead__h{flex:1 1 auto;min-width:0;font-weight:800;color:var(--ink);
+    font-size:clamp(14px,1.25vw,17px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lead__p{font-size:clamp(13px,1.1vw,15px);color:var(--ink-2);white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .lead__p b{color:var(--ink);font-weight:800}
+  .lead__none{margin:0 auto;max-width:46ch;font-size:clamp(14px,1.25vw,17px);
+    line-height:1.5;color:var(--ink-2)}
+  .lead__go{display:inline-block;margin-top:clamp(14px,1.8vw,22px);
+    font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink-2);text-decoration:none}
+  .lead__go i{font-style:normal;color:var(--pink-deep)}
+  .lead__go:hover{color:var(--ink)}
+
   .offer__more{margin:clamp(7px,0.8vw,11px) 0 0;
     font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
     max-width:34ch}
-  .offer__more a{color:inherit;text-decoration:underline;text-underline-offset:3px;
-    text-decoration-thickness:2px;text-decoration-color:var(--pink)}
-  .offer__more a:hover{color:var(--ink)}
   .offer__sub{margin:clamp(12px,1.4vw,18px) 0 0;
     font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
     max-width:34ch}
@@ -1202,11 +1227,36 @@
         <!-- THE SECOND REASON TO OPEN ONE, and it is a different reward from
              the fee: the money is per market, the board is cumulative. It links
              because a standing nobody can go and look at is a claim, and this
-             one is checkable -- /genesis ranks by exactly this and the app has
-             carried the link all along. Written to stay true on an empty board:
+             one is checkable, and it is now directly below rather than a
+             page away. Written to stay true on an empty board:
              it says what the board ranks, not where you would land. -->
-        <p class="offer__more">The <a href="/genesis">board</a> ranks you by how many people you bring in.</p>
+        <p class="offer__more">And the board below ranks you by how many people you bring in.</p>
       </div>
+    </div>
+
+
+    <!-- THE BOARD, ON THE FRONT DOOR. The sentence above promises a standing,
+         and this is it: nobody has to take the promise on trust or click
+         through to find out whether anybody is on it.
+         Server-rendered, TWO STATES, one markup. Rows when there are rows, the
+         dare when there are none. It never prints an empty table: this page
+         learned once that a true-but-empty number ("1 market tagged so far")
+         does nothing but announce that nobody is here, and LANDING_PROOF_MIN is
+         the scar that argument left.
+         If the read FAILS the block renders nothing at all, because a board
+         that could not be read is not a board with nobody on it, and guessing
+         between those is how a page starts lying by accident. -->
+    <div class="shell lead">
+      <h2 class="lead__hd">Who is bringing people in</h2>
+      <!--BOARD-->
+      <!-- IT POINTS AT /genesis, NOT app.oddie.fun/board, and the difference
+           matters: the app's board ranks CALLERS by settled-bet weight, a
+           different quantity measured on different people. Sending a visitor
+           who just read an opener ranking to a bettor ranking would be handing
+           them a different table and calling it the same one. When the opener
+           board gets a view inside the app this href moves and nothing else
+           does. -->
+      <a class="lead__go" href="/genesis">See the whole board <i aria-hidden="true">&rarr;</i></a>
     </div>
 
 
