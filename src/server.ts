@@ -138,7 +138,6 @@ const MARKET_HTML = readFileSync(path.join(__dirname, "../public/app/market.html
 /** "Your positions": what a wallet has riding and what it can collect. */
 const YOU_HTML = readFileSync(path.join(__dirname, "../public/app/you.html"), "utf8");
 /** The board: who was right when the room disagreed. */
-const BOARD_HTML = readFileSync(path.join(__dirname, "../public/app/board.html"), "utf8");
 const LEADERBOARD_HTML = readFileSync(path.join(__dirname, "../public/app/leaderboard.html"), "utf8");
 /** One wallet's record. The shareable artifact: the page somebody posts. */
 const WHO_HTML = readFileSync(path.join(__dirname, "../public/app/who.html"), "utf8");
@@ -181,58 +180,11 @@ const GENESIS_SEASON = (process.env.GENESIS_SEASON ?? "true").toLowerCase() === 
 /** Stamp a shell so its own script knows which season/gate flags are on. Meta
  *  tags rather than body attributes because the shells have no explicit
  *  <body>. Both stamps ride the same charset anchor. */
-/**
- * HAS ANYBODY EVER BEEN RIGHT?
- *
- * "Who was right" is a board of settled calls, and not one market has ever
- * settled, so today it is a nav item whose only possible content is the
- * sentence "nobody has been right yet". Sending a first-time visitor there is
- * sending them to a room we know is empty.
- *
- * Cached rather than queried per request: this decides one nav link and it is
- * on every app page, so it must never put a database round trip in front of a
- * paint. Refreshed at most once a minute, and once it flips true it stays true
- * for the life of the process, because settlements do not un-happen.
- *
- * UNKNOWN MEANS SHOW IT. A cold cache or a failed query must not hide a board
- * that has real names on it; the page renders its own honest empty state, so
- * showing it too early costs a shrug and hiding it too long costs the record
- * people came for.
- */
-let anySettled: boolean | null = null;
-let anySettledAt = 0;
-function refreshAnySettled(): void {
-  if (anySettled === true) return;
-  if (Date.now() - anySettledAt < 60_000) return;
-  anySettledAt = Date.now();
-  void settledLedger()
-    .then(({ calls }) => { if (calls.length > 0) anySettled = true; else anySettled = false; })
-    .catch(() => { /* leave it unknown; unknown shows the link */ });
-}
 
 const stampApp = (html: string): string => {
-  refreshAnySettled();
   const metas = (APP_X_GATE ? '\n<meta name="oddie-xgate" content="1">' : "")
-    + (GENESIS_SEASON ? '\n<meta name="oddie-genesis" content="1">' : "")
-    + (anySettled === false ? '\n<meta name="oddie-noboard" content="1">' : "");
+    + (GENESIS_SEASON ? '\n<meta name="oddie-genesis" content="1">' : "");
   const stamped = metas ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + metas) : html;
-  /* AND THE LINK ITSELF, NOT JUST THE META THAT DESCRIBES IT.
-     The board link was hidden by a script after the page painted, so on a phone
-     "Who was right" appeared in the nav and then vanished a moment later - a
-     flash of a destination that does not exist, on every app page, every load.
-     The server already knows the answer here, before a single byte goes out, so
-     the link ships hidden and nothing ever flashes. The client script stays as
-     the fallback for a page served before this knew, and setting hidden on
-     something already hidden costs nothing. */
-  /* The board page marks its own nav entry with aria-current, so the plain
-     anchor above does not match there and /board's nav kept the link while
-     every other page hid it. Both spellings are hidden, not one. */
-  const board = anySettled === false
-    ? stamped
-        .split('<a href="/board">Who was right</a>').join('<a href="/board" hidden>Who was right</a>')
-        .split('<a href="/board" aria-current="page">Who was right</a>')
-        .join('<a href="/board" aria-current="page" hidden>Who was right</a>')
-    : stamped;
   /* THE NAV ENTRY IS "Leaderboard" NOW, and that is a word matching a page
      rather than a rename: Genesis was the name of a season, and a person
      reading a nav needs the name of a thing. The season switch still hides it,
@@ -240,8 +192,8 @@ const stampApp = (html: string): string => {
      it.
      Exact-string matching, and it has to stay exact: the anchor text is the
      WHOLE link or this hides a word mid-sentence and leaves prose broken. */
-  return GENESIS_SEASON ? board
-    : board.split('<a href="/leaderboard">Leaderboard</a>').join('<a href="/leaderboard" hidden>Leaderboard</a>');
+  return GENESIS_SEASON ? stamped
+    : stamped.split('<a href="/leaderboard">Leaderboard</a>').join('<a href="/leaderboard" hidden>Leaderboard</a>');
 };
 
 /**
@@ -447,10 +399,12 @@ async function renderLanding(): Promise<string> {
      decides something: chain.js writes clusterLabel from the server's cluster
      in the app, and nothing there changed. */
 
-  refreshAnySettled();
-  const boardSentence = anySettled === false
-    ? LANDING_HTML.split('The <a href="/board">board</a> ranks').join("The board ranks")
-    : LANDING_HTML;
+  /* THE UNLINK-WHEN-EMPTY DANCE IS GONE WITH THE SENTENCE IT GUARDED. It
+     stripped the href from "The board ranks" so a launch-day page did not send
+     anybody to an empty table. The landing does not write that sentence any
+     more -- it renders the BOARD, and the board renders nothing when nobody is
+     on it, which is the same judgment made one step earlier and without a
+     string to keep in sync. */
 
   /* THE OPENER BOARD, ON THE FRONT DOOR.
    *
@@ -485,7 +439,7 @@ async function renderLanding(): Promise<string> {
             + (r.peopleBrought === 1 ? "person" : "people") + '</span></li>').join("")
         + "</ol>";
 
-  const html = boardSentence.replace("<!--BOARD-->", boardHtml);
+  const html = LANDING_HTML.replace("<!--BOARD-->", boardHtml);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
@@ -901,12 +855,17 @@ app.get("/markets", (req, res) => {
   res.set("Cache-Control", "no-cache").type("html").send(stampApp(MARKETS_HTML));
 });
 
-/** The board. Public and indexable: it is the page that answers "who should I
- *  listen to", which is the only question a prediction product exists to
- *  answer, and it is worth being found for. */
+/** /board IS /leaderboard NOW, and this redirect is the whole of what is left
+ *  of it. As a RANKING the page never worked: its own code hides the table
+ *  below three people, one person has ever settled a call, so it rendered as a
+ *  heading over a single card. Its three parts moved to the page that is named
+ *  for what they are -- the openers' board, the callers' board and the
+ *  settlements that both are computed from, one under the other.
+ *  301 and not a delete: the bot has been posting links for weeks and a shared
+ *  link that 404s is a worse answer than one that lands somewhere true. */
 app.get("/board", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
-  res.set("Cache-Control", "no-cache").type("html").send(BOARD_HTML);
+  res.redirect(301, "/leaderboard");
 });
 
 /** THE OTHER BOARD, and /leaderboard used to be an ALIAS of the one above: the

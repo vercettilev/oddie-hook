@@ -362,7 +362,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets" aria-current="page">Markets</a>
-      <a href="/board">Who was right</a>
       <a href="/profile">Profile</a>
       <a href="/leaderboard">Leaderboard</a>
     </nav>
@@ -758,22 +757,4 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   document.addEventListener("oddie:staked", function () { loadMarkets(); });
 })();
 </script>
-<script>
-/* NOBODY HAS BEEN RIGHT YET, SO DO NOT SEND ANYONE TO LOOK.
-   The board is a list of settled calls and no market has ever settled, so its
-   only possible content today is one sentence saying so. The server stamps
-   oddie-noboard when it knows the count is zero; unknown leaves the link alone,
-   because hiding a board that has real names on it is the worse mistake.
-   The link, not the page: /board still answers, so a shared link keeps working
-   and the moment the first market settles the item comes back on its own. */
-(function(){
-  if (!document.querySelector('meta[name="oddie-noboard"]')) return;
-  // ALL of them, not the first. The market page carries a second copy of the
-  // nav at the foot now (the masthead's is gone on a phone), and a singular
-  // query hid the one at the top and left the one at the bottom pointing at an
-  // empty board. Every page gets the plural form, because the next page to grow
-  // a second link should not have to rediscover this.
-  var links = document.querySelectorAll('.top a[href="/board"], nav a[href="/board"], a[href="/board"]');
-  Array.prototype.forEach.call(links, function (a) { a.hidden = true; });
-})();
-</script>
+

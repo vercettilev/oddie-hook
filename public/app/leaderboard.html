@@ -272,7 +272,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     <a class="mark" href="/"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
-      <a href="/board">Who was right</a>
       <a href="/profile">Profile</a>
       <a href="/leaderboard" aria-current="page">Leaderboard</a>
     </nav>
@@ -289,9 +288,21 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   <p class="rule">Ranked by the people you bring in: somebody whose <b>first</b>
     real-money bet lands in a market you opened. Each person counts once, ever,
     and your own wallet never counts.</p>
-  <p class="other-board">Different board, different number.
-    <a href="/board">Who was right</a> ranks callers by being right when the room disagreed.</p>
   <div id="view"><p class="load">Counting who brought people in&hellip;</p></div>
+  <!-- THE SECOND BOARD, on the same page. It used to be a page of its own
+       called "Who was right", and as a RANKING it never worked: its own code
+       hides the table below three people and one person has ever settled a
+       call, so the page was a heading over a single card. Two rankings that
+       both answer "who is ahead" belong on the page called Leaderboard.
+       They stay SEPARATE TABLES and never merge: one counts people brought in,
+       the other weighs being right when the room disagreed. Different people,
+       different units, and a single blended number would mean neither. -->
+  <div id="callers"></div>
+  <!-- AND WHAT THE RANKINGS ARE MADE OF. Every settled market with the names
+       of who took which side and at what price. It is the evidence under both
+       boards above, so it belongs under them rather than on a page of its own
+       that was a heading over a single card. -->
+  <div id="settled"></div>
 </main>
 
 <script src="/app/id.js"></script>
@@ -304,6 +315,48 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+
+  /* PORTED WHOLE from the retired board page, not rewritten: these three read
+     a settled market and its callers, and a rewrite of working render code is
+     a bug looking for a home. The CSS they need was already here, because this
+     page was cut from that one. */
+  function ago(iso) {
+    if (!iso) return "";
+    var s = (Date.now() - Date.parse(iso)) / 1000;
+    if (!isFinite(s) || s < 0) return "";
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    // Asagi yuvarlar, market sayfasi ve kartla ayni kural.
+    var d = Math.floor(s / 86400);
+    return d === 1 ? "yesterday" : d + " days ago";
+  }
+  function personLine(p, won, me) {
+    var name = p.handle ? "@" + esc(p.handle) : esc(p.short);
+    var mine = me && p.handle && p.handle.toLowerCase() === me;
+    /* THE PRICE THEY TOOK IT AT IS THE WHOLE POINT and it is why this is not a
+       results table. "Right" is cheap; "right at 24% while the room said no" is
+       the thing worth reading, and it teaches the weighting without a formula
+       anywhere on the page. */
+    var bits = '<span class="mom__v">' + (won ? "Right" : "Wrong") + "</span>"
+      + "<b><a href=\"/w/" + encodeURIComponent(p.wallet) + "\">" + name + "</a></b>"
+      + "<span>took " + esc(String(p.side).toUpperCase())
+      + (typeof p.entryPct === "number" ? " at " + p.entryPct + "%" : "") + "</span>";
+    if (p.pnlSol !== null && p.pnlSol !== undefined) bits += "<i>" + esc(sol(p.pnlSol)) + "</i>";
+    return '<li data-v="' + (won ? "r" : "w") + '"' + (mine ? " data-you" : "") + ">" + bits + "</li>";
+  }
+  function moment(m, me) {
+    var people = m.right.map(function (p) { return personLine(p, true, me); })
+      .concat(m.wrong.map(function (p) { return personLine(p, false, me); })).join("");
+    var hidden = (m.rightCount - m.right.length) + (m.wrongCount - m.wrong.length);
+    var when = ago(m.settledAt);
+    return '<article class="mom">'
+      + '<p class="mom__h"><b class="mom__o mom__o--' + esc(m.outcome) + '">' + esc(String(m.outcome).toUpperCase()) + "</b>"
+      + '<span class="mom__w">' + (when ? "settled " + esc(when) : "settled") + "</span></p>"
+      + '<h2 class="mom__q"><a href="/m/' + encodeURIComponent(m.slug) + '">' + esc(m.question) + "</a></h2>"
+      + '<ul class="mom__s">' + people + "</ul>"
+      + (hidden > 0 ? '<p class="mom__more">and ' + hidden + (hidden === 1 ? " other" : " others") + "</p>" : "")
+      + "</article>";
   }
 
   Promise.all([
@@ -349,5 +402,65 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       console.warn("[leaderboard]", e && e.message);
       view.innerHTML = '<div class="err">The leaderboard did not load. Reload the page.</div>';
     });
+
+  /* THE CALLERS' BOARD, fetched separately on purpose: if one read fails the
+     other still renders. A page that shows nothing because an unrelated query
+     timed out is the failure this split avoids. */
+  var callers = document.getElementById("callers");
+  fetch("/api/board?limit=50")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
+    .then(function (j) {
+      var rows = (j || {}).rows || [];
+      /* BELOW THREE IT RANKS A CROWD TOO SMALL TO BE ONE, and the top of it is
+         whoever happened to go first. Silence is the honest render. */
+      if (rows.length < 3) return;
+      callers.innerHTML = '<section class="stand"><h2>Who was right</h2>'
+        + '<p class="rule">Points for being right <b>when the room disagreed</b>: right at 20% is '
+        + "worth eight times right at 90%. Ranked by points, never by money."
+        + (j.fullCreditSol ? '<span class="ex">Thin pool, fewer points. Full points at '
+            + esc(String(j.fullCreditSol)) + " SOL.</span>" : "")
+        + "</p><table><thead><tr>"
+        + '<th class="r"></th><th>Who</th>'
+        + '<th class="num hide-sm">Record</th><th class="num">Points</th>'
+        + "</tr></thead><tbody>"
+        + rows.map(function (w) {
+            var name = w.handle ? "@" + esc(w.handle) : '<span class="anon">' + esc(w.short) + "</span>";
+            /* A ZERO WE NEVER MEASURED IS NOT A ZERO: points accumulate only over
+               calls the chain could price, so a caller whose settled markets are
+               ALL unreadable arrives with a real 0 meaning "we could not look". */
+            var settled = (w.wins || 0) + (w.losses || 0);
+            var pts = settled > 0 && w.unpriced >= settled
+              ? '<span class="net net--none">could not read</span>'
+              : '<span class="pts">' + w.points + "</span>"
+                + (w.unpriced ? '<span class="net net--none"><br>' + w.unpriced + " unread</span>" : "");
+            return "<tr>"
+              + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">#' + w.rank + "</td>"
+              + '<td class="who"><a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a></td>"
+              + '<td class="num hide-sm wl"><b>' + w.wins + "</b> right &middot; " + w.losses + " wrong</td>"
+              + '<td class="num">' + pts + "</td>"
+              + "</tr>";
+          }).join("")
+        + "</tbody></table></section>";
+    })
+    .catch(function (e) { console.warn("[leaderboard:callers]", e && e.message); });
+
+  /* THE SETTLEMENTS, third read and third failure boundary. */
+  var settled = document.getElementById("settled");
+  Promise.all([
+    fetch("/api/board?limit=50").then(function (r) {
+      return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status));
+    }),
+    window.OddieMe || Promise.resolve({ accounts: [] }),
+  ])
+    .then(function (both) {
+      var moments = (both[0] || {}).moments || [];
+      if (!moments.length) return;
+      var tw = ((both[1] || {}).accounts || []).filter(function (x) { return x.provider === "twitter"; })[0];
+      var mine = tw && tw.handle ? String(tw.handle).replace(/^@+/, "").toLowerCase() : null;
+      settled.innerHTML = '<section class="stand"><h2>What settled</h2>'
+        + moments.map(function (m) { return moment(m, mine); }).join("")
+        + "</section>";
+    })
+    .catch(function (e) { console.warn("[leaderboard:settled]", e && e.message); });
 })();
 </script>

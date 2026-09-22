@@ -52,7 +52,7 @@ const SURFACES: Record<string, string> = {
   "public/app/markets.html": read("public/app/markets.html"),
   "public/app/market.html": read("public/app/market.html"),
   "public/app/you.html": read("public/app/you.html"),
-  "public/app/board.html": read("public/app/board.html"),
+  "public/app/leaderboard.html": read("public/app/leaderboard.html"),
   "public/app/who.html": read("public/app/who.html"),
   "public/chain.js": read("public/chain.js"),
 };

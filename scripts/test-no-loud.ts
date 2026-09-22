@@ -128,8 +128,17 @@ console.log("\none word, one meaning\n");
   check("public/genesis.html says nothing about points",
     !/\bpoints?\b/i.test(copy),
     (copy.match(/[^\n]*\bpoints?\b[^\n]*/i) ?? [""])[0].trim().slice(0, 70));
-  const board = readFileSync(path.join(ROOT, "public/app/board.html"), "utf8");
-  check("public/app/board.html still has its Points column", board.includes("Points"));
+  /* THE POINTS COLUMN MOVED, it did not go: board.html was retired and its
+     callers' table now sits on the leaderboard page under the openers' one.
+     Both units are on ONE page now, which is exactly when the separation has to
+     be pinned rather than assumed -- People is a headcount, Points is
+     settled-bet weight, and each has its own table and its own rule sentence
+     above it. */
+  const lb = readFileSync(path.join(ROOT, "public/app/leaderboard.html"), "utf8");
+  check("the leaderboard still has the callers' Points column", lb.includes(">Points<"));
+  check("...and the openers' People column beside it", lb.includes(">People<"));
+  check("...each under a heading of its own",
+    lb.includes("<h2>Who was right</h2>") && lb.includes("Ranked by the people you bring in"));
   check("the opener board names what it counts",
     withoutComments.includes("<span>People</span>"));
 }
