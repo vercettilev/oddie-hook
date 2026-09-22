@@ -48,7 +48,9 @@ export interface ProfileCard {
    *  the card printed "0 PLAYERS" for everybody. */
   pooledLamports?: number;
   /** >=1. Fills the ring, because it is the one bounded number left. */
-  loudMultiplier?: number;
+  /** People whose FIRST real-money bet landed in a market this handle opened,
+   *  counted once per wallet forever. The card's third stat and its ring. */
+  takers?: number;
   hasEnough: boolean;
   /** Earned badges, most identity-defining first (kind picks the drawn glyph). */
   badges?: ProfileBadge[];
@@ -68,6 +70,9 @@ export interface ProfileCard {
 // ran straight through — the arc cut across the text. Shrinking the ring
 // slightly and dropping everything below it buys the line its own band.
 const RING_CX = 165, RING_CY = 322, RING_R = 78, RING_SW = 18;
+/** The ring is full at ten takers. Arbitrary, declared, and not a cap:
+ *  the stat beside it prints the true number however far past ten it goes. */
+const RING_FULL_AT = 10;
 const DIVIDER_Y = 428, STAT_VALUE_Y = 458, STAT_LABEL_Y = 486;
 
 /** A small stat block: a value over a label, left-anchored at x. */
@@ -145,16 +150,20 @@ export function renderProfileCard(p: ProfileCard): string {
   const made = p.marketsCreated ?? 0;
   const pooledSol = ((p.pooledLamports ?? 0) / 1e9);
   const pooledText = pooledSol >= 1 ? pooledSol.toFixed(2) : pooledSol.toFixed(3);
-  const mult = Math.max(1, Number(p.loudMultiplier) || 1);
+  const takers = Math.max(0, Math.floor(Number(p.takers) || 0));
 
-  // The ring shows the LOUD MULTIPLIER. It matters more here than anywhere else
-  // because this is the image that goes to X. It used to fill by meanEdge, and
-  // edge left the score entirely: with meanEdge null the maths came out at
-  // exactly half for every single person, so the gauge on every shared card was
-  // identical and measured nothing. The multiplier runs 1x to 2x and is moved by
-  // posting, which is the thing this card exists to encourage.
+  // THE RING SHOWS TAKERS, and the denominator is declared rather than derived.
+  // It has now had three fills. meanEdge left the score entirely and, with
+  // meanEdge null, produced exactly half for every single person, so the gauge
+  // on every shared card was identical and measured nothing. Then it filled by
+  // a multiplier moved by POSTING about oddie -- the shape X revoked API access
+  // for on 2026-01-15, so it went with the mechanic.
+  // Takers is what the card should have been measuring all along: it only moves
+  // when a stranger puts real SOL on a side of a market this person opened. Ten
+  // is an arbitrary full ring and is written here so nobody mistakes it for a
+  // cap on anything real -- the stat beside it prints the true number.
   const circumference = 2 * Math.PI * RING_R;
-  const pct = Math.max(0, Math.min(1, mult - 1));
+  const pct = Math.max(0, Math.min(1, takers / RING_FULL_AT));
   const score = p.oddieScore ?? 0;
   const heroText = String(score);
   const heroFS = 62;
@@ -245,6 +254,6 @@ export function renderProfileCard(p: ProfileCard): string {
   <line x1="${PAD_L}" y1="${DIVIDER_Y}" x2="${PAD_R}" y2="${DIVIDER_Y}" stroke="${C.barBg}" stroke-width="3"/>
   ${stat(PAD_L, String(made), "MARKETS")}
   ${stat(390, pooledText, "SOL POOLED")}
-  ${stat(690, `${mult}x`, "LOUD")}
+  ${stat(690, String(takers), "TAKERS")}
 </svg>`;
 }

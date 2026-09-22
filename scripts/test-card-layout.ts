@@ -348,7 +348,7 @@ console.log("\nthe profile card is postable for a post-pivot user");
     handle: "cardproof", oddieScore: acc.oddieScore, accuracyPct: acc.accuracyPct,
     streak: acc.streak, resolved: acc.resolved, hasEnough: acc.hasEnough,
     marketsCreated: acc.marketsCreated, pooledLamports: 2_870_000_000,
-    loudMultiplier: acc.loudMultiplier,
+    takers: 0,
     badges: [{ label: "First Tag", id: "first_tag" }, { label: "First Pool", id: "first_pool" }],
     rankTopPct: rep.rank ? rep.rank.topPct : null,
     tierLabel: rep.tier ? rep.tier.label : null, flexLine: rep.flexLine,
@@ -367,7 +367,7 @@ console.log("\nthe profile card is postable for a post-pivot user");
     texts.includes(String(acc.oddieScore)) && !texts.some((t) => /building/i.test(t)),
     String(acc.oddieScore));
   check("the stat row reports the ladder, not the dead play record",
-    texts.includes("MARKETS") && texts.includes("SOL POOLED") && texts.includes("LOUD")
+    texts.includes("MARKETS") && texts.includes("SOL POOLED") && texts.includes("TAKERS")
     && !texts.includes("ACCURACY") && !texts.includes("RESOLVED") && !texts.includes("STREAK")
     && !texts.includes("PLAYERS"),
     texts.join(" | "));

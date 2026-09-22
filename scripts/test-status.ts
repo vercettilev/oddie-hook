@@ -25,7 +25,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 const acc = (o: Partial<AccuracyRecord>): AccuracyRecord => ({
   resolved: 40, correct: 31, accuracyPct: 78, oddieScore: 640, meanEdge: 0.14,
   hasEnough: true, minResolved: 10, streak: 3, bestStreak: 7, bestTopic: null,
-  byCategory: [], loudMultiplier: 1, marketsCreated: 0, contributionPoints: 0, tradersReached: 0,
+  byCategory: [], marketsCreated: 0, contributionPoints: 0, tradersReached: 0,
   ...o,
 });
 
@@ -76,17 +76,19 @@ console.log("\noddieScoreFrom: the score is a loudness ladder");
   check("creating markets is the ladder's big rung",
     oddieScoreFrom({ marketsCreated: 1, contributionPoints: 0, resolvedCalls: 0, meanEdge: null }) === 100);
 
-  // The multiplier is the reward for being loud CONSISTENTLY, so it lifts the
-  // markets you surfaced. It must not touch ledger points, because those are
-  // quoted to the user as exact oddies ("+150 when your post clears").
-  const withMult = oddieScoreFrom({ marketsCreated: 3, contributionPoints: 75, resolvedCalls: 0, meanEdge: null, loudMultiplier: 2 });
-  const noMult   = oddieScoreFrom({ marketsCreated: 3, contributionPoints: 75, resolvedCalls: 0, meanEdge: null });
-  check("a loud streak doubles the markets half", withMult - 150 === (noMult - 150) * 2, `${withMult} vs ${noMult}`);
-  check("...and leaves the ledger half at face value", withMult - noMult === 300, String(withMult - noMult));
+  /* THE MULTIPLIER BLOCK IS GONE WITH THE MULTIPLIER. It asserted that a
+     posting streak doubled the markets half of the score, which is the mechanic
+     X revoked API access over on 2026-01-15. There is nothing to rewrite these
+     into: the score is now tagged markets plus the growth ledger, and nothing a
+     person posts moves it. The two assertions below survive because they pin
+     the ledger half, which did not change. */
   check("the promised delta is exact: +150 oddies for a 75-point ledger event",
     oddieScoreFrom({ marketsCreated: 0, contributionPoints: 75, resolvedCalls: 0, meanEdge: null }) === 150);
-  check("a multiplier below 1 can never shrink a score", 
-    oddieScoreFrom({ marketsCreated: 3, contributionPoints: 0, resolvedCalls: 0, meanEdge: null, loudMultiplier: 0 }) === 300);
+  /* AND THE CLAMP ASSERTION IS DELETED RATHER THAN ADAPTED, because it never
+     tested the clamp. With contributionPoints at 0 the expected 300 is
+     3 x 100 whether or not a clamp exists, so it would have stayed green if
+     Math.max(1, ...) had been deleted years ago. A test that cannot fail is
+     worse than no test: it reads as coverage. */
 }
 
 console.log("\nthe farm is pointed at X, on purpose");
@@ -100,9 +102,9 @@ console.log("\nthe farm is pointed at X, on purpose");
   check("a loud farmer outranks a sharp lurker by a wide margin", farmer > sharp * 5, `${farmer} vs ${sharp}`);
 
   const oneMarket = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 1, contributionPoints: 0, meanEdge: null });
-  const oneShare  = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 0, contributionPoints: 40, meanEdge: null });
-  check("tagging a market outranks sharing one: the tag is the loud axis",
-    oneMarket > oneShare, `${oneMarket} vs ${oneShare}`);
+  const oneLedgerEvent = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 0, contributionPoints: 40, meanEdge: null });
+  check("tagging a market outranks any single growth-ledger event",
+    oneMarket > oneLedgerEvent, `${oneMarket} vs ${oneLedgerEvent}`);
 
   const before = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 3, contributionPoints: 0, meanEdge: null });
   const after  = oddieScoreFrom({ resolvedCalls: 0, marketsCreated: 4, contributionPoints: 0, meanEdge: null });
@@ -126,7 +128,10 @@ console.log("\nno tier name and stamp name mean two different things");
   const stamps = await achievementsFor("dev-name-collision", await accuracyFor("dev-name-collision"), null, null);
   const clash = stamps.map((a) => a.name).filter((n) => tierNames.includes(n));
   check("every tier is named", tierNames.length === 3, tierNames.join(", "));
-  check("the sheet is full", stamps.length >= 12, String(stamps.length));
+  /* EXACT, not >=. Three stamps went with the posting mechanic (Cleared,
+     Triple Clear, Week Won) and the sheet is 11. A >= re-armed at the new
+     number would silently permit the next deletion to shrink it again. */
+  check("the sheet is full", stamps.length === 11, String(stamps.length));
   check("...and no stamp borrows a tier's name", clash.length === 0, clash.join(", "));
   check("...nor does any stamp name repeat another", 
     new Set(stamps.map((a) => a.name)).size === stamps.length,
@@ -140,9 +145,6 @@ console.log("\nflexLine: the postable brag, and only claims the data supports");
     loud({ marketsCreated: 4 }) === "4 markets tagged", loud({ marketsCreated: 4 }));
   check("singular at exactly one",
     loud({ marketsCreated: 1 }) === "1 market tagged", loud({ marketsCreated: 1 }));
-  check("an earned multiplier is worn",
-    loud({ marketsCreated: 2, loudMultiplier: 1.5 }) === "2 markets tagged · 1.5x loud",
-    loud({ marketsCreated: 2, loudMultiplier: 1.5 }));
   // tradersReached is permanently 0 (it counts rows in the dead play-token
   // table), so a brag that quoted it could never say what it looked like it said.
   check("the dead reach count can never leak into the brag",

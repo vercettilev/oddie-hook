@@ -4,7 +4,7 @@ import {
   STARTING_PREDICTIONS, CALL_COST,
   edgePts, proceedsFor, reputationOf, winBonus,
   CREATOR_FEE_BPS_PLAY, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL, creatorFeePlay,
-  callerTier, oddieScoreFrom, SCORE_WEIGHTS, loudMultiplierOf,
+  callerTier, oddieScoreFrom, SCORE_WEIGHTS,
   type Reputation, type CallerTier,
 } from "./economy.js";
 import { categorizeText } from "../matching/categorize.js";
@@ -525,22 +525,6 @@ CREATE TABLE IF NOT EXISTS season_points_log (
 CREATE INDEX IF NOT EXISTS spl_device_idx ON season_points_log(device_id);
 CREATE INDEX IF NOT EXISTS spl_handle_idx ON season_points_log(handle);
 
--- Loud submissions: "I posted about oddie — here's the link." One row per
--- tweet, forever (tweet_id UNIQUE is the dedup), reviewed by the operator
--- today and by an X API read when credits exist. Approval pays loud_post.
-CREATE TABLE IF NOT EXISTS loud_post (
-  id          bigserial PRIMARY KEY,
-  device_id   text NOT NULL,
-  tweet_id    text NOT NULL UNIQUE,
-  url         text NOT NULL,
-  status      text NOT NULL DEFAULT 'pending',  -- pending|approved|rejected
-  week        text NOT NULL,                    -- ISO week at submission
-  note        text,
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  decided_at  timestamptz
-);
-CREATE INDEX IF NOT EXISTS loud_post_device_idx ON loud_post(device_id);
-CREATE INDEX IF NOT EXISTS loud_post_status_idx ON loud_post(status);
 
 -- Every creator/protocol fee, real or merely proposed. One row per fee event:
 -- a play-token settlement writes one 'creator'/'play' row when a fee was
@@ -1527,9 +1511,6 @@ export interface LeaderRow {
   accuracyPct: number | null;
   /** What the board RANKS by — the same figure the profile shows. */
   oddies: number;
-  /** >=1. Shown as a badge where earned, so the board says out loud that
-   *  posting is what moves it. */
-  loudMultiplier: number;
 }
 
 /**
@@ -1676,7 +1657,7 @@ export async function leaderboard(limit = 20): Promise<LeaderRow[]> {
   const candidates = ranked.slice(0, LEADERBOARD_SCORE_CANDIDATES);
   const scored = await Promise.all(candidates.map(async (r) => {
     const acc = await accuracyFor(r.deviceId).catch(() => null);
-    return { ...r, oddies: acc?.oddieScore ?? 0, loudMultiplier: acc?.loudMultiplier ?? 1 };
+    return { ...r, oddies: acc?.oddieScore ?? 0 };
   }));
   return scored
     .sort((a, b) => b.oddies - a.oddies || b.avgEdge - a.avgEdge)
@@ -1871,8 +1852,6 @@ export interface AccuracyRecord {
   // much you beat the odds you took — scales it between 0.5x and 1.5x. The
   // formula lives in economy.ts's oddieScoreFrom, which is its only definition.
   oddieScore: number | null;  // >= 0, unbounded; null until hasEnough
-  /** >=1, the loud multiplier applied to the markets half (see economy.ts). */
-  loudMultiplier: number;
   /** Markets this device put on the board. The score's biggest rung, and what
    *  the entry badge is judged on, so every surface reads it from here. */
   marketsCreated: number;
@@ -1914,7 +1893,7 @@ function computeAccuracy(
   /** Activity terms. Defaulted so every existing caller and test keeps working
    *  and gets the accuracy-only half of the score; accuracyFor supplies the
    *  real numbers. */
-  activity: { marketsCreated?: number; contributionPoints?: number; callsMade?: number; loudMultiplier?: number; tradersReached?: number } = {},
+  activity: { marketsCreated?: number; contributionPoints?: number; callsMade?: number; tradersReached?: number } = {},
 ): AccuracyRecord {
   const resolved = rows.length;
   const correct = rows.filter((r) => r.correct).length;
@@ -1934,7 +1913,6 @@ function computeAccuracy(
     marketsCreated,
     contributionPoints: activity.contributionPoints ?? 0,
     meanEdge: resolved ? meanEdge : null,
-    loudMultiplier: activity.loudMultiplier ?? 1,
   });
 
   /**
@@ -1981,7 +1959,6 @@ function computeAccuracy(
     // formula that is supposed to dominate. Null only when there is no activity
     // at all, which is the honest "nothing yet".
     oddieScore: oddieScore > 0 ? oddieScore : null,
-    loudMultiplier: activity.loudMultiplier ?? 1,
     marketsCreated,
     contributionPoints: activity.contributionPoints ?? 0,
     tradersReached: activity.tradersReached ?? 0,
@@ -2026,15 +2003,14 @@ async function resolvedRowsFor(deviceId: string): Promise<ResolvedRow[]> {
 /** The activity half of the score, read once. Every surface that recomputes a
  *  score for a device needs the same three numbers, and reading them in one
  *  place is what stops the app quoting two different scores for one person. */
-export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCreated: number; contributionPoints: number; callsMade: number; loudMultiplier: number; tradersReached: number }> {
+export async function scoreActivityFor(rawDeviceId: string): Promise<{ marketsCreated: number; contributionPoints: number; callsMade: number; tradersReached: number }> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const [creator, contributionPoints, callsMade, loud] = await Promise.all([
+  const [creator, contributionPoints, callsMade] = await Promise.all([
     creatorStatsFor(deviceId).catch(() => null),
     seasonPointsFor(deviceId).catch(() => 0),
     callsMadeFor(deviceId).catch(() => 0),
-    loudStatusFor(deviceId).catch(() => ({ multiplier: 1 })),
   ]);
-  return { marketsCreated: creator?.marketsCreated ?? 0, tradersReached: creator?.tradersReached ?? 0, contributionPoints, callsMade, loudMultiplier: loud.multiplier };
+  return { marketsCreated: creator?.marketsCreated ?? 0, tradersReached: creator?.tradersReached ?? 0, contributionPoints, callsMade };
 }
 
 /** Every call this device has taken, open or closed. The volume half of the
@@ -2153,9 +2129,8 @@ export async function weeklyScoreDeltaFor(rawDeviceId: string): Promise<WeeklySc
   // pays a 50-point `surface` ledger row AND counts in marketsCreated, and only
   // the first of those is in season_points_log. A week with one tagged market
   // moved the score by 200 at 1x and reported "+100".
-  const { multiplier } = await loudStatusFor(deviceId).catch(() => ({ multiplier: 1 }));
   const delta = earned * SCORE_WEIGHTS.contribution
-    + Math.round(tagged * SCORE_WEIGHTS.marketCreated * multiplier);
+    + tagged * SCORE_WEIGHTS.marketCreated;
   if (!delta) return null;
   return { delta, direction: delta >= 0 ? "up" : "down" };
 }
@@ -2606,7 +2581,6 @@ async function loudnessRanking(): Promise<{ deviceId: string; score: number }[]>
       contributionPoints: a.contributionPoints,
       resolvedCalls: 0,
       meanEdge: null,
-      loudMultiplier: a.loudMultiplier,
     });
     if (score > 0) out.push({ deviceId, score });
   }
@@ -2844,11 +2818,9 @@ export async function achievementsFor(
   chain: ChainFacts | null,
 ): Promise<Achievement[]> {
   const deviceId = await resolveDevice(rawDeviceId);
-  const [founding, loud, cats, weeklyWins] = await Promise.all([
+  const [founding, cats] = await Promise.all([
     isFounding(deviceId).catch(() => false),
-    loudStatusFor(deviceId).catch(() => ({ clearedIn30d: 0, weeklyWinIn30d: false, multiplier: 1 })),
     categoriesTaggedBy(deviceId).catch(() => 0),
-    loudWinsFor(deviceId).catch(() => 0),
   ]);
   const made = acc.marketsCreated;
   const pooled = chain?.pooledLamports ?? 0;
@@ -2863,20 +2835,13 @@ export async function achievementsFor(
     S("first_tag",  "First Tag",    "Tag @oddiefun on X and a market opens.",              made >= 1),
     S("ranked",     "On the Board", "Earn any oddies and you hold a place in the season.",  rank != null),
     S("first_pool", "First Pool",   "Somebody stakes real SOL in a market you started.",    pooled > 0, true),
-    S("cleared",    "Cleared",      "Get one post about oddie approved.",                   loud.clearedIn30d >= 1),
     S("resolved",   "Verdict In",   "A market you tagged reaches its outcome.",             (chain?.resolved ?? 0) >= 1),
     S("first_fee",  "First Fee",    "Your 2% becomes real SOL at a resolve.",               earned > 0, true),
     S("range",      "Three Ways",   "Tag markets across three different topics.",           cats >= 3),
     S("collected",  "Collected",    "Claim a creator fee into your own wallet.",            !!chain?.claimed, true),
     S("ten_tags",   "Ten Up",       "Put ten markets on the board.",                        made >= 10),
-    S("triple",     "Triple Clear", "Three approved posts inside thirty days.",             loud.clearedIn30d >= 3),
     S("big_pool",   "Full Sol",     "A whole SOL riding on markets you started.",           pooled >= ONE_SOL, true),
     S("top_ten",    "Top Ten",      "Reach the top 10% of the season.",                     rank?.topPct != null && rank.topPct <= 10),
-    // NOT "Loudest": that is the name of the TIER for the top 5% of the board
-    // (callerTier in economy.ts), and both are worn on the same screen. One
-    // word cannot mean two different achievements in one product, so the stamp
-    // is named after what you actually did.
-    S("loudest",    "Week Won",     "Win a week's Loudest.",                                weeklyWins >= 1 || loud.weeklyWinIn30d),
     S("founding",   "Day One",      "Be one of the first thousand here.",                   founding),
   ];
 }
@@ -2898,16 +2863,6 @@ async function categoriesTaggedBy(deviceId: string): Promise<number> {
     `SELECT COUNT(DISTINCT cm.category)::bigint AS n
        FROM market_surfacer ms JOIN community_market cm ON cm.slug = ms.slug
       WHERE ms.device_id = $1 AND cm.category IS NOT NULL`, [deviceId]);
-  return Number(rows[0]?.n ?? 0);
-}
-
-/** Weekly Loudest wins, ever. The ledger keeps them, so the badge outlives the
- *  30-day window the multiplier uses. */
-async function loudWinsFor(deviceId: string): Promise<number> {
-  if (!PERSISTENT) return memSeasonLog.filter((r) => r.deviceId === deviceId && r.event === "loud").length;
-  await ensureSchema();
-  const { rows } = await db().query<{ n: string }>(
-    `SELECT COUNT(*)::bigint AS n FROM season_points_log WHERE device_id = $1 AND event = 'loud'`, [deviceId]);
   return Number(rows[0]?.n ?? 0);
 }
 
@@ -2989,7 +2944,6 @@ export function flexLine(acc: AccuracyRecord, _topCategory: { category: string; 
     // NOT tradersReached: see the field's own comment. It is permanently 0, so
     // the clause could never appear and the brag would have been silently
     // shorter than intended forever.
-    if (acc.loudMultiplier > 1) parts.push(`${acc.loudMultiplier}x loud`);
     return parts.join(" · ");
   }
   if ((acc.oddieScore ?? 0) > 0) return `${acc.oddieScore} oddies earned`;
@@ -3225,14 +3179,6 @@ const memSurfacer = new Map<string, MemSurfacer>();
 interface MemSeasonRow { deviceId: string | null; handle: string | null; event: string; amount: number; slug: string | null; dedupKey: string; createdAt: string }
 const memSeasonLog: MemSeasonRow[] = [];
 
-// In-memory mirror of loud_post. Same shape as the table.
-interface MemLoudPost {
-  id: number; deviceId: string; tweetId: string; url: string;
-  status: "pending" | "approved" | "rejected"; week: string;
-  note: string | null; createdAt: string; decidedAt: string | null;
-}
-const memLoudPosts: MemLoudPost[] = [];
-let memLoudPostId = 0;
 
 // In-memory mirror of market_fee_log — same shape as the table, same
 // "creator + protocol fee ledger" role, for the mem backend tests run against.
@@ -3654,12 +3600,6 @@ export const SEASON_POINTS = {
   three_players: 100, // that market reached 3 distinct participants
   first_timer: 100,   // a brand-new player took their first-ever call on it
   clean_resolve: 50,  // it resolved cleanly (no manual override)
-  // Posting a call to X. Deduped per (device, call), so it pays for putting a
-  // DIFFERENT position in front of people, not for pressing the button twice.
-  // This is the one event a player can trigger directly and deliberately, which
-  // is exactly the point: the cheapest way to raise your score should be to say
-  // something on X.
-  shared: 40,
   // The crowd ladder, continuing three_players: the market you surfaced keeps
   // paying as it fills. Steps are GEOMETRIC on purpose (face oddies 200 → 500
   // → 1500 → 5000) — "a bigger market is disproportionately better" — but the
@@ -3669,31 +3609,8 @@ export const SEASON_POINTS = {
   ten_players: 250,
   twentyfive_players: 750,
   hundred_players: 2500,
-  // A weekly Loudest Callers pick — the operator's judgment on the week's best
-  // posts about oddie, awarded by hand from /tool. Priced above first_timer
-  // because it is competitive (a handful of winners a week, not an action
-  // anyone can repeat), and deduped per (person, ISO week) so a resubmitted
-  // list cannot double-pay.
-  loud: 150,
-  // A submitted post link that passed review. Between shared and loud on
-  // purpose — the ladder, in oddies face value: pressed share (+80,
-  // optimistic), the post really exists and holds up (+150, verified), among
-  // the week's best (+300, picked). Deduped per tweet, so one post pays once
-  // no matter who resubmits it.
-  loud_post: 75,
 } as const;
 export type SeasonEvent = keyof typeof SEASON_POINTS;
-
-/**
- * What each ledger event is WORTH in oddies — the only unit any user-facing
- * surface may name. SEASON_POINTS above are internal ledger amounts (kept
- * as-is so historical season_points_log rows stay comparable); the score
- * doubles them in (SCORE_WEIGHTS.contribution, flat-added), so face value =
- * ledger × 2. Every "+N" the UI promises must come from THIS table.
- */
-export const ODDIES_PER = Object.fromEntries(
-  (Object.keys(SEASON_POINTS) as SeasonEvent[]).map((k) => [k, SEASON_POINTS[k] * SCORE_WEIGHTS.contribution]),
-) as Record<SeasonEvent, number>;
 
 /** Pull the tweet author's handle out of a status URL (x.com / twitter.com).
  *  Lowercased, no "@". Null when the URL isn't a recognisable tweet permalink —
@@ -4290,255 +4207,6 @@ export async function awardFirstTimer(slug: string, newDeviceId: string): Promis
 export async function awardCleanResolve(slug: string): Promise<boolean> {
   return awardSeasonPoints("clean_resolve", slug, `clean_resolve:${slug}`);
 }
-
-/** The ISO-8601 week a date falls in, as "2026-W33" — the loud award's dedup
- *  unit. UTC throughout, so the week does not flip with the server's timezone. */
-export function isoWeekOf(d: Date): string {
-  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7)); // to this week's Thursday
-  const y = t.getUTCFullYear();
-  const week = Math.ceil(((t.getTime() - Date.UTC(y, 0, 1)) / 86_400_000 + 1) / 7);
-  return `${y}-W${String(week).padStart(2, "0")}`;
-}
-
-/** +150: a weekly Loudest Callers pick. The operator chooses the week's best
- *  posts about oddie by hand (X search, human judgment) and names the authors;
- *  this credits each one directly — like `shared`, the earner is the person
- *  who posted, and there is no market to attribute, so the slug is the
- *  synthetic `loud-<week>`. One award per (person, week) via the dedup key,
- *  which makes resubmitting a list safe. */
-export async function awardLoud(
-  rawHandle: string, week: string,
-): Promise<{ ok: true } | { ok: false; reason: "no_account" | "already" }> {
-  const handle = rawHandle.replace(/^@+/, "").trim().toLowerCase();
-  const deviceId = handle ? await deviceForHandle(handle) : null;
-  if (!deviceId) return { ok: false, reason: "no_account" };
-  const ok = await awardSeasonPoints("loud", `loud-${week}`, `loud:${week}:${handle}`, deviceId);
-  return ok ? { ok } : { ok: false, reason: "already" };
-}
-
-/* ---------------------------------------------------------- loud posts --
- * Phase 1 of the loudness flywheel: instead of the operator hunting X for
- * posts, players bring their own link. Submitting requires a linked X
- * account; the credit only lands after review — the operator's eyeballs
- * today, an X API read (author + content) once API credits exist. Both
- * paths settle through decideLoudPost, so switching to the API changes
- * nothing else.
- */
-
-/** An x.com / twitter.com status URL → its parts. Accepts www./mobile. hosts
- *  and the old /statuses/ form; refuses everything else. */
-export function parseTweetUrl(raw: string): { handle: string; tweetId: string } | null {
-  const m = String(raw).trim().match(
-    /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d{5,25})\b/,
-  );
-  return m ? { handle: m[1], tweetId: m[2] } : null;
-}
-
-/** The device's LINKED X handle (@-less), or null. The chosen display handle
- *  deliberately does not count — a loud post must come from a real account. */
-async function linkedXHandleFor(deviceId: string): Promise<string | null> {
-  if (!PERSISTENT) {
-    const { _memAccounts } = await import("./accounts.js");
-    const a = _memAccounts.find((x) => x.canonicalDevice === deviceId && x.provider === "twitter" && x.handle);
-    return a?.handle?.replace(/^@+/, "") ?? null;
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ handle: string | null }>(
-    `SELECT handle FROM account
-      WHERE canonical_device = $1 AND provider = 'twitter' AND handle IS NOT NULL
-      ORDER BY created_at LIMIT 1`, [deviceId]);
-  return rows[0]?.handle?.replace(/^@+/, "") ?? null;
-}
-
-/** Submissions per device per rolling 24h. High enough for a real poster,
- *  low enough that the review queue cannot be flooded from one account. */
-export const LOUD_DAILY_CAP = 5;
-
-export interface LoudPostRow {
-  id: number; url: string; status: "pending" | "approved" | "rejected";
-  week: string; note: string | null; createdAt: string;
-}
-
-export type LoudSubmit =
-  | { ok: true; status: "pending" }
-  | { ok: false; reason: "no_x_account" | "bad_url" | "not_your_account" | "already_submitted" | "daily_cap" };
-
-export async function submitLoudPost(rawDeviceId: string, url: string, now = new Date()): Promise<LoudSubmit> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const parsed = parseTweetUrl(url);
-  if (!parsed) return { ok: false, reason: "bad_url" };
-  const linked = await linkedXHandleFor(deviceId);
-  if (!linked) return { ok: false, reason: "no_x_account" };
-  // Authorship, checked for free: the handle in a canonical status URL is the
-  // author's. X ignores that segment when resolving, so a crafted URL can lie —
-  // review is what actually settles authorship; this refuses the honest-mistake
-  // case (pasting someone else's post) without spending a read.
-  if (parsed.handle.toLowerCase() !== linked.toLowerCase()) return { ok: false, reason: "not_your_account" };
-  const week = isoWeekOf(now);
-  const canonical = `https://x.com/${parsed.handle}/status/${parsed.tweetId}`;
-
-  if (!PERSISTENT) {
-    if (memLoudPosts.some((p) => p.tweetId === parsed.tweetId)) return { ok: false, reason: "already_submitted" };
-    const since = now.getTime() - 86_400_000;
-    if (memLoudPosts.filter((p) => p.deviceId === deviceId && Date.parse(p.createdAt) > since).length >= LOUD_DAILY_CAP)
-      return { ok: false, reason: "daily_cap" };
-    memLoudPosts.push({
-      id: ++memLoudPostId, deviceId, tweetId: parsed.tweetId, url: canonical,
-      status: "pending", week, note: null, createdAt: now.toISOString(), decidedAt: null,
-    });
-    return { ok: true, status: "pending" };
-  }
-  await ensureSchema();
-  const { rows: cap } = await db().query<{ n: string }>(
-    `SELECT count(*) AS n FROM loud_post WHERE device_id = $1 AND created_at > now() - interval '24 hours'`, [deviceId]);
-  if (Number(cap[0].n) >= LOUD_DAILY_CAP) return { ok: false, reason: "daily_cap" };
-  const { rowCount } = await db().query(
-    `INSERT INTO loud_post (device_id, tweet_id, url, week) VALUES ($1,$2,$3,$4)
-       ON CONFLICT (tweet_id) DO NOTHING`, [deviceId, parsed.tweetId, canonical, week]);
-  return (rowCount ?? 0) > 0 ? { ok: true, status: "pending" } : { ok: false, reason: "already_submitted" };
-}
-
-/** A device's own submissions, newest first — the "where's my credit" view. */
-export async function loudPostsFor(rawDeviceId: string, limit = 20): Promise<LoudPostRow[]> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  if (!PERSISTENT) {
-    return memLoudPosts.filter((p) => p.deviceId === deviceId).slice(-limit).reverse()
-      .map((p) => ({ id: p.id, url: p.url, status: p.status, week: p.week, note: p.note, createdAt: p.createdAt }));
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ id: string; url: string; status: LoudPostRow["status"]; week: string; note: string | null; created_at: Date }>(
-    `SELECT id, url, status, week, note, created_at FROM loud_post
-      WHERE device_id = $1 ORDER BY id DESC LIMIT $2`, [deviceId, Math.max(1, Math.min(50, limit))]);
-  return rows.map((r) => ({ id: Number(r.id), url: r.url, status: r.status, week: r.week, note: r.note, createdAt: r.created_at.toISOString() }));
-}
-
-export interface LoudQueueRow { id: number; url: string; handle: string | null; week: string; createdAt: string }
-
-/** Pending submissions, oldest first — the operator's review queue. */
-export async function loudQueue(limit = 50): Promise<LoudQueueRow[]> {
-  if (!PERSISTENT) {
-    const out: LoudQueueRow[] = [];
-    for (const p of memLoudPosts.filter((x) => x.status === "pending").slice(0, limit)) {
-      out.push({ id: p.id, url: p.url, handle: await linkedXHandleFor(p.deviceId), week: p.week, createdAt: p.createdAt });
-    }
-    return out;
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ id: string; url: string; handle: string | null; week: string; created_at: Date }>(
-    `SELECT lp.id, lp.url, lp.week, lp.created_at,
-            (SELECT a.handle FROM account a
-              WHERE a.canonical_device = lp.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
-              ORDER BY a.created_at LIMIT 1) AS handle
-       FROM loud_post lp WHERE lp.status = 'pending' ORDER BY lp.id LIMIT $1`, [limit]);
-  return rows.map((r) => ({
-    id: Number(r.id), url: r.url, handle: r.handle ? r.handle.replace(/^@+/, "") : null,
-    week: r.week, createdAt: r.created_at.toISOString(),
-  }));
-}
-
-export type LoudDecision =
-  | { ok: true; status: "approved" | "rejected" }
-  | { ok: false; reason: "not_found" | "already_decided" };
-
-/** Settle one submission, once — a decided row never flips, so approve cannot
- *  double-pay (the award's tweet-keyed dedup backs that up anyway). The
- *  operator calls this from /tool today; the API verifier will call the same
- *  function when credits exist. */
-export async function decideLoudPost(id: number, approve: boolean, note?: string | null): Promise<LoudDecision> {
-  const status = approve ? ("approved" as const) : ("rejected" as const);
-  let deviceId: string, tweetId: string;
-  if (!PERSISTENT) {
-    const p = memLoudPosts.find((x) => x.id === id);
-    if (!p) return { ok: false, reason: "not_found" };
-    if (p.status !== "pending") return { ok: false, reason: "already_decided" };
-    p.status = status; p.note = note ?? null; p.decidedAt = new Date().toISOString();
-    deviceId = p.deviceId; tweetId = p.tweetId;
-  } else {
-    await ensureSchema();
-    const { rows } = await db().query<{ device_id: string; tweet_id: string }>(
-      `UPDATE loud_post SET status = $2, note = $3, decided_at = now()
-        WHERE id = $1 AND status = 'pending' RETURNING device_id, tweet_id`, [id, status, note ?? null]);
-    if (!rows.length) {
-      const { rows: exists } = await db().query(`SELECT 1 FROM loud_post WHERE id = $1`, [id]);
-      return exists.length ? { ok: false, reason: "already_decided" } : { ok: false, reason: "not_found" };
-    }
-    deviceId = rows[0].device_id; tweetId = rows[0].tweet_id;
-  }
-  if (approve) await awardSeasonPoints("loud_post", "loud-post", `loud_post:${tweetId}`, deviceId);
-  return { ok: true, status };
-}
-
-/** The loud multiplier's inputs and answer for one device: cleared posts and
- *  weekly-Loudest wins in the trailing 30 days. Feeds scoreActivityFor (so
- *  every score read applies it) and /api/loud/mine (so the sheet can SAY it). */
-export async function loudStatusFor(rawDeviceId: string): Promise<{ clearedIn30d: number; weeklyWinIn30d: boolean; multiplier: number }> {
-  const deviceId = await resolveDevice(rawDeviceId);
-  const since = Date.now() - 30 * 86_400_000;
-  let clearedIn30d = 0, weeklyWinIn30d = false;
-  if (!PERSISTENT) {
-    clearedIn30d = memLoudPosts.filter((p) => p.deviceId === deviceId && p.status === "approved"
-      && p.decidedAt && Date.parse(p.decidedAt) > since).length;
-    weeklyWinIn30d = memSeasonLog.some((r) => r.deviceId === deviceId && r.event === "loud" && Date.parse(r.createdAt) > since);
-  } else {
-    await ensureSchema();
-    const [posts, wins] = await Promise.all([
-      db().query<{ n: string }>(
-        `SELECT count(*) AS n FROM loud_post
-          WHERE device_id = $1 AND status = 'approved' AND decided_at > now() - interval '30 days'`, [deviceId]),
-      db().query<{ n: string }>(
-        `SELECT count(*) AS n FROM season_points_log
-          WHERE device_id = $1 AND event = 'loud' AND created_at > now() - interval '30 days'`, [deviceId]),
-    ]);
-    clearedIn30d = Number(posts.rows[0].n);
-    weeklyWinIn30d = Number(wins.rows[0].n) > 0;
-  }
-  return { clearedIn30d, weeklyWinIn30d, multiplier: loudMultiplierOf(clearedIn30d, weeklyWinIn30d) };
-}
-
-export interface LoudWinner { handle: string; week: string }
-
-/** The most recent weekly Loudest Callers picks, newest first, one entry per
- *  person — the feed's public proof that the program is real and pays real
- *  people. Handle resolution mirrors the profile's: the linked X account
- *  first, the chosen display handle as fallback; a winner with neither is
- *  skipped rather than shown as a device id. */
-export async function loudWinners(limit = 5): Promise<LoudWinner[]> {
-  const weekOf = (slug: string | null) => (slug ?? "").replace(/^loud-/, "");
-  const out: LoudWinner[] = [];
-  const seen = new Set<string>();
-  if (!PERSISTENT) {
-    for (const r of [...memSeasonLog].reverse()) {
-      if (r.event !== "loud" || !r.deviceId) continue;
-      const handle = (await linkedXHandleFor(r.deviceId)) ?? memHandle.get(r.deviceId)?.replace(/^@+/, "") ?? null;
-      if (!handle || seen.has(handle.toLowerCase())) continue;
-      seen.add(handle.toLowerCase());
-      out.push({ handle, week: weekOf(r.slug) });
-      if (out.length >= limit) break;
-    }
-    return out;
-  }
-  await ensureSchema();
-  const { rows } = await db().query<{ handle: string | null; slug: string | null }>(
-    `SELECT COALESCE(
-        (SELECT a.handle FROM account a
-          WHERE a.canonical_device = spl.device_id AND a.provider = 'twitter' AND a.handle IS NOT NULL
-          ORDER BY a.created_at LIMIT 1),
-        (SELECT b.handle FROM device_balance b WHERE b.device_id = spl.device_id)
-      ) AS handle, spl.slug
-       FROM season_points_log spl
-      WHERE spl.event = 'loud' AND spl.device_id IS NOT NULL
-      ORDER BY spl.id DESC LIMIT 40`);
-  for (const r of rows) {
-    const handle = r.handle?.replace(/^@+/, "");
-    if (!handle || seen.has(handle.toLowerCase())) continue;
-    seen.add(handle.toLowerCase());
-    out.push({ handle, week: weekOf(r.slug) });
-    if (out.length >= limit) break;
-  }
-  return out;
-}
-
 /** The two placeCall-driven awards, fired best-effort after a call lands: the
  *  3-distinct-participants milestone and the newcomer's first-ever call. Both
  *  credit the market's surfacer; both are idempotent, so firing on every call is
