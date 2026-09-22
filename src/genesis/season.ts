@@ -69,8 +69,8 @@ export interface GenesisStanding {
    *  new in. The other half of the arithmetic, and the half nobody was told. */
   ticketsBack: number;
   /** Distinct wallets whose FIRST real-money bet landed in one of them. */
-  takers: number;
-  /** Dense rank by takers among everyone who brought at least one. */
+  peopleBrought: number;
+  /** Dense rank by peopleBrought among everyone who brought at least one. */
   rank: number | null;
 }
 
@@ -309,7 +309,7 @@ export async function genesisStanding(rawHandle: string): Promise<GenesisStandin
   const handle = norm(rawHandle);
   const empty: GenesisStanding = {
     handle, ticketsLeft: GENESIS_TICKETS, marketsOpened: 0,
-    tagsBurnt: 0, ticketsBack: 0, takers: 0, rank: null,
+    tagsBurnt: 0, ticketsBack: 0, peopleBrought: 0, rank: null,
   };
   if (!validHandle(handle)) return empty;
 
@@ -328,7 +328,7 @@ export async function genesisStanding(rawHandle: string): Promise<GenesisStandin
       marketsOpened: memTags.filter((t) => t.handle === handle).length,
       tagsBurnt: mine.filter((l) => l.reason === "miss").length,
       ticketsBack: mine.filter((l) => l.reason === "bettor").length,
-      takers: people,
+      peopleBrought: people,
       rank: people > 0 ? better + 1 : null,
     };
   }
@@ -366,12 +366,12 @@ export async function genesisStanding(rawHandle: string): Promise<GenesisStandin
     marketsOpened: Number(r.opened),
     tagsBurnt: Number(r.burnt),
     ticketsBack: Number(r.back),
-    takers: Number(r.people),
+    peopleBrought: Number(r.people),
     rank: r.rank === null ? null : Number(r.rank),
   };
 }
 
-export interface BoardRow { handle: string; takers: number; marketsOpened: number; rank: number }
+export interface BoardRow { handle: string; peopleBrought: number; marketsOpened: number; rank: number }
 
 /** The board. Only people who actually brought somebody appear on it. */
 export async function genesisBoard(limit = 20): Promise<BoardRow[]> {
@@ -385,7 +385,7 @@ export async function genesisBoard(limit = 20): Promise<BoardRow[]> {
     let rank = 0, prev = -1;
     return sorted.slice(0, n).map(([handle, people]) => {
       if (people !== prev) { rank += 1; prev = people; }
-      return { handle, takers: people, marketsOpened: memTags.filter((t) => t.handle === handle).length, rank };
+      return { handle, peopleBrought: people, marketsOpened: memTags.filter((t) => t.handle === handle).length, rank };
     });
   }
 
@@ -399,7 +399,7 @@ export async function genesisBoard(limit = 20): Promise<BoardRow[]> {
     [n],
   );
   return rows.map((r) => ({
-    handle: r.handle, takers: Number(r.people),
+    handle: r.handle, peopleBrought: Number(r.people),
     marketsOpened: Number(r.opened), rank: Number(r.rank),
   }));
 }
@@ -445,7 +445,7 @@ export interface RosterRow {
   connectedAt: string | null;
   ticketsLeft: number;
   marketsOpened: number;
-  takers: number;
+  peopleBrought: number;
   /** Every market they opened, newest first: slug, whose claim it was, when. */
   tags: Array<{ slug: string; sourceHandle: string | null; at: string }>;
 }
@@ -480,7 +480,7 @@ export async function genesisRoster(limit = 200): Promise<RosterRow[]> {
         connectedAt: gp?.capturedAt ?? null,
         ticketsLeft: Math.max(0, Math.min(GENESIS_TICKETS, memBalance(handle))),
         marketsOpened: memTags.filter((t) => t.handle === handle).length,
-        takers: memBettors.filter((b) => b.handle === handle).length,
+        peopleBrought: memBettors.filter((b) => b.handle === handle).length,
         tags: memTags.filter((t) => t.handle === handle)
           .map((t) => ({ slug: t.slug, sourceHandle: t.sourceHandle, at: "" })),
       };
@@ -533,7 +533,7 @@ export async function genesisRoster(limit = 200): Promise<RosterRow[]> {
     connectedAt: r.captured_at ? r.captured_at.toISOString() : null,
     ticketsLeft: Math.max(0, Math.min(GENESIS_TICKETS, Number(r.tickets))),
     marketsOpened: Number(r.opened),
-    takers: Number(r.people),
+    peopleBrought: Number(r.people),
     tags: byHandle.get(r.handle) ?? [],
   }));
 }

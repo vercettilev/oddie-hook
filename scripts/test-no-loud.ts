@@ -130,8 +130,8 @@ console.log("\none word, one meaning\n");
     (copy.match(/[^\n]*\bpoints?\b[^\n]*/i) ?? [""])[0].trim().slice(0, 70));
   const board = readFileSync(path.join(ROOT, "public/app/board.html"), "utf8");
   check("public/app/board.html still has its Points column", board.includes("Points"));
-  check("the opener unit is named on the genesis board",
-    withoutComments.includes("<span>Takers</span>"));
+  check("the opener board names what it counts",
+    withoutComments.includes("<span>People</span>"));
 }
 
 console.log(failures === 0 ? "\nall shape checks passed.\n" : `\n${failures} shape check(s) FAILED.\n`);

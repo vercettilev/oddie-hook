@@ -50,17 +50,17 @@ async function main(): Promise<void> {
   await spendTicketForTag("m1", "alice", "bob");
   await creditFundedBettor("m1", "wallet-A");
   check("a new funded wallet counts for whoever tagged the market",
-    (await genesisStanding("alice")).takers === 1);
+    (await genesisStanding("alice")).peopleBrought === 1);
   check("and hands the ticket back", (await ticketsLeft("alice")) === GENESIS_TICKETS);
 
   await creditFundedBettor("m1", "wallet-A");
   check("the same wallet betting again is still one person",
-    (await genesisStanding("alice")).takers === 1);
+    (await genesisStanding("alice")).peopleBrought === 1);
 
   await spendTicketForTag("m2", "alice", "carol");
   await creditFundedBettor("m2", "wallet-A");
   check("a wallet's credit never moves to a second market (first touch)",
-    (await genesisStanding("alice")).takers === 1);
+    (await genesisStanding("alice")).peopleBrought === 1);
 
   // The cap. Alice is at 4 (spent m2), one new wallet refills her to 5, and a
   // second one must NOT mint a sixth.
@@ -69,28 +69,28 @@ async function main(): Promise<void> {
   await creditFundedBettor("m2", "wallet-C");
   check("but never mints a sixth ticket", (await ticketsLeft("alice")) === GENESIS_TICKETS);
   check("while the board still counts every person",
-    (await genesisStanding("alice")).takers === 3);
+    (await genesisStanding("alice")).peopleBrought === 3);
 
   // --- your own wallet never counts (the rule the page prints) -------------
   _resetSeason();
   await spendTicketForTag("m1", "alice", "bob");
   await creditFundedBettor("m1", "wallet-alice", "alice");
   check("funding your own market scores nothing",
-    (await genesisStanding("alice")).takers === 0);
+    (await genesisStanding("alice")).peopleBrought === 0);
   check("and hands no ticket back", (await ticketsLeft("alice")) === GENESIS_TICKETS - 1);
   await creditFundedBettor("m1", "wallet-alice2", "ALICE");
-  check("upper case is the same person", (await genesisStanding("alice")).takers === 0);
+  check("upper case is the same person", (await genesisStanding("alice")).peopleBrought === 0);
   // The wallet is NOT burned: it must still be able to count for somebody else.
   await spendTicketForTag("m2", "bob", null);
   await creditFundedBettor("m2", "wallet-alice", "alice");
   check("that same wallet still counts for somebody else",
-    (await genesisStanding("bob")).takers === 1);
+    (await genesisStanding("bob")).peopleBrought === 1);
   await creditFundedBettor("m1", "wallet-stranger", "carol");
   check("somebody else's wallet counts normally",
-    (await genesisStanding("alice")).takers === 1);
+    (await genesisStanding("alice")).peopleBrought === 1);
   await creditFundedBettor("m1", "wallet-anon", null);
   check("an unlinked wallet counts (we cannot prove it is yours)",
-    (await genesisStanding("alice")).takers === 2);
+    (await genesisStanding("alice")).peopleBrought === 2);
 
   // --- an untagged market credits nobody -----------------------------------
   _resetSeason();
@@ -107,17 +107,17 @@ async function main(): Promise<void> {
   await creditFundedBettor("c1", "w7");
 
   const board = await genesisBoard();
-  check("the board is ordered by people", board.map((r) => r.takers).join(",") === "3,3,1", board);
+  check("the board is ordered by people", board.map((r) => r.peopleBrought).join(",") === "3,3,1", board);
   check("a tie shares a rank", board[0].rank === 1 && board[1].rank === 1);
   check("and the next number is 2, not 3 (dense)", board[2].rank === 2, board);
   check("standing agrees with the board", (await genesisStanding("carol")).rank === 2);
   check("somebody who brought nobody has no rank", (await genesisStanding("dave")).rank === null);
   check("the board only holds people who brought somebody",
-    board.every((r) => r.takers > 0) && board.length === 3);
+    board.every((r) => r.peopleBrought > 0) && board.length === 3);
 
   const one = await genesisStanding("alice");
   check("standing reports markets opened", one.marketsOpened === 1);
-  check("standing reports people brought", one.takers === 3);
+  check("standing reports people brought", one.peopleBrought === 3);
 
   console.log(failed === 0 ? "\nall genesis season checks passed." : `\n${failed} FAILED`);
   if (failed > 0) process.exit(1);
