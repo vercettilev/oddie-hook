@@ -285,7 +285,16 @@ const day = (iso: string) => iso.slice(0, 10);
  *  which coin their money is on. */
 export function criteriaSentence(c: PriceCheck): string {
   const what = c.metric === "mc" ? "market cap" : "price";
-  const dir = c.op === ">=" || c.op === ">" ? "at or above" : "at or below";
+  /* FOUR OPERATORS, FOUR SENTENCES. This collapsed ">" into ">=" and "<" into
+     "<=", so a market whose rule is "strictly above 115" published the words
+     "at or above 115" -- and the published words are the half that gets hashed,
+     shown to bettors and pointed at when somebody disputes a settlement. Line
+     309 has always compared strictly for ">"; on a token that closes exactly on
+     the number, the code paid NO while the criteria promised YES. */
+  const dir = c.op === ">=" ? "at or above"
+    : c.op === ">" ? "above"
+    : c.op === "<=" ? "at or below"
+    : "below";
   // The window opens when the MARKET opens, never earlier, and the sentence says
   // so. Backdating it to the start of the calendar month the tweet mentioned
   // would let somebody tag a level the token already touched and collect on a
@@ -294,7 +303,17 @@ export function criteriaSentence(c: PriceCheck): string {
     c.mode === "touch" ? `at any point between this market opening on ${day(c.from)} and ${day(c.to)} UTC`
     : c.mode === "always" ? `continuously from this market opening on ${day(c.from)} to ${day(c.to)} UTC`
     : `at ${day(c.to)} UTC`;
-  return `Settles from the on-chain price of $${c.symbol} (${c.chain} mint ${c.mint}). YES if its ${what} is ${dir} ${money(c.target)} ${when}, read from the hourly candles of its deepest pool on GeckoTerminal against a supply of ${Math.round(c.supply).toLocaleString("en-US")} tokens fixed when this market opened. NO otherwise.`;
+  /* THE SUPPLY IS ONLY PART OF THE RULE WHEN THE RULE MULTIPLIES BY IT.
+     A market cap is price x supply, so freezing the supply is a real term of
+     the deal and belongs in the sentence. A price market never touches it, and
+     printing it there put a number in front of bettors that has nothing to do
+     with how their market settles -- on $SOL it read "a supply of 12,491,824
+     tokens" next to a coin with a few hundred million. Immutable once minted,
+     because this sentence is what criteria_hash commits to. */
+  const basis = c.metric === "mc"
+    ? ` against a supply of ${Math.round(c.supply).toLocaleString("en-US")} tokens fixed when this market opened`
+    : "";
+  return `Settles from the on-chain price of $${c.symbol} (${c.chain} mint ${c.mint}). YES if its ${what} is ${dir} ${money(c.target)} ${when}, read from the hourly candles of its deepest pool on GeckoTerminal${basis}. NO otherwise.`;
 }
 
 export interface PriceVerdict {

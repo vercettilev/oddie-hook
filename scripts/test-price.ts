@@ -280,6 +280,28 @@ d = await decide(
 check("an open price market is still refused for being open", d.gate === "not-closed", d.gate);
 
 _setProposer(null as any);
+/* THE PUBLISHED SENTENCE IS THE HASHED ONE, so it has to say what the code
+   does. Both of these shipped wrong: ">" printed "at or above" while line 309
+   compared strictly, and a price market printed a frozen supply it never
+   multiplies by. Neither is fixable after a mint -- criteria_hash commits to
+   this exact string. */
+{
+  const base = { symbol: "TOK", chain: "solana", mint: "M", target: 115, supply: 12_491_824,
+    from: WINDOW.from, to: WINDOW.to, mode: "at-close" } as unknown as PriceCheck;
+  const strict = criteriaSentence({ ...base, metric: "price", op: ">" } as PriceCheck);
+  const orEqual = criteriaSentence({ ...base, metric: "price", op: ">=" } as PriceCheck);
+  check("a strictly-above rule does not publish 'at or above'",
+    /is above /.test(strict) && !/at or above/.test(strict), strict);
+  check("...and an at-or-above rule still says so", /at or above/.test(orEqual), orEqual);
+  const below = criteriaSentence({ ...base, metric: "price", op: "<" } as PriceCheck);
+  check("...and the same holds under the line", /is below /.test(below) && !/at or below/.test(below), below);
+  check("a price market publishes no supply it never multiplies by",
+    !/supply/.test(strict), strict);
+  const mc = criteriaSentence({ ...base, metric: "mc", op: ">" } as PriceCheck);
+  check("a market-cap market still freezes one, because that IS the rule",
+    /supply of 12,491,824 tokens/.test(mc), mc);
+}
+
 _setPriceFeed(null);
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");
