@@ -1,5 +1,5 @@
 import express from "express";
-import { displayTitle } from "./title.js";
+import { displayTitle, foldIds } from "./title.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -624,7 +624,11 @@ const ogEsc = (s: string): string =>
  * about a pool nobody could read would outlive the blip that caused it.
  */
 async function marketShellHtml(slug: string, question: string): Promise<string> {
-  const title = displayTitle(question);
+  /* FOLDED FOR THE SAME REASON THE BODY IS. This title is the browser tab, the
+     og:title and the twitter:title -- the line that shows when the link is
+     pasted anywhere -- and a 44-character mint eats all of it. The canonical
+     question is untouched; only what a person reads changes. */
+  const title = foldIds(displayTitle(question));
   const detail = await communityMarketDetail(slug).catch(() => null);
   const read = detail?.onchainPubkey
     ? await readMarket(detail.onchainPubkey, { maxAgeMs: 10_000 }).catch((): MarketRead => ({ ok: false, reason: "unreadable", error: "read threw" }))
@@ -3377,7 +3381,15 @@ app.get("/api/v1/markets", async (req, res) => {
       { creatorBps: state?.creatorFeeBps ?? m.creatorFeeBps, protocolBps: PROTOCOL_FEE_BPS_REAL });
     return {
       slug: m.slug,
+      /* THE SAME QUESTION, READABLE. question stays canonical because it is
+         what the chain hashed at creation and what anybody verifying a market
+         checks against; questionDisplay is the one a person reads. Without it
+         the list card prints a raw 44-character mint over three lines where
+         the question should be, while the card on X, which has folded
+         addresses since it was written, shows "oreoU2...ybcp" for the same
+         market. */
       question: m.question,
+      questionDisplay: foldIds(m.question),
       url: `${APP_BASE_URL}/m/${m.slug}`,
       closesAt: m.closesAt,
       resolved: Boolean(m.resolvedOutcome),
@@ -3486,7 +3498,15 @@ async function marketDetailPayload(
   return {
     ok: true,
     slug: detail.slug,
+    /* THE SAME QUESTION, READABLE. question stays canonical because it is
+       what the chain hashed at creation and what anybody verifying a market
+       checks against; questionDisplay is the one a person reads. Without it
+       the list card prints a raw 44-character mint over three lines where
+       the question should be, while the card on X, which has folded
+       addresses since it was written, shows "oreoU2...ybcp" for the same
+       market. */
     question: detail.question,
+    questionDisplay: foldIds(detail.question),
     // Headline, not terms. A client may lead with this; `question` is still
     // the wording the stake is against and every surface must keep it.
     hook: detail.hook ?? null,

@@ -29,3 +29,24 @@ export function displayTitle(q: string): string {
   const base = title.endsWith("?") ? title.slice(0, -1).trimEnd() : title;
   return `${base}: ${outcome}?`;
 }
+
+/**
+ * Fold a base58 address down to its ends: "oreoU2...ybcp".
+ *
+ * A 44-character mint has no space to break at and no reader has ever gained
+ * anything from the middle of one. Folding keeps both ends, which is what a
+ * person actually checks an address by.
+ *
+ * It lived in the card renderer, whose comment said "it is exactly how the app
+ * prints one everywhere else". It was not: the card folded and every web
+ * surface printed the raw 44 characters, which on a 286px list card is three
+ * lines of base58 where the question should be.
+ *
+ * DISPLAY ONLY, same as displayTitle above, and for a harder reason here. The
+ * question is hashed on chain at creation; fold it anywhere a consumer might
+ * verify that hash and the check fails. The resolution criteria are where an
+ * address belongs whole, because that string IS the rule.
+ */
+export function foldIds(s: string): string {
+  return s.replace(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g, (m) => `${m.slice(0, 6)}\u2026${m.slice(-6)}`);
+}

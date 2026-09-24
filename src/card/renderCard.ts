@@ -1,6 +1,6 @@
 import { Market } from "../venues/types.js";
 import { X_HANDLE } from "../brand.js";
-import { displayTitle } from "../title.js";
+import { displayTitle, foldIds } from "../title.js";
 import { logoMark } from "./logoMark.js";
 import { CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "../store/economy.js";
 import { oddsFromPools } from "../odds.js";
@@ -274,9 +274,6 @@ function ivKern(s: string): string {
  * Scoped to the QUESTION on purpose. The resolution criteria are where an
  * address belongs and it must stay whole there: that string is the rule.
  */
-export function foldIds(s: string): string {
-  return s.replace(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g, (m) => `${m.slice(0, 6)}\u2026${m.slice(-6)}`);
-}
 
 /** Escape for SVG text, and suppress the ligatures the bundled fonts cannot draw. */
 export function esc(s: string): string {

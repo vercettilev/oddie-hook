@@ -715,9 +715,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         + (hook
             ? '<h2 class="card__q"><a href="' + href + '">' + esc(hook) + "</a></h2>"
               + '<p class="card__full" data-oddie-question data-oddie-hook="' + esc(hook)
-              + '" data-slug="' + esc(m.slug) + '">' + esc(m.question) + "</p>"
+              + '" data-slug="' + esc(m.slug) + '">' + esc((m.questionDisplay || m.question)) + "</p>"
             : '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
-              + '<a href="' + href + '">' + esc(m.question) + "</a></h2>")
+              + '<a href="' + href + '">' + esc((m.questionDisplay || m.question)) + "</a></h2>")
         + pool
         + '<div class="sides">'
         + sideEl("yes", "side--y", "YES", pct)

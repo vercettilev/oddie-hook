@@ -856,14 +856,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
          boyle bir uyusmazligi imkansiz kiliyor. */
       html += '<h1 class="q q--hook">' + esc(hook) + "</h1>"
         + '<p class="qfull" data-oddie-question data-oddie-hook="' + esc(hook)
-        + '" data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</p>";
+        + '" data-slug="' + esc(m.slug || SLUG) + '">' + esc((m.questionDisplay || m.question)) + "</p>";
     } else {
-      html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.question) + "</h1>";
+      html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.questionDisplay || m.question) + "</h1>";
     /* THE TAB SAID "oddie" AND NOTHING ELSE. Every market anybody opened from a
        tweet became an identical entry in their tabs, their history and their
        bookmarks, so going back to one meant opening them until the right one
        turned up. The question is the only thing that tells them apart. */
-    try { document.title = m.question + " · oddie"; } catch (e) {}
+    try { document.title = (m.questionDisplay || m.question) + " · oddie"; } catch (e) {}
     }
 
     if (resolved) {
@@ -1068,7 +1068,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var sh = view.querySelector("#share");
     if (sh) sh.addEventListener("click", function () {
       var url = location.origin + location.pathname;
-      var text = m.question;
+      // Folded: this string goes into a tweet, where 44 characters of base58
+      // is the whole preview.
+      var text = (m.questionDisplay || m.question);
       /* THE NATIVE SHEET ONLY WHERE IT IS ANY GOOD.
          navigator.share exists in desktop Safari and Chrome too, and there it
          offers AirDrop, Messages, Notes, Freeform and Reminders. None of those
