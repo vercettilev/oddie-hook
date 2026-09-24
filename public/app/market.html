@@ -935,7 +935,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div></div>';
       if (oneSided) {
         html += '<p class="first"><img src="/brand/st-rocket.webp" alt="">'
-          + "<b>Nobody's on the other side</b> yet.</p>";
+          // Bold the subject, plain the predicate -- the same split as "First one
+          // in sets the odds." two branches up. .first is a flex row and the gap
+          // between the <b> and the text node is the separator, so a one-word
+          // tail ("... side | yet.") reads as a stray rather than as a phrase.
+          + "<b>Nobody's taken</b> the other side yet.</p>";
       }
     }
 
