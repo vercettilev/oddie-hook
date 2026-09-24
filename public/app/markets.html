@@ -664,7 +664,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         pool = '<p class="pool pool--quiet">First one in sets the odds.</p>';
       } else {
         var y = m.pool.yesLamports, n2 = m.pool.noLamports, tot = y + n2;
-        var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
         /* toFixed(3) then stripping trailing zeros turns anything under 0.0005
            SOL into the bare string "0", so a card that exists BECAUSE money
            is in it announced an empty pool. Floored, not rounded away. */

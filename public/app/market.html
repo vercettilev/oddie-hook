@@ -901,8 +901,18 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + "<b>First one in</b> sets the odds.</p>";
     } else {
       var y = m.pool.yesLamports, n = m.pool.noLamports, tot = y + n;
+      /* THE BAR IS A PICTURE OF THE MONEY; THE BUTTONS ARE A PRICE.
+         Those are different claims and only one of them survives a one-sided
+         pool. All of it on yes draws a full bar, which is true and is the
+         point: you can see at a glance that nobody is holding the other end.
+         A "100%" on the YES button is not true in the same way -- it reads as
+         a settled argument when what happened is that nobody has shown up to
+         disagree, and it talks the second bettor out of being the one who
+         does. poolNow null is how this page already says "no price" on an
+         empty pool, so the one-sided pool says it the same way. */
+      var oneSided = m.oddsSource === "one-sided";
       var yp = m.yesPct == null ? Math.round((y / tot) * 100) : m.yesPct;
-      poolNow = { lamports: tot, yesPct: yp };
+      poolNow = oneSided ? null : { lamports: tot, yesPct: yp };
       /* KAC KISI GIRDI.
          "0.4 SOL" bir miktardir; "7 in" bir kalabaliktir, ve insani ikna
          eden ikincisidir. Sadece SIFIRDAN BUYUKSE yaziliyor: sayim yalnizca
@@ -923,6 +933,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + (heads >= MIN_HEADS_LIST ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
         + '<div class="bar" role="img" aria-label="' + yp + ' percent yes, ' + (100 - yp) + ' percent no">'
         + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div></div>';
+      if (oneSided) {
+        html += '<p class="first"><img src="/brand/st-rocket.webp" alt="">'
+          + "<b>Nobody's on the other side</b> yet.</p>";
+      }
     }
 
     if (!resolved) {
