@@ -56,9 +56,12 @@ const mk = (q: string, yesPct: number): Market => ({
 
 let worstGap = Infinity, worstAt = "";
 for (const q of QUESTIONS) {
-  for (let yes = 1; yes <= 100; yes++) {
+  /* STOPS AT 99 NOW, and the pool is what sets the number. A card prices off
+     the vault, so a percentage only exists when both sides hold money; 100 is
+     one-sided and has no price to lay out. That case is pinned in test-odds. */
+  for (let yes = 1; yes <= 99; yes++) {
     const m = mk(q, yes);
-    const svg = renderCard(m);
+    const svg = renderCard(m, { pools: { yes, no: 100 - yes, creatorFeeBps: 200 } });
 
     // Geometry, recomputed the way the renderer computes it.
     const heroText = `${Math.max(0, Math.min(100, Math.round(yes)))}%`;
@@ -296,7 +299,7 @@ console.log("\nligature suppression: the shaper must not be allowed to eat lette
 {
   const ZWNJ = "\u200C";
   const q = "Will inflation confirm a profit flip before the first filing?";
-  const svg = renderCard(mk(q, 62));
+  const svg = renderCard(mk(q, 62), { pools: { yes: 62, no: 38, creatorFeeBps: 200 } });
   // Every f-before-[fil] in the question must be followed by the joiner.
   const pairs = [...q.matchAll(/f(?=[fil])/g)].length;
   check(`the question has ${pairs} ligature pairs to defuse`, pairs >= 6);
@@ -455,7 +458,8 @@ console.log("\nthe profile card is postable for a post-pivot user");
 {
   const base: Market = { ...mk("Will the count show up when it should?", 50), venue: "community" };
   const metaOf = (n: number) => {
-    const svg = renderCard(base, { stakers: n });
+    // Both sides funded, or there is no odds line for the count to sit beside.
+    const svg = renderCard(base, { stakers: n, pools: { yes: 50, no: 50, creatorFeeBps: 200 } });
     return [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1].trim()).find((t) => /pays/.test(t)) ?? "";
   };
   check("the share card gates the crowd count above zero, not at it", MIN_HEADS_CARD > 1, String(MIN_HEADS_CARD));

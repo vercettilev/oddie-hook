@@ -35,6 +35,7 @@ import { runExtract, extractEnabled, EXTRACT_KEY_ENV, unsettleablePhrase, addres
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
+import { oddsFromPools } from "./odds.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee, closeMarketOnChain, _devPutMarket,
   walletBalanceLamports,
@@ -1574,11 +1575,27 @@ app.get("/og.svg", (_req, res) => res.type("image/svg+xml").send(renderBanner())
 /** Whether a market's vault is empty, which is not the same as 50/50. A chain
  *  that will not answer degrades to "unpriced", the safe direction: the card
  *  invites the first stake instead of quoting odds nobody set. */
-async function marketIsUnpriced(slug: string): Promise<boolean> {
+/* WHAT THE CARD IS ALLOWED TO SAY ABOUT THE MONEY.
+   This used to answer a yes/no -- "is the pool empty" -- and threw away the two
+   numbers it had just read to do it. The card then priced itself off the stored
+   record instead, which is a blend of a 50 anchor with a count of PEOPLE, and
+   printed a multiple derived from that. Money is the only thing the chain pays
+   from, so money is what leaves this function.
+   A chain that will not answer degrades to null, which renders as no price at
+   all: the safe direction, because it invites a stake instead of quoting odds
+   nobody set. */
+async function marketPools(
+  slug: string,
+): Promise<{ yes: number; no: number; creatorFeeBps: number } | null> {
   const detail = await communityMarketDetail(slug).catch(() => null);
-  if (!detail?.onchainPubkey) return true;
+  if (!detail?.onchainPubkey) return null;
   const state = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
-  return ((state?.totalYesLamports ?? 0) + (state?.totalNoLamports ?? 0)) <= 0;
+  if (!state) return null;
+  return {
+    yes: state.totalYesLamports ?? 0,
+    no: state.totalNoLamports ?? 0,
+    creatorFeeBps: state.creatorFeeBps ?? detail.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+  };
 }
 
 /**
@@ -1874,7 +1891,7 @@ app.get("/card/:slug.svg", async (req, res) => {
   const rec = await getSlug(req.params.slug, all);
   if (!rec) return res.status(404).send("unknown market");
   res.type("image/svg+xml").send(renderCard(rec.market, {
-    unpriced: await marketIsUnpriced(req.params.slug), stakers: await cardStakers(req.params.slug),
+    pools: await marketPools(req.params.slug), stakers: await cardStakers(req.params.slug),
     hook: await hookFor(req.params.slug).catch(() => null),
   }));
 });
@@ -1935,7 +1952,7 @@ app.get("/card/:slug.png", async (req, res) => {
   // unpriced card, which is the safe direction to be wrong in: it invites a
   // stake instead of quoting odds nobody set.
   const png = renderCardPng(renderCard(rec.market, {
-    unpriced: await marketIsUnpriced(slug), stakers: await cardStakers(slug),
+    pools: await marketPools(slug), stakers: await cardStakers(slug),
     hook: await hookFor(slug).catch(() => null),
   }));
   pngCache.set(slug, { png, at: now });
@@ -3321,6 +3338,11 @@ app.get("/api/v1/markets", async (req, res) => {
     const unreadable = Boolean(r && !r.ok && r.reason === "unreadable");
     const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
     const total = yes + no;
+    /* The rates are PER MARKET and frozen at creation: one with no creator to
+       pay charges no creator fee, and a response-level constant overstates the
+       takeout against it, which understates what its winners collect. */
+    const odds = oddsFromPools(unreadable ? null : yes, unreadable ? null : no,
+      { creatorBps: state?.creatorFeeBps ?? m.creatorFeeBps, protocolBps: PROTOCOL_FEE_BPS_REAL });
     return {
       slug: m.slug,
       question: m.question,
@@ -3344,8 +3366,14 @@ app.get("/api/v1/markets", async (req, res) => {
       // ETIKETLEYENDIR ve sourceUrl baskasinin gonderisi olabilir.
       sourceUrl: openers[m.slug]?.sourceUrl ?? null,
       pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
-      yesPct: unreadable || total <= 0 ? null : Math.max(1, Math.min(99, Math.round((yes / total) * 100))),
-      oddsSource: unreadable ? "unreadable" : total > 0 ? "vault" : "unpriced",
+      /* ONE DEFINITION, in src/odds.ts, because this line and the card disagreed
+         by 41 points on a live market. The clamp is what is gone: Math.min(99, ...)
+         published a pool that was 100% one way as 99, a figure nobody's money made,
+         and it read as a settled argument when what had actually happened was that
+         nobody had taken the other side yet. "one-sided" says that plainly, and
+         both clients already draw a null percentage correctly, so it costs no UI. */
+      yesPct: odds.state === "priced" ? odds.yesPct : null,
+      oddsSource: unreadable ? "unreadable" : odds.state === "priced" ? "vault" : odds.state,
       onchain: m.onchainPubkey ? { pubkey: m.onchainPubkey, explorer: explorerUrl(m.onchainPubkey) } : null,
       // PER MARKET, because the rates differ now: a market with no creator to
       // pay is minted at 0. The chain is the authority once minted; the row is
@@ -3397,6 +3425,11 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
   const heads = (await stakerCounts([req.params.slug]).catch(() => ({} as Record<string, number>)))[req.params.slug] ?? 0;
   const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
   const total = yes + no;
+  /* The rates are PER MARKET and frozen at creation: one with no creator to
+     pay charges no creator fee, and a response-level constant overstates the
+     takeout against it, which understates what its winners collect. */
+  const odds = oddsFromPools(unreadable ? null : yes, unreadable ? null : no,
+    { creatorBps: state?.creatorFeeBps ?? detail.creatorFeeBps, protocolBps: PROTOCOL_FEE_BPS_REAL });
   res.json({
     ok: true,
     slug: detail.slug,
@@ -3413,8 +3446,14 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     resolved: Boolean(state?.resolved ?? detail.resolvedOutcome),
     outcome: state?.winningSide ?? detail.resolvedOutcome ?? null,
     pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
-    yesPct: unreadable || total <= 0 ? null : Math.max(1, Math.min(99, Math.round((yes / total) * 100))),
-    oddsSource: unreadable ? "unreadable" : total > 0 ? "vault" : "unpriced",
+    /* ONE DEFINITION, in src/odds.ts, because this line and the card disagreed
+       by 41 points on a live market. The clamp is what is gone: Math.min(99, ...)
+       published a pool that was 100% one way as 99, a figure nobody's money made,
+       and it read as a settled argument when what had actually happened was that
+       nobody had taken the other side yet. "one-sided" says that plainly, and
+       both clients already draw a null percentage correctly, so it costs no UI. */
+    yesPct: odds.state === "priced" ? odds.yesPct : null,
+    oddsSource: unreadable ? "unreadable" : odds.state === "priced" ? "vault" : odds.state,
     taggedBy: src?.handle ?? null,
     // Null fields, never empty strings: the page decides whether to draw a
     // quoted card (text known) or just a link (only the url known).
@@ -5095,10 +5134,10 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
          into. It states a price nobody set and a multiple the first staker will
          not receive, while the page it links to says "first in sets the odds"
          about the same market in the same tweet.
-         marketIsUnpriced degrades an unreadable chain to unpriced too, which is
+         marketPools degrades an unreadable chain to no price at all, which is
          the safe direction: it invites a stake instead of inventing odds. */
       return renderCardPng(renderCard(rec.market, {
-        unpriced: await marketIsUnpriced(slug),
+        pools: await marketPools(slug),
         hook: await hookFor(slug).catch(() => null),
         stakers: await cardStakers(slug),
       }));

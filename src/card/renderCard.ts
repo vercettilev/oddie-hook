@@ -3,6 +3,7 @@ import { X_HANDLE } from "../brand.js";
 import { displayTitle } from "../title.js";
 import { logoMark } from "./logoMark.js";
 import { CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "../store/economy.js";
+import { oddsFromPools } from "../odds.js";
 
 // The card IS Oddie talking. Logo language: chunky black rounded outline,
 // white fill, brand chartreuse (#D7DC1F), the two ghost eyes as the one playful
@@ -485,13 +486,36 @@ export const MIN_HEADS_CARD = 5;
 
 export function renderCard(
   m: Market,
-  opts: { unpriced?: boolean; settled?: "yes" | "no"; stakers?: number; hook?: string | null } = {},
+  opts: {
+    /** The vault, in lamports, with the market's own creator rate. Null when the
+     *  chain would not answer, which renders as no price rather than as zero. */
+    pools?: { yes: number; no: number; creatorFeeBps: number } | null;
+    unpriced?: boolean;
+    settled?: "yes" | "no";
+    stakers?: number;
+    hook?: string | null;
+  } = {},
 ): string {
   const settled = opts.settled;
   // A settled market has an answer, so it is never unpriced and never invites a
   // stake. The two states cannot both be true and settled wins.
-  const unpriced = !settled && opts.unpriced === true;
-  const yes = Math.max(0, Math.min(100, Math.round(m.yesPct)));
+  /* THE MONEY, NOT THE STORED RECORD. m.yesPct is crowdPct: a 50 anchor blended
+     with a count of PEOPLE. The chain pays from the pool and only from the pool,
+     so a card that prints a percentage and a multiple has to read the same thing
+     the chain will. Measured on a live market: the record said 50 and the vault
+     said 100, and the card promised "yes pays 1.9x" on a bet that could return
+     the stake and nothing more. */
+  const view = opts.pools
+    ? oddsFromPools(opts.pools.yes, opts.pools.no,
+        { creatorBps: opts.pools.creatorFeeBps, protocolBps: PROTOCOL_FEE_BPS_REAL })
+    : { state: "unreadable" as const };
+  /* ONE SIDE HOLDING EVERYTHING IS NOT A PRICE. The zero-pool case was already
+     caught; this is the case one over, and it reached the same bad end -- a
+     percentage nobody's money made, beside a multiple nobody could collect. */
+  const oneSided = !settled && view.state === "one-sided";
+  const unpriced = !settled && !oneSided
+    && (opts.unpriced === true || view.state === "unpriced" || view.state === "unreadable");
+  const yes = view.state === "priced" ? view.yesPct : Math.max(0, Math.min(100, Math.round(m.yesPct)));
   const no = 100 - yes;
 
   /* THE HEADLINE IS THE HOOK, exactly as on the page this card opens.
@@ -548,7 +572,7 @@ export function renderCard(
     ? (firstBaseline - Q_TOP) + 36 + (sub_.lines.length - 1) * sub_.lineH + DESC * sub_.fs
     : CAP * q.fs + (q.lines.length - 1) * q.lineH + DESC * q.fs;
 
-  const heroText = settled ? settled.toUpperCase() : unpriced ? "open" : `${yes}%`;
+  const heroText = settled ? settled.toUpperCase() : (unpriced || oneSided) ? "open" : `${yes}%`;
   const udSide = yes <= 50 ? "yes" : "no";
   const udPct = udSide === "yes" ? yes : no;
   /* NET OF THE TAKEOUT, because nobody is ever paid the gross. The chain pays
@@ -563,8 +587,9 @@ export function renderCard(
      row. Using the default is exact today and wrong only if a market is ever
      minted at another rate, which would show up as a card promising slightly
      less than it pays: the safe direction. */
-  const TAKEOUT = (CREATOR_FEE_BPS_REAL + PROTOCOL_FEE_BPS_REAL) / 10_000;
-  const mRaw = (100 * (1 - TAKEOUT)) / Math.max(1, udPct);
+  const mRaw = view.state === "priced"
+    ? (udSide === "yes" ? view.yesPays : view.noPays)
+    : (100 * (1 - (CREATOR_FEE_BPS_REAL + PROTOCOL_FEE_BPS_REAL) / 10_000)) / Math.max(1, udPct);
   const mult = mRaw >= 10 ? Math.round(mRaw) : Math.round(mRaw * 10) / 10;
   /* HOW MANY PEOPLE MADE THAT NUMBER.
      The card's hero is a percentage and it travels on X with nothing beside it,
@@ -596,7 +621,9 @@ export function renderCard(
   const odds = `${udSide} pays ${mult}\u00d7`;
   const metaText = settled
     ? "settled on chain"
-    : unpriced
+    : oneSided
+      ? "nothing on the other side"
+      : unpriced
       ? "first in sets the line"
       : heads >= MIN_HEADS_CARD
         ? `${odds} \u00b7 ${heads} in`
