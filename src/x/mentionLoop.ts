@@ -653,8 +653,19 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       const outcome = postAttempted ? "failed" : "retry";
       await settleMention(m.id, outcome, { reason: (e as Error).message.slice(0, 300) });
       decide(outcome, { reason: (e as Error).message.slice(0, 120) });
+      /* THE BODY, NOT JUST THE STATUS. "x POST /tweets -> 403" says a request
+         was refused and nothing about why, and X always explains itself in the
+         response body: duplicate content, a permission the app lacks, a reply
+         the policy forbids. XError carries that body and we were dropping it at
+         the log, which is how a 403 becomes unfixable rather than merely
+         annoying. Truncated because an X error body can carry a long errors[]. */
+      const detail = (() => {
+        const body = (e as { body?: unknown }).body;
+        if (body == null) return undefined;
+        try { return JSON.stringify(body).slice(0, 400); } catch { return String(body).slice(0, 400); }
+      })();
       log(postAttempted ? "sweep item failed after posting, not retrying" : "sweep item failed before posting, will retry",
-        { tweetId: m.id, err: (e as Error).message });
+        { tweetId: m.id, err: (e as Error).message, detail });
     }
   }
 
