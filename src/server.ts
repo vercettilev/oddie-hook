@@ -684,7 +684,7 @@ async function marketShellHtml(slug: string, question: string): Promise<string> 
      up; the rest is already safe because the content type is not HTML. */
   let boot = "null";
   try {
-    const payload = await marketDetailPayload(slug);
+    const payload = await marketDetailPayload(slug, { maxAgeMs: 10_000 });
     if (payload) boot = JSON.stringify(payload).replace(/<\//g, "<\\/");
   } catch { /* the page fetches for itself */ }
   return MARKET_HTML
@@ -3451,11 +3451,20 @@ app.get("/api/v1/markets", async (req, res) => {
  * One renderer stays: the client's. Server-rendering the markup as well would
  * put the same layout in two languages and let them drift, which is the bug
  * this audit already found between the card and the page. */
-async function marketDetailPayload(slug: string): Promise<Record<string, unknown> | null> {
+async function marketDetailPayload(
+  slug: string,
+  /* The page shell has just read this market to write its og:description, and
+     that read is cached for ten seconds. Letting the inline payload share the
+     window collapses a page view back to ONE chain read: without it the shell
+     reads, then this reads again, and the hottest page in the product doubles
+     its RPC. The API route passes nothing and stays uncached, because it is the
+     refresh path -- it is what runs the moment a stake lands. */
+  opts: { maxAgeMs?: number } = {},
+): Promise<Record<string, unknown> | null> {
   const detail = await communityMarketDetail(slug);
   if (!detail) return null;
   const read = detail.onchainPubkey
-    ? await readMarket(detail.onchainPubkey).catch((): MarketRead => ({ ok: false, reason: "unreadable", error: "read threw" }))
+    ? await readMarket(detail.onchainPubkey, { maxAgeMs: opts.maxAgeMs ?? 0 }).catch((): MarketRead => ({ ok: false, reason: "unreadable", error: "read threw" }))
     : ({ ok: false, reason: "absent" } as MarketRead);
   const state = read.ok ? read.state : null;
   // See the list route above: an unreadable market publishes no pool at all
