@@ -288,6 +288,44 @@ async function main() {
     check("...and is recorded as failed, not as a retry", _memMentionOutcome("505") === "failed");
   }
   {
+    /* 403 IS THE ONE RETRYABLE POST FAILURE, and the retry must be the PLAIN
+       reply, not the same text again. X refused the decorated shape twice in
+       production (09-23 08:19, 09-24 09:39) while the bare shape went through
+       for the same market two minutes later. If this ever posts opts.text a
+       second time it is not a fallback, it is a double-post. */
+    _resetBotState();
+    const sent: { text: string; mediaIds?: string[] }[] = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("507")], newestId: "507" }),
+      postReply: async (o) => {
+        sent.push({ text: o.text, mediaIds: o.mediaIds });
+        if (sent.length === 1) throw Object.assign(new Error("x POST /tweets -> 403"), { status: 403, body: { detail: "refused" } });
+        return { id: "reply-plain" };
+      },
+    });
+    const r = await runMentionSweep(deps);
+    check("a 403 is retried once with the plain reply",
+      r.replied === 1 && sent.length === 2, `replied=${r.replied} sent=${sent.length}`);
+    check("...and the retry is a DIFFERENT, barer text",
+      sent.length === 2 && sent[1].text !== sent[0].text && sent[1].text.length < sent[0].text.length,
+      JSON.stringify(sent.map((x) => x.text)));
+    check("...carrying no media, so nothing about it can be the reason",
+      sent.length === 2 && !sent[1].mediaIds, JSON.stringify(sent[1]?.mediaIds));
+  }
+  {
+    /* The escape hatch stays narrow: only 403. Any other status keeps the
+       no-double-post rule above, which a bare `catch` would have quietly
+       converted into a retry for every timeout in the file. */
+    _resetBotState();
+    let tries = 0;
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("508")], newestId: "508" }),
+      postReply: async () => { tries++; throw Object.assign(new Error("x POST /tweets -> 500"), { status: 500 }); },
+    });
+    const r = await runMentionSweep(deps);
+    check("a non-403 post failure is still never retried", r.failed === 1 && tries === 1, `tries=${tries}`);
+  }
+  {
     // A claim that fails the same way three times is not going to work on the
     // fourth, and an unbounded retry pins the watermark and stops the bot dead.
     _resetBotState();

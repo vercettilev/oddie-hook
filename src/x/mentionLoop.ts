@@ -193,6 +193,36 @@ export function tweetUrl(handle: string | null, id: string): string {
   return handle ? `https://x.com/${handle}/status/${id}` : `https://x.com/i/web/status/${id}`;
 }
 
+/* A 403 FROM X IS A REFUSAL, NOT A MAYBE.
+   Every other failure here is ambiguous -- a timeout can mean the post landed
+   and only the response was lost, which is why this file treats a throw after
+   posting as unrecoverable and never retries. 403 is the one exception: X
+   evaluated the request and declined it, so nothing was created and a second
+   attempt cannot double-post.
+
+   The plain reply has existed in tweetReply.ts since it was written ("the
+   barest version for when the formatted reply looks off") and was never once
+   sent. Measured on 09-23: the decorated reply was refused at 08:19 and the
+   plain shape for the same market went through at 08:21 -- two minutes apart,
+   same account, same app. Media is dropped on the retry too: the point of the
+   bare version is to remove everything that could have been the reason. */
+async function postOrPlain(
+  deps: SweepDeps,
+  opts: { text: string; plain: string; inReplyTo: string; mediaIds?: string[] },
+  log: (msg: string, extra?: Record<string, unknown>) => void,
+): Promise<{ id: string }> {
+  try {
+    return await deps.postReply({ text: opts.text, inReplyTo: opts.inReplyTo, mediaIds: opts.mediaIds });
+  } catch (e) {
+    const status = (e as { status?: number }).status;
+    if (status !== 403 || !opts.plain || opts.plain === opts.text) throw e;
+    let detail: string | undefined;
+    try { detail = JSON.stringify((e as { body?: unknown }).body)?.slice(0, 400); } catch { /* body not serialisable */ }
+    log("x refused the decorated reply, sending the plain one", { tweetId: opts.inReplyTo, detail });
+    return await deps.postReply({ text: opts.plain, inReplyTo: opts.inReplyTo });
+  }
+}
+
 export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
   const log = deps.log ?? (() => {});
   const result: SweepResult = { looked: 0, replied: 0, skipped: 0, failed: 0, retried: 0, decisions: [], newestId: null };
@@ -480,7 +510,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
           log("card failed, replying without it", { tweetId: m.id, err: (e as Error).message });
         }
         postAttempted = true;
-        const posted = await deps.postReply({ text: reply.primary, inReplyTo: m.id, mediaIds });
+        const posted = await postOrPlain(deps, { text: reply.primary, plain: reply.fallback, inReplyTo: m.id, mediaIds }, log);
         await settleMention(m.id, "replied", { slug: already.slug, replyId: posted.id, claimText: graded });
         decide("replied", { reason: "existing", slug: already.slug, text: reply.primary });
         log("replied with the market this post already has", { tweetId: m.id, slug: already.slug });
@@ -625,7 +655,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       }
 
       postAttempted = true;
-      const posted = await deps.postReply({ text: reply.primary, inReplyTo: m.id, mediaIds });
+      const posted = await postOrPlain(deps, { text: reply.primary, plain: reply.fallback, inReplyTo: m.id, mediaIds }, log);
       /* AFTER THE POST, like the miss branch and for the same reason. It used
          to sit directly under the mint, on the reading that the market existing
          is what the ticket bought. But a market nobody was told about is a
