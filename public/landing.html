@@ -861,6 +861,20 @@
        and reads as print, not as a UI card. */
     filter:drop-shadow(7px 9px 0 rgba(11,13,4,.14))}
   .offer__say{min-width:0}
+  /* The proof link. Bordered rather than filled: it sits on the dark ground at
+     the end of the explanation and a solid block there would read as a second
+     hero competing with the one above the fold. */
+  .proof{display:block;margin:clamp(22px,3vw,34px) auto 0;max-width:640px;
+    border:2px solid var(--yellow);padding:clamp(14px,2vw,20px);
+    text-decoration:none;color:var(--cream)}
+  .proof:hover,.proof:focus-visible{background:rgba(215,220,31,.09)}
+  .proof__k{display:block;font-family:var(--mono);font-size:11px;font-weight:700;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--yellow);margin:0 0 8px}
+  .proof__q{display:block;font-family:var(--display);font-weight:400;
+    font-size:clamp(22px,3.4vw,32px);line-height:1.04;text-wrap:balance}
+  .proof__m{display:block;margin:10px 0 0;font-family:var(--mono);font-size:12.5px;
+    letter-spacing:.04em;color:var(--yellow)}
+  .proof__m i{font-style:normal;margin:0 8px;opacity:.6}
   .offer__hd{margin:0;font-family:var(--display);font-weight:400;line-height:.98;
     letter-spacing:.005em;color:var(--ink);
     font-size:clamp(32px,5.6vw,68px);text-wrap:balance}
@@ -1207,6 +1221,17 @@
         <img src="/brand/flow-market.webp" width="1600" height="900" loading="lazy"
              alt="Three steps: somebody posts that Pump.fun will close Q4 with more revenue than Q3, you tag @oddiefun under it, and an Oddie market opens on that claim with a YES and a NO side.">
       </figure>
+
+      <!-- THE PAGE ARGUED AND SHOWED NOTHING. Above this is an illustrated
+           three-step figure; the whole claim is that these things exist with
+           money in them, and a visitor could not check a single one. This is
+           one real market, server-rendered, chosen by pool size because the
+           slot is evidence and the most evidence is the most money.
+           SAME TWO STATES AS THE BOARD: with a funded open market it prints,
+           and with none -- or a read that failed -- it prints nothing at all.
+           An empty shelf where the proof goes answers the question the wrong
+           way, which is the argument LANDING_PROOF_MIN left behind. -->
+      <!--LIVE-->
 
     </div>
 

@@ -451,9 +451,66 @@ async function renderLanding(): Promise<string> {
   const boardCta = boardRows && boardRows.length > 0
     ? '<a class="lead__go" href="https://app.oddie.fun/leaderboard">See the whole board <i aria-hidden="true">&rarr;</i></a>'
     : '<a class="lead__go" href="https://x.com/intent/post?text=%40oddiefun%20">Open the first one <i aria-hidden="true">&rarr;</i></a>';
+  /* ONE REAL MARKET, ON THE FRONT DOOR.
+   *
+   * The page argued that a claim on X becomes a market with money in it and
+   * showed none: an illustrated three-step figure, a fee, a board, and not a
+   * single thing a visitor could check. The whole product is that these exist.
+   *
+   * SAME TWO-STATE DISCIPLINE AS THE BOARD, and for the same reason. One with
+   * money in it prints. Nothing open, nothing funded, or a read that failed
+   * prints nothing at all -- an empty shelf where the proof goes is worse than
+   * no shelf, because it answers the question the wrong way.
+   *
+   * Picked by pool size: this slot is evidence, and the most evidence is the
+   * market with the most real money on it. Never a resolved or closed one,
+   * which would be a museum piece where a live claim belongs.
+   */
+  const liveProof = await (async (): Promise<string> => {
+    try {
+      /* openCommunityMarkets rather than liveMarketData().all: the same rows,
+         but typed as what they are. LiveMarketData widens them to Market and
+         loses the slug and the pubkey this needs. */
+      const all = await openCommunityMarkets();
+      const now = Date.now();
+      // openCommunityMarkets already drops resolved and retired rows, so the
+      // only thing left to exclude here is a market whose deadline has passed.
+      const open = all.filter((m) => m.onchainPubkey
+        && m.closesAt && new Date(m.closesAt).getTime() > now);
+      if (!open.length) return "";
+      const states = await readMarkets(open.map((m) => m.onchainPubkey as string), { maxAgeMs: 60_000 });
+      const funded = open
+        .map((m) => {
+          const r = states.get(m.onchainPubkey as string);
+          const st = r?.ok ? r.state : null;
+          return { m, lamports: st && !st.resolved ? st.totalYesLamports + st.totalNoLamports : 0 };
+        })
+        .filter((x) => x.lamports > 0)
+        .sort((a, b) => b.lamports - a.lamports);
+      if (!funded.length) return "";
+      const { m, lamports } = funded[0];
+      const sol = lamports / 1e9;
+      const pool = sol < 0.001 ? "<0.001" : sol.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+      const left = Math.max(0, new Date(m.closesAt as string).getTime() - now);
+      const hrs = Math.floor(left / 3_600_000);
+      const when = hrs >= 48 ? `${Math.floor(hrs / 24)} days left`
+        : hrs >= 1 ? `${hrs} hours left`
+        : `${Math.max(1, Math.floor(left / 60_000))} minutes left`;
+      const line = foldIds(m.hook || m.question);
+      return '<a class="proof" href="' + escHtml(`${APP_BASE_URL}/m/${slugFor(m)}`) + '">'
+        + '<span class="proof__k">Open right now</span>'
+        + '<span class="proof__q">' + escHtml(line) + "</span>"
+        + '<span class="proof__m"><b>' + escHtml(pool) + "</b> SOL in the pool"
+        + '<i aria-hidden="true">&middot;</i>' + escHtml(when) + "</span></a>";
+    } catch {
+      return "";   // a read that failed is not a product with nothing in it
+    }
+  })();
+
   const html = LANDING_HTML
     .replace("<!--BOARD-->", boardHtml)
-    .replace("<!--BOARDCTA-->", boardCta);
+    .replace("<!--BOARDCTA-->", boardCta)
+    .replace("<!--LIVE-->", liveProof);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
