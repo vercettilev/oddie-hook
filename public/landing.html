@@ -1309,7 +1309,13 @@
            ALIAS of /board, the caller ranking, so a visitor who had just read
            an opener board would land on a different table under the same word.
            The alias is split now and this href is the page that matches. -->
-      <a class="lead__go" href="https://app.oddie.fun/leaderboard">See the whole board <i aria-hidden="true">&rarr;</i></a>
+      <!-- THE ROWS ARE CONDITIONAL AND THIS WAS NOT, which is the whole gap:
+           with nobody on the board the section still offered a trip to go and
+           see them, and the page it opened said "Nobody is on it yet". Same
+           rule as the rows now (server.ts) -- with names it points at them,
+           with none it points at the thing that puts a name there. No status
+           report either way: the headline is the invitation. -->
+      <!--BOARDCTA-->
     </div>
   </section>
 

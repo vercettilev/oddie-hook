@@ -440,7 +440,20 @@ async function renderLanding(): Promise<string> {
             + (r.peopleBrought === 1 ? "person" : "people") + '</span></li>').join("")
         + "</ol>";
 
-  const html = LANDING_HTML.replace("<!--BOARD-->", boardHtml);
+  /* AND THE LINK UNDER IT FOLLOWS THE SAME ANSWER. The rows were conditional
+     and the call to action was not, so an empty board still offered "See the
+     whole board" and the page it opened said "Nobody is on it yet" -- the
+     status report this block refuses to print, moved one click away. With
+     names it points at them. With none it points at the thing that puts a name
+     there, which is the same ask the rest of the page makes. A failed read
+     takes the dare too: it is the safe direction, because it invites rather
+     than promising a table we could not confirm exists. */
+  const boardCta = boardRows && boardRows.length > 0
+    ? '<a class="lead__go" href="https://app.oddie.fun/leaderboard">See the whole board <i aria-hidden="true">&rarr;</i></a>'
+    : '<a class="lead__go" href="https://x.com/intent/post?text=%40oddiefun%20">Open the first one <i aria-hidden="true">&rarr;</i></a>';
+  const html = LANDING_HTML
+    .replace("<!--BOARD-->", boardHtml)
+    .replace("<!--BOARDCTA-->", boardCta);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
