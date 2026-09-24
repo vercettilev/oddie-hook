@@ -1247,7 +1247,25 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   function load(first) {
   if (first) {
     var pre = bootPayload();
-    if (pre) { initChain(pre); render(pre); return; }
+    if (pre) {
+      initChain(pre);
+      render(pre);
+      /* AND AGAIN ONCE chain.js IS ACTUALLY THERE.
+         This render runs while the document is still parsing, and chain.js is
+         deferred -- so it has not executed yet, and presets() (the only thing
+         render reads off OddieChain rather than out of a click handler) comes
+         back empty. The stake chips are drawn from it, so every market lost its
+         amount row: the fast path where you set the stake and the side button
+         signs it straight through.
+         It used to work by accident. The old first render waited on a fetch,
+         and the deferred script had always run by the time that resolved.
+         Deferred scripts run before DOMContentLoaded, so this is the first
+         moment presets() can answer. */
+      if (!(window.OddieChain && window.OddieChain.presets)) {
+        document.addEventListener("DOMContentLoaded", function () { render(pre); }, { once: true });
+      }
+      return;
+    }
   }
   fetch("/api/v1/markets/" + encodeURIComponent(SLUG))
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? "no such market" : "server said " + r.status)); })
