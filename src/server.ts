@@ -493,9 +493,12 @@ async function renderLanding(): Promise<string> {
       const pool = sol < 0.001 ? "<0.001" : sol.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
       const left = Math.max(0, new Date(m.closesAt as string).getTime() - now);
       const hrs = Math.floor(left / 3_600_000);
-      const when = hrs >= 48 ? `${Math.floor(hrs / 24)} days left`
-        : hrs >= 1 ? `${hrs} hours left`
-        : `${Math.max(1, Math.floor(left / 60_000))} minutes left`;
+      // Singular when it is one. "1 minutes left" on the one line of this page
+      // that is supposed to read as live evidence.
+      const plural = (n: number, unit: string): string => `${n} ${unit}${n === 1 ? "" : "s"} left`;
+      const when = hrs >= 48 ? plural(Math.floor(hrs / 24), "day")
+        : hrs >= 1 ? plural(hrs, "hour")
+        : plural(Math.max(1, Math.floor(left / 60_000)), "minute");
       const line = foldIds(m.hook || m.question);
       return '<a class="proof" href="' + escHtml(`${APP_BASE_URL}/m/${slugFor(m)}`) + '">'
         + '<span class="proof__k">Open right now</span>'
