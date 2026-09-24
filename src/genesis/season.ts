@@ -43,7 +43,16 @@ import { _memProfileByHandle } from "./profileStore.js";
  * A window keeps that and drops the contradiction. Nobody experiences "five a
  * day" as a gate; everybody experiences "five, ever" as one.
  */
-export const GENESIS_TICKETS = 5;
+/* FIVE IS THE PRODUCT RULE, NOT A CONSTANT OF NATURE. Recording a demo means
+   tagging the bot over and over, and the eleventh take does not fail loudly --
+   it settles "no-tickets" and the bot simply says nothing, which on camera is
+   indistinguishable from the bot being broken. The env var exists so a demo day
+   can raise the ceiling without a deploy touching the cap everyone else gets.
+   Absent or unparseable, the rule above stands unchanged. */
+const ticketsFromEnv = Number(process.env.GENESIS_TICKETS_PER_DAY);
+export const GENESIS_TICKETS = Number.isFinite(ticketsFromEnv) && ticketsFromEnv > 0
+  ? Math.floor(ticketsFromEnv)
+  : 5;
 /** How far back the count reaches. The cap is per rolling day, not per life. */
 export const TICKET_WINDOW = "24 hours";
 
