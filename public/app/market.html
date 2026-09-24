@@ -429,16 +429,24 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
      rendered in its original sequence while looking, in the stylesheet, as
      though it had been reordered. */
   #view{display:flex;flex-direction:column}
-  #view > *{order:5}
+  #view > *{order:6}
   #view > .backfeed{order:1}
   #view > .q{order:2}
   #view > .qfull{order:3}
-  #view > .pool,#view > .first{order:4}
-  #view > .sides{order:6}
+  /* THE DEADLINE BELONGS BEFORE THE DECISION, and on phones it was after it.
+     Measured: the buttons sat at 476 and "6h 26m left" at 637, so somebody
+     staking had never been shown the horizon they were staking into. Above
+     640px the DOM order applies and the eyebrow has always come first; this
+     only ever went wrong on the width that X traffic arrives at.
+     It carries who said it and a link to the post as well, which is the same
+     kind of fact: everything a person checks BEFORE picking a side, ahead of
+     the side. */
+  #view > .eyebrow{order:4;margin:0 0 16px}
+  #view > .pool,#view > .first{order:5}
+  #view > .sides{order:7}
   /* "Betting is over" renders after the buttons and has to stay there; it is
      also a .pool, which would otherwise hoist it above the question. */
-  #view > .pool--quiet{order:6}
-  #view > .eyebrow{order:7;margin:22px 0 0}
+  #view > .pool--quiet{order:7}
   #view > .terms{order:8}
   #view > .act{order:9}
   #view > .rail{order:10}
@@ -513,11 +521,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   display:none;grid-column:1/-1;justify-self:start;
   font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;
   text-transform:uppercase;color:var(--fg-3);
-  background:none;border:0;padding:2px 0 6px;cursor:pointer;
+  margin:0;padding:2px 0 6px;
 }
 .sides__amt b{color:var(--fg);font-weight:800}
-.sides__amt span{color:var(--yellow);text-decoration:underline;text-underline-offset:3px}
-.sides__amt:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
 
 @media (max-width:640px){
   .sides{
@@ -1007,16 +1013,21 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
           : '<p class="how">Winners split the pool.</p>';
       }
       html += '<div class="sides">'
-        /* The figure rides WITH the buttons, because on a phone the buttons
-           are pinned to the bottom of the screen and the sentence that named
-           the amount is six hundred pixels above them. Only when there is a
-           figure to name: with no chips (chain.js absent) the sheet asks for
-           the amount itself, and a label saying nothing would be worse than
-           none. */
+        /* WHAT IS ABOUT TO BE STAKED, BESIDE THE BUTTON THAT STAKES IT. With a
+           wallet already connected, pressing a side does not open a form to
+           confirm: it goes straight to a signature. So the number stays here,
+           where a person reads it in the same glance as the button.
+           It is a LABEL now, not a control. It used to be a button that
+           scrolled to the chips, written when the buttons were pinned to the
+           bottom of the screen and the chips were six hundred pixels away.
+           They are not any more -- .sides is position:relative and the two sit
+           54px apart, both on screen together -- so "change" was an invitation
+           to travel to something already in view. The chips are the control;
+           this is the receipt. */
         + (!off && P.length
-            ? '<button class="sides__amt" type="button" id="amtjump">'
+            ? '<p class="sides__amt">'
               + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>")
-              + " <span>change</span></button>"
+              + "</p>"
             : "")
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES" + pctY + "</button>"
         + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO" + pctN + "</button></div>";
@@ -1135,8 +1146,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     function showStake() {
       var amt = view.querySelector(".sides__amt");
       if (amt) {
-        amt.innerHTML = (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>")
-          + " <span>change</span>";
+        amt.innerHTML = stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>";
       }
     }
 
@@ -1183,18 +1193,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         if (y) y.focus();
       });
     }
-
-    /* The figure is the control. Pressing it goes to the chips rather than
-       opening a second amount input: one source for the number, and the row
-       that changes it is already on the page. */
-    var amtjump = document.getElementById("amtjump");
-    if (amtjump) amtjump.addEventListener("click", function () {
-      var chips = view.querySelector(".stakes");
-      if (!chips) return;
-      chips.scrollIntoView({ block: "center", behavior: "smooth" });
-      var on = chips.querySelector(".stake.on") || chips.querySelector(".stake");
-      if (on) on.focus({ preventScroll: true });
-    });
 
     Array.prototype.forEach.call(view.querySelectorAll(".side"), function (b) {
       b.addEventListener("click", function () {
