@@ -631,12 +631,28 @@ async function marketShellHtml(slug: string, question: string): Promise<string> 
     : ({ ok: false, reason: "absent" } as MarketRead);
   let desc = "Real money on Solana. Call it YES or NO.";
   if (read.ok) {
-    const yes = read.state.totalYesLamports, no = read.state.totalNoLamports, tot = yes + no;
-    if (read.state.resolved && read.state.winningSide) desc = `Resolved ${read.state.winningSide.toUpperCase()}.`;
-    else if (tot > 0) {
-      const pct = Math.max(1, Math.min(99, Math.round((yes / tot) * 100)));
-      desc = `${(tot / 1e9).toFixed(2)} SOL in the pool — ${pct}% yes right now.`;
-    } else desc = "No one has backed a side yet. The first stake sets the price.";
+    if (read.state.resolved && read.state.winningSide) {
+      desc = `Resolved ${read.state.winningSide.toUpperCase()}. Settled on Solana.`;
+    } else {
+      /* THE THIRD COPY. This description is what unfurls on X, in Slack, in
+         iMessage -- every place a market link is pasted -- and it carried its
+         own clamped Math.min(99, ...), so it went on saying "99% yes right
+         now" about a pool nobody had taken the other side of after the card,
+         the API and the page had all stopped. Same definition as the rest now:
+         a price exists only when both sides hold money. */
+      const view = oddsFromPools(
+        read.state.totalYesLamports, read.state.totalNoLamports,
+        { creatorBps: read.state.creatorFeeBps ?? detail?.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+          protocolBps: PROTOCOL_FEE_BPS_REAL });
+      const sol = (n: number): string => (n / 1e9).toFixed(2);
+      if (view.state === "priced") {
+        desc = `${sol(view.totalLamports)} SOL in the pool, ${view.yesPct}% yes right now.`;
+      } else if (view.state === "one-sided") {
+        desc = `${sol(view.totalLamports)} SOL in the pool. Nobody has taken the other side yet.`;
+      } else {
+        desc = "No one has backed a side yet. The first stake sets the price.";
+      }
+    }
   }
   const img = `${BASE_URL}/card/${slug}.png`;
   const url = `${BASE_URL}/m/${slug}`;
@@ -657,7 +673,23 @@ async function marketShellHtml(slug: string, question: string): Promise<string> 
     `<meta name="twitter:description" content="${ogEsc(desc)}">`,
     `<meta name="twitter:image" content="${ogEsc(img)}">`,
   ].join("\n");
-  return MARKET_HTML.replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`);
+  /* THE PAYLOAD RIDES ALONG. Without it this page ships 137KB whose whole
+     visible body is "Loading the market...", then asks for the content in a
+     second round trip: html done at 211ms, content painted at 893ms, measured
+     on a desktop connection. On the one page every visitor from X lands on.
+     Not a second renderer -- the client's render() runs on this object exactly
+     as it runs on the fetched one, so there is no markup to drift. A failure
+     here inlines nothing and the page falls back to fetching, which is the
+     behaviour it has today. JSON inside a script element needs only "</" broken
+     up; the rest is already safe because the content type is not HTML. */
+  let boot = "null";
+  try {
+    const payload = await marketDetailPayload(slug);
+    if (payload) boot = JSON.stringify(payload).replace(/<\//g, "<\\/");
+  } catch { /* the page fetches for itself */ }
+  return MARKET_HTML
+    .replace("<title>oddie</title>", `<title>${ogEsc(title)} · oddie</title>\n${tags}`)
+    .replace('id="boot">null<', `id="boot">${boot}<`);
 }
 
 /** The market permalink while the app is closed: an honest object instead of a
@@ -3407,9 +3439,21 @@ app.get("/api/v1/markets", async (req, res) => {
 });
 
 /** One market, including who its creator fee is owed to. */
-app.get("/api/v1/markets/:slug", async (req, res) => {
-  const detail = await communityMarketDetail(req.params.slug);
-  if (!detail) return res.status(404).json({ ok: false, error: "unknown market" });
+/* THE PAGE AND THE API SERVE THE SAME OBJECT.
+ * Extracted so /m/:slug can put this payload INSIDE the html it already
+ * sends, instead of shipping 137KB whose whole visible body is "Loading the
+ * market..." and then asking for the content in a second round trip. The
+ * question is in that html four times already (title, og:title, og:image:alt,
+ * twitter:title) and in the body zero times. Measured: html done at 211ms,
+ * content painted at 893ms, on a desktop connection, on the one page every
+ * visitor from X lands on.
+ *
+ * One renderer stays: the client's. Server-rendering the markup as well would
+ * put the same layout in two languages and let them drift, which is the bug
+ * this audit already found between the card and the page. */
+async function marketDetailPayload(slug: string): Promise<Record<string, unknown> | null> {
+  const detail = await communityMarketDetail(slug);
+  if (!detail) return null;
   const read = detail.onchainPubkey
     ? await readMarket(detail.onchainPubkey).catch((): MarketRead => ({ ok: false, reason: "unreadable", error: "read threw" }))
     : ({ ok: false, reason: "absent" } as MarketRead);
@@ -3421,8 +3465,8 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
   // carries the ORIGINATING POST (url, text, author). A market IS a claim
   // somebody made on X, and the page that takes money against it has to let
   // the claim be checked at source, not reduce provenance to a handle.
-  const src = (await surfacersFor([req.params.slug]).catch(() => ({} as Record<string, SurfacerInfo>)))[req.params.slug] ?? null;
-  const heads = (await stakerCounts([req.params.slug]).catch(() => ({} as Record<string, number>)))[req.params.slug] ?? 0;
+  const src = (await surfacersFor([slug]).catch(() => ({} as Record<string, SurfacerInfo>)))[slug] ?? null;
+  const heads = (await stakerCounts([slug]).catch(() => ({} as Record<string, number>)))[slug] ?? 0;
   const yes = state?.totalYesLamports ?? 0, no = state?.totalNoLamports ?? 0;
   const total = yes + no;
   /* The rates are PER MARKET and frozen at creation: one with no creator to
@@ -3430,7 +3474,7 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
      takeout against it, which understates what its winners collect. */
   const odds = oddsFromPools(unreadable ? null : yes, unreadable ? null : no,
     { creatorBps: state?.creatorFeeBps ?? detail.creatorFeeBps, protocolBps: PROTOCOL_FEE_BPS_REAL });
-  res.json({
+  return {
     ok: true,
     slug: detail.slug,
     question: detail.question,
@@ -3475,9 +3519,14 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
     protocolFeeBps: state?.protocolFeeBps ?? PROTOCOL_FEE_BPS_REAL,
     onchain: detail.onchainPubkey ? { pubkey: detail.onchainPubkey, explorer: explorerUrl(detail.onchainPubkey) } : null,
     cluster: cluster(),
-  });
-});
+  };
+}
 
+app.get("/api/v1/markets/:slug", async (req, res) => {
+  const payload = await marketDetailPayload(req.params.slug);
+  if (!payload) return res.status(404).json({ ok: false, error: "unknown market" });
+  res.json(payload);
+});
 /**
  * Turn a claim into a market. The instruction no other agent platform has.
  *

@@ -622,6 +622,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 
 <main class="wrap">
   <div id="view"><p class="load">Loading the market…</p></div>
+  <!-- The server fills this with the same object /api/v1/markets/<slug> returns,
+       so the first render needs no network at all. Left as null when the server
+       could not build it, and the script below falls back to fetching. -->
+  <script type="application/json" id="boot">null</script>
 </main>
 <!-- THE NAV, AFTER THE THING YOU CAME FOR.
      Phone only: above 640px the masthead still carries it and a second copy
@@ -1192,17 +1196,40 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     }
   }
 
+  /* THE CHAIN CLIENT ONLY EVER NEEDS THE CLUSTER, and it may not have loaded
+     yet when the first payload arrives inline. */
+  function initChain(m) {
+    if (window.OddieChain && window.OddieChain.init) return window.OddieChain.init(m.cluster);
+    window.addEventListener("load", function () {
+      if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(m.cluster);
+    });
+  }
+
+  /* WHAT THE HTML ALREADY CARRIED. The page used to paint "Loading the market…"
+     and then go and ask for content the server had already computed to build
+     this page's own title and og tags. When the payload is inline the first
+     render happens at parse time and no request is made for it: the refresh
+     path below still runs on every stake and every poll, so nothing here goes
+     stale, it just stops being the thing that blocks the first paint. */
+  function bootPayload() {
+    var el = document.getElementById("boot");
+    if (!el) return null;
+    try {
+      var v = JSON.parse(el.textContent || "null");
+      return v && v.ok ? v : null;
+    } catch (e) { return null; }
+  }
+
   function load(first) {
+  if (first) {
+    var pre = bootPayload();
+    if (pre) { initChain(pre); render(pre); return; }
+  }
   fetch("/api/v1/markets/" + encodeURIComponent(SLUG))
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status === 404 ? "no such market" : "server said " + r.status)); })
     .then(function (m) {
       if (!m || !m.ok) throw new Error("bad response");
-      if (first) {
-        if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(m.cluster);
-        else window.addEventListener("load", function () {
-          if (window.OddieChain && window.OddieChain.init) window.OddieChain.init(m.cluster);
-        });
-      }
+      if (first) initChain(m);
       render(m);
     })
     .catch(function (e) {
