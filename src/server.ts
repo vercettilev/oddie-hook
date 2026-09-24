@@ -1553,6 +1553,9 @@ if (process.env.GENESIS_DEV_SEED === "1") {
         closeTime: Math.floor(new Date(closeIso).getTime() / 1000),
         winningSide: null, totalYesLamports: yesL, totalNoLamports: noL,
         creator: null, creatorFeeBps: CREATOR_FEE_BPS_REAL,
+        // Null, not a zero hash: this fixture market was never committed to a
+        // rule and must not read as one that was committed to an empty one.
+        criteriaHash: null,
         creatorFeeLamports: 0, creatorFeeClaimed: false,
         protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
         protocolFeeLamports: 0, protocolFeeClaimed: false,
@@ -3529,6 +3532,24 @@ async function marketDetailPayload(
     url: `${APP_BASE_URL}/m/${detail.slug}`,
     closesAt: detail.closesAt,
     resolutionCriteria: detail.resolutionCriteria ?? null,
+    /* PROVED, NOT ASSERTED. The program hashes the criteria itself: the rule
+       goes into instruction data verbatim and sha256 of it is written into
+       account state, so nobody can edit the rule afterwards without the hash
+       stopping matching. This recomputes that hash over the criteria we are
+       about to publish and says true only when the two agree.
+       Three ways it is not true, all different and none of them 'locked':
+       the field is absent (a market older than it), the hash is all zeros
+       (minted with no criteria, so committed to nothing), or it simply does
+       not match, which would mean the text on this page is not the rule the
+       chain holds. Null means unknown -- an unreadable chain must never
+       render as a broken promise, nor as a kept one. */
+    criteriaLocked: (() => {
+      const onchain = state?.criteriaHash;
+      const text = detail.resolutionCriteria;
+      if (!onchain || !text) return null;
+      if (/^0+$/.test(onchain)) return false;
+      return createHash("sha256").update(text, "utf8").digest("hex") === onchain;
+    })(),
     resolved: Boolean(state?.resolved ?? detail.resolvedOutcome),
     outcome: state?.winningSide ?? detail.resolvedOutcome ?? null,
     pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },

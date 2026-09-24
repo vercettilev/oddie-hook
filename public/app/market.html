@@ -201,6 +201,14 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .terms summary::after{content:"+";font-size:16px;line-height:1;color:var(--yellow)}
 .terms[open] summary::after{content:"\2212"}
 .terms summary:focus-visible{outline:3px solid var(--cream);outline-offset:-3px}
+/* The label and its note are ONE flex item, or space-between pushes them to
+   opposite ends of the row and the "+" loses its corner. */
+.terms__k{display:flex;flex-direction:column;gap:5px;min-width:0}
+/* Lower case and unspaced on purpose: the label above is a control and this
+   is a fact, and setting a fact in the control's own type turns it into a
+   second button nobody can press. */
+.terms__lock{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:0;
+  text-transform:none;color:var(--yellow);opacity:.92}
 .terms__b{padding:0 16px 14px;font-size:14.5px;line-height:1.6;color:var(--fg-2);
   white-space:pre-wrap;overflow-wrap:anywhere}
 .terms__b b{color:var(--cream)}
@@ -1032,7 +1040,21 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       /* Kapali aciliyor. Acik hali sartlari okumadan gecilemeyen bir duvar
          yapiyordu; asil isi merak edene TEK TIKLA acilmak, herkese pesinen
          dayatilmak degil. Baslik gorunur kaldigi icin varligi hala belli. */
-      html += '<details class="terms"><summary>How this resolves</summary>'
+      /* THE CLOSED STATE CARRIES THE CLAIM. Staying collapsed is settled (see
+         above) and this does not reopen it. What changed is what the closed
+         line says: "How this resolves" is a label a stranger scrolls past,
+         and the strongest fact this product has was folded up behind it --
+         that the rule was written into Solana when the market opened and
+         cannot be edited now, by us or by anyone.
+         Printed ONLY when the server recomputed sha256 over the text above
+         and it matched the hash the program wrote. Unknown chain, absent
+         field, zero hash or a mismatch all print nothing, because a promise
+         about who can change the rules is the last one to make on a guess. */
+      var lockNote = m.criteriaLocked === true
+        ? '<small class="terms__lock">Locked on Solana when this market opened</small>'
+        : "";
+      html += '<details class="terms"><summary><span class="terms__k">How this resolves'
+        + lockNote + "</span></summary>"
         + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
     }
 

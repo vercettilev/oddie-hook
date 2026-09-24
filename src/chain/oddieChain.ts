@@ -773,6 +773,27 @@ export interface OnChainMarketState {
   protocolFeeBps: number;
   protocolFeeLamports: number;
   protocolFeeClaimed: boolean;
+  /**
+   * sha256 of the rule this market settles by, as the PROGRAM computed it: the
+   * criteria go into instruction data verbatim and the hash is written into
+   * account state, so this is the one copy nobody can edit afterwards.
+   *
+   * Null when the field is absent (a market from the 162-byte layout) and
+   * "00...00" when the market was minted with no criteria at all. Those are
+   * different facts from a hash that simply does not match, and a page that
+   * claims "locked" must be able to tell all three apart.
+   */
+  criteriaHash: string | null;
+}
+
+/** A 32-byte account field as lowercase hex, whatever shape the decoder hands
+ *  back (Buffer, Uint8Array or a plain number array). Null when absent, which
+ *  is a market older than the field and not a market with nothing in it. */
+function hexOf(v: unknown): string | null {
+  if (v == null) return null;
+  const bytes = v instanceof Uint8Array ? Array.from(v) : Array.isArray(v) ? v : null;
+  if (!bytes || bytes.length !== 32) return null;
+  return bytes.map((b) => Number(b).toString(16).padStart(2, "0")).join("");
 }
 
 /** Read a market's live on-chain state — pool sizes and (once resolved) the
@@ -842,6 +863,7 @@ function decodeMarket(a: Record<string, unknown>): OnChainMarketState {
     protocolFeeBps: sane(Number(a.protocolFeeBps ?? a.protocol_fee_bps ?? 0)),
     protocolFeeLamports: Number(a.protocolFeeLamports ?? a.protocol_fee_lamports ?? 0),
     protocolFeeClaimed: Boolean(a.protocolFeeClaimed ?? a.protocol_fee_claimed),
+    criteriaHash: hexOf(a.criteriaHash ?? a.criteria_hash),
   };
 }
 
