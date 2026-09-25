@@ -1285,6 +1285,22 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   }
   load(true);
 
+  /* COUNT THE VISIT, ONCE, AFTER THE PAGE IS ACTUALLY UP.
+     The server deliberately does not count this: /m/<slug> is also what X
+     fetches to build the unfurl card for every market the bot posts, so
+     counting there would count the crawler on every reply and tell us nothing
+     about whether a person looked. A browser that got this far is a person.
+     Fire and forget. A counter that can fail is still a counter; a counter
+     that can break the page is a bug. */
+  try {
+    fetch("/api/view", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug: SLUG, deviceId: (window.OddieId && window.OddieId.get()) || null }),
+      keepalive: true,
+    }).catch(function () {});
+  } catch (e) {}
+
   /* THE MONEY MOVED, SO THE PAGE MOVES.
      chain.js fires this the moment a stake lands. Two things follow: the pool
      and the percentages are refetched (the server dropped its cached chain

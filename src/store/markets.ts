@@ -465,6 +465,14 @@ CREATE TABLE IF NOT EXISTS page_view (
   at         timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS page_view_slug_idx ON page_view(slug);
+-- ONE ROW PER PERSON PER MARKET, because that is what the reader counts:
+-- viewCounts does COUNT(DISTINCT device_id), so storing every reload would
+-- grow the table without changing a single number it produces. With the
+-- constraint the table IS the distinct set and the insert can simply collide.
+-- Separate statement on purpose: CREATE TABLE IF NOT EXISTS never alters an
+-- existing table, so a constraint added inside the definition above would
+-- silently not exist in production.
+CREATE UNIQUE INDEX IF NOT EXISTS page_view_once_idx ON page_view(slug, device_id);
 
 -- Who surfaced a market — the contributor a tagged claim came from. Keyed by
 -- slug so it covers BOTH venue matches (no community_market row) and created
@@ -4887,6 +4895,33 @@ export interface CommunityMarketDetail {
  * feed uses this only to break a tie between markets that both have no money in
  * them, which is exactly where attention is the best signal available.
  */
+/**
+ * Record that a device opened a market page.
+ *
+ * NOTHING HAS EVER WRITTEN TO page_view. The table was created, viewCounts has
+ * been reading it since it was written, and the counter it feeds has always
+ * been zero: not "nobody came", but "nobody was ever counted". The same shape
+ * as the telemetry that shipped disconnected for months on the other product.
+ *
+ * CLIENT SIDE ONLY, and that is the one decision in here that matters. Counting
+ * in the /m/:slug route would count X's unfurl crawler, which fetches every
+ * market link the bot posts, so the number would move every time the bot
+ * replied and would say nothing at all about whether a person looked.
+ *
+ * Collisions are the normal case (a reload, a second visit) and are dropped
+ * rather than raised: the question this answers is how many people saw a
+ * market, not how many times.
+ */
+export async function recordView(slug: string, deviceId: string | null): Promise<void> {
+  if (!PERSISTENT || !slug) return;
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO page_view (slug, device_id) VALUES ($1, $2)
+       ON CONFLICT (slug, device_id) DO NOTHING`,
+    [slug, deviceId],
+  );
+}
+
 export async function viewCounts(slugs: string[]): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
   if (!slugs.length || !PERSISTENT) return out;

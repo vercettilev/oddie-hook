@@ -30,7 +30,7 @@ import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
 import { resolvePriceClaim, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
-import { hookFor, viewCounts } from "./store/markets.js";
+import { hookFor, viewCounts, recordView } from "./store/markets.js";
 import { runExtract, extractEnabled, EXTRACT_KEY_ENV, unsettleablePhrase, addressInQuestion } from "./matching/extractClaim.js";
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
@@ -1525,6 +1525,24 @@ app.post("/api/push/unsubscribe", express.json(), async (req, res) => {
 /** They have been shown it. Called by the profile once it has actually drawn
  *  the money on screen, never by the masthead: a badge that cleared itself by
  *  being counted would vanish before anybody read it. */
+/* WHO ACTUALLY SAW A MARKET.
+   The counter this feeds has read zero since it was written because nothing
+   ever wrote to it, which is a different fact from nobody coming and the two
+   were indistinguishable from the outside. Answered from the browser rather
+   than from the /m/:slug route on purpose: that route is also what X's unfurl
+   crawler fetches for every market the bot posts, so counting there would
+   count the crawler and say nothing about people.
+   Always 204, including for junk: this is a counter, and a client that cannot
+   record a view has nothing useful to do about it. */
+app.post("/api/view", express.json(), async (req, res) => {
+  const body = req.body as { slug?: unknown };
+  const slug = typeof body?.slug === "string" ? body.slug.slice(0, 120) : "";
+  if (/^[a-z0-9-]{3,120}$/.test(slug)) {
+    await recordView(slug, deviceIdOf(req.body)).catch(() => {});
+  }
+  res.status(204).end();
+});
+
 app.post("/api/chain/payouts/seen", express.json(), async (req, res) => {
   const deviceId = typeof req.body?.deviceId === "string" && DEVICE_ID.test(req.body.deviceId) ? req.body.deviceId : null;
   if (!deviceId) return res.json({ ok: false });
