@@ -77,6 +77,20 @@ console.log("\nthe on-demand mint reads it, which is the whole point");
     "creator: null here silently drops the wallet the caller paid to name");
 }
 
+console.log("\nand the wallet named at open time reaches the row");
+{
+  /* THE MIDDLE LINK, which is the one that broke. Both ends above were tested
+     and passing while openMarketFromClaim computed the wallet and never handed
+     it to createCommunityMarket, so every on-demand market minted unnamed. */
+  const src = readFileSync("src/server.ts", "utf8");
+  const fn = src.slice(src.indexOf("async function openMarketFromClaim"));
+  const call = /createCommunityMarket\(\{[^}]*\}\)/.exec(fn.slice(0, fn.indexOf("\n}\n")))?.[0] ?? "";
+  check("openMarketFromClaim hands the wallet to the row", /\bcreatorWallet\b/.test(call), call.slice(0, 160));
+  const mint = src.slice(src.indexOf("async function ensureMinted"));
+  check("and a market with none on its row asks for the opener's wallet at mint time",
+    /creator:\s*detail\.creatorWallet \?\? \(await openerWalletFor\(slug\)/.test(mint.slice(0, mint.indexOf("\n}\n"))));
+}
+
 console.log("\nthe column is actually added to existing deployments");
 {
   const store = readFileSync("src/store/markets.ts", "utf8");

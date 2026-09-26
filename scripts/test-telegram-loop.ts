@@ -440,6 +440,8 @@ function guestHarness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}) {
   check("...and that reply edited into the market", Boolean(last && /Opened by @alice/.test(last.text)));
   check("...with the market page as its preview and its button",
     last?.previewUrl === "https://app.oddie.fun/m/slug-1" && last?.button?.url === "https://app.oddie.fun/m/slug-1");
+  check("...and words that name the market once, since the preview carries the rest",
+    Boolean(last && last.text.startsWith("BTC to 200k?\n\nOpened by") && !last.text.includes("/m/slug-1")), last?.text);
   check("...on its own ledger key, apart from the bot's real chats", _memMentionOutcome(`tgg:${PAIR.id}:41`) === "replied"
     && _memMentionOutcome(`tg:${PAIR.id}:41`) === null);
   check("...never storing the words from a private chat", _memMentionClaimText(`tgg:${PAIR.id}:41`) === null);

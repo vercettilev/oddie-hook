@@ -3154,7 +3154,12 @@ async function openMarketFromClaim(input: {
     return bad(502, "market could not be opened on Solana, so it has no vault and was not published");
   }
 
-  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria: criteria, resolvability, hook: input.hook ?? null, marketId, creatorFeeBps, priceCheck });
+  /* THE WALLET GOES ON THE ROW. It was computed above and handed to an eager
+     mint, and never to the row, so every on-demand market -- the claims API
+     that exists to pay its caller, and every Telegram market -- reached the
+     chain unnamed: ensureMinted reads the creator off the row and found null.
+     Both ends of that path were tested; this line between them was not. */
+  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria: criteria, resolvability, hook: input.hook ?? null, marketId, creatorFeeBps, creatorWallet, priceCheck });
   if (minted) await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
@@ -3183,6 +3188,19 @@ async function openMarketFromClaim(input: {
  * turns that into the same success. There is no window in which two accounts
  * can exist for one market.
  */
+/**
+ * The wallet the opener of this market has chosen, at this moment, or null.
+ * Telegram: the wallet they linked through /earn. X: the wallet linked to the
+ * X account that tagged (market_surfacer.handle is the tagger, not the claim's
+ * author). Read at mint time, so choosing a wallet before tagging counts.
+ */
+async function openerWalletFor(slug: string): Promise<string | null> {
+  const tg = await tgOpenerOf(slug).catch(() => null);
+  if (tg) return personWallet(tg.author);
+  const s = await surfacerFor(slug).catch(() => null);
+  return s?.handle ? walletForTwitterHandle(s.handle) : null;
+}
+
 async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   const detail = await communityMarketDetail(slug).catch(() => null);
   if (!detail) return null;
@@ -3212,9 +3230,11 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
     // caller's market actually reaches the chain; a wallet passed at create
     // time and not stored would have been silently dropped here, and the fix
     // would have looked complete while doing nothing on the one route it was
-    // written for. Still null for tag-driven markets: those name their creator
-    // when the person connects, which is unchanged.
-    creator: detail.creatorWallet, creatorFeeBps: detail.creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+    // written for. A tag-driven market whose opener chose a wallet BEFORE
+    // tagging used to stay unnamed here, because naming only ran when they
+    // connected; so the opener's wallet as it stands now is looked up.
+    creator: detail.creatorWallet ?? (await openerWalletFor(slug).catch(() => null)),
+    creatorFeeBps: detail.creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
   }).catch(() => null);
 
   if (minted) {

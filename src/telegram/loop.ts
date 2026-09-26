@@ -325,7 +325,9 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
       if (already) {
         const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${already.slug}`;
         const reply = buildTweetReply({ question: already.question, permalink, hook: "" });
-        await answer(reply.primary, already.slug);
+        // A guest reply shows the market page as its preview and has a button
+        // to it, so the words need only name the market once.
+        await answer(guest ? already.question : reply.primary, already.slug);
         await settleMention(key, "replied", { slug: already.slug, reason: "existing", claimText, replyId: guestReplyId });
         decide("replied", { reason: "existing", slug: already.slug });
         continue;
@@ -415,7 +417,10 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
          under a market that just opened: a pointer to an existing one was
          opened by somebody else, and naming the tagger there would be false. */
       const openerLine = TG_COPY.opener(tgDisplayName(msg.from), deps.botUsername);
-      await answer(`${reply.primary}\n\n${openerLine}`, minted.slug);
+      /* In a guest reply the preview above the text is the card and the page's
+         own title, and the button is the link, so the full reply said the
+         question three times. The headline and the opener are what is left. */
+      await answer(guest ? `${ex.hook || ex.question}\n\n${openerLine}` : `${reply.primary}\n\n${openerLine}`, minted.slug);
       /* "opened" is what the daily cap counts: a pointer to a market that
          already existed opened nothing and costs the person nothing. A guest
          reply keeps its inline id: it is the only way to show the result there. */
