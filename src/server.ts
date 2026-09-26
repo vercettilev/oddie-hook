@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
-  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson } from "./store/markets.js";
+  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson, tgOpenedToday } from "./store/markets.js";
 import { sendPush, vapidFromEnv } from "./push/webpush.js";
 import { findDuplicate } from "./matching/duplicate.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
@@ -36,6 +36,8 @@ import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import { oddsFromPools } from "./odds.js";
+import * as TG from "./telegram/client.js";
+import { runTelegramSweep, type TgSweepDeps } from "./telegram/loop.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee, closeMarketOnChain, _devPutMarket,
   walletBalanceLamports,
@@ -5461,6 +5463,127 @@ if (X_BOT_ENABLED) {
     console.log(`[x] mention loop ON, every ${Math.round(X_POLL_MS / 1000)}s, ${X_BOT_DRY_RUN ? "DRY RUN (nothing is posted)" : "POSTING FOR REAL"}`);
   }
 }
+
+/* ------------------------------------------------------------- telegram --
+ * oddie in Telegram groups. Everything that decides anything is in
+ * src/telegram/loop.ts; this is only the wiring, and it is the same wiring the
+ * X bot uses -- extraction, openMarketFromClaim, openMarketForSourcePost, the
+ * card -- because the market side was always platform-neutral.
+ *
+ * THE TOKEN IS THE SWITCH. No TELEGRAM_BOT_TOKEN, no loop, no error: a deploy
+ * without it behaves exactly as before.
+ *
+ * CREATOR FEE IS 0 HERE, deliberately, and not by omission. The 2% is paid to
+ * the wallet set_creator writes, which today comes from an X handle; a Telegram
+ * user has no linked wallet, so the fee would come out of real winners and sit
+ * in the vault unclaimed forever (creatorFeeBpsForHandle). taggerHandle null
+ * mints at 0 bps. It goes back to the full rate the day a Telegram user can
+ * link a wallet, without repricing anything already open.
+ */
+const TG_DRY_RUN = (process.env.TELEGRAM_DRY_RUN ?? "false").toLowerCase() === "true";
+const TG_MARKETS_PER_DAY = (() => {
+  const n = Number(process.env.TG_MARKETS_PER_DAY ?? 5);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
+})();
+const tgSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function startTelegram(): Promise<void> {
+  let me: TG.TgUser;
+  try {
+    await TG.deleteWebhook();
+    me = await TG.getMe();
+  } catch (e) {
+    console.error(`[tg] TELEGRAM_BOT_TOKEN is set but the bot could not be reached: ${(e as Error).message}. The loop will not start.`);
+    return;
+  }
+  if (!me.username) {
+    console.error("[tg] the bot has no @username, so a tag cannot be recognised. The loop will not start.");
+    return;
+  }
+  const log = (line: string, extra?: Record<string, unknown>) =>
+    console.log(JSON.stringify({ evt: "tg_bot", line, ...extra }));
+
+  const deps: TgSweepDeps = {
+    botUsername: me.username,
+    updates: (offset) => TG.getUpdates(offset, 25),
+    extract: (text) => runExtract(text),
+    existingMarket: (sourceUrl) => openMarketForSourcePost(sourceUrl),
+    openMarket: async (input) => {
+      const out = await openMarketFromClaim({
+        question: input.question,
+        closeInput: input.closeInput,
+        sourceUrl: input.sourceUrl,
+        taggerHandle: null, // 0 bps until a Telegram user can link a wallet (see above)
+        category: input.category,
+        resolutionCriteria: input.resolutionCriteria,
+        priceClaim: input.priceClaim ?? null,
+        claimText: input.claimText ?? null,
+        resolvability: input.resolvability,
+        hook: input.hook ?? null,
+        mint: "on-demand", // no rent until somebody actually stakes
+      });
+      return out.ok ? { ok: true, slug: out.slug } : { ok: false, status: out.status, error: out.error };
+    },
+    reply: async ({ chatId, replyTo, text, photoUrl }) => {
+      /* THE PICTURE MAY FALL BACK TO WORDS, BUT ONLY ON A REFUSAL. A 4xx is
+         Telegram saying it created nothing -- no photo rights in this group, or
+         it could not fetch the card -- so sending the text instead cannot
+         double-post. A timeout proves nothing either way, so that throws and
+         the loop settles it for good. Same reasoning as the X 403 fallback. */
+      const once = async () => {
+        if (photoUrl) {
+          try { await TG.sendPhoto(chatId, photoUrl, text, replyTo); return; }
+          catch (e) {
+            const refused = e instanceof TG.TgError && e.code >= 400 && e.code < 500 && e.code !== 429;
+            if (!refused) throw e;
+            log("photo refused, sending the words", { chatId, err: (e as Error).message });
+          }
+        }
+        await TG.sendMessage(chatId, text, replyTo);
+      };
+      try { await once(); }
+      catch (e) {
+        // Rate limited is also a definite "nothing was created": wait as told, once.
+        if (e instanceof TG.TgError && e.code === 429 && e.retryAfter && e.retryAfter <= 30) {
+          await tgSleep(e.retryAfter * 1000);
+          await once();
+          return;
+        }
+        throw e;
+      }
+    },
+    rememberPerson: (platformId, handle) => rememberPerson("tg", platformId, handle),
+    openedToday: (author) => tgOpenedToday(author),
+    dailyCap: TG_MARKETS_PER_DAY,
+    baseUrl: APP_BASE_URL,
+    cardUrl: (slug) => `${BASE_URL}/card/${slug}.png`,
+    dryRun: TG_DRY_RUN,
+    log,
+  };
+
+  console.log(`[tg] @${me.username} listening, ${TG_DRY_RUN ? "DRY RUN (nothing is posted)" : "POSTING FOR REAL"}, ${TG_MARKETS_PER_DAY} markets per person per day`);
+  let failures = 0;
+  for (;;) {
+    const t0 = Date.now();
+    try {
+      const r = await runTelegramSweep(deps);
+      if (r.looked) log("sweep", { looked: r.looked, replied: r.replied, skipped: r.skipped, failed: r.failed, retried: r.retried });
+      failures = 0;
+      // getUpdates long-polls, so this only matters if Telegram ever answers an
+      // idle poll instantly: never spin.
+      if (Date.now() - t0 < 500) await tgSleep(1000);
+    } catch (e) {
+      const te = e instanceof TG.TgError ? e : null;
+      const wait = te?.retryAfter ? te.retryAfter * 1000 : Math.min(60_000, 2_000 * 2 ** Math.min(failures++, 5));
+      /* 409 is another poller holding this token -- a deploy that overlaps the
+         instance it replaces. It clears when the old one exits; the webhook
+         variant of 409 was removed at startup. */
+      console.error(`[tg] ${te?.code === 409 ? "another instance is polling (deploy overlap?)" : "sweep error"}: ${(e as Error).message}; retrying in ${Math.round(wait / 1000)}s`);
+      await tgSleep(wait);
+    }
+  }
+}
+if (TG.tgToken()) void startTelegram();
 
 const PORT = Number(process.env.PORT ?? 3000);
 app.listen(PORT, () =>

@@ -6008,6 +6008,33 @@ export async function refusalRepliesTo(handle: string | null): Promise<number> {
  * behaviour we want. One answer per person per market; the second tag is
  * silence.
  */
+/**
+ * How many markets this Telegram person OPENED in the last day.
+ *
+ * Counts reason 'opened' only. A tag under a claim that already had a market
+ * is answered with a pointer to it, opens nothing, and costs the person
+ * nothing, so it must not spend their allowance.
+ *
+ * Keyed on the ledger author, which for Telegram is `tg:<numeric id>`: an @name
+ * is optional there and can be changed, and a cap keyed on it could be reset by
+ * renaming.
+ */
+export async function tgOpenedToday(author: string): Promise<number> {
+  if (!author) return 0;
+  if (!PERSISTENT) {
+    return [...memMentions.values()]
+      .filter((m) => m.author === author && m.outcome === "replied" && m.reason === "opened").length;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM x_mention
+      WHERE author = $1 AND outcome = 'replied' AND reason = 'opened'
+        AND at > now() - interval '24 hours'`,
+    [author],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 export async function toldAboutMarket(handle: string | null, slug: string): Promise<boolean> {
   if (!handle || !slug) return false;
   const h = handle.replace(/^@/, "").toLowerCase();
