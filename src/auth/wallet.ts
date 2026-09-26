@@ -98,6 +98,23 @@ function messageFor(domain: string, address: string, nonce: string, issuedAt: st
   ].join("\n");
 }
 
+/**
+ * The site a wallet is told it is signing in to.
+ *
+ * TWO RULES PULL AGAINST EACH OTHER. The wallet compares this name with the
+ * origin of the page that asked and flags any difference, so it has to be the
+ * host the page is really on: after the app moved to app.oddie.fun every
+ * message still said oddie.fun. And it must never be a name the caller picks,
+ * or a phishing page could have our name printed on its own request. So: the
+ * host the request came in on when that host is one of ours, otherwise the
+ * primary one.
+ */
+export function signInDomain(requestHost: string, primary: string, others: readonly string[] = []): string {
+  const asked = requestHost.trim().toLowerCase();
+  const ours = [primary, ...others].map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return ours.find((h) => h === asked) ?? primary.trim().toLowerCase();
+}
+
 /** Mint a one-shot challenge for this device+address. */
 export function issueChallenge(deviceId: string, address: string, domain: string, now = Date.now()): Challenge {
   sweep(now);
@@ -105,7 +122,11 @@ export function issueChallenge(deviceId: string, address: string, domain: string
   // one honest pending challenge at a time and keep the map permanently full.
   if (pending.size >= MAX_PENDING) pending.clear();
 
-  const nonce = randomBytes(24).toString("base64url");
+  // HEX, NOT BASE64URL. SIWS allows only letters and digits in the nonce
+  // (`8*( ALPHA / DIGIT )`). base64url put a '-' or '_' in about two nonces out
+  // of three, and Phantom refuses a message it cannot parse without opening a
+  // popup, so most attempts died in the wallet and never reached us.
+  const nonce = randomBytes(16).toString("hex");
   const c: Challenge = {
     nonce,
     deviceId,

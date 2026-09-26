@@ -68,7 +68,7 @@ import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
 import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice, devicesForWallets } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
-import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS } from "./auth/wallet.js";
+import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS, signInDomain } from "./auth/wallet.js";
 
 const app = express();
 // Real client IPs, not the reverse proxy's — required for the real-money
@@ -123,6 +123,11 @@ const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 const APP_HOST = (process.env.APP_HOST ?? "").trim().toLowerCase();
 const APP_BASE_URL = APP_HOST ? `https://${APP_HOST}` : BASE_URL;
 const isAppHost = (req: express.Request): boolean => Boolean(APP_HOST) && req.hostname.toLowerCase() === APP_HOST;
+/** The site named in a wallet sign-in message: the host this request came in
+ *  on, when it is one of ours. Pages that ask for a signature live on the app
+ *  host, so that is the default. See signInDomain. */
+const walletDomain = (req: express.Request): string =>
+  signInDomain(req.hostname, APP_HOST || new URL(BASE_URL).host, [new URL(BASE_URL).host]);
 /** The absolute origin a local path should be reached on: app paths on the
  *  app host, everything else on the apex. Used wherever the server builds a
  *  redirect from a path, so an X sign-in started on the app comes back to the
@@ -2284,11 +2289,11 @@ app.get("/api/auth/wallet/challenge", (req, res) => {
   const address = String(req.query.address ?? "");
   if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
 
-  // The domain in the signed text is OURS, from config — never the Host header.
-  // It is the only thing telling a reader which site they are signing into, and
-  // a caller-controlled value there is how a phishing page borrows our wording.
-  const domain = new URL(BASE_URL).host;
-  const { nonce, message } = issueChallenge(deviceId, address, domain);
+  // The domain in the signed text is always one of OURS, never a name the
+  // caller picks: it is the only thing telling a reader which site they are
+  // signing into. Among ours, it is the one this page is on, because the
+  // wallet flags a message that names a different site than the page.
+  const { nonce, message } = issueChallenge(deviceId, address, walletDomain(req));
   res.json({ nonce, message });
 });
 
@@ -5589,7 +5594,7 @@ app.post("/api/tg/earn/challenge", express.json(), (req, res) => {
   if (!tgId) return res.status(401).json({ error: "expired" });
   const address = String(req.body?.address ?? "");
   if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
-  const { nonce, message } = issueChallenge(`tg:${tgId}`, address, new URL(BASE_URL).host);
+  const { nonce, message } = issueChallenge(`tg:${tgId}`, address, walletDomain(req));
   res.json({ nonce, message });
 });
 
@@ -5619,6 +5624,24 @@ app.post("/api/tg/earn/link", express.json(), async (req, res) => {
   // After the response: naming on chain is a transaction per market.
   void nameTgMarkets(binding, address).then((n) =>
     console.log(JSON.stringify({ evt: "tg_earn", ok: true, person: binding, ...n })));
+});
+
+/* A FAILURE INSIDE THE WALLET NEVER REACHES US ON ITS OWN. The page stops
+   before its next request, so the only trace used to be somebody saying "it
+   didn't work". Twice the cause was the message we asked the wallet to sign,
+   and both times the logs were silent. The page now reports what broke; the
+   token keeps this to people who were really in the flow. */
+app.post("/api/tg/earn/fail", express.json({ limit: "2kb" }), (req, res) => {
+  const key = tgEarnKey();
+  const tgId = key ? verifyEarnToken(String(req.body?.t ?? ""), key) : null;
+  if (!tgId) return res.status(401).end();
+  const clip = (v: unknown, n: number): string | null =>
+    v == null ? null : String(v).replace(/[\r\n]+/g, " ").slice(0, n);
+  console.log(JSON.stringify({
+    evt: "tg_earn", ok: false, person: `tg:${tgId}`,
+    stage: clip(req.body?.stage, 16), code: clip(req.body?.code, 16), msg: clip(req.body?.msg, 200),
+  }));
+  res.status(204).end();
 });
 
 async function startTelegram(): Promise<void> {

@@ -10,7 +10,7 @@
 import { generateKeyPairSync, sign as edSign } from "node:crypto";
 import {
   issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress,
-  WALLET_ADDRESS, WALLET_NONCE_TTL_MS, _decodeBase58,
+  WALLET_ADDRESS, WALLET_NONCE_TTL_MS, _decodeBase58, signInDomain,
 } from "../src/auth/wallet.js";
 
 let failures = 0;
@@ -132,6 +132,52 @@ console.log("\nthe challenge: single use, time limited, bound to one browser");
   check("an expired challenge is refused", consumeChallenge(stale.nonce, DEV) === null);
 
   check("an unknown nonce is refused", consumeChallenge("never-issued", DEV) === null);
+}
+
+console.log("\nthe message obeys the SIWS grammar, field by field");
+{
+  // THE SHAPE CHECK ABOVE PASSED WHILE PHANTOM REFUSED MOST OF THESE. The
+  // grammar allows only letters and digits in the nonce (`8*( ALPHA / DIGIT )`)
+  // and we issued base64url, which carries a '-' or '_' in about two nonces out
+  // of three. A message that fails to parse gets no popup at all ("cannot be
+  // shown due to invalid formatting"), so the Connect button looks dead and
+  // nothing reaches the server. The nonce is random, so one sample proves
+  // little: this reads four hundred.
+  const SIWS = new RegExp([
+    "^[^\\s/?#]+ wants you to sign in with your Solana account:",
+    "[1-9A-HJ-NP-Za-km-z]{32,44}",
+    "",
+    "[A-Za-z0-9 \\-._~:/?#\\[\\]@!$&'()*+,;=]+",
+    "",
+    "URI: https://\\S+",
+    "Version: 1",
+    "Chain ID: (?:mainnet|testnet|devnet|localnet|solana:mainnet|solana:testnet|solana:devnet)",
+    "Nonce: [A-Za-z0-9]{8,}",
+    "Issued At: \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$",
+  ].join("\\n"));
+  const w = wallet();
+  let bad = "";
+  let n = 0;
+  for (; n < 400 && !bad; n++) {
+    const m = issueChallenge(DEV, w.address, DOMAIN).message;
+    if (!SIWS.test(m)) bad = m;
+  }
+  check("every one of 400 messages parses (the nonce is letters and digits only)",
+    !bad, `message ${n} does not parse: ${bad.replace(/\n/g, " | ")}`);
+}
+
+console.log("\nthe site the message names: the page's own, and only ever ours");
+{
+  // The wallet compares the named site with the page that asked. After the app
+  // moved to app.oddie.fun every message still said oddie.fun.
+  const APP = "app.oddie.fun", APEX = "oddie.fun";
+  check("a page on the app host names the app host", signInDomain("app.oddie.fun", APP, [APEX]) === APP);
+  check("a page on the apex names the apex", signInDomain("oddie.fun", APP, [APEX]) === APEX);
+  check("...whatever the case of the Host header", signInDomain("App.Oddie.FUN", APP, [APEX]) === APP);
+  check("a host that is not ours is never printed: it gets our primary",
+    signInDomain("oddie.fun.evil.example", APP, [APEX]) === APP);
+  check("...nor is an empty one", signInDomain("", APP, [APEX]) === APP);
+  check("with no app host configured, the apex is the primary", signInDomain("elsewhere.example", APEX) === APEX);
 }
 
 console.log("\nend to end: the exact flow the route runs");

@@ -57,5 +57,21 @@ const now = 1_800_000_000_000;
   check("...and the Telegram opener has its own field", /openedBy: sourceUrlKind\(src\?\.sourceUrl\) === "telegram"/.test(server));
 }
 
+/* BOTH SIGN-IN MESSAGES NAME THE PAGE'S OWN HOST. The earn page and the app's
+   wallet link both run on app.oddie.fun; a message naming oddie.fun is one the
+   wallet flags as coming from another site. */
+{
+  const server = readFileSync("src/server.ts", "utf8");
+  const calls = [...server.matchAll(/issueChallenge\(([^;]*?)\);/g)].map((m) => m[1]);
+  check("there are two wallet challenges (app link, Telegram earn)", calls.length === 2, String(calls.length));
+  check("...and every one takes its site from walletDomain(req)", calls.every((c) => /walletDomain\(req\)\s*$/.test(c)), calls.join(" || "));
+  check("walletDomain defaults to the app host, where the signing pages live",
+    /signInDomain\(req\.hostname, APP_HOST \|\| new URL\(BASE_URL\)\.host/.test(server));
+
+  const page = readFileSync("public/tg-earn.html", "utf8");
+  check("the earn page reports where a failure happened", /report\(stage, e\)/.test(page) && /\/api\/tg\/earn\/fail/.test(page));
+  check("...and the report route needs a live token", /app\.post\("\/api\/tg\/earn\/fail"[\s\S]{0,200}verifyEarnToken/.test(server));
+}
+
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall earn-token checks passed.\n");
 process.exit(failures ? 1 : 0);
