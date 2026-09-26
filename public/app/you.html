@@ -1025,11 +1025,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        still moving and a number here would be a guess. */
     out += pend.map(function (m) {
       var when = m.closesAt ? new Date(m.closesAt) : null;
+      // In UTC, the zone every criterion is written in: a market that closes
+      // 23:59 on Dec 31 read "Jan 1" east of London.
       var day = when && !isNaN(when.getTime())
-        ? when.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+        ? when.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
       return '<div class="row"><p class="row__q">' + esc(m.question) + "</p>"
         + '<p class="row__m"><span><b>' + (m.feeBps / 100) + "%</b> of the pool, yours when it settles</span>"
-        + (day ? "<span>Settles " + esc(day) + "</span>" : "") + "</p>"
+        + (day ? "<span>Closes " + esc(day) + "</span>" : "") + "</p>"
         + '<div class="act"><a class="open" href="/m/' + encodeURIComponent(m.slug) + '">Open the market</a></div></div>';
     }).join("");
 
