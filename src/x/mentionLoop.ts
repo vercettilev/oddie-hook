@@ -84,6 +84,9 @@ export interface SweepDeps {
   /** Have we already pointed this handle at this market? The only bound on the
    *  branch that answers the second, third and tenth person to tag one post. */
   alreadyTold?(handle: string, slug: string): Promise<boolean>;
+  /** Record that this X account was seen under this name. Optional: a sweep
+   *  that cannot write the mapping still answers the tag. */
+  rememberPerson?(platformId: string, handle: string | null): Promise<{ renamedFrom: string | null }>;
   uploadMedia(png: Buffer): Promise<string>;
   postReply(opts: { text: string; inReplyTo: string; mediaIds?: string[] }): Promise<{ id: string }>;
   /** Our own handle, without the @. Used only to strip routing out of the
@@ -271,6 +274,23 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       await settleMention(m.id, "skipped", { reason: "self" });
       decide("skipped", { reason: "self" });
       continue;
+    }
+
+    /* THE NAME IS NOT THE PERSON, and this is the only place both are in hand.
+       Every ledger downstream keys on the handle, so somebody who renames
+       leaves their tickets and their board position under a string anyone else
+       can claim. No payout can go wrong this way (the chain pays a pubkey), but
+       nothing today even RECORDS that a rename happened, which is why the first
+       time it matters would also be the first time it could be noticed.
+       Best effort on purpose: this is bookkeeping, and a sweep that cannot
+       write it still owes the person an answer to their tag. */
+    if (deps.rememberPerson && m.authorId) {
+      const seen = await deps.rememberPerson(m.authorId, m.authorHandle).catch(() => null);
+      if (seen?.renamedFrom) {
+        log("handle changed hands", {
+          tweetId: m.id, authorId: m.authorId, was: seen.renamedFrom, now: m.authorHandle,
+        });
+      }
     }
 
     const fresh = await claimMention(m.id, m.authorHandle);

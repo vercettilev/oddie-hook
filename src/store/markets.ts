@@ -474,6 +474,46 @@ CREATE INDEX IF NOT EXISTS page_view_slug_idx ON page_view(slug);
 -- silently not exist in production.
 CREATE UNIQUE INDEX IF NOT EXISTS page_view_once_idx ON page_view(slug, device_id);
 
+-- WHO A PERSON IS, as opposed to what they are currently called.
+--
+-- Every ledger in this product keys on the handle: genesis_tag, the ticket log,
+-- the bettor table. A handle is a NAME, and names can be given up and taken. If
+-- somebody renames, their record stays under the old string and whoever claims
+-- that string inherits it. No payout can be misdirected this way -- the chain
+-- pays a pubkey and oddieChain.ts contains zero handle references -- but the
+-- tickets, the board position and the "opened by" line all follow the name.
+--
+-- The stable id has been arriving on every mention the whole time (Mention
+-- .authorId, from expansions=author_id) and was used in exactly one place, to
+-- keep the bot from replying to itself, then dropped. This records it.
+--
+-- NAMESPACED FROM THE FIRST ROW: 'x:1234567890', and a Telegram user later is
+-- 'tg:987654321'. Two platforms will have colliding usernames and this is the
+-- cheapest moment to make that impossible.
+--
+-- The handle is NULLABLE on purpose. On X everyone has one. Telegram's own Bot
+-- API marks username Optional and only the numeric id required, so a person
+-- with no @name is a real case there and the schema has to admit it.
+CREATE TABLE IF NOT EXISTS person (
+  id          text PRIMARY KEY,
+  handle      text,
+  first_seen  timestamptz NOT NULL DEFAULT now(),
+  seen_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS person_handle_idx ON person(handle);
+
+-- Renames, kept rather than overwritten. Today a rename is invisible: the
+-- ledger simply starts referring to a different person and nothing anywhere
+-- says so. This is the evidence the repair will be built from.
+CREATE TABLE IF NOT EXISTS person_rename (
+  id         bigserial PRIMARY KEY,
+  person_id  text NOT NULL,
+  was        text NOT NULL,
+  became     text NOT NULL,
+  at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS person_rename_person_idx ON person_rename(person_id);
+
 -- Who surfaced a market — the contributor a tagged claim came from. Keyed by
 -- slug so it covers BOTH venue matches (no community_market row) and created
 -- markets. The contributor is a tweet author, so the natural identity is a
@@ -4912,6 +4952,66 @@ export interface CommunityMarketDetail {
  * rather than raised: the question this answers is how many people saw a
  * market, not how many times.
  */
+/** A platform's stable identifier, namespaced so two platforms cannot collide.
+ *  'x:1234567890' today; 'tg:987654321' when Telegram arrives. */
+export type Platform = "x" | "tg";
+export const personIdOf = (platform: Platform, platformId: string): string =>
+  `${platform}:${String(platformId).trim()}`;
+
+/**
+ * Record that this person was seen, under this name.
+ *
+ * Pure addition: nothing reads `person` to decide anything yet, and no existing
+ * query changed. What it buys is the two things that are impossible today.
+ *
+ * It keeps the mapping, so the repair that moves the ledgers onto the stable id
+ * starts with history instead of starting from zero.
+ *
+ * And it makes a rename VISIBLE. Right now one is completely silent: the ledger
+ * simply begins referring to somebody else and nothing anywhere records that it
+ * happened, so the first time it matters is also the first time anybody could
+ * possibly notice.
+ *
+ * Returns the handle this person used to have, when it changed. Null the rest
+ * of the time, which is nearly always.
+ */
+export async function rememberPerson(
+  platform: Platform,
+  platformId: string,
+  rawHandle: string | null,
+): Promise<{ renamedFrom: string | null }> {
+  const id = personIdOf(platform, platformId);
+  const handle = rawHandle ? rawHandle.replace(/^@+/, "").toLowerCase().trim() || null : null;
+  if (!PERSISTENT || !platformId) return { renamedFrom: null };
+  await ensureSchema();
+  /* The previous name is read in the same statement that overwrites it, or a
+     rename between the read and the write is lost. Null handles never count as
+     a rename: on Telegram a person can simply not have one, and "had a name,
+     now shows none" is the API being quiet rather than somebody renaming. */
+  /* A CTE, not a subselect inside RETURNING. Every branch of a CTE sees the
+     same snapshot, so `prev` is the row as it stood BEFORE the insert; a
+     subselect in RETURNING runs after the write and whether it sees the old
+     value is exactly the kind of thing that works until it does not. */
+  const { rows } = await db().query<{ was: string | null }>(
+    `WITH prev AS (SELECT handle FROM person WHERE id = $1),
+          ins AS (
+            INSERT INTO person (id, handle) VALUES ($1, $2)
+              ON CONFLICT (id) DO UPDATE
+                SET handle = COALESCE(EXCLUDED.handle, person.handle), seen_at = now()
+              RETURNING 1
+          )
+     SELECT (SELECT handle FROM prev) AS was FROM ins`,
+    [id, handle],
+  );
+  const was = rows[0]?.was ?? null;
+  if (!handle || !was || was === handle) return { renamedFrom: null };
+  await db().query(
+    `INSERT INTO person_rename (person_id, was, became) VALUES ($1, $2, $3)`,
+    [id, was, handle],
+  );
+  return { renamedFrom: was };
+}
+
 export async function recordView(slug: string, deviceId: string | null): Promise<void> {
   if (!PERSISTENT || !slug) return;
   await ensureSchema();

@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
-  savePushSubscription, pushSubscriptionsFor, dropPushSubscription } from "./store/markets.js";
+  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson } from "./store/markets.js";
 import { sendPush, vapidFromEnv } from "./push/webpush.js";
 import { findDuplicate } from "./matching/duplicate.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
@@ -5338,6 +5338,9 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
     refusalsUsed: (handle) => refusalRepliesTo(handle),
     spendMiss: (tweetId, handle) => spendTicketForMiss(tweetId, handle),
     alreadyTold: (handle, slug) => toldAboutMarket(handle, slug),
+    // The X numeric id, namespaced at the store boundary so Telegram's ids
+    // cannot ever collide with it.
+    rememberPerson: (platformId, handle) => rememberPerson("x", platformId, handle),
     uploadMedia: (png) => X.uploadMedia(png),
     postReply: (o) => X.postReply(o),
     // The Genesis season. A reply is a ticket: the balance is read before any

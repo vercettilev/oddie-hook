@@ -288,6 +288,48 @@ async function main() {
     check("...and is recorded as failed, not as a retry", _memMentionOutcome("505") === "failed");
   }
   {
+    /* THE NAME IS NOT THE PERSON. Every ledger keys on the handle, so a rename
+       hands somebody's tickets and board position to whoever claims the string
+       next. Nothing records that today. This is the only place both the stable
+       id and the current name are in hand. */
+    _resetBotState();
+    const seen: Array<[string, string | null]> = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("601")], newestId: "601" }),
+      rememberPerson: async (id, handle) => { seen.push([id, handle]); return { renamedFrom: null }; },
+    });
+    await runMentionSweep(deps);
+    check("the stable id is recorded, not just the name",
+      seen.length === 1 && Boolean(seen[0][0]), JSON.stringify(seen));
+    check("...together with the name it was wearing",
+      seen.length === 1 && seen[0][1] !== undefined, JSON.stringify(seen));
+  }
+  {
+    /* BOOKKEEPING NEVER OWES MORE THAN THE ANSWER DOES. Somebody tagged; they
+       are getting a market and a reply whether or not we managed to write down
+       who they are. A ledger write that can refuse a tag is worse than no
+       ledger. */
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("602")], newestId: "602" }),
+      rememberPerson: async () => { throw new Error("person store down"); },
+    });
+    const r = await runMentionSweep(deps);
+    check("a failed identity write still answers the tag",
+      r.replied === 1 && spy.posted.length === 1, `replied=${r.replied} posted=${spy.posted.length}`);
+  }
+  {
+    // And a sweep wired without the dep at all behaves exactly as before.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("603")], newestId: "603" }),
+      rememberPerson: undefined,
+    });
+    const r = await runMentionSweep(deps);
+    check("no identity writer at all is not an error",
+      r.replied === 1 && spy.posted.length === 1, `replied=${r.replied}`);
+  }
+  {
     /* 403 IS THE ONE RETRYABLE POST FAILURE, and the retry must be the PLAIN
        reply, not the same text again. X refused the decorated shape twice in
        production (09-23 08:19, 09-24 09:39) while the bare shape went through
