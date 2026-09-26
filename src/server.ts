@@ -5591,6 +5591,11 @@ async function startTelegram(): Promise<void> {
       const r = await runTelegramSweep(deps);
       if (r.looked) log("sweep", { looked: r.looked, replied: r.replied, skipped: r.skipped, failed: r.failed, retried: r.retried });
       failures = 0;
+      /* SPACE THE RETRIES. A held offset means Telegram hands the same update
+         straight back, so without a pause all three attempts land within a few
+         seconds -- measured on the first live tag -- and a Solana hiccup that
+         would have cleared in a minute costs the market instead. */
+      if (r.retried) await tgSleep(30_000);
       // getUpdates long-polls, so this only matters if Telegram ever answers an
       // idle poll instantly: never spin.
       if (Date.now() - t0 < 500) await tgSleep(1000);

@@ -144,6 +144,15 @@ export const TG_COPY = {
   unmarketable:
     "I open markets on claims with a clear yes or no and a date. Tag me under one of those.",
   cap: (n: number) => `That's ${n} markets from you today. More tomorrow.`,
+  /* A basic group. Its messages have no t.me link, and a market has to be able
+     to show where it came from, so the mint refuses it. Telegram upgrades the
+     group to a supergroup the moment chat history is made visible to new
+     members, which keeps it private and gives every message a link. */
+  needsLinks:
+    "To open markets here I need message links. In this group's settings, set Chat History for New Members to Visible, then tag me again.",
+  /* A private chat. Markets come from public arguments, so a DM is where the
+     person talks to oddie, not where markets open. */
+  dm: "Add me to a group and tag me under a claim. I'll open a market on it right there.",
 };
 
 /* ---------------------------------------------------------------- sweep -- */
@@ -166,6 +175,9 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
     if (!msg || !msg.from || msg.from.is_bot) continue;
     const isPrivate = msg.chat.type === "private";
     if (!isPrivate && !tagsBot(msg, deps.botUsername)) continue;
+    // Telegram sends "/start" the moment somebody opens a chat with the bot.
+    // Only DMs get a reply to a bare command: in a group, an untagged command
+    // was never meant for us.
 
     result.looked++;
     const key = `tg:${msg.chat.id}:${msg.message_id}`;
@@ -195,6 +207,18 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
     };
 
     try {
+      /* A PRIVATE CHAT OPENS NO MARKET, and is answered before anything is
+         spent. The mint requires a linkable source post, and a DM has none; it
+         used to reach the extraction anyway, so the "/start" Telegram sends
+         when somebody opens the chat was graded by a paid model call and then
+         refused. */
+      if (isPrivate) {
+        await answer(TG_COPY.dm, null);
+        await settleMention(key, "skipped", { reason: "dm" });
+        decide("skipped", { reason: "dm" });
+        continue;
+      }
+
       const claim = claimOf(msg, deps.botUsername);
       if (!claim.text) {
         await answer(TG_COPY.empty, null);
@@ -204,6 +228,19 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
       }
 
       const sourceUrl = messageLink(claim.source.chat, claim.source.message_id);
+      /* NO LINK, NO MARKET -- AND SAY SO. openMarketFromClaim refuses a market
+         with no source ("a market with no source can never show who it came
+         from"), and a basic group's messages have no t.me link. This used to be
+         discovered at the mint, after a paid extraction, then retried three
+         times in five seconds, then abandoned without a word to the person who
+         tagged. Checked first now, and answered with the one setting that
+         fixes it. */
+      if (!sourceUrl) {
+        await answer(TG_COPY.needsLinks, null);
+        await settleMention(key, "skipped", { reason: "unlinkable", claimText: claim.text });
+        decide("skipped", { reason: "unlinkable" });
+        continue;
+      }
 
       // ONE POST, ONE MARKET. Free: no cap, no extraction.
       const already = sourceUrl && deps.existingMarket
@@ -251,6 +288,19 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         openerId: author,
       });
       if (!minted.ok) {
+        /* A REFUSAL IS AN ANSWER; ONLY AN OUTAGE IS WORTH ANOTHER GO. A 4xx is
+           the mint telling us this claim cannot become a market -- a price
+           claim it could not pin to one token, say -- and asking again gets the
+           same answer after another paid extraction. That is what happened
+           three times in five seconds on the first live tag. A 5xx or a
+           network failure is the one case another attempt can fix. */
+        const refused = minted.status >= 400 && minted.status < 500;
+        if (refused) {
+          await answer(TG_COPY.unmarketable, null);
+          await settleMention(key, "skipped", { reason: `mint:${minted.status} ${minted.error}`, claimText: claim.text });
+          decide("skipped", { reason: `mint:${minted.status}` });
+          continue;
+        }
         // Nothing was posted, provably, so another go cannot double-post.
         await settleMention(key, "retry", { reason: `mint:${minted.status} ${minted.error}`, claimText: claim.text });
         decide("retry", { reason: "mint" });

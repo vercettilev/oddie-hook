@@ -8,7 +8,7 @@ import {
   runTelegramSweep, tagsBot, stripBotTag, messageLink, claimOf, tgAuthor, TG_COPY, TG_OFFSET_KEY,
   type TgSweepDeps,
 } from "../src/telegram/loop.js";
-import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState } from "../src/store/markets.js";
+import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState, sourceUrlKind } from "../src/store/markets.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -62,7 +62,15 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
     updates: async (offset) => updates.filter((u) => offset === null || u.update_id >= offset),
     extract: async (t) => { spy.extracted.push(t); return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
     existingMarket: async () => null,
+    /* THE REAL MINT'S CONTRACT, using the real validator. openMarketFromClaim
+       refuses a market whose source is not a linkable x.com or t.me post, and a
+       fake that accepted anything is exactly how the first live tag -- in a
+       basic group, with no link -- passed every test here and then failed three
+       times in production. */
     openMarket: async (i) => {
+      if (!sourceUrlKind(i.sourceUrl)) {
+        return { ok: false, status: 400, error: "source_url required: a market with no source can never show who it came from" } as MintResult;
+      }
       spy.minted.push({ question: i.question, sourceUrl: i.sourceUrl, openerId: i.openerId ?? null });
       return { ok: true, slug: `slug-${spy.minted.length}` } as MintResult;
     },
@@ -273,6 +281,56 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
   });
   const r = await runTelegramSweep(deps);
   check("a failed identity write still opens and answers", r.replied === 1 && spy.replies.length === 1);
+}
+
+/* ------------------------------------------- where a market can come from -- */
+{
+  /* THE FIRST LIVE TAG. A basic group's messages have no t.me link, the mint
+     refuses a sourceless market, and it used to find that out after a paid
+     extraction -- then retry three times -- then say nothing at all. */
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 2, chat: BASIC, text: `@${BOT} BTC hits 200k before 2027` }))]);
+  const r = await runTelegramSweep(deps);
+  check("a basic group opens nothing", spy.minted.length === 0);
+  check("...WITHOUT paying for an extraction first", spy.extracted.length === 0, `extracted=${spy.extracted.length}`);
+  check("...is not retried, because nothing will change on another go", r.retried === 0 && r.skipped === 1);
+  check("...and the person is told the one setting that fixes it",
+    spy.replies.length === 1 && spy.replies[0].text === TG_COPY.needsLinks, spy.replies[0]?.text);
+}
+{
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 3, chat: DM, text: "/start" }))]);
+  await runTelegramSweep(deps);
+  check("the /start Telegram sends on opening a chat costs no extraction", spy.extracted.length === 0);
+  check("...and a DM is answered with how oddie works", spy.replies[0]?.text === TG_COPY.dm && spy.minted.length === 0);
+}
+{
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 4, chat: DM, text: "BTC hits 200k before 2027" }))]);
+  await runTelegramSweep(deps);
+  check("a claim sent in a DM opens no market (no public post to come from)",
+    spy.minted.length === 0 && spy.extracted.length === 0);
+}
+{
+  /* A REFUSAL IS AN ANSWER. A 4xx from the mint is the same answer on every
+     attempt, so asking again only buys another paid extraction. */
+  _resetBotState();
+  let calls = 0;
+  const { deps, spy } = harness([upd(1, msg({ message_id: 5, chat: PUBLIC, text: `@${BOT} $BTC 200k` }))], {
+    openMarket: async () => { calls++; return { ok: false, status: 422, error: "price claim could not be pinned to a token" } as MintResult; },
+  });
+  for (let i = 0; i < 4; i++) await runTelegramSweep(deps);
+  check("a mint refusal is asked exactly once", calls === 1, `calls=${calls}`);
+  check("...extracted exactly once", spy.extracted.length === 1, `extracted=${spy.extracted.length}`);
+  check("...and the person hears why", spy.replies.length === 1 && spy.replies[0].text === TG_COPY.unmarketable);
+}
+{
+  // A supergroup reached through its t.me/c/ form is linkable and opens.
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 6, chat: PRIVATE, text: `@${BOT} BTC 200k before 2027` }))]);
+  await runTelegramSweep(deps);
+  check("a PRIVATE supergroup opens markets (its messages do have links)",
+    spy.minted[0]?.sourceUrl === "https://t.me/c/9876543210/6", String(spy.minted[0]?.sourceUrl));
 }
 
 /* -------------------------------------------------------------- dry run -- */
