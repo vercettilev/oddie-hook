@@ -46,7 +46,7 @@ const goodExtraction = (q: string): Extraction => ({
 
 interface Spy {
   replies: Array<{ chatId: number; replyTo: number; text: string; photoUrl: string | null }>;
-  minted: Array<{ question: string; sourceUrl: string | null }>;
+  minted: Array<{ question: string; sourceUrl: string | null; openerId?: string | null }>;
   extracted: string[];
   people: Array<[string, string | null]>;
 }
@@ -63,7 +63,7 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
     extract: async (t) => { spy.extracted.push(t); return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
     existingMarket: async () => null,
     openMarket: async (i) => {
-      spy.minted.push({ question: i.question, sourceUrl: i.sourceUrl });
+      spy.minted.push({ question: i.question, sourceUrl: i.sourceUrl, openerId: i.openerId ?? null });
       return { ok: true, slug: `slug-${spy.minted.length}` } as MintResult;
     },
     reply: async (o) => { spy.replies.push(o); },
@@ -128,6 +128,19 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
     spy.replies[0]?.replyTo === 11 && spy.replies[0]?.photoUrl === "https://oddie.fun/card/slug-1.png");
   check("...and the answer links the market", /app\.oddie\.fun\/m\/slug-1/.test(spy.replies[0]?.text ?? ""));
   check("the offset confirms the batch", (await botStateGet(TG_OFFSET_KEY)) === "101");
+}
+
+/* ------------------------------------------------------ who earns the 2% -- */
+{
+  /* THE RATE IS FROZEN AT MINT. If the opener is not handed to the mint, the
+     market is created at 0 and can never pay them, whatever they link later. */
+  _resetBotState();
+  const parent = msg({ message_id: 10, chat: PUBLIC, from: noname, text: "BTC 200k before 2027" });
+  const { deps, spy } = harness([upd(1, msg({ message_id: 11, chat: PUBLIC, from: alice, reply_to_message: parent }))]);
+  await runTelegramSweep(deps);
+  check("the mint is told who OPENED it", spy.minted[0]?.openerId === "tg:111", String(spy.minted[0]?.openerId));
+  check("...which is the tagger, not the claim's author (Lev: the 2% goes to whoever opened it)",
+    spy.minted[0]?.openerId !== "tg:222");
 }
 
 /* ----------------------------------------------------------- identity -- */

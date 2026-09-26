@@ -2875,15 +2875,15 @@ type OpenMarketResult =
  *
  * create_market deducts creator_fee_bps from the winners' pool and holds it for
  * whatever address sits in `creator`. That address is filled in later, by
- * set_creator, from the X handle in the source URL. A market whose source has
- * no handle -- every Telegram market, by construction -- can never be filled
- * in, so the fee would come out of real winners and sit in the vault unclaimed
- * forever. The program is explicit that it will not reroute an unclaimed fee to
- * the house, and it is right to refuse; the honest answer is not to charge it.
+ * set_creator, from the X handle in the source URL. A market with nobody who
+ * could EVER be named would take the fee out of real winners and leave it in
+ * the vault forever -- the program will not reroute an unclaimed fee to the
+ * house, and it is right to refuse -- so with no identifiable payee the honest
+ * answer is not to charge it.
  *
- * The rate is stored per market on chain, so this can go back to the full rate
- * for Telegram the day a group admin can claim it, without repricing anything
- * already open.
+ * A Telegram opener IS identifiable (tg:<user id>) and can link a wallet at any
+ * time, so openMarketFromClaim passes them as `payee` and they get the full
+ * rate. What still mints at 0 is a market with no handle and no payee at all.
  */
 function creatorFeeBpsForHandle(handle: string | null | undefined): number {
   return handle ? CREATOR_FEE_BPS_REAL : 0;
@@ -2924,6 +2924,23 @@ async function openMarketFromClaim(input: {
    * needs no proof of ownership beyond being a well-formed pubkey.
    */
   creatorWallet?: string | null;
+  /**
+   * AN IDENTIFIABLE OPENER WHO IS NOT AN X HANDLE. Telegram's `tg:<user id>`.
+   *
+   * The rule this serves (Lev): the 2% goes to whoever OPENED the market. On X
+   * that is the tagger's handle; on Telegram there is no handle, so the rate
+   * used to fall to 0 on the grounds that nobody could ever claim it. That
+   * stopped being true the moment a Telegram user can link a wallet: the
+   * program's set_creator has no time limit (lib.rs: it checks only that the
+   * creator is unset), the fee accrues at resolve whether or not anybody is
+   * named yet, and claim_creator_fee requires only that the market resolved.
+   * So the opener can connect before, during, or after the market closes and
+   * still collect.
+   *
+   * Affects the RATE only. recordSurfacer below still takes the X handle it
+   * always took, so nothing on the X path changes.
+   */
+  payee?: string | null;
   category?: string;
   yesPct?: number;
   resolutionCriteria?: string | null;
@@ -3005,7 +3022,12 @@ async function openMarketFromClaim(input: {
      Present, the fee is real and its recipient is already known; absent, the
      old handle rule stands unchanged for the bot, the admin and Telegram. */
   const creatorWallet = isValidPubkeyString(input.creatorWallet) ? input.creatorWallet : null;
-  const creatorFeeBps = creatorWallet ? CREATOR_FEE_BPS_REAL : creatorFeeBpsForHandle(payeeHandle);
+  /* The rate is FROZEN at mint, and that is why this has to be right here
+     rather than fixed up later: a market minted at 0 can never pay its opener,
+     whatever gets linked afterwards. An identifiable payee, handle or not,
+     gets the full rate; the recipient can be named when they turn up. */
+  const identifiablePayee = payeeHandle ?? (input.payee?.trim() || null);
+  const creatorFeeBps = creatorWallet ? CREATOR_FEE_BPS_REAL : creatorFeeBpsForHandle(identifiablePayee);
 
   /* PRICE CLAIMS GET THEIR TOKEN PINNED HERE, BEFORE ANYTHING IS MINTED.
      Three things happen in this block and each one is load-bearing.
@@ -5473,12 +5495,11 @@ if (X_BOT_ENABLED) {
  * THE TOKEN IS THE SWITCH. No TELEGRAM_BOT_TOKEN, no loop, no error: a deploy
  * without it behaves exactly as before.
  *
- * CREATOR FEE IS 0 HERE, deliberately, and not by omission. The 2% is paid to
- * the wallet set_creator writes, which today comes from an X handle; a Telegram
- * user has no linked wallet, so the fee would come out of real winners and sit
- * in the vault unclaimed forever (creatorFeeBpsForHandle). taggerHandle null
- * mints at 0 bps. It goes back to the full rate the day a Telegram user can
- * link a wallet, without repricing anything already open.
+ * THE OPENER EARNS THE 2% HERE TOO. The market is minted at the full rate with
+ * the opener as `payee` (tg:<user id>). Nobody is named on chain yet, and that
+ * is fine: the fee accrues at resolve to the unset creator and waits, and the
+ * program lets set_creator run at any time, before or after the market closes.
+ * The opener links a wallet whenever they like and collects.
  */
 const TG_DRY_RUN = (process.env.TELEGRAM_DRY_RUN ?? "false").toLowerCase() === "true";
 const TG_MARKETS_PER_DAY = (() => {
@@ -5513,7 +5534,8 @@ async function startTelegram(): Promise<void> {
         question: input.question,
         closeInput: input.closeInput,
         sourceUrl: input.sourceUrl,
-        taggerHandle: null, // 0 bps until a Telegram user can link a wallet (see above)
+        taggerHandle: null, // X handles only; the Telegram opener is `payee`
+        payee: input.openerId ?? null, // full rate: the opener can link a wallet and collect later
         category: input.category,
         resolutionCriteria: input.resolutionCriteria,
         priceClaim: input.priceClaim ?? null,

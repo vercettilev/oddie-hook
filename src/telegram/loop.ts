@@ -59,6 +59,8 @@ export interface TgSweepDeps {
     claimText?: string | null;
     resolvability?: string | null;
     hook?: string | null;
+    /** Who opened it, as `tg:<user id>`. The 2% belongs to this person. */
+    openerId?: string | null;
   }): Promise<MintResult>;
   /** Answer in the chat, threaded under `replyTo`. A photo when there is one. */
   reply(opts: { chatId: number; replyTo: number; text: string; photoUrl: string | null }): Promise<void>;
@@ -246,6 +248,7 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         claimText: claim.text,
         resolvability: ex.resolvability,
         hook: ex.hook || null,
+        openerId: author,
       });
       if (!minted.ok) {
         // Nothing was posted, provably, so another go cannot double-post.
