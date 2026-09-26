@@ -139,6 +139,17 @@ export interface ResolutionOutcome {
  * An unreadable winner prints NO money sentence at all. Silence is not a
  * failure mode here; a confident wrong one is.
  */
+/** The money sentence alone, shared with the Telegram announcement so the two
+ *  surfaces can never describe the same settlement differently. Null when the
+ *  winning side could not be read. */
+export function moneyLine(winningLamports?: number | null): string | null {
+  return winningLamports === 0
+    ? "Nobody called it, so every stake goes back in full. We took no fee."
+    : typeof winningLamports === "number" && winningLamports > 0
+      ? "Everyone who called it is paid from the pool, on chain."
+      : null;
+}
+
 export function resolutionText(
   question: string,
   outcome: "yes" | "no",
@@ -146,12 +157,7 @@ export function resolutionText(
   winningLamports?: number | null,
 ): string {
   const side = outcome.toUpperCase();
-  const money =
-    winningLamports === 0
-      ? "Nobody called it, so every stake goes back in full. We took no fee."
-      : typeof winningLamports === "number" && winningLamports > 0
-        ? "Everyone who called it is paid from the pool, on chain."
-        : null;
+  const money = moneyLine(winningLamports);
   // The question is NOT repeated: it is one tap up the thread, and repeating it
   // under itself reads as a bot filling space. The card carries it anyway.
   return [`Settled: ${side}.`, money, url].filter(Boolean).join("\n\n");

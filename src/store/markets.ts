@@ -5150,6 +5150,28 @@ export async function nameCreatorOnRow(slug: string, wallet: string): Promise<bo
  * not with everyone. Somebody with no @name is shown as coming from Telegram
  * and nothing more.
  */
+/**
+ * Every Telegram message that was answered with this market, oldest first:
+ * the tag that opened it and any later tag, in another group, that got a
+ * pointer to it. The keys carry the chat and the message to reply to.
+ */
+export async function tgThreadsForSlug(slug: string): Promise<Array<{ key: string; reason: string | null }>> {
+  if (!slug) return [];
+  if (!PERSISTENT) {
+    return [...memMentions.values()]
+      .filter((m) => m.slug === slug && m.outcome === "replied" && m.tweetId.startsWith("tg:"))
+      .map((m) => ({ key: m.tweetId, reason: m.reason }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ tweet_id: string; reason: string | null }>(
+    `SELECT tweet_id, reason FROM x_mention
+      WHERE slug = $1 AND outcome = 'replied' AND tweet_id LIKE 'tg:%'
+      ORDER BY at ASC`,
+    [slug],
+  );
+  return rows.map((r) => ({ key: r.tweet_id, reason: r.reason }));
+}
+
 export async function tgOpenerOf(slug: string): Promise<{ author: string; handle: string | null } | null> {
   if (!PERSISTENT || !slug) return null;
   await ensureSchema();
@@ -6247,8 +6269,12 @@ export async function replyIdForSlug(slug: string): Promise<string | null> {
   if (!PERSISTENT) return memReplyId.get(slug) ?? null;
   await ensureSchema();
   const { rows } = await db().query<{ reply_id: string | null }>(
+    // X rows only. The ledger also holds Telegram rows, and a Telegram message
+    // id handed to X as in_reply_to_tweet_id is a small integer that can name a
+    // real, ancient tweet: id 20 is the first tweet ever posted.
     `SELECT reply_id FROM x_mention
       WHERE slug = $1 AND outcome = 'replied' AND reply_id IS NOT NULL
+        AND tweet_id NOT LIKE 'tg:%'
       ORDER BY at DESC LIMIT 1`,
     [slug],
   );

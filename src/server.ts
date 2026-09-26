@@ -10,7 +10,8 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
-import { openerCandidates, isTelegramPayoutWallet } from "./store/markets.js";
+import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug } from "./store/markets.js";
+import { postTelegramResolution } from "./telegram/resolution.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
@@ -2036,6 +2037,7 @@ app.get("/card/:slug.svg", async (req, res) => {
   res.type("image/svg+xml").send(renderCard(rec.market, {
     pools: await marketPools(req.params.slug), stakers: await cardStakers(req.params.slug),
     hook: await hookFor(req.params.slug).catch(() => null),
+    settled: (await communityMarketDetail(req.params.slug).catch(() => null))?.resolvedOutcome ?? undefined,
   }));
 });
 
@@ -2089,6 +2091,12 @@ app.get("/card/:slug.png", async (req, res) => {
   const { all } = await liveMarketData();
   const rec = await getSlug(slug, all);
   if (!rec) return res.status(404).send("unknown market");
+  /* A SETTLED MARKET SHOWS ITS VERDICT. This route drew the open card forever,
+     so a settled market's link unfurled as a live one, and the settlement
+     notice in Telegram, which sends this image, would have announced a result
+     over a card still inviting stakes. resolveCommunityMarket drops the cached
+     copy the moment the row settles. */
+  const verdict = (await communityMarketDetail(slug).catch(() => null))?.resolvedOutcome ?? undefined;
   // Ask the vault whether this market has a price at all. The card is what
   // goes on X, so it is the last place that should draw the seeded 50 as if
   // somebody had staked it. A chain that will not answer degrades to the
@@ -2097,6 +2105,7 @@ app.get("/card/:slug.png", async (req, res) => {
   const png = renderCardPng(renderCard(rec.market, {
     pools: await marketPools(slug), stakers: await cardStakers(slug),
     hook: await hookFor(slug).catch(() => null),
+    settled: verdict,
   }));
   pngCache.set(slug, { png, at: now });
   if (pngCache.size > 300) for (const [k, v] of pngCache) if (now - v.at > PNG_TTL_MS) pngCache.delete(k);
@@ -3964,6 +3973,8 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
 async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Promise<{ settled: number } | null> {
   const ok = await markCommunityResolved(slug, outcome);
   if (!ok) return null;
+  // The card's cached PNG still shows an open market; the next fetch renders the verdict.
+  pngCache.delete(slug);
   const settled = await settleMarket(slug, outcome);
 
   /* TELL THE PEOPLE WHOSE MONEY IT IS.
@@ -3992,8 +4003,13 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
   // Real-stakes counterpart: resolve the SAME market on-chain so claim_winnings
   // has an outcome to pay against. Best-effort and entirely after the response-
   // determining work above — the real (virtual) economy never waits on devnet.
+  /* WHEN THE CHAIN HAS THE VERDICT. The Telegram notice names the opener's cut
+     in SOL, and that number is zero on chain until resolve_market lands, so it
+     waits for this. A market never minted, or a chain that is off, has nothing
+     to wait for. Never rejects. */
+  let chainDone: Promise<unknown> = Promise.resolve();
   if (isChainEnabled()) {
-    void communityMarketDetail(slug).then((detail) => {
+    chainDone = communityMarketDetail(slug).then((detail) => {
       if (!detail?.onchainPubkey) return;
       // The answer is READ now. It used to be discarded, which is how a
       // resolution came to exist only in our database: the row latches on
@@ -4002,7 +4018,7 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       // pay against. The row still latches; what changed is that a chain that
       // did not get the verdict is now LOUD, and `npm run resolve-reconcile`
       // is the way back.
-      void resolveMarketOnChain(detail.onchainPubkey, outcome).then(async (r) => {
+      const resolvedOnChain = resolveMarketOnChain(detail.onchainPubkey, outcome).then(async (r) => {
         if (!r.ok) {
           console.error(JSON.stringify({
             evt: "resolve_chain_gap", slug, outcome, reason: r.reason, error: r.error,
@@ -4041,6 +4057,7 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
         // program fixed on THIS market, which is 0 for one with no creator.
         if (state) void logRealFee(slug, state.totalYesLamports + state.totalNoLamports, state.creatorFeeBps);
       }).catch(() => {});
+      return resolvedOnChain;
     }).catch(() => {});
   }
   /**
@@ -4125,6 +4142,48 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       return key && key.startsWith("x:") ? key.slice(2) : null;
     },
   }).catch((e) => console.error("[resolution] announce failed:", (e as Error).message));
+
+  /* AND IN TELEGRAM, in every group the market was announced in, after the
+     chain has the verdict so the opener's cut is a real number. Everything
+     about what it says lives in src/telegram/resolution.ts. */
+  if (TG.tgToken()) {
+    const tgLog = (line: string, extra?: Record<string, unknown>) =>
+      console.log(JSON.stringify({ evt: "tg_resolution", line, ...extra }));
+    void chainDone.then(() => postTelegramResolution(slug, outcome, {
+      dryRun: TG_DRY_RUN,
+      appBaseUrl: APP_BASE_URL,
+      botUsername: tgBotUsername,
+      threads: (s2) => tgThreadsForSlug(s2),
+      opener: async (s2) => {
+        const o = await tgOpenerOf(s2);
+        if (!o) return null;
+        return { handle: o.handle, linked: Boolean(await personWallet(o.author).catch(() => null)) };
+      },
+      vault: async (s2, o) => {
+        const d = await communityMarketDetail(s2).catch(() => null);
+        if (!d) return null;
+        // Never minted: nobody staked, so there is no vault and nothing in it.
+        if (!d.onchainPubkey) return { pool: 0, won: 0, creatorFee: 0 };
+        let r = await readMarket(d.onchainPubkey);
+        // A confirmed resolve can land a beat before a read sees it, and the
+        // fee reads zero until then.
+        if (r.ok && !r.state.resolved) { await tgSleep(4_000); r = await readMarket(d.onchainPubkey); }
+        // Absent after a resolve is an empty market that was just closed for its rent.
+        if (!r.ok) return r.reason === "absent" ? { pool: 0, won: 0, creatorFee: 0 } : null;
+        const st = r.state;
+        return {
+          pool: st.totalYesLamports + st.totalNoLamports,
+          won: o === "yes" ? st.totalYesLamports : st.totalNoLamports,
+          creatorFee: st.resolved ? st.creatorFeeLamports : 0,
+        };
+      },
+      // The query only makes the URL new, so Telegram cannot hand back the
+      // open card it fetched when the market was announced.
+      cardUrl: (s2, o) => `${BASE_URL}/card/${s2}.png?v=${o}`,
+      send: (m) => tgReply(m, tgLog),
+      log: tgLog,
+    })).catch((e) => console.error("[tg] resolution announce failed:", (e as Error).message));
+  }
 
   return { settled: settled.length };
 }
@@ -5571,6 +5630,43 @@ const TG_EARN_HTML = readFileSync(path.join(__dirname, "../public/tg-earn.html")
 /** Set once the bot has answered getMe. The earn page names the bot in its
  *  "link expired" message, and it must be the bot's real current name. */
 let tgBotUsername: string | null = null;
+
+/**
+ * ONE WAY TO ANSWER IN A GROUP, used by the tag loop and by the settlement
+ * notice, so both fall back and back off the same way.
+ *
+ * THE PICTURE MAY FALL BACK TO WORDS, BUT ONLY ON A REFUSAL. A 4xx is
+ * Telegram saying it created nothing -- no photo rights in this group, or it
+ * could not fetch the card -- so sending the text instead cannot double-post.
+ * A timeout proves nothing either way, so that throws and the caller settles
+ * it. Same reasoning as the X 403 fallback.
+ */
+async function tgReply(
+  { chatId, replyTo, text, photoUrl }: { chatId: number; replyTo: number; text: string; photoUrl: string | null },
+  log: (line: string, extra?: Record<string, unknown>) => void,
+): Promise<void> {
+  const once = async () => {
+    if (photoUrl) {
+      try { await TG.sendPhoto(chatId, photoUrl, text, replyTo); return; }
+      catch (e) {
+        const refused = e instanceof TG.TgError && e.code >= 400 && e.code < 500 && e.code !== 429;
+        if (!refused) throw e;
+        log("photo refused, sending the words", { chatId, err: (e as Error).message });
+      }
+    }
+    await TG.sendMessage(chatId, text, replyTo);
+  };
+  try { await once(); }
+  catch (e) {
+    // Rate limited is also a definite "nothing was created": wait as told, once.
+    if (e instanceof TG.TgError && e.code === 429 && e.retryAfter && e.retryAfter <= 30) {
+      await tgSleep(e.retryAfter * 1000);
+      await once();
+      return;
+    }
+    throw e;
+  }
+}
 const tgEarnKey = (): Buffer | null => { const t = TG.tgToken(); return t ? earnKey(t) : null; };
 const tgEarnLink = (tgUserId: number): string | null => {
   const key = tgEarnKey();
@@ -5714,34 +5810,7 @@ async function startTelegram(): Promise<void> {
       });
       return out.ok ? { ok: true, slug: out.slug } : { ok: false, status: out.status, error: out.error };
     },
-    reply: async ({ chatId, replyTo, text, photoUrl }) => {
-      /* THE PICTURE MAY FALL BACK TO WORDS, BUT ONLY ON A REFUSAL. A 4xx is
-         Telegram saying it created nothing -- no photo rights in this group, or
-         it could not fetch the card -- so sending the text instead cannot
-         double-post. A timeout proves nothing either way, so that throws and
-         the loop settles it for good. Same reasoning as the X 403 fallback. */
-      const once = async () => {
-        if (photoUrl) {
-          try { await TG.sendPhoto(chatId, photoUrl, text, replyTo); return; }
-          catch (e) {
-            const refused = e instanceof TG.TgError && e.code >= 400 && e.code < 500 && e.code !== 429;
-            if (!refused) throw e;
-            log("photo refused, sending the words", { chatId, err: (e as Error).message });
-          }
-        }
-        await TG.sendMessage(chatId, text, replyTo);
-      };
-      try { await once(); }
-      catch (e) {
-        // Rate limited is also a definite "nothing was created": wait as told, once.
-        if (e instanceof TG.TgError && e.code === 429 && e.retryAfter && e.retryAfter <= 30) {
-          await tgSleep(e.retryAfter * 1000);
-          await once();
-          return;
-        }
-        throw e;
-      }
-    },
+    reply: (o) => tgReply(o, log),
     rememberPerson: (platformId, handle) => rememberPerson("tg", platformId, handle),
     earnLink: (tgUserId) => tgEarnLink(tgUserId),
     openedToday: (author) => tgOpenedToday(author),
