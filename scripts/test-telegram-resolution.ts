@@ -31,10 +31,21 @@ console.log("ledger keys and threads");
     { key: "tg:-1001:7", reason: "existing" },
     { key: "not-a-key", reason: "opened" },
   ]);
-  const a = t.find((x) => x.chatId === -1001), b = t.find((x) => x.chatId === -1002);
+  const groups = t.flatMap((x) => (x.kind === "group" ? [x] : []));
+  const a = groups.find((x) => x.chatId === -1001), b = groups.find((x) => x.chatId === -1002);
   check("one thread per group", t.length === 2);
   check("the group it was opened in answers the opener's own message", a?.messageId === 2 && a.opened === true);
   check("a group that only got a pointer answers its latest tag", b?.messageId === 9 && b.opened === false);
+
+  const g = threadsFrom([
+    { key: "tgg:777:5", reason: "opened", replyId: "INLINE-A" },
+    { key: "tgg:888:9", reason: "existing", replyId: "INLINE-B" },
+    { key: "tgg:999:1", reason: "opened", replyId: null },
+  ]);
+  const ga = g.find((x) => x.kind === "guest" && x.inlineMessageId === "INLINE-A");
+  check("a guest tag is answered by editing its own reply", Boolean(ga && ga.opened));
+  check("...each guest reply is its own thread", g.length === 2);
+  check("...and one with no reply id is left alone: there is no way back to it", !g.some((x) => x.kind === "guest" && !x.inlineMessageId));
 }
 
 console.log("\nthe amount, in words");
@@ -148,6 +159,44 @@ console.log("\nwhere it goes, against a faithful Telegram");
   }
 }
 
+console.log("\na guest market: edited in place, the opener told privately");
+{
+  const edits: Array<{ id: string; text: string; url: string }> = [];
+  const dms: Array<{ userId: number; text: string }> = [];
+  const sends: unknown[] = [];
+  const deps: TgResolutionDeps = {
+    dryRun: false, appBaseUrl: APP, botUsername: "oddiefunbot",
+    threads: async () => [{ key: "tgg:5550001:14", reason: "opened", replyId: "INLINE-XYZ" }],
+    opener: async () => ({ handle: "levvercetti", linked: true, userId: 1775258225 }),
+    vault: async () => ({ pool: 2e9, won: 1e9, creatorFee: 40_000_000 }),
+    cardUrl: (s, o) => `https://oddie.fun/card/${s}.png?v=${o}`,
+    // Faithful: a guest bot may not send into that chat at all.
+    send: async (m) => { sends.push(m); throw new Error("400 PEER_ID_INVALID"); },
+    editGuest: async (id, text, url) => { edits.push({ id, text, url }); },
+    dmOpener: async (userId, text) => { dms.push({ userId, text }); },
+    log: () => {},
+  };
+  const r = await postTelegramResolution("some-market", "yes", deps);
+  check("the guest reply is rewritten into the result, and nothing is sent", r.posted === 1 && edits.length === 1 && sends.length === 0);
+  check("...its preview is the market page", edits[0]?.url === `${APP}/m/some-market`);
+  check("...and it names the cut where the market was opened", /you opened this market and earned 0\.04 SOL/.test(edits[0]?.text ?? ""));
+  check("the opener also hears it privately, because an edit notifies nobody",
+    r.dmSent === true && dms[0]?.userId === 1775258225 && /earned 0\.04 SOL/.test(dms[0]?.text ?? ""));
+  check("...addressed as you, not by @name, in their own chat", !/@levvercetti/.test(dms[0]?.text ?? ""));
+
+  const quiet = await postTelegramResolution("some-market", "yes", {
+    ...deps, dmOpener: async () => { throw new Error("403 bot can't initiate conversation with a user"); },
+  });
+  check("an opener who never started the bot is simply not messaged", quiet.posted === 1 && !quiet.dmSent);
+
+  const dmGroup: Array<number> = [];
+  await postTelegramResolution("some-market", "yes", {
+    ...deps, threads: async () => [{ key: "tg:-1004413284410:2", reason: "opened" }],
+    send: async () => {}, dmOpener: async (u) => { dmGroup.push(u); },
+  });
+  check("a market opened in a group is not also sent privately (the reply notifies them)", dmGroup.length === 0);
+}
+
 console.log("\nwired into settlement");
 {
   const server = readFileSync("src/server.ts", "utf8");
@@ -156,7 +205,7 @@ console.log("\nwired into settlement");
   check("the card route draws the verdict", /settled: verdict,/.test(server));
   check("...and settlement drops the cached open card", /pngCache\.delete\(slug\);/.test(server));
   const store = readFileSync("src/store/markets.ts", "utf8");
-  check("X never replies to a Telegram message id", /AND tweet_id NOT LIKE 'tg:%'\s*\n\s*ORDER BY at DESC LIMIT 1/.test(store));
+  check("X never replies to a Telegram or guest row", /AND tweet_id NOT LIKE 'tg%'\s*\n\s*ORDER BY at DESC LIMIT 1/.test(store));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall telegram resolution checks passed.\n");

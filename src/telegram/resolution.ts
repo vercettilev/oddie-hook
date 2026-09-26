@@ -19,6 +19,11 @@
  * when a cut is owed, and with the amount, because money is moving and the
  * words are literal.
  *
+ * A GUEST TAG IS ANSWERED BY EDITING. In a chat the bot was never added to it
+ * sent exactly one reply and may send nothing else, so that reply is rewritten
+ * into the result. An edit notifies nobody, so the opener also hears it in
+ * their own chat with the bot, when they have one.
+ *
  * UNLIKE X, A MARKET NOBODY STAKED IS STILL ANNOUNCED. On X that post would sit
  * under a stranger's tweet saying our market was empty. In a group, the people
  * who asked are the audience, and "who was right" is the answer they asked for.
@@ -26,13 +31,14 @@
  */
 import { moneyLine } from "../x/resolutionReply.js";
 
-export interface TgThread {
-  chatId: number;
-  messageId: number;
-  /** The message that opened the market, as opposed to a later tag in another
-   *  group that was answered with a pointer to it. */
-  opened: boolean;
-}
+export type TgThread =
+  /** A group the bot is in: reply to the tag. */
+  | { kind: "group"; chatId: number; messageId: number;
+      /** The message that opened the market, as opposed to a later tag in
+       *  another group that was answered with a pointer to it. */
+      opened: boolean }
+  /** A guest tag: the bot's own reply there, editable by its inline id. */
+  | { kind: "guest"; inlineMessageId: string; opened: boolean };
 
 /** Ledger keys are `tg:<chat id>:<message id>`. Group ids are negative. */
 export function parseTgKey(key: string): { chatId: number; messageId: number } | null {
@@ -49,15 +55,26 @@ export function parseTgKey(key: string): { chatId: number; messageId: number } |
  * market was opened answers the opener's message; a chat that only received a
  * pointer answers the latest tag there.
  */
-export function threadsFrom(rows: ReadonlyArray<{ key: string; reason: string | null }>): TgThread[] {
-  const byChat = new Map<number, TgThread>();
+export function threadsFrom(
+  rows: ReadonlyArray<{ key: string; reason: string | null; replyId?: string | null }>,
+): TgThread[] {
+  const byChat = new Map<number, TgThread & { kind: "group" }>();
+  const guests = new Map<string, TgThread & { kind: "guest" }>();
   for (const r of rows) {
+    // A guest reply is its own message wherever it is; without its inline id
+    // there is no way back to it, and nothing to do.
+    if (r.key.startsWith("tgg:")) {
+      if (r.replyId && !guests.has(r.replyId)) {
+        guests.set(r.replyId, { kind: "guest", inlineMessageId: r.replyId, opened: r.reason === "opened" });
+      }
+      continue;
+    }
     const k = parseTgKey(r.key);
     if (!k) continue;
     if (byChat.get(k.chatId)?.opened) continue;
-    byChat.set(k.chatId, { chatId: k.chatId, messageId: k.messageId, opened: r.reason === "opened" });
+    byChat.set(k.chatId, { kind: "group", chatId: k.chatId, messageId: k.messageId, opened: r.reason === "opened" });
   }
-  return [...byChat.values()];
+  return [...byChat.values(), ...guests.values()];
 }
 
 /** SOL for a sentence: enough places that a small cut is not rounded away,
@@ -107,14 +124,20 @@ export interface TgResolutionDeps {
   /** For the deep link that starts the collect flow in a private chat. */
   botUsername: string | null;
   /** Every Telegram ledger row that answered a tag with this market. */
-  threads(slug: string): Promise<Array<{ key: string; reason: string | null }>>;
-  opener(slug: string): Promise<{ handle: string | null; linked: boolean } | null>;
+  threads(slug: string): Promise<Array<{ key: string; reason: string | null; replyId?: string | null }>>;
+  /** userId: the opener's Telegram id, for the private note after a guest tag. */
+  opener(slug: string): Promise<{ handle: string | null; linked: boolean; userId?: number | null } | null>;
   /** The vault after the verdict is on chain, or null when it cannot be read.
    *  A market never minted, or already closed, is all zeros. */
   vault(slug: string, outcome: "yes" | "no"): Promise<{ pool: number; won: number; creatorFee: number } | null>;
   /** A card image URL that shows the verdict. */
   cardUrl(slug: string, outcome: "yes" | "no"): string;
   send(o: { chatId: number; replyTo: number; text: string; photoUrl: string | null }): Promise<void>;
+  /** Rewrite a guest reply into the result; the market page is its preview. */
+  editGuest?(inlineMessageId: string, text: string, marketUrl: string): Promise<void>;
+  /** A private message to the opener. Refused by Telegram unless they have
+   *  started a chat with the bot, which is fine: it is a courtesy. */
+  dmOpener?(userId: number, text: string): Promise<void>;
   log(line: string, extra?: Record<string, unknown>): void;
 }
 
@@ -124,6 +147,8 @@ export interface TgResolutionOutcome {
   /** Set when nothing was attempted. */
   skipped?: "no-thread" | "dry-run";
   texts: string[];
+  /** The private note to a guest market's opener went out. */
+  dmSent?: boolean;
 }
 
 /**
@@ -162,16 +187,40 @@ export async function postTelegramResolution(
     });
     out.texts.push(text);
     if (deps.dryRun) {
-      deps.log("resolution dry-run", { slug, outcome, chatId: t.chatId, replyTo: t.messageId, text });
+      deps.log("resolution dry-run", { slug, outcome, ...(t.kind === "group"
+        ? { chatId: t.chatId, replyTo: t.messageId } : { inlineMessageId: t.inlineMessageId }), text });
       continue;
     }
     try {
-      await deps.send({ chatId: t.chatId, replyTo: t.messageId, text, photoUrl: deps.cardUrl(slug, outcome) });
+      if (t.kind === "guest") {
+        if (!deps.editGuest) throw new Error("guest edits are not wired");
+        await deps.editGuest(t.inlineMessageId, text, marketUrl);
+      } else {
+        await deps.send({ chatId: t.chatId, replyTo: t.messageId, text, photoUrl: deps.cardUrl(slug, outcome) });
+      }
       out.posted++;
-      deps.log("resolution posted", { slug, outcome, chatId: t.chatId, credited: Boolean(credit) });
+      deps.log("resolution posted", { slug, outcome, kind: t.kind, credited: Boolean(credit) });
     } catch (e) {
       out.failed++;
-      deps.log("resolution: send failed", { slug, chatId: t.chatId, err: (e as Error).message });
+      deps.log("resolution: send failed", { slug, kind: t.kind, err: (e as Error).message });
+    }
+  }
+
+  /* THE OPENER OF A GUEST MARKET HEARS IT PRIVATELY. The edit above is silent,
+     so without this the person owed the cut learns nothing. Only possible when
+     they have started a chat with the bot (Telegram refuses otherwise), which
+     everybody who linked a wallet through /earn has. */
+  const openedAsGuest = threads.some((t) => t.kind === "guest" && t.opened);
+  if (openedAsGuest && opener?.userId && deps.dmOpener && !deps.dryRun) {
+    const credit = vault && vault.creatorFee > 0
+      ? { handle: null, feeLamports: vault.creatorFee, linked: opener.linked, collectUrl }
+      : null;
+    const note = tgResolutionText({ outcome, pool: vault ? vault.pool : null, won: vault ? vault.won : null, marketUrl, opener: credit });
+    try {
+      await deps.dmOpener(opener.userId, note);
+      out.dmSent = true;
+    } catch (e) {
+      deps.log("resolution: opener note not delivered", { slug, err: (e as Error).message });
     }
   }
   if (deps.dryRun) out.skipped = "dry-run";

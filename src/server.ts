@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
-import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug } from "./store/markets.js";
+import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl } from "./store/markets.js";
 import { postTelegramResolution } from "./telegram/resolution.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -2640,7 +2640,7 @@ app.get("/api/mentions", requireAdmin, async (_req, res) => {
     // above it for why that is arithmetic rather than manners.
     const v = buildVerdict({
       handle: r.handle, side: r.side, entryPct: r.entryPct, outcome: r.outcome,
-      question: r.question, permalink: url, sourceUrl: srcs[r.slug]?.sourceUrl ?? null,
+      question: r.question, permalink: url, sourceUrl: isWebSourceUrl(srcs[r.slug]?.sourceUrl) ? srcs[r.slug]!.sourceUrl : null,
     });
     out.push({
       callId: r.callId, handle: r.handle, won: v.won, longshot: v.longshot,
@@ -2648,7 +2648,7 @@ app.get("/api/mentions", requireAdmin, async (_req, res) => {
       // The claim this market came from. With it the operator posts a QUOTE —
       // an original post as far as ranking is concerned, so it clears the
       // reply filter and is boost-eligible. Without it, a plain post.
-      sourceUrl: srcs[r.slug]?.sourceUrl ?? null,
+      sourceUrl: isWebSourceUrl(srcs[r.slug]?.sourceUrl) ? srcs[r.slug]!.sourceUrl : null,
       // The image to attach to the post itself — the personal card as a PNG,
       // so the tweet carries the visual natively instead of leaning on unfurl.
       cardPng: token ? `${BASE_URL}/card/pc/${token}.png` : null,
@@ -3546,7 +3546,7 @@ app.get("/api/v1/markets", async (req, res) => {
       // onu yayinlamakti. Istemci yazari URL'den cikarip handle ile
       // karsilastiriyor: ikisi ayni degilse cip profile gider, cunku taggedBy
       // ETIKETLEYENDIR ve sourceUrl baskasinin gonderisi olabilir.
-      sourceUrl: openers[m.slug]?.sourceUrl ?? null,
+      sourceUrl: isWebSourceUrl(openers[m.slug]?.sourceUrl) ? openers[m.slug]!.sourceUrl : null,
       pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
       /* ONE DEFINITION, in src/odds.ts, because this line and the card disagreed
          by 41 points on a live market. The clamp is what is gone: Math.min(99, ...)
@@ -3702,8 +3702,10 @@ async function marketDetailPayload(
        it safe to print on a public page. */
     earnUrl: sourceUrlKind(src?.sourceUrl) === "telegram" && tgBotUsername
       ? `https://t.me/${tgBotUsername}?start=earn` : null,
-    sourcePost: src && (src.sourceUrl || src.sourceText)
-      ? { url: src.sourceUrl, text: src.sourceText, author: src.sourceAuthor }
+    // Only a real link is a link. A private chat's opaque marker (tg-private:)
+    // is provenance for us, never something to print or to click.
+    sourcePost: src && (isWebSourceUrl(src.sourceUrl) || src.sourceText)
+      ? { url: isWebSourceUrl(src.sourceUrl) ? src.sourceUrl : null, text: src.sourceText, author: src.sourceAuthor }
       : null,
     // Read off the market, not from our constants. A market minted under a
     // different rate keeps it, and an agent that assumed today's numbers would
@@ -4157,7 +4159,12 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       opener: async (s2) => {
         const o = await tgOpenerOf(s2);
         if (!o) return null;
-        return { handle: o.handle, linked: Boolean(await personWallet(o.author).catch(() => null)) };
+        const id = Number(o.author.replace(/^tg:/, ""));
+        return {
+          handle: o.handle,
+          linked: Boolean(await personWallet(o.author).catch(() => null)),
+          userId: Number.isSafeInteger(id) && id > 0 ? id : null,
+        };
       },
       vault: async (s2, o) => {
         const d = await communityMarketDetail(s2).catch(() => null);
@@ -4181,6 +4188,8 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       // open card it fetched when the market was announced.
       cardUrl: (s2, o) => `${BASE_URL}/card/${s2}.png?v=${o}`,
       send: (m) => tgReply(m, tgLog),
+      editGuest: (id, text, url) => TG.editGuestReply(id, { text, previewUrl: url, button: { text: "See the result", url } }),
+      dmOpener: async (userId, text) => { await TG.sendMessage(userId, text, null); },
       log: tgLog,
     })).catch((e) => console.error("[tg] resolution announce failed:", (e as Error).message));
   }
@@ -5612,6 +5621,10 @@ if (X_BOT_ENABLED) {
  * The opener links a wallet whenever they like and collects.
  */
 const TG_DRY_RUN = (process.env.TELEGRAM_DRY_RUN ?? "false").toLowerCase() === "true";
+/** Guest tags one person may send in a day, market or not. Guest mode lets
+ *  anybody on Telegram summon the bot, and each summons that reaches the model
+ *  is a paid call. */
+const TG_GUEST_TRIES_PER_DAY = Math.max(1, Number(process.env.TG_GUEST_TRIES_PER_DAY ?? 30) || 30);
 const TG_MARKETS_PER_DAY = (() => {
   const n = Number(process.env.TG_MARKETS_PER_DAY ?? 5);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
@@ -5811,6 +5824,10 @@ async function startTelegram(): Promise<void> {
       return out.ok ? { ok: true, slug: out.slug } : { ok: false, status: out.status, error: out.error };
     },
     reply: (o) => tgReply(o, log),
+    guestAnswer: (q, c) => TG.answerGuestQuery(q, c),
+    guestEdit: (id, c) => TG.editGuestReply(id, c),
+    guestTriesToday: (author) => tgGuestTriesToday(author),
+    guestDailyTries: TG_GUEST_TRIES_PER_DAY,
     rememberPerson: (platformId, handle) => rememberPerson("tg", platformId, handle),
     earnLink: (tgUserId) => tgEarnLink(tgUserId),
     openedToday: (author) => tgOpenedToday(author),

@@ -1,5 +1,5 @@
 /**
- * The Telegram Bot API, the four calls oddie needs and nothing else.
+ * The Telegram Bot API, the calls oddie needs and nothing else.
  *
  * Deliberately thin. Everything that decides anything lives in loop.ts, where
  * it can be tested against a fake; this file only knows how to talk to
@@ -97,11 +97,18 @@ export interface TgMessage {
   entities?: TgEntity[];
   caption_entities?: TgEntity[];
   reply_to_message?: TgMessage;
+  /** Present on a guest message: the one reply the bot may send, through
+   *  answerGuestQuery. */
+  guest_query_id?: string;
 }
 
 export interface TgUpdate {
   update_id: number;
   message?: TgMessage;
+  /** GUEST MODE (Bot API 10.0): the bot was tagged in a chat it is not a member
+   *  of, a private chat between two people included. It gets this message and
+   *  the one it replied to, and may answer once. */
+  guest_message?: TgMessage;
 }
 
 /* ------------------------------------------------------------- the calls -- */
@@ -130,7 +137,7 @@ export async function getMe(): Promise<TgUser> {
 export async function getUpdates(offset: number | null, timeoutSec = 25): Promise<TgUpdate[]> {
   return call<TgUpdate[]>(
     "getUpdates",
-    { ...(offset !== null ? { offset } : {}), timeout: timeoutSec, allowed_updates: ["message"] },
+    { ...(offset !== null ? { offset } : {}), timeout: timeoutSec, allowed_updates: ["message", "guest_message"] },
     (timeoutSec + 10) * 1000,
   );
 }
@@ -143,11 +150,11 @@ const replyTo = (messageId: number) => ({
   reply_parameters: { message_id: messageId, allow_sending_without_reply: true },
 });
 
-export async function sendMessage(chatId: number, text: string, replyToId: number): Promise<SentMessage> {
+export async function sendMessage(chatId: number, text: string, replyToId: number | null): Promise<SentMessage> {
   return call<SentMessage>("sendMessage", {
     chat_id: chatId,
     text,
-    ...replyTo(replyToId),
+    ...(replyToId ? replyTo(replyToId) : {}),
   });
 }
 
@@ -160,5 +167,56 @@ export async function sendPhoto(
     photo: photoUrl,
     caption,
     ...replyTo(replyToId),
+  });
+}
+
+/* ------------------------------------------------------------- guest mode -- */
+
+/** How a guest reply looks: text, the market's card as the link preview above
+ *  it, and one button. A photo result would need a JPEG and the card is a PNG,
+ *  and a text message is also the only kind that can later be edited into the
+ *  result. */
+export interface GuestContent {
+  text: string;
+  /** The page whose preview (its og:image, the card) shows above the text. */
+  previewUrl?: string | null;
+  button?: { text: string; url: string } | null;
+}
+
+const guestBody = (c: GuestContent) => ({
+  link_preview_options: c.previewUrl
+    ? { url: c.previewUrl, prefer_large_media: true, show_above_text: true }
+    : { is_disabled: true },
+  ...(c.button ? { reply_markup: { inline_keyboard: [[{ text: c.button.text, url: c.button.url }]] } } : {}),
+});
+
+/**
+ * The one reply a guest bot may send in a chat it is not a member of. Returns
+ * the inline_message_id: the only handle on that message afterwards, and the
+ * only way to change it, because every other call into that chat is refused.
+ */
+export async function answerGuestQuery(guestQueryId: string, content: GuestContent): Promise<string> {
+  const { link_preview_options, reply_markup } = guestBody(content) as {
+    link_preview_options: unknown; reply_markup?: unknown;
+  };
+  const sent = await call<{ inline_message_id: string }>("answerGuestQuery", {
+    guest_query_id: guestQueryId,
+    result: {
+      type: "article",
+      id: "1",
+      title: "oddie",
+      input_message_content: { message_text: content.text, link_preview_options },
+      ...(reply_markup ? { reply_markup } : {}),
+    },
+  });
+  return sent.inline_message_id;
+}
+
+/** Rewrite a guest reply in place. Telegram does not notify anybody of an edit. */
+export async function editGuestReply(inlineMessageId: string, content: GuestContent): Promise<void> {
+  await call<boolean>("editMessageText", {
+    inline_message_id: inlineMessageId,
+    text: content.text,
+    ...guestBody(content),
   });
 }

@@ -29,6 +29,14 @@
  * settled and is skipped, and the retry is bounded by the same attempt limit
  * the X ledger enforces.
  *
+ * GUEST MODE, THE SAME FLOW IN ANY CHAT. Since Bot API 10.0 a person can tag
+ * the bot in a chat it was never added to, a private chat between two people
+ * included. The update is `guest_message`, the bot may answer exactly once, and
+ * nothing else it sends into that chat is accepted. So a guest tag gets a short
+ * reply at once, before the slow part, and that reply is then edited into the
+ * answer. Its ledger key is `tgg:`, never `tg:`: a guest chat's id can equal the
+ * id of a chat the bot really is in.
+ *
  * IDENTITY IS THE NUMERIC ID FROM THE FIRST ROW. The ledger author is
  * `tg:<user id>`, never the @name: Telegram's own schema makes username
  * optional, so a person may not have one, and one they do have can be changed
@@ -37,7 +45,8 @@
 import type { Extraction } from "../matching/extractClaim.js";
 import type { PriceClaim } from "../price/index.js";
 import type { MintResult } from "../x/mentionLoop.js";
-import type { TgMessage, TgUpdate } from "./client.js";
+import { createHash } from "node:crypto";
+import type { GuestContent, TgMessage, TgUpdate } from "./client.js";
 import { buildTweetReply } from "../matching/tweetReply.js";
 import { claimMention, settleMention, botStateGet, botStateSet } from "../store/markets.js";
 
@@ -64,6 +73,13 @@ export interface TgSweepDeps {
   }): Promise<MintResult>;
   /** Answer in the chat, threaded under `replyTo`. A photo when there is one. */
   reply(opts: { chatId: number; replyTo: number; text: string; photoUrl: string | null }): Promise<void>;
+  /** A guest tag's one reply; returns its inline_message_id. */
+  guestAnswer?(guestQueryId: string, content: GuestContent): Promise<string>;
+  /** Rewrite that reply in place. */
+  guestEdit?(inlineMessageId: string, content: GuestContent): Promise<void>;
+  /** Guest tags from this person in the last day, and how many they get. */
+  guestTriesToday?(author: string): Promise<number>;
+  guestDailyTries?: number;
   rememberPerson?(platformId: string, handle: string | null): Promise<{ renamedFrom: string | null }>;
   /** The private one-tap URL that lets this Telegram user link a wallet and
    *  collect their 2%. Null when the feature is not configured. */
@@ -126,6 +142,18 @@ export function messageLink(chat: TgMessage["chat"], messageId: number): string 
 }
 
 /**
+ * A MESSAGE THAT HAS NO LINK STILL HAS A SOURCE. A private chat and a basic
+ * group have no t.me link, and they are exactly where guest mode and two
+ * friends' new group put the bot. The market records an opaque marker instead,
+ * a hash of the chat and the message: enough for one-post-one-market, and it
+ * reveals neither, since in a one-to-one chat the chat id can be a person's own
+ * user id. See TG_PRIVATE_SOURCE in the store.
+ */
+export function privateSource(chatId: number, messageId: number): string {
+  return `tg-private:${createHash("sha256").update(`${chatId}:${messageId}`).digest("hex").slice(0, 16)}`;
+}
+
+/**
  * WHICH MESSAGE IS THE CLAIM. A reply-tag is the whole point -- somebody said
  * something, somebody else tags the bot under it -- so the parent is the claim
  * and the source. A tag on its own carries the claim in its own text. A reply
@@ -147,15 +175,16 @@ export const TG_COPY = {
   unmarketable:
     "I open markets on claims with a clear yes or no and a date. Tag me under one of those.",
   cap: (n: number) => `That's ${n} markets from you today. More tomorrow.`,
-  /* A basic group. Its messages have no t.me link, and a market has to be able
-     to show where it came from, so the mint refuses it. Telegram upgrades the
-     group to a supergroup the moment chat history is made visible to new
-     members, which keeps it private and gives every message a link. */
-  needsLinks:
-    "To open markets here I need message links. In this group's settings, set Chat History for New Members to Visible, then tag me again.",
-  /* A private chat. Markets come from public arguments, so a DM is where the
-     person talks to oddie, not where markets open. */
-  dm: "Add me to a group and tag me under a claim. I'll open a market on it right there.\n\nOpened one already? Send /earn to collect your 2%.",
+  /* The chat with the bot itself is where a person talks to oddie, not where
+     markets open: there is nobody here to take the other side. */
+  dm: "Tag me under a claim in any chat, a group or a private one, and I'll open a market on it right there.\n\nOpened one already? Send /earn to collect your 2%.",
+  /* A guest tag gets one reply, sent at once and then edited into the answer,
+     because reading the claim takes a few seconds. */
+  reading: "Reading the claim…",
+  /* After that reply, another go is impossible: the one reply is spent. So a
+     passing outage is said as the next step rather than retried. */
+  later: "Tag me again in a minute and I'll open it.",
+  guestCap: "That's plenty from you today. Tag me again tomorrow.",
   /* Where the 2% is collected. Sent ONLY in a private chat: the URL binds a
      wallet to this person's markets, so in a group anybody could take it. */
   earn: (link: string) =>
@@ -191,16 +220,27 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
 
   for (const u of updates) {
     maxId = Math.max(maxId, u.update_id);
-    const msg = u.message;
+    const guest = u.guest_message ?? null;
+    const msg = u.message ?? guest;
     if (!msg || !msg.from || msg.from.is_bot) continue;
-    const isPrivate = msg.chat.type === "private";
-    if (!isPrivate && !tagsBot(msg, deps.botUsername)) continue;
+    /* A GUEST MESSAGE COUNTS ONLY WHEN IT NAMES THE BOT. Guest mode also
+       delivers every reply to the bot's own message in that chat, and two
+       people talking under a card are not asking for anything. */
+    if (guest && (!guest.guest_query_id || !tagsBot(msg, deps.botUsername))) continue;
+    // A guest message from a private chat is a chat between two people, not
+    // with the bot: it takes the claim path, never the DM one.
+    const isPrivate = !guest && msg.chat.type === "private";
+    if (!guest && !isPrivate && !tagsBot(msg, deps.botUsername)) continue;
     // Telegram sends "/start" the moment somebody opens a chat with the bot.
     // Only DMs get a reply to a bare command: in a group, an untagged command
     // was never meant for us.
 
     result.looked++;
-    const key = `tg:${msg.chat.id}:${msg.message_id}`;
+    const key = `${guest ? "tgg" : "tg"}:${msg.chat.id}:${msg.message_id}`;
+    /* PRIVATE WORDS STAY PRIVATE. In a one-to-one chat the claim is usually the
+       OTHER person's message, written to one friend. Only the question the model
+       draws from it is ever published; the words themselves are not even kept. */
+    const keepText = !(guest && msg.chat.type === "private");
     const author = tgAuthor(msg.from.id);
     const decide = (outcome: TgSweepResult["decisions"][number]["outcome"], extra: { reason?: string; slug?: string } = {}) => {
       if (outcome === "replied") result.replied++;
@@ -220,10 +260,22 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
     }
 
     let postAttempted = false;
-    const answer = async (text: string, photoUrl: string | null) => {
+    /** A guest tag's reply, once sent: every later answer edits it. */
+    let guestReplyId: string | null = null;
+    /** Answer in this chat. `slug` names the market to show: its card as the
+     *  photo in a group, its page as the preview and the button in a guest reply. */
+    const answer = async (text: string, slug: string | null) => {
       if (deps.dryRun) { log("dry-run telegram reply", { key, text }); return; }
       postAttempted = true;
-      await deps.reply({ chatId: msg.chat.id, replyTo: msg.message_id, text, photoUrl });
+      if (guest) {
+        if (!deps.guestAnswer || !deps.guestEdit) throw new Error("guest mode is not wired");
+        const url = slug ? `${deps.baseUrl.replace(/\/+$/, "")}/m/${slug}` : null;
+        const content: GuestContent = { text, previewUrl: url, button: url ? { text: "Take a side", url } : null };
+        if (guestReplyId) await deps.guestEdit(guestReplyId, content);
+        else guestReplyId = await deps.guestAnswer(guest.guest_query_id!, content);
+        return;
+      }
+      await deps.reply({ chatId: msg.chat.id, replyTo: msg.message_id, text, photoUrl: slug ? deps.cardUrl(slug) : null });
     };
 
     try {
@@ -258,20 +310,13 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         continue;
       }
 
-      const sourceUrl = messageLink(claim.source.chat, claim.source.message_id);
-      /* NO LINK, NO MARKET -- AND SAY SO. openMarketFromClaim refuses a market
-         with no source ("a market with no source can never show who it came
-         from"), and a basic group's messages have no t.me link. This used to be
-         discovered at the mint, after a paid extraction, then retried three
-         times in five seconds, then abandoned without a word to the person who
-         tagged. Checked first now, and answered with the one setting that
-         fixes it. */
-      if (!sourceUrl) {
-        await answer(TG_COPY.needsLinks, null);
-        await settleMention(key, "skipped", { reason: "unlinkable", claimText: claim.text });
-        decide("skipped", { reason: "unlinkable" });
-        continue;
-      }
+      /* A LINK WHEN THERE IS ONE, AN OPAQUE MARKER WHEN THERE IS NOT. A basic
+         group and a private chat have no t.me link. They used to be refused,
+         with a request to change a group setting; the marker keeps provenance
+         and one-post-one-market without a link. See privateSource. */
+      const sourceUrl = messageLink(claim.source.chat, claim.source.message_id)
+        ?? privateSource(claim.source.chat.id, claim.source.message_id);
+      const claimText = keepText ? claim.text : null;
 
       // ONE POST, ONE MARKET. Free: no cap, no extraction.
       const already = sourceUrl && deps.existingMarket
@@ -280,10 +325,23 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
       if (already) {
         const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${already.slug}`;
         const reply = buildTweetReply({ question: already.question, permalink, hook: "" });
-        await answer(reply.primary, deps.cardUrl(already.slug));
-        await settleMention(key, "replied", { slug: already.slug, reason: "existing", claimText: claim.text });
+        await answer(reply.primary, already.slug);
+        await settleMention(key, "replied", { slug: already.slug, reason: "existing", claimText, replyId: guestReplyId });
         decide("replied", { reason: "existing", slug: already.slug });
         continue;
+      }
+
+      /* ANYBODY ON TELEGRAM CAN SUMMON A GUEST BOT, and every summons that
+         reaches the model is paid for, market or not. This row was claimed
+         above, so it is already in the count. */
+      if (guest && deps.guestTriesToday && deps.guestDailyTries && deps.guestDailyTries > 0) {
+        const tries = await deps.guestTriesToday(author).catch(() => 0);
+        if (tries > deps.guestDailyTries) {
+          await answer(TG_COPY.guestCap, null);
+          await settleMention(key, "skipped", { reason: "guest-cap" });
+          decide("skipped", { reason: "guest-cap" });
+          continue;
+        }
       }
 
       if (deps.openedToday && deps.dailyCap && deps.dailyCap > 0) {
@@ -296,12 +354,16 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         }
       }
 
+      // The guest reply goes out now, before the slow part, and is edited into
+      // the answer: a few silent seconds after a tag reads as a dead bot.
+      if (guest && !deps.dryRun && !guestReplyId) await answer(TG_COPY.reading, null);
+
       // Capped for the same reason the X loop caps it: this goes into a model
       // prompt, and a pasted wall of text is not our budget.
       const ex = await deps.extract(claim.text.slice(0, 4000));
       if (ex.resolvability === "unresolvable" || !ex.appropriate || !ex.question) {
         await answer(TG_COPY.unmarketable, null);
-        await settleMention(key, "skipped", { reason: `gate:${ex.resolvability}`, claimText: claim.text });
+        await settleMention(key, "skipped", { reason: `gate:${ex.resolvability}`, claimText });
         decide("skipped", { reason: `gate:${ex.resolvability}` });
         continue;
       }
@@ -313,7 +375,7 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         category: ex.category,
         resolutionCriteria: ex.resolution_criteria || null,
         priceClaim: ex.price_claim,
-        claimText: claim.text,
+        claimText,
         resolvability: ex.resolvability,
         hook: ex.hook || null,
         openerId: author,
@@ -328,12 +390,20 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         const refused = minted.status >= 400 && minted.status < 500;
         if (refused) {
           await answer(TG_COPY.unmarketable, null);
-          await settleMention(key, "skipped", { reason: `mint:${minted.status} ${minted.error}`, claimText: claim.text });
+          await settleMention(key, "skipped", { reason: `mint:${minted.status} ${minted.error}`, claimText });
           decide("skipped", { reason: `mint:${minted.status}` });
           continue;
         }
+        /* A GUEST TAG CANNOT BE TRIED AGAIN: its one reply is already out, and
+           a second answerGuestQuery is refused. It says what to do instead. */
+        if (guest && guestReplyId) {
+          await answer(TG_COPY.later, null);
+          await settleMention(key, "failed", { reason: `mint:${minted.status} ${minted.error}`, claimText, replyId: guestReplyId });
+          decide("failed", { reason: `mint:${minted.status}` });
+          continue;
+        }
         // Nothing was posted, provably, so another go cannot double-post.
-        await settleMention(key, "retry", { reason: `mint:${minted.status} ${minted.error}`, claimText: claim.text });
+        await settleMention(key, "retry", { reason: `mint:${minted.status} ${minted.error}`, claimText });
         decide("retry", { reason: "mint" });
         continue;
       }
@@ -345,15 +415,21 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
          under a market that just opened: a pointer to an existing one was
          opened by somebody else, and naming the tagger there would be false. */
       const openerLine = TG_COPY.opener(tgDisplayName(msg.from), deps.botUsername);
-      await answer(`${reply.primary}\n\n${openerLine}`, deps.cardUrl(minted.slug));
+      await answer(`${reply.primary}\n\n${openerLine}`, minted.slug);
       /* "opened" is what the daily cap counts: a pointer to a market that
-         already existed opened nothing and costs the person nothing. */
-      await settleMention(key, "replied", { slug: minted.slug, reason: "opened", claimText: claim.text });
+         already existed opened nothing and costs the person nothing. A guest
+         reply keeps its inline id: it is the only way to show the result there. */
+      await settleMention(key, "replied", { slug: minted.slug, reason: "opened", claimText, replyId: guestReplyId });
       decide("replied", { reason: "opened", slug: minted.slug });
       log("telegram market opened", { key, slug: minted.slug });
     } catch (e) {
+      // A guest reply that already said "Reading the claim…" must not say it
+      // forever: its one reply is spent, so it is edited into the next step.
+      if (guest && guestReplyId && deps.guestEdit) {
+        await deps.guestEdit(guestReplyId, { text: TG_COPY.later }).catch(() => {});
+      }
       const outcome = postAttempted ? "failed" : "retry";
-      await settleMention(key, outcome, { reason: (e as Error).message.slice(0, 300) }).catch(() => {});
+      await settleMention(key, outcome, { reason: (e as Error).message.slice(0, 300), replyId: guestReplyId }).catch(() => {});
       decide(outcome, { reason: (e as Error).message.slice(0, 120) });
       log(postAttempted ? "telegram item failed after posting, not retrying" : "telegram item failed before posting, will retry",
         { key, err: (e as Error).message });

@@ -6,9 +6,13 @@ import type { MintResult } from "../src/x/mentionLoop.js";
 import type { TgMessage, TgUpdate } from "../src/telegram/client.js";
 import {
   runTelegramSweep, tagsBot, stripBotTag, messageLink, claimOf, tgAuthor, TG_COPY, TG_OFFSET_KEY,
-  type TgSweepDeps,
+  privateSource, type TgSweepDeps,
 } from "../src/telegram/loop.js";
-import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState, sourceUrlKind } from "../src/store/markets.js";
+import {
+  botStateGet, _memMentionOutcome, _memMentionReason, _memMentionClaimText, _resetBotState, sourceUrlKind, sourcePostKey,
+  isWebSourceUrl,
+} from "../src/store/markets.js";
+import type { GuestContent } from "../src/telegram/client.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -285,17 +289,18 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
 
 /* ------------------------------------------- where a market can come from -- */
 {
-  /* THE FIRST LIVE TAG. A basic group's messages have no t.me link, the mint
-     refuses a sourceless market, and it used to find that out after a paid
-     extraction -- then retry three times -- then say nothing at all. */
+  /* A BASIC GROUP OPENS MARKETS NOW. Its messages have no t.me link, and it is
+     what two friends get when they make a group. It used to be refused with a
+     request to change a group setting; it records an opaque source instead. */
   _resetBotState();
   const { deps, spy } = harness([upd(1, msg({ message_id: 2, chat: BASIC, text: `@${BOT} BTC hits 200k before 2027` }))]);
   const r = await runTelegramSweep(deps);
-  check("a basic group opens nothing", spy.minted.length === 0);
-  check("...WITHOUT paying for an extraction first", spy.extracted.length === 0, `extracted=${spy.extracted.length}`);
-  check("...is not retried, because nothing will change on another go", r.retried === 0 && r.skipped === 1);
-  check("...and the person is told the one setting that fixes it",
-    spy.replies.length === 1 && spy.replies[0].text === TG_COPY.needsLinks, spy.replies[0]?.text);
+  const src = spy.minted[0]?.sourceUrl ?? "";
+  check("a basic group opens a market", r.replied === 1 && spy.minted.length === 1);
+  check("...from an opaque source the real mint accepts", sourceUrlKind(src) === "telegram" && src === privateSource(BASIC.id, 2), src);
+  check("...which is never a link", !isWebSourceUrl(src));
+  check("...and carries neither the chat id nor the message id", !src.includes(String(Math.abs(BASIC.id))));
+  check("...and still keys one post to one market", sourcePostKey(src) === `tgp:${src.slice("tg-private:".length)}`);
 }
 {
   _resetBotState();
@@ -396,12 +401,135 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
   check("a pointer to an existing market credits nobody", !/Opened by/.test(spy.replies[0]?.text ?? ""));
 }
 
+/* ------------------------------------------------------------ guest mode -- */
+/* Two people in their own chat, the bot a member of nothing. The fake is
+   faithful to Telegram: one answer per guest query, edits only through the
+   inline id it returned, and PEER_ID_INVALID for anything sent into the chat. */
+const PAIR = { id: 70001, type: "private" as const };
+const gupd = (id: number, m: TgMessage, q = `gq-${id}`): TgUpdate => ({ update_id: id, guest_message: { ...m, guest_query_id: q } });
+function guestHarness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}) {
+  const answered = new Map<string, string>();
+  const g = { answers: [] as Array<{ q: string; c: GuestContent }>, edits: [] as Array<{ id: string; c: GuestContent }> };
+  const h = harness(updates, {
+    reply: async (o) => { if (o.chatId === PAIR.id) throw new Error("400 PEER_ID_INVALID"); },
+    guestAnswer: async (q, c) => {
+      if (answered.has(q)) throw new Error("400 QUERY_ID_INVALID");
+      const id = `inline-${answered.size + 1}`;
+      answered.set(q, id);
+      g.answers.push({ q, c });
+      return id;
+    },
+    guestEdit: async (id, c) => {
+      if (![...answered.values()].includes(id)) throw new Error("400 MESSAGE_ID_INVALID");
+      g.edits.push({ id, c });
+    },
+    ...over,
+  });
+  return { ...h, g };
+}
+{
+  _resetBotState();
+  const claim = msg({ message_id: 40, chat: PAIR, from: noname, text: "BTC is going to 200k before 2027, bet?" });
+  const tag = msg({ message_id: 41, chat: PAIR, from: alice, text: `@${BOT}`, reply_to_message: claim });
+  const { deps, spy, g } = guestHarness([gupd(1, tag)]);
+  const r = await runTelegramSweep(deps);
+  const last = g.edits[g.edits.length - 1]?.c;
+  check("a tag in a private chat between two people opens a market", r.replied === 1 && spy.minted.length === 1);
+  check("...from the friend's message it replied to", spy.extracted[0] === claim.text);
+  check("...answered once, at once, before the slow part", g.answers.length === 1 && g.answers[0].c.text === TG_COPY.reading);
+  check("...and that reply edited into the market", Boolean(last && /Opened by @alice/.test(last.text)));
+  check("...with the market page as its preview and its button",
+    last?.previewUrl === "https://app.oddie.fun/m/slug-1" && last?.button?.url === "https://app.oddie.fun/m/slug-1");
+  check("...on its own ledger key, apart from the bot's real chats", _memMentionOutcome(`tgg:${PAIR.id}:41`) === "replied"
+    && _memMentionOutcome(`tg:${PAIR.id}:41`) === null);
+  check("...never storing the words from a private chat", _memMentionClaimText(`tgg:${PAIR.id}:41`) === null);
+  check("...and never publishing where it came from", !isWebSourceUrl(spy.minted[0]?.sourceUrl ?? "")
+    && !(spy.minted[0]?.sourceUrl ?? "").includes(String(PAIR.id)));
+  check("the person who tagged is the opener", spy.minted[0]?.openerId === tgAuthor(alice.id));
+}
+{
+  // Guest mode also delivers replies to the bot's own message: people talking.
+  _resetBotState();
+  const card = msg({ message_id: 50, chat: PAIR, from: botUser, text: "market is live" });
+  const chat = msg({ message_id: 51, chat: PAIR, from: noname, text: "I'm on NO lol", reply_to_message: card });
+  const { deps, spy, g } = guestHarness([gupd(1, chat)]);
+  const r = await runTelegramSweep(deps);
+  check("a reply to the bot that does not name it gets nothing, and costs nothing",
+    r.looked === 0 && g.answers.length === 0 && spy.extracted.length === 0 && _memMentionOutcome(`tgg:${PAIR.id}:51`) === null);
+}
+{
+  _resetBotState();
+  const { deps, g } = guestHarness([gupd(1, msg({ message_id: 60, chat: PAIR, text: `@${BOT} I love pizza` }))], {
+    extract: async () => ({ ...goodExtraction(""), question: "", resolvability: "unresolvable", appropriate: true } as Extraction),
+  });
+  await runTelegramSweep(deps);
+  check("a guest tag on something that is not a claim says so in the same reply",
+    g.answers.length === 1 && g.edits.length === 1 && g.edits[0].c.text === TG_COPY.unmarketable);
+}
+{
+  /* ONE REPLY, SO NO RETRY. A passing outage after the reply went out would
+     otherwise be tried again, and the second answer is refused by Telegram. */
+  _resetBotState();
+  let mints = 0;
+  const { deps, g } = guestHarness([gupd(1, msg({ message_id: 70, chat: PAIR, text: `@${BOT} BTC 200k before 2027` }))], {
+    openMarket: async () => { mints++; return { ok: false, status: 503, error: "down" } as MintResult; },
+  });
+  const r1 = await runTelegramSweep(deps);
+  await runTelegramSweep(deps);
+  check("a guest mint outage is not retried", mints === 1 && r1.retried === 0, `mints=${mints}`);
+  check("...and the reply says what to do instead of 'Reading' forever",
+    g.answers.length === 1 && g.edits[g.edits.length - 1]?.c.text === TG_COPY.later);
+}
+{
+  _resetBotState();
+  const { deps, spy, g } = guestHarness([gupd(1, msg({ message_id: 80, chat: PAIR, text: `@${BOT} BTC 200k before 2027` }))], {
+    guestTriesToday: async () => 31, guestDailyTries: 30,
+  });
+  await runTelegramSweep(deps);
+  check("past the day's guest tags, the answer is free: no model call",
+    spy.extracted.length === 0 && g.answers[0]?.c.text === TG_COPY.guestCap);
+}
+{
+  // Tagging a claim that already has a market: the pointer is the one reply.
+  _resetBotState();
+  const { deps, g } = guestHarness([gupd(1, msg({ message_id: 90, chat: PAIR, text: `@${BOT} BTC 200k before 2027` }))], {
+    existingMarket: async () => ({ slug: "already", question: "Will BTC hit 200k before 2027?" }),
+  });
+  await runTelegramSweep(deps);
+  check("a known claim is answered with its market, in one reply and no edit",
+    g.answers.length === 1 && g.edits.length === 0 && g.answers[0].c.previewUrl === "https://app.oddie.fun/m/already");
+}
+{
+  _resetBotState();
+  const { deps, g } = guestHarness([gupd(1, msg({ message_id: 95, chat: PAIR, text: `@${BOT} BTC 200k` }))], { dryRun: true });
+  await runTelegramSweep(deps);
+  check("a dry run answers no guest either", g.answers.length === 0 && g.edits.length === 0);
+}
+{
+  // A public group the bot was never added to still has real message links.
+  _resetBotState();
+  const { deps, spy } = guestHarness([gupd(1, msg({ message_id: 97, chat: PUBLIC, text: `@${BOT} BTC 200k before 2027` }))]);
+  await runTelegramSweep(deps);
+  check("a guest tag in a public group keeps its real t.me link", spy.minted[0]?.sourceUrl === "https://t.me/cryptoroom/97");
+}
+
 /* -------------------------------------------------------------- dry run -- */
 {
   _resetBotState();
   const { deps, spy } = harness([upd(90, msg({ message_id: 1, chat: PUBLIC, text: `@${BOT} BTC 200k` }))], { dryRun: true });
   await runTelegramSweep(deps);
   check("a dry run posts nothing", spy.replies.length === 0);
+}
+
+/* ------------------------------------------------ never printed as a link -- */
+{
+  const { readFileSync } = await import("node:fs");
+  const server = readFileSync("src/server.ts", "utf8");
+  check("the market page gets a source URL only when it is a real link",
+    /url: isWebSourceUrl\(src\.sourceUrl\) \? src\.sourceUrl : null/.test(server));
+  check("...and so does the public market list",
+    /sourceUrl: isWebSourceUrl\(openers\[m\.slug\]\?\.sourceUrl\)/.test(server));
+  check("guest updates are asked for", readFileSync("src/telegram/client.ts", "utf8").includes('allowed_updates: ["message", "guest_message"]'));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall telegram checks passed.\n");

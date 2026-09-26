@@ -3704,8 +3704,26 @@ export function handleFromSourceUrl(url: string | null | undefined): string | nu
  * all, and is allowed to be wider.
  */
 export type SourceKind = "x" | "telegram";
+/**
+ * A TELEGRAM MESSAGE WITH NO PUBLIC LINK: a private chat, which is where guest
+ * mode lets the bot be tagged, and a basic group, which is what two friends get
+ * when they make a group. Neither has a t.me link, and a market still has to
+ * say where it came from and still needs one-post-one-market.
+ *
+ * So it is an opaque marker, `tg-private:<16 hex>`, a hash of the chat and the
+ * message. Opaque on purpose: in a one-to-one chat the chat id can be a
+ * person's own user id, and it is never published, not even inside a URL.
+ * It is not a link and is never rendered as one (isWebSourceUrl).
+ */
+export const TG_PRIVATE_SOURCE = /^tg-private:([0-9a-f]{16})$/;
+
+/** Only a real web link is ever printed as a link. */
+export const isWebSourceUrl = (url: string | null | undefined): boolean =>
+  typeof url === "string" && /^https?:\/\//i.test(url);
+
 export function sourceUrlKind(url: string | null | undefined): SourceKind | null {
   if (!url) return null;
+  if (TG_PRIVATE_SOURCE.test(String(url))) return "telegram";
   let u: URL;
   try { u = new URL(String(url)); } catch { return null; }
   if (u.protocol !== "https:" && u.protocol !== "http:") return null;
@@ -3747,6 +3765,8 @@ export function sourceUrlKind(url: string | null | undefined): SourceKind | null
 export function sourcePostKey(url: string | null | undefined): string | null {
   const kind = sourceUrlKind(url);
   if (!kind) return null;
+  const priv = TG_PRIVATE_SOURCE.exec(String(url));
+  if (priv) return `tgp:${priv[1]}`;
   const u = new URL(String(url));
   if (kind === "x") {
     const id = /\/status\/(\d+)/.exec(u.pathname)?.[1];
@@ -5155,21 +5175,40 @@ export async function nameCreatorOnRow(slug: string, wallet: string): Promise<bo
  * the tag that opened it and any later tag, in another group, that got a
  * pointer to it. The keys carry the chat and the message to reply to.
  */
-export async function tgThreadsForSlug(slug: string): Promise<Array<{ key: string; reason: string | null }>> {
+export async function tgThreadsForSlug(slug: string): Promise<Array<{ key: string; reason: string | null; replyId: string | null; author: string | null }>> {
   if (!slug) return [];
   if (!PERSISTENT) {
     return [...memMentions.values()]
-      .filter((m) => m.slug === slug && m.outcome === "replied" && m.tweetId.startsWith("tg:"))
-      .map((m) => ({ key: m.tweetId, reason: m.reason }));
+      .filter((m) => m.slug === slug && m.outcome === "replied" && /^tgg?:/.test(m.tweetId))
+      .map((m) => ({ key: m.tweetId, reason: m.reason, replyId: memMentionReply.get(m.tweetId) ?? null, author: m.author }));
   }
   await ensureSchema();
-  const { rows } = await db().query<{ tweet_id: string; reason: string | null }>(
-    `SELECT tweet_id, reason FROM x_mention
-      WHERE slug = $1 AND outcome = 'replied' AND tweet_id LIKE 'tg:%'
+  // `tg:` is a message in a group the bot is in; `tgg:` is a guest tag, whose
+  // only handle afterwards is the reply's inline_message_id, kept in reply_id.
+  const { rows } = await db().query<{ tweet_id: string; reason: string | null; reply_id: string | null; author: string | null }>(
+    `SELECT tweet_id, reason, reply_id, author FROM x_mention
+      WHERE slug = $1 AND outcome = 'replied' AND (tweet_id LIKE 'tg:%' OR tweet_id LIKE 'tgg:%')
       ORDER BY at ASC`,
     [slug],
   );
-  return rows.map((r) => ({ key: r.tweet_id, reason: r.reason }));
+  return rows.map((r) => ({ key: r.tweet_id, reason: r.reason, replyId: r.reply_id, author: r.author }));
+}
+
+/** Guest tags from one person in the last day, whatever became of them. Guest
+ *  mode lets anybody on Telegram summon the bot, and every summons that reaches
+ *  the model is paid for, market or not. */
+export async function tgGuestTriesToday(author: string): Promise<number> {
+  if (!author) return 0;
+  if (!PERSISTENT) {
+    return [...memMentions.values()].filter((m) => m.author === author && m.tweetId.startsWith("tgg:")).length;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM x_mention
+      WHERE author = $1 AND tweet_id LIKE 'tgg:%' AND at > now() - interval '24 hours'`,
+    [author],
+  );
+  return rows[0]?.n ?? 0;
 }
 
 export async function tgOpenerOf(slug: string): Promise<{ author: string; handle: string | null } | null> {
@@ -6129,6 +6168,9 @@ interface MentionRow {
   claimText: string | null;
 }
 const memMentions = new Map<string, MentionRow>();
+/** The reply id per ledger row, in memory. Postgres keeps it in x_mention.reply_id;
+ *  a guest tag's inline_message_id is the only way back to its reply. */
+const memMentionReply = new Map<string, string>();
 
 /**
  * Claim a mention for processing, exactly once, ever.
@@ -6274,7 +6316,7 @@ export async function replyIdForSlug(slug: string): Promise<string | null> {
     // real, ancient tweet: id 20 is the first tweet ever posted.
     `SELECT reply_id FROM x_mention
       WHERE slug = $1 AND outcome = 'replied' AND reply_id IS NOT NULL
-        AND tweet_id NOT LIKE 'tg:%'
+        AND tweet_id NOT LIKE 'tg%'
       ORDER BY at DESC LIMIT 1`,
     [slug],
   );
@@ -6299,6 +6341,7 @@ export async function settleMention(
       // silently spend a go it never got.
       attempts: (prev?.attempts ?? 0) + (outcome === "retry" ? 1 : 0),
     });
+    if (extra.replyId) memMentionReply.set(tweetId, extra.replyId);
     return;
   }
   await ensureSchema();
@@ -6337,6 +6380,13 @@ export function _memMentionReason(tweetId: string): string | null {
 export function _resetBotState(): void {
   memBotState.clear();
   memMentions.clear();
+  memMentionReply.clear();
+}
+
+/** Test seam: the claim text a ledger row kept, so a test can prove a private
+ *  chat's words were never stored. */
+export function _memMentionClaimText(tweetId: string): string | null {
+  return memMentions.get(tweetId)?.claimText ?? null;
 }
 
 /* ------------------------------------------------------------- avatars -----
