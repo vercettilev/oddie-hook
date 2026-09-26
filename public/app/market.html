@@ -21,7 +21,7 @@
 @font-face{font-family:'Nunito';font-style:normal;font-weight:400 800;font-display:swap;
     src:url('/fonts/nunito-latin-ext.woff2') format('woff2');
     unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
-:root{
+:root{--tg:#2AABEE;--tg-hi:#4FBDF2;
   --yellow:#D7DC1F; --yellow-hi:#E7EC4E; --yellow-deep:#5A6109;
   --pink:#FF2D78; --pink-deep:#A3053F;
   --black:#020302; --cream:#FBFCF4; --ink:#0B0D04;
@@ -586,6 +586,15 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   letter-spacing:.02em;text-transform:none}
 .eyebrow .by:hover{background:var(--yellow-hi)}
 .eyebrow .by:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+/* TELEGRAM'S OWN BLUE, and only on the two things that belong to Telegram:
+   the opener's @name and the way back to the chat. The colour is the label.
+   A yellow chip reads as an X handle everywhere else in the product, so a
+   Telegram name in yellow would say the wrong platform before a word of it
+   is read. */
+.eyebrow .by--tg{background:var(--tg);color:#fff}
+.eyebrow .by--tg:hover{background:var(--tg-hi)}
+.src__a--tg{color:var(--tg)}
+.rail a.earn{color:inherit;text-decoration:underline;text-underline-offset:3px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
    Appended to nav instead, the chip took a third row of its own. */
@@ -758,6 +767,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     return '<a class="by" href="https://x.com/' + encodeURIComponent(h)
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
+  /* The same pill for a Telegram opener, leaving for their Telegram profile.
+     Only ever an @name: the page is public, and a first name from a private
+     group is not something that person shared with the web. */
+  function tgChip(handle) {
+    var h = String(handle).replace(/^@+/, "");
+    return '<a class="by by--tg" href="https://t.me/' + encodeURIComponent(h)
+      + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
+  }
 
   /* What this browser just put on this market. Null until a stake lands in
      this session: the page has no wallet-scoped read of its own, so it can
@@ -822,6 +839,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var src = m.oddsSource;
     var bits = [];
     if (m.taggedBy) bits.push(byChip(m.taggedBy));
+    else if (m.openedBy && m.openedBy.platform === "telegram" && m.openedBy.handle) bits.push(tgChip(m.openedBy.handle));
     /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
        vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre
        hicbir zaman hicbir sey elemiyordu ve cozulmus market de geri sayiyordu. */
@@ -838,8 +856,12 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
        kart olmaktan cikip bu satira giriyor. Cip de ayni yere goturuyor
        (kisiyi bilen tiklar), bu ise etiketli hali (tahmin etmeyen tiklar). */
     if (m.sourcePost && m.sourcePost.url) {
-      bits.push('<a class="src__a" href="' + esc(m.sourcePost.url)
-        + '" target="_blank" rel="noopener noreferrer">See the post</a>');
+      /* On Telegram it is a message in a chat, not a post, and for a private
+         group the link opens only for its members -- who are exactly the people
+         arriving here from the bot's reply in that chat. */
+      var tg = m.origin === "telegram";
+      bits.push('<a class="src__a' + (tg ? " src__a--tg" : "") + '" href="' + esc(m.sourcePost.url)
+        + '" target="_blank" rel="noopener noreferrer">' + (tg ? "See it on Telegram" : "See the post") + "</a>");
     }
 
     // Separate spans, not one joined string: .eyebrow is a flex row with a gap,
@@ -1084,8 +1106,17 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
          kurar. "of it" ikinciyi birincinin icine sokar, ve bunu tek kelimeyle
          yapar -- toplama ihtimali kalmiyor. */
       + "<span><b>" + fee + "%</b> of the pool at settle</span>"
+      /* ON TELEGRAM "the opener" IS THE DOOR. Nothing else on the web says how
+         a Telegram opener collects, and the person most likely to wonder is
+         standing on this page having tapped the bot's reply. The deep link is
+         safe to print publicly: it lands whoever taps it in their own chat with
+         the bot, which only ever links their own markets. No new line, no new
+         words: the phrase that raises the question is the one that answers it. */
       + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of it to "
-          + "the opener</span>" : "")
+          + (m.earnUrl
+              ? '<a class="earn" href="' + esc(m.earnUrl) + '" target="_blank" rel="noopener noreferrer">the opener</a>'
+              : "the opener")
+          + "</span>" : "")
       + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">See the money on Solana</a></span>' : "")
       + "</div>";
 

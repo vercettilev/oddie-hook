@@ -5085,6 +5085,28 @@ export async function nameCreatorOnRow(slug: string, wallet: string): Promise<bo
   return (rowCount ?? 0) > 0;
 }
 
+/**
+ * Who opened a Telegram market, for the page that shows it.
+ *
+ * The @username only, and never the first name. The market page is public on
+ * the web; an @username is a person's chosen public handle on Telegram, while
+ * a first name from a private group is something they shared with that room,
+ * not with everyone. Somebody with no @name is shown as coming from Telegram
+ * and nothing more.
+ */
+export async function tgOpenerOf(slug: string): Promise<{ author: string; handle: string | null } | null> {
+  if (!PERSISTENT || !slug) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ author: string; handle: string | null }>(
+    `SELECT m.author, p.handle FROM x_mention m
+       LEFT JOIN person p ON p.id = m.author
+      WHERE m.slug = $1 AND m.outcome = 'replied' AND m.reason = 'opened' AND m.author LIKE 'tg:%'
+      ORDER BY m.at ASC LIMIT 1`,
+    [slug],
+  );
+  return rows[0] ?? null;
+}
+
 export async function recordView(slug: string, deviceId: string | null): Promise<void> {
   if (!PERSISTENT || !slug) return;
   await ensureSchema();

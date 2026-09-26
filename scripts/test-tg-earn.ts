@@ -1,6 +1,7 @@
 // Collecting the 2% on Telegram. The token is the only thing standing between
 // "this person may link a wallet to their markets" and "anybody may", so it is
 // pinned against every way a token goes wrong.
+import { readFileSync } from "node:fs";
 import { earnKey, earnToken, verifyEarnToken, EARN_TOKEN_TTL_MS } from "../src/telegram/earnToken.js";
 
 let failures = 0;
@@ -35,6 +36,25 @@ const now = 1_800_000_000_000;
     check(`malformed input is refused without throwing: ${JSON.stringify(junk.slice(0, 12))}`,
       verifyEarnToken(junk, key, now) === null);
   }
+}
+
+/* ON THE PUBLIC PAGE, ONLY THE PUBLIC DOOR. The market page is readable by
+   anybody, so what it prints for "the opener" must be the t.me deep link that
+   lands each tapper in their own chat -- never a URL carrying a token, which
+   would let the whole web link a wallet to one person's markets. */
+{
+  const server = readFileSync("src/server.ts", "utf8");
+  const i = server.indexOf("earnUrl: sourceUrlKind(src?.sourceUrl)");
+  const earnExpr = i >= 0 ? server.slice(i, i + 220) : "";
+  check("the page's earn door is the public deep link", /t\.me\/\$\{tgBotUsername\}\?start=earn/.test(earnExpr), earnExpr.slice(0, 120));
+  check("...and never a token URL", !/tg\/earn\?t=|earnToken\(/.test(earnExpr));
+
+  /* A TELEGRAM NAME NEVER BECOMES AN X HANDLE. taggedBy feeds X's own paths;
+     a Telegram @name in it would have them treating a same-named X account as
+     the person who opened the market. */
+  const t = server.indexOf("taggedBy: src?.handle ?? null");
+  check("taggedBy still comes only from the X surfacer", t >= 0);
+  check("...and the Telegram opener has its own field", /openedBy: sourceUrlKind\(src\?\.sourceUrl\) === "telegram"/.test(server));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall earn-token checks passed.\n");

@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
-  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson, tgOpenedToday, setPersonWallet, personWallet, tgOpenedSlugs, nameCreatorOnRow } from "./store/markets.js";
+  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson, tgOpenedToday, setPersonWallet, personWallet, tgOpenedSlugs, nameCreatorOnRow, tgOpenerOf } from "./store/markets.js";
 import { sendPush, vapidFromEnv } from "./push/webpush.js";
 import { findDuplicate } from "./matching/duplicate.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
@@ -3667,6 +3667,22 @@ async function marketDetailPayload(
     taggedBy: src?.handle ?? null,
     // Null fields, never empty strings: the page decides whether to draw a
     // quoted card (text known) or just a link (only the url known).
+    /* WHERE THE ARGUMENT HAPPENED, and who opened it there. taggedBy is an X
+       handle and stays one: putting a Telegram name into it would send the X
+       creator-naming path hunting for an X account that merely shares the
+       name. Telegram gets its own fields, and the page draws them in
+       Telegram's colour so the chip says which platform the name belongs to. */
+    origin: sourceUrlKind(src?.sourceUrl) ?? null,
+    openedBy: sourceUrlKind(src?.sourceUrl) === "telegram"
+      ? await tgOpenerOf(slug).then((o) => o && o.handle
+          ? { platform: "telegram", handle: o.handle, url: `https://t.me/${o.handle}` }
+          : { platform: "telegram", handle: null, url: null }).catch(() => null)
+      : null,
+    /* THE DOOR TO THE 2%. Only a public deep link, never the private token:
+       whoever taps it lands in their own chat with the bot, which is what makes
+       it safe to print on a public page. */
+    earnUrl: sourceUrlKind(src?.sourceUrl) === "telegram" && tgBotUsername
+      ? `https://t.me/${tgBotUsername}?start=earn` : null,
     sourcePost: src && (src.sourceUrl || src.sourceText)
       ? { url: src.sourceUrl, text: src.sourceText, author: src.sourceAuthor }
       : null,
