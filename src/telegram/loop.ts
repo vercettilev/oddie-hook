@@ -65,6 +65,9 @@ export interface TgSweepDeps {
   /** Answer in the chat, threaded under `replyTo`. A photo when there is one. */
   reply(opts: { chatId: number; replyTo: number; text: string; photoUrl: string | null }): Promise<void>;
   rememberPerson?(platformId: string, handle: string | null): Promise<{ renamedFrom: string | null }>;
+  /** The private one-tap URL that lets this Telegram user link a wallet and
+   *  collect their 2%. Null when the feature is not configured. */
+  earnLink?(tgUserId: number): string | null;
   /** Markets this person opened in the last 24 hours. Absent = no cap. */
   openedToday?(author: string): Promise<number>;
   dailyCap?: number;
@@ -152,8 +155,25 @@ export const TG_COPY = {
     "To open markets here I need message links. In this group's settings, set Chat History for New Members to Visible, then tag me again.",
   /* A private chat. Markets come from public arguments, so a DM is where the
      person talks to oddie, not where markets open. */
-  dm: "Add me to a group and tag me under a claim. I'll open a market on it right there.",
+  dm: "Add me to a group and tag me under a claim. I'll open a market on it right there.\n\nOpened one already? Send /earn to collect your 2%.",
+  /* Where the 2% is collected. Sent ONLY in a private chat: the URL binds a
+     wallet to this person's markets, so in a group anybody could take it. */
+  earn: (link: string) =>
+    `Connect a wallet and you collect 2% of every market you open. Markets you opened before count too, even ones that already closed.\n\n${link}\n\nThis link is yours and works for 30 minutes.`,
+  earnOff: "Collecting isn't switched on yet. Your 2% is kept for you and you can collect it once it is.",
+  /* Under a market that just opened, where the whole group reads it. The deep
+     link is safe to post publicly: whoever taps it lands in THEIR OWN chat with
+     the bot, authenticated by Telegram, and can only link their own markets. */
+  opener: (who: string, bot: string) =>
+    `Opened by ${who}, who earns 2% of the pool.\nCollect it: https://t.me/${bot}?start=earn`,
 };
+
+/** How to name a Telegram user in a group: their @name when they have one,
+ *  otherwise the first name Telegram always provides. */
+export const tgDisplayName = (u: { username?: string; first_name: string }): string =>
+  u.username ? `@${u.username}` : u.first_name;
+
+const EARN_COMMAND = /^\/(?:start\s+earn|earn|wallet|collect)\b/i;
 
 /* ---------------------------------------------------------------- sweep -- */
 
@@ -213,6 +233,17 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
          when somebody opens the chat was graded by a paid model call and then
          refused. */
       if (isPrivate) {
+        /* /start earn is what the deep link under a market sends, and /earn is
+           the same thing typed. Telegram guarantees msg.from is the person in
+           this chat, which is what lets the link be bound to them. */
+        const wantsEarn = EARN_COMMAND.test((msg.text ?? "").trim());
+        if (wantsEarn) {
+          const link = deps.earnLink ? deps.earnLink(msg.from.id) : null;
+          await answer(link ? TG_COPY.earn(link) : TG_COPY.earnOff, null);
+          await settleMention(key, "skipped", { reason: "earn" });
+          decide("skipped", { reason: "earn" });
+          continue;
+        }
         await answer(TG_COPY.dm, null);
         await settleMention(key, "skipped", { reason: "dm" });
         decide("skipped", { reason: "dm" });
@@ -309,7 +340,12 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
 
       const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
       const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook });
-      await answer(reply.primary, deps.cardUrl(minted.slug));
+      /* THE INCENTIVE, SAID WHERE THE ROOM CAN SEE IT. "Bring the room, own the
+         room" only works if the room can see that opening a market pays. Only
+         under a market that just opened: a pointer to an existing one was
+         opened by somebody else, and naming the tagger there would be false. */
+      const openerLine = TG_COPY.opener(tgDisplayName(msg.from), deps.botUsername);
+      await answer(`${reply.primary}\n\n${openerLine}`, deps.cardUrl(minted.slug));
       /* "opened" is what the daily cap counts: a pointer to a market that
          already existed opened nothing and costs the person nothing. */
       await settleMention(key, "replied", { slug: minted.slug, reason: "opened", claimText: claim.text });

@@ -333,6 +333,69 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
     spy.minted[0]?.sourceUrl === "https://t.me/c/9876543210/6", String(spy.minted[0]?.sourceUrl));
 }
 
+/* ---------------------------------------------------- collecting the 2% -- */
+{
+  // The deep link under a market sends "/start earn" into the tapper's OWN chat.
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 7, chat: DM, from: alice, text: "/start earn" }))],
+    { earnLink: (id) => `https://app.oddie.fun/tg/earn?t=TOKEN-FOR-${id}` });
+  await runTelegramSweep(deps);
+  check("/start earn in a DM answers with that person's own link",
+    /TOKEN-FOR-111/.test(spy.replies[0]?.text ?? ""), spy.replies[0]?.text);
+  check("...without extracting anything", spy.extracted.length === 0);
+}
+{
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 8, chat: DM, from: noname, text: "/earn" }))],
+    { earnLink: (id) => `https://app.oddie.fun/tg/earn?t=TOKEN-FOR-${id}` });
+  await runTelegramSweep(deps);
+  check("/earn typed by hand works too, for a person with no @name",
+    /TOKEN-FOR-222/.test(spy.replies[0]?.text ?? ""), spy.replies[0]?.text);
+}
+{
+  /* THE LINK NEVER GOES TO A GROUP. It binds a wallet to one person's markets;
+     posted publicly, anybody could point that person's 2% at themselves. */
+  _resetBotState();
+  const links: number[] = [];
+  const { deps, spy } = harness([upd(1, msg({ message_id: 9, chat: PUBLIC, text: `@${BOT} /earn BTC 200k before 2027` }))],
+    { earnLink: (id) => { links.push(id); return `https://app.oddie.fun/tg/earn?t=TOKEN-FOR-${id}`; } });
+  await runTelegramSweep(deps);
+  check("a /earn inside a GROUP never produces a link", links.length === 0, `links=${links.length}`);
+  check("...and no reply in a group carries one", !spy.replies.some((r) => /tg\/earn\?t=/.test(r.text)));
+}
+{
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 10, chat: DM, text: "/earn" }))]); // no earnLink
+  await runTelegramSweep(deps);
+  check("with collecting switched off, the person is told their 2% is kept", spy.replies[0]?.text === TG_COPY.earnOff);
+}
+{
+  /* THE INCENTIVE, WHERE THE ROOM CAN SEE IT. */
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 11, chat: PUBLIC, from: alice, text: `@${BOT} BTC 200k before 2027` }))]);
+  await runTelegramSweep(deps);
+  const text = spy.replies[0]?.text ?? "";
+  check("a new market names who opened it", /Opened by @alice, who earns 2% of the pool/.test(text), text);
+  check("...with the PUBLIC deep link, not a private token",
+    text.includes(`https://t.me/${BOT}?start=earn`) && !/tg\/earn\?t=/.test(text));
+}
+{
+  _resetBotState();
+  const { deps, spy } = harness([upd(1, msg({ message_id: 12, chat: PUBLIC, from: noname, text: `@${BOT} BTC 200k before 2027` }))]);
+  await runTelegramSweep(deps);
+  check("an opener with no @name is named by their first name", /Opened by Bob,/.test(spy.replies[0]?.text ?? ""));
+}
+{
+  // A pointer to a market somebody else opened must not credit the tagger.
+  _resetBotState();
+  const parent = msg({ message_id: 13, chat: PUBLIC, text: "BTC 200k before 2027" });
+  const { deps, spy } = harness([upd(1, msg({ message_id: 14, chat: PUBLIC, from: alice, reply_to_message: parent }))], {
+    existingMarket: async () => ({ slug: "already", question: "Will BTC hit 200k before 2027?" }),
+  });
+  await runTelegramSweep(deps);
+  check("a pointer to an existing market credits nobody", !/Opened by/.test(spy.replies[0]?.text ?? ""));
+}
+
 /* -------------------------------------------------------------- dry run -- */
 {
   _resetBotState();

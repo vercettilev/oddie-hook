@@ -513,6 +513,12 @@ CREATE TABLE IF NOT EXISTS person_rename (
   at         timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS person_rename_person_idx ON person_rename(person_id);
+-- WHERE A PERSON'S 2% GOES. Added as columns rather than written into the table
+-- above, because CREATE TABLE IF NOT EXISTS never alters a table that already
+-- exists, and person exists in production: a column added inside that
+-- definition would simply never appear there.
+ALTER TABLE person ADD COLUMN IF NOT EXISTS wallet text;
+ALTER TABLE person ADD COLUMN IF NOT EXISTS wallet_at timestamptz;
 
 -- Who surfaced a market — the contributor a tagged claim came from. Keyed by
 -- slug so it covers BOTH venue matches (no community_market row) and created
@@ -5010,6 +5016,73 @@ export async function rememberPerson(
     [id, was, handle],
   );
   return { renamedFrom: was };
+}
+
+/**
+ * Record where this person's creator fee should go. Proven, not typed: the
+ * caller has already verified a signature from this address (the same verifier
+ * the wallet sign-in uses), so the address cannot be a typo and cannot be
+ * somebody else's.
+ *
+ * Re-linking is allowed and replaces it. What it cannot reach is a market
+ * already named on chain: the program refuses to rename a creator, so those
+ * stay with the wallet they were named with.
+ */
+export async function setPersonWallet(personId: string, wallet: string): Promise<void> {
+  if (!PERSISTENT || !personId || !wallet) return;
+  await ensureSchema();
+  await db().query(
+    `INSERT INTO person (id, wallet, wallet_at) VALUES ($1, $2, now())
+       ON CONFLICT (id) DO UPDATE SET wallet = EXCLUDED.wallet, wallet_at = now()`,
+    [personId, wallet],
+  );
+}
+
+export async function personWallet(personId: string): Promise<string | null> {
+  if (!PERSISTENT || !personId) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ wallet: string | null }>(
+    `SELECT wallet FROM person WHERE id = $1`, [personId]);
+  return rows[0]?.wallet ?? null;
+}
+
+/**
+ * Every market this Telegram person OPENED, from the ledger that recorded the
+ * tag. 'opened' only: a pointer to a market somebody else opened is not theirs
+ * and its fee is not theirs either.
+ */
+export async function tgOpenedSlugs(author: string): Promise<string[]> {
+  if (!author) return [];
+  if (!PERSISTENT) {
+    return [...memMentions.values()]
+      .filter((m) => m.author === author && m.outcome === "replied" && m.reason === "opened" && m.slug)
+      .map((m) => m.slug as string);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string }>(
+    `SELECT DISTINCT slug FROM x_mention
+      WHERE author = $1 AND outcome = 'replied' AND reason = 'opened' AND slug IS NOT NULL`,
+    [author],
+  );
+  return rows.map((r) => r.slug);
+}
+
+/**
+ * Name the creator on a market that has not been minted yet, so the mint that
+ * happens at the first stake writes it on chain from the start (ensureMinted
+ * reads creator_wallet off this row). Only fills an EMPTY field: a row that
+ * already names somebody is left alone, the same rule the program applies once
+ * the market is on chain.
+ */
+export async function nameCreatorOnRow(slug: string, wallet: string): Promise<boolean> {
+  if (!PERSISTENT || !slug || !wallet) return false;
+  await ensureSchema();
+  const { rowCount } = await db().query(
+    `UPDATE community_market SET creator_wallet = $2
+      WHERE slug = $1 AND creator_wallet IS NULL AND onchain_pubkey IS NULL`,
+    [slug, wallet],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 export async function recordView(slug: string, deviceId: string | null): Promise<void> {

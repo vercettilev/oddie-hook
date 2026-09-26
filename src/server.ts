@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
-  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson, tgOpenedToday } from "./store/markets.js";
+  savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson, tgOpenedToday, setPersonWallet, personWallet, tgOpenedSlugs, nameCreatorOnRow } from "./store/markets.js";
 import { sendPush, vapidFromEnv } from "./push/webpush.js";
 import { findDuplicate } from "./matching/duplicate.js";
 import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
@@ -38,6 +38,7 @@ import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/e
 import { oddsFromPools } from "./odds.js";
 import * as TG from "./telegram/client.js";
 import { runTelegramSweep, type TgSweepDeps } from "./telegram/loop.js";
+import { earnKey, earnToken, verifyEarnToken } from "./telegram/earnToken.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee, closeMarketOnChain, _devPutMarket,
   walletBalanceLamports,
@@ -5508,6 +5509,102 @@ const TG_MARKETS_PER_DAY = (() => {
 })();
 const tgSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/* ------------------------------------------ telegram: collecting the 2% --
+ * The opener is paid by naming their wallet as the market's creator on chain.
+ * The program lets that happen at ANY time while the creator is unset, the fee
+ * accrues at resolve regardless, and claim_creator_fee needs only a resolved
+ * market -- so linking a wallet is never too late. The claim itself is the
+ * existing one: /api/chain/creator-fees lists resolved markets naming this
+ * wallet, and the profile page's button collects them.
+ */
+const TG_EARN_HTML = readFileSync(path.join(__dirname, "../public/tg-earn.html"), "utf8");
+/** Set once the bot has answered getMe. The earn page names the bot in its
+ *  "link expired" message, and it must be the bot's real current name. */
+let tgBotUsername: string | null = null;
+const tgEarnKey = (): Buffer | null => { const t = TG.tgToken(); return t ? earnKey(t) : null; };
+const tgEarnLink = (tgUserId: number): string | null => {
+  const key = tgEarnKey();
+  return key ? `${APP_BASE_URL}/tg/earn?t=${earnToken(tgUserId, key)}` : null;
+};
+
+/**
+ * Point every market this Telegram person opened at the wallet they just
+ * linked. Three cases, because a market can be at three stages:
+ *   - created after linking: already named at creation (see openMarket below)
+ *   - created before, not minted yet: the ROW gets the wallet, and the mint at
+ *     the first stake writes it on chain from the start (ensureMinted reads it)
+ *   - created before and already on chain: set_creator, which the program
+ *     allows until a creator is set, including after the market has closed
+ * Best effort and idempotent in the only direction that matters: a market
+ * already named is skipped, and linking again retries whatever failed.
+ */
+async function nameTgMarkets(author: string, wallet: string): Promise<{ onRow: number; onChain: number; seen: number }> {
+  const out = { onRow: 0, onChain: 0, seen: 0 };
+  const slugs = await tgOpenedSlugs(author).catch(() => [] as string[]);
+  out.seen = slugs.length;
+  for (const slug of slugs) {
+    const d = await communityMarketDetail(slug).catch(() => null);
+    if (!d) continue;
+    if (!d.onchainPubkey) {
+      if (await nameCreatorOnRow(slug, wallet).catch(() => false)) out.onRow++;
+      continue;
+    }
+    // Unreadable is skipped rather than named: naming writes to chain, and doing
+    // it on the strength of a failed read is how a field gets paid for twice.
+    const r = await readMarket(d.onchainPubkey).catch(() => null);
+    if (!r || !r.ok || r.state.creator) continue;
+    if (await nameCreator(d.onchainPubkey, wallet).catch(() => null)) out.onChain++;
+  }
+  return out;
+}
+
+app.get("/tg/earn", (_req, res) => {
+  res.set("Cache-Control", "no-store").type("html")
+    .send(TG_EARN_HTML.replaceAll("__BOT__", tgBotUsername ?? "oddiefunbot"));
+});
+
+/* The same challenge the wallet sign-in uses, bound to the Telegram user the
+   token names rather than to a browser device. The domain in the signed text
+   is ours from config, never the Host header. */
+app.post("/api/tg/earn/challenge", express.json(), (req, res) => {
+  const key = tgEarnKey();
+  if (!key) return res.status(503).json({ error: "off" });
+  const tgId = verifyEarnToken(String(req.body?.t ?? ""), key);
+  if (!tgId) return res.status(401).json({ error: "expired" });
+  const address = String(req.body?.address ?? "");
+  if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
+  const { nonce, message } = issueChallenge(`tg:${tgId}`, address, new URL(BASE_URL).host);
+  res.json({ nonce, message });
+});
+
+app.post("/api/tg/earn/link", express.json(), async (req, res) => {
+  const key = tgEarnKey();
+  if (!key) return res.status(503).json({ error: "off" });
+  const tgId = verifyEarnToken(String(req.body?.t ?? ""), key);
+  if (!tgId) return res.status(401).json({ error: "expired" });
+  const address = String(req.body?.address ?? "");
+  const nonce = String(req.body?.nonce ?? "");
+  const sigHex = String(req.body?.signature ?? "");
+  if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
+  if (!/^[0-9a-fA-F]{128}$/.test(sigHex)) return res.status(400).json({ error: "bad signature" });
+  const binding = `tg:${tgId}`;
+  const challenge = consumeChallenge(nonce, binding);
+  if (!challenge) return res.status(400).json({ error: "challenge expired" });
+  // The address is signed into the message; a different one now means this is
+  // not the exchange that was started.
+  if (!challenge.message.includes(address)) return res.status(400).json({ error: "address mismatch" });
+  if (!verifyWalletSignature(address, challenge.message, Buffer.from(sigHex, "hex"))) {
+    console.log(JSON.stringify({ evt: "tg_earn", ok: false, reason: "bad_signature" }));
+    return res.status(401).json({ error: "signature did not verify" });
+  }
+  await setPersonWallet(binding, address);
+  const slugs = await tgOpenedSlugs(binding).catch(() => [] as string[]);
+  res.json({ ok: true, wallet: address, markets: slugs.length });
+  // After the response: naming on chain is a transaction per market.
+  void nameTgMarkets(binding, address).then((n) =>
+    console.log(JSON.stringify({ evt: "tg_earn", ok: true, person: binding, ...n })));
+});
+
 async function startTelegram(): Promise<void> {
   let me: TG.TgUser;
   try {
@@ -5521,6 +5618,7 @@ async function startTelegram(): Promise<void> {
     console.error("[tg] the bot has no @username, so a tag cannot be recognised. The loop will not start.");
     return;
   }
+  tgBotUsername = me.username;
   const log = (line: string, extra?: Record<string, unknown>) =>
     console.log(JSON.stringify({ evt: "tg_bot", line, ...extra }));
 
@@ -5536,6 +5634,8 @@ async function startTelegram(): Promise<void> {
         sourceUrl: input.sourceUrl,
         taggerHandle: null, // X handles only; the Telegram opener is `payee`
         payee: input.openerId ?? null, // full rate: the opener can link a wallet and collect later
+        // Already linked? Then the market is minted with them named from the start.
+        creatorWallet: input.openerId ? await personWallet(input.openerId).catch(() => null) : null,
         category: input.category,
         resolutionCriteria: input.resolutionCriteria,
         priceClaim: input.priceClaim ?? null,
@@ -5575,6 +5675,7 @@ async function startTelegram(): Promise<void> {
       }
     },
     rememberPerson: (platformId, handle) => rememberPerson("tg", platformId, handle),
+    earnLink: (tgUserId) => tgEarnLink(tgUserId),
     openedToday: (author) => tgOpenedToday(author),
     dailyCap: TG_MARKETS_PER_DAY,
     baseUrl: APP_BASE_URL,
