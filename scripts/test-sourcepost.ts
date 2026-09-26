@@ -133,8 +133,16 @@ console.log("\nthe market page never invents an anonymous person");
   // ever was.
   check("the source row only renders when a post url is actually known",
     body.includes("if (m.sourcePost && m.sourcePost.url)"));
-  check("the source is a link to the post on X, and it is the ONLY way left to check the claim",
-    body.includes("'<a class=\"src__a\" href=\"' + esc(m.sourcePost.url)") && body.includes("See the post"));
+  /* THE PROPERTY, NOT THE SPELLING. What matters is that the source row is a
+     link whose href is the post's own url -- the only way left to check the
+     claim at source. The class became conditional when Telegram markets got
+     their own colour, and an exact-string match on the concatenation would
+     have made that a failure while the thing it protects stood untouched. */
+  check("the source is a link to the post, and it is the ONLY way left to check the claim",
+    /<a class="src__a[^"]*"[^>]*href="' \+ esc\(m\.sourcePost\.url\)/.test(body.replace(/'\s*\+\s*\(tg \? " src__a--tg" : ""\)\s*\+\s*'/g, ""))
+      && body.includes("See the post"));
+  check("...labelled for where it lives: a post on X, a message on Telegram",
+    body.includes("See the post") && body.includes("See it on Telegram"));
   check("no code path prints the post's text any more, so nothing can half-quote it",
     !/sourcePost\.text|\bsp\.text\b/.test(page));
   check("...in a new tab, without leaking the referrer chain",
