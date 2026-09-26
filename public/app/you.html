@@ -307,7 +307,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .wayout__b:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 /* The way back to what happened, at the foot of the money. Quiet: it is a
    door, not an action. */
-.recordline{margin:18px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
+.recordline{margin:18px 0 34px;font-family:var(--mono);font-size:12px;font-weight:700;
   letter-spacing:.1em;text-transform:uppercase}
 .recordline a{color:var(--fg-3)}
 .recordline a:hover{color:var(--fg)}
@@ -379,16 +379,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .tix__n span{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.14em;
   text-transform:uppercase;color:var(--ink-2)}
 .tix--out .tix__n b{color:var(--pink-deep)}
-/* What became of the spent ones. Opened and missed are opposite outcomes and
-   a balance that only says "3 left" hides which of the two you have been
-   doing, which is the entire lesson the charge exists to teach. */
-.tix__spent{margin:14px 0 0;display:flex;flex-wrap:wrap;gap:5px 8px;
-  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--ink-2)}
-.tix__spent b{color:var(--ink);font-weight:800}
-/* The separator is drawn between the facts rather than typed into them, so a
-   row that wraps never starts a line with a dot. */
-.tix__spent span + span::before{content:"\00b7";margin-right:8px;color:rgba(11,13,4,.35)}
 .tix__why{margin:12px 0 0;font-size:14px;line-height:1.45;color:rgba(11,13,4,.78)}
 .tix__why a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
 .tix--out .tix__why{color:var(--ink);font-weight:700}
@@ -492,7 +482,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
            already names the one action that moves it. -->
       <p class="tix__n" id="brought" hidden><b id="brn">&mdash;</b> <span id="brlabel">people brought in</span></p>
     </div>
-    <p class="tix__spent" id="tixspent" hidden></p>
     <p class="tix__why" id="tixwhy"></p>
   </section>
   <p class="pushask" id="pushask" hidden></p>
@@ -524,6 +513,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      number the server owns. Null until the boot fetch lands, and the fee copy
      falls back to a rate-free sentence rather than guessing. */
   var CHAIN_STATUS = null;
+  /* Whether this browser has an X account, known for certain. Only used to
+     word the link ask: a wallet a Telegram opener already chose still has
+     one thing a signature adds, and only for somebody who also has X. */
+  var HAS_X = false;
 
   /* SIGNED IN AS, AND THE WAY OUT.
      disconnectDevice() drops this browser's device_account row and nothing
@@ -969,8 +962,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      rewritten, so a stale local copy would describe a deal nobody was offered.
 
      @param fees      the /api/chain/creator-fees payload, or null
-     @param connected whether a wallet is on this device at all */
-  function feesSection(fees, connected) {
+     @param connected whether a wallet is on this device at all
+     @param opener    the /api/chain/opener payload, or null: open markets
+                      that will pay this wallet, and whether a Telegram
+                      opener already chose it */
+  function feesSection(fees, connected, opener) {
     var fs = (fees && fees.fees) || [];
     var unreadable = fees && fees.unreadable;
     // null is a fetch that failed, not a measured zero. Without this the block
@@ -982,9 +978,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     // Six words instead of a sentence. It still carries the qualifier that
     // matters -- the TAG is what opens a market that can pay you, and a market
     // with no tagger handle is minted at 0 bps and never pays anyone.
-    var rule = feeRate
-      ? "Tag <b>@oddiefun</b>, keep <b>" + (feeRate / 100) + "%</b> of the pool."
-      : "Tag <b>@oddiefun</b>, keep a cut of the pool.";
+    // Both doors, named by the handle you would actually type.
+    var rule = "Tag <b>@oddiefun</b> on X or <b>@oddiefunbot</b> on Telegram, keep "
+      + (feeRate ? "<b>" + (feeRate / 100) + "%</b>" : "a cut") + " of the pool.";
+    var pend = (opener && opener.pending) || [];
 
     var out = "<section><h2>Your fees</h2>" + blind(unreadable, unreadable === 1 ? "settled market" : "settled markets");
 
@@ -996,7 +993,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       return out + "</section>";
     }
 
-    if (!fs.length) {
+    if (!fs.length && !pend.length) {
       if (!answered) {
         out += unread("your fees");
       } else if (!unreadable) {
@@ -1021,6 +1018,21 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       }).join("");
     }
 
+    /* STILL OPEN, ALREADY YOURS. A market you opened pays nothing until it
+       settles, so without these rows the section said "Nothing to collect yet"
+       to somebody who had just been told a market was set to pay them. A cream
+       row because it states a fact about you; no amount, because the pool is
+       still moving and a number here would be a guess. */
+    out += pend.map(function (m) {
+      var when = m.closesAt ? new Date(m.closesAt) : null;
+      var day = when && !isNaN(when.getTime())
+        ? when.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+      return '<div class="row"><p class="row__q">' + esc(m.question) + "</p>"
+        + '<p class="row__m"><span><b>' + (m.feeBps / 100) + "%</b> of the pool, yours when it settles</span>"
+        + (day ? "<span>Settles " + esc(day) + "</span>" : "") + "</p>"
+        + '<div class="act"><a class="open" href="/m/' + encodeURIComponent(m.slug) + '">Open the market</a></div></div>';
+    }).join("");
+
     /* CONNECTED BUT NOT LINKED, ASKED INSIDE THE SECTION THAT EXPLAINS WHY.
        Signing is the ONLY thing that writes this wallet into a market's
        on-chain `creator` field, so an unlinked wallet cannot be paid a fee no
@@ -1033,9 +1045,19 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        a page that asks an already-linked person to link again reads as broken.
        It can still be wrong in the safe direction, since a blinked
        /api/auth/me resolves to false and a second signature costs nothing. */
+    /* A WALLET A TELEGRAM OPENER ALREADY CHOSE is not asked again: that
+       signature already made their markets pay it. What one more signature
+       still adds is X, so it is offered, in those words, only to somebody who
+       has X here. */
     if (C().linked() === false) {
-      out += '<div class="linkme"><p>One signature, free. Then markets you open can pay you.</p>'
-        + '<button class="go" id="linkme" type="button">Link this wallet</button></div>';
+      var chosen = Boolean(opener && opener.telegram);
+      if (!chosen) {
+        out += '<div class="linkme"><p>One signature, free. Then markets you open can pay you.</p>'
+          + '<button class="go" id="linkme" type="button">Link this wallet</button></div>';
+      } else if (HAS_X) {
+        out += '<div class="linkme"><p>Your markets from X can pay this wallet too. One signature, free.</p>'
+          + '<button class="go" id="linkme" type="button">Link this wallet</button></div>';
+      }
     }
     return out + "</section>";
   }
@@ -1168,6 +1190,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       getJSON("/api/chain/claimable?userPubkey=" + pk),
       getJSON("/api/chain/open?userPubkey=" + pk),
       getJSON("/api/chain/creator-fees?creatorPubkey=" + pk),
+      getJSON("/api/chain/opener?wallet=" + pk),
     ]).then(function (r) {
       /* A STALE ANSWER MUST NOT BE PAINTED, AND A STRANDED PAGE MUST NOT BE
          LEFT EITHER. This used to return and nothing else, on the assumption
@@ -1182,7 +1205,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         if (myGen === loadGen && heals < 2) { heals++; load(); }
         return;
       }
-      var claim = r[0], open = r[1], fees = r[2];
+      var claim = r[0], open = r[1], fees = r[2], opener = r[3];
       if (!claim && !open && !fees) {
         /* AND A BUTTON, because "try again in a moment" with nothing to press
            is an instruction to reload a page somebody may not realise they can
@@ -1258,12 +1281,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           + blind(blindOpen, "of your positions")
           + (op.length ? op.map(function (o) { return row(o, "open"); }).join("")
                        : !readOpen ? unread("your positions")
-                       : '<p class="empty">Nothing riding. Tag @oddiefun under a claim on X.'
+                       : '<p class="empty">Nothing riding. Tag oddie under a claim on X or Telegram.'
                          + '<img class="psticker" src="/brand/st-grass.webp" alt=""></p>')
           + "</section>";
       }
 
-      html += feesSection(fees, true);
+      html += feesSection(fees, true, opener);
 
       /* WHERE WHAT YOU JUST COLLECTED WENT.
          Collecting emptied this page: the section vanished, the empty state
@@ -1367,7 +1390,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // /api/auth/me is NOT treated as "no X" — that would lock out somebody
       // who is connected because a request blinked — so the page proceeds.
       var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
-      var skipped = !!(window.OddieId && window.OddieId.recall && window.OddieId.recall("xlater"));
+      HAS_X = !!(me && Array.isArray(me.accounts) && me.accounts.some(function (a) { return a.provider === "twitter"; }));
+      /* "tg" is left by the Telegram collect page. Somebody who arrived from
+         Telegram has a name already and never came here through X, so the X
+         ask would be a door to a room they are not trying to enter. */
+      var skipped = !!(window.OddieId && window.OddieId.recall
+        && (window.OddieId.recall("xlater") || window.OddieId.recall("tg")));
       if (XGATE && me && !hasX && !skipped) return xgate();
 
       /* THE CHAIN LAYER CAN BE OFF, AND THAT IS NOT A BLIP.
@@ -1424,61 +1452,41 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         var st = j && j.profile && j.profile.standing;
         if (!st || typeof st.ticketsLeft !== "number") return;
         var left = st.ticketsLeft;
+        var cap = Number(j.profile.ticketsPerDay) || 5;
+        var people = Number(st.peopleBrought) || 0;
+
+        /* A RATE LIMIT IS SILENT UNTIL IT BITES. The allowance is per rolling
+           day and exists to keep the bot from being a spam engine; somebody
+           with all of today's tickets has nothing to learn from a card saying
+           so. It appears once one is used, or once somebody has brought people
+           in, which is a number worth seeing on its own. The old card also
+           counted lifetime "missed" and "became markets" beside a daily
+           balance, so the arithmetic on it never added up. */
+        if (left >= cap && !people) return;
+
         var box = document.getElementById("tix");
         document.getElementById("tixn").textContent = String(left);
-        document.getElementById("tixlabel").textContent = left === 1 ? "ticket left" : "tickets left";
+        document.getElementById("tixlabel").textContent = left === 1 ? "ticket left today" : "tickets left today";
         if (left === 0) box.className = "tix tix--out";
 
-        /* WHAT BECAME OF THE SPENT ONES. Opening a market and burning a tag on
-           a take we could not price are opposite outcomes, and a bare "3 left"
-           hides which of the two somebody has been doing - which is the whole
-           lesson the charge was added to teach. Only the non-zero parts, so a
-           clean record reads as one short line rather than three zeroes. */
-        var parts = [];
-        if (st.marketsOpened) parts.push("<b>" + st.marketsOpened + "</b> became markets");
-        if (st.tagsBurnt) parts.push("<b>" + st.tagsBurnt + "</b> missed");
-        if (st.ticketsBack) parts.push("<b>" + st.ticketsBack + "</b> came back");
-        /* Not folded into tixspent: that line is the ledger of five tickets
-           and every part of it is bounded by them. This is the uncapped one
-           and it belongs beside the balance, not inside the accounting. */
-        if (st.peopleBrought) {
-          document.getElementById("brn").textContent = String(st.peopleBrought);
-          document.getElementById("brlabel").textContent =
-            st.peopleBrought === 1 ? "person brought in" : "people brought in";
+        if (people) {
+          document.getElementById("brn").textContent = String(people);
+          document.getElementById("brlabel").textContent = people === 1 ? "person brought in" : "people brought in";
           document.getElementById("brought").hidden = false;
         }
 
-        var spent = document.getElementById("tixspent");
-        // One span per fact, so the flex row wraps BETWEEN them. Joined as one
-        // text run it wrapped mid-phrase and left a stranded "1" at the end of
-        // a line on a phone.
-        if (parts.length) {
-          spent.innerHTML = parts.map(function (t) { return "<span>" + t + "</span>"; }).join("");
-          spent.hidden = false;
-        }
-
-        /* THE REFUND RULE, WRITTEN DOWN SOMEWHERE AT LAST.
-           Tags come back when a market you opened brings somebody new in, and
-           until this line that fact existed only in the ledger code and in one
-           clause of one reply. At zero it stops being a rule and becomes the
-           only thing left to do, so it is said as an instruction and the slab
-           turns. */
+        /* THE RULE, AND AT ZERO THE WAY BACK. Tickets return a day after each
+           tag on their own, and sooner when a market you opened brings somebody
+           new in; the newest market is linked because "share one" with no link
+           is a chore. */
+        var capWord = cap === 5 ? "Five" : String(cap);
         var mine = (j.profile.opened || []);
         document.getElementById("tixwhy").innerHTML = left > 0
-          ? "Every new bettor in a market you opened brings one back, up to five. "
-            + "A yes-or-no with a date spends one."
-          : mine.length
-            /* There IS a way back, and it is one specific market rather than a
-               vague gesture at the board: the newest one they opened, linked,
-               because "share the ones you opened" with no link is a chore and
-               this is the moment they most want to do it. */
-            ? "One new bettor in a market you opened brings a ticket back. "
-              + '<a href="/m/' + encodeURIComponent(mine[0].slug) + '">Share the last one you opened</a>'
-            /* And sometimes there is not one. Five tickets spent without a
-               single market means nothing can bring one back, and telling this
-               person otherwise would be the one lie on the page. */
-            : "All five went on takes we could not price. "
-              + "Tickets come back when a market you opened brings somebody new in.";
+          ? capWord + " a day. A yes-or-no with a date uses one, and every new bettor in a market you opened brings one back."
+          : "Today's " + capWord.toLowerCase() + " are used. Each comes back a day after you used it, or sooner when a new bettor joins a market you opened."
+            + (mine.length
+              ? ' <a href="/m/' + encodeURIComponent(mine[0].slug) + '">Share the last one you opened</a>'
+              : "");
         box.hidden = false;
       })
       .catch(function () {});

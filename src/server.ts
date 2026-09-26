@@ -10,6 +10,8 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
+import { openerCandidates, isTelegramPayoutWallet } from "./store/markets.js";
+import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
   savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson, tgOpenedToday, setPersonWallet, personWallet, tgOpenedSlugs, nameCreatorOnRow, tgOpenerOf } from "./store/markets.js";
@@ -1333,6 +1335,9 @@ app.get("/api/genesis/me", async (req, res) => {
     // Absent rather than zeroed when the read failed: the page shows what it
     // knows, and a fabricated 5/5 would be a lie about somebody's balance.
     standing,
+    // The day's allowance, so the page says "of five" from the same number
+    // the bot enforces, including on a demo day that raised it.
+    ticketsPerDay: GENESIS_TICKETS,
       opened,
   } });
 });
@@ -4777,6 +4782,30 @@ if (realStakesReady) {
    * prepare route that skips them answers 200 with a transaction that is certain
    * to revert, and then the wallet is the thing that looks broken.
    */
+  /* WHAT WILL PAY THIS WALLET, BEFORE IT PAYS.
+     /api/chain/creator-fees answers "what can I collect now", which is empty
+     for every opener until a market settles. So somebody who had just linked a
+     wallet from Telegram and was told "the market you opened is now set to pay
+     you" landed on a profile that said "Nothing to collect yet" and asked them
+     to link the wallet again. This is the other half: open markets whose 2%
+     goes to this wallet, plus whether a Telegram opener already chose it. */
+  app.get("/api/chain/opener", async (req, res) => {
+    const wallet = String(req.query.wallet ?? "");
+    if (!isValidPubkeyString(wallet)) return res.status(400).json({ error: "invalid wallet" });
+    const [cands, telegram] = await Promise.all([
+      openerCandidates(wallet).catch(() => null),
+      isTelegramPayoutWallet(wallet).catch(() => false),
+    ]);
+    if (!cands) return res.status(503).json({ error: "unavailable" });
+    const onChain = cands.filter((c) => !c.named && c.onchainPubkey).map((c) => c.onchainPubkey as string);
+    const states = onChain.length
+      ? await readMarkets(onChain, { maxAgeMs: 60_000 }).catch(() => new Map<string, MarketRead>())
+      : new Map<string, MarketRead>();
+    const pending = marketsPaying(wallet, cands, states)
+      .map((c) => ({ slug: c.slug, question: foldIds(c.question), closesAt: c.closesAt, feeBps: c.feeBps }));
+    res.json({ ok: true, telegram, pending });
+  });
+
   app.post("/api/chain/refund/prepare", async (req, res) => {
     const slug = String(req.body?.slug ?? "");
     const userPubkey = String(req.body?.userPubkey ?? "");

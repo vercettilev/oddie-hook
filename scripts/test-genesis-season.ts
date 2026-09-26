@@ -9,8 +9,9 @@
  */
 import {
   GENESIS_TICKETS, ticketsLeft, spendTicketForTag, creditFundedBettor,
-  genesisStanding, genesisBoard, _resetSeason,
+  genesisStanding, genesisBoard, _resetSeason, _setSeasonClock,
 } from "../src/genesis/season.js";
+import { readFileSync } from "node:fs";
 
 let failed = 0;
 function check(name: string, cond: boolean, extra?: unknown): void {
@@ -118,6 +119,32 @@ async function main(): Promise<void> {
   const one = await genesisStanding("alice");
   check("standing reports markets opened", one.marketsOpened === 1);
   check("standing reports people brought", one.peopleBrought === 3);
+
+  // --- five a DAY, for reads and writes alike ------------------------------
+  // The window used to live in the gate alone. The spend checked the lifetime
+  // sum, so past five tags in total it found "0 left", recorded nothing, and
+  // the daily limit stopped applying to the heaviest tagger; the profile read
+  // the lifetime sum too and printed a smaller number than the bot enforced.
+  {
+    _resetSeason();
+    const T0 = 1_800_000_000_000;
+    let t = T0;
+    _setSeasonClock(() => t);
+    for (let i = 0; i < GENESIS_TICKETS; i++) await spendTicketForTag(`w${i}`, "heavy", "src");
+    check("five tags use the day's allowance", (await ticketsLeft("heavy")) === 0);
+    t = T0 + 24 * 60 * 60_000 + 1;
+    check("a day later the allowance is whole again", (await ticketsLeft("heavy")) === GENESIS_TICKETS);
+    check("...and the next tag is accepted", (await spendTicketForTag("w-next", "heavy", "src")) === true);
+    check("...and CHARGED, so the limit still applies past five in total",
+      (await ticketsLeft("heavy")) === GENESIS_TICKETS - 1);
+    check("the profile's number is the bot's number",
+      (await genesisStanding("heavy")).ticketsLeft === (await ticketsLeft("heavy")));
+    _setSeasonClock(null);
+
+    const src = readFileSync("src/genesis/season.ts", "utf8");
+    check("every balance query goes through the one windowed definition",
+      src.split("AS bal FROM genesis_ticket_log").length - 1 === 1);
+  }
 
   console.log(failed === 0 ? "\nall genesis season checks passed." : `\n${failed} FAILED`);
   if (failed > 0) process.exit(1);

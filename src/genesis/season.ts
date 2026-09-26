@@ -55,6 +55,27 @@ export const GENESIS_TICKETS = Number.isFinite(ticketsFromEnv) && ticketsFromEnv
   : 5;
 /** How far back the count reaches. The cap is per rolling day, not per life. */
 export const TICKET_WINDOW = "24 hours";
+const TICKET_WINDOW_MS = 24 * 60 * 60_000;
+
+/**
+ * THE BALANCE, ONE DEFINITION FOR EVERY READ AND EVERY WRITE.
+ *
+ * The window above was applied to the gate and to nothing else. The spend, the
+ * miss and the refund still checked the LIFETIME sum, so the day somebody
+ * passed five tags in total, spendTicketForTag found "0 left", wrote no spend,
+ * and the daily limit quietly stopped applying to exactly the heavy tagger it
+ * exists for. The profile read the lifetime sum too, and printed 2 to a person
+ * the bot was treating as having 5. Every balance comes from this string now.
+ * $1 = handle, $2 = the allowance.
+ */
+const BALANCE_SQL = `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log
+  WHERE handle = $1 AND at > now() - interval '${TICKET_WINDOW}'`;
+
+let clock = (): number => Date.now();
+/** Test seam only: move the in-memory season's clock. null restores it. */
+export function _setSeasonClock(fn: (() => number) | null): void {
+  clock = fn ?? (() => Date.now());
+}
 
 const norm = (h: string): string => h.replace(/^@+/, "").toLowerCase();
 const validHandle = (h: string): boolean => /^[a-z0-9_]{1,15}$/.test(h);
@@ -84,7 +105,7 @@ export interface GenesisStanding {
 }
 
 // --- in-memory backend (no DATABASE_URL: dev and tests) ---------------------
-interface MemLog { handle: string; delta: number; reason: string; dedupKey: string }
+interface MemLog { handle: string; delta: number; reason: string; dedupKey: string; at?: number }
 interface MemTag { slug: string; handle: string; sourceHandle: string | null }
 interface MemBettor { wallet: string; slug: string; handle: string | null }
 const memLog: MemLog[] = [];
@@ -96,8 +117,13 @@ export function _resetSeason(): void {
   memLog.length = 0; memTags.length = 0; memBettors.length = 0;
 }
 
-const memBalance = (handle: string): number =>
-  GENESIS_TICKETS + memLog.filter((l) => l.handle === handle).reduce((s, l) => s + l.delta, 0);
+const memBalance = (handle: string): number => {
+  const since = clock() - TICKET_WINDOW_MS;
+  return GENESIS_TICKETS + memLog
+    .filter((l) => l.handle === handle && (l.at ?? 0) > since)
+    .reduce((s, l) => s + l.delta, 0);
+};
+const memPush = (l: MemLog): void => { memLog.push({ ...l, at: clock() }); };
 
 /** Tickets left for a handle. Never negative, never above the campaign cap. */
 export async function ticketsLeft(rawHandle: string): Promise<number> {
@@ -108,8 +134,7 @@ export async function ticketsLeft(rawHandle: string): Promise<number> {
   const { rows } = await storeDb().query<{ bal: string }>(
     // Only the rolling window counts. Rows outside it stay in the ledger,
     // because the ledger is also the record of who showed up and when.
-    `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log
-      WHERE handle = $1 AND at > now() - interval '${TICKET_WINDOW}'`,
+    BALANCE_SQL,
     [handle, GENESIS_TICKETS],
   );
   // node-postgres hands back SUM() as a STRING; Number() it or the clamp below
@@ -139,7 +164,7 @@ export async function spendTicketForTag(
     if (memTags.some((t) => t.slug === slug)) return true; // already charged
     if (memBalance(handle) <= 0) return false;
     memTags.push({ slug, handle, sourceHandle: source });
-    memLog.push({ handle, delta: -1, reason: "tag", dedupKey: `tag:${slug}` });
+    memPush({ handle, delta: -1, reason: "tag", dedupKey: `tag:${slug}` });
     return true;
   }
 
@@ -150,7 +175,7 @@ export async function spendTicketForTag(
     // Lock this handle's ledger so two sweeps cannot both read "1 left".
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`genesis:${handle}`]);
     const bal = await client.query<{ bal: string }>(
-      `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log WHERE handle = $1`,
+      BALANCE_SQL,
       [handle, GENESIS_TICKETS],
     );
     const already = await client.query(`SELECT 1 FROM genesis_tag WHERE slug = $1`, [slug]);
@@ -209,7 +234,7 @@ export async function spendTicketForMiss(
   if (!STORE_PERSISTENT) {
     if (memLog.some((l) => l.dedupKey === key)) return { spent: false, left: memBalance(handle) };
     if (memBalance(handle) <= 0) return { spent: false, left: 0 };
-    memLog.push({ handle, delta: -1, reason: "miss", dedupKey: key });
+    memPush({ handle, delta: -1, reason: "miss", dedupKey: key });
     return { spent: true, left: Math.max(0, memBalance(handle)) };
   }
 
@@ -219,7 +244,7 @@ export async function spendTicketForMiss(
     await client.query("BEGIN");
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`genesis:${handle}`]);
     const bal = await client.query<{ bal: string }>(
-      `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log WHERE handle = $1`,
+      BALANCE_SQL,
       [handle, GENESIS_TICKETS],
     );
     const before = Number(bal.rows[0]?.bal ?? GENESIS_TICKETS);
@@ -269,7 +294,7 @@ export async function creditFundedBettor(
     if (tag && owner && tag.handle === owner) return; // kendi cuzdanin sayilmaz
     memBettors.push({ wallet, slug, handle: tag?.handle ?? null });
     if (tag && memBalance(tag.handle) < GENESIS_TICKETS) {
-      memLog.push({ handle: tag.handle, delta: 1, reason: "bettor", dedupKey: `bettor:${wallet}` });
+      memPush({ handle: tag.handle, delta: 1, reason: "bettor", dedupKey: `bettor:${wallet}` });
     }
     return;
   }
@@ -292,7 +317,7 @@ export async function creditFundedBettor(
 
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`genesis:${handle}`]);
     const bal = await client.query<{ bal: string }>(
-      `SELECT COALESCE(SUM(delta), 0) + $2 AS bal FROM genesis_ticket_log WHERE handle = $1`,
+      BALANCE_SQL,
       [handle, GENESIS_TICKETS],
     );
     // The cap is the campaign's whole scarcity claim: bringing people back
@@ -347,7 +372,8 @@ export async function genesisStanding(rawHandle: string): Promise<GenesisStandin
     tickets: string; opened: string; burnt: string; back: string; people: string; rank: string | null;
   }>(
     `WITH me AS (SELECT $1::text AS handle),
-     bal AS (SELECT COALESCE(SUM(delta), 0) + $2 AS t FROM genesis_ticket_log WHERE handle = (SELECT handle FROM me)),
+     bal AS (SELECT COALESCE(SUM(delta), 0) + $2 AS t FROM genesis_ticket_log
+                WHERE handle = (SELECT handle FROM me) AND at > now() - interval '${TICKET_WINDOW}'),
      opened AS (SELECT COUNT(*) AS c FROM genesis_tag WHERE handle = (SELECT handle FROM me)),
      -- Counted off the LOG rather than off genesis_tag, because a miss has no
      -- market to be a row of. Negated: the log stores the movement, the page
@@ -510,7 +536,8 @@ export async function genesisRoster(limit = 200): Promise<RosterRow[]> {
      )
      SELECT f.handle,
             gp.display_name, gp.archetype, gp.captured_at,
-            COALESCE((SELECT SUM(delta) FROM genesis_ticket_log l WHERE l.handle = f.handle), 0) + $2 AS tickets,
+            COALESCE((SELECT SUM(delta) FROM genesis_ticket_log l WHERE l.handle = f.handle
+                       AND l.at > now() - interval '${TICKET_WINDOW}'), 0) + $2 AS tickets,
             (SELECT COUNT(*) FROM genesis_tag t WHERE t.handle = f.handle) AS opened,
             (SELECT COUNT(*) FROM genesis_bettor b WHERE b.handle = f.handle) AS people
        FROM folk f

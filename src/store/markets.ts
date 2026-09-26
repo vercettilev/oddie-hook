@@ -5051,6 +5051,62 @@ export async function personWallet(personId: string): Promise<string | null> {
  * tag. 'opened' only: a pointer to a market somebody else opened is not theirs
  * and its fee is not theirs either.
  */
+/**
+ * OPEN MARKETS WHOSE OPENER'S CUT MAY GO TO THIS WALLET, as candidates.
+ *
+ * A market names its opener in one of two places. One minted after the wallet
+ * was known carries it on the row (creator_wallet) and comes back decided,
+ * `named: true`. One minted before is named on chain, which only the caller
+ * can read, so every minted open market that names nobody on its row comes
+ * back for the caller to check. A row naming a different wallet is not a
+ * candidate: the program only accepts a creator once.
+ */
+export async function openerCandidates(wallet: string, limit = 200): Promise<Array<{
+  slug: string; question: string; closesAt: string | null; feeBps: number;
+  onchainPubkey: string | null; named: boolean;
+}>> {
+  if (!wallet) return [];
+  const n = Math.max(1, Math.min(500, Math.floor(limit)));
+  if (!PERSISTENT) {
+    return [...memCommunity.values()]
+      .filter((m) => !m.resolvedOutcome && !m.retiredAt && (m.creatorFeeBps ?? 0) > 0
+        && (m.creatorWallet === wallet || (m.onchainPubkey && !m.creatorWallet)))
+      .slice(-n).reverse()
+      .map((m) => ({
+        slug: m.slug, question: mem.get(m.slug)?.market.question ?? m.slug,
+        closesAt: mem.get(m.slug)?.market.closesAt ?? null, feeBps: m.creatorFeeBps ?? 0,
+        onchainPubkey: m.onchainPubkey, named: m.creatorWallet === wallet,
+      }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{
+    slug: string; question: string; closes_at: Date | null; creator_fee_bps: number;
+    onchain_pubkey: string | null; named: boolean;
+  }>(
+    `SELECT c.slug, s.question, s.closes_at, c.creator_fee_bps, c.onchain_pubkey,
+            (c.creator_wallet IS NOT DISTINCT FROM $1) AS named
+       FROM community_market c JOIN market_slug s ON s.slug = c.slug
+      WHERE c.resolved_outcome IS NULL AND c.retired_at IS NULL AND c.creator_fee_bps > 0
+        AND (c.creator_wallet = $1 OR (c.onchain_pubkey IS NOT NULL AND c.creator_wallet IS NULL))
+      ORDER BY c.market_id DESC LIMIT $2`,
+    [wallet, n],
+  );
+  return rows.map((r) => ({
+    slug: r.slug, question: r.question,
+    closesAt: r.closes_at ? new Date(r.closes_at).toISOString() : null,
+    feeBps: Number(r.creator_fee_bps), onchainPubkey: r.onchain_pubkey, named: Boolean(r.named),
+  }));
+}
+
+/** Whether a Telegram opener has chosen this wallet for their 2%. A yes/no,
+ *  never who: the page only needs to know not to ask for the link again. */
+export async function isTelegramPayoutWallet(wallet: string): Promise<boolean> {
+  if (!PERSISTENT || !wallet) return false;
+  await ensureSchema();
+  const { rows } = await db().query(`SELECT 1 FROM person WHERE wallet = $1 LIMIT 1`, [wallet]);
+  return rows.length > 0;
+}
+
 export async function tgOpenedSlugs(author: string): Promise<string[]> {
   if (!author) return [];
   if (!PERSISTENT) {

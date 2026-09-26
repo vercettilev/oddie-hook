@@ -55,6 +55,7 @@
   <p class="note">Markets you already opened count too, even ones that have closed.</p>
   <div id="act"></div>
 </main>
+<script src="/app/id.js"></script>
 <script>
 (function () {
   var act = document.getElementById("act");
@@ -148,6 +149,9 @@
       var out = await lr.json().catch(function () { return {}; });
       if (!lr.ok || !out.ok) throw new Error(out.error || ("link " + lr.status));
 
+      // The profile asks for X before anything else. Somebody who came from
+      // Telegram has a name already, so this browser remembers not to ask.
+      if (window.OddieId && window.OddieId.remember) window.OddieId.remember("tg", "1", 365);
       var n = Number(out.markets || 0);
       say('<div class="ok"><p style="margin:0 0 8px;color:var(--cream)"><b>Linked.</b> Your 2% goes to <code>'
         + esc(short(address)) + '</code>.</p>'
