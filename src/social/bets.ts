@@ -15,9 +15,11 @@
  *     of your bet", in the app, and by Telegram or push when we can reach them.
  *   - The opener: a bet came into your market, which is their 2% growing.
  *
- * NEVER A NAME. The stake is said as "Someone". Which wallet bet is public on
- * chain, but who that is was never published by them; naming bettors waits for
- * a switch the person turns on themselves.
+ * A NAME ONLY BY CHOICE. The stake is "Someone" unless its owner turned on
+ * "show my name" on their profile. Then Telegram hears their Telegram @handle
+ * (a name Telegram verified), or failing that their oddie name WITHOUT an @: an
+ * @ in Telegram is a mention, and an oddie name there could point at a
+ * stranger who happens to own it. The lock-screen push never names anybody.
  *
  * THE PHONE BUZZES AT MOST EVERY HALF HOUR PER MARKET. The in-app list gets
  * every event; the group and the private messages get the first stake on each
@@ -57,31 +59,39 @@ export function shouldBroadcast(e: BetLanded, last: Pacing | null, now: number):
   return now - last.at >= BROADCAST_GAP_MS && pool >= last.pool * 1.5;
 }
 
+/** How a staker is named in Telegram: see the header. */
+export function tgWho(name: { username: string | null; tgHandle: string | null } | null): string {
+  if (name?.tgHandle) return `@${name.tgHandle.replace(/^@+/, "")}`;
+  if (name?.username) return name.username;
+  return "Someone";
+}
+
 /** The group message. */
-export function groupText(e: BetLanded): string {
+export function groupText(e: BetLanded, who = "Someone"): string {
   const side = e.side.toUpperCase();
   const opp = other(e.side).toUpperCase();
   const a = after(e);
   const amt = `${solText(e.lamports)} SOL`;
   const oppAfter = a[other(e.side)];
-  if (e.before[e.side] === 0 && oppAfter === 0) return `Someone just took ${side} with ${amt}. ${opp} is wide open.`;
+  if (e.before[e.side] === 0 && oppAfter === 0) return `${who} just took ${side} with ${amt}. ${opp} is wide open.`;
   if (e.before[e.side] === 0) {
-    return `Someone just took ${side} with ${amt}. Both sides are in: ${solText(a.yes)} SOL on YES, ${solText(a.no)} SOL on NO.`;
+    return `${who} just took ${side} with ${amt}. Both sides are in: ${solText(a.yes)} SOL on YES, ${solText(a.no)} SOL on NO.`;
   }
-  if (oppAfter === 0) return `Someone just added ${amt} to ${side}. ${solText(a[e.side])} SOL on ${side}, and ${opp} is wide open.`;
-  return `Someone just added ${amt} to ${side}. The pool: ${solText(a.yes)} SOL on YES, ${solText(a.no)} SOL on NO.`;
+  if (oppAfter === 0) return `${who} just added ${amt} to ${side}. ${solText(a[e.side])} SOL on ${side}, and ${opp} is wide open.`;
+  return `${who} just added ${amt} to ${side}. The pool: ${solText(a.yes)} SOL on YES, ${solText(a.no)} SOL on NO.`;
 }
 
 /** To somebody on the other side of this stake. */
-export function counterText(e: BetLanded, headline: string, url: string): string {
-  return `Someone took the other side of your bet on “${headline}”: ${solText(e.lamports)} SOL on ${e.side.toUpperCase()}.\n\n${url}`;
+export function counterText(e: BetLanded, headline: string, url: string, who = "Someone"): string {
+  return `${who} took the other side of your bet on “${headline}”: ${solText(e.lamports)} SOL on ${e.side.toUpperCase()}.\n\n${url}`;
 }
 
 /** To the person who opened the market. */
-export function openerText(e: BetLanded, headline: string, url: string, feeBps: number): string {
+export function openerText(e: BetLanded, headline: string, url: string, feeBps: number, who = "Someone"): string {
   const pool = e.before.yes + e.before.no + e.lamports;
   const earn = feeBps > 0 ? `, and you earn ${feeBps / 100}% of it when it settles` : "";
-  return `${solText(e.lamports)} SOL just came in on ${e.side.toUpperCase()} in your market “${headline}”. The pool is ${solText(pool)} SOL${earn}.\n\n${url}`;
+  const from = who === "Someone" ? "" : ` from ${who}`;
+  return `${solText(e.lamports)} SOL just came in on ${e.side.toUpperCase()}${from} in your market “${headline}”. The pool is ${solText(pool)} SOL${earn}.\n\n${url}`;
 }
 
 export interface BetNotifyDeps {
@@ -99,6 +109,8 @@ export interface BetNotifyDeps {
   sendGroup(o: { chatId: number; replyTo: number; text: string; url: string }): Promise<void>;
   dm(userId: number, text: string): Promise<void>;
   push(wallets: string[], payload: { title: string; body: string; url: string; tag: string }): Promise<void>;
+  /** The staker's chosen name, only when they turned "show my name" on. */
+  nameFor?(wallet: string): Promise<{ username: string | null; tgHandle: string | null } | null>;
   dryRun?: boolean;
   log(line: string, extra?: Record<string, unknown>): void;
 }
@@ -148,7 +160,8 @@ export async function onBetLanded(e: BetLanded, deps: BetNotifyDeps): Promise<Be
     }
   };
 
-  const text = groupText(e);
+  const who = tgWho(deps.nameFor ? await deps.nameFor(e.wallet).catch(() => null) : null);
+  const text = groupText(e, who);
   for (const g of await deps.groupThreads(e.slug).catch(() => [])) {
     if (await say("group ping", () => deps.sendGroup({ chatId: g.chatId, replyTo: g.messageId, text, url: m.url }))) out.groups++;
   }
@@ -158,7 +171,7 @@ export async function onBetLanded(e: BetLanded, deps: BetNotifyDeps): Promise<Be
   const freshCounter = fresh.filter((n) => n.kind === "counter").map((n) => n.wallet);
   for (const w of freshCounter) {
     const tg = await deps.tgUserForWallet(w).catch(() => null);
-    if (tg && await say("counter dm", () => deps.dm(tg, counterText(e, m.headline, m.url)))) out.dms++;
+    if (tg && await say("counter dm", () => deps.dm(tg, counterText(e, m.headline, m.url, who)))) out.dms++;
   }
   if (freshCounter.length) {
     await deps.push(freshCounter, {
@@ -173,7 +186,7 @@ export async function onBetLanded(e: BetLanded, deps: BetNotifyDeps): Promise<Be
     && (fresh.some((n) => n.kind === "opened_bet") || (!opener?.wallet && Boolean(opener?.tgUserId)));
   if (tellOpener) {
     const tg = opener?.tgUserId ?? (openerWallet ? await deps.tgUserForWallet(openerWallet).catch(() => null) : null);
-    if (tg && await say("opener dm", () => deps.dm(tg, openerText(e, m.headline, m.url, m.feeBps)))) out.dms++;
+    if (tg && await say("opener dm", () => deps.dm(tg, openerText(e, m.headline, m.url, m.feeBps, who)))) out.dms++;
     if (openerWallet) {
       await deps.push([openerWallet], {
         title: "oddie", body: `A bet came into your market “${m.headline}”.`, url: m.url, tag: `opened:${e.slug}`,

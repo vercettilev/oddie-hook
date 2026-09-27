@@ -358,6 +358,39 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .payout .go:hover{background:#000;color:var(--yellow-hi)}
 .payout .go:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
+/* YOUR PICTURE AND NAME, and the panel that changes them. */
+.pfp{width:56px;height:56px;border-radius:50%;border:3px solid var(--black);box-shadow:3px 3px 0 var(--yellow-deep);
+  vertical-align:middle;margin:0 14px 6px 0;object-fit:cover}
+.pfp[hidden]{display:none}
+.idbar{margin:-4px 0 18px}
+.idbar button{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  background:transparent;color:var(--fg);border:2px solid var(--line);padding:7px 11px;cursor:pointer}
+.idbar button:hover{border-color:var(--fg-3)}
+.idbar button:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.idedit{border:3px solid var(--yellow);box-shadow:8px 9px 0 var(--yellow-deep);padding:20px 22px;margin:0 0 28px;
+  display:grid;gap:10px;max-width:560px}
+.idedit[hidden]{display:none}
+.idedit__l{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--fg-3);margin:6px 0 0}
+.idedit__u{display:flex;align-items:center;border:2px solid var(--fg-3);background:rgba(255,255,255,.04)}
+.idedit__u:focus-within{border-color:var(--yellow)}
+.idedit__u span{padding:0 2px 0 12px;color:var(--fg-3);font-weight:800;font-size:18px}
+.idedit__u input{flex:1;min-width:0;background:transparent;border:0;color:var(--fg);font:700 18px/1.2 var(--body);
+  padding:12px 12px 12px 0;outline:none}
+.idedit__hint{margin:0;font-size:13.5px;line-height:1.4;color:var(--fg-3)}
+.idedit__hint.is-ok{color:var(--yellow)}
+.idedit__hint.is-bad{color:var(--pink)}
+.idedit__pics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.idedit__pics button{padding:0;border:0;background:none;cursor:pointer;border-radius:50%;aspect-ratio:1}
+.idedit__pics button:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.idedit__pics img{width:100%;height:100%;border-radius:50%;display:block;border:3px solid transparent;box-sizing:border-box}
+.idedit__pics button[aria-checked="true"] img{border-color:var(--yellow)}
+@media (max-width:420px){.idedit__pics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.idedit__sw{display:flex;gap:10px;align-items:center;font-weight:700;margin-top:8px;cursor:pointer}
+.idedit__sw input{width:20px;height:20px;accent-color:var(--yellow);flex:none}
+.idedit__act{display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.acts__pf{width:20px;height:20px;border-radius:50%;vertical-align:-4px;margin-right:7px}
+
 /* TWO DOORS IN, side by side: X and Telegram are equals. */
 .gate .gate__ways{grid-column:2;justify-self:start;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .big--tg{background:#2AABEE;color:#fff;text-decoration:none}
@@ -491,8 +524,21 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        line says which wallet's bets are on screen, which is the one fact
        neither of the others carried; and the two ways out share a quiet foot
        line, each shown only when it can do something. -->
-  <h1><span id="who">Your profile</span> <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
+  <h1><img class="pfp" id="pfp" alt="" hidden><span id="who">Your profile</span> <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
   <p class="sub" id="sub"></p>
+  <p class="idbar" id="idbar" hidden><button type="button" id="idedit-open">Edit profile</button></p>
+  <!-- YOUR NAME AND PICTURE ON ODDIE, and whether your bets carry them. One
+       small panel, opened on demand: most visits are about money, not this. -->
+  <section class="idedit" id="idedit" hidden aria-label="Edit profile">
+    <label class="idedit__l" for="uname">Username</label>
+    <div class="idedit__u"><span aria-hidden="true">@</span><input id="uname" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="15" aria-describedby="unamehint"></div>
+    <p class="idedit__hint" id="unamehint">3 to 15 letters, numbers or _</p>
+    <p class="idedit__l" id="picslabel">Picture</p>
+    <div class="idedit__pics" id="pics" role="radiogroup" aria-labelledby="picslabel"></div>
+    <label class="idedit__sw"><input type="checkbox" id="showname"> <span>Show my name when I take a side</span></label>
+    <p class="idedit__hint">Your groups and the people you bet against see your name instead of “Someone”.</p>
+    <div class="idedit__act"><button class="big" id="idsave" type="button">Save</button><button class="later" id="idcancel" type="button">Cancel</button></div>
+  </section>
   <!-- ABOVE the tickets and outside #view, for the same reason the tickets are:
        every state of this page rewrites #view wholesale. Money outranks the
        ticket book, so it sits above it. -->
@@ -571,10 +617,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      X-only one. */
   (window.OddieMe || Promise.resolve({ accounts: [] })).then(function (me) {
     var accts = (me && me.accounts) || [];
-    // X first, Telegram when there is no X: either is the name on the calls.
-    var tw = accts.filter(function (a) { return a.provider === "twitter" && a.handle; })[0]
+    var prof = me && me.profile;
+    // The oddie name first; then X; then Telegram. Any of them is the name on the calls.
+    var tw = prof && prof.username ? { handle: prof.username }
+      : accts.filter(function (a) { return a.provider === "twitter" && a.handle; })[0]
       || accts.filter(function (a) { return a.provider === "telegram" && a.handle; })[0];
     if (!tw || !tw.handle) return;
+    if (prof && prof.avatar) {
+      var pf = document.getElementById("pfp");
+      if (pf) { pf.src = "/avatars/" + prof.avatar + ".webp"; pf.hidden = false; }
+    }
     // The heading IS the name now. Written into its own span so the sticker
     // beside it survives, which a plain h1.textContent would have eaten.
     var handle = "@" + String(tw.handle).replace(/^@+/, "");
@@ -611,6 +663,88 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     box.hidden = false;
     if (!tg && window.OddieTgLogin) window.OddieTgLogin.prepare(document.getElementById("accttg"));
   });
+
+  /* THE PROFILE EDITOR. Username, picture, and the switch that puts the name
+     on your bets. Only for a signed-in person: the server answers signedIn. */
+  (function profileEditor() {
+    var did = (window.OddieId && window.OddieId.get()) || "";
+    var bar = document.getElementById("idbar"), panel = document.getElementById("idedit");
+    if (!did || !bar || !panel) return;
+    var input = document.getElementById("uname"), hint = document.getElementById("unamehint");
+    var pics = document.getElementById("pics"), sw = document.getElementById("showname");
+    var state = null, picked = null, checkT = null, lastOk = true;
+    var HINTS = { invalid: "3 to 15 letters, numbers or _", reserved: "That name belongs to another account.",
+      taken: "Somebody already has that one.", ok: "That one is yours if you want it." };
+    function setHint(kind) {
+      hint.textContent = HINTS[kind] || HINTS.invalid;
+      hint.className = "idedit__hint" + (kind === "ok" ? " is-ok" : kind === "invalid" ? "" : " is-bad");
+    }
+    function drawPics(avatars) {
+      pics.innerHTML = avatars.map(function (id) {
+        return '<button type="button" role="radio" aria-checked="' + (id === picked) + '" data-id="' + id + '">'
+          + '<img src="/avatars/' + id + '.webp" alt="Picture ' + id.slice(1) + '"></button>';
+      }).join("");
+      Array.prototype.forEach.call(pics.querySelectorAll("button"), function (b) {
+        b.addEventListener("click", function () {
+          picked = b.getAttribute("data-id");
+          Array.prototype.forEach.call(pics.querySelectorAll("button"), function (o) {
+            o.setAttribute("aria-checked", String(o === b));
+          });
+        });
+      });
+    }
+    fetch("/api/profile/me?deviceId=" + encodeURIComponent(did), { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.signedIn) return;
+        state = j;
+        bar.hidden = false;
+        document.getElementById("idedit-open").addEventListener("click", function () {
+          input.value = state.username || "";
+          picked = state.avatar;
+          sw.checked = Boolean(state.showName);
+          drawPics(state.avatars || []);
+          setHint(state.username ? "ok" : "invalid");
+          lastOk = true;
+          panel.hidden = false; bar.hidden = true;
+          input.focus();
+        });
+      })
+      .catch(function () {});
+    input.addEventListener("input", function () {
+      clearTimeout(checkT);
+      var v = input.value.trim().replace(/^@+/, "").toLowerCase();
+      if (state && v === (state.username || "")) { setHint("ok"); lastOk = true; return; }
+      if (!/^[a-z0-9_]{3,15}$/.test(v)) { setHint("invalid"); lastOk = false; return; }
+      checkT = setTimeout(function () {
+        fetch("/api/profile/check?username=" + encodeURIComponent(v) + "&deviceId=" + encodeURIComponent(did), { cache: "no-store" })
+          .then(function (r) { return r.json(); })
+          .then(function (c) { setHint(c.state); lastOk = c.state === "ok"; })
+          .catch(function () {});
+      }, 300);
+    });
+    document.getElementById("idcancel").addEventListener("click", function () { panel.hidden = true; bar.hidden = false; });
+    document.getElementById("idsave").addEventListener("click", function () {
+      var b = this;
+      var v = input.value.trim().replace(/^@+/, "").toLowerCase();
+      if (!lastOk && v !== (state.username || "")) { input.focus(); return; }
+      b.disabled = true;
+      fetch("/api/profile", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deviceId: did, username: v || null, avatar: picked, showName: sw.checked }),
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          b.disabled = false;
+          if (!res.ok) { setHint((res.j && res.j.error) || "invalid"); return; }
+          state = Object.assign({}, state, res.j);
+          var who = document.getElementById("who"), pf = document.getElementById("pfp");
+          if (who && state.username) { who.textContent = "@" + state.username; document.title = "@" + state.username + " · oddie"; }
+          if (pf && state.avatar) { pf.src = "/avatars/" + state.avatar + ".webp"; pf.hidden = false; }
+          panel.hidden = true; bar.hidden = false;
+        })
+        .catch(function () { b.disabled = false; });
+    });
+  })();
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
@@ -1022,11 +1156,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     return "<section><h2>Activity</h2><ul class=\"acts\">" + items.slice(0, 12).map(function (it) {
       var amt = typeof it.lamports === "number" ? SOL(it.lamports) + " SOL" : "";
       var side = it.side ? String(it.side).toUpperCase() : "";
+      var who = it.by && it.by.username ? "@" + it.by.username : "Someone";
       var line = it.kind === "counter"
-        ? "Someone took " + side + (amt ? " with " + amt : "") + " against you"
-        : (amt || "A bet") + " came in on " + side + " in your market";
+        ? who + " took " + side + (amt ? " with " + amt : "") + " against you"
+        : (amt || "A bet") + " came in on " + side + (it.by ? " from " + who : "") + " in your market";
+      var face = it.by && it.by.avatar ? '<img class="acts__pf" src="/avatars/' + esc(it.by.avatar) + '.webp" alt="">' : "";
       return '<li' + (it.seen ? "" : ' class="is-new"') + '><a href="' + esc(it.url) + '">'
-        + '<span class="acts__t">' + esc(line) + '</span><span class="acts__q">' + esc(it.headline) + "</span></a>"
+        + '<span class="acts__t">' + face + esc(line) + '</span><span class="acts__q">' + esc(it.headline) + "</span></a>"
         + '<time datetime="' + esc(it.at) + '">' + ago(it.at) + "</time></li>";
     }).join("") + "</ul></section>";
   }

@@ -374,6 +374,19 @@ export async function devicesForWallets(wallets: string[]): Promise<string[]> {
   return rows.map((r) => r.device_id);
 }
 
+/** The person this browser is signed in as (the canonical device every one of
+ *  their identities points at), or null for a browser signed into nothing. */
+export async function canonicalFor(deviceId: string): Promise<string | null> {
+  if (!deviceId) return null;
+  if (!STORE_PERSISTENT) return _memDeviceAccount.get(deviceId) ?? null;
+  await storeSchema();
+  const { rows } = await storeDb().query<{ canonical_device: string }>(
+    `SELECT a.canonical_device FROM device_account da JOIN account a ON a.id = da.account_id WHERE da.device_id = $1`,
+    [deviceId],
+  );
+  return rows[0]?.canonical_device ?? null;
+}
+
 export async function accountsFor(deviceId: string): Promise<Account[]> {
   if (!STORE_PERSISTENT) {
     const canon = _memDeviceAccount.get(deviceId);

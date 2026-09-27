@@ -39,6 +39,21 @@
   window.OddieMe
     .then(function (j) {
       var accts = j.accounts || [];
+      var prof = j.profile;
+      // The oddie name and picture, once there is one.
+      if (prof && prof.username) {
+        a.className = "mechip mechip--me mechip--pf";
+        a.textContent = "";
+        if (prof.avatar) {
+          var im = document.createElement("img");
+          im.src = "/avatars/" + prof.avatar + ".webp";
+          im.alt = "";
+          a.appendChild(im);
+        }
+        a.appendChild(document.createTextNode("@" + prof.username));
+        a.href = "/profile";
+        return;
+      }
       var tw = accts.filter(function (x) { return x.provider === "twitter" && x.handle; })[0]
         || accts.filter(function (x) { return x.provider === "telegram" && x.handle; })[0];
       if (!tw || !tw.handle) return;
@@ -81,6 +96,8 @@
       + ".mechip--new:hover{background:#E7EC4E;color:#0B0D04}"
       // A Telegram name wears Telegram's blue, as it does on the market page.
       + ".mechip--tg{background:#2AABEE;color:#fff}.mechip--tg:hover{background:#4FBDF2;color:#fff}"
+      + ".mechip--pf{display:inline-flex;align-items:center;gap:7px}"
+      + ".mechip--pf img{width:22px;height:22px;border-radius:50%;margin:-5px 0 -5px -7px;border:2px solid #0B0D04}"
       /* AND ON A PHONE THE NAME GIVES WAY TO THE MONEY. Even sharing one
          margin, the wordmark plus two chips is about 418px of a 375px row, so
          the masthead wrapped to three lines: 134px of a 667px screen spent on

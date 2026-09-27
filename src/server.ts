@@ -10,7 +10,7 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
-import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet } from "./store/markets.js";
+import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
@@ -71,7 +71,7 @@ import { ticketsLeft, spendTicketForMiss, spendTicketForTag, creditFundedBettor,
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice, devicesForWallets } from "./store/accounts.js";
+import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice, devicesForWallets, canonicalFor } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS, signInDomain } from "./auth/wallet.js";
 
@@ -1510,6 +1510,7 @@ function betNotifyDeps(): BetNotifyDeps {
     },
     dm: async (userId, text) => { if (tgOn) await TG.sendMessage(userId, text, null); },
     push: (wallets, payload) => pushToWallets(wallets, payload),
+    nameFor: (w) => publicNameForWallet(w),
     dryRun: TG_DRY_RUN,
     log,
   };
@@ -1537,12 +1538,19 @@ app.get("/api/notices", async (req, res) => {
     heads.set(slug, d ? foldIds(d.hook || d.question) : slug);
   }
   // The actor is a wallet, and a wallet is never printed: it is dropped here.
+  // Its owner's oddie name rides instead, only if they chose to show it.
+  const names = new Map<string, { username: string | null; avatar: string } | null>();
+  for (const a of new Set(rows.map((r) => r.actor))) names.set(a, await publicNameForWallet(a).catch(() => null));
   res.set("Cache-Control", "no-store").json({
     unseen,
-    items: rows.map((r) => ({
-      kind: r.kind, slug: r.slug, headline: heads.get(r.slug) ?? r.slug, url: `/m/${r.slug}`,
-      side: r.side, lamports: r.lamports, at: r.at, seen: r.seen,
-    })),
+    items: rows.map((r) => {
+      const n = names.get(r.actor);
+      return {
+        kind: r.kind, slug: r.slug, headline: heads.get(r.slug) ?? r.slug, url: `/m/${r.slug}`,
+        side: r.side, lamports: r.lamports, at: r.at, seen: r.seen,
+        by: n?.username ? { username: n.username, avatar: n.avatar } : null,
+      };
+    }),
   });
 });
 
@@ -2384,7 +2392,9 @@ app.get("/api/auth/me", async (req, res) => {
     { provider: "telegram", available: Boolean(TG.tgToken() && tgBotUsername) },
   ];
   if (!deviceId) return res.json({ accounts: [], providers });
-  res.json({ accounts: await accountsFor(deviceId), providers });
+  const me = await profileMe(deviceId).catch(() => null);
+  res.json({ accounts: await accountsFor(deviceId), providers,
+    profile: me ? { username: me.profile.username, avatar: me.profile.avatar } : null });
 });
 
 /**
@@ -2392,6 +2402,53 @@ app.get("/api/auth/me", async (req, res) => {
  * redirect_uri — the provider matches that URI byte for byte against what is
  * registered in its console, and a query string on it is a mismatch.
  */
+/**
+ * WHO THIS BROWSER IS ON ODDIE. A person signed in for the first time gets the
+ * handle they signed in with as their oddie name, when nobody else has it, and
+ * one of the twelve pictures; both can be changed on the profile.
+ */
+async function profileMe(deviceId: string): Promise<{ canonical: string; profile: OddieProfile } | null> {
+  const canonical = await canonicalFor(deviceId);
+  if (!canonical) return null;
+  const have = await profileFor(canonical);
+  if (have) return { canonical, profile: have };
+  const accts = await accountsFor(deviceId).catch(() => []);
+  const handles = ["twitter", "telegram"]
+    .map((p) => accts.find((a) => a.provider === p)?.handle)
+    .filter((h): h is string => Boolean(h))
+    .map(normUsername);
+  let username: string | null = null;
+  for (const h of handles) if ((await usernameState(h, canonical)) === "ok") { username = h; break; }
+  const saved = await saveProfile(canonical, { username, avatar: defaultAvatar(canonical) }).catch(() => null);
+  return { canonical, profile: saved && saved.ok ? saved.profile : { username: null, avatar: defaultAvatar(canonical), showName: false } };
+}
+
+app.get("/api/profile/me", async (req, res) => {
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  const me = deviceId ? await profileMe(deviceId).catch(() => null) : null;
+  res.set("Cache-Control", "no-store").json(me ? { signedIn: true, ...me.profile, avatars: AVATARS } : { signedIn: false, avatars: AVATARS });
+});
+
+app.post("/api/profile", express.json(), async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  const canonical = deviceId ? await canonicalFor(deviceId).catch(() => null) : null;
+  if (!canonical) return res.status(401).json({ error: "signed-out" });
+  const b = req.body ?? {};
+  const patch: { username?: string | null; avatar?: string; showName?: boolean } = {};
+  if (typeof b.username === "string" || b.username === null) patch.username = b.username;
+  if (typeof b.avatar === "string") patch.avatar = b.avatar;
+  if (typeof b.showName === "boolean") patch.showName = b.showName;
+  const out = await saveProfile(canonical, patch);
+  if (!out.ok) return res.status(out.error === "taken" ? 409 : 400).json({ error: out.error });
+  res.json({ ok: true, ...out.profile });
+});
+
+app.get("/api/profile/check", async (req, res) => {
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  const canonical = deviceId ? await canonicalFor(deviceId).catch(() => null) : null;
+  res.set("Cache-Control", "no-store").json({ state: await usernameState(String(req.query.username ?? ""), canonical) });
+});
+
 /**
  * "Continue with Telegram", part 1: a one-time link to the bot for this
  * browser, and the code the bot will repeat. Nothing is signed in here; the

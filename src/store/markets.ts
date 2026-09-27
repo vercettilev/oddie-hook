@@ -948,6 +948,19 @@ CREATE TABLE IF NOT EXISTS bet_notice (
 );
 CREATE INDEX IF NOT EXISTS bet_notice_wallet_idx ON bet_notice (wallet, at DESC);
 
+-- WHO A PERSON IS ON ODDIE: the name and the picture they chose, and whether
+-- their bets carry that name. Keyed on the canonical device, which is the
+-- person every identity (X, Telegram, wallets) of theirs already points at.
+-- Named oddie_profile because genesis_profile is something else entirely.
+CREATE TABLE IF NOT EXISTS oddie_profile (
+  canonical_device text PRIMARY KEY,
+  username   text,
+  avatar     text,
+  show_name  boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS oddie_profile_username_idx ON oddie_profile (lower(username)) WHERE username IS NOT NULL;
+
 -- PERMISSION TO KNOCK ON A DOOR.
 --
 -- The endpoint is the primary key because the browser owns it: one browser has
@@ -6955,6 +6968,137 @@ export function _resetPayoutNotices(): void { memPayoutNotices.length = 0; }
  * Best-effort by contract. The caller is the settlement path and no bookkeeping
  * failure may hold up money that has already moved on chain.
  */
+/* ------------------------------------------------------------ profiles -----
+ * A person's oddie name and picture, and the one switch that decides whether
+ * their bets carry that name. */
+export const AVATARS = ["a01", "a02", "a03", "a04", "a05", "a06", "a07", "a08", "a09", "a10", "a11", "a12"] as const;
+export const USERNAME_RE = /^[a-z0-9_]{3,15}$/;
+const RESERVED_NAMES = new Set([
+  "oddie", "oddiefun", "oddiefunbot", "oddiebot", "admin", "support", "help", "mod", "moderator", "team",
+  "official", "api", "app", "www", "root", "system", "null", "undefined", "someone", "anonymous", "profile",
+]);
+export interface OddieProfile { username: string | null; avatar: string; showName: boolean }
+export type UsernameState = "ok" | "invalid" | "reserved" | "taken";
+const memProfiles = new Map<string, OddieProfile>();
+
+/** Everybody has a picture from the first moment: one of the twelve, fixed by
+ *  who they are, until they choose another. */
+export function defaultAvatar(canonical: string): string {
+  let h = 0;
+  for (const ch of canonical) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATARS[h % AVATARS.length];
+}
+
+export const normUsername = (raw: string): string => String(raw ?? "").trim().replace(/^@+/, "").toLowerCase();
+
+export async function profileFor(canonical: string): Promise<OddieProfile | null> {
+  if (!canonical) return null;
+  if (!PERSISTENT) return memProfiles.get(canonical) ?? null;
+  await ensureSchema();
+  const { rows } = await db().query<{ username: string | null; avatar: string | null; show_name: boolean }>(
+    `SELECT username, avatar, show_name FROM oddie_profile WHERE canonical_device = $1`, [canonical]);
+  const r = rows[0];
+  return r ? { username: r.username, avatar: r.avatar ?? defaultAvatar(canonical), showName: r.show_name } : null;
+}
+
+/**
+ * Whether this person may take this name. Not "is it free" alone: a name that
+ * is somebody else's X or Telegram handle on oddie is theirs, or anybody could
+ * sign up as a well-known account and bet under its name.
+ */
+export async function usernameState(raw: string, canonical: string | null): Promise<UsernameState> {
+  const name = normUsername(raw);
+  if (!USERNAME_RE.test(name)) return "invalid";
+  if (RESERVED_NAMES.has(name)) return "reserved";
+  if (!PERSISTENT) {
+    for (const [c, p] of memProfiles) if (c !== canonical && p.username === name) return "taken";
+    return "ok";
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ kind: string }>(
+    `SELECT 'taken' AS kind FROM oddie_profile WHERE lower(username) = $1 AND canonical_device IS DISTINCT FROM $2
+     UNION ALL
+     SELECT 'reserved' FROM account WHERE provider IN ('twitter','telegram') AND lower(ltrim(handle, '@')) = $1
+        AND canonical_device IS DISTINCT FROM $2
+     LIMIT 1`,
+    [name, canonical],
+  );
+  return rows[0] ? (rows[0].kind as UsernameState) : "ok";
+}
+
+export async function saveProfile(
+  canonical: string, patch: { username?: string | null; avatar?: string; showName?: boolean },
+): Promise<{ ok: true; profile: OddieProfile } | { ok: false; error: Exclude<UsernameState, "ok"> | "invalid-avatar" }> {
+  const cur = (await profileFor(canonical)) ?? { username: null, avatar: defaultAvatar(canonical), showName: false };
+  const next: OddieProfile = { ...cur };
+  if (patch.username !== undefined) {
+    if (patch.username === null || patch.username === "") next.username = null;
+    else {
+      const st = await usernameState(patch.username, canonical);
+      if (st !== "ok") return { ok: false, error: st };
+      next.username = normUsername(patch.username);
+    }
+  }
+  if (patch.avatar !== undefined) {
+    if (!(AVATARS as readonly string[]).includes(patch.avatar)) return { ok: false, error: "invalid-avatar" };
+    next.avatar = patch.avatar;
+  }
+  if (patch.showName !== undefined) next.showName = Boolean(patch.showName);
+  if (!PERSISTENT) { memProfiles.set(canonical, next); return { ok: true, profile: next }; }
+  await ensureSchema();
+  try {
+    await db().query(
+      `INSERT INTO oddie_profile (canonical_device, username, avatar, show_name, updated_at) VALUES ($1,$2,$3,$4, now())
+       ON CONFLICT (canonical_device) DO UPDATE SET username = EXCLUDED.username, avatar = EXCLUDED.avatar,
+         show_name = EXCLUDED.show_name, updated_at = now()`,
+      [canonical, next.username, next.avatar, next.showName],
+    );
+  } catch (e) {
+    // Two people pressing Save on the same name at once: the index decides.
+    if ((e as { code?: string }).code === "23505") return { ok: false, error: "taken" };
+    throw e;
+  }
+  return { ok: true, profile: next };
+}
+
+/**
+ * The name a stake carries, or null. Only when its owner turned the switch on.
+ * A wallet belongs to a person either by a signature on one of their browsers
+ * (a phantom account row) or by being the wallet they chose on Telegram.
+ */
+export async function publicNameForWallet(wallet: string): Promise<
+  { username: string | null; tgHandle: string | null; xHandle: string | null; avatar: string } | null
+> {
+  if (!wallet) return null;
+  if (!PERSISTENT) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ canonical_device: string; username: string | null; avatar: string | null; show_name: boolean;
+    tg_handle: string | null; x_handle: string | null }>(
+    `WITH who AS (
+       SELECT canonical_device FROM account WHERE provider = 'phantom' AND provider_uid = $1
+       UNION
+       SELECT a.canonical_device FROM person pe
+         JOIN account a ON a.provider = 'telegram' AND a.provider_uid = substr(pe.id, 4)
+        WHERE pe.wallet = $1 AND pe.id LIKE 'tg:%'
+     )
+     SELECT p.canonical_device, p.username, p.avatar, p.show_name,
+            (SELECT handle FROM account WHERE canonical_device = p.canonical_device AND provider = 'telegram' ORDER BY created_at DESC LIMIT 1) AS tg_handle,
+            (SELECT handle FROM account WHERE canonical_device = p.canonical_device AND provider = 'twitter' ORDER BY created_at DESC LIMIT 1) AS x_handle
+       FROM oddie_profile p WHERE p.canonical_device IN (SELECT canonical_device FROM who) AND p.show_name
+      LIMIT 1`,
+    [wallet],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    username: r.username, avatar: r.avatar ?? defaultAvatar(r.canonical_device),
+    tgHandle: r.tg_handle ? r.tg_handle.replace(/^@+/, "") : null, xHandle: r.x_handle ? r.x_handle.replace(/^@+/, "") : null,
+  };
+}
+
+/** Test seam. */
+export function _resetProfiles(): void { memProfiles.clear(); }
+
 /* ------------------------------------------------------------- notices -----
  * Per-wallet activity: somebody took the other side of your bet, somebody bet
  * in the market you opened. Written when a stake is confirmed, read by the
