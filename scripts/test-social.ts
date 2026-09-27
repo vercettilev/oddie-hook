@@ -186,6 +186,10 @@ console.log("\nthe lines no memory test reaches");
   check("a stored side is read only through its owner's switch", /\(e\.kind = 'open' OR p\.show_name\)/.test(evs));
   check("the two pages exist", existsSync("public/app/person.html") && existsSync("public/app/following.html"));
   check("they live on the app host", /\(m\|market\|w\|u\)/.test(server) && /\|following\)/.test(server));
+  const marketPage = readFileSync("public/app/market.html", "utf8");
+  check("the market page offers the open side only while it can be taken",
+    /if \(oneSided && !resolved && !closed\) \{/.test(marketPage));
+  check("...and so does the unfurl", /shut\s*\n?\s*\? `\$\{solText\(view\.totalLamports\)\} SOL on \$\{onYes \? "YES" : "NO"\}\. Betting is closed/.test(server));
   for (const f of ["markets", "market", "you", "leaderboard", "who", "person", "following"]) {
     check(`Following is in the nav on ${f}`, readFileSync(`public/app/${f}.html`, "utf8").includes('<a href="/following"'));
   }

@@ -616,8 +616,12 @@ export function renderCard(
      copy on the one surface that leaves the product. */
   const heads = Math.max(0, Math.floor(opts.stakers ?? 0));
   const odds = `${udSide} pays ${mult}\u00d7`;
+  // Past its close nobody can take the open side, so it is not offered.
+  const closedNow = Boolean(m.closesAt) && new Date(m.closesAt as string).getTime() <= Date.now();
   const metaText = settled
     ? "settled on chain"
+    : oneSided && closedNow
+      ? "betting closed"
     : oneSided
       // The side that is open, as the group message and the unfurl say it.
       ? `${(opts.pools?.yes ?? 0) > 0 ? "NO" : "YES"} is wide open`

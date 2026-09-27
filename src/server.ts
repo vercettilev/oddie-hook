@@ -754,7 +754,11 @@ async function marketShellHtml(slug: string, question: string): Promise<string> 
       } else if (view.state === "one-sided") {
         // Said the way the group message says it: the side that is open.
         const onYes = read.state.totalYesLamports > 0;
-        desc = `${solText(view.totalLamports)} SOL on ${onYes ? "YES" : "NO"}. ${onYes ? "NO" : "YES"} is wide open.`;
+        // After the close the open side is no longer open to anybody.
+        const shut = Boolean(detail?.closesAt) && new Date(detail!.closesAt as string).getTime() <= Date.now();
+        desc = shut
+          ? `${solText(view.totalLamports)} SOL on ${onYes ? "YES" : "NO"}. Betting is closed; the result is on its way.`
+          : `${solText(view.totalLamports)} SOL on ${onYes ? "YES" : "NO"}. ${onYes ? "NO" : "YES"} is wide open.`;
       } else {
         desc = "Both sides are open. The first stake sets the price.";
       }

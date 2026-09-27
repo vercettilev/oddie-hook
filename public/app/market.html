@@ -989,7 +989,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
         + (heads >= MIN_HEADS_LIST ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
         + '<div class="bar" role="img" aria-label="' + yp + ' percent yes, ' + (100 - yp) + ' percent no">'
         + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div></div>';
-      if (oneSided) {
+      // Only while somebody can still take it: a closed or settled market has
+      // no open side to offer.
+      if (oneSided && !resolved && !closed) {
         html += '<p class="first"><img src="/brand/st-rocket.webp" alt="">'
           // Bold the subject, plain the predicate -- the same split as "First one
           // in sets the odds." two branches up. .first is a flex row and the gap

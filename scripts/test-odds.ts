@@ -89,6 +89,10 @@ const mkt = {
   check("...said for the other way round too",
     /YES is wide open/.test(renderCard(mkt, { pools: { yes: 0, no: 0.5 * SOL, creatorFeeBps: 200 } })));
   check("...and prints no percentage hero", !/>\d+%</.test(svg), (svg.match(/>\d+%</) || [""])[0]);
+  // Past its close nobody can take the open side, so the card stops offering it.
+  const shut = { ...mkt, closesAt: new Date(Date.now() - 3600_000).toISOString() } as Market;
+  const closedSvg = renderCard(shut, { pools: { yes: 0.5 * SOL, no: 0, creatorFeeBps: 200 } });
+  check("a closed one-sided card offers no open side", !/wide open/.test(closedSvg) && /betting closed/.test(closedSvg));
 }
 {
   const svg = renderCard(mkt, { pools: { yes: 1 * SOL, no: 3 * SOL, creatorFeeBps: 200 } });
