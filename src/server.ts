@@ -11,7 +11,7 @@ import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet } from "./store/markets.js";
-import { postTelegramResolution, threadsFrom } from "./telegram/resolution.js";
+import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -719,7 +719,15 @@ async function marketShellHtml(slug: string, question: string): Promise<string> 
     ? await readMarket(detail.onchainPubkey, { maxAgeMs: 10_000 }).catch((): MarketRead => ({ ok: false, reason: "unreadable", error: "read threw" }))
     : ({ ok: false, reason: "absent" } as MarketRead);
   let desc = "Real money on Solana. Call it YES or NO.";
+  /* THE IMAGE URL CARRIES THE POOL. Unfurlers keep an image by its URL, so a
+     card fetched when the market opened was shown again under a message
+     announcing its first stake: "first in sets the line" over a market that
+     had just been set. A new pool is a new URL; the route ignores the query. */
+  let imgVersion = "";
   if (read.ok) {
+    imgVersion = read.state.resolved && read.state.winningSide
+      ? `?r=${read.state.winningSide}`
+      : `?p=${read.state.totalYesLamports}-${read.state.totalNoLamports}`;
     if (read.state.resolved && read.state.winningSide) {
       desc = `Resolved ${read.state.winningSide.toUpperCase()}. Settled on Solana.`;
     } else {
@@ -737,13 +745,15 @@ async function marketShellHtml(slug: string, question: string): Promise<string> 
       if (view.state === "priced") {
         desc = `${sol(view.totalLamports)} SOL in the pool, ${view.yesPct}% yes right now.`;
       } else if (view.state === "one-sided") {
-        desc = `${sol(view.totalLamports)} SOL in the pool. Nobody has taken the other side yet.`;
+        // Said the way the group message says it: the side that is open.
+        const onYes = read.state.totalYesLamports > 0;
+        desc = `${solText(view.totalLamports)} SOL on ${onYes ? "YES" : "NO"}. ${onYes ? "NO" : "YES"} is wide open.`;
       } else {
-        desc = "No one has backed a side yet. The first stake sets the price.";
+        desc = "Both sides are open. The first stake sets the price.";
       }
     }
   }
-  const img = `${BASE_URL}/card/${slug}.png`;
+  const img = `${BASE_URL}/card/${slug}.png${imgVersion}`;
   const url = `${BASE_URL}/m/${slug}`;
   const tags = [
     `<link rel="canonical" href="${ogEsc(url)}">`,
@@ -5160,6 +5170,8 @@ if (realStakesReady) {
           slug, wallet: stake.user, side: stake.side,
           entryPct: entryShareOf(crowdBefore, stake.side), lamports: stake.lamports,
         });
+        // The cached card shows the pool before this stake; the next fetch draws the new one.
+        pngCache.delete(slug);
         // The Genesis board's ONLY number: a wallet that had never funded
         // anything before is a new human, credited to whoever's tag got them
         // here. The wallet's owner rides along so the ledger can enforce the

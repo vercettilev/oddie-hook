@@ -153,6 +153,11 @@ console.log("\nwired into the money path");
   check("a confirmed stake, and only a confirmed one, is announced", /await onBetLanded\(\{/.test(confirmed));
   const api = server.slice(server.indexOf('app.get("/api/notices"'), server.indexOf('app.post("/api/notices/seen"'));
   check("the Activity API never sends the wallet that staked", !/actor:/.test(api));
+  const confirmedBlock = confirmed.slice(confirmed.indexOf("await recordChainEntry"));
+  check("a confirmed stake drops the cached card, so the next unfurl shows it", /pngCache\.delete\(slug\);/.test(confirmedBlock));
+  const shell = server.slice(server.indexOf("async function marketShellHtml"), server.indexOf("async function marketShellHtml") + 4000);
+  check("the preview image URL changes with the pool", /card\/\$\{slug\}\.png\$\{imgVersion\}/.test(shell) && /\?p=\$\{read\.state\.totalYesLamports\}/.test(shell));
+  check("the preview says the open side, never who is missing", !/Nobody has|No one has/.test(shell) && /is wide open/.test(shell));
   const store = readFileSync("src/store/markets.ts", "utf8");
   check("notices live in their own table, not the play-money era's `notice`",
     /CREATE TABLE IF NOT EXISTS bet_notice \(/.test(store) && /INSERT INTO bet_notice/.test(store));
