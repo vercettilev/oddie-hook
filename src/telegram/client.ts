@@ -102,9 +102,18 @@ export interface TgMessage {
   guest_query_id?: string;
 }
 
+/** A tap on a button the bot sent. Its data is ours, set when the button was. */
+export interface TgCallbackQuery {
+  id: string;
+  from: TgUser;
+  message?: TgMessage;
+  data?: string;
+}
+
 export interface TgUpdate {
   update_id: number;
   message?: TgMessage;
+  callback_query?: TgCallbackQuery;
   /** GUEST MODE (Bot API 10.0): the bot was tagged in a chat it is not a member
    *  of, a private chat between two people included. It gets this message and
    *  the one it replied to, and may answer once. */
@@ -137,7 +146,7 @@ export async function getMe(): Promise<TgUser> {
 export async function getUpdates(offset: number | null, timeoutSec = 25): Promise<TgUpdate[]> {
   return call<TgUpdate[]>(
     "getUpdates",
-    { ...(offset !== null ? { offset } : {}), timeout: timeoutSec, allowed_updates: ["message", "guest_message"] },
+    { ...(offset !== null ? { offset } : {}), timeout: timeoutSec, allowed_updates: ["message", "guest_message", "callback_query"] },
     (timeoutSec + 10) * 1000,
   );
 }
@@ -150,17 +159,33 @@ const replyTo = (messageId: number) => ({
   reply_parameters: { message_id: messageId, allow_sending_without_reply: true },
 });
 
+export type TgButton = { text: string; url: string } | { text: string; callback: string };
+
 export async function sendMessage(
-  chatId: number, text: string, replyToId: number | null, button?: { text: string; url: string } | null,
+  chatId: number, text: string, replyToId: number | null, button?: TgButton | null,
 ): Promise<SentMessage> {
+  const key = button && "url" in button ? { text: button.text, url: button.url }
+    : button ? { text: button.text, callback_data: button.callback } : null;
   return call<SentMessage>("sendMessage", {
     chat_id: chatId,
     text,
     ...(replyToId ? replyTo(replyToId) : {}),
     // A link in the text would unfurl a second card under every ping; the
     // button carries the link without one.
-    ...(button ? { reply_markup: { inline_keyboard: [[{ text: button.text, url: button.url }]] }, link_preview_options: { is_disabled: true } } : {}),
+    ...(key ? { reply_markup: { inline_keyboard: [[key]] }, link_preview_options: { is_disabled: true } } : {}),
   });
+}
+
+/** The small confirmation Telegram shows on the tapping person's screen. Every
+ *  callback must be answered, or their button spins. */
+export async function answerCallbackQuery(id: string, text?: string): Promise<void> {
+  await call<boolean>("answerCallbackQuery", { callback_query_id: id, ...(text ? { text } : {}) });
+}
+
+/** Rewrite one of the bot's own messages in a chat it is in. With no keyboard
+ *  given, the old one is removed: a spent button must not stay tappable. */
+export async function editMessage(chatId: number, messageId: number, text: string): Promise<void> {
+  await call<unknown>("editMessageText", { chat_id: chatId, message_id: messageId, text });
 }
 
 /** Telegram fetches the photo from the URL itself. */

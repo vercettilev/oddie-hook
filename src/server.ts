@@ -13,6 +13,7 @@ import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMent
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
+import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
@@ -2380,6 +2381,7 @@ app.get("/api/auth/me", async (req, res) => {
   const providers = [
     ...PROVIDERS.map((p) => ({ provider: p as string, available: isConfigured(p) })),
     { provider: "phantom", available: true },
+    { provider: "telegram", available: Boolean(TG.tgToken() && tgBotUsername) },
   ];
   if (!deviceId) return res.json({ accounts: [], providers });
   res.json({ accounts: await accountsFor(deviceId), providers });
@@ -2390,6 +2392,28 @@ app.get("/api/auth/me", async (req, res) => {
  * redirect_uri — the provider matches that URI byte for byte against what is
  * registered in its console, and a query string on it is a mismatch.
  */
+/**
+ * "Continue with Telegram", part 1: a one-time link to the bot for this
+ * browser, and the code the bot will repeat. Nothing is signed in here; the
+ * person's Yes in their own chat with the bot does that. See telegram/login.ts.
+ */
+app.post("/api/auth/telegram/start", express.json(), (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+  if (!TG.tgToken() || !tgBotUsername) return res.status(503).json({ error: "off" });
+  const { nonce, code } = startTgLogin(deviceId, describeBrowser(String(req.headers["user-agent"] ?? "")));
+  res.set("Cache-Control", "no-store").json({ link: `https://t.me/${tgBotUsername}?start=login_${nonce}`, code, nonce });
+});
+
+/** Part 2: the page asking whether the Yes has happened. Only the browser that
+ *  asked can read its own sign-in. */
+app.get("/api/auth/telegram/status", (req, res) => {
+  const nonce = String(req.query.nonce ?? "");
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  if (!/^[a-f0-9]{32}$/.test(nonce) || !deviceId) return res.status(400).json({ error: "bad request" });
+  res.set("Cache-Control", "no-store").json(tgLoginStatus(nonce, deviceId));
+});
+
 /**
  * Wallet sign-in, part 1: hand out something to sign.
  *
@@ -5960,6 +5984,25 @@ async function startTelegram(): Promise<void> {
     guestTriesToday: (author) => tgGuestTriesToday(author),
     guestDailyTries: TG_GUEST_TRIES_PER_DAY,
     rememberPerson: (platformId, handle) => rememberPerson("tg", platformId, handle),
+    loginAsk: async (nonce, user) => askTgLogin(nonce, user),
+    loginConfirm: async (nonce, user) => {
+      const ok = confirmTgLogin(nonce, user);
+      if (!ok) return false;
+      try {
+        await linkAccount(ok.deviceId, {
+          provider: "telegram", uid: String(user.id), handle: user.username ?? null, name: user.first_name ?? null,
+        });
+        await rememberPerson("tg", String(user.id), user.username ?? null).catch(() => null);
+        log("telegram sign-in", { person: `tg:${user.id}` });
+        return true;
+      } catch (e) {
+        log("telegram sign-in failed", { err: (e as Error).message });
+        return false;
+      }
+    },
+    sendPrompt: async (chatId, text, button) => { await TG.sendMessage(chatId, text, null, button); },
+    answerCallback: (id, text) => TG.answerCallbackQuery(id, text),
+    editMessage: (chatId, messageId, text) => TG.editMessage(chatId, messageId, text),
     earnLink: (tgUserId) => tgEarnLink(tgUserId),
     openedToday: (author) => tgOpenedToday(author),
     dailyCap: TG_MARKETS_PER_DAY,

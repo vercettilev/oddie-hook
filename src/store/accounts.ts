@@ -20,7 +20,8 @@ import { getWallet } from "./markets.js";
 // account is a (provider, uid) pair pointing at a canonical device, and a
 // wallet address is as good a uid as Google's `sub`. See src/auth/wallet.ts for
 // how the identity is proved before it gets here.
-export type Provider = "google" | "twitter" | "phantom";
+/** telegram: signed in through the bot's own chat (src/telegram/login.ts). */
+export type Provider = "google" | "twitter" | "phantom" | "telegram";
 
 export interface Identity {
   provider: Provider;

@@ -46,7 +46,7 @@ import type { Extraction } from "../matching/extractClaim.js";
 import type { PriceClaim } from "../price/index.js";
 import type { MintResult } from "../x/mentionLoop.js";
 import { createHash } from "node:crypto";
-import type { GuestContent, TgMessage, TgUpdate } from "./client.js";
+import type { GuestContent, TgCallbackQuery, TgMessage, TgUpdate, TgUser } from "./client.js";
 import { buildTweetReply } from "../matching/tweetReply.js";
 import { claimMention, settleMention, botStateGet, botStateSet } from "../store/markets.js";
 
@@ -77,6 +77,15 @@ export interface TgSweepDeps {
   guestAnswer?(guestQueryId: string, content: GuestContent): Promise<string>;
   /** Rewrite that reply in place. */
   guestEdit?(inlineMessageId: string, content: GuestContent): Promise<void>;
+  /** "Continue with Telegram": the bot was opened from a sign-in link. What
+   *  to show the person, or null when the link is unknown or expired. */
+  loginAsk?(nonce: string, user: TgUser): Promise<{ code: string; asking: string } | null>;
+  /** Their Yes. True when a browser was signed in. */
+  loginConfirm?(nonce: string, user: TgUser): Promise<boolean>;
+  /** One message with one tappable button, in this person's chat with the bot. */
+  sendPrompt?(chatId: number, text: string, button: { text: string; callback: string }): Promise<void>;
+  answerCallback?(id: string, text?: string): Promise<void>;
+  editMessage?(chatId: number, messageId: number, text: string): Promise<void>;
   /** Guest tags from this person in the last day, and how many they get. */
   guestTriesToday?(author: string): Promise<number>;
   guestDailyTries?: number;
@@ -185,6 +194,13 @@ export const TG_COPY = {
      passing outage is said as the next step rather than retried. */
   later: "Tag me again in a minute and I'll open it.",
   guestCap: "That's plenty from you today. Tag me again tomorrow.",
+  /* Signing a browser in. The code is on the page too: it is how a person
+     knows the browser asking is the one in front of them. */
+  loginAsk: (asking: string, code: string) =>
+    `Sign in to oddie on ${asking}?\n\nCode ${code}, the same as on the page.\n\nTap only if you just pressed Continue with Telegram yourself.`,
+  loginYes: "Yes, sign me in",
+  loginDone: "Signed in. You can go back to oddie.",
+  loginExpired: "That sign-in link has expired. Press Continue with Telegram on oddie again.",
   /* Where the 2% is collected. Sent ONLY in a private chat: the URL binds a
      wallet to this person's markets, so in a group anybody could take it. */
   earn: (link: string) =>
@@ -203,6 +219,23 @@ export const tgDisplayName = (u: { username?: string; first_name: string }): str
   u.username ? `@${u.username}` : u.first_name;
 
 const EARN_COMMAND = /^\/(?:start\s+earn|earn|wallet|collect)\b/i;
+const LOGIN_COMMAND = /^\/start\s+login_([a-f0-9]{32})$/i;
+const LOGIN_CALLBACK = /^login:([a-f0-9]{32})$/;
+
+/**
+ * A tap on the sign-in button. Answered whatever happens: an unanswered
+ * callback leaves the person's button spinning. The prompt is then rewritten,
+ * so a spent button cannot be tapped again.
+ */
+async function handleCallback(cq: TgCallbackQuery, deps: TgSweepDeps): Promise<void> {
+  const m = LOGIN_CALLBACK.exec(cq.data ?? "");
+  if (!m || !deps.loginConfirm) { await deps.answerCallback?.(cq.id); return; }
+  const ok = await deps.loginConfirm(m[1], cq.from).catch(() => false);
+  await deps.answerCallback?.(cq.id, ok ? "Signed in" : "This sign-in has expired").catch(() => {});
+  if (cq.message) {
+    await deps.editMessage?.(cq.message.chat.id, cq.message.message_id, ok ? TG_COPY.loginDone : TG_COPY.loginExpired).catch(() => {});
+  }
+}
 
 /* ---------------------------------------------------------------- sweep -- */
 
@@ -220,6 +253,10 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
 
   for (const u of updates) {
     maxId = Math.max(maxId, u.update_id);
+    if (u.callback_query) {
+      if (!deps.dryRun) await handleCallback(u.callback_query, deps).catch((e) => log("callback failed", { err: (e as Error).message }));
+      continue;
+    }
     const guest = u.guest_message ?? null;
     const msg = u.message ?? guest;
     if (!msg || !msg.from || msg.from.is_bot) continue;
@@ -288,6 +325,22 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         /* /start earn is what the deep link under a market sends, and /earn is
            the same thing typed. Telegram guarantees msg.from is the person in
            this chat, which is what lets the link be bound to them. */
+        /* A SIGN-IN LINK asks, and never signs in by itself: the button does.
+           See src/telegram/login.ts for why the tap is the consent. */
+        const login = LOGIN_COMMAND.exec((msg.text ?? "").trim());
+        if (login) {
+          const ask = deps.loginAsk ? await deps.loginAsk(login[1], msg.from).catch(() => null) : null;
+          if (ask && deps.sendPrompt && !deps.dryRun) {
+            postAttempted = true;
+            await deps.sendPrompt(msg.chat.id, TG_COPY.loginAsk(ask.asking, ask.code),
+              { text: TG_COPY.loginYes, callback: `login:${login[1]}` });
+          } else {
+            await answer(TG_COPY.loginExpired, null);
+          }
+          await settleMention(key, "skipped", { reason: "login" });
+          decide("skipped", { reason: "login" });
+          continue;
+        }
         const wantsEarn = EARN_COMMAND.test((msg.text ?? "").trim());
         if (wantsEarn) {
           const link = deps.earnLink ? deps.earnLink(msg.from.id) : null;

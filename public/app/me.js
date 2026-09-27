@@ -23,9 +23,9 @@
   // Default to the ask. If the fetch never answers, an invitation is a better
   // wrong answer than a blank space or a name we cannot prove.
   a.className = "mechip mechip--go mechip--me";
-  a.textContent = "Connect X";
-  a.href = "/api/auth/twitter/start?deviceId=" + encodeURIComponent(did)
-         + "&return=" + encodeURIComponent(location.pathname);
+  // Two ways in now, X and Telegram, and both live on the profile.
+  a.textContent = "Sign in";
+  a.href = "/profile#accounts";
 
   // One request, published for whoever else needs it. window.OddieMe always
   // settles: pages await it rather than opening a second identical call, and a
@@ -38,9 +38,11 @@
 
   window.OddieMe
     .then(function (j) {
-      var tw = (j.accounts || []).filter(function (x) { return x.provider === "twitter"; })[0];
+      var accts = j.accounts || [];
+      var tw = accts.filter(function (x) { return x.provider === "twitter" && x.handle; })[0]
+        || accts.filter(function (x) { return x.provider === "telegram" && x.handle; })[0];
       if (!tw || !tw.handle) return;
-      a.className = "mechip mechip--me";
+      a.className = "mechip mechip--me" + (tw.provider === "telegram" ? " mechip--tg" : "");
       a.textContent = "@" + String(tw.handle).replace(/^@+/, "");
       a.href = "/profile";
     });
@@ -77,6 +79,8 @@
       // Activity in the markets you are in: somebody took the other side.
       + ".mechip--new{background:#D7DC1F;color:#0B0D04;box-shadow:3px 3px 0 #5A6109}"
       + ".mechip--new:hover{background:#E7EC4E;color:#0B0D04}"
+      // A Telegram name wears Telegram's blue, as it does on the market page.
+      + ".mechip--tg{background:#2AABEE;color:#fff}.mechip--tg:hover{background:#4FBDF2;color:#fff}"
       /* AND ON A PHONE THE NAME GIVES WAY TO THE MONEY. Even sharing one
          margin, the wordmark plus two chips is about 418px of a 375px row, so
          the masthead wrapped to three lines: 134px of a 667px screen spent on

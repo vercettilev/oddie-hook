@@ -358,6 +358,26 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .payout .go:hover{background:#000;color:var(--yellow-hi)}
 .payout .go:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
+/* TWO DOORS IN, side by side: X and Telegram are equals. */
+.gate .gate__ways{grid-column:2;justify-self:start;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.big--tg{background:#2AABEE;color:#fff;text-decoration:none}
+.big--tg:hover:not(:disabled){background:#4FBDF2;color:#fff}
+.big[hidden]{display:none}
+.tglogin-note{flex-basis:100%;margin:4px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
+  letter-spacing:.06em;color:var(--fg-2)}
+@media (max-width:700px){ .gate .gate__ways{grid-column:auto;justify-self:center;justify-content:center} }
+/* ACCOUNTS: the names on this account, and a way to add the other one. */
+.accts{margin:6px 0 22px}
+.accts__row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.acct{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--fg-3);border:2px solid var(--line);padding:7px 10px}
+.acct b{color:var(--fg);text-transform:none;letter-spacing:.02em}
+.acct--tg b{color:#4FBDF2}
+.acct-add{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink);background:var(--yellow);border:2px solid var(--black);padding:8px 12px;text-decoration:none}
+.acct-add--tg{background:#2AABEE;color:#fff}
+.acct-add[hidden]{display:none}
+
 /* ACTIVITY: what other people did in the markets you are in. A list, not a
    set of stickers: these are events, not facts about you, and the unseen ones
    carry a pink edge until this page has shown them. */
@@ -504,6 +524,13 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        page could show a control for a wallet it had already forgotten. Out
        here nothing rewrites them; each is unhidden only when it has something
        to undo. -->
+  <!-- THE NAMES ON THIS ACCOUNT, AND THE ONES YOU CAN ADD. One oddie account,
+       X and Telegram on it: this is where the second one is added, and where
+       the masthead's Sign in leads when neither is. -->
+  <section class="accts" id="accounts" hidden>
+    <h2>Accounts</h2>
+    <div class="accts__row" id="acctsrow"></div>
+  </section>
   <p class="wayout">
     <button class="wayout__b" id="idout" type="button" hidden>Sign out</button>
     <button class="wayout__b" id="wout" type="button" hidden>Disconnect wallet</button>
@@ -513,6 +540,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 <link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
 <script src="/app/push.js"></script>
+<script src="/app/tglogin.js"></script>
 <script src="/app/me.js"></script>
 <script src="/chain.js"></script>
 <script>
@@ -542,7 +570,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      a row on the same device, so the label promises a sign-out and not an
      X-only one. */
   (window.OddieMe || Promise.resolve({ accounts: [] })).then(function (me) {
-    var tw = ((me && me.accounts) || []).filter(function (a) { return a.provider === "twitter"; })[0];
+    var accts = (me && me.accounts) || [];
+    // X first, Telegram when there is no X: either is the name on the calls.
+    var tw = accts.filter(function (a) { return a.provider === "twitter" && a.handle; })[0]
+      || accts.filter(function (a) { return a.provider === "telegram" && a.handle; })[0];
     if (!tw || !tw.handle) return;
     // The heading IS the name now. Written into its own span so the sticker
     // beside it survives, which a plain h1.textContent would have eaten.
@@ -561,6 +592,24 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       }).then(function () { location.href = "/profile"; })
         .catch(function () { location.href = "/profile"; });
     }, { once: true });
+  });
+
+  (window.OddieMe || Promise.resolve({ accounts: [] })).then(function (me) {
+    var did = (window.OddieId && window.OddieId.get()) || "";
+    var box = document.getElementById("accounts"), row = document.getElementById("acctsrow");
+    if (!did || !box || !row) return;
+    var accts = (me && me.accounts) || [];
+    var x = accts.filter(function (a) { return a.provider === "twitter"; })[0];
+    var tg = accts.filter(function (a) { return a.provider === "telegram"; })[0];
+    var at = function (h) { return "@" + esc(String(h).replace(/^@+/, "")); };
+    row.innerHTML = (x
+      ? '<span class="acct">X <b>' + (x.handle ? at(x.handle) : "connected") + "</b></span>"
+      : '<a class="acct-add" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fprofile">Add X</a>')
+      + (tg
+        ? '<span class="acct acct--tg">Telegram <b>' + (tg.handle ? at(tg.handle) : "connected") + "</b></span>"
+        : '<a class="acct-add acct-add--tg" id="accttg" hidden>Add Telegram</a>');
+    box.hidden = false;
+    if (!tg && window.OddieTgLogin) window.OddieTgLogin.prepare(document.getElementById("accttg"));
   });
 
   function esc(s) {
@@ -602,10 +651,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          about who the reader turns out to be. */
       + '<img class="gsticker" src="/brand/st-tag.webp" alt="">'
       + "<p>Your calls, under your name. The wallet comes later.</p>"
+      + '<div class="gate__ways">'
       + '<a class="big" id="xconnect" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did)
       + '&return=%2Fprofile">Continue with X</a>'
+      + '<a class="big big--tg" id="tglogin" hidden>Continue with Telegram</a>'
+      + "</div>"
       + '<button class="later" id="later" type="button">I\'ll do this later</button>'
       + "</div>";
+    if (window.OddieTgLogin) window.OddieTgLogin.prepare(document.getElementById("tglogin"));
     // "Later" here means: go straight to the wallet. The page is wallet-scoped
     // anyway; X only adds the name. Remembered for a week, cross-host.
     document.getElementById("later").addEventListener("click", function () {
@@ -1437,7 +1490,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       // Gate closed and no X on this device: ask for X. An unreachable
       // /api/auth/me is NOT treated as "no X" — that would lock out somebody
       // who is connected because a request blinked — so the page proceeds.
-      var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
+      // Either name counts: a person signed in with Telegram is not asked for X.
+      var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter" || a.provider === "telegram"; });
       HAS_X = !!(me && Array.isArray(me.accounts) && me.accounts.some(function (a) { return a.provider === "twitter"; }));
       /* "tg" is left by the Telegram collect page. Somebody who arrived from
          Telegram has a name already and never came here through X, so the X

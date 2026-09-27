@@ -923,7 +923,8 @@ function b64ToBytes(b64) {
     try {
       const r = await fetch(`/api/auth/me?deviceId=${encodeURIComponent(did)}`);
       const j = await r.json();
-      if (Array.isArray(j.accounts) && j.accounts.some((a) => a.provider === "twitter")) return;
+      // Named already, by X or by Telegram.
+      if (Array.isArray(j.accounts) && j.accounts.some((a) => a.provider === "twitter" || a.provider === "telegram")) return;
       const back = encodeURIComponent(location.pathname);
       host.innerHTML = `<p class="cnote chain-name">This call is on chain as <b>${wallet ? shortAddr(wallet.publicKey) : "your wallet"}</b>.
         <a class="chain-name__x" href="/api/auth/twitter/start?deviceId=${encodeURIComponent(did)}&return=${back}">Put your name on it with X &rarr;</a></p>`;

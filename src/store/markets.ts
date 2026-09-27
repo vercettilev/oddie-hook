@@ -184,7 +184,7 @@ CREATE INDEX IF NOT EXISTS event_name_at_idx ON event(name, at);
 -- devices a person signs in from.
 CREATE TABLE IF NOT EXISTS account (
   id               bigserial PRIMARY KEY,
-  provider         text NOT NULL CHECK (provider IN ('google','twitter','phantom')),
+  provider         text NOT NULL CHECK (provider IN ('google','twitter','phantom','telegram')),
   provider_uid     text NOT NULL,
   handle           text,
   display_name     text,
@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS account (
 -- guarded: the statement is then correct whatever state the constraint is in,
 -- and the account table is small enough that revalidating it on boot is free.
 ALTER TABLE account DROP CONSTRAINT IF EXISTS account_provider_check;
-ALTER TABLE account ADD CONSTRAINT account_provider_check CHECK (provider IN ('google','twitter','phantom'));
+ALTER TABLE account ADD CONSTRAINT account_provider_check CHECK (provider IN ('google','twitter','phantom','telegram'));
 
 CREATE TABLE IF NOT EXISTS device_account (
   device_id  text PRIMARY KEY,

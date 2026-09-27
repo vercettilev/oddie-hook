@@ -531,7 +531,9 @@ function guestHarness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}) {
     /url: isWebSourceUrl\(src\.sourceUrl\) \? src\.sourceUrl : null/.test(server));
   check("...and so does the public market list",
     /sourceUrl: isWebSourceUrl\(openers\[m\.slug\]\?\.sourceUrl\)/.test(server));
-  check("guest updates are asked for", readFileSync("src/telegram/client.ts", "utf8").includes('allowed_updates: ["message", "guest_message"]'));
+  const allowed = /allowed_updates: \[([^\]]*)\]/.exec(readFileSync("src/telegram/client.ts", "utf8"))?.[1] ?? "";
+  check("guest updates are asked for", allowed.includes('"guest_message"'), allowed);
+  check("...and taps on the bot's buttons", allowed.includes('"callback_query"'), allowed);
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall telegram checks passed.\n");

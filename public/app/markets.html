@@ -344,9 +344,17 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .big--2l .big__main{display:block}
 .big--2l small{display:block;margin-top:6px;font-family:var(--mono);font-size:11px;
   font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--yellow-deep)}
+/* The two ways in, side by side: X and Telegram are equals here. */
+.gate__ways{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+.big--tg{background:#2AABEE;color:#fff}
+.big--tg:hover{background:#4FBDF2;color:#fff}
+.big[hidden]{display:none}
+.tglogin-note{flex-basis:100%;margin:4px 0 0;font-family:var(--mono);font-size:12px;
+  font-weight:700;letter-spacing:.06em;color:var(--fg-2)}
 @media (max-width:560px){
   .gate{grid-template-columns:1fr;gap:10px;justify-items:center;text-align:center}
   .gate .big,.gate .later{justify-self:center}
+  .gate__ways{justify-content:center}
   .big--2l{text-align:center}
 }
 
@@ -447,6 +455,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 <link rel="stylesheet" href="/app/money.css">
 <script src="/app/id.js"></script>
 <script src="/app/push.js"></script>
+<script src="/app/tglogin.js"></script>
 <script src="/app/me.js"></script>
 <!-- Para tabakasi. market.html ile AYNI dosya: feed'de bahis alan sheet ile
      market sayfasindaki sheet ayni kod olmali, yoksa iki yerde iki farkli
@@ -529,11 +538,18 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     // way to put the ask away.
     var g = document.createElement("div");
     g.className = "gate";
-    g.innerHTML = '<a class="big big--2l" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">'
+    g.innerHTML = '<div class="gate__ways">'
+      + '<a class="big big--2l" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did) + '&return=%2Fmarkets">'
       + '<span class="big__main">Continue with X</span>'
       + '<small>Your handle on every call, not a wallet address</small></a>'
+      // Telegram is the other door in: the bot is where half of these
+      // markets are opened. Hidden until its link is ready.
+      + '<a class="big big--2l big--tg" id="tglogin" hidden><span class="big__main">Continue with Telegram</span>'
+      + '<small style="color:rgba(255,255,255,.8)">Your @name, from the chat you already use</small></a>'
+      + '</div>'
       + '<button class="later" id="later" type="button">Not now</button>';
     view.appendChild(g);
+    if (window.OddieTgLogin) window.OddieTgLogin.prepare(document.getElementById("tglogin"));
     // Skipping is a first-class outcome, not a failure. Remembered for a week
     // on the cross-host cookie so the next page is not the same question; the
     // ask comes back where it pays, after a call lands.
@@ -551,7 +567,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   who.then(function (me) {
     // An unreachable /api/auth/me is not "no X": the list still renders rather
     // than locking out somebody who is connected because a request blinked.
-    var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter"; });
+    // A name is a name: X or Telegram, either one is the person behind the calls.
+    var hasX = !me || !Array.isArray(me.accounts) || me.accounts.some(function (a) { return a.provider === "twitter" || a.provider === "telegram"; });
     var skipped = !!(window.OddieId && window.OddieId.recall && window.OddieId.recall("xlater"));
     /* THE MARKETS COME FIRST, ALWAYS. This used to RETURN xgate(), so a
        stranger's first screen was a sign-up card and the product was behind it.
