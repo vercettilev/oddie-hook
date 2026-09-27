@@ -6371,6 +6371,32 @@ export async function claimMention(tweetId: string, author: string | null): Prom
 }
 
 /**
+ * Telegram tags parked while the model was out, by a process that has since
+ * stopped: their notes still say "shortly". Only rows from before `before`
+ * (this process's start), so a tag parked by this process is never taken back.
+ */
+export async function parkedMentionRows(before: Date): Promise<Array<{ key: string; replyId: string | null }>> {
+  if (!PERSISTENT) return [];
+  await ensureSchema();
+  const { rows } = await db().query<{ tweet_id: string; reply_id: string | null }>(
+    `SELECT tweet_id, reply_id FROM x_mention
+      WHERE outcome = 'failed' AND reason LIKE 'parked:%' AND tweet_id LIKE 'tg%'
+        AND at < $1 AND at > now() - interval '24 hours'`, [before]);
+  return rows.map((r) => ({ key: r.tweet_id, replyId: r.reply_id }));
+}
+
+/** A Telegram person's numeric id from their @name, as the bot last saw it. */
+export async function tgIdForHandle(handle: string): Promise<number | null> {
+  const h = String(handle ?? "").replace(/^@+/, "").toLowerCase().trim();
+  if (!PERSISTENT || !h) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ id: string }>(
+    `SELECT id FROM person WHERE id LIKE 'tg:%' AND handle = $1 ORDER BY seen_at DESC LIMIT 1`, [h]);
+  const n = rows[0] ? Number(rows[0].id.slice(3)) : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+/**
  * The id of oddie's OWN reply for a market, so a resolution can answer it.
  *
  * The bot records this at src/x/mentionLoop.ts when it posts the card, keyed by

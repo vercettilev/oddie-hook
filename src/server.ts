@@ -9,10 +9,10 @@ import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
-import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
+import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
-  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
+  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
@@ -45,7 +45,7 @@ import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweet
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
 import { oddsFromPools } from "./odds.js";
 import * as TG from "./telegram/client.js";
-import { runTelegramSweep, type TgSweepDeps } from "./telegram/loop.js";
+import { runTelegramSweep, releaseOrphanedParks, parkedCount, type TgSweepDeps } from "./telegram/loop.js";
 import { earnKey, earnToken, verifyEarnToken } from "./telegram/earnToken.js";
 import {
   mintMarket, isChainEnabled, onchainEnabled, explorerUrl, adminAddress, adminBalanceSol, cluster, nameCreator, prepareCreatorFeeTx, claimProtocolFee, closeMarketOnChain, _devPutMarket,
@@ -6028,6 +6028,9 @@ const TG_MARKETS_PER_DAY = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
 })();
 const tgSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** When this process started: parked tags from before it belong to a process
+ *  that is gone. */
+const TG_BOOT_AT = new Date();
 
 /* ------------------------------------------ telegram: collecting the 2% --
  * The opener is paid by naming their wallet as the market's creator on chain.
@@ -6180,6 +6183,20 @@ app.post("/api/tg/earn/fail", express.json({ limit: "2kb" }), (req, res) => {
   res.status(204).end();
 });
 
+/**
+ * THE OPERATOR HEARS ABOUT AN OUTAGE ONLY A PERSON CAN FIX, on Telegram, from
+ * the bot: an empty model balance or a refused key. Whose chat is set by
+ * TG_OPS_CHAT_ID (a numeric id) or TG_OPS_HANDLE (an @name that has talked to
+ * the bot). Unset, the alert is a log line and nothing else.
+ */
+async function tgOpsAlert(text: string): Promise<void> {
+  console.error(JSON.stringify({ evt: "ops_alert", text }));
+  const fixed = Number(process.env.TG_OPS_CHAT_ID ?? "");
+  const id = Number.isSafeInteger(fixed) && fixed !== 0 ? fixed
+    : process.env.TG_OPS_HANDLE ? await tgIdForHandle(process.env.TG_OPS_HANDLE).catch(() => null) : null;
+  if (id) await TG.sendMessage(id, text, null).catch((e) => console.error("[tg] ops alert not delivered:", (e as Error).message));
+}
+
 async function startTelegram(): Promise<void> {
   let me: TG.TgUser;
   try {
@@ -6247,6 +6264,9 @@ async function startTelegram(): Promise<void> {
     sendPrompt: async (chatId, text, button) => { await TG.sendMessage(chatId, text, null, button); },
     answerCallback: (id, text) => TG.answerCallbackQuery(id, text),
     editMessage: (chatId, messageId, text) => TG.editMessage(chatId, messageId, text),
+    replyText: async (chatId, replyTo, text) => (await TG.sendMessage(chatId, text, replyTo)).message_id,
+    deleteMessage: (chatId, messageId) => TG.deleteMessage(chatId, messageId),
+    alertOps: (text) => tgOpsAlert(text),
     earnLink: (tgUserId) => tgEarnLink(tgUserId),
     openedToday: (author) => tgOpenedToday(author),
     dailyCap: TG_MARKETS_PER_DAY,
@@ -6257,12 +6277,23 @@ async function startTelegram(): Promise<void> {
   };
 
   console.log(`[tg] @${me.username} listening, ${TG_DRY_RUN ? "DRY RUN (nothing is posted)" : "POSTING FOR REAL"}, ${TG_MARKETS_PER_DAY} markets per person per day`);
+  // Tags a previous process parked and lost with its memory: their notes say
+  // "shortly", and nothing here can keep that promise now.
+  if (!TG_DRY_RUN) {
+    const orphans = await parkedMentionRows(TG_BOOT_AT).catch(() => []);
+    const released = await releaseOrphanedParks(orphans, {
+      guestEdit: (id, c) => TG.editGuestReply(id, c),
+      editMessage: (chatId, messageId, text) => TG.editMessage(chatId, messageId, text),
+      settle: (key) => settleMention(key, "failed", { reason: "parked-released" }),
+    });
+    if (released) log("released parked tags from before this start", { released });
+  }
   let failures = 0;
   for (;;) {
     const t0 = Date.now();
     try {
       const r = await runTelegramSweep(deps);
-      if (r.looked) log("sweep", { looked: r.looked, replied: r.replied, skipped: r.skipped, failed: r.failed, retried: r.retried });
+      if (r.looked || r.decisions.length) log("sweep", { looked: r.looked, replied: r.replied, skipped: r.skipped, failed: r.failed, retried: r.retried, parked: r.parked, waiting: parkedCount() });
       failures = 0;
       /* SPACE THE RETRIES. A held offset means Telegram hands the same update
          straight back, so without a pause all three attempts land within a few

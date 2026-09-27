@@ -37,6 +37,17 @@
  * answer. Its ledger key is `tgg:`, never `tg:`: a guest chat's id can equal the
  * id of a chat the bot really is in.
  *
+ * WHEN THE MODEL IS OUT, A TAG WAITS INSTEAD OF BOUNCING. Reading a claim is a
+ * paid model call, and the model can be out for minutes (overloaded) or hours
+ * (the credit balance ran dry, which is how this was found: three tags in a
+ * row answered "tag me again in a minute", and again, and again). A tag that
+ * hits that is parked: the chat is told it will open shortly, the words are
+ * held in memory only, and every sweep tries again with a growing gap until
+ * the model answers. Then the same reply is edited into the market (a guest
+ * reply) or the card is posted under the tag and the note removed (a group).
+ * Twelve hours later it gives up and says so. The operator hears about an
+ * outage that needs a person (billing, a refused key) once, on Telegram.
+ *
  * IDENTITY IS THE NUMERIC ID FROM THE FIRST ROW. The ledger author is
  * `tg:<user id>`, never the @name: Telegram's own schema makes username
  * optional, so a person may not have one, and one they do have can be changed
@@ -86,6 +97,14 @@ export interface TgSweepDeps {
   sendPrompt?(chatId: number, text: string, button: { text: string; callback: string }): Promise<void>;
   answerCallback?(id: string, text?: string): Promise<void>;
   editMessage?(chatId: number, messageId: number, text: string): Promise<void>;
+  /** A plain threaded reply in a group; returns its message id, so a parked
+   *  tag's note can be edited or removed once the market is open. */
+  replyText?(chatId: number, replyTo: number, text: string): Promise<number>;
+  deleteMessage?(chatId: number, messageId: number): Promise<void>;
+  /** The operator's own chat: an outage only a person can fix. */
+  alertOps?(text: string): Promise<void>;
+  /** Clock seam for the parked queue. */
+  now?(): number;
   /** Guest tags from this person in the last day, and how many they get. */
   guestTriesToday?(author: string): Promise<number>;
   guestDailyTries?: number;
@@ -109,8 +128,10 @@ export interface TgSweepResult {
   skipped: number;
   failed: number;
   retried: number;
+  /** Tags set aside because the model is out; see parkTag. */
+  parked: number;
   newOffset: number | null;
-  decisions: Array<{ key: string; outcome: "replied" | "skipped" | "failed" | "retry"; reason?: string; slug?: string }>;
+  decisions: Array<{ key: string; outcome: "replied" | "skipped" | "failed" | "retry" | "parked"; reason?: string; slug?: string }>;
 }
 
 /* ------------------------------------------------------------ small parts -- */
@@ -193,6 +214,13 @@ export const TG_COPY = {
   /* After that reply, another go is impossible: the one reply is spent. So a
      passing outage is said as the next step rather than retried. */
   later: "Tag me again in a minute and I'll open it.",
+  /* The model is out and the tag is parked: said as what happens next, and it
+     does happen, by itself, once the model is back. */
+  parked: "Got it. I'll open this market right here shortly.",
+  /* A parked tag that waited its twelve hours, or outlived a restart. */
+  expired: "Tag me again and I'll open it.",
+  /* Left in place of the note only when the note could not be removed. */
+  openedBelow: "Opened. It's right below.",
   guestCap: "That's plenty from you today. Tag me again tomorrow.",
   /* Signing a browser in. The code is on the page too: it is how a person
      knows the browser asking is the one in front of them. */
@@ -237,11 +265,300 @@ async function handleCallback(cq: TgCallbackQuery, deps: TgSweepDeps): Promise<v
   }
 }
 
+/* ------------------------------------------------------------- parking -- */
+
+export const PARK_MAX_MS = 12 * 3600_000;
+const PARK_MAX = 200;
+const ALERT_GAP_MS = 3 * 3600_000;
+
+export type ModelOutage = "billing" | "auth" | "config" | "busy" | "network";
+
+/**
+ * Is this failure the MODEL being out, rather than something about the claim?
+ * Only these are worth parking: another go at the same words after the model
+ * is back can succeed. A 4xx that is not about money or the key is a request
+ * we got wrong, and waiting would not change it.
+ */
+export function modelOutage(err: unknown): ModelOutage | null {
+  const m = err instanceof Error ? err.message : String(err ?? "");
+  const st = /^extract (\d{3})\b/.exec(m);
+  if (st) {
+    const code = Number(st[1]);
+    if (code === 400 && /credit balance|billing/i.test(m)) return "billing";
+    if (code === 401 || code === 403) return "auth";
+    if (code === 429 || code >= 500) return "busy";
+    return null;
+  }
+  if (/^extraction unavailable/i.test(m)) return "config";
+  if (/timeout|timed out|aborted|fetch failed|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(m)) return "network";
+  return null;
+}
+
+interface ParkedTag {
+  key: string;
+  guest: boolean;
+  guestReplyId: string | null;
+  chatId: number;
+  tagMessageId: number;
+  /** The group note ("Got it..."), removed once the card is up. */
+  noteId: number | null;
+  /** The claim, for the model. In memory only: from a private chat these are
+   *  a person's words to a friend, and they are never written anywhere. */
+  text: string;
+  /** What the ledger may keep, as on the first attempt. */
+  keptText: string | null;
+  sourceUrl: string;
+  author: string;
+  from: TgUser;
+  at: number;
+  tries: number;
+  nextAt: number;
+}
+
+const parked = new Map<string, ParkedTag>();
+const lastAlert = new Map<ModelOutage, number>();
+
+export function parkedCount(): number { return parked.size; }
+/** Test seam. */
+export function _resetParked(): void { parked.clear(); lastAlert.clear(); }
+
+const nowOf = (deps: TgSweepDeps): number => (deps.now ? deps.now() : Date.now());
+/** A minute, then two, four, eight, and every fifteen after that. */
+const parkGap = (tries: number): number => Math.min(15 * 60_000, 60_000 * 2 ** Math.max(0, tries - 1));
+
+function guestContent(text: string, slug: string | null, baseUrl: string): GuestContent {
+  const url = slug ? `${baseUrl.replace(/\/+$/, "")}/m/${slug}` : null;
+  return { text, previewUrl: url, button: url ? { text: "Take a side", url } : null };
+}
+
+export const OPS_COPY: Record<"billing" | "auth" | "config", (waiting: number) => string> = {
+  billing: (n) => `oddie can't read claims right now: the Anthropic credit balance is empty.\n\n`
+    + `${n} tag${n === 1 ? " is" : "s are"} waiting and will open by themselves once it is topped up:\nhttps://console.anthropic.com/settings/billing`,
+  auth: (n) => `oddie can't read claims right now: Anthropic refused the API key (ANTHROPIC_API_KEY on Railway).\n\n`
+    + `${n} tag${n === 1 ? " is" : "s are"} waiting.`,
+  config: (n) => `oddie can't read claims right now: ANTHROPIC_API_KEY is not set on Railway.\n\n`
+    + `${n} tag${n === 1 ? " is" : "s are"} waiting.`,
+};
+
+/** Tell the operator, once per kind per three hours, and only about outages a
+ *  person has to fix. Busy and network outages clear by themselves. */
+async function alertOnce(kind: ModelOutage, deps: TgSweepDeps): Promise<void> {
+  if (!deps.alertOps || kind === "busy" || kind === "network") return;
+  const now = nowOf(deps);
+  const last = lastAlert.get(kind);
+  if (last !== undefined && now - last < ALERT_GAP_MS) return;
+  lastAlert.set(kind, now);
+  await deps.alertOps(OPS_COPY[kind](parked.size)).catch(() => {});
+}
+
+/** Set a tag aside: say so in the chat, keep the work in memory, and write the
+ *  ledger row as decided so Telegram's redelivery never double-handles it. */
+async function parkTag(
+  t: Omit<ParkedTag, "noteId" | "at" | "tries" | "nextAt">, kind: ModelOutage, err: unknown, deps: TgSweepDeps,
+): Promise<void> {
+  const now = nowOf(deps);
+  let noteId: number | null = null;
+  if (t.guest) {
+    if (t.guestReplyId && deps.guestEdit) await deps.guestEdit(t.guestReplyId, { text: TG_COPY.parked }).catch(() => {});
+  } else if (deps.replyText) {
+    noteId = await deps.replyText(t.chatId, t.tagMessageId, TG_COPY.parked).catch(() => null);
+  }
+  parked.set(t.key, { ...t, noteId, at: now, tries: 1, nextAt: now + parkGap(1) });
+  const msg = err instanceof Error ? err.message : String(err);
+  await settleMention(t.key, "failed", {
+    reason: `parked:${kind} ${msg}`.slice(0, 300), claimText: t.keptText,
+    // Where the note is, so a restart that loses this queue can still take it back.
+    replyId: t.guest ? t.guestReplyId : noteId !== null ? `note:${t.chatId}:${noteId}` : null,
+  }).catch(() => {});
+}
+
+/** Give up on a parked tag and say so where it was promised. */
+async function releaseTag(t: ParkedTag, why: string, deps: TgSweepDeps): Promise<void> {
+  parked.delete(t.key);
+  if (t.guest) { if (t.guestReplyId && deps.guestEdit) await deps.guestEdit(t.guestReplyId, { text: TG_COPY.expired }).catch(() => {}); }
+  else if (t.noteId !== null && deps.editMessage) await deps.editMessage(t.chatId, t.noteId, TG_COPY.expired).catch(() => {});
+  await settleMention(t.key, "failed", { reason: `parked-${why}` }).catch(() => {});
+}
+
+/**
+ * After a restart the queue is gone, and every note it left says "shortly".
+ * Those are taken back here, from the ledger: a guest reply by its inline id, a
+ * group note by the chat and message the ledger kept.
+ */
+export async function releaseOrphanedParks(
+  rows: Array<{ key: string; replyId: string | null }>,
+  io: {
+    guestEdit?(inlineMessageId: string, content: GuestContent): Promise<void>;
+    editMessage?(chatId: number, messageId: number, text: string): Promise<void>;
+    settle(key: string): Promise<void>;
+  },
+): Promise<number> {
+  let n = 0;
+  for (const r of rows) {
+    const note = r.replyId ? /^note:(-?\d+):(\d+)$/.exec(r.replyId) : null;
+    if (r.key.startsWith("tgg:") && r.replyId && io.guestEdit) await io.guestEdit(r.replyId, { text: TG_COPY.expired }).catch(() => {});
+    else if (note && io.editMessage) await io.editMessage(Number(note[1]), Number(note[2]), TG_COPY.expired).catch(() => {});
+    await io.settle(r.key).catch(() => {});
+    n++;
+  }
+  return n;
+}
+
+/**
+ * What is left once the claim has been read: the gate, the mint, the answer,
+ * the ledger. Shared by a fresh tag and a parked one finishing later. A mint
+ * outage on a group tag comes back as "retry" for the caller to decide: a
+ * fresh tag holds the offset, a parked one has no offset left to hold.
+ */
+async function finishClaim(
+  job: {
+    key: string; guest: boolean; keptText: string | null; sourceUrl: string; author: string; from: TgUser;
+    answer(text: string, slug: string | null): Promise<void>;
+    replyId(): string | null;
+  },
+  ex: Extraction, deps: TgSweepDeps,
+): Promise<{ outcome: "replied" | "skipped" | "failed" | "retry"; reason: string; slug?: string; ledgerReason?: string }> {
+  const log = deps.log ?? (() => {});
+  if (ex.resolvability === "unresolvable" || !ex.appropriate || !ex.question) {
+    await job.answer(TG_COPY.unmarketable, null);
+    await settleMention(job.key, "skipped", { reason: `gate:${ex.resolvability}`, claimText: job.keptText });
+    return { outcome: "skipped", reason: `gate:${ex.resolvability}` };
+  }
+
+  const minted = await deps.openMarket({
+    question: ex.question,
+    closeInput: ex.close_time,
+    sourceUrl: job.sourceUrl,
+    category: ex.category,
+    resolutionCriteria: ex.resolution_criteria || null,
+    priceClaim: ex.price_claim,
+    claimText: job.keptText,
+    resolvability: ex.resolvability,
+    hook: ex.hook || null,
+    openerId: job.author,
+  });
+  if (!minted.ok) {
+    /* A REFUSAL IS AN ANSWER; ONLY AN OUTAGE IS WORTH ANOTHER GO. A 4xx is
+       the mint telling us this claim cannot become a market -- a price
+       claim it could not pin to one token, say -- and asking again gets the
+       same answer after another paid extraction. That is what happened
+       three times in five seconds on the first live tag. A 5xx or a
+       network failure is the one case another attempt can fix. */
+    const refused = minted.status >= 400 && minted.status < 500;
+    if (refused) {
+      await job.answer(TG_COPY.unmarketable, null);
+      await settleMention(job.key, "skipped", { reason: `mint:${minted.status} ${minted.error}`, claimText: job.keptText });
+      return { outcome: "skipped", reason: `mint:${minted.status}` };
+    }
+    /* A GUEST TAG CANNOT BE TRIED AGAIN: its one reply is already out, and
+       a second answerGuestQuery is refused. It says what to do instead. */
+    if (job.guest && job.replyId()) {
+      await job.answer(TG_COPY.later, null);
+      await settleMention(job.key, "failed", { reason: `mint:${minted.status} ${minted.error}`, claimText: job.keptText, replyId: job.replyId() });
+      return { outcome: "failed", reason: `mint:${minted.status}` };
+    }
+    return { outcome: "retry", reason: "mint", ledgerReason: `mint:${minted.status} ${minted.error}` };
+  }
+
+  const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
+  const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook });
+  /* THE INCENTIVE, SAID WHERE THE ROOM CAN SEE IT. "Bring the room, own the
+     room" only works if the room can see that opening a market pays. Only
+     under a market that just opened: a pointer to an existing one was
+     opened by somebody else, and naming the tagger there would be false. */
+  const openerLine = TG_COPY.opener(tgDisplayName(job.from), deps.botUsername);
+  /* In a guest reply the preview above the text is the card and the page's
+     own title, and the button is the link, so the full reply said the
+     question three times. The headline and the opener are what is left. */
+  await job.answer(job.guest ? `${ex.hook || ex.question}\n\n${openerLine}` : `${reply.primary}\n\n${openerLine}`, minted.slug);
+  /* "opened" is what the daily cap counts: a pointer to a market that
+     already existed opened nothing and costs the person nothing. A guest
+     reply keeps its inline id: it is the only way to show the result there. */
+  await settleMention(job.key, "replied", { slug: minted.slug, reason: "opened", claimText: job.keptText, replyId: job.replyId() });
+  log("telegram market opened", { key: job.key, slug: minted.slug });
+  return { outcome: "replied", reason: "opened", slug: minted.slug };
+}
+
+/**
+ * Try the parked tags whose turn it is. One that still meets an outage stops
+ * the round: the rest would meet the same one, and each try is a call.
+ */
+async function drainParked(deps: TgSweepDeps, result: TgSweepResult): Promise<void> {
+  if (!parked.size || deps.dryRun) return;
+  const log = deps.log ?? (() => {});
+  for (const t of [...parked.values()]) {
+    const now = nowOf(deps);
+    if (now - t.at > PARK_MAX_MS) {
+      await releaseTag(t, "expired", deps);
+      result.failed++; result.decisions.push({ key: t.key, outcome: "failed", reason: "parked-expired" });
+      log("telegram parked tag expired", { key: t.key });
+      continue;
+    }
+    if (t.nextAt > now) continue;
+    let ex: Extraction;
+    try {
+      ex = await deps.extract(t.text.slice(0, 4000));
+    } catch (e) {
+      const kind = modelOutage(e);
+      t.tries++;
+      t.nextAt = now + parkGap(t.tries);
+      if (kind) { await alertOnce(kind, deps); break; }
+      // Not the model: something about these words. Waiting will not help.
+      await releaseTag(t, "error", deps);
+      result.failed++; result.decisions.push({ key: t.key, outcome: "failed", reason: "parked-error" });
+      log("telegram parked tag failed", { key: t.key, err: (e as Error).message });
+      continue;
+    }
+    parked.delete(t.key);
+    const answer = async (text: string, slug: string | null): Promise<void> => {
+      if (t.guest) {
+        if (!t.guestReplyId || !deps.guestEdit) throw new Error("the guest reply is gone");
+        await deps.guestEdit(t.guestReplyId, guestContent(text, slug, deps.baseUrl));
+        return;
+      }
+      // Words only: the note becomes them. A market: its card goes under the
+      // tag, where it always goes, and the note that promised it is removed.
+      if (!slug && t.noteId !== null && deps.editMessage) { await deps.editMessage(t.chatId, t.noteId, text); return; }
+      await deps.reply({ chatId: t.chatId, replyTo: t.tagMessageId, text, photoUrl: slug ? deps.cardUrl(slug) : null });
+      if (t.noteId !== null) {
+        const noteId = t.noteId;
+        const removed = deps.deleteMessage ? await deps.deleteMessage(t.chatId, noteId).then(() => true, () => false) : false;
+        if (!removed && deps.editMessage) await deps.editMessage(t.chatId, noteId, TG_COPY.openedBelow).catch(() => {});
+      }
+    };
+    try {
+      const done = await finishClaim({
+        key: t.key, guest: t.guest, keptText: t.keptText, sourceUrl: t.sourceUrl, author: t.author, from: t.from,
+        answer, replyId: () => t.guestReplyId,
+      }, ex, deps);
+      if (done.outcome === "retry") {
+        // A parked group tag has no offset left to hold: said, not retried.
+        await answer(TG_COPY.later, null).catch(() => {});
+        await settleMention(t.key, "failed", { reason: done.ledgerReason ?? "mint", claimText: t.keptText }).catch(() => {});
+        result.failed++; result.decisions.push({ key: t.key, outcome: "failed", reason: "unparked:mint" });
+        continue;
+      }
+      if (done.outcome === "replied") result.replied++;
+      else if (done.outcome === "skipped") result.skipped++;
+      else result.failed++;
+      result.decisions.push({ key: t.key, outcome: done.outcome, reason: `unparked:${done.reason}`, slug: done.slug });
+      log("telegram parked tag finished", { key: t.key, outcome: done.outcome, waitedMin: Math.round((now - t.at) / 60_000) });
+    } catch (e) {
+      await settleMention(t.key, "failed", { reason: `parked-post:${(e as Error).message}`.slice(0, 300) }).catch(() => {});
+      result.failed++; result.decisions.push({ key: t.key, outcome: "failed", reason: "parked-post" });
+      log("telegram parked tag failed after posting", { key: t.key, err: (e as Error).message });
+    }
+  }
+}
+
 /* ---------------------------------------------------------------- sweep -- */
 
 export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult> {
   const log = deps.log ?? (() => {});
-  const result: TgSweepResult = { looked: 0, replied: 0, skipped: 0, failed: 0, retried: 0, newOffset: null, decisions: [] };
+  const result: TgSweepResult = { looked: 0, replied: 0, skipped: 0, failed: 0, retried: 0, parked: 0, newOffset: null, decisions: [] };
+
+  // Parked tags first: the ones waiting longest are owed their market first.
+  await drainParked(deps, result).catch((e) => log("parked drain failed", { err: (e as Error).message }));
 
   const stored = await botStateGet(TG_OFFSET_KEY);
   const offset = stored !== null && Number.isFinite(Number(stored)) ? Number(stored) : null;
@@ -306,8 +623,7 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
       postAttempted = true;
       if (guest) {
         if (!deps.guestAnswer || !deps.guestEdit) throw new Error("guest mode is not wired");
-        const url = slug ? `${deps.baseUrl.replace(/\/+$/, "")}/m/${slug}` : null;
-        const content: GuestContent = { text, previewUrl: url, button: url ? { text: "Take a side", url } : null };
+        const content = guestContent(text, slug, deps.baseUrl);
         if (guestReplyId) await deps.guestEdit(guestReplyId, content);
         else guestReplyId = await deps.guestAnswer(guest.guest_query_id!, content);
         return;
@@ -415,71 +731,35 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
 
       // Capped for the same reason the X loop caps it: this goes into a model
       // prompt, and a pasted wall of text is not our budget.
-      const ex = await deps.extract(claim.text.slice(0, 4000));
-      if (ex.resolvability === "unresolvable" || !ex.appropriate || !ex.question) {
-        await answer(TG_COPY.unmarketable, null);
-        await settleMention(key, "skipped", { reason: `gate:${ex.resolvability}`, claimText });
-        decide("skipped", { reason: `gate:${ex.resolvability}` });
+      let ex: Extraction;
+      try {
+        ex = await deps.extract(claim.text.slice(0, 4000));
+      } catch (e) {
+        // The model is out, not the claim: park it (see the header).
+        const kind = modelOutage(e);
+        if (!kind || deps.dryRun || parked.size >= PARK_MAX) throw e;
+        await parkTag({
+          key, guest: Boolean(guest), guestReplyId, chatId: msg.chat.id, tagMessageId: msg.message_id,
+          text: claim.text, keptText: claimText, sourceUrl, author, from: msg.from,
+        }, kind, e, deps);
+        result.parked++;
+        result.decisions.push({ key, outcome: "parked", reason: kind });
+        log("telegram tag parked until the model is back", { key, kind, err: (e as Error).message.slice(0, 160) });
+        await alertOnce(kind, deps);
         continue;
       }
 
-      const minted = await deps.openMarket({
-        question: ex.question,
-        closeInput: ex.close_time,
-        sourceUrl,
-        category: ex.category,
-        resolutionCriteria: ex.resolution_criteria || null,
-        priceClaim: ex.price_claim,
-        claimText,
-        resolvability: ex.resolvability,
-        hook: ex.hook || null,
-        openerId: author,
-      });
-      if (!minted.ok) {
-        /* A REFUSAL IS AN ANSWER; ONLY AN OUTAGE IS WORTH ANOTHER GO. A 4xx is
-           the mint telling us this claim cannot become a market -- a price
-           claim it could not pin to one token, say -- and asking again gets the
-           same answer after another paid extraction. That is what happened
-           three times in five seconds on the first live tag. A 5xx or a
-           network failure is the one case another attempt can fix. */
-        const refused = minted.status >= 400 && minted.status < 500;
-        if (refused) {
-          await answer(TG_COPY.unmarketable, null);
-          await settleMention(key, "skipped", { reason: `mint:${minted.status} ${minted.error}`, claimText });
-          decide("skipped", { reason: `mint:${minted.status}` });
-          continue;
-        }
-        /* A GUEST TAG CANNOT BE TRIED AGAIN: its one reply is already out, and
-           a second answerGuestQuery is refused. It says what to do instead. */
-        if (guest && guestReplyId) {
-          await answer(TG_COPY.later, null);
-          await settleMention(key, "failed", { reason: `mint:${minted.status} ${minted.error}`, claimText, replyId: guestReplyId });
-          decide("failed", { reason: `mint:${minted.status}` });
-          continue;
-        }
+      const done = await finishClaim({
+        key, guest: Boolean(guest), keptText: claimText, sourceUrl, author, from: msg.from,
+        answer, replyId: () => guestReplyId,
+      }, ex, deps);
+      if (done.outcome === "retry") {
         // Nothing was posted, provably, so another go cannot double-post.
-        await settleMention(key, "retry", { reason: `mint:${minted.status} ${minted.error}`, claimText });
-        decide("retry", { reason: "mint" });
+        await settleMention(key, "retry", { reason: done.ledgerReason, claimText });
+        decide("retry", { reason: done.reason });
         continue;
       }
-
-      const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
-      const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook });
-      /* THE INCENTIVE, SAID WHERE THE ROOM CAN SEE IT. "Bring the room, own the
-         room" only works if the room can see that opening a market pays. Only
-         under a market that just opened: a pointer to an existing one was
-         opened by somebody else, and naming the tagger there would be false. */
-      const openerLine = TG_COPY.opener(tgDisplayName(msg.from), deps.botUsername);
-      /* In a guest reply the preview above the text is the card and the page's
-         own title, and the button is the link, so the full reply said the
-         question three times. The headline and the opener are what is left. */
-      await answer(guest ? `${ex.hook || ex.question}\n\n${openerLine}` : `${reply.primary}\n\n${openerLine}`, minted.slug);
-      /* "opened" is what the daily cap counts: a pointer to a market that
-         already existed opened nothing and costs the person nothing. A guest
-         reply keeps its inline id: it is the only way to show the result there. */
-      await settleMention(key, "replied", { slug: minted.slug, reason: "opened", claimText, replyId: guestReplyId });
-      decide("replied", { reason: "opened", slug: minted.slug });
-      log("telegram market opened", { key, slug: minted.slug });
+      decide(done.outcome, { reason: done.reason, slug: done.slug });
     } catch (e) {
       // A guest reply that already said "Reading the claim…" must not say it
       // forever: its one reply is spent, so it is edited into the next step.

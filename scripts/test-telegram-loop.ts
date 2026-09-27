@@ -6,7 +6,7 @@ import type { MintResult } from "../src/x/mentionLoop.js";
 import type { TgMessage, TgUpdate } from "../src/telegram/client.js";
 import {
   runTelegramSweep, tagsBot, stripBotTag, messageLink, claimOf, tgAuthor, TG_COPY, TG_OFFSET_KEY,
-  privateSource, type TgSweepDeps,
+  privateSource, modelOutage, parkedCount, _resetParked, releaseOrphanedParks, PARK_MAX_MS, type TgSweepDeps,
 } from "../src/telegram/loop.js";
 import {
   botStateGet, _memMentionOutcome, _memMentionReason, _memMentionClaimText, _resetBotState, sourceUrlKind, sourcePostKey,
@@ -515,6 +515,126 @@ function guestHarness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}) {
   check("a guest tag in a public group keeps its real t.me link", spy.minted[0]?.sourceUrl === "https://t.me/cryptoroom/97");
 }
 
+/* ------------------------------------------------------ the model is out -- */
+/* Found live: the Anthropic balance ran dry, and three tags in a row were told
+   "tag me again in a minute", and again. A tag that meets an outage of the
+   MODEL waits, and opens by itself when the model is back. */
+const CREDIT = new Error('extract 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}');
+{
+  check("no credit is a billing outage", modelOutage(CREDIT) === "billing");
+  check("a refused key is an auth outage", modelOutage(new Error("extract 401 invalid x-api-key")) === "auth");
+  check("overloaded is busy", modelOutage(new Error("extract 529 overloaded")) === "busy"
+    && modelOutage(new Error("extract 429 rate_limit")) === "busy" && modelOutage(new Error("extract 500")) === "busy");
+  check("a dropped connection is the network", modelOutage(new Error("fetch failed")) === "network"
+    && modelOutage(new Error("The operation was aborted due to timeout")) === "network");
+  check("no key at all is config", modelOutage(new Error("extraction unavailable — set ANTHROPIC_API_KEY")) === "config");
+  check("a request we got wrong is NOT an outage: waiting would not fix it",
+    modelOutage(new Error('extract 400 {"type":"error","error":{"type":"invalid_request_error","message":"messages: bad"}}')) === null);
+}
+{
+  _resetBotState(); _resetParked();
+  let clock = 1_800_000_000_000;
+  let down = true;
+  const alerts: string[] = [];
+  const claim = msg({ message_id: 140, chat: PAIR, from: noname, text: "BTC is going to 200k before 2027, bet?" });
+  const tag = msg({ message_id: 141, chat: PAIR, from: alice, text: `@${BOT}`, reply_to_message: claim });
+  const { deps, spy, g } = guestHarness([gupd(1, tag)], {
+    now: () => clock,
+    extract: async (t) => { spy.extracted.push(t); if (down) throw CREDIT; return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
+    alertOps: async (t) => { alerts.push(t); },
+  });
+  const r1 = await runTelegramSweep(deps);
+  check("a guest tag during an outage is parked, not bounced", r1.parked === 1 && r1.failed === 0 && spy.minted.length === 0);
+  check("...its one reply says it will open shortly", g.answers.length === 1 && g.edits[g.edits.length - 1]?.c.text === TG_COPY.parked);
+  check("...the ledger says why", (_memMentionReason(`tgg:${PAIR.id}:141`) ?? "").startsWith("parked:billing"));
+  check("...and the operator hears about it once, with where to fix it",
+    alerts.length === 1 && /credit balance/.test(alerts[0]) && /console\.anthropic\.com\/settings\/billing/.test(alerts[0]));
+  check("...never storing the private words while it waits", _memMentionClaimText(`tgg:${PAIR.id}:141`) === null);
+
+  clock += 30_000;
+  await runTelegramSweep(deps);
+  check("it waits its turn: no call before the first minute", spy.extracted.length === 1);
+  clock += 60_000;
+  await runTelegramSweep(deps);
+  check("then tries again", spy.extracted.length === 2);
+  check("...still out: the operator is not told twice", alerts.length === 1);
+
+  down = false;
+  clock += 3 * 60_000;
+  const r4 = await runTelegramSweep(deps);
+  const last = g.edits[g.edits.length - 1]?.c;
+  check("once the model is back, the market opens by itself", r4.replied === 1 && spy.minted.length === 1);
+  check("...in the same reply, edited into the market",
+    g.answers.length === 1 && Boolean(last && /Opened by @alice/.test(last.text)) && last?.button?.url === "https://app.oddie.fun/m/slug-1");
+  check("...from the friend's message, still", spy.extracted[spy.extracted.length - 1] === claim.text);
+  check("...and the ledger says replied", _memMentionOutcome(`tgg:${PAIR.id}:141`) === "replied");
+  check("...and the queue is empty", parkedCount() === 0);
+}
+{
+  // A group tag: a short note under the tag, then the card, and the note goes.
+  _resetBotState(); _resetParked();
+  let clock = 1_800_000_000_000;
+  let down = true;
+  const notes: Array<{ chatId: number; replyTo: number; text: string }> = [];
+  const deleted: number[] = [];
+  const { deps, spy } = harness([upd(300, msg({ message_id: 150, chat: PUBLIC, text: `@${BOT} BTC 200k before 2027` }))], {
+    now: () => clock,
+    extract: async (t) => { spy.extracted.push(t); if (down) throw new Error("extract 529 overloaded"); return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
+    replyText: async (chatId, replyTo, text) => { notes.push({ chatId, replyTo, text }); return 7001; },
+    deleteMessage: async (_c, m) => { deleted.push(m); },
+  });
+  const r1 = await runTelegramSweep(deps);
+  check("a group tag during an outage gets a note under it", r1.parked === 1 && notes.length === 1
+    && notes[0].replyTo === 150 && notes[0].text === TG_COPY.parked && spy.replies.length === 0);
+  check("...and does not hold the offset: the queue owns it now", r1.newOffset === 301 && r1.retried === 0);
+  down = false;
+  clock += 61_000;
+  const r2 = await runTelegramSweep(deps);
+  check("back: the card goes under the tag", r2.replied === 1 && spy.replies.length === 1
+    && spy.replies[0].replyTo === 150 && spy.replies[0].photoUrl === "https://oddie.fun/card/slug-1.png");
+  check("...and the note that promised it is removed", deleted.join() === "7001");
+}
+{
+  // Twelve hours is long enough to wait.
+  _resetBotState(); _resetParked();
+  let clock = 1_800_000_000_000;
+  const { deps, spy, g } = guestHarness([gupd(1, msg({ message_id: 160, chat: PAIR, text: `@${BOT} BTC 200k before 2027` }))], {
+    now: () => clock,
+    extract: async (t) => { spy.extracted.push(t); throw CREDIT; },
+  });
+  await runTelegramSweep(deps);
+  clock += PARK_MAX_MS + 1;
+  const r = await runTelegramSweep(deps);
+  check("after twelve hours it gives up, and says so where it promised",
+    r.failed === 1 && g.edits[g.edits.length - 1]?.c.text === TG_COPY.expired && parkedCount() === 0);
+  check("...the ledger says so too", _memMentionReason(`tgg:${PAIR.id}:160`) === "parked-expired");
+}
+{
+  // Anything that is not the model keeps the old answer.
+  _resetBotState(); _resetParked();
+  const { deps, g } = guestHarness([gupd(1, msg({ message_id: 170, chat: PAIR, text: `@${BOT} BTC 200k before 2027` }))], {
+    extract: async () => { throw new Error('extract 400 {"error":{"message":"messages: bad"}}'); },
+  });
+  const r = await runTelegramSweep(deps);
+  check("a failure that is not an outage is not parked", r.parked === 0 && parkedCount() === 0
+    && g.edits[g.edits.length - 1]?.c.text === TG_COPY.later);
+}
+{
+  // After a restart the queue is gone; its notes must not say "shortly" forever.
+  const edits: string[] = []; const settled: string[] = [];
+  const n = await releaseOrphanedParks([
+    { key: "tgg:70001:141", replyId: "inline-9" },
+    { key: "tg:-1001234567890:150", replyId: "note:-1001234567890:7001" },
+    { key: "tg:-1001234567890:151", replyId: null },
+  ], {
+    guestEdit: async (id, c) => { edits.push(`guest ${id} ${c.text}`); },
+    editMessage: async (chat, id, text) => { edits.push(`group ${chat}/${id} ${text}`); },
+    settle: async (k) => { settled.push(k); },
+  });
+  check("a restart takes back every note the lost queue left",
+    n === 3 && edits.join("|") === `guest inline-9 ${TG_COPY.expired}|group -1001234567890/7001 ${TG_COPY.expired}` && settled.length === 3);
+}
+
 /* -------------------------------------------------------------- dry run -- */
 {
   _resetBotState();
@@ -533,6 +653,16 @@ function guestHarness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}) {
     /sourceUrl: isWebSourceUrl\(openers\[m\.slug\]\?\.sourceUrl\)/.test(server));
   const allowed = /allowed_updates: \[([^\]]*)\]/.exec(readFileSync("src/telegram/client.ts", "utf8"))?.[1] ?? "";
   check("guest updates are asked for", allowed.includes('"guest_message"'), allowed);
+  const boot = server.slice(server.indexOf("async function startTelegram"), server.indexOf("if (TG.tgToken()) void startTelegram();"));
+  check("a parked group tag can leave a note and remove it", /replyText: async \(chatId, replyTo, text\) => \(await TG\.sendMessage\(chatId, text, replyTo\)\)\.message_id/.test(boot)
+    && /deleteMessage: \(chatId, messageId\) => TG\.deleteMessage\(chatId, messageId\)/.test(boot));
+  check("the operator alert is wired", /alertOps: \(text\) => tgOpsAlert\(text\)/.test(boot)
+    && /process\.env\.TG_OPS_CHAT_ID/.test(server) && /process\.env\.TG_OPS_HANDLE/.test(server));
+  check("a restart takes back the notes of the queue it lost, and only those",
+    /parkedMentionRows\(TG_BOOT_AT\)/.test(boot) && /releaseOrphanedParks\(orphans,/.test(boot));
+  const store = readFileSync("src/store/markets.ts", "utf8");
+  const rowsFn = store.slice(store.indexOf("export async function parkedMentionRows"), store.indexOf("export async function tgIdForHandle"));
+  check("...read from the ledger by their parked reason, before this start", /reason LIKE 'parked:%'/.test(rowsFn) && /at < \$1/.test(rowsFn));
   check("...and taps on the bot's buttons", allowed.includes('"callback_query"'), allowed);
 }
 

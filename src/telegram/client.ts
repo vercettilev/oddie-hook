@@ -188,6 +188,12 @@ export async function editMessage(chatId: number, messageId: number, text: strin
   await call<unknown>("editMessageText", { chat_id: chatId, message_id: messageId, text });
 }
 
+/** Remove one of the bot's own messages: a parked tag's note, once the card
+ *  it promised is up. */
+export async function deleteMessage(chatId: number, messageId: number): Promise<void> {
+  await call<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
+}
+
 /** Telegram fetches the photo from the URL itself. */
 export async function sendPhoto(
   chatId: number, photoUrl: string, caption: string, replyToId: number,
