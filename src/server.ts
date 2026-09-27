@@ -10,8 +10,9 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
-import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl } from "./store/markets.js";
-import { postTelegramResolution } from "./telegram/resolution.js";
+import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet } from "./store/markets.js";
+import { postTelegramResolution, threadsFrom } from "./telegram/resolution.js";
+import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   recordPayoutNotices, unseenPayouts, markPayoutsSeen,
@@ -1450,6 +1451,98 @@ async function pushPayoutNotice(slug: string, outcome: "yes" | "no", wallets: st
  * thing somebody must still be able to hear about on a deploy with betting
  * switched off.
  */
+/** A push to every browser linked to these wallets, with the payout push's
+ *  rule: it is about the market, never about a person. */
+async function pushToWallets(wallets: string[], payload: { title: string; body: string; url: string; tag: string }): Promise<void> {
+  const keys = vapidFromEnv();
+  if (!keys || wallets.length === 0) return;
+  const devices = await devicesForWallets(wallets).catch(() => []);
+  const subs = await pushSubscriptionsFor(devices).catch(() => []);
+  for (const sub of subs) {
+    const r = await sendPush(sub, payload, keys);
+    if (!r.ok && r.gone) await dropPushSubscription(sub.endpoint).catch(() => {});
+  }
+}
+
+function betNotifyDeps(): BetNotifyDeps {
+  const log = (line: string, extra?: Record<string, unknown>) =>
+    console.log(JSON.stringify({ evt: "bet_notify", line, ...extra }));
+  const tgOn = Boolean(TG.tgToken());
+  return {
+    now: () => Date.now(),
+    market: async (slug) => {
+      const d = await communityMarketDetail(slug).catch(() => null);
+      return d ? { headline: foldIds(d.hook || d.question), url: `${APP_BASE_URL}/m/${slug}`, feeBps: d.creatorFeeBps ?? 0 } : null;
+    },
+    opener: async (slug) => {
+      const tg = await tgOpenerOf(slug).catch(() => null);
+      const id = tg ? Number(tg.author.replace(/^tg:/, "")) : NaN;
+      return { wallet: await openerWalletFor(slug).catch(() => null), tgUserId: Number.isSafeInteger(id) && id > 0 ? id : null };
+    },
+    walletsOnSide: async (slug, side) => (await walletsInMarket(slug)).filter((w) => w.side === side).map((w) => w.wallet),
+    record: (list) => recordBetNotices(list),
+    tgUserForWallet: (w) => tgUserForWallet(w),
+    // Groups the bot is in only: a guest reply is one message the bot may
+    // edit, never a thread it may add to.
+    groupThreads: async (slug) => threadsFrom(await tgThreadsForSlug(slug))
+      .flatMap((t) => (t.kind === "group" ? [{ chatId: t.chatId, messageId: t.messageId }] : [])),
+    pacing: {
+      get: async (slug) => {
+        const raw = await botStateGet(`bet_broadcast:${slug}`).catch(() => null);
+        try { return raw ? (JSON.parse(raw) as { at: number; pool: number }) : null; } catch { return null; }
+      },
+      set: async (slug, p) => { await botStateSet(`bet_broadcast:${slug}`, JSON.stringify(p)); },
+    },
+    sendGroup: async ({ chatId, replyTo, text, url }) => {
+      if (!tgOn) return;
+      await TG.sendMessage(chatId, text, replyTo, { text: "Take a side", url });
+    },
+    dm: async (userId, text) => { if (tgOn) await TG.sendMessage(userId, text, null); },
+    push: (wallets, payload) => pushToWallets(wallets, payload),
+    dryRun: TG_DRY_RUN,
+    log,
+  };
+}
+
+/**
+ * WHAT HAPPENED IN THE MARKETS YOU ARE IN. For the wallets linked to this
+ * browser, plus the one connected on the page asking (the profile knows it,
+ * the masthead does not). Nothing here is more private than the chain: every
+ * stake is a public account, and this only says that somebody made one.
+ */
+app.get("/api/notices", async (req, res) => {
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  const wallet = typeof req.query.wallet === "string" && isValidPubkeyString(req.query.wallet) ? req.query.wallet : null;
+  const wallets = [...(deviceId ? await walletsForDevice(deviceId).catch(() => []) : []), ...(wallet ? [wallet] : [])];
+  if (!wallets.length) return res.json({ unseen: 0, items: [] });
+  if (req.query.countOnly === "1") return res.json({ unseen: await unseenBetNoticeCount(wallets).catch(() => 0) });
+  const [unseen, rows] = await Promise.all([
+    unseenBetNoticeCount(wallets).catch(() => 0),
+    betNoticesFor(wallets, 30).catch(() => []),
+  ]);
+  const heads = new Map<string, string>();
+  for (const slug of new Set(rows.map((r) => r.slug))) {
+    const d = await communityMarketDetail(slug).catch(() => null);
+    heads.set(slug, d ? foldIds(d.hook || d.question) : slug);
+  }
+  // The actor is a wallet, and a wallet is never printed: it is dropped here.
+  res.set("Cache-Control", "no-store").json({
+    unseen,
+    items: rows.map((r) => ({
+      kind: r.kind, slug: r.slug, headline: heads.get(r.slug) ?? r.slug, url: `/m/${r.slug}`,
+      side: r.side, lamports: r.lamports, at: r.at, seen: r.seen,
+    })),
+  });
+});
+
+app.post("/api/notices/seen", express.json(), async (req, res) => {
+  const deviceId = typeof req.body?.deviceId === "string" && DEVICE_ID.test(req.body.deviceId) ? req.body.deviceId : null;
+  const wallet = typeof req.body?.wallet === "string" && isValidPubkeyString(req.body.wallet) ? req.body.wallet : null;
+  const wallets = [...(deviceId ? await walletsForDevice(deviceId).catch(() => []) : []), ...(wallet ? [wallet] : [])];
+  if (wallets.length) await markBetNoticesSeen(wallets).catch(() => {});
+  res.status(204).end();
+});
+
 app.get("/api/chain/payouts", async (req, res) => {
   const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
   if (!deviceId) return res.json({ count: 0 });
@@ -5077,6 +5170,12 @@ if (realStakesReady) {
         const walletOwner = await twitterHandleForWallet(stake.user).catch(() => null);
         await creditFundedBettor(slug, stake.user, walletOwner).catch((e) =>
           console.error("[genesis] bettor credit failed (non-fatal):", (e as Error).message));
+        // The people this stake concerns hear about it: the group the market
+        // came from, the other side, the opener. See src/social/bets.ts.
+        await onBetLanded({
+          slug, wallet: stake.user, side: stake.side, lamports: stake.lamports,
+          before: { yes: crowdBefore.totalYesLamports, no: crowdBefore.totalNoLamports },
+        }, betNotifyDeps()).catch((e) => console.error("[bets] notify failed (non-fatal):", (e as Error).message));
       }).catch(() => {});
     }
 

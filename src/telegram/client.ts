@@ -150,11 +150,16 @@ const replyTo = (messageId: number) => ({
   reply_parameters: { message_id: messageId, allow_sending_without_reply: true },
 });
 
-export async function sendMessage(chatId: number, text: string, replyToId: number | null): Promise<SentMessage> {
+export async function sendMessage(
+  chatId: number, text: string, replyToId: number | null, button?: { text: string; url: string } | null,
+): Promise<SentMessage> {
   return call<SentMessage>("sendMessage", {
     chat_id: chatId,
     text,
     ...(replyToId ? replyTo(replyToId) : {}),
+    // A link in the text would unfurl a second card under every ping; the
+    // button carries the link without one.
+    ...(button ? { reply_markup: { inline_keyboard: [[{ text: button.text, url: button.url }]] }, link_preview_options: { is_disabled: true } } : {}),
   });
 }
 

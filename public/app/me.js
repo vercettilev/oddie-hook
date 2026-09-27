@@ -22,7 +22,7 @@
 
   // Default to the ask. If the fetch never answers, an invitation is a better
   // wrong answer than a blank space or a name we cannot prove.
-  a.className = "mechip mechip--go";
+  a.className = "mechip mechip--go mechip--me";
   a.textContent = "Connect X";
   a.href = "/api/auth/twitter/start?deviceId=" + encodeURIComponent(did)
          + "&return=" + encodeURIComponent(location.pathname);
@@ -40,7 +40,7 @@
     .then(function (j) {
       var tw = (j.accounts || []).filter(function (x) { return x.provider === "twitter"; })[0];
       if (!tw || !tw.handle) return;
-      a.className = "mechip";
+      a.className = "mechip mechip--me";
       a.textContent = "@" + String(tw.handle).replace(/^@+/, "");
       a.href = "/profile";
     });
@@ -73,14 +73,17 @@
       // Under the phone breakpoint every page gives .mechip `margin-left:auto`
       // to push it to the end of the masthead row. With TWO of them both did
       // it, each claimed the whole remaining width. Only the first one pushes.
-      + ".mechip--cash + .mechip{margin-left:0}"
+      + ".mechip--cash + .mechip,.mechip--new + .mechip{margin-left:0}"
+      // Activity in the markets you are in: somebody took the other side.
+      + ".mechip--new{background:#D7DC1F;color:#0B0D04;box-shadow:3px 3px 0 #5A6109}"
+      + ".mechip--new:hover{background:#E7EC4E;color:#0B0D04}"
       /* AND ON A PHONE THE NAME GIVES WAY TO THE MONEY. Even sharing one
          margin, the wordmark plus two chips is about 418px of a 375px row, so
          the masthead wrapped to three lines: 134px of a 667px screen spent on
          chrome, on the page where the money is. One of them has to go, and it
          is not the one with SOL behind it. The handle is one tap away on the
          page this chip links to. */
-      + "@media (max-width:560px){.mechip--cash ~ .mechip{display:none}}";
+      + "@media (max-width:560px){.mechip--cash ~ .mechip--me,.mechip--new ~ .mechip--me{display:none}}";
     document.head.appendChild(css);
 
     fetch("/api/chain/payouts?deviceId=" + encodeURIComponent(did))
@@ -98,6 +101,22 @@
         // Before the identity chip: on a phone the masthead wraps, and the one
         // thing that must survive the wrap is the money.
         bar.insertBefore(cash, a);
+      })
+      .catch(function () {});
+
+    /* SOMETHING HAPPENED IN A MARKET YOU ARE IN. Somebody took the other side
+       of your bet, or bet in the market you opened. A count and a word, like
+       the money chip, and gone once the profile has shown them. */
+    fetch("/api/notices?countOnly=1&deviceId=" + encodeURIComponent(did))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var n = j && j.unseen;
+        if (!n) return;
+        var news = document.createElement("a");
+        news.className = "mechip mechip--new";
+        news.textContent = n + " new";
+        news.href = "/profile";
+        bar.insertBefore(news, a);
       })
       .catch(function () {});
   }

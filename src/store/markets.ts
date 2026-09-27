@@ -926,6 +926,28 @@ CREATE TABLE IF NOT EXISTS payout_notice (
 );
 CREATE INDEX IF NOT EXISTS payout_notice_unseen_idx ON payout_notice (wallet) WHERE seen_at IS NULL;
 
+-- WHAT HAPPENED IN A MARKET YOU ARE IN, per wallet. Its own table: "notice" is
+-- the play-money era's, keyed on a device, and CREATE TABLE IF NOT EXISTS would
+-- have silently kept that shape in production. The payout notice above is
+-- the one about money to collect; these are the ones about people: somebody
+-- took the other side of your bet, somebody bet in the market you opened.
+-- actor is the wallet that did it, kept so the same stake retried or
+-- relayed twice is one notice (the unique key), and never shown: it is a
+-- wallet, and a wallet is not a name anybody chose to publish.
+CREATE TABLE IF NOT EXISTS bet_notice (
+  id       bigserial PRIMARY KEY,
+  wallet   text NOT NULL,
+  kind     text NOT NULL,
+  slug     text NOT NULL,
+  actor    text NOT NULL,
+  side     text,
+  lamports bigint,
+  at       timestamptz NOT NULL DEFAULT now(),
+  seen_at  timestamptz,
+  UNIQUE (wallet, kind, slug, actor)
+);
+CREATE INDEX IF NOT EXISTS bet_notice_wallet_idx ON bet_notice (wallet, at DESC);
+
 -- PERMISSION TO KNOCK ON A DOOR.
 --
 -- The endpoint is the primary key because the browser owns it: one browser has
@@ -6933,6 +6955,95 @@ export function _resetPayoutNotices(): void { memPayoutNotices.length = 0; }
  * Best-effort by contract. The caller is the settlement path and no bookkeeping
  * failure may hold up money that has already moved on chain.
  */
+/* ------------------------------------------------------------- notices -----
+ * Per-wallet activity: somebody took the other side of your bet, somebody bet
+ * in the market you opened. Written when a stake is confirmed, read by the
+ * masthead bell and the profile's Activity list. */
+export type BetNoticeKind = "counter" | "opened_bet";
+export interface BetNotice {
+  wallet: string; kind: BetNoticeKind; slug: string; actor: string;
+  side: "yes" | "no" | null; lamports: number | null;
+}
+export interface StoredBetNotice extends BetNotice { id: number; at: string; seen: boolean }
+const memBetNotices: StoredBetNotice[] = [];
+
+/** Writes each notice once, ever (the same stake relayed twice is one), and
+ *  returns only the ones that are new, which are the only ones to push. */
+export async function recordBetNotices(list: BetNotice[]): Promise<BetNotice[]> {
+  const fresh: BetNotice[] = [];
+  if (!PERSISTENT) {
+    for (const n of list) {
+      if (memBetNotices.some((x) => x.wallet === n.wallet && x.kind === n.kind && x.slug === n.slug && x.actor === n.actor)) continue;
+      memBetNotices.push({ ...n, id: memBetNotices.length + 1, at: new Date().toISOString(), seen: false });
+      fresh.push(n);
+    }
+    return fresh;
+  }
+  await ensureSchema();
+  for (const n of list) {
+    const { rowCount } = await db().query(
+      `INSERT INTO bet_notice (wallet, kind, slug, actor, side, lamports) VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (wallet, kind, slug, actor) DO NOTHING`,
+      [n.wallet, n.kind, n.slug, n.actor, n.side, n.lamports],
+    );
+    if ((rowCount ?? 0) > 0) fresh.push(n);
+  }
+  return fresh;
+}
+
+export async function betNoticesFor(wallets: string[], limit = 30): Promise<StoredBetNotice[]> {
+  const list = [...new Set(wallets.filter(Boolean))];
+  if (list.length === 0) return [];
+  if (!PERSISTENT) {
+    return memBetNotices.filter((x) => list.includes(x.wallet)).slice(-limit).reverse();
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ id: string; wallet: string; kind: BetNoticeKind; slug: string; actor: string;
+    side: "yes" | "no" | null; lamports: string | null; at: Date; seen_at: Date | null }>(
+    `SELECT id, wallet, kind, slug, actor, side, lamports, at, seen_at FROM bet_notice
+      WHERE wallet = ANY($1::text[]) ORDER BY at DESC LIMIT $2`,
+    [list, Math.max(1, Math.min(100, limit))],
+  );
+  // bigint arrives as a string from node-postgres; a string here would
+  // concatenate instead of add anywhere downstream.
+  return rows.map((r) => ({
+    id: Number(r.id), wallet: r.wallet, kind: r.kind, slug: r.slug, actor: r.actor, side: r.side,
+    lamports: r.lamports === null ? null : Number(r.lamports), at: new Date(r.at).toISOString(), seen: r.seen_at !== null,
+  }));
+}
+
+export async function unseenBetNoticeCount(wallets: string[]): Promise<number> {
+  const list = [...new Set(wallets.filter(Boolean))];
+  if (list.length === 0) return 0;
+  if (!PERSISTENT) return memBetNotices.filter((x) => list.includes(x.wallet) && !x.seen).length;
+  await ensureSchema();
+  const { rows } = await db().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM bet_notice WHERE wallet = ANY($1::text[]) AND seen_at IS NULL`, [list]);
+  return rows[0]?.n ?? 0;
+}
+
+export async function markBetNoticesSeen(wallets: string[]): Promise<void> {
+  const list = [...new Set(wallets.filter(Boolean))];
+  if (list.length === 0) return;
+  if (!PERSISTENT) { for (const x of memBetNotices) if (list.includes(x.wallet)) x.seen = true; return; }
+  await ensureSchema();
+  await db().query(`UPDATE bet_notice SET seen_at = now() WHERE wallet = ANY($1::text[]) AND seen_at IS NULL`, [list]);
+}
+
+/** The Telegram user who chose this wallet for their 2%, when one did: the
+ *  person a private message about this wallet's bets can reach. */
+export async function tgUserForWallet(wallet: string): Promise<number | null> {
+  if (!PERSISTENT || !wallet) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ id: string }>(
+    `SELECT id FROM person WHERE wallet = $1 AND id LIKE 'tg:%' ORDER BY wallet_at DESC NULLS LAST LIMIT 1`, [wallet]);
+  const id = rows[0] ? Number(rows[0].id.slice(3)) : NaN;
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/** Test seam: the in-memory notices. */
+export function _resetBetNotices(): void { memBetNotices.length = 0; }
+
 export async function recordPayoutNotices(slug: string, wallets: string[]): Promise<number> {
   const list = [...new Set(wallets.filter(Boolean))];
   if (!slug || list.length === 0) return 0;

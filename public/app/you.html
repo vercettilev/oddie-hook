@@ -358,6 +358,19 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .payout .go:hover{background:#000;color:var(--yellow-hi)}
 .payout .go:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
+/* ACTIVITY: what other people did in the markets you are in. A list, not a
+   set of stickers: these are events, not facts about you, and the unseen ones
+   carry a pink edge until this page has shown them. */
+.acts{list-style:none;margin:0 0 30px;padding:0;display:grid;gap:10px}
+.acts li{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  border-left:3px solid var(--line);padding:4px 0 4px 12px}
+.acts li.is-new{border-left-color:var(--pink)}
+.acts a{display:grid;gap:3px;text-decoration:none;color:var(--fg);min-width:0}
+.acts a:hover .acts__t{text-decoration:underline;text-underline-offset:3px}
+.acts__t{font-weight:700;font-size:15px;line-height:1.35}
+.acts__q{color:var(--fg-3);font-size:13.5px;line-height:1.35;overflow-wrap:anywhere}
+.acts time{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--fg-3);white-space:nowrap}
+
 /* YOUR TICKETS, AND THIS PAGE IS WHERE THEY LIVE.
    The bot has been telling people "4 tickets left" under their own tweets and
    there was nowhere on oddie.fun to go and check it. A number you
@@ -513,6 +526,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      number the server owns. Null until the boot fetch lands, and the fee copy
      falls back to a rate-free sentence rather than guessing. */
   var CHAIN_STATUS = null;
+  /** This browser's id, for reads keyed on the wallets linked to it. */
+  var DID = (window.OddieId && window.OddieId.get && window.OddieId.get()) || "";
   /* Whether this browser has an X account, known for certain. Only used to
      word the link ask: a wallet a Telegram opener already chose still has
      one thing a signature adds, and only for somebody who also has X. */
@@ -939,6 +954,30 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       + ". Your money is safe.</div>";
   }
 
+  /* ACTIVITY. What other people did in the markets you are in: somebody took
+     the other side of your bet, somebody bet in the market you opened. Drawn
+     only when there is something, because an empty heading is a promise with
+     nothing behind it. Never a name: the server does not even send the wallet
+     that did it. */
+  function ago(iso) {
+    var s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    return s < 60 ? "now" : s < 3600 ? Math.floor(s / 60) + "m" : s < 86400 ? Math.floor(s / 3600) + "h" : Math.floor(s / 86400) + "d";
+  }
+  function activitySection(n) {
+    var items = (n && n.items) || [];
+    if (!items.length) return "";
+    return "<section><h2>Activity</h2><ul class=\"acts\">" + items.slice(0, 12).map(function (it) {
+      var amt = typeof it.lamports === "number" ? SOL(it.lamports) + " SOL" : "";
+      var side = it.side ? String(it.side).toUpperCase() : "";
+      var line = it.kind === "counter"
+        ? "Someone took " + side + (amt ? " with " + amt : "") + " against you"
+        : (amt || "A bet") + " came in on " + side + " in your market";
+      return '<li' + (it.seen ? "" : ' class="is-new"') + '><a href="' + esc(it.url) + '">'
+        + '<span class="acts__t">' + esc(line) + '</span><span class="acts__q">' + esc(it.headline) + "</span></a>"
+        + '<time datetime="' + esc(it.at) + '">' + ago(it.at) + "</time></li>";
+    }).join("") + "</ul></section>";
+  }
+
   /* YOUR FEES, DRAWN IN EVERY STATE, INCLUDING BEFORE A WALLET EXISTS.
      Lev: "fee si hic olmayan bir adama bile bunu gosterebiliriz... fee
      toplayabilecegini anlasin iyice diye." It used to appear only when there
@@ -1193,6 +1232,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       getJSON("/api/chain/open?userPubkey=" + pk),
       getJSON("/api/chain/creator-fees?creatorPubkey=" + pk),
       getJSON("/api/chain/opener?wallet=" + pk),
+      getJSON("/api/notices?wallet=" + pk + (DID ? "&deviceId=" + encodeURIComponent(DID) : "")),
     ]).then(function (r) {
       /* A STALE ANSWER MUST NOT BE PAINTED, AND A STRANDED PAGE MUST NOT BE
          LEFT EITHER. This used to return and nothing else, on the assumption
@@ -1207,7 +1247,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         if (myGen === loadGen && heals < 2) { heals++; load(); }
         return;
       }
-      var claim = r[0], open = r[1], fees = r[2], opener = r[3];
+      var claim = r[0], open = r[1], fees = r[2], opener = r[3], notices = r[4];
       if (!claim && !open && !fees) {
         /* AND A BUTTON, because "try again in a moment" with nothing to press
            is an instruction to reload a page somebody may not realise they can
@@ -1288,6 +1328,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           + "</section>";
       }
 
+      html += activitySection(notices);
       html += feesSection(fees, true, opener);
 
       /* WHERE WHAT YOU JUST COLLECTED WENT.
@@ -1302,6 +1343,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       }
 
       view.innerHTML = html;
+      // Shown, so seen: the masthead's count clears on the next page.
+      if (notices && notices.unseen) {
+        fetch("/api/notices/seen", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ wallet: myPk, deviceId: DID || undefined }) }).catch(function () {});
+      }
 
       var lk = view.querySelector("#linkme");
       if (lk) lk.addEventListener("click", function () {
