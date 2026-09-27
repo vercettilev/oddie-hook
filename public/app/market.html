@@ -979,7 +979,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
           // in sets the odds." two branches up. .first is a flex row and the gap
           // between the <b> and the text node is the separator, so a one-word
           // tail ("... side | yet.") reads as a stray rather than as a phrase.
-          + "<b>Nobody's taken</b> the other side yet.</p>";
+          // The open side, named, as the group message and the unfurl say it.
+          + "<b>" + (y > 0 ? "NO" : "YES") + "</b> is wide open.</p>";
       }
     }
 
