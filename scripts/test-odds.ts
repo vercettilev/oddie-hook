@@ -85,7 +85,9 @@ const mkt = {
   // The live market that started this: 0.5 SOL on yes, nothing on no.
   const svg = renderCard(mkt, { pools: { yes: 0.5 * SOL, no: 0, creatorFeeBps: 200 } });
   check("a one-sided card quotes no multiple", !/pays/.test(svg), (svg.match(/pays [^<]*/) || [""])[0]);
-  check("...and says what is actually true", /nothing on the other side/.test(svg));
+  check("...and says what is actually true: the open side", /NO is wide open/.test(svg));
+  check("...said for the other way round too",
+    /YES is wide open/.test(renderCard(mkt, { pools: { yes: 0, no: 0.5 * SOL, creatorFeeBps: 200 } })));
   check("...and prints no percentage hero", !/>\d+%</.test(svg), (svg.match(/>\d+%</) || [""])[0]);
 }
 {

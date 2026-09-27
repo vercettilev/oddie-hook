@@ -619,7 +619,8 @@ export function renderCard(
   const metaText = settled
     ? "settled on chain"
     : oneSided
-      ? "nothing on the other side"
+      // The side that is open, as the group message and the unfurl say it.
+      ? `${(opts.pools?.yes ?? 0) > 0 ? "NO" : "YES"} is wide open`
       : unpriced
       ? "first in sets the line"
       : heads >= MIN_HEADS_CARD
