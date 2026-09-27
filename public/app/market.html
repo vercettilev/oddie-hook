@@ -592,6 +592,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    Telegram name in yellow would say the wrong platform before a word of it
    is read. */
 .eyebrow .by--tg{background:var(--tg);color:#fff}
+/* AN OPENER WITH AN ODDIE NAME is somebody you can follow, so their chip
+   carries their picture and leads to their page, where the Follow button is.
+   The post itself stays one tap away under "See the post". */
+.eyebrow .by--pp{display:inline-flex;align-items:center;gap:7px;padding:3px 12px 3px 3px}
+.eyebrow .by--pp img{width:22px;height:22px;border-radius:50%;background:var(--cream);flex:none}
 .eyebrow .by--tg:hover{background:var(--tg-hi)}
 .src__a--tg{color:var(--tg)}
 .rail a.earn{color:inherit;text-decoration:underline;text-underline-offset:3px}
@@ -637,6 +642,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       <a class="mark" href="https://oddie.fun"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
+      <a href="/following">Following</a>
       <a href="/profile">Profile</a>
       <a href="/leaderboard">Leaderboard</a>
     </nav>
@@ -657,6 +663,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
      have been given a reason to go anywhere. -->
 <nav class="foot wrap" aria-label="Site">
   <a href="/markets">Markets</a>
+  <a href="/following">Following</a>
   
   <a href="/profile">Profile</a>
   <a href="/leaderboard">Leaderboard</a>
@@ -776,6 +783,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
 
+  /* The opener as somebody to follow: their oddie picture and name, to their
+     page. Used whenever the server knows them; the X and Telegram chips above
+     remain for openers who have no oddie name yet. */
+  function ppChip(o) {
+    return '<a class="by by--pp" href="/u/' + encodeURIComponent(o.username) + '">'
+      + '<img src="/avatars/' + esc(o.avatar) + '.webp" alt="" width="22" height="22">@' + esc(o.username) + "</a>";
+  }
+
   /* What this browser just put on this market. Null until a stake lands in
      this session: the page has no wallet-scoped read of its own, so it can
      only ever speak about what it watched happen. Never invented. */
@@ -838,7 +853,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
-    if (m.taggedBy) bits.push(byChip(m.taggedBy));
+    if (m.opener && m.opener.username) bits.push(ppChip(m.opener));
+    else if (m.taggedBy) bits.push(byChip(m.taggedBy));
     else if (m.openedBy && m.openedBy.platform === "telegram" && m.openedBy.handle) bits.push(tgChip(m.openedBy.handle));
     /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
        vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre

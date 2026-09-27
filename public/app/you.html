@@ -362,11 +362,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .pfp{width:56px;height:56px;border-radius:50%;border:3px solid var(--black);box-shadow:3px 3px 0 var(--yellow-deep);
   vertical-align:middle;margin:0 14px 6px 0;object-fit:cover}
 .pfp[hidden]{display:none}
-.idbar{margin:-4px 0 18px}
-.idbar button{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+.idbar{margin:-4px 0 18px;display:flex;flex-wrap:wrap;gap:10px}
+.idbar a,.idbar button{text-decoration:none;display:inline-block;font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
   background:transparent;color:var(--fg);border:2px solid var(--line);padding:7px 11px;cursor:pointer}
-.idbar button:hover{border-color:var(--fg-3)}
-.idbar button:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.idbar a:hover,.idbar button:hover{border-color:var(--fg-3)}
+.idbar a[hidden]{display:none}
+.idbar a:focus-visible,.idbar button:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .idedit{border:3px solid var(--yellow);box-shadow:8px 9px 0 var(--yellow-deep);padding:20px 22px;margin:0 0 28px;
   display:grid;gap:10px;max-width:560px}
 .idedit[hidden]{display:none}
@@ -418,8 +419,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .acts li{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
   border-left:3px solid var(--line);padding:4px 0 4px 12px}
 .acts li.is-new{border-left-color:var(--pink)}
-.acts a{display:grid;gap:3px;text-decoration:none;color:var(--fg);min-width:0}
-.acts a:hover .acts__t{text-decoration:underline;text-underline-offset:3px}
+.acts__b{display:grid;gap:3px;min-width:0}
+.acts__who{color:var(--fg);text-decoration:underline;text-decoration-color:var(--fg-3);text-underline-offset:3px}
+.acts__who:hover{text-decoration-color:var(--yellow)}
+a.acts__q{text-decoration:none}
+a.acts__q:hover{color:var(--fg);text-decoration:underline;text-underline-offset:3px}
 .acts__t{font-weight:700;font-size:15px;line-height:1.35}
 .acts__q{color:var(--fg-3);font-size:13.5px;line-height:1.35;overflow-wrap:anywhere}
 .acts time{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--fg-3);white-space:nowrap}
@@ -503,6 +507,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       <a class="mark" href="https://oddie.fun"><img src="/brand/mark.webp" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
+      <a href="/following">Following</a>
       <a href="/profile" aria-current="page">Profile</a>
       <a href="/leaderboard">Leaderboard</a>
     </nav>
@@ -526,7 +531,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        line, each shown only when it can do something. -->
   <h1><img class="pfp" id="pfp" alt="" hidden><span id="who">Your profile</span> <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
   <p class="sub" id="sub"></p>
-  <p class="idbar" id="idbar" hidden><button type="button" id="idedit-open">Edit profile</button></p>
+  <p class="idbar" id="idbar" hidden><button type="button" id="idedit-open">Edit profile</button><a id="mypage" hidden>Your page</a></p>
   <!-- YOUR NAME AND PICTURE ON ODDIE, and whether your bets carry them. One
        small panel, opened on demand: most visits are about money, not this. -->
   <section class="idedit" id="idedit" hidden aria-label="Edit profile">
@@ -699,6 +704,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         if (!j || !j.signedIn) return;
         state = j;
         bar.hidden = false;
+        // Your public page, the one people follow you from.
+        var mine = document.getElementById("mypage");
+        if (mine && j.username) { mine.href = "/u/" + encodeURIComponent(j.username); mine.hidden = false; }
         document.getElementById("idedit-open").addEventListener("click", function () {
           input.value = state.username || "";
           picked = state.avatar;
@@ -709,6 +717,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           panel.hidden = false; bar.hidden = true;
           input.focus();
         });
+        if (location.hash === "#idedit") document.getElementById("idedit-open").click();
       })
       .catch(function () {});
     input.addEventListener("input", function () {
@@ -1161,8 +1170,15 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         ? who + " took " + side + (amt ? " with " + amt : "") + " against you"
         : (amt || "A bet") + " came in on " + side + (it.by ? " from " + who : "") + " in your market";
       var face = it.by && it.by.avatar ? '<img class="acts__pf" src="/avatars/' + esc(it.by.avatar) + '.webp" alt="">' : "";
-      return '<li' + (it.seen ? "" : ' class="is-new"') + '><a href="' + esc(it.url) + '">'
-        + '<span class="acts__t">' + face + esc(line) + '</span><span class="acts__q">' + esc(it.headline) + "</span></a>"
+      // A named person is a link to their page, where they can be followed;
+      // the headline under it is the way into the market.
+      var t = esc(line);
+      if (it.by && it.by.username) {
+        t = t.replace(esc(who), '<a class="acts__who" href="/u/' + encodeURIComponent(it.by.username) + '">' + face + esc(who) + "</a>");
+        face = "";
+      }
+      return '<li' + (it.seen ? "" : ' class="is-new"') + '><div class="acts__b">'
+        + '<span class="acts__t">' + face + t + '</span><a class="acts__q" href="' + esc(it.url) + '">' + esc(it.headline) + "</a></div>"
         + '<time datetime="' + esc(it.at) + '">' + ago(it.at) + "</time></li>";
     }).join("") + "</ul></section>";
   }

@@ -974,6 +974,34 @@ CREATE TABLE IF NOT EXISTS oddie_profile (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS oddie_profile_username_idx ON oddie_profile (lower(username)) WHERE username IS NOT NULL;
+-- When this person last looked at what the people they follow did.
+ALTER TABLE oddie_profile ADD COLUMN IF NOT EXISTS feed_seen_at timestamptz;
+
+-- WHO FOLLOWS WHOM: people, not wallets. Both ends are canonical devices.
+CREATE TABLE IF NOT EXISTS follow_edge (
+  follower  text NOT NULL,
+  followee  text NOT NULL,
+  at        timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (follower, followee)
+);
+CREATE INDEX IF NOT EXISTS follow_edge_followee_idx ON follow_edge (followee);
+
+-- WHAT A PERSON DID, for the people who follow them: opened a market, took a
+-- side. Written as it happens, from the moment this table exists. A bet is
+-- recorded whether or not its owner shows their name, and shown only while
+-- they do: the switch decides what is read, so turning it off hides the past
+-- too. dedup keeps a relayed stake or a retried open to one event.
+CREATE TABLE IF NOT EXISTS social_event (
+  id        bigserial PRIMARY KEY,
+  actor     text NOT NULL,
+  kind      text NOT NULL CHECK (kind IN ('bet','open')),
+  slug      text NOT NULL,
+  side      text,
+  lamports  bigint,
+  dedup     text NOT NULL UNIQUE,
+  at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS social_event_actor_idx ON social_event (actor, at DESC);
 
 -- PERMISSION TO KNOCK ON A DOOR.
 --
@@ -7112,6 +7140,279 @@ export async function publicNameForWallet(wallet: string): Promise<
     tgHandle: r.tg_handle ? r.tg_handle.replace(/^@+/, "") : null, xHandle: r.x_handle ? r.x_handle.replace(/^@+/, "") : null,
   };
 }
+
+/* ------------------------------------------------------------- following ---
+ * People follow people. A person is a canonical device, found from a wallet (a
+ * signature on one of their browsers, or the wallet they chose on Telegram),
+ * from a Telegram id, or from an X handle. */
+export async function canonicalForWallet(wallet: string): Promise<string | null> {
+  if (!PERSISTENT || !wallet) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ c: string }>(
+    `SELECT canonical_device AS c FROM account WHERE provider = 'phantom' AND provider_uid = $1
+     UNION
+     SELECT a.canonical_device FROM person pe JOIN account a ON a.provider = 'telegram' AND a.provider_uid = substr(pe.id, 4)
+      WHERE pe.wallet = $1 AND pe.id LIKE 'tg:%'
+     LIMIT 1`, [wallet]);
+  return rows[0]?.c ?? null;
+}
+
+export async function canonicalForIdentity(provider: "telegram" | "twitter", key: string): Promise<string | null> {
+  if (!PERSISTENT || !key) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ c: string }>(provider === "telegram"
+    ? `SELECT canonical_device AS c FROM account WHERE provider = 'telegram' AND provider_uid = $1 LIMIT 1`
+    : `SELECT canonical_device AS c FROM account WHERE provider = 'twitter' AND lower(ltrim(handle, '@')) = lower(ltrim($1, '@')) LIMIT 1`,
+    [key]);
+  return rows[0]?.c ?? null;
+}
+
+export interface PublicPerson { canonical: string; username: string; avatar: string; showName: boolean }
+
+export async function personByUsername(raw: string): Promise<PublicPerson | null> {
+  const name = normUsername(raw);
+  if (!USERNAME_RE.test(name)) return null;
+  if (!PERSISTENT) {
+    for (const [c, p] of memProfiles) if (p.username === name) return { canonical: c, username: name, avatar: p.avatar, showName: p.showName };
+    return null;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ canonical_device: string; username: string; avatar: string | null; show_name: boolean }>(
+    `SELECT canonical_device, username, avatar, show_name FROM oddie_profile WHERE lower(username) = $1`, [name]);
+  const r = rows[0];
+  return r ? { canonical: r.canonical_device, username: r.username, avatar: r.avatar ?? defaultAvatar(r.canonical_device), showName: r.show_name } : null;
+}
+
+const memFollows = new Set<string>();
+export async function setFollow(follower: string, followee: string, on: boolean): Promise<void> {
+  if (!follower || !followee || follower === followee) return;
+  if (!PERSISTENT) { const k = `${follower}>${followee}`; if (on) memFollows.add(k); else memFollows.delete(k); return; }
+  await ensureSchema();
+  if (on) await db().query(`INSERT INTO follow_edge (follower, followee) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [follower, followee]);
+  else await db().query(`DELETE FROM follow_edge WHERE follower = $1 AND followee = $2`, [follower, followee]);
+}
+
+export async function isFollowing(follower: string, followee: string): Promise<boolean> {
+  if (!follower || !followee) return false;
+  if (!PERSISTENT) return memFollows.has(`${follower}>${followee}`);
+  await ensureSchema();
+  const { rows } = await db().query(`SELECT 1 FROM follow_edge WHERE follower = $1 AND followee = $2`, [follower, followee]);
+  return rows.length > 0;
+}
+
+export async function followCounts(canonical: string): Promise<{ followers: number; following: number }> {
+  if (!PERSISTENT) {
+    let followers = 0, following = 0;
+    for (const k of memFollows) { const [a, b] = k.split(">"); if (b === canonical) followers++; if (a === canonical) following++; }
+    return { followers, following };
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ followers: number; following: number }>(
+    `SELECT (SELECT count(*)::int FROM follow_edge WHERE followee = $1) AS followers,
+            (SELECT count(*)::int FROM follow_edge WHERE follower = $1) AS following`, [canonical]);
+  return rows[0] ?? { followers: 0, following: 0 };
+}
+
+export async function followersOf(canonical: string): Promise<string[]> {
+  if (!PERSISTENT) return [...memFollows].filter((k) => k.endsWith(`>${canonical}`)).map((k) => k.split(">")[0]);
+  await ensureSchema();
+  const { rows } = await db().query<{ follower: string }>(`SELECT follower FROM follow_edge WHERE followee = $1`, [canonical]);
+  return rows.map((r) => r.follower);
+}
+
+export interface SocialEvent { actor: string; kind: "bet" | "open"; slug: string; side: "yes" | "no" | null; lamports: number | null; dedup: string }
+const memEvents: Array<SocialEvent & { at: string }> = [];
+
+/** Records one event, once. True when it is new (and so worth telling anybody). */
+export async function recordSocialEvent(e: SocialEvent): Promise<boolean> {
+  if (!PERSISTENT) {
+    if (memEvents.some((x) => x.dedup === e.dedup)) return false;
+    memEvents.push({ ...e, at: new Date().toISOString() });
+    return true;
+  }
+  await ensureSchema();
+  const { rowCount } = await db().query(
+    `INSERT INTO social_event (actor, kind, slug, side, lamports, dedup) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (dedup) DO NOTHING`,
+    [e.actor, e.kind, e.slug, e.side, e.lamports, e.dedup]);
+  return (rowCount ?? 0) > 0;
+}
+
+export interface FeedItem {
+  kind: "bet" | "open"; slug: string; side: "yes" | "no" | null; lamports: number | null; at: string;
+  username: string; avatar: string;
+}
+
+/**
+ * Events by the given people ("all" for everybody), newest first, as the public
+ * may see them: a market opened is public (its page names its opener); a side
+ * taken shows only while its owner shows their name. People with no username
+ * are not shown: there is nobody to point at.
+ */
+export async function eventsBy(actors: string[] | "all", limit = 40, since?: string | null): Promise<FeedItem[]> {
+  const list = actors === "all" ? null : [...new Set(actors.filter(Boolean))];
+  if (list && !list.length) return [];
+  const n = Math.max(1, Math.min(100, limit));
+  if (!PERSISTENT) {
+    return memEvents.filter((e) => (!list || list.includes(e.actor)) && (!since || e.at > since)).reverse().flatMap((e) => {
+      const p = memProfiles.get(e.actor);
+      if (!p?.username || (e.kind === "bet" && !p.showName)) return [];
+      return [{ kind: e.kind, slug: e.slug, side: e.side, lamports: e.lamports, at: e.at, username: p.username, avatar: p.avatar }];
+    }).slice(0, n);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ kind: "bet" | "open"; slug: string; side: "yes" | "no" | null; lamports: string | null; at: Date;
+    username: string; avatar: string | null; actor: string }>(
+    `SELECT e.kind, e.slug, e.side, e.lamports, e.at, p.username, p.avatar, e.actor
+       FROM social_event e JOIN oddie_profile p ON p.canonical_device = e.actor
+      WHERE ($1::text[] IS NULL OR e.actor = ANY($1::text[])) AND p.username IS NOT NULL AND (e.kind = 'open' OR p.show_name)
+        AND ($3::timestamptz IS NULL OR e.at > $3::timestamptz)
+      ORDER BY e.at DESC LIMIT $2`,
+    [list, n, since ?? null]);
+  return rows.map((r) => ({
+    kind: r.kind, slug: r.slug, side: r.side, lamports: r.lamports === null ? null : Number(r.lamports),
+    at: new Date(r.at).toISOString(), username: r.username, avatar: r.avatar ?? defaultAvatar(r.actor),
+  }));
+}
+
+/** The person who opened this market, when they have an oddie name. An open is
+ *  always public, so this is safe to print on the market's own page. */
+export async function openerProfile(slug: string): Promise<{ username: string; avatar: string } | null> {
+  if (!slug) return null;
+  if (!PERSISTENT) {
+    const e = memEvents.find((x) => x.kind === "open" && x.slug === slug);
+    const p = e ? memProfiles.get(e.actor) : undefined;
+    return p?.username ? { username: p.username, avatar: p.avatar } : null;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ username: string; avatar: string | null; canonical_device: string }>(
+    `SELECT p.username, p.avatar, p.canonical_device FROM social_event e JOIN oddie_profile p ON p.canonical_device = e.actor
+      WHERE e.dedup = 'open:' || $1 AND p.username IS NOT NULL LIMIT 1`, [slug]);
+  const r = rows[0];
+  return r ? { username: r.username, avatar: r.avatar ?? defaultAvatar(r.canonical_device) } : null;
+}
+
+export async function followeesOf(canonical: string): Promise<string[]> {
+  if (!PERSISTENT) return [...memFollows].filter((k) => k.startsWith(`${canonical}>`)).map((k) => k.split(">")[1]);
+  await ensureSchema();
+  const { rows } = await db().query<{ followee: string }>(`SELECT followee FROM follow_edge WHERE follower = $1`, [canonical]);
+  return rows.map((r) => r.followee);
+}
+
+export async function markFeedSeen(canonical: string): Promise<void> {
+  if (!PERSISTENT || !canonical) return;
+  await ensureSchema();
+  await db().query(`UPDATE oddie_profile SET feed_seen_at = now() WHERE canonical_device = $1`, [canonical]);
+}
+
+export async function feedSeenAt(canonical: string): Promise<string | null> {
+  if (!PERSISTENT || !canonical) return null;
+  await ensureSchema();
+  const { rows } = await db().query<{ t: Date | null }>(`SELECT feed_seen_at AS t FROM oddie_profile WHERE canonical_device = $1`, [canonical]);
+  return rows[0]?.t ? new Date(rows[0].t).toISOString() : null;
+}
+
+/** People worth following: the most active public people of the last month,
+ *  never yourself and never somebody you already follow. Public means they did
+ *  something the public may see (opened a market, or took a side with their
+ *  name on); somebody who only signed in is not listed, because a list of
+ *  everyone who ever signed in would say who uses oddie. */
+export async function peopleToFollow(exclude: string | null, limit = 8): Promise<Array<{ username: string; avatar: string; events: number }>> {
+  const n = Math.max(1, Math.min(30, limit));
+  if (!PERSISTENT) {
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const count = new Map<string, number>();
+    for (const e of memEvents) {
+      const p = memProfiles.get(e.actor);
+      if (!p?.username || e.actor === exclude || e.at < since || (e.kind === "bet" && !p.showName)) continue;
+      if (exclude && memFollows.has(`${exclude}>${e.actor}`)) continue;
+      count.set(e.actor, (count.get(e.actor) ?? 0) + 1);
+    }
+    return [...count].sort((x, y) => y[1] - x[1]).slice(0, n)
+      .map(([c, k]) => ({ username: memProfiles.get(c)!.username!, avatar: memProfiles.get(c)!.avatar, events: k }));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ username: string; avatar: string | null; canonical_device: string; n: number }>(
+    `SELECT p.username, p.avatar, p.canonical_device, count(e.id)::int AS n
+       FROM oddie_profile p
+       JOIN social_event e ON e.actor = p.canonical_device AND e.at > now() - interval '30 days' AND (e.kind = 'open' OR p.show_name)
+      WHERE p.username IS NOT NULL AND p.canonical_device IS DISTINCT FROM $1
+        AND NOT EXISTS (SELECT 1 FROM follow_edge f WHERE f.follower = $1 AND f.followee = p.canonical_device)
+      GROUP BY p.username, p.avatar, p.canonical_device
+      ORDER BY n DESC, max(e.at) DESC LIMIT $2`,
+    [exclude, n]);
+  return rows.map((r) => ({ username: r.username, avatar: r.avatar ?? defaultAvatar(r.canonical_device), events: r.n }));
+}
+
+/**
+ * EVERYTHING THAT HAPPENED BEFORE THE FEED EXISTED, written into it once.
+ *
+ * social_event is written as things happen, from the day it was created, so on
+ * that day every page it feeds was empty while the markets and the stakes
+ * behind them were sitting in other tables. This copies them in with their own
+ * times: every market opened by somebody with an account (an X tagger by
+ * handle, a Telegram opener by id) and every first stake per side by a wallet
+ * that belongs to somebody (signed in a browser, or chosen on Telegram).
+ * Nobody is told: these are history, not news. The dedup keys are the ones
+ * the live paths write, so it is safe to run on every boot, and a person who
+ * signs in later has their history picked up by the next one.
+ */
+export async function backfillSocialEvents(): Promise<number> {
+  if (!PERSISTENT) return 0;
+  await ensureSchema();
+  let added = 0;
+  const run = async (sql: string) => { const r = await db().query(sql); added += r.rowCount ?? 0; };
+  await run(`INSERT INTO social_event (actor, kind, slug, side, lamports, dedup, at)
+    SELECT DISTINCT ON (s.slug) a.canonical_device, 'open', s.slug, NULL, NULL, 'open:' || s.slug, s.created_at
+      FROM market_surfacer s
+      JOIN community_market cm ON cm.slug = s.slug
+      JOIN account a ON a.provider = 'twitter' AND lower(ltrim(a.handle, '@')) = lower(ltrim(s.handle, '@'))
+     WHERE s.handle IS NOT NULL
+     ORDER BY s.slug, a.created_at
+    ON CONFLICT (dedup) DO NOTHING`);
+  await run(`INSERT INTO social_event (actor, kind, slug, side, lamports, dedup, at)
+    SELECT DISTINCT ON (m.slug) a.canonical_device, 'open', m.slug, NULL, NULL, 'open:' || m.slug, m.at
+      FROM x_mention m
+      JOIN account a ON a.provider = 'telegram' AND a.provider_uid = substr(m.author, 4)
+     WHERE m.outcome = 'replied' AND m.reason = 'opened' AND m.author LIKE 'tg:%' AND m.slug IS NOT NULL
+     ORDER BY m.slug, m.at
+    ON CONFLICT (dedup) DO NOTHING`);
+  await run(`INSERT INTO social_event (actor, kind, slug, side, lamports, dedup, at)
+    SELECT DISTINCT ON (ce.slug, ce.wallet, ce.side) o.canonical_device, 'bet', ce.slug, ce.side, ce.lamports,
+           'bet:' || ce.slug || ':' || ce.wallet || ':' || ce.side, ce.created_at
+      FROM chain_entry ce
+      JOIN (SELECT provider_uid AS wallet, canonical_device, created_at FROM account WHERE provider = 'phantom'
+            UNION ALL
+            SELECT pe.wallet, a.canonical_device, a.created_at FROM person pe
+              JOIN account a ON a.provider = 'telegram' AND a.provider_uid = substr(pe.id, 4)
+             WHERE pe.id LIKE 'tg:%' AND pe.wallet IS NOT NULL) o ON o.wallet = ce.wallet
+     ORDER BY ce.slug, ce.wallet, ce.side, o.created_at
+    ON CONFLICT (dedup) DO NOTHING`);
+  return added;
+}
+
+/** The handles on a person's account, and where to reach them. */
+export async function reachFor(canonical: string): Promise<{ tgId: number | null; tgHandle: string | null; xHandle: string | null; devices: string[] }> {
+  const none = { tgId: null, tgHandle: null, xHandle: null, devices: [] as string[] };
+  if (!PERSISTENT || !canonical) return none;
+  await ensureSchema();
+  const { rows } = await db().query<{ provider: string; provider_uid: string; handle: string | null }>(
+    `SELECT provider, provider_uid, handle FROM account WHERE canonical_device = $1 AND provider IN ('telegram','twitter')
+      ORDER BY created_at DESC`, [canonical]);
+  const tg = rows.find((r) => r.provider === "telegram");
+  const x = rows.find((r) => r.provider === "twitter");
+  const dev = await db().query<{ device_id: string }>(
+    `SELECT da.device_id FROM device_account da JOIN account a ON a.id = da.account_id WHERE a.canonical_device = $1`, [canonical]);
+  const id = tg ? Number(tg.provider_uid) : NaN;
+  return {
+    tgId: Number.isSafeInteger(id) && id > 0 ? id : null,
+    tgHandle: tg?.handle ? tg.handle.replace(/^@+/, "") : null,
+    xHandle: x?.handle ? x.handle.replace(/^@+/, "") : null,
+    devices: [...new Set(dev.rows.map((r) => r.device_id))],
+  };
+}
+
+/** Test seam. */
+export function _resetSocial(): void { memFollows.clear(); memEvents.length = 0; }
 
 /** Test seam. */
 export function _resetProfiles(): void { memProfiles.clear(); }

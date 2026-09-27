@@ -10,9 +10,12 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
-import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile } from "./store/markets.js";
+import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
+  canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
+  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
+import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -140,7 +143,7 @@ const walletDomain = (req: express.Request): string =>
 const homeFor = (path: string): string => (APP_HOST && hostFor(path) === "app" ? APP_BASE_URL : BASE_URL);
 /** Which host a path belongs on. "shared" is served by both (APIs, assets). */
 function hostFor(path: string): "app" | "apex" | "shared" {
-  if (/^\/(m|market|w)\//.test(path) || /^\/(you|positions|profile|board|leaderboard|markets)\/?$/.test(path) || path.startsWith("/@")) return "app";
+  if (/^\/(m|market|w|u)\//.test(path) || /^\/(you|positions|profile|board|leaderboard|markets|following)\/?$/.test(path) || path.startsWith("/@")) return "app";
   if (path === "/" || /^\/(genesis|g|card)(\/|$)/.test(path)) return "apex";
   return "shared";
 }
@@ -155,6 +158,9 @@ const YOU_HTML = readFileSync(path.join(__dirname, "../public/app/you.html"), "u
 const LEADERBOARD_HTML = readFileSync(path.join(__dirname, "../public/app/leaderboard.html"), "utf8");
 /** One wallet's record. The shareable artifact: the page somebody posts. */
 const WHO_HTML = readFileSync(path.join(__dirname, "../public/app/who.html"), "utf8");
+/** A person on oddie, by the name they chose, and what the people you follow did. */
+const PERSON_HTML = readFileSync(path.join(__dirname, "../public/app/person.html"), "utf8");
+const FOLLOWING_HTML = readFileSync(path.join(__dirname, "../public/app/following.html"), "utf8");
 /** The list: every open market, newest first. The app's front door. */
 const MARKETS_HTML = readFileSync(path.join(__dirname, "../public/app/markets.html"), "utf8");
 
@@ -1560,6 +1566,171 @@ app.post("/api/notices/seen", express.json(), async (req, res) => {
   const wallets = [...(deviceId ? await walletsForDevice(deviceId).catch(() => []) : []), ...(wallet ? [wallet] : [])];
   if (wallets.length) await markBetNoticesSeen(wallets).catch(() => {});
   res.status(204).end();
+});
+
+/* ------------------------------------------------------------------ social -- */
+function followDeps(): FollowNotifyDeps {
+  const tgOn = Boolean(TG.tgToken());
+  return {
+    now: () => Date.now(),
+    followersOf: (a) => followersOf(a),
+    actor: async (a, kind) => {
+      const p = await profileFor(a);
+      if (!p?.username || (kind === "bet" && !p.showName)) return null;
+      return { username: p.username, tgHandle: (await reachFor(a)).tgHandle };
+    },
+    market: async (slug) => {
+      const d = await communityMarketDetail(slug).catch(() => null);
+      return d ? { headline: foldIds(d.hook || d.question), url: `${APP_BASE_URL}/m/${slug}` } : null;
+    },
+    tgUserFor: async (c) => (await reachFor(c)).tgId,
+    pushTo: async (c, payload) => {
+      const keys = vapidFromEnv();
+      if (!keys) return;
+      for (const sub of await pushSubscriptionsFor((await reachFor(c)).devices).catch(() => [])) {
+        const r = await sendPush(sub, payload, keys);
+        if (!r.ok && r.gone) await dropPushSubscription(sub.endpoint).catch(() => {});
+      }
+    },
+    pacing: {
+      get: async (k) => { const v = await botStateGet(k).catch(() => null); return v ? Number(v) : null; },
+      set: async (k, at) => { await botStateSet(k, String(at)); },
+    },
+    dm: async (userId, text) => { if (tgOn) await TG.sendMessage(userId, text, null); },
+    dryRun: TG_DRY_RUN,
+    log: (line, extra) => console.log(JSON.stringify({ evt: "follow_notify", line, ...extra })),
+  };
+}
+
+/** Record what a person did, once, and tell the people who follow them. */
+async function socialEvent(e: SocialEvent): Promise<void> {
+  if (!(await recordSocialEvent(e))) return;
+  await notifyFollowers(e, followDeps());
+}
+
+async function socialBet(slug: string, wallet: string, side: "yes" | "no", lamports: number): Promise<void> {
+  const actor = await canonicalForWallet(wallet);
+  if (actor) await socialEvent({ actor, kind: "bet", slug, side, lamports, dedup: `bet:${slug}:${wallet}:${side}` });
+}
+
+/** The opener as a person: a Telegram opener by id, an X tagger by handle, an
+ *  API caller by the wallet they named. */
+async function socialOpen(slug: string, payee: string | null, wallet: string | null): Promise<void> {
+  const actor = payee?.startsWith("tg:") ? await canonicalForIdentity("telegram", payee.slice(3))
+    : payee ? await canonicalForIdentity("twitter", payee)
+    : wallet ? await canonicalForWallet(wallet) : null;
+  if (actor) await socialEvent({ actor, kind: "open", slug, side: null, lamports: null, dedup: `open:${slug}` });
+}
+
+async function withHeadlines(items: FeedItem[]): Promise<Array<FeedItem & { headline: string; url: string }>> {
+  const heads = new Map<string, string>();
+  for (const slug of new Set(items.map((i) => i.slug))) {
+    const d = await communityMarketDetail(slug).catch(() => null);
+    heads.set(slug, d ? foldIds(d.hook || d.question) : slug);
+  }
+  return items.map((i) => ({ ...i, headline: heads.get(i.slug) ?? i.slug, url: `/m/${i.slug}` }));
+}
+
+/**
+ * A PERSON IS PUBLIC ONCE THEY DID SOMETHING PUBLIC. Opened a market (its page
+ * names its opener anyway), or took a side with their name on, or turned the
+ * name switch on at all. Somebody who only signed in has a name, often their
+ * X handle, and answering "yes, @them is here" to anybody who asks would say
+ * who uses oddie. So they read exactly like a name nobody has, everywhere a
+ * stranger can ask: the page, the follow button, the suggestions. They always
+ * see their own.
+ */
+async function publicPerson(raw: string, me: string | null): Promise<{ who: PublicPerson; events: FeedItem[] } | null> {
+  const who = await personByUsername(raw).catch(() => null);
+  if (!who) return null;
+  const events = await eventsBy([who.canonical], 30).catch(() => [] as FeedItem[]);
+  if (me !== who.canonical && !who.showName && !events.length) return null;
+  return { who, events };
+}
+
+/** A person's public page, by their oddie name. */
+app.get("/api/u/:username", async (req, res) => {
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  const me = deviceId ? await canonicalFor(deviceId).catch(() => null) : null;
+  const found = await publicPerson(req.params.username, me);
+  if (!found) return res.status(404).set("Cache-Control", "no-store").json({ error: "unknown" });
+  const { who, events } = found;
+  const [counts, following] = await Promise.all([
+    followCounts(who.canonical).catch(() => ({ followers: 0, following: 0 })),
+    me ? isFollowing(me, who.canonical).catch(() => false) : Promise.resolve(false),
+  ]);
+  const isYou = me === who.canonical;
+  res.set("Cache-Control", "no-store").json({
+    username: who.username, avatar: who.avatar, followers: counts.followers, following: counts.following,
+    youFollow: following, isYou, signedIn: Boolean(me),
+    // Only to its owner: whether their sides show here is their own setting.
+    ...(isYou ? { showName: who.showName } : {}),
+    events: await withHeadlines(events),
+  });
+});
+
+app.post("/api/follow", express.json(), async (req, res) => {
+  const deviceId = deviceIdOf(req.body);
+  const me = deviceId ? await canonicalFor(deviceId).catch(() => null) : null;
+  if (!me) return res.status(401).json({ error: "signed-out" });
+  const found = await publicPerson(String(req.body?.username ?? ""), me);
+  if (!found) return res.status(404).json({ error: "unknown" });
+  if (found.who.canonical === me) return res.status(400).json({ error: "self" });
+  const on = req.body?.on !== false;
+  await setFollow(me, found.who.canonical, on);
+  const counts = await followCounts(found.who.canonical).catch(() => ({ followers: 0, following: 0 }));
+  res.json({ ok: true, youFollow: on, followers: counts.followers });
+});
+
+/**
+ * What the people you follow did, newest first (scope=following, marked seen
+ * once shown), or what everybody public did (scope=all), which is also what a
+ * signed-out visitor gets: the page is worth opening before you follow anyone.
+ */
+app.get("/api/following", async (req, res) => {
+  const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
+  const me = deviceId ? await canonicalFor(deviceId).catch(() => null) : null;
+  res.set("Cache-Control", "no-store");
+  const followees = me ? await followeesOf(me).catch(() => [] as string[]) : [];
+  const scope = req.query.scope === "all" || !followees.length ? "all" : "following";
+  if (scope === "all") {
+    const items = await withHeadlines(await eventsBy("all", 40).catch(() => [] as FeedItem[]));
+    return res.json({ signedIn: Boolean(me), scope, following: followees.length, seenAt: null, items,
+      people: await peopleToFollow(me).catch(() => []) });
+  }
+  const seen = await feedSeenAt(me!).catch(() => null);
+  const items = await withHeadlines(await eventsBy(followees, 50).catch(() => [] as FeedItem[]));
+  const people = items.length < 5 ? await peopleToFollow(me).catch(() => []) : [];
+  await markFeedSeen(me!).catch(() => {});
+  res.json({ signedIn: true, scope, following: followees.length, seenAt: seen, items, people });
+});
+
+/** The person page, with an unfurl that names them when they are public. */
+app.get("/u/:username", async (req, res) => {
+  if (!appOpenFor(req)) return appClosed(res);
+  const found = await publicPerson(req.params.username, null).catch(() => null);
+  let html = stampApp(PERSON_HTML);
+  if (found) {
+    const name = `@${found.who.username}`;
+    const title = `${name} on oddie`;
+    const desc = `Follow ${name} to hear the moment they open a market or take a side.`;
+    const img = `${APP_BASE_URL}/avatars/${found.who.avatar}.webp`;
+    const tags = [
+      `<meta property="og:type" content="profile">`,
+      `<meta property="og:title" content="${escHtml(title)}">`,
+      `<meta property="og:description" content="${escHtml(desc)}">`,
+      `<meta property="og:image" content="${escHtml(img)}">`,
+      `<meta property="og:url" content="${escHtml(`${APP_BASE_URL}/u/${found.who.username}`)}">`,
+      `<meta name="twitter:card" content="summary">`,
+      `<meta name="description" content="${escHtml(desc)}">`,
+    ].join("\n");
+    html = html.replace("<title>oddie</title>", `<title>${escHtml(title)}</title>\n${tags}`);
+  }
+  res.set("Cache-Control", "no-cache").type("html").send(html);
+});
+app.get("/following", (req, res) => {
+  if (!appOpenFor(req)) return appClosed(res);
+  res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampApp(FOLLOWING_HTML));
 });
 
 app.get("/api/chain/payouts", async (req, res) => {
@@ -3355,6 +3526,9 @@ async function openMarketFromClaim(input: {
   // turetir, yani iddianin sahibini yazar ve zincirdeki creator o olur.
   await recordSurfacer(slug, { sourceUrl, handle: payeeHandle });
   void awardSurface(slug).catch(() => {}); // points are best-effort; the row is not
+  // A market opened is something its opener did, for the people who follow them.
+  void socialOpen(slug, identifiablePayee, creatorWallet)
+    .catch((e) => console.error("[social] open event failed (non-fatal):", (e as Error).message));
 
   return {
     ok: true, slug, marketId,
@@ -3904,6 +4078,11 @@ async function marketDetailPayload(
     /* THE DOOR TO THE 2%. Only a public deep link, never the private token:
        whoever taps it lands in their own chat with the bot, which is what makes
        it safe to print on a public page. */
+    /* THE OPENER AS SOMEBODY TO FOLLOW. Their oddie name and picture when the
+       person who opened this has one; the chip then leads to their page, where
+       the Follow button is, instead of out to X or Telegram. An open is public,
+       so naming its opener here tells nobody anything new. */
+    opener: await openerProfile(slug).catch(() => null),
     earnUrl: sourceUrlKind(src?.sourceUrl) === "telegram" && tgBotUsername
       ? `https://t.me/${tgBotUsername}?start=earn` : null,
     // Only a real link is a link. A private chat's opaque marker (tg-private:)
@@ -5270,6 +5449,9 @@ if (realStakesReady) {
           slug, wallet: stake.user, side: stake.side, lamports: stake.lamports,
           before: { yes: crowdBefore.totalYesLamports, no: crowdBefore.totalNoLamports },
         }, betNotifyDeps()).catch((e) => console.error("[bets] notify failed (non-fatal):", (e as Error).message));
+        // And a thing its owner did, for the people who follow them.
+        await socialBet(slug, stake.user, stake.side, stake.lamports)
+          .catch((e) => console.error("[social] bet event failed (non-fatal):", (e as Error).message));
       }).catch(() => {});
     }
 
@@ -6098,6 +6280,11 @@ async function startTelegram(): Promise<void> {
   }
 }
 if (TG.tgToken()) void startTelegram();
+
+// The feed starts with everything that happened before it existed.
+void backfillSocialEvents()
+  .then((n) => { if (n) console.log(JSON.stringify({ evt: "social_backfill", added: n })); })
+  .catch((e) => console.error("[social] backfill failed (non-fatal):", (e as Error).message));
 
 const PORT = Number(process.env.PORT ?? 3000);
 app.listen(PORT, () =>
