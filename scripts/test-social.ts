@@ -190,6 +190,18 @@ console.log("\nthe lines no memory test reaches");
   check("the market page offers the open side only while it can be taken",
     /if \(oneSided && !resolved && !closed\) \{/.test(marketPage));
   check("...and so does the unfurl", /shut\s*\n?\s*\? `\$\{solText\(view\.totalLamports\)\} SOL on \$\{onYes \? "YES" : "NO"\}\. Betting is closed/.test(server));
+  const bp = store.slice(store.indexOf("export async function boardPeople"), store.indexOf("/** The handles on a person's account"));
+  check("the leaderboard names a wallet's owner only while they show their name",
+    /WHERE p\.username IS NOT NULL AND p\.show_name`/.test(bp));
+  check("...and an opener once they are public at all",
+    /AND \(p\.show_name OR EXISTS \(SELECT 1 FROM social_event e WHERE e\.actor = p\.canonical_device AND e\.kind = 'open'\)\)/.test(bp));
+  const board = server.slice(server.indexOf('app.get("/api/board"'), server.indexOf('app.get("/api/board"') + 5000);
+  check("both boards say who is behind a row", /person: people\.get\(b\.wallet\) \?\? null/.test(board)
+    && /person: people\.get\(c\.wallet\) \?\? null/.test(board) && /person: byHandle\.get\(/.test(server));
+  const lb = readFileSync("public/app/leaderboard.html", "utf8");
+  check("the leaderboard links a person to their page, and everybody else to their wallet record",
+    (lb.match(/ppLink\(/g) || []).length === 4 && /: "<a href=\\"\/w\/" \+ encodeURIComponent\(p\.wallet\)/.test(lb)
+    && /: '<a href="\/w\/' \+ encodeURIComponent\(w\.wallet\)/.test(lb));
   for (const f of ["markets", "market", "you", "leaderboard", "who", "person", "following"]) {
     check(`Following is in the nav on ${f}`, readFileSync(`public/app/${f}.html`, "utf8").includes('<a href="/following"'));
   }

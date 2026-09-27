@@ -59,7 +59,7 @@ console.log("\nhow often the phone buzzes");
 }
 
 console.log("\nwho hears what, against a faithful Telegram");
-type Sent = { kind: "group" | "dm"; to: number; text: string; replyTo?: number; url?: string };
+type Sent = { kind: "group" | "dm"; to: number; text: string; replyTo?: number; url?: string; follow?: { label: string; url: string } | null };
 function world(over: Partial<BetNotifyDeps> = {}, sides: Record<string, "yes" | "no"> = {}, tgOf: Record<string, number> = {}) {
   _resetBetNotices();
   const sent: Sent[] = [];
@@ -75,7 +75,7 @@ function world(over: Partial<BetNotifyDeps> = {}, sides: Record<string, "yes" | 
     tgUserForWallet: async (w) => tgOf[w] ?? null,
     groupThreads: async () => [{ chatId: -1004413284410, messageId: 2 }],
     pacing: { get: async (s) => pacing.get(s) ?? null, set: async (s, p) => { pacing.set(s, p); } },
-    sendGroup: async (o) => { sent.push({ kind: "group", to: o.chatId, text: o.text, replyTo: o.replyTo, url: o.url }); },
+    sendGroup: async (o) => { sent.push({ kind: "group", to: o.chatId, text: o.text, replyTo: o.replyTo, url: o.url, follow: o.follow ?? null }); },
     // Faithful: Telegram refuses a first message to somebody who never started the bot.
     dm: async (to, text) => { if (to === 404) throw new Error("403 bot can't initiate conversation with a user"); sent.push({ kind: "dm", to, text }); },
     push: async (wallets, p) => { pushes.push({ wallets, body: p.body }); },
@@ -91,6 +91,7 @@ function world(over: Partial<BetNotifyDeps> = {}, sides: Record<string, "yes" | 
   const g = w.sent.find((s) => s.kind === "group");
   check("the group hears it, under the tag that opened the market", Boolean(g && g.replyTo === 2 && g.url === URL_M), JSON.stringify(g));
   check("...with no one on the other side to tell yet", r.notices === 0);
+  check("...and nobody to follow when nobody is named", g?.follow === null);
   check("the opener is told on Telegram, wallet or not",
     w.sent.some((s) => s.kind === "dm" && s.to === 1775258225 && /you earn 2%/.test(s.text)));
 }
@@ -143,6 +144,25 @@ function world(over: Partial<BetNotifyDeps> = {}, sides: Record<string, "yes" | 
   const w = world({ dryRun: true }, { [YES_W]: "yes" });
   await onBetLanded(bet(YES_W, "yes", 0.5, 0, 0), w.deps);
   check("a dry run sends nothing to Telegram", w.sent.length === 0);
+}
+
+console.log("\nfollowing somebody the room can see");
+{
+  const w = world({ nameFor: async () => ({ username: "lev", tgHandle: "levvercetti" }) }, { [YES_W]: "yes" });
+  await onBetLanded(bet(YES_W, "yes", 0.5, 0, 0), w.deps);
+  const g = w.sent.find((s) => s.kind === "group");
+  check("a named staker's ping carries a Follow button with the name the message used",
+    g?.follow?.label === "Follow @levvercetti" && /^@levvercetti just took YES/.test(g?.text ?? ""), JSON.stringify(g?.follow));
+  check("...leading to their oddie page, on the market's own host", g?.follow?.url === "https://app.oddie.fun/u/lev");
+  const w2 = world({ nameFor: async () => ({ username: "lev", tgHandle: null }) }, { [YES_W]: "yes" });
+  await onBetLanded(bet(YES_W, "yes", 0.5, 0, 0), w2.deps);
+  check("...named by their oddie name when they have no Telegram one",
+    w2.sent.find((s) => s.kind === "group")?.follow?.label === "Follow lev");
+  const server = readFileSync("src/server.ts", "utf8");
+  const send = server.slice(server.indexOf("sendGroup: async ({ chatId, replyTo, text, url, follow })"));
+  check("the server sends both buttons, one per row", /\[\{ text: "Take a side", url \}, \{ text: follow\.label, url: follow\.url \}\]/.test(send.slice(0, 400)));
+  const client = readFileSync("src/telegram/client.ts", "utf8");
+  check("...and the client stacks a list of buttons one per row", /inline_keyboard: list\.map\(\(b\) => \[keyOf\(b\)\]\)/.test(client));
 }
 
 console.log("\nwired into the money path");

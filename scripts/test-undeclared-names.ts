@@ -73,6 +73,15 @@ function pageScript(html: string): { code: string; lineOf: number[] } {
     lines.push(";");
     lineOf.push(0);
   }
+  /* ONE PAGE'S GLOBALS ARE NOT ANOTHER PAGE'S. Every page is compiled in the
+     same tsc run, and a plain script's top-level names are global to that
+     whole program, so a `const sol` at the top of tool.html made `sol`
+     "declared" in leaderboard.html, which never declares it. The leaderboard's
+     settled section threw on that name in production for five days while this
+     check passed it. As a module, each page keeps its own top-level names and
+     still sees the real globals: the DOM and what public/*.js publishes. */
+  lines.push("export {};");
+  lineOf.push(0);
   return { code: lines.join("\n"), lineOf };
 }
 

@@ -161,18 +161,19 @@ const replyTo = (messageId: number) => ({
 
 export type TgButton = { text: string; url: string } | { text: string; callback: string };
 
+/** One button, or several stacked one per row (a label never gets squeezed). */
 export async function sendMessage(
-  chatId: number, text: string, replyToId: number | null, button?: TgButton | null,
+  chatId: number, text: string, replyToId: number | null, button?: TgButton | TgButton[] | null,
 ): Promise<SentMessage> {
-  const key = button && "url" in button ? { text: button.text, url: button.url }
-    : button ? { text: button.text, callback_data: button.callback } : null;
+  const keyOf = (b: TgButton) => ("url" in b ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.callback });
+  const list = Array.isArray(button) ? button : button ? [button] : [];
   return call<SentMessage>("sendMessage", {
     chat_id: chatId,
     text,
     ...(replyToId ? replyTo(replyToId) : {}),
     // A link in the text would unfurl a second card under every ping; the
     // button carries the link without one.
-    ...(key ? { reply_markup: { inline_keyboard: [[key]] }, link_preview_options: { is_disabled: true } } : {}),
+    ...(list.length ? { reply_markup: { inline_keyboard: list.map((b) => [keyOf(b)]) }, link_preview_options: { is_disabled: true } } : {}),
   });
 }
 

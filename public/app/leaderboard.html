@@ -249,6 +249,11 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .mom__s li b{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.02em;color:var(--ink)}
 .mom__s li b a{color:inherit;text-decoration:none}
 .mom__s li b a:hover{color:var(--pink-deep)}
+/* A NAME THAT IS A PERSON carries their picture and leads to their page, where
+   they can be followed. Only for people who chose to be public; everybody
+   else keeps the wallet record link. */
+.pp{display:inline-flex;align-items:center;gap:7px;text-decoration:none}
+.pp img{width:22px;height:22px;border-radius:50%;background:var(--cream);flex:none}
 .mom__s li i{font-family:var(--mono);font-size:13px;font-weight:700;font-style:normal;
   margin-left:auto;font-variant-numeric:tabular-nums}
 .mom__s li[data-v="r"] i{color:#1d7a3a}
@@ -328,6 +333,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      a settled market and its callers, and a rewrite of working render code is
      a bug looking for a home. The CSS they need was already here, because this
      page was cut from that one. */
+  /* Signed money, the way a settled line reads it. It lived on board.html and
+     was left behind when these lines moved here, so every settled argument
+     threw on it and the section never drew. A refund is 0, not "+0". */
+  function sol(n) { return (n > 0 ? "+" : "") + String(Math.round(n * 1e4) / 1e4) + " SOL"; }
   function ago(iso) {
     if (!iso) return "";
     var s = (Date.now() - Date.parse(iso)) / 1000;
@@ -338,6 +347,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     var d = Math.floor(s / 86400);
     return d === 1 ? "yesterday" : d + " days ago";
   }
+  /* The person link, when there is a person to follow: their picture and name,
+     to their page. The text is the name that row already used, or theirs. */
+  function ppLink(person, label) {
+    return '<a class="pp" href="/u/' + encodeURIComponent(person.username) + '">'
+      + '<img src="/avatars/' + esc(person.avatar) + '.webp" alt="" width="22" height="22">' + label + "</a>";
+  }
   function personLine(p, won, me) {
     var name = p.handle ? "@" + esc(p.handle) : esc(p.short);
     var mine = me && p.handle && p.handle.toLowerCase() === me;
@@ -346,7 +361,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        the thing worth reading, and it teaches the weighting without a formula
        anywhere on the page. */
     var bits = '<span class="mom__v">' + (won ? "Right" : "Wrong") + "</span>"
-      + "<b><a href=\"/w/" + encodeURIComponent(p.wallet) + "\">" + name + "</a></b>"
+      + "<b>" + (p.person ? ppLink(p.person, "@" + esc(p.person.username))
+        : "<a href=\"/w/" + encodeURIComponent(p.wallet) + "\">" + name + "</a>") + "</b>"
       + "<span>took " + esc(String(p.side).toUpperCase())
       + (typeof p.entryPct === "number" ? " at " + p.entryPct + "%" : "") + "</span>";
     if (p.pnlSol !== null && p.pnlSol !== undefined) bits += "<i>" + esc(sol(p.pnlSol)) + "</i>";
@@ -398,7 +414,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
             var mine = me && h.toLowerCase() === me;
             return "<tr" + (mine ? ' class="me"' : "") + ">"
               + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">#' + w.rank + "</td>"
-              + '<td class="who">@' + esc(h) + "</td>"
+              + '<td class="who">' + (w.person ? ppLink(w.person, "@" + esc(h)) : "@" + esc(h)) + "</td>"
               + '<td class="num hide-sm wl">' + (w.marketsOpened || 0) + "</td>"
               + '<td class="num"><span class="pts">' + (w.peopleBrought || 0) + "</span></td>"
               + "</tr>";
@@ -442,7 +458,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
                 + (w.unpriced ? '<span class="net net--none"><br>' + w.unpriced + " unread</span>" : "");
             return "<tr>"
               + '<td class="r' + (w.rank <= 3 ? " r--top" : "") + '">#' + w.rank + "</td>"
-              + '<td class="who"><a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a></td>"
+              + '<td class="who">' + (w.person ? ppLink(w.person, "@" + esc(w.person.username))
+                : '<a href="/w/' + encodeURIComponent(w.wallet) + '">' + name + "</a>") + "</td>"
               + '<td class="num hide-sm wl"><b>' + w.wins + "</b> right &middot; " + w.losses + " wrong</td>"
               + '<td class="num">' + pts + "</td>"
               + "</tr>";

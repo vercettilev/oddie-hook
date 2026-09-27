@@ -59,6 +59,13 @@ export function shouldBroadcast(e: BetLanded, last: Pacing | null, now: number):
   return now - last.at >= BROADCAST_GAP_MS && pool >= last.pool * 1.5;
 }
 
+/** A person's page, on the same host as the market. */
+export function personUrl(marketUrl: string, username: string): string {
+  let origin = "https://app.oddie.fun";
+  try { origin = new URL(marketUrl).origin; } catch { /* keep the default */ }
+  return `${origin}/u/${encodeURIComponent(username)}`;
+}
+
 /** How a staker is named in Telegram: see the header. */
 export function tgWho(name: { username: string | null; tgHandle: string | null } | null): string {
   if (name?.tgHandle) return `@${name.tgHandle.replace(/^@+/, "")}`;
@@ -106,7 +113,9 @@ export interface BetNotifyDeps {
   /** Groups the bot is in where this market was announced, and the tag there. */
   groupThreads(slug: string): Promise<Array<{ chatId: number; messageId: number }>>;
   pacing: { get(slug: string): Promise<Pacing | null>; set(slug: string, p: Pacing): Promise<void> };
-  sendGroup(o: { chatId: number; replyTo: number; text: string; url: string }): Promise<void>;
+  /** `follow`, when the staker is named: a second button to their oddie page,
+   *  so the room can follow them in one tap. */
+  sendGroup(o: { chatId: number; replyTo: number; text: string; url: string; follow?: { label: string; url: string } | null }): Promise<void>;
   dm(userId: number, text: string): Promise<void>;
   push(wallets: string[], payload: { title: string; body: string; url: string; tag: string }): Promise<void>;
   /** The staker's chosen name, only when they turned "show my name" on. */
@@ -160,10 +169,14 @@ export async function onBetLanded(e: BetLanded, deps: BetNotifyDeps): Promise<Be
     }
   };
 
-  const who = tgWho(deps.nameFor ? await deps.nameFor(e.wallet).catch(() => null) : null);
+  const name = deps.nameFor ? await deps.nameFor(e.wallet).catch(() => null) : null;
+  const who = tgWho(name);
   const text = groupText(e, who);
+  // Somebody the room can see is somebody the room can follow. The button says
+  // the name the message said, and leads to their page on oddie.
+  const follow = name?.username ? { label: `Follow ${who}`, url: personUrl(m.url, name.username) } : null;
   for (const g of await deps.groupThreads(e.slug).catch(() => [])) {
-    if (await say("group ping", () => deps.sendGroup({ chatId: g.chatId, replyTo: g.messageId, text, url: m.url }))) out.groups++;
+    if (await say("group ping", () => deps.sendGroup({ chatId: g.chatId, replyTo: g.messageId, text, url: m.url, follow }))) out.groups++;
   }
 
   // Private messages and pushes follow the same pacing, and only for people

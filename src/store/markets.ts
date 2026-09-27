@@ -7459,6 +7459,51 @@ export async function backfillSocialEvents(): Promise<number> {
   return added;
 }
 
+/**
+ * THE PEOPLE BEHIND A LEADERBOARD, in one query per kind. A wallet's row is its
+ * bets, so a wallet is named only while its owner shows their name (the same
+ * switch that names their stakes everywhere else). An X handle on the openers'
+ * board is already public, and so is the person behind it once they are public
+ * at all: they opened a market, or they show their name.
+ */
+export interface BoardPerson { username: string; avatar: string }
+export async function boardPeople(input: { wallets?: string[]; handles?: string[] }):
+  Promise<{ byWallet: Map<string, BoardPerson>; byHandle: Map<string, BoardPerson> }> {
+  const byWallet = new Map<string, BoardPerson>();
+  const byHandle = new Map<string, BoardPerson>();
+  if (!PERSISTENT) return { byWallet, byHandle };
+  const wallets = [...new Set((input.wallets ?? []).filter(Boolean))];
+  const handles = [...new Set((input.handles ?? []).map((h) => String(h).replace(/^@+/, "").toLowerCase()).filter(Boolean))];
+  if (!wallets.length && !handles.length) return { byWallet, byHandle };
+  await ensureSchema();
+  if (wallets.length) {
+    const { rows } = await db().query<{ wallet: string; username: string; avatar: string | null; canonical_device: string }>(
+      `SELECT w.wallet, p.username, p.avatar, p.canonical_device FROM (
+         SELECT provider_uid AS wallet, canonical_device FROM account WHERE provider = 'phantom' AND provider_uid = ANY($1::text[])
+         UNION
+         SELECT pe.wallet, a.canonical_device FROM person pe
+           JOIN account a ON a.provider = 'telegram' AND a.provider_uid = substr(pe.id, 4)
+          WHERE pe.id LIKE 'tg:%' AND pe.wallet = ANY($1::text[])
+       ) w JOIN oddie_profile p ON p.canonical_device = w.canonical_device
+      WHERE p.username IS NOT NULL AND p.show_name`, [wallets]);
+    for (const r of rows) {
+      if (!byWallet.has(r.wallet)) byWallet.set(r.wallet, { username: r.username, avatar: r.avatar ?? defaultAvatar(r.canonical_device) });
+    }
+  }
+  if (handles.length) {
+    const { rows } = await db().query<{ handle: string; username: string; avatar: string | null; canonical_device: string }>(
+      `SELECT lower(ltrim(a.handle, '@')) AS handle, p.username, p.avatar, p.canonical_device
+         FROM account a JOIN oddie_profile p ON p.canonical_device = a.canonical_device
+        WHERE a.provider = 'twitter' AND lower(ltrim(a.handle, '@')) = ANY($1::text[]) AND p.username IS NOT NULL
+          AND (p.show_name OR EXISTS (SELECT 1 FROM social_event e WHERE e.actor = p.canonical_device AND e.kind = 'open'))`,
+      [handles]);
+    for (const r of rows) {
+      if (!byHandle.has(r.handle)) byHandle.set(r.handle, { username: r.username, avatar: r.avatar ?? defaultAvatar(r.canonical_device) });
+    }
+  }
+  return { byWallet, byHandle };
+}
+
 /** The handles on a person's account, and where to reach them. */
 export async function reachFor(canonical: string): Promise<{ tgId: number | null; tgHandle: string | null; xHandle: string | null; devices: string[] }> {
   const none = { tgId: null, tgHandle: null, xHandle: null, devices: [] as string[] };

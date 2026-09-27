@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
-  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
+  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
@@ -1514,9 +1514,11 @@ function betNotifyDeps(): BetNotifyDeps {
       },
       set: async (slug, p) => { await botStateSet(`bet_broadcast:${slug}`, JSON.stringify(p)); },
     },
-    sendGroup: async ({ chatId, replyTo, text, url }) => {
+    sendGroup: async ({ chatId, replyTo, text, url, follow }) => {
       if (!tgOn) return;
-      await TG.sendMessage(chatId, text, replyTo, { text: "Take a side", url });
+      await TG.sendMessage(chatId, text, replyTo, follow
+        ? [{ text: "Take a side", url }, { text: follow.label, url: follow.url }]
+        : { text: "Take a side", url });
     },
     dm: async (userId, text) => { if (tgOn) await TG.sendMessage(userId, text, null); },
     push: (wallets, payload) => pushToWallets(wallets, payload),
@@ -1855,7 +1857,11 @@ app.post("/api/chain/payouts/seen", express.json(), async (req, res) => {
 app.get("/api/genesis/board", async (req, res) => {
   const limit = Number(req.query.limit);
   const rows = await genesisBoard(Number.isFinite(limit) ? limit : 20).catch(() => []);
-  res.json({ tickets: GENESIS_TICKETS, rows });
+  // The person behind each handle, when they are somebody to follow on oddie.
+  const { byHandle } = await boardPeople({ handles: rows.map((r) => r.handle) })
+    .catch(() => ({ byHandle: new Map<string, { username: string; avatar: string }>() }));
+  res.json({ tickets: GENESIS_TICKETS,
+    rows: rows.map((r) => ({ ...r, person: byHandle.get(String(r.handle).replace(/^@+/, "").toLowerCase()) ?? null })) });
 });
 
 /* Dev-only seed for exercising the real store+render path without an OAuth
@@ -2177,12 +2183,17 @@ app.get("/api/board", async (req, res) => {
   const top = standings.slice(0, limit);
   // A board of base58 strings is not a social object. One query for the lot.
   const handles = await twitterHandlesForWallets(top.map((b) => b.wallet)).catch(() => new Map<string, string>());
+  /* The person behind a wallet, only while they show their name: a row here is
+     a record of bets, and that switch is what puts a name on a bet. */
+  const { byWallet: people } = await boardPeople({ wallets: [...new Set([...top, ...calls].map((b) => b.wallet))] })
+    .catch(() => ({ byWallet: new Map<string, { username: string; avatar: string }>() }));
   const rows = denseRank(top).map((b) => {
     const rank = b.rank;
     return {
       wallet: b.wallet,
       short: `${b.wallet.slice(0, 4)}…${b.wallet.slice(-4)}`,
       handle: handles.get(b.wallet) ?? null,
+      person: people.get(b.wallet) ?? null,
       wins: b.wins, losses: b.losses, points: b.points, rank,
       // ORDERING is points; this is the same standing said in money, because
       // "341 points" needs a footnote and "+2.4 SOL" does not. Shown, never
@@ -2215,6 +2226,7 @@ app.get("/api/board", async (req, res) => {
     wallet: c.wallet,
     short: `${c.wallet.slice(0, 4)}…${c.wallet.slice(-4)}`,
     handle: allHandles.get(c.wallet) ?? handles.get(c.wallet) ?? null,
+    person: people.get(c.wallet) ?? null,
     side: c.side,
     entryPct: c.entryPct,
     sol: Number((c.lamports / 1e9).toFixed(4)),
