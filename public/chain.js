@@ -893,6 +893,29 @@ function b64ToBytes(b64) {
    */
   /** "Put your name on it": shown only when this device has no X account.
    *  Silent on any failure — an ask that errors is worse than no ask. */
+  /* THE OTHER SIDE IS NOW THE ONE THING THIS PERSON WANTS TO HEAR ABOUT, and
+     this is the moment the ask is a promise rather than a toll: money just went
+     on YES and nobody may have taken NO. It is our own button first, and the
+     browser's dialog only after a tap on it, because a permission refused out
+     of reflex is refused for good. Nothing is shown where push cannot work
+     (iPhone outside the home screen), or once the browser has been answered. */
+  function offerNotify(host, side) {
+    const P = window.OddiePush;
+    if (!host || !P || !P.supported || !P.askable) return;
+    const other = side === "yes" ? "NO" : "YES";
+    P.askable().then((ok) => {
+      if (!ok) return;
+      host.innerHTML = `<button type="button" class="chain-notify">Tell me when someone takes ${other}</button>`;
+      host.querySelector("button").onclick = async (ev) => {
+        const b = ev.currentTarget;
+        b.disabled = true;
+        b.textContent = "Allow it in your browser…";
+        const on = await P.ask();
+        host.innerHTML = on ? `<p class="chain-notify-on">You'll hear it here when someone takes ${other}.</p>` : "";
+      };
+    }).catch(() => {});
+  }
+
   async function offerName(host) {
     if (!host) return;
     const did = deviceId();
@@ -1511,6 +1534,7 @@ function b64ToBytes(b64) {
             <a class="cbtn cbtn--share" id="chainshare" href="#" rel="noopener">Post your call</a>
             <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
             <div id="chainname"></div>
+            <div id="chainnotify"></div>
             ${homeLink()}
             <button class="cclose">Done</button>`;
           body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
@@ -1576,6 +1600,7 @@ function b64ToBytes(b64) {
           // trade. Naming is retroactive (the board resolves handles at read
           // time), so one tap names this call and every earlier one.
           void offerName(body.querySelector("#chainname"));
+          if (confirmed) offerNotify(body.querySelector("#chainnotify"), side);
 
           // THE PAGE BEHIND THIS SHEET STILL SHOWS THE POOL FROM BEFORE.
           // The money moved and the market underneath said nothing about it:

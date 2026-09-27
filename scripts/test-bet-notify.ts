@@ -158,6 +158,12 @@ console.log("\nwired into the money path");
   const shell = server.slice(server.indexOf("async function marketShellHtml"), server.indexOf("async function marketShellHtml") + 4000);
   check("the preview image URL changes with the pool", /card\/\$\{slug\}\.png\$\{imgVersion\}/.test(shell) && /\?p=\$\{read\.state\.totalYesLamports\}/.test(shell));
   check("the preview says the open side, never who is missing", !/Nobody has|No one has/.test(shell) && /is wide open/.test(shell));
+  const chain = readFileSync("public/chain.js", "utf8");
+  const offer = chain.slice(chain.indexOf("function offerNotify"), chain.indexOf("async function offerName"));
+  check("the receipt offers to tell the bettor when the other side is taken", /Tell me when someone takes \$\{other\}/.test(offer)
+    && /if \(confirmed\) offerNotify\(/.test(chain));
+  check("...and the browser's dialog only ever opens from a tap on it",
+    offer.indexOf("P.ask()") > offer.indexOf(".onclick") && (offer.match(/P\.ask\(\)/g) || []).length === 1);
   const store = readFileSync("src/store/markets.ts", "utf8");
   check("notices live in their own table, not the play-money era's `notice`",
     /CREATE TABLE IF NOT EXISTS bet_notice \(/.test(store) && /INSERT INTO bet_notice/.test(store));
