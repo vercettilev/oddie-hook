@@ -205,6 +205,29 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
   check("...and the person is TOLD, rather than met with silence",
     spy.replies.length === 1 && spy.replies[0].text === TG_COPY.cap(5), spy.replies[0]?.text);
 }
+{
+  // The operator tests by tagging: the day's caps are for everybody else.
+  _resetBotState();
+  const asked: number[] = [];
+  const { deps, spy } = harness([
+    upd(1, msg({ message_id: 1, chat: PUBLIC, from: alice, text: `@${BOT} BTC 200k before 2027` })),
+    upd(2, msg({ message_id: 2, chat: PUBLIC, from: noname, text: `@${BOT} ETH 10k before 2027` })),
+  ], {
+    openedToday: async () => 5, dailyCap: 5,
+    uncapped: async (u) => { asked.push(u.id); return u.id === alice.id; },
+  });
+  const r = await runTelegramSweep(deps);
+  check("an uncapped person opens past the cap", spy.minted.length === 1 && spy.minted[0].openerId === tgAuthor(alice.id));
+  check("...everybody else still meets it", r.skipped === 1 && spy.replies.some((x) => x.text === TG_COPY.cap(5)));
+  check("...asked by the person's own Telegram id", asked.join() === `${alice.id},${noname.id}`);
+}
+{
+  const { readFileSync } = await import("node:fs");
+  const server = readFileSync("src/server.ts", "utf8");
+  check("who is uncapped is read from TG_UNCAPPED, by id or @name",
+    /process\.env\.TG_UNCAPPED/.test(server) && /TG_UNCAPPED\.includes\(String\(u\.id\)\)/.test(server)
+    && /uncapped: async \(user\) => tgUncapped\(user\)/.test(server));
+}
 
 /* --------------------------------------------------------- unmarketable -- */
 {
@@ -513,6 +536,15 @@ function guestHarness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}) {
   const { deps, spy } = guestHarness([gupd(1, msg({ message_id: 97, chat: PUBLIC, text: `@${BOT} BTC 200k before 2027` }))]);
   await runTelegramSweep(deps);
   check("a guest tag in a public group keeps its real t.me link", spy.minted[0]?.sourceUrl === "https://t.me/cryptoroom/97");
+}
+
+{
+  _resetBotState();
+  const { deps, spy, g } = guestHarness([gupd(1, msg({ message_id: 180, chat: PAIR, from: alice, text: `@${BOT} BTC 200k before 2027` }))], {
+    guestTriesToday: async () => 99, guestDailyTries: 30, uncapped: async () => true,
+  });
+  await runTelegramSweep(deps);
+  check("an uncapped person is past the guest tries too", spy.minted.length === 1 && g.answers[0]?.c.text !== TG_COPY.guestCap);
 }
 
 /* ------------------------------------------------------ the model is out -- */

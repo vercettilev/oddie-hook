@@ -115,6 +115,8 @@ export interface TgSweepDeps {
   /** Markets this person opened in the last 24 hours. Absent = no cap. */
   openedToday?(author: string): Promise<number>;
   dailyCap?: number;
+  /** People the day's caps never apply to (the operator, testing). */
+  uncapped?(user: TgUser): Promise<boolean>;
   /** Where the market page lives, and where its card image can be fetched. */
   baseUrl: string;
   cardUrl(slug: string): string;
@@ -702,10 +704,14 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         continue;
       }
 
+      /* THE CAPS ARE FOR STRANGERS. Whoever runs oddie tests it by tagging it,
+         and five markets a day is a wall in the middle of a test. */
+      const uncapped = deps.uncapped ? await deps.uncapped(msg.from).catch(() => false) : false;
+
       /* ANYBODY ON TELEGRAM CAN SUMMON A GUEST BOT, and every summons that
          reaches the model is paid for, market or not. This row was claimed
          above, so it is already in the count. */
-      if (guest && deps.guestTriesToday && deps.guestDailyTries && deps.guestDailyTries > 0) {
+      if (!uncapped && guest && deps.guestTriesToday && deps.guestDailyTries && deps.guestDailyTries > 0) {
         const tries = await deps.guestTriesToday(author).catch(() => 0);
         if (tries > deps.guestDailyTries) {
           await answer(TG_COPY.guestCap, null);
@@ -715,7 +721,7 @@ export async function runTelegramSweep(deps: TgSweepDeps): Promise<TgSweepResult
         }
       }
 
-      if (deps.openedToday && deps.dailyCap && deps.dailyCap > 0) {
+      if (!uncapped && deps.openedToday && deps.dailyCap && deps.dailyCap > 0) {
         const n = await deps.openedToday(author).catch(() => 0);
         if (n >= deps.dailyCap) {
           await answer(TG_COPY.cap(deps.dailyCap), null);

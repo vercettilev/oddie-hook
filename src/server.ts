@@ -6072,6 +6072,14 @@ const TG_MARKETS_PER_DAY = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
 })();
 const tgSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/**
+ * WHO THE DAY'S CAPS NEVER APPLY TO: TG_UNCAPPED, a comma-separated list of
+ * Telegram user ids (stable) or @names (convenient, but a name can change
+ * hands). For the operator, who tests the bot by tagging it.
+ */
+const TG_UNCAPPED = (process.env.TG_UNCAPPED ?? "").split(",").map((x) => x.trim().replace(/^@+/, "").toLowerCase()).filter(Boolean);
+const tgUncapped = (u: TG.TgUser): boolean =>
+  TG_UNCAPPED.includes(String(u.id)) || Boolean(u.username && TG_UNCAPPED.includes(u.username.toLowerCase()));
 /** When this process started: parked tags from before it belong to a process
  *  that is gone. */
 const TG_BOOT_AT = new Date();
@@ -6314,13 +6322,15 @@ async function startTelegram(): Promise<void> {
     earnLink: (tgUserId) => tgEarnLink(tgUserId),
     openedToday: (author) => tgOpenedToday(author),
     dailyCap: TG_MARKETS_PER_DAY,
+    uncapped: async (user) => tgUncapped(user),
     baseUrl: APP_BASE_URL,
     cardUrl: (slug) => `${BASE_URL}/card/${slug}.png`,
     dryRun: TG_DRY_RUN,
     log,
   };
 
-  console.log(`[tg] @${me.username} listening, ${TG_DRY_RUN ? "DRY RUN (nothing is posted)" : "POSTING FOR REAL"}, ${TG_MARKETS_PER_DAY} markets per person per day`);
+  console.log(`[tg] @${me.username} listening, ${TG_DRY_RUN ? "DRY RUN (nothing is posted)" : "POSTING FOR REAL"}, ${TG_MARKETS_PER_DAY} markets per person per day`
+    + (TG_UNCAPPED.length ? `, ${TG_UNCAPPED.length} uncapped` : ""));
   // Tags a previous process parked and lost with its memory: their notes say
   // "shortly", and nothing here can keep that promise now.
   if (!TG_DRY_RUN) {
