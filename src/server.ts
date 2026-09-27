@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
-  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
+  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
@@ -2584,14 +2584,8 @@ async function profileMe(deviceId: string): Promise<{ canonical: string; profile
   const have = await profileFor(canonical);
   if (have) return { canonical, profile: have };
   const accts = await accountsFor(deviceId).catch(() => []);
-  const handles = ["twitter", "telegram"]
-    .map((p) => accts.find((a) => a.provider === p)?.handle)
-    .filter((h): h is string => Boolean(h))
-    .map(normUsername);
-  let username: string | null = null;
-  for (const h of handles) if ((await usernameState(h, canonical)) === "ok") { username = h; break; }
-  const saved = await saveProfile(canonical, { username, avatar: defaultAvatar(canonical) }).catch(() => null);
-  return { canonical, profile: saved && saved.ok ? saved.profile : { username: null, avatar: defaultAvatar(canonical), showName: false } };
+  const handles = ["twitter", "telegram"].map((p) => accts.find((a) => a.provider === p)?.handle);
+  return { canonical, profile: await ensureProfile(canonical, handles) };
 }
 
 app.get("/api/profile/me", async (req, res) => {
@@ -2822,6 +2816,11 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
     const identity = await identify(p, code, pendingAuth.verifier, BASE_URL);
     const result = await linkAccount(pendingAuth.deviceId, identity);
     console.log(JSON.stringify({ evt: "auth_link", provider: p, seeded: result.seeded }));
+    // Their oddie name, from their handle, the moment they have one.
+    if (identity.provider === "twitter") {
+      await ensureProfile(result.canonicalDevice).catch((e) =>
+        console.error("[profile] name at sign-in failed (non-fatal):", (e as Error).message));
+    }
     // The Genesis card. Best-effort ON PURPOSE: the sign-in is complete and a
     // storage hiccup must not turn a successful link into an auth_error page.
     if (identity.provider === "twitter" && identity.handle) {
@@ -6229,9 +6228,10 @@ async function startTelegram(): Promise<void> {
       const ok = confirmTgLogin(nonce, user);
       if (!ok) return false;
       try {
-        await linkAccount(ok.deviceId, {
+        const linked = await linkAccount(ok.deviceId, {
           provider: "telegram", uid: String(user.id), handle: user.username ?? null, name: user.first_name ?? null,
         });
+        await ensureProfile(linked.canonicalDevice).catch(() => null);
         await rememberPerson("tg", String(user.id), user.username ?? null).catch(() => null);
         log("telegram sign-in", { person: `tg:${user.id}` });
         return true;
@@ -6281,8 +6281,12 @@ async function startTelegram(): Promise<void> {
 }
 if (TG.tgToken()) void startTelegram();
 
-// The feed starts with everything that happened before it existed.
-void backfillSocialEvents()
+// The feed starts with everything that happened before it existed, under the
+// names of the people who did it.
+void ensureProfilesForAll()
+  .then((named) => { if (named) console.log(JSON.stringify({ evt: "profile_backfill", named })); })
+  .catch((e) => console.error("[profile] backfill failed (non-fatal):", (e as Error).message))
+  .then(() => backfillSocialEvents())
   .then((n) => { if (n) console.log(JSON.stringify({ evt: "social_backfill", added: n })); })
   .catch((e) => console.error("[social] backfill failed (non-fatal):", (e as Error).message));
 

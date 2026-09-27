@@ -7107,6 +7107,49 @@ export async function saveProfile(
 }
 
 /**
+ * A PERSON HAS A NAME FROM THE MOMENT THEY SIGN IN, not from the moment they
+ * open their profile. The name used to be written on the first visit to
+ * /profile, and on the day following went live nobody had made that visit, so
+ * every market in the feed belonged to somebody with no name to show. Their X
+ * handle, else their Telegram one, when it is free; no name when neither is
+ * (a Telegram handle longer than fifteen, say), until they pick one.
+ * Existing rows are never touched: a name somebody chose stays chosen.
+ */
+export async function ensureProfile(canonical: string, handles?: Array<string | null | undefined>): Promise<OddieProfile> {
+  const have = await profileFor(canonical);
+  if (have) return have;
+  const hs = (handles ?? (await handlesOf(canonical))).filter((h): h is string => Boolean(h)).map(normUsername);
+  let username: string | null = null;
+  for (const h of hs) if ((await usernameState(h, canonical)) === "ok") { username = h; break; }
+  const saved = await saveProfile(canonical, { username, avatar: defaultAvatar(canonical) }).catch(() => null);
+  return saved && saved.ok ? saved.profile : { username: null, avatar: defaultAvatar(canonical), showName: false };
+}
+
+/** A person's X handle first, then their Telegram one. */
+async function handlesOf(canonical: string): Promise<string[]> {
+  if (!PERSISTENT || !canonical) return [];
+  await ensureSchema();
+  const { rows } = await db().query<{ handle: string }>(
+    `SELECT handle FROM account WHERE canonical_device = $1 AND provider IN ('twitter','telegram') AND handle IS NOT NULL
+      ORDER BY (provider = 'twitter') DESC, created_at`, [canonical]);
+  return rows.map((r) => r.handle);
+}
+
+/** Everybody who signed in with X or Telegram before names were given at
+ *  sign-in gets theirs now. Safe on every boot: only rows that are missing. */
+export async function ensureProfilesForAll(): Promise<number> {
+  if (!PERSISTENT) return 0;
+  await ensureSchema();
+  const { rows } = await db().query<{ c: string }>(
+    `SELECT DISTINCT a.canonical_device AS c FROM account a
+      WHERE a.provider IN ('twitter','telegram')
+        AND NOT EXISTS (SELECT 1 FROM oddie_profile p WHERE p.canonical_device = a.canonical_device)`);
+  let named = 0;
+  for (const r of rows) if ((await ensureProfile(r.c).catch(() => null))?.username) named++;
+  return named;
+}
+
+/**
  * The name a stake carries, or null. Only when its owner turned the switch on.
  * A wallet belongs to a person either by a signature on one of their browsers
  * (a phantom account row) or by being the wallet they chose on Telegram.

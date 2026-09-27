@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import {
   saveProfile, _resetProfiles, setFollow, isFollowing, followCounts, followersOf, followeesOf,
   recordSocialEvent, eventsBy, peopleToFollow, openerProfile, _resetSocial, type SocialEvent,
+  ensureProfile, profileFor,
 } from "../src/store/markets.js";
 import { notifyFollowers, followText, FOLLOW_PING_GAP_MS, type FollowNotifyDeps } from "../src/social/follow.js";
 
@@ -34,6 +35,17 @@ console.log("who follows whom");
   check("the people a person follows", (await followeesOf("ann")).join() === "bob");
   await setFollow("cat", "bob", false);
   check("an unfollow is kept too", !(await isFollowing("cat", "bob")) && (await followCounts("bob")).followers === 1);
+}
+
+console.log("\na name from the moment they sign in");
+{
+  _resetSocial(); _resetProfiles();
+  check("their X handle, first", (await ensureProfile("p1", ["@LevX", "levtg"])).username === "levx");
+  check("...kept, and never overwritten by a later look", (await ensureProfile("p1", ["other"])).username === "levx"
+    && (await profileFor("p1"))?.username === "levx");
+  check("their Telegram one when the X handle is somebody else's", (await ensureProfile("p2", ["levx", "levtg"])).username === "levtg");
+  check("no name when neither fits, until they pick one", (await ensureProfile("p3", ["a_telegram_name_far_too_long"])).username === null);
+  check("...and a picture either way", Boolean((await profileFor("p3"))?.avatar));
 }
 
 console.log("\nwhat a follower may see");
@@ -163,7 +175,10 @@ console.log("\nthe lines no memory test reaches");
   check("...there too", /'open:' \|\| s\.slug/.test(bf) && /'open:' \|\| m\.slug/.test(bf)
     && /'bet:' \|\| ce\.slug \|\| ':' \|\| ce\.wallet \|\| ':' \|\| ce\.side/.test(bf));
   check("the backfill never tells anybody", !/notify|push|sendMessage/i.test(bf.replace(/Nobody is told/g, "")));
-  check("history is written in at boot", /void backfillSocialEvents\(\)/.test(server));
+  check("history is written in at boot, after the names it is shown under",
+    /void ensureProfilesForAll\(\)[\s\S]{0,300}\.then\(\(\) => backfillSocialEvents\(\)\)/.test(server));
+  check("an X sign-in names the person", /evt: "auth_link"[\s\S]{0,300}await ensureProfile\(result\.canonicalDevice\)/.test(server));
+  check("...and so does a Telegram one", /provider: "telegram", uid: String\(user\.id\)[\s\S]{0,200}await ensureProfile\(linked\.canonicalDevice\)/.test(server));
   check("the market names its opener as somebody to follow", /opener: await openerProfile\(slug\)/.test(server));
   const ptf = store.slice(store.indexOf("export async function peopleToFollow"), store.indexOf("export async function backfillSocialEvents"));
   check("suggestions list only public people", /\(e\.kind = 'open' OR p\.show_name\)/.test(ptf) && /JOIN social_event e/.test(ptf) && !/LEFT JOIN social_event/.test(ptf));
