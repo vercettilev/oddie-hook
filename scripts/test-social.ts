@@ -12,6 +12,7 @@ import {
   ensureProfile, profileFor,
 } from "../src/store/markets.js";
 import { notifyFollowers, followText, FOLLOW_PING_GAP_MS, type FollowNotifyDeps } from "../src/social/follow.js";
+import { bestCalls, type PricedCall } from "../src/store/standings.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -93,6 +94,32 @@ console.log("\npeople to follow");
   check("never yourself", !(await peopleToFollow("ann")).some((p) => p.username === "ann"));
   await setFollow("dan", "ann", true);
   check("never somebody you already follow", !(await peopleToFollow("dan")).some((p) => p.username === "ann"));
+}
+
+console.log("\nbest calls");
+{
+  const call = (over: Partial<PricedCall>): PricedCall => ({
+    wallet: "W", slug: "s", question: "Q", resolvedAt: "2026-09-20T00:00:00Z", side: "yes", outcome: "yes", won: true,
+    lamports: 1e8, entryPct: 50, poolLamports: 5e8, payoutLamports: 2e8, pnlLamports: 1e8, weight: 5, ...over,
+  });
+  const all = [
+    call({ slug: "lost", won: false, outcome: "no", pnlLamports: -1e8, weight: 0 }),
+    call({ slug: "refund", pnlLamports: -2e6, weight: 5 }),          // a "win" nobody took the other side of
+    call({ slug: "even", pnlLamports: 0, weight: 5 }),
+    call({ slug: "unread", pnlLamports: null, weight: null }),
+    call({ slug: "crowd", entryPct: 90, pnlLamports: 3e8, weight: 1 }),
+    call({ slug: "contrarian", entryPct: 20, pnlLamports: 1e8, weight: 8 }),
+    call({ slug: "mid-big", entryPct: 50, pnlLamports: 4e8, weight: 5 }),
+    call({ slug: "mid-small", entryPct: 50, pnlLamports: 2e8, weight: 5 }),
+  ];
+  const list = bestCalls(all);
+  // Asked for more than there are, so nothing is hidden by the limit.
+  const every = bestCalls(all, 99).map((c) => c.slug);
+  check("only calls that paid", every.join() === "contrarian,mid-big,mid-small,crowd", every.join());
+  check("best first by the board's own measure, then by the money",
+    list.map((c) => c.slug).join() === "contrarian,mid-big,mid-small", list.map((c) => c.slug).join());
+  check("three at most", list.length === 3 && bestCalls(list, 1).length === 1);
+  check("nobody's best calls when they have none", bestCalls([]).length === 0);
 }
 
 console.log("\nwho hears about it, and how often");
@@ -185,6 +212,13 @@ console.log("\nthe lines no memory test reaches");
   const evs = store.slice(store.indexOf("export async function eventsBy"), store.indexOf("export async function openerProfile"));
   check("a stored side is read only through its owner's switch", /\(e\.kind = 'open' OR p\.show_name\)/.test(evs));
   check("the two pages exist", existsSync("public/app/person.html") && existsSync("public/app/following.html"));
+  check("best calls are bets, so they show only while their owner shows their name",
+    /who\.showName \? bestCallsOf\(who\.canonical\)\.catch\(\(\) => \[\]\) : Promise\.resolve\(\[\]\)/.test(server));
+  const bc = server.slice(server.indexOf("async function bestCallsOf"), server.indexOf("/** A person's public page, by their oddie name. */"));
+  check("...read from this person's own wins only, priced by the chain",
+    /filter\(\(c\) => c\.won && wallets\.has\(c\.wallet\)\)/.test(bc) && /bestCalls\(/.test(bc) && /readMarkets\(keys/.test(bc));
+  const wp = store.slice(store.indexOf("export async function walletsOfPerson"), store.indexOf("/** The handles on a person's account"));
+  check("...across every wallet that is theirs", /provider = 'phantom' AND canonical_device = \$1/.test(wp) && /pe\.wallet IS NOT NULL AND a\.canonical_device = \$1/.test(wp));
   check("they live on the app host", /\(m\|market\|w\|u\)/.test(server) && /\|following\)/.test(server));
   const marketPage = readFileSync("public/app/market.html", "utf8");
   check("the market page offers the open side only while it can be taken",

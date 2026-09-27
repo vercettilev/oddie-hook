@@ -91,6 +91,22 @@ export function standingsFrom(calls: PricedCall[]): Standing[] {
   return [...by.values()].sort((a, b) => b.points - a.points || b.realizedLamports - a.realizedLamports);
 }
 
+/**
+ * A PERSON'S BEST CALLS, for their page: the settled calls that made them
+ * money, best first. Best by the board's own measure (being right while the
+ * room disagreed, discounted for a thin pool), then by the money. Only calls
+ * that paid: a "win" in a market nobody took the other side of returns the
+ * stake less fees, and that is not a trade anybody would call their best. A
+ * market the chain could not price is left out rather than guessed at.
+ */
+export function bestCalls(calls: PricedCall[], limit = 3): PricedCall[] {
+  return calls
+    .filter((c) => c.won && c.pnlLamports !== null && c.pnlLamports > 0)
+    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0) || (b.pnlLamports ?? 0) - (a.pnlLamports ?? 0)
+      || String(b.resolvedAt ?? "").localeCompare(String(a.resolvedAt ?? "")))
+    .slice(0, Math.max(0, limit));
+}
+
 /** Dense rank over an already-ordered list: the rank advances per DISTINCT
  *  points total, so two people on the same points are the same place. Same
  *  rule as the Genesis board. */

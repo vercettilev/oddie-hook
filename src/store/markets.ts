@@ -7504,6 +7504,19 @@ export async function boardPeople(input: { wallets?: string[]; handles?: string[
   return { byWallet, byHandle };
 }
 
+/** Every wallet that is a person's: signed on one of their browsers, or the
+ *  one they chose on Telegram. */
+export async function walletsOfPerson(canonical: string): Promise<string[]> {
+  if (!PERSISTENT || !canonical) return [];
+  await ensureSchema();
+  const { rows } = await db().query<{ wallet: string }>(
+    `SELECT provider_uid AS wallet FROM account WHERE provider = 'phantom' AND canonical_device = $1
+     UNION
+     SELECT pe.wallet FROM person pe JOIN account a ON a.provider = 'telegram' AND a.provider_uid = substr(pe.id, 4)
+      WHERE pe.id LIKE 'tg:%' AND pe.wallet IS NOT NULL AND a.canonical_device = $1`, [canonical]);
+  return rows.map((r) => r.wallet);
+}
+
 /** The handles on a person's account, and where to reach them. */
 export async function reachFor(canonical: string): Promise<{ tgId: number | null; tgHandle: string | null; xHandle: string | null; devices: string[] }> {
   const none = { tgId: null, tgHandle: null, xHandle: null, devices: [] as string[] };

@@ -283,6 +283,29 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .pp__act .share{margin:0}
 .pp__act a.share{display:inline-flex;align-items:center;min-height:48px}
 @media (max-width:420px){ .pp > .pf{width:84px;height:84px} }
+
+/* BEST CALLS: what they got right while the room disagreed, and what it paid.
+   Cream stickers on the black field, the same material as the record page's
+   hero, because this is the part of a person worth pinning up. */
+.best{display:grid;gap:20px;margin:4px 0 36px}
+.bc{display:block;text-decoration:none;background:var(--cream);color:var(--ink);border:3px solid var(--black);
+  box-shadow:7px 8px 0 var(--pink-deep);padding:16px 18px 14px;transform:rotate(-.4deg);
+  transition:box-shadow .15s ease}
+.bc:nth-child(2n){transform:rotate(.35deg)}
+.bc:hover{box-shadow:10px 11px 0 var(--pink-deep)}
+.bc:focus-visible{outline:3px solid var(--yellow);outline-offset:4px}
+.bc__top{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin:0 0 10px}
+.bc__call,.bc__pnl{font-family:var(--display);font-weight:400;font-size:clamp(24px,5.4vw,32px);line-height:1;
+  text-transform:uppercase;font-variant-numeric:tabular-nums}
+.bc__call{display:flex;align-items:center;gap:10px}
+.bc__side{font-size:.6em;letter-spacing:.04em;padding:5px 10px 3px;border:2px solid var(--black)}
+.bc__side--yes{background:var(--yellow);color:var(--ink)}
+.bc__side--no{background:var(--pink);color:var(--cream)}
+.bc__q{margin:0 0 6px;font-family:var(--display);font-weight:400;font-size:clamp(16px,3.4vw,19px);line-height:1.15;
+  text-transform:uppercase;text-wrap:balance}
+.bc__m{margin:0;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:rgba(11,13,4,.62)}
+@media (prefers-reduced-motion:reduce){.bc{transition:none}}
 </style>
 
 <header class="top">
@@ -329,6 +352,22 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   function remember(v) { try { v ? sessionStorage.setItem(AFTER, v) : sessionStorage.removeItem(AFTER); } catch (e) {} }
   function pending() { try { return sessionStorage.getItem(AFTER); } catch (e) { return null; } }
 
+  function solAmt(n) { return String(Math.round(Number(n) * 1000) / 1000); }
+  /* One best call. The price is the story: "YES at 24%" means they took YES
+     when a quarter of the pool agreed. 50 is the first stake into an empty
+     pool, where there was no room to disagree with, so the room goes unsaid. */
+  function bestCard(c) {
+    var other = c.side === "yes" ? "NO" : "YES";
+    var room = c.entryPct !== 50 ? "the room was " + (100 - c.entryPct) + "% " + other + " \u00b7 " : "";
+    var a = c.settledAt ? ago(c.settledAt) : null;
+    var when = a === null ? "settled" : a === "now" ? "settled just now" : "settled " + a + " ago";
+    return '<a class="bc" href="' + esc(c.url) + '"><div class="bc__top">'
+      + '<span class="bc__call"><span class="bc__side bc__side--' + (c.side === "yes" ? "yes" : "no") + '">'
+      + (c.side === "yes" ? "YES" : "NO") + "</span>at " + Number(c.entryPct) + "%</span>"
+      + '<span class="bc__pnl">+' + solAmt(c.pnlSol) + " SOL</span></div>"
+      + '<p class="bc__q">' + esc(c.headline) + '</p><p class="bc__m">' + esc(room + when) + "</p></a>";
+  }
+
   function evLine(it) {
     var side = it.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>';
     var t = it.kind === "open" ? "Opened a market"
@@ -355,7 +394,8 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
     if (j.isYou) {
       html += '<p class="hint">This is your page, as everyone sees it. Markets you open show here'
-        + (j.showName ? ", and so do the sides you take." : '. Your sides join them when you turn on <a href="/profile#idedit">Show my name</a>.')
+        + (j.showName ? ", and so do the sides you take and your best calls."
+          : '. Your sides and your best calls join them when you turn on <a href="/profile#idedit">Show my name</a>.')
         + "</p>";
     } else {
       html += '<p class="lede">Follow ' + esc(me) + " to hear the moment they open a market or take a side.</p>";
@@ -367,6 +407,8 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       + "&return=" + encodeURIComponent("/u/" + j.username) + '">Continue with X</a>'
       + '<a class="way way--tg" id="tglogin" hidden>Continue with Telegram</a></div></div>';
 
+    var best = j.best || [];
+    if (best.length) html += '<h2>Best calls</h2><div class="best">' + best.map(bestCard).join("") + "</div>";
     var evs = j.events || [];
     if (evs.length) html += "<h2>Calls</h2><ul class=\"evs\">" + evs.map(evLine).join("") + "</ul>";
     view.innerHTML = html;

@@ -12,7 +12,7 @@ import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, reco
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
-  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
+  eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, walletsOfPerson, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
@@ -34,7 +34,7 @@ import { decide } from "./oracle/oracle.js";
 import { oracleAvailable } from "./oracle/verdict.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
-import { priceCall, standingsFrom, denseRank } from "./store/standings.js";
+import { priceCall, standingsFrom, denseRank, bestCalls } from "./store/standings.js";
 import { resolvePriceClaim, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
@@ -1654,6 +1654,35 @@ async function publicPerson(raw: string, me: string | null): Promise<{ who: Publ
   return { who, events };
 }
 
+/**
+ * A PERSON'S BEST CALLS: their settled calls that paid, best first by the
+ * board's own measure (see bestCalls in src/store/standings.ts), priced by the
+ * chain. Only the markets this person won are read, never the whole ledger's.
+ */
+async function bestCallsOf(canonical: string): Promise<Array<{
+  slug: string; headline: string; url: string; side: "yes" | "no"; entryPct: number; pnlSol: number; settledAt: string | null;
+}>> {
+  const wallets = new Set(await walletsOfPerson(canonical).catch(() => [] as string[]));
+  if (!wallets.size) return [];
+  const raw = (await settledCalls().catch(() => [])).filter((c) => c.won && wallets.has(c.wallet));
+  if (!raw.length) return [];
+  const keys = [...new Set(raw.map((c) => c.onchainPubkey).filter(Boolean))] as string[];
+  const states = await readMarkets(keys, { maxAgeMs: 10_000 }).catch(() => new Map<string, MarketRead>());
+  const best = bestCalls(raw.map((c) => {
+    const r = c.onchainPubkey ? states.get(c.onchainPubkey) : undefined;
+    return priceCall(c, r?.ok ? r.state : null);
+  }));
+  const out = [];
+  for (const c of best) {
+    const d = await communityMarketDetail(c.slug).catch(() => null);
+    out.push({
+      slug: c.slug, headline: foldIds(d ? d.hook || d.question : c.question), url: `/m/${c.slug}`,
+      side: c.side, entryPct: c.entryPct, pnlSol: Number(((c.pnlLamports ?? 0) / 1e9).toFixed(4)), settledAt: c.resolvedAt ?? null,
+    });
+  }
+  return out;
+}
+
 /** A person's public page, by their oddie name. */
 app.get("/api/u/:username", async (req, res) => {
   const deviceId = typeof req.query.deviceId === "string" && DEVICE_ID.test(req.query.deviceId) ? req.query.deviceId : null;
@@ -1661,9 +1690,11 @@ app.get("/api/u/:username", async (req, res) => {
   const found = await publicPerson(req.params.username, me);
   if (!found) return res.status(404).set("Cache-Control", "no-store").json({ error: "unknown" });
   const { who, events } = found;
-  const [counts, following] = await Promise.all([
+  const [counts, following, best] = await Promise.all([
     followCounts(who.canonical).catch(() => ({ followers: 0, following: 0 })),
     me ? isFollowing(me, who.canonical).catch(() => false) : Promise.resolve(false),
+    // Calls are bets, so they are shown only while their owner shows their name.
+    who.showName ? bestCallsOf(who.canonical).catch(() => []) : Promise.resolve([]),
   ]);
   const isYou = me === who.canonical;
   res.set("Cache-Control", "no-store").json({
@@ -1671,6 +1702,7 @@ app.get("/api/u/:username", async (req, res) => {
     youFollow: following, isYou, signedIn: Boolean(me),
     // Only to its owner: whether their sides show here is their own setting.
     ...(isYou ? { showName: who.showName } : {}),
+    best,
     events: await withHeadlines(events),
   });
 });
