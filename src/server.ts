@@ -3739,8 +3739,8 @@ app.get("/api/v1/markets", async (req, res) => {
       hook: m.hook ?? null,
       taggedBy: openers[m.slug]?.handle ?? null,
       /* KAC KISI GIRDI -- BIZIM KAYDIMIZDAN, ZINCIRDEN DEGIL.
-         chain_entry cuzdan basina tek satir tutuyor, yani bu insan sayar,
-         bahis degil. Ama yalnizca onaylanmis islemler yaziliyor, o yuzden
+         stakerCounts FARKLI cuzdan sayar (defterde taraf basina satir var,
+         iki tarafli cuzdan tek kisidir), yani bu insan sayar, bahis degil. Ama yalnizca onaylanmis islemler yaziliyor, o yuzden
          GERCEGIN ALTINDA kalabilir, ustunde asla. Bunu havuzun yaninda
          basan istemcinin kurali: sifirsa hic yazma. Dolu bir havuzun
          yaninda "0 in" yazmak, parayi yalanlamaktir. */
@@ -4084,7 +4084,9 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   // An admin screen, so exactness is worth a round trip per wallet, but not an
   // unbounded number of them. Past the cap the list says what it left out.
   const CAP = 60;
-  const shown = entries.slice(0, CAP);
+  // One row per wallet here: a two-sided wallet is stamped once per side, and
+  // its position (both legs) is read below.
+  const shown = entries.filter((e, i) => entries.findIndex((x) => x.wallet === e.wallet) === i).slice(0, CAP);
   const stakes = new Map<string, { yes: number; no: number; claimed: boolean }>();
   if (pubkey && shown.length) {
     await Promise.all(shown.map(async (e) => {
@@ -4106,13 +4108,11 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   const payout = (winningLam: number) =>
     winningLam === 0 ? poolLam : poolLam - Math.floor((poolLam * feeBps) / 10_000);
   /* WHO WINS IS A QUESTION ONLY THE POSITION ACCOUNT CAN ANSWER.
-     chain_entry keeps one row per wallet per market carrying the side of their
-     FIRST stake, so a wallet sitting on both sides is filed under one of them.
-     Counting winners from that said "pays 0.192 SOL to 0 wallets" on a market
-     where the same wallet held 0.1 on each side: a payout with nobody to pay.
-     Every participating wallet does appear in chain_entry exactly once, so the
-     SET is complete and only the side is unreliable; the Position account has
-     both legs, and chain_entry's side is the fallback when it cannot be read. */
+     chain_entry now has a row per side a wallet staked, so a wallet sitting on
+     both sides is filed under both. It used to keep one row per wallet, under
+     its FIRST side, which once said "pays 0.192 SOL to 0 wallets" on a market
+     where the same wallet held 0.1 on each side. The Position account (both
+     legs) still decides; a row's side is the fallback when it cannot be read. */
   const holds = (w: string, side: "yes" | "no", stamped: "yes" | "no") => {
     const p = stakes.get(w);
     return p ? (side === "yes" ? p.yes > 0 : p.no > 0) : stamped === side;
@@ -4336,7 +4336,8 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       const winners = entries.filter((e) => e.side === o);
       const best = winners.reduce<number | null>(
         (lo, e) => (lo === null || e.entryPct < lo ? e.entryPct : lo), null);
-      return { stakers: entries.length, winners: winners.length, bestEntryPct: best };
+      // People, not rows: a wallet on both sides is stamped twice.
+      return { stakers: new Set(entries.map((e) => e.wallet)).size, winners: new Set(winners.map((e) => e.wallet)).size, bestEntryPct: best };
     },
     /* The claim to quote. Null for a market that never came from X, which is
        not a failure: there is simply nothing to quote and the thread reply is

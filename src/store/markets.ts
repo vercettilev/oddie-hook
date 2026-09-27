@@ -779,8 +779,22 @@ CREATE TABLE IF NOT EXISTS chain_entry (
   entry_pct   integer NOT NULL,
   lamports    bigint NOT NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (slug, wallet)
+  PRIMARY KEY (slug, wallet, side)
 );
+-- ONE ROW PER SIDE, NOT PER WALLET. The program lets a wallet hold both sides of
+-- a market, and farming both sides is welcome here; one row per wallet filed a
+-- two-sided wallet under its first side only, so its other leg was missing from
+-- its record and the board. The key moved from (slug, wallet) to (slug, wallet,
+-- side). A table created before this keeps its old key (CREATE TABLE IF NOT
+-- EXISTS never alters), so it is moved here, once: only while the key still has
+-- two columns.
+DO $chain_entry_key$ BEGIN
+  IF (SELECT count(*) FROM information_schema.key_column_usage
+       WHERE table_name = 'chain_entry' AND constraint_name = 'chain_entry_pkey') = 2 THEN
+    ALTER TABLE chain_entry DROP CONSTRAINT chain_entry_pkey;
+    ALTER TABLE chain_entry ADD PRIMARY KEY (slug, wallet, side);
+  END IF;
+END $chain_entry_key$;
 
 -- The bot API's idempotency ledger.
 --
@@ -908,10 +922,10 @@ CREATE INDEX IF NOT EXISTS genesis_tag_handle_idx ON genesis_tag (handle);
 -- somebody through their handle silently excludes exactly the people who came
 -- straight from a tweet and bet.
 --
--- WHAT IT DELIBERATELY DOES NOT STORE IS WHO WON. chain_entry holds one row per
--- wallet per market carrying the side of their FIRST stake, so a wallet holding
--- both sides would be labelled with one of them, and "you won" shown to
--- somebody who did not is worse than no notice at all. This records that a
+-- WHAT IT DELIBERATELY DOES NOT STORE IS WHO WON. chain_entry holds a row per
+-- side a wallet staked, so a wallet on both sides is on both, and only the
+-- chain can say which leg paid; "you won" shown to somebody who did not is
+-- worse than no notice at all. This records that a
 -- market they were in is over; the chain is asked what that means.
 --
 -- seen_at is what the badge counts down. It marks having been SHOWN the
@@ -6772,7 +6786,7 @@ export async function recordChainEntry(e: {
   const entryPct = Math.max(0, Math.min(100, Math.round(e.entryPct)));
   try {
     if (!PERSISTENT) {
-      if (!memChainEntries.some((x) => x.slug === e.slug && x.wallet === e.wallet)) {
+      if (!memChainEntries.some((x) => x.slug === e.slug && x.wallet === e.wallet && x.side === e.side)) {
         memChainEntries.push({ ...e, entryPct, createdAt: new Date().toISOString() });
       }
       return;
@@ -6780,7 +6794,7 @@ export async function recordChainEntry(e: {
     await ensureSchema();
     await db().query(
       `INSERT INTO chain_entry (slug, wallet, side, entry_pct, lamports)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (slug, wallet) DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (slug, wallet, side) DO NOTHING`,
       [e.slug, e.wallet, e.side, entryPct, e.lamports],
     );
   } catch (err) {
@@ -6795,11 +6809,14 @@ const rowToEntry = (r: ChainEntryRow): ChainEntry => ({
   lamports: Number(r.lamports), createdAt: r.created_at.toISOString(),
 });
 
+/** This wallet's FIRST stake in this market; a two-sided wallet has a row per
+ *  side, and a receipt tells the story from where it started. */
 export async function chainEntryFor(slug: string, wallet: string): Promise<ChainEntry | null> {
   if (!PERSISTENT) return memChainEntries.find((x) => x.slug === slug && x.wallet === wallet) ?? null;
   await ensureSchema();
   const { rows } = await db().query<ChainEntryRow>(
-    `SELECT slug, wallet, side, entry_pct, lamports, created_at FROM chain_entry WHERE slug = $1 AND wallet = $2`,
+    `SELECT slug, wallet, side, entry_pct, lamports, created_at FROM chain_entry WHERE slug = $1 AND wallet = $2
+      ORDER BY created_at ASC LIMIT 1`,
     [slug, wallet],
   );
   return rows[0] ? rowToEntry(rows[0]) : null;
@@ -7238,9 +7255,8 @@ export async function markPayoutsSeen(wallets: string[]): Promise<void> {
 
 
 
-/** Every wallet that stamped an entry on this market, for the settlement
- *  notice. First stakes only, which is all we need: a wallet that topped up
- *  already has a stamp. */
+/** Every side a wallet stamped on this market: one row per (wallet, side), so
+ *  a wallet on both sides appears twice. Count people with a Set of wallets. */
 export async function walletsInMarket(slug: string): Promise<Array<{ wallet: string; side: "yes" | "no"; entryPct: number; lamports: number }>> {
   if (!PERSISTENT) {
     return memChainEntries.filter((e) => e.slug === slug).map((e) => ({ wallet: e.wallet, side: e.side, entryPct: e.entryPct, lamports: e.lamports }));
@@ -7255,8 +7271,8 @@ export async function walletsInMarket(slug: string): Promise<Array<{ wallet: str
 
 /** HOW MANY WALLETS ARE IN, per slug, batched for a feed.
  *
- *  One row per wallet per market (see the table's primary key), so counting
- *  rows counts people, not stakes: a top-up never inflates it.
+ *  DISTINCT wallets: the table has a row per side, and a wallet on both sides
+ *  is one person. A top-up never inflates it either.
  *
  *  THIS NUMBER IS A FLOOR, NOT THE TRUTH. recordChainEntry writes only on
  *  `confirmed === true`, deliberately: a send whose confirmation we could not
@@ -7279,7 +7295,7 @@ export async function stakerCounts(slugs: string[]): Promise<Record<string, numb
   }
   await ensureSchema();
   const { rows } = await db().query<{ slug: string; n: number }>(
-    `SELECT slug, count(*)::int AS n FROM chain_entry WHERE slug = ANY($1) GROUP BY slug`, [slugs]);
+    `SELECT slug, count(DISTINCT wallet)::int AS n FROM chain_entry WHERE slug = ANY($1) GROUP BY slug`, [slugs]);
   for (const r of rows) out[r.slug] = r.n;
   for (const s of slugs) out[s] ??= 0;
   return out;
@@ -7291,7 +7307,8 @@ export async function stakerCounts(slugs: string[]): Promise<Record<string, numb
 export async function openEntriesFor(wallet: string): Promise<Array<{ slug: string; question: string; side: "yes" | "no"; entryPct: number; closesAt: string | null; onchainPubkey: string | null }>> {
   if (!PERSISTENT) {
     return memChainEntries
-      .filter((e) => e.wallet === wallet && !memCommunity.get(e.slug)?.resolvedOutcome)
+      .filter((e, i, all) => e.wallet === wallet && !memCommunity.get(e.slug)?.resolvedOutcome
+        && all.findIndex((x) => x.wallet === wallet && x.slug === e.slug) === i)
       .map((e) => {
         const rec = mem.get(e.slug);
         return {
@@ -7302,12 +7319,16 @@ export async function openEntriesFor(wallet: string): Promise<Array<{ slug: stri
   }
   await ensureSchema();
   const { rows } = await db().query<{ slug: string; question: string; side: "yes" | "no"; entry_pct: number; closes_at: Date | null; onchain_pubkey: string | null }>(
-    `SELECT ce.slug, s.question, ce.side, ce.entry_pct, s.closes_at, cm.onchain_pubkey
-       FROM chain_entry ce
-       JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NULL
-       JOIN market_slug s ON s.slug = ce.slug
-      WHERE ce.wallet = $1
-      ORDER BY s.closes_at ASC NULLS LAST`,
+    // One row per market: a wallet on both sides has two stamps, and the
+    // position account read after this carries both legs anyway.
+    `SELECT * FROM (
+       SELECT DISTINCT ON (ce.slug) ce.slug, s.question, ce.side, ce.entry_pct, s.closes_at, cm.onchain_pubkey
+         FROM chain_entry ce
+         JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NULL
+         JOIN market_slug s ON s.slug = ce.slug
+        WHERE ce.wallet = $1
+        ORDER BY ce.slug, ce.created_at ASC
+     ) one ORDER BY closes_at ASC NULLS LAST`,
     [wallet],
   );
   return rows.map((r) => ({
