@@ -61,6 +61,7 @@ import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
+import { renderPersonCard, type PersonCard } from "./card/renderPersonCard.js";
 import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
 import type { SweepDeps, SweepResult } from "./x/mentionLoop.js";
 import * as X from "./x/client.js";
@@ -1743,6 +1744,52 @@ app.get("/api/following", async (req, res) => {
   res.json({ signedIn: true, scope, following: followees.length, seenAt: seen, items, people });
 });
 
+/** The twelve pictures as PNG, for the share card: resvg draws no WebP. */
+const avatarPngCache = new Map<string, string | null>();
+function avatarPng(id: string): string | null {
+  if (!(AVATARS as readonly string[]).includes(id)) return null;
+  if (!avatarPngCache.has(id)) {
+    let b64: string | null = null;
+    try { b64 = readFileSync(path.join(__dirname, `../assets/avatars/${id}.png`)).toString("base64"); } catch { /* ring only */ }
+    avatarPngCache.set(id, b64);
+  }
+  return avatarPngCache.get(id) ?? null;
+}
+
+/** What a person's share card says, and a version that changes when it does,
+ *  so an unfurler that keeps images by URL fetches the new one. */
+async function personCardOf(who: PublicPerson, events: FeedItem[]): Promise<{ card: PersonCard; version: string }> {
+  const [counts, best] = await Promise.all([
+    followCounts(who.canonical).catch(() => ({ followers: 0, following: 0 })),
+    who.showName ? bestCallsOf(who.canonical).catch(() => []) : Promise.resolve([]),
+  ]);
+  const opens = events.filter((e) => e.kind === "open");
+  const latest = opens[0] ? (await withHeadlines([opens[0]]).catch(() => []))[0]?.headline ?? null : null;
+  const b = best[0] ?? null;
+  const card: PersonCard = {
+    username: who.username, avatarPng: null, followers: counts.followers, opened: opens.length,
+    best: b ? { side: b.side, entryPct: b.entryPct, pnlSol: b.pnlSol, headline: b.headline } : null,
+    latestOpen: latest,
+  };
+  const version = createHash("sha1").update(JSON.stringify({ ...card, avatar: who.avatar })).digest("hex").slice(0, 10);
+  return { card: { ...card, avatarPng: avatarPng(who.avatar) }, version };
+}
+
+const personPngCache = new Map<string, Buffer>();
+app.get("/u/:username/card.png", async (req, res) => {
+  const found = await publicPerson(req.params.username, null).catch(() => null);
+  if (!found) return res.status(404).send("no such person");
+  const { card, version } = await personCardOf(found.who, found.events);
+  const key = `${found.who.username}:${version}`;
+  let png = personPngCache.get(key);
+  if (!png) {
+    png = renderCardPng(renderPersonCard(card));
+    if (personPngCache.size > 200) personPngCache.clear();
+    personPngCache.set(key, png);
+  }
+  res.set("Cache-Control", "public, max-age=300").type("image/png").send(png);
+});
+
 /** The person page, with an unfurl that names them when they are public. */
 app.get("/u/:username", async (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
@@ -1752,14 +1799,19 @@ app.get("/u/:username", async (req, res) => {
     const name = `@${found.who.username}`;
     const title = `${name} on oddie`;
     const desc = `Follow ${name} to hear the moment they open a market or take a side.`;
-    const img = `${APP_BASE_URL}/avatars/${found.who.avatar}.webp`;
+    // The card, versioned by what it says: a new best call is a new URL.
+    const { version } = await personCardOf(found.who, found.events).catch(() => ({ version: "0" }));
+    const img = `${APP_BASE_URL}/u/${encodeURIComponent(found.who.username)}/card.png?v=${version}`;
     const tags = [
       `<meta property="og:type" content="profile">`,
       `<meta property="og:title" content="${escHtml(title)}">`,
       `<meta property="og:description" content="${escHtml(desc)}">`,
       `<meta property="og:image" content="${escHtml(img)}">`,
+      `<meta property="og:image:width" content="2000">`,
+      `<meta property="og:image:height" content="1048">`,
       `<meta property="og:url" content="${escHtml(`${APP_BASE_URL}/u/${found.who.username}`)}">`,
-      `<meta name="twitter:card" content="summary">`,
+      `<meta name="twitter:card" content="summary_large_image">`,
+      `<meta name="twitter:image" content="${escHtml(img)}">`,
       `<meta name="description" content="${escHtml(desc)}">`,
     ].join("\n");
     html = html.replace("<title>oddie</title>", `<title>${escHtml(title)}</title>\n${tags}`);

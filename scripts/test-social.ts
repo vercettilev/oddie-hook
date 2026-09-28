@@ -13,6 +13,8 @@ import {
 } from "../src/store/markets.js";
 import { notifyFollowers, followText, FOLLOW_PING_GAP_MS, type FollowNotifyDeps } from "../src/social/follow.js";
 import { bestCalls, type PricedCall } from "../src/store/standings.js";
+import { renderPersonCard } from "../src/card/renderPersonCard.js";
+import { AVATARS } from "../src/store/markets.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -122,6 +124,29 @@ console.log("\nbest calls");
   check("nobody's best calls when they have none", bestCalls([]).length === 0);
 }
 
+console.log("\nthe share card");
+{
+  // The card puts invisible separators into words the bundled font would fuse
+  // ("f" before "i", "i" before "V"); the words are read without them.
+  const plain = (svg: string) => svg.replace(/[\u200A\u200C]/g, "");
+  const card = (p: Parameters<typeof renderPersonCard>[0]) => plain(renderPersonCard(p));
+  const best = card({ username: "levvercetti", avatarPng: null, followers: 12, opened: 4,
+    best: { side: "yes", entryPct: 24, pnlSol: 0.4123, headline: "Pump.fun closes Q4 with more revenue than Q3?" }, latestOpen: null });
+  check("it leads with their best call and what it paid", best.includes("called YES at 24%") && best.includes("+0.412 SOL"));
+  check("...and the room it beat", best.includes("the room was 76% NO"));
+  check("...with who they are over it", best.includes("@LEVVERCETTI") && best.includes("12 followers") && best.includes("opened 4 markets"));
+  const empty = card({ username: "fresh", avatarPng: null, followers: 0, opened: 0, best: null, latestOpen: null });
+  check("a card somebody posts never says 0 followers", !/0 followers/.test(empty));
+  check("...and with nothing yet it is the invitation", empty.includes("calls it first") && empty.includes("Follow @fresh"));
+  const opener = card({ username: "troxqt", avatarPng: null, followers: 1, opened: 4, best: null, latestOpen: "Solana equity holders to 1.5M?" });
+  check("an opener's card leads with the markets, said once", opener.includes("opened 4 markets") && (opener.match(/opened 4 markets/g) || []).length === 2
+    && opener.includes("Solana equity holders to 1.5M?"));
+  const first = card({ username: "x_y", avatarPng: null, followers: 3, opened: 0,
+    best: { side: "no", entryPct: 50, pnlSol: 0.05, headline: "Q" }, latestOpen: null });
+  check("a first stake into an empty pool beat no room, so none is claimed", !/the room was/.test(first) && first.includes("called NO at 50%"));
+  check("every picture has the PNG the card needs", (AVATARS as readonly string[]).every((a) => existsSync(`assets/avatars/${a}.png`)));
+}
+
 console.log("\nwho hears about it, and how often");
 {
   const T0 = 1_800_000_000_000;
@@ -191,6 +216,11 @@ console.log("\nthe lines no memory test reaches");
   check("...and needs a signed-in browser", /if \(!me\) return res\.status\(401\)/.test(fol));
   const page = server.slice(server.indexOf('app.get("/u/:username"'), server.indexOf('app.get("/following"'));
   check("the page's unfurl names only a public person", /publicPerson\(req\.params\.username, null\)/.test(page));
+  check("...and unfurls as the large card, versioned by what it says",
+    /card\.png\?v=\$\{version\}/.test(page) && /twitter:card" content="summary_large_image"/.test(page));
+  const cardRoute = server.slice(server.indexOf('app.get("/u/:username/card.png"'), server.indexOf('app.get("/u/:username/card.png"') + 700);
+  check("the card is drawn only for a public person", /publicPerson\(req\.params\.username, null\)/.test(cardRoute)
+    && /status\(404\)/.test(cardRoute));
   check("a stake is an event for its owner's followers, after the ledger has it",
     /await onBetLanded\([\s\S]{0,400}await socialBet\(slug, stake\.user, stake\.side, stake\.lamports\)/.test(server));
   check("a market opened is an event for its opener's followers",
