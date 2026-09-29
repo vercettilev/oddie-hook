@@ -15,6 +15,11 @@
  * So chat stays exactly as easy as the native feature (!yes, !no) and the
  * standings live on oddie, which is what brings a viewer there.
  *
+ * TWO DOORS IN ONE CHAT. `!oddie <claim>` is the same door as tagging oddie on
+ * X or Telegram: anybody may knock, the claim is read, a real market opens and
+ * oddie's resolver settles it. `!call <question>` is the quick free vote for a
+ * moment no resolver can see ("clutch this round?"), run by the channel.
+ *
  * WHO DOES WHAT. The channel's owner and its moderators open, settle and
  * cancel calls; everybody answers. One call at a time per channel, one answer
  * per person, and an answer is final: a call changed after the room has moved
@@ -36,6 +41,10 @@ export interface ChatMessage {
   /** The channel's owner or one of its moderators. */
   canRun: boolean;
   text: string;
+  /** The message this one replied to: under a claim, a bare !oddie means it. */
+  replyText?: string | null;
+  /** The channel's own name, for the market's provenance. */
+  channelSlug?: string;
 }
 
 export type LiveCommand =
@@ -43,7 +52,8 @@ export type LiveCommand =
   | { kind: "pick"; side: Side }
   | { kind: "settle"; outcome: Side }
   | { kind: "cancel" }
-  | { kind: "help" };
+  | { kind: "help" }
+  | { kind: "market"; claim: string };
 
 export const CALL_MINUTES_DEFAULT = 3;
 export const CALL_MINUTES_MAX = 30;
@@ -62,7 +72,10 @@ export function parseCommand(raw: string): LiveCommand | null {
   const text = String(raw ?? "").trim().replace(/\s+/g, " ");
   const pick = /^!(yes|evet|no|hay[ıi]r)(?=\s|$)/i.exec(text);
   if (pick) return { kind: "pick", side: YES_WORD.test(pick[1]) ? "yes" : "no" };
-  const m = /^!oddie(?=\s|$)\s*(.*)$/i.exec(text);
+  // !oddie is the market door; whatever follows is the claim, read like a tag.
+  const market = /^!oddie(?=\s|$)\s*(.*)$/i.exec(text);
+  if (market) return { kind: "market", claim: market[1].trim() };
+  const m = /^!call(?=\s|$)\s*(.*)$/i.exec(text);
   if (!m) return null;
   const rest = m[1].trim();
   if (!rest) return { kind: "help" };
@@ -70,7 +83,7 @@ export function parseCommand(raw: string): LiveCommand | null {
   if (NO_WORD.test(rest)) return { kind: "settle", outcome: "no" };
   if (/^(cancel|iptal)$/i.test(rest)) return { kind: "cancel" };
   // A length only at the START, where it cannot be part of the question:
-  // "!oddie 5m will I win" is five minutes; "will he hit 5m followers" is not.
+  // "!call 5m will I win" is five minutes; "will he hit 5m followers" is not.
   let minutes = CALL_MINUTES_DEFAULT;
   let question = rest;
   const dur = /^(\d{1,2})\s*(?:m|min|mins|dk)\b\s*(.*)$/i.exec(rest);
@@ -130,15 +143,16 @@ export const LIVE_COPY = {
     : "Calls are locked for this one. The next one is yours.",
   settled: (outcome: Side, right: number, total: number, points: number, url: string) => {
     const it = `It's ${outcome.toUpperCase()}.`;
-    if (!total) return `${it} Next call opens with !oddie. Standings: ${url}`;
+    if (!total) return `${it} The next one opens with !call. Standings: ${url}`;
     if (!right) return `${it} The whole room went the other way this time. Standings: ${url}`;
     return `${it} ${right} of ${total} called it right, +${points} each. Standings: ${url}`;
   },
-  canceled: "Call canceled. The next one opens with !oddie.",
+  canceled: "Call canceled. The next one opens with !call.",
   busy: (q: string) => `One call at a time: "${q}" is still running.`,
-  settleFirst: (q: string) => `Settle "${q}" first: !oddie yes or !oddie no.`,
-  help: "Mods: !oddie <question> opens a call (!oddie 5m <question> for five minutes). Chat: !yes or !no. Settle with !oddie yes or !oddie no.",
-  hello: "oddie is here. Mods: !oddie <question> opens a call, chat answers !yes or !no, and the standings live on oddie.",
+  settleFirst: (q: string) => `Settle "${q}" first: !call yes or !call no.`,
+  help: "Mods: !call <question> opens a quick vote (!call 5m <question> for five minutes), chat answers !yes or !no, settle with !call yes or !call no.",
+  marketHelp: "!oddie <a claim with a yes or no and a date> opens a real market anybody can take, and oddie settles it. Reply !oddie to a message to open one on it.",
+  hello: "oddie is here. !oddie <claim> opens a real market anybody can take, settled by oddie. Mods run quick votes with !call <question>, and chat answers !yes or !no.",
 };
 
 /* --------------------------------------------------------------- engine -- */
@@ -169,6 +183,8 @@ export interface LiveDeps {
   /** Where this channel's standings live on oddie. */
   standingsUrl(platform: Platform, channelId: string): Promise<string>;
   log(line: string, extra?: Record<string, unknown>): void;
+  /** The market door (src/live/claims.ts). Absent: !oddie is only explained. */
+  market?(msg: ChatMessage, claim: string): Promise<string>;
 }
 
 const lastSplit = new Map<string, number>();
@@ -210,6 +226,14 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       await sayQuiet(deps, msg, LIVE_COPY.split(call.question, await deps.store.tally(call.id), call.closesAt - now));
     }
     return "picked";
+  }
+
+  // The market door is for everybody, like a tag on X or Telegram. Bare, under
+  // a message, it means that message; bare on its own it asks how.
+  if (cmd.kind === "market") {
+    const claim = cmd.claim || (msg.replyText ?? "").trim();
+    if (!claim || !deps.market) { await sayQuiet(deps, msg, LIVE_COPY.marketHelp, msg.messageId); return "market-help"; }
+    return deps.market(msg, claim);
   }
 
   if (!msg.canRun) return "not-allowed";

@@ -152,7 +152,11 @@ export function verifyKickSignature(publicKeyPem: string, messageId: string, tim
 export const WEBHOOK_MAX_AGE_MS = 10 * 60_000;
 
 interface KickSender { user_id: number; username: string; identity?: { badges?: Array<{ type?: string }> } | null }
-interface KickChatEvent { message_id: string; broadcaster: KickSender; sender: KickSender; content: string }
+interface KickChatEvent {
+  message_id: string; broadcaster: KickSender & { channel_slug?: string }; sender: KickSender; content: string;
+  replies_to?: { message_id?: string; content?: string } | null;
+}
+const noEmotes = (s: string): string => s.replace(/\[emote:\d+:[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
 
 /** A `chat.message.sent` payload as the engine reads it. The owner is the
  *  sender whose id is the broadcaster's; a moderator carries the badge. */
@@ -169,6 +173,8 @@ export function chatFromKick(body: unknown): ChatMessage | null {
     senderName: String(e.sender.username ?? ""),
     canRun: owner || mod,
     // Emotes arrive inline as [emote:id:name]; they are never part of a command.
-    text: e.content.replace(/\[emote:\d+:[^\]]*\]/g, " ").trim(),
+    text: noEmotes(e.content),
+    replyText: typeof e.replies_to?.content === "string" ? noEmotes(e.replies_to.content) : null,
+    channelSlug: e.broadcaster.channel_slug ?? undefined,
   };
 }

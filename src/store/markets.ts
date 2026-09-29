@@ -3780,7 +3780,7 @@ export function handleFromSourceUrl(url: string | null | undefined): string | nu
  * and is deliberately narrow. This decides whether we will show the market at
  * all, and is allowed to be wider.
  */
-export type SourceKind = "x" | "telegram";
+export type SourceKind = "x" | "telegram" | "kick";
 /**
  * A TELEGRAM MESSAGE WITH NO PUBLIC LINK: a private chat, which is where guest
  * mode lets the bot be tagged, and a basic group, which is what two friends get
@@ -3794,6 +3794,21 @@ export type SourceKind = "x" | "telegram";
  */
 export const TG_PRIVATE_SOURCE = /^tg-private:([0-9a-f]{16})$/;
 
+/**
+ * A KICK CHAT MESSAGE. Kick has no link to one chat message, so a market
+ * opened from a stream's chat keeps `kick-chat:<channel slug>/<message id>`:
+ * which channel it came from (public: it is the channel's own name) and which
+ * message, for one-post-one-market. Like the private Telegram marker it is
+ * never printed as a link (isWebSourceUrl).
+ */
+export const KICK_CHAT_SOURCE = /^kick-chat:([a-z0-9_-]{1,40})\/([0-9a-f-]{8,64})$/i;
+export const kickChatSource = (channelSlug: string, messageId: string): string => {
+  const slug = channelSlug.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "channel";
+  const id = /^[0-9a-f-]{8,64}$/i.test(messageId) ? messageId.toLowerCase()
+    : createHash("sha256").update(messageId).digest("hex").slice(0, 32);
+  return `kick-chat:${slug}/${id}`;
+};
+
 /** Only a real web link is ever printed as a link. */
 export const isWebSourceUrl = (url: string | null | undefined): boolean =>
   typeof url === "string" && /^https?:\/\//i.test(url);
@@ -3801,6 +3816,7 @@ export const isWebSourceUrl = (url: string | null | undefined): boolean =>
 export function sourceUrlKind(url: string | null | undefined): SourceKind | null {
   if (!url) return null;
   if (TG_PRIVATE_SOURCE.test(String(url))) return "telegram";
+  if (KICK_CHAT_SOURCE.test(String(url))) return "kick";
   let u: URL;
   try { u = new URL(String(url)); } catch { return null; }
   if (u.protocol !== "https:" && u.protocol !== "http:") return null;
@@ -3844,6 +3860,8 @@ export function sourcePostKey(url: string | null | undefined): string | null {
   if (!kind) return null;
   const priv = TG_PRIVATE_SOURCE.exec(String(url));
   if (priv) return `tgp:${priv[1]}`;
+  const kick = KICK_CHAT_SOURCE.exec(String(url));
+  if (kick) return `kick:${kick[2].toLowerCase()}`;
   const u = new URL(String(url));
   if (kind === "x") {
     const id = /\/status\/(\d+)/.exec(u.pathname)?.[1];
@@ -5269,6 +5287,25 @@ export async function tgThreadsForSlug(slug: string): Promise<Array<{ key: strin
     [slug],
   );
   return rows.map((r) => ({ key: r.tweet_id, reason: r.reason, replyId: r.reply_id, author: r.author }));
+}
+
+/** The Kick channels a market was opened from, for its result: the ledger key
+ *  is `kick:<channel id>:<message id>`. */
+export async function kickThreadsForSlug(slug: string): Promise<Array<{ channelId: string; messageId: string }>> {
+  if (!slug) return [];
+  const parse = (key: string) => {
+    const m = /^kick:([^:]+):(.+)$/.exec(key);
+    return m ? { channelId: m[1], messageId: m[2] } : null;
+  };
+  if (!PERSISTENT) {
+    return [...memMentions.values()]
+      .filter((m) => m.slug === slug && m.outcome === "replied" && m.tweetId.startsWith("kick:"))
+      .map((m) => parse(m.tweetId)).filter((x): x is { channelId: string; messageId: string } => Boolean(x));
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ tweet_id: string }>(
+    `SELECT tweet_id FROM x_mention WHERE slug = $1 AND outcome = 'replied' AND tweet_id LIKE 'kick:%' ORDER BY at ASC`, [slug]);
+  return rows.map((r) => parse(r.tweet_id)).filter((x): x is { channelId: string; messageId: string } => Boolean(x));
 }
 
 /** Guest tags from one person in the last day, whatever became of them. Guest

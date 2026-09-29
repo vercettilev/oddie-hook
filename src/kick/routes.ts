@@ -11,6 +11,8 @@ import {
   refreshTokens, sendChat, sendChatAsUser, subscribeToChannel, verifyKickSignature, WEBHOOK_MAX_AGE_MS,
 } from "./client.js";
 import { handleChat, LIVE_COPY, lockDue, yesPct, type LiveDeps, type Platform } from "../live/calls.js";
+import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
+import { kickChatSource } from "../store/markets.js";
 import {
   channelById, channelBySlug, channelStandings, liveStore, recentCalls, saveChannel, type LiveChannel,
 } from "../store/live.js";
@@ -27,6 +29,8 @@ export interface KickRouteDeps {
   /** Test seams: Kick's key, and the engine's hands. */
   publicKey?(): Promise<string>;
   engine?: LiveDeps;
+  /** The market door's machinery, from the server (the same as X and Telegram). */
+  markets?: Omit<ChatMarketDeps, "say" | "sourceFor">;
 }
 
 const pending = new Map<string, { verifier: string; at: number }>();
@@ -62,7 +66,7 @@ const kickChat: KickChat = { bot: sendChat, user: sendChatAsUser };
  */
 const botCannotPost = new Set<string>();
 
-export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log">, chat: KickChat = kickChat): LiveDeps {
+export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets">, chat: KickChat = kickChat): LiveDeps {
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const deliver = async (token: string, channelId: string, text: string, replyTo?: string) => {
     if (!botCannotPost.has(channelId)) {
@@ -76,19 +80,26 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log">, cha
     }
     await chat.user(token, channelId, text, replyTo);
   };
+  const say = async (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<void> => {
+    const ch = await channelById("kick", channelId);
+    if (!ch?.active) return;
+    try { await deliver(await tokenFor(ch), channelId, text, replyTo); }
+    catch (e) {
+      // An expired token says 401: refresh once and say it again.
+      if ((e as { status?: number }).status !== 401) throw e;
+      await deliver(await tokenFor(ch, true), channelId, text, replyTo);
+    }
+  };
+  const markets = d.markets;
   return {
     store: liveStore,
     now: () => Date.now(),
-    say: async (_p: Platform, channelId, text, replyTo) => {
-      const ch = await channelById("kick", channelId);
-      if (!ch?.active) return;
-      try { await deliver(await tokenFor(ch), channelId, text, replyTo); }
-      catch (e) {
-        // An expired token says 401: refresh once and say it again.
-        if ((e as { status?: number }).status !== 401) throw e;
-        await deliver(await tokenFor(ch, true), channelId, text, replyTo);
-      }
-    },
+    say,
+    market: markets ? (msg, claim) => openFromChat(msg, claim, {
+      ...markets,
+      sourceFor: (m) => kickChatSource(m.channelSlug || m.channelId, m.messageId),
+      say: (m, text) => say("kick", m.channelId, text, m.messageId),
+    }) : undefined,
     standingsUrl: async (_p, channelId) => {
       const ch = await channelById("kick", channelId).catch(() => null);
       return `${base}/live/kick/${encodeURIComponent(ch?.slug ?? channelId)}`;
@@ -204,7 +215,7 @@ export function kickRouter(d: KickRouteDeps): Router {
 }
 
 /** The clock: every few seconds, calls whose time is up are locked and said. */
-export function startLiveClock(d: Pick<KickRouteDeps, "appBaseUrl" | "log">, everyMs = 5_000): NodeJS.Timeout {
+export function startLiveClock(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets">, everyMs = 5_000): NodeJS.Timeout {
   const engine = kickEngineDeps(d);
   return setInterval(() => { void lockDue(engine).catch((e) => d.log("live clock failed", { err: (e as Error).message })); }, everyMs);
 }

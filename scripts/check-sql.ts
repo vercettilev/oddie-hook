@@ -26,12 +26,15 @@ if (!url) { console.error("no DATABASE_PUBLIC_URL or DATABASE_URL: run it throug
 
 const client = new pg.Client({ connectionString: url, ssl: /railway\.internal/.test(url) ? false : { rejectUnauthorized: false } });
 await client.connect();
-let bad = 0, n = 0;
+let bad = 0, n = 0, dynamic = 0;
 for (const f of files) {
   const src = readFileSync(f, "utf8");
   const cols = /const CALL_COLS = `([^`]*)`/.exec(src)?.[1] ?? "";
   const stmts = [...src.matchAll(/query(?:<[^>]*>)?\(\s*`([\s\S]*?)`/g)].map((m) => m[1].replace(/\$\{CALL_COLS\}/g, cols));
   for (const sql of stmts) {
+    // A statement assembled at run time (a column name, a VALUES list) cannot be
+    // checked from its source: said, not counted as a failure.
+    if (sql.includes("${")) { dynamic++; continue; }
     const name = `chk_${n++}`;
     const head = sql.trim().split(/\s+/).slice(0, 5).join(" ");
     try {
@@ -45,5 +48,6 @@ for (const f of files) {
   }
 }
 await client.end();
-console.log(bad ? `\n${bad} of ${n} statement(s) FAILED\n` : `\nall ${n} statements parse against the real database.\n`);
+const skipped = dynamic ? ` (${dynamic} built at run time, not checked)` : "";
+console.log(bad ? `\n${bad} of ${n} statement(s) FAILED${skipped}\n` : `\nall ${n} statements parse against the real database${skipped}.\n`);
 process.exit(bad ? 1 : 0);

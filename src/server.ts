@@ -9,14 +9,14 @@ import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
-import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention } from "./store/markets.js";
+import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
   eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, walletsOfPerson, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
-import { kickRouter, startLiveClock } from "./kick/routes.js";
+import { kickRouter, startLiveClock, kickEngineDeps } from "./kick/routes.js";
 import { kickConfigured } from "./kick/client.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
@@ -1831,15 +1831,46 @@ app.get("/live", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").type("html").send(stampApp(LIVE_HTML));
 });
+/** Markets a person may open from one stream's chat in a day. The channel's
+ *  owner and moderators are not counted. */
+const KICK_MARKETS_PER_DAY = (() => {
+  const n = Number(process.env.KICK_MARKETS_PER_DAY ?? 5);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
+})();
+const liveLog = (line: string, extra?: Record<string, unknown>) => console.log(JSON.stringify({ evt: "live", line, ...extra }));
+/* `!oddie <claim>` in a stream: the same extractor, gate, mint and resolver as
+   a tag on X or Telegram. The channel is the opener, so its 2%. */
+const kickMarkets = {
+  extract: (text: string) => runExtract(text),
+  existingMarket: (sourceUrl: string) => openMarketForSourcePost(sourceUrl),
+  openMarket: async (input: Parameters<NonNullable<Parameters<typeof kickRouter>[0]["markets"]>["openMarket"]>[0]) => {
+    const out = await openMarketFromClaim({
+      question: input.question, closeInput: input.closeInput, sourceUrl: input.sourceUrl,
+      taggerHandle: null, payee: input.openerId, creatorWallet: null,
+      category: input.category, resolutionCriteria: input.resolutionCriteria, priceClaim: input.priceClaim ?? null,
+      claimText: input.claimText ?? null, resolvability: input.resolvability, hook: input.hook ?? null,
+      mint: "on-demand",
+    });
+    return out.ok ? { ok: true as const, slug: out.slug } : { ok: false as const, status: out.status, error: out.error };
+  },
+  claim: (key: string, author: string) => claimMention(key, author),
+  settle: (key: string, outcome: "replied" | "skipped" | "failed", extra: { reason?: string; slug?: string; claimText?: string | null }) =>
+    settleMention(key, outcome, extra),
+  openedToday: (author: string) => tgOpenedToday(author),
+  dailyCap: KICK_MARKETS_PER_DAY,
+  baseUrl: APP_BASE_URL,
+  log: liveLog,
+};
 app.use(kickRouter({
   appBaseUrl: APP_BASE_URL,
   pageHtml: () => stampApp(LIVE_HTML),
   pageOpen: (req) => appOpenFor(req),
   pageClosed: (res) => appClosed(res),
-  log: (line, extra) => console.log(JSON.stringify({ evt: "live", line, ...extra })),
+  log: liveLog,
+  markets: kickMarkets,
 }));
 // The clock only runs where a channel can exist to need it.
-if (kickConfigured()) startLiveClock({ appBaseUrl: APP_BASE_URL, log: (line, extra) => console.log(JSON.stringify({ evt: "live", line, ...extra })) });
+if (kickConfigured()) startLiveClock({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
 
 app.get("/following", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
@@ -4196,7 +4227,10 @@ async function marketDetailPayload(
       ? await tgOpenerOf(slug).then((o) => o && o.handle
           ? { platform: "telegram", handle: o.handle, url: `https://t.me/${o.handle}` }
           : { platform: "telegram", handle: null, url: null }).catch(() => null)
-      : null,
+      : sourceUrlKind(src?.sourceUrl) === "kick"
+        // The channel it was opened in, which is public: it is the channel's name.
+        ? (() => { const m = KICK_CHAT_SOURCE.exec(String(src?.sourceUrl)); return m ? { platform: "kick", handle: m[1], url: `https://kick.com/${m[1]}` } : null; })()
+        : null,
     /* THE DOOR TO THE 2%. Only a public deep link, never the private token:
        whoever taps it lands in their own chat with the bot, which is what makes
        it safe to print on a public page. */
@@ -4650,6 +4684,23 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       return key && key.startsWith("x:") ? key.slice(2) : null;
     },
   }).catch((e) => console.error("[resolution] announce failed:", (e as Error).message));
+
+  /* AND ON KICK, in the chat the market was opened from, after the chain has
+     the verdict so winners can collect the moment they read it. */
+  if (kickConfigured()) {
+    void chainDone.then(async () => {
+      const threads = await kickThreadsForSlug(slug).catch(() => []);
+      if (!threads.length) return;
+      const d = await communityMarketDetail(slug).catch(() => null);
+      const headline = d ? foldIds(d.hook || d.question) : slug;
+      const text = `It's ${outcome.toUpperCase()}: "${headline}" Winners collect at ${APP_BASE_URL}/m/${slug}`;
+      const eng = kickEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog });
+      for (const t of threads) {
+        await eng.say("kick", t.channelId, text, t.messageId)
+          .catch((e) => liveLog("kick result not delivered", { slug, channel: t.channelId, err: (e as Error).message }));
+      }
+    }).catch(() => {});
+  }
 
   /* AND IN TELEGRAM, in every group the market was announced in, after the
      chain has the verdict so the opener's cut is a real number. Everything
