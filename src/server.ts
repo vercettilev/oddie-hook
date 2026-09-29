@@ -16,6 +16,8 @@ import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTrie
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
+import { kickRouter, startLiveClock } from "./kick/routes.js";
+import { kickConfigured } from "./kick/client.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -108,7 +110,10 @@ app.use((req, res, next) => {
   if (where === "apex" && onApp && req.path !== "/") return res.redirect(301, `${BASE_URL}${req.originalUrl}`);
   next();
 });
-app.use(express.json());
+// The Kick webhook is verified over its exact bytes (src/kick/routes.ts), so it
+// reads its own raw body and the JSON parser leaves it alone.
+const jsonBody = express.json();
+app.use((req, res, next) => (req.path === "/live/kick/webhook" ? next() : jsonBody(req, res, next)));
 
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 /**
@@ -144,7 +149,7 @@ const walletDomain = (req: express.Request): string =>
 const homeFor = (path: string): string => (APP_HOST && hostFor(path) === "app" ? APP_BASE_URL : BASE_URL);
 /** Which host a path belongs on. "shared" is served by both (APIs, assets). */
 function hostFor(path: string): "app" | "apex" | "shared" {
-  if (/^\/(m|market|w|u)\//.test(path) || /^\/(you|positions|profile|board|leaderboard|markets|following)\/?$/.test(path) || path.startsWith("/@")) return "app";
+  if (/^\/(m|market|w|u|live)\//.test(path) || /^\/(you|positions|profile|board|leaderboard|markets|following|live)\/?$/.test(path) || path.startsWith("/@")) return "app";
   if (path === "/" || /^\/(genesis|g|card)(\/|$)/.test(path)) return "apex";
   return "shared";
 }
@@ -162,6 +167,7 @@ const WHO_HTML = readFileSync(path.join(__dirname, "../public/app/who.html"), "u
 /** A person on oddie, by the name they chose, and what the people you follow did. */
 const PERSON_HTML = readFileSync(path.join(__dirname, "../public/app/person.html"), "utf8");
 const FOLLOWING_HTML = readFileSync(path.join(__dirname, "../public/app/following.html"), "utf8");
+const LIVE_HTML = readFileSync(path.join(__dirname, "../public/app/live.html"), "utf8");
 /** The list: every open market, newest first. The app's front door. */
 const MARKETS_HTML = readFileSync(path.join(__dirname, "../public/app/markets.html"), "utf8");
 
@@ -1818,6 +1824,23 @@ app.get("/u/:username", async (req, res) => {
   }
   res.set("Cache-Control", "no-cache").type("html").send(html);
 });
+/* ------------------------------------------------------------------ live --
+ * Free calls in a stream's chat, kept on oddie. The rules: src/live/calls.ts.
+ * Kick first (src/kick); Twitch plugs into the same engine. */
+app.get("/live", (req, res) => {
+  if (!appOpenFor(req)) return appClosed(res);
+  res.set("Cache-Control", "no-cache").type("html").send(stampApp(LIVE_HTML));
+});
+app.use(kickRouter({
+  appBaseUrl: APP_BASE_URL,
+  pageHtml: () => stampApp(LIVE_HTML),
+  pageOpen: (req) => appOpenFor(req),
+  pageClosed: (res) => appClosed(res),
+  log: (line, extra) => console.log(JSON.stringify({ evt: "live", line, ...extra })),
+}));
+// The clock only runs where a channel can exist to need it.
+if (kickConfigured()) startLiveClock({ appBaseUrl: APP_BASE_URL, log: (line, extra) => console.log(JSON.stringify({ evt: "live", line, ...extra })) });
+
 app.get("/following", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
   res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(stampApp(FOLLOWING_HTML));

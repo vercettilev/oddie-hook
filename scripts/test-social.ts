@@ -249,7 +249,7 @@ console.log("\nthe lines no memory test reaches");
     /filter\(\(c\) => c\.won && wallets\.has\(c\.wallet\)\)/.test(bc) && /bestCalls\(/.test(bc) && /readMarkets\(keys/.test(bc));
   const wp = store.slice(store.indexOf("export async function walletsOfPerson"), store.indexOf("/** The handles on a person's account"));
   check("...across every wallet that is theirs", /provider = 'phantom' AND canonical_device = \$1/.test(wp) && /pe\.wallet IS NOT NULL AND a\.canonical_device = \$1/.test(wp));
-  check("they live on the app host", /\(m\|market\|w\|u\)/.test(server) && /\|following\)/.test(server));
+  check("they live on the app host", /\(m\|market\|w\|u[|)]/.test(server) && /\|following[|)]/.test(server));
   const marketPage = readFileSync("public/app/market.html", "utf8");
   check("the market page offers the open side only while it can be taken",
     /if \(oneSided && !resolved && !closed\) \{/.test(marketPage));
