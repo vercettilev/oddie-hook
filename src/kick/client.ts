@@ -98,12 +98,25 @@ export async function myChannel(token: string): Promise<{ slug: string }> {
   return { slug: c.slug };
 }
 
-/** Their chat, and whether they are live, delivered to our webhook. */
-export async function subscribeToChannel(token: string): Promise<void> {
-  await api(token, "POST", "/events/subscriptions", {
-    method: "webhook",
-    events: [{ name: "chat.message.sent", version: 1 }, { name: "livestream.status.updated", version: 1 }],
-  });
+export const KICK_EVENTS = [{ name: "chat.message.sent", version: 1 }, { name: "livestream.status.updated", version: 1 }];
+
+/**
+ * Their chat, and whether they are live, delivered to our webhook: only the
+ * events not already there. A streamer signs in again to manage their 2%, and
+ * Kick does not say what a second subscription to the same event does; if it
+ * were a second delivery, every line in their chat would be answered twice.
+ * A list that cannot be read subscribes to everything, as a first connect does.
+ */
+export async function subscribeToChannel(token: string, broadcasterUserId?: string): Promise<{ added: string[] }> {
+  let have = new Set<string>();
+  try {
+    const q = broadcasterUserId ? `?broadcaster_user_id=${encodeURIComponent(broadcasterUserId)}` : "";
+    const j = await api<{ data?: Array<{ event?: string; method?: string }> }>(token, "GET", `/events/subscriptions${q}`);
+    have = new Set((j.data ?? []).filter((s) => !s.method || s.method === "webhook").map((s) => String(s.event)));
+  } catch { /* unread: subscribe to all of them */ }
+  const events = KICK_EVENTS.filter((e) => !have.has(e.name));
+  if (events.length) await api(token, "POST", "/events/subscriptions", { method: "webhook", events });
+  return { added: events.map((e) => e.name) };
 }
 
 /** One line in the channel the token belongs to, as oddie's bot. */

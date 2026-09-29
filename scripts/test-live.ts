@@ -6,18 +6,25 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 process.env.LIVE_TOKEN_KEY = "test-key-for-sealing";
-import { createSign, generateKeyPairSync } from "node:crypto";
+import { createSign, generateKeyPairSync, sign as edSign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import bs58 from "bs58";
 import express from "express";
 import {
   parseCommand, handleChat, lockDue, pointsFor, LIVE_COPY, SPLIT_GAP_MS, _resetLive, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
-import { chatFromKick, verifyKickSignature } from "../src/kick/client.js";
-import { kickRouter, kickEngineDeps, type KickChat } from "../src/kick/routes.js";
+import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
+import { kickRouter, kickEngineDeps, type KickChat, type KickSignIn } from "../src/kick/routes.js";
 import { openFromChat, MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
-import { kickChatSource, sourceUrlKind, sourcePostKey, isWebSourceUrl, claimMention, settleMention, _memMentionOutcome } from "../src/store/markets.js";
+import {
+  cookieValue, OWNER_COOKIE, OWNER_TTL_MS, ownerCookie, ownerKey, ownerKeyFromEnv, ownerToken, verifyOwnerToken,
+} from "../src/live/owner.js";
+import {
+  kickChatSource, sourceUrlKind, sourcePostKey, isWebSourceUrl, claimMention, settleMention, _memMentionOutcome,
+  createCommunityMarket, markCommunityResolved, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets,
+} from "../src/store/markets.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
 
 let failures = 0;
@@ -205,12 +212,15 @@ console.log("\nthe market door: !oddie <claim>, like a tag on X or Telegram");
     close_time: "2026-10-03T23:59:00Z", close_time_inferred: false, category: "Crypto", resolvability: "clean",
     appropriate: true, reason: "clean", hook: "BTC to 120k by Friday?" } as Extraction);
   const world = (over: Partial<ChatMarketDeps> = {}) => {
-    const said: string[] = []; const opened: Array<{ openerId: string; sourceUrl: string }> = [];
+    const said: string[] = []; const opened: Array<{ openerId: string; sourceUrl: string; creatorWallet: string | null }> = [];
     let opens = 0;
     const deps: ChatMarketDeps = {
       extract: async () => good("Will BTC close above $120k on Friday, October 3, 2026?"),
       existingMarket: async () => null,
-      openMarket: async (i) => { opened.push({ openerId: i.openerId, sourceUrl: i.sourceUrl }); return { ok: true, slug: `m${++opens}` } as never; },
+      openMarket: async (i) => {
+        opened.push({ openerId: i.openerId, sourceUrl: i.sourceUrl, creatorWallet: i.creatorWallet ?? null });
+        return { ok: true, slug: `m${++opens}` } as never;
+      },
       claim: (k, a) => claimMention(k, a),
       settle: (k, o, x) => settleMention(k, o, x),
       openedToday: async () => 0,
@@ -248,6 +258,10 @@ console.log("\nthe market door: !oddie <claim>, like a tag on X or Telegram");
     (await openFromChat(viewer("id-4", "x"), "vibes are good", vibes.deps)) === "unmarketable" && vibes.said[0] === MARKET_COPY.unmarketable && vibes.opened.length === 0);
   const down = world({ extract: async () => { throw new Error("extract 529 overloaded"); } });
   check("a model outage asks for another go", (await openFromChat(viewer("id-5", "x"), "claim", down.deps)) === "later" && down.said[0] === MARKET_COPY.later);
+  const linked = world({ payoutWallet: async (id) => (id === "kick:131980691" ? "Wal1etOfTheStreamer" : null) });
+  await openFromChat(viewer("id-7", "x"), "claim", linked.deps);
+  check("a channel that linked a wallet is named on the market from the start", linked.opened[0]?.creatorWallet === "Wal1etOfTheStreamer");
+  check("...and one that has not opens it unnamed, to be named when it links", w.opened[0]?.creatorWallet === null);
   const known = world({ existingMarket: async () => ({ slug: "known", question: "Will BTC close above $120k?" }) });
   check("a claim that already has a market points at it", (await openFromChat(viewer("id-6", "x"), "claim", known.deps)) === "existing"
     && /app\.oddie\.fun\/m\/known/.test(known.said[0] ?? "") && known.opened.length === 0);
@@ -294,6 +308,171 @@ console.log("\nwhen Kick will not take a bot line");
   check("...but an outage is an outage, not a reason to speak as the streamer", threw && !sent.includes("user:777"));
 }
 
+console.log("\na streamer's 2%: which channel, which wallet, which markets");
+{
+  // Which channel: a cookie from the end of Kick's own sign-in, never a link.
+  const key = ownerKey("k1");
+  const tok = ownerToken("131980691", key, 1_000);
+  check("the owner token names the channel it was issued to", verifyOwnerToken(tok, key, 2_000) === "131980691");
+  check("...and nothing once its week is up", verifyOwnerToken(tok, key, 1_000 + OWNER_TTL_MS) === null);
+  check("...nor under another key", verifyOwnerToken(tok, ownerKey("k2"), 2_000) === null);
+  const [pl, mac] = tok.split(".");
+  const swapped = Buffer.from(JSON.stringify({ c: "777", e: 9e15 })).toString("base64url");
+  check("...nor with the channel changed", verifyOwnerToken(`${swapped}.${mac}`, key, 2_000) === null);
+  check("...and anything malformed is null, never a throw",
+    verifyOwnerToken("", key) === null && verifyOwnerToken("a.b.c", key) === null && verifyOwnerToken(`${pl}.`, key) === null);
+  const line = ownerCookie(tok, true);
+  check("the cookie is HttpOnly, host-only, same-site, and sent only to the channel API",
+    /HttpOnly/.test(line) && /SameSite=Lax/.test(line) && /; Secure/.test(line) && /Path=\/api\/live\/kick;/.test(line) && !/Domain=/i.test(line));
+  check("...and read back from a Cookie header", cookieValue(`a=1; ${OWNER_COOKIE}=${tok}; b=2`, OWNER_COOKIE) === tok
+    && cookieValue("a=1", OWNER_COOKIE) === null);
+}
+{
+  // Signing in again must not subscribe twice: Kick does not say what a
+  // second subscription does, and a chat delivered twice is answered twice.
+  const realFetch = globalThis.fetch;
+  const calls: string[] = [];
+  const kickApi = (have: string[] | "down") => (async (url: string | URL | Request, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push(`${method} ${String(url).replace("https://api.kick.com/public/v1", "")}${init?.body ? ` ${String(init.body)}` : ""}`);
+    if (method === "GET") {
+      if (have === "down") return new Response("down", { status: 503 });
+      return new Response(JSON.stringify({ data: have.map((event) => ({ event, method: "webhook", version: 1 })) }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ data: [] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    globalThis.fetch = kickApi(["chat.message.sent", "livestream.status.updated"]);
+    const all = await subscribeToChannel("tok", "131980691");
+    check("signing in again subscribes to nothing already there", all.added.length === 0 && !calls.some((c) => c.startsWith("POST")), calls.join(" | "));
+    check("...having asked about this channel", calls[0]?.includes("broadcaster_user_id=131980691") ?? false, calls[0]);
+    calls.length = 0;
+    globalThis.fetch = kickApi(["livestream.status.updated"]);
+    const one = await subscribeToChannel("tok", "131980691");
+    check("...only to what is missing", one.added.join() === "chat.message.sent"
+      && calls.some((c) => c.startsWith("POST") && c.includes("chat.message.sent") && !c.includes("livestream")), calls.join(" | "));
+    calls.length = 0;
+    globalThis.fetch = kickApi("down");
+    const blind = await subscribeToChannel("tok", "131980691");
+    check("...and a list Kick will not show subscribes to all, as a first connect does", blind.added.length === 2, calls.join(" | "));
+  } finally { globalThis.fetch = realFetch; }
+}
+{
+  process.env.KICK_CLIENT_ID = "test-client";
+  process.env.KICK_CLIENT_SECRET = "test-secret";
+  _resetLiveStore(); _resetLive();
+  const said: string[] = [];
+  const saved: Array<[string, string]> = [];
+  const named: Array<[string, string]> = [];
+  const wallets = new Map<string, string>();
+  let subscribed = 0;
+  const signIn: KickSignIn = {
+    exchangeCode: async () => ({ accessToken: "acc", refreshToken: "ref", expiresAt: Date.now() + 3_600_000 }),
+    me: async () => ({ userId: "424242", name: "Streamer", avatar: null }),
+    myChannel: async () => ({ slug: "streamer" }),
+    subscribe: async () => { subscribed++; return { added: [] }; },
+  };
+  const app = express();
+  app.use(express.json());
+  app.use(kickRouter({
+    appBaseUrl: "https://app.oddie.fun", pageHtml: () => "<p>page</p>", pageOpen: () => true, pageClosed: (res) => { res.status(404).end(); },
+    log: () => {}, signIn,
+    engine: { store: liveStore, now: () => Date.now(), say: async (_p, _c, t) => { said.push(t); }, standingsUrl: async () => "", log: () => {} },
+    channelMarkets: (id, n) => kickChannelMarkets(id, n),
+    payout: {
+      domain: () => "app.oddie.fun",
+      wallet: async (id) => wallets.get(id) ?? null,
+      setWallet: async (id, w) => { saved.push([id, w]); wallets.set(id, w); },
+      openedSlugs: (id) => kickOpenedSlugs(id),
+      nameMarkets: async (id, w) => { named.push([id, w]); return { onRow: 0, onChain: 0, seen: 0 }; },
+    },
+  }));
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const signInOnce = async () => {
+    const go = await fetch(`${base}/live/kick/connect`, { redirect: "manual" });
+    const state = new URL(go.headers.get("location") ?? "http://x").searchParams.get("state") ?? "";
+    return fetch(`${base}/live/kick/callback?state=${state}&code=abc`, { redirect: "manual" });
+  };
+  const first = await signInOnce();
+  const setCookie = first.headers.get("set-cookie") ?? "";
+  const cookie = setCookie.split(";")[0];
+  check("Kick's sign-in ends with the owner cookie, and the page's address carries no token",
+    cookie.startsWith(`${OWNER_COOKIE}=`) && /HttpOnly/.test(setCookie)
+    && first.headers.get("location") === "https://app.oddie.fun/live/kick/streamer?connected=1", `${first.status} ${first.headers.get("location")} ${setCookie}`);
+  check("...and oddie says hello in the new chat", said.filter((t) => t === LIVE_COPY.hello).length === 1);
+  const again = await signInOnce();
+  check("signing in again to manage the 2% is not a second hello",
+    said.filter((t) => t === LIVE_COPY.hello).length === 1 && again.headers.get("location") === "https://app.oddie.fun/live/kick/streamer"
+    && (again.headers.get("set-cookie") ?? "").startsWith(`${OWNER_COOKIE}=`) && subscribed === 2);
+
+  // The markets: two opened in this chat, one opened in another channel, and a
+  // pointer from this chat to that one, which makes it no more this channel's.
+  const future = Math.floor(Date.now() / 1000) + 3 * 86_400;
+  const m1 = await createCommunityMarket({ question: "Will BTC close above $88k on Friday?", closeTime: future });
+  const m2 = await createCommunityMarket({ question: "Will ETH close above $5k on Friday?", closeTime: future });
+  const m3 = await createCommunityMarket({ question: "Will the other stream win?", closeTime: future });
+  const open = async (key: string, author: string, slug: string, reason: string) => {
+    await claimMention(key, author); await settleMention(key, "replied", { slug, reason });
+  };
+  await open("kick:424242:msg-a", "kick:viewer7", m1.slug, "opened");
+  await open("kick:424242:msg-b", "kick:viewer8", m2.slug, "opened");
+  await open("kick:424242:msg-c", "kick:viewer9", m3.slug, "existing");
+  await open("kick:777:msg-d", "kick:viewer9", m3.slug, "opened");
+  await markCommunityResolved(m1.slug, "yes");
+  check("a channel's markets are the ones opened in its chat", JSON.stringify(await kickOpenedSlugs("424242")) === JSON.stringify([m1.slug, m2.slug]));
+  check("...a market's opener is its channel, whoever typed the claim",
+    (await kickOpenerOf(m2.slug)) === "kick:424242" && (await kickOpenerOf(m3.slug)) === "kick:777");
+  check("...and a market from anywhere else has none", (await kickOpenerOf("no-such-market")) === null);
+  const listed = await kickChannelMarkets("424242", 10);
+  check("the page lists them newest first, with where each stands",
+    listed.map((m) => m.slug).join() === [m2.slug, m1.slug].join() && listed[0]?.outcome === null && listed[1]?.outcome === "yes");
+
+  type Api = { owner?: { wallet: string | null; markets: number }; markets?: Array<{ slug: string }> };
+  const read = (c?: string) => fetch(`${base}/api/live/kick/streamer`, { headers: c ? { cookie: c } : {} }).then((r) => r.json() as Promise<Api>);
+  const pub = await read();
+  check("everybody sees the markets from this chat", pub.markets?.length === 2);
+  check("...and only the streamer sees where the 2% goes", pub.owner === undefined);
+  const mine = await read(cookie);
+  check("the streamer's own browser sees their 2% waiting for a wallet", mine.owner?.wallet === null && mine.owner?.markets === 2);
+  const otherCookie = `${OWNER_COOKIE}=${ownerToken("777", ownerKeyFromEnv() as Buffer)}`;
+  check("...another channel's streamer does not", (await read(otherCookie)).owner === undefined);
+
+  // Which wallet: a signature on the challenge every wallet sign-in signs.
+  const addressOf = (k: ReturnType<typeof generateKeyPairSync>) =>
+    bs58.encode(Buffer.from(k.publicKey.export({ format: "jwk" }).x as string, "base64url"));
+  const kp = generateKeyPairSync("ed25519");
+  const address = addressOf(kp);
+  const signWith = (k: ReturnType<typeof generateKeyPairSync>, m: string) => edSign(null, Buffer.from(m, "utf8"), k.privateKey).toString("hex");
+  const post = (path: string, body: unknown, c: string | null = cookie) => fetch(`${base}/api/live/kick/wallet/${path}`, {
+    method: "POST", headers: { "content-type": "application/json", ...(c ? { cookie: c } : {}) }, body: JSON.stringify(body),
+  });
+  const challenge = async () => (await post("challenge", { address })).json() as Promise<{ nonce: string; message: string }>;
+  check("no Kick sign-in, no challenge", (await post("challenge", { address }, null)).status === 401);
+  const c1 = await challenge();
+  check("the streamer signs the same challenge as every wallet sign-in", /app\.oddie\.fun/.test(c1.message) && c1.message.includes(address));
+  const stranger = generateKeyPairSync("ed25519");
+  const forged = await post("link", { address, nonce: c1.nonce, signature: signWith(stranger, c1.message) });
+  check("a signature from another key is refused, and nothing is saved", forged.status === 401 && saved.length === 0);
+  const c2 = await challenge();
+  check("a challenge made for one channel cannot link another",
+    (await post("link", { address, nonce: c2.nonce, signature: signWith(kp, c2.message) }, otherCookie)).status === 400 && saved.length === 0);
+  const c3 = await challenge();
+  const good = await post("link", { address, nonce: c3.nonce, signature: signWith(kp, c3.message) });
+  const gj = await good.json() as { ok?: boolean; wallet?: string; markets?: number };
+  await new Promise((r) => setTimeout(r, 20));
+  check("a streamer's signature links their wallet to the channel", good.status === 200 && gj.ok === true && gj.markets === 2
+    && saved.length === 1 && saved[0][0] === "kick:424242" && saved[0][1] === address, JSON.stringify(gj));
+  check("...and every market from their chat is pointed at it", named.length === 1 && named[0][0] === "424242" && named[0][1] === address);
+  check("...a challenge answers once", (await post("link", { address, nonce: c3.nonce, signature: signWith(kp, c3.message) })).status === 400 && saved.length === 1);
+  check("...and their page shows where it goes", (await read(cookie)).owner?.wallet === address);
+  const other = generateKeyPairSync("ed25519");
+  const c4 = await challenge();
+  check("a signature for another address than the one challenged is refused",
+    (await post("link", { address: addressOf(other), nonce: c4.nonce, signature: signWith(other, c4.message) })).status === 400 && saved.length === 1);
+  server.close();
+}
+
 console.log("\nthe lines no memory test reaches");
 {
   const server = readFileSync("src/server.ts", "utf8");
@@ -320,6 +499,29 @@ console.log("\nthe lines no memory test reaches");
     && /function kickChip\(handle\)/.test(page));
   check("a webhook older than ten minutes is refused, and each message is handled once",
     /age <= WEBHOOK_MAX_AGE_MS/.test(routes) && /if \(seen\.has\(id\)\) return;/.test(routes));
+  check("a streamer's wallet names the markets from their chat: at creation, at the mint, and when they link",
+    /payoutWallet: \(openerId: string\) => personWallet\(openerId\)/.test(server)
+    && /creatorWallet: input\.creatorWallet \?\? null/.test(server)
+    && /const channel = await kickOpenerOf\(slug\)[^\n]*\n\s*if \(channel\) return personWallet\(channel\);/.test(server)
+    && /nameMarkets: async \(channelId, wallet\) => nameOpenedMarkets\(await kickOpenedSlugs\(channelId\)/.test(server)
+    && /setWallet: \(personId, wallet\) => setPersonWallet\(personId, wallet\)/.test(server)
+    && /channelMarkets: \(channelId, limit\) => kickChannelMarkets\(channelId, limit\)/.test(server));
+  check("the owner proof travels only as a cookie: the redirect after Kick's sign-in carries no token",
+    /res\.redirect\(`\$\{base\}\/live\/kick\/\$\{encodeURIComponent\(ch\.slug\)\}\$\{fresh \? "\?connected=1" : ""\}`\)/.test(routes));
+  // Memory tests never run SQL: the database's copy of "only an opening makes
+  // a market the channel's" is read off the source.
+  const mstore = readFileSync("src/store/markets.ts", "utf8");
+  const sqlOf = (fn: string) => {
+    const i = mstore.indexOf(`export async function ${fn}(`);
+    return i < 0 ? "" : mstore.slice(i, mstore.indexOf("\n}\n", i)).split("await ensureSchema();")[1] ?? "";
+  };
+  check("in the database too, only an opening makes a market a channel's, never a pointer to it",
+    ["kickOpenedSlugs", "kickOpenerOf", "kickChannelMarkets"].every((f) => /outcome = 'replied' AND reason = 'opened'/.test(sqlOf(f))));
+  const live = readFileSync("public/app/live.html", "utf8");
+  check("...and the channel page never reads one from its address",
+    !/\.get\("t"\)/.test(live) && /\/api\/live\/kick\/wallet\/link/.test(live));
+  check("the streamer page says what !oddie does now, and !call is the quick vote",
+    /!oddie BTC above 120k by Friday\?/.test(live) && /!call will I win this round\?/.test(live) && !/!oddie yes/.test(live));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall live checks passed.\n");

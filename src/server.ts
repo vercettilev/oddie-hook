@@ -9,7 +9,7 @@ import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
-import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE } from "./store/markets.js";
+import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
   eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, walletsOfPerson, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
@@ -1846,7 +1846,7 @@ const kickMarkets = {
   openMarket: async (input: Parameters<NonNullable<Parameters<typeof kickRouter>[0]["markets"]>["openMarket"]>[0]) => {
     const out = await openMarketFromClaim({
       question: input.question, closeInput: input.closeInput, sourceUrl: input.sourceUrl,
-      taggerHandle: null, payee: input.openerId, creatorWallet: null,
+      taggerHandle: null, payee: input.openerId, creatorWallet: input.creatorWallet ?? null,
       category: input.category, resolutionCriteria: input.resolutionCriteria, priceClaim: input.priceClaim ?? null,
       claimText: input.claimText ?? null, resolvability: input.resolvability, hook: input.hook ?? null,
       mint: "on-demand",
@@ -1858,6 +1858,8 @@ const kickMarkets = {
     settleMention(key, outcome, extra),
   openedToday: (author: string) => tgOpenedToday(author),
   dailyCap: KICK_MARKETS_PER_DAY,
+  // A streamer who linked a wallet already is named on the market at creation.
+  payoutWallet: (openerId: string) => personWallet(openerId),
   baseUrl: APP_BASE_URL,
   log: liveLog,
 };
@@ -1868,6 +1870,16 @@ app.use(kickRouter({
   pageClosed: (res) => appClosed(res),
   log: liveLog,
   markets: kickMarkets,
+  channelMarkets: (channelId, limit) => kickChannelMarkets(channelId, limit),
+  /* A channel's 2%: the same person store, challenge and naming as Telegram's
+     /earn, with the channel as the person (kick:<id>). */
+  payout: {
+    domain: (req) => walletDomain(req),
+    wallet: (personId) => personWallet(personId),
+    setWallet: (personId, wallet) => setPersonWallet(personId, wallet),
+    openedSlugs: (channelId) => kickOpenedSlugs(channelId),
+    nameMarkets: async (channelId, wallet) => nameOpenedMarkets(await kickOpenedSlugs(channelId).catch(() => [] as string[]), wallet),
+  },
 }));
 // The clock only runs where a channel can exist to need it.
 if (kickConfigured()) startLiveClock({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
@@ -3701,13 +3713,17 @@ async function openMarketFromClaim(input: {
  */
 /**
  * The wallet the opener of this market has chosen, at this moment, or null.
- * Telegram: the wallet they linked through /earn. X: the wallet linked to the
- * X account that tagged (market_surfacer.handle is the tagger, not the claim's
- * author). Read at mint time, so choosing a wallet before tagging counts.
+ * Telegram: the wallet they linked through /earn. Kick: the wallet the
+ * streamer linked on their channel page (the channel is the opener of every
+ * market from its chat). X: the wallet linked to the X account that tagged
+ * (market_surfacer.handle is the tagger, not the claim's author). Read at mint
+ * time, so choosing a wallet before the market was opened counts.
  */
 async function openerWalletFor(slug: string): Promise<string | null> {
   const tg = await tgOpenerOf(slug).catch(() => null);
   if (tg) return personWallet(tg.author);
+  const channel = await kickOpenerOf(slug).catch(() => null);
+  if (channel) return personWallet(channel);
   const s = await surfacerFor(slug).catch(() => null);
   return s?.handle ? walletForTwitterHandle(s.handle) : null;
 }
@@ -6266,8 +6282,9 @@ const tgEarnLink = (tgUserId: number): string | null => {
 };
 
 /**
- * Point every market this Telegram person opened at the wallet they just
- * linked. Three cases, because a market can be at three stages:
+ * Point every market an opener opened at the wallet they just linked: a
+ * Telegram person's (/earn), or a streamer's channel (its page). Three cases,
+ * because a market can be at three stages:
  *   - created after linking: already named at creation (see openMarket below)
  *   - created before, not minted yet: the ROW gets the wallet, and the mint at
  *     the first stake writes it on chain from the start (ensureMinted reads it)
@@ -6276,10 +6293,8 @@ const tgEarnLink = (tgUserId: number): string | null => {
  * Best effort and idempotent in the only direction that matters: a market
  * already named is skipped, and linking again retries whatever failed.
  */
-async function nameTgMarkets(author: string, wallet: string): Promise<{ onRow: number; onChain: number; seen: number }> {
-  const out = { onRow: 0, onChain: 0, seen: 0 };
-  const slugs = await tgOpenedSlugs(author).catch(() => [] as string[]);
-  out.seen = slugs.length;
+async function nameOpenedMarkets(slugs: string[], wallet: string): Promise<{ onRow: number; onChain: number; seen: number }> {
+  const out = { onRow: 0, onChain: 0, seen: slugs.length };
   for (const slug of slugs) {
     const d = await communityMarketDetail(slug).catch(() => null);
     if (!d) continue;
@@ -6339,7 +6354,7 @@ app.post("/api/tg/earn/link", express.json(), async (req, res) => {
   const slugs = await tgOpenedSlugs(binding).catch(() => [] as string[]);
   res.json({ ok: true, wallet: address, markets: slugs.length });
   // After the response: naming on chain is a transaction per market.
-  void nameTgMarkets(binding, address).then((n) =>
+  void nameOpenedMarkets(slugs, address).then((n) =>
     console.log(JSON.stringify({ evt: "tg_earn", ok: true, person: binding, ...n })));
 });
 

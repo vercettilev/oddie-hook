@@ -25,7 +25,11 @@ export interface ChatMarketDeps {
     question: string; closeInput: unknown; sourceUrl: string; category?: string;
     resolutionCriteria?: string | null; priceClaim?: PriceClaim | null; claimText?: string | null;
     resolvability?: string | null; hook?: string | null; openerId: string;
+    /** The wallet the channel chose for its 2%, named from the mint on. */
+    creatorWallet?: string | null;
   }): Promise<MintResult>;
+  /** Where the opener's 2% goes, when they have chosen already. */
+  payoutWallet?(openerId: string): Promise<string | null>;
   /** The idempotency ledger: true the first time a message is handled. */
   claim(key: string, author: string): Promise<boolean>;
   settle(key: string, outcome: "replied" | "skipped" | "failed", extra: { reason?: string; slug?: string; claimText?: string | null }): Promise<void>;
@@ -78,12 +82,14 @@ export async function openFromChat(msg: ChatMessage, claimText: string, deps: Ch
       await deps.settle(key, "skipped", { reason: `gate:${ex.resolvability}`, claimText: text });
       return "unmarketable";
     }
+    // The channel is the opener: its 2%, whoever typed the claim. A streamer
+    // who linked a wallet already is named on the market from the start.
+    const openerId = `${msg.platform}:${msg.channelId}`;
+    const creatorWallet = deps.payoutWallet ? await deps.payoutWallet(openerId).catch(() => null) : null;
     const minted = await deps.openMarket({
       question: ex.question, closeInput: ex.close_time, sourceUrl, category: ex.category,
       resolutionCriteria: ex.resolution_criteria || null, priceClaim: ex.price_claim, claimText: text,
-      resolvability: ex.resolvability, hook: ex.hook || null,
-      // The channel is the opener: its 2%, whoever typed the claim.
-      openerId: `${msg.platform}:${msg.channelId}`,
+      resolvability: ex.resolvability, hook: ex.hook || null, openerId, creatorWallet,
     });
     if (!minted.ok) {
       const refused = minted.status >= 400 && minted.status < 500;

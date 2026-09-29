@@ -5213,8 +5213,9 @@ export async function openerCandidates(wallet: string, limit = 200): Promise<Arr
   }));
 }
 
-/** Whether a Telegram opener has chosen this wallet for their 2%. A yes/no,
- *  never who: the page only needs to know not to ask for the link again. */
+/** Whether an opener from a chat, a Telegram person or a streamer's channel
+ *  (kick:<id>), has chosen this wallet for their 2%. A yes/no, never who: the
+ *  page only needs to know not to ask for the link again. */
 export async function isTelegramPayoutWallet(wallet: string): Promise<boolean> {
   if (!PERSISTENT || !wallet) return false;
   await ensureSchema();
@@ -5306,6 +5307,96 @@ export async function kickThreadsForSlug(slug: string): Promise<Array<{ channelI
   const { rows } = await db().query<{ tweet_id: string }>(
     `SELECT tweet_id FROM x_mention WHERE slug = $1 AND outcome = 'replied' AND tweet_id LIKE 'kick:%' ORDER BY at ASC`, [slug]);
   return rows.map((r) => parse(r.tweet_id)).filter((x): x is { channelId: string; messageId: string } => Boolean(x));
+}
+
+/* A STREAM'S OWN MARKETS. A market opened from a stream's chat is the
+   CHANNEL's, whoever typed the claim (src/live/claims.ts), so its opener is
+   read off the ledger KEY, kick:<channel id>:<message id>, and never off the
+   author, who is only the viewer that knocked. The channel's person id is
+   kick:<channel id>, the same shape as a Telegram opener's tg:<user id>, and
+   the wallet its streamer links sits on that person row. */
+
+const kickChannelOfKey = (key: string): string | null => /^kick:([^:]+):/.exec(key)?.[1] ?? null;
+
+/** Every market opened in this channel's chat, oldest first. */
+export async function kickOpenedSlugs(channelId: string): Promise<string[]> {
+  if (!channelId) return [];
+  if (!PERSISTENT) {
+    return [...new Set([...memMentions.values()]
+      .filter((m) => m.outcome === "replied" && m.reason === "opened" && m.slug && kickChannelOfKey(m.tweetId) === channelId)
+      .map((m) => m.slug as string))];
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string }>(
+    `SELECT slug FROM x_mention
+      WHERE tweet_id LIKE 'kick:%' AND split_part(tweet_id, ':', 2) = $1
+        AND outcome = 'replied' AND reason = 'opened' AND slug IS NOT NULL
+      GROUP BY slug ORDER BY min(at) ASC`,
+    [channelId],
+  );
+  return rows.map((r) => r.slug);
+}
+
+/** The channel a market was opened in, as its person id (kick:<channel id>),
+ *  or null when the market did not come from a stream. */
+export async function kickOpenerOf(slug: string): Promise<string | null> {
+  if (!slug) return null;
+  let key: string | null = null;
+  if (!PERSISTENT) {
+    key = [...memMentions.values()].find((m) =>
+      m.slug === slug && m.outcome === "replied" && m.reason === "opened" && m.tweetId.startsWith("kick:"))?.tweetId ?? null;
+  } else {
+    await ensureSchema();
+    const { rows } = await db().query<{ tweet_id: string }>(
+      `SELECT tweet_id FROM x_mention
+        WHERE slug = $1 AND outcome = 'replied' AND reason = 'opened' AND tweet_id LIKE 'kick:%'
+        ORDER BY at ASC LIMIT 1`,
+      [slug],
+    );
+    key = rows[0]?.tweet_id ?? null;
+  }
+  const channel = key ? kickChannelOfKey(key) : null;
+  return channel ? `kick:${channel}` : null;
+}
+
+/** A market on a stream's page: what it asks and where it stands. */
+export interface ChannelMarket {
+  slug: string; question: string; hook: string | null; closesAt: string | null; outcome: "yes" | "no" | null;
+}
+
+/** The markets a stream's page lists, newest first. Retired ones are left out,
+ *  as they are everywhere else. */
+export async function kickChannelMarkets(channelId: string, limit = 10): Promise<ChannelMarket[]> {
+  if (!channelId) return [];
+  const n = Math.max(1, Math.min(50, Math.floor(limit)));
+  if (!PERSISTENT) {
+    const out: ChannelMarket[] = [];
+    for (const slug of (await kickOpenedSlugs(channelId)).reverse()) {
+      const c = memCommunity.get(slug);
+      if (!c || c.retiredAt) continue;
+      const m = mem.get(slug)?.market;
+      out.push({ slug, question: m?.question ?? slug, hook: c.hook ?? null, closesAt: m?.closesAt ?? null, outcome: c.resolvedOutcome });
+    }
+    return out.slice(0, n);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; question: string; hook: string | null; closes_at: Date | null; resolved_outcome: string | null }>(
+    `SELECT o.slug, s.question, c.hook, s.closes_at, c.resolved_outcome
+       FROM (SELECT slug, min(at) AS opened_at FROM x_mention
+              WHERE tweet_id LIKE 'kick:%' AND split_part(tweet_id, ':', 2) = $1
+                AND outcome = 'replied' AND reason = 'opened' AND slug IS NOT NULL
+              GROUP BY slug) o
+       JOIN community_market c ON c.slug = o.slug
+       JOIN market_slug s ON s.slug = o.slug
+      WHERE c.retired_at IS NULL
+      ORDER BY o.opened_at DESC LIMIT $2`,
+    [channelId, n],
+  );
+  return rows.map((r) => ({
+    slug: r.slug, question: r.question, hook: r.hook,
+    closesAt: r.closes_at ? new Date(r.closes_at).toISOString() : null,
+    outcome: r.resolved_outcome === "yes" || r.resolved_outcome === "no" ? r.resolved_outcome : null,
+  }));
 }
 
 /** Guest tags from one person in the last day, whatever became of them. Guest

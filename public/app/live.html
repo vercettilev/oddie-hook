@@ -321,6 +321,49 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .add:hover{background:#6BFF3A}
 .add:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .note{margin:14px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--pink)}
+/* A sentence, not an address: whole words, balanced. .who breaks anywhere
+   because it usually holds a wallet. */
+.who--say{word-break:normal;overflow-wrap:break-word;text-wrap:balance}
+.quick{margin:26px 0 0;color:var(--fg-2);font-size:15px;line-height:1.55;max-width:56ch}
+.quick b{color:var(--cream)}
+.quick code{font-family:var(--mono);font-weight:800;color:var(--yellow)}
+
+/* THE STREAMER'S 2%, on their own browser only. The same sticker as the
+   running call, tilted the other way, with the one pink control on it. */
+.own{background:var(--cream);color:var(--ink);border:3px solid var(--black);box-shadow:8px 9px 0 var(--pink-deep);
+  padding:18px 20px;margin:0 0 34px;transform:rotate(.25deg)}
+.own__k{margin:0 0 6px;font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:rgba(11,13,4,.6)}
+.own .own__t{margin:0 0 8px;padding:0;border:0;font-family:var(--display);font-weight:400;font-size:clamp(24px,5.4vw,34px);
+  line-height:1.05;letter-spacing:.01em;text-transform:uppercase;color:var(--ink);text-wrap:balance}
+.own__t code{font-family:var(--mono);font-size:.6em;letter-spacing:.02em;text-transform:none;background:var(--ink);color:var(--yellow);
+  padding:3px 8px;vertical-align:middle;white-space:nowrap}
+.own__p{margin:0 0 14px;font-size:15.5px;line-height:1.5;color:rgba(11,13,4,.78);max-width:52ch}
+.own__p b{color:var(--ink)}
+.own__act{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.pay{font-family:var(--display);font-weight:400;font-size:18px;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;
+  padding:11px 24px 10px;min-height:48px;border:3px solid var(--black);background:var(--pink);color:var(--cream);
+  box-shadow:4px 4px 0 var(--pink-deep);cursor:pointer;touch-action:manipulation;display:inline-flex;align-items:center;
+  transition:transform .12s ease,background-color .15s ease}
+.pay:hover{background:#FF4A8C}
+.pay:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--pink-deep)}
+.pay:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.pay:disabled{opacity:.6;cursor:progress}
+.own__alt{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;background:none;border:0;
+  padding:8px 0;min-height:44px;color:rgba(11,13,4,.7);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.own__alt:hover{color:var(--ink)}
+.own__addr{text-transform:none}
+.own__alt:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.own__n{margin:12px 0 0;font-size:13.5px;line-height:1.45;color:rgba(11,13,4,.62);max-width:52ch}
+.own__e{margin:10px 0 0;font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--pink-deep)}
+.own__e:empty{display:none}
+@media (prefers-reduced-motion:reduce){.pay{transition:none}.pay:active{transform:none}}
+
+/* Markets opened in this chat: open ones cream, settled ones in their colour. */
+.mk .res__q a{color:var(--cream);text-decoration:none}
+.mk .res__q a:hover{color:var(--yellow)}
+.mk li.o{border-left-color:var(--cream)}
+.mine{margin:0 0 30px;color:var(--fg-3);font-size:14.5px;line-height:1.5;max-width:52ch}
+.mine a{color:var(--yellow)}
 </style>
 
 <header class="top">
@@ -360,21 +403,162 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   if (!SLUG) {
     var q = new URLSearchParams(location.search).get("kick");
     document.title = "oddie for streamers";
-    view.innerHTML = '<h1 class="who">Your chat calls it. oddie keeps score.</h1>'
-      + '<p class="lede">A question your chat answers YES or NO, right in the stream. '
-      + "Every call counts toward a record that follows each viewer to every stream running oddie.</p>"
+    view.innerHTML = '<h1 class="who who--say">Your chat calls it. oddie settles it.</h1>'
+      + '<p class="lede">Anyone in your chat turns a claim into a market with one line. '
+      + "oddie opens it, settles it when the answer is in, and pays you 2% of every pool.</p>"
       + '<ol class="steps">'
       + "<li><span><b>Add oddie to your Kick channel.</b> One tap, Kick asks you to confirm.</span></li>"
-      + "<li><span><b>You or a mod opens a call:</b> <code>!oddie will I win this game?</code> Add <code>5m</code> after <code>!oddie</code> for five minutes.</span></li>"
-      + "<li><span><b>Chat answers</b> <code>!yes</code> or <code>!no</code>, and you settle it with <code>!oddie yes</code> or <code>!oddie no</code>. The standings live here, on oddie.</span></li>"
+      + "<li><span><b>Anyone in chat opens a market:</b> <code>!oddie BTC above 120k by Friday?</code> oddie posts the link and settles it when the day comes.</span></li>"
+      + "<li><span><b>Connect your wallet</b> on your channel page. Every market opened in your chat pays you 2% of its pool.</span></li>"
       + "</ol>"
       + '<a class="add" href="/live/kick/connect">Add oddie to Kick</a>'
       + (q === "expired" ? '<p class="note">That link expired. Press Add oddie to Kick again.</p>' : "")
-      + (q === "failed" ? '<p class="note">Connecting to Kick needs one more try. Press Add oddie to Kick again.</p>' : "");
+      + (q === "failed" ? '<p class="note">Connecting to Kick needs one more try. Press Add oddie to Kick again.</p>' : "")
+      + '<p class="quick"><b>Quick calls for the moments in between:</b> you or a mod runs <code>!call will I win this round?</code>, '
+      + "chat answers <code>!yes</code> or <code>!no</code>, and <code>!call yes</code> or <code>!call no</code> settles it. "
+      + "The standings live on your channel page.</p>"
+      + '<p class="hint" style="margin-top:14px">Markets are for viewers 18 and over, and settle in SOL on Solana.</p>';
     return;
   }
 
   var timer = null, data = null;
+  var headEl = null, ownEl = null, bodyEl = null, lastHead = "", lastBody = "";
+
+  /* ------------------------------------------------ the streamer's 2% --
+     Only on the streamer's own browser: the API adds `owner` when the cookie
+     from their Kick sign-in names this channel. Painted apart from the poll,
+     so a signature in progress is never repainted out from under them. */
+  var owner = null, ownKey = "", ownMode = "view", ownBusy = false, justConnected = false;
+  if (new URLSearchParams(location.search).get("connected") === "1") {
+    justConnected = true;
+    try { history.replaceState(null, "", location.pathname); } catch (_) { /* the notice still shows */ }
+  }
+  var provider = (window.phantom && window.phantom.solana) || window.solana;
+  var hasPhantom = Boolean(provider && provider.isPhantom);
+  var mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  function short(a) { return String(a).slice(0, 4) + "…" + String(a).slice(-4); }
+  function kicker() { return '<p class="own__k">' + (justConnected ? "oddie is in your chat" : "Your channel") + "</p>"; }
+  function ownSay(t) { var e = document.getElementById("own-e"); if (e) e.textContent = t; }
+
+  function paintOwner() {
+    if (!ownEl) return;
+    if (!owner) { ownEl.innerHTML = ""; return; }
+    if (!owner.wallet || ownMode === "ask") return askWallet();
+    var n = Number(owner.markets || 0);
+    ownEl.innerHTML = '<section class="own" aria-labelledby="own-t">' + kicker()
+      + '<h2 class="own__t" id="own-t">Your 2% goes to <code>' + esc(short(owner.wallet)) + "</code></h2>"
+      + '<p class="own__p">' + (n === 1 ? "The market from your chat pays this wallet 2% of its pool. "
+        : n ? n + " markets from your chat pay this wallet 2% of each pool. "
+        : "Every market opened in your chat pays this wallet 2% of its pool. ")
+      + "When one settles, collect it on your profile with this wallet.</p>"
+      + '<div class="own__act"><a class="pay" href="/profile">Open your profile</a>'
+      + '<button class="own__alt" type="button" id="own-alt">Use another wallet</button></div>'
+      + '<p class="own__e" id="own-e" role="status"></p></section>';
+    document.getElementById("own-alt").addEventListener("click", function () { ownMode = "ask"; paintOwner(); });
+  }
+
+  function askWallet() {
+    var n = Number(owner.markets || 0);
+    var again = Boolean(owner.wallet);
+    var lead = again
+      ? "Markets opened from now on pay the new wallet. The ones already set keep paying <b>" + esc(short(owner.wallet)) + "</b>."
+      : "Every market opened in your chat pays you 2% of its pool when it settles. "
+        + (n ? "<b>" + (n === 1 ? "1 market" : n + " markets") + " so far.</b> " : "") + "Connect the wallet it goes to.";
+    var act, note;
+    if (hasPhantom) {
+      act = '<button class="pay" type="button" id="own-go">Connect Phantom</button>';
+      note = "One signature proves the wallet is yours. It is a message, and your funds stay exactly where they are.";
+    } else if (mobile) {
+      // Phantom's own browser has the wallet; Kick's sign-in there tells us the channel.
+      var deep = "https://phantom.app/ul/browse/" + encodeURIComponent(location.origin + "/live/kick/connect")
+        + "?ref=" + encodeURIComponent(location.origin);
+      act = '<a class="pay" href="' + esc(deep) + '">Open in Phantom</a>';
+      note = "Phantom opens oddie in its own browser. Sign in with Kick there once, then connect in one tap.";
+    } else {
+      act = '<a class="pay" href="https://phantom.app/download" target="_blank" rel="noopener">Get Phantom</a>';
+      note = "Then come back to this page. It remembers your channel for a week.";
+    }
+    if (again) act += '<button class="own__alt" type="button" id="own-back">Keep <span class="own__addr">' + esc(short(owner.wallet)) + "</span></button>";
+    ownEl.innerHTML = '<section class="own" aria-labelledby="own-t">' + kicker()
+      + '<h2 class="own__t" id="own-t">' + (again ? "Use another wallet" : "Collect your 2%") + "</h2>"
+      + '<p class="own__p">' + lead + "</p>"
+      + '<div class="own__act">' + act + "</div>"
+      + '<p class="own__n">' + note + "</p>"
+      + '<p class="own__e" id="own-e" role="status"></p></section>';
+    var go = document.getElementById("own-go");
+    if (go) go.addEventListener("click", function () { link(go); });
+    var back = document.getElementById("own-back");
+    if (back) back.addEventListener("click", function () { ownMode = "view"; paintOwner(); });
+  }
+
+  function signedOut() {
+    ownBusy = false; owner = null; ownKey = ""; ownMode = "view";
+    ownEl.innerHTML = '<section class="own"><p class="own__k">Your channel</p>'
+      + '<h2 class="own__t">Sign in with Kick again</h2>'
+      + '<p class="own__p">This page keeps your channel for a week. One tap with Kick and you are back.</p>'
+      + '<div class="own__act"><a class="pay" href="/live/kick/connect">Sign in with Kick</a></div></section>';
+  }
+
+  // A failure inside the wallet never reaches the server on its own: the page
+  // just stops before its next request. So the page says what broke.
+  function report(stage, e) {
+    try {
+      fetch("/api/live/kick/wallet/fail", {
+        method: "POST", keepalive: true, headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stage: stage, code: e && e.code != null ? String(e.code) : null,
+          msg: String((e && e.message) || e).slice(0, 200) }),
+      }).catch(function () {});
+    } catch (_) { /* reporting must never cost the streamer a retry */ }
+  }
+
+  async function link(btn) {
+    var stage = "connect";
+    ownBusy = true;
+    btn.disabled = true; btn.textContent = "Connecting…"; ownSay("");
+    try {
+      var conn = await provider.connect();
+      var address = conn.publicKey.toString();
+
+      stage = "challenge";
+      var cr = await fetch("/api/live/kick/wallet/challenge", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: address }),
+      });
+      if (cr.status === 401) return signedOut();
+      if (!cr.ok) throw new Error("challenge " + cr.status);
+      var ch = await cr.json();
+
+      btn.textContent = "Sign in Phantom…";
+      stage = "sign";
+      var signed = await provider.signMessage(new TextEncoder().encode(ch.message), "utf8");
+      // Hex, the encoding every wallet sign-in sends, so one verifier serves all.
+      var sig = Array.prototype.map.call(new Uint8Array(signed.signature), function (x) {
+        return x.toString(16).padStart(2, "0");
+      }).join("");
+
+      stage = "link";
+      var lr = await fetch("/api/live/kick/wallet/link", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address: address, nonce: ch.nonce, signature: sig }),
+      });
+      if (lr.status === 401) return signedOut();
+      var out = await lr.json().catch(function () { return {}; });
+      if (!lr.ok || !out.ok) throw new Error(out.error || ("link " + lr.status));
+
+      owner = { wallet: out.wallet, markets: Number(out.markets || 0) };
+      ownKey = JSON.stringify(owner);
+      ownMode = "view"; ownBusy = false;
+      paintOwner();
+      ownSay("Linked. Your 2% goes to this wallet.");
+    } catch (e) {
+      ownBusy = false;
+      btn.disabled = false; btn.textContent = "Connect Phantom";
+      var rejected = e && (e.code === 4001 || /reject|denied|cancel/i.test(String(e.message)));
+      if (window.console) console.warn("[oddie] linking stopped at " + stage, e);
+      report(stage, e);
+      ownSay(rejected ? "Ready when you are. Tap Connect Phantom again." : "That didn't go through. Try once more.");
+    }
+  }
+
   function countdown() {
     var el = document.getElementById("left");
     if (!el || !data || !data.current) return;
@@ -384,12 +568,34 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
     el.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + " left";
   }
 
+  function marketState(m) {
+    if (m.outcome === "yes" || m.outcome === "no") {
+      return { cls: m.outcome === "yes" ? "y" : "n", text: '<span class="' + (m.outcome === "yes" ? "y" : "n") + '">' + m.outcome.toUpperCase() + "</span> · settled" };
+    }
+    var t = m.closesAt ? new Date(m.closesAt) : null;
+    if (t && !isNaN(t.getTime()) && t.getTime() <= Date.now()) return { cls: "", text: "Closed · result on the way" };
+    // In UTC, the zone every market's terms are written in.
+    var day = t && !isNaN(t.getTime()) ? t.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
+    return { cls: "o", text: "Open" + (day ? " · closes " + esc(day) : "") };
+  }
+
   function render(j) {
     data = j;
+    if (!headEl) {
+      view.innerHTML = '<div id="head"></div><div id="own"></div><div id="body"></div>';
+      headEl = document.getElementById("head"); ownEl = document.getElementById("own"); bodyEl = document.getElementById("body");
+    }
     document.title = (j.name || j.slug) + " calls on oddie";
-    var html = '<section class="ch">' + (j.avatar ? '<img src="' + esc(j.avatar) + '" alt="" width="64" height="64">' : "")
+    var head = '<section class="ch">' + (j.avatar ? '<img src="' + esc(j.avatar) + '" alt="" width="64" height="64">' : "")
       + '<div><h1 class="who">' + esc(j.name || j.slug) + '</h1><a href="' + esc(j.url) + '" target="_blank" rel="noopener">Watch on Kick</a></div></section>';
+    if (head !== lastHead) { headEl.innerHTML = head; lastHead = head; }
 
+    if (!ownBusy) {
+      var next = j.owner ? JSON.stringify(j.owner) : "";
+      if (next !== ownKey) { ownKey = next; owner = j.owner || null; paintOwner(); }
+    }
+
+    var html = "";
     var c = j.current;
     if (c) {
       var total = c.yes + c.no;
@@ -405,9 +611,18 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       html += '<p class="lede idle">Between calls. The next one opens in chat, and it lands here the moment it does.</p>';
     }
 
+    var mk = j.markets || [];
+    if (mk.length) {
+      html += "<h2>Markets from this chat</h2><ul class=\"res mk\">" + mk.map(function (m) {
+        var st = marketState(m);
+        return '<li class="' + st.cls + '"><p class="res__q"><a href="/m/' + encodeURIComponent(m.slug) + '">' + esc(m.question) + "</a></p>"
+          + '<p class="res__m">' + st.text + "</p></li>";
+      }).join("") + "</ul>";
+    }
+
     var rec = j.recent || [];
     if (rec.length) {
-      html += "<h2>Settled</h2><ul class=\"res\">" + rec.map(function (r) {
+      html += "<h2>Settled calls</h2><ul class=\"res\">" + rec.map(function (r) {
         var t = r.yes + r.no, p = t ? Math.round((r.yes / t) * 100) : 0;
         return '<li class="' + (r.outcome === "yes" ? "y" : "n") + '"><p class="res__q">' + esc(r.question) + "</p>"
           + '<p class="res__m"><span class="' + (r.outcome === "yes" ? "y" : "n") + '">' + String(r.outcome).toUpperCase() + "</span> · "
@@ -425,7 +640,13 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
         }).join("") + "</tbody></table>";
       html += '<p class="hint">Points for being right when the room disagreed: right with 20% agreeing is worth 80.</p>';
     }
-    view.innerHTML = html;
+    // For a streamer whose week ran out, or who is on another browser. Not
+    // while their own card is up: that card already says it.
+    if (!j.owner && !ownEl.firstChild) {
+      html += '<p class="mine">Your channel? <a href="/live/kick/connect">Sign in with Kick</a> to collect 2% of every market opened here.</p>';
+    }
+    // Repainted only when something changed, so a link somebody is on keeps its focus.
+    if (html !== lastBody) { bodyEl.innerHTML = html; lastBody = html; }
     countdown();
   }
 
@@ -436,7 +657,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
       .catch(function (st) {
         if (data) return;
         view.innerHTML = st === 404
-          ? '<h1 class="who">Calls start here soon</h1><p class="lede">This channel\'s calls land here once its streamer adds oddie, in one tap. <a href="/live">See how it works</a>.</p>'
+          ? '<h1 class="who who--say">Calls start here soon</h1><p class="lede">This channel\'s calls land here once its streamer adds oddie, in one tap. <a href="/live">See how it works</a>.</p>'
           : '<p class="lede">This page is loading slowly. <a href="' + esc(location.pathname) + '">Try again</a>.</p>';
       });
   }
