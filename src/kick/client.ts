@@ -113,6 +113,14 @@ export async function sendChat(token: string, content: string, replyTo?: string)
   });
 }
 
+/** The same line as the account that authorized us, into a given channel. */
+export async function sendChatAsUser(token: string, broadcasterUserId: string, content: string, replyTo?: string): Promise<void> {
+  await api(token, "POST", "/chat", {
+    type: "user", broadcaster_user_id: Number(broadcasterUserId), content: content.slice(0, 500),
+    ...(replyTo ? { reply_to_message_id: replyTo } : {}),
+  });
+}
+
 /* ---------------------------------------------------------- webhooks -- */
 
 let keyCache: { pem: string; at: number } | null = null;

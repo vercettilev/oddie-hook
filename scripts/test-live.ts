@@ -15,7 +15,7 @@ import {
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature } from "../src/kick/client.js";
-import { kickRouter } from "../src/kick/routes.js";
+import { kickRouter, kickEngineDeps, type KickChat } from "../src/kick/routes.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -190,6 +190,33 @@ console.log("\nKick's side");
   const api = await fetch(`http://127.0.0.1:${port}/api/live/kick/broadcaster_channel`).then((x) => x.json()) as { current?: { question: string } };
   check("the page reads the running call", api.current?.question === "will I win?");
   server.close();
+}
+
+console.log("\nwhen Kick will not take a bot line");
+{
+  _resetLiveStore();
+  for (const id of ["555", "777"]) {
+    await saveChannel({ platform: "kick", channelId: id, slug: `c${id}`, name: "C", avatar: null,
+      accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  const sent: string[] = [];
+  const fail = (status: number) => { const e = new Error(`kick POST /chat ${status}`) as Error & { status?: number }; e.status = status; return e; };
+  const chat: KickChat = {
+    bot: async (_t, text) => { sent.push(`bot:${text}`); throw fail(404); },
+    user: async (_t, ch, text) => { sent.push(`user:${ch}:${text}`); },
+  };
+  const deps = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {} }, chat);
+  await deps.say("kick", "555", "hello");
+  await deps.say("kick", "555", "again");
+  check("a line Kick refuses from the bot goes out as the channel's own account",
+    sent.join("|") === "bot:hello|user:555:hello|user:555:again", sent.join("|"));
+  check("...and once refused there, the bot is not asked again in that channel", sent.filter((x) => x.startsWith("bot:")).length === 1);
+  const other = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {} }, {
+    bot: async () => { throw fail(500); }, user: async () => { sent.push("user:777"); },
+  });
+  let threw = false;
+  try { await other.say("kick", "777", "x"); } catch { threw = true; }
+  check("...but an outage is an outage, not a reason to speak as the streamer", threw && !sent.includes("user:777"));
 }
 
 console.log("\nthe lines no memory test reaches");

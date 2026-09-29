@@ -8,7 +8,7 @@ import express, { type Request, type Response, type Router } from "express";
 import { randomBytes } from "node:crypto";
 import {
   authorizeUrl, chatFromKick, exchangeCode, kickConfigured, kickPublicKey, me, myChannel, pkcePair,
-  refreshTokens, sendChat, subscribeToChannel, verifyKickSignature, WEBHOOK_MAX_AGE_MS,
+  refreshTokens, sendChat, sendChatAsUser, subscribeToChannel, verifyKickSignature, WEBHOOK_MAX_AGE_MS,
 } from "./client.js";
 import { handleChat, LIVE_COPY, lockDue, yesPct, type LiveDeps, type Platform } from "../live/calls.js";
 import {
@@ -45,19 +45,48 @@ async function tokenFor(ch: LiveChannel, force = false): Promise<string> {
   return ch.accessToken;
 }
 
-export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log">): LiveDeps {
+/** How a line reaches a Kick chat. A seam for the tests. */
+export interface KickChat {
+  bot(token: string, text: string, replyTo?: string): Promise<void>;
+  user(token: string, channelId: string, text: string, replyTo?: string): Promise<void>;
+}
+const kickChat: KickChat = { bot: sendChat, user: sendChatAsUser };
+
+/**
+ * A NEW APP'S BOT CANNOT POST YET. Found on the first live test (29 Sep):
+ * every bot line from the freshly made oddie app came back 404 "Not found",
+ * and other developers report the same for new apps with no answer from
+ * Kick. So a line goes out as the bot first and, on 404 or 400, as the
+ * account that authorized us, which is what the chat:write scope grants.
+ * A channel where the bot has failed once skips straight to that.
+ */
+const botCannotPost = new Set<string>();
+
+export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log">, chat: KickChat = kickChat): LiveDeps {
   const base = d.appBaseUrl.replace(/\/+$/, "");
+  const deliver = async (token: string, channelId: string, text: string, replyTo?: string) => {
+    if (!botCannotPost.has(channelId)) {
+      try { await chat.bot(token, text, replyTo); return; }
+      catch (e) {
+        const st = (e as { status?: number }).status;
+        if (st !== 404 && st !== 400) throw e;
+        botCannotPost.add(channelId);
+        d.log("kick bot cannot post here, sending as the channel's account", { channel: channelId, status: st });
+      }
+    }
+    await chat.user(token, channelId, text, replyTo);
+  };
   return {
     store: liveStore,
     now: () => Date.now(),
     say: async (_p: Platform, channelId, text, replyTo) => {
       const ch = await channelById("kick", channelId);
       if (!ch?.active) return;
-      try { await sendChat(await tokenFor(ch), text, replyTo); }
+      try { await deliver(await tokenFor(ch), channelId, text, replyTo); }
       catch (e) {
         // An expired token says 401: refresh once and say it again.
         if ((e as { status?: number }).status !== 401) throw e;
-        await sendChat(await tokenFor(ch, true), text, replyTo);
+        await deliver(await tokenFor(ch, true), channelId, text, replyTo);
       }
     },
     standingsUrl: async (_p, channelId) => {
@@ -100,7 +129,8 @@ export function kickRouter(d: KickRouteDeps): Router {
       };
       await saveChannel(ch);
       await subscribeToChannel(t.accessToken).catch((e) => d.log("kick subscribe failed", { channel: ch.slug, err: (e as Error).message }));
-      await sendChat(t.accessToken, LIVE_COPY.hello).catch(() => {});
+      await engine.say("kick", ch.channelId, LIVE_COPY.hello)
+        .catch((e) => d.log("kick hello not delivered", { channel: ch.slug, err: (e as Error).message }));
       d.log("kick channel connected", { channel: ch.slug });
       res.redirect(`${base}/live/kick/${encodeURIComponent(ch.slug)}?connected=1`);
     } catch (e) {
@@ -135,7 +165,9 @@ export function kickRouter(d: KickRouteDeps): Router {
     try { body = JSON.parse(raw.toString("utf8")); } catch { return; }
     const msg = chatFromKick(body);
     if (!msg) return;
-    await handleChat(msg, engine).catch((e) => d.log("kick chat failed", { err: (e as Error).message }));
+    const action = await handleChat(msg, engine).catch((e) => { d.log("kick chat failed", { err: (e as Error).message }); return "error"; });
+    // What a command did, never what anybody wrote: ordinary chat is not logged.
+    if (action !== "chat") d.log("kick chat command", { channel: msg.channelId, action, runner: msg.canRun });
   });
 
   /** A channel's page on oddie, and what it reads. */
