@@ -105,7 +105,8 @@
     "typecheck": "tsc --noEmit",
     "test-no-loud": "tsx scripts/test-no-loud.ts",
     "test-social": "tsx scripts/test-social.ts",
-    "test-live": "tsx scripts/test-live.ts"
+    "test-live": "tsx scripts/test-live.ts",
+    "check-sql": "tsx scripts/check-sql.ts"
   },
   "engines": {
     "node": ">=20"

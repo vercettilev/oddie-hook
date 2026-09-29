@@ -231,6 +231,8 @@ console.log("\nthe lines no memory test reaches");
   check("one live call per channel is the database's rule",
     /CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_open ON live_call \(platform, channel_id\)\s+WHERE settled_at IS NULL AND canceled_at IS NULL/.test(store));
   check("one answer per person is the primary key", /PRIMARY KEY \(call_id, platform, user_id\)/.test(store));
+  check("no column is called `right`: RIGHT is reserved, and ORDER BY right is a syntax error Postgres found live",
+    !/\bAS right\b/.test(store) && !/ORDER BY[^`]*\bright\b/.test(store));
   check("an answer lands only in a call that is still open", /WHERE EXISTS \(SELECT 1 FROM live_call WHERE id = \$1 AND locked_at IS NULL/.test(store));
   const routes = readFileSync("src/kick/routes.ts", "utf8");
   check("a webhook older than ten minutes is refused, and each message is handled once",

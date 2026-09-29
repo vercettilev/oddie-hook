@@ -258,10 +258,10 @@ export const liveStore: LiveStore = {
           WHERE id = $1 AND settled_at IS NULL AND canceled_at IS NULL`, [callId, outcome, new Date(at), points]);
       if (!upd.rowCount) { await client.query("ROLLBACK"); return null; }
       await client.query(`UPDATE live_pick SET points = CASE WHEN side = $2 THEN $3 ELSE 0 END WHERE call_id = $1`, [callId, outcome, points]);
-      const { rows } = await client.query<{ right: number; total: number }>(
-        `SELECT count(*) FILTER (WHERE side = $2)::int AS right, count(*)::int AS total FROM live_pick WHERE call_id = $1`, [callId, outcome]);
+      const { rows } = await client.query<{ right_count: number; total: number }>(
+        `SELECT count(*) FILTER (WHERE side = $2)::int AS right_count, count(*)::int AS total FROM live_pick WHERE call_id = $1`, [callId, outcome]);
       await client.query("COMMIT");
-      return rows[0] ?? { right: 0, total: 0 };
+      return rows[0] ? { right: rows[0].right_count, total: rows[0].total } : { right: 0, total: 0 };
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       throw e;
@@ -313,13 +313,16 @@ export async function channelStandings(platform: Platform, channelId: string, li
     return [...by.values()].sort((a, b) => b.points - a.points || b.right - a.right).slice(0, limit);
   }
   await schema();
-  const { rows } = await storeDb().query<{ user_id: string; username: string; points: number; right: number; calls: number }>(
+  // right_count, never `right`: RIGHT is reserved in Postgres, and as a bare
+  // ORDER BY term it is a syntax error. The page showed empty standings over
+  // two scored calls on the first live test, and no memory test could see it.
+  const { rows } = await storeDb().query<{ user_id: string; username: string; points: number; right_count: number; calls: number }>(
     `SELECT p.user_id, max(p.username) AS username, sum(COALESCE(p.points, 0))::int AS points,
-            count(*) FILTER (WHERE p.points > 0)::int AS right, count(*)::int AS calls
+            count(*) FILTER (WHERE p.points > 0)::int AS right_count, count(*)::int AS calls
        FROM live_pick p JOIN live_call c ON c.id = p.call_id
       WHERE c.platform = $1 AND c.channel_id = $2 AND c.settled_at IS NOT NULL
-      GROUP BY p.user_id ORDER BY points DESC, right DESC LIMIT $3`, [platform, channelId, Math.max(1, Math.min(100, limit))]);
-  return rows.map((r) => ({ userId: r.user_id, username: r.username, points: r.points, right: r.right, calls: r.calls }));
+      GROUP BY p.user_id ORDER BY points DESC, right_count DESC LIMIT $3`, [platform, channelId, Math.max(1, Math.min(100, limit))]);
+  return rows.map((r) => ({ userId: r.user_id, username: r.username, points: r.points, right: r.right_count, calls: r.calls }));
 }
 
 /** The channel's latest calls, newest first, with their counts. */
