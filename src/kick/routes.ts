@@ -40,6 +40,9 @@ export interface KickRouteDeps {
   payout?: KickPayoutDeps;
   /** Test seam: Kick's side of the sign-in. */
   signIn?: KickSignIn;
+  /** The channel whose account speaks for oddie in every chat (its slug).
+   *  Default KICK_VOICE_CHANNEL, else "oddiefun"; "" turns it off. */
+  voice?: string;
 }
 
 /**
@@ -99,7 +102,21 @@ const kickChat: KickChat = { bot: sendChat, user: sendChatAsUser };
  */
 const botCannotPost = new Set<string>();
 
-export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets">, chat: KickChat = kickChat): LiveDeps {
+/**
+ * ONE VOICE IN EVERY CHAT. Speaking as the channel's own account meant that
+ * in a stream oddie's answer arrived under the streamer's name: "oddiefun:
+ * Market open..." in oddiefun's chat reads as the streamer typing it. So a
+ * line goes out from oddie's own account (the voice channel, which authorized
+ * us with chat:write like any other) into the channel it answers, the way any
+ * viewer's line does. Where that is refused (followers-only chat, a ban), the
+ * channel's own path takes over and the voice is tried again ten minutes on.
+ */
+const voiceCannotPost = new Map<string, number>();
+const VOICE_RETRY_MS = 10 * 60_000;
+const voiceSlugFrom = (d: { voice?: string }): string =>
+  (d.voice ?? process.env.KICK_VOICE_CHANNEL ?? "oddiefun").trim().toLowerCase();
+
+export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets" | "voice">, chat: KickChat = kickChat): LiveDeps {
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const deliver = async (token: string, channelId: string, text: string, replyTo?: string) => {
     if (!botCannotPost.has(channelId)) {
@@ -113,9 +130,37 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
     }
     await chat.user(token, channelId, text, replyTo);
   };
+  const voiceSlug = voiceSlugFrom(d);
+  /** True when oddie's own account said it. False hands the line on. */
+  const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<boolean> => {
+    if (!voiceSlug) return false;
+    const failedAt = voiceCannotPost.get(channelId);
+    if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return false;
+    const voice = await channelBySlug("kick", voiceSlug).catch(() => null);
+    // In its own chat the voice is the channel, and the channel's path is it.
+    if (!voice?.active || !voice.accessToken || voice.channelId === channelId) return false;
+    const send = async (force: boolean, reply?: string) => chat.user(await tokenFor(voice, force), channelId, text, reply);
+    const st = (e: unknown) => (e as { status?: number }).status;
+    try {
+      try { await send(false, replyTo); }
+      catch (e) {
+        if (st(e) === 401) await send(true, replyTo);
+        // A reply may not reach across channels; the line itself still can.
+        else if (replyTo && (st(e) === 400 || st(e) === 422)) await send(false);
+        else throw e;
+      }
+      voiceCannotPost.delete(channelId);
+      return true;
+    } catch (e) {
+      voiceCannotPost.set(channelId, Date.now());
+      d.log("kick voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null });
+      return false;
+    }
+  };
   const say = async (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<void> => {
     const ch = await channelById("kick", channelId);
     if (!ch?.active) return;
+    if (await sayAsVoice(channelId, text, replyTo)) return;
     try { await deliver(await tokenFor(ch), channelId, text, replyTo); }
     catch (e) {
       // An expired token says 401: refresh once and say it again.
@@ -350,7 +395,7 @@ export function kickRouter(d: KickRouteDeps): Router {
 }
 
 /** The clock: every few seconds, calls whose time is up are locked and said. */
-export function startLiveClock(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets">, everyMs = 5_000): NodeJS.Timeout {
+export function startLiveClock(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets" | "voice">, everyMs = 5_000): NodeJS.Timeout {
   const engine = kickEngineDeps(d);
   return setInterval(() => { void lockDue(engine).catch((e) => d.log("live clock failed", { err: (e as Error).message })); }, everyMs);
 }

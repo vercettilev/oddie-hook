@@ -308,6 +308,55 @@ console.log("\nwhen Kick will not take a bot line");
   check("...but an outage is an outage, not a reason to speak as the streamer", threw && !sent.includes("user:777"));
 }
 
+console.log("\noddie speaks as itself in every chat");
+{
+  _resetLiveStore();
+  await saveChannel({ platform: "kick", channelId: "131980691", slug: "oddiefun", name: "oddiefun", avatar: null,
+    accessToken: "voice-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  await saveChannel({ platform: "kick", channelId: "900", slug: "levvercetti", name: "levvercetti", avatar: null,
+    accessToken: "lev-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  const sent: string[] = [];
+  const fail = (status: number) => { const e = new Error(`kick POST /chat ${status}`) as Error & { status?: number }; e.status = status; return e; };
+  let refuse: number | null = null;
+  const chat: KickChat = {
+    bot: async (t, text) => { sent.push(`bot:${t}:${text}`); throw fail(404); },
+    user: async (t, ch, text, reply) => {
+      if (refuse && t === "voice-tok") throw fail(refuse);
+      sent.push(`user:${t}:${ch}:${text}${reply ? `:re:${reply}` : ""}`);
+    },
+  };
+  const deps = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "oddiefun" }, chat);
+  await deps.say("kick", "900", "Market open", "msg-1");
+  check("a line in a streamer's chat comes from oddie's own account, not the streamer's",
+    sent.join("|") === "user:voice-tok:900:Market open:re:msg-1", sent.join("|"));
+  sent.length = 0;
+  await deps.say("kick", "131980691", "hello");
+  check("...and in oddie's own chat, oddie's account is the channel's", sent.some((x) => x === "user:voice-tok:131980691:hello") && !sent.some((x) => x.includes(":900:")), sent.join("|"));
+  sent.length = 0;
+  refuse = 403;
+  const other = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "oddiefun" }, chat);
+  await saveChannel({ platform: "kick", channelId: "901", slug: "strict", name: "strict", avatar: null,
+    accessToken: "strict-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  await other.say("kick", "901", "one");
+  check("a chat that refuses oddie's account still hears the line, from the channel's own account",
+    sent.some((x) => x === "user:strict-tok:901:one"), sent.join("|"));
+  refuse = null; sent.length = 0;
+  await other.say("kick", "901", "two");
+  check("...and oddie's account is not asked again there straight away", sent.every((x) => !x.startsWith("user:voice-tok")), sent.join("|"));
+  const noReply: string[] = [];
+  const replyShy = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "oddiefun" }, {
+    bot: async () => { throw fail(404); },
+    user: async (t, ch, text, reply) => { if (t === "voice-tok" && reply) throw fail(400); noReply.push(`${t}:${ch}:${text}:${reply ?? "-"}`); },
+  });
+  await replyShy.say("kick", "900", "still said", "msg-2");
+  check("a reply Kick will not take across channels still goes out from oddie, as a plain line",
+    noReply.join("|") === "voice-tok:900:still said:-", noReply.join("|"));
+  const plain = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "" }, chat);
+  sent.length = 0;
+  await plain.say("kick", "900", "old way");
+  check("with no voice set, a channel speaks for itself as before", sent.some((x) => x === "user:lev-tok:900:old way"), sent.join("|"));
+}
+
 console.log("\na streamer's 2%: which channel, which wallet, which markets");
 {
   // Which channel: a cookie from the end of Kick's own sign-in, never a link.
