@@ -170,9 +170,14 @@ function flowRow(items: FlowStep[], top: number, accent: string, ink: string, on
   // A drawn panel has to lift off its ground or it is a hole, and a stroke in
   // the ink colour is the only lift that works on all four of this deck's
   // grounds.
-  const panelFill = onDark ? "#1C1F0E" : "rgba(11,13,4,.05)";
+  // OPAQUE ON BOTH GROUNDS. A see-through fill let the pink offset behind the
+  // panel show through on cream, and every drawn panel came out pink.
+  const panelFill = onDark ? "#1C1F0E" : "#EEEFE3";
   const hair = onDark ? "rgba(251,252,244,.28)" : "rgba(11,13,4,.18)";
   const quiet = onDark ? "rgba(251,252,244,.60)" : "rgba(11,13,4,.60)";
+  // Lime is the loud colour on black and invisible on cream, so a proof set on
+  // a light ground lights its words in the deep pink instead.
+  const hi = onDark ? C.yellow : C.pinkDeep;
   const out: string[] = [];
   let capBottom = top + ph;
 
@@ -204,8 +209,8 @@ function flowRow(items: FlowStep[], top: number, accent: string, ink: string, on
         // The handle the tweet was aimed at is lit, because it is the whole
         // interface: a reader who takes nothing else from this slide should
         // still see that the product is summoned by typing its name.
-        const lit = (l: string) => l.split(/(@\w+)/)
-          .map((p) => (/^@\w+$/.test(p) ? `<tspan fill="${C.yellow}">${esc(p)}</tspan>` : esc(p)))
+        const lit = (l: string) => l.split(/(@\w+|!oddie)/)
+          .map((p) => (/^(@\w+|!oddie)$/.test(p) ? `<tspan fill="${hi}">${esc(p)}</tspan>` : esc(p)))
           .join("");
         for (const l of wrapToWidth(`“${it.quote}”`, pw - INSET * 2, 30, 4, "meta").lines) {
           out.push(`<text x="${x + INSET}" y="${ty}" font-family="${BODY}" font-size="30" font-weight="600" fill="${ink}">${lit(l)}</text>`);
@@ -216,7 +221,7 @@ function flowRow(items: FlowStep[], top: number, accent: string, ink: string, on
       // from the top and the bottom: the loud line sits a third of the way
       // down and the value a reader can check sits on the floor.
       if (it.head) {
-        out.push(`<text x="${x + INSET}" y="${top + 110}" font-family="${DISPLAY}" font-size="66" fill="${C.yellow}">${esc(it.head.toUpperCase())}</text>`);
+        out.push(`<text x="${x + INSET}" y="${top + 110}" font-family="${DISPLAY}" font-size="66" fill="${hi}">${esc(it.head.toUpperCase())}</text>`);
       }
       if (it.sub) {
         out.push(`<text x="${x + INSET}" y="${top + 162}" font-family="${BODY}" font-size="30" font-weight="600" fill="${ink}" fill-opacity=".8">${esc(it.sub)}</text>`);
@@ -243,7 +248,7 @@ function flowRow(items: FlowStep[], top: number, accent: string, ink: string, on
       const gx = x - GAP, gy = top + ph / 2;
       out.push(`<path d="M ${gx + 16} ${gy} h 44 m -16 -16 l 16 16 l -16 16" fill="none" stroke="${accent}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>`);
       if (it.gapLabel) {
-        out.push(`<text x="${gx + GAP / 2}" y="${top - 30}" text-anchor="middle" font-family="${DISPLAY}" font-size="36" fill="${C.yellow}">${esc(it.gapLabel.toUpperCase())}</text>`);
+        out.push(`<text x="${gx + GAP / 2}" y="${top - 30}" text-anchor="middle" font-family="${DISPLAY}" font-size="36" fill="${hi}">${esc(it.gapLabel.toUpperCase())}</text>`);
       }
     }
   });
@@ -423,7 +428,7 @@ function render(s: Slide, n: number, total: number): string {
     // mis-parses that one has mis-read the outcome.
     const m = s.rail.mark;
     const body = m && s.rail.text.includes(m)
-      ? s.rail.text.split(m).map(esc).join(`<tspan fill="${C.yellow}">${esc(m)}</tspan>`)
+      ? s.rail.text.split(m).map(esc).join(`<tspan fill="${onDark ? C.yellow : C.pinkDeep}">${esc(m)}</tspan>`)
       : esc(s.rail.text);
     parts.push(`<text x="${PAD + 40 + textWidth(tag, 40, "display") + 36}" y="${y + h / 2 + 12}" font-family="${BODY}" font-size="32" font-weight="600" fill="${s.ink}" fill-opacity=".88">${body}</text>`);
     y += h;
@@ -510,7 +515,7 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
    long slide. The brand runs on four grounds and the landing page moves through
    all of them. So does this:
 
-     yellow  black  YELLOW  black  cream  yellow  black  cream  black  PINK  yellow
+     yellow  black  cream  yellow  BLACK  cream  yellow  black  yellow  black  yellow  PINK  yellow
 
    No two neighbours share a ground, every ground is used, and the highest
    chroma is spent once, on the ask, which is the only slide asking for
@@ -540,9 +545,13 @@ const D = C.black, L = C.cream;
 const Y = C.yellow, I = C.ink;
 export const SLIDES: Slide[] = [
   {
+    /* THE COVER SAYS WHAT HAPPENS, NOT WHAT CATEGORY WE ARE IN. "The people's
+       prediction market" named a category; the product is the moment an
+       argument turns into a market where it is happening, on a stream, under a
+       tweet, in a group chat. The category line stays, one size down. */
     label: "", bg: Y, ink: I,
-    head: "The people\u2019s prediction market.",
-    body: ["oddie.fun   @oddiefun"],
+    head: "Every argument is a market.",
+    body: ["The people\u2019s prediction market. Live on Kick, X and Telegram.", "oddie.fun   @oddiefun"],
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
   },
   {
@@ -590,11 +599,62 @@ export const SLIDES: Slide[] = [
   {
     /* "HOW IT WORKS", NOT "THE SOLUTION". One is what the slide contains, the
        other is a deck-template word that could sit on any slide in any deck. */
+    /* "TAG IT" WAS ONE DOOR. On Kick nobody tags anything, they type !oddie in
+       the chat, so the verb is the one all three doors share: you call it. The
+       doors are listed by what a person actually types in each. */
     label: "How it works", bg: Y, ink: I,
-    head: "Tag it. It\u2019s a market.",
-    steps: ["Tag", "Pick a side", "Get paid"],
+    head: "Call it. It\u2019s a market.",
     body: ["No referee. The deadline hits and it pays."],
-    sticker: "st-tag", stickerBox: { x: 1200, y: 520, w: 660, h: 500 },
+    steps: ["Call", "Pick a side", "Get paid"],
+    rows: [
+      { tag: "Kick", text: "Type !oddie and a claim in a stream\u2019s chat." },
+      { tag: "X", text: "Tag @oddiefun under any claim." },
+      { tag: "Telegram", text: "Reply to any message with @oddiefunbot." },
+    ],
+    sticker: "st-decide", stickerBox: { x: 1300, y: 480, w: 560, h: 540 },
+  },
+  {
+    /* THE NEW DOOR, SHOWN BEFORE THE OLD ONE, because it is the positioning:
+       a stream is a room of thousands arguing live, and this is the first
+       market ever opened in one.
+       WHAT IS ON IT HAPPENED: 29 September, Lev's own channel (oddiefun), the
+       claim typed in Turkish, the market created at 21:43:30 UTC with the
+       headline "BTC to $88k by Friday?" (community_market, read from the live
+       database). Lev typed it himself, so the slide says the chat called it,
+       never that a stranger did. No gap is printed over the arrow: the chat
+       message's own time is not stored, and the X slide's 24 seconds is
+       arithmetic this one cannot repeat.
+       THE RESULT IS DASHED BECAUSE IT HAS NOT HAPPENED. The market closes on 2
+       October; close the stroke (done: true) the day oddie posts it. */
+    label: "Live on Kick", bg: D, ink: L,
+    head: "Any chat. Any language.", headSize: 100,
+    aside: ["Called in Turkish.", "Opened in English.", "Paid to the stream."],
+    flow: [
+      {
+        tick: "29 Sep, Kick chat",
+        by: "oddiefun, live",
+        quote: "!oddie BTC cumaya kadar 88k olur mu?",
+        cap: "the chat calls it, in Turkish",
+      },
+      {
+        tick: "21:43:30 UTC",
+        by: "oddie, in the chat",
+        quote: "Market open: \u2018BTC to $88k by Friday?\u2019 Take YES or NO: app.oddie.fun/m/\u2026",
+        cap: "a real market, seconds later",
+      },
+      {
+        tick: "The stream",
+        head: "2%",
+        sub: "of the pool, to the channel",
+        note: "oddiefun earns 2% of the pool",
+        cap: "the room pays whoever brought it",
+      },
+    ],
+    rail: {
+      tag: "2 Oct 23:59 UTC",
+      mark: "in the chat",
+      text: "The deadline hits. oddie settles it and posts the result in the chat.",
+    },
   },
   {
     /* THE SLIDE THE DECK DID NOT HAVE, and its absence was the whole problem:
@@ -623,7 +683,7 @@ export const SLIDES: Slide[] = [
        claim, and a claim as the label of the slide whose entire job is evidence
        reads defensively. Proof names the function: everything under it is a
        receipt for the sentence above it. */
-    label: "Proof", bg: D, ink: L,
+    label: "Proof", bg: L, ink: I,
     head: "It runs itself.",
     /* THE PICTURES SHOW WHAT HAPPENED; THEY CANNOT SHOW WHO DID NOT. That is
        the claim, so it is the one sentence on the slide. It names oddie rather
@@ -728,6 +788,7 @@ export const SLIDES: Slide[] = [
          slide was true. */
       "Half of it goes to whoever opened the market, the day it settles.",
       "A pool of $1,000 pays its opener $20, and us $20.",
+      "On a stream, the opener is the streamer.",
     ],
     sticker: "st-riding", stickerBox: { x: 1260, y: 540, w: 600, h: 480 },
   },
@@ -738,8 +799,14 @@ export const SLIDES: Slide[] = [
        slide is the growth loop, which is a different claim. */
     label: "How it spreads", bg: Y, ink: I,
     head: "Bring the room, own the room.",
-    body: ["Whoever opens a market is paid to bring people into it. That is the entire growth plan."],
-    sticker: "genesis-ticket", stickerBox: { x: 1300, y: 480, w: 560, h: 560 },
+    /* THE ROOM GOT BIGGER. On X a room is a thread; on Kick it is thousands of
+       people arguing live, and the streamer is paid for every market their
+       chat opens. Same rule, three doors, named once each. */
+    body: [
+      "Whoever opens a market is paid to bring people into it. On X, whoever tagged it. On Telegram, whoever asked. On Kick, the streamer.",
+      "Your audience argues, you earn. That is the entire growth plan.",
+    ],
+    sticker: "arch-loudest", stickerBox: { x: 1300, y: 460, w: 560, h: 580 },
   },
   {
     /* PRESENT TENSE, because the old version was entirely future: "give it a
@@ -759,7 +826,7 @@ export const SLIDES: Slide[] = [
          this category is already thinking the name. Saying it first, and then
          answering it, is worth more than the sentence costs. */
       "It settles on chain under your handle, right or wrong. Polymarket can copy the button. It cannot copy your record.",
-      "A platform can close a door. The markets and the record are on Solana, and the next door is built.",
+      "A platform can close a door. oddie already has three, and the markets and the record are on Solana.",
     ],
     sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
   },
@@ -773,7 +840,7 @@ export const SLIDES: Slide[] = [
        and lets the four rows underneath say when. */
     head: "It goes wherever people argue.",
     rows: [
-      { tag: "Now", text: "X. Live, with real money in it." },
+      { tag: "Now", text: "Kick, X and Telegram. Live, with real money in it." },
       /* NOT "BUILT AND TESTED". There is no Telegram bot in this repo: no
          client, no token, no send path. What does exist is the market side —
          a t.me link is a valid source, sourcePostKey parses it, and
@@ -781,9 +848,13 @@ export const SLIDES: Slide[] = [
          the row says the half that is true. An investor who asks and gets
          "actually it only accepts the link" stops believing the three rows
          under it as well. */
-      { tag: "Next", text: "Telegram. The market side is done. The bot is the work." },
-      { tag: "Then", text: "Discord." },
-      { tag: "After", text: "Any app, with one key." },
+      /* TELEGRAM MOVED UP, IT IS LIVE, and Kick arrived beside it. Twitch is
+         NEXT, not now: the engine is platform-free (src/live/calls.ts) and the
+         adapter is the work. The streamer's own game read off the screen is a
+         plan, measured nowhere yet, so it sits at THEN. */
+      { tag: "Next", text: "Twitch. The same engine, one more door." },
+      { tag: "Then", text: "A streamer\u2019s own game, settled from the screen." },
+      { tag: "After", text: "Discord, and any app with one key." },
     ],
     sticker: "st-rocket", stickerBox: { x: 1400, y: 580, w: 440, h: 440 },
   },
@@ -805,7 +876,7 @@ export const SLIDES: Slide[] = [
        things. One founder, named and faced three slides earlier, is a cleaner
        answer than a team nobody can see. */
     rows: [
-      { tag: "30%", text: "Creators. Paid to open markets and bring their rooms." },
+      { tag: "30%", text: "Streamers and creators. Paid to open markets and bring their rooms." },
       { tag: "60%", text: "Founder. Twelve months, full time, shipping." },
       { tag: "10%", text: "Infra. Measured, not estimated." },
     ],
@@ -833,8 +904,8 @@ export const SLIDES: Slide[] = [
        — the closer is the cover's yellow for the same reason — so the words
        may as well agree with it. The body changes underneath from who we are
        to what to do next, which is what makes it a close and not a copy. */
-    head: "The people\u2019s prediction market.",
-    body: ["Try it: tag @oddiefun under any claim on X.", "lev@oddie.fun"],
+    head: "Every argument is a market.",
+    body: ["Try it: type !oddie in a Kick chat, tag @oddiefun on X, or reply with @oddiefunbot on Telegram.", "lev@oddie.fun"],
     sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
   },
 ];
