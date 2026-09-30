@@ -134,6 +134,31 @@ function loadShot(file: string): { uri: string; w: number; h: number } | null {
   };
 }
 
+
+/* THE DOORS, BY THEIR OWN MARKS. Paths from simple-icons 16.33.0 (CC0), the
+   brands' current logos; colours from the same package's data. Each sits on a
+   small tile the way its app icon does, because Kick's green on this deck's
+   lime disappears: black tile, green mark for Kick; black tile, white mark
+   for X; Telegram's own blue disc, which is its own tile. */
+const LOGOS: Record<string, { d: string; fill: string; tile: string | null }> = {
+  kick: { d: "M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z", fill: "#53FC19", tile: C.black },
+  x: { d: "M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z", fill: C.cream, tile: C.black },
+  telegram: { d: "M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z", fill: "#26A5E4", tile: null },
+};
+type Door = "kick" | "x" | "telegram";
+/** A door's mark, `size` square, top-left at x,y. */
+function logo(name: Door, x: number, y: number, size: number): string {
+  const l = LOGOS[name];
+  const out: string[] = [];
+  let inner = size, ix = x, iy = y;
+  if (l.tile) {
+    out.push(`<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${Math.round(size * 0.24)}" fill="${l.tile}"/>`);
+    inner = size * 0.6; ix = x + (size - inner) / 2; iy = y + (size - inner) / 2;
+  }
+  out.push(`<path d="${l.d}" fill="${l.fill}" transform="translate(${ix} ${iy}) scale(${inner / 24})"/>`);
+  return out.join("");
+}
+
 /* THE STEPS ARE DRAWN, NOT LISTED, and the slide they replaced is the reason.
    It carried four dated sentences in a column, which is a CLAIM about a machine
    on the one slide in the deck whose whole job is EVIDENCE. The machine's own
@@ -266,7 +291,7 @@ interface Slide {
   stats?: { big: string; small: string }[];
   steps?: string[];
   /** A labelled row: the stage in display caps, the sentence in body case. */
-  rows?: { tag: string; text: string }[];
+  rows?: { tag: string; text: string; logo?: Door }[];
   /** A quiet line under everything, for a caveat or a link a reader can check. */
   foot?: string;
   /** A short block set against the headline, on the right. */
@@ -277,7 +302,7 @@ interface Slide {
   /** Markets that do not exist, drawn as the markets they are not: the same
    *  dashed outline this deck uses everywhere for a thing that has not
    *  happened. Solid is a receipt, dashed is a hole. */
-  ghosts?: string[];
+  ghosts?: Array<string | { text: string; logo: Door }>;
   /** The steps, shown rather than told. */
   flow?: FlowStep[];
   /** The strip under the flow: the beat that lands after the pictures.
@@ -405,8 +430,11 @@ function render(s: Slide, n: number, total: number): string {
     y += 34;
     const h = 84, gap = 22;
     for (const g of s.ghosts) {
+      const text = typeof g === "string" ? g : g.text;
       parts.push(`<rect x="${PAD}" y="${y}" width="${colW}" height="${h}" rx="18" fill="none" stroke="${accent}" stroke-width="3" stroke-dasharray="16 10" stroke-opacity=".85"/>`);
-      parts.push(`<text x="${PAD + 34}" y="${y + h / 2 + 13}" font-family="${BODY}" font-size="34" font-weight="600" fill="${s.ink}" fill-opacity=".92">${esc(g)}</text>`);
+      parts.push(`<text x="${PAD + 34}" y="${y + h / 2 + 13}" font-family="${BODY}" font-size="34" font-weight="600" fill="${s.ink}" fill-opacity=".92">${esc(text)}</text>`);
+      // Where the argument is happening, at the chip's far end.
+      if (typeof g !== "string") parts.push(logo(g.logo, PAD + colW - 22 - 48, y + (h - 48) / 2, 48));
       y += h + gap;
     }
     // NOT `y -= gap`. A caption's y is its BASELINE, so leaving y on the last
@@ -439,10 +467,13 @@ function render(s: Slide, n: number, total: number): string {
     // The text column aligns to the LONGEST tag on this slide, not to a fixed
     // 230: "30%" against that minimum left a hand's width of dead space before
     // every line, on the one slide a reader actually studies.
-    const tagCol = Math.max(...s.rows.map((r) => textWidth(r.tag.toUpperCase(), 40, "display"))) + 40;
+    const LOGO = 52, anyLogo = s.rows.some((r) => r.logo);
+    const lead = anyLogo ? LOGO + 22 : 0;
+    const tagCol = lead + Math.max(...s.rows.map((r) => textWidth(r.tag.toUpperCase(), 40, "display"))) + 40;
     for (const r of s.rows) {
       const tag = r.tag.toUpperCase();
-      parts.push(`<text x="${PAD}" y="${y}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
+      if (r.logo) parts.push(logo(r.logo, PAD, y - 40, LOGO));
+      parts.push(`<text x="${PAD + lead}" y="${y}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
       const tx = PAD + tagCol;
       const wrapped = wrapToWidth(r.text, colW - (tx - PAD), 34, 4, "meta").lines;
       let yy = y;
@@ -578,10 +609,12 @@ export const SLIDES: Slide[] = [
        streams, and a stream's chat argues about matches and streamers as much
        as tokens. Each is one a chat really types and each has a public answer
        on a date. The BTC one is the market Kick actually opened on 29 Sep. */
+    /* Each carries the room it is argued in, not where it was opened: this
+       slide is about markets nobody opens. */
     ghosts: [
-      "does NAVI win the next CS2 Major?",
-      "does Kai Cenat break his sub record this month?",
-      "btc 88k by friday?",
+      { text: "btc 88k by friday?", logo: "kick" },
+      { text: "does Kai Cenat break his sub record this month?", logo: "x" },
+      { text: "does NAVI win the next CS2 Major?", logo: "telegram" },
     ],
     foot: "Polymarket lists elections. Kalshi lists the economy. Neither will list this.",
     sticker: "st-l", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
@@ -611,9 +644,9 @@ export const SLIDES: Slide[] = [
     body: ["No referee. The deadline hits and it pays."],
     steps: ["Call", "Pick a side", "Get paid"],
     rows: [
-      { tag: "Kick", text: "Type !oddie and a claim in a stream\u2019s chat." },
-      { tag: "X", text: "Tag @oddiefun under any claim." },
-      { tag: "Telegram", text: "Reply to any message with @oddiefunbot." },
+      { tag: "Kick", logo: "kick", text: "Type !oddie and a claim in a stream\u2019s chat." },
+      { tag: "X", logo: "x", text: "Tag @oddiefun under any claim." },
+      { tag: "Telegram", logo: "telegram", text: "Reply to any message with @oddiefunbot." },
     ],
     sticker: "st-decide", stickerBox: { x: 1300, y: 480, w: 560, h: 540 },
   },
