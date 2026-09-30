@@ -179,7 +179,7 @@ interface FlowStep {
   /** The pink line over the panel. A clock time where there is one. */
   tick: string;
   /** The quiet line under it, in plain words. */
-  cap: string;
+  cap?: string;
   /** A real file in brand/, filling the panel. */
   img?: string;
   /** Somebody's real words, set as they were written. */
@@ -269,12 +269,14 @@ function flowRow(items: FlowStep[], top: number, accent: string, ink: string, on
     // Stacked, not clipped: a caption that outgrows its panel pushes the row
     // down and trips the overflow warning, rather than losing its second half
     // where nobody would notice.
-    let cy = top + ph + 52;
-    for (const l of wrapToWidth(it.cap, pw, 28, 2, "meta").lines) {
-      out.push(`<text x="${x}" y="${cy}" font-family="${BODY}" font-size="28" font-weight="600" fill="${quiet}">${esc(l)}</text>`);
-      cy += 36;
+    if (it.cap) {
+      let cy = top + ph + 52;
+      for (const l of wrapToWidth(it.cap, pw, 28, 2, "meta").lines) {
+        out.push(`<text x="${x}" y="${cy}" font-family="${BODY}" font-size="28" font-weight="600" fill="${quiet}">${esc(l)}</text>`);
+        cy += 36;
+      }
+      capBottom = Math.max(capBottom, cy - 36);
     }
-    capBottom = Math.max(capBottom, cy - 36);
 
     // DRAWN, NOT TYPED, for the same reason the steps row draws its arrow:
     // Anton has no arrow glyph and resvg puts a tofu box there without a word.
@@ -591,7 +593,7 @@ export const SLIDES: Slide[] = [
        tweet, in a group chat. The category line stays, one size down. */
     label: "", bg: Y, ink: I,
     head: "Every argument is a market.",
-    body: ["The people\u2019s prediction market. Live on Kick, X and Telegram.", "oddie.fun   @oddiefun"],
+    body: ["Live on Kick, X and Telegram.", "oddie.fun   @oddiefun"],
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
   },
   {
@@ -653,7 +655,6 @@ export const SLIDES: Slide[] = [
     label: "How it works", bg: Y, ink: I,
     head: "Call it. It\u2019s a market.",
     body: ["No referee. The deadline hits and it pays."],
-    steps: ["Call", "Pick a side", "Get paid"],
     rows: [
       { tag: "Kick", logo: "kick", text: "Type !oddie and a claim in a stream\u2019s chat." },
       { tag: "X", logo: "x", text: "Tag @oddiefun under any claim." },
@@ -682,20 +683,16 @@ export const SLIDES: Slide[] = [
         tick: "29 Sep, Kick chat",
         by: "oddiefun, live",
         quote: "!oddie BTC cumaya kadar 88k olur mu?",
-        cap: "the chat calls it, in Turkish",
       },
       {
         tick: "21:43:30 UTC",
         by: "oddie, in the chat",
         quote: "Market open: \u2018BTC to $88k by Friday?\u2019 Take YES or NO: app.oddie.fun/m/\u2026",
-        cap: "a real market, seconds later",
       },
       {
         tick: "The stream",
         head: "2%",
         sub: "of the pool, to the channel",
-        note: "oddiefun earns 2% of the pool",
-        cap: "the room pays whoever brought it",
       },
     ],
     rail: {
@@ -744,7 +741,6 @@ export const SLIDES: Slide[] = [
         tick: "13:17:08",
         by: "Giga Chad",
         quote: "$BULLSHIT hits a 1m market cap within 3 days. screenshot this. @oddiefun",
-        cap: "someone tags it on X",
       },
       {
         /* THE CARD IS THE ONE THAT WAS POSTED, not one generated for the deck:
@@ -753,7 +749,6 @@ export const SLIDES: Slide[] = [
            would say today. A deck that re-renders its evidence has no evidence. */
         tick: "13:17:33", gapLabel: "24 sec",
         img: "step-market.png",
-        cap: "the bot opens it and replies",
       },
       {
         /* NO TIME ON THIS ONE, and that is not an oversight. The Solana account
@@ -763,7 +758,6 @@ export const SLIDES: Slide[] = [
         head: "Real SOL",
         sub: "held until the deadline",
         note: "562CXadj…SRE6rc1D7",
-        cap: "the money lands on Solana",
       },
     ],
     /* THE LAST BEAT IS WRITTEN FOR 18 SEPTEMBER, THE DAY IT RUNS. $BULLSHIT sat
@@ -811,7 +805,6 @@ export const SLIDES: Slide[] = [
     stats: [
       { big: "$0.31", small: "to open one on Solana" },
       { big: "$22B", small: "what Kalshi is worth" },
-      { big: "0", small: "markets you can open from a reply" },
     ],
   },
   {
@@ -837,11 +830,11 @@ export const SLIDES: Slide[] = [
          the program finds a single payment where the deck promised a royalty,
          and the wrong half of that discovery is that everything else on the
          slide was true. */
-      "No listing desk, no permission. Any claim with a yes, a no and a date becomes a market, from any chat.",
-      "The opener\u2019s cut is the distribution: every market comes with someone paid to spread it. The tagger on X, the asker on Telegram, the streamer on Kick.",
+      "No listing desk, no permission. Any claim with a yes, a no and a date.",
+      "The opener\u2019s 2% is the distribution: every market comes with someone paid to spread it.",
     ],
     stats: [
-      { big: "4%", small: "of the pool when it settles, nothing before" },
+      { big: "4%", small: "of the pool, when it settles" },
       { big: "2%", small: "to whoever opened it" },
       { big: "2%", small: "to oddie" },
     ],
@@ -859,8 +852,8 @@ export const SLIDES: Slide[] = [
        people arguing live, and the streamer is paid for every market their
        chat opens. Same rule, three doors, named once each. */
     body: [
-      "A stream is thousands of people arguing live. A group chat, hundreds. A thread, whoever is watching.",
-      "Each market is carried into the next room by the one it pays. Your audience argues, you earn.",
+      "A stream is thousands of people arguing live.",
+      "Your audience argues, you earn.",
     ],
     sticker: "arch-loudest", stickerBox: { x: 1300, y: 460, w: 560, h: 580 },
   },
@@ -881,8 +874,8 @@ export const SLIDES: Slide[] = [
          for when they would rather not say it out loud, and every investor in
          this category is already thinking the name. Saying it first, and then
          answering it, is worth more than the sentence costs. */
-      "It settles on chain under your handle, right or wrong. Polymarket can copy the button. It cannot copy your record.",
-      "A platform can close a door. oddie already has three, and the markets and the record are on Solana.",
+      "It settles on chain under your handle. Polymarket can copy the button, not your record.",
+      "A platform can close a door. oddie has three, and everything is on Solana.",
     ],
     sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
   },
@@ -961,7 +954,7 @@ export const SLIDES: Slide[] = [
        may as well agree with it. The body changes underneath from who we are
        to what to do next, which is what makes it a close and not a copy. */
     head: "Every argument is a market.",
-    body: ["Try it: type !oddie in a Kick chat, tag @oddiefun on X, or reply with @oddiefunbot on Telegram.", "lev@oddie.fun"],
+    body: ["Try it: !oddie on Kick, @oddiefun on X, @oddiefunbot on Telegram.", "lev@oddie.fun"],
     sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
   },
 ];
