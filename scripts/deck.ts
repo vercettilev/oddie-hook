@@ -643,7 +643,7 @@ export const SLIDES: Slide[] = [
     who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
     stats: [
       { big: "600", small: "in the closed beta" },
-      { big: "20K", small: "posts they wrote" },
+      { big: "20K", small: "posts beta users wrote in the extension" },
     ],
   },
   {
@@ -686,7 +686,7 @@ export const SLIDES: Slide[] = [
       },
       {
         tick: "21:43:30 UTC",
-        by: "oddie, in the chat",
+        by: "Oddie, in the chat",
         quote: "Market open: \u2018BTC to $88k by Friday?\u2019 Take YES or NO: app.oddie.fun/m/\u2026",
       },
       {
@@ -698,7 +698,7 @@ export const SLIDES: Slide[] = [
     rail: {
       tag: "2 Oct 23:59 UTC",
       mark: "in the chat",
-      text: "The deadline hits. oddie settles it and posts the result in the chat.",
+      text: "The deadline hits. Oddie settles it and posts the result in the chat.",
     },
   },
   {
@@ -735,7 +735,7 @@ export const SLIDES: Slide[] = [
        than saying "nobody", because "nobody" is what the old headline said and
        a reader heard it as "no users" — the one thing this slide must not
        imply, since both accounts on this market are Lev's. */
-    aside: ["No one at oddie", "opened this market.", "No one closed it."],
+    aside: ["No one at Oddie", "opened this market.", "No one closed it."],
     flow: [
       {
         tick: "13:17:08",
@@ -836,7 +836,7 @@ export const SLIDES: Slide[] = [
     stats: [
       { big: "4%", small: "of the pool, when it settles" },
       { big: "2%", small: "to whoever opened it" },
-      { big: "2%", small: "to oddie" },
+      { big: "2%", small: "to Oddie" },
     ],
     /* NO STICKER: three numbers and two sentences need the full width, and
        with the art beside them the slide ran off its own bottom edge. */
@@ -875,7 +875,7 @@ export const SLIDES: Slide[] = [
          this category is already thinking the name. Saying it first, and then
          answering it, is worth more than the sentence costs. */
       "It settles on chain under your handle. Polymarket can copy the button, not your record.",
-      "A platform can close a door. oddie has three, and everything is on Solana.",
+      "A platform can close a door. Oddie has three, and everything is on Solana.",
     ],
     sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
   },
