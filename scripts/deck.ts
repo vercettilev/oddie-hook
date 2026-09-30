@@ -812,16 +812,29 @@ export const SLIDES: Slide[] = [
        a deck with twelve of them. The felt one keeps the word; this one is the
        cause, so it says the cause and nothing else. Three words, and the body
        and the stats underneath do the rest. */
-    head: "Markets got cheap.",
-    body: ["A listing desk exists because opening a market used to cost something."],
+    /* "MARKETS GOT CHEAP" WAS ONE HALF OF THE CHANGE, and the shallow half.
+       Cheap rent alone does not remove the desk: somebody still had to write
+       the rules and settle the result, and that labour is why only big
+       questions get listed. What changed is that both jobs became software.
+       Every number below is measured in this repo: 24 seconds from tag to
+       posted market (slide six, snowflake arithmetic), 0 wrong in 25 oracle
+       runs over real resolved markets (oracle backtest, 30 Aug 2026), and
+       0.00291 SOL of rent (oddieChain.ts). Kalshi's valuation stays, as the
+       size of the prize a desk has been worth. */
+    head: "The listing desk became software.", headSize: 124,
+    body: [
+      "A market used to need people: one to write the rules, one to settle it. Kalshi is worth $22B running that desk.",
+      "Now a model writes the rules in seconds, settles from the record, and Solana makes opening one cost cents.",
+    ],
     /* $40B TRADED IN ONE MONTH CAME OUT. It was the load-bearing number on the
        slide whose whole weight is a contrast, and it was unsourced through
        three asks. An unverifiable figure on a fundraising document does not
        fail quietly: a reader who checks it and cannot confirm it stops
        trusting every other number here. Put it back the day there is a link. */
     stats: [
+      { big: "24 SEC", small: "from a tag to a live market" },
+      { big: "0 OF 25", small: "oracle runs settled wrong" },
       { big: "$0.31", small: "to open one on Solana" },
-      { big: "$22B", small: "what Kalshi is worth" },
     ],
   },
   {
