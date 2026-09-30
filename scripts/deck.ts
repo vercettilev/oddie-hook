@@ -603,8 +603,10 @@ export const SLIDES: Slide[] = [
        tweet, in a group chat. The category line stays, one size down. */
     label: "", bg: Y, ink: I,
     head: "Every argument is a market.",
-    body: ["Live on Kick, X and Telegram."],
-    badges: ["kick", "x", "telegram"],
+    /* THE COVER IS THE VISION, NOT THE INTEGRATIONS. Naming Kick, X and
+       Telegram here made the product read as three bots (Lev); the doors
+       arrive on slide four, where they are the mechanism. */
+    body: ["The people\u2019s prediction market."],
     foot: "oddie.fun   @oddiefun",
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
   },
