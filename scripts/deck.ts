@@ -147,15 +147,24 @@ const LOGOS: Record<string, { d: string; fill: string; tile: string | null }> = 
 };
 type Door = "kick" | "x" | "telegram";
 /** A door's mark, `size` square, top-left at x,y. */
-function logo(name: Door, x: number, y: number, size: number): string {
+function logo(name: Door, x: number, y: number, size: number, onDark = false): string {
   const l = LOGOS[name];
   const out: string[] = [];
-  let inner = size, ix = x, iy = y;
   if (l.tile) {
-    out.push(`<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${Math.round(size * 0.24)}" fill="${l.tile}"/>`);
-    inner = size * 0.6; ix = x + (size - inner) / 2; iy = y + (size - inner) / 2;
+    // On black a black tile is no tile, so it gets a hairline to stand on.
+    const edge = onDark ? ` stroke="rgba(251,252,244,.28)" stroke-width="2"` : "";
+    out.push(`<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${Math.round(size * 0.24)}" fill="${l.tile}"${edge}/>`);
+    const inner = size * 0.6, o = (size - inner) / 2;
+    out.push(`<path d="${l.d}" fill="${l.fill}" transform="translate(${x + o} ${y + o}) scale(${inner / 24})"/>`);
+    return out.join("");
   }
-  out.push(`<path d="${l.d}" fill="${l.fill}" transform="translate(${ix} ${iy}) scale(${inner / 24})"/>`);
+  /* TELEGRAM IS ITS OWN TILE, a disc with the plane cut out of it. The cut
+     showed the ground through (lime, or black), and at the tile's full size
+     the disc read a size bigger than the other two marks. So a white disc
+     goes under it and the whole mark is held to 86% of the tile. */
+  const d = size * 0.86, o = (size - d) / 2;
+  out.push(`<circle cx="${x + size / 2}" cy="${y + size / 2}" r="${d * 0.46}" fill="#FFFFFF"/>`);
+  out.push(`<path d="${l.d}" fill="${l.fill}" transform="translate(${x + o} ${y + o}) scale(${d / 24})"/>`);
   return out.join("");
 }
 
@@ -434,7 +443,7 @@ function render(s: Slide, n: number, total: number): string {
       parts.push(`<rect x="${PAD}" y="${y}" width="${colW}" height="${h}" rx="18" fill="none" stroke="${accent}" stroke-width="3" stroke-dasharray="16 10" stroke-opacity=".85"/>`);
       parts.push(`<text x="${PAD + 34}" y="${y + h / 2 + 13}" font-family="${BODY}" font-size="34" font-weight="600" fill="${s.ink}" fill-opacity=".92">${esc(text)}</text>`);
       // Where the argument is happening, at the chip's far end.
-      if (typeof g !== "string") parts.push(logo(g.logo, PAD + colW - 22 - 48, y + (h - 48) / 2, 48));
+      if (typeof g !== "string") parts.push(logo(g.logo, PAD + colW - 22 - 48, y + (h - 48) / 2, 48, onDark));
       y += h + gap;
     }
     // NOT `y -= gap`. A caption's y is its BASELINE, so leaving y on the last
@@ -472,7 +481,7 @@ function render(s: Slide, n: number, total: number): string {
     const tagCol = lead + Math.max(...s.rows.map((r) => textWidth(r.tag.toUpperCase(), 40, "display"))) + 40;
     for (const r of s.rows) {
       const tag = r.tag.toUpperCase();
-      if (r.logo) parts.push(logo(r.logo, PAD, y - 40, LOGO));
+      if (r.logo) parts.push(logo(r.logo, PAD, y - 40, LOGO, onDark));
       parts.push(`<text x="${PAD + lead}" y="${y}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
       const tx = PAD + tagCol;
       const wrapped = wrapToWidth(r.text, colW - (tx - PAD), 34, 4, "meta").lines;
@@ -609,12 +618,14 @@ export const SLIDES: Slide[] = [
        streams, and a stream's chat argues about matches and streamers as much
        as tokens. Each is one a chat really types and each has a public answer
        on a date. The BTC one is the market Kick actually opened on 29 Sep. */
-    /* Each carries the room it is argued in, not where it was opened: this
-       slide is about markets nobody opens. */
+    /* Each is the argument native to its room, marked with that room, never
+       with where it was opened: this slide is about markets nobody opens. A
+       Kick chat argues about its streamers, X about the price, a Telegram
+       group about its coin. */
     ghosts: [
-      { text: "btc 88k by friday?", logo: "kick" },
-      { text: "does Kai Cenat break his sub record this month?", logo: "x" },
-      { text: "does NAVI win the next CS2 Major?", logo: "telegram" },
+      { text: "does Adin Ross break Kick\u2019s viewer record this month?", logo: "kick" },
+      { text: "btc 88k by friday?", logo: "x" },
+      { text: "is $ORE at 50m by the end of the month?", logo: "telegram" },
     ],
     foot: "Polymarket lists elections. Kalshi lists the economy. Neither will list this.",
     sticker: "st-l", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
