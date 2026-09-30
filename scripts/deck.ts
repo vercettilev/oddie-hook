@@ -326,6 +326,8 @@ interface Slide {
   stickerBox?: { x: number; y: number; w: number; h: number };
   /** The repeated band this deck's visual language uses along the bottom. */
   band?: string;
+  /** The doors' marks in a row, under the body. */
+  badges?: Door[];
   /** A named person, with a face when brand/<photo> exists. */
   who?: { name: string; handle: string; photo?: string };
 }
@@ -409,6 +411,12 @@ function render(s: Slide, n: number, total: number): string {
       y += 58;
     }
     y += 22;
+  }
+
+  if (s.badges?.length) {
+    const B = 64;
+    s.badges.forEach((b, i) => parts.push(logo(b, PAD + i * (B + 20), y - 34, B, onDark)));
+    y += B + 20;
   }
 
   if (s.steps?.length) {
@@ -514,7 +522,9 @@ function render(s: Slide, n: number, total: number): string {
     // Assigned AFTER the loop. Written inside it, every stat started lower than
     // the one before and the row came out as a staircase: y is the shared
     // baseline the row is drawn from, so nothing may move it mid-row.
-    y = bottom;
+    // `bottom` is the last caption's BASELINE, so whatever follows needs a
+    // line of air or it is drawn through the captions (it was, on the model).
+    y = bottom + (s.foot ? 48 : 0);
   }
 
   if (s.foot) {
@@ -557,7 +567,7 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
    long slide. The brand runs on four grounds and the landing page moves through
    all of them. So does this:
 
-     yellow  black  cream  yellow  BLACK  cream  yellow  black  yellow  black  yellow  PINK  yellow
+     yellow  black  cream  yellow  BLACK  cream  yellow  black  cream  yellow  PINK  yellow
 
    No two neighbours share a ground, every ground is used, and the highest
    chroma is spent once, on the ask, which is the only slide asking for
@@ -593,7 +603,9 @@ export const SLIDES: Slide[] = [
        tweet, in a group chat. The category line stays, one size down. */
     label: "", bg: Y, ink: I,
     head: "Every argument is a market.",
-    body: ["Live on Kick, X and Telegram.", "oddie.fun   @oddiefun"],
+    body: ["Live on Kick, X and Telegram."],
+    badges: ["kick", "x", "telegram"],
+    foot: "oddie.fun   @oddiefun",
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
   },
   {
@@ -660,7 +672,8 @@ export const SLIDES: Slide[] = [
       { tag: "X", logo: "x", text: "Tag @oddiefun under any claim." },
       { tag: "Telegram", logo: "telegram", text: "Reply to any message with @oddiefunbot." },
     ],
-    sticker: "st-decide", stickerBox: { x: 1300, y: 480, w: 560, h: 540 },
+    // "Called it", next to "Call it": the sweating ghost argued with the verb.
+    sticker: "st-called", stickerBox: { x: 1300, y: 480, w: 560, h: 540 },
   },
   {
     /* THE NEW DOOR, SHOWN BEFORE THE OLD ONE, because it is the positioning:
@@ -735,7 +748,11 @@ export const SLIDES: Slide[] = [
        than saying "nobody", because "nobody" is what the old headline said and
        a reader heard it as "no users" — the one thing this slide must not
        imply, since both accounts on this market are Lev's. */
-    aside: ["No one at Oddie", "opened this market.", "No one closed it."],
+    /* "NO ONE AT ODDIE OPENED THIS MARKET" WAS TRUE AND FRAGILE: the tag and
+       the stake were Lev's own accounts, and a reader who finds that reads the
+       line as a dodge. The claim is that no person typed the market in or
+       settled it, so it says exactly that. */
+    aside: ["Nobody typed it in.", "Nobody closed it."],
     flow: [
       {
         tick: "13:17:08",
@@ -831,39 +848,27 @@ export const SLIDES: Slide[] = [
          and the wrong half of that discovery is that everything else on the
          slide was true. */
       "No listing desk, no permission. Any claim with a yes, a no and a date.",
-      "The opener\u2019s 2% is the distribution: every market comes with someone paid to spread it.",
+      "The opener\u2019s 2% is the distribution. A stream is thousands of people arguing live, and the streamer is paid to keep Oddie in it.",
     ],
     stats: [
       { big: "4%", small: "of the pool, when it settles" },
       { big: "2%", small: "to whoever opened it" },
       { big: "2%", small: "to Oddie" },
     ],
+    foot: "A $1,000 pool pays its opener $20, and Oddie $20.",
     /* NO STICKER: three numbers and two sentences need the full width, and
        with the art beside them the slide ran off its own bottom edge. */
   },
-  {
-    /* THIS SLIDE SAID THE FEE AGAIN. "Open a market and keep 2% of it" is the
-       previous slide's "half goes to whoever opened it", one screen later, in
-       a deck that cuts restatements everywhere else. The fee is the model; this
-       slide is the growth loop, which is a different claim. */
-    label: "How it spreads", bg: Y, ink: I,
-    head: "Bring the room, own the room.",
-    /* THE ROOM GOT BIGGER. On X a room is a thread; on Kick it is thousands of
-       people arguing live, and the streamer is paid for every market their
-       chat opens. Same rule, three doors, named once each. */
-    body: [
-      "A stream is thousands of people arguing live.",
-      "Your audience argues, you earn.",
-    ],
-    sticker: "arch-loudest", stickerBox: { x: 1300, y: 460, w: 560, h: 580 },
-  },
+  /* "HOW IT SPREADS" FOLDED INTO THE BUSINESS MODEL. Cut down, it was two
+     lines restating the slide before it; the stream line now sits where the
+     2% is explained. */
   {
     /* PRESENT TENSE, because the old version was entirely future: "give it a
        year and every account is a track record" is a moat in year two of a
        company in week one, and an investor discounts that to nothing. The
        record starts on the first settled call, and the first one is dated on
        slide five. */
-    label: "The moat", bg: D, ink: L,
+    label: "The moat", bg: L, ink: I,
     head: "Every call already has a name on it.", headSize: 118,
     /* A CLONE WAS THE ONLY THING THIS ANSWERED, and the platform is the bigger
        risk: the founder slide establishes that one already killed his last
@@ -876,6 +881,10 @@ export const SLIDES: Slide[] = [
          answering it, is worth more than the sentence costs. */
       "It settles on chain under your handle. Polymarket can copy the button, not your record.",
       "A platform can close a door. Oddie has three, and everything is on Solana.",
+      /* THE PLATFORM QUESTION, ANSWERED AS A PARTNER. Oddie is not a rival to
+         Kick or Telegram: it pays their creators, which is what a platform
+         wants more of. */
+      "Oddie doesn\u2019t compete with the platforms. It pays their creators.",
     ],
     sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
   },
@@ -915,7 +924,7 @@ export const SLIDES: Slide[] = [
        forecast nobody believes, because the product being built is what makes
        the question the only remaining risk. */
     head: "$100,000", headSize: 196,
-    body: ["Everything is built. This buys the year that finds out how far it goes."],
+    body: ["Everything is built. This buys the answer: do streamers and groups bring their rooms?"],
     /* "TEAM" AND "RUNWAY" WERE THE SAME LINE. Thirty per cent so shipping never
        stops and thirty per cent of founder time is sixty per cent of people
        under two names, and a reader adds them anyway. Worse, the deck budgeted
