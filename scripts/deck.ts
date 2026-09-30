@@ -574,10 +574,14 @@ export const SLIDES: Slide[] = [
        open on the spot. Lower case because that is how they are typed. */
     label: "The problem", bg: D, ink: L,
     head: "Nobody opens the market you want.", headSize: 118,
+    /* THE ROOMS CHANGED, SO THE QUESTIONS DID. The deck now leads with
+       streams, and a stream's chat argues about matches and streamers as much
+       as tokens. Each is one a chat really types and each has a public answer
+       on a date. The BTC one is the market Kick actually opened on 29 Sep. */
     ghosts: [
-      "will $ORE hit 50m this month?",
-      "is $ANSEM still over 250m on 31 december?",
-      "does $BONK get back to 500m this year?",
+      "does NAVI win the next CS2 Major?",
+      "does Kai Cenat break his sub record this month?",
+      "btc 88k by friday?",
     ],
     foot: "Polymarket lists elections. Kalshi lists the economy. Neither will list this.",
     sticker: "st-l", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
@@ -767,12 +771,15 @@ export const SLIDES: Slide[] = [
     ],
   },
   {
-    label: "The money", bg: D, ink: L,
+    /* THE MODEL IS WHO MAY OPEN, NOT ONLY THE RATE. Lev: the slide should say
+       the business is permissionless and that the opener's cut is what spreads
+       it. So the rate moves into the stats and the headline says the rule. */
+    label: "Business model", bg: D, ink: L,
     /* SIZED SO THE HEAD BREAKS ON ITS OWN FULL STOP. At 150 the wrapper split
        it three ways as "4% when it is / over. Nothing / before.", which reads as
        two half-sentences; 132 fits "4% when it is over." on one line and lets
        the second sentence have the second. */
-    head: "4% when it is over. Nothing before.", headSize: 132,
+    head: "Anyone opens it. The opener gets paid.", headSize: 100,
     /* A RATE IS NOT AN ECONOMIC. "4%" with no volume anywhere in the deck
        leaves the reader to do the arithmetic, and a reader doing arithmetic is
        a reader deciding what the number probably is. One worked line costs a
@@ -786,11 +793,16 @@ export const SLIDES: Slide[] = [
          the program finds a single payment where the deck promised a royalty,
          and the wrong half of that discovery is that everything else on the
          slide was true. */
-      "Half of it goes to whoever opened the market, the day it settles.",
-      "A pool of $1,000 pays its opener $20, and us $20.",
-      "On a stream, the opener is the streamer.",
+      "No listing desk, no permission. Any claim with a yes, a no and a date becomes a market, from any chat.",
+      "The opener\u2019s cut is the distribution: every market comes with someone paid to spread it. The tagger on X, the asker on Telegram, the streamer on Kick.",
     ],
-    sticker: "st-riding", stickerBox: { x: 1260, y: 540, w: 600, h: 480 },
+    stats: [
+      { big: "4%", small: "of the pool when it settles, nothing before" },
+      { big: "2%", small: "to whoever opened it" },
+      { big: "2%", small: "to oddie" },
+    ],
+    /* NO STICKER: three numbers and two sentences need the full width, and
+       with the art beside them the slide ran off its own bottom edge. */
   },
   {
     /* THIS SLIDE SAID THE FEE AGAIN. "Open a market and keep 2% of it" is the
@@ -803,8 +815,8 @@ export const SLIDES: Slide[] = [
        people arguing live, and the streamer is paid for every market their
        chat opens. Same rule, three doors, named once each. */
     body: [
-      "Whoever opens a market is paid to bring people into it. On X, whoever tagged it. On Telegram, whoever asked. On Kick, the streamer.",
-      "Your audience argues, you earn. That is the entire growth plan.",
+      "A stream is thousands of people arguing live. A group chat, hundreds. A thread, whoever is watching.",
+      "Each market is carried into the next room by the one it pays. Your audience argues, you earn.",
     ],
     sticker: "arch-loudest", stickerBox: { x: 1300, y: 460, w: 560, h: 580 },
   },
