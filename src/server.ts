@@ -457,18 +457,24 @@ async function renderLanding(): Promise<string> {
       const now = Date.now();
       // openCommunityMarkets already drops resolved and retired rows, so the
       // only thing left to exclude here is a market whose deadline has passed.
-      const open = all.filter((m) => m.onchainPubkey
-        && m.closesAt && new Date(m.closesAt).getTime() > now);
+      /* A market is minted on its first stake, so an open market with no
+         pubkey is not missing anything: its pool is simply empty, which is
+         exactly the "first one in sets the odds" card. A minted one whose
+         read failed is left out, because its pool is unknown, not zero. */
+      const open = all.filter((m) => m.closesAt && new Date(m.closesAt).getTime() > now);
       if (!open.length) return "";
+      const minted = open.filter((m) => m.onchainPubkey).map((m) => m.onchainPubkey as string);
       const [states, usd] = await Promise.all([
-        readMarkets(open.map((m) => m.onchainPubkey as string), { maxAgeMs: 60_000 }),
+        minted.length ? readMarkets(minted, { maxAgeMs: 60_000 }) : Promise.resolve(new Map<string, MarketRead>()),
         solUsd().catch(() => null),
       ]);
-      const rows = open.map((m) => {
-        const r = states.get(m.onchainPubkey as string);
-        const st = r?.ok ? r.state : null;
-        return { m, readable: Boolean(r?.ok), lamports: st && !st.resolved ? st.totalYesLamports + st.totalNoLamports : 0 };
-      }).filter((x) => x.readable);
+      const rows = open.flatMap((m) => {
+        if (!m.onchainPubkey) return [{ m, lamports: 0 }];
+        const r = states.get(m.onchainPubkey);
+        if (!r?.ok) return [];
+        const st = r.state;
+        return [{ m, lamports: st && !st.resolved ? st.totalYesLamports + st.totalNoLamports : 0 }];
+      });
       const solText = (lamports: number): string => {
         const sol = lamports / 1e9;
         return sol < 0.001 ? "<0.001" : sol.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");

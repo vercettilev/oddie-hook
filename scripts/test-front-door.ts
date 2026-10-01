@@ -47,6 +47,10 @@ console.log("the landing names all three doors");
     && /const BOARD_MIN = 5;/.test(server) && /boardRows\.length < BOARD_MIN \? ""/.test(server));
   check("the live cards are a biggest pool and a closing-soon clock",
     /Biggest pool/.test(server) && /Closing soon/.test(server) && /class="clock" data-at="/.test(server));
+  check("an unminted open market can close soon (it is minted on its first stake)",
+    /if \(!m\.onchainPubkey\) return \[\{ m, lamports: 0 \}\];/.test(server));
+  check("...but a minted one whose read failed is left out, not shown as empty",
+    /if \(!r\?\.ok\) return \[\];/.test(server));
   check("...and the page ticks the clock", /querySelectorAll\("\.clock\[data-at\]"\)/.test(landing));
 }
 
