@@ -1091,6 +1091,25 @@
   .cr__go:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
   @media (max-width:860px){.cr__row{grid-template-columns:1fr}.cr:nth-child(n){margin-top:0}}
 
+
+  /* =================================================== THE LIVE STRIP ==
+     One line under the hero doors: the next market to close, ticking. Drawn
+     by the server only when one closes inside 48 hours; otherwise nothing. */
+  .live{position:relative;z-index:6;display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px 12px;
+    margin-top:22px;padding:10px 16px;background:var(--ink);color:var(--cream);text-decoration:none;
+    border:3px solid var(--ink);box-shadow:5px 6px 0 var(--pink);rotate:-.6deg;max-width:100%}
+  .live:hover{box-shadow:3px 4px 0 var(--pink)}
+  .live:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
+  .live__dot{width:10px;height:10px;border-radius:50%;background:var(--pink);flex:none;
+    animation:livepulse 1.6s infinite}
+  @keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(255,45,120,.7)}70%{box-shadow:0 0 0 9px rgba(255,45,120,0)}100%{box-shadow:0 0 0 0 rgba(255,45,120,0)}}
+  @media (prefers-reduced-motion:reduce){.live__dot{animation:none}}
+  .live__k{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--pink)}
+  .live__q{font-family:var(--display);font-size:18px;text-transform:uppercase}
+  .live__t{font-family:var(--mono);font-size:13px;color:var(--yellow);font-variant-numeric:tabular-nums}
+  .live__go{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+  .live__go i{font-style:normal;color:var(--yellow)}
+
   /* =================================================== THE LIVE CARDS ==
      Biggest pool and closing soon, side by side; the second wears pink and
      a clock the script below ticks down from the market's real deadline. */
@@ -1221,6 +1240,7 @@
           <a class="door" href="https://x.com/intent/post?text=%40oddiefun%20"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-x"/></svg><span class="door__t"><b>@oddiefun</b><small>under any post on X</small></span></a>
           <a class="door" href="https://t.me/oddiefunbot"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-telegram"/></svg><span class="door__t"><b>@oddiefunbot</b><small>in any Telegram group</small></span></a>
         </div>
+        <!--LIVESTRIP-->
         <!-- THE "WORKS ON X / TELEGRAM SOON / DISCORD SOON" ROW IS GONE.
              Both halves already existed elsewhere: X is named in the hero
              sentence directly above ("under any argument on X"), and the

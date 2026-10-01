@@ -394,6 +394,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
    does not. The tabs measured 23px tall at 375. */
 .top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
 
+/* TWO COLUMNS ON A WIDE SCREEN. At 1280 the list was one 860px column with
+   the rest of the screen empty, so four markets needed two screens. Cards pair
+   up; everything that is not a market card (the waiting rows, the invite, an
+   empty or error state) keeps the full width. */
+@media (min-width:1000px){
+  :root{--shell:1180px}
+  #view{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:26px;align-items:start}
+  #view > :not(.card),#view > .card--invite{grid-column:1/-1}
+}
+
 /* The three doors in the invite card, the same three as the landing. */
 .invite__doors{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
 .invite__doors a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 14px 8px 9px;

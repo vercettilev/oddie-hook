@@ -108,6 +108,22 @@ console.log("\nsmall things a stranger reads wrong");
   check("signed out, the profile does not offer the same two doors twice", /if \(!x && !tg\) return;/.test(you));
 }
 
+console.log("\nlive strip, the other side, two columns");
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  check("the hero has a live strip slot, filled by the server", /<!--LIVESTRIP-->/.test(landing)
+    && /\.replace\("<!--LIVESTRIP-->", liveStrip\)/.test(server));
+  check("...from the same closing-soon market as the card, with the same clock",
+    /liveStrip = '<a class="live" href="' \+ href\(soon\.m\)/.test(server) && /class="live__t clock" data-at="/.test(server));
+  check("the receipt asks for the other side, in words that stay true",
+    /pays when somebody <em>takes \$\{otherSide\.toUpperCase\(\)\}<\/em>/.test(chain)
+    && /is <em>more for your \$\{side\.toUpperCase\(\)\}<\/em>/.test(chain));
+  check("...with X, Telegram and a copied link", /id="chainshare"/.test(chain) && /t\.me\/share\/url\?url=/.test(chain) && /id="chaincopy"/.test(chain));
+  check("a wide screen lays markets in two columns, and nothing else is squeezed",
+    /@media \(min-width:1000px\)\{[\s\S]*?#view\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(list)
+    && /#view > :not\(\.card\),#view > \.card--invite\{grid-column:1\/-1\}/.test(list));
+}
+
 console.log("\nthe opener's share, without arithmetic");
 {
   check("an even split reads as half of it", /\? "<b>half<\/b> of it to "/.test(page));

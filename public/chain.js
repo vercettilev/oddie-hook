@@ -1522,6 +1522,8 @@ function b64ToBytes(b64) {
              feeling from joining, and the pool totals here are the ones from
              BEFORE this bet, so the test is exact rather than flattering. */
           const wasEmpty = (yesLamports + noLamports) === 0;
+          const otherSide = side === "yes" ? "no" : "yes";
+          const otherEmpty = (side === "yes" ? noLamports : yesLamports) === 0;
           body.innerHTML = `${confirmed ? `
             <div class="rcpt rcpt--${side}">
               <p class="rin">
@@ -1541,7 +1543,22 @@ function b64ToBytes(b64) {
             </div>`
             : `<h3>Sent</h3>
             <p class="cnote">${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.</p>`}
-            <a class="cbtn cbtn--share" id="chainshare" href="#" rel="noopener">Post your call</a>
+            <!-- BRING THE OTHER SIDE (Lev, 1 Oct). Pari-mutuel: a YES only pays
+                 out of NO money, so the one useful thing to do after a bet is
+                 fetch somebody who disagrees. Said as exactly that, true for
+                 an empty other side and for a taken one, with the three places
+                 an argument actually lives. -->
+            <div class="bring">
+              <p class="bring__h">${otherEmpty
+                ? `Your ${side.toUpperCase()} pays when somebody <em>takes ${otherSide.toUpperCase()}</em>.`
+                : `Every ${otherSide.toUpperCase()} is <em>more for your ${side.toUpperCase()}</em>.`}</p>
+              <p class="bring__p">Send it to whoever said you were wrong.</p>
+              <div class="bring__row">
+                <a class="bring__x" id="chainshare" href="#" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg>Post</a>
+                <a id="chaintg" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#26A5E4"/><path fill="#fff" d="M5.5 11.6l11-4.3c.5-.2 1 .1.8.9l-1.9 8.9c-.1.6-.5.8-1 .5l-2.9-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.2-.9z"/></svg>Telegram</a>
+                <button type="button" id="chaincopy">Copy link</button>
+              </div>
+            </div>
             <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
             <div id="chainname"></div>
             <div id="chainnotify"></div>
@@ -1602,6 +1619,16 @@ function b64ToBytes(b64) {
                desktop it opens the composer with the post already written. */
             a.href = `https://x.com/intent/tweet?text=${encodeURIComponent(`${text} ${url}`)}`;
             a.target = "_blank";
+            // Telegram's own share sheet: pick a chat, the link and the call go in.
+            const tg = body.querySelector("#chaintg");
+            if (tg) tg.href = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+            // And the link alone, for a Kick chat, a DM, anywhere else.
+            const cp = body.querySelector("#chaincopy");
+            if (cp) cp.onclick = () => {
+              const done = () => { cp.textContent = "Copied"; setTimeout(() => { cp.textContent = "Copy link"; }, 1800); };
+              if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => { window.prompt("Copy this link", url); });
+              else window.prompt("Copy this link", url);
+            };
           }
           // THE RECEIPT MOMENT. The one place X is asked for on the cold path,
           // and the only moment it has something to sell: the call just landed,
