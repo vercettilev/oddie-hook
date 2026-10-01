@@ -1,6 +1,5 @@
 import { C, FONT, META, textWidth, esc } from "./renderCard.js";
 import { logoMark } from "./logoMark.js";
-import { X_HANDLE } from "../brand.js";
 
 // The unfurl image: what X, iMessage and Slack show when anyone posts a bare
 // oddie.fun link. Every other card here is drawn per market; this one is the
@@ -35,13 +34,17 @@ const CONTENT_W = COL_R - PAD_L;
    a market at all, and that is the half no competitor can copy. Anyone sharing
    oddie.fun on X sees this rectangle before they see a word of the page, so it
    says the same thing the page does or the page argues with itself. */
-const HEAD = ["the people\u2019s", "prediction market."];
+/* 1 OCT: THE ONE-LINER, AND EVERY DOOR. "the people's prediction market"
+   moves to the sub line as the category, and "tag @oddiefun on X" went with
+   the X-only story: the unfurl now names Kick and Telegram too, because a
+   link shared from a stream or a group should not describe a Twitter bot. */
+export const HEAD = ["every argument", "is a market."];
 const HEAD_FS_MAX = 82;
 const CAP = 0.72;
 
 /** The mechanic, then the claim. "no listing desk" is the differentiator stated
  *  the shortest way it can be: every rival runs one, one of them by law. */
-const SUB = [`tag ${X_HANDLE} on X.`, "no listing desk."];
+export const SUB = ["call it on kick, x or telegram.", "the people\u2019s prediction market."];
 const SUB_FS = 26;
 
 /** A chip: the yes/no pair is the fastest way to say "prediction market"

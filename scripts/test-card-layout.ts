@@ -11,7 +11,7 @@ import {
   renderCard, textWidth, layoutQuestion, volumePill, LOCKUP_RIGHT, C,
   pick, INVITE_POOL, BADGE_POOL, VOICE_ANY, VOICE_UNPRICED,
 } from "../src/card/renderCard.js";
-import { renderBanner } from "../src/card/renderBanner.js";
+import { renderBanner, HEAD as BANNER_HEAD } from "../src/card/renderBanner.js";
 import { renderPositionCard } from "../src/card/renderPositionCard.js";
 import { renderProfileCard } from "../src/card/renderProfileCard.js";
 import { renderTeachCard } from "../src/card/renderTeachCard.js";
@@ -251,7 +251,8 @@ console.log("\nthe images we post match the app people land in");
 
   const banner = renderBanner();
   check("the banner is painted in the brand accent", banner.includes(`fill="${C.accent}"`));
-  check("...and carries the handle as an instruction", banner.includes(`tag ${X_HANDLE} on X.`));
+  check("...and names every door, not only X", /call it on kick, x or telegram\./.test(banner));
+  check("...under the one-liner", banner.includes(">every argument<") && banner.includes(">is a market.<"));
   // The mark is an inlined base64 PNG, and base64's alphabet spells "NaN" by
   // chance often enough that scanning the raw string for it is meaningless.
   const geom = banner.replace(/href="data:[^"]*"/g, 'href="…"');
@@ -260,7 +261,7 @@ console.log("\nthe images we post match the app people land in");
   // The headline is auto-sized to its column; re-measure the shipped size the
   // way the renderer did and prove it stops short of the leftmost chip.
   const headFS = Number(geom.match(/<text font-size="(\d+)" font-weight="700"/)?.[1] ?? 0);
-  const headRight = 70 + Math.max(...["turn arguments", "into markets."].map((l) => textWidth(l, headFS)));
+  const headRight = 70 + Math.max(...BANNER_HEAD.map((l) => textWidth(l, headFS)));
   check("...and the headline clears the yes/no chips", headFS > 0 && headRight <= 618 - 24,
     `headline right edge ${Math.round(headRight)} at ${headFS}px vs chips at 618`);
 
@@ -271,7 +272,9 @@ console.log("\nthe images we post match the app people land in");
     const html = readFileSync(new URL(`../public/${page}.html`, import.meta.url), "utf8");
     const imgs = [...html.matchAll(/(?:og:image|twitter:image)" content="([^"]+)"/g)].map((m) => m[1]);
     check(`${page}.html ships both image tags`, imgs.length === 2, JSON.stringify(imgs));
-    check(`...and both are the rendered banner`, imgs.every((u) => u.endsWith("/og.png")), JSON.stringify(imgs));
+    // A ?v= is allowed: X caches an unfurl image by URL, so a redrawn banner
+    // needs a new one to be seen at all.
+    check(`...and both are the rendered banner`, imgs.every((u) => /\/og\.png(\?v=\d+)?$/.test(u)), JSON.stringify(imgs));
   }
 }
 

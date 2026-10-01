@@ -189,6 +189,8 @@
   border:2px solid var(--ink,#0B0D04);padding:9px 13px;cursor:pointer;
 }
 .chain-chip:hover{background:#F1F3E4}
+/* The dollar line under an amount: quieter than the SOL, which is what moves. */
+.chain-chip__usd{display:block;margin-top:2px;font-size:10.5px;font-weight:700;opacity:.62}
 .chain-chip[aria-pressed="true"],.chain-chip.on{
   background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4)}
 .chain-chip:focus-visible{outline:3px solid var(--pink,#FF2D78);outline-offset:3px}

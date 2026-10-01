@@ -95,6 +95,19 @@ console.log("\ndollars beside SOL, never invented");
   _setPriceFeed(null);
 }
 
+console.log("\nsmall things a stranger reads wrong");
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  const board = readFileSync("public/app/leaderboard.html", "utf8");
+  const you = readFileSync("public/app/you.html", "utf8");
+  check("the money sheet's amounts carry dollars when a price is known",
+    /chain-chip__usd/.test(chain) && /if \(!\(r > 0\) \|\| !\(sol > 0\)\) return "";/.test(chain));
+  check("...from the price the page already read", /window\.ODDIE_SOL_USD = SOL_USD;/.test(list) && /window\.ODDIE_SOL_USD = SOL_USD;/.test(page));
+  check("a settled line at zero says refunded, not '0 SOL'", /Number\(p\.pnlSol\) === 0 \? "refunded"/.test(board));
+  check("...and a wallet with no name is 'a caller', not half an address", /: "a caller";/.test(board));
+  check("signed out, the profile does not offer the same two doors twice", /if \(!x && !tg\) return;/.test(you));
+}
+
 console.log("\nthe opener's share, without arithmetic");
 {
   check("an even split reads as half of it", /\? "<b>half<\/b> of it to "/.test(page));

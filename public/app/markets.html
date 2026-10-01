@@ -852,6 +852,8 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          product to a stranger, here it is inventory to somebody already in. */
       all = ms;
       SOL_USD = typeof j.solUsd === "number" ? j.solUsd : null;
+      // The money sheet (chain.js) reads the same price for its amount chips.
+      window.ODDIE_SOL_USD = SOL_USD;
       draw(ms, false);
       setFilterVisibility();
 

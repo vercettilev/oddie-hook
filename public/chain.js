@@ -27,6 +27,15 @@
      OddieChain.presets rather than printing its own, so the sheet and the page
      can never disagree about what a bet costs. */
   const PRESETS = [0.1, 0.5, 1];
+  /* DOLLARS UNDER EACH AMOUNT, display only (money reads in USD, settles in
+     SOL). The page that opens the sheet sets window.ODDIE_SOL_USD from the
+     server's cached price; with no price, the chip says SOL and nothing else. */
+  const usdOf = (sol) => {
+    const r = Number(window.ODDIE_SOL_USD);
+    if (!(r > 0) || !(sol > 0)) return "";
+    const v = sol * r;
+    return v < 1 ? "&lt;$1" : "$" + Math.round(v).toLocaleString("en-US");
+  };
 
   /**
    * The network, from the server, never guessed here.
@@ -1174,7 +1183,7 @@ function b64ToBytes(b64) {
           <button class="chain-side" data-side="no" type="button">NO</button>
         </div>
         <div class="chain-amt-row">
-          ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p} SOL</button>`).join("")}
+          ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p} SOL${usdOf(p) ? `<small class="chain-chip__usd">&asymp; ${usdOf(p)}</small>` : ""}</button>`).join("")}
           <button class="chain-chip chain-chip--other" data-sol="custom" type="button">Other</button>
         </div>
         <input class="chain-amt" type="number" min="0.001" step="0.001" placeholder="SOL amount" inputmode="decimal" hidden>

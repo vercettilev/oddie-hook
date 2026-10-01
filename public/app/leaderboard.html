@@ -357,7 +357,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
       + '<img src="/avatars/' + esc(person.avatar) + '.webp" alt="" width="22" height="22">' + label + "</a>";
   }
   function personLine(p, won, me) {
-    var name = p.handle ? "@" + esc(p.handle) : esc(p.short);
+    /* A WALLET WITH NO NAME IS "a caller", not "H3aQ...8ej9". Half a base58
+       string reads as a system id, not a person, and the link still goes to
+       that wallet's page for anyone who wants the address. */
+    var name = p.handle ? "@" + esc(p.handle) : "a caller";
     var mine = me && p.handle && p.handle.toLowerCase() === me;
     /* THE PRICE THEY TOOK IT AT IS THE WHOLE POINT and it is why this is not a
        results table. "Right" is cheap; "right at 24% while the room said no" is
@@ -368,7 +371,12 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         : "<a href=\"/w/" + encodeURIComponent(p.wallet) + "\">" + name + "</a>") + "</b>"
       + "<span>took " + esc(String(p.side).toUpperCase())
       + (typeof p.entryPct === "number" ? " at " + p.entryPct + "%" : "") + "</span>";
-    if (p.pnlSol !== null && p.pnlSol !== undefined) bits += "<i>" + esc(sol(p.pnlSol)) + "</i>";
+    /* ZERO IS A REFUND, AND SAYS SO. A market nobody took the other side of
+       gives everybody their money back, and "Right ... 0 SOL" read as being
+       right and winning nothing. */
+    if (p.pnlSol !== null && p.pnlSol !== undefined) {
+      bits += "<i>" + (Number(p.pnlSol) === 0 ? "refunded" : esc(sol(p.pnlSol))) + "</i>";
+    }
     return '<li data-v="' + (won ? "r" : "w") + '"' + (mine ? " data-you" : "") + ">" + bits + "</li>";
   }
   function moment(m, me) {

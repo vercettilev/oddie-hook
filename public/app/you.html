@@ -661,6 +661,10 @@ a.acts__q:hover{color:var(--fg);text-decoration:underline;text-underline-offset:
     var accts = (me && me.accounts) || [];
     var x = accts.filter(function (a) { return a.provider === "twitter"; })[0];
     var tg = accts.filter(function (a) { return a.provider === "telegram"; })[0];
+    /* SIGNED OUT, THE SIGN-IN CARD ABOVE ALREADY OFFERS BOTH. This row then
+       repeated "Add X / Add Telegram" under "Continue with X / Telegram": the
+       same two doors twice on one screen. It is for adding the SECOND name. */
+    if (!x && !tg) return;
     var at = function (h) { return "@" + esc(String(h).replace(/^@+/, "")); };
     row.innerHTML = (x
       ? '<span class="acct">X <b>' + (x.handle ? at(x.handle) : "connected") + "</b></span>"

@@ -872,7 +872,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   }
 
   function render(m) {
-    if (typeof m.solUsd === "number") SOL_USD = m.solUsd;
+    if (typeof m.solUsd === "number") { SOL_USD = m.solUsd; window.ODDIE_SOL_USD = SOL_USD; }
     var poolNow = null;   // okunabilir ve dolu bir havuz varsa asagida doluyor
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
     var resolved = Boolean(m.resolved && m.outcome);
