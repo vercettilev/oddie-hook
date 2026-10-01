@@ -361,8 +361,8 @@ function matrixSvg(m: Matrix, box: { x: number; y: number; w: number; h: number 
      and printed over each other. */
   const lab = (t: string, lx: number, ly: number, anchor: string, up = false) =>
     `<text x="${lx}" y="${ly}" text-anchor="${anchor}"${up ? ` transform="rotate(-90 ${lx} ${ly})"` : ""} font-family="${BODY}" font-size="22" font-weight="700" letter-spacing="3" fill="${quiet}">${esc(t.toUpperCase())}</text>`;
-  out.push(lab(m.y[0], x + 40, y + h - 70, "start", true));
-  out.push(lab(m.y[1], x + 40, y + 26, "end", true));
+  out.push(lab(m.y[0], x + 40, y + h * 0.72, "middle", true));
+  out.push(lab(m.y[1], x + 40, y + h * 0.27, "middle", true));
   out.push(lab(m.x[0], x + 66, y + h - 24, "start"));
   out.push(lab(m.x[1], x + w - 26, y + h - 24, "end"));
   for (const p of m.points) {
@@ -375,7 +375,7 @@ function matrixSvg(m: Matrix, box: { x: number; y: number; w: number; h: number 
       out.push(`<text x="${left ? px - 40 : px + 40}" y="${py + 16}" text-anchor="${left ? "end" : "start"}" font-family="${DISPLAY}" font-size="48" fill="${ink}">${esc(p.name.toUpperCase())}</text>`);
     } else {
       out.push(`<circle cx="${px}" cy="${py}" r="13" fill="${ink}" fill-opacity=".72"/>`);
-      out.push(`<text x="${left ? px - 26 : px + 26}" y="${py + 10}" text-anchor="${left ? "end" : "start"}" font-family="${BODY}" font-size="30" font-weight="700" fill="${ink}" fill-opacity=".86">${esc(p.name)}</text>`);
+      out.push(`<text x="${left ? px - 26 : px + 26}" y="${py + 10}" text-anchor="${left ? "end" : "start"}" font-family="${BODY}" font-size="28" font-weight="700" fill="${ink}" fill-opacity=".86">${esc(p.name)}</text>`);
     }
   }
   return out.join("");
@@ -664,265 +664,193 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
 const D = C.black, L = C.cream;
 const Y = C.yellow, I = C.ink;
 export const SLIDES: Slide[] = [
-  /* THE ORDER IS THE INVESTOR'S, NOT OURS (1 Oct 2026). The deck had no market
-     size, no traction and no competition slide, the three an investor looks
-     for first and reads as hidden when they are missing. It now runs problem,
-     solution, proof, opportunity, team, ask, with three appendix slides for
-     the questions after. Every outside figure carries its source on the slide;
-     every estimate says it is one. */
+  /* THE INVESTOR'S ORDER (1 Oct 2026): problem, solution, proof, opportunity,
+     team, ask, then the appendix. AS LITTLE TEXT AS POSSIBLE (Lev, same day):
+     one idea a slide, numbers over sentences, every outside figure sourced in
+     the bottom line, every estimate marked. */
   {
-    /* THE COVER IS THE VISION, NOT THE INTEGRATIONS (Lev). The doors arrive on
-       slide three, where they are the mechanism. The second line is the party
-       test: what happens, in words anybody gets. */
     label: "", bg: Y, ink: I,
     head: "Every argument is a market.",
-    body: ["The people’s prediction market.", "Tag Oddie under any claim, in any chat. It becomes a real-money market in seconds."],
+    body: ["The people’s prediction market."],
     foot: "Lev, founder   ·   oddie.fun   ·   @oddiefun",
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
   },
   {
-    /* Each argument is the one native to its room, marked with that room. The
-       BTC one is the market Kick actually opened on 29 Sep. */
+    /* Each argument is the one native to its room. The BTC one is the market
+       Kick actually opened on 29 Sep. */
     label: "The problem", bg: D, ink: L,
-    head: "The bets people argue about every day are the ones nobody lists.", headSize: 98,
+    head: "Nobody lists the bets\npeople argue about.", headSize: 112,
     ghosts: [
       { text: "does Adin Ross break Kick’s viewer record this month?", logo: "kick" },
       { text: "btc 88k by friday?", logo: "x" },
       { text: "is $ORE at 50m by the end of the month?", logo: "telegram" },
     ],
-    foot: "$45.33B traded on Kalshi and Polymarket in August 2026, on markets each of them chose. Kick averaged over 900K viewers that month, every chat arguing.",
-    sources: "Sources: The Block, 2 Sep 2026 (volume) · Polymarket docs (users cannot create markets) · Streams Charts, 2 Sep 2026 (Kick viewers)",
-    /* NO STICKER: the headline, three rooms and a sourced foot need the full
-       width, and beside the art the foot ran into the sources line. */
+    foot: "Kalshi and Polymarket: $45B in August 2026, every market picked by a desk.",
+    sources: "The Block, 2 Sep 2026 · Polymarket docs",
   },
   {
-    /* "CALL IT", BECAUSE ON KICK NOBODY TAGS: they type !oddie. The doors are
-       listed by what a person actually types in each. */
     label: "The solution", bg: Y, ink: I,
-    head: "Call it in the chat and it is a live market on Solana in 24 seconds.", headSize: 100,
-    body: ["It settles itself: 0 wrong in 25 oracle runs. Whoever opens it earns 2% of the pool."],
+    head: "Call it in chat.\nIt’s a market in 24 seconds.", headSize: 110,
     rows: [
-      { tag: "Kick", logo: "kick", text: "Type !oddie and a claim in a stream’s chat." },
-      { tag: "X", logo: "x", text: "Tag @oddiefun under any claim." },
-      { tag: "Telegram", logo: "telegram", text: "Reply to any message with @oddiefunbot." },
+      { tag: "Kick", logo: "kick", text: "!oddie + the claim" },
+      { tag: "X", logo: "x", text: "@oddiefun" },
+      { tag: "Telegram", logo: "telegram", text: "@oddiefunbot" },
     ],
+    foot: "It settles itself. The opener earns 2%.",
     sticker: "st-called", stickerBox: { x: 1300, y: 500, w: 560, h: 520 },
   },
   {
-    /* WHAT IS ON IT HAPPENED: 29 September, the oddiefun channel, the claim
-       typed in Turkish, the market created at 21:43:30 UTC as "BTC to $88k by
-       Friday?". Lev typed it himself, so the slide says the chat called it,
-       never that a stranger did.
-       THE RESULT IS DASHED BECAUSE IT HAS NOT HAPPENED. The market closes on 2
-       October; close the stroke (done: true) the day Oddie posts it. */
+    /* WHAT IS ON IT HAPPENED: 29 Sep, the oddiefun channel, the claim typed in
+       Turkish, the market created at 21:43:30 UTC. Lev typed it himself.
+       THE RAIL IS DASHED UNTIL 2 OCT; close it (done: true) with the result. */
     label: "The product", bg: D, ink: L,
-    head: "A streamer gets paid for arguments their chat was having anyway.", headSize: 100,
+    head: "The stream earns from\nits chat’s arguments.", headSize: 110,
     flow: [
-      {
-        tick: "29 Sep, Kick chat",
-        by: "oddiefun, live",
-        quote: "!oddie BTC cumaya kadar 88k olur mu?",
-        cap: "Typed in Turkish, live on stream.",
-      },
-      {
-        tick: "21:43:30 UTC",
-        by: "Oddie, in the chat",
-        quote: "Market open: ‘BTC to $88k by Friday?’ Take YES or NO: app.oddie.fun/m/…",
-        cap: "Opened in English, in the same chat.",
-      },
-      {
-        tick: "The stream",
-        head: "2%",
-        sub: "of the pool, to the channel",
-        cap: "Whichever side wins.",
-      },
+      { tick: "29 Sep, Kick chat", by: "oddiefun, live", quote: "!oddie BTC cumaya kadar 88k olur mu?" },
+      { tick: "21:43:30 UTC", by: "Oddie, in the chat", quote: "Market open: ‘BTC to $88k by Friday?’ Take YES or NO" },
+      { tick: "The stream", head: "2%", sub: "of the pool, to the channel" },
     ],
-    rail: {
-      tag: "2 Oct 23:59 UTC",
-      mark: "in the chat",
-      text: "The deadline hits. Oddie settles it and posts the result in the chat.",
-    },
+    rail: { tag: "2 Oct 23:59 UTC", mark: "in the chat", text: "Oddie settles it in the chat." },
   },
   {
-    /* BOTTOM-UP, AND THE BIG NUMBER IS THE SMALLEST. The headline is the
-       1,000-room line because that is the arithmetic a reader can redo:
-       1,000 x 10 markets a week x $300 x 52 = $156M of volume, 2% of it $3.1M.
+    /* 1,000 x 10 markets a week x $300 x 52 = $156M of volume; 2% is $3.1M.
        The SAM is the same sum over the 91,000 Kick channels that streamed to
-       an audience in August, with X and Telegram left out. */
+       an audience in August. */
     label: "Market size", bg: L, ink: I,
-    head: "1,000 of the 91,000 Kick channels with an audience, opening 10 markets a week, is a $3.1M business.", headSize: 92,
+    head: "1,000 Kick rooms make\n$3.1M a year.", headSize: 130,
     stats: [
-      { big: "$544B", small: "a year of prediction-market volume (TAM, Aug 2026 run rate)" },
-      { big: "$284M", small: "2% of 10 markets a week in 91,000 Kick rooms (SAM, est.)" },
-      { big: "$3.1M", small: "2% of 10 markets a week in 1,000 rooms (SOM, est.)" },
+      { big: "$544B", small: "prediction-market volume a year" },
+      { big: "$284M", small: "SAM: 91,000 Kick rooms (est.)" },
+      { big: "$3.1M", small: "SOM: 1,000 rooms (est.)" },
     ],
-    foot: "Why now: a model writes and settles the rules in seconds, and a market costs $0.31 to open. Kalshi is valued at $22B for running that desk by hand.",
-    sources: "Sources: The Block, 2 Sep 2026 (August volume) · Streamer.Guide on Streams Charts data, 27 Sep 2026 (91,000 Kick channels averaging 5+ viewers) · The Block (Kalshi $22B). Estimates assume $300 pools.",
+    foot: "Why now: a model writes and settles the rules. A market costs $0.31 to open.",
+    sources: "The Block, Sep 2026 · Streams Charts via Streamer.Guide, Sep 2026 · est.: 10 markets a week, $300 pools, 2%",
   },
   {
-    /* HONEST, BECAUSE THE READER CHECKS. Nothing here is growing yet and the
-       slide says so in its own headline; what it shows instead is the speed of
-       shipping and the demand the founder has already drawn once. */
     label: "Traction", bg: Y, ink: I,
-    head: "Three doors went live on mainnet within three weeks. Outside money is the next proof.", headSize: 96,
+    head: "Three doors live in three weeks.", headSize: 130,
     rows: [
-      { tag: "8 Sep", text: "Mainnet. The market program goes live on Solana." },
-      { tag: "20 Sep", logo: "x", text: "X. @oddiefun opens markets from tags." },
-      { tag: "26 Sep", logo: "telegram", text: "Telegram. @oddiefunbot in groups and DMs." },
-      { tag: "30 Sep", logo: "kick", text: "Kick. !oddie in a stream’s chat." },
+      { tag: "8 Sep", text: "Mainnet" },
+      { tag: "20 Sep", logo: "x", text: "X" },
+      { tag: "26 Sep", logo: "telegram", text: "Telegram" },
+      { tag: "30 Sep", logo: "kick", text: "Kick" },
     ],
-    foot: "30 Sep 2026: 18 markets, 2 staking wallets, 1.82 SOL pooled, mostly founder tests. No metric is growing yet; the founder’s last product drew a 45,000 waitlist.",
-    sticker: "st-cooking", stickerBox: { x: 1340, y: 560, w: 500, h: 440 },
+    foot: "30 Sep: 18 markets, 1.82 SOL, mostly our tests. Outside money is next.",
+    sticker: "st-cooking", stickerBox: { x: 1340, y: 520, w: 500, h: 460 },
   },
   {
-    /* THE RATE, THE COST AND WHAT ONE ROOM IS WORTH. A rate with no volume
-       leaves the reader to guess; the estimates are labelled as estimates and
-       their one assumption is in the foot. LTV/CAC: $3,120 a year against the
-       test's $500 over 3 rooms, about $167 a room. */
+    /* $3,120 a year a room (10 x $300 x 2% x 52) against $167 to win one ($500
+       test budget over 3 rooms): about 19x. */
     label: "Business model", bg: D, ink: L,
-    head: "Anyone opens a market. Oddie keeps 2% of every pool it settles.", headSize: 100,
-    body: ["Free while open. At settlement 4% of the pool: 2% to whoever opened it, 2% to Oddie."],
+    head: "Oddie keeps 2% of every pool.", headSize: 130,
     stats: [
-      { big: "$0.31", small: "to open a market on Solana" },
-      { big: "$3,120", small: "a year from one room (est.)" },
-      { big: "19x", small: "LTV to CAC, $167 to win a room (est.)" },
+      { big: "$0.31", small: "to open a market" },
+      { big: "$3,120", small: "a room, a year (est.)" },
+      { big: "19x", small: "LTV/CAC (est.)" },
     ],
-    foot: "Estimates assume 10 markets a week per room at $300 pools. 100 rooms in 12 months is a $310K run rate; 1,000 rooms in 24 months is $3.1M.",
+    foot: "4% of the pool at settlement: 2% to the opener, 2% to Oddie.",
   },
   {
-    /* TWO FUNDED RIVALS ALREADY LET ANYONE OPEN A MARKET ON X, so that is not
-       the difference any more and the slide does not pretend it is. The
-       difference is the room: a stream channel earns from every market its
-       chat opens. */
     label: "Competition", bg: L, ink: I,
-    head: "Others let anyone open a market on X. Only Oddie lives in live rooms and pays the room.", headSize: 92,
+    head: "Only Oddie lives in the room\nand pays it.", headSize: 110,
     rows: [
-      { tag: "Desk", text: "Kalshi, Polymarket: their own team picks every market." },
-      { tag: "Worm", text: "Anyone creates, 2.5% creator fee, UMA settlement. $4.5M pre-seed." },
-      { tag: "Kash", text: "Markets from X posts via @kash_bot. $2M pre-seed." },
-      { tag: "Oddie", text: "Kick streams, Telegram groups and X. The channel earns from every market its chat opens." },
+      { tag: "Desk", text: "Kalshi, Polymarket" },
+      { tag: "Worm", text: "$4.5M · anyone opens · 2.5% fee" },
+      { tag: "Kash", text: "$2M · X bot" },
+      { tag: "Oddie", text: "Kick, Telegram, X · the room earns" },
     ],
-    foot: "The moat is installed rooms with a payout history. A copy starts at zero rooms.",
+    foot: "Moat: rooms with a payout history.",
     matrix: {
-      x: ["In their app", "In the chat"],
-      y: ["A desk lists", "Anyone opens"],
+      x: ["Their app", "The chat"],
+      y: ["A desk", "Anyone"],
       points: [
-        { name: "Kalshi", x: 0.06, y: 0.08 },
-        { name: "Polymarket", x: 0.1, y: 0.26 },
+        { name: "Kalshi", x: 0.12, y: 0.08 },
+        { name: "Polymarket", x: 0.02, y: 0.32 },
         { name: "Worm", x: 0.2, y: 0.82 },
         { name: "Kash", x: 0.62, y: 0.68 },
         { name: "Oddie", x: 0.92, y: 0.92, me: true },
       ],
     },
-    sources: "Sources: Polymarket docs · Solana Compass (Worm) · BeInCrypto (Kash)",
+    sources: "Polymarket docs · Solana Compass · BeInCrypto",
   },
   {
     label: "Go-to-market", bg: D, ink: L,
-    head: "Every streamer is a room, and we sign rooms one DM at a time.", headSize: 100,
+    head: "We sign rooms\none DM at a time.", headSize: 130,
     steps: ["DM", "First stream", "First market", "Fourth stream"],
     rows: [
-      { tag: "Who", text: "Kick crypto, trading and just-chatting channels with 50 to 2,000 viewers." },
-      { tag: "How", text: "20 DMs a day. Join the first stream; the chat opens the first market." },
-      { tag: "Seed", text: "$500 seeds both sides of early pools. Target: 3 rooms in 2 weeks." },
-      { tag: "Pass", text: "Stakers reach 2% of chatters and the median pool hits $100." },
+      { tag: "Who", text: "Kick channels, 50 to 2,000 viewers" },
+      { tag: "Seed", text: "$500 · 3 rooms in 2 weeks" },
+      { tag: "Pass", text: "2% of chat stakes · $100 median pool" },
     ],
-    foot: "The round pays creators to open markets and takes the test to 100 rooms.",
   },
   {
-    /* NO PRONOUN. The founder is named and faced; the copy says what was built
-       and what happened, which is the part a reader is buying. */
+    /* NO PRONOUN: the founder is named and faced. */
     label: "The team", bg: L, ink: I,
-    head: "A solo founder who built all of Oddie, and grew the last product to a 45,000 waitlist.", headSize: 84,
-    body: ["Built end to end: Solana program, oracle, three bots, app. 678 commits since 14 July."],
+    head: "Built all of Oddie.\nGrew the last one to 45,000.", headSize: 100,
     who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
     stats: [
       { big: "45,000", small: "waitlist, last product" },
       { big: "600", small: "weekly beta users" },
     ],
-    foot: "The last product lost its store when Chrome banned the category. Next hire: a growth co-founder for streamer and creator deals.",
-    sources: "Source: Chrome Web Store policy update, prediction-market extensions banned from 1 Aug 2026",
+    foot: "Chrome banned the last one’s category. Hiring: a growth co-founder.",
+    sources: "Chrome Web Store policy, Aug 2026",
   },
   {
-    /* AN ALLOCATION IS NOT A MILESTONE, so the milestones sit under it: the
-       round buys an answer, and this is what the answer looks like. */
     label: "The ask", bg: C.pinkField, ink: C.cream,
     head: "$100,000", headSize: 196,
-    body: ["Buys the answer: do streamers and groups bring their rooms?"],
+    body: ["To learn if streamers bring their rooms."],
     rows: [
-      { tag: "30%", text: "Streamers and creators, paid to open markets." },
-      { tag: "60%", text: "Founder, twelve months full time." },
-      { tag: "10%", text: "Infra." },
+      { tag: "30%", text: "Creators" },
+      { tag: "60%", text: "Founder, 12 months" },
+      { tag: "10%", text: "Infra" },
     ],
-    foot: "Milestones: 10 outside rooms, 3 markets per room a week, one $1,000 pool, no room lost in 4 weeks. Next round: Q1 2027.",
+    foot: "Goal: 10 rooms, one $1,000 pool. Next round: Q1 2027.",
     narrow: true,
   },
   {
-    /* THE FRAME CLOSES ON THE COVER'S LINE, and the one number to remember is
-       the speed: 24 seconds, snowflake arithmetic anyone can redo (appendix). */
     label: "", bg: Y, ink: I,
     head: "Every argument\nis a market.", headSize: 128,
-    body: ["Try it: !oddie on Kick, @oddiefun on X, @oddiefunbot on Telegram.", "lev@oddie.fun   ·   oddie.fun"],
-    stats: [{ big: "24 SEC", small: "from a chat line to a live market" }],
+    body: ["!oddie · @oddiefun · @oddiefunbot", "lev@oddie.fun"],
+    stats: [{ big: "24 SEC", small: "from chat to market" }],
     sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
   },
   {
-    /* APPENDIX A1. The machine running unattended, end to end. Both accounts
-       on this market were Lev's, so it proves the loop, not demand. The 24
-       seconds is snowflake arithmetic: 2099850003501969749 at 13:17:08.818Z,
-       2099850105037926466 at 13:17:33.026Z. The card is the one that was
-       posted, frozen in brand/. */
+    /* APPENDIX. The 24 seconds is snowflake arithmetic: 2099850003501969749 at
+       13:17:08.818Z, 2099850105037926466 at 13:17:33.026Z. Both accounts were
+       Lev's, so it proves the loop, not demand. The card is the one posted. */
     label: "Appendix · Proof", bg: L, ink: I,
     head: "It runs itself.",
     aside: ["Nobody typed it in.", "Nobody closed it."],
     flow: [
-      {
-        tick: "13:17:08",
-        by: "Giga Chad",
-        quote: "$BULLSHIT hits a 1m market cap within 3 days. screenshot this. @oddiefun",
-      },
-      {
-        tick: "13:17:33", gapLabel: "24 sec",
-        img: "step-market.png",
-      },
-      {
-        tick: "On chain",
-        head: "Real SOL",
-        sub: "held until the deadline",
-        note: "562CXadj…SRE6rc1D7",
-      },
+      { tick: "13:17:08", by: "Giga Chad", quote: "$BULLSHIT hits a 1m market cap within 3 days. screenshot this. @oddiefun" },
+      { tick: "13:17:33", gapLabel: "24 sec", img: "step-market.png" },
+      { tick: "On chain", head: "Real SOL", sub: "held until the deadline", note: "562CXadj…SRE6rc1D7" },
     ],
-    rail: {
-      tag: "18 Sep 13:17 UTC",
-      mark: "NO",
-      text: "It read the price history, answered NO, and replied under the tweet.",
-      done: true,
-    },
+    rail: { tag: "18 Sep 13:17 UTC", mark: "NO", text: "It read the price history and answered NO.", done: true },
   },
   {
     label: "Appendix · Roadmap", bg: Y, ink: I,
     head: "It goes wherever people argue.",
     rows: [
-      { tag: "Now", text: "Kick, X and Telegram. Live, with real money in it." },
-      { tag: "Next", text: "Twitch. The same engine, one more door." },
-      { tag: "Then", text: "A streamer’s own game, settled from the screen." },
-      { tag: "After", text: "Discord, and any app with one key." },
+      { tag: "Now", text: "Kick, X, Telegram" },
+      { tag: "Next", text: "Twitch" },
+      { tag: "Then", text: "Games settled from the screen" },
+      { tag: "After", text: "Discord, any app" },
     ],
-    foot: "Oracle backtest, 30 Aug 2026: 25 runs, 0 wrong, 38% settled with no human. The rest is the resolver network's job.",
+    foot: "Oracle: 25 runs, 0 wrong (30 Aug 2026).",
     sticker: "st-rocket", stickerBox: { x: 1400, y: 580, w: 440, h: 440 },
   },
   {
-    /* THE QUESTIONS A CAREFUL READER ASKS SECOND, answered before they are
-       asked. Each row is a rule we checked and what we do about it. */
     label: "Appendix · Risks", bg: D, ink: L,
-    head: "The risks we know, and the answer to each.", headSize: 110,
+    head: "Known risks, and our answer.", headSize: 130,
     rows: [
-      { tag: "Law", text: "18+ only. Paid markets stay off in the US and Türkiye." },
-      { tag: "Kick", text: "Its guidelines bar gambling with funds from other users. We get Kick’s written OK before scaling the door." },
-      { tag: "X", text: "AI replies need X’s prior written approval. We apply before scaling the X door." },
-      { tag: "Telegram", text: "Mini Apps must use TON. Oddie’s bot has no Mini App, which the rules exempt." },
-      { tag: "Wallet", text: "Phantom warns on young domains. Its domain review is the fix." },
+      { tag: "Law", text: "18+. No paid markets in the US or Türkiye." },
+      { tag: "Kick", text: "No betting with viewers’ funds: written OK first." },
+      { tag: "X", text: "AI replies need approval: apply first." },
+      { tag: "Telegram", text: "TON-only Mini Apps: we have none." },
+      { tag: "Wallet", text: "Phantom flags new domains: domain review." },
     ],
-    sources: "Sources: Kick Community Guidelines, 19 Mar 2026 · X Automation Rules · Telegram Blockchain Guidelines",
+    sources: "Kick Community Guidelines, Mar 2026 · X Automation Rules · Telegram Blockchain Guidelines",
   },
 ];
 export { C, W, H, PAD, shelf };
