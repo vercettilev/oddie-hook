@@ -129,7 +129,7 @@ const server = createServer(async (req, res) => {
 
   res.writeHead(200, { "content-type": "text/html" }).end(
     `<body style="font:16px system-ui;padding:40px;background:#050605;color:#fff">
-       <h2 style="color:#D7DC1F">Authorised as ${who}</h2>
+       <h2 style="color:#FCF604">Authorised as ${who}</h2>
        <p>The refresh token is in your terminal. This tab is done.</p>
      </body>`,
   );

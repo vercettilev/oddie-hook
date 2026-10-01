@@ -28,7 +28,7 @@ export function renderCardPng(svg: string): Buffer {
     // The card draws its own white card on a white page; no transparency to keep.
     // The market card bleeds lime to its edges, so a white raster background
     // flashes a hairline at the corners where the rounded artboard antialiases.
-    background: "#D7DC1F",
+    background: "#FCF604",
   });
   return Buffer.from(resvg.render().asPng());
 }

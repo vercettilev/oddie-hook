@@ -18,7 +18,7 @@ export const LOGO_MARK_DATA_URI = `data:image/png;base64,${PNG.toString("base64"
 
 /** The brand lockup for the card header: the mark, then the wordmark text.
  *  `x`/`y` anchor the mark's top-left; the wordmark is drawn by the caller so
- *  each card keeps its own fill. The mark is the lime app-icon tile, so it's
+ *  each card keeps its own fill. The mark is the yellow app-icon tile, so it's
  *  clipped to a rounded square (matching the favicon / home-screen icon) rather
  *  than drawn as a bare square. Returns the clipPath + <image>. */
 export function logoMark(x: number, y: number, size: number): string {

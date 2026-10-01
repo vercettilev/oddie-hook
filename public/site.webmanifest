@@ -5,7 +5,7 @@
   "start_url": "/markets",
   "display": "standalone",
   "background_color": "#050505",
-  "theme_color": "#D7DC1F",
+  "theme_color": "#FCF604",
   "icons": [
     {
       "src": "/icon-192.png",

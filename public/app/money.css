@@ -96,7 +96,7 @@
   letter-spacing:.03em;line-height:1;color:var(--black,#020302);
   border:2px solid var(--ink,#0B0D04);padding:6px 11px 7px;
 }
-.chain-took__s--yes{background:var(--yellow,#D7DC1F);box-shadow:3px 4px 0 var(--yellow-deep,#5A6109)}
+.chain-took__s--yes{background:var(--yellow,#FCF604);box-shadow:3px 4px 0 var(--yellow-deep,#676A00)}
 .chain-took__s--no{background:var(--pink,#FF2D78);box-shadow:3px 4px 0 var(--pink-deep,#A3053F)}
 .chain-took__q{
   flex:1 1 120px;min-width:0;
@@ -148,18 +148,18 @@
   transition:transform .13s cubic-bezier(.3,1.4,.5,1),box-shadow .13s ease,
              opacity .13s ease,background .13s ease;
 }
-.chain-side[data-side="yes"]{background:var(--yellow,#D7DC1F);
-  box-shadow:6px 7px 0 var(--yellow-deep,#5A6109),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
+.chain-side[data-side="yes"]{background:var(--yellow,#FCF604);
+  box-shadow:6px 7px 0 var(--yellow-deep,#676A00),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
 .chain-side[data-side="no"]{background:var(--pink,#FF2D78);
   box-shadow:6px 7px 0 var(--pink-deep,#A3053F),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
-.chain-side[data-side="yes"]:hover{background:var(--yellow-hi,#E7EC4E);
+.chain-side[data-side="yes"]:hover{background:var(--yellow-hi,#FFFB3B);
   transform:translate(-2px,-3px) scale(1.02);
-  box-shadow:9px 11px 0 var(--yellow-deep,#5A6109),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
+  box-shadow:9px 11px 0 var(--yellow-deep,#676A00),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
 .chain-side[data-side="no"]:hover{transform:translate(-2px,-3px) scale(1.02);
   box-shadow:9px 11px 0 var(--pink-deep,#A3053F),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
 .chain-side:active{transform:translate(6px,7px) scale(.985)}
 .chain-side[data-side="yes"]:active{
-  box-shadow:0 0 0 var(--yellow-deep,#5A6109),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
+  box-shadow:0 0 0 var(--yellow-deep,#676A00),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
 .chain-side[data-side="no"]:active{
   box-shadow:0 0 0 var(--pink-deep,#A3053F),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
 /* :has() carries the "somebody has chosen" state. Where it is unsupported the
@@ -233,7 +233,7 @@
   display:block;width:100%;
   font-family:var(--display,'Anton',sans-serif);font-size:21px;letter-spacing:.03em;
   text-transform:uppercase;line-height:1;
-  background:var(--yellow,#D7DC1F);color:var(--ink,#0B0D04);
+  background:var(--yellow,#FCF604);color:var(--ink,#0B0D04);
   border:3px solid var(--ink,#0B0D04);padding:17px 14px 19px;cursor:pointer;
   box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
              inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13);
@@ -243,7 +243,7 @@
   transition:transform .12s ease,box-shadow .12s ease,background .18s ease;
 }
 .claimbtn:hover:not(:disabled),.cbtn:hover:not(:disabled){
-  background:var(--yellow-hi,#E7EC4E);transform:translate(-2px,-3px);
+  background:var(--yellow-hi,#FFFB3B);transform:translate(-2px,-3px);
   box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
              inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
 .claimbtn:active:not(:disabled),.cbtn:active:not(:disabled){
@@ -353,7 +353,7 @@
    than one flat block of pink. */
 .rcpt .rin__a{color:var(--cream,#FBFCF4);font-size:clamp(46px,15vw,74px);
   animation:rcpt-amt .42s cubic-bezier(.34,1.56,.64,1) .05s both}
-.rcpt--yes .rin__a i{color:var(--yellow,#D7DC1F)}
+.rcpt--yes .rin__a i{color:var(--yellow,#FCF604)}
 .rcpt--no .rin__a i{color:var(--pink,#FF2D78)}
 .rcpt .rin__l{color:var(--cream,#FBFCF4);opacity:.74;font-size:14.5px;margin:10px 0 0}
 /* The chip is read against a 74px number now, and at its form-sheet size it
@@ -379,7 +379,7 @@
   letter-spacing:.03em;line-height:1;color:var(--black,#020302);
   border:3px solid var(--ink,#0B0D04);padding:8px 13px 9px;
 }
-.rin__s--yes{background:var(--yellow,#D7DC1F);box-shadow:4px 5px 0 var(--yellow-deep,#5A6109)}
+.rin__s--yes{background:var(--yellow,#FCF604);box-shadow:4px 5px 0 var(--yellow-deep,#676A00)}
 .rin__s--no{background:var(--pink,#FF2D78);box-shadow:4px 5px 0 var(--pink-deep,#A3053F)}
 .rin__a{
   font-family:var(--display,'Anton',sans-serif);font-weight:400;
@@ -408,7 +408,7 @@
 .seat b{display:block;font-family:var(--display,'Anton',sans-serif);font-weight:400;
   font-size:16px;letter-spacing:.02em}
 .seat span{display:block;font-size:11.5px;line-height:1.45;color:var(--ink-2,#494E2D);margin-top:2px}
-.seat:hover:not(:disabled){background:rgba(215,220,31,.28);border-style:solid}
+.seat:hover:not(:disabled){background:rgba(252,246,4,.28);border-style:solid}
 .seat:disabled{opacity:.6;cursor:default}
 .seat:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:3px}
 
@@ -424,12 +424,12 @@
    bet: the sentence is "you are in, now go say it". */
 .cbtn--share{
   display:block;margin-top:0;text-align:center;text-decoration:none;
-  background:var(--yellow,#D7DC1F);color:var(--ink,#0B0D04);
+  background:var(--yellow,#FCF604);color:var(--ink,#0B0D04);
   font-size:19px;padding:16px 14px 18px;
   box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
              inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13);
 }
-.cbtn--share:hover{background:var(--yellow-hi,#E7EC4E);color:var(--ink,#0B0D04);
+.cbtn--share:hover{background:var(--yellow-hi,#FFFB3B);color:var(--ink,#0B0D04);
   transform:translate(-2px,-3px);
   box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
              inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}

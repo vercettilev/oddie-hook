@@ -32,7 +32,7 @@ const FONTS = ["Fredoka_600SemiBold.ttf", "Fredoka_700Bold.ttf", "Nunito_700Bold
 const W = 1920, H = 1080, PAD = 120;
 const C = {
   ink: "#0B0D04", black: "#020302", cream: "#FBFCF4",
-  yellow: "#D7DC1F", yellowHi: "#E7EC4E", pink: "#FF2D78", pinkDeep: "#A3053F",
+  yellow: "#FCF604", yellowHi: "#FFFB3B", pink: "#FF2D78", pinkDeep: "#A3053F",
   pinkField: "#E13774",
 };
 const DISPLAY = "Anton", BODY = "Fredoka";

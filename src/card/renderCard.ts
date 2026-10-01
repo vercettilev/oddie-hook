@@ -6,7 +6,7 @@ import { CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "../store/economy.js
 import { oddsFromPools } from "../odds.js";
 
 // The card IS Oddie talking. Logo language: chunky black rounded outline,
-// white fill, brand chartreuse (#D7DC1F), the two ghost eyes as the one playful
+// white fill, brand chartreuse (#FCF604), the two ghost eyes as the one playful
 // signature. Super simple: one hero number, one colour, lots of air.
 // No venue named — just Oddie brand + normalized volume as the trust signal.
 //
@@ -20,7 +20,7 @@ import { oddsFromPools } from "../odds.js";
 
 // These are the LIVE APP's tokens, deliberately: the card is the app's face on
 // X, and for a while it was not wearing the app's colours. The landing and the
-// feed moved to the chartreuse sampled off the Oddie mark (--accent #D7DC1F, a
+// feed moved to the chartreuse sampled off the Oddie mark (--accent #FCF604, a
 // yellow-green); the cards stayed on the mint-lime that shipped before it
 // (#B6F05F) because the value lived here as a literal with nothing tying it to
 // the stylesheets. The two greens are close enough to survive a glance and far
@@ -29,17 +29,17 @@ import { oddsFromPools } from "../odds.js";
 // app shells share (public/app/market.html), and scripts/test-card-layout.ts
 // holds them in step.
 export const C = {
-  accent: "#D7DC1F", // --accent: brand chartreuse, sampled off the mark
+  accent: "#FCF604", // --accent: brand chartreuse, sampled off the mark
   ink: "#000000",
   number: "#141414", // the hero number's fill; near-black so it reads on accent and white alike
   white: "#FFFFFF",
   muted: "#6B7A88",
-  pill: "#F7F9DC", // --wash
+  pill: "#FDFDD8", // --wash
   barBg: "#E7EDF2",
   // The darker olive the live app falls back to for small accent-on-white text
   // (its --acc-deep token) — bare accent reads fine as a big hero fill or a
   // large kicker, but loses contrast at caption sizes.
-  accentDeep: "#5A6109",
+  accentDeep: "#676A00",
   // The hard offset under the wordmark. Same pink as the app's NO side and the
   // landing headline's echo, which is where the treatment comes from.
   echo: "#FF2D78",

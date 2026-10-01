@@ -92,8 +92,8 @@
       // it, each claimed the whole remaining width. Only the first one pushes.
       + ".mechip--cash + .mechip,.mechip--new + .mechip{margin-left:0}"
       // Activity in the markets you are in: somebody took the other side.
-      + ".mechip--new{background:#D7DC1F;color:#0B0D04;box-shadow:3px 3px 0 #5A6109}"
-      + ".mechip--new:hover{background:#E7EC4E;color:#0B0D04}"
+      + ".mechip--new{background:#FCF604;color:#0B0D04;box-shadow:3px 3px 0 #676A00}"
+      + ".mechip--new:hover{background:#FFFB3B;color:#0B0D04}"
       // A Telegram name wears Telegram's blue, as it does on the market page.
       + ".mechip--tg{background:#2AABEE;color:#fff}.mechip--tg:hover{background:#4FBDF2;color:#fff}"
       + ".mechip--pf{display:inline-flex;align-items:center;gap:7px}"

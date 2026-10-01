@@ -3,14 +3,14 @@
 Originals as delivered. Everything in public/ is generated FROM these, so
 regenerate rather than editing an icon by hand.
 
-- `oddiepink-lime.png` 1254x1254. **THE LOGO IN USE.** oddiepink with its
-                    background remapped from #FDF604 to #D7DC1F, the brand lime.
-                    Generated, not hand-drawn: see the recolour note below.
-- `oddiepink.png`   1254x1254. As delivered, on #FDF604. Kept as the original.
-                    Its yellow is NOT the brand lime, and in the nav it sat
-                    inches from a CTA painted var(--lime), so two almost-matching
-                    yellows disagreed with each other. That is why the version
-                    in use is recoloured.
+- `oddiepink.png`   1254x1254, on #FCF604. **THE LOGO IN USE** since
+                    2026-10-01, everywhere: favicons, PWA icons, the nav mark
+                    (public/brand/mark.webp), the card/og mark, and the X
+                    avatar. Lev chose the X yellow over the lime because it
+                    reads livelier; the X header art is the same yellow family.
+- `oddiepink-lime.png` 1254x1254. The 2026-08 recolour to the site lime
+                    (#D7DC1F), in use until 2026-10-01. Kept for history; see
+                    the recolour note below for how it was made.
 - `oddielogo.png`   1254x1254. Same ghost, no pink shadow, on the older lime.
                     Kept as the flat alternative.
 - `oddiebanner.png` 2196x716. Cinematic banner, "Turn arguments into markets."
@@ -26,6 +26,18 @@ regenerate rather than editing an icon by hand.
                     is what the landing shipped until 2026-08-26.
 - `oddie-ansemhack.png` 1200x630 with alpha. AnsemHack graphic.
 
+## Brand colour
+
+Since 2026-10-01 the brand yellow is the logo's own yellow, everywhere:
+`--yellow #FCF604`, `--yellow-hi #FFFB3B`, `--yellow-deep #676A00` (was the
+lime `#D7DC1F` / `#E7EC4E` / `#5A6109`). The lime was only ever there so the
+nav mark and the CTAs agreed; making the whole site the X yellow does the same
+job and matches the avatar, the X header and the sticker art, whose yellow
+(#F8F602) is within a few degrees of it. og-genesis.png and the raw
+public/oddielogo.png were recoloured in place: hue 50-75 with HSV saturation
+above 0.35 scaled per channel lime->yellow. Key on HSV saturation, not HLS:
+in HLS the cream ticket paper reads as saturated and turns yellow too.
+
 Regenerate every icon from the logo:
 
     SRC=brand/oddiepink.png
@@ -34,9 +46,21 @@ Regenerate every icon from the logo:
     for i in {1..${#names[@]}}; do sips -z ${sizes[$i]} ${sizes[$i]} "$SRC" --out "public/${names[$i]}"; done
 
 favicon.ico is PNG-in-ICO built from the 16/32/48 PNGs; sips cannot write .ico.
-feed.html's `--mark` is the only HAND-EMBEDDED copy: base64 of logo-mark-128.png,
-inlined so the app header never depends on a path resolving. logoMark.ts reads
-public/logo-mark-256.png at runtime, so the share card follows automatically.
+public/brand/mark.webp (the nav mark on every page) is the same source at
+320x320. Pillow writes both in one pass:
+
+    from PIL import Image
+    src = Image.open("brand/oddiepink.png").convert("RGBA")
+    src.resize((48, 48), Image.LANCZOS).save("public/favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
+    src.resize((320, 320), Image.LANCZOS).save("public/brand/mark.webp", quality=90, method=6)
+
+After regenerating, bump the `?v=` on every favicon / mark.webp reference
+(`grep -rn '?v=' public src`): static files are served with a 7-day max-age,
+so without it returning visitors keep the old mark for a week.
+
+No hand-embedded copy is left (feed.html, which inlined one as base64, is
+gone). logoMark.ts reads public/logo-mark-256.png at runtime, so the share
+card and og.png follow automatically after a restart.
 
 ## Recolouring the tile
 

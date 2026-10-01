@@ -229,7 +229,7 @@ export function renderProfileCard(p: ProfileCard): string {
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="${FONT}">
   <defs>
     <radialGradient id="medalGrad" cx="32%" cy="26%" r="80%">
-      <stop offset="0%" stop-color="#eefccb"/>
+      <stop offset="0%" stop-color="#F2FFC8"/>
       <stop offset="100%" stop-color="${C.accent}"/>
     </radialGradient>
   </defs>

@@ -824,13 +824,13 @@ function closedMarketHtml(slug: string, question: string | null): string {
 <meta property="og:image" content="${png}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="${png}">
-<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
 display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px;text-align:center}
 img{max-width:min(96vw,760px);border-radius:18px}
 h1{font-size:21px;line-height:1.35;margin:0;max-width:26ch}
 p{margin:0;color:rgba(255,255,255,.62);max-width:52ch;font-size:15px}
-a.claim{background:#D7DC1F;color:#020302;text-decoration:none;font-weight:800;
+a.claim{background:#FCF604;color:#020302;text-decoration:none;font-weight:800;
 padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
 <img src="${png}" alt="${escHtml(title)}">
 ${question ? `<h1>${escHtml(question)}</h1>` : ""}
@@ -901,7 +901,7 @@ app.get("/@:handle", async (req, res) => {
 <style>body{margin:0;background:#020302;color:#FBFCF4;font-family:'Nunito',system-ui,sans-serif;padding:40px 20px}
 .s{max-width:640px;margin:0 auto}h1{font-family:'Anton','Arial Narrow',sans-serif;font-weight:400;text-transform:uppercase;font-size:clamp(28px,6vw,44px);line-height:1.02;margin:0 0 14px}
 p{font-size:16px;line-height:1.55;color:rgba(255,255,255,.72);margin:0 0 22px}b{color:#FBFCF4}
-a{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#D7DC1F}</style></head>
+a{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#FCF604}</style></head>
 <body><div class="s"><h1>${escHtml(title)}</h1><p>${body}</p><a href="/board">See who was right</a></div></body></html>`);
 });
 
@@ -962,7 +962,7 @@ const PREVIEW_PAGE = (msg: string) => `<!doctype html><html lang="en"><head><met
 .s{max-width:420px;margin:0 auto}h1{font-family:'Anton','Arial Narrow',sans-serif;font-weight:400;text-transform:uppercase;font-size:34px;margin:0 0 6px}
 p{color:rgba(255,255,255,.7);font-size:14px;line-height:1.5;margin:0 0 18px}label{display:block;font:700 11px ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5);margin:0 0 8px}
 input{width:100%;box-sizing:border-box;font:inherit;padding:12px;border:3px solid #FBFCF4;background:#020302;color:#FBFCF4}
-button{margin-top:12px;font:800 15px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;background:#D7DC1F;color:#0B0D04;border:3px solid #020302;padding:12px 18px;cursor:pointer;box-shadow:5px 6px 0 #5A6109}
+button{margin-top:12px;font:800 15px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;background:#FCF604;color:#0B0D04;border:3px solid #020302;padding:12px 18px;cursor:pointer;box-shadow:5px 6px 0 #676A00}
 .e{color:#FF2D78;font:700 12px ui-monospace,monospace;margin:10px 0 0}</style></head>
 <body><div class="s"><h1>Operator preview</h1><p>The app is closed to the public. Your admin token opens it in this browser, on both hosts, for 30 days.</p>
 <form method="post" action="/preview"><label for="t">Admin token</label><input id="t" name="token" type="password" autocomplete="off"><button type="submit">Open the app for me</button></form>${msg ? `<p class="e">${msg}</p>` : ""}</div></body></html>`;
@@ -1325,13 +1325,13 @@ app.get("/g/:handle", async (req, res) => {
 <meta property="og:image" content="${png}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="${png}">
-<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
 display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px}
 img{max-width:min(96vw,760px);border-radius:18px}
 h1{font-size:20px;line-height:1.35;margin:0;max-width:26ch;text-align:center}
 p{margin:0;color:rgba(255,255,255,.62);max-width:56ch;text-align:center;font-size:15px}
-a.claim{background:#D7DC1F;color:#020302;text-decoration:none;font-weight:800;
+a.claim{background:#FCF604;color:#020302;text-decoration:none;font-weight:800;
 padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
 <img src="${png}" alt="${escHtml(title)}">
 <h1>oddie turns a claim on X into a real prediction market.</h1>
@@ -2224,7 +2224,7 @@ app.get("/r/:slug/:wallet", async (req, res) => {
 <style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
 display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px}
 img{max-width:min(96vw,760px);border-radius:18px}
-a{color:#D7DC1F}p{margin:0;color:rgba(255,255,255,.62);max-width:60ch;text-align:center}</style></head><body>
+a{color:#FCF604}p{margin:0;color:rgba(255,255,255,.62);max-width:60ch;text-align:center}</style></head><body>
 <img src="${png}" alt="${escHtml(title)}">
 <p>${escHtml(detail.question)}</p>
 <p><a href="/m/${encodeURIComponent(slug)}">see the market</a></p>

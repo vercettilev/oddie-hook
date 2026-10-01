@@ -69,7 +69,7 @@ const PALETTES: Record<GenesisTheme, Palette> = {
   acid: {
     bg: C.accent, frameStroke: C.ink, frameW: 13, offset: C.ink, onDark: false,
     kicker: C.ink, handle: C.ink, pillBg: C.ink, pillText: C.accent,
-    pillOffset: C.echo, head: C.ink, footer: "#4A4F0A", spark: C.echo,
+    pillOffset: C.echo, head: C.ink, footer: "#575900", spark: C.echo,
   },
 };
 
