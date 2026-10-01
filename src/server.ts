@@ -427,10 +427,6 @@ async function renderLanding(): Promise<string> {
      decides something: chain.js writes clusterLabel from the server's cluster
      in the app, and nothing there changed. */
 
-  /* THE OPENER BOARD LEFT THE FRONT DOOR (1 Oct). It printed nothing until
-     somebody was on it, so its field was a headline and a trophy; that field
-     is the streamer offer now, and the board lives in the app. */
-
   /* ONE REAL MARKET, ON THE FRONT DOOR.
    *
    * The page argued that a claim on X becomes a market with money in it and
@@ -446,6 +442,12 @@ async function renderLanding(): Promise<string> {
    * market with the most real money on it. Never a resolved or closed one,
    * which would be a museum piece where a live claim belongs.
    */
+  /* TWO REAL MARKETS, NOT ONE (1 Oct, Lev: FOMO, but only from true things).
+   * "Biggest pool" is the market with the most money on it; "Closing soon" is
+   * the open market whose deadline is next, inside 48 hours, with a clock the
+   * page ticks down from its deadline. Neither is ever invented: no funded
+   * market, no first card; nothing closing soon, no second; neither, nothing.
+   * A failed read prints nothing at all, as before. */
   const liveProof = await (async (): Promise<string> => {
     try {
       /* openCommunityMarkets rather than liveMarketData().all: the same rows,
@@ -458,39 +460,83 @@ async function renderLanding(): Promise<string> {
       const open = all.filter((m) => m.onchainPubkey
         && m.closesAt && new Date(m.closesAt).getTime() > now);
       if (!open.length) return "";
-      const states = await readMarkets(open.map((m) => m.onchainPubkey as string), { maxAgeMs: 60_000 });
-      const funded = open
-        .map((m) => {
-          const r = states.get(m.onchainPubkey as string);
-          const st = r?.ok ? r.state : null;
-          return { m, lamports: st && !st.resolved ? st.totalYesLamports + st.totalNoLamports : 0 };
-        })
-        .filter((x) => x.lamports > 0)
-        .sort((a, b) => b.lamports - a.lamports);
-      if (!funded.length) return "";
-      const { m, lamports } = funded[0];
-      const sol = lamports / 1e9;
-      const pool = sol < 0.001 ? "<0.001" : sol.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-      const left = Math.max(0, new Date(m.closesAt as string).getTime() - now);
-      const hrs = Math.floor(left / 3_600_000);
+      const [states, usd] = await Promise.all([
+        readMarkets(open.map((m) => m.onchainPubkey as string), { maxAgeMs: 60_000 }),
+        solUsd().catch(() => null),
+      ]);
+      const rows = open.map((m) => {
+        const r = states.get(m.onchainPubkey as string);
+        const st = r?.ok ? r.state : null;
+        return { m, readable: Boolean(r?.ok), lamports: st && !st.resolved ? st.totalYesLamports + st.totalNoLamports : 0 };
+      }).filter((x) => x.readable);
+      const solText = (lamports: number): string => {
+        const sol = lamports / 1e9;
+        return sol < 0.001 ? "<0.001" : sol.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+      };
+      const usdText = (lamports: number): string => {
+        const v = usd && lamports > 0 ? (lamports / 1e9) * usd : 0;
+        return v > 0 ? ' <span class="usd">&asymp; $' + (v < 1 ? "&lt;1" : Math.round(v).toLocaleString("en-US")) + "</span>" : "";
+      };
       // Singular when it is one. "1 minutes left" on the one line of this page
       // that is supposed to read as live evidence.
       const plural = (n: number, unit: string): string => `${n} ${unit}${n === 1 ? "" : "s"} left`;
-      const when = hrs >= 48 ? plural(Math.floor(hrs / 24), "day")
-        : hrs >= 1 ? plural(hrs, "hour")
-        : plural(Math.max(1, Math.floor(left / 60_000)), "minute");
-      const line = foldIds(m.hook || m.question);
-      return '<a class="proof" href="' + escHtml(`${APP_BASE_URL}/m/${slugFor(m)}`) + '">'
-        + '<span class="proof__k">Open right now</span>'
-        + '<span class="proof__q">' + escHtml(line) + "</span>"
-        + '<span class="proof__m"><b>' + escHtml(pool) + "</b> SOL in the pool"
-        + '<i aria-hidden="true">&middot;</i>' + escHtml(when) + "</span></a>";
+      const whenText = (closesAt: string): string => {
+        const left = Math.max(0, new Date(closesAt).getTime() - now);
+        const hrs = Math.floor(left / 3_600_000);
+        return hrs >= 48 ? plural(Math.floor(hrs / 24), "day")
+          : hrs >= 1 ? plural(hrs, "hour")
+          : plural(Math.max(1, Math.floor(left / 60_000)), "minute");
+      };
+      const href = (m: (typeof open)[number]): string => escHtml(`${APP_BASE_URL}/m/${slugFor(m)}`);
+      const title = (m: (typeof open)[number]): string => escHtml(foldIds(m.hook || m.question));
+      const cards: string[] = [];
+
+      const big = rows.filter((x) => x.lamports > 0).sort((a, b) => b.lamports - a.lamports)[0];
+      if (big) {
+        cards.push('<a class="proof" href="' + href(big.m) + '">'
+          + '<span class="proof__k">Biggest pool</span>'
+          + '<span class="proof__q">' + title(big.m) + "</span>"
+          + '<span class="proof__m"><b>' + escHtml(solText(big.lamports)) + "</b> SOL in the pool" + usdText(big.lamports)
+          + '<i aria-hidden="true">&middot;</i>' + escHtml(whenText(big.m.closesAt as string)) + "</span></a>");
+      }
+      const SOON_MS = 48 * 3_600_000;
+      const soon = rows
+        .filter((x) => x.m !== big?.m && new Date(x.m.closesAt as string).getTime() - now <= SOON_MS)
+        .sort((a, b) => new Date(a.m.closesAt as string).getTime() - new Date(b.m.closesAt as string).getTime())[0];
+      if (soon) {
+        const at = new Date(soon.m.closesAt as string).toISOString();
+        cards.push('<a class="proof proof--hot" href="' + href(soon.m) + '">'
+          + '<span class="proof__k">Closing soon</span>'
+          + '<span class="proof__q">' + title(soon.m) + "</span>"
+          + '<span class="proof__m"><b class="clock" data-at="' + escHtml(at) + '">' + escHtml(whenText(soon.m.closesAt as string)) + "</b>"
+          + '<i aria-hidden="true">&middot;</i>'
+          + (soon.lamports > 0
+            ? "<b>" + escHtml(solText(soon.lamports)) + "</b> SOL in the pool" + usdText(soon.lamports)
+            : "first one in sets the odds")
+          + "</span></a>");
+      }
+      return cards.length ? '<div class="proofs">' + cards.join("") + "</div>" : "";
     } catch {
       return "";   // a read that failed is not a product with nothing in it
     }
   })();
 
+  /* THE BOARD COMES BACK BY ITSELF. It left the front door because it printed
+     nothing until somebody was on it, and an empty or one-name board says
+     "nobody is here". It returns under the live cards once BOARD_MIN real
+     people are on it (genesisBoard only lists openers who brought somebody),
+     and not a row before. A failed read is the same as too few. */
+  const BOARD_MIN = 5;
+  const boardRows = await genesisBoard(BOARD_MIN).catch(() => [] as Awaited<ReturnType<typeof genesisBoard>>);
+  const boardHtml = boardRows.length < BOARD_MIN ? ""
+    : '<div class="lboard"><p class="lboard__k">Top openers</p><ol>'
+      + boardRows.map((r) => '<li><span class="lboard__n">' + r.rank + '</span><span class="lboard__h">@'
+        + escHtml(r.handle) + '</span><span class="lboard__p"><b>' + r.peopleBrought + "</b> "
+        + (r.peopleBrought === 1 ? "person" : "people") + " brought in</span></li>").join("")
+      + '</ol><a class="lboard__go" href="' + escHtml(`${APP_BASE_URL}/leaderboard`) + '">See the whole board <i aria-hidden="true">&rarr;</i></a></div>';
+
   const html = LANDING_HTML
+    .replace("<!--BOARD-->", boardHtml)
     .replace("<!--LIVE-->", liveProof);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one

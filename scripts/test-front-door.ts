@@ -33,13 +33,21 @@ console.log("the landing names all three doors");
     const n = landing.split(`<a class="door" href="${href}">`).length - 1;
     check(`${door} is a door in the hero and at the close`, n === 2, `${n} found`);
   }
-  check("the streamer field links to /live", /id="streamers"[\s\S]*?href="https:\/\/app\.oddie\.fun\/live"/.test(landing));
-  check("...and the nav can reach it", /href="#streamers">For streamers</.test(landing));
+  check("the creators field has a card per door",
+    /id="creators"[\s\S]*?<h3>Streamers<\/h3>[\s\S]*?<h3>Creators on X<\/h3>[\s\S]*?<h3>Communities<\/h3>/.test(landing));
+  check("...and the streamer card still links to /live", /<h3>Streamers<\/h3>[\s\S]{0,300}href="https:\/\/app\.oddie\.fun\/live"/.test(landing));
+  check("...and the nav can reach it", /href="#creators">For creators</.test(landing));
+  check("the hero chat is in English, the page speaks to everyone", !/cumaya|görmez/.test(landing));
+  check("no card says KOL", !/\bKOLs?\b/.test(landing));
   check("the description names Kick and Telegram", /<meta name="description" content="[^"]*Kick[^"]*Telegram/.test(landing));
   check("no X composer is left to wire", !/data-ask/.test(landing) && !/EXAMPLES/.test(landing));
   check("step three never states a side for a market still open",
     !/<div class="step">[\s\S]*?3\. It pays[\s\S]*?(Settled|Result): (YES|NO)/i.test(landing));
-  check("the board slots left with the board", !/<!--BOARD(CTA)?-->/.test(landing) && !/<!--BOARD/.test(server));
+  check("the board slot is back, behind a threshold", /<!--BOARD-->/.test(landing)
+    && /const BOARD_MIN = 5;/.test(server) && /boardRows\.length < BOARD_MIN \? ""/.test(server));
+  check("the live cards are a biggest pool and a closing-soon clock",
+    /Biggest pool/.test(server) && /Closing soon/.test(server) && /class="clock" data-at="/.test(server));
+  check("...and the page ticks the clock", /querySelectorAll\("\.clock\[data-at\]"\)/.test(landing));
 }
 
 console.log("\nthe list shows what you can still bet on");

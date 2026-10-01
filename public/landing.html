@@ -661,7 +661,7 @@
      tiklayinca bolum basligi barin altinda kaliyordu. */
   /* Serit nav satirina girdigi icin bar artik tek yukseklikte: capa payinin
      iki degeri olmasina gerek kalmadi. */
-  #how,#streamers,#board{scroll-margin-top:clamp(72px,7vw,96px)}
+  #how,#creators,#board{scroll-margin-top:clamp(72px,7vw,96px)}
 
   /* ------------------------------------------------ kampanya CTA'si -- */
   [data-genesis="0"] .gcta{display:none}
@@ -846,7 +846,7 @@
      where the hero and the pink band use it. Pink glyphs with an ink outline
      on cream are emphasis enough here. */
   .offer__hd .lo::after{display:none}
-  /* D, the streamer field. Ink on yellow, like the hero. */
+  /* D, the creators field. Ink on yellow, like the hero. */
   .D{position:relative;background:var(--yellow);color:var(--ink);
     overflow-x:clip;overflow-y:visible;
     padding:calc(var(--seam-h) + clamp(16px,2vw,30px)) 0 clamp(30px,3.8vw,56px)}
@@ -1031,10 +1031,10 @@
 
   /* ==================================================== HOW IT WORKS, LIVE ==
      Three chat cards in place of the baked tweet figure, because the figure
-     could only ever show X. The thread is the real one from a Kick stream:
-     asked in Turkish, opened in English. Step three states the rule (result
-     posted, winners split, 2% to the stream) and never a side, because that
-     market has not closed. */
+     could only ever show X. The market is the real one from a Kick stream;
+     the chat is in English because the page speaks to everyone (Lev,
+     1 Oct). Step three states the rule (result posted, winners split, 2% to
+     the stream) and never a side, because that market has not closed. */
   .steps{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
     gap:clamp(16px,2.4vw,34px);margin:clamp(22px,3vw,40px) 0 0;align-items:start}
   .step:nth-child(1){rotate:-1.4deg}
@@ -1068,21 +1068,55 @@
   .B .proof{grid-column:1/-1;justify-self:center;width:100%}
   @media (max-width:860px){.steps{grid-template-columns:1fr}.step:nth-child(n){margin-top:0}}
 
-  /* ======================================================= FOR STREAMERS ==
-     The yellow field the opener board used to hold. The board printed
-     nothing until somebody was on it, so the field was a headline and a
-     trophy; the streamer offer is the ask the GTM actually runs on, and
-     /live had no door from this page at all. */
-  .stream{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);
-    gap:clamp(18px,3vw,48px);align-items:center}
-  .stream .h2{margin:0}
-  .stream__p{font-size:clamp(15px,1.35vw,18px);line-height:1.55;color:var(--ink-2);max-width:44ch;
-    margin:clamp(14px,1.6vw,20px) 0 0}
-  .stream__p b{color:var(--ink)}
-  .stream .btn{margin-top:clamp(18px,2vw,26px);box-shadow:6px 7px 0 var(--pink)}
-  .stream__art{justify-self:center;width:clamp(150px,20vw,260px);height:auto;rotate:5deg;
-    filter:drop-shadow(7px 9px 0 rgba(11,13,4,.14))}
-  @media (max-width:760px){.stream{grid-template-columns:1fr}.stream__art{grid-row:1;width:140px}}
+  /* ======================================================== FOR CREATORS ==
+     Three cards, one per door, in the yellow field the opener board used to
+     hold. Same stamp grammar as the doors: ink border, flat pink shadow,
+     each card off by a degree or so. */
+  .crs .h2{margin:0 0 clamp(20px,2.6vw,34px)}
+  .cr__row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(14px,2vw,26px)}
+  .cr{background:var(--cream);border:3px solid var(--ink);padding:18px 18px 16px;
+    box-shadow:6px 7px 0 var(--pink);display:flex;flex-direction:column;gap:10px}
+  .cr:nth-child(1){rotate:-1.2deg}
+  .cr:nth-child(2){rotate:.9deg;margin-top:14px}
+  .cr:nth-child(3){rotate:-.6deg;margin-top:6px}
+  .cr__h{display:flex;align-items:center;gap:10px}
+  .cr h3{margin:0;font-family:var(--display);font-weight:400;font-size:26px;text-transform:uppercase;line-height:1}
+  .cr p{margin:0;font-size:15px;line-height:1.5;color:var(--ink-2);flex:1}
+  .cr p b{color:var(--ink)}
+  .cr__go{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;min-height:44px;
+    padding:10px 16px;background:var(--ink);color:var(--cream);text-decoration:none;
+    font-family:var(--display);font-size:16px;text-transform:uppercase}
+  .cr__go i{font-style:normal;color:var(--yellow)}
+  .cr__go:hover{background:#1a1e0a}
+  .cr__go:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
+  @media (max-width:860px){.cr__row{grid-template-columns:1fr}.cr:nth-child(n){margin-top:0}}
+
+  /* =================================================== THE LIVE CARDS ==
+     Biggest pool and closing soon, side by side; the second wears pink and
+     a clock the script below ticks down from the market's real deadline. */
+  .proofs{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;
+    max-width:900px;width:100%;justify-self:center;margin:clamp(22px,3vw,34px) auto 0}
+  .proofs .proof{margin:0;max-width:none;grid-column:auto;justify-self:stretch}
+  .proofs .proof:only-child{grid-column:1/-1;max-width:640px;justify-self:center}
+  .proof--hot{border-color:var(--pink);box-shadow:5px 6px 0 var(--pink)}
+  .proof--hot .proof__k{color:var(--pink)}
+  .proof .usd{opacity:.7}
+  .clock{font-variant-numeric:tabular-nums}
+  @media (max-width:700px){.proofs{grid-template-columns:1fr}}
+
+  /* The board, once it is real (server.ts, BOARD_MIN). */
+  .lboard{grid-column:1/-1;justify-self:center;width:min(640px,100%);margin:clamp(22px,3vw,34px) auto 0;
+    border:2px solid rgba(251,252,244,.3);padding:clamp(14px,2vw,20px);color:var(--cream)}
+  .lboard__k{margin:0 0 10px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--yellow)}
+  .lboard ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+  .lboard li{display:flex;align-items:baseline;gap:12px;padding:8px 10px;background:rgba(251,252,244,.05)}
+  .lboard__n{font-family:var(--mono);font-size:12px;font-weight:800;min-width:1.6em;font-variant-numeric:tabular-nums;color:var(--yellow)}
+  .lboard__h{flex:1;min-width:0;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lboard__p{font-size:14px;color:rgba(251,252,244,.72);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .lboard__p b{color:var(--cream)}
+  .lboard__go{display:inline-flex;align-items:center;min-height:44px;margin-top:6px;font-family:var(--mono);
+    font-size:11px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--yellow);text-decoration:none}
 
   /* 44px to tap. The nav link was 19px tall and the footer links 17px. */
   .nav__links .nav__a{padding-block:12px}
@@ -1112,7 +1146,7 @@
          thing a stranger is asked to do. -->
     <div class="nav__links">
       <a class="nav__a" href="#how">How it works</a>
-      <a class="nav__a" href="#streamers">For streamers</a>
+      <a class="nav__a" href="#creators">For creators</a>
       <a class="btn" href="/markets">See the markets <i aria-hidden="true">&rarr;</i></a>
     </div>
   </nav>
@@ -1241,8 +1275,8 @@
           <p class="step__n">1. Call it</p>
           <div class="chat">
             <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> Kick chat</p>
-            <p class="msg"><u class="v">deniz_</u>bitcoin bu hafta 88k&rsquo;yı görmez</p>
-            <p class="msg"><u class="v">kaan.trd</u><code>!oddie BTC cumaya kadar 88k olur mu?</code></p>
+            <p class="msg"><u class="v">mike_trades</u>no way btc sees 88k this week</p>
+            <p class="msg"><u class="v">0xjules</u><code>!oddie BTC hits 88k by Friday?</code></p>
           </div>
           <p class="step__cap">Any chat, any language. One line opens it.</p>
         </div>
@@ -1280,6 +1314,7 @@
            An empty shelf where the proof goes answers the question the wrong
            way, which is the argument LANDING_PROOF_MIN left behind. -->
       <!--LIVE-->
+      <!--BOARD-->
 
     </div>
 
@@ -1335,7 +1370,7 @@
              one is checkable, and it is now directly below rather than a
              page away. Written to stay true on an empty board:
              it says what the board ranks, not where you would land. -->
-        <p class="offer__more">Opened on a stream? It goes to the channel.</p>
+        <p class="offer__more">On a stream, that&rsquo;s the channel.</p>
       </div>
     </div>
 
@@ -1354,14 +1389,30 @@
        pink with black on both ends; yellow brings the hero's ground back for
        the one block that is supposed to shout, and ink on yellow is the
        loudest pairing this palette has. -->
-  <section class="D sec" id="streamers">
-    <div class="shell stream reveal">
-      <div>
-        <h2 class="h2"><span>Got a stream?</span><span class="lo">Your chat pays you.</span></h2>
-        <p class="stream__p">Add oddie to your Kick channel in one tap. Every market your chat opens pays <b>your channel 2% of its pool</b>, whichever side wins.</p>
-        <a class="btn" href="https://app.oddie.fun/live"><svg class="mk" width="22" height="22" aria-hidden="true"><use href="#mk-kick"/></svg> Add oddie to Kick <i aria-hidden="true">&rarr;</i></a>
+  <section class="D sec" id="creators">
+    <!-- EVERY CREATOR, NOT ONLY STREAMERS (Lev, 1 Oct). Each card says who the
+         2% goes to on that door TODAY: on Kick the channel earns from whatever
+         its chat opens; on X and Telegram the person who opens it earns, so
+         those cards ask the creator to open it themselves. -->
+    <div class="shell crs reveal">
+      <h2 class="h2"><span>Got an audience?</span><span class="lo">Open what they argue about.</span></h2>
+      <div class="cr__row">
+        <article class="cr">
+          <div class="cr__h"><svg class="mk" width="30" height="30" aria-hidden="true"><use href="#mk-kick"/></svg><h3>Streamers</h3></div>
+          <p>Add oddie to your Kick channel. Every market your chat opens pays <b>your channel 2%</b>.</p>
+          <a class="cr__go" href="https://app.oddie.fun/live">Add oddie to Kick <i aria-hidden="true">&rarr;</i></a>
+        </article>
+        <article class="cr">
+          <div class="cr__h"><svg class="mk" width="30" height="30" aria-hidden="true"><use href="#mk-x"/></svg><h3>Creators on X</h3></div>
+          <p>Tag @oddiefun under your own call. <b>2% of the pool</b> is yours, whichever side wins.</p>
+          <a class="cr__go" href="https://x.com/intent/post?text=%40oddiefun%20" target="_blank" rel="noopener">Tag @oddiefun <i aria-hidden="true">&rarr;</i></a>
+        </article>
+        <article class="cr">
+          <div class="cr__h"><svg class="mk" width="30" height="30" aria-hidden="true"><use href="#mk-telegram"/></svg><h3>Communities</h3></div>
+          <p>Add @oddiefunbot to your group and call it there. <b>The opener earns 2%</b>.</p>
+          <a class="cr__go" href="https://t.me/oddiefunbot?startgroup=true" target="_blank" rel="noopener">Add to a group <i aria-hidden="true">&rarr;</i></a>
+        </article>
       </div>
-      <img class="stream__art" src="/brand/mascot-trophy.webp" width="944" height="800" loading="lazy" alt="">
     </div>
   </section>
 
@@ -1427,7 +1478,7 @@
     <a href="https://kick.com/oddiefun" target="_blank" rel="noopener">Oddie on Kick</a>
     <a href="https://x.com/oddiefun" target="_blank" rel="noopener">Oddie on X</a>
     <a href="https://t.me/oddiefunbot" target="_blank" rel="noopener">Oddie on Telegram</a>
-    <a href="https://app.oddie.fun/live">For streamers</a>
+    <a href="#creators">For creators</a>
     <a href="/terms">Terms</a>
     <a href="/privacy">Privacy</a>
   </div>
@@ -1447,6 +1498,23 @@
          switched away.
        - the hash lands in the URL after the travel, not before, or the browser
          jumps to the target and there is nothing left to animate. */
+
+  /* THE CLOSING-SOON CLOCK. The server writes the deadline; this only counts
+     down to it, so a cached page is never wrong about how long is left. */
+  (function () {
+    var clocks = [].slice.call(document.querySelectorAll(".clock[data-at]"));
+    if (!clocks.length) return;
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    function tick() {
+      clocks.forEach(function (c) {
+        var left = Math.max(0, new Date(c.getAttribute("data-at")).getTime() - Date.now());
+        var h = Math.floor(left / 36e5), m = Math.floor(left % 36e5 / 6e4), sec = Math.floor(left % 6e4 / 1e3);
+        c.textContent = left ? h + ":" + pad(m) + ":" + pad(sec) + " left" : "closed";
+      });
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
 
   (function () {
     var root = document.documentElement;
