@@ -330,6 +330,55 @@ interface Slide {
   badges?: Door[];
   /** A named person, with a face when brand/<photo> exists. */
   who?: { name: string; handle: string; photo?: string };
+  /** Where every outside figure on the slide came from, in one small line on
+   *  the bottom edge. A sent-ahead deck is read by somebody who can check. */
+  sources?: string;
+  /** A 2x2 on the right; the text under the headline narrows beside it. */
+  matrix?: Matrix;
+}
+
+/* THE COMPETITION IS DRAWN AS A 2x2 BECAUSE THE CLAIM IS A POSITION, not a
+   feature list: who decides what gets a market, and where the market lives.
+   Coordinates are 0..1 on each axis; the one `me` point carries the accent. */
+interface Matrix {
+  /** Axis ends: [left, right] along the bottom, [bottom, top] up the side. */
+  x: [string, string];
+  y: [string, string];
+  points: Array<{ name: string; x: number; y: number; me?: boolean }>;
+}
+
+/** The 2x2, in a fixed box on the right of the slide. */
+function matrixSvg(m: Matrix, box: { x: number; y: number; w: number; h: number }, ink: string, accent: string, onDark: boolean): string {
+  const line = onDark ? "rgba(251,252,244,.35)" : "rgba(11,13,4,.28)";
+  const quiet = onDark ? "rgba(251,252,244,.66)" : "rgba(11,13,4,.62)";
+  const { x, y, w, h } = box;
+  const out: string[] = [];
+  out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="22" fill="none" stroke="${line}" stroke-width="3"/>`);
+  out.push(`<path d="M ${x + w / 2} ${y + 18} V ${y + h - 18} M ${x + 18} ${y + h / 2} H ${x + w - 18}" stroke="${line}" stroke-width="3" stroke-dasharray="12 10"/>`);
+  /* THE AXIS NAMES SIT INSIDE THE FRAME, at the ends they describe: the
+     vertical pair runs up the left edge, the horizontal pair along the floor.
+     Set flat, "A DESK LISTS" and "IN THEIR APP" met in the bottom-left corner
+     and printed over each other. */
+  const lab = (t: string, lx: number, ly: number, anchor: string, up = false) =>
+    `<text x="${lx}" y="${ly}" text-anchor="${anchor}"${up ? ` transform="rotate(-90 ${lx} ${ly})"` : ""} font-family="${BODY}" font-size="22" font-weight="700" letter-spacing="3" fill="${quiet}">${esc(t.toUpperCase())}</text>`;
+  out.push(lab(m.y[0], x + 40, y + h - 70, "start", true));
+  out.push(lab(m.y[1], x + 40, y + 26, "end", true));
+  out.push(lab(m.x[0], x + 66, y + h - 24, "start"));
+  out.push(lab(m.x[1], x + w - 26, y + h - 24, "end"));
+  for (const p of m.points) {
+    const px = x + 90 + p.x * (w - 150), py = y + h - 80 - p.y * (h - 150);
+    // A label never runs off the frame: past the middle it hangs to the left.
+    const left = p.x > 0.55;
+    if (p.me) {
+      out.push(`<circle cx="${px + 5}" cy="${py + 6}" r="24" fill="${ink}"/>`);
+      out.push(`<circle cx="${px}" cy="${py}" r="24" fill="${accent}" stroke="${ink}" stroke-width="4"/>`);
+      out.push(`<text x="${left ? px - 40 : px + 40}" y="${py + 16}" text-anchor="${left ? "end" : "start"}" font-family="${DISPLAY}" font-size="48" fill="${ink}">${esc(p.name.toUpperCase())}</text>`);
+    } else {
+      out.push(`<circle cx="${px}" cy="${py}" r="13" fill="${ink}" fill-opacity=".72"/>`);
+      out.push(`<text x="${left ? px - 26 : px + 26}" y="${py + 10}" text-anchor="${left ? "end" : "start"}" font-family="${BODY}" font-size="30" font-weight="700" fill="${ink}" fill-opacity=".86">${esc(p.name)}</text>`);
+    }
+  }
+  return out.join("");
 }
 
 function render(s: Slide, n: number, total: number): string {
@@ -372,6 +421,10 @@ function render(s: Slide, n: number, total: number): string {
   // A portrait takes the same right-hand column a sticker does, and forgetting
   // that ran the body text straight under the circle.
   const colW = s.sticker || s.who || s.narrow ? 1060 : W - PAD * 2;
+  /* BESIDE A 2x2 THE HEADLINE KEEPS THE FULL WIDTH and only what sits under
+     it narrows, because the matrix starts below the headline, not beside it. */
+  const MATRIX_X = 1210;
+  const bodyW = s.matrix ? MATRIX_X - PAD - 60 : colW;
 
   // The headline steps DOWN until it fits its column, so a copy edit can never
   // push a word off the slide silently. Same rule as the market card.
@@ -380,15 +433,18 @@ function render(s: Slide, n: number, total: number): string {
      cannot fit: it split it. The slide went out reading "$250,00" over "0".
      A number is one object. It shrinks or it is wrong. */
   const oneWord = !/\s/.test(s.head.trim());
-  const maxLines = oneWord ? 1 : 3;
+  /* A "\n" IN A HEADLINE IS A CHOSEN BREAK, kept as written: the wrapper is
+     greedy, and at the close's size it set "EVERY ARGUMENT IS A" over a lone
+     "MARKET.", splitting the one line the deck exists to say. */
+  const forced = s.head.includes("\n") ? s.head.split("\n") : null;
+  const maxLines = forced ? forced.length : oneWord ? 1 : 3;
   let fs = s.headSize ?? 150;
-  let lines = wrapToWidth(s.head, colW, fs, maxLines + 1, "display").lines;
+  const wrap = () => forced ?? (oneWord ? [s.head] : wrapToWidth(s.head, colW, fs, maxLines + 1, "display").lines);
+  let lines = wrap();
   const tooWide = () => Math.max(...lines.map((l) => textWidth(l, fs, "display"))) > colW;
   while (fs > 48 && (lines.length > maxLines || tooWide())) {
     fs -= 4;
-    lines = oneWord
-      ? [s.head]
-      : wrapToWidth(s.head, colW, fs, maxLines + 1, "display").lines;
+    lines = wrap();
   }
   const lh = Math.round(fs * 1.02);
   /* THE HEADLINE IS CENTRED ON 300 BUT IT MAY NOT CLIMB PAST THE HEADER, and a
@@ -404,8 +460,11 @@ function render(s: Slide, n: number, total: number): string {
   }
 
   y += 44;
+  if (s.matrix) {
+    parts.push(matrixSvg(s.matrix, { x: MATRIX_X, y: y - 20, w: W - PAD - MATRIX_X, h: H - 130 - (y - 20) }, s.ink, accent, onDark));
+  }
   for (const b of s.body ?? []) {
-    const wrapped = wrapToWidth(b, colW, 42, 4, "meta").lines;
+    const wrapped = wrapToWidth(b, bodyW, 42, 4, "meta").lines;
     for (const l of wrapped) {
       parts.push(`<text x="${PAD}" y="${y}" font-family="${BODY}" font-size="42" font-weight="600" fill="${s.ink}" fill-opacity=".86">${esc(l)}</text>`);
       y += 58;
@@ -450,10 +509,10 @@ function render(s: Slide, n: number, total: number): string {
     const h = 84, gap = 22;
     for (const g of s.ghosts) {
       const text = typeof g === "string" ? g : g.text;
-      parts.push(`<rect x="${PAD}" y="${y}" width="${colW}" height="${h}" rx="18" fill="none" stroke="${accent}" stroke-width="3" stroke-dasharray="16 10" stroke-opacity=".85"/>`);
+      parts.push(`<rect x="${PAD}" y="${y}" width="${bodyW}" height="${h}" rx="18" fill="none" stroke="${accent}" stroke-width="3" stroke-dasharray="16 10" stroke-opacity=".85"/>`);
       parts.push(`<text x="${PAD + 34}" y="${y + h / 2 + 13}" font-family="${BODY}" font-size="34" font-weight="600" fill="${s.ink}" fill-opacity=".92">${esc(text)}</text>`);
       // Where the argument is happening, at the chip's far end.
-      if (typeof g !== "string") parts.push(logo(g.logo, PAD + colW - 22 - 48, y + (h - 48) / 2, 48, onDark));
+      if (typeof g !== "string") parts.push(logo(g.logo, PAD + bodyW - 22 - 48, y + (h - 48) / 2, 48, onDark));
       y += h + gap;
     }
     // NOT `y -= gap`. A caption's y is its BASELINE, so leaving y on the last
@@ -494,7 +553,7 @@ function render(s: Slide, n: number, total: number): string {
       if (r.logo) parts.push(logo(r.logo, PAD, y - 40, LOGO, onDark));
       parts.push(`<text x="${PAD + lead}" y="${y}" font-family="${DISPLAY}" font-size="40" fill="${accent}">${esc(tag)}</text>`);
       const tx = PAD + tagCol;
-      const wrapped = wrapToWidth(r.text, colW - (tx - PAD), 34, 4, "meta").lines;
+      const wrapped = wrapToWidth(r.text, bodyW - (tx - PAD), 34, 4, "meta").lines;
       let yy = y;
       for (const l of wrapped) {
         parts.push(`<text x="${tx}" y="${yy}" font-family="${BODY}" font-size="34" font-weight="600" fill="${s.ink}" fill-opacity=".86">${esc(l)}</text>`);
@@ -529,16 +588,23 @@ function render(s: Slide, n: number, total: number): string {
 
   if (s.foot) {
     y += 14;
-    for (const l of wrapToWidth(s.foot, colW, 28, 3, "meta").lines) {
+    for (const l of wrapToWidth(s.foot, bodyW, 28, 3, "meta").lines) {
       parts.push(`<text x="${PAD}" y="${y}" font-family="${BODY}" font-size="28" font-weight="600" fill="${s.ink}" fill-opacity=".62">${esc(l)}</text>`);
       y += 38;
     }
   }
 
-  if (y > H - 70) {
+  // The sources line owns the bottom edge, so the content has to stop above it.
+  const floor = s.sources ? H - 110 : H - 70;
+  if (y > floor) {
     // Not a silent truncation: a slide that ran past its own edge is a copy
     // problem, and the only way to find one in a PNG is to be told.
-    console.warn(`  ! slide "${s.label || s.head}" runs ${Math.round(y - (H - 70))}px past the bottom`);
+    console.warn(`  ! slide "${s.label || s.head}" runs ${Math.round(y - floor)}px past the bottom`);
+  }
+  if (s.sources) {
+    for (const [i, l] of wrapToWidth(s.sources, W - PAD * 2, 22, 2, "meta").lines.entries()) {
+      parts.push(`<text x="${PAD}" y="${H - 58 + i * 30}" font-family="${BODY}" font-size="22" font-weight="600" fill="${s.ink}" fill-opacity=".5">${esc(l)}</text>`);
+    }
   }
 
   if (s.band) {
@@ -567,7 +633,8 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
    long slide. The brand runs on four grounds and the landing page moves through
    all of them. So does this:
 
-     yellow  black  cream  yellow  BLACK  cream  yellow  black  cream  yellow  PINK  yellow
+     yellow  black  yellow  BLACK  cream  yellow  black  cream  black  cream  PINK  yellow
+     appendix: cream  yellow  black
 
    No two neighbours share a ground, every ground is used, and the highest
    chroma is spent once, on the ask, which is the only slide asking for
@@ -578,8 +645,9 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
    ran three cream slides, and one of them was the SOLUTION: the moment the
    product arrives was the quietest ground in the deck, which is a hierarchy
    error however good the slide looks on its own. A problem slide is dark and a
-   turn is loud. Cream now falls only on the two densest slides, the founder and
-   the moat, where a light ground actually buys the reader something.
+   turn is loud. Cream now falls only on the densest slides (market size,
+   competition, the team, the proof), where a light ground actually buys the
+   reader something.
 
    Two worries that did NOT survive checking, recorded so they are not raised
    again: cream against a viewer's own white chrome (every PDF viewer surrounds
@@ -596,118 +664,77 @@ export function slidePng(s: Slide, n: number, total: number): Buffer {
 const D = C.black, L = C.cream;
 const Y = C.yellow, I = C.ink;
 export const SLIDES: Slide[] = [
+  /* THE ORDER IS THE INVESTOR'S, NOT OURS (1 Oct 2026). The deck had no market
+     size, no traction and no competition slide, the three an investor looks
+     for first and reads as hidden when they are missing. It now runs problem,
+     solution, proof, opportunity, team, ask, with three appendix slides for
+     the questions after. Every outside figure carries its source on the slide;
+     every estimate says it is one. */
   {
-    /* THE COVER SAYS WHAT HAPPENS, NOT WHAT CATEGORY WE ARE IN. "The people's
-       prediction market" named a category; the product is the moment an
-       argument turns into a market where it is happening, on a stream, under a
-       tweet, in a group chat. The category line stays, one size down. */
+    /* THE COVER IS THE VISION, NOT THE INTEGRATIONS (Lev). The doors arrive on
+       slide three, where they are the mechanism. The second line is the party
+       test: what happens, in words anybody gets. */
     label: "", bg: Y, ink: I,
     head: "Every argument is a market.",
-    /* THE COVER IS THE VISION, NOT THE INTEGRATIONS. Naming Kick, X and
-       Telegram here made the product read as three bots (Lev); the doors
-       arrive on slide four, where they are the mechanism. */
-    body: ["The people\u2019s prediction market."],
-    foot: "oddie.fun   @oddiefun",
+    body: ["The people’s prediction market.", "Tag Oddie under any claim, in any chat. It becomes a real-money market in seconds."],
+    foot: "Lev, founder   ·   oddie.fun   ·   @oddiefun",
     sticker: "sticker-hero", stickerBox: { x: 1020, y: 340, w: 840, h: 680 },
   },
   {
-    /* THE PROBLEM WAS A PHILOSOPHY SLIDE. "Being right pays, just not where you
-       argue" is an observation, and an observation is a vitamin: true, mildly
-       agreeable, and nobody wakes up hurting from it. The pain people actually
-       have is narrower and much sharper, and it is the whole social-trading
-       wedge: the bet they want to place right now does not exist anywhere. No
-       venue will list a market on one memecoin's market cap, so the argument
-       running on the timeline has nowhere to settle.
-       It also earns its own answer. Slide six explains WHY nobody lists these
-       (a listing desk is what you build when opening a market costs something)
-       and slide four is the mechanism. Problem, cause, answer, in that order,
-       with no sentence doing the job twice.
-       THE TICKERS ARE REAL AND MEASURED, because a made-up example on the one
-       slide that has to feel lived-in would be obvious to this reader in
-       particular: $ORE $17.4M, $ANSEM $158M, $BONK $249M on 18 September. The
-       two shapes are the two the oracle actually settles, a touch inside a
-       window and a level on a date, so every question here is one oddie could
-       open on the spot. Lower case because that is how they are typed. */
+    /* Each argument is the one native to its room, marked with that room. The
+       BTC one is the market Kick actually opened on 29 Sep. */
     label: "The problem", bg: D, ink: L,
-    head: "Nobody opens the market you want.", headSize: 118,
-    /* THE ROOMS CHANGED, SO THE QUESTIONS DID. The deck now leads with
-       streams, and a stream's chat argues about matches and streamers as much
-       as tokens. Each is one a chat really types and each has a public answer
-       on a date. The BTC one is the market Kick actually opened on 29 Sep. */
-    /* Each is the argument native to its room, marked with that room, never
-       with where it was opened: this slide is about markets nobody opens. A
-       Kick chat argues about its streamers, X about the price, a Telegram
-       group about its coin. */
+    head: "The bets people argue about every day are the ones nobody lists.", headSize: 98,
     ghosts: [
-      { text: "does Adin Ross break Kick\u2019s viewer record this month?", logo: "kick" },
+      { text: "does Adin Ross break Kick’s viewer record this month?", logo: "kick" },
       { text: "btc 88k by friday?", logo: "x" },
       { text: "is $ORE at 50m by the end of the month?", logo: "telegram" },
     ],
-    foot: "Polymarket lists elections. Kalshi lists the economy. Neither will list this.",
-    sticker: "st-l", stickerBox: { x: 1300, y: 540, w: 540, h: 480 },
+    foot: "$45.33B traded on Kalshi and Polymarket in August 2026, on markets each of them chose. Kick averaged over 900K viewers that month, every chat arguing.",
+    sources: "Sources: The Block, 2 Sep 2026 (volume) · Polymarket docs (users cannot create markets) · Streams Charts, 2 Sep 2026 (Kick viewers)",
+    /* NO STICKER: the headline, three rooms and a sourced foot need the full
+       width, and beside the art the foot ran into the sources line. */
   },
   {
-    /* THE FOUNDER MOVED TO THREE. A hundred thousand dollars is an angel
-       cheque, and an angel cheque is written on the founder and the insight,
-       not on a market-model-moat sequence. Burying him at six made this read
-       like a business deck for a business that has not happened yet. */
-    label: "The founder", bg: C.cream, ink: I,
-    head: "45,000 signed up for the last one.", headSize: 124,
-    body: ["He built a Chrome extension that put prediction markets on any website. Chrome banned the category days before launch. Oddie is the idea he wanted all along, built where nobody can delete it."],
-    who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
-    stats: [
-      { big: "600", small: "in the closed beta" },
-      { big: "20K", small: "posts beta users wrote in the extension" },
-    ],
-  },
-  {
-    /* "HOW IT WORKS", NOT "THE SOLUTION". One is what the slide contains, the
-       other is a deck-template word that could sit on any slide in any deck. */
-    /* "TAG IT" WAS ONE DOOR. On Kick nobody tags anything, they type !oddie in
-       the chat, so the verb is the one all three doors share: you call it. The
-       doors are listed by what a person actually types in each. */
-    label: "How it works", bg: Y, ink: I,
-    head: "Call it. It\u2019s a market.",
-    body: ["No referee. The deadline hits and it pays."],
+    /* "CALL IT", BECAUSE ON KICK NOBODY TAGS: they type !oddie. The doors are
+       listed by what a person actually types in each. */
+    label: "The solution", bg: Y, ink: I,
+    head: "Call it in the chat and it is a live market on Solana in 24 seconds.", headSize: 100,
+    body: ["It settles itself: 0 wrong in 25 oracle runs. Whoever opens it earns 2% of the pool."],
     rows: [
-      { tag: "Kick", logo: "kick", text: "Type !oddie and a claim in a stream\u2019s chat." },
+      { tag: "Kick", logo: "kick", text: "Type !oddie and a claim in a stream’s chat." },
       { tag: "X", logo: "x", text: "Tag @oddiefun under any claim." },
       { tag: "Telegram", logo: "telegram", text: "Reply to any message with @oddiefunbot." },
     ],
-    // "Called it", next to "Call it": the sweating ghost argued with the verb.
-    sticker: "st-called", stickerBox: { x: 1300, y: 480, w: 560, h: 540 },
+    sticker: "st-called", stickerBox: { x: 1300, y: 500, w: 560, h: 520 },
   },
   {
-    /* THE NEW DOOR, SHOWN BEFORE THE OLD ONE, because it is the positioning:
-       a stream is a room of thousands arguing live, and this is the first
-       market ever opened in one.
-       WHAT IS ON IT HAPPENED: 29 September, Lev's own channel (oddiefun), the
-       claim typed in Turkish, the market created at 21:43:30 UTC with the
-       headline "BTC to $88k by Friday?" (community_market, read from the live
-       database). Lev typed it himself, so the slide says the chat called it,
-       never that a stranger did. No gap is printed over the arrow: the chat
-       message's own time is not stored, and the X slide's 24 seconds is
-       arithmetic this one cannot repeat.
+    /* WHAT IS ON IT HAPPENED: 29 September, the oddiefun channel, the claim
+       typed in Turkish, the market created at 21:43:30 UTC as "BTC to $88k by
+       Friday?". Lev typed it himself, so the slide says the chat called it,
+       never that a stranger did.
        THE RESULT IS DASHED BECAUSE IT HAS NOT HAPPENED. The market closes on 2
-       October; close the stroke (done: true) the day oddie posts it. */
-    label: "Live on Kick", bg: D, ink: L,
-    head: "Any chat. Any language.", headSize: 100,
-    aside: ["Called in Turkish.", "Opened in English.", "Paid to the stream."],
+       October; close the stroke (done: true) the day Oddie posts it. */
+    label: "The product", bg: D, ink: L,
+    head: "A streamer gets paid for arguments their chat was having anyway.", headSize: 100,
     flow: [
       {
         tick: "29 Sep, Kick chat",
         by: "oddiefun, live",
         quote: "!oddie BTC cumaya kadar 88k olur mu?",
+        cap: "Typed in Turkish, live on stream.",
       },
       {
         tick: "21:43:30 UTC",
         by: "Oddie, in the chat",
-        quote: "Market open: \u2018BTC to $88k by Friday?\u2019 Take YES or NO: app.oddie.fun/m/\u2026",
+        quote: "Market open: ‘BTC to $88k by Friday?’ Take YES or NO: app.oddie.fun/m/…",
+        cap: "Opened in English, in the same chat.",
       },
       {
         tick: "The stream",
         head: "2%",
         sub: "of the pool, to the channel",
+        cap: "Whichever side wins.",
       },
     ],
     rail: {
@@ -717,43 +744,135 @@ export const SLIDES: Slide[] = [
     },
   },
   {
-    /* THE SLIDE THE DECK DID NOT HAVE, and its absence was the whole problem:
-       eleven slides and not one fact about oddie itself.
-       IT IS A PROOF, NOT A METRIC, and deliberately so. The tag and the stake
-       on this market were both Lev's own accounts, so there is no demand here
-       and the slide must not imply any. What it does prove is that the machine
-       runs unattended end to end, which no competitor can say, and which is
-       the only thing worth showing before there are users. */
-    /* "THE LOOP RUNS WITH NOBODY IN IT" SAID THE WRONG THING. It was meant as
-       no operator; it reads just as easily as no users, which is the one thing
-       this deck is careful not to advertise, and it planted that idea in the
-       reader itself. The claim is that it is automatic, so say that. */
-    /* AND THEN IT WAS STILL A LIST. Four dated sentences in a column tell a
-       reader that a machine ran; they do not show it, and a list is exactly
-       what a founder writes when there is nothing to show. There is something
-       to show. The panels hold the real objects: the words that were tweeted,
-       the card exactly as it went out on X, and the account the money is in.
-       THE NUMBER ON THE ARROW IS THE WHOLE SLIDE. Both posts are snowflake
-       ids, so the gap between them is not a claim, it is arithmetic anyone can
-       redo: 2099850003501969749 at 13:17:08.818Z, 2099850105037926466 at
-       13:17:33.026Z. Twenty-four seconds, and nobody was awake for them. */
-    /* "PROOF", NOT "IT WORKS" AND CERTAINLY NOT "HOW IT WORKS". How it works is
-       the slide before this one, and running the same label twice would turn an
-       exhibit into a second explanation. "It works" was closer but it is a
-       claim, and a claim as the label of the slide whose entire job is evidence
-       reads defensively. Proof names the function: everything under it is a
-       receipt for the sentence above it. */
-    label: "Proof", bg: L, ink: I,
+    /* BOTTOM-UP, AND THE BIG NUMBER IS THE SMALLEST. The headline is the
+       1,000-room line because that is the arithmetic a reader can redo:
+       1,000 x 10 markets a week x $300 x 52 = $156M of volume, 2% of it $3.1M.
+       The SAM is the same sum over the 91,000 Kick channels that streamed to
+       an audience in August, with X and Telegram left out. */
+    label: "Market size", bg: L, ink: I,
+    head: "1,000 of the 91,000 Kick channels with an audience, opening 10 markets a week, is a $3.1M business.", headSize: 92,
+    stats: [
+      { big: "$544B", small: "a year of prediction-market volume (TAM, Aug 2026 run rate)" },
+      { big: "$284M", small: "2% of 10 markets a week in 91,000 Kick rooms (SAM, est.)" },
+      { big: "$3.1M", small: "2% of 10 markets a week in 1,000 rooms (SOM, est.)" },
+    ],
+    foot: "Why now: a model writes and settles the rules in seconds, and a market costs $0.31 to open. Kalshi is valued at $22B for running that desk by hand.",
+    sources: "Sources: The Block, 2 Sep 2026 (August volume) · Streamer.Guide on Streams Charts data, 27 Sep 2026 (91,000 Kick channels averaging 5+ viewers) · The Block (Kalshi $22B). Estimates assume $300 pools.",
+  },
+  {
+    /* HONEST, BECAUSE THE READER CHECKS. Nothing here is growing yet and the
+       slide says so in its own headline; what it shows instead is the speed of
+       shipping and the demand the founder has already drawn once. */
+    label: "Traction", bg: Y, ink: I,
+    head: "Three doors went live on mainnet within three weeks. Outside money is the next proof.", headSize: 96,
+    rows: [
+      { tag: "8 Sep", text: "Mainnet. The market program goes live on Solana." },
+      { tag: "20 Sep", logo: "x", text: "X. @oddiefun opens markets from tags." },
+      { tag: "26 Sep", logo: "telegram", text: "Telegram. @oddiefunbot in groups and DMs." },
+      { tag: "30 Sep", logo: "kick", text: "Kick. !oddie in a stream’s chat." },
+    ],
+    foot: "30 Sep 2026: 18 markets, 2 staking wallets, 1.82 SOL pooled, mostly founder tests. No metric is growing yet; the founder’s last product drew a 45,000 waitlist.",
+    sticker: "st-cooking", stickerBox: { x: 1340, y: 560, w: 500, h: 440 },
+  },
+  {
+    /* THE RATE, THE COST AND WHAT ONE ROOM IS WORTH. A rate with no volume
+       leaves the reader to guess; the estimates are labelled as estimates and
+       their one assumption is in the foot. LTV/CAC: $3,120 a year against the
+       test's $500 over 3 rooms, about $167 a room. */
+    label: "Business model", bg: D, ink: L,
+    head: "Anyone opens a market. Oddie keeps 2% of every pool it settles.", headSize: 100,
+    body: ["Free while open. At settlement 4% of the pool: 2% to whoever opened it, 2% to Oddie."],
+    stats: [
+      { big: "$0.31", small: "to open a market on Solana" },
+      { big: "$3,120", small: "a year from one room (est.)" },
+      { big: "19x", small: "LTV to CAC, $167 to win a room (est.)" },
+    ],
+    foot: "Estimates assume 10 markets a week per room at $300 pools. 100 rooms in 12 months is a $310K run rate; 1,000 rooms in 24 months is $3.1M.",
+  },
+  {
+    /* TWO FUNDED RIVALS ALREADY LET ANYONE OPEN A MARKET ON X, so that is not
+       the difference any more and the slide does not pretend it is. The
+       difference is the room: a stream channel earns from every market its
+       chat opens. */
+    label: "Competition", bg: L, ink: I,
+    head: "Others let anyone open a market on X. Only Oddie lives in live rooms and pays the room.", headSize: 92,
+    rows: [
+      { tag: "Desk", text: "Kalshi, Polymarket: their own team picks every market." },
+      { tag: "Worm", text: "Anyone creates, 2.5% creator fee, UMA settlement. $4.5M pre-seed." },
+      { tag: "Kash", text: "Markets from X posts via @kash_bot. $2M pre-seed." },
+      { tag: "Oddie", text: "Kick streams, Telegram groups and X. The channel earns from every market its chat opens." },
+    ],
+    foot: "The moat is installed rooms with a payout history. A copy starts at zero rooms.",
+    matrix: {
+      x: ["In their app", "In the chat"],
+      y: ["A desk lists", "Anyone opens"],
+      points: [
+        { name: "Kalshi", x: 0.06, y: 0.08 },
+        { name: "Polymarket", x: 0.1, y: 0.26 },
+        { name: "Worm", x: 0.2, y: 0.82 },
+        { name: "Kash", x: 0.62, y: 0.68 },
+        { name: "Oddie", x: 0.92, y: 0.92, me: true },
+      ],
+    },
+    sources: "Sources: Polymarket docs · Solana Compass (Worm) · BeInCrypto (Kash)",
+  },
+  {
+    label: "Go-to-market", bg: D, ink: L,
+    head: "Every streamer is a room, and we sign rooms one DM at a time.", headSize: 100,
+    steps: ["DM", "First stream", "First market", "Fourth stream"],
+    rows: [
+      { tag: "Who", text: "Kick crypto, trading and just-chatting channels with 50 to 2,000 viewers." },
+      { tag: "How", text: "20 DMs a day. Join the first stream; the chat opens the first market." },
+      { tag: "Seed", text: "$500 seeds both sides of early pools. Target: 3 rooms in 2 weeks." },
+      { tag: "Pass", text: "Stakers reach 2% of chatters and the median pool hits $100." },
+    ],
+    foot: "The round pays creators to open markets and takes the test to 100 rooms.",
+  },
+  {
+    /* NO PRONOUN. The founder is named and faced; the copy says what was built
+       and what happened, which is the part a reader is buying. */
+    label: "The team", bg: L, ink: I,
+    head: "A solo founder who built all of Oddie, and grew the last product to a 45,000 waitlist.", headSize: 84,
+    body: ["Built end to end: Solana program, oracle, three bots, app. 678 commits since 14 July."],
+    who: { name: "Lev", handle: "@levvercetti", photo: "madlev.jpg" },
+    stats: [
+      { big: "45,000", small: "waitlist, last product" },
+      { big: "600", small: "weekly beta users" },
+    ],
+    foot: "The last product lost its store when Chrome banned the category. Next hire: a growth co-founder for streamer and creator deals.",
+    sources: "Source: Chrome Web Store policy update, prediction-market extensions banned from 1 Aug 2026",
+  },
+  {
+    /* AN ALLOCATION IS NOT A MILESTONE, so the milestones sit under it: the
+       round buys an answer, and this is what the answer looks like. */
+    label: "The ask", bg: C.pinkField, ink: C.cream,
+    head: "$100,000", headSize: 196,
+    body: ["Buys the answer: do streamers and groups bring their rooms?"],
+    rows: [
+      { tag: "30%", text: "Streamers and creators, paid to open markets." },
+      { tag: "60%", text: "Founder, twelve months full time." },
+      { tag: "10%", text: "Infra." },
+    ],
+    foot: "Milestones: 10 outside rooms, 3 markets per room a week, one $1,000 pool, no room lost in 4 weeks. Next round: Q1 2027.",
+    narrow: true,
+  },
+  {
+    /* THE FRAME CLOSES ON THE COVER'S LINE, and the one number to remember is
+       the speed: 24 seconds, snowflake arithmetic anyone can redo (appendix). */
+    label: "", bg: Y, ink: I,
+    head: "Every argument\nis a market.", headSize: 128,
+    body: ["Try it: !oddie on Kick, @oddiefun on X, @oddiefunbot on Telegram.", "lev@oddie.fun   ·   oddie.fun"],
+    stats: [{ big: "24 SEC", small: "from a chat line to a live market" }],
+    sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
+  },
+  {
+    /* APPENDIX A1. The machine running unattended, end to end. Both accounts
+       on this market were Lev's, so it proves the loop, not demand. The 24
+       seconds is snowflake arithmetic: 2099850003501969749 at 13:17:08.818Z,
+       2099850105037926466 at 13:17:33.026Z. The card is the one that was
+       posted, frozen in brand/. */
+    label: "Appendix · Proof", bg: L, ink: I,
     head: "It runs itself.",
-    /* THE PICTURES SHOW WHAT HAPPENED; THEY CANNOT SHOW WHO DID NOT. That is
-       the claim, so it is the one sentence on the slide. It names oddie rather
-       than saying "nobody", because "nobody" is what the old headline said and
-       a reader heard it as "no users" — the one thing this slide must not
-       imply, since both accounts on this market are Lev's. */
-    /* "NO ONE AT ODDIE OPENED THIS MARKET" WAS TRUE AND FRAGILE: the tag and
-       the stake were Lev's own accounts, and a reader who finds that reads the
-       line as a dodge. The claim is that no person typed the market in or
-       settled it, so it says exactly that. */
     aside: ["Nobody typed it in.", "Nobody closed it."],
     flow: [
       {
@@ -762,34 +881,16 @@ export const SLIDES: Slide[] = [
         quote: "$BULLSHIT hits a 1m market cap within 3 days. screenshot this. @oddiefun",
       },
       {
-        /* THE CARD IS THE ONE THAT WAS POSTED, not one generated for the deck:
-           it is pulled from the tweet's own media and frozen in brand/, which
-           is why it still reads "2d left" instead of whatever the live market
-           would say today. A deck that re-renders its evidence has no evidence. */
         tick: "13:17:33", gapLabel: "24 sec",
         img: "step-market.png",
       },
       {
-        /* NO TIME ON THIS ONE, and that is not an oversight. The Solana account
-           is minted when the first stake lands, not when the market opens, so
-           a clock here would be a nice-looking lie. */
         tick: "On chain",
         head: "Real SOL",
         sub: "held until the deadline",
         note: "562CXadj…SRE6rc1D7",
       },
     ],
-    /* THE LAST BEAT IS WRITTEN FOR 18 SEPTEMBER, THE DAY IT RUNS. $BULLSHIT sat
-       at $543k against a $1,000,000 touch with fifteen hours left, so NO is the
-       answer the price history gives, and an oracle that can only ever say yes
-       is not an oracle: a deck that shows one refusing is worth more than a
-       deck that shows one agreeing.
-       THIS PDF IS TRUE FROM 13:17 UTC ON THE 18th AND NOT BEFORE. Nothing here
-       is a picture of it, so nothing is forged, but a dated fact needs its date
-       to have passed, and the file must not go out before then.
-       NO PAYOUT IS CLAIMED, deliberately. Every lamport in this pool is on YES
-       and YES lost, so a pool with no winners is a refund path rather than a
-       payout, and the slide stays away from it. */
     rail: {
       tag: "18 Sep 13:17 UTC",
       mark: "NO",
@@ -798,188 +899,30 @@ export const SLIDES: Slide[] = [
     },
   },
   {
-    /* THIS SLIDE DID NOT ANSWER ITS OWN TITLE. It had a comp and a zero and
-       named no CHANGE, which is the only thing "why now" asks for: why 2026 and
-       not 2023. The change is the cost. A listing desk is not a business
-       decision, it is what you build when opening a market costs enough that
-       someone has to ration them, and on Solana it costs the rent on two
-       accounts.
-       THE NUMBER IS DATED ON PURPOSE. 0.00291 SOL is fixed (oddieChain.ts:84);
-       the dollars are not. At SOL $105.81 that is $0.308, so the stat is the
-       measured figure today and the small line says which SOL it was measured
-       at, rather than a round number that quietly stops being true. */
-    label: "Why now", bg: Y, ink: I,
-    /* AND IT NO LONGER OPENS THE WAY THE PROBLEM SLIDE DOES. Both headlines
-       started with "Nobody" and both were about markets, four slides apart, in
-       a deck with twelve of them. The felt one keeps the word; this one is the
-       cause, so it says the cause and nothing else. Three words, and the body
-       and the stats underneath do the rest. */
-    /* "MARKETS GOT CHEAP" WAS ONE HALF OF THE CHANGE, and the shallow half.
-       Cheap rent alone does not remove the desk: somebody still had to write
-       the rules and settle the result, and that labour is why only big
-       questions get listed. What changed is that both jobs became software.
-       Every number below is measured in this repo: 24 seconds from tag to
-       posted market (slide six, snowflake arithmetic), 0 wrong in 25 oracle
-       runs over real resolved markets (oracle backtest, 30 Aug 2026), and
-       0.00291 SOL of rent (oddieChain.ts). Kalshi's valuation stays, as the
-       size of the prize a desk has been worth. */
-    head: "The listing desk became software.", headSize: 124,
-    body: [
-      "A market used to need people: one to write the rules, one to settle it. Kalshi is worth $22B running that desk.",
-      "Now a model writes the rules in seconds, settles from the record, and Solana makes opening one cost cents.",
-    ],
-    /* $40B TRADED IN ONE MONTH CAME OUT. It was the load-bearing number on the
-       slide whose whole weight is a contrast, and it was unsourced through
-       three asks. An unverifiable figure on a fundraising document does not
-       fail quietly: a reader who checks it and cannot confirm it stops
-       trusting every other number here. Put it back the day there is a link. */
-    stats: [
-      { big: "24 SEC", small: "from a tag to a live market" },
-      { big: "0 OF 25", small: "oracle runs settled wrong" },
-      { big: "$0.31", small: "to open one on Solana" },
-    ],
-  },
-  {
-    /* THE MODEL IS WHO MAY OPEN, NOT ONLY THE RATE. Lev: the slide should say
-       the business is permissionless and that the opener's cut is what spreads
-       it. So the rate moves into the stats and the headline says the rule. */
-    label: "Business model", bg: D, ink: L,
-    /* SIZED SO THE HEAD BREAKS ON ITS OWN FULL STOP. At 150 the wrapper split
-       it three ways as "4% when it is / over. Nothing / before.", which reads as
-       two half-sentences; 132 fits "4% when it is over." on one line and lets
-       the second sentence have the second. */
-    head: "Anyone opens it. The opener gets paid.", headSize: 100,
-    /* A RATE IS NOT AN ECONOMIC. "4%" with no volume anywhere in the deck
-       leaves the reader to do the arithmetic, and a reader doing arithmetic is
-       a reader deciding what the number probably is. One worked line costs a
-       sentence and removes the guess. */
-    body: [
-      /* NOT A STREAM, AND THIS SAID ONE. "for as long as it exists" was meant
-         as "the claim is permanently theirs, nobody can reassign it", and it
-         reads as income over time. The chain fixes creator_fee_lamports ONCE,
-         at resolve, as a share of the final pool, and claim_creator_fee pays it
-         once (onchain/programs/oddie_chain/src/lib.rs). An investor who checks
-         the program finds a single payment where the deck promised a royalty,
-         and the wrong half of that discovery is that everything else on the
-         slide was true. */
-      "No listing desk, no permission. Any claim with a yes, a no and a date.",
-      "The opener\u2019s 2% is the distribution. A stream is thousands of people arguing live, and the streamer is paid to keep Oddie in it.",
-    ],
-    stats: [
-      { big: "4%", small: "of the pool, when it settles" },
-      { big: "2%", small: "to whoever opened it" },
-      { big: "2%", small: "to Oddie" },
-    ],
-    foot: "A $1,000 pool pays its opener $20, and Oddie $20.",
-    /* NO STICKER: three numbers and two sentences need the full width, and
-       with the art beside them the slide ran off its own bottom edge. */
-  },
-  /* "HOW IT SPREADS" FOLDED INTO THE BUSINESS MODEL. Cut down, it was two
-     lines restating the slide before it; the stream line now sits where the
-     2% is explained. */
-  {
-    /* PRESENT TENSE, because the old version was entirely future: "give it a
-       year and every account is a track record" is a moat in year two of a
-       company in week one, and an investor discounts that to nothing. The
-       record starts on the first settled call, and the first one is dated on
-       slide five. */
-    label: "The moat", bg: L, ink: I,
-    head: "Every call already has a name on it.", headSize: 118,
-    /* A CLONE WAS THE ONLY THING THIS ANSWERED, and the platform is the bigger
-       risk: the founder slide establishes that one already killed his last
-       product, three slides earlier, and a reader joins those two on their own.
-       The deck has to close that loop itself. */
-    body: [
-      /* THE THREAT GETS A NAME. "A clone" is the abstraction a founder reaches
-         for when they would rather not say it out loud, and every investor in
-         this category is already thinking the name. Saying it first, and then
-         answering it, is worth more than the sentence costs. */
-      "It settles on chain under your handle. Polymarket can copy the button, not your record.",
-      "A platform can close a door. Oddie has three, and everything is on Solana.",
-      /* THE PLATFORM QUESTION, ANSWERED AS A PARTNER. Oddie is not a rival to
-         Kick or Telegram: it pays their creators, which is what a platform
-         wants more of. */
-      "Oddie doesn\u2019t compete with the platforms. It pays their creators.",
-    ],
-    sticker: "arch-judge", stickerBox: { x: 1320, y: 540, w: 520, h: 480 },
-  },
-  {
-    label: "Where it goes", bg: Y, ink: I,
-    /* "EVERY ARGUMENT IS A MARKET" SAT DIRECTLY UNDER "EVERY CALL ALREADY HAS A
-       NAME ON IT", and two adjacent headlines opening on the same word is the
-       kind of thing a reader feels without being able to name. It was also the
-       deck's refrain for the third time, after the cover and "Tag it. It's a
-       market." This slide is a roadmap, so its headline now says where it goes
-       and lets the four rows underneath say when. */
+    label: "Appendix · Roadmap", bg: Y, ink: I,
     head: "It goes wherever people argue.",
     rows: [
       { tag: "Now", text: "Kick, X and Telegram. Live, with real money in it." },
-      /* NOT "BUILT AND TESTED". There is no Telegram bot in this repo: no
-         client, no token, no send path. What does exist is the market side —
-         a t.me link is a valid source, sourcePostKey parses it, and
-         resolutionReply already handles a market with no X handle on it. So
-         the row says the half that is true. An investor who asks and gets
-         "actually it only accepts the link" stops believing the three rows
-         under it as well. */
-      /* TELEGRAM MOVED UP, IT IS LIVE, and Kick arrived beside it. Twitch is
-         NEXT, not now: the engine is platform-free (src/live/calls.ts) and the
-         adapter is the work. The streamer's own game read off the screen is a
-         plan, measured nowhere yet, so it sits at THEN. */
       { tag: "Next", text: "Twitch. The same engine, one more door." },
-      { tag: "Then", text: "A streamer\u2019s own game, settled from the screen." },
+      { tag: "Then", text: "A streamer’s own game, settled from the screen." },
       { tag: "After", text: "Discord, and any app with one key." },
     ],
+    foot: "Oracle backtest, 30 Aug 2026: 25 runs, 0 wrong, 38% settled with no human. The rest is the resolver network's job.",
     sticker: "st-rocket", stickerBox: { x: 1400, y: 580, w: 440, h: 440 },
   },
   {
-    label: "The ask", bg: C.pinkField, ink: C.cream,
-    /* AN ALLOCATION IS NOT A MILESTONE. Percentages say where money goes; an
-       angel is buying the next step, and the next step here is an answer:
-       whether strangers tag it. Saying that out loud is stronger than a
-       forecast nobody believes, because the product being built is what makes
-       the question the only remaining risk. */
-    head: "$100,000", headSize: 196,
-    body: ["Everything is built. This buys the answer: do streamers and groups bring their rooms?"],
-    /* "TEAM" AND "RUNWAY" WERE THE SAME LINE. Thirty per cent so shipping never
-       stops and thirty per cent of founder time is sixty per cent of people
-       under two names, and a reader adds them anyway. Worse, the deck budgeted
-       for a team it never shows: there is one person in it, and the slide
-       created the "who else?" question by itself. The split is unchanged —
-       30/60/10, exactly what it was — it just stops pretending to be four
-       things. One founder, named and faced three slides earlier, is a cleaner
-       answer than a team nobody can see. */
+    /* THE QUESTIONS A CAREFUL READER ASKS SECOND, answered before they are
+       asked. Each row is a rule we checked and what we do about it. */
+    label: "Appendix · Risks", bg: D, ink: L,
+    head: "The risks we know, and the answer to each.", headSize: 110,
     rows: [
-      { tag: "30%", text: "Streamers and creators. Paid to open markets and bring their rooms." },
-      { tag: "60%", text: "Founder. Twelve months, full time, shipping." },
-      { tag: "10%", text: "Infra. Measured, not estimated." },
+      { tag: "Law", text: "18+ only. Paid markets stay off in the US and Türkiye." },
+      { tag: "Kick", text: "Its guidelines bar gambling with funds from other users. We get Kick’s written OK before scaling the door." },
+      { tag: "X", text: "AI replies need X’s prior written approval. We apply before scaling the X door." },
+      { tag: "Telegram", text: "Mini Apps must use TON. Oddie’s bot has no Mini App, which the rules exempt." },
+      { tag: "Wallet", text: "Phantom warns on young domains. Its domain review is the fix." },
     ],
-    /* NO STICKER, AND IT IS THE ONLY SLIDE WITHOUT ONE ON PURPOSE. A ghost on a
-       number-one podium holding a trophy, next to the number being asked for,
-       says the round is already won and the reader has not decided anything
-       yet. Nine of twelve slides carry art and the deck is better for it; this
-       is the one where the room goes quiet. The pink is already the loudest
-       thing in the deck, spent once, here — a celebration on top of it was
-       shouting twice. The column stays at a sticker's width so the empty half
-       reads as composure and not as a slide that lost its picture. */
-    narrow: true,
-  },
-  {
-    label: "", bg: Y, ink: I,
-    /* THE LAST SLIDE OF A RAISE SHOULD MAKE THE NEXT ACTION TRIVIAL, and this
-       one was a brand sign-off with an address under it. The best next action
-       for this product is not a reply, it is a tag: an investor who opens a
-       market converts on a different curve from one who reads about it. */
-    /* AND THE HEADLINE RETURNS TO THE COVER'S. "Be right. Be early. Be oddie."
-       was three imperatives carrying no information, on the slide that stays on
-       screen while you talk and the one a reader screenshots. The positioning
-       line is the thing worth leaving up there, and saying it twice is not a
-       repetition to cut: it is the frame closing. The ground already does this
-       — the closer is the cover's yellow for the same reason — so the words
-       may as well agree with it. The body changes underneath from who we are
-       to what to do next, which is what makes it a close and not a copy. */
-    head: "Every argument is a market.",
-    body: ["Try it: !oddie on Kick, @oddiefun on X, @oddiefunbot on Telegram.", "lev@oddie.fun"],
-    sticker: "st-main", stickerBox: { x: 1200, y: 460, w: 660, h: 580 },
+    sources: "Sources: Kick Community Guidelines, 19 Mar 2026 · X Automation Rules · Telegram Blockchain Guidelines",
   },
 ];
 export { C, W, H, PAD, shelf };
