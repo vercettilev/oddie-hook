@@ -155,6 +155,24 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
     spy.minted[0]?.openerId !== "tg:222");
 }
 
+/* ------------------------------------- a claim that already has a market -- */
+{
+  /* The mint found the same claim already open (another group, another post)
+     and handed that market back. Nothing was opened here: no "Opened by you,
+     who earns 2%", and the ledger must not count it against the daily cap. */
+  _resetBotState();
+  const parent = msg({ message_id: 10, chat: PUBLIC, from: noname, text: "BTC 200k before 2027" });
+  const { deps, spy } = harness([upd(1, msg({ message_id: 11, chat: PUBLIC, from: alice, reply_to_message: parent }))], {
+    openMarket: async () => ({ ok: true, slug: "btc-200k", existed: true, question: "Will Bitcoin hit $200k before 2027?" }) as MintResult,
+  });
+  const r = await runTelegramSweep(deps);
+  check("a tag that matches an open market is answered with it", r.replied === 1
+    && /app\.oddie\.fun\/m\/btc-200k/.test(spy.replies[0]?.text ?? ""), spy.replies[0]?.text);
+  check("...without naming the tagger as its opener", !/Opened by/.test(spy.replies[0]?.text ?? ""));
+  check("...and recorded as existing, not opened", _memMentionReason("tg:-1001234567890:11") === "existing",
+    String(_memMentionReason("tg:-1001234567890:11")));
+}
+
 /* ----------------------------------------------------------- identity -- */
 {
   _resetBotState();

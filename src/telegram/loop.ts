@@ -462,6 +462,19 @@ async function finishClaim(
     return { outcome: "retry", reason: "mint", ledgerReason: `mint:${minted.status} ${minted.error}` };
   }
 
+  /* THE CLAIM ALREADY HAD A MARKET, opened elsewhere: the same answer as the
+     one-post-one-market branch, with no opener line (it was not theirs) and
+     not recorded as opened, so it costs this person nothing of their cap. */
+  if (minted.existed) {
+    const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
+    const question = minted.question || ex.question;
+    const reply = buildTweetReply({ question, permalink, hook: "" });
+    await job.answer(job.guest ? question : reply.primary, minted.slug);
+    await settleMention(job.key, "replied", { slug: minted.slug, reason: "existing", claimText: job.keptText, replyId: job.replyId() });
+    log("telegram tag matched an open market", { key: job.key, slug: minted.slug });
+    return { outcome: "replied", reason: "existing", slug: minted.slug };
+  }
+
   const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
   const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook });
   /* THE INCENTIVE, SAID WHERE THE ROOM CAN SEE IT. "Bring the room, own the

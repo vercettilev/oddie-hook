@@ -113,6 +113,24 @@ async function main() {
     check("the watermark advanced to the tweet it handled", (await botStateGet(SINCE_KEY)) === "100");
   }
 
+  /* ------------------------------------- a claim that already has a market -- */
+  {
+    /* Two different posts making the same claim: the mint hands back the
+       market the first one opened. The second tagger gets a pointer, free:
+       no ticket spent and the reply does not read as theirs. */
+    _resetBotState();
+    const spends: string[] = [];
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("150")], newestId: "150" }),
+      openMarket: async () => ({ ok: true, slug: "btc-200k", existed: true, question: "Will Bitcoin hit $200k before 2027?" }) as MintResult,
+      spendTicket: async (slug) => { spends.push(slug); return true; },
+    });
+    const r = await runMentionSweep(deps);
+    check("a tag that matches an open market is answered with it", r.replied === 1
+      && (spy.posted[0]?.text ?? "").includes("https://oddie.fun/m/btc-200k"), spy.posted[0]?.text);
+    check("...and costs the tagger no ticket", spends.length === 0, JSON.stringify(spends));
+  }
+
   /* ---------------------------------------------- the claim is the PARENT -- */
   {
     _resetBotState();

@@ -97,6 +97,15 @@ export async function openFromChat(msg: ChatMessage, claimText: string, deps: Ch
       await deps.settle(key, refused ? "skipped" : "failed", { reason: `mint:${minted.status} ${minted.error}`, claimText: text });
       return refused ? "unmarketable" : "later";
     }
+    /* THE CLAIM ALREADY HAD A MARKET, opened elsewhere. Nothing was opened
+       here, so this chat is pointed at it and it is NOT recorded as opened:
+       "opened" is what the daily cap counts and what this channel's list of
+       its own markets reads, and the 2% stays with whoever really opened it. */
+    if (minted.existed) {
+      await deps.say(msg, MARKET_COPY.existing(minted.question || ex.question, `${base}/m/${minted.slug}`));
+      await deps.settle(key, "replied", { slug: minted.slug, reason: "existing", claimText: text });
+      return "existing";
+    }
     const url = `${base}/m/${minted.slug}`;
     await deps.say(msg, MARKET_COPY.opened(ex.hook || ex.question, url, channel));
     // "opened" is what the daily cap counts.

@@ -22,7 +22,7 @@ import {
   cookieValue, OWNER_COOKIE, OWNER_TTL_MS, ownerCookie, ownerKey, ownerKeyFromEnv, ownerToken, verifyOwnerToken,
 } from "../src/live/owner.js";
 import {
-  kickChatSource, sourceUrlKind, sourcePostKey, isWebSourceUrl, claimMention, settleMention, _memMentionOutcome,
+  kickChatSource, sourceUrlKind, sourcePostKey, isWebSourceUrl, claimMention, settleMention, _memMentionOutcome, _memMentionReason,
   createCommunityMarket, markCommunityResolved, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets,
 } from "../src/store/markets.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
@@ -258,6 +258,17 @@ console.log("\nthe market door: !oddie <claim>, like a tag on X or Telegram");
     (await openFromChat(viewer("id-4", "x"), "vibes are good", vibes.deps)) === "unmarketable" && vibes.said[0] === MARKET_COPY.unmarketable && vibes.opened.length === 0);
   const down = world({ extract: async () => { throw new Error("extract 529 overloaded"); } });
   check("a model outage asks for another go", (await openFromChat(viewer("id-5", "x"), "claim", down.deps)) === "later" && down.said[0] === MARKET_COPY.later);
+  /* THE CLAIM ALREADY HAD A MARKET, opened from another chat or post. The mint
+     hands back that market with existed set; the chat is pointed at it and the
+     row is NOT recorded as "opened", which the daily cap and this channel's own
+     list both count. Live on 30 Sep: one BTC market was "opened" four times. */
+  const twin = world({ openMarket: async () => ({ ok: true, slug: "btc-120k", existed: true, question: "Will BTC close above $120k on Friday?" }) as never });
+  const tw = await openFromChat(viewer("id-twin", "x"), "BTC above 120k by Friday?", twin.deps);
+  check("a claim that matches an open market points at it", tw === "existing"
+    && twin.said[0] === MARKET_COPY.existing("Will BTC close above $120k on Friday?", "https://app.oddie.fun/m/btc-120k"), `${tw} ${twin.said[0]}`);
+  check("...and says nothing about this channel earning from it", !/earns 2%/.test(twin.said[0] ?? ""));
+  check("...and is recorded as existing, never as opened", _memMentionReason("kick:131980691:id-twin") === "existing",
+    String(_memMentionReason("kick:131980691:id-twin")));
   const linked = world({ payoutWallet: async (id) => (id === "kick:131980691" ? "Wal1etOfTheStreamer" : null) });
   await openFromChat(viewer("id-7", "x"), "claim", linked.deps);
   check("a channel that linked a wallet is named on the market from the start", linked.opened[0]?.creatorWallet === "Wal1etOfTheStreamer");

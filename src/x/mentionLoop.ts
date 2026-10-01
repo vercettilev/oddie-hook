@@ -31,6 +31,12 @@ import { SINCE_KEY } from "./client.js";
 export interface MintedMarket {
   ok: true;
   slug: string;
+  /** Nothing was opened: the claim matched a market that was already open,
+   *  and slug is that market. Every door answers it as an existing market,
+   *  never as one it just opened. */
+  existed?: boolean;
+  /** The existing market's question, when existed. */
+  question?: string;
 }
 export type MintResult = MintedMarket | { ok: false; status: number; error: string };
 
@@ -645,6 +651,28 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
         decide("retry", { reason: `mint:${minted.status}` });
         log("mint failed, leaving the tag for the next sweep",
           { tweetId: m.id, status: minted.status, error: minted.error });
+        continue;
+      }
+
+      /* THE CLAIM ALREADY HAD A MARKET, opened from another post. Answered
+         exactly like the one-post-one-market branch above: a pointer, free,
+         no ticket spent and no "you opened this" in the reply, because they
+         did not, and the 2% stays with whoever did. */
+      if (minted.existed) {
+        const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
+        const reply = buildTweetReply({ question: minted.question || ex.question, permalink, hook: "" });
+        let mediaIds: string[] | undefined;
+        try {
+          const png = await deps.cardPng(minted.slug);
+          if (png) mediaIds = [await deps.uploadMedia(png)];
+        } catch (e) {
+          log("card failed, replying without it", { tweetId: m.id, err: (e as Error).message });
+        }
+        postAttempted = true;
+        const posted = await postOrPlain(deps, { text: reply.primary, plain: reply.fallback, inReplyTo: m.id, mediaIds }, log);
+        await settleMention(m.id, "replied", { slug: minted.slug, replyId: posted.id, claimText: graded });
+        decide("replied", { reason: "existing", slug: minted.slug, text: reply.primary });
+        log("replied with the open market this claim matched", { tweetId: m.id, slug: minted.slug });
         continue;
       }
 

@@ -1855,7 +1855,7 @@ const kickMarkets = {
       claimText: input.claimText ?? null, resolvability: input.resolvability, hook: input.hook ?? null,
       mint: "on-demand",
     });
-    return out.ok ? { ok: true as const, slug: out.slug } : { ok: false as const, status: out.status, error: out.error };
+    return out.ok ? { ok: true as const, slug: out.slug, existed: Boolean(out.existed), question: out.question } : { ok: false as const, status: out.status, error: out.error };
   },
   claim: (key: string, author: string) => claimMention(key, author),
   settle: (key: string, outcome: "replied" | "skipped" | "failed", extra: { reason?: string; slug?: string; claimText?: string | null }) =>
@@ -3397,7 +3397,7 @@ type OpenMarketResult =
       /** Set when nothing was opened because this claim already had a market.
        *  The slug above is that market's: every caller then links the one that
        *  exists instead of minting a twin beside it. */
-      existed?: true }
+      existed?: true; question?: string }
   | { ok: false; status: number; error: string };
 
 /**
@@ -3650,7 +3650,7 @@ async function openMarketFromClaim(input: {
   ).catch(() => null);
   if (twin) {
     void logExtraction("duplicate", question, { slug: twin.slug, question, existing: twin.question });
-    return { ok: true, slug: twin.slug, marketId: 0, onchain: null, existed: true };
+    return { ok: true, slug: twin.slug, marketId: 0, onchain: null, existed: true, question: twin.question };
   }
 
   // The vault comes first. Written the other way round, a Solana failure
@@ -6065,7 +6065,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
         // not. It gets minted the moment somebody actually turns up.
         mint: "on-demand",
       });
-      return out.ok ? { ok: true, slug: out.slug } : { ok: false, status: out.status, error: out.error };
+      return out.ok ? { ok: true, slug: out.slug, existed: Boolean(out.existed), question: out.question } : { ok: false, status: out.status, error: out.error };
     },
     cardPng: async (slug) => {
       const { all } = await liveMarketData();
@@ -6456,7 +6456,7 @@ async function startTelegram(): Promise<void> {
         hook: input.hook ?? null,
         mint: "on-demand", // no rent until somebody actually stakes
       });
-      return out.ok ? { ok: true, slug: out.slug } : { ok: false, status: out.status, error: out.error };
+      return out.ok ? { ok: true, slug: out.slug, existed: Boolean(out.existed), question: out.question } : { ok: false, status: out.status, error: out.error };
     },
     reply: (o) => tgReply(o, log),
     guestAnswer: (q, c) => TG.answerGuestQuery(q, c),
