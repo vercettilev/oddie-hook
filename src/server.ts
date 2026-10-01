@@ -1,5 +1,6 @@
 import express from "express";
-import { displayTitle, foldIds } from "./title.js";
+import { displayTitle, foldIds, readableQuestion } from "./title.js";
+import { solUsd } from "./price/solUsd.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -426,57 +427,10 @@ async function renderLanding(): Promise<string> {
      decides something: chain.js writes clusterLabel from the server's cluster
      in the app, and nothing there changed. */
 
-  /* THE UNLINK-WHEN-EMPTY DANCE IS GONE WITH THE SENTENCE IT GUARDED. It
-     stripped the href from "The board ranks" so a launch-day page did not send
-     anybody to an empty table. The landing does not write that sentence any
-     more -- it renders the BOARD, and the board renders nothing when nobody is
-     on it, which is the same judgment made one step earlier and without a
-     string to keep in sync. */
+  /* THE OPENER BOARD LEFT THE FRONT DOOR (1 Oct). It printed nothing until
+     somebody was on it, so its field was a headline and a trophy; that field
+     is the streamer offer now, and the board lives in the app. */
 
-  /* THE OPENER BOARD, ON THE FRONT DOOR.
-   *
-   * It ranks by people brought in -- distinct wallets whose FIRST real-money
-   * bet landed in a market that handle opened -- which is the one number
-   * opening a market accumulates. The app has the same board; this is the copy
-   * that has to make a stranger want to go and look.
-   *
-   * TWO STATES, ONE IMPLEMENTATION, because the honest answer changes and the
-   * markup must not. With rows it prints them. With none it prints the dare
-   * instead, which is true on a launch and needs no edit the day it stops being
-   * true. What it must NEVER do is print an empty table: this page decided once
-   * already that a true-but-empty number ("1 market tagged so far") does
-   * nothing but announce that nobody is here, and LANDING_PROOF_MIN is the
-   * scar. An empty shelf is the same claim.
-   *
-   * Failure renders nothing at all. A board that could not be read is not a
-   * board with nobody on it, and guessing between those is how a page starts
-   * lying by accident. */
-  const boardRows = await genesisBoard(5).catch(() => null);
-  /* EMPTY PRINTS NOTHING, same as a failed read (Lev). The apology line that
-     used to sit here said out loud that nobody was on it, which is a status
-     report where an invitation belongs -- and the headline above already IS
-     the invitation. The app's own leaderboard still carries the long version,
-     because somebody who clicked through has asked to know. */
-  const boardHtml = !boardRows || boardRows.length === 0
-    ? ""
-    : '<ol class="lead__rows">'
-        + boardRows.map((r) => '<li class="lead__row"><span class="lead__n">'
-            + r.rank + '</span><span class="lead__h">@' + escHtml(r.handle) + '</span>'
-            + '<span class="lead__p"><b>' + r.peopleBrought + '</b> '
-            + (r.peopleBrought === 1 ? "person" : "people") + '</span></li>').join("")
-        + "</ol>";
-
-  /* AND THE LINK UNDER IT FOLLOWS THE SAME ANSWER. The rows were conditional
-     and the call to action was not, so an empty board still offered "See the
-     whole board" and the page it opened said "Nobody is on it yet" -- the
-     status report this block refuses to print, moved one click away. With
-     names it points at them. With none it points at the thing that puts a name
-     there, which is the same ask the rest of the page makes. A failed read
-     takes the dare too: it is the safe direction, because it invites rather
-     than promising a table we could not confirm exists. */
-  const boardCta = boardRows && boardRows.length > 0
-    ? '<a class="lead__go" href="https://app.oddie.fun/leaderboard">See the whole board <i aria-hidden="true">&rarr;</i></a>'
-    : '<a class="lead__go" href="https://x.com/intent/post?text=%40oddiefun%20">Open the first one <i aria-hidden="true">&rarr;</i></a>';
   /* ONE REAL MARKET, ON THE FRONT DOOR.
    *
    * The page argued that a claim on X becomes a market with money in it and
@@ -537,8 +491,6 @@ async function renderLanding(): Promise<string> {
   })();
 
   const html = LANDING_HTML
-    .replace("<!--BOARD-->", boardHtml)
-    .replace("<!--BOARDCTA-->", boardCta)
     .replace("<!--LIVE-->", liveProof);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
@@ -4007,6 +3959,24 @@ function marketPayload(slug: string, detail: { question: string; closesAt: strin
   };
 }
 
+interface OpenedBy { platform: "kick" | "telegram"; handle: string | null; url: string | null }
+/** Where a market was opened, when that was not X: the Kick channel (public,
+ *  it is the channel's name) or the Telegram opener's @name. One definition
+ *  for the list card and the market page, so the two chips cannot disagree. */
+async function openedByFor(slug: string, sourceUrl: string | null | undefined): Promise<OpenedBy | null> {
+  const kind = sourceUrlKind(sourceUrl);
+  if (kind === "telegram") {
+    return tgOpenerOf(slug).then((o): OpenedBy => o && o.handle
+      ? { platform: "telegram", handle: o.handle, url: `https://t.me/${o.handle}` }
+      : { platform: "telegram", handle: null, url: null }).catch(() => null);
+  }
+  if (kind === "kick") {
+    const m = KICK_CHAT_SOURCE.exec(String(sourceUrl));
+    return m ? { platform: "kick", handle: m[1], url: `https://kick.com/${m[1]}` } : null;
+  }
+  return null;
+}
+
 app.get("/api/v1/markets", async (req, res) => {
   const limit = Math.max(1, Math.min(50, Number(req.query.limit ?? 20) || 20));
   // adminListCommunity despite the name: it is a store query, not a permission,
@@ -4046,6 +4016,11 @@ app.get("/api/v1/markets", async (req, res) => {
     // Only ever a tie-break between two empty markets. See viewCounts.
     viewCounts(live.map((m) => m.slug)).catch(() => ({} as Record<string, number>)),
   ]);
+  const [openedByRows, usd] = await Promise.all([
+    Promise.all(live.map((m) => openedByFor(m.slug, openers[m.slug]?.sourceUrl).then((o) => [m.slug, o] as const))),
+    solUsd().catch(() => null),
+  ]);
+  const openedBy = Object.fromEntries(openedByRows) as Record<string, OpenedBy | null>;
   const items = live.map((m) => {
     const r = m.onchainPubkey ? states.get(m.onchainPubkey) : { ok: false as const, reason: "absent" as const };
     const state = r?.ok ? r.state : null;
@@ -4074,13 +4049,16 @@ app.get("/api/v1/markets", async (req, res) => {
          addresses since it was written, shows "oreoU2...ybcp" for the same
          market. */
       question: m.question,
-      questionDisplay: foldIds(m.question),
+      questionDisplay: readableQuestion(m.question, m.hook),
       url: `${APP_BASE_URL}/m/${m.slug}`,
       closesAt: m.closesAt,
       resolved: Boolean(m.resolvedOutcome),
       outcome: m.resolvedOutcome ?? null,
       hook: m.hook ?? null,
       taggedBy: openers[m.slug]?.handle ?? null,
+      // The Kick channel or Telegram opener, so a card can say where it was
+      // opened. Null for X, where taggedBy already is the chip.
+      openedBy: openedBy[m.slug] ?? null,
       /* KAC KISI GIRDI -- BIZIM KAYDIMIZDAN, ZINCIRDEN DEGIL.
          stakerCounts FARKLI cuzdan sayar (defterde taraf basina satir var,
          iki tarafli cuzdan tek kisidir), yani bu insan sayar, bahis degil. Ama yalnizca onaylanmis islemler yaziliyor, o yuzden
@@ -4131,6 +4109,8 @@ app.get("/api/v1/markets", async (req, res) => {
     // The DEFAULT rate, kept for callers that read it. Prefer the per-market
     // creatorFeeBps on each item above; this one cannot be right for every row.
     creatorFeeBps: CREATOR_FEE_BPS_REAL, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
+    // Dollars per SOL, display only; see src/price/solUsd.ts.
+    solUsd: usd,
     markets: page,
   });
 });
@@ -4191,7 +4171,9 @@ async function marketDetailPayload(
        addresses since it was written, shows "oreoU2...ybcp" for the same
        market. */
     question: detail.question,
-    questionDisplay: foldIds(detail.question),
+    questionDisplay: readableQuestion(detail.question, detail.hook),
+    // Display only; see src/price/solUsd.ts. Null when no fresh price exists.
+    solUsd: await solUsd().catch(() => null),
     // Headline, not terms. A client may lead with this; `question` is still
     // the wording the stake is against and every surface must keep it.
     hook: detail.hook ?? null,
@@ -4239,14 +4221,7 @@ async function marketDetailPayload(
        name. Telegram gets its own fields, and the page draws them in
        Telegram's colour so the chip says which platform the name belongs to. */
     origin: sourceUrlKind(src?.sourceUrl) ?? null,
-    openedBy: sourceUrlKind(src?.sourceUrl) === "telegram"
-      ? await tgOpenerOf(slug).then((o) => o && o.handle
-          ? { platform: "telegram", handle: o.handle, url: `https://t.me/${o.handle}` }
-          : { platform: "telegram", handle: null, url: null }).catch(() => null)
-      : sourceUrlKind(src?.sourceUrl) === "kick"
-        // The channel it was opened in, which is public: it is the channel's name.
-        ? (() => { const m = KICK_CHAT_SOURCE.exec(String(src?.sourceUrl)); return m ? { platform: "kick", handle: m[1], url: `https://kick.com/${m[1]}` } : null; })()
-        : null,
+    openedBy: await openedByFor(slug, src?.sourceUrl),
     /* THE DOOR TO THE 2%. Only a public deep link, never the private token:
        whoever taps it lands in their own chat with the bot, which is what makes
        it safe to print on a public page. */

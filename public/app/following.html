@@ -281,6 +281,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .tab[aria-selected="true"]{background:var(--cream);color:var(--ink);border-color:var(--cream)}
 .tab:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 h1.who{margin-bottom:10px}
+/* 44px to tap without moving the masthead: the hit area grows, the layout
+   does not. The tabs measured 23px tall at 375. */
+.top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
 </style>
 
 <header class="top">

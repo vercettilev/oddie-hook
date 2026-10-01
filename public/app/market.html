@@ -517,6 +517,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
  */
 /* Off on a desktop, where the same sentence is already two lines above in
    .how and the buttons are never out of reach. */
+.usd{font-family:var(--mono);font-size:.9em;font-weight:700;letter-spacing:0;text-transform:none;opacity:.62}
 .sides__amt{
   display:none;grid-column:1/-1;justify-self:start;
   font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;
@@ -634,6 +635,10 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .backfeed:hover{color:var(--yellow)}
 .backfeed:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .stake--other{letter-spacing:.06em}
+/* 44px to tap without moving the masthead: the hit area grows, the layout
+   does not. The tabs measured 23px tall at 375. */
+.top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
+.foot a{padding-top:12px;padding-bottom:12px}
 </style>
 
 <header class="top">
@@ -693,6 +698,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     });
   }
   var SOL = function (lamports) { return (lamports / 1e9).toFixed(3).replace(/\.?0+$/, "") || "0"; };
+  /* Dollars beside a SOL figure (money reads in USD, settles in SOL). The
+     server sends its cached price with the market; without one, nothing. */
+  var SOL_USD = null;
+  function usdOf(sol) {
+    if (!(SOL_USD > 0) || !(sol > 0)) return "";
+    var v = sol * SOL_USD;
+    return ' <span class="usd">&asymp; $' + (v < 1 ? "<1" : Math.round(v).toLocaleString("en-US")) + "</span>";
+  }
 
   /* PARA HAREKET ETTI, SAYI DA ETSIN.
      render() her seferinde tum DOM'u yeniden yaziyor, yani aradan gecis
@@ -859,6 +872,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   }
 
   function render(m) {
+    if (typeof m.solUsd === "number") SOL_USD = m.solUsd;
     var poolNow = null;   // okunabilir ve dolu bir havuz varsa asagida doluyor
     var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
     var resolved = Boolean(m.resolved && m.outcome);
@@ -997,7 +1011,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
       var MIN_HEADS_LIST = 3;
       var heads = Number(m.stakers || 0);
       html += '<div class="pool"><div class="pool__n">' + SOL(tot) + "<span>SOL</span></div>"
-        + '<div class="pool__k">in the pool'
+        + '<div class="pool__k">in the pool' + usdOf(tot / 1e9)
         + (heads >= MIN_HEADS_LIST ? ' &middot; <b>' + heads + "</b> in" : "") + "</div>"
         + '<div class="bar" role="img" aria-label="' + yp + ' percent yes, ' + (100 - yp) + ' percent no">'
         + '<i class="bar__y" style="width:' + yp + '%"></i><i class="bar__n" style="width:' + (100 - yp) + '%"></i></div></div>';
@@ -1079,7 +1093,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
            this is the receipt. */
         + (!off && P.length
             ? '<p class="sides__amt">'
-              + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>")
+              + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>" + usdOf(Number(stake)))
               + "</p>"
             : "")
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES" + pctY + "</button>"
@@ -1146,7 +1160,12 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
          safe to print publicly: it lands whoever taps it in their own chat with
          the bot, which only ever links their own markets. No new line, no new
          words: the phrase that raises the question is the one that answers it. */
-      + (m.creatorFeeBps ? "<span><b>" + (m.creatorFeeBps / 100) + "%</b> of it to "
+      /* "HALF OF IT", NOT "2% OF IT". Read cold, "4% ... 2% of it" is 2% of
+         the 4%, a twenty-fifth of what the opener actually gets. When the
+         split is even, the word says it with no arithmetic at all. */
+      + (m.creatorFeeBps ? "<span>" + (m.creatorFeeBps * 2 === m.creatorFeeBps + m.protocolFeeBps
+          ? "<b>half</b> of it to "
+          : "<b>" + (m.creatorFeeBps / 100) + "%</b> of the pool to ")
           + (m.earnUrl
               ? '<a class="earn" href="' + esc(m.earnUrl) + '" target="_blank" rel="noopener noreferrer">the opener</a>'
               : "the opener")
@@ -1211,7 +1230,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
     function showStake() {
       var amt = view.querySelector(".sides__amt");
       if (amt) {
-        amt.innerHTML = stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>";
+        amt.innerHTML = stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>" + usdOf(Number(stake));
       }
     }
 

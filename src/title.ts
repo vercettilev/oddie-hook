@@ -50,3 +50,21 @@ export function displayTitle(q: string): string {
 export function foldIds(s: string): string {
   return s.replace(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g, (m) => `${m.slice(0, 6)}\u2026${m.slice(-6)}`);
 }
+
+/**
+ * The question as a person reads it.
+ *
+ * A price claim on a coin with no ticker the matcher trusts is written against
+ * its mint, so the question reads "Will the Solana token at mint address
+ * oreoU2...ybcp reach 90", and folding the address only shortens the noise.
+ * When the hook already names the coin by its ticker, the ticker is what the
+ * reader knows it by, so that phrase becomes "$ORE". DISPLAY ONLY, for the
+ * reason foldIds gives: the question itself is hashed on chain.
+ */
+export function readableQuestion(question: string, hook?: string | null): string {
+  const ticker = /\$[A-Za-z][A-Za-z0-9]{0,11}\b/.exec(hook ?? "")?.[0];
+  const q = ticker
+    ? question.replace(/\b(?:the\s+)?(?:Solana\s+)?token\s+(?:at|with)\s+(?:mint\s+)?(?:address\s+)?[1-9A-HJ-NP-Za-km-z]{32,44}\b/gi, ticker)
+    : question;
+  return foldIds(q);
+}

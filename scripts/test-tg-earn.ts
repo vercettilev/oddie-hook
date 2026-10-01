@@ -54,7 +54,11 @@ const now = 1_800_000_000_000;
      the person who opened the market. */
   const t = server.indexOf("taggedBy: src?.handle ?? null");
   check("taggedBy still comes only from the X surfacer", t >= 0);
-  check("...and the Telegram opener has its own field", /openedBy: sourceUrlKind\(src\?\.sourceUrl\) === "telegram"/.test(server));
+  // One helper now feeds the market page and the list (openedByFor), so the
+  // field is checked where it is built, not where it is assigned.
+  check("...and the Telegram opener has its own field",
+    /openedBy: await openedByFor\(slug, src\?\.sourceUrl\)/.test(server)
+    && /if \(kind === "telegram"\) \{\s*return tgOpenerOf\(slug\)/.test(server));
 }
 
 /* BOTH SIGN-IN MESSAGES NAME THE PAGE'S OWN HOST. The earn page and the app's

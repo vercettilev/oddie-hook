@@ -3,7 +3,7 @@
 // resolution criteria are where an address belongs whole because that string IS
 // the rule. These pin the boundary, not the regex.
 import { readFileSync } from "node:fs";
-import { foldIds, displayTitle } from "../src/title.js";
+import { foldIds, displayTitle, readableQuestion } from "../src/title.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -34,6 +34,19 @@ const Q = `Will the Solana token at mint address ${MINT} reach 90 by the end of 
   check("folding composes with the title rule", foldIds(displayTitle(`${Q} — Yes`)) === foldIds(Q));
 }
 
+/* THE TICKER, WHEN THE HOOK ALREADY NAMES THE COIN. Folding only shortened
+   "the Solana token at mint address oreoU2...ybcp"; the reader knows it as $ORE. */
+{
+  const out = readableQuestion(Q, "$ORE to $90 this week?");
+  check("a mint the hook names by ticker reads as the ticker",
+    out === "Will $ORE reach 90 by the end of this week?", out);
+  check("...and with no ticker in the hook it is only folded",
+    readableQuestion(Q, "Big week for ORE?") === foldIds(Q), readableQuestion(Q, "Big week for ORE?"));
+  check("...and with no hook at all, the same", readableQuestion(Q, null) === foldIds(Q));
+  check("a question with no mint is left alone",
+    readableQuestion("Will $ORE reach $80 today?", "$ORE to $80?") === "Will $ORE reach $80 today?");
+}
+
 /* THE BOUNDARY, CHECKED IN THE SOURCE. A fold applied to the canonical field is
    not a rendering bug, it is a market whose published question no longer hashes
    to what the chain stored. */
@@ -42,7 +55,7 @@ const Q = `Will the Solana token at mint address ${MINT} reach 90 by the end of 
   const bad = server.match(/^\s*question: foldIds\(/m);
   check("the canonical question is never folded on the way out", !bad, bad?.[0] ?? "");
   check("the readable copy is published beside it, not instead of it",
-    /questionDisplay: foldIds\(/.test(server) && /^\s*question: (m|detail)\.question,$/m.test(server));
+    /questionDisplay: (foldIds|readableQuestion)\(/.test(server) && /^\s*question: (m|detail)\.question,$/m.test(server));
   const criteria = server.match(/(resolutionCriteria|criteria): foldIds\(/);
   check("the resolution criteria keep their address whole", !criteria, criteria?.[0] ?? "");
 }

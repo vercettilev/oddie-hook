@@ -270,6 +270,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .stand h2{font-family:var(--display);font-weight:400;font-size:clamp(20px,4.4vw,26px);
   text-transform:uppercase;color:var(--cream);margin:0 0 4px}
 .stand .rule{margin:0 0 14px}
+/* 44px to tap without moving the masthead: the hit area grows, the layout
+   does not. The tabs measured 23px tall at 375. */
+.top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
 </style>
 
 <header class="top">

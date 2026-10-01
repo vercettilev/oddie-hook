@@ -494,6 +494,9 @@ a.acts__q:hover{color:var(--fg);text-decoration:underline;text-underline-offset:
    and disappears into the sentence. */
 .err a{color:var(--yellow);text-decoration:underline;text-underline-offset:3px}
 .err a:hover{color:var(--yellow-hi)}
+/* 44px to tap without moving the masthead: the hit area grows, the layout
+   does not. The tabs measured 23px tall at 375. */
+.top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
 </style>
 
 <header class="top">

@@ -12,7 +12,7 @@
      icin burada preload ediliyor (bant genisligini degistirmez, baslama
      anini one alir). -->
 <link rel="preload" as="image" href="/brand/sticker-hero.webp">
-<title>Oddie: the people&rsquo;s prediction market</title>
+<title>Oddie: every argument is a market</title>
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=3">
@@ -20,12 +20,12 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
 <link rel="manifest" href="/site.webmanifest?v=3">
 <meta name="theme-color" content="#FCF604">
-<meta name="description" content="Tag @oddiefun under any claim on X and a real-money market opens on it in seconds. Nobody decides whether it deserves to exist.">
+<meta name="description" content="Call it in any chat: !oddie on Kick, @oddiefun on X, @oddiefunbot on Telegram. It becomes a real-money market on Solana in seconds and settles itself.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/">
-<meta property="og:title" content="The people’s prediction market.">
-<meta property="og:description" content="Tag @oddiefun under any claim on X and a real-money market opens on it in seconds. Winners split the pool, less 4%.">
+<meta property="og:title" content="Every argument is a market.">
+<meta property="og:description" content="Call it in any chat, on Kick, X or Telegram. It becomes a real-money market in seconds. Winners split the pool, less 4%.">
 <meta property="og:image" content="https://oddie.fun/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="The people’s prediction market.">
@@ -246,8 +246,6 @@
        too, or the whole page gains 26px of sideways scroll. */
     overflow-x:clip;overflow-y:visible}
   .B__hd{margin:0 0 clamp(14px,1.8vw,26px);font-size:clamp(26px,3.4vw,46px)}
-  .B__fig{max-width:1000px;margin:clamp(28px,3.6vw,52px) auto 0}
-  .B__fig img{width:100%}
 
   /* --------------------------------------------------------------- oracle --
      KAIDE geregi .reveal tasiyan .oracle'a transform YAZILMAZ; yerlesim grid
@@ -302,24 +300,6 @@
      de artik burada. */
   .close{margin-top:clamp(26px,4vw,56px);gap:clamp(15px,2vw,26px)}
   .C__say{max-width:34ch;margin:0}
-  /* Kutu ve tus tek nesne gibi dursun: ayni yukseklik, ayni golge yonu. */
-  /* align-self:start, or the hero column stretches this row to the space it
-     has left and align-items:stretch passes that down: measured, the input
-     came out 108px tall beside a 75px button. Pinned to its own content, the
-     line is as tall as the button and the box matches it. */
-  .ask--hero{justify-content:flex-start;align-self:start;
-    width:min(740px,100%);flex-wrap:nowrap}
-  .ask--hero .ask__in{flex:1 1 auto;min-width:0}
-  .ask--hero .ask__in{background:var(--cream);border-color:var(--ink);
-    box-shadow:6px 7px 0 var(--pink)}
-  .ask{display:flex;flex-wrap:wrap;justify-content:center;align-items:stretch;
-    gap:12px;width:min(640px,100%)}
-  .ask__in{flex:1 1 300px;min-width:0;font:inherit;font-size:clamp(14px,1.3vw,16px);
-    padding:15px 18px;border-radius:3px;border:2px solid var(--ink);
-    background:var(--cream);color:var(--ink);box-shadow:6px 7px 0 rgba(0,0,0,.55)}
-  .ask__in::placeholder{color:var(--ink);opacity:.42}
-  .ask__in:focus{outline:3px solid var(--yellow);outline-offset:2px}
-  @media (max-width:560px){.ask__in{flex:1 1 100%}.ask .btn{width:100%;justify-content:center}}
   .C__say a{color:inherit;text-underline-offset:4px}
   .close .h2{font-size:clamp(30px,5.4vw,80px)}
   .close__fine{margin:0;font-family:var(--mono);font-size:12px;font-weight:700;
@@ -368,7 +348,6 @@
 
   /* adim 1: silinen satir ici style'larin sinif karsiliklari */
   .B .lede{max-width:38ch}
-  .B__fig{margin-block:0}
 
   /* ---------------------------------------------------------- dikisler --
      Uc alan gecisi de yirtik kagit. Mekanizma her yerde ayni: AYNI maskeyi
@@ -482,20 +461,10 @@
   .B{position:relative;padding:clamp(30px,3.4vw,50px) 0 clamp(24px,2.6vw,38px)}
   .B > .shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
     column-gap:clamp(20px,3.2vw,58px);align-items:start}
-  .B__fig{grid-column:1/-1;grid-row:2}
 
-  .B__fig{position:relative;z-index:2;max-width:none;
-    width:min(112vw,1360px);
-    margin-left:calc(50% - min(56vw,680px));
-    margin-right:0;
-    margin-top:0;
-    margin-bottom:0;
-    rotate:-1.6deg}
-  .B__fig img{width:100%}
   /* Manifesto ve telefon ciktiktan sonra kalan iki parca: baslik tam genislik
      ve sola yaslanir, figur altinda akar. Kaynak sirasi geregi bu blok yukarida
      kalan eski yerlesim kurallarini ezer. */
-  .B__fig{grid-column:1/-1;grid-row:2}
 
   /* -------------------------------------------------------- C · pembe --
      60/40 ders kitabi gridi kirilir: baslik uc kademeli merdiven, ucuncu
@@ -562,7 +531,6 @@
      ONCE geldigi icin esit ozgullukteki yeni kurallar onlari her genislikte
      ezer. Egimler korunur, kaydirmalar sifirlanir, konfetinin cogu gizlenir. */
   @media (max-width:1180px){
-    .B__fig{width:min(108vw,1040px);margin-left:calc(50% - min(54vw,520px))}
   }
   @media (max-width:900px){
     /* nowrap masaustunde tek satir veriyor, 390px'te 510px genislik ve tasma */
@@ -578,7 +546,6 @@
     /* Bu tasma GORSEL icindi: resim kenardan akinca iyi duruyordu. Figur
        artik OKUNACAK kartlar tasiyor ve ayni tasma metni kirpiyor, o yuzden
        dar ekranda figur kabin icinde kaliyor. */
-    .B__fig{width:100%;margin-left:0;margin-top:clamp(16px,4vw,28px)}
 
   }
   @media (max-width:740px){
@@ -620,9 +587,6 @@
      dayali, cunku saga dayali govde metni okunmayi zorlastiriyordu. */
 
   /* Baslik + gorsel birlikte bir ekrana sigsin diye gorsel kucultuldu */
-  .B__fig{grid-row:3;width:min(84vw,980px);
-    margin-left:calc(50% - min(42vw,490px));
-    margin-top:clamp(10px,1.6vw,26px)}
 
   /* Kalabalik artik dogrudan siyah alt bilgiye giriyor: kendi yirtik
      deckle kenari pembe/siyah gecisini tasiyor, ustune CSS yirtigi konmuyor. */
@@ -634,9 +598,7 @@
     .B__ghost{grid-column:1;grid-row:1;justify-self:end;
       width:min(52%,215px);
       margin:calc(-1 * clamp(38px,10vw,92px)) calc(-1 * clamp(2px,2vw,16px)) 0 auto}
-    .B__fig{grid-column:1;grid-row:4}
     /* Ayni sebep: tasma gorselindi, kartlari kirpiyor. */
-    .B__fig{width:100%;margin-left:0}
   }
 
 
@@ -678,8 +640,6 @@
      on a flex item is added to its line's height, so the 33px that used to sit
      above the button stretched the box beside it to 108px against a 75px
      button. Measured; it is not visible as a spacing bug, only as a mismatch. */
-  .ask--hero .btn{margin-top:0}
-  .ask--hero{margin-top:clamp(20px,2.6vw,38px)}
   /* destek cumlesi basligin yanindaki ikinci siyah kutle olmaktan cikiyor */
   .A__hero .brush{font-size:clamp(13px,1.15vw,15.5px);padding:9px 17px}
 
@@ -701,7 +661,7 @@
      tiklayinca bolum basligi barin altinda kaliyordu. */
   /* Serit nav satirina girdigi icin bar artik tek yukseklikte: capa payinin
      iki degeri olmasina gerek kalmadi. */
-  #how,#board{scroll-margin-top:clamp(72px,7vw,96px)}
+  #how,#streamers,#board{scroll-margin-top:clamp(72px,7vw,96px)}
 
   /* ------------------------------------------------ kampanya CTA'si -- */
   [data-genesis="0"] .gcta{display:none}
@@ -886,52 +846,21 @@
      where the hero and the pink band use it. Pink glyphs with an ink outline
      on cream are emphasis enough here. */
   .offer__hd .lo::after{display:none}
-  /* D, the board's own field. Ink on yellow, like the hero. */
+  /* D, the streamer field. Ink on yellow, like the hero. */
   .D{position:relative;background:var(--yellow);color:var(--ink);
     overflow-x:clip;overflow-y:visible;
     padding:calc(var(--seam-h) + clamp(16px,2vw,30px)) 0 clamp(30px,3.8vw,56px)}
   .D > .shell{position:relative;z-index:3}
-  .lead{text-align:center}
-  /* Board left, sticker right: the mirror of the offer above, so the two
-     fields lean into each other instead of stacking one shape twice. */
-  .lead__body{display:flex;align-items:center;justify-content:center;
-    gap:clamp(16px,3vw,48px)}
-  .lead__list{flex:0 1 520px;min-width:0}
-  .lead__st{width:clamp(96px,12vw,168px);height:auto;flex:none;rotate:5deg;
-    filter:drop-shadow(7px 9px 0 rgba(11,13,4,.14))}
   /* The list is EMPTY until somebody is on the board, and an empty flex child
      still claims its basis: without this the sticker sits 260px off-centre
      beside nothing. Collapsed, the row centres on the sticker alone. */
-  .lead__list:empty{flex:0 0 0;display:none}
   @media (max-width:760px){
-    .lead__body{flex-direction:column-reverse;gap:clamp(14px,3vw,22px)}
-    .lead__list{flex:1 1 auto;width:100%}
   }
   /* .h2 span is display:block;width:fit-content, so text-align does not move
      it: the two lines hug the left and only margin-inline centres them. */
-  .lead__hd{margin:0 0 clamp(18px,2.2vw,28px)}
-  .lead__hd span{margin-inline:auto}
   /* The rows are ink-tinted yellow, not white: a white card on this ground
      reads as a UI panel dropped onto a poster. */
-  .lead__row{background:rgba(11,13,4,.07)}
-  .lead__rows{list-style:none;margin:0 auto;padding:0;width:min(520px,100%);
-    display:flex;flex-direction:column;gap:2px}
-  .lead__row{display:flex;align-items:baseline;gap:clamp(10px,1.4vw,18px);
-    padding:clamp(9px,1.1vw,13px) clamp(12px,1.6vw,18px);
-    border-radius:3px;text-align:left}
   /* Tabular figures or the rank column shivers as the numbers change width. */
-  .lead__n{font-family:var(--mono);font-size:12px;font-weight:800;
-    color:var(--ink-3);min-width:1.6em;font-variant-numeric:tabular-nums}
-  .lead__h{flex:1 1 auto;min-width:0;font-weight:800;color:var(--ink);
-    font-size:clamp(14px,1.25vw,17px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .lead__p{font-size:clamp(13px,1.1vw,15px);color:var(--ink-2);white-space:nowrap;
-    font-variant-numeric:tabular-nums}
-  .lead__p b{color:var(--ink);font-weight:800}
-  .lead__go{display:inline-block;margin-top:clamp(14px,1.8vw,22px);
-    font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.13em;
-    text-transform:uppercase;color:var(--ink-2);text-decoration:none}
-  .lead__go i{font-style:normal;color:var(--pink-deep)}
-  .lead__go:hover{color:var(--ink)}
 
   .offer__more{margin:clamp(7px,0.8vw,11px) 0 0;
     font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
@@ -1006,7 +935,6 @@
   @media (max-width:900px){
     .phone{grid-column:1;grid-row:4;justify-self:center;margin:clamp(22px,5vw,36px) auto 0;
       rotate:1.6deg}
-    .B__fig{grid-row:5}
   }
 
   /* Platform satiri 11px'lik gri bir mono satirdi ve CTA'nin altinda
@@ -1073,6 +1001,92 @@
     .btn:hover,.btn:active,.nav__links .btn:active,.brand:active{translate:none;scale:1}
     .reveal-armed .phone .mcard__bar i{width:var(--w);transition:none}
   }
+  /* ===================================================== THE THREE DOORS ==
+     Kick, X and Telegram, as one row of stamps. They replaced the X composer
+     in the hero and at the close: a text box that posts to X told a Kick
+     viewer and a Telegram group that the product lives somewhere else. Each
+     door goes where its words say (the streamer page, the X composer, the
+     bot), and the command is set in mono because it is what you type. */
+  .doors{position:relative;z-index:6;display:grid;grid-template-columns:repeat(3,max-content);
+    gap:14px 16px;margin:clamp(20px,2.6vw,34px) 0 0}
+  .door{display:flex;align-items:center;gap:10px;min-height:58px;padding:9px 14px 9px 10px;
+    background:var(--cream);color:var(--ink);border:3px solid var(--ink);text-decoration:none;
+    box-shadow:5px 6px 0 var(--pink);transition:transform .12s,box-shadow .12s}
+  .door:nth-child(1){rotate:-1.6deg}.door:nth-child(2){rotate:1.2deg}.door:nth-child(3){rotate:-.8deg}
+  .door:hover{transform:translate(1px,1px);box-shadow:3px 4px 0 var(--pink)}
+  .door:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+  .door__t{display:flex;flex-direction:column;line-height:1.1;text-align:left}
+  .door__t b{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:-.01em}
+  .door__t small{font-size:11.5px;color:var(--ink-2);margin-top:3px}
+  .mk{flex:none;display:block}
+  .close .doors{justify-content:center}
+  .close .door{box-shadow:5px 6px 0 var(--ink)}
+  @media (max-width:900px){.doors{grid-template-columns:1fr;max-width:420px}
+    .close .doors{margin-inline:auto;width:100%}}
+  @media (prefers-reduced-motion:reduce){.door{transition:none}}
+  /* The pink star sat under the X composer; with the doors there it lands
+     beside the last one instead of on top of the middle one. */
+  .A__hero::after{left:auto;right:44%;bottom:-6px}
+  @media (max-width:560px){.A__hero .h1::after{top:-.95em;right:-2px}}
+
+  /* ==================================================== HOW IT WORKS, LIVE ==
+     Three chat cards in place of the baked tweet figure, because the figure
+     could only ever show X. The thread is the real one from a Kick stream:
+     asked in Turkish, opened in English. Step three states the rule (result
+     posted, winners split, 2% to the stream) and never a side, because that
+     market has not closed. */
+  .steps{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:clamp(16px,2.4vw,34px);margin:clamp(22px,3vw,40px) 0 0;align-items:start}
+  .step:nth-child(1){rotate:-1.4deg}
+  .step:nth-child(2){rotate:1deg;margin-top:28px}
+  .step:nth-child(3){rotate:-.6deg;margin-top:10px}
+  .step__n{font-family:var(--display);font-size:clamp(26px,2.6vw,36px);line-height:1;color:var(--yellow);
+    text-transform:uppercase;margin:0 0 12px;text-shadow:3px 4px 0 var(--pink)}
+  .chat{background:#0f1210;border:2px solid rgba(251,252,244,.22);padding:14px 14px 12px;
+    color:var(--cream);box-shadow:6px 7px 0 var(--pink)}
+  .chat__src{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
+    letter-spacing:.12em;text-transform:uppercase;color:rgba(251,252,244,.66);margin:0 0 10px}
+  .msg{font-size:15px;line-height:1.45;margin:0}
+  .msg + .msg{margin-top:8px}
+  .msg u{text-decoration:none;font-weight:800;margin-right:6px}
+  .msg .v{color:#53FC19}
+  .msg .o{color:var(--yellow)}
+  .msg code{font-family:var(--mono);font-size:14px;background:rgba(83,252,25,.12);color:#b6ff9a;padding:1px 4px}
+  .mcard{margin-top:10px;background:var(--cream);color:var(--ink);border:2px solid var(--ink);padding:10px 12px}
+  .mcard__q{font-family:var(--display);font-size:20px;line-height:1.05;text-transform:uppercase;color:var(--ink)}
+  .mcard__s{display:flex;gap:8px;margin-top:9px}
+  .mcard__s span{flex:1;text-align:center;font-family:var(--display);font-size:16px;padding:6px 0;
+    border:2px solid var(--ink);color:var(--ink)}
+  .mcard__s .y{background:var(--yellow)}
+  .mcard__s .n{background:var(--pink);color:#fff}
+  .paid{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;
+    font-family:var(--mono);font-size:13px}
+  .paid li{display:flex;justify-content:space-between;gap:10px;
+    border-bottom:1px dashed rgba(251,252,244,.2);padding-bottom:5px}
+  .paid b{color:var(--yellow)}
+  .step__cap{margin:12px 0 0;font-size:14px;line-height:1.45;color:rgba(251,252,244,.72);max-width:30ch}
+  .B .proof{grid-column:1/-1;justify-self:center;width:100%}
+  @media (max-width:860px){.steps{grid-template-columns:1fr}.step:nth-child(n){margin-top:0}}
+
+  /* ======================================================= FOR STREAMERS ==
+     The yellow field the opener board used to hold. The board printed
+     nothing until somebody was on it, so the field was a headline and a
+     trophy; the streamer offer is the ask the GTM actually runs on, and
+     /live had no door from this page at all. */
+  .stream{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);
+    gap:clamp(18px,3vw,48px);align-items:center}
+  .stream .h2{margin:0}
+  .stream__p{font-size:clamp(15px,1.35vw,18px);line-height:1.55;color:var(--ink-2);max-width:44ch;
+    margin:clamp(14px,1.6vw,20px) 0 0}
+  .stream__p b{color:var(--ink)}
+  .stream .btn{margin-top:clamp(18px,2vw,26px);box-shadow:6px 7px 0 var(--pink)}
+  .stream__art{justify-self:center;width:clamp(150px,20vw,260px);height:auto;rotate:5deg;
+    filter:drop-shadow(7px 9px 0 rgba(11,13,4,.14))}
+  @media (max-width:760px){.stream{grid-template-columns:1fr}.stream__art{grid-row:1;width:140px}}
+
+  /* 44px to tap. The nav link was 19px tall and the footer links 17px. */
+  .nav__links .nav__a{padding-block:12px}
+  .foot a{display:inline-block;padding-block:12px}
 </style>
 
 <!-- ==================================================== A · YELLOW · ONE FIELD ==
@@ -1081,6 +1095,7 @@
 <!-- Istek sayfanin tamaminda ekranda kalsin diye masthead header'in DISINDA
      ve <body>'nin dogrudan cocugu: sticky bir eleman ebeveyninin disina
      tasamaz, nav .A'nin icinde kalsaydi 640px sonra birakirdi. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol></svg>
 <div class="topbar">
   <nav class="shell nav__in">
     <a class="brand" href="/" aria-label="Oddie home">
@@ -1097,6 +1112,7 @@
          thing a stranger is asked to do. -->
     <div class="nav__links">
       <a class="nav__a" href="#how">How it works</a>
+      <a class="nav__a" href="#streamers">For streamers</a>
       <a class="btn" href="/markets">See the markets <i aria-hidden="true">&rarr;</i></a>
     </div>
   </nav>
@@ -1115,7 +1131,7 @@
              it, so "anyone can open one on anything" is structurally ours and
              not a slogan. Lev'in karari: bu ust satir odanin tekrar edecegi
              cumle, dugme de ne yapilacagini soyleyen taunt. -->
-        <h1 class="h1"><span>The people&rsquo;s</span><span class="lo">prediction market.</span></h1>
+        <h1 class="h1"><span>Every argument</span><span class="lo">is a market.</span></h1>
         <!-- THE MECHANIC IS STATED ONCE, HERE.
              This was three lines and it said the same thing three times:
              "turn arguments into markets", "find a fight, tag it", "it becomes
@@ -1145,8 +1161,8 @@
              what happens. The second line is the same "no listing desk" claim in
              words that need no prior product to understand. -->
         <p class="pitch">
-          <span>Tag <b>@oddiefun</b> about anything on X.</span>
-          <span>If it can be settled, it becomes a market.</span>
+          <span>The people&rsquo;s prediction market.</span>
+          <span>Call it in any chat. It opens in seconds and pays out on its own.</span>
         </p>
         <!-- IT USED TO LAND ON /genesis, WHICH WAS RIGHT WHILE THERE WAS A
              CAMPAIGN AND A TICKET TO CLAIM. There is neither now, so a button
@@ -1163,10 +1179,13 @@
              longer one clipped the example inside the box. It can be short,
              because the box and its placeholder carry the instruction and the
              button is only the verb. -->
-        <div class="ask ask--hero">
-          <input class="ask__in" data-ask type="text" autocomplete="off"
-                 aria-label="What do you think will happen?">
-          <a class="btn" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">Tag it <i aria-hidden="true">&rarr;</i></a>
+        <!-- THE DOORS, NOT A BOX THAT POSTS TO X. The hero line stopped naming
+             one platform (Lev, 1 Oct: every argument, not every tweet), so the
+             call to action stopped being one platform's composer too. -->
+        <div class="doors">
+          <a class="door" href="https://app.oddie.fun/live"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-kick"/></svg><span class="door__t"><b>!oddie</b><small>your claim, in any Kick chat</small></span></a>
+          <a class="door" href="https://x.com/intent/post?text=%40oddiefun%20"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-x"/></svg><span class="door__t"><b>@oddiefun</b><small>under any post on X</small></span></a>
+          <a class="door" href="https://t.me/oddiefunbot"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-telegram"/></svg><span class="door__t"><b>@oddiefunbot</b><small>in any Telegram group</small></span></a>
         </div>
         <!-- THE "WORKS ON X / TELEGRAM SOON / DISCORD SOON" ROW IS GONE.
              Both halves already existed elsewhere: X is named in the hero
@@ -1217,10 +1236,39 @@
              anybody here. A heading costs one line and turns a decoration into
              a section. -->
         <h2 class="h2 B__hd reveal"><span>How it works</span></h2>
-      <figure class="B__fig reveal">
-        <img src="/brand/flow-market.webp" width="1600" height="900" loading="lazy"
-             alt="Three steps: somebody posts that Pump.fun will close Q4 with more revenue than Q3, you tag @oddiefun under it, and an Oddie market opens on that claim with a YES and a NO side.">
-      </figure>
+      <div class="steps reveal">
+        <div class="step">
+          <p class="step__n">1. Call it</p>
+          <div class="chat">
+            <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> Kick chat</p>
+            <p class="msg"><u class="v">deniz_</u>bitcoin bu hafta 88k&rsquo;yı görmez</p>
+            <p class="msg"><u class="v">kaan.trd</u><code>!oddie BTC cumaya kadar 88k olur mu?</code></p>
+          </div>
+          <p class="step__cap">Any chat, any language. One line opens it.</p>
+        </div>
+        <div class="step">
+          <p class="step__n">2. It&rsquo;s a market</p>
+          <div class="chat">
+            <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> Kick chat</p>
+            <p class="msg"><u class="o">oddiefun</u>Market open. Pick a side:</p>
+            <div class="mcard"><p class="mcard__q">BTC to $88k by Friday?</p>
+              <div class="mcard__s"><span class="y">YES</span><span class="n">NO</span></div></div>
+          </div>
+          <p class="step__cap">Seconds later it&rsquo;s live on Solana. Nobody has to list it.</p>
+        </div>
+        <div class="step">
+          <p class="step__n">3. It pays</p>
+          <div class="chat">
+            <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> Kick chat</p>
+            <p class="msg"><u class="o">oddiefun</u>Friday 23:59 UTC. The result is in.</p>
+            <ul class="paid">
+              <li><span>Winners</span><b>split the pool</b></li>
+              <li><span>The stream</span><b>2%</b></li>
+            </ul>
+          </div>
+          <p class="step__cap">No referee. The deadline hits and it settles itself.</p>
+        </div>
+      </div>
 
       <!-- THE PAGE ARGUED AND SHOWED NOTHING. Above this is an illustrated
            three-step figure; the whole claim is that these things exist with
@@ -1287,7 +1335,7 @@
              one is checkable, and it is now directly below rather than a
              page away. Written to stay true on an empty board:
              it says what the board ranks, not where you would land. -->
-        <p class="offer__more">And the board below ranks you by how many people you bring in.</p>
+        <p class="offer__more">Opened on a stream? It goes to the channel.</p>
       </div>
     </div>
 
@@ -1306,41 +1354,14 @@
        pink with black on both ends; yellow brings the hero's ground back for
        the one block that is supposed to shout, and ink on yellow is the
        loudest pairing this palette has. -->
-  <section class="D sec" id="leaderboard">
-    <!-- THE BOARD, ON THE FRONT DOOR. The sentence above promises a standing,
-         and this is it: nobody has to take the promise on trust or click
-         through to find out whether anybody is on it.
-         Server-rendered, TWO STATES, one markup. Rows when there are rows, the
-         dare when there are none. It never prints an empty table: this page
-         learned once that a true-but-empty number ("1 market tagged so far")
-         does nothing but announce that nobody is here, and LANDING_PROOF_MIN is
-         the scar that argument left.
-         If the read FAILS the block renders nothing at all, because a board
-         that could not be read is not a board with nobody on it, and guessing
-         between those is how a page starts lying by accident. -->
-    <div class="shell lead">
-      <h2 class="h2 lead__hd"><span>Climb the</span><span class="lo">leaderboard.</span></h2>
-      <!-- The sticker is on the right and the board on the left, which is the
-           mirror of the offer block above it: sticker left, words right. The
-           two fields then lean into each other rather than stacking the same
-           shape twice. On one column it goes under, because a 120px mascot
-           beside a four-row table at phone width leaves neither any room. -->
-      <div class="lead__body">
-        <div class="lead__list"><!--BOARD--></div>
-        <img class="lead__st" src="/brand/mascot-trophy.webp" width="944" height="800"
-             loading="lazy" alt="">
+  <section class="D sec" id="streamers">
+    <div class="shell stream reveal">
+      <div>
+        <h2 class="h2"><span>Got a stream?</span><span class="lo">Your chat pays you.</span></h2>
+        <p class="stream__p">Add oddie to your Kick channel in one tap. Every market your chat opens pays <b>your channel 2% of its pool</b>, whichever side wins.</p>
+        <a class="btn" href="https://app.oddie.fun/live"><svg class="mk" width="22" height="22" aria-hidden="true"><use href="#mk-kick"/></svg> Add oddie to Kick <i aria-hidden="true">&rarr;</i></a>
       </div>
-      <!-- IT POINTS AT THE APP'S OWN LEADERBOARD. /leaderboard used to be an
-           ALIAS of /board, the caller ranking, so a visitor who had just read
-           an opener board would land on a different table under the same word.
-           The alias is split now and this href is the page that matches. -->
-      <!-- THE ROWS ARE CONDITIONAL AND THIS WAS NOT, which is the whole gap:
-           with nobody on the board the section still offered a trip to go and
-           see them, and the page it opened said "Nobody is on it yet". Same
-           rule as the rows now (server.ts) -- with names it points at them,
-           with none it points at the thing that puts a name there. No status
-           report either way: the headline is the invitation. -->
-      <!--BOARDCTA-->
+      <img class="stream__art" src="/brand/mascot-trophy.webp" width="944" height="800" loading="lazy" alt="">
     </div>
   </section>
 
@@ -1362,7 +1383,7 @@
            ("A ticket is the only thing a tag costs you"), ama o cumle giris
            yapmayan ziyaretcinin hic gormedigi bir yerde duruyordu. -->
       <div class="close col col--mid reveal">
-        <h2 class="h2"><span>Find a fight.</span><span class="lo">Tag it.</span></h2>
+        <h2 class="h2"><span>Find a fight.</span><span class="lo">Call it.</span></h2>
         <!-- THE BUTTON NAMES THE DESTINATION, because the headline right above
              it already made the ask. "Tag your first claim" repeated that ask in
              the same words and then landed the reader on a page about tickets,
@@ -1385,10 +1406,10 @@
              what travels to X is only what they typed.
              The link keeps working with JS off: it carries the bare handle,
              which is where this started. -->
-        <div class="ask">
-          <input class="ask__in" data-ask type="text" autocomplete="off"
-                 aria-label="What do you think will happen?">
-          <a class="btn btn--light" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">If you&rsquo;re so sure, tag it <i aria-hidden="true">&rarr;</i></a>
+        <div class="doors">
+          <a class="door" href="https://app.oddie.fun/live"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-kick"/></svg><span class="door__t"><b>!oddie</b><small>your claim, in any Kick chat</small></span></a>
+          <a class="door" href="https://x.com/intent/post?text=%40oddiefun%20"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-x"/></svg><span class="door__t"><b>@oddiefun</b><small>under any post on X</small></span></a>
+          <a class="door" href="https://t.me/oddiefunbot"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-telegram"/></svg><span class="door__t"><b>@oddiefunbot</b><small>in any Telegram group</small></span></a>
         </div>
       </div>
     </div>
@@ -1403,7 +1424,10 @@
 
 <footer>
   <div class="shell foot">
+    <a href="https://kick.com/oddiefun" target="_blank" rel="noopener">Oddie on Kick</a>
     <a href="https://x.com/oddiefun" target="_blank" rel="noopener">Oddie on X</a>
+    <a href="https://t.me/oddiefunbot" target="_blank" rel="noopener">Oddie on Telegram</a>
+    <a href="https://app.oddie.fun/live">For streamers</a>
     <a href="/terms">Terms</a>
     <a href="/privacy">Privacy</a>
   </div>
@@ -1423,53 +1447,6 @@
          switched away.
        - the hash lands in the URL after the travel, not before, or the browser
          jumps to the target and there is nothing left to animate. */
-  /* THE COMPOSER OPENS ON A BLANK PAGE and X intent has no placeholder --
-     whatever is in text= IS the tweet. An example prefilled there is a real
-     sentence the visitor has to delete, and whoever does not delete it posts a
-     claim they do not care about from their own account, to their own
-     followers, in a line dozens of other strangers are posting the same day.
-     Measured: unsettleablePhrase() does not catch instruction text either, so
-     "put your claim here" would travel all the way to a model, spend one of
-     their five tickets for the day, and come back refused.
-
-     So the example lives in an <input> on this page instead. A placeholder is
-     grey, it is not a value, it cannot be submitted, and it is gone on the
-     first keystroke. What reaches X is only what they typed.
-
-     PRICE CLAIMS ONLY in the pool: they settle from published candles with no
-     model in the loop, so the shape a first-timer copies is the shape that
-     cannot end in an abstention. */
-  (function () {
-    var EXAMPLES = [
-      "$SOL ends this week higher than it started",
-      "$BONK doubles before Friday",
-      "$ORE is above a $1m mcap by Sunday"
-    ];
-    /* EVERY box, not the first one. The page has two doors now and they are
-       ~2000px apart; wiring one and not the other ships a text field that
-       silently does nothing, which is worse than not having it. */
-    var boxes = [].slice.call(document.querySelectorAll("input[data-ask]"));
-    if (!boxes.length) return;
-
-    /* ONE example per page view, shared. Two boxes showing two different
-       examples reads as two different things being asked for. */
-    var pick = EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
-    var BASE = "https://x.com/intent/post?text=";
-
-    boxes.forEach(function (box) {
-      var link = box.parentNode.querySelector("a[data-tag]");
-      if (!link) return;
-      box.placeholder = pick;
-      function sync() {
-        var said = box.value.trim();
-        link.href = BASE + encodeURIComponent("@oddiefun" + (said ? " " + said : " "));
-      }
-      box.addEventListener("input", sync);
-      box.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") { e.preventDefault(); sync(); link.click(); }
-      });
-    });
-  })();
 
   (function () {
     var root = document.documentElement;

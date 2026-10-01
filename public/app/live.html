@@ -364,6 +364,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .mk li.o{border-left-color:var(--cream)}
 .mine{margin:0 0 30px;color:var(--fg-3);font-size:14.5px;line-height:1.5;max-width:52ch}
 .mine a{color:var(--yellow)}
+/* 44px to tap without moving the masthead: the hit area grows, the layout
+   does not. The tabs measured 23px tall at 375. */
+.top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
 </style>
 
 <header class="top">

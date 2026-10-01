@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Tagged markets · oddie</title>
+<title>Markets · oddie</title>
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <link rel="manifest" href="/site.webmanifest?v=3">
 <style>
@@ -361,33 +361,49 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 /* The ask, wearing the same sticker panel as a market so it reads as the next
    row in the list and not a banner bolted under it. */
 .card--invite{box-shadow:8px 9px 0 var(--pink-deep)}
-  /* The box and its button as one object: same height, the button shrink-proof.
-     Ink-on-cream here rather than the landing's yellow, because this card sits
-     on the dark feed and the card itself is the light surface. */
-  /* DO NOT "FIX" THE HEIGHTS HERE WITH getBoundingClientRect NUMBERS. The card
-     is rotated about half a degree, and that method returns the AXIS-ALIGNED
-     box of a rotated element: a 654px-wide input reads ~6px taller than it is
-     and a 107px button ~1px, so a perfectly aligned pair measures as 58 vs 53.
-     offsetHeight says 56 and 56. Measure with offsetHeight on this page. */
-  .card--invite .ask{display:flex;gap:10px;margin-top:14px;align-items:stretch;flex-wrap:wrap}
-  .card--invite .ask__in{flex:1 1 220px;min-width:0;font:inherit;font-family:var(--body);
-    font-weight:600;font-size:15px;padding:13px 15px;border-radius:3px;
-    border:2px solid var(--ink);background:#fff;color:var(--ink)}
-  .card--invite .ask__in::placeholder{color:var(--ink);opacity:.42}
-  .card--invite .ask__in:focus{outline:3px solid var(--pink-deep);outline-offset:2px}
-  .card--invite .ask__go{flex:none;display:inline-flex;align-items:center;gap:8px;
-    font-family:var(--display);font-weight:400;font-size:17px;text-transform:uppercase;
-    padding:13px 22px;border-radius:3px;background:var(--ink);color:#fff;text-decoration:none}
-  .card--invite .ask__go i{font-style:normal;color:var(--yellow)}
-  .card--invite .ask__go:hover{background:#1a1e0a}
-  @media (max-width:480px){
-    .card--invite .ask__in{flex:1 1 100%}
-    .card--invite .ask__go{width:100%;justify-content:center}
-  }
 .card--invite .card__q{margin:0 0 6px}
 .card--invite .pool{margin:0}
+
+/* WHERE IT WAS OPENED. Every chip carries its platform's mark, because the
+   same name means different things on Kick, X and Telegram. */
+.card__m{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+.card__m .by{display:inline-flex;align-items:center;gap:6px}
+.card__m .by svg{display:block;flex:none;width:15px;height:15px}
+.card__m .by--x,.card__m .by--kick,.card__m .by--tg{padding-left:5px}
+/* Dollars beside SOL, quieter than the SOL: SOL is what moves. */
+.usd{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:0;text-transform:none;opacity:.62}
+
+/* WAITING FOR THE RESULT. A closed market with money in it is not something to
+   bet on, so it is a row, not a card with two dead buttons. A closed market
+   nobody put money into has nothing to wait for and is not listed at all. */
+.sec-h{font-family:var(--display);font-weight:400;text-transform:uppercase;font-size:22px;
+  color:var(--cream);margin:34px 0 12px;display:flex;align-items:baseline;gap:10px}
+.sec-h small{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--fg-2)}
+.wait{list-style:none;margin:0 0 26px;padding:0;border:3px solid var(--cream)}
+.wrow + .wrow{border-top:1px solid var(--line)}
+.wrow a{display:flex;flex-direction:column;gap:4px;padding:13px 16px;min-height:44px;
+  text-decoration:none;color:var(--cream)}
+.wrow a:hover{background:rgba(251,252,244,.06)}
+.wrow a:focus-visible{outline:3px solid var(--yellow);outline-offset:-3px}
+.wrow__q{font-family:var(--display);font-size:18px;text-transform:uppercase;line-height:1.1}
+.wrow__m{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--fg-2)}
+.wrow__m svg{width:14px;height:14px;flex:none}
+.wrow__m b{color:var(--yellow);font-weight:700}
+
+/* 44px to tap without moving the masthead: the hit area grows, the layout
+   does not. The tabs measured 23px tall at 375. */
+.top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
+
+/* The three doors in the invite card, the same three as the landing. */
+.invite__doors{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.invite__doors a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 14px 8px 9px;
+  border:2px solid var(--ink);border-radius:3px;background:#fff;color:var(--ink);text-decoration:none;
+  font-family:var(--mono);font-size:14px;font-weight:800}
+.invite__doors a:hover{background:var(--yellow)}
+.invite__doors svg{width:22px;height:22px;flex:none}
 </style>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol></svg>
 <header class="top">
   <div class="wrap">
     <!-- THE LOGO LEAVES THE APP, on purpose. It used to point at "/", which on
@@ -415,19 +431,10 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      saying it is live is a fact about today, and facts about today have to be
      true. 5 is GENESIS_TICKETS in src/genesis/season.ts. -->
 <main class="wrap">
-  <!-- IT NAMES THE LIST AND SAYS HOW THEY GOT HERE, in that order.
-       It read "Nobody listed these" for a while, which was a rebuttal to "Open
-       markets" -- what a listing desk calls its board -- and the rebuttal was
-       the right idea said the wrong way round. It described an ABSENCE, so it
-       answered a question the reader had never asked ("who listed these?"), and
-       it never named the list at all. Lev, who knows the thesis, had to ask
-       what the heading meant; a cold visitor had no chance.
-       "Tagged" carries the same point in the affirmative and this page teaches
-       the word two cards below, in "Tag @oddiefun under any claim on X".
-       NOT "Opened markets", which was the other candidate: spoken aloud it is
-       indistinguishable from "open markets", the listing-desk phrase the
-       heading exists to avoid. -->
-  <h1>Tagged markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
+  <!-- "MARKETS" SINCE 1 OCT. "Tagged" was true while X was the only door; a
+       market opened with !oddie in a Kick chat was never tagged, and the
+       chip on each card now says where it was opened. -->
+  <h1>Markets <img class="hsticker" src="/brand/st-cooking.webp" alt=""></h1>
     <!-- A CONTROL ON A SHORT LIST IS CLUTTER, so this one is hidden until the
          list is long enough that scanning it beats reading it. See FILTER_FROM
          in the script: the input only appears above that many markets. -->
@@ -464,36 +471,6 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 <script src="/chain.js" defer></script>
 <script>
 (function () {
-  /* PORTED FROM THE LANDING, and the two must not drift: same examples, same
-     one-per-view pick, same "empty means the bare handle" rule. The card is
-     rendered by script and can be re-rendered, so this wires whatever boxes
-     exist right now and is safe to call again. */
-  var ASK_EXAMPLES = [
-    "$SOL ends this week higher than it started",
-    "$BONK doubles before Friday",
-    "$ORE is above a $1m mcap by Sunday"
-  ];
-  var askPick = ASK_EXAMPLES[Math.floor(Math.random() * ASK_EXAMPLES.length)];
-  function wireAsk() {
-    var boxes = [].slice.call(document.querySelectorAll("input[data-ask]"));
-    boxes.forEach(function (box) {
-      if (box.dataset.wired) return;
-      var link = box.parentNode.querySelector("a[data-tag]");
-      if (!link) return;
-      box.dataset.wired = "1";
-      box.placeholder = askPick;
-      function sync() {
-        var said = box.value.trim();
-        link.href = "https://x.com/intent/post?text="
-          + encodeURIComponent("@oddiefun" + (said ? " " + said : " "));
-      }
-      box.addEventListener("input", sync);
-      box.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") { e.preventDefault(); sync(); link.click(); }
-      });
-    });
-  }
-
   var view = document.getElementById("view");
   var inited = false;   // OddieChain.init bir kez calisir, her listelemede degil
   /* THE X GATE, on the app's front door. Cheap (no money, no signature) and
@@ -601,8 +578,64 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
     var m = String(sourceUrl || "").match(
       /^https?:\/\/(?:www\.)?(?:x|twitter)\.com\/([^\/?#]+)\/status\/\d+/i);
     if (m && m[1].toLowerCase() === h.toLowerCase()) href = sourceUrl;
-    return '<a class="by" href="' + esc(href)
-      + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
+    return '<a class="by by--x" href="' + esc(href)
+      + '" target="_blank" rel="noopener noreferrer">' + mark("x") + "@" + esc(h) + "</a>";
+  }
+  /* A platform's mark, from the sprite at the top of the page. */
+  function mark(name) {
+    return '<svg width="15" height="15" aria-hidden="true"><use href="#mk-' + name + '"/></svg>';
+  }
+  /* Where a market was opened when it was not X: the Kick channel, or the
+     Telegram opener's @name. Same fields as the market page's chip. */
+  function originChip(o) {
+    if (!o) return "";
+    if (o.platform === "kick" && o.handle) {
+      return '<a class="by by--kick" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">'
+        + mark("kick") + "kick.com/" + esc(o.handle) + "</a>";
+    }
+    if (o.platform === "telegram") {
+      return o.handle
+        ? '<a class="by by--tg" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">' + mark("telegram") + "@" + esc(o.handle) + "</a>"
+        : '<span class="by by--tg">' + mark("telegram") + "Telegram</span>";
+    }
+    return "";
+  }
+  /* Dollars for a SOL figure, or nothing when the server had no fresh price.
+     Display only: the pool is SOL and settles in SOL. */
+  var SOL_USD = null;
+  function usdOf(sol) {
+    if (!(SOL_USD > 0) || !(sol > 0)) return "";
+    var v = sol * SOL_USD;
+    return '<span class="usd">&asymp; $' + (v < 1 ? "<1" : Math.round(v).toLocaleString("en-US")) + "</span>";
+  }
+  /* The rows under the open cards. Who opened it and how much is in it, and
+     the row goes to the market page, where the result will land. */
+  function waitHtml(list) {
+    if (!list.length) return "";
+    return '<h2 class="sec-h">Waiting for the result <small>' + list.length + "</small></h2>"
+      + '<ul class="wait">' + list.map(function (m) {
+        var o = m.openedBy, who;
+        if (o && o.platform === "kick" && o.handle) who = mark("kick") + "kick.com/" + esc(o.handle);
+        else if (o && o.platform === "telegram") who = mark("telegram") + (o.handle ? "@" + esc(o.handle) : "Telegram");
+        else if (m.taggedBy) who = mark("x") + "@" + esc(String(m.taggedBy).replace(/^@+/, ""));
+        else who = "";
+        var sol = poolSol(m);
+        var money = sol > 0
+          ? "<b>" + (sol < 0.001 ? "<0.001" : sol.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")) + " SOL</b> " + usdOf(sol)
+          : "";
+        var meta = [who, money].filter(Boolean).join(" &middot; ");
+        return '<li class="wrow"><a href="/m/' + encodeURIComponent(m.slug) + '">'
+          + '<span class="wrow__q">' + esc(m.hook || m.questionDisplay || m.question) + "</span>"
+          + (meta ? '<span class="wrow__m">' + meta + "</span>" : "")
+          + "</a></li>";
+      }).join("") + "</ul>";
+  }
+  /* Past its deadline and not yet resolved. */
+  function isShut(m) {
+    return m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
+  }
+  function poolSol(m) {
+    return m.pool ? (m.pool.yesLamports + m.pool.noLamports) / 1e9 : 0;
   }
 
   var MIN_HEADS_LIST = 3;
@@ -641,7 +674,18 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      and cannot race a request. loadMarkets keeps `all`; this only ever
      reads it. */
   function draw(ms, filtering) {
-    if (!ms.length) {
+    /* OPEN ON TOP, MONEY WAITING UNDERNEATH, NOTHING ELSE.
+       Nine of fifteen cards were past their deadline, each with two dead
+       buttons, and the first card on the page was one of them. A closed
+       market with money in it is waiting for its result, so it becomes a
+       row below the open ones. A closed one nobody put money into has
+       nothing to wait for, and is not listed. Unreadable counts as money:
+       a pool we could not read is not an empty pool. */
+    var open = ms.filter(function (m) { return !isShut(m); });
+    var waiting = ms.filter(function (m) {
+      return isShut(m) && (poolSol(m) > 0 || m.oddsSource === "unreadable");
+    });
+    if (!open.length && !waiting.length) {
       /* Two different nothings. "Nothing open yet" is a fact about the
          product and an invitation; under a filter it is a lie about it, and
          the reader who typed a word needs the word back, not onboarding. */
@@ -650,20 +694,22 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
           + '<p>Try a shorter word, or <button type="button" class="linky" id="clearq">show everything</button>.</p></div>'
         : '<div class="poster"><img src="/brand/st-tag.webp" alt="">'
           + '<h3>Nothing open yet</h3>'
-          + '<p>Tag <b>@oddiefun</b> on X, under anything that ends up true or false. '
-          + '<a href="/leaderboard">How it works</a></p></div>';
+          + '<p>Call it in any chat: <b>!oddie</b> on Kick, <b>@oddiefun</b> on X, '
+          + '<b>@oddiefunbot</b> on Telegram. <a href="https://oddie.fun/#how">How it works</a></p></div>';
       var cq = document.getElementById("clearq");
       if (cq) cq.addEventListener("click", function () { q.value = ""; draw(all, false); q.focus(); });
       return;
     }
-    view.innerHTML = ms.map(function (m) {
+    view.innerHTML = open.map(function (m) {
       var bits = [];
       // WHO OPENED IT IS THE POINT. This was four grey characters, which is
       // how a social market reads as a ticker. A pill linked to their X
       // profile makes the opener a person you can go look at.
       // Same two words the market page uses: a bare handle beside a countdown
       // could be the opener, the claim's author, or the person it is about.
-      if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
+      var origin = originChip(m.openedBy);
+      if (origin) bits.push(origin);
+      else if (m.taggedBy) bits.push(byChip(m.taggedBy, m.sourceUrl));
       var w = when(m.closesAt);
       // when() answers "closed" for a past deadline, and the sides now say
       // that too -- in the place where it decides something. One word, one
@@ -688,7 +734,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         var totSol = tot / 1e9;
         pool = '<p class="pool"><b>'
           + (totSol < 0.001 ? "<0.001" : totSol.toFixed(3).replace(/0+$/, "").replace(/\.$/, ""))
-          + "</b> SOL in the pool"
+          + "</b> SOL in the pool " + usdOf(totSol)
           // Ayni kural: sifirsa hic yazma, dolu havuzun yaninda "0 in"
           // parayi yalanlar.
           + (Number(m.stakers || 0) >= MIN_HEADS_LIST ? ' <span class="heads">&middot; <b>' + Number(m.stakers) + "</b> in</span>" : "")
@@ -741,7 +787,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
         + sideEl("yes", "side--y", "YES", pct)
         + sideEl("no", "side--n", "NO", pct === null ? null : 100 - pct)
         + "</div></article>";
-    }).join("");
+    }).join("") + waitHtml(waiting);
 
     /* WHEN THE LIST IS THIN, THE PAGE STOPS DECORATING AND STARTS ASKING.
        Measured at 1920 with one market on it: the page was 1352px and the
@@ -753,7 +799,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
        ask, built as one more card so it reads as the next row rather than a
        banner. At three the list fills a screen on its own and the strip
        comes back to close it. */
-    if (!filtering && ms.length < THIN) {
+    if (!filtering && open.length < THIN) {
       /* THE ASK IS A DOOR NOW, not a sentence about one. It told somebody to
          tag @oddiefun and then left them to go and do it from memory, on
          another site, in their own words. The landing solved this with a box
@@ -761,17 +807,16 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          the SHAPE of a claim, and what travels to X is only what they typed.
          Same rule as the landing: the placeholder is a real placeholder and
          can never be posted, so nobody ships a sentence they did not write. */
+      /* The same three doors as the landing. This was an X composer, which
+         told a Kick viewer and a Telegram group the product lived elsewhere. */
       view.innerHTML += '<article class="card card--invite">'
         + '<h2 class="card__q">Open your own</h2>'
-        + '<p class="pool pool--quiet">Tag <b>@oddiefun</b> under any claim on X. '
-        + 'Keep <b>2%</b> of its pool.</p>'
-        + '<div class="ask">'
-        + '<input class="ask__in" data-ask type="text" autocomplete="off" '
-        + 'aria-label="What do you think will happen?">'
-        + '<a class="ask__go" data-tag href="https://x.com/intent/post?text=%40oddiefun%20">'
-        + 'Tag it <i aria-hidden="true">&rarr;</i></a>'
+        + '<p class="pool pool--quiet">Call it in any chat. Keep <b>2%</b> of its pool.</p>'
+        + '<div class="invite__doors">'
+        + '<a href="https://app.oddie.fun/live">' + mark("kick") + '!oddie on Kick</a>'
+        + '<a href="https://x.com/intent/post?text=%40oddiefun%20" target="_blank" rel="noopener">' + mark("x") + '@oddiefun on X</a>'
+        + '<a href="https://t.me/oddiefunbot" target="_blank" rel="noopener">' + mark("telegram") + '@oddiefunbot</a>'
         + "</div></article>";
-      wireAsk();
       // Two asks under a thin list is one too many, and this one says how.
       var season = document.getElementById("season");
       if (season) season.hidden = true;
@@ -806,6 +851,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
          reason written at MIN_HEADS_CARD - there it is a claim about the
          product to a stranger, here it is inventory to somebody already in. */
       all = ms;
+      SOL_USD = typeof j.solUsd === "number" ? j.solUsd : null;
       draw(ms, false);
       setFilterVisibility();
 

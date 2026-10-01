@@ -306,6 +306,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .bc__m{margin:0;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   color:rgba(11,13,4,.62)}
 @media (prefers-reduced-motion:reduce){.bc{transition:none}}
+/* 44px to tap without moving the masthead: the hit area grows, the layout
+   does not. The tabs measured 23px tall at 375. */
+.top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
 </style>
 
 <header class="top">
