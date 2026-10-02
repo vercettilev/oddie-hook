@@ -47,7 +47,7 @@ a{color:inherit}
 .top nav{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 18px}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
-.top nav a:hover{color:var(--fg)}
+@media (hover:hover){.top nav a:hover{color:var(--fg)}}
 .top nav a[aria-current="page"]{color:var(--fg);pointer-events:none}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
@@ -75,7 +75,7 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .card__q a{color:var(--cream);text-decoration:none}
 /* Kartta da hook baslik, tam soru altinda. Ayni kural: sozlesme gorunur. */
 .card__full{margin:4px 0 0;font-size:13px;line-height:1.38;color:var(--fg-3)}
-.card__q a:hover{color:var(--yellow)}
+@media (hover:hover){.card__q a:hover{color:var(--yellow)}}
 
 /* Kac kisi girdi: rakam one cikar, etiket geride kalir. */
 .heads b{color:var(--yellow);font-weight:700}
@@ -103,14 +103,14 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   box-shadow:6px 7px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
 .side--n{background:var(--pink);
   box-shadow:6px 7px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
-.side:hover{transform:translate(-2px,-3px) scale(1.02)}
-.side--y:hover{background:var(--yellow-hi);
-  box-shadow:9px 11px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
-.side--n:hover{box-shadow:9px 11px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
+@media (hover:hover){.side:hover{transform:translate(-2px,-3px) scale(1.02)}}
+@media (hover:hover){.side--y:hover{background:var(--yellow-hi);
+  box-shadow:9px 11px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}}
+@media (hover:hover){.side--n:hover{box-shadow:9px 11px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}}
 .side:active{transform:translate(6px,7px) scale(.985)}
 .side--y:active{box-shadow:0 0 0 var(--yellow-deep),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
 .side--n:active{box-shadow:0 0 0 var(--pink-deep),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
-@media (prefers-reduced-motion:reduce){ .side,.side:hover,.side:active{transform:none;transition:none} }
+@media (prefers-reduced-motion:reduce){ .side,.side:active{transform:none;transition:none}@media (hover:hover){.side:hover{transform:none;transition:none}} }
 .side:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
 .side span{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
   letter-spacing:.1em;margin-top:6px;opacity:.72}
@@ -120,14 +120,14 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   letter-spacing:.03em;text-transform:uppercase;line-height:1;background:var(--yellow);
   color:var(--ink);border:3px solid var(--black);padding:16px 22px;cursor:pointer;
   box-shadow:6px 7px 0 var(--yellow-deep);transition:transform .12s ease,box-shadow .12s ease}
-.big:hover{background:var(--yellow-hi);transform:translate(-2px,-2px);box-shadow:8px 9px 0 var(--yellow-deep)}
+@media (hover:hover){.big:hover{background:var(--yellow-hi);transform:translate(-2px,-2px);box-shadow:8px 9px 0 var(--yellow-deep)}}
 .big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
 /* The way past the gate. Quiet on purpose: findable, never competing with
    the button that does the thing. */
 .later{display:block;margin-top:14px;background:none;border:0;padding:8px 0;cursor:pointer;
   font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:var(--fg-3)}
-.later:hover{color:var(--cream)}
+@media (hover:hover){.later:hover{color:var(--cream)}}
 .later:focus-visible{outline:2px solid var(--cream);outline-offset:3px}
 .empty{border:2px dashed var(--fg-3);padding:24px 22px;font-size:15px;line-height:1.65;
   color:var(--fg-2)}
@@ -179,7 +179,7 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
-.top nav a:hover{color:var(--ink)}
+@media (hover:hover){.top nav a:hover{color:var(--ink)}}
 .top nav a[aria-current="page"]{color:var(--ink)}
 /* the seam: the lime band tears into the black field below it */
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
@@ -216,7 +216,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   text-transform:uppercase;color:rgba(11,13,4,.6)}
 .card__m b{color:var(--pink-deep);font-weight:400}
 .card__q a{color:var(--ink)}
-.card__q a:hover{color:var(--pink-deep)}
+@media (hover:hover){.card__q a:hover{color:var(--pink-deep)}}
 /* THE ONE RULE THE CREAM REDESIGN LEFT BEHIND. The card used to be dark and
    every text on it came from the --fg-* ramp, which is white at three opacities.
    When the card became cream, .card__m, .card__m b and .card__q a were all
@@ -272,9 +272,9 @@ h1{color:var(--cream)}
 .top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   text-transform:uppercase;background:var(--ink);color:var(--yellow);
   padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
-.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.top .mechip:hover{background:#000;color:var(--yellow-hi)}}
 .top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
-.top .mechip--go:hover{background:var(--pink);color:#fff}
+@media (hover:hover){.top .mechip--go:hover{background:var(--pink);color:#fff}}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* THE OPENER IS A PERSON, NOT A BYLINE. Ink pill on the cream sticker so it
@@ -282,7 +282,7 @@ h1{color:var(--cream)}
 .card__m .by{display:inline-block;background:var(--ink);color:var(--cream);
   padding:4px 11px 3px;border-radius:999px;text-decoration:none;font-weight:400;
   letter-spacing:.02em;text-transform:none}
-.card__m .by:hover{background:var(--pink);color:#fff}
+@media (hover:hover){.card__m .by:hover{background:var(--pink);color:#fff}}
 .card__m .by:focus-visible{outline:3px solid var(--pink-deep);outline-offset:2px}
 
 /* THE SEASON STRIP. A pink band under the lime masthead: loud enough to be a
@@ -297,7 +297,7 @@ h1{color:var(--cream)}
   margin:26px 0 34px;position:relative;z-index:2}
 .season[hidden]{display:none}
 .season img{width:26px;height:26px;transform:rotate(-8deg)}
-.season:hover{background:var(--pink-deep);color:#fff}
+@media (hover:hover){.season:hover{background:var(--pink-deep);color:#fff}}
 .season:focus-visible{outline:3px solid var(--yellow);outline-offset:-6px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
@@ -322,7 +322,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
    Same treatment the market page gives its disabled buttons. */
 .side--off{opacity:.42;cursor:not-allowed;transform:none !important;
   box-shadow:4px 5px 0 rgba(0,0,0,.5) !important}
-.side--off:hover{transform:none;box-shadow:4px 5px 0 rgba(0,0,0,.5)}
+@media (hover:hover){.side--off:hover{transform:none;box-shadow:4px 5px 0 rgba(0,0,0,.5)}}
 .side small{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
   letter-spacing:.1em;margin-top:6px;opacity:.75;text-transform:uppercase}
 
@@ -347,7 +347,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 /* The two ways in, side by side: X and Telegram are equals here. */
 .gate__ways{display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
 .big--tg{background:#2AABEE;color:#fff}
-.big--tg:hover{background:#4FBDF2;color:#fff}
+@media (hover:hover){.big--tg:hover{background:#4FBDF2;color:#fff}}
 .big[hidden]{display:none}
 .tglogin-note{flex-basis:100%;margin:4px 0 0;font-family:var(--mono);font-size:12px;
   font-weight:700;letter-spacing:.06em;color:var(--fg-2)}
@@ -383,7 +383,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .wrow + .wrow{border-top:1px solid var(--line)}
 .wrow a{display:flex;flex-direction:column;gap:4px;padding:13px 16px;min-height:44px;
   text-decoration:none;color:var(--cream)}
-.wrow a:hover{background:rgba(251,252,244,.06)}
+@media (hover:hover){.wrow a:hover{background:rgba(251,252,244,.06)}}
 .wrow a:focus-visible{outline:3px solid var(--yellow);outline-offset:-3px}
 .wrow__q{font-family:var(--display);font-size:18px;text-transform:uppercase;line-height:1.1}
 .wrow__m{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--fg-2)}
@@ -409,8 +409,31 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .invite__doors a{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 14px 8px 9px;
   border:2px solid var(--ink);border-radius:3px;background:#fff;color:var(--ink);text-decoration:none;
   font-family:var(--mono);font-size:14px;font-weight:800}
-.invite__doors a:hover{background:var(--yellow)}
+@media (hover:hover){.invite__doors a:hover{background:var(--yellow)}}
 .invite__doors svg{width:22px;height:22px;flex:none}
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.top nav a:active{opacity:.55}
+.top .mechip:active{scale:.96}
+.wrow a:active,.invite__doors a:active,.by:active,.season:active{scale:.98}
+.gate .big:active:not(:disabled){scale:.97}
+
+/* PAGE TO PAGE (2 Oct). Same-origin navigations cross-fade instead of
+   flashing white, and a market's title travels from its card in the list to
+   the heading of its page. Browsers without cross-document view transitions
+   navigate exactly as before; reduced motion gets no animation at all. */
+@view-transition{navigation:auto}
+::view-transition-group(root){animation-duration:.22s}
+::view-transition-group(mq){animation-duration:.34s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
 </style>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol></svg>
@@ -892,6 +915,23 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
      yeni sekmede acma, orta tik ve baglanti kopyalama da bozulmadan kaliyor.
      Delegasyon: kartlar her yuklemede yeniden ciziliyor, tek dinleyici
      hepsini kapsiyor. */
+  /* THE TITLE TRAVELS TO ITS PAGE (view transition). Only the tapped card's
+     title carries the name, and any name an earlier visit left behind is
+     cleared first: two elements sharing one name cancel the whole transition. */
+  function clearTravel() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-vt]"), function (n) {
+      n.style.viewTransitionName = ""; n.removeAttribute("data-vt");
+    });
+  }
+  window.addEventListener("pageshow", clearTravel);
+  view.addEventListener("click", function (ev) {
+    var go = ev.target.closest && ev.target.closest(".card__q a, .wrow a");
+    if (go) {
+      clearTravel();
+      var head = go.closest(".card__q") || go.querySelector(".wrow__q");
+      if (head) { head.style.viewTransitionName = "mq"; head.setAttribute("data-vt", "1"); }
+    }
+  });
   view.addEventListener("click", function (ev) {
     var a = ev.target.closest && ev.target.closest("a.side");
     if (!a || !a.dataset.slug) return;

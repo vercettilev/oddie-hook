@@ -17,6 +17,12 @@
  *
  * Loaded synchronously and before any code that needs the id. No dependencies.
  */
+/* iOS SAFARI APPLIES :active ONLY TO A PAGE THAT LISTENS FOR TOUCHES. Without
+   this one empty listener every press state in the app is invisible on an
+   iPhone, and a tap gives no feedback until the next page paints. Passive, so
+   it never delays scrolling. Every app page loads this file first. */
+document.addEventListener("touchstart", function () {}, { passive: true });
+
 window.OddieId = (function () {
   var KEY = "oddie_did";
 

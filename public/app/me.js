@@ -86,16 +86,16 @@
     // Defined here rather than in five page stylesheets: this element is
     // created by this file, so its look lives with it and cannot drift.
     css.textContent = ".mechip--cash{background:#FF2D78;color:#FBFCF4;"
-      + "box-shadow:3px 3px 0 #A3053F}.mechip--cash:hover{background:#FF2D78;color:#fff}"
+      + "box-shadow:3px 3px 0 #A3053F}@media (hover:hover){.mechip--cash:hover{background:#FF2D78;color:#fff}}"
       // Under the phone breakpoint every page gives .mechip `margin-left:auto`
       // to push it to the end of the masthead row. With TWO of them both did
       // it, each claimed the whole remaining width. Only the first one pushes.
       + ".mechip--cash + .mechip,.mechip--new + .mechip{margin-left:0}"
       // Activity in the markets you are in: somebody took the other side.
       + ".mechip--new{background:#FCF604;color:#0B0D04;box-shadow:3px 3px 0 #676A00}"
-      + ".mechip--new:hover{background:#FFFB3B;color:#0B0D04}"
+      + "@media (hover:hover){.mechip--new:hover{background:#FFFB3B;color:#0B0D04}}"
       // A Telegram name wears Telegram's blue, as it does on the market page.
-      + ".mechip--tg{background:#2AABEE;color:#fff}.mechip--tg:hover{background:#4FBDF2;color:#fff}"
+      + ".mechip--tg{background:#2AABEE;color:#fff}@media (hover:hover){.mechip--tg:hover{background:#4FBDF2;color:#fff}}"
       + ".mechip--pf{display:inline-flex;align-items:center;gap:7px}"
       + ".mechip--pf img{width:22px;height:22px;border-radius:50%;margin:-5px 0 -5px -7px;border:2px solid #0B0D04}"
       /* AND ON A PHONE THE NAME GIVES WAY TO THE MONEY. Even sharing one

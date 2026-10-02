@@ -32,7 +32,7 @@
   .gate button{margin-top:12px;font-family:var(--mono);font-size:13px;font-weight:800;
     letter-spacing:.1em;text-transform:uppercase;background:var(--yellow);color:var(--ink);
     border:3px solid var(--ink);padding:11px 18px;cursor:pointer}
-  .gate button:hover{background:#FFFB3B}
+  @media (hover:hover){.gate button:hover{background:#FFFB3B}}
   .err{margin-top:10px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--pink-deep)}
 
   /* The fuel gauge. Loud only when it needs to be: an operator who sees a red
@@ -78,6 +78,13 @@
     .hide-sm{display:none}
     .wrap{padding:18px 12px 60px}
   }
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
 </style>
 
 <div class="wrap">

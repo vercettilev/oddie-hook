@@ -5,6 +5,30 @@
 <title>oddie</title>
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <link rel="manifest" href="/site.webmanifest?v=3">
+<script>
+/* THE TITLE CAN ONLY TRAVEL IF IT IS THERE TO LAND.
+   Tapping a card on the list carries its question into this page's headline
+   (view-transition-name "mq"). The browser photographs this page at its first
+   frame, and that frame came while the parser waited on the scripts at the
+   bottom, so the photo said "Loading the market..." and the title faded out
+   instead of moving. Measured in Chrome: first frame at 21ms with no h1, the
+   render at 203ms.
+   So a visit from inside the app holds its first frame until #painted, which
+   sits after the script that renders the market from the inline payload. The
+   old page stays up for those milliseconds, as a native app would. A cold visit
+   from X has no transition to wait for and paints as early as it always did. */
+(function () {
+  try {
+    var nav = window.navigation;
+    var from = nav && nav.activation && nav.activation.from;
+    if ((from && from.url) || document.referrer.indexOf(location.origin + "/") === 0) {
+      var hold = document.createElement("link");
+      hold.rel = "expect"; hold.href = "#painted"; hold.setAttribute("blocking", "render");
+      document.head.appendChild(hold);
+    }
+  } catch (e) { /* no hold: the page paints as it always did */ }
+})();
+</script>
 <style>
 /* Fonts are EMBEDDED, not linked. A preload plus font-display:swap still
    paints thin fallback text first and pops; only a data: URI is ready at the
@@ -51,7 +75,7 @@ a{color:inherit}
 .top nav{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 18px}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
-.top nav a:hover{color:var(--fg)}
+@media (hover:hover){.top nav a:hover{color:var(--fg)}}
 
 /* ---- the question ---- */
 main.wrap{padding-top:34px;padding-bottom:72px}
@@ -119,7 +143,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .stake{font-family:var(--mono);font-size:12.5px;font-weight:700;letter-spacing:.06em;
   cursor:pointer;padding:8px 14px;border-radius:999px;
   background:transparent;color:var(--fg-2);border:2px solid rgba(255,255,255,.22)}
-.stake:hover{color:var(--cream);border-color:rgba(255,255,255,.45)}
+@media (hover:hover){.stake:hover{color:var(--cream);border-color:rgba(255,255,255,.45)}}
 .stake.on{background:var(--cream);color:var(--ink);border-color:var(--cream)}
 .stake:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
 .sides{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:6px 0 30px}
@@ -145,10 +169,10 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   box-shadow:9px 10px 0 var(--pink-deep),inset 0 6px 0 rgba(255,255,255,.4),inset 0 -7px 0 rgba(0,0,0,.13)}
 /* Every state repeats its own rotate(): transform is one property, so a hover
    that only lists translate() silently straightens the button out. */
-.side--y:hover{background:var(--yellow-hi);transform:rotate(-1.1deg) translate(-2px,-4px) scale(1.025);
-  box-shadow:12px 14px 0 var(--yellow-deep),inset 0 6px 0 rgba(255,255,255,.5),inset 0 -7px 0 rgba(0,0,0,.13)}
-.side--n:hover{transform:rotate(1.1deg) translate(-2px,-4px) scale(1.025);
-  box-shadow:12px 14px 0 var(--pink-deep),inset 0 6px 0 rgba(255,255,255,.48),inset 0 -7px 0 rgba(0,0,0,.13)}
+@media (hover:hover){.side--y:hover{background:var(--yellow-hi);transform:rotate(-1.1deg) translate(-2px,-4px) scale(1.025);
+  box-shadow:12px 14px 0 var(--yellow-deep),inset 0 6px 0 rgba(255,255,255,.5),inset 0 -7px 0 rgba(0,0,0,.13)}}
+@media (hover:hover){.side--n:hover{transform:rotate(1.1deg) translate(-2px,-4px) scale(1.025);
+  box-shadow:12px 14px 0 var(--pink-deep),inset 0 6px 0 rgba(255,255,255,.48),inset 0 -7px 0 rgba(0,0,0,.13)}}
 /* Pressed = the button travels the whole length of its own shadow and lands
    flat on the page. The inset flips so the light comes from below. */
 .side--y:active{transform:rotate(-1.1deg) translate(9px,10px) scale(.985);
@@ -161,8 +185,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 /* The tilt and the spring are decoration; the button is not. Anybody who has
    asked the system to calm down gets a flat pair that still presses. */
 @media (prefers-reduced-motion:reduce){
-  .side,.side--y,.side--n,.side--y:hover,.side--n:hover,
-  .side--y:active,.side--n:active{transform:none;transition:none}
+  .side,.side--y,.side--n,.side--y:active,.side--n:active{transform:none;transition:none}@media (hover:hover){.side--y:hover,.side--n:hover{transform:none;transition:none}}
 }
 .side small{display:block;font-family:var(--mono);font-size:10.5px;font-weight:700;
   letter-spacing:.1em;margin-top:7px;opacity:.72}
@@ -182,14 +205,14 @@ main.wrap{padding-top:34px;padding-bottom:72px}
   border:3px solid var(--black);padding:14px 20px;cursor:pointer;
   transition:transform .12s ease,box-shadow .12s ease;
 }
-.collect:hover{transform:translate(-2px,-2px);box-shadow:5px 6px 0 rgba(2,3,2,.45)}
+@media (hover:hover){.collect:hover{transform:translate(-2px,-2px);box-shadow:5px 6px 0 rgba(2,3,2,.45)}}
 .collect:active{transform:translate(2px,2px);box-shadow:none}
 .collect:focus-visible{outline:3px solid var(--black);outline-offset:4px}
 
 /* ---- the claim, at source: artik bir kart degil, ust satirdaki bir baglanti ---- */
 .src__a{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--yellow);text-decoration:none}
-.src__a:hover{text-decoration:underline}
+@media (hover:hover){.src__a:hover{text-decoration:underline}}
 
 /* ---- the terms this settles by ---- */
 .how{font-size:15px;line-height:1.55;color:var(--fg-2);margin:0 0 14px;max-width:46ch}
@@ -219,7 +242,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .share{font:inherit;letter-spacing:inherit;text-transform:inherit;
   color:var(--fg-2);text-decoration:underline;border:0;padding:0;
   background:none;cursor:pointer}
-.share:hover{color:var(--cream)}
+@media (hover:hover){.share:hover{color:var(--cream)}}
 .share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 
 /* ---- the money rail: dipnot. Okunur kalir -- ucret ifsasi sayfanin
@@ -279,7 +302,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
-.top nav a:hover{color:var(--ink)}
+@media (hover:hover){.top nav a:hover{color:var(--ink)}}
 /* the seam: the lime band tears into the black field below it */
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
@@ -333,7 +356,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .terms summary{color:var(--fg-2);font-family:var(--display);font-weight:400;font-size:15px;
   letter-spacing:.03em}
 .terms summary::after{color:var(--fg-3)}
-.terms:hover summary{color:var(--cream)}
+@media (hover:hover){.terms:hover summary{color:var(--cream)}}
 .terms__b{color:var(--fg-2)}
 .terms__b b{color:var(--cream)}
 .rail{font-family:var(--display);font-weight:400;font-size:12.5px;letter-spacing:.02em;
@@ -478,7 +501,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   }
   .foot a{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;
     text-transform:uppercase;color:var(--fg-3);text-decoration:none}
-  .foot a:hover{color:var(--fg)}
+  @media (hover:hover){.foot a:hover{color:var(--fg)}}
   .foot a[hidden]{display:none}
 }
 
@@ -577,7 +600,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   text-transform:uppercase;background:var(--ink);color:var(--yellow);
   padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
-.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.top .mechip:hover{background:#000;color:var(--yellow-hi)}}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* THE OPENER IS A PERSON, NOT A BYLINE. Lime on the black field, ink on the
@@ -585,7 +608,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .eyebrow .by{display:inline-block;background:var(--yellow);color:var(--ink);
   padding:4px 12px 3px;border-radius:999px;text-decoration:none;font-weight:400;
   letter-spacing:.02em;text-transform:none}
-.eyebrow .by:hover{background:var(--yellow-hi)}
+@media (hover:hover){.eyebrow .by:hover{background:var(--yellow-hi)}}
 .eyebrow .by:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
 /* TELEGRAM'S OWN BLUE, and only on the two things that belong to Telegram:
    the opener's @name and the way back to the chat. The colour is the label.
@@ -596,14 +619,14 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 /* KICK'S OWN GREEN, on the one thing that belongs to Kick: the channel the
    market was opened in, leading back to that stream. */
 .eyebrow .by--kick{background:#53FC18;color:var(--ink)}
-.eyebrow .by--kick:hover{background:#6BFF3A}
+@media (hover:hover){.eyebrow .by--kick:hover{background:#6BFF3A}}
 .adult{margin:10px 0 0;font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3)}
 /* AN OPENER WITH AN ODDIE NAME is somebody you can follow, so their chip
    carries their picture and leads to their page, where the Follow button is.
    The post itself stays one tap away under "See the post". */
 .eyebrow .by--pp{display:inline-flex;align-items:center;gap:7px;padding:3px 12px 3px 3px}
 .eyebrow .by--pp img{width:22px;height:22px;border-radius:50%;background:var(--cream);flex:none}
-.eyebrow .by--tg:hover{background:var(--tg-hi)}
+@media (hover:hover){.eyebrow .by--tg:hover{background:var(--tg-hi)}}
 .src__a--tg{color:var(--tg)}
 .rail a.earn{color:inherit;text-decoration:underline;text-underline-offset:3px}
 
@@ -632,13 +655,36 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .backfeed{display:inline-block;margin:0 0 14px;font-family:var(--mono);font-size:11.5px;
   font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3);
   text-decoration:none}
-.backfeed:hover{color:var(--yellow)}
+@media (hover:hover){.backfeed:hover{color:var(--yellow)}}
 .backfeed:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .stake--other{letter-spacing:.06em}
 /* 44px to tap without moving the masthead: the hit area grows, the layout
    does not. The tabs measured 23px tall at 375. */
 .top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
 .foot a{padding-top:12px;padding-bottom:12px}
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.top nav a:active{opacity:.55}
+.top .mechip:active{scale:.96}
+.stake:active,.share:active,.by:active{scale:.96}
+
+/* PAGE TO PAGE (2 Oct). Same-origin navigations cross-fade instead of
+   flashing white, and a market's title travels from its card in the list to
+   the heading of its page. Browsers without cross-document view transitions
+   navigate exactly as before; reduced motion gets no animation at all. */
+@view-transition{navigation:auto}
+::view-transition-group(root){animation-duration:.22s}
+::view-transition-group(mq){animation-duration:.34s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
+#view h1.q{view-transition-name:mq}
 </style>
 
 <header class="top">
@@ -1409,4 +1455,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   });
 })();
 </script>
+<!-- The market is on the page by here: the head holds an in-app visit's first
+     frame until this element is parsed. -->
+<i id="painted" hidden></i>
 

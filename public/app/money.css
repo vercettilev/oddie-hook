@@ -28,7 +28,10 @@
   border:3px solid var(--black,#020302);
   box-shadow:0 -8px 0 rgba(2,3,2,.35);
   padding:22px 20px calc(24px + env(safe-area-inset-bottom));
-  max-height:88vh;overflow-y:auto;
+  /* dvh, because on a phone 88vh is measured with the browser bar hidden and
+     the sheet jumped when it showed. Its scroll stays its own: reaching the
+     end does not start scrolling the page behind it. */
+  max-height:88vh;max-height:88dvh;overflow-y:auto;overscroll-behavior:contain;
   animation:csheet-in .2s cubic-bezier(.22,.9,.3,1);
 }
 @keyframes csheet-in{from{transform:translateY(14px)}to{transform:none}}
@@ -111,7 +114,7 @@
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2,#494E2D);
   text-decoration:underline;text-underline-offset:3px;
 }
-.chain-swap:hover{color:var(--ink,#0B0D04)}
+@media (hover:hover){.chain-swap:hover{color:var(--ink,#0B0D04)}}
 .chain-swap:active{transform:translateY(1px)}
 
 /* THE SWITCH, AS A THING THAT HAPPENS.
@@ -152,11 +155,11 @@
   box-shadow:6px 7px 0 var(--yellow-deep,#676A00),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
 .chain-side[data-side="no"]{background:var(--pink,#FF2D78);
   box-shadow:6px 7px 0 var(--pink-deep,#A3053F),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
-.chain-side[data-side="yes"]:hover{background:var(--yellow-hi,#FFFB3B);
+@media (hover:hover){.chain-side[data-side="yes"]:hover{background:var(--yellow-hi,#FFFB3B);
   transform:translate(-2px,-3px) scale(1.02);
-  box-shadow:9px 11px 0 var(--yellow-deep,#676A00),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
-.chain-side[data-side="no"]:hover{transform:translate(-2px,-3px) scale(1.02);
-  box-shadow:9px 11px 0 var(--pink-deep,#A3053F),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
+  box-shadow:9px 11px 0 var(--yellow-deep,#676A00),inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}}
+@media (hover:hover){.chain-side[data-side="no"]:hover{transform:translate(-2px,-3px) scale(1.02);
+  box-shadow:9px 11px 0 var(--pink-deep,#A3053F),inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}}
 .chain-side:active{transform:translate(6px,7px) scale(.985)}
 .chain-side[data-side="yes"]:active{
   box-shadow:0 0 0 var(--yellow-deep,#676A00),inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
@@ -173,10 +176,10 @@
      flat into the page at .62 says "not this one" while the colour still says
      "still yours". */
   opacity:.62;transform:translate(4px,5px);box-shadow:none}
-.chain-side-row:has(.on) .chain-side:not(.on):hover{opacity:1;transform:translate(0,0)}
+@media (hover:hover){.chain-side-row:has(.on) .chain-side:not(.on):hover{opacity:1;transform:translate(0,0)}}
 .chain-side:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:4px}
 @media (prefers-reduced-motion:reduce){
-  .chain-side,.chain-side:hover,.chain-side:active{transform:none;transition:none}
+  .chain-side,.chain-side:active{transform:none;transition:none}@media (hover:hover){.chain-side:hover{transform:none;transition:none}}
 }
 
 /* ---- how much ----
@@ -188,7 +191,7 @@
   background:#fff;color:var(--ink,#0B0D04);
   border:2px solid var(--ink,#0B0D04);padding:9px 13px;cursor:pointer;
 }
-.chain-chip:hover{background:#F1F3E4}
+@media (hover:hover){.chain-chip:hover{background:#F1F3E4}}
 /* The dollar line under an amount: quieter than the SOL, which is what moves. */
 .chain-chip__usd{display:block;margin-top:2px;font-size:10.5px;font-weight:700;opacity:.62}
 .chain-chip[aria-pressed="true"],.chain-chip.on{
@@ -199,7 +202,7 @@
    Only ever applied once a balance actually came back -- an unreadable
    balance leaves every chip exactly as it was. */
 .chain-chip--over{opacity:.42;cursor:not-allowed;text-decoration:line-through}
-.chain-chip--over:hover{background:#fff}
+@media (hover:hover){.chain-chip--over:hover{background:#fff}}
 .chain-amt{
   display:block;width:100%;font:inherit;font-family:var(--mono,monospace);
   padding:11px 12px;border:2px solid var(--ink,#0B0D04);background:#fff;
@@ -244,10 +247,10 @@
      actually changed was the one thing that snapped. */
   transition:transform .12s ease,box-shadow .12s ease,background .18s ease;
 }
-.claimbtn:hover:not(:disabled),.cbtn:hover:not(:disabled){
+@media (hover:hover){.claimbtn:hover:not(:disabled),.cbtn:hover:not(:disabled){
   background:var(--yellow-hi,#FFFB3B);transform:translate(-2px,-3px);
   box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
-             inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
+             inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}}
 .claimbtn:active:not(:disabled),.cbtn:active:not(:disabled){
   transform:translate(5px,6px);
   box-shadow:0 0 0 var(--pink-deep,#A3053F),
@@ -258,9 +261,9 @@
 .claimbtn--no{background:var(--pink,#FF2D78);
   box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
              inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
-.claimbtn--no:hover:not(:disabled){background:var(--pink,#FF2D78);transform:translate(-2px,-3px);
+@media (hover:hover){.claimbtn--no:hover:not(:disabled){background:var(--pink,#FF2D78);transform:translate(-2px,-3px);
   box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
-             inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}
+             inset 0 5px 0 rgba(255,255,255,.48),inset 0 -6px 0 rgba(0,0,0,.13)}}
 .claimbtn--no:active:not(:disabled){transform:translate(5px,6px);
   box-shadow:0 0 0 var(--pink-deep,#A3053F),
              inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
@@ -276,7 +279,7 @@
   letter-spacing:.12em;text-transform:uppercase;
   background:none;color:var(--ink-2,#494E2D);border:0;padding:13px 10px;cursor:pointer;
 }
-.cclose:hover{color:var(--ink,#0B0D04)}
+@media (hover:hover){.cclose:hover{color:var(--ink,#0B0D04)}}
 .cclose:focus-visible{outline:2px solid var(--ink,#0B0D04);outline-offset:2px}
 
 .chain-wallet{
@@ -410,7 +413,7 @@
 .seat b{display:block;font-family:var(--display,'Anton',sans-serif);font-weight:400;
   font-size:16px;letter-spacing:.02em}
 .seat span{display:block;font-size:11.5px;line-height:1.45;color:var(--ink-2,#494E2D);margin-top:2px}
-.seat:hover:not(:disabled){background:rgba(252,246,4,.28);border-style:solid}
+@media (hover:hover){.seat:hover:not(:disabled){background:rgba(252,246,4,.28);border-style:solid}}
 .seat:disabled{opacity:.6;cursor:default}
 .seat:focus-visible{outline:3px solid var(--ink,#0B0D04);outline-offset:3px}
 
@@ -431,10 +434,10 @@
   box-shadow:5px 6px 0 var(--pink-deep,#A3053F),
              inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13);
 }
-.cbtn--share:hover{background:var(--yellow-hi,#FFFB3B);color:var(--ink,#0B0D04);
+@media (hover:hover){.cbtn--share:hover{background:var(--yellow-hi,#FFFB3B);color:var(--ink,#0B0D04);
   transform:translate(-2px,-3px);
   box-shadow:8px 10px 0 var(--pink-deep,#A3053F),
-             inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}
+             inset 0 5px 0 rgba(255,255,255,.5),inset 0 -6px 0 rgba(0,0,0,.13)}}
 .cbtn--share:active{transform:translate(5px,6px);
   box-shadow:0 0 0 var(--pink-deep,#A3053F),
              inset 0 -4px 0 rgba(255,255,255,.3),inset 0 5px 0 rgba(0,0,0,.16)}
@@ -453,9 +456,9 @@
 .bring__row a,.bring__row button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:46px;
   padding:0 6px;border:2px solid var(--ink,#0B0D04);background:#fff;color:var(--ink,#0B0D04);
   font-family:var(--mono,monospace);font-size:12.5px;font-weight:800;text-decoration:none;cursor:pointer}
-.bring__row a:hover,.bring__row button:hover{background:#F1F3E4}
+@media (hover:hover){.bring__row a:hover,.bring__row button:hover{background:#F1F3E4}}
 .bring__row .bring__x{background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4)}
-.bring__row .bring__x:hover{background:#1a1e0a}
+@media (hover:hover){.bring__row .bring__x:hover{background:#1a1e0a}}
 .bring__row a:focus-visible,.bring__row button:focus-visible{outline:3px solid var(--pink,#FF2D78);outline-offset:2px}
 .bring__row svg{width:16px;height:16px;flex:none}
 
@@ -465,7 +468,7 @@
 .chain-notify{display:block;width:100%;margin:12px 0 0;padding:13px 14px;cursor:pointer;
   background:transparent;color:var(--ink,#0B0D04);border:2px solid var(--ink,#0B0D04);
   font-family:var(--body,system-ui,sans-serif);font-weight:800;font-size:15px;line-height:1.25}
-.chain-notify:hover:not(:disabled){background:rgba(11,13,4,.06)}
+@media (hover:hover){.chain-notify:hover:not(:disabled){background:rgba(11,13,4,.06)}}
 .chain-notify:focus-visible{outline:3px solid var(--pink-deep,#A3053F);outline-offset:3px}
 .chain-notify:disabled{opacity:.55;cursor:wait}
 .chain-notify-on{margin:12px 0 0;text-align:center;font-size:14px;line-height:1.4;color:var(--ink-2,#494E2D)}
@@ -476,7 +479,7 @@
 .chain-home a{font-family:var(--mono,monospace);font-size:12px;font-weight:700;
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink,#0B0D04);
   text-decoration:underline;text-underline-offset:3px}
-.chain-home a:hover{color:var(--pink,#FF2D78)}
+@media (hover:hover){.chain-home a:hover{color:var(--pink,#FF2D78)}}
 
 /* ---- hidden means hidden ----
  *
@@ -494,3 +497,23 @@
  * the screen.
  */
 [hidden]{display:none !important}
+
+/* TOUCH, in the sheet: a press shows the moment a finger lands, and a long
+   press on a control does not select its words. */
+.chain-chip:active,.cclose:active,.bring__row a:active,.bring__row button:active{scale:.96}
+.chain-chip,.chain-side,.claimbtn,.cbtn,.cclose,.bring__row a,.bring__row button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+/* THE SHEET, AS A SHEET (?sheet=v2 while Lev tries it on a phone). chain.js
+   drives it with a spring, so the CSS entrances step aside; the scrim follows
+   the sheet as it moves; on a phone a grab bar says it can be pulled down.
+   Scrolling the page behind an open sheet is locked. */
+.cdim--v2{animation:none;background:rgba(2,3,2,calc(.72 * var(--scrim,1)))}
+.cdim--v2 .csheet{animation:none;will-change:transform,opacity}
+@media (max-width:619.98px){
+  .cdim--v2 .csheet{padding-top:12px}
+  .cdim--v2 .csheet::before{content:"";display:block;width:44px;height:5px;border-radius:3px;
+    background:rgba(11,13,4,.28);margin:0 auto 16px}
+}
+.cdim--v2.cdim--fade{animation:cdim-in .15s ease-out}
+.cdim--v2.cdim--out{opacity:0;transition:opacity .15s ease-in}
+html.sheet-open,html.sheet-open body{overflow:hidden}

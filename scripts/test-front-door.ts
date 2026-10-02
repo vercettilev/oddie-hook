@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import { solUsd, _setSolUsd } from "../src/price/solUsd.js";
 import { _setPriceFeed, type PriceFeed } from "../src/price/feed.js";
+import { filesUnder } from "./inline-blocks.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -128,6 +129,122 @@ console.log("\nthe opener's share, without arithmetic");
 {
   check("an even split reads as half of it", /\? "<b>half<\/b> of it to "/.test(page));
   check("...and an uneven one names the pool, not 'it'", /%<\/b> of the pool to "\)/.test(page));
+}
+
+console.log("\na press answers on the press, on every page");
+{
+  /* A tap on a phone fires :hover and it stays until the next tap somewhere
+     else, so an unguarded hover rule leaves a button lit after the finger has
+     gone. Every hover rule waits for a pointer that can really hover. */
+  const unguarded = (css: string): string[] => {
+    const out: string[] = [];
+    const stack: boolean[] = [];
+    let prelude = "";
+    for (let i = 0; i < css.length; i++) {
+      if (css.startsWith("/*", i)) { const j = css.indexOf("*/", i + 2); i = j < 0 ? css.length : j + 1; continue; }
+      const ch = css[i];
+      if (ch === "{") {
+        const p = prelude.trim();
+        const guarded = stack.includes(true) || /^@media[^{]*\(\s*hover\s*:\s*hover\s*\)/.test(p);
+        if (!guarded && !p.startsWith("@") && p.includes(":hover")) out.push(p);
+        stack.push(guarded);
+        prelude = "";
+      } else if (ch === "}") { stack.pop(); prelude = ""; }
+      else if (ch === ";") prelude = "";
+      else prelude += ch;
+    }
+    return out;
+  };
+  const pages = filesUnder("public", ".html").filter((f) => !/(^|\/)zz-/.test(f));
+  check("there are pages to check", pages.length >= 15, `${pages.length}`);
+  for (const f of pages) {
+    const html = readFileSync(f, "utf8");
+    const css = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n");
+    const bad = unguarded(css);
+    check(`${f}: every hover waits for a real pointer`, bad.length === 0, bad.slice(0, 3).join(" | "));
+    check(`${f}: no grey box flashes on a tap`, /html\{-webkit-tap-highlight-color:transparent\}/.test(html));
+  }
+  const money = readFileSync("public/app/money.css", "utf8");
+  check("money.css: every hover waits for a real pointer", unguarded(money).length === 0, unguarded(money).slice(0, 3).join(" | "));
+  const me = readFileSync("public/app/me.js", "utf8");
+  const hovers = (me.match(/:hover\{/g) ?? []).length;
+  const guarded = (me.match(/@media \(hover:hover\)\{[^{}]*:hover\{/g) ?? []).length;
+  check("me.js: the chips it draws wait for a real pointer too", hovers > 0 && hovers === guarded, `${guarded}/${hovers}`);
+
+  // iOS only applies :active once the page listens for touches.
+  const touch = /document\.addEventListener\("touchstart", function \(\) \{\}, \{ passive: true \}\);/;
+  check("every app page gets :active on iOS through id.js", touch.test(readFileSync("public/app/id.js", "utf8")));
+  check("...and the landing, which does not load id.js, listens itself", touch.test(landing));
+  for (const p of ["markets", "market", "you", "live", "leaderboard", "following", "person", "who"]) {
+    const html = readFileSync(`public/app/${p}.html`, "utf8");
+    check(`${p}.html loads id.js`, html.includes('<script src="/app/id.js"></script>'));
+    check(`${p}.html: the masthead chip gives under the finger`, html.includes(".top .mechip:active{scale:.96}"));
+    check(`${p}.html: moving between pages cross-fades, and not for reduced motion`,
+      html.includes("@view-transition{navigation:auto}")
+      && /@media \(prefers-reduced-motion:reduce\)\{\s*::view-transition-group\(\*\),::view-transition-old\(\*\),::view-transition-new\(\*\)\{animation:none!important\}/.test(html));
+  }
+  check("the landing keeps clear of the notch", /viewport-fit=cover/.test(landing) && /env\(safe-area-inset-left\)/.test(landing));
+}
+
+console.log("\nthe question travels from the list into the market");
+{
+  check("the market's headline and the tapped card share one name",
+    page.includes("#view h1.q{view-transition-name:mq}") && list.includes('head.style.viewTransitionName = "mq";'));
+  check("...given to one card at a time and taken back on return",
+    /function clearTravel\(\)/.test(list) && list.includes('window.addEventListener("pageshow", clearTravel);'));
+  check("an in-app visit holds its first frame until the market is drawn",
+    page.includes('hold.rel = "expect"; hold.href = "#painted"; hold.setAttribute("blocking", "render");'));
+  check("...decided in the head, the only place a hold can still be added",
+    page.indexOf('hold.rel = "expect"') > 0 && page.indexOf('hold.rel = "expect"') < page.indexOf("<header"));
+  check("...and released right after the script that draws the market",
+    page.lastIndexOf("load(true);") < page.indexOf('<i id="painted" hidden></i>')
+    && /<i id="painted" hidden><\/i>\s*$/.test(page));
+}
+
+console.log("\nthe money sheet moves like a sheet");
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  const money = readFileSync("public/app/money.css", "utf8");
+  check("every sheet closes through one door", /function closeSheet\(el, velocity\)/.test(chain)
+    && !/closest\("\.cdim"\)\.remove\(\)/.test(chain));
+  check("the spring sheet waits behind ?sheet=v2 until it is approved",
+    chain.includes('if (q === "v2") localStorage.setItem("oddie:sheet", "v2");')
+    && chain.includes('if (q === "v1") localStorage.removeItem("oddie:sheet");')
+    && chain.includes("if (SHEET_V2) mountSheetMotion(dim, sheet);"));
+  check("...and reduced motion gets a short fade, not travel", /if \(reduced\) \{ halt\(\); dim\.classList\.add\("cdim--out"\)/.test(chain)
+    && /\.cdim--v2\.cdim--fade\{animation:cdim-in \.15s ease-out\}/.test(money));
+  check("the sheet fits the screen you can see, and keeps its scroll to itself",
+    money.includes("max-height:88dvh") && money.includes("overscroll-behavior:contain"));
+  check("a confirmed stake taps the hand once",
+    chain.includes("if (confirmed) { try { if (navigator.vibrate) navigator.vibrate(12); }"));
+
+  // The spring itself, on a fake clock: what a refactor could quietly break
+  // is no overshoot at damping 1, overshoot below it, a carried velocity, and
+  // the projection that decides whether a flick closes the sheet.
+  const start = chain.indexOf("  function spring(");
+  const end = chain.indexOf("  /** Close the sheet");
+  check("the spring is where this test looks for it", start > 0 && end > start);
+  let frames: ((t: number) => void)[] = [];
+  const make = new Function("requestAnimationFrame", "cancelAnimationFrame",
+    chain.slice(start, end) + "\nreturn { spring, project, rubber };");
+  const { spring, project, rubber } = make((cb: (t: number) => void) => frames.push(cb), () => {});
+  const run = (st: { x: number; v: number }, to: number, opts: { response: number; damping: number }) => {
+    frames = [];
+    let t = 0, n = 0, lo = Infinity, hi = -Infinity, done = false;
+    spring(st, to, opts, () => { lo = Math.min(lo, st.x); hi = Math.max(hi, st.x); }, () => { done = true; });
+    while (!done && n++ < 600) { const f = frames; frames = []; t += 1000 / 60; f.forEach((cb) => cb(t)); }
+    return { done, ms: Math.round(t), lo, hi };
+  };
+  const open = run({ x: 0, v: 0 }, 100, { response: 0.38, damping: 1 });
+  check("damping 1 arrives without passing the target", open.done && open.hi <= 100.0001, JSON.stringify(open));
+  check("...in about its response time, not a slow crawl", open.ms < 900, `${open.ms}ms`);
+  const back = run({ x: 0, v: 0 }, 100, { response: 0.3, damping: 0.8 });
+  check("damping .8 overshoots a little, as a released sheet should", back.hi > 100 && back.hi < 110, `${back.hi.toFixed(2)}`);
+  const caught = run({ x: 50, v: -3000 }, 100, { response: 0.3, damping: 1 });
+  check("a spring started mid-flight keeps the speed it was given", caught.done && caught.lo < 50, `low ${caught.lo.toFixed(1)}`);
+  check("a flick at 1000px/s projects 99px ahead", Math.abs(project(1000) - 99) < 1e-9, `${project(1000)}`);
+  check("past the edge the sheet follows less, and less again",
+    rubber(100, 400) < 100 && rubber(200, 400) < 2 * rubber(100, 400) && rubber(0, 400) === 0);
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");

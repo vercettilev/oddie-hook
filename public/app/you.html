@@ -48,7 +48,7 @@ a{color:inherit}
 .top nav{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 18px}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
-.top nav a:hover{color:var(--fg)}
+@media (hover:hover){.top nav a:hover{color:var(--fg)}}
 .top nav a[aria-current="page"]{color:var(--fg);pointer-events:none}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
@@ -65,15 +65,15 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   line-height:1;background:var(--yellow);color:var(--ink);border:3px solid var(--black);
   padding:16px 22px;cursor:pointer;box-shadow:6px 7px 0 var(--yellow-deep);
   transition:transform .12s ease,box-shadow .12s ease}
-.big:hover:not(:disabled){background:var(--yellow-hi);transform:translate(-2px,-2px);
-  box-shadow:8px 9px 0 var(--yellow-deep)}
+@media (hover:hover){.big:hover:not(:disabled){background:var(--yellow-hi);transform:translate(-2px,-2px);
+  box-shadow:8px 9px 0 var(--yellow-deep)}}
 .big:active:not(:disabled){transform:translate(2px,3px);box-shadow:2px 3px 0 var(--yellow-deep)}
 .big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
 .big:disabled{opacity:.5;cursor:not-allowed;transform:none}
 .later{display:block;margin-top:14px;background:none;border:0;padding:8px 0;cursor:pointer;
   font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:var(--fg-3)}
-.later:hover{color:var(--cream)}
+@media (hover:hover){.later:hover{color:var(--cream)}}
 .later:focus-visible{outline:2px solid var(--cream);outline-offset:3px}
 .deep{display:inline-block;margin-top:12px;font-family:var(--mono);font-size:12px;
   font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--yellow)}
@@ -99,13 +99,13 @@ h2 b{color:var(--yellow);font-weight:800}
 .act .go{font-family:var(--display);font-size:16px;letter-spacing:.03em;text-transform:uppercase;
   line-height:1;background:var(--yellow);color:var(--ink);border:3px solid var(--black);
   padding:11px 16px;cursor:pointer;box-shadow:4px 5px 0 var(--yellow-deep)}
-.act .go:hover{background:var(--yellow-hi)}
+@media (hover:hover){.act .go:hover{background:var(--yellow-hi)}}
 .act .go:focus-visible{outline:3px solid var(--cream);outline-offset:3px}
 /* Rent-only is a real but small return, and calling it "collect winnings"
    would be a lie the button tells. It gets the quiet treatment to match. */
 .act .go--rent{background:transparent;color:var(--cream);border-color:var(--cream);
   box-shadow:none;font-size:14px}
-.act .go--rent:hover{background:rgba(251,252,244,.1)}
+@media (hover:hover){.act .go--rent:hover{background:rgba(251,252,244,.1)}}
 .act a.open{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2)}
 
@@ -160,7 +160,7 @@ h2 b{color:var(--yellow);font-weight:800}
 .mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
-.top nav a:hover{color:var(--ink)}
+@media (hover:hover){.top nav a:hover{color:var(--ink)}}
 .top nav a[aria-current="page"]{color:var(--ink)}
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
@@ -240,7 +240,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .act a.open{font-family:var(--display);font-weight:400;font-size:14px;letter-spacing:.03em;
   color:var(--pink-deep)}
 .act .go--rent{border-color:var(--black);color:var(--ink)}
-.act .go--rent:hover{background:rgba(11,13,4,.08)}
+@media (hover:hover){.act .go--rent:hover{background:rgba(11,13,4,.08)}}
 .act .done{font-family:var(--display);font-weight:400;font-size:14px;color:var(--pink-deep)}
 .act .done a{color:rgba(11,13,4,.6)}
 h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04em;color:var(--fg-3)}
@@ -271,9 +271,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   text-transform:uppercase;background:var(--ink);color:var(--yellow);
   padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
-.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.top .mechip:hover{background:#000;color:var(--yellow-hi)}}
 .top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
-.top .mechip--go:hover{background:var(--pink);color:#fff}
+@media (hover:hover){.top .mechip--go:hover{background:var(--pink);color:#fff}}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
@@ -303,14 +303,14 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .wayout__b{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;background:none;border:0;padding:6px 2px;cursor:pointer;
   color:var(--fg-3);text-decoration:underline;text-underline-offset:3px}
-.wayout__b:hover{color:var(--pink)}
+@media (hover:hover){.wayout__b:hover{color:var(--pink)}}
 .wayout__b:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 /* The way back to what happened, at the foot of the money. Quiet: it is a
    door, not an action. */
 .recordline{margin:18px 0 34px;font-family:var(--mono);font-size:12px;font-weight:700;
   letter-spacing:.1em;text-transform:uppercase}
 .recordline a{color:var(--fg-3)}
-.recordline a:hover{color:var(--fg)}
+@media (hover:hover){.recordline a:hover{color:var(--fg)}}
 /* The masthead's handle chip links to this very page and restates the strip
    under the heading. The ask state (Connect X) and the money state (N to
    collect) are different things and stay. */
@@ -330,7 +330,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
   background:var(--yellow);color:var(--ink);border:0;border-radius:3px;
   padding:9px 16px 7px;margin-left:auto}
-.pushask button:hover{background:var(--yellow-hi)}
+@media (hover:hover){.pushask button:hover{background:var(--yellow-hi)}}
 .pushask button:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .pushask button[disabled]{opacity:.55;cursor:default}
 
@@ -355,7 +355,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   font-weight:400;font-size:19px;letter-spacing:.04em;text-transform:uppercase;
   background:var(--ink);color:var(--yellow);text-decoration:none;
   padding:12px 22px 10px;border-radius:3px}
-.payout .go:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.payout .go:hover{background:#000;color:var(--yellow-hi)}}
 .payout .go:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* YOUR PICTURE AND NAME, and the panel that changes them. */
@@ -365,7 +365,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .idbar{margin:-4px 0 18px;display:flex;flex-wrap:wrap;gap:10px}
 .idbar a,.idbar button{text-decoration:none;display:inline-block;font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
   background:transparent;color:var(--fg);border:2px solid var(--line);padding:7px 11px;cursor:pointer}
-.idbar a:hover,.idbar button:hover{border-color:var(--fg-3)}
+@media (hover:hover){.idbar a:hover,.idbar button:hover{border-color:var(--fg-3)}}
 .idbar a[hidden]{display:none}
 .idbar a:focus-visible,.idbar button:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .idedit{border:3px solid var(--yellow);box-shadow:8px 9px 0 var(--yellow-deep);padding:20px 22px;margin:0 0 28px;
@@ -395,7 +395,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 /* TWO DOORS IN, side by side: X and Telegram are equals. */
 .gate .gate__ways{grid-column:2;justify-self:start;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .big--tg{background:#2AABEE;color:#fff;text-decoration:none}
-.big--tg:hover:not(:disabled){background:#4FBDF2;color:#fff}
+@media (hover:hover){.big--tg:hover:not(:disabled){background:#4FBDF2;color:#fff}}
 .big[hidden]{display:none}
 .tglogin-note{flex-basis:100%;margin:4px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
   letter-spacing:.06em;color:var(--fg-2)}
@@ -421,9 +421,9 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .acts li.is-new{border-left-color:var(--pink)}
 .acts__b{display:grid;gap:3px;min-width:0}
 .acts__who{color:var(--fg);text-decoration:underline;text-decoration-color:var(--fg-3);text-underline-offset:3px}
-.acts__who:hover{text-decoration-color:var(--yellow)}
+@media (hover:hover){.acts__who:hover{text-decoration-color:var(--yellow)}}
 a.acts__q{text-decoration:none}
-a.acts__q:hover{color:var(--fg);text-decoration:underline;text-underline-offset:3px}
+@media (hover:hover){a.acts__q:hover{color:var(--fg);text-decoration:underline;text-underline-offset:3px}}
 .acts__t{font-weight:700;font-size:15px;line-height:1.35}
 .acts__q{color:var(--fg-3);font-size:13.5px;line-height:1.35;overflow-wrap:anywhere}
 .acts time{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--fg-3);white-space:nowrap}
@@ -469,7 +469,7 @@ a.acts__q:hover{color:var(--fg);text-decoration:underline;text-underline-offset:
 .start__go .big{text-decoration:none}
 .start__go .alt{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.11em;
   text-transform:uppercase;color:var(--fg-3);text-decoration:underline;text-underline-offset:3px}
-.start__go .alt:hover{color:var(--yellow)}
+@media (hover:hover){.start__go .alt:hover{color:var(--yellow)}}
 @media (max-width:560px){
   .start{grid-template-columns:1fr;gap:12px;justify-items:center;text-align:center}
   .start .ssticker{grid-row:auto;width:min(180px,46vw)}
@@ -480,23 +480,45 @@ a.acts__q:hover{color:var(--fg);text-decoration:underline;text-underline-offset:
 .backfeed{display:inline-block;margin:0 0 10px;font-family:var(--mono);font-size:11px;
   font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);
   text-decoration:none}
-.backfeed:hover{color:var(--fg)}
+@media (hover:hover){.backfeed:hover{color:var(--fg)}}
 
 /* The way out of a failed read. Sized like the sentence it sits in, because it
    is a repair and not an invitation. */
 .errgo{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;
   text-transform:uppercase;cursor:pointer;background:none;color:var(--yellow);
   border:1px solid var(--yellow);border-radius:3px;padding:5px 10px;margin-left:6px}
-.errgo:hover{background:var(--yellow);color:var(--ink)}
+@media (hover:hover){.errgo:hover{background:var(--yellow);color:var(--ink)}}
 .errgo:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 
 /* An .err can carry a link out. Without this it inherits the body link colour
    and disappears into the sentence. */
 .err a{color:var(--yellow);text-decoration:underline;text-underline-offset:3px}
-.err a:hover{color:var(--yellow-hi)}
+@media (hover:hover){.err a:hover{color:var(--yellow-hi)}}
 /* 44px to tap without moving the masthead: the hit area grows, the layout
    does not. The tabs measured 23px tall at 375. */
 .top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.top nav a:active{opacity:.55}
+.top .mechip:active{scale:.96}
+.acct-add:active,.wayout__b:active{scale:.97}
+
+/* PAGE TO PAGE (2 Oct). Same-origin navigations cross-fade instead of
+   flashing white, and a market's title travels from its card in the list to
+   the heading of its page. Browsers without cross-document view transitions
+   navigate exactly as before; reduced motion gets no animation at all. */
+@view-transition{navigation:auto}
+::view-transition-group(root){animation-duration:.22s}
+::view-transition-group(mq){animation-duration:.34s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
 </style>
 
 <header class="top">

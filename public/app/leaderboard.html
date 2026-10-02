@@ -47,7 +47,7 @@ a{color:inherit}
 .top nav{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 18px}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
-.top nav a:hover{color:var(--fg)}
+@media (hover:hover){.top nav a:hover{color:var(--fg)}}
 .top nav a[aria-current="page"]{color:var(--fg);pointer-events:none}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
@@ -67,13 +67,13 @@ thead th{font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing
   text-transform:uppercase;color:var(--fg-3);text-align:left;
   padding:0 10px 10px;border-bottom:1px solid var(--line)}
 tbody td{padding:14px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-tbody tr:hover td{background:rgba(251,252,244,.04)}
+@media (hover:hover){tbody tr:hover td{background:rgba(251,252,244,.04)}}
 .r{font-family:var(--display);font-size:22px;line-height:1;color:var(--fg-3);width:1%;
   padding-right:4px;font-variant-numeric:tabular-nums}
 .r--top{color:var(--yellow)}
 .who a{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--cream);
   text-decoration:none;word-break:break-all}
-.who a:hover{color:var(--yellow)}
+@media (hover:hover){.who a:hover{color:var(--yellow)}}
 .who .anon{color:var(--fg-2);font-weight:400}
 .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pts{font-family:var(--display);font-size:24px;line-height:1;color:var(--yellow)}
@@ -117,7 +117,7 @@ tbody tr:hover td{background:rgba(251,252,244,.04)}
 .mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
-.top nav a:hover{color:var(--ink)}
+@media (hover:hover){.top nav a:hover{color:var(--ink)}}
 .top nav a[aria-current="page"]{color:var(--ink)}
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
@@ -170,9 +170,9 @@ thead th{font-family:var(--display);font-weight:400;font-size:14px;letter-spacin
 .top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   text-transform:uppercase;background:var(--ink);color:var(--yellow);
   padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
-.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.top .mechip:hover{background:#000;color:var(--yellow-hi)}}
 .top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
-.top .mechip--go:hover{background:var(--pink);color:#fff}
+@media (hover:hover){.top .mechip--go:hover{background:var(--pink);color:#fff}}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
@@ -196,7 +196,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .other-board{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.11em;
   text-transform:uppercase;color:var(--fg-3);margin:-16px 0 28px}
 .other-board a{color:var(--yellow)}
-.other-board a:hover{color:var(--yellow-hi)}
+@media (hover:hover){.other-board a:hover{color:var(--yellow-hi)}}
 
 /* ============================================================== MOMENTS ==
    A STANDINGS TABLE NEEDS VOLUME AND THIS PRODUCT DOES NOT HAVE IT YET.
@@ -213,7 +213,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
   letter-spacing:.02em;text-transform:uppercase;color:var(--fg-2);
   margin:0 0 26px;line-height:1.35}
 .next a{color:var(--yellow);text-decoration:none}
-.next a:hover{color:var(--yellow-hi)}
+@media (hover:hover){.next a:hover{color:var(--yellow-hi)}}
 .next b{color:var(--cream);font-weight:400}
 
 .mom{background:var(--cream);color:var(--ink);border:3px solid var(--black);
@@ -228,7 +228,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .mom__q{font-family:var(--display);font-weight:400;font-size:clamp(18px,4vw,25px);
   line-height:1.08;text-transform:uppercase;margin:0 0 12px;text-wrap:balance}
 .mom__q a{color:var(--ink);text-decoration:none}
-.mom__q a:hover{color:var(--pink-deep)}
+@media (hover:hover){.mom__q a:hover{color:var(--pink-deep)}}
 
 /* One line per person, and the shape of the line IS the verdict: the name, what
    they took and at what price, then the money. No icons and no colour-only
@@ -248,7 +248,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .mom__s li[data-v="w"] .mom__v{color:var(--pink-deep)}
 .mom__s li b{font-family:var(--display);font-weight:400;font-size:17px;letter-spacing:.02em;color:var(--ink)}
 .mom__s li b a{color:inherit;text-decoration:none}
-.mom__s li b a:hover{color:var(--pink-deep)}
+@media (hover:hover){.mom__s li b a:hover{color:var(--pink-deep)}}
 /* A NAME THAT IS A PERSON carries their picture and leads to their page, where
    they can be followed. Only for people who chose to be public; everybody
    else keeps the wallet record link. */
@@ -273,6 +273,27 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 /* 44px to tap without moving the masthead: the hit area grows, the layout
    does not. The tabs measured 23px tall at 375. */
 .top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.top nav a:active{opacity:.55}
+.top .mechip:active{scale:.96}
+
+/* PAGE TO PAGE (2 Oct). Same-origin navigations cross-fade instead of
+   flashing white, and a market's title travels from its card in the list to
+   the heading of its page. Browsers without cross-document view transitions
+   navigate exactly as before; reduced motion gets no animation at all. */
+@view-transition{navigation:auto}
+::view-transition-group(root){animation-duration:.22s}
+::view-transition-group(mq){animation-duration:.34s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
 </style>
 
 <header class="top">

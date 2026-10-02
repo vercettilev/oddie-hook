@@ -183,7 +183,7 @@
     background-image:linear-gradient(var(--ink),var(--ink));background-repeat:no-repeat;
     background-size:100% .12em;background-position:0 100%;padding-bottom:.1em;
     transition:color .12s ease,background-size .12s ease}
-  a.mk:hover{color:var(--ink);background-size:100% .2em}
+  @media (hover:hover){a.mk:hover{color:var(--ink);background-size:100% .2em}}
   a.mk:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
   /* The sticky masthead would otherwise land on top of the heading. */
   #people{scroll-margin-top:clamp(84px,11vh,120px)}
@@ -201,7 +201,7 @@
     background:var(--ink);color:#fff;border-radius:3px;
     padding:10px 14px 9px;box-shadow:5px 6px 0 var(--pink);
     transition:translate .13s var(--zip),scale .13s var(--zip),box-shadow .13s ease-out}
-  .gcta:hover .gcta__pill{translate:1px 1px;box-shadow:4px 5px 0 var(--pink)}
+  @media (hover:hover){.gcta:hover .gcta__pill{translate:1px 1px;box-shadow:4px 5px 0 var(--pink)}}
   .gcta:active .gcta__pill{scale:.965;translate:3px 4px}
   .gcta__tag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;
     text-transform:uppercase;color:var(--ink);background:var(--yellow);
@@ -217,7 +217,7 @@
     text-transform:uppercase;padding:15px 30px;border-radius:3px;border:0;
     background:var(--ink);color:#fff;box-shadow:6px 7px 0 var(--pink);
     transition:translate .13s var(--zip),scale .13s var(--zip),box-shadow .13s ease-out}
-  .btn:hover{translate:1px 1px;box-shadow:5px 6px 0 var(--pink)}
+  @media (hover:hover){.btn:hover{translate:1px 1px;box-shadow:5px 6px 0 var(--pink)}}
   .btn:active{scale:.965;translate:3px 4px}
   .btn i{font-style:normal;color:var(--yellow)}
   /* iki satirli CTA: ustte eylem, altta kazandirdigi */
@@ -233,7 +233,7 @@
      (olculdu: buton 126px'e buyudu, landing 110). */
   .nav__links .btn{padding:9px 17px;font-size:14px;background:transparent;color:var(--ink);
     border:2.5px solid var(--ink);box-shadow:none}
-  .nav__links .btn:hover{translate:none;box-shadow:none;background:rgba(11,13,4,.06)}
+  @media (hover:hover){.nav__links .btn:hover{translate:none;box-shadow:none;background:rgba(11,13,4,.06)}}
   .nav__links .btn i{color:var(--ink)}
   /* eve-donus varyanti: ayni hap, ok basta ve sola bakar. Cipsiz oldugu icin
      yazi mobilde de kalir; yoksa 820 altinda hap tek basina bir ok olurdu. */
@@ -263,7 +263,7 @@
   .nav__links{display:flex;align-items:center;gap:clamp(16px,2.4vw,32px)}
   .nav__links a:not(.btn){font-family:var(--mono);font-size:12px;font-weight:700;
     letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);position:relative}
-  .nav__links a:not(.btn):hover{color:var(--ink)}
+  @media (hover:hover){.nav__links a:not(.btn):hover{color:var(--ink)}}
   .nav__links a:not(.btn)::after{content:'';position:absolute;left:0;right:0;
     top:50%;height:44px;transform:translateY(-50%)}
   @media (max-width:720px){
@@ -442,7 +442,7 @@
   .board__row--me{background:var(--yellow);border-bottom:3px solid var(--ink)}
   .nav__back{font-family:var(--mono);font-size:12px;font-weight:700;
     letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);position:relative}
-  .nav__back:hover{color:var(--ink)}
+  @media (hover:hover){.nav__back:hover{color:var(--ink)}}
   .board__row .who{font-family:var(--mono);font-size:13px;font-weight:700}
   .board__row .n{font-family:var(--display);font-weight:400;font-size:clamp(18px,1.9vw,26px);
     text-align:right}
@@ -458,7 +458,7 @@
   .foot a{position:relative}
   .foot a::after{content:'';position:absolute;left:0;right:0;top:50%;height:44px;
     transform:translateY(-50%)}
-  .foot a:hover{color:#fff}
+  @media (hover:hover){.foot a:hover{color:#fff}}
 
   @media (max-width:900px){
     .A__in{grid-template-columns:1fr;gap:clamp(24px,6vw,40px)}
@@ -478,7 +478,7 @@
   }
   @media (prefers-reduced-motion:reduce){
     .btn{transition:none}
-    .btn:hover,.btn:active{translate:none;scale:1}
+    .btn:active{translate:none;scale:1}@media (hover:hover){.btn:hover{translate:none;scale:1}}
   }
 
   /* ------------------------------------------------------------- reveal --
@@ -529,7 +529,7 @@
   .who-strip__out{border:0;background:none;padding:11px 2px;cursor:pointer;
     font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink-2);
     text-decoration:underline;text-underline-offset:3px}
-  .who-strip__out:hover,.who-strip__out:focus-visible{color:var(--ink)}
+  .who-strip__out:focus-visible{color:var(--ink)}@media (hover:hover){.who-strip__out:hover{color:var(--ink)}}
   /* Iki eylem tek satirda, gcard'in kendi cifti gibi: birincil buton +
      sessiz ama OKUNUR bag. Onceki hali <br> ile alta atilmis 12px gri
      satirdi ve gozukmuyordu. */
@@ -539,7 +539,7 @@
   /* Tukenmis bilet: buton duruyor ama artik bir kapi degil, bir durum. */
   .btn--spent{background:transparent;color:var(--ink);border:3px dashed var(--ink);
     box-shadow:none;cursor:default}
-  .btn--spent:hover,.btn--spent:active{translate:none;scale:1;background:transparent}
+  .btn--spent:active{translate:none;scale:1;background:transparent}@media (hover:hover){.btn--spent:hover{translate:none;scale:1;background:transparent}}
   /* Doldurmali sablon: composer'da gorecegi seyin birebir on izlemesi.
      Sabit kisim cip, bosluk kesik cizgili yuva — beklenti tiklamadan ONCE
      kuruluyor, kimse bos composer karsisinda donup kalmiyor. */
@@ -557,12 +557,12 @@
       color:var(--ink);text-decoration:none;padding:9px 12px;font-family:var(--mono);
       font-size:12.5px;font-weight:700;line-height:1.35;
       overflow-wrap:anywhere}
-    .mine-open__list a:hover{background:var(--yellow)}
+    @media (hover:hover){.mine-open__list a:hover{background:var(--yellow)}}
   .board-jump{display:inline-block;padding:11px 2px;
     font-family:var(--mono);font-size:13px;font-weight:700;
     letter-spacing:.1em;text-transform:uppercase;color:var(--ink);
     text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:2px}
-  .board-jump:hover,.board-jump:focus-visible{color:var(--pink-deep)}
+  .board-jump:focus-visible{color:var(--pink-deep)}@media (hover:hover){.board-jump:hover{color:var(--pink-deep)}}
 
   .gcard{margin:clamp(18px,2.4vw,30px) 0 0;max-width:560px}
   .gcard__img{display:block;width:100%;height:auto;border-radius:14px;
@@ -574,7 +574,7 @@
     font-family:var(--mono);font-size:12px;font-weight:700;
     letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
     text-decoration:underline;text-underline-offset:3px}
-  .gcard__save:hover,.gcard__save:focus-visible{color:var(--ink)}
+  .gcard__save:focus-visible{color:var(--ink)}@media (hover:hover){.gcard__save:hover{color:var(--ink)}}
 
   /* defter satirlari: fisin kucuk olcegi */
   /* siyahtan siyaha geciyor: dikis yok, ve .B'nin dikis payi da gereksiz */
@@ -600,6 +600,13 @@
     .mrow__b{grid-column:2}
     .mrow__s{grid-column:2;text-align:left}
   }
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
 </style>
 </head>
 <body>

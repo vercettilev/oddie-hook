@@ -45,6 +45,13 @@
   .ok code{font:600 14px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--yellow)}
   .err{color:var(--pink)}
   @media (prefers-reduced-motion:no-preference){ .btn{transition:transform .08s ease} .btn:active{transform:scale(.98)} }
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
 </style>
 </head>
 <body>

@@ -487,6 +487,207 @@ function b64ToBytes(b64) {
     return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
   }
 
+  /* THE SHEET, AS A SHEET (Lev, 2 Oct, the Apple pass). Behind ?sheet=v2
+     until Lev has held it on a phone; ?sheet=v1 turns it off again. The choice
+     sticks per browser so it survives the next page.
+       Phone: it rises from the bottom on a spring, follows a finger 1:1 when
+     pulled down, and on release goes where the gesture was going (momentum
+     projected, Apple's own formula), closing or settling back with the
+     finger's speed carried through. Desktop: it grows out of the point that
+     was pressed and shrinks back into it. Either way a close can interrupt an
+     open mid-flight and starts from where the sheet actually is.
+       Reduced motion gets a short fade and no travel. */
+  const SHEET_V2 = (() => {
+    try {
+      const q = new URLSearchParams(location.search).get("sheet");
+      if (q === "v2") localStorage.setItem("oddie:sheet", "v2");
+      if (q === "v1") localStorage.removeItem("oddie:sheet");
+      return localStorage.getItem("oddie:sheet") === "v2";
+    } catch (e) { return false; }
+  })();
+  const reducedMotion = () => {
+    try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; }
+  };
+  // Where the last press landed, so a dialog can grow out of it.
+  let lastPress = null;
+  document.addEventListener("pointerdown", (e) => { lastPress = { x: e.clientX, y: e.clientY }; },
+    { capture: true, passive: true });
+
+  /** A spring in Apple's terms: `response` is roughly how long it takes, in
+   *  seconds; `damping` 1 settles without overshoot, below 1 overshoots. It
+   *  moves `st.x` toward `to`, starting from `st.x` and `st.v` as they are,
+   *  which is what lets a new spring take over mid-flight. Returns a stopper. */
+  function spring(st, to, opts, onFrame, onDone) {
+    const k = Math.pow((2 * Math.PI) / opts.response, 2);
+    const c = (4 * Math.PI * opts.damping) / opts.response;
+    const eps = opts.eps || 0.3;
+    let raf = 0, last = 0;
+    const step = (now) => {
+      const dt = last ? Math.min(0.032, (now - last) / 1000) : 1 / 60;
+      last = now;
+      for (let i = 0, h = dt / 8; i < 8; i++) {
+        st.v += (-k * (st.x - to) - c * st.v) * h;
+        st.x += st.v * h;
+      }
+      if (Math.abs(st.x - to) < eps && Math.abs(st.v) < eps * 12) {
+        st.x = to; st.v = 0; onFrame(); raf = 0;
+        if (onDone) onDone();
+        return;
+      }
+      onFrame();
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
+  }
+  /** Where a flick at `v` px/s comes to rest (Apple's projection). */
+  const project = (v, d = 0.99) => ((v / 1000) * d) / (1 - d);
+  /** Past an edge the sheet follows less and less, the way a real one would. */
+  const rubber = (over, dim, c = 0.55) => (over * dim * c) / (dim + c * Math.abs(over));
+
+  /** Close the sheet `el` belongs to: animated when the new sheet is on,
+   *  removed outright otherwise. Every close path goes through here. */
+  function closeSheet(el, velocity) {
+    const dim = el && el.closest ? el.closest(".cdim") : null;
+    if (!dim) return;
+    if (dim._sheet) dim._sheet.close(velocity || 0);
+    else dim.remove();
+  }
+
+  function mountSheetMotion(dim, sheet) {
+    dim.classList.add("cdim--v2");
+    const root = document.documentElement;
+    root.classList.add("sheet-open");
+    const phone = !matchMedia("(min-width: 620px)").matches;
+    const reduced = reducedMotion();
+    // Phone: px below its resting place. Desktop: 1 is closed, 0 is open.
+    const st = { x: 0, v: 0 };
+    const H = () => sheet.offsetHeight + 24;
+    let stop = null, closing = false, finished = false;
+    const paint = () => {
+      // A closing sheet is gone the moment it is out of sight: waiting for the
+      // spring to settle below the screen only kept the page locked.
+      // (The close aims 24px past the sheet's height, so it crosses "out of
+      // sight" at speed instead of creeping up on it.)
+      if (closing && !finished && (phone ? st.x >= sheet.offsetHeight + 10 : st.x >= 0.97)) { finish(); return; }
+      if (phone) {
+        sheet.style.transform = `translate3d(0, ${st.x}px, 0)`;
+        dim.style.setProperty("--scrim", String(Math.max(0, Math.min(1, 1 - st.x / H()))));
+      } else {
+        const p = Math.max(0, Math.min(1, 1 - st.x));
+        sheet.style.transform = `scale(${0.9 + 0.1 * (1 - st.x)})`;
+        sheet.style.opacity = String(p);
+        dim.style.setProperty("--scrim", String(p));
+      }
+    };
+    const halt = () => { if (stop) stop(); stop = null; };
+    const run = (to, opts, done) => {
+      halt();
+      stop = spring(st, to, opts, paint, () => { stop = null; if (done) done(); });
+    };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    const dispose = () => {
+      halt();
+      document.removeEventListener("keydown", onKey);
+      if (!document.querySelector(".cdim--v2:not(.cdim--gone)")) root.classList.remove("sheet-open");
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      dim.classList.add("cdim--gone"); dispose(); dim.remove();
+    };
+    function close(velocity) {
+      if (closing) return;
+      closing = true;
+      if (reduced) { halt(); dim.classList.add("cdim--out"); setTimeout(finish, 160); return; }
+      if (phone) {
+        // A flick carries its speed into the close, within reason.
+        if (velocity) st.v = Math.min(velocity, 4000);
+        run(H(), { response: 0.3, damping: 1 }, finish);
+      } else {
+        run(1, { response: 0.22, damping: 1, eps: 0.002 }, finish);
+      }
+    }
+    dim._sheet = { close, dispose };
+    document.addEventListener("keydown", onKey);
+
+    if (!phone && lastPress) {
+      const r = sheet.getBoundingClientRect();
+      sheet.style.transformOrigin = `${lastPress.x - r.left}px ${lastPress.y - r.top}px`;
+    }
+    if (reduced) {
+      dim.classList.add("cdim--fade");
+    } else if (phone) {
+      st.x = H(); paint();
+      run(0, { response: 0.38, damping: 1 });
+    } else {
+      st.x = 1; paint();
+      run(0, { response: 0.3, damping: 1, eps: 0.002 });
+    }
+    if (!phone) return;
+
+    /* PULL TO CLOSE. From the grab bar it always drags; from the content only
+       when the content is scrolled to the top and the finger moves down, so a
+       sheet with more in it still scrolls. ~8px of travel decides which. */
+    const GRAB = 34;
+    let drag = null, hist = [];
+    const begin = (y) => { halt(); drag = { y0: y, x0: st.x }; hist = [{ y, t: performance.now() }]; };
+    const move = (y) => {
+      let x = drag.x0 + (y - drag.y0);
+      if (x < 0) x = -rubber(-x, H());
+      st.x = x; st.v = 0; paint();
+      hist.push({ y, t: performance.now() });
+      if (hist.length > 6) hist.shift();
+    };
+    const end = () => {
+      const a = hist[0], b = hist[hist.length - 1];
+      const dt = (b.t - a.t) / 1000;
+      const v = dt > 0 ? (b.y - a.y) / dt : 0;
+      drag = null;
+      if (st.x + project(v) > H() * 0.5 || v > 1100) close(Math.max(v, 0));
+      else { st.v = v; run(0, { response: 0.3, damping: 0.8 }); }
+    };
+    let t0 = null, active = false;
+    sheet.addEventListener("touchstart", (e) => {
+      if (closing || e.touches.length !== 1) { t0 = null; return; }
+      const t = e.touches[0];
+      t0 = { x: t.clientX, y: t.clientY, grab: t.clientY - sheet.getBoundingClientRect().top < GRAB };
+      active = false;
+    }, { passive: true });
+    sheet.addEventListener("touchmove", (e) => {
+      if (!t0 || closing) return;
+      const t = e.touches[0], dy = t.clientY - t0.y, dx = t.clientX - t0.x;
+      if (!active) {
+        if (Math.abs(dy) < 8 || Math.abs(dx) > Math.abs(dy)) return;
+        if (!t0.grab && (sheet.scrollTop > 0 || dy < 0)) { t0 = null; return; }
+        active = true;
+        begin(t.clientY);
+      }
+      e.preventDefault();
+      move(t.clientY);
+    }, { passive: false });
+    const touchEnd = () => { if (active && drag) end(); t0 = null; active = false; };
+    sheet.addEventListener("touchend", touchEnd);
+    sheet.addEventListener("touchcancel", touchEnd);
+    // A mouse (a narrow desktop window) drags by the grab bar only.
+    sheet.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch" || closing) return;
+      if (e.clientY - sheet.getBoundingClientRect().top >= GRAB) return;
+      try { sheet.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+      begin(e.clientY);
+      const mv = (ev) => move(ev.clientY);
+      const up = () => {
+        sheet.removeEventListener("pointermove", mv);
+        sheet.removeEventListener("pointerup", up);
+        sheet.removeEventListener("pointercancel", up);
+        if (drag) end();
+      };
+      sheet.addEventListener("pointermove", mv);
+      sheet.addEventListener("pointerup", up);
+      sheet.addEventListener("pointercancel", up);
+    });
+  }
+
   function sheetShell() {
     // ONE SHEET AT A TIME. This appended without clearing, so every reopen left
     // the previous one in the DOM. With the stylesheet present they simply
@@ -494,13 +695,18 @@ function b64ToBytes(b64) {
     // down the page, which is how the missing stylesheet was found at all.
     // Orphan money dialogs are worth removing either way: each one holds live
     // handlers over a wallet.
-    document.querySelectorAll(".cdim.chaindim").forEach((el) => el.remove());
+    document.querySelectorAll(".cdim.chaindim").forEach((el) => {
+      if (el._sheet) { el.classList.add("cdim--gone"); el._sheet.dispose(); }
+      el.remove();
+    });
     const dim = document.createElement("div");
     dim.className = "cdim chaindim";
     dim.innerHTML = `<div class="csheet chainsheet" role="dialog" aria-label="Make it real"></div>`;
-    dim.onclick = (e) => { if (e.target === dim) dim.remove(); };
+    dim.onclick = (e) => { if (e.target === dim) closeSheet(dim.firstElementChild); };
     document.body.appendChild(dim);
-    return dim.querySelector(".chainsheet");
+    const sheet = dim.querySelector(".chainsheet");
+    if (SHEET_V2) mountSheetMotion(dim, sheet);
+    return sheet;
   }
 
   /**
@@ -521,7 +727,7 @@ function b64ToBytes(b64) {
     const shell = (inner) => {
       body.innerHTML = `<h3>The answer was ${won}</h3>${inner}`;
       const c = body.querySelector(".cclose");
-      if (c) c.onclick = () => body.closest(".cdim").remove();
+      if (c) c.onclick = () => closeSheet(body);
     };
 
     if (!wallet) {
@@ -649,7 +855,7 @@ function b64ToBytes(b64) {
           ${confirmed ? `<p class="cnote" style="margin-top:10px"><a href="/w/${encodeURIComponent(wallet.publicKey)}" target="_blank" rel="noopener">your whole record →</a></p>` : ""}
           ${homeLink()}
           <button class="cclose">Done</button>`;
-        body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+        body.querySelector(".cclose").onclick = () => closeSheet(body);
       } catch (e) {
         btn.disabled = false; btn.textContent = isWinner ? "Collect winnings" : "Get your deposit back";
         if (line) line.textContent = e.message || "Something went wrong. Try again.";
@@ -681,7 +887,7 @@ function b64ToBytes(b64) {
     const shell = (inner) => {
       body.innerHTML = `<h3>Take your stake back</h3>${inner}`;
       const c = body.querySelector(".cclose");
-      if (c) c.onclick = () => body.closest(".cdim").remove();
+      if (c) c.onclick = () => closeSheet(body);
     };
 
     if (!wallet) {
@@ -733,7 +939,7 @@ function b64ToBytes(b64) {
           <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${homeLink()}
           <button class="cclose">Done</button>`;
-        body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+        body.querySelector(".cclose").onclick = () => closeSheet(body);
       } catch (e) {
         btn.disabled = false; btn.textContent = "Take your stake back";
         if (line) line.textContent = e.message || "Something went wrong. Try again.";
@@ -760,7 +966,7 @@ function b64ToBytes(b64) {
     const shell = (inner) => {
       body.innerHTML = `<h3>Sell your seat</h3>${inner}`;
       const c = body.querySelector(".cclose");
-      if (c) c.onclick = () => body.closest(".cdim").remove();
+      if (c) c.onclick = () => closeSheet(body);
     };
     if (!wallet) {
       shell(`<p class="cnote">Connect the wallet holding this position and we can offer it.</p>
@@ -828,7 +1034,7 @@ function b64ToBytes(b64) {
           <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${homeLink()}
           <button class="cclose">Done</button>`;
-        body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+        body.querySelector(".cclose").onclick = () => closeSheet(body);
       } catch (e) {
         btn.disabled = false; btn.textContent = "Offer it";
         if (line) line.textContent = e.message || "Something went wrong. Try again.";
@@ -871,7 +1077,7 @@ function b64ToBytes(b64) {
         <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
         ${homeLink()}
         <button class="cclose">Done</button>`;
-      body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+      body.querySelector(".cclose").onclick = () => closeSheet(body);
     } catch (e) {
       if (host) host.innerHTML = "";
       const line = body.querySelector("#chainline");
@@ -1037,7 +1243,7 @@ function b64ToBytes(b64) {
       body.innerHTML = `<h3>Make it real</h3>
         <p class="cnote">${esc(why)}</p>
         <button class="cclose">Close</button>`;
-      body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+      body.querySelector(".cclose").onclick = () => closeSheet(body);
       return;
     }
     // Resolved -> this sheet stops being a place to stake and becomes the place
@@ -1193,7 +1399,7 @@ function b64ToBytes(b64) {
         ${feeNoteHTML}
         ${wallet ? `<p class="chain-wallet">Wallet: <b>${short(wallet.publicKey)}</b></p>` : ""}
         <button class="cclose">Not now</button>`;
-      body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+      body.querySelector(".cclose").onclick = () => closeSheet(body);
 
       let side = presetSide === "yes" || presetSide === "no" ? presetSide : null, sol = 0;
       const sideBtns = [...body.querySelectorAll(".chain-side")];
@@ -1564,7 +1770,7 @@ function b64ToBytes(b64) {
             <div id="chainnotify"></div>
             ${homeLink()}
             <button class="cclose">Done</button>`;
-          body.querySelector(".cclose").onclick = () => body.closest(".cdim").remove();
+          body.querySelector(".cclose").onclick = () => closeSheet(body);
           // "Tag it. Bet it. Get paid." — the third verb starts here. Every
           // stake is a post, and every post brings the next stranger to a bot
           // link. Text carries the side and the entry price, which are the two
@@ -1638,6 +1844,9 @@ function b64ToBytes(b64) {
           // time), so one tap names this call and every earlier one.
           void offerName(body.querySelector("#chainname"));
           if (confirmed) offerNotify(body.querySelector("#chainnotify"), side);
+          /* ONE BUZZ, ON THE ONE MOMENT THAT EARNS IT: the money is on chain.
+             Android only (iOS has no web vibration); nothing else buzzes. */
+          if (confirmed) { try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) { /* no haptics */ } }
 
           // THE PAGE BEHIND THIS SHEET STILL SHOWS THE POOL FROM BEFORE.
           // The money moved and the market underneath said nothing about it:

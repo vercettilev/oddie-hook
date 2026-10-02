@@ -47,7 +47,7 @@ a{color:inherit}
 .top nav{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 18px}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
-.top nav a:hover{color:var(--fg)}
+@media (hover:hover){.top nav a:hover{color:var(--fg)}}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 .who{font-family:var(--display);font-weight:400;font-size:clamp(28px,6vw,46px);
@@ -83,7 +83,7 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 .rec__q{font-family:var(--display);font-weight:400;font-size:clamp(16px,3.4vw,21px);
   line-height:1.14;text-transform:uppercase;margin:0 0 7px;text-wrap:balance}
 .rec__q a{color:var(--cream);text-decoration:none}
-.rec__q a:hover{color:var(--yellow)}
+@media (hover:hover){.rec__q a:hover{color:var(--yellow)}}
 .rec__m{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
   text-transform:uppercase;color:var(--fg-3);margin:0;
   display:flex;flex-wrap:wrap;gap:4px 14px;font-variant-numeric:tabular-nums}
@@ -97,7 +97,7 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
   text-transform:uppercase;color:var(--cream);text-decoration:none;
   border:2px solid var(--cream);padding:9px 13px;display:inline-block;cursor:pointer;
   background:none;margin:0 0 26px}
-.share:hover{background:var(--cream);color:var(--black)}
+@media (hover:hover){.share:hover{background:var(--cream);color:var(--black)}}
 .share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .blind b{color:var(--pink)}
 .load{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
@@ -125,7 +125,7 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 .mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
-.top nav a:hover{color:var(--ink)}
+@media (hover:hover){.top nav a:hover{color:var(--ink)}}
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
    at both ends. A negative LEFT costs nothing in a left-to-right page, but the
@@ -166,9 +166,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   text-transform:uppercase;background:var(--ink);color:var(--yellow);
   padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
-.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.top .mechip:hover{background:#000;color:var(--yellow-hi)}}
 .top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
-.top .mechip--go:hover{background:var(--pink);color:#fff}
+@media (hover:hover){.top .mechip--go:hover{background:var(--pink);color:#fff}}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
@@ -182,6 +182,27 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 /* 44px to tap without moving the masthead: the hit area grows, the layout
    does not. The tabs measured 23px tall at 375. */
 .top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.top nav a:active{opacity:.55}
+.top .mechip:active{scale:.96}
+
+/* PAGE TO PAGE (2 Oct). Same-origin navigations cross-fade instead of
+   flashing white, and a market's title travels from its card in the list to
+   the heading of its page. Browsers without cross-document view transitions
+   navigate exactly as before; reduced motion gets no animation at all. */
+@view-transition{navigation:auto}
+::view-transition-group(root){animation-duration:.22s}
+::view-transition-group(mq){animation-duration:.34s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
 </style>
 
 <header class="top">

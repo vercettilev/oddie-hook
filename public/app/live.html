@@ -47,7 +47,7 @@ a{color:inherit}
 .top nav{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 18px}
 .top nav a{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
   text-transform:uppercase;color:var(--fg-2);text-decoration:none}
-.top nav a:hover{color:var(--fg)}
+@media (hover:hover){.top nav a:hover{color:var(--fg)}}
 
 main.wrap{padding-top:34px;padding-bottom:80px}
 .who{font-family:var(--display);font-weight:400;font-size:clamp(28px,6vw,46px);
@@ -83,7 +83,7 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 .rec__q{font-family:var(--display);font-weight:400;font-size:clamp(16px,3.4vw,21px);
   line-height:1.14;text-transform:uppercase;margin:0 0 7px;text-wrap:balance}
 .rec__q a{color:var(--cream);text-decoration:none}
-.rec__q a:hover{color:var(--yellow)}
+@media (hover:hover){.rec__q a:hover{color:var(--yellow)}}
 .rec__m{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.09em;
   text-transform:uppercase;color:var(--fg-3);margin:0;
   display:flex;flex-wrap:wrap;gap:4px 14px;font-variant-numeric:tabular-nums}
@@ -97,7 +97,7 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
   text-transform:uppercase;color:var(--cream);text-decoration:none;
   border:2px solid var(--cream);padding:9px 13px;display:inline-block;cursor:pointer;
   background:none;margin:0 0 26px}
-.share:hover{background:var(--cream);color:var(--black)}
+@media (hover:hover){.share:hover{background:var(--cream);color:var(--black)}}
 .share:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .blind b{color:var(--pink)}
 .load{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
@@ -125,7 +125,7 @@ h2{font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.16em
 .mark img{transform:rotate(-6deg);border-radius:8px;box-shadow:3px 3px 0 rgba(11,13,4,.35)}
 .top nav a{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   color:rgba(11,13,4,.7)}
-.top nav a:hover{color:var(--ink)}
+@media (hover:hover){.top nav a:hover{color:var(--ink)}}
 /* THE SEAM RUNS OFF BOTH EDGES ON PURPOSE, AND THE RIGHT ONE COST A SCROLLBAR.
    .top::after is left:-3%; right:-3%, so the torn edge bleeds past the viewport
    at both ends. A negative LEFT costs nothing in a left-to-right page, but the
@@ -166,9 +166,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .top .mechip{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   text-transform:uppercase;background:var(--ink);color:var(--yellow);
   padding:7px 13px 6px;border-radius:999px;text-decoration:none;white-space:nowrap}
-.top .mechip:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.top .mechip:hover{background:#000;color:var(--yellow-hi)}}
 .top .mechip--go{background:var(--pink);color:var(--cream);box-shadow:3px 3px 0 var(--pink-deep)}
-.top .mechip--go:hover{background:var(--pink);color:#fff}
+@media (hover:hover){.top .mechip--go:hover{background:var(--pink);color:#fff}}
 .top .mechip:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
@@ -194,7 +194,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   padding:11px 26px 10px;min-height:48px;border:3px solid var(--black);background:var(--pink);color:var(--cream);
   box-shadow:4px 4px 0 var(--pink-deep);cursor:pointer;touch-action:manipulation;
   transition:transform .12s ease,background-color .15s ease,color .15s ease}
-.follow:hover{background:#FF4A8C}
+@media (hover:hover){.follow:hover{background:#FF4A8C}}
 .follow:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--pink-deep)}
 .follow[aria-pressed="true"]{background:var(--cream);color:var(--ink);box-shadow:4px 4px 0 rgba(251,252,244,.22)}
 .follow:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
@@ -214,9 +214,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .way{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04em;text-transform:uppercase;
   text-decoration:none;padding:11px 18px 10px;min-height:46px;border:3px solid var(--black);
   background:var(--ink);color:var(--yellow);display:inline-flex;align-items:center}
-.way:hover{background:#000;color:var(--yellow-hi)}
+@media (hover:hover){.way:hover{background:#000;color:var(--yellow-hi)}}
 .way--tg{background:#2AABEE;color:#fff}
-.way--tg:hover{background:#4FBDF2;color:#fff}
+@media (hover:hover){.way--tg:hover{background:#4FBDF2;color:#fff}}
 .way:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 .way[hidden]{display:none}
 .tglogin-note{flex-basis:100%;margin:6px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;
@@ -235,12 +235,12 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .ev__t{grid-column:2;margin:0;font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.04em;
   text-transform:uppercase;color:var(--fg-2);line-height:1.25}
 .ev__t a{color:var(--cream);text-decoration:none}
-.ev__t a:hover{color:var(--yellow)}
+@media (hover:hover){.ev__t a:hover{color:var(--yellow)}}
 .ev__t .y{color:var(--yellow)} .ev__t .n{color:var(--pink)}
 .ev__q{grid-column:2 / 4;margin:0;font-family:var(--display);font-weight:400;font-size:clamp(17px,3.6vw,21px);
   line-height:1.14;text-transform:uppercase;text-wrap:balance}
 .ev__q a{color:var(--cream);text-decoration:none}
-.ev__q a:hover{color:var(--yellow)}
+@media (hover:hover){.ev__q a:hover{color:var(--yellow)}}
 .ev time{grid-column:3;grid-row:1;font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--fg-3);
   white-space:nowrap;padding-top:3px}
 .ev__new{font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--pink);margin-left:8px}
@@ -257,7 +257,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .ppl__id{min-width:0;display:grid;gap:2px}
 .ppl__id a{font-family:var(--display);font-weight:400;font-size:19px;letter-spacing:.02em;text-transform:uppercase;
   color:var(--cream);text-decoration:none;overflow-wrap:anywhere;line-height:1.1}
-.ppl__id a:hover{color:var(--yellow)}
+@media (hover:hover){.ppl__id a:hover{color:var(--yellow)}}
 .ppl__id small{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
 .ppl .follow{margin-left:auto}
 
@@ -276,7 +276,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .ch img{width:64px;height:64px;border-radius:50%;border:3px solid var(--black);box-shadow:4px 5px 0 var(--pink-deep);background:var(--cream)}
 .ch .who{margin:0}
 .ch a{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);text-decoration:none}
-.ch a:hover{color:var(--yellow)}
+@media (hover:hover){.ch a:hover{color:var(--yellow)}}
 
 .now{background:var(--cream);color:var(--ink);border:3px solid var(--black);box-shadow:8px 9px 0 var(--pink-deep);
   padding:18px 20px 16px;margin:0 0 34px;transform:rotate(-.3deg)}
@@ -318,7 +318,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .add{display:inline-flex;align-items:center;gap:10px;font-family:var(--display);font-size:20px;letter-spacing:.04em;text-transform:uppercase;
   text-decoration:none;padding:13px 24px 12px;min-height:52px;border:3px solid var(--black);background:#53FC18;color:var(--ink);
   box-shadow:5px 5px 0 var(--pink-deep)}
-.add:hover{background:#6BFF3A}
+@media (hover:hover){.add:hover{background:#6BFF3A}}
 .add:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
 .note{margin:14px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--pink)}
 /* A sentence, not an address: whole words, balanced. .who breaks anywhere
@@ -344,13 +344,13 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   padding:11px 24px 10px;min-height:48px;border:3px solid var(--black);background:var(--pink);color:var(--cream);
   box-shadow:4px 4px 0 var(--pink-deep);cursor:pointer;touch-action:manipulation;display:inline-flex;align-items:center;
   transition:transform .12s ease,background-color .15s ease}
-.pay:hover{background:#FF4A8C}
+@media (hover:hover){.pay:hover{background:#FF4A8C}}
 .pay:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--pink-deep)}
 .pay:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .pay:disabled{opacity:.6;cursor:progress}
 .own__alt{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;background:none;border:0;
   padding:8px 0;min-height:44px;color:rgba(11,13,4,.7);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.own__alt:hover{color:var(--ink)}
+@media (hover:hover){.own__alt:hover{color:var(--ink)}}
 .own__addr{text-transform:none}
 .own__alt:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .own__n{margin:12px 0 0;font-size:13.5px;line-height:1.45;color:rgba(11,13,4,.62);max-width:52ch}
@@ -360,13 +360,35 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
 /* Markets opened in this chat: open ones cream, settled ones in their colour. */
 .mk .res__q a{color:var(--cream);text-decoration:none}
-.mk .res__q a:hover{color:var(--yellow)}
+@media (hover:hover){.mk .res__q a:hover{color:var(--yellow)}}
 .mk li.o{border-left-color:var(--cream)}
 .mine{margin:0 0 30px;color:var(--fg-3);font-size:14.5px;line-height:1.5;max-width:52ch}
 .mine a{color:var(--yellow)}
 /* 44px to tap without moving the masthead: the hit area grows, the layout
    does not. The tabs measured 23px tall at 375. */
 .top nav a{padding-top:11px;padding-bottom:11px;margin-top:-11px;margin-bottom:-11px}
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.top nav a:active{opacity:.55}
+.top .mechip:active{scale:.96}
+.add:active{scale:.97}
+
+/* PAGE TO PAGE (2 Oct). Same-origin navigations cross-fade instead of
+   flashing white, and a market's title travels from its card in the list to
+   the heading of its page. Browsers without cross-document view transitions
+   navigate exactly as before; reduced motion gets no animation at all. */
+@view-transition{navigation:auto}
+::view-transition-group(root){animation-duration:.22s}
+::view-transition-group(mq){animation-duration:.34s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
 </style>
 
 <header class="top">

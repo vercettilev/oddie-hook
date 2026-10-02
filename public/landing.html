@@ -170,12 +170,12 @@
     font-family:var(--display);font-weight:400;font-size:clamp(16px,1.5vw,20px);
     text-transform:uppercase;padding:15px 28px;border-radius:3px;border:0;
     background:var(--ink);color:#fff;box-shadow:6px 7px 0 rgba(11,13,4,.3)}
-  .btn:hover{background:#1a1e0a;transform:translate(1px,1px);box-shadow:5px 6px 0 rgba(11,13,4,.3)}
+  @media (hover:hover){.btn:hover{background:#1a1e0a;transform:translate(1px,1px);box-shadow:5px 6px 0 rgba(11,13,4,.3)}}
   .btn i{font-style:normal;color:var(--yellow)}
   .btn--light{background:var(--yellow);color:var(--ink);box-shadow:6px 7px 0 rgba(0,0,0,.55)}
-  .btn--light:hover{background:var(--yellow-hi)}
+  @media (hover:hover){.btn--light:hover{background:var(--yellow-hi)}}
   .btn--light i{color:var(--ink)}
-  @media (prefers-reduced-motion:reduce){.btn:hover{transform:none}}
+  @media (prefers-reduced-motion:reduce){@media (hover:hover){.btn:hover{transform:none}}}
 
   .rails{display:inline-flex;align-items:center;gap:11px;flex-wrap:wrap;
     font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.13em;
@@ -213,7 +213,7 @@
   .nav__links{display:flex;align-items:center;gap:clamp(16px,2.4vw,32px)}
   .nav__links a:not(.btn){font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
     text-transform:uppercase;color:var(--ink-2)}
-  .nav__links a:not(.btn):hover{color:var(--ink)}
+  @media (hover:hover){.nav__links a:not(.btn):hover{color:var(--ink)}}
   .nav__links .btn{padding:11px 20px;font-size:14px;box-shadow:4px 5px 0 rgba(11,13,4,.3)}
   @media (max-width:760px){.nav__links a:not(.btn){display:none}}
 
@@ -314,7 +314,7 @@
   .foot{display:flex;align-items:center;gap:10px 24px;flex-wrap:wrap;
     font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.09em;
     text-transform:uppercase}
-  .foot a:hover{color:#fff}
+  @media (hover:hover){.foot a:hover{color:#fff}}
   .foot .sp{text-transform:none;letter-spacing:0;font-family:'Nunito',sans-serif;font-size:12.5px}
   .livechip{display:inline-flex;align-items:center;gap:8px}
   .livechip i{width:7px;height:7px;border-radius:50%;background:var(--yellow)}
@@ -487,11 +487,11 @@
 
   /* tek golge dili: her golge 4-10px, SIFIR blur, duz marka rengi */
   .A .btn{box-shadow:6px 7px 0 var(--pink)}
-  .A .btn:hover{box-shadow:5px 6px 0 var(--pink)}
+  @media (hover:hover){.A .btn:hover{box-shadow:5px 6px 0 var(--pink)}}
   .nav__links .btn{box-shadow:4px 5px 0 var(--pink)}
-  .nav__links .btn:hover{box-shadow:3px 4px 0 var(--pink)}
+  @media (hover:hover){.nav__links .btn:hover{box-shadow:3px 4px 0 var(--pink)}}
   .btn--light{box-shadow:7px 8px 0 var(--pink)}
-  .btn--light:hover{box-shadow:6px 7px 0 var(--pink)}
+  @media (hover:hover){.btn--light:hover{box-shadow:6px 7px 0 var(--pink)}}
 
   /* Bu adimdan sonra sayfada blur degeri sifirdan buyuk TEK BIR golge
      kalmamali. Denetim:
@@ -629,8 +629,8 @@
      eylem. */
   .nav__links .btn{background:transparent;color:var(--ink);
     border:2.5px solid var(--ink);box-shadow:none;padding:9px 17px}
-  .nav__links .btn:hover{background:var(--ink);color:var(--yellow);
-    box-shadow:none;transform:none}
+  @media (hover:hover){.nav__links .btn:hover{background:var(--ink);color:var(--yellow);
+    box-shadow:none;transform:none}}
   .nav__links .btn i{color:currentColor}
   /* Istek panele yapisik durmasin (17px'ti; h1-panel 43, buton-raylar 44 iken).
      Ayni ritme cekilince buton kendi basina duran tek eylem olarak okunuyor. */
@@ -671,7 +671,7 @@
     background:var(--ink);color:#fff;border-radius:3px;
     padding:10px 14px 9px;box-shadow:5px 6px 0 var(--pink);
     transition:translate .13s var(--zip),scale .13s var(--zip),box-shadow .13s ease-out}
-  .gcta:hover .gcta__pill{translate:1px 1px;box-shadow:4px 5px 0 var(--pink)}
+  @media (hover:hover){.gcta:hover .gcta__pill{translate:1px 1px;box-shadow:4px 5px 0 var(--pink)}}
   .gcta:active .gcta__pill{scale:.965;translate:3px 4px}
   .gcta__tag{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;
     text-transform:uppercase;color:var(--ink);background:var(--yellow);
@@ -700,7 +700,7 @@
   @media (max-width:480px){.brand span{display:none}}
   @media (prefers-reduced-motion:reduce){
     .gcta__pill{transition:none}
-    .gcta:hover .gcta__pill,.gcta:active .gcta__pill{translate:none;scale:1}
+    .gcta:active .gcta__pill{translate:none;scale:1}@media (hover:hover){.gcta:hover .gcta__pill{translate:none;scale:1}}
   }
 
   /* ------------------------------------------------ sanatin ustundeki not --
@@ -772,7 +772,7 @@
      ust ve alt kenari kendi maskesiyle yirtik. */
   .nav__a{font-size:13px;font-weight:700;color:inherit;text-decoration:none;
     opacity:.72;margin-right:clamp(10px,1.6vw,22px);white-space:nowrap}
-  .nav__a:hover{opacity:1}
+  @media (hover:hover){.nav__a:hover{opacity:1}}
   @media (max-width:560px){.nav__a{display:none}}
 
   .facts{position:relative;z-index:4;margin-top:clamp(26px,3.4vw,52px);
@@ -827,7 +827,7 @@
   .proof{display:block;margin:clamp(22px,3vw,34px) auto 0;max-width:640px;
     border:2px solid var(--yellow);padding:clamp(14px,2vw,20px);
     text-decoration:none;color:var(--cream)}
-  .proof:hover,.proof:focus-visible{background:rgba(252,246,4,.09)}
+  .proof:focus-visible{background:rgba(252,246,4,.09)}@media (hover:hover){.proof:hover{background:rgba(252,246,4,.09)}}
   .proof__k{display:block;font-family:var(--mono);font-size:11px;font-weight:700;
     letter-spacing:.16em;text-transform:uppercase;color:var(--yellow);margin:0 0 8px}
   .proof__q{display:block;font-family:var(--display);font-weight:400;
@@ -989,16 +989,16 @@
   /* basma geri bildirimi: kutu ezilir, golge kisalir */
   .btn,.brand,.nav__links a:not(.btn){transition:translate .13s var(--zip),
     scale .13s var(--zip),box-shadow .13s ease-out,background .15s ease-out,color .15s ease-out}
-  .btn:hover{translate:1px 1px}
+  @media (hover:hover){.btn:hover{translate:1px 1px}}
   .btn:active{scale:.965;translate:3px 4px}
   .nav__links .btn:active{scale:.955;translate:2px 3px}
   .brand:active{scale:.955}
   /* .btn:hover'in eski transform'u translate ile cakisiyordu */
-  .btn:hover{transform:none}
+  @media (hover:hover){.btn:hover{transform:none}}
 
   @media (prefers-reduced-motion:reduce){
     .btn,.brand,.nav__links a:not(.btn){transition:none}
-    .btn:hover,.btn:active,.nav__links .btn:active,.brand:active{translate:none;scale:1}
+    .btn:active,.nav__links .btn:active,.brand:active{translate:none;scale:1}@media (hover:hover){.btn:hover{translate:none;scale:1}}
     .reveal-armed .phone .mcard__bar i{width:var(--w);transition:none}
   }
   /* ===================================================== THE THREE DOORS ==
@@ -1013,7 +1013,7 @@
     background:var(--cream);color:var(--ink);border:3px solid var(--ink);text-decoration:none;
     box-shadow:5px 6px 0 var(--pink);transition:transform .12s,box-shadow .12s}
   .door:nth-child(1){rotate:-1.6deg}.door:nth-child(2){rotate:1.2deg}.door:nth-child(3){rotate:-.8deg}
-  .door:hover{transform:translate(1px,1px);box-shadow:3px 4px 0 var(--pink)}
+  @media (hover:hover){.door:hover{transform:translate(1px,1px);box-shadow:3px 4px 0 var(--pink)}}
   .door:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
   .door__t{display:flex;flex-direction:column;line-height:1.1;text-align:left}
   .door__t b{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:-.01em}
@@ -1087,7 +1087,7 @@
     padding:10px 16px;background:var(--ink);color:var(--cream);text-decoration:none;
     font-family:var(--display);font-size:16px;text-transform:uppercase}
   .cr__go i{font-style:normal;color:var(--yellow)}
-  .cr__go:hover{background:#1a1e0a}
+  @media (hover:hover){.cr__go:hover{background:#1a1e0a}}
   .cr__go:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
   @media (max-width:860px){.cr__row{grid-template-columns:1fr}.cr:nth-child(n){margin-top:0}}
 
@@ -1098,7 +1098,7 @@
   .live{position:relative;z-index:6;display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px 12px;
     margin-top:22px;padding:10px 16px;background:var(--ink);color:var(--cream);text-decoration:none;
     border:3px solid var(--ink);box-shadow:5px 6px 0 var(--pink);rotate:-.6deg;max-width:100%}
-  .live:hover{box-shadow:3px 4px 0 var(--pink)}
+  @media (hover:hover){.live:hover{box-shadow:3px 4px 0 var(--pink)}}
   .live:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
   .live__dot{width:10px;height:10px;border-radius:50%;background:var(--pink);flex:none;
     animation:livepulse 1.6s infinite}
@@ -1140,6 +1140,22 @@
   /* 44px to tap. The nav link was 19px tall and the footer links 17px. */
   .nav__links .nav__a{padding-block:12px}
   .foot a{display:inline-block;padding-block:12px}
+
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+.btn,.door,.cr__go,.live,.proof{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.door:active,.cr__go:active,.live:active,.proof:active{scale:.97}
+.nav__a:active,.foot a:active{opacity:.55}
+/* LANDSCAPE iPHONE. The page is viewport-fit=cover, so the side notch sits over
+   the content unless the gutter grows to clear it. */
+@supports (padding:max(0px)){
+  .shell{padding-left:max(clamp(20px,4vw,40px),env(safe-area-inset-left));
+         padding-right:max(clamp(20px,4vw,40px),env(safe-area-inset-right))}
+}
 </style>
 
 <!-- ==================================================== A · YELLOW · ONE FIELD ==
@@ -1518,6 +1534,9 @@
          switched away.
        - the hash lands in the URL after the travel, not before, or the browser
          jumps to the target and there is nothing left to animate. */
+
+  /* iOS Safari applies :active only to a page that listens for touches. */
+  document.addEventListener("touchstart", function () {}, { passive: true });
 
   /* THE CLOSING-SOON CLOCK. The server writes the deadline; this only counts
      down to it, so a cached page is never wrong about how long is left. */

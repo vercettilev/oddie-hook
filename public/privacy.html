@@ -11,7 +11,7 @@ font-weight:600;line-height:1.6;padding:0 20px 90px}
 header{padding:34px 0 10px}
 a.home{font:800 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;
 text-transform:uppercase;color:#A3053F;text-decoration:none}
-a.home:hover{text-decoration:underline}
+@media (hover:hover){a.home:hover{text-decoration:underline}}
 h1{font-family:'Anton','Arial Narrow','Helvetica Neue',sans-serif;font-weight:400;text-transform:uppercase;
 font-size:clamp(34px,7vw,54px);line-height:.98;letter-spacing:.01em;margin:14px 0 6px}
 .upd{font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;
@@ -25,7 +25,14 @@ a{color:#A3053F}
 .note p:last-child{margin:0}
 footer{margin-top:40px;padding-top:18px;border-top:2px solid #E3E5D6;
 font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#494E2D}
-footer a{color:#494E2D;margin-right:14px}</style></head>
+footer a{color:#494E2D;margin-right:14px}
+/* TOUCH (2 Oct, the Apple pass). No grey flash on a tap: the press states are
+   the feedback, and they show the moment a finger lands. iOS applies :active
+   only once the page listens for touches, which id.js does. A long press on a
+   control does not select its words. `scale` is its own property, so a press
+   composes with whatever rotate or transform an element already wears. */
+html{-webkit-tap-highlight-color:transparent}
+</style></head>
 <body><div class="s">
 <header><a class="home" href="/">&larr; oddie</a>
 <h1>Privacy</h1>
