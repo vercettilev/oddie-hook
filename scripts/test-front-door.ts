@@ -6,10 +6,16 @@
 // nowhere. These pin the parts that are easy to undo by accident: the three
 // doors, the streamer door, the list that hides dead cards, the dollar figure
 // that never invents a price, and the opener's share said without arithmetic.
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { solUsd, _setSolUsd } from "../src/price/solUsd.js";
 import { _setPriceFeed, type PriceFeed } from "../src/price/feed.js";
 import { filesUnder } from "./inline-blocks.js";
+import { MARKET_COPY } from "../src/live/claims.js";
+import { buildTweetReply } from "../src/matching/tweetReply.js";
+import { TG_COPY } from "../src/telegram/loop.js";
+import { resolutionText, authorCreditText } from "../src/x/resolutionReply.js";
+import { tgResolutionText } from "../src/telegram/resolution.js";
+import { slugFor } from "../src/store/markets.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -43,8 +49,14 @@ console.log("the landing names all three doors");
   check("no card says KOL", !/\bKOLs?\b/.test(landing));
   check("the description names Kick and Telegram", /<meta name="description" content="[^"]*Kick[^"]*Telegram/.test(landing));
   check("no X composer is left to wire", !/data-ask/.test(landing) && !/EXAMPLES/.test(landing));
-  check("step three never states a side for a market still open",
-    landing.includes("Friday 23:59 UTC. The result is in.") && !/(Settled|Result|Answer)[^<"]{0,12}(YES|NO)\b/.test(landing.slice(landing.indexOf('id="tale"'))));
+  /* Step three used to state the deadline and never a side, because it told
+     the live BTC market. It now settles a made-up twin of it (another slug,
+     no date in the question), so it can say how the twin settled, in the
+     bots' words; that market and those words are pinned in the tale's
+     section below (Lev approved, 2 Oct). */
+  check("step three settles the twin and says nothing about the live market",
+    !landing.includes("Friday 23:59 UTC. The result is in.") && !/by Friday, October/.test(landing)
+    && !landing.includes("will-bitcoin-btc-reach-88000-by-426b52"));
   check("the board slot is back, behind a threshold", /<!--BOARD-->/.test(landing)
     && /const BOARD_MIN = 5;/.test(server) && /boardRows\.length < BOARD_MIN \? ""/.test(server));
   check("the live cards are a biggest pool and a closing-soon clock",
@@ -431,13 +443,50 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
     && !landing.includes('<div class="steps reveal">') && !landing.includes('class="step__cap"'));
   check("...that plays on all three doors, not only Kick",
     script.includes('where: "Kick chat"') && script.includes('where: "Replies on X"') && script.includes('where: "Telegram group"')
-    && script.includes('tag: "!oddie"') && script.includes('tag: "@oddiefun"') && script.includes('tag: "@oddiefunbot"'));
-  check("...each door naming who its 2% goes to",
-    script.includes('earns: "The stream"') && script.includes('earns: "The tagger"') && script.includes('earns: "The opener"'));
-  check("...in the words its bot really uses",
-    script.includes('open: "Market open. Pick a side:"') && script.includes('open: "Pick a side, real SOL on it &darr;"'));
+    && script.includes('var TAG = "!oddie BTC hits 88k by Friday?"') && script.includes('"<i>@oddiefun</i> BTC hits 88k by Friday?"')
+    && script.includes('"<i>@oddiefunbot</i> BTC hits 88k by Friday?"'));
+  check("...each door drawn as its own app (Lev, 2 Oct: X and Telegram did not look like X and Telegram)",
+    script.includes('p: "kick"') && script.includes('p: "x"') && script.includes('p: "tg"')
+    && /\.tale__screen\[data-app="x"\]\{background:#000;/.test(landing) && /\.tale__screen\[data-app="tg"\]\{background:#0e1621;/.test(landing)
+    && landing.includes(".xp--chain::before") && landing.includes(".tg__bub::before"));
+  check("...and the window keeps one height on every door, so a switch never moves the page",
+    /\.tale--js \.tale__feed\{height:\d+px;/.test(landing)
+    && !/\.tale__screen\[data-app="(?:x|tg)"\]\{[^}]*(?:padding:|padding-(?:top|bottom)|height)/.test(landing));
+  check("the card in the X reply and the Telegram photo is the real card, not a drawing of one",
+    script.includes('var CARD_SRC = "/brand/tale-card.webp";') && script.includes('card("xp__m")') && script.includes('card("tg__ph")')
+    && !landing.includes('class="mcard__s"') && statSync("public/brand/tale-card.webp").size < 40_000);
+  {
+    /* EVERY LINE A BOT SAYS ON SCREEN IS WHAT ITS CODE SAYS, built here from
+       that code for the market on screen. The market is a made-up twin of the
+       live BTC one: its slug comes from its own id, and the X reply picks its
+       CTA from the link, so the twin's id was chosen to land on "pick a side". */
+    const HOOK = "BTC to $88k by Friday?";
+    const twin = { venue: "community" as const, venueId: "demo-btc-88k-4", question: "Will Bitcoin (BTC) reach $88,000 by Friday?",
+      yesPct: 50, closesAt: null, volumeUsd: 0, venueUrl: "", tags: [] };
+    const LINK = `https://app.oddie.fun/m/${slugFor(twin)}`;
+    const js = (s: string) => s.replace(/\n/g, "\\n");
+    const [kickA, kickB] = MARKET_COPY.opened(HOOK, "\u0000", "this channel").split("\u0000");
+    check("the market on screen is the twin, never a live one", LINK === "https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7"
+      && script.includes(`var LINK = "${LINK}";`) && !/will-bitcoin-btc-reach-88000-by-(?!215eb7)[0-9a-f]{6}/.test(landing));
+    check("Kick says what the chat bot says, opening and settling",
+      tale.includes(`${kickA}<span class="ln">${LINK}</span>${kickB}`)
+      && server.includes('`It\'s ${outcome.toUpperCase()}: "${headline}" Winners collect at ${APP_BASE_URL}/m/${slug}`')
+      && tale.includes(`It's NO: "${HOOK}" Winners collect at <span class="ln">${LINK}</span>`));
+    const reply = buildTweetReply({ question: twin.question, permalink: LINK, hook: HOOK }).primary;
+    check("X and Telegram open with the reply the bot builds for that link",
+      reply.endsWith(`\n\nPick a side, real SOL on it ↓\n${LINK}`)
+      && script.includes('"Pick a side, real SOL on it ↓\\n" + SHORT') && script.includes('"Pick a side, real SOL on it ↓\\n" + link + "\\n\\n'));
+    check("...Telegram names the opener the way TG_COPY does",
+      script.includes(js(`\n\n${TG_COPY.opener("Jules", "oddiefunbot").split("\n")[0]}`)));
+    const settled = resolutionText(twin.question, "no", LINK, 1);
+    check("step three settles in the bots' own words, on X and in Telegram",
+      settled === tgResolutionText({ outcome: "no", pool: 2, won: 1, marketUrl: LINK })
+      && script.includes(js(settled.slice(0, settled.lastIndexOf("\n\n") + 2)))
+      && script.includes(`"<i>@0xjules</i>${authorCreditText("0xjules", LINK).split("\n")[0].slice("@0xjules".length)}"`));
+  }
   check("without script it is the whole Kick conversation",
-    tale.includes("<code>!oddie BTC hits 88k by Friday?</code>") && tale.includes("<span>The stream</span><b>2%</b>"));
+    tale.includes('<div class="tale__screen" data-app="kick"><div class="tale__feed" aria-live="off">')
+    && tale.includes('<p class="msg kc"><b class="k2">0xjules</b>: !oddie BTC hits 88k by Friday?</p>'));
   check("it moves only on screen, and never on its own with reduced motion",
     script.includes("if (reduced) { upTo(1); return; }") && script.includes("}, { threshold: 0.35 }).observe(tale);"));
   check("the hero says the pitch once; the doors say where",

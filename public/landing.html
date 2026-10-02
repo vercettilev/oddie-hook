@@ -1029,35 +1029,74 @@
   .tale__door{display:grid;place-items:center;width:30px;height:30px;padding:0;cursor:pointer;
     background:none;border:1.5px solid rgba(251,252,244,.22);opacity:.55}
   .tale__door.on{opacity:1;border-color:var(--yellow)}
-  .tale--js .tale__feed{height:292px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;
-    -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 34px);mask-image:linear-gradient(to bottom,transparent 0,#000 34px)}
-  .tale--js .tale__feed .msg{margin:8px 0 0;animation:tale-in .35s ease-out both}
-  @keyframes tale-in{from{opacity:0;translate:0 10px}to{opacity:1;translate:none}}
-  @media (prefers-reduced-motion:reduce){.tale--js .tale__feed .msg{animation:none}}
-  .msg .t{color:#2AABEE}
-  .msg .x{color:var(--cream)}
   .chat{background:#0f1210;border:2px solid rgba(251,252,244,.22);padding:14px 14px 12px;
     color:var(--cream);box-shadow:6px 7px 0 var(--pink)}
   .chat__src{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
     letter-spacing:.12em;text-transform:uppercase;color:rgba(251,252,244,.66);margin:0 0 10px}
-  .msg{font-size:15px;line-height:1.45;margin:0}
-  .msg + .msg{margin-top:8px}
-  .msg u{text-decoration:none;font-weight:800;margin-right:6px}
-  .msg .v{color:#53FC19}
-  .msg .o{color:var(--yellow)}
-  .msg code{font-family:var(--mono);font-size:14px;background:rgba(83,252,25,.12);color:#b6ff9a;padding:1px 4px}
-  .mcard{margin-top:10px;background:var(--cream);color:var(--ink);border:2px solid var(--ink);padding:10px 12px}
-  .mcard__q{font-family:var(--display);font-size:20px;line-height:1.05;text-transform:uppercase;color:var(--ink)}
-  .mcard__s{display:flex;gap:8px;margin-top:9px}
-  .mcard__s span{flex:1;text-align:center;font-family:var(--display);font-size:16px;padding:6px 0;
-    border:2px solid var(--ink);color:var(--ink)}
-  .mcard__s .y{background:var(--yellow)}
-  .mcard__s .n{background:var(--pink);color:#fff}
-  .paid{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;
-    font-family:var(--mono);font-size:13px}
-  .paid li{display:flex;justify-content:space-between;gap:10px;
-    border-bottom:1px dashed rgba(251,252,244,.2);padding-bottom:5px}
-  .paid b{color:var(--yellow)}
+  /* EACH DOOR LOOKS LIKE ITS OWN APP (Lev, 2 Oct: the X and Telegram chats
+     did not look like X and Telegram). The screen under the frame's header is
+     drawn the way that app draws it: Kick's chat lines, an X thread, a
+     Telegram group in night mode. It bleeds to the frame's edges, and every
+     door gives it the same height and padding, so a switch never moves the
+     page. The X and Telegram fonts are the system stack, as on X. */
+  .tale__screen{margin:0 -14px -12px;padding:0 14px 12px;border-top:1px solid transparent}
+  .tale__screen[data-app="x"]{background:#000;border-top-color:#2f3336;padding-inline:0}
+  .tale__screen[data-app="tg"]{background:#0e1621;padding-inline:10px}
+  .tale--js .tale__feed{height:330px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;
+    -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 30px);mask-image:linear-gradient(to bottom,transparent 0,#000 30px)}
+  .tale--js .tale__feed .msg{animation:tale-in .35s ease-out both}
+  @keyframes tale-in{from{opacity:0;translate:0 10px}to{opacity:1;translate:none}}
+  @media (prefers-reduced-motion:reduce){.tale--js .tale__feed .msg{animation:none}}
+  .msg{margin:0}
+  /* Kick: a line per message, the name in its colour and a colon; the bot's
+     answer carries the line it replies to above it. */
+  .kc{font-size:14.5px;line-height:1.45;overflow-wrap:anywhere}
+  .kc + .kc{margin-top:8px}
+  .kc b{font-weight:800}
+  .kc .k1{color:#53FC19}
+  .kc .k2{color:#C3A6FF}
+  .kc .k0{color:var(--yellow)}
+  .kc .ln{text-decoration:underline;text-decoration-color:rgba(251,252,244,.35);text-underline-offset:2px}
+  .kc__rp{display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.5;color:rgba(251,252,244,.5);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kc__rp svg{flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  /* X: avatar, name, @handle and age, the post, the action row; the posts
+     above the bot's reply are joined by the thread line. */
+  .xp{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:10px 14px 9px;
+    border-bottom:1px solid #2f3336;color:#e7e9ea;
+    font:400 14.5px/1.32 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .xp--chain{border-bottom:0;padding-bottom:4px}
+  .xp--chain::before{content:"";position:absolute;left:30px;top:48px;bottom:-6px;width:2px;background:#333639}
+  .xp__av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px}
+  .xp__h{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xp__h b{font-weight:700}
+  .xp__h span{color:#71767b}
+  .xp__t{margin:1px 0 0;white-space:pre-line;overflow-wrap:anywhere}
+  .xp i{font-style:normal;color:#1d9bf0}
+  .xp__m{display:block;width:100%;height:auto;margin-top:10px;border:1px solid #2f3336;border-radius:14px}
+  .xp__a{display:flex;justify-content:space-between;max-width:290px;margin:8px 0 0;color:#71767b}
+  .xp__a svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  /* Telegram, night: a bubble with a tail, the name in its colour, the time
+     inside; the bot answers the tag it quotes, with the card as its photo. */
+  .tg{display:flex;align-items:flex-end;gap:8px;color:#f5f5f5;
+    font:400 14px/1.36 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .tg + .tg{margin-top:6px}
+  .tg__av{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:13px;font-weight:600}
+  .tg__bub{position:relative;min-width:0;max-width:calc(100% - 46px);background:#182533;
+    border-radius:12px 12px 12px 0;padding:5px 9px 6px}
+  .tg__bub::before{content:"";position:absolute;left:-7px;bottom:0;width:8px;height:14px;
+    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 14'%3E%3Cpath d='M8 0v14H1.3C.4 14 0 13.1.6 12.4 3.7 9 6.9 4.9 8 0z' fill='%23182533'/%3E%3C/svg%3E") no-repeat}
+  .tg__bub--ph{width:250px}
+  .tg__n{display:block;font-size:13.5px;font-weight:600;line-height:1.3}
+  .tg__rp{display:block;margin:3px 0 5px;padding:2px 8px 3px;border-left:3px solid var(--c);border-radius:4px;
+    background:color-mix(in srgb,var(--c) 14%,transparent);font-size:13px;line-height:1.3;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tg__rp b{display:block;color:var(--c);font-weight:600}
+  .tg__ph{display:block;width:calc(100% + 18px);height:auto;margin:5px -9px 6px}
+  .tg__t{margin:0;white-space:pre-line;overflow-wrap:anywhere}
+  .tg__t::after{content:"";display:inline-block;width:34px}
+  .tg i{font-style:normal;color:#6ab3f3;word-break:break-all}
+  .tg__tm{position:absolute;right:8px;bottom:4px;font-size:11px;color:#6d7f8f}
   .B .proof{grid-column:1/-1;justify-self:center;width:100%}
 
   /* ======================================================== FOR CREATORS ==
@@ -1155,7 +1194,7 @@ html{-webkit-tap-highlight-color:transparent}
 <!-- Istek sayfanin tamaminda ekranda kalsin diye masthead header'in DISINDA
      ve <body>'nin dogrudan cocugu: sticky bir eleman ebeveyninin disina
      tasamaz, nav .A'nin icinde kalsaydi 640px sonra birakirdi. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol><symbol id="xi-r" viewBox="0 0 24 24"><path d="M12 4.5c4.4 0 8 2.9 8 6.6s-3.6 6.6-8 6.6c-.9 0-1.8-.1-2.6-.3L5.5 19.5l.9-3.3C5 15 4 13.1 4 11.1 4 7.4 7.6 4.5 12 4.5z"/></symbol><symbol id="xi-rt" viewBox="0 0 24 24"><path d="M4.5 8 7 5.5 9.5 8M7 6v9.5a2 2 0 0 0 2 2h4.5M19.5 16 17 18.5 14.5 16M17 18V8.5a2 2 0 0 0-2-2h-4.5"/></symbol><symbol id="xi-l" viewBox="0 0 24 24"><path d="M12 19.5s-7.5-4.4-7.5-9.6A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.5 2.3c0 5.2-7.5 9.6-7.5 9.6z"/></symbol><symbol id="xi-v" viewBox="0 0 24 24"><path d="M6 19v-6M12 19V6M18 19v-9"/></symbol><symbol id="xi-s" viewBox="0 0 24 24"><path d="M12 15V4.5M8 8.5l4-4 4 4M5 13.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5"/></symbol></svg>
 <div class="topbar">
   <nav class="shell nav__in">
     <a class="brand" href="/" aria-label="Oddie home">
@@ -1304,9 +1343,12 @@ html{-webkit-tap-highlight-color:transparent}
            on a phone. This is the story as it happens: one chat window that
            plays the claim, the market and the payout in turn, then plays the
            same story on X and in a Telegram group, because a page that only
-           ever shows Kick reads as a Kick bot. Same words the bots really use
-           on each door, same rule for step three: it states what happens at
-           the deadline and never a side.
+           ever shows Kick reads as a Kick bot. Each door is drawn the way that
+           app draws it and its bot says what it really says there, the card
+           in the X reply and the Telegram photo included. The market is a
+           made-up twin of the live one (another slug, no date in the
+           question), so step three can say how it settled without saying
+           anything about a market that is still open.
            Without script it is the whole Kick conversation, static. With
            reduced motion it never moves on its own: the steps and the doors
            switch it. -->
@@ -1323,14 +1365,14 @@ html{-webkit-tap-highlight-color:transparent}
               <button class="tale__door" type="button" data-plat="1" aria-label="X"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-x"/></svg></button>
               <button class="tale__door" type="button" data-plat="2" aria-label="Telegram"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-telegram"/></svg></button>
             </span></p>
-          <div class="tale__feed" aria-live="off">
-            <p class="msg"><u class="v">mike_trades</u>no way btc sees 88k this week</p>
-            <p class="msg"><u class="v">0xjules</u><code>!oddie BTC hits 88k by Friday?</code></p>
-            <div class="msg"><u class="o">oddiefun</u>Market open. Pick a side:<div class="mcard"><p class="mcard__q">BTC to $88k by Friday?</p><div class="mcard__s"><span class="y">YES</span><span class="n">NO</span></div></div></div>
-            <p class="msg"><u class="v">0xjules</u>YES. 0.1 in</p>
-            <p class="msg"><u class="v">mike_trades</u>NO. see you friday</p>
-            <div class="msg"><u class="o">oddiefun</u>Friday 23:59 UTC. The result is in.<ul class="paid"><li><span>Winners</span><b>split the pool</b></li><li><span>The stream</span><b>2%</b></li></ul></div>
-          </div>
+          <div class="tale__screen" data-app="kick"><div class="tale__feed" aria-live="off">
+            <p class="msg kc"><b class="k1">mike_trades</b>: no way btc sees 88k this week</p>
+            <p class="msg kc"><b class="k2">0xjules</b>: !oddie BTC hits 88k by Friday?</p>
+            <p class="msg kc"><span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @0xjules: !oddie BTC hits 88k by Friday?</span><b class="k0">oddiefun</b>: Market open: "BTC to $88k by Friday?" Take YES or NO: <span class="ln">https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7</span> (this channel earns 2% of the pool)</p>
+            <p class="msg kc"><b class="k2">0xjules</b>: YES. 0.1 in</p>
+            <p class="msg kc"><b class="k1">mike_trades</b>: NO. see you at midnight</p>
+            <p class="msg kc"><span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @0xjules: !oddie BTC hits 88k by Friday?</span><b class="k0">oddiefun</b>: It's NO: "BTC to $88k by Friday?" Winners collect at <span class="ln">https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7</span></p>
+          </div></div>
         </div>
       </div>
 
@@ -1484,44 +1526,107 @@ html{-webkit-tap-highlight-color:transparent}
 
   /* HOW IT WORKS, AS ONE CHAT (Lev, 2 Oct, the hypercasual cut). The window
      plays the claim, the market and the payout, then the same story on the
-     next door: Kick, X, Telegram. Each door speaks as its bot really does
-     (Kick says "Market open"; X and Telegram reply with the CTA and the card)
-     and names who gets the 2% there. It plays only while it is on screen,
-     a step or a door jumps to it, and with reduced motion nothing moves on
-     its own. */
+     next door: Kick, X, Telegram, each drawn as that app draws it. What the
+     bot says is its real text for this market, cut short only where it
+     repeats the card: Kick from MARKET_COPY and the result notice in
+     server.ts; X from buildTweetReply, resolutionText and authorCreditText;
+     Telegram the same reply as the card's caption with TG_COPY.opener, then
+     tgResolutionText. The card is the real one, rendered by src/card for
+     this made-up market (its slug picks the "pick a side" CTA). It plays
+     only while it is on screen, a step or a door jumps to it, and with
+     reduced motion nothing moves on its own. */
   (function () {
     var tale = document.getElementById("tale");
     if (!tale) return;
+    var screen = tale.querySelector(".tale__screen");
     var feed = tale.querySelector(".tale__feed");
     var tabs = [].slice.call(tale.querySelectorAll(".tale__tab"));
     var doors = [].slice.call(tale.querySelectorAll(".tale__door"));
     var where = tale.querySelector(".tale__where");
     var srcMark = tale.querySelector(".tale__src use");
     var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    var CARD = '<div class="mcard"><p class="mcard__q">BTC to $88k by Friday?</p>'
-      + '<div class="mcard__s"><span class="y">YES</span><span class="n">NO</span></div></div>';
-    var DOORS = [
-      { where: "Kick chat", mark: "#mk-kick", u: "v", a: "mike_trades", b: "0xjules", bot: "oddiefun",
-        tag: "!oddie", open: "Market open. Pick a side:", earns: "The stream" },
-      { where: "Replies on X", mark: "#mk-x", u: "x", a: "@mike_trades", b: "@0xjules", bot: "@oddiefun",
-        tag: "@oddiefun", open: "Pick a side, real SOL on it &darr;", earns: "The tagger" },
-      { where: "Telegram group", mark: "#mk-telegram", u: "t", a: "Mike", b: "Jules", bot: "oddiefunbot",
-        tag: "@oddiefunbot", open: "Pick a side, real SOL on it &darr;", earns: "The opener" }
-    ];
-    function story(d) {
-      var D = DOORS[d], u = '<u class="' + D.u + '">';
+    var HOOK = "BTC to $88k by Friday?";
+    var LINK = "https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7";
+    var CARD_SRC = "/brand/tale-card.webp";
+    function card(cls) {
+      return '<img class="' + cls + '" src="' + CARD_SRC + '" width="720" height="377" decoding="async" alt="The market card: BTC to $88k by Friday?">';
+    }
+    function m(beat, at, cls, html) { return { beat: beat, at: at, cls: cls, html: html }; }
+
+    function kick() {
+      var TAG = "!oddie BTC hits 88k by Friday?";
+      var RE = '<span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @0xjules: ' + TAG + "</span>";
+      function say(c, who, text, re) { return (re ? RE : "") + '<b class="' + c + '">' + who + "</b>: " + text; }
+      var link = '<span class="ln">' + LINK + "</span>";
       return [
-        { beat: 0, at: 300, html: u + D.a + "</u>no way btc sees 88k this week" },
-        { beat: 0, at: 1300, html: u + D.b + "</u><code>" + D.tag + " BTC hits 88k by Friday?</code>" },
-        { beat: 1, at: 2700, html: '<u class="o">' + D.bot + "</u>" + D.open + CARD },
-        { beat: 1, at: 3900, html: u + D.b + "</u>YES. 0.1 in" },
-        { beat: 1, at: 4700, html: u + D.a + "</u>NO. see you friday" },
-        { beat: 2, at: 6100, html: '<u class="o">' + D.bot + "</u>Friday 23:59 UTC. The result is in."
-          + '<ul class="paid"><li><span>Winners</span><b>split the pool</b></li><li><span>' + D.earns + "</span><b>2%</b></li></ul>" }
+        m(0, 300, "kc", say("k1", "mike_trades", "no way btc sees 88k this week")),
+        m(0, 1300, "kc", say("k2", "0xjules", TAG)),
+        m(1, 2700, "kc", say("k0", "oddiefun", 'Market open: "' + HOOK + '" Take YES or NO: ' + link + " (this channel earns 2% of the pool)", 1)),
+        m(2, 5300, "kc", say("k2", "0xjules", "YES. 0.1 in")),
+        m(2, 6000, "kc", say("k1", "mike_trades", "NO. see you at midnight")),
+        m(2, 7200, "kc", say("k0", "oddiefun", "It's NO: \"" + HOOK + "\" Winners collect at " + link, 1))
       ];
     }
-    var BEAT_AT = [0, 2400, 5800], END = 9800;
-    var door = 0, timers = [], onScreen = false;
+
+    function x() {
+      var SHORT = "<i>app.oddie.fun/m/will-bit…</i>";
+      var ACTS = '<p class="xp__a" aria-hidden="true">' + ["r", "rt", "l", "v", "s"].map(function (i) {
+        return '<svg viewBox="0 0 24 24"><use href="#xi-' + i + '"/></svg>'; }).join("") + "</p>";
+      var WHO = {
+        m: ['<span class="xp__av" style="background:#e8743b" aria-hidden="true">M</span>', "Mike", "@mike_trades"],
+        j: ['<span class="xp__av" style="background:#7856ff" aria-hidden="true">J</span>', "Jules", "@0xjules"],
+        o: ['<img class="xp__av" src="/brand/mark.webp?v=3" alt="">', "oddie", "@oddiefun"]
+      };
+      function post(w, ago, text, media) {
+        var W = WHO[w];
+        return W[0] + '<div><p class="xp__h"><b>' + W[1] + "</b> <span>" + W[2] + " · " + ago + "</span></p>"
+          + '<p class="xp__t">' + text + "</p>" + (media || "") + ACTS + "</div>";
+      }
+      return [
+        m(0, 300, "xp xp--chain", post("m", "11h", "no way btc sees 88k this week")),
+        m(0, 1300, "xp xp--chain", post("j", "11h", "<i>@oddiefun</i> BTC hits 88k by Friday?")),
+        m(1, 2700, "xp", post("o", "11h", "Pick a side, real SOL on it ↓\n" + SHORT, card("xp__m"))),
+        m(2, 5300, "xp", post("j", "11h", "YES. 0.1 in")),
+        m(2, 6000, "xp", post("m", "11h", "NO. see you at midnight")),
+        m(2, 7200, "xp", post("o", "1m", "Settled: NO.\n\nEveryone who called it is paid from the pool, on chain.\n\n" + SHORT)),
+        m(2, 8300, "xp", post("o", "1m", "<i>@0xjules</i>, the market you opened drew real SOL, so it earned you a creator cut."))
+      ];
+    }
+
+    function tg() {
+      var WHO = {
+        m: ['<span class="tg__av" style="background:linear-gradient(#ffcd6a,#ffa85c)" aria-hidden="true">M</span>', "Mike", "#ffa357"],
+        j: ['<span class="tg__av" style="background:linear-gradient(#82b1ff,#665fff)" aria-hidden="true">J</span>', "Jules", "#b48bf2"],
+        o: ['<img class="tg__av" src="/brand/mark.webp?v=3" alt="">', "oddiebot", "#5fd0e6"]
+      };
+      var QUOTE = '<span class="tg__rp" style="--c:#b48bf2"><b>Jules</b>@oddiefunbot BTC hits 88k by Friday?</span>';
+      function bub(w, time, text, quote, photo) {
+        var W = WHO[w];
+        return W[0] + '<div class="tg__bub' + (photo ? " tg__bub--ph" : "") + '"><b class="tg__n" style="color:' + W[2] + '">' + W[1] + "</b>"
+          + (quote ? QUOTE : "") + (photo ? card("tg__ph") : "")
+          + '<p class="tg__t">' + text + '</p><span class="tg__tm">' + time + "</span></div>";
+      }
+      var link = "<i>" + LINK + "</i>";
+      return [
+        m(0, 300, "tg", bub("m", "12:37", "no way btc sees 88k this week")),
+        m(0, 1300, "tg", bub("j", "12:38", "<i>@oddiefunbot</i> BTC hits 88k by Friday?")),
+        m(1, 2700, "tg", bub("o", "12:38", "Pick a side, real SOL on it ↓\n" + link + "\n\nOpened by Jules, who earns 2% of the pool.", 0, 1)),
+        m(2, 5300, "tg", bub("j", "12:41", "YES. 0.1 in")),
+        m(2, 6000, "tg", bub("m", "12:43", "NO. see you at midnight")),
+        m(2, 7200, "tg", bub("o", "00:01", "Settled: NO.\n\nEveryone who called it is paid from the pool, on chain.\n\n" + link, 1))
+      ];
+    }
+
+    var DOORS = [
+      { where: "Kick chat", mark: "#mk-kick", p: "kick", story: kick() },
+      { where: "Replies on X", mark: "#mk-x", p: "x", story: x() },
+      { where: "Telegram group", mark: "#mk-telegram", p: "tg", story: tg() }
+    ];
+    var BEAT_AT = [0, 2400, 5000], END = 11000;
+    var door = 0, timers = [], onScreen = false, warmed = false;
+    /* The card is fetched before its first door plays, not as it appears. */
+    function warm() { if (!warmed) { warmed = true; new Image().src = CARD_SRC; } }
+    function story(d) { return DOORS[d].story; }
     function stop() { timers.forEach(clearTimeout); timers = []; }
     function setBeat(b) {
       tabs.forEach(function (t, i) { t.classList.toggle("on", i === b); t.setAttribute("aria-selected", i === b ? "true" : "false"); });
@@ -1531,8 +1636,9 @@ html{-webkit-tap-highlight-color:transparent}
       doors.forEach(function (x, i) { x.classList.toggle("on", i === d); x.setAttribute("aria-pressed", i === d ? "true" : "false"); });
       where.textContent = DOORS[d].where;
       if (srcMark) srcMark.setAttribute("href", DOORS[d].mark);
+      screen.setAttribute("data-app", DOORS[d].p);
     }
-    function add(m) { var el = document.createElement("div"); el.className = "msg"; el.innerHTML = m.html; feed.appendChild(el); }
+    function add(m) { var el = document.createElement("div"); el.className = "msg " + m.cls; el.innerHTML = m.html; feed.appendChild(el); }
     function upTo(b) { feed.innerHTML = ""; story(door).forEach(function (m) { if (m.beat <= b) add(m); }); setBeat(b); }
     function play(from) {
       stop();
@@ -1548,13 +1654,13 @@ html{-webkit-tap-highlight-color:transparent}
     tale.classList.add("tale--js");
     setDoor(0);
     tabs.forEach(function (t) { t.addEventListener("click", function () { play(Number(t.getAttribute("data-beat"))); }); });
-    doors.forEach(function (x) { x.addEventListener("click", function () { setDoor(Number(x.getAttribute("data-plat"))); play(reduced ? 1 : 0); }); });
+    doors.forEach(function (x) { x.addEventListener("click", function () { warm(); setDoor(Number(x.getAttribute("data-plat"))); play(reduced ? 1 : 0); }); });
     if (reduced) { upTo(1); return; }
     upTo(2);   // until it is on screen, the whole Kick story, still
-    if (!("IntersectionObserver" in window)) { play(0); return; }
+    if (!("IntersectionObserver" in window)) { warm(); play(0); return; }
     new IntersectionObserver(function (entries) {
       var vis = entries[entries.length - 1].isIntersecting;
-      if (vis && !onScreen) play(0);
+      if (vis && !onScreen) { warm(); play(0); }
       if (!vis && onScreen) stop();
       onScreen = vis;
     }, { threshold: 0.35 }).observe(tale);
