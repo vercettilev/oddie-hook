@@ -213,9 +213,22 @@ function b64ToBytes(b64) {
 
   /** Phantom's universal link: it opens THIS page inside Phantom's own browser,
    *  where window.solana does exist, and the flow continues normally from there.
-   *  Nothing is signed by the link and no parameters carry anything private. */
-  function phantomDeepLink() {
-    const url = window.location.href;
+   *  Nothing is signed by the link and no parameters carry anything private.
+   *
+   *  `choice` ({ side, sol }) rides along as ?side=&sol=, which the market page
+   *  reads on arrival. Without it the person picked YES and 0.1 SOL, switched
+   *  apps, and found the page with no side and Phantom's fresh browser on its
+   *  default 0.5: the side asked twice and the amount silently five times over. */
+  function phantomDeepLink(choice) {
+    let url = window.location.href;
+    if (choice && (choice.side === "yes" || choice.side === "no")) {
+      try {
+        const u = new URL(url);
+        u.searchParams.set("side", choice.side);
+        if (choice.sol > 0) u.searchParams.set("sol", String(choice.sol));
+        url = u.toString();
+      } catch (e) { /* the bare page still works; the choice is asked again */ }
+    }
     return `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(window.location.origin)}`;
   }
 
@@ -236,10 +249,11 @@ function b64ToBytes(b64) {
   function connectLabel(fallback) {
     return isMobileNoWallet() ? "Open in Phantom" : (fallback || "Connect wallet");
   }
-  /** Handled it? True means the caller must stop: the page is leaving. */
-  function connectHere() {
+  /** Handled it? True means the caller must stop: the page is leaving.
+   *  `choice` is passed through to the link (see phantomDeepLink). */
+  function connectHere(choice) {
     if (!isMobileNoWallet()) return false;
-    window.location.href = phantomDeepLink();
+    window.location.href = phantomDeepLink(choice);
     return true;
   }
 
@@ -1202,7 +1216,10 @@ function b64ToBytes(b64) {
      bir ilerleme ekranidir: asagida, cuzdan zaten baglıysa, kendi kendine
      onaya gecer. Onay yine Phantom'dadir, yani hicbir para kullanicinin
      imzasi olmadan kimildamaz -- degisen sadece BIZIM sordugumuz soru sayisi. */
-  async function openStakeSheet(slug, presetSide, presetSol) {
+  /** `opts.confirm`: the sheet was opened by a link rather than a tap on this
+   *  page, so it waits for one press even when a trusted wallet and an amount
+   *  would otherwise sign straight through (see TEK TIK below). */
+  async function openStakeSheet(slug, presetSide, presetSol, opts) {
     const body = sheetShell();
     // The question the money is going on. The sheet covers the page, so
     // without this the screen that takes a stake never states what the stake
@@ -1706,7 +1723,7 @@ function b64ToBytes(b64) {
              rather than redirecting - but a button that says "Open in Phantom
              to bet" has been tapped on exactly that promise, so performing it
              is keeping the promise, not taking a liberty. */
-          if (connectHere()) return;
+          if (connectHere({ side, sol })) return;
           stakeBtn.disabled = true; stakeBtn.textContent = "Check your wallet…";
           try { await connectWallet(); }
           catch (e) {
@@ -1981,10 +1998,13 @@ function b64ToBytes(b64) {
              kullanicinin istemedigi bir seydir,
            - bakiye yetiyor. showBalance bekleniyor, cunku yetersiz bakiyeyi
              preflight hatasina birakmak yerine burada durup uyariyi
-             gostermek daha durust.
+             gostermek daha durust,
+           - sheet bir linkle acilmadi (opts.confirm). Listeden ya da
+             Phantom'a geciste gelen kisi bu sayfayi henuz gormedi; gelis
+             bir imza degildir.
          Durdugu her durumda sheet zaten dogru secimlerle acik kaliyor, yani
          geri dusus "tek tik yerine iki tik", hata degil. */
-      if (presetSol > 0 && side && sol > 0 && wallet) {
+      if (presetSol > 0 && side && sol > 0 && wallet && !(opts && opts.confirm)) {
         Promise.resolve(showBalance()).catch(() => {}).then(() => {
           if (sol <= spendable()) stakeBtn.click();
         });

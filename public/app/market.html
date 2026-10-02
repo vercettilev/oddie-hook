@@ -880,6 +880,34 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
      cunku bos liste zaten "chip yok" demek. */
   function presets() { return (window.OddieChain && window.OddieChain.presets) || []; }
   var stake = null;
+
+  /* ARRIVING WITH A SIDE ALREADY CHOSEN: ?side=yes|no, plus ?sol= when the
+     amount was chosen too. Two doors use it: a YES or NO on a card in the
+     list, and the Phantom link a phone follows to reopen this page inside the
+     wallet, which carries what the person picked before the app switch.
+     Read ONCE, here, before anything renders. It used to be read inside
+     render(), whose first run happens while the page is still parsing and
+     chain.js (deferred) does not exist yet: the click found no money layer,
+     the button flashed "can't take a side right now", the param was already
+     gone from the URL, and the sheet never opened. Measured on production on
+     2 Oct, on a card tap from the list.
+     The two params leave the URL at once, so a reload or a shared link never
+     re-opens a money sheet at somebody; any other param stays. The sheet
+     opens on the choice and waits for a tap: an arrival is never a signature. */
+  var ARRIVAL = (function () {
+    var side = (location.search.match(/[?&]side=(yes|no)\b/) || [])[1];
+    if (!side) return null;
+    var sol = parseFloat((location.search.match(/[?&]sol=([0-9.]+)/) || [])[1]);
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete("side");
+      u.searchParams.delete("sol");
+      history.replaceState(null, "", u.pathname + u.search + u.hash);
+    } catch (e) { /* the params stay; the sheet still opens only once */ }
+    // The server takes 0.001 to 5 SOL. A number outside that is a mangled
+    // link, and then the page's own amount stands.
+    return { side: side, sol: sol >= 0.001 && sol <= 5 ? Math.round(sol * 1e9) / 1e9 : null, done: false, waiting: false };
+  })();
   function pickStake(P) {
     if (!P.length) return null;
     if (stake !== null && P.indexOf(stake) !== -1) return stake;   // bu oturumdaki secim
@@ -1351,17 +1379,41 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       });
     });
 
-    /* ?side=yes|no: arriving from a card on the list, where the side was
-       already chosen. The sheet opens on that side rather than making somebody
-       pick twice. Ignored on a closed or resolved market, where there is no
-       side left to take, and the param is dropped from the URL either way so a
-       reload or a shared link does not re-open a money sheet at somebody. */
-    var wanted = (location.search.match(/[?&]side=(yes|no)\b/) || [])[1];
-    if (wanted) {
-      history.replaceState(null, "", location.pathname);
-      var b = view.querySelector('.side[data-side="' + wanted + '"]');
-      if (b && !b.disabled) b.click();
+    /* The arrival (see ARRIVAL). Tried on every render until it lands: the
+       first render can run before chain.js exists, and then the next render,
+       or the page's load event, tries again. Ignored on a closed or resolved
+       market, where there is no side left to take. */
+    function openArrival() {
+      if (!ARRIVAL || ARRIVAL.done) return;
+      if (!(window.OddieChain && window.OddieChain.openStake)) {
+        if (!ARRIVAL.waiting) {
+          ARRIVAL.waiting = true;
+          window.addEventListener("load", openArrival, { once: true });
+        }
+        return;
+      }
+      var b = view.querySelector('.side[data-side="' + ARRIVAL.side + '"]');
+      if (!b) return;
+      ARRIVAL.done = true;
+      if (b.disabled) return;
+      if (ARRIVAL.sol) {
+        var chip = view.querySelector('.stake[data-sol="' + ARRIVAL.sol + '"]');
+        if (chip) {
+          chip.click();
+        } else {
+          // Not a preset: the "Other" field holds it, unfocused, because a
+          // keyboard rising on arrival is not something anybody asked for.
+          var other = view.querySelector('.stake[data-sol="other"]');
+          Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (x) { x.classList.toggle("on", x === other); });
+          var xf = view.querySelector("#stakex");
+          if (xf) { xf.hidden = false; xf.value = String(ARRIVAL.sol); }
+          stake = ARRIVAL.sol;
+          showStake();
+        }
+      }
+      window.OddieChain.openStake(SLUG, ARRIVAL.side, stake || undefined, { confirm: true });
     }
+    openArrival();
   }
 
   /* THE CHAIN CLIENT ONLY EVER NEEDS THE CLUSTER, and it may not have loaded

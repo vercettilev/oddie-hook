@@ -310,5 +310,49 @@ console.log("\nthe first bet is told what happens if nobody comes");
     page.includes("#view > .pool,#view > .first,#view > .first-floor{order:5}"));
 }
 
+console.log("\nthe choice survives the trip into Phantom");
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  // The link, built against a fake page.
+  const ls = chain.indexOf("  function phantomDeepLink(");
+  const le = chain.indexOf("  /**\n   * WHAT A CONNECT CONTROL SHOULD SAY");
+  check("phantomDeepLink is where this test looks for it", ls > 0 && le > ls);
+  const win = { location: { href: "https://app.oddie.fun/m/btc-88k", origin: "https://app.oddie.fun" } };
+  const deepLink = new Function("window", chain.slice(ls, le) + "\nreturn phantomDeepLink;")(win);
+  const inner = (link: string) => decodeURIComponent(link.slice("https://phantom.app/ul/browse/".length).split("?ref=")[0]);
+  check("the link carries the side and the amount",
+    inner(deepLink({ side: "yes", sol: 0.1 })) === "https://app.oddie.fun/m/btc-88k?side=yes&sol=0.1", inner(deepLink({ side: "yes", sol: 0.1 })));
+  check("...and without a choice it is the page, as before",
+    inner(deepLink()) === "https://app.oddie.fun/m/btc-88k");
+  check("the stake button hands its choice to the link", chain.includes("if (connectHere({ side, sol })) return;"));
+  check("a sheet opened by a link waits for a tap, whatever the wallet",
+    chain.includes("if (presetSol > 0 && side && sol > 0 && wallet && !(opts && opts.confirm)) {"));
+
+  // The arrival, read against a fake location.
+  const as = page.indexOf("  var ARRIVAL = (function () {");
+  const ae = page.indexOf("  })();", as);
+  check("the arrival is read once, before the first render", as > 0 && as < page.indexOf("  function render(m) {"));
+  const arrive = (search: string) => {
+    const replaced: string[] = [];
+    const href = "https://app.oddie.fun/m/btc-88k" + search;
+    const got = new Function("location", "history", "URL",
+      page.slice(as, ae + "  })();".length).replace("var ARRIVAL =", "return"))(
+      { search, href }, { replaceState: (_s: unknown, _t: string, u: string) => replaced.push(u) }, URL);
+    return { got, replaced };
+  };
+  const a1 = arrive("?side=no&sol=0.1&sheet=v2");
+  check("?side=no&sol=0.1 arrives as NO for 0.1",
+    a1.got?.side === "no" && a1.got?.sol === 0.1, JSON.stringify(a1.got));
+  check("...and leaves the URL, keeping every other param", a1.replaced[0] === "/m/btc-88k?sheet=v2", a1.replaced[0]);
+  check("an amount the server would refuse is dropped, not obeyed", arrive("?side=yes&sol=9").got?.sol === null);
+  check("no side, no arrival, and the URL is left alone",
+    arrive("?sheet=v2").got === null && arrive("?sheet=v2").replaced.length === 0);
+  check("the old read inside render, which ran before chain.js existed, is gone",
+    !page.includes('history.replaceState(null, "", location.pathname);'));
+  check("render tries the arrival until it lands, and opens it to wait for a tap",
+    page.includes("openArrival();\n  }") && page.includes('window.addEventListener("load", openArrival, { once: true });')
+    && page.includes("window.OddieChain.openStake(SLUG, ARRIVAL.side, stake || undefined, { confirm: true });"));
+}
+
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");
 process.exit(failures ? 1 : 0);
