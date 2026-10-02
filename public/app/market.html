@@ -93,12 +93,9 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .q{font-family:var(--display);font-weight:400;
   font-size:clamp(28px,5.1vw,44px);line-height:1.04;letter-spacing:.005em;
   text-transform:uppercase;text-wrap:balance;margin:0 0 26px;color:var(--cream)}
-/* Baslik hook oldugunda tam soru BURADA duruyor ve gitmiyor: paranin
-   baglandigi sozlesme bu kelimeler, hook yalnizca vitrin. Sessiz ama
-   okunur -- kucultulmus degil, ikincil. */
-.q--hook{margin-bottom:10px}
-.qfull{margin:0 0 26px;font-size:15px;line-height:1.5;color:var(--fg-2);
-  max-width:60ch}
+/* The hook is the headline and the full question lives in Rules (Lev, 2
+   Oct, the hypercasual cut), so the headline sits close to the chips under it. */
+.q--hook{margin-bottom:16px}
 
 /* ---- the pool ---- */
 .pool{border:3px solid var(--cream);background:transparent;padding:18px 20px 20px;margin:0 0 22px}
@@ -215,7 +212,6 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 @media (hover:hover){.src__a:hover{text-decoration:underline}}
 
 /* ---- the terms this settles by ---- */
-.how{font-size:15px;line-height:1.55;color:var(--fg-2);margin:0 0 14px;max-width:46ch}
 .terms{border:2px solid var(--fg-3);margin:0 0 22px}
 .terms summary{cursor:pointer;list-style:none;padding:12px 16px;
   font-family:var(--mono);font-size:11.5px;font-weight:800;letter-spacing:.14em;
@@ -235,6 +231,10 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 .terms__b{padding:0 16px 14px;font-size:14.5px;line-height:1.6;color:var(--fg-2);
   white-space:pre-wrap;overflow-wrap:anywhere}
 .terms__b b{color:var(--cream)}
+.terms__b p{margin:0 0 10px}
+.terms__b p:last-child{margin-bottom:0}
+.terms__q{color:var(--cream)}
+.terms__b a{color:inherit;text-decoration:underline;text-underline-offset:3px}
 
 /* ---- share: a footnote now. Every bet is a post and a post is what brings
    the next stranger, but it is not this reader's move on this screen: after
@@ -399,9 +399,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 @media (max-width:640px){
   main.wrap{padding-top:36px}
   #view > .backfeed{margin-bottom:10px}
-  #view > .qfull{margin-bottom:18px}
   #view > .pool{margin-bottom:16px}
-  #view > .how{margin-bottom:10px}
 
   .pool{display:grid;grid-template-columns:auto 1fr;align-items:baseline;
     column-gap:10px;padding:14px 16px 16px}
@@ -455,7 +453,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   #view > *{order:6}
   #view > .backfeed{order:1}
   #view > .q{order:2}
-  #view > .qfull{order:3}
   /* THE DEADLINE BELONGS BEFORE THE DECISION, and on phones it was after it.
      Measured: the buttons sat at 476 and "6h 26m left" at 637, so somebody
      staking had never been shown the horizon they were staking into. Above
@@ -538,8 +535,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
  * signature request for an amount they had never been shown. The figure is
  * also the control: pressing it goes to the chips.
  */
-/* Off on a desktop, where the same sentence is already two lines above in
-   .how and the buttons are never out of reach. */
+/* Off on a desktop, where the chips sit right above the buttons and neither
+   is ever out of reach. */
 .usd{font-family:var(--mono);font-size:.9em;font-weight:700;letter-spacing:0;text-transform:none;opacity:.62}
 .sides__amt{
   display:none;grid-column:1/-1;justify-self:start;
@@ -548,6 +545,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   margin:0;padding:2px 0 6px;
 }
 .sides__amt b{color:var(--fg);font-weight:800}
+.sides__amt--near{visibility:hidden}
 
 @media (max-width:640px){
   .sides{
@@ -588,7 +586,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   font-family:var(--display);font-weight:400;font-size:clamp(16px,3.6vw,20px);
   letter-spacing:.02em;color:var(--fg-2);line-height:1.15}
 .first b{color:var(--yellow);font-weight:400}
-.first-floor{margin:-8px 0 18px;font-size:15px;line-height:1.5;color:var(--fg);max-width:46ch}
+.first-floor{width:fit-content;margin:-6px 0 18px;padding:5px 12px;border-radius:999px;
+  background:rgba(252,246,4,.14);color:var(--yellow);font-size:13px;font-weight:700;letter-spacing:.01em}
 .first img{height:38px;width:auto;flex:none;transform:rotate(-7deg);
   filter:drop-shadow(0 5px 12px rgba(0,0,0,.55))}
 /* summary is a space-between flex row (label ... +). A third child would
@@ -629,7 +628,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .eyebrow .by--pp img{width:22px;height:22px;border-radius:50%;background:var(--cream);flex:none}
 @media (hover:hover){.eyebrow .by--tg:hover{background:var(--tg-hi)}}
 .src__a--tg{color:var(--tg)}
-.rail a.earn{color:inherit;text-decoration:underline;text-underline-offset:3px}
 
 /* Phone masthead: logo and chip share the top row, the links wrap under them.
    Appended to nav instead, the chip took a third row of its own. */
@@ -880,6 +878,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
      cunku bos liste zaten "chip yok" demek. */
   function presets() { return (window.OddieChain && window.OddieChain.presets) || []; }
   var stake = null;
+  var amtWatch = null;   // see THE AMOUNT BESIDE THE BUTTONS in render()
 
   /* ARRIVING WITH A SIDE ALREADY CHOSEN: ?side=yes|no, plus ?sol= when the
      amount was chosen too. Two doors use it: a YES or NO on a card in the
@@ -986,7 +985,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     /* THE WAY BACK. Every market link off X lands here cold, and the only
        route to the rest of the product was the masthead, which is scrolled
        away the moment somebody reads the question. */
-    var html = '<a class="backfeed" href="/markets">&larr; All markets</a>';
+    var html = '<a class="backfeed" href="/markets">&larr; Markets</a>';
     html += bits.length
       ? '<p class="eyebrow"><span>' + bits.join("</span><span>") + "</span></p>"
       : "";
@@ -1000,6 +999,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
        metnini bahis sheet'inin basligina yaziyor ve paranin uzerine gittigi
        ekran tam ifadeyi gostermeli, vitrini degil. */
     var hook = String(m.hook || "").trim();
+    var fullQ = "";
     if (hook) {
       /* Hook ve soru AYNI elemanda: biri oznitelik degeri, digeri metin.
          Ayri elemanlarda dururken sheet ikisini iki ayri sorguyla ariyordu ve
@@ -1007,8 +1007,12 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
          deploy) sessizce uzun soruya dusuyordu -- yani hata tam da en zor fark
          edilen bicimde, "calisiyor ama cirkin" olarak cikiyordu. Tek eleman
          boyle bir uyusmazligi imkansiz kiliyor. */
-      html += '<h1 class="q q--hook">' + esc(hook) + "</h1>"
-        + '<p class="qfull" data-oddie-question data-oddie-hook="' + esc(hook)
+      /* THE FULL QUESTION MOVED INTO RULES (Lev, 2 Oct, the hypercasual cut):
+         the first screen is the hook, the price and YES/NO, and the exact
+         wording is one tap away with the criteria it settles by. The element
+         itself is unchanged, so chain.js still finds hook and question in it. */
+      html += '<h1 class="q q--hook">' + esc(hook) + "</h1>";
+      fullQ = '<p class="terms__q" data-oddie-question data-oddie-hook="' + esc(hook)
         + '" data-slug="' + esc(m.slug || SLUG) + '">' + esc((m.questionDisplay || m.question)) + "</p>";
     } else {
       html += '<h1 class="q" data-oddie-question data-slug="' + esc(m.slug || SLUG) + '">' + esc(m.questionDisplay || m.question) + "</h1>";
@@ -1067,9 +1071,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
          nobody comes. The program's answer is the best line this market has:
          with no other side, every stake comes back whole and no fee is taken.
          Said here as well as in the sheet, because a connected wallet with an
-         amount picked goes from this page straight to the signature. */
+         amount picked goes from this page straight to the signature.
+         A tag, not a sentence (Lev, 2 Oct, the hypercasual cut): four words
+         carry it, and Rules says it in full. */
       if (!closed && !resolved) {
-        html += '<p class="first-floor">If nobody takes the other side, you take it all back. No fee.</p>';
+        html += '<p class="first-floor">No taker? Full refund.</p>';
       }
     } else {
       var y = m.pool.yesLamports, n = m.pool.noLamports, tot = y + n;
@@ -1136,16 +1142,15 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
           + "You are in <b>" + esc(String(youAreIn.side).toUpperCase()) + "</b> for <b>"
           + esc(String(youAreIn.sol)) + " SOL</b></p>";
       }
-      /* SAYFA NE YAPTIGINI SOYLEMIYORDU.
-         Iki renkli buton vardi ve basinca ne olacagini hicbir yer yazmiyordu:
-         parayi kim aliyor, kazanan neye gore belli oluyor. Eylemin ONUNDE
-         duruyor, cunku eylemden sonra aciklama aciklama degil mazerettir. */
+      /* SAYFA NE YAPTIGINI SOYLEMIYORDU, ve "Winners split the pool." bunun
+         icin eklenmisti. Lev 2 Eki (hypercasual kesim): cumle kalkmadi, Rules'a
+         tasindi ve ucretle birlikte orada, tek dokunusta. Ilk ekran soru,
+         fiyat ve YES/NO; para hareket etmeden once ucret sheet'te etiket olarak
+         gorunuyor. */
       var P = presets();
       stake = pickStake(P);
-      if (!off) {
-        html += P.length
-          ? '<p class="how">Winners split the pool.</p>'
-            + '<div class="stakes" role="group" aria-label="Stake amount">'
+      if (!off && P.length) {
+        html += '<div class="stakes" role="group" aria-label="Stake amount">'
             + P.map(function (v) {
                 return '<button class="stake' + (v === stake ? " on" : "") + '" type="button" data-sol="'
                   + esc(String(v)) + '">' + esc(String(v)) + " SOL</button>";
@@ -1163,11 +1168,10 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
                number could be typed. The chip is the ask; the input has to be
                where the ask is. */
             + '<input class="stake-x" id="stakex" type="number" min="0.001" step="0.001"'
-            + ' inputmode="decimal" placeholder="Amount in SOL" hidden>'
+            + ' inputmode="decimal" placeholder="Amount in SOL" hidden>';
           /* chain.js yuklenmediyse hic chip cizmiyoruz: rakamlari burada
              tekrar yazmak, iki yerde ayrisacak ikinci bir kaynak demek. O
              durumda butonlar bugunku gibi sheet'i form olarak aciyor. */
-          : '<p class="how">Winners split the pool.</p>';
       }
       html += '<div class="sides">'
         /* WHAT IS ABOUT TO BE STAKED, BESIDE THE BUTTON THAT STAKES IT. With a
@@ -1180,10 +1184,13 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
            They are not any more -- .sides is position:relative and the two sit
            54px apart, both on screen together -- so "change" was an invitation
            to travel to something already in view. The chips are the control;
-           this is the receipt. */
+           this is the receipt.
+           The amount only, no dollars (Lev, 2 Oct, the hypercasual cut): the
+           figure is the safety, the conversion was a restatement, and the
+           sheet's button carries the dollars where the money moves. */
         + (!off && P.length
             ? '<p class="sides__amt">'
-              + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>" + usdOf(Number(stake)))
+              + (stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>")
               + "</p>"
             : "")
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES" + pctY + "</button>"
@@ -1203,47 +1210,43 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
        a contract with a blank clause. Collapsed, because most people already
        know what the question means; present, because some people are about
        to find out they disagreed about it. */
-    if (m.resolutionCriteria) {
-      /* ACIK GELIYOR. Cozum kurallari paranin karsiligini belirleyen tek
-         metin; katlanmis halde "onemli degil" diye okunuyordu. Landing'de
-         "kim karar veriyor" sorusunu one cikardik, paranin konuldugu sayfada
-         saklamak tutarsizdi. Katlanabilir kaliyor, kapatmak isteyen kapatir. */
-      /* Kapali aciliyor. Acik hali sartlari okumadan gecilemeyen bir duvar
-         yapiyordu; asil isi merak edene TEK TIKLA acilmak, herkese pesinen
-         dayatilmak degil. Baslik gorunur kaldigi icin varligi hala belli. */
-      /* THE CLOSED STATE CARRIES THE CLAIM. Staying collapsed is settled (see
-         above) and this does not reopen it. What changed is what the closed
-         line says: "How this resolves" is a label a stranger scrolls past,
-         and the strongest fact this product has was folded up behind it --
-         that the rule was written into Solana when the market opened and
-         cannot be edited now, by us or by anyone.
-         Printed ONLY when the server recomputed sha256 over the text above
-         and it matched the hash the program wrote. Unknown chain, absent
-         field, zero hash or a mismatch all print nothing, because a promise
-         about who can change the rules is the last one to make on a guess. */
-      var lockNote = m.criteriaLocked === true
-        ? '<small class="terms__lock">Locked on Solana when this market opened</small>'
-        : "";
-      html += '<details class="terms"><summary><span class="terms__k">How this resolves'
-        + lockNote + "</span></summary>"
-        + '<div class="terms__b">' + esc(m.resolutionCriteria) + "</div></details>";
-    }
-
-    /* HEPSI AYNI AGIRLIKTAYDI, OYSA AYNI SEY DEGILLER.
-       Share bir BUYUME EYLEMI: her bahis bir gonderi, ve bir sonraki
-       yabanciyi getiren sey o. Yuzdeler ise ifsa; okunmalari gerekir ama
-       tiklanmalari gerekmez. Vault bir kanit baglantisi, yine eylem degil.
-       Eylem kendi satirina cikiyor, kalan ucu dipnot oluyor -- ifsanin
-       kendisi kucultulmuyor, sadece eylemle ayni sesle konusmayi birakiyor. */
-
+    /* ACIK GELIYOR. Cozum kurallari paranin karsiligini belirleyen tek
+       metin; katlanmis halde "onemli degil" diye okunuyordu. Landing'de
+       "kim karar veriyor" sorusunu one cikardik, paranin konuldugu sayfada
+       saklamak tutarsizdi. Katlanabilir kaliyor, kapatmak isteyen kapatir. */
+    /* Kapali aciliyor. Acik hali sartlari okumadan gecilemeyen bir duvar
+       yapiyordu; asil isi merak edene TEK TIKLA acilmak, herkese pesinen
+       dayatilmak degil. Baslik gorunur kaldigi icin varligi hala belli. */
+    /* THE CLOSED STATE CARRIES THE CLAIM. Staying collapsed is settled (see
+       above) and this does not reopen it. What changed is what the closed
+       line says: a bare label is something a stranger scrolls past, and the
+       strongest fact this product has was folded up behind it -- that the
+       rule was written into Solana when the market opened and cannot be
+       edited now, by us or by anyone.
+       Printed ONLY when the server recomputed sha256 over the criteria and it
+       matched the hash the program wrote. Unknown chain, absent field, zero
+       hash or a mismatch all print nothing, because a promise about who can
+       change the rules is the last one to make on a guess. */
+    /* RULES (Lev, 2 Oct, the hypercasual cut). What a careful reader checks
+       and a decided one does not, in one place and one tap away: the exact
+       question, the criteria, the fee and who it goes to, the two ways a stake
+       comes back, and the vault. These were four blocks across the page, and
+       the first screen is now the claim, the price and YES/NO. Shown on every
+       market, criteria or not, because the fee and the refunds hold for all.
+       The lock note stays in the closed line (see above), shorter. */
+    var lockNote = m.criteriaLocked === true
+      ? '<small class="terms__lock">Locked on Solana</small>'
+      : "";
     var fee = ((m.creatorFeeBps + m.protocolFeeBps) / 100);
-    html += '<div class="rail"><span><button class="share" id="share" type="button">Share</button></span>'
+    html += '<details class="terms"><summary><span class="terms__k">Rules' + lockNote + "</span></summary>"
+      + '<div class="terms__b">' + fullQ
+      + (m.resolutionCriteria ? '<p class="terms__c">' + esc(m.resolutionCriteria) + "</p>" : "")
       /* "4% at resolve" ve "2% to the opener" yan yana %6 gibi okunuyordu.
          Ikisini de "of the pool" yapmak paydayi esitledi ama ICERMEYI hala
          okuyucunun cikarmasi gerekiyordu: iki ayri kesinti de ayni cumleyi
          kurar. "of it" ikinciyi birincinin icine sokar, ve bunu tek kelimeyle
          yapar -- toplama ihtimali kalmiyor. */
-      + "<span><b>" + fee + "%</b> of the pool at settle</span>"
+      + '<p class="terms__m">Winners split the pool' + (fee > 0 ? ", less <b>" + fee + "%</b> at settle" : "")
       /* ON TELEGRAM "the opener" IS THE DOOR. Nothing else on the web says how
          a Telegram opener collects, and the person most likely to wonder is
          standing on this page having tapped the bot's reply. The deep link is
@@ -1253,17 +1256,41 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       /* "HALF OF IT", NOT "2% OF IT". Read cold, "4% ... 2% of it" is 2% of
          the 4%, a twenty-fifth of what the opener actually gets. When the
          split is even, the word says it with no arithmetic at all. */
-      + (m.creatorFeeBps ? "<span>" + (m.creatorFeeBps * 2 === m.creatorFeeBps + m.protocolFeeBps
+      + (m.creatorFeeBps ? ", " + (m.creatorFeeBps * 2 === m.creatorFeeBps + m.protocolFeeBps
           ? "<b>half</b> of it to "
           : "<b>" + (m.creatorFeeBps / 100) + "%</b> of the pool to ")
           + (m.earnUrl
               ? '<a class="earn" href="' + esc(m.earnUrl) + '" target="_blank" rel="noopener noreferrer">the opener</a>'
-              : "the opener")
-          + "</span>" : "")
-      + (m.onchain ? '<span><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">See the money on Solana</a></span>' : "")
-      + "</div>";
+              : "the opener") : "")
+      + ".</p>"
+      + '<p class="terms__m">Nobody took the other side? Every stake comes back in full, no fee.</p>'
+      + '<p class="terms__m">No result 30 days after close? Everyone can take their stake back.</p>'
+      + (m.onchain ? '<p class="terms__m"><a href="' + esc(m.onchain.explorer) + '" target="_blank" rel="noopener">See the money on Solana</a></p>' : "")
+      + "</div></details>";
+
+    /* HEPSI AYNI AGIRLIKTAYDI, OYSA AYNI SEY DEGILLER.
+       Share bir BUYUME EYLEMI: her bahis bir gonderi, ve bir sonraki
+       yabanciyi getiren sey o. Yuzdeler ise ifsa; okunmalari gerekir ama
+       tiklanmalari gerekmez. Vault bir kanit baglantisi, yine eylem degil.
+       Eylem kendi satirina cikiyor; ifsa ve kasa linki artik Rules'ta. */
+    html += '<div class="rail"><span><button class="share" id="share" type="button">Share</button></span></div>';
 
     view.innerHTML = html;
+    /* THE AMOUNT BESIDE THE BUTTONS ONLY WHILE THE CHIPS ARE OUT OF SIGHT
+       (Lev, 2 Oct, the hypercasual cut). Right under the chips it restated
+       the lit one. Its job is the pinned bar on a phone, where YES can go
+       straight to a signature with the chips scrolled away, so that is when
+       it shows. Visibility, not display: nothing on the page moves when it
+       appears. Without IntersectionObserver it simply stays, as before. */
+    if (amtWatch) { amtWatch.disconnect(); amtWatch = null; }
+    var chipsEl = view.querySelector(".stakes"), amtEl = view.querySelector(".sides__amt");
+    if (chipsEl && amtEl && "IntersectionObserver" in window) {
+      amtEl.classList.add("sides__amt--near");
+      amtWatch = new IntersectionObserver(function (es) {
+        amtEl.classList.toggle("sides__amt--near", es[es.length - 1].isIntersecting);
+      });
+      amtWatch.observe(chipsEl);
+    }
     mountClock(m);
     // Cizimden SONRA: elemanlar artik var, eski degerden yeniye gecebiliriz.
     animatePool(prevPool, poolNow);
@@ -1320,7 +1347,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     function showStake() {
       var amt = view.querySelector(".sides__amt");
       if (amt) {
-        amt.innerHTML = stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>" + usdOf(Number(stake));
+        amt.innerHTML = stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>";
       }
     }
 

@@ -488,7 +488,7 @@ function b64ToBytes(b64) {
     // fee is the only thing that happens to a pool nobody joins, so name the
     // fee and name the consequence and stop. The warning is not softened --
     // it is the one case where winning still costs money.
-    // AN EMPTY OTHER SIDE GETS THE FLOOR, SAID TRUE. What used to be here was
+    // AN EMPTY OTHER SIDE GETS THE FLOOR, SAID TRUE, AS A TAG. What used to be here was
     // "if nobody takes the other side, the fee still comes off, so you get
     // back less than you staked", and that is FALSE: resolve_market returns 0
     // for both fees when `pool == winning_total`, with a comment saying that
@@ -499,7 +499,9 @@ function b64ToBytes(b64) {
     // left the commonest first bet (nobody on the other side yet) with no
     // answer to the one question it raises, on the screen where the money
     // moves, under small print quoting a 4% cut that this case never pays.
-    if (other <= 0) return `If nobody takes ${side === "yes" ? "NO" : "YES"}, you take all ${sol} SOL back. No fee.`;
+    // The sheet says it as a tag under the button ("No taker? Full refund.",
+    // see feeNoteHTML), so this line stays free for the payout figure.
+    if (other <= 0) return "";
     return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
   }
 
@@ -1237,7 +1239,7 @@ function b64ToBytes(b64) {
     // back to the question when a market has no hook, which is the old
     // behaviour exactly.
     const hook = qEl ? (qEl.getAttribute("data-oddie-hook") || "").trim() : "";
-    const titleHTML = hook && question
+    const titleHTML = hook && question && question !== hook
       ? `<h3 class="chain-q">${esc(hook)}</h3><p class="chain-qfull">${esc(question)}</p>`
       : question ? `<h3 class="chain-q">${esc(question)}</h3>` : `<h3>Pick a side</h3>`;
     body.innerHTML = `<h3>Make it real</h3><p class="cnote">Checking this market…</p>`;
@@ -1332,8 +1334,14 @@ function b64ToBytes(b64) {
     // even before a wallet connects, so there's something to decide from.
     const yesLamports = marketState.totalYesLamports ?? 0, noLamports = marketState.totalNoLamports ?? 0;
     const yesOnchainPct = poolPct(yesLamports, noLamports), noOnchainPct = yesOnchainPct == null ? null : 100 - yesOnchainPct;
-    const onchainOddsHTML = yesOnchainPct == null
-      ? `<p class="chain-pool-empty"><b>First one in</b> sets the odds.</p>`
+    /* A PRICE ONCE BOTH SIDES HOLD MONEY, and nothing before (Lev, 2 Oct, the
+       hypercasual cut). An empty pool repeated the page's "First one in sets
+       the odds." word for word. A one-sided pool drew "NO 1% 100.0×" beside
+       "Wins about 0.192 SOL": two figures for one bet, and the loud one wrong,
+       on the pool the market page deliberately prices at nothing. */
+    const twoSided = yesLamports > 0 && noLamports > 0;
+    const onchainOddsHTML = !twoSided
+      ? ""
       : `<div class="chain-pool-odds">
            <span class="chain-pool-side">YES <b>${yesOnchainPct}%</b> <small>${fmtMult(yesOnchainPct)}</small></span>
            <span class="chain-pool-side">NO <b>${noOnchainPct}%</b> <small>${fmtMult(noOnchainPct)}</small></span>
@@ -1394,13 +1402,21 @@ function b64ToBytes(b64) {
        in 30 days, you get your stake back" is a story about a person; "No
        result in 30 days: refunded" is the rule, which is what a footnote is
        for. */
-    const feeNoteHTML = `<p class="chain-fine">`
+    /* TAGS, NOT SENTENCES (Lev, 2 Oct, the hypercasual cut). The refund
+       floor, the date and the fee are each a few words a person glances at,
+       not a paragraph to read before the button. The floor shows only while
+       the other side is empty (refresh() decides, because switching sides
+       changes it). The 30-day rule for a market nobody settles moved to the
+       market page's Rules: it is the rare case, and the common one, nobody on
+       the other side, is the tag. */
+    const feeNoteHTML = `<p class="chain-tags">`
       // "TEST SOL", not "Solana devnet". The chip exists to answer one
       // question -- is this real money -- and the cluster's NAME answers it
       // only for somebody who already knows what a devnet is. Where the
       // network itself matters (the explorer link on a receipt) it is named
       // there, in full.
-      + (testnet ? `<b class="chain-net">Test SOL</b> ` : "")
+      + (testnet ? `<b class="chain-net">Test SOL</b>` : "")
+      + `<span class="chain-tag chain-tag--floor" id="chainfloor" hidden>No taker? Full refund.</span>`
       /* WHEN IT ENDS, said as information rather than as a warning.
          This footnote told people what happens at settle and what happens
          after 30 unsettled days, and never once said WHEN settle is. The page
@@ -1412,9 +1428,8 @@ function b64ToBytes(b64) {
          be the loudest new word on the quietest line. A date is the fact
          somebody needs in order to decide. Omitted rather than guessed when
          the chain read carries no close time. */
-      + (settles ? `Settles ${settles}. ` : "")
-      + `Winners split the pool${feeBps || protoBps ? `, less ${totalPct}%` : ""}. `
-      + `No result in 30 days: refunded.`
+      + (settles ? `<span class="chain-tag">Settles ${settles}</span>` : "")
+      + (feeBps || protoBps ? `<span class="chain-tag">${totalPct}% fee</span>` : "")
       + `</p>`;
 
     const render = () => {
@@ -1442,7 +1457,7 @@ function b64ToBytes(b64) {
         <p class="chain-took">
           <b class="chain-took__s chain-took__s--${presetSide}">${String(presetSide).toUpperCase()}</b>
           <span class="chain-took__q">${esc(hook || question || "on this market")}</span>
-          <button class="chain-swap" type="button">Switch to ${otherOf(presetSide).toUpperCase()}</button>
+          <button class="chain-swap" type="button" aria-label="Switch to ${otherOf(presetSide).toUpperCase()}">Switch</button>
         </p>`;
       /* The cluster line and the "How much?" label are both gone from the body.
          The first is a money fact and moved into the small print under the
@@ -1457,7 +1472,7 @@ function b64ToBytes(b64) {
           <button class="chain-side" data-side="no" type="button">NO</button>
         </div>
         <div class="chain-amt-row">
-          ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p} SOL${usdOf(p) ? `<small class="chain-chip__usd">&asymp; ${usdOf(p)}</small>` : ""}</button>`).join("")}
+          ${PRESETS.map((p) => `<button class="chain-chip" data-sol="${p}" type="button">${p} SOL</button>`).join("")}
           <button class="chain-chip chain-chip--other" data-sol="custom" type="button">Other</button>
         </div>
         <input class="chain-amt" type="number" min="0.001" step="0.001" placeholder="SOL amount" inputmode="decimal" hidden>
@@ -1578,7 +1593,17 @@ function b64ToBytes(b64) {
           stakeBtn.disabled = true;
           stakeBtn.textContent = (testnet && balSol === 0) ? "No test SOL in this wallet" : "Not enough SOL";
         }
-        else { stakeBtn.disabled = false; stakeBtn.textContent = `${side.toUpperCase()} · ${sol} SOL`; }
+        else {
+          /* THE DOLLARS RIDE ON THE BUTTON, once, for the amount actually
+             chosen. They used to sit under every chip: three conversions to
+             read on the way to one decision. Under a dollar says nothing. */
+          const usd = usdOf(sol);
+          stakeBtn.disabled = false;
+          stakeBtn.textContent = `${side.toUpperCase()} · ${sol} SOL${usd.charAt(0) === "$" ? ` (${usd})` : ""}`;
+        }
+        // The floor tag holds only while nobody is on the other side.
+        const floorTag = body.querySelector("#chainfloor");
+        if (floorTag) floorTag.hidden = !(side && (side === "yes" ? noLamports : yesLamports) === 0);
         // Ternary, not `a && b && f()`. That short-circuits to the boolean
         // `false` when either test fails, and textContent renders it as the
         // word "false" sitting under the odds. Caught in the browser; it is
@@ -1618,7 +1643,7 @@ function b64ToBytes(b64) {
         stakeBtn.classList.remove("claimbtn--flash");
         void stakeBtn.offsetWidth;
         stakeBtn.classList.add("claimbtn--flash");
-        swap.textContent = `Switch to ${(next === "yes" ? "no" : "yes").toUpperCase()}`;
+        swap.setAttribute("aria-label", `Switch to ${(next === "yes" ? "no" : "yes").toUpperCase()}`);
       };
 
       sideBtns.forEach((b) => b.onclick = () => {

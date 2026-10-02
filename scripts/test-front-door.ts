@@ -101,8 +101,9 @@ console.log("\nsmall things a stranger reads wrong");
   const chain = readFileSync("public/chain.js", "utf8");
   const board = readFileSync("public/app/leaderboard.html", "utf8");
   const you = readFileSync("public/app/you.html", "utf8");
-  check("the money sheet's amounts carry dollars when a price is known",
-    /chain-chip__usd/.test(chain) && /if \(!\(r > 0\) \|\| !\(sol > 0\)\) return "";/.test(chain));
+  check("the money sheet's button carries the dollars when a price is known",
+    chain.includes('stakeBtn.textContent = `${side.toUpperCase()} · ${sol} SOL${usd.charAt(0) === "$" ? ` (${usd})` : ""}`;')
+    && /if \(!\(r > 0\) \|\| !\(sol > 0\)\) return "";/.test(chain));
   check("...from the price the page already read", /window\.ODDIE_SOL_USD = SOL_USD;/.test(list) && /window\.ODDIE_SOL_USD = SOL_USD;/.test(page));
   check("a settled line at zero says refunded, not '0 SOL'", /Number\(p\.pnlSol\) === 0 \? "refunded"/.test(board));
   check("...and a wallet with no name is 'a caller', not half an address", /: "a caller";/.test(board));
@@ -296,16 +297,16 @@ console.log("\nthe first bet is told what happens if nobody comes");
   const end = chain.indexOf("  /* THE SHEET, AS A SHEET");
   check("payoutHint is where this test looks for it", start > 0 && end > start);
   const payoutHint = new Function(chain.slice(start, end) + "\nreturn payoutHint;")();
-  check("an empty pool says the floor, with the amount",
-    payoutHint("yes", 0.1, 0, 0, 200, 200) === "If nobody takes NO, you take all 0.1 SOL back. No fee.",
-    payoutHint("yes", 0.1, 0, 0, 200, 200));
-  check("...and so does joining the only side there is",
-    payoutHint("no", 0.5, 0, 1e8, 200, 200) === "If nobody takes YES, you take all 0.5 SOL back. No fee.");
+  check("the sheet says the floor as a tag, not in the payout line",
+    payoutHint("yes", 0.1, 0, 0, 200, 200) === "" && payoutHint("no", 0.5, 0, 1e8, 200, 200) === ""
+    && chain.includes('<span class="chain-tag chain-tag--floor" id="chainfloor" hidden>No taker? Full refund.</span>'));
+  check("...shown while the chosen side's other side is empty, including joining the only side there is",
+    chain.includes('if (floorTag) floorTag.hidden = !(side && (side === "yes" ? noLamports : yesLamports) === 0);'));
   check("taking the empty side is a payout estimate, after both fees",
     payoutHint("no", 0.1, 1e8, 0, 200, 200) === "Wins about 0.192 SOL at today's odds. Moves as others bet.",
     payoutHint("no", 0.1, 1e8, 0, 200, 200));
   check("the market page says it under the first-in line, while bets are open",
-    page.includes("if (!closed && !resolved) {\n        html += '<p class=\"first-floor\">If nobody takes the other side, you take it all back. No fee.</p>';"));
+    page.includes("if (!closed && !resolved) {\n        html += '<p class=\"first-floor\">No taker? Full refund.</p>';"));
   check("...and on a phone it stays beside that line",
     page.includes("#view > .pool,#view > .first,#view > .first-floor{order:5}"));
 }
@@ -352,6 +353,46 @@ console.log("\nthe choice survives the trip into Phantom");
   check("render tries the arrival until it lands, and opens it to wait for a tap",
     page.includes("openArrival();\n  }") && page.includes('window.addEventListener("load", openArrival, { once: true });')
     && page.includes("window.OddieChain.openStake(SLUG, ARRIVAL.side, stake || undefined, { confirm: true });"));
+}
+
+console.log("\nthe money screens fit a glance (the hypercasual cut)");
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  const money = readFileSync("public/app/money.css", "utf8");
+  // The market page: the first screen is the claim, the price and YES/NO.
+  check("the full question left the header for Rules, as the same element chain.js reads",
+    page.includes(`fullQ = '<p class="terms__q" data-oddie-question data-oddie-hook="' + esc(hook)`)
+    && !page.includes('class="qfull"'));
+  check("\"Winners split the pool.\" is a rule now, not a line above the chips",
+    !page.includes('<p class="how">') && page.includes(`'<p class="terms__m">Winners split the pool'`));
+  check("Rules is drawn on every market, with the fee, both refunds and the vault",
+    page.includes(`html += '<details class="terms"><summary><span class="terms__k">Rules' + lockNote`)
+    && page.includes("Nobody took the other side? Every stake comes back in full, no fee.")
+    && page.includes("No result 30 days after close? Everyone can take their stake back.")
+    && page.includes("See the money on Solana</a></p>"));
+  check("Share keeps its own line, and the fee and the vault are off it",
+    page.includes(`html += '<div class="rail"><span><button class="share" id="share" type="button">Share</button></span></div>';`));
+  check("the amount on the pinned buttons stays, without the dollar restatement",
+    page.includes(`(stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>")`)
+    && !page.includes(`" SOL</b>" + usdOf(Number(stake))`));
+  check("...and shows only while the chips are out of sight, without moving the page",
+    page.includes(`amtEl.classList.toggle("sides__amt--near", es[es.length - 1].isIntersecting);`)
+    && page.includes(".sides__amt--near{visibility:hidden}"));
+  // The sheet.
+  check("the sheet prices a pool only once both sides hold money",
+    chain.includes("const twoSided = yesLamports > 0 && noLamports > 0;") && !chain.includes("chain-pool-empty"));
+  check("its small print is tags: the floor, the date, the fee",
+    chain.includes("<span class=\"chain-tag\">Settles ${settles}</span>")
+    && chain.includes("<span class=\"chain-tag\">${totalPct}% fee</span>")
+    && money.includes(".chain-tag[hidden]{display:none}"));
+  check("the chips name the amount once, with no dollar line under each",
+    !chain.includes("chain-chip__usd") && !money.includes("chain-chip__usd"));
+  check("a title whose question is its hook is written once",
+    chain.includes("const titleHTML = hook && question && question !== hook"));
+  // The list.
+  check("a list card is the hook, the numbers and YES/NO, with no full question line",
+    !list.includes("card__full")
+    && list.includes(`'<h2 class="card__q" data-oddie-question data-oddie-hook="' + esc(hook)`));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");

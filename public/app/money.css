@@ -59,18 +59,11 @@
 .cnote b{color:var(--ink,#0B0D04)}
 
 /* ---- the live pool, inside the sheet ---- */
-.chain-pool-empty,.chain-pool-odds{
+/* Drawn only once both sides hold money; an empty or one-sided pool shows
+   no price here, as on the market page. */
+.chain-pool-odds{
   border:2px solid var(--ink,#0B0D04);padding:10px 12px;margin:0 0 16px;
 }
-/* No box. A dashed frame is what this design language uses for a WARNING, and
-   an empty pool is not one: it is the reason to press a button. Reads as the
-   sentence it is, in the same words the page and the card use. */
-.chain-pool-empty{
-  border:0;padding:0;margin:0 0 13px;
-  font-family:var(--display,'Anton',sans-serif);font-weight:400;font-size:16px;
-  letter-spacing:.02em;color:var(--ink-2,#494E2D);
-}
-.chain-pool-empty b{color:var(--ink,#0B0D04);font-weight:400}
 .chain-pool-odds{display:flex;gap:14px;justify-content:space-between}
 .chain-pool-side{
   font-family:var(--mono,monospace);font-size:11px;font-weight:700;
@@ -193,7 +186,6 @@
 }
 @media (hover:hover){.chain-chip:hover{background:#F1F3E4}}
 /* The dollar line under an amount: quieter than the SOL, which is what moves. */
-.chain-chip__usd{display:block;margin-top:2px;font-size:10.5px;font-weight:700;opacity:.62}
 .chain-chip[aria-pressed="true"],.chain-chip.on{
   background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4)}
 .chain-chip:focus-visible{outline:3px solid var(--pink,#FF2D78);outline-offset:3px}
@@ -302,11 +294,19 @@
    than a bare `.chain-net` -- written the short way the chip inherited ink on
    ink and rendered as a solid black rectangle with invisible text. Caught by
    looking at it; the CSS itself is perfectly valid either way. */
-.chain-fine .chain-net{
+.chain-fine .chain-net,.chain-tags .chain-net{
   display:inline-block;background:var(--ink,#0B0D04);color:var(--cream,#FBFCF4);
   padding:2px 6px 3px;margin-right:4px;letter-spacing:.1em;text-transform:uppercase;
   font-size:9px;font-weight:700;vertical-align:1px;
 }
+/* THE MONEY TAGS under the stake button (Lev, 2 Oct, the hypercasual cut):
+   the refund floor, the date, the fee. A glance each, not a paragraph. The
+   floor wears the brand yellow because it is the one that changes a mind. */
+.chain-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:11px 0 0}
+.chain-tag{font-family:var(--mono,monospace);font-size:11px;font-weight:700;line-height:1.2;
+  padding:5px 9px;border-radius:999px;background:rgba(11,13,4,.07);color:var(--ink,#0B0D04)}
+.chain-tag[hidden]{display:none}
+.chain-tag--floor{background:rgba(252,246,4,.62)}
 .chain-sig{
   font-family:var(--mono,monospace);font-size:11.5px;margin:12px 0 0;word-break:break-all;
 }

@@ -74,7 +74,6 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   line-height:1.1;text-transform:uppercase;margin:0 0 14px;text-wrap:balance}
 .card__q a{color:var(--cream);text-decoration:none}
 /* Kartta da hook baslik, tam soru altinda. Ayni kural: sozlesme gorunur. */
-.card__full{margin:4px 0 0;font-size:13px;line-height:1.38;color:var(--fg-3)}
 @media (hover:hover){.card__q a:hover{color:var(--yellow)}}
 
 /* Kac kisi girdi: rakam one cikar, etiket geride kalir. */
@@ -217,18 +216,6 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 .card__m b{color:var(--pink-deep);font-weight:400}
 .card__q a{color:var(--ink)}
 @media (hover:hover){.card__q a:hover{color:var(--pink-deep)}}
-/* THE ONE RULE THE CREAM REDESIGN LEFT BEHIND. The card used to be dark and
-   every text on it came from the --fg-* ramp, which is white at three opacities.
-   When the card became cream, .card__m, .card__m b and .card__q a were all
-   re-coloured to ink and .card__full was not, so the market's actual QUESTION
-   has been rendering as white at 50% on a cream ground: a contrast ratio of
-   about 1.01 to 1, which is not faint, it is absent. Measured on a phone at
-   375px, where the card shows a headline, a pool and a blank space where the
-   claim should be.
-   Darker than .card__m on purpose. The meta line is furniture; this sentence is
-   the thing the market is about, and it was the only part a reader could not
-   see. */
-.card__full{color:rgba(11,13,4,.78)}
 .pool{font-family:var(--display);font-weight:400;font-size:15px;letter-spacing:.03em;
   color:rgba(11,13,4,.6)}
 .pool b{color:var(--ink)}
@@ -804,15 +791,16 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       var hook = String(m.hook || "").trim();
       return '<article class="card">'
         + (bits.length ? '<p class="card__m"><span>' + bits.join("</span><span>") + "</span></p>" : "")
-        /* Hook varsa baslik odur ve tam soru ALTINDA gorunur kalir; yoksa
-           baslik zaten sorunun kendisidir. data-oddie-question her iki
-           durumda da SORUYU tasiyan elemanda, cunku chain.js onun metnini
-           bahis sheet'ine yaziyor. Tek kopya: ayni soruyu bir gorunur bir
-           gizli olarak iki kere yazmak, ikisinin ayrisabilecegi demektir. */
+        /* Hook varsa baslik odur; yoksa baslik zaten sorunun kendisidir. Tam
+           soru kartta artik yok (Lev 2 Eki, hypercasual kesim): market
+           sayfasinda Rules'ta, kriterle birlikte. data-oddie-question
+           basligin uzerinde, cunku listede YES/NO sheet'i burada aciyor ve
+           chain.js basligi oradan okuyor; hook ile soru ayni metin oldugunda
+           sheet onu bir kez yaziyor. Tek kopya kurali duruyor: gizli ikinci
+           bir soru yazilmiyor. */
         + (hook
-            ? '<h2 class="card__q"><a href="' + href + '">' + esc(hook) + "</a></h2>"
-              + '<p class="card__full" data-oddie-question data-oddie-hook="' + esc(hook)
-              + '" data-slug="' + esc(m.slug) + '">' + esc((m.questionDisplay || m.question)) + "</p>"
+            ? '<h2 class="card__q" data-oddie-question data-oddie-hook="' + esc(hook)
+              + '" data-slug="' + esc(m.slug) + '"><a href="' + href + '">' + esc(hook) + "</a></h2>"
             : '<h2 class="card__q" data-oddie-question data-slug="' + esc(m.slug) + '">'
               + '<a href="' + href + '">' + esc((m.questionDisplay || m.question)) + "</a></h2>")
         + pool
