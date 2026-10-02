@@ -474,16 +474,18 @@ function b64ToBytes(b64) {
     // fee is the only thing that happens to a pool nobody joins, so name the
     // fee and name the consequence and stop. The warning is not softened --
     // it is the one case where winning still costs money.
-    // Silent on an empty pool, and it must STAY silent. What used to be here
-    // was "if nobody takes the other side, the fee still comes off, so you get
+    // AN EMPTY OTHER SIDE GETS THE FLOOR, SAID TRUE. What used to be here was
+    // "if nobody takes the other side, the fee still comes off, so you get
     // back less than you staked", and that is FALSE: resolve_market returns 0
     // for both fees when `pool == winning_total`, with a comment saying that
     // charging there would be charging winners on their own returned stake. It
     // also returns 0 when `winning_total == 0`, and claim_winnings refunds
     // everybody. So a person alone in a market cannot lose to the fee on
-    // either outcome, and the warning invented a cost the program refuses to
-    // take. Cut for length; kept out for being untrue.
-    if (other <= 0) return "";
+    // either outcome. The false line was cut and nothing replaced it, which
+    // left the commonest first bet (nobody on the other side yet) with no
+    // answer to the one question it raises, on the screen where the money
+    // moves, under small print quoting a 4% cut that this case never pays.
+    if (other <= 0) return `If nobody takes ${side === "yes" ? "NO" : "YES"}, you take all ${sol} SOL back. No fee.`;
     return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
   }
 

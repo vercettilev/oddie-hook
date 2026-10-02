@@ -284,5 +284,31 @@ console.log("\na pool nobody backed is a refund, not a loss");
     server.includes('returns: refund ? "stake-and-rent" : won ? "winnings-and-rent" : "rent-only"'));
 }
 
+console.log("\nthe first bet is told what happens if nobody comes");
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  const lib = readFileSync("onchain/programs/oddie_chain/src/lib.rs", "utf8");
+  // The promise rests on both of these: no fee when one side holds the whole
+  // pool, and a full refund when the winning side holds nothing.
+  check("the program takes no fee from a pool with one side (lib.rs)",
+    /if winning_total == 0 \{\s*return Ok\(0\);/.test(lib) && /if pool == winning_total \{\s*return Ok\(0\);/.test(lib));
+  const start = chain.indexOf("  function payoutHint(");
+  const end = chain.indexOf("  /* THE SHEET, AS A SHEET");
+  check("payoutHint is where this test looks for it", start > 0 && end > start);
+  const payoutHint = new Function(chain.slice(start, end) + "\nreturn payoutHint;")();
+  check("an empty pool says the floor, with the amount",
+    payoutHint("yes", 0.1, 0, 0, 200, 200) === "If nobody takes NO, you take all 0.1 SOL back. No fee.",
+    payoutHint("yes", 0.1, 0, 0, 200, 200));
+  check("...and so does joining the only side there is",
+    payoutHint("no", 0.5, 0, 1e8, 200, 200) === "If nobody takes YES, you take all 0.5 SOL back. No fee.");
+  check("taking the empty side is a payout estimate, after both fees",
+    payoutHint("no", 0.1, 1e8, 0, 200, 200) === "Wins about 0.192 SOL at today's odds. Moves as others bet.",
+    payoutHint("no", 0.1, 1e8, 0, 200, 200));
+  check("the market page says it under the first-in line, while bets are open",
+    page.includes("if (!closed && !resolved) {\n        html += '<p class=\"first-floor\">If nobody takes the other side, you take it all back. No fee.</p>';"));
+  check("...and on a phone it stays beside that line",
+    page.includes("#view > .pool,#view > .first,#view > .first-floor{order:5}"));
+}
+
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");
 process.exit(failures ? 1 : 0);

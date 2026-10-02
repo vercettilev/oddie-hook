@@ -465,7 +465,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
      kind of fact: everything a person checks BEFORE picking a side, ahead of
      the side. */
   #view > .eyebrow{order:4;margin:0 0 16px}
-  #view > .pool,#view > .first{order:5}
+  #view > .pool,#view > .first,#view > .first-floor{order:5}
   #view > .sides{order:7}
   /* "Betting is over" renders after the buttons and has to stay there; it is
      also a .pool, which would otherwise hoist it above the question. */
@@ -588,6 +588,7 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
   font-family:var(--display);font-weight:400;font-size:clamp(16px,3.6vw,20px);
   letter-spacing:.02em;color:var(--fg-2);line-height:1.15}
 .first b{color:var(--yellow);font-weight:400}
+.first-floor{margin:-8px 0 18px;font-size:15px;line-height:1.5;color:var(--fg);max-width:46ch}
 .first img{height:38px;width:auto;flex:none;transform:rotate(-7deg);
   filter:drop-shadow(0 5px 12px rgba(0,0,0,.55))}
 /* summary is a space-between flex row (label ... +). A third child would
@@ -1033,6 +1034,15 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
          narrate our deployment. */
       html += '<p class="first"><img src="/brand/st-rocket.webp" alt="">'
         + "<b>First one in</b> sets the odds.</p>";
+      /* THE FLOOR UNDER THE FIRST BET. Whoever goes first is betting against
+         nobody yet, and the one thing they want to know is what happens if
+         nobody comes. The program's answer is the best line this market has:
+         with no other side, every stake comes back whole and no fee is taken.
+         Said here as well as in the sheet, because a connected wallet with an
+         amount picked goes from this page straight to the signature. */
+      if (!closed && !resolved) {
+        html += '<p class="first-floor">If nobody takes the other side, you take it all back. No fee.</p>';
+      }
     } else {
       var y = m.pool.yesLamports, n = m.pool.noLamports, tot = y + n;
       /* THE BAR IS A PICTURE OF THE MONEY; THE BUTTONS ARE A PRICE.
