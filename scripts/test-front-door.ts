@@ -32,7 +32,8 @@ console.log("the landing names all three doors");
     ["@oddiefunbot", "https://t.me/oddiefunbot"],
   ]) {
     const n = landing.split(`<a class="door" href="${href}">`).length - 1;
-    check(`${door} is a door in the hero and at the close`, n === 2, `${n} found`);
+    // Once, in the hero: the closing ask that repeated them went (Lev, 2 Oct).
+    check(`${door} is a door in the hero`, n === 1, `${n} found`);
   }
   check("the creators field has a card per door",
     /id="creators"[\s\S]*?<h3>Streamers<\/h3>[\s\S]*?<h3>Creators on X<\/h3>[\s\S]*?<h3>Communities<\/h3>/.test(landing));
@@ -43,7 +44,7 @@ console.log("the landing names all three doors");
   check("the description names Kick and Telegram", /<meta name="description" content="[^"]*Kick[^"]*Telegram/.test(landing));
   check("no X composer is left to wire", !/data-ask/.test(landing) && !/EXAMPLES/.test(landing));
   check("step three never states a side for a market still open",
-    !/<div class="step">[\s\S]*?3\. It pays[\s\S]*?(Settled|Result): (YES|NO)/i.test(landing));
+    landing.includes("Friday 23:59 UTC. The result is in.") && !/(Settled|Result|Answer)[^<"]{0,12}(YES|NO)\b/.test(landing.slice(landing.indexOf('id="tale"'))));
   check("the board slot is back, behind a threshold", /<!--BOARD-->/.test(landing)
     && /const BOARD_MIN = 5;/.test(server) && /boardRows\.length < BOARD_MIN \? ""/.test(server));
   check("the live cards are a biggest pool and a closing-soon clock",
@@ -420,6 +421,34 @@ console.log("\nthe secondary pages say less (the hypercasual cut, round two)");
     && !you.includes("The wallet comes later."));
   check("the streamer page is three one-line steps, with no lede restating them",
     !live.includes('<p class="lede">Anyone in your chat turns a claim') && live.includes("<li><span><b>Add oddie to your Kick channel.</b></span></li>"));
+}
+
+console.log("\nthe landing tells it once, as one chat (the hypercasual cut, round two)");
+{
+  const tale = landing.slice(landing.indexOf('<div class="tale reveal" id="tale">'));
+  const script = landing.slice(landing.indexOf("HOW IT WORKS, AS ONE CHAT"));
+  check("how it works is one chat window, not three cards", landing.includes('<div class="tale reveal" id="tale">')
+    && !landing.includes('<div class="steps reveal">') && !landing.includes('class="step__cap"'));
+  check("...that plays on all three doors, not only Kick",
+    script.includes('where: "Kick chat"') && script.includes('where: "Replies on X"') && script.includes('where: "Telegram group"')
+    && script.includes('tag: "!oddie"') && script.includes('tag: "@oddiefun"') && script.includes('tag: "@oddiefunbot"'));
+  check("...each door naming who its 2% goes to",
+    script.includes('earns: "The stream"') && script.includes('earns: "The tagger"') && script.includes('earns: "The opener"'));
+  check("...in the words its bot really uses",
+    script.includes('open: "Market open. Pick a side:"') && script.includes('open: "Pick a side, real SOL on it &darr;"'));
+  check("without script it is the whole Kick conversation",
+    tale.includes("<code>!oddie BTC hits 88k by Friday?</code>") && tale.includes("<span>The stream</span><b>2%</b>"));
+  check("it moves only on screen, and never on its own with reduced motion",
+    script.includes("if (reduced) { upTo(1); return; }") && script.includes("}, { threshold: 0.35 }).observe(tale);"));
+  check("the hero says the pitch once; the doors say where",
+    landing.includes("<span>The people&rsquo;s prediction market.</span>") && !landing.includes("It opens in seconds and pays out on its own."));
+  check("the creators are a row per door, each still saying who earns",
+    landing.includes("<p>Your channel earns <b>2%</b>.</p>") && landing.includes("<p>You earn <b>2%</b>, either side.</p>")
+    && landing.includes("<p>The opener earns <b>2%</b>.</p>"));
+  check("the offer keeps its own turn (Lev's call), untouched",
+    landing.includes('<p class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</p>'));
+  check("the closing ask is gone and the crowd stays",
+    !landing.includes('<div class="close col col--mid reveal">') && landing.includes('<img src="/brand/crowd-strip.webp"'));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");

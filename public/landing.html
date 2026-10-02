@@ -1035,13 +1035,33 @@
      the chat is in English because the page speaks to everyone (Lev,
      1 Oct). Step three states the rule (result posted, winners split, 2% to
      the stream) and never a side, because that market has not closed. */
-  .steps{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:clamp(16px,2.4vw,34px);margin:clamp(22px,3vw,40px) 0 0;align-items:start}
-  .step:nth-child(1){rotate:-1.4deg}
-  .step:nth-child(2){rotate:1deg;margin-top:28px}
-  .step:nth-child(3){rotate:-.6deg;margin-top:10px}
-  .step__n{font-family:var(--display);font-size:clamp(26px,2.6vw,36px);line-height:1;color:var(--yellow);
-    text-transform:uppercase;margin:0 0 12px;text-shadow:3px 4px 0 var(--pink)}
+  /* ONE CHAT WINDOW (Lev, 2 Oct, the hypercasual cut): the three steps are
+     tabs over one chat that plays them, on Kick, then X, then Telegram. The
+     window has a fixed height once script runs, so the page never moves while
+     it plays; without script it is the whole Kick conversation. No translate
+     on .tale: it carries .reveal (see KAIDE above). */
+  .tale{grid-column:1/-1;width:100%;max-width:470px;margin:clamp(22px,3vw,40px) auto 0}
+  .tale__tabs{display:none;flex-wrap:wrap;gap:6px 16px;margin:0 0 16px}
+  .tale--js .tale__tabs{display:flex}
+  .tale__tab{background:none;border:0;padding:2px 0;cursor:pointer;font-family:var(--display);
+    font-size:clamp(20px,2.2vw,26px);line-height:1;text-transform:uppercase;color:rgba(251,252,244,.34)}
+  .tale__tab.on{color:var(--yellow);text-shadow:3px 4px 0 var(--pink)}
+  .tale__tab:focus-visible,.tale__door:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+  .tale__chat{rotate:-1deg}
+  .tale__chat .chat__src{justify-content:space-between}
+  .tale__src{display:flex;align-items:center;gap:8px}
+  .tale__doors{display:none;gap:6px}
+  .tale--js .tale__doors{display:flex}
+  .tale__door{display:grid;place-items:center;width:30px;height:30px;padding:0;cursor:pointer;
+    background:none;border:1.5px solid rgba(251,252,244,.22);opacity:.55}
+  .tale__door.on{opacity:1;border-color:var(--yellow)}
+  .tale--js .tale__feed{height:292px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;
+    -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 34px);mask-image:linear-gradient(to bottom,transparent 0,#000 34px)}
+  .tale--js .tale__feed .msg{margin:8px 0 0;animation:tale-in .35s ease-out both}
+  @keyframes tale-in{from{opacity:0;translate:0 10px}to{opacity:1;translate:none}}
+  @media (prefers-reduced-motion:reduce){.tale--js .tale__feed .msg{animation:none}}
+  .msg .t{color:#2AABEE}
+  .msg .x{color:var(--cream)}
   .chat{background:#0f1210;border:2px solid rgba(251,252,244,.22);padding:14px 14px 12px;
     color:var(--cream);box-shadow:6px 7px 0 var(--pink)}
   .chat__src{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
@@ -1064,32 +1084,29 @@
   .paid li{display:flex;justify-content:space-between;gap:10px;
     border-bottom:1px dashed rgba(251,252,244,.2);padding-bottom:5px}
   .paid b{color:var(--yellow)}
-  .step__cap{margin:12px 0 0;font-size:14px;line-height:1.45;color:rgba(251,252,244,.72);max-width:30ch}
   .B .proof{grid-column:1/-1;justify-self:center;width:100%}
-  @media (max-width:860px){.steps{grid-template-columns:1fr}.step:nth-child(n){margin-top:0}}
 
   /* ======================================================== FOR CREATORS ==
      Three cards, one per door, in the yellow field the opener board used to
      hold. Same stamp grammar as the doors: ink border, flat pink shadow,
      each card off by a degree or so. */
   .crs .h2{margin:0 0 clamp(20px,2.6vw,34px)}
-  .cr__row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(14px,2vw,26px)}
-  .cr{background:var(--cream);border:3px solid var(--ink);padding:18px 18px 16px;
-    box-shadow:6px 7px 0 var(--pink);display:flex;flex-direction:column;gap:10px}
-  .cr:nth-child(1){rotate:-1.2deg}
-  .cr:nth-child(2){rotate:.9deg;margin-top:14px}
-  .cr:nth-child(3){rotate:-.6deg;margin-top:6px}
-  .cr__h{display:flex;align-items:center;gap:10px}
-  .cr h3{margin:0;font-family:var(--display);font-weight:400;font-size:26px;text-transform:uppercase;line-height:1}
-  .cr p{margin:0;font-size:15px;line-height:1.5;color:var(--ink-2);flex:1}
+  /* A ROW PER DOOR in one cream panel (Lev, 2 Oct, the hypercasual cut): the
+     name and who earns on the left, the door on the right. */
+  .cr__row{background:var(--cream);border:3px solid var(--ink);box-shadow:6px 7px 0 var(--pink);
+    rotate:-.6deg;padding:2px clamp(14px,2vw,22px);max-width:760px}
+  .cr{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 14px;padding:14px 0}
+  .cr + .cr{border-top:2px solid rgba(11,13,4,.12)}
+  .cr__h{display:flex;align-items:center;gap:9px}
+  .cr h3{margin:0;font-family:var(--display);font-weight:400;font-size:clamp(20px,2.2vw,26px);text-transform:uppercase;line-height:1}
+  .cr p{grid-column:1;margin:0;font-size:14px;line-height:1.4;color:var(--ink-2)}
   .cr p b{color:var(--ink)}
-  .cr__go{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;min-height:44px;
-    padding:10px 16px;background:var(--ink);color:var(--cream);text-decoration:none;
-    font-family:var(--display);font-size:16px;text-transform:uppercase}
+  .cr__go{grid-column:2;grid-row:1 / span 2;display:inline-flex;align-items:center;gap:6px;min-height:44px;
+    padding:8px 12px;background:var(--ink);color:var(--cream);text-decoration:none;white-space:nowrap;
+    font-family:var(--display);font-size:15px;text-transform:uppercase}
   .cr__go i{font-style:normal;color:var(--yellow)}
   @media (hover:hover){.cr__go:hover{background:#1a1e0a}}
   .cr__go:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
-  @media (max-width:860px){.cr__row{grid-template-columns:1fr}.cr:nth-child(n){margin-top:0}}
 
 
   /* =================================================== THE LIVE STRIP ==
@@ -1209,8 +1226,8 @@ html{-webkit-tap-highlight-color:transparent}
              what makes a reader stop reading the small text -- and once they
              learn the small text repeats, they skip the two lines that carry
              the actual rules (how a market closes, and what Genesis counts).
-             "Find a fight" is not lost: it is the closing headline, where it is
-             a call and not an explanation. -->
+             "Find a fight" was the closing headline until the closing ask went
+             (Lev, 2 Oct, the hypercasual cut). -->
         <!-- TWO SENTENCES, AND THE SECOND ONE CARRIES THE MONEY BY IMPLICATION.
              This briefly read "It becomes a market. People bet real SOL." after
              a measurement showed the first screen had no money word on it at
@@ -1229,9 +1246,11 @@ html{-webkit-tap-highlight-color:transparent}
              it now says the mechanism in one breath: what you do, where, and
              what happens. The second line is the same "no listing desk" claim in
              words that need no prior product to understand. -->
+        <!-- ONE LINE NOW (Lev, 2 Oct, the hypercasual cut). The doors right
+             under it say where you call it, and How it works plays what
+             happens next, so the second sentence was saying both in advance. -->
         <p class="pitch">
           <span>The people&rsquo;s prediction market.</span>
-          <span>Call it in any chat. It opens in seconds and pays out on its own.</span>
         </p>
         <!-- IT USED TO LAND ON /genesis, WHICH WAS RIGHT WHILE THERE WAS A
              CAMPAIGN AND A TICKET TO CLAIM. There is neither now, so a button
@@ -1306,37 +1325,38 @@ html{-webkit-tap-highlight-color:transparent}
              anybody here. A heading costs one line and turns a decoration into
              a section. -->
         <h2 class="h2 B__hd reveal"><span>How it works</span></h2>
-      <div class="steps reveal">
-        <div class="step">
-          <p class="step__n">1. Call it</p>
-          <div class="chat">
-            <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> Kick chat</p>
+      <!-- ONE CHAT, NOT THREE CARDS (Lev, 2 Oct, the hypercasual cut). The
+           three cards told one story in three boxes and three captions, 735px
+           on a phone. This is the story as it happens: one chat window that
+           plays the claim, the market and the payout in turn, then plays the
+           same story on X and in a Telegram group, because a page that only
+           ever shows Kick reads as a Kick bot. Same words the bots really use
+           on each door, same rule for step three: it states what happens at
+           the deadline and never a side.
+           Without script it is the whole Kick conversation, static. With
+           reduced motion it never moves on its own: the steps and the doors
+           switch it. -->
+      <div class="tale reveal" id="tale">
+        <div class="tale__tabs" role="tablist" aria-label="How it works">
+          <button class="tale__tab" type="button" role="tab" data-beat="0">1. Call it</button>
+          <button class="tale__tab" type="button" role="tab" data-beat="1">2. It&rsquo;s a market</button>
+          <button class="tale__tab" type="button" role="tab" data-beat="2">3. It pays</button>
+        </div>
+        <div class="chat tale__chat">
+          <p class="chat__src"><span class="tale__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> <span class="tale__where">Kick chat</span></span>
+            <span class="tale__doors" aria-label="Where it works">
+              <button class="tale__door" type="button" data-plat="0" aria-label="Kick"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-kick"/></svg></button>
+              <button class="tale__door" type="button" data-plat="1" aria-label="X"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-x"/></svg></button>
+              <button class="tale__door" type="button" data-plat="2" aria-label="Telegram"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-telegram"/></svg></button>
+            </span></p>
+          <div class="tale__feed" aria-live="off">
             <p class="msg"><u class="v">mike_trades</u>no way btc sees 88k this week</p>
             <p class="msg"><u class="v">0xjules</u><code>!oddie BTC hits 88k by Friday?</code></p>
+            <div class="msg"><u class="o">oddiefun</u>Market open. Pick a side:<div class="mcard"><p class="mcard__q">BTC to $88k by Friday?</p><div class="mcard__s"><span class="y">YES</span><span class="n">NO</span></div></div></div>
+            <p class="msg"><u class="v">0xjules</u>YES. 0.1 in</p>
+            <p class="msg"><u class="v">mike_trades</u>NO. see you friday</p>
+            <div class="msg"><u class="o">oddiefun</u>Friday 23:59 UTC. The result is in.<ul class="paid"><li><span>Winners</span><b>split the pool</b></li><li><span>The stream</span><b>2%</b></li></ul></div>
           </div>
-          <p class="step__cap">Any chat, any language. One line opens it.</p>
-        </div>
-        <div class="step">
-          <p class="step__n">2. It&rsquo;s a market</p>
-          <div class="chat">
-            <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> Kick chat</p>
-            <p class="msg"><u class="o">oddiefun</u>Market open. Pick a side:</p>
-            <div class="mcard"><p class="mcard__q">BTC to $88k by Friday?</p>
-              <div class="mcard__s"><span class="y">YES</span><span class="n">NO</span></div></div>
-          </div>
-          <p class="step__cap">Seconds later it&rsquo;s live on Solana. Nobody has to list it.</p>
-        </div>
-        <div class="step">
-          <p class="step__n">3. It pays</p>
-          <div class="chat">
-            <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> Kick chat</p>
-            <p class="msg"><u class="o">oddiefun</u>Friday 23:59 UTC. The result is in.</p>
-            <ul class="paid">
-              <li><span>Winners</span><b>split the pool</b></li>
-              <li><span>The stream</span><b>2%</b></li>
-            </ul>
-          </div>
-          <p class="step__cap">No referee. The deadline hits and it settles itself.</p>
         </div>
       </div>
 
@@ -1432,20 +1452,23 @@ html{-webkit-tap-highlight-color:transparent}
          those cards ask the creator to open it themselves. -->
     <div class="shell crs reveal">
       <h2 class="h2"><span>Got an audience?</span><span class="lo">Open what they argue about.</span></h2>
+      <!-- A ROW PER DOOR (Lev, 2 Oct, the hypercasual cut). Each still says
+           who the 2% goes to on that door, the 1 Oct decision above, in four
+           words instead of a sentence; the how is in the chat window above. -->
       <div class="cr__row">
         <article class="cr">
-          <div class="cr__h"><svg class="mk" width="30" height="30" aria-hidden="true"><use href="#mk-kick"/></svg><h3>Streamers</h3></div>
-          <p>Add oddie to your Kick channel. Every market your chat opens pays <b>your channel 2%</b>.</p>
-          <a class="cr__go" href="https://app.oddie.fun/live">Add oddie to Kick <i aria-hidden="true">&rarr;</i></a>
+          <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-kick"/></svg><h3>Streamers</h3></div>
+          <p>Your channel earns <b>2%</b>.</p>
+          <a class="cr__go" href="https://app.oddie.fun/live">Add to Kick <i aria-hidden="true">&rarr;</i></a>
         </article>
         <article class="cr">
-          <div class="cr__h"><svg class="mk" width="30" height="30" aria-hidden="true"><use href="#mk-x"/></svg><h3>Creators on X</h3></div>
-          <p>Tag @oddiefun under your own call. <b>2% of the pool</b> is yours, whichever side wins.</p>
+          <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-x"/></svg><h3>Creators on X</h3></div>
+          <p>You earn <b>2%</b>, either side.</p>
           <a class="cr__go" href="https://x.com/intent/post?text=%40oddiefun%20" target="_blank" rel="noopener">Tag @oddiefun <i aria-hidden="true">&rarr;</i></a>
         </article>
         <article class="cr">
-          <div class="cr__h"><svg class="mk" width="30" height="30" aria-hidden="true"><use href="#mk-telegram"/></svg><h3>Communities</h3></div>
-          <p>Add @oddiefunbot to your group and call it there. <b>The opener earns 2%</b>.</p>
+          <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-telegram"/></svg><h3>Communities</h3></div>
+          <p>The opener earns <b>2%</b>.</p>
           <a class="cr__go" href="https://t.me/oddiefunbot?startgroup=true" target="_blank" rel="noopener">Add to a group <i aria-hidden="true">&rarr;</i></a>
         </article>
       </div>
@@ -1464,41 +1487,10 @@ html{-webkit-tap-highlight-color:transparent}
            acquisition one, and it sat between this page's argument and its last
            ask. It is one tap away from every market page. -->
 
-      <!-- ================================================ C · kapanis · SON ISTEK ==
-           Ayni eylem, ayni kelimeler: hero ne diyorsa buton da onu diyor.
-           Alt satir uydurma degil, /genesis'in kendi cumlesinin karsiligi
-           ("A ticket is the only thing a tag costs you"), ama o cumle giris
-           yapmayan ziyaretcinin hic gormedigi bir yerde duruyordu. -->
-      <div class="close col col--mid reveal">
-        <h2 class="h2"><span>Find a fight.</span><span class="lo">Call it.</span></h2>
-        <!-- THE BUTTON NAMES THE DESTINATION, because the headline right above
-             it already made the ask. "Tag your first claim" repeated that ask in
-             the same words and then landed the reader on a page about tickets,
-             so the page's last promise and the next page's first sentence did
-             not match. This is the phrase genesis itself uses on arrival, and
-             the phrase src/server.ts already ships in the nav strip. The hero
-             keeps the taunt; a second door should say something different from
-             the first, not the same thing again. -->
-        <!-- THE SECOND DOOR IS THE SAME DOOR NOW. It used to lead to /genesis
-             and ask for a ticket claim; there is nothing to claim any more, and
-             the only action this page has ever wanted is the tag. The hero
-             keeps the taunt, this keeps the instruction. -->
-        <!-- A REAL PLACEHOLDER, WHICH IS THE ONE THING X CANNOT GIVE US.
-             Prefilling the composer with an example put a sentence in the
-             visitor's mouth: their account, their followers, a claim they do
-             not care about, and the same line repeating across strangers is
-             exactly what a farm looks like. An <input> placeholder is grey, it
-             is not text, it vanishes on the first keystroke and it can never be
-             posted. So the example is shown HERE, where showing is free, and
-             what travels to X is only what they typed.
-             The link keeps working with JS off: it carries the bare handle,
-             which is where this started. -->
-        <div class="doors">
-          <a class="door" href="https://app.oddie.fun/live"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-kick"/></svg><span class="door__t"><b>!oddie</b><small>your claim, in any Kick chat</small></span></a>
-          <a class="door" href="https://x.com/intent/post?text=%40oddiefun%20"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-x"/></svg><span class="door__t"><b>@oddiefun</b><small>under any post on X</small></span></a>
-          <a class="door" href="https://t.me/oddiefunbot"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-telegram"/></svg><span class="door__t"><b>@oddiefunbot</b><small>in any Telegram group</small></span></a>
-        </div>
-      </div>
+      <!-- THE CLOSING ASK WENT (Lev, 2 Oct, the hypercasual cut): it was the
+           hero's three doors a second time, and on a page now short enough to
+           scroll back to them in a flick it was the page repeating itself.
+           The crowd stays, the last thing the page says. -->
     </div>
 
     <!-- the crowd is the last thing the page says -->
@@ -1553,6 +1545,84 @@ html{-webkit-tap-highlight-color:transparent}
     }
     tick();
     setInterval(tick, 1000);
+  })();
+
+  /* HOW IT WORKS, AS ONE CHAT (Lev, 2 Oct, the hypercasual cut). The window
+     plays the claim, the market and the payout, then the same story on the
+     next door: Kick, X, Telegram. Each door speaks as its bot really does
+     (Kick says "Market open"; X and Telegram reply with the CTA and the card)
+     and names who gets the 2% there. It plays only while it is on screen,
+     a step or a door jumps to it, and with reduced motion nothing moves on
+     its own. */
+  (function () {
+    var tale = document.getElementById("tale");
+    if (!tale) return;
+    var feed = tale.querySelector(".tale__feed");
+    var tabs = [].slice.call(tale.querySelectorAll(".tale__tab"));
+    var doors = [].slice.call(tale.querySelectorAll(".tale__door"));
+    var where = tale.querySelector(".tale__where");
+    var srcMark = tale.querySelector(".tale__src use");
+    var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var CARD = '<div class="mcard"><p class="mcard__q">BTC to $88k by Friday?</p>'
+      + '<div class="mcard__s"><span class="y">YES</span><span class="n">NO</span></div></div>';
+    var DOORS = [
+      { where: "Kick chat", mark: "#mk-kick", u: "v", a: "mike_trades", b: "0xjules", bot: "oddiefun",
+        tag: "!oddie", open: "Market open. Pick a side:", earns: "The stream" },
+      { where: "Replies on X", mark: "#mk-x", u: "x", a: "@mike_trades", b: "@0xjules", bot: "@oddiefun",
+        tag: "@oddiefun", open: "Pick a side, real SOL on it &darr;", earns: "The tagger" },
+      { where: "Telegram group", mark: "#mk-telegram", u: "t", a: "Mike", b: "Jules", bot: "oddiefunbot",
+        tag: "@oddiefunbot", open: "Pick a side, real SOL on it &darr;", earns: "The opener" }
+    ];
+    function story(d) {
+      var D = DOORS[d], u = '<u class="' + D.u + '">';
+      return [
+        { beat: 0, at: 300, html: u + D.a + "</u>no way btc sees 88k this week" },
+        { beat: 0, at: 1300, html: u + D.b + "</u><code>" + D.tag + " BTC hits 88k by Friday?</code>" },
+        { beat: 1, at: 2700, html: '<u class="o">' + D.bot + "</u>" + D.open + CARD },
+        { beat: 1, at: 3900, html: u + D.b + "</u>YES. 0.1 in" },
+        { beat: 1, at: 4700, html: u + D.a + "</u>NO. see you friday" },
+        { beat: 2, at: 6100, html: '<u class="o">' + D.bot + "</u>Friday 23:59 UTC. The result is in."
+          + '<ul class="paid"><li><span>Winners</span><b>split the pool</b></li><li><span>' + D.earns + "</span><b>2%</b></li></ul>" }
+      ];
+    }
+    var BEAT_AT = [0, 2400, 5800], END = 9800;
+    var door = 0, timers = [], onScreen = false;
+    function stop() { timers.forEach(clearTimeout); timers = []; }
+    function setBeat(b) {
+      tabs.forEach(function (t, i) { t.classList.toggle("on", i === b); t.setAttribute("aria-selected", i === b ? "true" : "false"); });
+    }
+    function setDoor(d) {
+      door = d;
+      doors.forEach(function (x, i) { x.classList.toggle("on", i === d); x.setAttribute("aria-pressed", i === d ? "true" : "false"); });
+      where.textContent = DOORS[d].where;
+      if (srcMark) srcMark.setAttribute("href", DOORS[d].mark);
+    }
+    function add(m) { var el = document.createElement("div"); el.className = "msg"; el.innerHTML = m.html; feed.appendChild(el); }
+    function upTo(b) { feed.innerHTML = ""; story(door).forEach(function (m) { if (m.beat <= b) add(m); }); setBeat(b); }
+    function play(from) {
+      stop();
+      if (reduced) { upTo(from); return; }
+      var msgs = story(door), t0 = BEAT_AT[from];
+      feed.innerHTML = "";
+      msgs.forEach(function (m) { if (m.beat < from) add(m); });
+      setBeat(from);
+      BEAT_AT.forEach(function (at, b) { if (b > from) timers.push(setTimeout(function () { setBeat(b); }, at - t0)); });
+      msgs.forEach(function (m) { if (m.beat >= from) timers.push(setTimeout(function () { add(m); }, m.at - t0)); });
+      timers.push(setTimeout(function () { setDoor((door + 1) % DOORS.length); play(0); }, END - t0));
+    }
+    tale.classList.add("tale--js");
+    setDoor(0);
+    tabs.forEach(function (t) { t.addEventListener("click", function () { play(Number(t.getAttribute("data-beat"))); }); });
+    doors.forEach(function (x) { x.addEventListener("click", function () { setDoor(Number(x.getAttribute("data-plat"))); play(reduced ? 1 : 0); }); });
+    if (reduced) { upTo(1); return; }
+    upTo(2);   // until it is on screen, the whole Kick story, still
+    if (!("IntersectionObserver" in window)) { play(0); return; }
+    new IntersectionObserver(function (entries) {
+      var vis = entries[entries.length - 1].isIntersecting;
+      if (vis && !onScreen) play(0);
+      if (!vis && onScreen) stop();
+      onScreen = vis;
+    }, { threshold: 0.35 }).observe(tale);
   })();
 
   (function () {
