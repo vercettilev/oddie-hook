@@ -14,7 +14,7 @@
  *
  * Run with: npm run test-push
  */
-import { createECDH } from "node:crypto";
+import { createECDH, createPublicKey, verify } from "node:crypto";
 import {
   encryptPayload, decryptPayload, vapidHeader, generateVapidKeys, sendPush,
   _vapidPublicFromPrivate, type PushSubscription,
@@ -24,6 +24,11 @@ let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
   if (ok) console.log(`  ✓ ${n}`);
   else { failures++; console.error(`  ✗ ${n}`); if (d) console.error(`      ${d}`); }
+};
+/** The value, or what it threw, so a refused key reads as a failed check
+ *  rather than as a stack trace that stops every check after it. */
+const attempt = (f: () => string): string => {
+  try { return f(); } catch (e) { return `threw: ${(e as Error).message}`; }
 };
 
 /** A subscription exactly as a browser produces one: a P-256 keypair whose
@@ -74,6 +79,63 @@ console.log("\nweb push\n");
   const sig = Buffer.from(h.split(".")[2].split(",")[0], "base64url");
   // 64 bytes is r||s. A DER signature would be 70-72 and silently rejected.
   check("the signature is raw r||s, not DER", sig.length === 64, `${sig.length} bytes`);
+}
+{
+  /* ONE KEY IN 256 BEGINS WITH A ZERO BYTE, and node's getPrivateKey() hands
+     it back without that byte: 31 bytes, not 32. The random pair above lands
+     on it one run in 256, which is how the length check failed once on
+     2 Oct 2026 and passed on every rerun. This scalar starts with 0x00, so the
+     case runs every time: through the generator's padding, through the DER
+     import, and as the 31-byte value an older pair may still be stored as. */
+  const d = Buffer.from("00" + "5c".repeat(31), "hex");
+  const ec = createECDH("prime256v1");
+  ec.setPrivateKey(d);
+  const point = ec.getPublicKey();
+  check("the fixture is the case node shortens: getPrivateKey() gives 31 bytes",
+    ec.getPrivateKey().length === 31, `${ec.getPrivateKey().length} bytes`);
+
+  const { publicKey, privateKey } = generateVapidKeys(ec);
+  const generated = Buffer.from(privateKey, "base64url");
+  check("a scalar that starts with 0x00 is generated at all 32 bytes, zero kept",
+    generated.equals(d), generated.toString("hex"));
+  const imported = attempt(() => _vapidPublicFromPrivate(privateKey, publicKey));
+  check("...and the hand-rolled DER imports it to the SAME public point", imported === publicKey, imported);
+
+  /* THAT IMPORT CANNOT TELL A RIGHT SCALAR FROM A WRONG ONE. The DER carries
+     the public point verbatim and node never checks the scalar against it, so
+     a zero padded onto the wrong end would import just as cleanly. A signature
+     can tell: one made with the key has to verify against the point this
+     scalar really has, read here from the bare coordinates rather than from
+     the wrapper under test. */
+  const truePoint = createPublicKey({
+    key: { kty: "EC", crv: "P-256", x: point.subarray(1, 33).toString("base64url"), y: point.subarray(33).toString("base64url") },
+    format: "jwk",
+  });
+  const signs = (priv: string) => attempt(() => {
+    const h = vapidHeader("https://fcm.googleapis.com/fcm/send/abc123", { publicKey, privateKey: priv, subject: "https://oddie.fun" }, 1_700_000_000);
+    const [head, body, sig] = h.slice("vapid t=".length, h.indexOf(", k=")).split(".");
+    const ok = verify("sha256", Buffer.from(`${head}.${body}`), { key: truePoint, dsaEncoding: "ieee-p1363" }, Buffer.from(sig, "base64url"));
+    return ok ? "verifies" : "does not verify";
+  });
+  const signed = signs(privateKey);
+  check("a header signed with it verifies against the scalar's own point", signed === "verifies", signed);
+
+  /* A PAIR GENERATED BEFORE THE FIX MAY ALREADY SIT IN RAILWAY AT 31 BYTES.
+     It is the same number, so it is padded back and never refused: refusing
+     it would turn off every push for everybody who has allowed notifications. */
+  const stored = d.subarray(1).toString("base64url");
+  const storedImported = attempt(() => _vapidPublicFromPrivate(stored, publicKey));
+  check("a stored 31-byte key imports to the same point, padded rather than refused",
+    storedImported === publicKey, storedImported);
+  const storedSigned = signs(stored);
+  check("...and signs headers that verify", storedSigned === "verifies", storedSigned);
+
+  // Two leading zeros, one key in 65,536: padded to 32, not padded by one.
+  const d2 = Buffer.from("0000" + "5c".repeat(30), "hex");
+  const ec2 = createECDH("prime256v1");
+  ec2.setPrivateKey(d2);
+  const generated2 = Buffer.from(generateVapidKeys(ec2).privateKey, "base64url");
+  check("two leading zeros come back as two", generated2.equals(d2), generated2.toString("hex"));
 }
 
 /* ---------------------------------------------------------- encryption -- */

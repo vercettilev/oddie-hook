@@ -44,7 +44,8 @@ export interface VapidKeys {
   /** Uncompressed P-256 point, 65 bytes, base64url. Public by design: it is
    *  handed to every browser that subscribes. */
   publicKey: string;
-  /** The 32-byte scalar, base64url. A secret, and the only one here. */
+  /** The 32-byte scalar, base64url. A secret, and the only one here. An older
+   *  pair may store it shorter, without its leading zeros; see scalar32. */
   privateKey: string;
   /** RFC 8292 wants a way to reach whoever is sending. */
   subject: string;
@@ -52,15 +53,29 @@ export interface VapidKeys {
 
 /* ------------------------------------------------------------- VAPID ---- */
 
+/**
+ * THE SCALAR AT EXACTLY 32 BYTES, PADDED ON THE LEFT.
+ *
+ * Node's getPrivateKey() returns the number with its leading zero bytes
+ * dropped, so about one key in 256 comes out 31 bytes long (one in 65,536,
+ * 30). A pair generated before that was caught may sit in the environment
+ * that way. It is the same number, so it is padded back and never refused:
+ * refusing it would turn every push off for everybody at once.
+ */
+function scalar32(d: Buffer): Buffer {
+  if (d.length === 0 || d.length > 32) throw new Error(`VAPID private key must be 1 to 32 bytes, got ${d.length}`);
+  return Buffer.concat([Buffer.alloc(32 - d.length), d]);
+}
+
 /** A P-256 private key object from the raw 32-byte scalar the VAPID format
  *  stores. Node will not import a bare scalar, so it is wrapped in the minimal
  *  DER a SEC1 EC private key needs, with the public point alongside it. */
 function vapidPrivateKey(privateKeyB64: string, publicKeyB64: string) {
-  const d = unb64url(privateKeyB64);
+  const d = scalar32(unb64url(privateKeyB64));
   const q = unb64url(publicKeyB64);
-  if (d.length !== 32) throw new Error(`VAPID private key must be 32 bytes, got ${d.length}`);
   if (q.length !== 65 || q[0] !== 0x04) throw new Error("VAPID public key must be a 65-byte uncompressed point");
   // SEC1: SEQUENCE { INTEGER 1, OCTET STRING d, [0] OID prime256v1, [1] BIT STRING q }
+  // Every length in this prefix assumes a 32-byte d, which is why it is padded first.
   const der = Buffer.concat([
     Buffer.from("308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b0201010420", "hex"),
     d,
@@ -224,15 +239,20 @@ export function vapidFromEnv(): VapidKeys | null {
   return { publicKey, privateKey, subject };
 }
 
-/** Generate a pair. Printed by scripts/push-keys.ts, never called at runtime. */
-export function generateVapidKeys(): { publicKey: string; privateKey: string } {
-  const ec = createECDH("prime256v1");
-  ec.generateKeys();
-  return { publicKey: b64url(ec.getPublicKey()), privateKey: b64url(ec.getPrivateKey()) };
+/** Generate a pair. Printed by scripts/push-keys.ts, never called at runtime.
+ *
+ *  `pinned` exists ONLY so the test can hand in a scalar that starts with a
+ *  zero byte, the one-in-256 case, on every run instead of by luck. */
+export function generateVapidKeys(pinned?: ReturnType<typeof createECDH>): { publicKey: string; privateKey: string } {
+  let ec = pinned;
+  if (!ec) { ec = createECDH("prime256v1"); ec.generateKeys(); }
+  return { publicKey: b64url(ec.getPublicKey()), privateKey: b64url(scalar32(ec.getPrivateKey())) };
 }
 
 /** Test seam: the public key as node sees it, for asserting the DER wrapper
- *  above produced an importable key rather than a plausible-looking one. */
+ *  above produced an importable key rather than a plausible-looking one.
+ *  It reads back the point the DER carries, and node never checks that the
+ *  scalar matches it, so whether the scalar is right is a signature's job. */
 export function _vapidPublicFromPrivate(privateKeyB64: string, publicKeyB64: string): string {
   const key = vapidPrivateKey(privateKeyB64, publicKeyB64);
   const spki = createPublicKey(key).export({ format: "der", type: "spki" });
