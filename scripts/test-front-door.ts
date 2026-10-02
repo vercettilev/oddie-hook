@@ -445,8 +445,9 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
   check("the creators are a row per door, each still saying who earns",
     landing.includes("<p>Your channel earns <b>2%</b>.</p>") && landing.includes("<p>You earn <b>2%</b>, either side.</p>")
     && landing.includes("<p>The opener earns <b>2%</b>.</p>"));
-  check("the offer keeps its own turn (Lev's call), untouched",
-    landing.includes('<p class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</p>'));
+  check("the offer heads the creators field, in the words Lev approved (folded in by his call, 2 Oct)",
+    landing.indexOf('<h2 class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</h2>') > landing.indexOf('id="creators"')
+    && landing.includes('<p class="offer__sub">Whichever side wins, the 2% is yours.</p>') && !landing.includes('class="Bw sec"'));
   check("the closing ask is gone and the crowd stays",
     !landing.includes('<div class="close col col--mid reveal">') && landing.includes('<img src="/brand/crowd-strip.webp"'));
 }

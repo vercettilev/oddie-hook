@@ -237,14 +237,6 @@
      the real markets sit under it as a scoreboard, NOT as a card grid: two
      three-up grids on one page is how the template creeps back. */
   .B{background:var(--black);color:var(--fg);padding:clamp(44px,5vw,68px) 0 clamp(48px,5.5vw,76px)}
-  /* The page turns over after the picture. No .on-dark here on purpose: the
-     kicker and lede defaults ARE the ink ones, so the flip costs no overrides. */
-  .Bw{position:relative;background:var(--cream);color:var(--ink);
-    padding:var(--seam-h) 0 0;
-    /* .facts is rotated -.6deg, so its box is ~52px wider than the shell. .B
-       clipped that; this section inherited the band and had to inherit the clip
-       too, or the whole page gains 26px of sideways scroll. */
-    overflow-x:clip;overflow-y:visible}
   .B__hd{margin:0 0 clamp(14px,1.8vw,26px);font-size:clamp(26px,3.4vw,46px)}
 
   /* --------------------------------------------------------------- oracle --
@@ -355,14 +347,14 @@
      ::after ustteki alanin rengi. Yukaridan asagi: ustteki rengin disleri,
      9px krem deckle, alttaki alan. Tek pseudo + drop-shadow ise CALISMAZ:
      CSS filter mask'ten ONCE uygulanir, golge de maskelenip yok olur. */
-  .B::before,.B::after,.C::before,.C::after,.Bw::before,.Bw::after,.D::before,.D::after{
+  .B::before,.B::after,.C::before,.C::after,.D::before,.D::after{
     content:"";position:absolute;left:-3%;right:-3%;top:0;pointer-events:none;
     -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
-  .B::before,.C::before,.Bw::before,.D::before{
+  .B::before,.C::before,.D::before{
     height:calc(var(--seam-h) + 9px);z-index:1;
     -webkit-mask-size:100% var(--seam-h);mask-size:100% var(--seam-h);
     -webkit-mask-position:0 9px;mask-position:0 9px}
-  .B::after,.C::after,.Bw::after,.D::after{
+  .B::after,.C::after,.D::after{
     height:var(--seam-h);z-index:2;
     -webkit-mask-size:100% 100%;mask-size:100% 100%}
 
@@ -373,18 +365,12 @@
   .B::after{background:var(--yellow);
     -webkit-mask-image:var(--tear-1);mask-image:var(--tear-1)}
 
-  /* 4. dikis KREM -> PEMBE. Bu dikis .B'nin hemen altindayken yazildi ve
-     ustundeki alanin rengini, siyahi boyuyordu. Sayfa arada krem bir yarim
-     kazaninca o siyah serit hicbir alanin devami olmadan orada kaldi: pembe
-     bandin tepesinde, neyin yirtildigini soylemeyen bir cizgi.
-     Ust alan artik krem, o yuzden disler krem; aradaki serit de -- .Bw'deki
-     ile ayni sebeple -- krem olamaz, kalkan kagit kenarinin pembeye dusurdugu
-     golge. */
-  /* 4. dikis KREM -> SARI. Krem kagit yirtiliyor, altindan sari cikiyor; serit
-     kalkan kagit kenarinin sariya dusurdugu golge. */
+  /* 4. dikis SIYAH -> SARI. Krem ara alan kalkinca (Lev 2 Eki, hypercasual
+     kesim) sarinin ustunde siyah var; disler yine ustteki alanin rengini
+     soyluyor, serit kalkan kenarin sariya dusurdugu golge. */
   .D::before{background:rgba(11,13,4,.16);
     -webkit-mask-image:var(--tear-5);mask-image:var(--tear-5)}
-  .D::after{background:var(--cream);
+  .D::after{background:var(--black);
     -webkit-mask-image:var(--tear-5);mask-image:var(--tear-5)}
 
   /* 5. dikis SARI -> PEMBE. Bu dikis ustunde KREM varken yazilmisti; araya sari
@@ -396,24 +382,12 @@
     -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
   .C::after{background:var(--yellow);
     -webkit-mask-image:var(--tear-2);mask-image:var(--tear-2)}
-  /* 3. dikis SIYAH -> KREM. Tek pseudo, cunku ::before'un isi ustteki rengin
-     disleri ile alttaki alan arasina krem bir deckle sermek; burada alttaki
-     alan ZATEN krem, yani o serit krem uzerine krem olurdu. Yirtigin kendisi
-     bu sefer siyahin sokuldugu yer: altindan cikan kagit sayfanin kendisi. */
-  /* IKI KENAR, tek degil. Digerlerinde yirtigi tasiyan sey iki maske arasindaki
-     9px'lik serit; tek pseudo ile kenar yirtik degil DALGALI okunuyordu.
-     Burada o serit krem olamaz (alttaki alan zaten krem), o yuzden kalkan siyah
-     kenarin kagida dusurdugu golge: ayni mekanizma, gorunur kalan ton. */
-  .Bw::before{background:rgba(11,13,4,.16);
-    -webkit-mask-image:var(--tear-4);mask-image:var(--tear-4)}
-  .Bw::after{background:var(--black);
-    -webkit-mask-image:var(--tear-4);mask-image:var(--tear-4)}
   .C > .shell{position:relative;z-index:3}
 
   @media (max-width:700px){
-    .B::before,.C::before,.Bw::before,.D::before{
+    .B::before,.C::before,.D::before{
       -webkit-mask-size:360% var(--seam-h);mask-size:360% var(--seam-h)}
-    .B::after,.C::after,.Bw::after,.D::after{
+    .B::after,.C::after,.D::after{
       -webkit-mask-size:360% 100%;mask-size:360% 100%}
   }
 
@@ -852,6 +826,8 @@
     overflow-x:clip;overflow-y:visible;
     padding:calc(var(--seam-h) + clamp(16px,2vw,30px)) 0 clamp(30px,3.8vw,56px)}
   .D > .shell{position:relative;z-index:3}
+  .D .offer{padding-block:0 clamp(18px,2.6vw,34px)}
+  .D .cr__row{margin-inline:auto}
   /* The list is EMPTY until somebody is on the board, and an empty flex child
      still claims its basis: without this the sticker sits 260px off-centre
      beside nothing. Collapsed, the row centres on the sticker alone. */
@@ -863,15 +839,12 @@
      reads as a UI panel dropped onto a poster. */
   /* Tabular figures or the rank column shivers as the numbers change width. */
 
-  .offer__more{margin:clamp(7px,0.8vw,11px) 0 0;
-    font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
-    max-width:34ch}
   .offer__sub{margin:clamp(12px,1.4vw,18px) 0 0;
     font-size:clamp(14px,1.25vw,17px);line-height:1.5;color:var(--ink-2);
     max-width:34ch}
   @media (max-width:760px){
     .offer{flex-direction:column;text-align:center;gap:clamp(14px,3vw,22px)}
-    .offer__sub,.offer__more{margin-inline:auto}
+    .offer__sub{margin-inline:auto}
   }
 
 
@@ -1383,58 +1356,6 @@ html{-webkit-tap-highlight-color:transparent}
        dark half; everything that follows is the terms, and terms belong on
        paper. .on-dark is deliberately absent, which is also what flips .kicker
        and .lede back to their ink defaults without a single override. -->
-  <section class="Bw sec">
-    <!-- THE WHITE TURN OPENS ON THE OFFER. Lev asked for this line to be what
-         the page says the moment it goes to paper, and he is right: the reason
-         to open a market is the one thing the picture above cannot show.
-         The subtitle no longer repeats "2%" -- the headline just said it. It
-         carries the part a reader cannot infer instead: that the creator's cut
-         does not depend on which side wins. NOT "forever" -- the fee is fixed
-         at resolve and paid once (resolve_market), so a sentence promising a
-         stream would be a number that gets checked. The full 4% stays in the
-         band below, because printing the creator half alone once made a 4%
-         take read as 2%. Proposition first, disclosure under it. -->
-    <!-- ONE MOMENT, NOT THREE. This half used to stack the offer, the
-         settlement rule and the fee band as three centred blocks with a screen
-         of cream between them, and it read as three unrelated fragments rather
-         than the page's one argument. Lev's call: the offer alone, designed.
-
-         WHAT WENT, AND WHERE IT LIVES NOW. "The rule is written before the
-         money moves" is the guarantee that went on chain today, so it is not
-         gone from the product: it is in the README, it is verifiable against
-         criteria_hash, and the market pages carry the criteria themselves. It
-         is gone from THIS page, which is a choice about the page.
-
-         "OF THE POOL", NOT "OF IT". Measured before changing it: the landing's
-         visible text contained the words SOL, Solana, money, wallet and bet
-         exactly zero times, and app.oddie.fun's first screen showed a SOL
-         figure on zero lines, because the one live market has an empty pool. So
-         nothing on the way in said this was real money, and "2% of it" never
-         said 2% of WHAT. One word names the money, answers the question, and
-         does not become redundant the day the pools fill.
-         It also makes "the more people join, the more you earn" unnecessary:
-         a share OF A POOL already says that, and saying it twice is the
-         restatement this page cuts everywhere else. -->
-    <div class="shell offer reveal">
-      <img class="offer__st" src="/brand/st-riding.webp" width="640" height="640"
-           loading="lazy" alt="">
-      <div class="offer__say">
-        <p class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</p>
-        <p class="offer__sub">Whichever side wins, the 2% is yours.</p>
-        <!-- THE SECOND REASON TO OPEN ONE, and it is a different reward from
-             the fee: the money is per market, the board is cumulative. It links
-             because a standing nobody can go and look at is a claim, and this
-             one is checkable, and it is now directly below rather than a
-             page away. Written to stay true on an empty board:
-             it says what the board ranks, not where you would land. -->
-        <p class="offer__more">On a stream, that&rsquo;s the channel.</p>
-      </div>
-    </div>
-
-
-
-
-    </section>
 
   <!-- ============================================== D · YELLOW · THE BOARD ==
        ITS OWN FIELD, not a footnote under the fee. Opening a market pays twice
@@ -1451,8 +1372,22 @@ html{-webkit-tap-highlight-color:transparent}
          2% goes to on that door TODAY: on Kick the channel earns from whatever
          its chat opens; on X and Telegram the person who opens it earns, so
          those cards ask the creator to open it themselves. -->
+    <!-- THE OFFER HEADS THIS FIELD NOW (Lev, 2 Oct, the hypercasual cut). It had
+         a cream turn of its own, by Lev's earlier call ("the offer alone,
+         designed"); he chose to fold it in here after seeing the hypercasual
+         mockup, with the decision in front of him. The headline, the sticker
+         and the subline are the ones he approved, moved rather than rewritten;
+         "On a stream, that's the channel." left because the Streamers row says
+         it. -->
     <div class="shell crs reveal">
-      <h2 class="h2"><span>Got an audience?</span><span class="lo">Open what they argue about.</span></h2>
+      <div class="offer">
+        <img class="offer__st" src="/brand/st-riding.webp" width="640" height="640"
+             loading="lazy" alt="">
+        <div class="offer__say">
+          <h2 class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</h2>
+          <p class="offer__sub">Whichever side wins, the 2% is yours.</p>
+        </div>
+      </div>
       <!-- A ROW PER DOOR (Lev, 2 Oct, the hypercasual cut). Each still says
            who the 2% goes to on that door, the 1 Oct decision above, in four
            words instead of a sentence; the how is in the chat window above. -->
