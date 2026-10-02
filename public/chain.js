@@ -540,8 +540,9 @@ function b64ToBytes(b64) {
     raf = requestAnimationFrame(step);
     return () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
   }
-  /** Where a flick at `v` px/s comes to rest (Apple's projection). */
-  const project = (v, d = 0.99) => ((v / 1000) * d) / (1 - d);
+  /** Where a flick at `v` px/s comes to rest (Apple's projection, at the
+   *  normal scroll deceleration). */
+  const project = (v, d = 0.998) => ((v / 1000) * d) / (1 - d);
   /** Past an edge the sheet follows less and less, the way a real one would. */
   const rubber = (over, dim, c = 0.55) => (over * dim * c) / (dim + c * Math.abs(over));
 
@@ -563,7 +564,7 @@ function b64ToBytes(b64) {
     // Phone: px below its resting place. Desktop: 1 is closed, 0 is open.
     const st = { x: 0, v: 0 };
     const H = () => sheet.offsetHeight + 24;
-    let stop = null, closing = false, finished = false;
+    let stop = null, closing = false, finished = false, ro = null;
     const paint = () => {
       // A closing sheet is gone the moment it is out of sight: waiting for the
       // spring to settle below the screen only kept the page locked.
@@ -588,6 +589,8 @@ function b64ToBytes(b64) {
     const onKey = (e) => { if (e.key === "Escape") close(); };
     const dispose = () => {
       halt();
+      if (ro) ro.disconnect();
+      ro = null;
       document.removeEventListener("keydown", onKey);
       if (!document.querySelector(".cdim--v2:not(.cdim--gone)")) root.classList.remove("sheet-open");
     };
@@ -640,13 +643,35 @@ function b64ToBytes(b64) {
       if (hist.length > 6) hist.shift();
     };
     const end = () => {
-      const a = hist[0], b = hist[hist.length - 1];
-      const dt = (b.t - a.t) / 1000;
-      const v = dt > 0 ? (b.y - a.y) / dt : 0;
+      // The speed the finger had as it let go, from its last 100ms. A finger
+      // that stopped before it lifted has no speed left to hand over.
+      const now = performance.now(), last = hist[hist.length - 1];
+      const a = hist.filter((p) => now - p.t < 100).concat({ y: last.y, t: now })[0];
+      const v = now > a.t ? (last.y - a.y) / ((now - a.t) / 1000) : 0;
       drag = null;
-      if (st.x + project(v) > H() * 0.5 || v > 1100) close(Math.max(v, 0));
+      // Where the gesture is going decides, not where it stopped: past
+      // halfway it closes, short of it the sheet springs back.
+      if (st.x + project(v) > H() * 0.5) close(Math.max(v, 0));
       else { st.v = v; run(0, { response: 0.3, damping: 0.8 }); }
     };
+    /* THE SHEET OPENS BEFORE ITS CONTENT ARRIVES. It is mounted with a
+       loading line and filled after the wallet and market reads, so it rose
+       as a strip and then jumped to full height. Pinned to the bottom, a
+       taller sheet moves its top edge up at once; pushing it down by the same
+       amount keeps the edge where the eye is, and the spring carries it the
+       rest of the way. A sheet that gets shorter just settles: lifting it
+       with a transform would open a gap under it. */
+    let lastH = sheet.offsetHeight;
+    if (!reduced && typeof ResizeObserver === "function") {
+      ro = new ResizeObserver(() => {
+        const h = sheet.offsetHeight, d = h - lastH;
+        lastH = h;
+        if (d <= 0 || drag || closing) return;
+        st.x += d; paint();
+        run(0, { response: 0.38, damping: 1 });
+      });
+      ro.observe(sheet);
+    }
     let t0 = null, active = false;
     sheet.addEventListener("touchstart", (e) => {
       if (closing || e.touches.length !== 1) { t0 = null; return; }

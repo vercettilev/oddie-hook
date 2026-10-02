@@ -242,9 +242,21 @@ console.log("\nthe money sheet moves like a sheet");
   check("damping .8 overshoots a little, as a released sheet should", back.hi > 100 && back.hi < 110, `${back.hi.toFixed(2)}`);
   const caught = run({ x: 50, v: -3000 }, 100, { response: 0.3, damping: 1 });
   check("a spring started mid-flight keeps the speed it was given", caught.done && caught.lo < 50, `low ${caught.lo.toFixed(1)}`);
-  check("a flick at 1000px/s projects 99px ahead", Math.abs(project(1000) - 99) < 1e-9, `${project(1000)}`);
+  check("a flick at 1000px/s projects 499px ahead (Apple's normal deceleration)",
+    Math.abs(project(1000) - 499) < 1e-6, `${project(1000)}`);
   check("past the edge the sheet follows less, and less again",
     rubber(100, 400) < 100 && rubber(200, 400) < 2 * rubber(100, 400) && rubber(0, 400) === 0);
+  // A stake sheet on a 390x844 phone, plus the 24px a close travels past it.
+  const H = 453;
+  const closes = (x: number, v: number) => x + project(v) > H * 0.5;
+  check("a medium swipe from a third of the way down closes it", closes(134, 600));
+  check("...so does a quick flick from near the top", closes(40, 1500));
+  check("...and a slow nudge springs back", !closes(100, 50) && !closes(60, 0));
+  check("...by the rule the sheet actually runs", chain.includes("if (st.x + project(v) > H() * 0.5) close(Math.max(v, 0));"));
+  check("a finger that stopped before it lifted hands over no speed",
+    chain.includes("hist.filter((p) => now - p.t < 100).concat({ y: last.y, t: now })[0]"));
+  check("the sheet grows with its content instead of jumping", /ro = new ResizeObserver\(/.test(chain)
+    && chain.includes("if (ro) ro.disconnect();") && chain.includes("if (d <= 0 || drag || closing) return;"));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");
