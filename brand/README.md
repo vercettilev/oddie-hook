@@ -25,6 +25,15 @@ regenerate rather than editing an icon by hand.
 - `oddiegraphic.png` 1122x1402. The same scene BEFORE the pink was added. This
                     is what the landing shipped until 2026-08-26.
 - `oddie-ansemhack.png` 1200x630 with alpha. AnsemHack graphic.
+- `v3/oddiepng3.png` 2172x724 with alpha. The crowd strip as delivered. Its
+                    two bucket hats and the raised phone carried made-up marks.
+- `v3/oddiepng3-realmark.png` 2172x724 with alpha. **THE CROWD IN USE** since
+                    2026-10-02, shipped as public/brand/crowd-strip.webp
+                    (1800x600, WebP q88). The same art with the real ghost: on
+                    both hats as a print (the ghost keyed off oddiepink.png's
+                    yellow, so its black outline sinks into the black cloth),
+                    and on the phone as the app's yellow splash. Regenerate
+                    the WebP from this file; bump `?v=` on the landing's img.
 
 ## Brand colour
 

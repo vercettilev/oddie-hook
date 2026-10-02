@@ -498,7 +498,9 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
     landing.indexOf('<h2 class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</h2>') > landing.indexOf('id="creators"')
     && landing.includes('<p class="offer__sub">Whichever side wins, the 2% is yours.</p>') && !landing.includes('class="Bw sec"'));
   check("the closing ask is gone and the crowd stays",
-    !landing.includes('<div class="close col col--mid reveal">') && landing.includes('<img src="/brand/crowd-strip.webp"'));
+    !landing.includes('<div class="close col col--mid reveal">') && landing.includes('<img src="/brand/crowd-strip.webp?v=2"'));
+  check("the crowd wears the real mark, from the retouched source (Lev, 2 Oct)",
+    statSync("brand/v3/oddiepng3-realmark.png").size > 0 && readFileSync("brand/README.md", "utf8").includes("oddiepng3-realmark.png"));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");
