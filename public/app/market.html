@@ -574,7 +574,11 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
      shadow taller than the gap it sits in. */
   .side--y{box-shadow:5px 6px 0 var(--yellow-deep),inset 0 5px 0 rgba(255,255,255,.42),inset 0 -6px 0 rgba(0,0,0,.13)}
   .side--n{box-shadow:5px 6px 0 var(--pink-deep),inset 0 5px 0 rgba(255,255,255,.4),inset 0 -6px 0 rgba(0,0,0,.13)}
-  .sides__amt{display:flex;align-items:baseline;gap:6px}
+  /* Floated into the fade above the bar instead of taking a row: it only
+     shows while the chips are out of sight (see render()), and a row kept for
+     it the rest of the time was a blank band between the chips and YES. */
+  .sides__amt{display:flex;align-items:baseline;gap:6px;
+    position:absolute;left:20px;bottom:100%;padding:0 0 4px}
 }
 
 
