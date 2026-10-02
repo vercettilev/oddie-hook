@@ -311,6 +311,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 
 /* The page for streamers: three steps and the one button. */
 .steps{list-style:none;counter-reset:s;margin:0 0 30px;padding:0;display:grid;gap:14px}
+/* The lede used to sit between the headline and the steps and carry the gap;
+   it went (Lev, 2 Oct, the hypercasual cut), so the steps carry it now. */
+.who--say + .steps{margin-top:26px}
 .steps li{counter-increment:s;display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:start;font-size:16px;line-height:1.45;color:var(--fg-2)}
 .steps li::before{content:counter(s);font-family:var(--display);font-size:28px;line-height:1;color:var(--yellow)}
 .steps b{color:var(--cream)}
