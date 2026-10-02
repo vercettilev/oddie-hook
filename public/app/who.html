@@ -293,17 +293,22 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
         html += '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
           + '<h3>No finished calls yet</h3><p><a href="/markets">See the markets</a></p></div>';
       } else {
-        html += "<h2>Every finished call</h2>" + recs.map(function (r) {
+        /* THE SIDE AND ITS PRICE ARE ONE FACT (Lev, 2 Oct, the hypercasual
+           cut): "NO at 50%" instead of "NO · crowd said 50% · 0.02 SOL in".
+           The hook heads the row, as on every other surface. */
+        html += "<h2>Calls</h2>" + recs.map(function (r) {
           var side = r.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>';
-          var bits = [side, "<span>crowd said " + r.entryPct + "%</span>", "<span>" + r.stakeSol + " SOL in</span>",
+          var bits = ["<span>" + side + " at " + r.entryPct + "%</span>", "<span>" + r.stakeSol + " SOL</span>",
                       "<span>" + (r.won ? "right" : "wrong") + "</span>"];
           // Null, never zero: an unreadable market must not read as break-even.
+          // Zero is a refund and says so, the way the board says it.
           bits.push(r.pnlSol === null
             ? '<span class="na">money not readable right now</span>'
-            : '<span class="' + (r.pnlSol > 0 ? "up" : r.pnlSol < 0 ? "dn" : "") + '">'
+            : r.pnlSol === 0 ? "<span>refunded</span>"
+            : '<span class="' + (r.pnlSol > 0 ? "up" : "dn") + '">'
               + (r.pnlSol > 0 ? "+" : "") + r.pnlSol + " SOL</span>");
           return '<div class="rec rec--' + (r.won ? "w" : "l") + '">'
-            + '<p class="rec__q"><a href="/m/' + encodeURIComponent(r.slug) + '">' + esc(r.question) + "</a></p>"
+            + '<p class="rec__q"><a href="/m/' + encodeURIComponent(r.slug) + '">' + esc(r.hook || r.question) + "</a></p>"
             + '<p class="rec__m">' + bits.join("") + "</p></div>";
         }).join("");
       }

@@ -320,10 +320,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
        stated is a list of strangers with numbers beside them. This page ranks
        by people brought in, which is a narrower thing than it sounds and the
        narrowness is the point: a repeat bettor does not count twice, and your
-       own wallet never counts at all. -->
-  <p class="rule">Ranked by the people you bring in: somebody whose <b>first</b>
-    real-money bet lands in a market you opened. Each person counts once, ever,
-    and your own wallet never counts.</p>
+       own wallet never counts at all.
+       One line now (Lev, 2 Oct, the hypercasual cut): the unit is the
+       sentence; the fine print about repeats and your own wallet is how the
+       count is kept, not something a reader has to read to use the board. -->
+  <p class="rule">Ranked by <b>first-time</b> bettors your markets bring in.</p>
   <div id="view"><p class="load">Counting who brought people in&hellip;</p></div>
   <!-- THE SECOND BOARD, on the same page. It used to be a page of its own
        called "Who was right", and as a RANKING it never worked: its own code
@@ -407,8 +408,10 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     var when = ago(m.settledAt);
     return '<article class="mom">'
       + '<p class="mom__h"><b class="mom__o mom__o--' + esc(m.outcome) + '">' + esc(String(m.outcome).toUpperCase()) + "</b>"
-      + '<span class="mom__w">' + (when ? "settled " + esc(when) : "settled") + "</span></p>"
-      + '<h2 class="mom__q"><a href="/m/' + encodeURIComponent(m.slug) + '">' + esc(m.question) + "</a></h2>"
+      // "settled" left the stamp: the section is called What settled.
+      + '<span class="mom__w">' + esc(when) + "</span></p>"
+      // The hook, as on every other surface; the full question is on the market.
+      + '<h2 class="mom__q"><a href="/m/' + encodeURIComponent(m.slug) + '">' + esc(m.hook || m.question) + "</a></h2>"
       + '<ul class="mom__s">' + people + "</ul>"
       + (hidden > 0 ? '<p class="mom__more">and ' + hidden + (hidden === 1 ? " other" : " others") + "</p>" : "")
       + "</article>";
@@ -430,9 +433,9 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
          the first name here is whoever opens a market that fills. */
       if (!rows.length) {
         view.innerHTML = '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
-          + "<h3>Nobody is on it yet</h3>"
-          + "<p>The first name here is whoever opens a market that other people put real money into. "
-          + '<a href="/markets">See what is open</a></p></div>';
+          + "<h3>Nobody yet</h3>"
+          + "<p>Open a market people bet on. "
+          + '<a href="/markets">See what&rsquo;s open</a></p></div>';
         return;
       }
 

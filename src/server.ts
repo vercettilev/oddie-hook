@@ -2293,7 +2293,7 @@ app.get("/api/w/:wallet", async (req, res) => {
     rank: idx,
     settled: mine.length,
     receipts: mine.map((r) => ({
-      slug: r.slug, question: r.question, side: r.side, outcome: r.outcome,
+      slug: r.slug, question: r.question, hook: r.hook ?? null, side: r.side, outcome: r.outcome,
       won: r.won, entryPct: r.entryPct, weight: r.weight,
       stakeSol: Number((r.lamports / 1e9).toFixed(4)),
       // Null, not zero, when the market could not be read.
@@ -2404,7 +2404,7 @@ app.get("/api/board", async (req, res) => {
     const lost = cs.filter((c) => !c.won);
     const first = cs[0];
     return {
-      slug, question: first.question, outcome: first.outcome,
+      slug, question: first.question, hook: first.hook ?? null, outcome: first.outcome,
       settledAt: first.resolvedAt ?? null,
       poolSol: first.poolLamports === null ? null : Number((first.poolLamports / 1e9).toFixed(4)),
       right: won.slice(0, NAMED).map(person), rightCount: won.length,

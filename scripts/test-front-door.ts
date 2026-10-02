@@ -395,5 +395,32 @@ console.log("\nthe money screens fit a glance (the hypercasual cut)");
     && list.includes(`'<h2 class="card__q" data-oddie-question data-oddie-hook="' + esc(hook)`));
 }
 
+console.log("\nthe secondary pages say less (the hypercasual cut, round two)");
+{
+  const board = readFileSync("public/app/leaderboard.html", "utf8");
+  const who = readFileSync("public/app/who.html", "utf8");
+  const following = readFileSync("public/app/following.html", "utf8");
+  const you = readFileSync("public/app/you.html", "utf8");
+  const live = readFileSync("public/app/live.html", "utf8");
+  const standings = readFileSync("src/store/standings.ts", "utf8");
+  const store = readFileSync("src/store/markets.ts", "utf8");
+  check("settled calls carry the market's hook from the database to both pages",
+    store.includes("SELECT ce.wallet, ce.slug, s.question, cm.hook,") && standings.includes("hook: c.hook ?? null")
+    && server.includes("hook: r.hook ?? null, side: r.side") && server.includes("hook: first.hook ?? null"));
+  check("the board and the record lead each row with the hook",
+    board.includes("esc(m.hook || m.question)") && who.includes("esc(r.hook || r.question)"));
+  check("the record says the side and its price as one fact, and zero as a refund",
+    who.includes(`"<span>" + side + " at " + r.entryPct + "%</span>"`) && who.includes(`r.pnlSol === 0 ? "<span>refunded</span>"`)
+    && !who.includes(`"<span>crowd said "`));
+  check("the board's rule is one line", board.includes(`<p class="rule">Ranked by <b>first-time</b> bettors your markets bring in.</p>`));
+  check("Following signs in with a five-word note, not a 21-word sentence",
+    following.includes(`"<p>Alerts on Telegram or here.</p></div>"`) && !following.includes("Sign in once, follow anybody"));
+  check("the profile keeps the iPhone home-screen route, in one line",
+    you.includes("Results on your phone: tap <b>Share</b>, then <b>Add to Home Screen</b>.")
+    && !you.includes("The wallet comes later."));
+  check("the streamer page is three one-line steps, with no lede restating them",
+    !live.includes('<p class="lede">Anyone in your chat turns a claim') && live.includes("<li><span><b>Add oddie to your Kick channel.</b></span></li>"));
+}
+
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");
 process.exit(failures ? 1 : 0);

@@ -358,7 +358,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   function item(it, seenAt) {
     var who = '<a href="/u/' + encodeURIComponent(it.username) + '">@' + esc(it.username) + "</a>";
     var side = it.side === "yes" ? '<span class="y">YES</span>' : '<span class="n">NO</span>';
-    var t = it.kind === "open" ? who + " opened a market"
+    var t = it.kind === "open" ? who + " opened"
       : who + " took " + side + (typeof it.lamports === "number" ? " with " + sol(it.lamports) + " SOL" : "");
     var fresh = seenAt && it.at > seenAt;
     var cls = it.kind === "open" ? "open" : it.side === "yes" ? "yes" : "no";
@@ -378,11 +378,13 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   }
 
   function signinBox() {
+    // The how, in five words under the buttons (Lev, 2 Oct, the hypercasual
+    // cut); it used to be a 21-word sentence above them.
     return '<div class="signin" id="signin"><h3>Follow the people who call it first</h3>'
-      + "<p>Sign in once, follow anybody, and their next market reaches you on Telegram or in this browser the moment it opens.</p>"
       + '<div class="signin__ways"><a class="way" href="/api/auth/twitter/start?deviceId=' + encodeURIComponent(did())
       + '&return=%2Ffollowing">Continue with X</a>'
-      + '<a class="way way--tg" id="tglogin" hidden>Continue with Telegram</a></div></div>';
+      + '<a class="way way--tg" id="tglogin" hidden>Continue with Telegram</a></div>'
+      + "<p>Alerts on Telegram or here.</p></div>";
   }
 
   function render(j) {

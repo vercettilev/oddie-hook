@@ -428,21 +428,21 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   if (!SLUG) {
     var q = new URLSearchParams(location.search).get("kick");
     document.title = "oddie for streamers";
+    /* THREE STEPS, ONE LINE EACH (Lev, 2 Oct, the hypercasual cut). The lede
+       said the steps in a paragraph before the steps said them again, and the
+       quick-call paragraph was 38 words for three commands. */
     view.innerHTML = '<h1 class="who who--say">Your chat calls it. oddie settles it.</h1>'
-      + '<p class="lede">Anyone in your chat turns a claim into a market with one line. '
-      + "oddie opens it, settles it when the answer is in, and pays you 2% of every pool.</p>"
       + '<ol class="steps">'
-      + "<li><span><b>Add oddie to your Kick channel.</b> One tap, Kick asks you to confirm.</span></li>"
-      + "<li><span><b>Anyone in chat opens a market:</b> <code>!oddie BTC above 120k by Friday?</code> oddie posts the link and settles it when the day comes.</span></li>"
-      + "<li><span><b>Connect your wallet</b> on your channel page. Every market opened in your chat pays you 2% of its pool.</span></li>"
+      + "<li><span><b>Add oddie to your Kick channel.</b></span></li>"
+      + "<li><span><b>Chat types</b> <code>!oddie BTC above 120k by Friday?</code></span></li>"
+      + "<li><span><b>Connect a wallet.</b> You earn 2% of every pool.</span></li>"
       + "</ol>"
       + '<a class="add" href="/live/kick/connect">Add oddie to Kick</a>'
       + (q === "expired" ? '<p class="note">That link expired. Press Add oddie to Kick again.</p>' : "")
       + (q === "failed" ? '<p class="note">Connecting to Kick needs one more try. Press Add oddie to Kick again.</p>' : "")
-      + '<p class="quick"><b>Quick calls for the moments in between:</b> you or a mod runs <code>!call will I win this round?</code>, '
-      + "chat answers <code>!yes</code> or <code>!no</code>, and <code>!call yes</code> or <code>!call no</code> settles it. "
-      + "The standings live on your channel page.</p>"
-      + '<p class="hint" style="margin-top:14px">Markets are for viewers 18 and over, and settle in SOL on Solana.</p>';
+      + '<p class="quick"><b>Quick calls:</b> <code>!call will I win this round?</code> &rarr; chat <code>!yes</code> or <code>!no</code> '
+      + "&rarr; <code>!call yes</code> or <code>!call no</code> settles it.</p>"
+      + '<p class="hint" style="margin-top:14px">18+ only &middot; real SOL on Solana</p>';
     return;
   }
 

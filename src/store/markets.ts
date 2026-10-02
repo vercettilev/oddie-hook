@@ -7018,6 +7018,8 @@ export async function chainEntryFor(slug: string, wallet: string): Promise<Chain
  */
 export interface SettledCall {
   wallet: string; slug: string; question: string; onchainPubkey: string | null;
+  /** The market's short headline, when it has one; the full question otherwise. */
+  hook?: string | null;
   side: "yes" | "no"; lamports: number; entryPct: number;
   outcome: "yes" | "no"; won: boolean;
   /** When the market settled, or null for rows settled before the column
@@ -7035,6 +7037,7 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
       if (!meta?.resolvedOutcome || !rec) continue;
       out.push({
         wallet: e.wallet, slug: e.slug, question: rec.market.question,
+        hook: meta.hook ?? null,
         onchainPubkey: meta.onchainPubkey ?? null,
         side: e.side, lamports: e.lamports, entryPct: e.entryPct,
         outcome: meta.resolvedOutcome, won: e.side === meta.resolvedOutcome,
@@ -7046,11 +7049,11 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
   }
   await ensureSchema();
   const { rows } = await db().query<{
-    wallet: string; slug: string; question: string; onchain_pubkey: string | null;
+    wallet: string; slug: string; question: string; hook: string | null; onchain_pubkey: string | null;
     side: "yes" | "no"; lamports: string; entry_pct: number; resolved_outcome: "yes" | "no";
     resolved_at: Date | null;
   }>(
-    `SELECT ce.wallet, ce.slug, s.question, cm.onchain_pubkey, ce.side, ce.lamports,
+    `SELECT ce.wallet, ce.slug, s.question, cm.hook, cm.onchain_pubkey, ce.side, ce.lamports,
             ce.entry_pct, cm.resolved_outcome, cm.resolved_at
        FROM chain_entry ce
        JOIN community_market cm ON cm.slug = ce.slug AND cm.resolved_outcome IS NOT NULL
@@ -7062,7 +7065,7 @@ export async function settledCalls(limit = 2000): Promise<SettledCall[]> {
   // lamports is bigint and arrives as a STRING; annotating it `number` would be
   // a lie that only breaks against a real database.
   return rows.map((r) => ({
-    wallet: r.wallet, slug: r.slug, question: r.question, onchainPubkey: r.onchain_pubkey,
+    wallet: r.wallet, slug: r.slug, question: r.question, hook: r.hook ?? null, onchainPubkey: r.onchain_pubkey,
     side: r.side, lamports: Number(r.lamports), entryPct: r.entry_pct,
     outcome: r.resolved_outcome, won: r.side === r.resolved_outcome,
     resolvedAt: r.resolved_at ? r.resolved_at.toISOString() : null,

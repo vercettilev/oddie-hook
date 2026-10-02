@@ -138,7 +138,7 @@ console.log("\none word, one meaning\n");
   check("the leaderboard still has the callers' Points column", lb.includes(">Points<"));
   check("...and the openers' People column beside it", lb.includes(">People<"));
   check("...each under a heading of its own",
-    lb.includes("<h2>Who was right</h2>") && lb.includes("Ranked by the people you bring in"));
+    lb.includes("<h2>Who was right</h2>") && lb.includes("Ranked by <b>first-time</b> bettors your markets bring in."));
   check("the opener board names what it counts",
     withoutComments.includes("<span>People</span>"));
 }
