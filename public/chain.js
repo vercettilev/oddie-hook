@@ -776,6 +776,12 @@ function b64ToBytes(b64) {
     }
 
     shell(`<p class="cnote">Checking your bet…</p>`);
+    // The pool's totals, read beside the position rather than after it: they
+    // decide whether a loss is a loss at all (see `refund` below). The stake
+    // sheet already holds them; the page and the profile do not.
+    const totalsP = marketState.totalYesLamports != null && marketState.totalNoLamports != null
+      ? Promise.resolve(marketState)
+      : fetch(`/api/chain/market/${encodeURIComponent(slug)}`).then((r) => r.json()).catch(() => null);
     let position = null, reachable = true;
     try {
       const r = await fetch(`/api/chain/position?slug=${encodeURIComponent(slug)}&userPubkey=${encodeURIComponent(wallet.publicKey)}`);
@@ -829,10 +835,28 @@ function b64ToBytes(b64) {
     // was on NO would be a wrong number about their own money.
     const sol = (winningLeg / 1e9).toFixed(3);
     const bothSides = yesLeg > 0 && noLeg > 0;
+    /* NOBODY ON THE WINNING SIDE IS A REFUND, NOT A LOSS.
+       claim_winnings pays every stake back in full, fee-free, when the winning
+       side holds nothing (lib.rs, `winning_total == 0`). This branch used to
+       read only the position, so the one bettor in a one-sided market that
+       went the other way was told "you called YES" and offered their deposit:
+       0.0015 SOL, for a button that actually returns the whole stake. Nobody
+       presses that, and the money sits in the vault while its owner believes
+       it is gone. Unknown totals keep the old sentence rather than guess. */
+    const totals = isWinner ? null : await totalsP;
+    const refund = !isWinner && !!totals && totals.ok !== false
+      && totals.totalYesLamports != null && totals.totalNoLamports != null
+      && Number(won === "YES" ? totals.totalYesLamports : totals.totalNoLamports) === 0;
+    const back = fmtSol((yesLeg + noLeg) / 1e9);
     shell(isWinner
       ? `<p class="cnote">You called <b>${won}</b> with <b>${sol} SOL</b>${bothSides ? " (your other side pays nothing)" : ""}.${
           paysSol != null ? ` This pays <b>${fmtSol(paysSol)} SOL</b>.` : ""} Your wallet signs, we never hold your winnings.</p>
       <button class="claimbtn" id="chainclaim">${paysSol != null ? `Collect ${fmtSol(paysSol)} SOL` : "Collect winnings"}</button>
+      <div class="chain-line" id="chainline"></div>
+      <button class="cclose">Later</button>`
+      : refund
+      ? `<p class="cnote">Nobody was on <b>${won}</b>, so nobody wins your stake. All <b>${back} SOL</b> comes back, no fee. Your wallet signs, we never hold it.</p>
+      <button class="claimbtn" id="chainclaim">Take back ${back} SOL</button>
       <div class="chain-line" id="chainline"></div>
       <button class="cclose">Later</button>`
       : `<p class="cnote">You called <b>${won === "YES" ? "NO" : "YES"}</b>. The deposit your bet holds is still yours; your wallet signs, we never hold it.</p>
@@ -873,7 +897,7 @@ function b64ToBytes(b64) {
           <p class="cnote">${confirmed
             ? `${isWinner
                   ? (paysSol != null ? `<b>${fmtSol(paysSol)} SOL</b> is` : "Your winnings are")
-                  : "Your deposit is"} on the way to your wallet${CLUSTER === "mainnet-beta" ? "" : `, on ${clusterLabel(CLUSTER)}`}.`
+                  : refund ? `<b>${back} SOL</b> is` : "Your deposit is"} on the way to your wallet${CLUSTER === "mainnet-beta" ? "" : `, on ${clusterLabel(CLUSTER)}`}.`
             : "It is on Solana. We could not watch it land. Open the link below before you collect again."}</p>
           <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${confirmed && isWinner && !bothSides ? `<a class="claimbtn" href="${receiptUrl}" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">Show your receipt</a>` : ""}
@@ -882,7 +906,7 @@ function b64ToBytes(b64) {
           <button class="cclose">Done</button>`;
         body.querySelector(".cclose").onclick = () => closeSheet(body);
       } catch (e) {
-        btn.disabled = false; btn.textContent = isWinner ? "Collect winnings" : "Get your deposit back";
+        btn.disabled = false; btn.textContent = isWinner ? "Collect winnings" : refund ? `Take back ${back} SOL` : "Get your deposit back";
         if (line) line.textContent = e.message || "Something went wrong. Try again.";
       }
     };

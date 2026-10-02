@@ -259,5 +259,30 @@ console.log("\nthe money sheet moves like a sheet");
     && chain.includes("if (ro) ro.disconnect();") && chain.includes("if (d <= 0 || drag || closing) return;"));
 }
 
+console.log("\na pool nobody backed is a refund, not a loss");
+{
+  const chain = readFileSync("public/chain.js", "utf8");
+  const you = readFileSync("public/app/you.html", "utf8");
+  const lib = readFileSync("onchain/programs/oddie_chain/src/lib.rs", "utf8");
+  const claim = chain.slice(chain.indexOf("async function renderClaim("), chain.indexOf("async function openRefundSheet("));
+  check("the program refunds every stake in full when nobody won (lib.rs)",
+    /if winning_total == 0 \{\s*staked \/\/ nobody won/.test(lib));
+  check("the claim sheet reads the pool when it was not handed one",
+    claim.includes("fetch(`/api/chain/market/${encodeURIComponent(slug)}`)"));
+  check("...and a winning side holding nothing means a refund, as claim_winnings decides it",
+    claim.includes('Number(won === "YES" ? totals.totalYesLamports : totals.totalNoLamports) === 0'));
+  check("...which it says as a refund, with the whole stake on the button",
+    claim.includes("so nobody wins your stake. All <b>${back} SOL</b> comes back, no fee.")
+    && claim.includes("Take back ${back} SOL"));
+  check("the profile row says nobody was on that side, not that you lost",
+    you.includes('o.refund ? "nobody was on " + String(o.outcome || "").toUpperCase() : "you lost it"'));
+  check("...and its button takes the stake back, checked before the win branch it used to hide in",
+    /o\.refund && o\.payoutLamports != null\s*\?\s*"Take back " \+ sol4/.test(you));
+  check("the market page offers the stake back when nobody won",
+    page.includes('(nobodyWon ? "Take your stake back" : "Collect winnings")'));
+  check("the server's returns field agrees with its own payout figure",
+    server.includes('returns: refund ? "stake-and-rent" : won ? "winnings-and-rent" : "rent-only"'));
+}
+
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall green\n");
 process.exit(failures ? 1 : 0);

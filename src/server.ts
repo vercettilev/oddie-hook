@@ -5252,16 +5252,19 @@ if (realStakesReady) {
             ? 0
             : Math.floor((winningLeg * (pool - mst.creatorFeeLamports - mst.protocolFeeLamports)) / winningTotal);
       }
+      // A pool nobody backed is refunded whole, which is a different sentence
+      // from winning and has to be able to say so.
+      const refund = mst ? (m.resolvedOutcome === "yes" ? mst.totalYesLamports : mst.totalNoLamports) === 0 : false;
       return {
         slug: m.slug, question: m.question, side: position.side,
         amountYes: position.amountYes, amountNo: position.amountNo,
         lamports: position.lamports, outcome: m.resolvedOutcome,
         // What pressing the button actually does, so the UI never has to guess.
-        won, returns: won ? "winnings-and-rent" : "rent-only",
+        // A refund was reported as "rent-only" while payoutLamports carried the
+        // whole stake: the two fields disagreed about the same button.
+        won, returns: refund ? "stake-and-rent" : won ? "winnings-and-rent" : "rent-only",
         payoutLamports,
-        // A pool nobody backed is refunded whole, which is a different sentence
-        // from winning and has to be able to say so.
-        refund: mst ? (m.resolvedOutcome === "yes" ? mst.totalYesLamports : mst.totalNoLamports) === 0 : false,
+        refund,
       };
     });
     res.json({ ok: true, claimable: found.filter(Boolean), unreadable });

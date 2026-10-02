@@ -992,12 +992,18 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
 
     if (resolved) {
       var yes = m.outcome === "yes";
+      /* NOBODY WON IF NOBODY WAS ON THE WINNING SIDE. The program then pays
+         every stake back whole, so "Collect winnings" named money that does
+         not exist, to people who mostly read it as "not for me". */
+      var nobodyWon = !!m.pool && (m.pool.yesLamports + m.pool.noLamports) > 0
+        && (yes ? m.pool.yesLamports : m.pool.noLamports) === 0;
       // The copy promises an action, so the action has to be here. Without the
       // button this said "connect the wallet you staked with" and offered
       // nothing to connect with, which is how a winning position sits in a
       // vault forever.
       html += '<div class="verdict verdict--' + (yes ? "y" : "n") + '">' + (yes ? "YES" : "NO") + " WON"
-        + '<button class="collect" id="collect" type="button">Collect winnings</button></div>';
+        + '<button class="collect" id="collect" type="button">'
+        + (nobodyWon ? "Take your stake back" : "Collect winnings") + "</button></div>";
     }
 
     /* THE POOL, AND THE THREE THINGS IT CAN BE.

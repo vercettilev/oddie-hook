@@ -1110,7 +1110,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
          The record's honesty is the only thing this product sells, so it does
          not get to flatter a position that took both sides. */
       var hedged = o.amountYes > 0 && o.amountNo > 0;
-      bits.push(cell(hedged ? "you held both sides" : o.won ? "you were right" : "you lost it"));
+      /* A POOL NOBODY BACKED IS NOT A LOSS. Nobody on the winning side means
+         every stake comes back whole (lib.rs claim_winnings), and this cell
+         said "you lost it" over a button that returns all of it. */
+      bits.push(cell(hedged ? "you held both sides" : o.won ? "you were right"
+        : o.refund ? "nobody was on " + String(o.outcome || "").toUpperCase() : "you lost it"));
     }
     /* AN OPEN REFUND WINDOW IS MONEY, SO IT GETS A BUTTON.
        Nobody settled this market and the 30 day window has passed, so the
@@ -1146,13 +1150,16 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
          and sends it; null means the chain could not be read, and then the
          button says what it has always said rather than a number nobody
          measured. */
-      : '<button class="go' + (o.won ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '"'
+      /* The refund label was written for this case and could never show: it
+         sat inside `o.won`, and a refund is by definition a market where
+         nobody won. It is checked first now. */
+      : '<button class="go' + (o.won || o.refund ? "" : " go--rent") + '" data-slug="' + esc(o.slug) + '" data-outcome="' + esc(o.outcome) + '"'
         + (o.payoutLamports != null ? ' data-pay="' + (o.payoutLamports / 1e9) + '"' : "")
         + ' type="button">'
-        + (o.won
-            ? (o.payoutLamports != null
-                ? (o.refund ? "Take back " : "Collect ") + sol4(o.payoutLamports / 1e9) + " SOL"
-                : "Collect winnings")
+        + (o.refund && o.payoutLamports != null
+            ? "Take back " + sol4(o.payoutLamports / 1e9) + " SOL"
+            : o.won
+            ? (o.payoutLamports != null ? "Collect " + sol4(o.payoutLamports / 1e9) + " SOL" : "Collect winnings")
             : "Get your deposit back") + "</button>"
         + '<a class="open" href="/m/' + encodeURIComponent(o.slug) + '">Open the market</a>';
     return '<div class="row' + (kind === "claim" && o.won ? " row--win" : "") + '">'
