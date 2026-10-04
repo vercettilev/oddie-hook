@@ -1,18 +1,24 @@
 # oddie
 
-**Tag any claim on X and it becomes a real market on Solana.**
+**The people's prediction market. Call a market on any argument, right where it happens.**
 
-Someone tags [@oddiefun](https://x.com/oddiefun) under a post. An agent reads the
-argument, decides whether it can actually be settled, writes the resolution
-criteria and a deadline, and opens a pari-mutuel market. The bot answers the
-original tweet with a card anyone can tap. People take YES or NO with real SOL.
-At the deadline the market settles itself and the bot posts the result back
-under the tweet that started it.
+Type `!oddie` in a Kick stream's chat, tag [@oddiefun](https://x.com/oddiefun)
+under a post on X, or tag [@oddiefunbot](https://t.me/oddiefunbot) in a Telegram
+chat. An agent reads the argument, decides whether it can actually be settled,
+writes the resolution criteria and a deadline, and opens a pari-mutuel market on
+Solana. The bot answers in the same chat with a card anyone can tap, and people
+take YES or NO from their own wallet. At the deadline the market settles itself
+and the bot posts the result back where the argument started.
+
+Whoever opens a market earns 2% of its pool; on Kick that is the stream's
+channel. If nobody takes the other side, every stake comes back in full with no
+fee.
 
 No listing desk. On a price claim, no model decides who won: the answer is
 arithmetic over published candles. Settlement is the distribution.
 
 - Live: [oddie.fun](https://oddie.fun) · app at [app.oddie.fun](https://app.oddie.fun)
+- In production: X since 20 September 2026, Telegram since 26 September, Kick since 29 September
 - Program: [`3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu`](https://explorer.solana.com/address/3SYG7hzQBYGc853BGTxcBtTLefESaP9DqP5aHbvgnYsu) on Solana mainnet
 
 ## It has run end to end, unattended
@@ -29,13 +35,13 @@ runs unattended. It does not prove demand.
 ## The loop
 
 ```
-mention on X
+!oddie on Kick, @oddiefun on X, @oddiefunbot on Telegram
   → extractClaim()     is there a claim here, can it be settled, by when
   → market opens       minted on chain at the first stake, not before
-  → the bot replies    a rendered card under the original tweet
+  → the bot answers    a rendered card, in the same chat
   → people stake       their own wallet signs; we never hold or sign for funds
   → the deadline       oracle decides, or abstains out loud
-  → the bot replies    the result, under the tweet that started it
+  → the bot answers    the result, where the argument started
 ```
 
 ## The oracle has two paths, and the cheap one is the common one
@@ -91,7 +97,7 @@ and publish a verifiable build so the deployed bytes can be matched to this
 source by somebody who is not us.
 
 Deliberately NOT on that list: a close-time guard on `resolve_market`. It was
-there and was removed on purpose, because it locked real money for two months to
+there and was removed on purpose, because it locked people's stakes for two months to
 protect against nothing the outcome changes. An authority that settles early is
 a key-custody problem and the multisig is its answer, not a `require!`.
 
@@ -102,9 +108,10 @@ anything.
 
 ## The money
 
-4% when a market is over and nothing before: 2% to whoever opened it, for as
-long as the market exists, and 2% to the protocol. Both rates are frozen into
-the market at creation, so changing the rate can never reprice an open pool.
+4% when a market is over and nothing before: 2% to whoever opened it (on Kick,
+the stream's channel) for as long as the market exists, and 2% to the protocol.
+Both rates are frozen into the market at creation, so changing the rate can
+never reprice an open pool.
 
 A pool with no winners is refunded in full and charged nothing, because taking a
 cut of a refund would be charging people for our own inability to price the
@@ -114,17 +121,21 @@ question.
 
 ```
 onchain/programs/oddie_chain/   the Anchor program: markets, vaults, positions,
-                                a peer-to-peer listing book (1188 lines)
+                                a peer-to-peer listing book (1347 lines)
 src/chain/                      client: reads, transaction assembly, resolve
-src/matching/                   tweet → claim, criteria, deadline; duplicate check
+src/matching/                   post → claim, criteria, deadline; duplicate check
 src/oracle/                     the decision, its gates, and what it refuses
 src/price/                      DexScreener + GeckoTerminal, the deterministic path
 src/card/                       every card the bot posts, drawn as SVG server-side
-src/x/                          mentions, replies, the resolution post
+src/x/                          X: mentions, replies, the resolution post
+src/telegram/                   Telegram: groups, guest mode, the resolution post
+src/kick/                       Kick: a streamer connects once, the chat webhook,
+                                the channel's 2% wallet
+src/live/                       the stream doors: `!oddie` markets, `!call` free votes
 src/auth/                       Sign In With Solana
 src/store/                      Postgres, and the schema comments explaining it
 public/                         the app: hand-written HTML, no framework
-scripts/                        49 test suites, probes, and the deck generator
+scripts/                        64 test suites, probes, and the deck generator
 ```
 
 ## The one piece of configuration that is not optional
@@ -147,7 +158,7 @@ The server warns at boot if this is pointed at the public endpoint.
 
 ```bash
 npm install
-npm test          # 49 suites, all offline
+npm test          # 64 suites, all offline
 npm run dev       # :3000
 ```
 
