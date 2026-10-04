@@ -4369,6 +4369,14 @@ app.post("/api/v1/markets", async (req, res) => {
   });
 });
 
+/** An X username as the console sends it, "@Oddiefun" or "Oddiefun". Lower
+ *  case, like handleFromSourceUrl, because the handle keys the device lookup.
+ *  Anything that is not a legal handle is no opener at all, never a guess. */
+function openerHandleOf(raw: unknown): string | null {
+  const h = typeof raw === "string" ? raw.trim().replace(/^@/, "").toLowerCase() : "";
+  return /^[a-z0-9_]{1,15}$/.test(h) ? h : null;
+}
+
 app.post("/api/community/create", requireAdmin, async (req, res) => {
   // Thin now. Every rule a market is born under lives in openMarketFromClaim,
   // which the agent API calls too, so the two callers cannot drift apart on
@@ -4383,6 +4391,12 @@ app.post("/api/community/create", requireAdmin, async (req, res) => {
     resolvability: req.body?.resolvability != null ? String(req.body.resolvability) : null,
     hook: req.body?.hook != null ? String(req.body.hook) : null,
     creatorWallet: req.body?.creator_wallet != null ? String(req.body.creator_wallet) : null,
+    // THE OPENER, when it is not the claim's author. Lev'in karari: %2 marketi
+    // ACAN kisiye gider. Without this the console could only credit whoever
+    // wrote the source tweet, so a market @oddiefun opened by quoting a
+    // stranger's claim was published as opened by that stranger. Same field the
+    // reply-tag flow fills with the tagger.
+    taggerHandle: openerHandleOf(req.body?.opener_handle),
     // The lazy mint the bot has always used, reachable by hand. Every market
     // @oddiefun opens is born this way -- no vault until somebody actually
     // wants to stake -- but this route hard-required a mint, so an admin (or
