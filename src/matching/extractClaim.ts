@@ -91,7 +91,8 @@ Rules, in order:
 3. No bounded timeframe and none can be reasonably inferred → unresolvable.
 4. Private/unverifiable matters (someone's private relationship, undisclosed internal numbers, unfalsifiable claims about intent) → unresolvable.
 5. The question must be about the SAME event, threshold, person and date the argument is actually about — never a related-but-different one.
-6. The appropriateness gate runs ALONGSIDE resolvability, never instead of it. Judge both. If the subject crosses a line above, set appropriate false and refuse even if the claim is otherwise cleanly resolvable.`;
+6. The appropriateness gate runs ALONGSIDE resolvability, never instead of it. Judge both. If the subject crosses a line above, set appropriate false and refuse even if the claim is otherwise cleanly resolvable.
+7. A market call that names NO asset at all ("all time highs by Christmas", "new highs this month", "we print a new ATH before Q1") is, on this product, about crypto's benchmark: read it as Bitcoin, write "Bitcoin" in the question and "BTC" in the hook, and settle it on BTC/USD against its previous all-time high. This is not a guess at what they meant, it is the one reading a stranger on crypto Twitter would give it, and the question says it out loud so nobody bets on a different one. Apply it ONLY when nothing in the text names another asset, index, sector or group: a ticker, "SOL", "stocks", "the S&P", "alts", "memecoins", a company or a team always wins, and a group like "alts" with no single measurable member stays unresolvable.`;
 
 const SCHEMA = {
   type: "object",
