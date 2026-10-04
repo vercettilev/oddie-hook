@@ -15,6 +15,7 @@ import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTrie
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
   eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, walletsOfPerson, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
+import { announceToRoom, roomChatId } from "./telegram/room.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
 import { kickRouter, startLiveClock, kickEngineDeps } from "./kick/routes.js";
@@ -3707,6 +3708,17 @@ async function openMarketFromClaim(input: {
   // A market opened is something its opener did, for the people who follow them.
   void socialOpen(slug, identifiablePayee, creatorWallet)
     .catch((e) => console.error("[social] open event failed (non-fatal):", (e as Error).message));
+  // The Room hears about it, whatever door it came through (src/telegram/room.ts).
+  if (TG.tgToken()) {
+    void announceToRoom({
+      chatId: roomChatId(),
+      send: (chatId, text, url) => TG.sendMessage(chatId, text, null, { text: "Take a side", url }),
+      record: async (key, s) => {
+        if (await claimMention(key, null)) await settleMention(key, "replied", { slug: s, reason: "announced" });
+      },
+      log: (msg, extra) => console.error(`[room] ${msg}`, extra ?? {}),
+    }, { slug, headline: foldIds(input.hook || question), url: `${APP_BASE_URL}/m/${slug}`, sourceUrl });
+  }
 
   return {
     ok: true, slug, marketId,
