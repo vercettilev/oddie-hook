@@ -136,7 +136,7 @@ export async function sendChat(token: string, broadcasterId: string, senderId: s
   const r = j.data?.[0];
   // A 200 can still be a line Twitch did not deliver (AutoMod, followers-only).
   if (r && r.is_sent === false) {
-    const err = new Error(`twitch chat dropped: ${r.drop_reason?.code ?? "unknown"}`) as Error & { status?: number };
+    const err = new Error(`twitch chat dropped: ${r.drop_reason?.code ?? "unknown"} ${r.drop_reason?.message ?? ""}`.trim()) as Error & { status?: number };
     err.status = 422;
     throw err;
   }

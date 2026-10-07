@@ -95,7 +95,9 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     try { await as(voice, channelId, text, replyTo); voiceCannotPost.delete(channelId); return true; }
     catch (e) {
       voiceCannotPost.set(channelId, Date.now());
-      d.log("twitch voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceLogin, status: status(e) ?? null });
+      // The message carries Twitch's drop reason (followers-only, a verified
+      // email the channel requires, a ban), which is the one thing worth knowing.
+      d.log("twitch voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
       return false;
     }
   };
