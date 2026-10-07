@@ -28,26 +28,32 @@ const list = readFileSync("public/app/markets.html", "utf8");
 const page = readFileSync("public/app/market.html", "utf8");
 const server = readFileSync("src/server.ts", "utf8");
 
-console.log("the landing names all three doors");
+console.log("the landing leads with livestreams and names every door (7 Oct)");
 {
-  check("the headline is the one-liner", /<h1 class="h1"><span>Every argument<\/span><span class="lo">is a market\.<\/span><\/h1>/.test(landing));
+  check("the headline is the one-liner", /<h1 class="h1"><span>Prediction markets<\/span><span class="lo">for livestreams\.<\/span><\/h1>/.test(landing));
+  check("...and the old headline closes the page as the vision",
+    /<h2 class="h2 vision reveal"><span>Every argument<\/span><span class="lo">is a market\.<\/span><\/h2>/.test(landing)
+    && landing.indexOf('class="h2 vision') > landing.indexOf('id="creators"'));
   check("no line says the product is X-only", !/about anything on X/.test(landing));
   for (const [door, href] of [
-    ["!oddie", "https://app.oddie.fun/live"],
-    ["@oddiefun", "https://x.com/intent/post?text=%40oddiefun%20"],
-    ["@oddiefunbot", "https://t.me/oddiefunbot"],
+    ["Kick", "https://app.oddie.fun/live/kick/connect"],
+    ["Twitch", "https://app.oddie.fun/live/twitch/connect"],
   ]) {
     const n = landing.split(`<a class="door" href="${href}">`).length - 1;
     // Once, in the hero: the closing ask that repeated them went (Lev, 2 Oct).
-    check(`${door} is a door in the hero`, n === 1, `${n} found`);
+    check(`${door} is a door in the hero, straight to its sign-in`, n === 1, `${n} found`);
   }
+  check("...and X and Telegram are one quiet line under them",
+    /<p class="also">Also on[\s\S]{0,200}href="https:\/\/x\.com\/intent\/post\?text=%40oddiefun%20"[\s\S]{0,300}href="https:\/\/t\.me\/oddiefunbot"/.test(landing));
   check("the creators field has a card per door",
     /id="creators"[\s\S]*?<h3>Streamers<\/h3>[\s\S]*?<h3>Creators on X<\/h3>[\s\S]*?<h3>Communities<\/h3>/.test(landing));
-  check("...and the streamer card still links to /live", /<h3>Streamers<\/h3>[\s\S]{0,300}href="https:\/\/app\.oddie\.fun\/live"/.test(landing));
+  check("...and the streamer card adds it to Kick and to Twitch",
+    /<h3>Streamers<\/h3>[\s\S]{0,300}href="https:\/\/app\.oddie\.fun\/live\/kick\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/twitch\/connect"/.test(landing));
   check("...and the nav can reach it", /href="#creators">For creators</.test(landing));
   check("the hero chat is in English, the page speaks to everyone", !/cumaya|görmez/.test(landing));
   check("no card says KOL", !/\bKOLs?\b/.test(landing));
-  check("the description names Kick and Telegram", /<meta name="description" content="[^"]*Kick[^"]*Telegram/.test(landing));
+  check("the description names Kick, Twitch and Telegram", /<meta name="description" content="[^"]*Kick[^"]*Twitch[^"]*Telegram/.test(landing));
+  check("no share tag says real money (brand rules)", !/content="[^"]*real-money/.test(landing));
   check("no X composer is left to wire", !/data-ask/.test(landing) && !/EXAMPLES/.test(landing));
   /* Step three used to state the deadline and never a side, because it told
      the live BTC market. It now settles a made-up twin of it (another slug,
@@ -443,17 +449,20 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
   const script = landing.slice(landing.indexOf("HOW IT WORKS, AS ONE CHAT"));
   check("how it works is one chat window, not three cards", landing.includes('<div class="tale reveal" id="tale">')
     && !landing.includes('<div class="steps reveal">') && !landing.includes('class="step__cap"'));
-  check("...that plays on all three doors, not only Kick",
-    script.includes('where: "Kick chat"') && script.includes('where: "Replies on X"') && script.includes('where: "Telegram group"')
+  check("...that plays on every door, streams first",
+    script.indexOf('where: "Kick chat"') < script.indexOf('where: "Twitch chat"')
+    && script.indexOf('where: "Twitch chat"') < script.indexOf('where: "Replies on X"')
+    && script.includes('where: "Replies on X"') && script.includes('where: "Telegram group"')
     && script.includes('var TAG = "!oddie BTC hits 88k by Friday?"') && script.includes('"<i>@oddiefun</i> BTC hits 88k by Friday?"')
     && script.includes('"<i>@oddiefunbot</i> BTC hits 88k by Friday?"'));
   check("...each door drawn as its own app (Lev, 2 Oct: X and Telegram did not look like X and Telegram)",
-    script.includes('p: "kick"') && script.includes('p: "x"') && script.includes('p: "tg"')
+    script.includes('p: "kick"') && script.includes('p: "tw"') && script.includes('p: "x"') && script.includes('p: "tg"')
+    && /\.tale__screen\[data-app="tw"\]\{background:#18181b;/.test(landing)
     && /\.tale__screen\[data-app="x"\]\{background:#000;/.test(landing) && /\.tale__screen\[data-app="tg"\]\{background:#0e1621;/.test(landing)
     && landing.includes(".xp--chain::before") && landing.includes(".tg__bub::before"));
   check("...and the window keeps one height on every door, so a switch never moves the page",
     /\.tale--js \.tale__feed\{height:\d+px;/.test(landing)
-    && !/\.tale__screen\[data-app="(?:x|tg)"\]\{[^}]*(?:padding:|padding-(?:top|bottom)|height)/.test(landing));
+    && !/\.tale__screen\[data-app="(?:x|tg|tw)"\]\{[^}]*(?:padding:|padding-(?:top|bottom)|height)/.test(landing));
   check("the card in the X reply and the Telegram photo is the real card, not a drawing of one",
     script.includes('var CARD_SRC = "/brand/tale-card.webp";') && script.includes('card("xp__m")') && script.includes('card("tg__ph")')
     && !landing.includes('class="mcard__s"') && statSync("public/brand/tale-card.webp").size < 40_000);
@@ -474,6 +483,13 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
       tale.includes(`${kickA}<span class="ln">${LINK}</span>${kickB}`)
       && server.includes('`It\'s ${outcome.toUpperCase()}: "${headline}" Winners collect at ${APP_BASE_URL}/m/${slug}`')
       && tale.includes(`It's NO: "${HOOK}" Winners collect at <span class="ln">${LINK}</span>`));
+    // Twitch runs the same engine, so its lines are Kick's, on its own market.
+    const TW_HOOK = "SOL above $150 by Sunday?";
+    const [twA, twB] = MARKET_COPY.opened(TW_HOOK, "\u0000", "this channel").split("\u0000");
+    check("Twitch says what the chat bot says, opening and settling",
+      script.includes(`var HK = "${TW_HOOK}";`)
+      && script.includes(`'${twA.replace(TW_HOOK, "' + HK + '")}' + link + "${twB}"`)
+      && script.includes(`"It's YES: \\"" + HK + "\\" Winners collect at " + link`));
     const reply = buildTweetReply({ question: twin.question, permalink: LINK, hook: HOOK }).primary;
     check("X and Telegram open with the reply the bot builds for that link",
       reply.endsWith(`\n\nPick a side, real SOL on it ↓\n${LINK}`)
@@ -491,8 +507,8 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
     && tale.includes('<p class="msg kc"><b class="k2">0xjules</b>: !oddie BTC hits 88k by Friday?</p>'));
   check("it moves only on screen, and never on its own with reduced motion",
     script.includes("if (reduced) { upTo(1); return; }") && script.includes("}, { threshold: 0.35 }).observe(tale);"));
-  check("the hero says the pitch once; the doors say where",
-    landing.includes("<span>The people&rsquo;s prediction market.</span>") && !landing.includes("It opens in seconds and pays out on its own."));
+  check("the hero says the pitch once, to the streamer; the doors say where",
+    landing.includes("<span>Your chat calls the market. You earn 2%.</span>") && !landing.includes("It opens in seconds and pays out on its own."));
   check("the creators are a row per door, each still saying who earns",
     landing.includes("<p>Your channel earns <b>2%</b>.</p>") && landing.includes("<p>You earn <b>2%</b>, either side.</p>")
     && landing.includes("<p>The opener earns <b>2%</b>.</p>"));

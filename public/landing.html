@@ -12,7 +12,7 @@
      icin burada preload ediliyor (bant genisligini degistirmez, baslama
      anini one alir). -->
 <link rel="preload" as="image" href="/brand/sticker-hero.webp">
-<title>Oddie: every argument is a market</title>
+<title>Oddie: prediction markets for livestreams</title>
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=3">
@@ -20,17 +20,17 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
 <link rel="manifest" href="/site.webmanifest?v=3">
 <meta name="theme-color" content="#FCF604">
-<meta name="description" content="Call it in any chat: !oddie on Kick, @oddiefun on X, @oddiefunbot on Telegram. It becomes a real-money market on Solana in seconds and settles itself.">
+<meta name="description" content="Your chat calls it: !oddie on Kick or Twitch opens a market in seconds, it settles itself, and the channel earns 2% of every pool. Also on X and Telegram.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/">
-<meta property="og:title" content="Every argument is a market.">
-<meta property="og:description" content="Call it in any chat, on Kick, X or Telegram. It becomes a real-money market in seconds. Winners split the pool, less 4%.">
-<meta property="og:image" content="https://oddie.fun/og.png?v=2">
+<meta property="og:title" content="Prediction markets for livestreams.">
+<meta property="og:description" content="Your chat calls it with !oddie on Kick or Twitch. A market opens in seconds, settles itself, and the channel earns 2% of every pool.">
+<meta property="og:image" content="https://oddie.fun/og.png?v=3">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="The people’s prediction market.">
-<meta name="twitter:description" content="Tag @oddiefun under any claim on X and a real-money market opens on it in seconds. Winners split the pool, less 4%.">
-<meta name="twitter:image" content="https://oddie.fun/og.png?v=2">
+<meta name="twitter:title" content="Prediction markets for livestreams.">
+<meta name="twitter:description" content="Your chat calls it with !oddie on Kick or Twitch. A market opens in seconds, settles itself, and the channel earns 2% of every pool.">
+<meta name="twitter:image" content="https://oddie.fun/og.png?v=3">
 
 <style>
   @font-face{font-family:'Anton';font-style:normal;font-weight:400;font-display:swap;
@@ -156,8 +156,6 @@
   .col{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(13px,1.5vw,20px)}
   .col--mid{align-items:center;text-align:center}
   .col--end{align-items:flex-end;text-align:right}
-  .mk{background-image:linear-gradient(var(--pink),var(--pink));background-repeat:no-repeat;
-    background-size:100% .09em;background-position:0 101%;padding-bottom:.08em}
 
   .brush{display:inline-block;background:var(--ink);color:#fff;padding:11px 22px;
     font-size:clamp(14px,1.4vw,18px);font-weight:700;line-height:1.35;transform:rotate(-.8deg);
@@ -301,6 +299,10 @@
   .crowd{margin-top:clamp(32px,4vw,58px);line-height:0}
   .crowd img{width:100%}
   .pmark{border-radius:5px}
+  .vision{margin:0 auto;width:fit-content;max-width:100%;color:var(--ink);line-height:.96;
+    font-size:clamp(40px,7vw,104px)}
+  .vision span:nth-child(1){font-size:.72em}
+  .vision span:nth-child(2){margin-left:clamp(0px,3.4vw,58px);margin-top:.18em;rotate:-1.3deg;transform-origin:0 60%}
 
   footer{background:var(--black);padding:8px 0 40px;color:var(--fg-3)}
   .foot{display:flex;align-items:center;gap:10px 24px;flex-wrap:wrap;
@@ -1000,6 +1002,11 @@
   .door__t b{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:-.01em}
   .door__t small{font-size:11.5px;color:var(--ink-2);margin-top:3px}
   .mk{flex:none;display:block}
+  /* The rest of the bot, under the doors: a quiet line, not a third door. */
+  .also{position:relative;z-index:6;margin:clamp(14px,1.8vw,22px) 0 0;font-size:14px;font-weight:700;color:var(--ink-2)}
+  .also a{display:inline-flex;align-items:center;gap:5px;margin-inline:2px;color:var(--ink);text-decoration:none}
+  .also a span{text-decoration:underline;text-decoration-thickness:2px;text-decoration-color:var(--pink);text-underline-offset:3px}
+  .also .mk{display:inline-block;vertical-align:-4px}
   .close .doors{justify-content:center}
   .close .door{box-shadow:5px 6px 0 var(--ink)}
   @media (max-width:900px){.doors{grid-template-columns:1fr;max-width:420px}
@@ -1049,6 +1056,12 @@
   .tale__screen{margin:0 -14px -12px;padding:0 14px 12px;border-top:1px solid transparent}
   .tale__screen[data-app="x"]{background:#000;border-top-color:#2f3336;padding-inline:0}
   .tale__screen[data-app="tg"]{background:#0e1621;padding-inline:10px}
+  /* Twitch: Kick's line grammar on Twitch's own ground, font and name colours. */
+  .tale__screen[data-app="tw"]{background:#18181b;border-top-color:#2f2f35}
+  .tale__screen[data-app="tw"] .kc{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;color:#efeff1}
+  .tale__screen[data-app="tw"] .kc .k1{color:#FF7F50}
+  .tale__screen[data-app="tw"] .kc .k2{color:#1E90FF}
+  .tale__screen[data-app="tw"] .kc__rp{color:#adadb8}
   .tale--js .tale__feed{height:330px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;
     -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 30px);mask-image:linear-gradient(to bottom,transparent 0,#000 30px)}
   .tale--js .tale__feed .msg{animation:tale-in .35s ease-out both}
@@ -1125,6 +1138,18 @@
     padding:8px 12px;background:var(--ink);color:var(--cream);text-decoration:none;white-space:nowrap;
     font-family:var(--display);font-size:15px;text-transform:uppercase}
   .cr__go i{font-style:normal;color:var(--yellow)}
+  /* Streamers have two doors, stacked in the one column the others use. */
+  .cr__gos{grid-column:2;grid-row:1 / span 2;display:flex;flex-direction:column;gap:6px}
+  .cr__gos .cr__go{grid-column:auto;grid-row:auto}
+  /* X and Telegram sit behind the streams (Lev, 7 Oct): smaller, quieter, and
+     their doors outlined, so the two filled buttons are the streamer's. */
+  .cr--minor{padding:10px 0}
+  .cr--minor .mk{width:20px;height:20px}
+  .cr--minor h3{font-size:clamp(16px,1.6vw,19px);color:var(--ink-2)}
+  .cr--minor p{font-size:13px}
+  .cr--minor .cr__go{min-height:36px;padding:5px 10px;font-size:13px;background:transparent;color:var(--ink);border:2px solid var(--ink)}
+  .cr--minor .cr__go i{color:var(--pink)}
+  @media (hover:hover){.cr--minor .cr__go:hover{background:rgba(11,13,4,.07)}}
   @media (hover:hover){.cr__go:hover{background:#1a1e0a}}
   .cr__go:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
 
@@ -1201,7 +1226,7 @@ html{-webkit-tap-highlight-color:transparent}
 <!-- Istek sayfanin tamaminda ekranda kalsin diye masthead header'in DISINDA
      ve <body>'nin dogrudan cocugu: sticky bir eleman ebeveyninin disina
      tasamaz, nav .A'nin icinde kalsaydi 640px sonra birakirdi. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol><symbol id="xi-r" viewBox="0 0 24 24"><path d="M12 4.5c4.4 0 8 2.9 8 6.6s-3.6 6.6-8 6.6c-.9 0-1.8-.1-2.6-.3L5.5 19.5l.9-3.3C5 15 4 13.1 4 11.1 4 7.4 7.6 4.5 12 4.5z"/></symbol><symbol id="xi-rt" viewBox="0 0 24 24"><path d="M4.5 8 7 5.5 9.5 8M7 6v9.5a2 2 0 0 0 2 2h4.5M19.5 16 17 18.5 14.5 16M17 18V8.5a2 2 0 0 0-2-2h-4.5"/></symbol><symbol id="xi-l" viewBox="0 0 24 24"><path d="M12 19.5s-7.5-4.4-7.5-9.6A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.5 2.3c0 5.2-7.5 9.6-7.5 9.6z"/></symbol><symbol id="xi-v" viewBox="0 0 24 24"><path d="M6 19v-6M12 19V6M18 19v-9"/></symbol><symbol id="xi-s" viewBox="0 0 24 24"><path d="M12 15V4.5M8 8.5l4-4 4 4M5 13.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-twitch" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#9146FF"/><path d="M8.2 5 6.5 8.4v10.1h3.4V20.2h1.7l1.7-1.7h2.8l3.4-3.4V5H8.2zm9.6 9.2-2 2h-3.4l-1.7 1.7v-1.7H7.9V6.4h9.9v7.8zm-2.6-5.1v3.4h-1.4V9.1h1.4zm-3.7 0v3.4h-1.4V9.1h1.4z" fill="#fff"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol><symbol id="xi-r" viewBox="0 0 24 24"><path d="M12 4.5c4.4 0 8 2.9 8 6.6s-3.6 6.6-8 6.6c-.9 0-1.8-.1-2.6-.3L5.5 19.5l.9-3.3C5 15 4 13.1 4 11.1 4 7.4 7.6 4.5 12 4.5z"/></symbol><symbol id="xi-rt" viewBox="0 0 24 24"><path d="M4.5 8 7 5.5 9.5 8M7 6v9.5a2 2 0 0 0 2 2h4.5M19.5 16 17 18.5 14.5 16M17 18V8.5a2 2 0 0 0-2-2h-4.5"/></symbol><symbol id="xi-l" viewBox="0 0 24 24"><path d="M12 19.5s-7.5-4.4-7.5-9.6A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.5 2.3c0 5.2-7.5 9.6-7.5 9.6z"/></symbol><symbol id="xi-v" viewBox="0 0 24 24"><path d="M6 19v-6M12 19V6M18 19v-9"/></symbol><symbol id="xi-s" viewBox="0 0 24 24"><path d="M12 15V4.5M8 8.5l4-4 4 4M5 13.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5"/></symbol></svg>
 <div class="topbar">
   <nav class="shell nav__in">
     <a class="brand" href="/" aria-label="Oddie home">
@@ -1237,7 +1262,12 @@ html{-webkit-tap-highlight-color:transparent}
              it, so "anyone can open one on anything" is structurally ours and
              not a slogan. Lev'in karari: bu ust satir odanin tekrar edecegi
              cumle, dugme de ne yapilacagini soyleyen taunt. -->
-        <h1 class="h1"><span>Every argument</span><span class="lo">is a market.</span></h1>
+        <!-- LIVESTREAMS LEAD (Lev, 7 Oct, after Josip): "every argument" was too
+             wide to picture, and a stream chat already holds both sides of an
+             argument with a crowd watching. The one-liner is the category plus
+             where it lives; "Every argument is a market." is the vision now and
+             closes the page. -->
+        <h1 class="h1"><span>Prediction markets</span><span class="lo">for livestreams.</span></h1>
         <!-- THE MECHANIC IS STATED ONCE, HERE.
              This was three lines and it said the same thing three times:
              "turn arguments into markets", "find a fight, tag it", "it becomes
@@ -1270,7 +1300,7 @@ html{-webkit-tap-highlight-color:transparent}
              under it say where you call it, and How it works plays what
              happens next, so the second sentence was saying both in advance. -->
         <p class="pitch">
-          <span>The people&rsquo;s prediction market.</span>
+          <span>Your chat calls the market. You earn 2%.</span>
         </p>
         <!-- IT USED TO LAND ON /genesis, WHICH WAS RIGHT WHILE THERE WAS A
              CAMPAIGN AND A TICKET TO CLAIM. There is neither now, so a button
@@ -1290,11 +1320,17 @@ html{-webkit-tap-highlight-color:transparent}
         <!-- THE DOORS, NOT A BOX THAT POSTS TO X. The hero line stopped naming
              one platform (Lev, 1 Oct: every argument, not every tweet), so the
              call to action stopped being one platform's composer too. -->
+        <!-- TWO DOORS FOR THE STREAMER, ONE LINE FOR EVERYWHERE ELSE. The hero
+             speaks to whoever installs it, so each door is the install itself
+             (the platform's own sign-in); X and Telegram stay one tap away as
+             the same bot, because they are where the vision already runs. -->
         <div class="doors">
-          <a class="door" href="https://app.oddie.fun/live"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-kick"/></svg><span class="door__t"><b>!oddie</b><small>your claim, in any Kick chat</small></span></a>
-          <a class="door" href="https://x.com/intent/post?text=%40oddiefun%20"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-x"/></svg><span class="door__t"><b>@oddiefun</b><small>under any post on X</small></span></a>
-          <a class="door" href="https://t.me/oddiefunbot"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-telegram"/></svg><span class="door__t"><b>@oddiefunbot</b><small>in any Telegram group</small></span></a>
+          <a class="door" href="https://app.oddie.fun/live/kick/connect"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-kick"/></svg><span class="door__t"><b>Add to Kick</b><small>!oddie and !call in your chat</small></span></a>
+          <a class="door" href="https://app.oddie.fun/live/twitch/connect"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-twitch"/></svg><span class="door__t"><b>Add to Twitch</b><small>!oddie and !call in your chat</small></span></a>
         </div>
+        <p class="also">Also on
+          <a href="https://x.com/intent/post?text=%40oddiefun%20" target="_blank" rel="noopener"><svg class="mk" width="18" height="18" aria-hidden="true"><use href="#mk-x"/></svg><span>X</span></a>
+          and <a href="https://t.me/oddiefunbot" target="_blank" rel="noopener"><svg class="mk" width="18" height="18" aria-hidden="true"><use href="#mk-telegram"/></svg><span>Telegram</span></a></p>
         <!--LIVESTRIP-->
         <!-- THE "WORKS ON X / TELEGRAM SOON / DISCORD SOON" ROW IS GONE.
              Both halves already existed elsewhere: X is named in the hero
@@ -1369,8 +1405,9 @@ html{-webkit-tap-highlight-color:transparent}
           <p class="chat__src"><span class="tale__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> <span class="tale__where">Kick chat</span></span>
             <span class="tale__doors" aria-label="Where it works">
               <button class="tale__door" type="button" data-plat="0" aria-label="Kick"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-kick"/></svg></button>
-              <button class="tale__door" type="button" data-plat="1" aria-label="X"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-x"/></svg></button>
-              <button class="tale__door" type="button" data-plat="2" aria-label="Telegram"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-telegram"/></svg></button>
+              <button class="tale__door" type="button" data-plat="1" aria-label="Twitch"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-twitch"/></svg></button>
+              <button class="tale__door" type="button" data-plat="2" aria-label="X"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-x"/></svg></button>
+              <button class="tale__door" type="button" data-plat="3" aria-label="Telegram"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-telegram"/></svg></button>
             </span></p>
           <div class="tale__screen" data-app="kick"><div class="tale__feed" aria-live="off">
             <p class="msg kc"><b class="k1">mike_trades</b>: no way btc sees 88k this week</p>
@@ -1418,7 +1455,7 @@ html{-webkit-tap-highlight-color:transparent}
        loudest pairing this palette has. -->
   <section class="D sec" id="creators">
     <!-- EVERY CREATOR, NOT ONLY STREAMERS (Lev, 1 Oct). Each card says who the
-         2% goes to on that door TODAY: on Kick the channel earns from whatever
+         2% goes to on that door TODAY: on Kick and Twitch the channel earns from whatever
          its chat opens; on X and Telegram the person who opens it earns, so
          those cards ask the creator to open it themselves. -->
     <!-- THE OFFER HEADS THIS FIELD NOW (Lev, 2 Oct, the hypercasual cut). It had
@@ -1442,16 +1479,16 @@ html{-webkit-tap-highlight-color:transparent}
            words instead of a sentence; the how is in the chat window above. -->
       <div class="cr__row">
         <article class="cr">
-          <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-kick"/></svg><h3>Streamers</h3></div>
+          <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-kick"/></svg><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-twitch"/></svg><h3>Streamers</h3></div>
           <p>Your channel earns <b>2%</b>.</p>
-          <a class="cr__go" href="https://app.oddie.fun/live">Add to Kick <i aria-hidden="true">&rarr;</i></a>
+          <span class="cr__gos"><a class="cr__go" href="https://app.oddie.fun/live/kick/connect">Add to Kick <i aria-hidden="true">&rarr;</i></a><a class="cr__go" href="https://app.oddie.fun/live/twitch/connect">Add to Twitch <i aria-hidden="true">&rarr;</i></a></span>
         </article>
-        <article class="cr">
+        <article class="cr cr--minor">
           <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-x"/></svg><h3>Creators on X</h3></div>
           <p>You earn <b>2%</b>, either side.</p>
           <a class="cr__go" href="https://x.com/intent/post?text=%40oddiefun%20" target="_blank" rel="noopener">Tag @oddiefun <i aria-hidden="true">&rarr;</i></a>
         </article>
-        <article class="cr">
+        <article class="cr cr--minor">
           <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-telegram"/></svg><h3>Communities</h3></div>
           <p>The opener earns <b>2%</b>.</p>
           <a class="cr__go" href="https://t.me/oddiefunbot?startgroup=true" target="_blank" rel="noopener">Add to a group <i aria-hidden="true">&rarr;</i></a>
@@ -1480,6 +1517,13 @@ html{-webkit-tap-highlight-color:transparent}
     <!-- the crowd is the last thing the page says. The marks on its hats
          and its raised phone are the real oddie ghost (Lev, 2 Oct: the art
          had made-up ones); ?v= because /brand is cached for a week. -->
+    <!-- THE VISION CLOSES THE PAGE (Lev, 7 Oct). The hero says where Oddie
+         starts, livestreams; this says where it is going, and the crowd under
+         it is everybody who argues. It is the old headline, so it is the line
+         people already repeat. -->
+    <div class="shell">
+      <h2 class="h2 vision reveal"><span>Every argument</span><span class="lo">is a market.</span></h2>
+    </div>
     <div class="crowd" aria-hidden="true">
       <img src="/brand/crowd-strip.webp?v=2" alt="" width="1800" height="600" loading="lazy">
     </div>
@@ -1537,7 +1581,7 @@ html{-webkit-tap-highlight-color:transparent}
 
   /* HOW IT WORKS, AS ONE CHAT (Lev, 2 Oct, the hypercasual cut). The window
      plays the claim, the market and the payout, then the same story on the
-     next door: Kick, X, Telegram, each drawn as that app draws it. What the
+     next door: Kick, Twitch, X, Telegram, each drawn as that app draws it. What the
      bot says is its real text for this market, cut short only where it
      repeats the card: Kick from MARKET_COPY and the result notice in
      server.ts; X from buildTweetReply, resolutionText and authorCreditText;
@@ -1576,6 +1620,26 @@ html{-webkit-tap-highlight-color:transparent}
         m(2, 5300, "kc", say("k2", "0xjules", "YES. 0.1 in")),
         m(2, 6000, "kc", say("k1", "mike_trades", "NO. see you at midnight")),
         m(2, 7200, "kc", say("k0", "oddiefun", "It's NO: \"" + HOOK + "\" Winners collect at " + link, 1))
+      ];
+    }
+
+    /* Twitch: the same engine and the same lines as Kick (MARKET_COPY and the
+       result notice), drawn the way Twitch draws its chat, on its own market:
+       the streams that argue about coins are on Twitch too. */
+    function twitch() {
+      var HK = "SOL above $150 by Sunday?";
+      var LK = "https://app.oddie.fun/m/will-solana-sol-be-above-150-by-7c41d2";
+      var TAG = "!oddie SOL above $150 by Sunday?";
+      var RE = '<span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @kaitrades: ' + TAG + "</span>";
+      function say(c, who, text, re) { return (re ? RE : "") + '<b class="' + c + '">' + who + "</b>: " + text; }
+      var link = '<span class="ln">' + LK + "</span>";
+      return [
+        m(0, 300, "kc", say("k1", "degen_mo", "sol is seeing 150 by sunday. calling it now")),
+        m(0, 1300, "kc", say("k2", "kaitrades", TAG)),
+        m(1, 2700, "kc", say("k0", "oddiefun", 'Market open: "' + HK + '" Take YES or NO: ' + link + " (this channel earns 2% of the pool)", 1)),
+        m(2, 5300, "kc", say("k1", "degen_mo", "YES. 0.5 in")),
+        m(2, 6000, "kc", say("k2", "kaitrades", "NO. see you sunday")),
+        m(2, 7200, "kc", say("k0", "oddiefun", "It's YES: \"" + HK + "\" Winners collect at " + link, 1))
       ];
     }
 
@@ -1630,6 +1694,7 @@ html{-webkit-tap-highlight-color:transparent}
 
     var DOORS = [
       { where: "Kick chat", mark: "#mk-kick", p: "kick", story: kick() },
+      { where: "Twitch chat", mark: "#mk-twitch", p: "tw", story: twitch() },
       { where: "Replies on X", mark: "#mk-x", p: "x", story: x() },
       { where: "Telegram group", mark: "#mk-telegram", p: "tg", story: tg() }
     ];

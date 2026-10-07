@@ -38,13 +38,16 @@ const CONTENT_W = COL_R - PAD_L;
    moves to the sub line as the category, and "tag @oddiefun on X" went with
    the X-only story: the unfurl now names Kick and Telegram too, because a
    link shared from a stream or a group should not describe a Twitter bot. */
-export const HEAD = ["every argument", "is a market."];
+/* 7 OCT: LIVESTREAMS LEAD. The one-liner is the category and where it lives,
+   the same words as the page's headline; the sub line says how a streamer's
+   chat calls it, and that it is on X and Telegram too. */
+export const HEAD = ["prediction markets", "for livestreams."];
 const HEAD_FS_MAX = 82;
 const CAP = 0.72;
 
 /** The mechanic, then the claim. "no listing desk" is the differentiator stated
  *  the shortest way it can be: every rival runs one, one of them by law. */
-export const SUB = ["call it on kick, x or telegram.", "the people\u2019s prediction market."];
+export const SUB = ["your chat calls it on kick or twitch.", "also on x and telegram."];
 const SUB_FS = 26;
 
 /** A chip: the yes/no pair is the fastest way to say "prediction market"

@@ -251,8 +251,9 @@ console.log("\nthe images we post match the app people land in");
 
   const banner = renderBanner();
   check("the banner is painted in the brand accent", banner.includes(`fill="${C.accent}"`));
-  check("...and names every door, not only X", /call it on kick, x or telegram\./.test(banner));
-  check("...under the one-liner", banner.includes(">every argument<") && banner.includes(">is a market.<"));
+  check("...and names the streams first, then the other doors", /your chat calls it on kick or twitch\./.test(banner)
+    && /also on x and telegram\./.test(banner));
+  check("...under the one-liner", banner.includes(">prediction markets<") && banner.includes(">for livestreams.<"));
   // The mark is an inlined base64 PNG, and base64's alphabet spells "NaN" by
   // chance often enough that scanning the raw string for it is meaningless.
   const geom = banner.replace(/href="data:[^"]*"/g, 'href="…"');
