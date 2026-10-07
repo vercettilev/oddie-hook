@@ -3780,7 +3780,7 @@ export function handleFromSourceUrl(url: string | null | undefined): string | nu
  * and is deliberately narrow. This decides whether we will show the market at
  * all, and is allowed to be wider.
  */
-export type SourceKind = "x" | "telegram" | "kick";
+export type SourceKind = "x" | "telegram" | "kick" | "twitch";
 /**
  * A TELEGRAM MESSAGE WITH NO PUBLIC LINK: a private chat, which is where guest
  * mode lets the bot be tagged, and a basic group, which is what two friends get
@@ -3809,6 +3809,19 @@ export const kickChatSource = (channelSlug: string, messageId: string): string =
   return `kick-chat:${slug}/${id}`;
 };
 
+/**
+ * A TWITCH CHAT MESSAGE, the same shape for the same reason: a chat line has
+ * no link of its own, so `twitch-chat:<channel login>/<message id>` (Twitch
+ * message ids are UUIDs). Never printed as a link.
+ */
+export const TWITCH_CHAT_SOURCE = /^twitch-chat:([a-z0-9_]{1,40})\/([0-9a-f-]{8,64})$/i;
+export const twitchChatSource = (channelLogin: string, messageId: string): string => {
+  const login = channelLogin.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 40) || "channel";
+  const id = /^[0-9a-f-]{8,64}$/i.test(messageId) ? messageId.toLowerCase()
+    : createHash("sha256").update(messageId).digest("hex").slice(0, 32);
+  return `twitch-chat:${login}/${id}`;
+};
+
 /** Only a real web link is ever printed as a link. */
 export const isWebSourceUrl = (url: string | null | undefined): boolean =>
   typeof url === "string" && /^https?:\/\//i.test(url);
@@ -3817,6 +3830,7 @@ export function sourceUrlKind(url: string | null | undefined): SourceKind | null
   if (!url) return null;
   if (TG_PRIVATE_SOURCE.test(String(url))) return "telegram";
   if (KICK_CHAT_SOURCE.test(String(url))) return "kick";
+  if (TWITCH_CHAT_SOURCE.test(String(url))) return "twitch";
   let u: URL;
   try { u = new URL(String(url)); } catch { return null; }
   if (u.protocol !== "https:" && u.protocol !== "http:") return null;
@@ -3862,6 +3876,8 @@ export function sourcePostKey(url: string | null | undefined): string | null {
   if (priv) return `tgp:${priv[1]}`;
   const kick = KICK_CHAT_SOURCE.exec(String(url));
   if (kick) return `kick:${kick[2].toLowerCase()}`;
+  const twitch = TWITCH_CHAT_SOURCE.exec(String(url));
+  if (twitch) return `twitch:${twitch[2].toLowerCase()}`;
   const u = new URL(String(url));
   if (kind === "x") {
     const id = /\/status\/(\d+)/.exec(u.pathname)?.[1];
@@ -5290,74 +5306,86 @@ export async function tgThreadsForSlug(slug: string): Promise<Array<{ key: strin
   return rows.map((r) => ({ key: r.tweet_id, reason: r.reason, replyId: r.reply_id, author: r.author }));
 }
 
-/** The Kick channels a market was opened from, for its result: the ledger key
- *  is `kick:<channel id>:<message id>`. */
-export async function kickThreadsForSlug(slug: string): Promise<Array<{ channelId: string; messageId: string }>> {
+/** A stream platform, as it prefixes the ledger key: <platform>:<channel id>:<message id>. */
+export type StreamPlatform = "kick" | "twitch";
+
+/** The channels of one platform a market was opened from, for its result. */
+export async function streamThreadsForSlug(platform: StreamPlatform, slug: string): Promise<Array<{ channelId: string; messageId: string }>> {
   if (!slug) return [];
+  const re = new RegExp(`^${platform}:([^:]+):(.+)$`);
   const parse = (key: string) => {
-    const m = /^kick:([^:]+):(.+)$/.exec(key);
+    const m = re.exec(key);
     return m ? { channelId: m[1], messageId: m[2] } : null;
   };
   if (!PERSISTENT) {
     return [...memMentions.values()]
-      .filter((m) => m.slug === slug && m.outcome === "replied" && m.tweetId.startsWith("kick:"))
+      .filter((m) => m.slug === slug && m.outcome === "replied" && m.tweetId.startsWith(`${platform}:`))
       .map((m) => parse(m.tweetId)).filter((x): x is { channelId: string; messageId: string } => Boolean(x));
   }
   await ensureSchema();
   const { rows } = await db().query<{ tweet_id: string }>(
-    `SELECT tweet_id FROM x_mention WHERE slug = $1 AND outcome = 'replied' AND tweet_id LIKE 'kick:%' ORDER BY at ASC`, [slug]);
+    `SELECT tweet_id FROM x_mention WHERE slug = $1 AND outcome = 'replied' AND tweet_id LIKE $2 ORDER BY at ASC`, [slug, `${platform}:%`]);
   return rows.map((r) => parse(r.tweet_id)).filter((x): x is { channelId: string; messageId: string } => Boolean(x));
 }
+/** The Kick channels a market was opened from: the ledger key is `kick:<channel id>:<message id>`. */
+export const kickThreadsForSlug = (slug: string) => streamThreadsForSlug("kick", slug);
 
 /* A STREAM'S OWN MARKETS. A market opened from a stream's chat is the
    CHANNEL's, whoever typed the claim (src/live/claims.ts), so its opener is
-   read off the ledger KEY, kick:<channel id>:<message id>, and never off the
-   author, who is only the viewer that knocked. The channel's person id is
-   kick:<channel id>, the same shape as a Telegram opener's tg:<user id>, and
-   the wallet its streamer links sits on that person row. */
+   read off the ledger KEY, <platform>:<channel id>:<message id>, and never off
+   the author, who is only the viewer that knocked. The channel's person id is
+   <platform>:<channel id>, the same shape as a Telegram opener's tg:<user id>,
+   and the wallet its streamer links sits on that person row. */
 
-const kickChannelOfKey = (key: string): string | null => /^kick:([^:]+):/.exec(key)?.[1] ?? null;
+const channelOfKey = (platform: StreamPlatform, key: string): string | null =>
+  new RegExp(`^${platform}:([^:]+):`).exec(key)?.[1] ?? null;
 
 /** Every market opened in this channel's chat, oldest first. */
-export async function kickOpenedSlugs(channelId: string): Promise<string[]> {
+export async function streamOpenedSlugs(platform: StreamPlatform, channelId: string): Promise<string[]> {
   if (!channelId) return [];
   if (!PERSISTENT) {
     return [...new Set([...memMentions.values()]
-      .filter((m) => m.outcome === "replied" && m.reason === "opened" && m.slug && kickChannelOfKey(m.tweetId) === channelId)
+      .filter((m) => m.outcome === "replied" && m.reason === "opened" && m.slug && channelOfKey(platform, m.tweetId) === channelId)
       .map((m) => m.slug as string))];
   }
   await ensureSchema();
   const { rows } = await db().query<{ slug: string }>(
     `SELECT slug FROM x_mention
-      WHERE tweet_id LIKE 'kick:%' AND split_part(tweet_id, ':', 2) = $1
+      WHERE tweet_id LIKE $2 AND split_part(tweet_id, ':', 2) = $1
         AND outcome = 'replied' AND reason = 'opened' AND slug IS NOT NULL
       GROUP BY slug ORDER BY min(at) ASC`,
-    [channelId],
+    [channelId, `${platform}:%`],
   );
   return rows.map((r) => r.slug);
 }
+export const kickOpenedSlugs = (channelId: string) => streamOpenedSlugs("kick", channelId);
 
-/** The channel a market was opened in, as its person id (kick:<channel id>),
- *  or null when the market did not come from a stream. */
-export async function kickOpenerOf(slug: string): Promise<string | null> {
+/** The channel a market was opened in, as its person id (<platform>:<channel
+ *  id>), or null when the market did not come from a stream. */
+export async function streamOpenerOf(slug: string): Promise<string | null> {
   if (!slug) return null;
   let key: string | null = null;
+  const stream = (k: string) => k.startsWith("kick:") || k.startsWith("twitch:");
   if (!PERSISTENT) {
     key = [...memMentions.values()].find((m) =>
-      m.slug === slug && m.outcome === "replied" && m.reason === "opened" && m.tweetId.startsWith("kick:"))?.tweetId ?? null;
+      m.slug === slug && m.outcome === "replied" && m.reason === "opened" && stream(m.tweetId))?.tweetId ?? null;
   } else {
     await ensureSchema();
     const { rows } = await db().query<{ tweet_id: string }>(
       `SELECT tweet_id FROM x_mention
-        WHERE slug = $1 AND outcome = 'replied' AND reason = 'opened' AND tweet_id LIKE 'kick:%'
+        WHERE slug = $1 AND outcome = 'replied' AND reason = 'opened' AND (tweet_id LIKE 'kick:%' OR tweet_id LIKE 'twitch:%')
         ORDER BY at ASC LIMIT 1`,
       [slug],
     );
     key = rows[0]?.tweet_id ?? null;
   }
-  const channel = key ? kickChannelOfKey(key) : null;
-  return channel ? `kick:${channel}` : null;
+  if (!key) return null;
+  const platform: StreamPlatform = key.startsWith("twitch:") ? "twitch" : "kick";
+  const channel = channelOfKey(platform, key);
+  return channel ? `${platform}:${channel}` : null;
 }
+/** Kept for callers that only ever meant a stream: any stream's channel now. */
+export const kickOpenerOf = streamOpenerOf;
 
 /** A market on a stream's page: what it asks and where it stands. */
 export interface ChannelMarket {
@@ -5366,12 +5394,12 @@ export interface ChannelMarket {
 
 /** The markets a stream's page lists, newest first. Retired ones are left out,
  *  as they are everywhere else. */
-export async function kickChannelMarkets(channelId: string, limit = 10): Promise<ChannelMarket[]> {
+export async function streamChannelMarkets(platform: StreamPlatform, channelId: string, limit = 10): Promise<ChannelMarket[]> {
   if (!channelId) return [];
   const n = Math.max(1, Math.min(50, Math.floor(limit)));
   if (!PERSISTENT) {
     const out: ChannelMarket[] = [];
-    for (const slug of (await kickOpenedSlugs(channelId)).reverse()) {
+    for (const slug of (await streamOpenedSlugs(platform, channelId)).reverse()) {
       const c = memCommunity.get(slug);
       if (!c || c.retiredAt) continue;
       const m = mem.get(slug)?.market;
@@ -5383,14 +5411,14 @@ export async function kickChannelMarkets(channelId: string, limit = 10): Promise
   const { rows } = await db().query<{ slug: string; question: string; hook: string | null; closes_at: Date | null; resolved_outcome: string | null }>(
     `SELECT o.slug, s.question, c.hook, s.closes_at, c.resolved_outcome
        FROM (SELECT slug, min(at) AS opened_at FROM x_mention
-              WHERE tweet_id LIKE 'kick:%' AND split_part(tweet_id, ':', 2) = $1
+              WHERE tweet_id LIKE $3 AND split_part(tweet_id, ':', 2) = $1
                 AND outcome = 'replied' AND reason = 'opened' AND slug IS NOT NULL
               GROUP BY slug) o
        JOIN community_market c ON c.slug = o.slug
        JOIN market_slug s ON s.slug = o.slug
       WHERE c.retired_at IS NULL
       ORDER BY o.opened_at DESC LIMIT $2`,
-    [channelId, n],
+    [channelId, n, `${platform}:%`],
   );
   return rows.map((r) => ({
     slug: r.slug, question: r.question, hook: r.hook,
@@ -5398,6 +5426,7 @@ export async function kickChannelMarkets(channelId: string, limit = 10): Promise
     outcome: r.resolved_outcome === "yes" || r.resolved_outcome === "no" ? r.resolved_outcome : null,
   }));
 }
+export const kickChannelMarkets = (channelId: string, limit = 10) => streamChannelMarkets("kick", channelId, limit);
 
 /** Guest tags from one person in the last day, whatever became of them. Guest
  *  mode lets anybody on Telegram summon the bot, and every summons that reaches

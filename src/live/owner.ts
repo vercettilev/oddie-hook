@@ -21,8 +21,12 @@
  * secret), so rotating it signs every streamer out.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { Platform } from "./calls.js";
 
 export const OWNER_COOKIE = "oddie_kick_owner";
+/** One cookie per platform, on its own path: a Kick channel id is never read
+ *  as a Twitch one. Kick keeps the name and path it shipped with. */
+export const ownerCookieName = (platform: Platform): string => (platform === "kick" ? OWNER_COOKIE : `oddie_${platform}_owner`);
 /** A week: long enough to add oddie one evening and link a wallet another,
  *  short enough that a forgotten browser stops speaking for the channel. */
 export const OWNER_TTL_MS = 7 * 86_400_000;
@@ -30,14 +34,14 @@ export const OWNER_TTL_MS = 7 * 86_400_000;
 const CHANNEL_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const b64u = (b: Buffer | string): string => Buffer.from(b).toString("base64url");
 
-export function ownerKey(secret: string): Buffer {
-  return createHmac("sha256", secret).update("oddie-kick-owner-v1").digest();
+export function ownerKey(secret: string, platform: Platform = "kick"): Buffer {
+  return createHmac("sha256", secret).update(`oddie-${platform}-owner-v1`).digest();
 }
 
 /** The key from the environment, or null where Kick is not set up. */
-export function ownerKeyFromEnv(): Buffer | null {
-  const raw = process.env.LIVE_TOKEN_KEY || process.env.KICK_CLIENT_SECRET;
-  return raw ? ownerKey(raw) : null;
+export function ownerKeyFromEnv(platform: Platform = "kick"): Buffer | null {
+  const raw = process.env.LIVE_TOKEN_KEY || (platform === "kick" ? process.env.KICK_CLIENT_SECRET : process.env.TWITCH_CLIENT_SECRET);
+  return raw ? ownerKey(raw, platform) : null;
 }
 
 export function ownerToken(channelId: string, key: Buffer, now = Date.now(), ttlMs = OWNER_TTL_MS): string {
@@ -67,8 +71,8 @@ export function verifyOwnerToken(token: string, key: Buffer, now = Date.now()): 
 
 /** The Set-Cookie line. Host-only (no Domain), sent only to the channel API,
  *  and never on a request another site starts (SameSite=Lax). */
-export function ownerCookie(token: string, secure: boolean, maxAgeMs = OWNER_TTL_MS): string {
-  return `${OWNER_COOKIE}=${token}; Path=/api/live/kick; Max-Age=${Math.floor(maxAgeMs / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+export function ownerCookie(token: string, secure: boolean, maxAgeMs = OWNER_TTL_MS, platform: Platform = "kick"): string {
+  return `${ownerCookieName(platform)}=${token}; Path=/api/live/${platform}; Max-Age=${Math.floor(maxAgeMs / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
 export function cookieValue(header: string | undefined, name: string): string | null {

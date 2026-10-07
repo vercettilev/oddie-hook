@@ -624,6 +624,8 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
    market was opened in, leading back to that stream. */
 .eyebrow .by--kick{background:#53FC18;color:var(--ink)}
 @media (hover:hover){.eyebrow .by--kick:hover{background:#6BFF3A}}
+.eyebrow .by--twitch{background:#9146FF;color:#fff}
+@media (hover:hover){.eyebrow .by--twitch:hover{background:#A970FF}}
 .adult{margin:10px 0 0;font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3)}
 /* AN OPENER WITH AN ODDIE NAME is somebody you can follow, so their chip
    carries their picture and leads to their page, where the Follow button is.
@@ -850,6 +852,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + '" target="_blank" rel="noopener noreferrer">@' + esc(h) + "</a>";
   }
   /* The stream a market was opened in, leading back to it. */
+  function twitchChip(handle) {
+    var h = String(handle);
+    return '<a class="by by--twitch" href="https://www.twitch.tv/' + encodeURIComponent(h)
+      + '" target="_blank" rel="noopener noreferrer">twitch.tv/' + esc(h) + "</a>";
+  }
   function kickChip(handle) {
     var h = String(handle);
     return '<a class="by by--kick" href="https://kick.com/' + encodeURIComponent(h)
@@ -960,6 +967,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     else if (m.taggedBy) bits.push(byChip(m.taggedBy));
     else if (m.openedBy && m.openedBy.platform === "telegram" && m.openedBy.handle) bits.push(tgChip(m.openedBy.handle));
     else if (m.openedBy && m.openedBy.platform === "kick" && m.openedBy.handle) bits.push(kickChip(m.openedBy.handle));
+    else if (m.openedBy && m.openedBy.platform === "twitch" && m.openedBy.handle) bits.push(twitchChip(m.openedBy.handle));
     /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
        vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre
        hicbir zaman hicbir sey elemiyordu ve cozulmus market de geri sayiyordu. */
@@ -1201,7 +1209,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
         + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO" + pctN + "</button></div>";
       // A market opened in a stream reaches a stream's audience: said plainly,
       // next to the buttons that take the money.
-      if (!off && m.origin === "kick") html += '<p class="adult">18+ only · real SOL on Solana</p>';
+      if (!off && (m.origin === "kick" || m.origin === "twitch")) html += '<p class="adult">18+ only · real SOL on Solana</p>';
       if (closed) {
         html += '<div class="pool pool--quiet"><div class="pool__n">Betting is over.</div>'
           + '<div class="pool__k">Waiting on the result. Your bet stays in the pool</div></div>';

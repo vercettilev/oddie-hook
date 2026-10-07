@@ -11,14 +11,12 @@ import {
   authorizeUrl, chatFromKick, exchangeCode, kickConfigured, kickPublicKey, me, myChannel, pkcePair,
   refreshTokens, sendChat, sendChatAsUser, subscribeToChannel, verifyKickSignature, WEBHOOK_MAX_AGE_MS, type KickTokens,
 } from "./client.js";
-import { consumeChallenge, issueChallenge, verifyWalletSignature, WALLET_ADDRESS } from "../auth/wallet.js";
-import { handleChat, LIVE_COPY, lockDue, yesPct, type LiveDeps, type Platform } from "../live/calls.js";
+import { handleChat, LIVE_COPY, lockDue, type LiveDeps, type Platform } from "../live/calls.js";
+import { addChannelRoutes, type ChannelPayoutDeps } from "../live/channelRoutes.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
-import { cookieValue, OWNER_COOKIE, ownerCookie, ownerKeyFromEnv, ownerToken, verifyOwnerToken } from "../live/owner.js";
+import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { kickChatSource, type ChannelMarket } from "../store/markets.js";
-import {
-  channelById, channelBySlug, channelStandings, liveStore, recentCalls, saveChannel, type LiveChannel,
-} from "../store/live.js";
+import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
 
 export interface KickRouteDeps {
   /** Where the app lives: the standings links and the OAuth redirect. */
@@ -45,20 +43,8 @@ export interface KickRouteDeps {
   voice?: string;
 }
 
-/**
- * A CHANNEL'S 2%, from the server: the same person store, challenge and
- * verifier the Telegram link uses. The channel is the person kick:<id>.
- */
-export interface KickPayoutDeps {
-  /** The site named in the message the wallet signs: the server's own rule. */
-  domain(req: Request): string;
-  wallet(personId: string): Promise<string | null>;
-  setWallet(personId: string, wallet: string): Promise<void>;
-  /** Every market opened in the channel's chat. */
-  openedSlugs(channelId: string): Promise<string[]>;
-  /** Point those markets at the wallet: on the row before a mint, on chain after. */
-  nameMarkets(channelId: string, wallet: string): Promise<{ onRow: number; onChain: number; seen: number }>;
-}
+/** A channel's 2% (src/live/channelRoutes.ts): the channel is the person kick:<id>. */
+export type KickPayoutDeps = ChannelPayoutDeps;
 
 /** Kick's side of a streamer signing in. A seam for the tests. */
 export interface KickSignIn {
@@ -195,26 +181,6 @@ export function kickRouter(d: KickRouteDeps): Router {
   const kick = d.signIn ?? kickSignIn;
   const secure = base.startsWith("https:");
 
-  /** The channel this browser signed in as, from the owner cookie, or null. */
-  const ownerOf = (req: Request): string | null => {
-    const key = ownerKeyFromEnv();
-    const token = cookieValue(req.headers.cookie, OWNER_COOKIE);
-    return key && token ? verifyOwnerToken(token, key) : null;
-  };
-
-  /* The page is polled every few seconds by everybody watching it, and the
-     markets under it change when somebody opens one: read a channel's list at
-     most every fifteen seconds. */
-  const marketCache = new Map<string, { at: number; rows: ChannelMarket[] }>();
-  const marketsOf = async (channelId: string): Promise<ChannelMarket[]> => {
-    if (!d.channelMarkets) return [];
-    const hit = marketCache.get(channelId);
-    if (hit && Date.now() - hit.at < 15_000) return hit.rows;
-    const rows = await d.channelMarkets(channelId, 10).catch(() => hit?.rows ?? []);
-    marketCache.set(channelId, { at: Date.now(), rows });
-    return rows;
-  };
-
   /** A streamer adds oddie to their channel. */
   r.get("/live/kick/connect", (_req, res) => {
     if (!kickConfigured()) return res.status(503).type("text").send("oddie for Kick is almost here.");
@@ -290,106 +256,8 @@ export function kickRouter(d: KickRouteDeps): Router {
     if (action !== "chat") d.log("kick chat command", { channel: msg.channelId, action, runner: msg.canRun });
   });
 
-  /** A channel's page on oddie, and what it reads. */
-  r.get("/live/kick/:slug", (req, res) => {
-    if (!d.pageOpen(req)) return d.pageClosed(res);
-    res.set("Cache-Control", "no-cache").type("html").send(d.pageHtml());
-  });
-
-  r.get("/api/live/kick/:slug", async (req, res) => {
-    res.set("Cache-Control", "no-store");
-    const ch = await channelBySlug("kick", req.params.slug).catch(() => null);
-    if (!ch) return res.status(404).json({ error: "unknown" });
-    const [current, recent, standings] = await Promise.all([
-      liveStore.current("kick", ch.channelId).catch(() => null),
-      recentCalls("kick", ch.channelId, 10).catch(() => []),
-      channelStandings("kick", ch.channelId, 20).catch(() => []),
-    ]);
-    const tally = current ? await liveStore.tally(current.id).catch(() => ({ yes: 0, no: 0 })) : null;
-    const markets = await marketsOf(ch.channelId);
-    // Only to the streamer's own browser: where their 2% goes, and how many
-    // markets pay it.
-    const owner = d.payout && ownerOf(req) === ch.channelId
-      ? await Promise.all([
-        d.payout.wallet(`kick:${ch.channelId}`).catch(() => null),
-        d.payout.openedSlugs(ch.channelId).catch(() => [] as string[]),
-      ]).then(([wallet, slugs]) => ({ wallet, markets: slugs.length }))
-      : null;
-    res.json({
-      platform: "kick", slug: ch.slug, name: ch.name, avatar: ch.avatar, url: `https://kick.com/${ch.slug}`,
-      ...(owner ? { owner } : {}),
-      markets: markets.map((m) => ({ slug: m.slug, question: m.question, hook: m.hook, closesAt: m.closesAt, outcome: m.outcome })),
-      current: current && tally ? {
-        question: current.question, closesAt: new Date(current.closesAt).toISOString(),
-        locked: current.lockedAt !== null || Date.now() >= current.closesAt, yes: tally.yes, no: tally.no, yesPct: yesPct(tally),
-      } : null,
-      recent: recent.filter((c) => c.settledAt !== null).map((c) => ({
-        question: c.question, outcome: c.outcome, yes: c.yes, no: c.no, points: c.points,
-        settledAt: c.settledAt ? new Date(c.settledAt).toISOString() : null,
-      })),
-      standings: standings.map((s, i) => ({ rank: i + 1, username: s.username, points: s.points, right: s.right, calls: s.calls })),
-    });
-  });
-
-  /* ------------------------------------------------ the streamer's 2% --
-   * Every market opened in a channel's chat pays that channel 2% of its pool
-   * (src/live/claims.ts). Collecting it takes a wallet named as the markets'
-   * creator, and naming one takes two proofs: which channel (the owner cookie,
-   * set only at the end of Kick's own sign-in) and which wallet (a signature on
-   * the same challenge every wallet sign-in uses, bound to kick:<channel>). */
-  r.post("/api/live/kick/wallet/challenge", express.json({ limit: "4kb" }), (req, res) => {
-    res.set("Cache-Control", "no-store");
-    if (!d.payout) return res.status(503).json({ error: "off" });
-    const channelId = ownerOf(req);
-    if (!channelId) return res.status(401).json({ error: "signin" });
-    const address = String(req.body?.address ?? "");
-    if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
-    const { nonce, message } = issueChallenge(`kick:${channelId}`, address, d.payout.domain(req));
-    res.json({ nonce, message });
-  });
-
-  r.post("/api/live/kick/wallet/link", express.json({ limit: "4kb" }), async (req, res) => {
-    res.set("Cache-Control", "no-store");
-    const pay = d.payout;
-    if (!pay) return res.status(503).json({ error: "off" });
-    const channelId = ownerOf(req);
-    if (!channelId) return res.status(401).json({ error: "signin" });
-    const address = String(req.body?.address ?? "");
-    const nonce = String(req.body?.nonce ?? "");
-    const sigHex = String(req.body?.signature ?? "");
-    if (!WALLET_ADDRESS.test(address)) return res.status(400).json({ error: "bad address" });
-    if (!/^[0-9a-fA-F]{128}$/.test(sigHex)) return res.status(400).json({ error: "bad signature" });
-    const binding = `kick:${channelId}`;
-    const challenge = consumeChallenge(nonce, binding);
-    if (!challenge) return res.status(400).json({ error: "challenge expired" });
-    // The address is signed into the message; a different one now means this
-    // is not the exchange that was started.
-    if (!challenge.message.includes(address)) return res.status(400).json({ error: "address mismatch" });
-    if (!verifyWalletSignature(address, challenge.message, Buffer.from(sigHex, "hex"))) {
-      d.log("kick payout refused", { channel: channelId, reason: "bad_signature" });
-      return res.status(401).json({ error: "signature did not verify" });
-    }
-    await pay.setWallet(binding, address);
-    const slugs = await pay.openedSlugs(channelId).catch(() => [] as string[]);
-    res.json({ ok: true, wallet: address, markets: slugs.length });
-    // After the answer: naming on chain is a transaction per market.
-    void pay.nameMarkets(channelId, address)
-      .then((n) => d.log("kick payout linked", { channel: channelId, ...n }))
-      .catch((e) => d.log("kick payout naming failed", { channel: channelId, err: (e as Error).message }));
-  });
-
-  /* A failure inside the wallet never reaches us on its own: the page stops
-     before its next request. So the page says what broke, as Telegram's does;
-     the cookie keeps this to streamers who were really in the flow. */
-  r.post("/api/live/kick/wallet/fail", express.json({ limit: "2kb" }), (req, res) => {
-    const channelId = ownerOf(req);
-    if (!channelId) return res.status(401).end();
-    const clip = (v: unknown, n: number): string | null => (v == null ? null : String(v).replace(/[\r\n]+/g, " ").slice(0, n));
-    d.log("kick payout stopped", {
-      channel: channelId, stage: clip(req.body?.stage, 16), code: clip(req.body?.code, 16), msg: clip(req.body?.msg, 200),
-    });
-    res.status(204).end();
-  });
+  /** The channel's page, its standings, and the streamer's 2%: shared with Twitch. */
+  addChannelRoutes(r, "kick", d);
 
   return r;
 }

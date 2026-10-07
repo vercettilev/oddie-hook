@@ -356,7 +356,7 @@ h1:has(.hsticker){display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px}
 .card__m{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
 .card__m .by{display:inline-flex;align-items:center;gap:6px}
 .card__m .by svg{display:block;flex:none;width:15px;height:15px}
-.card__m .by--x,.card__m .by--kick,.card__m .by--tg{padding-left:5px}
+.card__m .by--x,.card__m .by--kick,.card__m .by--twitch,.card__m .by--tg{padding-left:5px}
 /* Dollars beside SOL, quieter than the SOL: SOL is what moves. */
 .usd{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:0;text-transform:none;opacity:.62}
 
@@ -423,7 +423,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
 }
 </style>
 
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-twitch" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#9146FF"/><path d="M8.2 5 6.5 8.4v10.1h3.4V20.2h1.7l1.7-1.7h2.8l3.4-3.4V5H8.2zm9.6 9.2-2 2h-3.4l-1.7 1.7v-1.7H7.9V6.4h9.9v7.8zm-2.6-5.1v3.4h-1.4V9.1h1.4zm-3.7 0v3.4h-1.4V9.1h1.4z" fill="#fff"/></symbol><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol></svg>
 <header class="top">
   <div class="wrap">
     <!-- THE LOGO LEAVES THE APP, on purpose. It used to point at "/", which on
@@ -613,6 +613,10 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       return '<a class="by by--kick" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">'
         + mark("kick") + "kick.com/" + esc(o.handle) + "</a>";
     }
+    if (o.platform === "twitch" && o.handle) {
+      return '<a class="by by--twitch" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">'
+        + mark("twitch") + "twitch.tv/" + esc(o.handle) + "</a>";
+    }
     if (o.platform === "telegram") {
       return o.handle
         ? '<a class="by by--tg" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">' + mark("telegram") + "@" + esc(o.handle) + "</a>"
@@ -636,6 +640,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + '<ul class="wait">' + list.map(function (m) {
         var o = m.openedBy, who;
         if (o && o.platform === "kick" && o.handle) who = mark("kick") + "kick.com/" + esc(o.handle);
+        else if (o && o.platform === "twitch" && o.handle) who = mark("twitch") + "twitch.tv/" + esc(o.handle);
         else if (o && o.platform === "telegram") who = mark("telegram") + (o.handle ? "@" + esc(o.handle) : "Telegram");
         else if (m.taggedBy) who = mark("x") + "@" + esc(String(m.taggedBy).replace(/^@+/, ""));
         else who = "";

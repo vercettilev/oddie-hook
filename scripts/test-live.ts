@@ -536,11 +536,13 @@ console.log("\na streamer's 2%: which channel, which wallet, which markets");
 console.log("\nthe lines no memory test reaches");
 {
   const server = readFileSync("src/server.ts", "utf8");
-  check("the JSON parser leaves the webhook's bytes alone", /req\.path === "\/live\/kick\/webhook" \? next\(\) : jsonBody\(req, res, next\)/.test(server)
+  check("the JSON parser leaves the webhooks' bytes alone", /RAW_WEBHOOKS = new Set\(\["\/live\/kick\/webhook", "\/live\/twitch\/webhook"\]\)/.test(server)
+    && /RAW_WEBHOOKS\.has\(req\.path\) \? next\(\) : jsonBody\(req, res, next\)/.test(server)
     && !/^app\.use\(express\.json\(\)\);$/m.test(server));
   check("the live pages are app pages", /\(m\|market\|w\|u\|live\)/.test(server) && /\|following\|live\)/.test(server));
-  check("the Kick router is mounted, and the clock runs only where Kick is set up",
-    /app\.use\(kickRouter\(\{/.test(server) && /if \(kickConfigured\(\)\) startLiveClock\(/.test(server));
+  check("the Kick and Twitch routers are mounted, and the clock runs only where one of them is set up",
+    /app\.use\(kickRouter\(\{/.test(server) && /app\.use\(twitchRouter\(\{/.test(server)
+    && /if \(kickConfigured\(\) \|\| twitchConfigured\(\)\) \{[\s\S]{0,900}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
   check("one live call per channel is the database's rule",
     /CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_open ON live_call \(platform, channel_id\)\s+WHERE settled_at IS NULL AND canceled_at IS NULL/.test(store));
@@ -555,7 +557,7 @@ console.log("\nthe lines no memory test reaches");
   check("a market opened on Kick names its channel on its page", /platform: "kick", handle: m\[1\], url: `https:\/\/kick\.com\/\$\{m\[1\]\}`/.test(server));
   check("...and its result goes back to that chat", /kickThreadsForSlug\(slug\)/.test(server) && /Winners collect at/.test(server));
   const page = readFileSync("public/app/market.html", "utf8");
-  check("the market page says 18+ next to the buttons on a Kick market", /m\.origin === "kick"\) html \+= '<p class="adult">18\+ only/.test(page)
+  check("the market page says 18+ next to the buttons on a stream's market", /\(m\.origin === "kick" \|\| m\.origin === "twitch"\)\) html \+= '<p class="adult">18\+ only/.test(page)
     && /function kickChip\(handle\)/.test(page));
   check("a webhook older than ten minutes is refused, and each message is handled once",
     /age <= WEBHOOK_MAX_AGE_MS/.test(routes) && /if \(seen\.has\(id\)\) return;/.test(routes));
@@ -576,10 +578,10 @@ console.log("\nthe lines no memory test reaches");
     return i < 0 ? "" : mstore.slice(i, mstore.indexOf("\n}\n", i)).split("await ensureSchema();")[1] ?? "";
   };
   check("in the database too, only an opening makes a market a channel's, never a pointer to it",
-    ["kickOpenedSlugs", "kickOpenerOf", "kickChannelMarkets"].every((f) => /outcome = 'replied' AND reason = 'opened'/.test(sqlOf(f))));
+    ["streamOpenedSlugs", "streamOpenerOf", "streamChannelMarkets"].every((f) => /outcome = 'replied' AND reason = 'opened'/.test(sqlOf(f))));
   const live = readFileSync("public/app/live.html", "utf8");
   check("...and the channel page never reads one from its address",
-    !/\.get\("t"\)/.test(live) && /\/api\/live\/kick\/wallet\/link/.test(live));
+    !/\.get\("t"\)/.test(live) && /"\/api\/live\/" \+ P \+ "\/wallet\/link"/.test(live));
   check("the streamer page says what !oddie does now, and !call is the quick vote",
     /!oddie BTC above 120k by Friday\?/.test(live) && /!call will I win this round\?/.test(live) && !/!oddie yes/.test(live));
 }

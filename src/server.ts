@@ -10,7 +10,7 @@ import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
-import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets } from "./store/markets.js";
+import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
   eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, walletsOfPerson, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
@@ -18,8 +18,11 @@ import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolut
 import { announceToRoom, roomChatId } from "./telegram/room.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
-import { kickRouter, startLiveClock, kickEngineDeps } from "./kick/routes.js";
+import { kickRouter, kickEngineDeps } from "./kick/routes.js";
 import { kickConfigured } from "./kick/client.js";
+import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
+import { twitchConfigured } from "./twitch/client.js";
+import { lockDue, type LiveDeps } from "./live/calls.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -112,10 +115,12 @@ app.use((req, res, next) => {
   if (where === "apex" && onApp && req.path !== "/") return res.redirect(301, `${BASE_URL}${req.originalUrl}`);
   next();
 });
-// The Kick webhook is verified over its exact bytes (src/kick/routes.ts), so it
-// reads its own raw body and the JSON parser leaves it alone.
+// The Kick and Twitch webhooks are verified over their exact bytes
+// (src/kick/routes.ts, src/twitch/routes.ts), so they read their own raw body
+// and the JSON parser leaves them alone.
 const jsonBody = express.json();
-app.use((req, res, next) => (req.path === "/live/kick/webhook" ? next() : jsonBody(req, res, next)));
+const RAW_WEBHOOKS = new Set(["/live/kick/webhook", "/live/twitch/webhook"]);
+app.use((req, res, next) => (RAW_WEBHOOKS.has(req.path) ? next() : jsonBody(req, res, next)));
 
 const BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:3000";
 /**
@@ -1895,8 +1900,35 @@ app.use(kickRouter({
     nameMarkets: async (channelId, wallet) => nameOpenedMarkets(await kickOpenedSlugs(channelId).catch(() => [] as string[]), wallet),
   },
 }));
-// The clock only runs where a channel can exist to need it.
-if (kickConfigured()) startLiveClock({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
+app.use(twitchRouter({
+  appBaseUrl: APP_BASE_URL,
+  pageHtml: () => stampApp(LIVE_HTML),
+  pageOpen: (req) => appOpenFor(req),
+  pageClosed: (res) => appClosed(res),
+  log: liveLog,
+  markets: kickMarkets,
+  channelMarkets: (channelId, limit) => streamChannelMarkets("twitch", channelId, limit),
+  // A channel's 2%: the person is twitch:<id>, otherwise exactly Kick's.
+  payout: {
+    domain: (req) => walletDomain(req),
+    wallet: (personId) => personWallet(personId),
+    setWallet: (personId, wallet) => setPersonWallet(personId, wallet),
+    openedSlugs: (channelId) => streamOpenedSlugs("twitch", channelId),
+    nameMarkets: async (channelId, wallet) => nameOpenedMarkets(await streamOpenedSlugs("twitch", channelId).catch(() => [] as string[]), wallet),
+  },
+}));
+/* The clock only runs where a channel can exist to need it. One clock for
+   both platforms: a due call is said through its own platform's voice. */
+if (kickConfigured() || twitchConfigured()) {
+  const kickEng = kickEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
+  const twEng = twitchEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
+  const clock: LiveDeps = {
+    ...kickEng,
+    say: (p, c, t, r) => (p === "twitch" ? twEng.say(p, c, t, r) : kickEng.say(p, c, t, r)),
+    standingsUrl: (p, c) => (p === "twitch" ? twEng.standingsUrl(p, c) : kickEng.standingsUrl(p, c)),
+  };
+  setInterval(() => { void lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message })); }, 5_000);
+}
 
 app.get("/following", (req, res) => {
   if (!appOpenFor(req)) return appClosed(res);
@@ -4032,7 +4064,7 @@ function marketPayload(slug: string, detail: { question: string; closesAt: strin
   };
 }
 
-interface OpenedBy { platform: "kick" | "telegram"; handle: string | null; url: string | null }
+interface OpenedBy { platform: "kick" | "twitch" | "telegram"; handle: string | null; url: string | null }
 /** Where a market was opened, when that was not X: the Kick channel (public,
  *  it is the channel's name) or the Telegram opener's @name. One definition
  *  for the list card and the market page, so the two chips cannot disagree. */
@@ -4046,6 +4078,10 @@ async function openedByFor(slug: string, sourceUrl: string | null | undefined): 
   if (kind === "kick") {
     const m = KICK_CHAT_SOURCE.exec(String(sourceUrl));
     return m ? { platform: "kick", handle: m[1], url: `https://kick.com/${m[1]}` } : null;
+  }
+  if (kind === "twitch") {
+    const m = TWITCH_CHAT_SOURCE.exec(String(sourceUrl));
+    return m ? { platform: "twitch", handle: m[1], url: `https://www.twitch.tv/${m[1]}` } : null;
   }
   return null;
 }
@@ -4776,6 +4812,21 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       for (const t of threads) {
         await eng.say("kick", t.channelId, text, t.messageId)
           .catch((e) => liveLog("kick result not delivered", { slug, channel: t.channelId, err: (e as Error).message }));
+      }
+    }).catch(() => {});
+  }
+  /* AND ON TWITCH, the same way. */
+  if (twitchConfigured()) {
+    void chainDone.then(async () => {
+      const threads = await streamThreadsForSlug("twitch", slug).catch(() => []);
+      if (!threads.length) return;
+      const d = await communityMarketDetail(slug).catch(() => null);
+      const headline = d ? foldIds(d.hook || d.question) : slug;
+      const text = `It's ${outcome.toUpperCase()}: "${headline}" Winners collect at ${APP_BASE_URL}/m/${slug}`;
+      const eng = twitchEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog });
+      for (const t of threads) {
+        await eng.say("twitch", t.channelId, text, t.messageId)
+          .catch((e) => liveLog("twitch result not delivered", { slug, channel: t.channelId, err: (e as Error).message }));
       }
     }).catch(() => {});
   }

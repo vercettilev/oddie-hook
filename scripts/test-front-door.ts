@@ -432,7 +432,9 @@ console.log("\nthe secondary pages say less (the hypercasual cut, round two)");
     you.includes("Results on your phone: tap <b>Share</b>, then <b>Add to Home Screen</b>.")
     && !you.includes("The wallet comes later."));
   check("the streamer page is three one-line steps, with no lede restating them",
-    !live.includes('<p class="lede">Anyone in your chat turns a claim') && live.includes("<li><span><b>Add oddie to your Kick channel.</b></span></li>"));
+    !live.includes('<p class="lede">Anyone in your chat turns a claim') && live.includes("<li><span><b>Add oddie to your Kick or Twitch channel.</b></span></li>"));
+  check("...with one door per platform", live.includes('href="/live/kick/connect">Add oddie to Kick</a>')
+    && live.includes('href="/live/twitch/connect">Add oddie to Twitch</a>'));
 }
 
 console.log("\nthe landing tells it once, as one chat (the hypercasual cut, round two)");
