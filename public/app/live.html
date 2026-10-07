@@ -637,7 +637,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     if (c) {
       var total = c.yes + c.no;
       html += '<section class="now" aria-live="polite"><p class="now__k"><b>' + (c.locked ? "Locked" : "Live call") + "</b> · "
-        + total + (total === 1 ? " call" : " calls") + ' · <span id="left"></span></p>'
+        // Locked already says it in the label; the countdown only runs while the call is open.
+        + total + (total === 1 ? " call" : " calls") + (c.locked ? "" : ' · <span id="left"></span>') + "</p>"
         + '<p class="now__q">' + esc(c.question) + "</p>"
         + '<div class="bar" role="img" aria-label="' + c.yesPct + ' percent yes"><i style="width:' + (total ? c.yesPct : 50) + '%"></i></div>'
         + '<p class="now__n"><span class="y">YES ' + (total ? c.yesPct : 0) + "%</span><span class=\"n\">NO " + (total ? 100 - c.yesPct : 0) + "%</span></p>"
