@@ -389,13 +389,16 @@ export async function channelStandings(platform: Platform, channelId: string, li
  * row names the channel they last called in.
  */
 export interface GlobalStandingRow extends StandingRow { platform: Platform; channel: string }
+/** The house never ranks: oddie's own voice account and the founder's test
+ *  account, whose test votes sat on the board as players (Lev, 8 Oct, "evet"). */
+export const HOUSE_ACCOUNTS = ["oddiefun", "levvercetti"];
 export async function allStandings(limit = 50): Promise<GlobalStandingRow[]> {
   const n = Math.max(1, Math.min(100, limit));
   if (!STORE_PERSISTENT) {
     const by = new Map<string, GlobalStandingRow & { lastAt: number }>();
     for (const p of memPicks) {
       const c = memCalls.get(p.callId);
-      if (!c || c.settledAt === null) continue;
+      if (!c || c.settledAt === null || HOUSE_ACCOUNTS.includes(p.username.toLowerCase())) continue;
       const slug = memChannels.get(ck(c.platform, c.channelId))?.slug ?? c.channelId;
       const r = by.get(`${c.platform}:${p.userId}`)
         ?? { platform: c.platform, userId: p.userId, username: p.username, points: 0, right: 0, calls: 0, channel: slug, lastAt: -1 };
@@ -414,8 +417,8 @@ export async function allStandings(limit = 50): Promise<GlobalStandingRow[]> {
        FROM live_pick p
        JOIN live_call c ON c.id = p.call_id
        LEFT JOIN live_channel ch ON ch.platform = c.platform AND ch.channel_id = c.channel_id
-      WHERE c.settled_at IS NOT NULL
-      GROUP BY c.platform, p.user_id ORDER BY points DESC, right_count DESC LIMIT $1`, [n]);
+      WHERE c.settled_at IS NOT NULL AND lower(p.username) <> ALL($2::text[])
+      GROUP BY c.platform, p.user_id ORDER BY points DESC, right_count DESC LIMIT $1`, [n, HOUSE_ACCOUNTS]);
   return rows.map((r) => ({ platform: r.platform, userId: r.user_id, username: r.username, points: r.points, right: r.right_count,
     calls: r.calls, channel: r.channel ?? "" }));
 }

@@ -248,6 +248,10 @@ console.log("\nthe leaderboard: every channel's votes in one table (Lev, 8 Oct)"
   check("...each names the channel it was last called in, by its slug", tw?.channel === "bee_empire"
     && all.find((r) => r.platform === "kick")?.channel === "100");
   check("...best first", all[0].points >= all[1].points && all[1].points >= all[2].points);
+  check("the house never ranks: oddie's own account and the founder's test votes stay off the board", await (async () => {
+    await vote("kick", "131980691", t0 + 1_500_000, [["oddiefun", "yes"], ["LevVercetti", "yes"]], "yes");
+    return (await allStandings()).every((r) => !["oddiefun", "levvercetti"].includes(r.username.toLowerCase()));
+  })());
   check("an open vote counts for nobody yet", await (async () => {
     await liveStore.open({ platform: "twitch", channelId: "7", question: "open?", openedById: "s", openedByName: "s", openedAt: t0 + 2_000_000, closesAt: t0 + 2_060_000, timed: true });
     return (await allStandings()).length === 3;
@@ -885,7 +889,7 @@ console.log("\nthe lines no memory test reaches");
     && /if \(kickConfigured\(\) \|\| twitchConfigured\(\)\) \{[\s\S]{0,1600}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
   check("the leaderboard's SQL groups by platform and person, names the last channel, and never says RIGHT bare",
-    /GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1/.test(store)
+    /WHERE c\.settled_at IS NOT NULL AND lower\(p\.username\) <> ALL\(\$2::text\[\]\)\s+GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1`, \[n, HOUSE_ACCOUNTS\]/.test(store)
     && /\(array_agg\(COALESCE\(ch\.slug, c\.channel_id\) ORDER BY c\.settled_at DESC\)\)\[1\] AS channel/.test(store)
     && /app\.get\("\/api\/live\/standings"/.test(server));
   check("one call taking answers per channel is the database's rule, and the old one-unsettled index goes",
