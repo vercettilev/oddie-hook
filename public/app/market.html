@@ -703,7 +703,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       <a class="mark" href="https://oddie.fun"><img src="/brand/mark.webp?v=3" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
-      <a href="/following">Following</a>
+      <a href="/live">Live</a>
       <a href="/profile">Profile</a>
       <a href="/leaderboard">Leaderboard</a>
     </nav>
@@ -724,7 +724,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
      have been given a reason to go anywhere. -->
 <nav class="foot wrap" aria-label="Site">
   <a href="/markets">Markets</a>
-  <a href="/following">Following</a>
+  <a href="/live">Live</a>
   
   <a href="/profile">Profile</a>
   <a href="/leaderboard">Leaderboard</a>
@@ -1209,7 +1209,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
         + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO" + pctN + "</button></div>";
       // A market opened in a stream reaches a stream's audience: said plainly,
       // next to the buttons that take the money.
-      if (!off && (m.origin === "kick" || m.origin === "twitch")) html += '<p class="adult">18+ only · real SOL on Solana</p>';
+      if (!off && (m.origin === "kick" || m.origin === "twitch")) html += '<p class="adult">18+ only · on Solana</p>';
       if (closed) {
         html += '<div class="pool pool--quiet"><div class="pool__n">Betting is over.</div>'
           + '<div class="pool__k">Waiting on the result. Your bet stays in the pool</div></div>';

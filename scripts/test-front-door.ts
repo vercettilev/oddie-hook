@@ -124,8 +124,9 @@ console.log("\nsmall things a stranger reads wrong");
     chain.includes('stakeBtn.textContent = `${side.toUpperCase()} · ${sol} SOL${usd.charAt(0) === "$" ? ` (${usd})` : ""}`;')
     && /if \(!\(r > 0\) \|\| !\(sol > 0\)\) return "";/.test(chain));
   check("...from the price the page already read", /window\.ODDIE_SOL_USD = SOL_USD;/.test(list) && /window\.ODDIE_SOL_USD = SOL_USD;/.test(page));
-  check("a settled line at zero says refunded, not '0 SOL'", /Number\(p\.pnlSol\) === 0 \? "refunded"/.test(board));
-  check("...and a wallet with no name is 'a caller', not half an address", /: "a caller";/.test(board));
+  // The leaderboard is the stream votes now (Lev, 8 Oct): a name, and where it was called.
+  check("the leaderboard says where each name was called, one tap from that channel", board.includes('<a class="ch" href="/live/'));
+  check("...and an empty board points at adding oddie to a stream", board.includes('<a href="/live">Add oddie to your stream</a>'));
   check("signed out, the profile does not offer the same two doors twice", /if \(!x && !tg\) return;/.test(you));
 }
 
@@ -426,12 +427,12 @@ console.log("\nthe secondary pages say less (the hypercasual cut, round two)");
   check("settled calls carry the market's hook from the database to both pages",
     store.includes("SELECT ce.wallet, ce.slug, s.question, cm.hook,") && standings.includes("hook: c.hook ?? null")
     && server.includes("hook: r.hook ?? null, side: r.side") && server.includes("hook: first.hook ?? null"));
-  check("the board and the record lead each row with the hook",
-    board.includes("esc(m.hook || m.question)") && who.includes("esc(r.hook || r.question)"));
+  check("the record and a channel's markets lead each row with the hook",
+    who.includes("esc(r.hook || r.question)") && live.includes("esc(m.hook || m.question)"));
   check("the record says the side and its price as one fact, and zero as a refund",
     who.includes(`"<span>" + side + " at " + r.entryPct + "%</span>"`) && who.includes(`r.pnlSol === 0 ? "<span>refunded</span>"`)
     && !who.includes(`"<span>crowd said "`));
-  check("the board's rule is one line", board.includes(`<p class="rule">Ranked by <b>first-time</b> bettors your markets bring in.</p>`));
+  check("the board's rule is one line", board.includes(`<p class="rule">Points from votes in stream chats.</p>`));
   check("Following signs in with a five-word note, not a 21-word sentence",
     following.includes(`"<p>Alerts on Telegram or here.</p></div>"`) && !following.includes("Sign in once, follow anybody"));
   check("the profile keeps the iPhone home-screen route, in one line",

@@ -15,7 +15,7 @@ import {
   parseCommand, handleChat, lockDue, remindOpen, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
   EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, REPORT_WINDOW_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
-import { liveStore, saveChannel, channelStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
+import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
 import { kickRouter, kickEngineDeps, type KickChat, type KickSignIn } from "../src/kick/routes.js";
 import { openFromChat, MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
@@ -225,6 +225,33 @@ console.log("\na new call takes the room; the old one waits for its result");
     && (await handleChat(r2.line("owner", "!call open?", true), r2.deps)) === "opened"
     && (await handleChat(r2.line("owner", "!call 1m quick?", true), r2.deps)) === "opened"
     && (await liveStore.unsettled("kick", "100")).length === 3);
+}
+
+console.log("\nthe leaderboard: every channel's votes in one table (Lev, 8 Oct)");
+{
+  _resetLiveStore(); _resetLive();
+  await saveChannel({ platform: "twitch", channelId: "7", slug: "bee_empire", name: "Bee", avatar: null,
+    accessToken: "t", refreshToken: null, tokenExpiresAt: null, active: true });
+  const t0 = 1_800_000_000_000;
+  const vote = async (platform: "kick" | "twitch", channelId: string, at: number, picks: Array<[string, "yes" | "no"]>, outcome: "yes" | "no") => {
+    const c = (await liveStore.open({ platform, channelId, question: "green?", openedById: "s", openedByName: "s", openedAt: at, closesAt: at + 60_000, timed: true }))!;
+    for (const [who, side] of picks) await liveStore.pick(c, who, who, side, at);
+    await liveStore.settle(c.id, outcome, 50, at + 60_000);
+  };
+  await vote("twitch", "7", t0, [["litre46", "no"], ["bee", "yes"]], "no");
+  await vote("twitch", "7", t0 + 600_000, [["litre46", "yes"], ["bee", "yes"]], "yes");
+  await vote("kick", "100", t0 + 1_200_000, [["litre46", "yes"]], "yes");
+  const all = await allStandings();
+  const tw = all.find((r) => r.platform === "twitch" && r.userId === "litre46");
+  check("one row per person per platform, points summed over that platform's channels",
+    all.length === 3 && tw?.points === 100 && tw.right === 2 && tw.calls === 2, JSON.stringify(all));
+  check("...each names the channel it was last called in, by its slug", tw?.channel === "bee_empire"
+    && all.find((r) => r.platform === "kick")?.channel === "100");
+  check("...best first", all[0].points >= all[1].points && all[1].points >= all[2].points);
+  check("an open vote counts for nobody yet", await (async () => {
+    await liveStore.open({ platform: "twitch", channelId: "7", question: "open?", openedById: "s", openedByName: "s", openedAt: t0 + 2_000_000, closesAt: t0 + 2_060_000, timed: true });
+    return (await allStandings()).length === 3;
+  })());
 }
 
 console.log("\nthe same question again, while it takes answers (8 Oct: a candle call typed twice opened its twin)");
@@ -857,6 +884,10 @@ console.log("\nthe lines no memory test reaches");
     /app\.use\(kickRouter\(\{/.test(server) && /app\.use\(twitchRouter\(\{/.test(server)
     && /if \(kickConfigured\(\) \|\| twitchConfigured\(\)\) \{[\s\S]{0,1600}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
+  check("the leaderboard's SQL groups by platform and person, names the last channel, and never says RIGHT bare",
+    /GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1/.test(store)
+    && /\(array_agg\(COALESCE\(ch\.slug, c\.channel_id\) ORDER BY c\.settled_at DESC\)\)\[1\] AS channel/.test(store)
+    && /app\.get\("\/api\/live\/standings"/.test(server));
   check("one call taking answers per channel is the database's rule, and the old one-unsettled index goes",
     /CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_voting ON live_call \(platform, channel_id\)\s+WHERE locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL/.test(store)
     && /DROP INDEX IF EXISTS live_call_one_open;/.test(store) && !/CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_open/.test(store));

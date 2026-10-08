@@ -337,7 +337,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       <a class="mark" href="https://oddie.fun"><img src="/brand/mark.webp?v=3" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
-      <a href="/following">Following</a>
+      <a href="/live">Live</a>
       <a href="/profile">Profile</a>
       <a href="/leaderboard">Leaderboard</a>
     </nav>
@@ -492,9 +492,10 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
     .then(render)
     .catch(function (st) {
+      if (st === 404) document.title = "Looking for someone? · oddie";
       view.innerHTML = st === 404
         ? '<h1 class="who">Looking for someone?</h1><p class="lede">A name shows up here once its owner opens a market or shares their calls. '
-          + 'See who is active on <a href="/following">Following</a>.</p>'
+          + '<a href="/markets">See the markets</a>.</p>'
         : '<h1 class="who">One moment</h1><p class="lede">This page is loading slowly. <a href="' + esc(location.pathname) + '">Try again</a>.</p>';
     });
 })();

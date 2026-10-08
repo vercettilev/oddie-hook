@@ -382,6 +382,44 @@ export async function channelStandings(platform: Platform, channelId: string, li
   return rows.map((r) => ({ userId: r.user_id, username: r.username, points: r.points, right: r.right_count, calls: r.calls }));
 }
 
+/**
+ * THE LEADERBOARD: everybody's votes, across every channel (Lev, 8 Oct: the
+ * board is the stream votes, not the X era's openers). A person is a
+ * platform's user id, so a Twitch name and a Kick name are two rows, and each
+ * row names the channel they last called in.
+ */
+export interface GlobalStandingRow extends StandingRow { platform: Platform; channel: string }
+export async function allStandings(limit = 50): Promise<GlobalStandingRow[]> {
+  const n = Math.max(1, Math.min(100, limit));
+  if (!STORE_PERSISTENT) {
+    const by = new Map<string, GlobalStandingRow & { lastAt: number }>();
+    for (const p of memPicks) {
+      const c = memCalls.get(p.callId);
+      if (!c || c.settledAt === null) continue;
+      const slug = memChannels.get(ck(c.platform, c.channelId))?.slug ?? c.channelId;
+      const r = by.get(`${c.platform}:${p.userId}`)
+        ?? { platform: c.platform, userId: p.userId, username: p.username, points: 0, right: 0, calls: 0, channel: slug, lastAt: -1 };
+      r.points += p.points ?? 0; r.calls++; if ((p.points ?? 0) > 0) r.right++;
+      if (c.settledAt >= r.lastAt) { r.lastAt = c.settledAt; r.channel = slug; }
+      by.set(`${c.platform}:${p.userId}`, r);
+    }
+    return [...by.values()].sort((a, b) => b.points - a.points || b.right - a.right).slice(0, n)
+      .map(({ lastAt: _at, ...r }) => r);
+  }
+  await schema();
+  const { rows } = await storeDb().query<{ platform: Platform; user_id: string; username: string; points: number; right_count: number; calls: number; channel: string | null }>(
+    `SELECT c.platform, p.user_id, max(p.username) AS username, sum(COALESCE(p.points, 0))::int AS points,
+            count(*) FILTER (WHERE p.points > 0)::int AS right_count, count(*)::int AS calls,
+            (array_agg(COALESCE(ch.slug, c.channel_id) ORDER BY c.settled_at DESC))[1] AS channel
+       FROM live_pick p
+       JOIN live_call c ON c.id = p.call_id
+       LEFT JOIN live_channel ch ON ch.platform = c.platform AND ch.channel_id = c.channel_id
+      WHERE c.settled_at IS NOT NULL
+      GROUP BY c.platform, p.user_id ORDER BY points DESC, right_count DESC LIMIT $1`, [n]);
+  return rows.map((r) => ({ platform: r.platform, userId: r.user_id, username: r.username, points: r.points, right: r.right_count,
+    calls: r.calls, channel: r.channel ?? "" }));
+}
+
 /** The channel's latest calls, newest first, with their counts. */
 export async function recentCalls(platform: Platform, channelId: string, limit = 10): Promise<CallSummary[]> {
   if (!STORE_PERSISTENT) {

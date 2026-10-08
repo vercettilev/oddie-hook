@@ -292,7 +292,16 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .now__n .y{color:var(--yellow-deep)} .now__n .n{color:var(--pink-deep)}
 .now__how{margin:12px 0 0;font-size:15px;color:rgba(11,13,4,.72)}
 .now__how code{font-family:var(--mono);font-weight:800;background:var(--ink);color:var(--yellow);padding:2px 6px}
-.idle{margin:0 0 34px}
+/* A sticker beside the line it belongs to (8 Oct): the judge where oddie
+   settles it, the waiting ghost between calls. Small, tilted, after the words. */
+.st{height:auto;flex:none}
+.say{display:flex;align-items:center;gap:6px 14px}
+.say .who{flex:1 1 auto;margin:0}
+.say .st{width:clamp(72px,18vw,110px);transform:rotate(4deg)}
+.say + .steps{margin-top:26px}
+.idle{display:flex;align-items:center;gap:14px;margin:0 0 34px}
+.idle .st{width:clamp(60px,15vw,88px);transform:rotate(-4deg)}
+.idle .lede{margin:0}
 .wait li{border-left-color:var(--cream)}
 
 .res{list-style:none;margin:0 0 34px;padding:0;display:grid;gap:12px}
@@ -419,7 +428,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       <a class="mark" href="https://oddie.fun"><img src="/brand/mark.webp?v=3" alt="" width="30" height="30" fetchpriority="high">oddie</a>
     <nav>
       <a href="/markets">Markets</a>
-      <a href="/following">Following</a>
+      <a href="/live" aria-current="page">Live</a>
       <a href="/profile">Profile</a>
       <a href="/leaderboard">Leaderboard</a>
     </nav>
@@ -458,7 +467,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     /* THREE STEPS, ONE LINE EACH (Lev, 2 Oct, the hypercasual cut). The lede
        said the steps in a paragraph before the steps said them again, and the
        quick-call paragraph was 38 words for three commands. */
-    view.innerHTML = '<h1 class="who who--say">Your chat calls it. oddie settles it.</h1>'
+    view.innerHTML = '<div class="say"><h1 class="who who--say">Your chat calls it. oddie settles it.</h1>'
+      + '<img class="st" src="/brand/st-judge.webp" alt="" width="110" height="110"></div>'
       + '<ol class="steps">'
       + "<li><span><b>Add oddie to your Kick or Twitch channel.</b></span></li>"
       + "<li><span><b>Chat types</b> <code>!oddie BTC above 120k by Friday?</code></span></li>"
@@ -482,7 +492,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + "<dt><code>!call yes</code> or <code>!call no</code></dt><dd>Settle the vote.</dd>"
       + "<dt><code>!call cancel</code></dt><dd>Cancel the open vote.</dd>"
       + "</dl></details>"
-      + '<p class="hint" style="margin-top:14px">18+ only &middot; real SOL on Solana</p>';
+      + '<p class="hint" style="margin-top:14px">18+ only &middot; on Solana</p>';
     // The page is drawn after the browser looked for #commands, so the link a
     // streamer is sent opens and scrolls to the list itself.
     var cmds = document.getElementById("commands");
@@ -690,14 +700,15 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       }).join("") + "</ul>";
     }
     if (!c && !wt.length) {
-      html += '<p class="lede idle">Between calls. The next one opens in chat, and it lands here the moment it does.</p>';
+      html += '<div class="idle"><img class="st" src="/brand/st-waiting.webp" alt="" width="96" height="96">'
+        + '<p class="lede">Between calls. The next one opens in chat, and it lands here the moment it does.</p></div>';
     }
 
     var mk = j.markets || [];
     if (mk.length) {
       html += "<h2>Markets from this chat</h2><ul class=\"res mk\">" + mk.map(function (m) {
         var st = marketState(m);
-        return '<li class="' + st.cls + '"><p class="res__q"><a href="/m/' + encodeURIComponent(m.slug) + '">' + esc(m.question) + "</a></p>"
+        return '<li class="' + st.cls + '"><p class="res__q"><a href="/m/' + encodeURIComponent(m.slug) + '">' + esc(m.hook || m.question) + "</a></p>"
           + '<p class="res__m">' + st.text + "</p></li>";
       }).join("") + "</ul>";
     }
@@ -709,7 +720,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
         return '<li class="' + (r.outcome === "yes" ? "y" : "n") + '"><p class="res__q">' + esc(r.question) + "</p>"
           + '<p class="res__m"><span class="' + (r.outcome === "yes" ? "y" : "n") + '">' + String(r.outcome).toUpperCase() + "</span> · "
           + p + "% said YES · " + t + (t === 1 ? " call" : " calls")
-          + (r.points ? " · +" + r.points + " each" : "") + (r.settledAt ? " · " + ago(r.settledAt) : "") + "</p></li>";
+          // The most a right call earned: earlier ones scored more, so "each" stopped being true.
+          + (r.points ? " · up to +" + r.points : "") + (r.settledAt ? " · " + ago(r.settledAt) : "") + "</p></li>";
       }).join("") + "</ul>";
     }
 
@@ -720,7 +732,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
           return '<tr><td class="r">#' + s.rank + "</td><td>" + esc(s.username) + '</td><td class="num">' + s.right + "/" + s.calls
             + '</td><td class="num pts">' + s.points + "</td></tr>";
         }).join("") + "</tbody></table>";
-      html += '<p class="hint">Points for being right when the room disagreed: right with 20% agreeing is worth 80.</p>';
+      html += '<p class="hint">Being right scores more when the room disagreed, and when you called it early.</p>';
     }
     // For a streamer whose week ran out, or who is on another browser. Not
     // while their own card is up: that card already says it.

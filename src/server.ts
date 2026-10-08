@@ -23,6 +23,7 @@ import { kickConfigured } from "./kick/client.js";
 import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { lockDue, remindOpen, type LiveDeps } from "./live/calls.js";
+import { allStandings } from "./store/live.js";
 import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
@@ -259,11 +260,9 @@ const appOpenFor = (req: express.Request): boolean => APP_OPEN || hasPreview(req
 
 /** Kapaliyken herkesi kampanyaya gonder: 404 vermek yerine gidilecek bir yer. */
 function appClosed(res: express.Response): void {
-  // Absolute, to the apex. A relative "/genesis" resolves on whichever host
-  // the request hit; on app.oddie.fun that is an apex path, which the split
-  // then 301s back to oddie.fun: two hops for every closed-app visit, and the
-  // closed app is the path every visitor takes until APP_OPEN flips.
-  res.set("Cache-Control", "no-store").redirect(302, `${BASE_URL}/genesis`);
+  // Absolute, to the apex: a relative path resolves on whichever host the
+  // request hit. The landing, since Genesis retired (8 Oct).
+  res.set("Cache-Control", "no-store").redirect(302, `${BASE_URL}/`);
 }
 const TOOL_HTML = readFileSync(path.join(__dirname, "../public/tool.html"), "utf8");
 const LANDING_HTML = readFileSync(path.join(__dirname, "../public/landing.html"), "utf8");
@@ -854,8 +853,8 @@ a.claim{background:#FCF604;color:#020302;text-decoration:none;font-weight:800;
 padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
 <img src="${png}" alt="${escHtml(title)}">
 ${question ? `<h1>${escHtml(question)}</h1>` : ""}
-<p>This market is open on Solana. Betting opens to everyone shortly. Genesis is running first.</p>
-<a class="claim" href="/genesis">Get your 5 tickets</a>
+<p>This market is open on Solana. Betting opens to everyone shortly.</p>
+<a class="claim" href="${BASE_URL}/">See how oddie works</a>
 </body></html>`;
 }
 
@@ -928,11 +927,12 @@ a{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter
 // Both paths serve the SAME file: /genesis/how is a view of the campaign page,
 // not a second copy of it. The explanation lives in exactly one place, and the
 // boot script switches views off location.pathname.
+// GENESIS IS RETIRED (Lev, 8 Oct): the five-ticket campaign was X only, and
+// oddie is markets for livestreams now. Old links land on the landing, which
+// tells the current story; a 302, so the campaign can come back without a
+// browser holding on to the redirect. genesis.html stays in the repo for that.
 app.get(["/genesis", "/genesis/how"], (_req, res) => {
-  // no-cache = the browser must revalidate (cheap 304 via etag) before reusing.
-  // The page inlines its JS, so a heuristically-cached copy runs stale script;
-  // this is what left an old "Post your card" tweet string live after a deploy.
-  res.set("Cache-Control", "no-cache").type("html").send(GENESIS_HTML);
+  res.set("Cache-Control", "no-store").redirect(302, `${BASE_URL}/`);
 });
 
 /**
@@ -1331,34 +1331,9 @@ app.get("/card/genesis/:handle.png", async (req, res) => {
 // the current render.
 const GENESIS_CARD_VERSION = "3";
 
-app.get("/g/:handle", async (req, res) => {
-  const gp = await genesisProfileByHandle(req.params.handle).catch(() => null);
-  if (!gp) return res.redirect("/genesis");
-  const label = ARCHETYPE_LABEL[gp.archetype];
-  const png = `${BASE_URL}/card/genesis/${encodeURIComponent(gp.handle)}.png?v=${GENESIS_CARD_VERSION}`;
-  const title = `${label} · @${gp.handle}`;
-  res.type("html").send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escHtml(title)} · oddie</title>
-<meta property="og:title" content="${escHtml(title)}">
-<meta property="og:description" content="${escHtml(gp.headline)} \u00b7 oddie turns a claim on X into a real prediction market.">
-<meta property="og:image" content="${png}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="${png}">
-<link rel="icon" href="/favicon.ico?v=3" sizes="any">
-<style>body{margin:0;background:#020302;color:#fff;font-family:'Nunito',system-ui,sans-serif;font-weight:600;
-display:flex;flex-direction:column;align-items:center;gap:18px;padding:34px 18px}
-img{max-width:min(96vw,760px);border-radius:18px}
-h1{font-size:20px;line-height:1.35;margin:0;max-width:26ch;text-align:center}
-p{margin:0;color:rgba(255,255,255,.62);max-width:56ch;text-align:center;font-size:15px}
-a.claim{background:#FCF604;color:#020302;text-decoration:none;font-weight:800;
-padding:14px 26px;border-radius:999px;font-size:17px}</style></head><body>
-<img src="${png}" alt="${escHtml(title)}">
-<h1>oddie turns a claim on X into a real prediction market.</h1>
-<p>Tag @oddiefun on any claim and people bet real money on YES or NO.
-This card is what oddie read in @${escHtml(gp.handle)}. Yours is one tap away.</p>
-<a class="claim" href="/genesis">Get your 5 tickets</a>
-</body></html>`);
+app.get("/g/:handle", (_req, res) => {
+  // A Genesis card's share page, from the retired campaign: the landing now.
+  res.set("Cache-Control", "no-store").redirect(302, `${BASE_URL}/`);
 });
 
 /**
@@ -1918,6 +1893,17 @@ app.use(twitchRouter({
     nameMarkets: async (channelId, wallet) => nameOpenedMarkets(await streamOpenedSlugs("twitch", channelId).catch(() => [] as string[]), wallet),
   },
 }));
+/* THE LEADERBOARD'S ROWS: points from the votes in every stream chat (Lev,
+   8 Oct, the board is the live product's). Usernames and points, the same
+   things every channel page already shows; one grouped read per visit. */
+app.get("/api/live/standings", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  const rows = await allStandings(50).catch(() => null);
+  if (!rows) return res.status(503).json({ error: "unavailable" });
+  res.json({ standings: rows.map((s, i) => ({ rank: i + 1, platform: s.platform, username: s.username, channel: s.channel,
+    right: s.right, calls: s.calls, points: s.points })) });
+});
+
 /* The clock only runs where a channel can exist to need it. One clock for
    both platforms: a due call is said through its own platform's voice. */
 if (kickConfigured() || twitchConfigured()) {

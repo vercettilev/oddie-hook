@@ -262,12 +262,14 @@ console.log("\nthe lines no memory test reaches");
   const board = server.slice(server.indexOf('app.get("/api/board"'), server.indexOf('app.get("/api/board"') + 5000);
   check("both boards say who is behind a row", /person: people\.get\(b\.wallet\) \?\? null/.test(board)
     && /person: people\.get\(c\.wallet\) \?\? null/.test(board) && /person: byHandle\.get\(/.test(server));
+  // The leaderboard is the stream votes (Lev, 8 Oct), read from every channel at once.
   const lb = readFileSync("public/app/leaderboard.html", "utf8");
-  check("the leaderboard links a person to their page, and everybody else to their wallet record",
-    (lb.match(/ppLink\(/g) || []).length === 4 && /: "<a href=\\"\/w\/" \+ encodeURIComponent\(p\.wallet\)/.test(lb)
-    && /: '<a href="\/w\/' \+ encodeURIComponent\(w\.wallet\)/.test(lb));
-  for (const f of ["markets", "market", "you", "leaderboard", "who", "person", "following"]) {
-    check(`Following is in the nav on ${f}`, readFileSync(`public/app/${f}.html`, "utf8").includes('<a href="/following"'));
+  check("the leaderboard reads the votes from every stream chat",
+    lb.includes('fetch("/api/live/standings")') && server.includes('app.get("/api/live/standings"'));
+  // Live took Following's place in the nav (Lev, 8 Oct); /following still opens.
+  for (const f of ["markets", "market", "you", "leaderboard", "who", "person", "following", "live"]) {
+    const html = readFileSync(`public/app/${f}.html`, "utf8");
+    check(`Live is in the nav on ${f}, Following is not`, /<a href="\/live"( aria-current="page")?>Live<\/a>/.test(html) && !html.includes(">Following</a>"));
   }
 }
 

@@ -134,11 +134,14 @@ console.log("\none word, one meaning\n");
      be pinned rather than assumed -- People is a headcount, Points is
      settled-bet weight, and each has its own table and its own rule sentence
      above it. */
+  /* THE LEADERBOARD IS THE STREAM VOTES NOW (Lev, 8 Oct): one table, one
+     unit. Points are what a vote paid for being right, the rule sentence says
+     where they come from, and the people-brought count left with Genesis. */
   const lb = readFileSync(path.join(ROOT, "public/app/leaderboard.html"), "utf8");
-  check("the leaderboard still has the callers' Points column", lb.includes(">Points<"));
-  check("...and the openers' People column beside it", lb.includes(">People<"));
-  check("...each under a heading of its own",
-    lb.includes("<h2>Who was right</h2>") && lb.includes("Ranked by <b>first-time</b> bettors your markets bring in."));
+  check("the leaderboard has its Points column", lb.includes(">Points<"));
+  check("...one unit on the page: the openers' People column is gone", !lb.includes(">People<"));
+  check("...under one rule sentence that says where points come from",
+    lb.includes('<p class="rule">Points from votes in stream chats.</p>') && lb.includes('fetch("/api/live/standings")'));
   check("the opener board names what it counts",
     withoutComments.includes("<span>People</span>"));
 }
