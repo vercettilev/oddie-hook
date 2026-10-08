@@ -24,7 +24,7 @@ if (process.env.DATABASE_URL) {
 }
 
 import { readFileSync } from "node:fs";
-import { runMentionSweep, stripLeadingMentions, stripBotHandle, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB } from "../src/x/mentionLoop.js";
+import { runMentionSweep, stripLeadingMentions, stripBotHandle, addressesBot, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
 import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState } from "../src/store/markets.js";
 import { SINCE_KEY } from "../src/x/client.js";
@@ -693,6 +693,37 @@ async function main() {
     check("an inappropriate tag stays silent even with the card wired", spy.posted.length === 0);
   }
   {
+    // Named, not asked: the 8 Oct reply under a Solana Foundation founder's
+    // post that ended on our handle got the teaching card, publicly.
+    _resetBotState();
+    let spent = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("645", {
+        text: "@therealchaseeb hey chase, did what you said: short blurb + 20s demo\n\nprediction markets for livestreams: chat types a claim, it becomes a market. @oddiefun",
+      })], newestId: "645" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "no claim" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      spendMiss: async () => { spent++; return { spent: true, left: 4 }; },
+    });
+    await runMentionSweep(deps);
+    check("a post that only names us gets no lesson", spy.posted.length === 0 && spy.minted.length === 0);
+    check("...costs them nothing", spent === 0);
+    check("...and is recorded as named, not taught",
+      String(_memMentionReason("645")).endsWith("/named"), _memMentionReason("645") ?? "");
+  }
+  {
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("646", { text: "@someone yo @oddiefun make this a market" })], newestId: "646" }),
+      extract: async () => ({ ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "vibes" }),
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+    });
+    await runMentionSweep(deps);
+    check("a greeting before our handle still asks, and is taught", spy.posted.length === 1);
+  }
+  {
     // The card carries the entire lesson now that the text is one sentence, so
     // a reply without it is a bare public "no" - the exact post this branch was
     // written to avoid. An upload failure has to end in silence, not in text.
@@ -1117,6 +1148,14 @@ async function main() {
     stripBotHandle("the next CEO will be @jack", "oddiefun") === "the next CEO will be @jack");
   check("stripBotHandle does not eat a longer handle that starts the same way",
     stripBotHandle("ask @oddiefunny about it", "oddiefun") === "ask @oddiefunny about it");
+  check("addressesBot: our handle in the reply's leading handles asks",
+    addressesBot("@someone @oddiefun price this", "oddiefun"));
+  check("addressesBot: a bare tag asks", addressesBot("@oddiefun", "oddiefun"));
+  check("addressesBot: hey @oddiefun asks", addressesBot("hey @oddiefun is this a market", "oddiefun"));
+  check("addressesBot: a sentence that ends on our handle only names us",
+    !addressesBot("@chase prediction markets for livestreams, check out @oddiefun", "oddiefun"));
+  check("addressesBot: a longer handle is somebody else",
+    !addressesBot("@chase big fan of the work at @oddiefunny and @oddiefun", "oddiefun"));
   check("stripLeadingMentions only takes handles off the FRONT",
     stripLeadingMentions("@a @b real text @c") === "real text @c");
   check("tweetUrl falls back to the handle-free form",

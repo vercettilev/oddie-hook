@@ -196,6 +196,31 @@ export function stripBotHandle(text: string, handle: string): string {
   return text.replace(new RegExp(`@${h}\\b`, "gi"), " ").replace(/\s{2,}/g, " ").trim();
 }
 
+/**
+ * WAS ODDIE ASKED, OR ONLY NAMED?
+ *
+ * "@oddiefun price this" asks. So does a reply that opens on our handle, and
+ * "yo @oddiefun, market this". "...prediction markets for livestreams, it
+ * becomes a market. @oddiefun" does not: that is somebody telling their own
+ * audience about us, and on 8 Oct the teaching card went out under exactly
+ * that post, publicly, in a Solana Foundation founder's replies. A claim in a
+ * post that only names us is still priced (the gate decides that); this only
+ * decides whether a post with nothing to price is worth a lesson, and a lesson
+ * nobody asked for reads as the bot not knowing it was being talked about.
+ */
+export function addressesBot(text: string, handle: string): boolean {
+  const h = handle.replace(/^@+/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(h)) return true;
+  const ours = new RegExp(`@${h}\\b`, "i");
+  const lead = /^(?:\s*@[A-Za-z0-9_]{1,15})+/.exec(text)?.[0] ?? "";
+  if (ours.test(lead)) return true;
+  const rest = text.slice(lead.length);
+  const at = rest.search(ours);
+  if (at < 0) return true;
+  // A greeting before the handle still addresses it; a sentence does not.
+  return rest.slice(0, at).trim().split(/\s+/).filter(Boolean).length <= 2;
+}
+
 /** Tweets are addressed by handle in the URL, but any handle resolves; the id
  *  is what makes it canonical. `i/web` is X's own handle-free form. */
 export function tweetUrl(handle: string | null, id: string): string {
@@ -360,6 +385,13 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
          `why` is recorded on the row and is load-bearing: refusalsUsed counts
          rows whose reason starts with "taught". */
       const teach = async (why: string): Promise<void> => {
+        // Named in passing, not asked: nothing to teach, and nothing charged.
+        if (!addressesBot(m.text, deps.botHandle ?? "oddiefun")) {
+          await settleMention(m.id, "skipped", { reason: `gate:${why}/named`, claimText: graded });
+          decide("skipped", { reason: "named" });
+          log("named, not asked: no lesson", { tweetId: m.id, handle: m.authorHandle });
+          return;
+        }
         const teachPng = deps.teachPng;
         if (!teachPng) {
           await settleMention(m.id, "skipped", { reason: `gate:${why}`, claimText: graded });
