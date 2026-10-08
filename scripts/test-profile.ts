@@ -6,6 +6,7 @@ if (process.env.DATABASE_URL) {
   process.exit(1);
 }
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import {
   usernameState, saveProfile, profileFor, defaultAvatar, normUsername, AVATARS, _resetProfiles,
   _resetBetNotices,
@@ -91,6 +92,83 @@ console.log("\nthe lines no memory test reaches");
   check("...and saving needs a signed-in browser", /if \(!canonical\) return res\.status\(401\)\.json\(\{ error: "signed-out" \}\)/.test(server));
   const api = server.slice(server.indexOf('app.get("/api/notices"'), server.indexOf('app.post("/api/notices/seen"'));
   check("Activity names the other person only through their switch", /publicNameForWallet\(a\)/.test(api) && !/actor:/.test(api));
+}
+
+console.log("\nthe masthead chip (public/app/me.js), run against a pretend page");
+{
+  // Live on 8 Oct the first streamer to bet sent a screenshot: his wallet
+  // connected, his bets on the profile, and the masthead still said "Sign in".
+  const src = readFileSync("public/app/me.js", "utf8");
+  class El {
+    className = ""; href = ""; src = ""; alt = ""; children: Array<El | { textContent: string }> = []; private own = "";
+    get textContent(): string { return this.own + this.children.map((c) => c.textContent).join(""); }
+    set textContent(v: string) { this.own = String(v); this.children = []; }
+    appendChild<T>(c: T): T { this.children.push(c as unknown as El); return c; }
+    insertBefore<T>(c: T, ref: unknown): T { const i = this.children.indexOf(ref as El); this.children.splice(i < 0 ? this.children.length : i, 0, c as unknown as El); return c; }
+  }
+  const KEY = "22eK3nDoECWrvVx4skKofCg8ExE8rZD5WbmDyrvqNPEe";
+  const pk = { toString: () => KEY };
+  type Phantom = { isPhantom: boolean; isConnected: boolean; publicKey: unknown; on(ev: string, f: (k?: unknown) => void): void; connect(o: unknown): Promise<{ publicKey: unknown }> };
+  async function page(me: unknown, solana?: Partial<Phantom> & { trusted?: boolean }): Promise<{ chip: El; fire: (ev: string, k?: unknown) => void }> {
+    const bar = new El();
+    const on: Record<string, (k?: unknown) => void> = {};
+    const sol = solana && {
+      isPhantom: true, isConnected: false, publicKey: null,
+      on: (ev: string, f: (k?: unknown) => void) => { on[ev] = f; },
+      connect: () => (solana.trusted ? Promise.resolve({ publicKey: pk }) : Promise.reject(new Error("User rejected the request."))),
+      ...solana,
+    };
+    const answer = (url: string) => (url.startsWith("/api/auth/me") ? me : url.startsWith("/api/notices") ? { unseen: 0 } : { count: 0 });
+    const ctx: Record<string, unknown> = {
+      document: {
+        querySelector: (q: string) => (q === ".top .wrap" ? bar : null),
+        createElement: () => new El(),
+        createTextNode: (t: string) => ({ textContent: t }),
+        head: { appendChild: () => {} },
+      },
+      fetch: (url: string) => Promise.resolve({ json: () => Promise.resolve(answer(url)) }),
+      OddieId: { get: () => "dev-test-1" },
+      solana: sol,
+    };
+    ctx.window = ctx;
+    runInNewContext(src, ctx);
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    return { chip: bar.children[bar.children.length - 1] as El, fire: (ev, k) => on[ev]?.(k) };
+  }
+  const name = (c: El) => c.textContent;
+  {
+    const { chip } = await page({ accounts: [], profile: null });
+    check("nobody: the chip asks to sign in", name(chip) === "Sign in" && chip.href === "/profile#accounts");
+  }
+  {
+    const { chip } = await page({ accounts: [{ provider: "phantom", handle: "22eK…NPEe" }], profile: { username: null, avatar: "a3" } });
+    check("signed in with a wallet only: its address and picture, not \"Sign in\"", name(chip) === "22eK…NPEe" && chip.href === "/profile"
+      && chip.children.some((c) => c instanceof El && c.src === "/avatars/a3.webp"), name(chip));
+  }
+  {
+    const { chip } = await page({ accounts: [{ provider: "phantom", handle: "22eK…NPEe" }, { provider: "twitter", handle: "bee_empir3" }], profile: { username: null, avatar: "a3" } });
+    check("...an X name still wins over the wallet", name(chip) === "@bee_empir3", name(chip));
+  }
+  {
+    const { chip } = await page({ accounts: [{ provider: "phantom", handle: "22eK…NPEe" }], profile: { username: "bee", avatar: "a3" } });
+    check("...and so does an oddie name", name(chip) === "@bee", name(chip));
+  }
+  {
+    const { chip } = await page({ accounts: [], profile: null }, { isConnected: true, publicKey: pk });
+    check("not signed in, wallet connected on this page: the wallet, not \"Sign in\"", name(chip) === "22eK…NPEe" && chip.href === "/profile", name(chip));
+  }
+  {
+    const { chip } = await page({ accounts: [], profile: null }, { trusted: true });
+    check("a wallet this site is trusted by shows on any page, with no popup", name(chip) === "22eK…NPEe", name(chip));
+  }
+  {
+    const { chip, fire } = await page({ accounts: [], profile: null }, { trusted: false });
+    check("an untrusted wallet stays an ask", name(chip) === "Sign in", name(chip));
+    fire("connect", pk);
+    check("...until it connects on the page", name(chip) === "22eK…NPEe", name(chip));
+    fire("disconnect");
+    check("...and disconnecting asks again", name(chip) === "Sign in" && chip.href === "/profile#accounts", name(chip));
+  }
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall profile checks passed.\n");

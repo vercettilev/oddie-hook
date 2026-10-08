@@ -22,10 +22,60 @@
 
   // Default to the ask. If the fetch never answers, an invitation is a better
   // wrong answer than a blank space or a name we cannot prove.
-  a.className = "mechip mechip--go mechip--me";
-  // Two ways in now, X and Telegram, and both live on the profile.
-  a.textContent = "Sign in";
-  a.href = "/profile#accounts";
+  function ask() {
+    a.className = "mechip mechip--go mechip--me";
+    // Two ways in now, X and Telegram, and both live on the profile.
+    a.textContent = "Sign in";
+    a.href = "/profile#accounts";
+  }
+  ask();
+
+  /*
+   * A WALLET IS SOMEBODY TOO.
+   *
+   * Connecting a wallet stopped signing anything when the second Phantom popup
+   * left the way to a first bet, so a bettor can have money riding, their
+   * wallet connected and their bets on the profile, and no oddie account at
+   * all. This chip still said "Sign in" to them. Live on 8 Oct the first
+   * streamer to bet with oddie sent a screenshot of exactly that: "still shows
+   * signin despite wallet connected". So a wallet signed in with, or one this
+   * page is connected to, is the name here when there is no other.
+   */
+  function wallet(label, avatar) {
+    a.className = "mechip mechip--me mechip--pf";
+    a.textContent = "";
+    if (avatar) {
+      var im = document.createElement("img");
+      im.src = "/avatars/" + avatar + ".webp";
+      im.alt = "";
+      a.appendChild(im);
+    }
+    a.appendChild(document.createTextNode(label));
+    a.href = "/profile";
+  }
+  var shortKey = function (k) {
+    var s = String(k || "");
+    return s.length > 10 ? s.slice(0, 4) + "…" + s.slice(-4) : s;
+  };
+  /* Not signed in: whatever wallet Phantom has connected to this page, now or
+     later. A wallet this site is trusted by answers without a popup and throws
+     for everybody else, so the probe is free and silent, as in the money sheet. */
+  function watchWallet() {
+    var p = window.solana;
+    if (!p || !p.isPhantom) return;
+    var show = function (k) { if (k) wallet(shortKey(k)); else ask(); };
+    if (typeof p.on === "function") {
+      p.on("connect", function (k) { show(k || p.publicKey); });
+      p.on("accountChanged", function (k) { show(k); });
+      p.on("disconnect", function () { ask(); });
+    }
+    if (p.isConnected && p.publicKey) return show(p.publicKey);
+    if (typeof p.connect === "function") {
+      p.connect({ onlyIfTrusted: true })
+        .then(function (r) { if (r && r.publicKey) show(r.publicKey); })
+        .catch(function () {});
+    }
+  }
 
   // One request, published for whoever else needs it. window.OddieMe always
   // settles: pages await it rather than opening a second identical call, and a
@@ -56,10 +106,16 @@
       }
       var tw = accts.filter(function (x) { return x.provider === "twitter" && x.handle; })[0]
         || accts.filter(function (x) { return x.provider === "telegram" && x.handle; })[0];
-      if (!tw || !tw.handle) return;
-      a.className = "mechip mechip--me" + (tw.provider === "telegram" ? " mechip--tg" : "");
-      a.textContent = "@" + String(tw.handle).replace(/^@+/, "");
-      a.href = "/profile";
+      if (tw && tw.handle) {
+        a.className = "mechip mechip--me" + (tw.provider === "telegram" ? " mechip--tg" : "");
+        a.textContent = "@" + String(tw.handle).replace(/^@+/, "");
+        a.href = "/profile";
+        return;
+      }
+      // Signed in with a wallet: its short address is the handle it was given.
+      var ph = accts.filter(function (x) { return x.provider === "phantom" && x.handle; })[0];
+      if (ph) return wallet(ph.handle, prof && prof.avatar);
+      watchWallet();
     });
 
   /*
