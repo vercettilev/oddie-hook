@@ -23,6 +23,7 @@ import { kickConfigured } from "./kick/client.js";
 import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { lockDue, remindOpen, type LiveDeps } from "./live/calls.js";
+import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -1934,6 +1935,8 @@ if (kickConfigured() || twitchConfigured()) {
     void lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message }));
     void remindOpen(clock).catch((e) => liveLog("live reminder failed", { err: (e as Error).message }));
   }, 5_000);
+  // One read now, so the log says whether price calls can be settled from here.
+  void probePriceSource(liveLog);
 }
 
 app.get("/following", (req, res) => {
