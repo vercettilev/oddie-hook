@@ -153,6 +153,12 @@ export async function sendChat(token: string, broadcasterId: string, senderId: s
   return r?.message_id ? String(r.message_id) : null;
 }
 
+/** Is the channel live now? The app token is enough: /streams lists only live ones. */
+export async function streamIsLive(app: string, userId: string): Promise<boolean> {
+  const j = await api<{ data?: unknown[] }>(app, "GET", `/streams?user_id=${encodeURIComponent(userId)}&type=live`);
+  return (j.data?.length ?? 0) > 0;
+}
+
 /** The message pinned in a channel's chat now, if any (null: nothing pinned). */
 export async function pinnedChat(token: string, broadcasterId: string, moderatorId: string): Promise<string | null> {
   const q = new URLSearchParams({ broadcaster_id: broadcasterId, moderator_id: moderatorId });

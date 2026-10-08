@@ -1929,6 +1929,10 @@ if (kickConfigured() || twitchConfigured()) {
     // Pins are Twitch's; on Kick the reminder alone keeps a long call in sight.
     pin: (p, c, id) => (p === "twitch" && twEng.pin ? twEng.pin(p, c, id) : Promise.resolve()),
     unpin: (p, c) => (p === "twitch" && twEng.unpin ? twEng.unpin(p, c) : Promise.resolve()),
+    streamLive: (p, c) => {
+      const eng = p === "twitch" ? twEng : kickEng;
+      return eng.streamLive ? eng.streamLive(p, c) : Promise.resolve(null);
+    },
     standingsUrl: (p, c) => (p === "twitch" ? twEng.standingsUrl(p, c) : kickEng.standingsUrl(p, c)),
   };
   setInterval(() => {

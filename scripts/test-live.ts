@@ -13,7 +13,7 @@ import bs58 from "bs58";
 import express from "express";
 import {
   parseCommand, handleChat, lockDue, remindOpen, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
-  EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, _resetLive, type ChatMessage, type LiveDeps,
+  EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, REPORT_WINDOW_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
@@ -51,6 +51,8 @@ console.log("what a chat line asks for");
     && (parseCommand("!call yes") as { which: number | null }).which === null);
   check("...and a number names which call waiting", (parseCommand("!call yes 2") as { which: number }).which === 2
     && (parseCommand("!call no #1") as { which: number; outcome: string }).which === 1 && parseCommand("!call no #1")?.kind === "settle");
+  check("!result yes and !result no report what happened, in Turkish too", (parseCommand("!result yes") as { kind: string; side: string })?.side === "yes"
+    && parseCommand("!result NO")?.kind === "report" && (parseCommand("!sonuç hayır") as { side: string })?.side === "no" && parseCommand("!result") === null);
   check("!call cancel cancels, a number names which", parseCommand("!call iptal")?.kind === "cancel"
     && (parseCommand("!call cancel 3") as { which: number }).which === 3);
   check("!call alone asks for help", parseCommand("!call")?.kind === "help");
@@ -102,7 +104,7 @@ console.log("\na timed call, start to finish");
     (await handleChat(r.line("v1", "!call will he win?"), r.deps)) === "not-allowed" && r.said.length === 0);
   check("the streamer or a mod can", (await handleChat(r.line("mod", "!call 3m will he win this game?", true), r.deps)) === "opened");
   check("...and the room hears how to answer, how long, and where the standings are",
-    r.said[0]?.text === LIVE_COPY.opened("will he win this game?", 3, "https://app.oddie.fun/live/kick/streamer")
+    r.said[0]?.text === LIVE_COPY.opened("will he win this game?", 3, "https://app.oddie.fun/live/kick/streamer", true)
     && /lock in 3 min, earlier calls score more/.test(r.said[0]?.text ?? ""));
   check("...and the line is pinned where the platform can", r.pins.length === 1 && r.pins[0] === r.said[0]?.id);
   for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!no"], ["d", "!no"], ["e", "!no"]] as const) await handleChat(r.line(who, side), r.deps);
@@ -161,7 +163,7 @@ console.log("\na call open until it is settled (8 Oct: \"before the stream ends?
   const r = room();
   await handleChat(r.line("owner", "!call btc reclaims 82.5k before the stream ends?", true), r.deps);
   check("the room hears it stays open, and that early calls score more",
-    r.said[0]?.text === LIVE_COPY.opened("btc reclaims 82.5k before the stream ends?", null, "https://app.oddie.fun/live/kick/streamer")
+    r.said[0]?.text === LIVE_COPY.opened("btc reclaims 82.5k before the stream ends?", null, "https://app.oddie.fun/live/kick/streamer", true)
     && /Open until it's settled, earlier calls score more/.test(r.said[0]?.text ?? ""), r.said[0]?.text);
   await handleChat(r.line("a", "!yes"), r.deps);
   r.tick(2 * 60 * 60_000);
@@ -244,6 +246,120 @@ console.log("\nseen later: the reminder, and the pin again");
       .every((t) => parseCommand(t) === null));
   check("the reminder copy never says bet, gambling, free or real money",
     !/\bbet(s|ting)?\b|gambl|\bfree\b|real money|real sol/i.test(LIVE_COPY.reminder("q", { yes: 1, no: 1 }, 60_000) + LIVE_COPY.switched("q", { yes: 1, no: 0 }) + LIVE_COPY.which("yes", ["a", "b"])));
+}
+
+console.log("\nthe room reports what only the stream showed (Lev, 8 Oct: the result drops without !call yes)");
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call clutch this round?", true), r.deps);
+  check("a moment's call says how it settles", /When it's over, anybody types !result yes or !result no/.test(r.said[0]?.text ?? ""), r.said[0]?.text);
+  for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!yes"]] as const) await handleChat(r.line(who, side), r.deps);
+  r.tick(5 * 60_000);
+  check("anybody reports, and the first report closes the answers",
+    (await handleChat(r.line("v1", "!result yes"), r.deps)) === "reported" && (await liveStore.current("kick", "100")) === null
+    && r.said[r.said.length - 1]?.text === LIVE_COPY.reportOpened("clutch this round?"), r.said[r.said.length - 1]?.text);
+  check("...an answer after it is no answer", (await handleChat(r.line("late", "!yes"), r.deps)) !== "picked");
+  await handleChat(r.line("v2", "!result yes"), r.deps);
+  await handleChat(r.line("v3", "!result no"), r.deps);
+  await handleChat(r.line("v1", "!result no"), r.deps);
+  r.tick(REPORT_WINDOW_MS - 1);
+  await lockDue(r.deps);
+  check("...nothing settles before the minute is up", (await liveStore.unsettled("kick", "100")).length === 1);
+  r.tick(1);
+  await lockDue(r.deps);
+  const last = r.said[r.said.length - 1]?.text ?? "";
+  check("a minute on, the majority settles it, the count in front, one report each",
+    last.startsWith(`2 of 3 reports say YES. It's YES: "clutch this round?". 2 of 3 called it right`), last);
+  check("...and no mod typed anything", (await liveStore.unsettled("kick", "100")).length === 0);
+}
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call 1v1 win?", true), r.deps);
+  await handleChat(r.line("a", "!result yes"), r.deps);
+  await handleChat(r.line("b", "!result no"), r.deps);
+  r.tick(REPORT_WINDOW_MS); await lockDue(r.deps);
+  check("a tie gets one more minute", r.said[r.said.length - 1]?.text === LIVE_COPY.reportTie("1v1 win?", 1, 1), r.said[r.said.length - 1]?.text);
+  r.tick(REPORT_WINDOW_MS); await lockDue(r.deps);
+  check("...then goes to the mods", r.said[r.said.length - 1]?.text === LIVE_COPY.reportToMods("1v1 win?"));
+  check("...who still settle it", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled");
+}
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call ace this round?", true), r.deps);
+  await handleChat(r.line("a", "!result no"), r.deps);
+  check("a mod's !call yes wins over the room", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled");
+  r.tick(REPORT_WINDOW_MS); const n0 = r.said.length; await lockDue(r.deps);
+  check("...and the room's minute then says nothing", r.said.length === n0);
+}
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call will BTC close current 30min candle above 82k?", true), r.deps);
+  check("a price call needs no report, said once",
+    (await handleChat(r.line("a", "!result yes"), r.deps)) === "price-call" && (await handleChat(r.line("b", "!result no"), r.deps)) === "price-call"
+    && r.said.filter((x) => x.text === LIVE_COPY.priceNoReport("will BTC close current 30min candle above 82k?")).length === 1);
+  check("...and a report with nothing waiting is chat", (await handleChat({ ...r.line("c", "!result yes"), channelId: "999" }, r.deps)) === "no-call");
+}
+
+console.log("\nthe stream ends");
+{
+  const r = room();
+  let live: boolean | null = true;
+  r.deps.streamLive = async () => live;
+  await handleChat(r.line("owner", "!call will he win the final?", true), r.deps);
+  await handleChat(r.line("a", "!yes"), r.deps);
+  await handleChat(r.line("owner", "!call nobody reports this?", true), r.deps);
+  await lockDue(r.deps);
+  live = null;
+  r.tick(STREAM_POLL_MS); await lockDue(r.deps);
+  check("a platform that does not answer ends nothing", (await liveStore.unsettled("kick", "100")).length === 2);
+  live = false;
+  r.tick(STREAM_POLL_MS); await lockDue(r.deps);
+  check("a live channel gone dark cancels the moments nobody reported, no points",
+    r.said.some((x) => x.text === LIVE_COPY.noResult("will he win the final?")) && r.said.some((x) => x.text === LIVE_COPY.noResult("nobody reports this?"))
+    && (await liveStore.unsettled("kick", "100")).length === 0);
+  check("...and nobody scored", (await channelStandings("kick", "100")).every((x) => x.points === 0));
+}
+{
+  const r = room();
+  let live = true;
+  r.deps.streamLive = async () => live;
+  await handleChat(r.line("owner", "!call clutch?", true), r.deps);
+  await lockDue(r.deps);
+  await handleChat(r.line("a", "!result yes"), r.deps);
+  live = false;
+  r.tick(STREAM_POLL_MS / 2); await lockDue(r.deps);
+  r.tick(STREAM_POLL_MS / 2); await lockDue(r.deps);
+  check("reported, then the stream ended: the reports settle it", r.said.some((x) => x.text.startsWith(`1 of 1 report says YES. It's YES: "clutch?"`)),
+    JSON.stringify(r.said.map((x) => x.text).slice(-2)));
+}
+{
+  const r = room();
+  r.deps.streamLive = async () => false;
+  await handleChat(r.line("owner", "!call offline test?", true), r.deps);
+  await lockDue(r.deps); r.tick(STREAM_POLL_MS); await lockDue(r.deps);
+  check("a channel never seen live is not ended by the clock", (await liveStore.unsettled("kick", "100")).length === 1);
+  r.tick(CALL_FORGET_MS); await lockDue(r.deps);
+  check("...a call nobody settled in a day is put away quietly", (await liveStore.unsettled("kick", "100")).length === 0
+    && !r.said.some((x) => x.text.startsWith("No result")));
+}
+
+console.log("\na restart forgets the waits, the store does not");
+{
+  const r = room();
+  const t0 = Date.parse("2026-10-08T13:43:11Z");
+  r.tick(t0 - r.deps.now());
+  let reads = 0;
+  r.deps.prices = { venue: "Binance",
+    async candle() { reads++; return { open: 82362.01, close: 82182.01 }; },
+    async priceAt() { return null; }, async extremes() { return null; } };
+  await handleChat(r.line("owner", "!call will BTC close current 30min candle above 82k?", true), r.deps);
+  await handleChat(r.line("a", "!yes"), r.deps);
+  r.tick(3 * 60_000 + 1_000); await lockDue(r.deps);
+  _forgetWaits();
+  r.tick(Date.parse("2026-10-08T14:00:05Z") - r.deps.now()); await lockDue(r.deps);
+  r.tick(STREAM_POLL_MS); await lockDue(r.deps);
+  const last = r.said[r.said.length - 1]?.text ?? "";
+  check("a locked price call gets its wait back and settles itself", reads >= 1 && /It's YES: "will BTC close current 30min candle above 82k\?"/.test(last), last);
 }
 
 console.log("\n!yes or !no with nothing open");
@@ -693,7 +809,7 @@ console.log("\nthe lines no memory test reaches");
   check("the live pages are app pages", /\(m\|market\|w\|u\|live\)/.test(server) && /\|following\|live\)/.test(server));
   check("the Kick and Twitch routers are mounted, and the clock runs only where one of them is set up",
     /app\.use\(kickRouter\(\{/.test(server) && /app\.use\(twitchRouter\(\{/.test(server)
-    && /if \(kickConfigured\(\) \|\| twitchConfigured\(\)\) \{[\s\S]{0,900}lockDue\(clock\)/.test(server));
+    && /if \(kickConfigured\(\) \|\| twitchConfigured\(\)\) \{[\s\S]{0,1600}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
   check("one call taking answers per channel is the database's rule, and the old one-unsettled index goes",
     /CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_voting ON live_call \(platform, channel_id\)\s+WHERE locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL/.test(store)

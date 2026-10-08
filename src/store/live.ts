@@ -330,6 +330,17 @@ export const liveStore: LiveStore = {
     return rows.map(callFrom);
   },
 
+  async everyUnsettled() {
+    if (!STORE_PERSISTENT) {
+      return [...memCalls.values()].filter((c) => c.settledAt === null && c.canceledAt === null)
+        .sort((a, b) => a.openedAt - b.openedAt || Number(a.id) - Number(b.id)).map((c) => ({ ...c }));
+    }
+    await schema();
+    const { rows } = await storeDb().query<CallRow>(
+      `SELECT ${CALL_COLS} FROM live_call WHERE settled_at IS NULL AND canceled_at IS NULL ORDER BY opened_at LIMIT 500`);
+    return rows.map(callFrom);
+  },
+
   async takingAnswers() {
     if (!STORE_PERSISTENT) return [...memCalls.values()].filter(takingAnswers).map((c) => ({ ...c }));
     await schema();

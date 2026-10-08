@@ -9,7 +9,7 @@ import express, { type Request, type Response, type Router } from "express";
 import { randomBytes } from "node:crypto";
 import {
   authorizeUrl, chatFromKick, exchangeCode, kickConfigured, kickPublicKey, me, myChannel, pkcePair,
-  refreshTokens, sendChat, sendChatAsUser, subscribeToChannel, verifyKickSignature, WEBHOOK_MAX_AGE_MS, type KickTokens,
+  refreshTokens, sendChat, sendChatAsUser, subscribeToChannel, verifyKickSignature, WEBHOOK_MAX_AGE_MS, type KickTokens, kickStreamIsLive,
 } from "./client.js";
 import { handleChat, LIVE_COPY, lockDue, type LiveDeps, type Platform } from "../live/calls.js";
 import { addChannelRoutes, type ChannelPayoutDeps } from "../live/channelRoutes.js";
@@ -159,6 +159,9 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
     store: liveStore,
     now: () => Date.now(),
     say,
+    // Is the channel live? The clock asks for channels with calls waiting, so a
+    // stream's end can settle or cancel the moments only the room saw.
+    streamLive: async (_p, channelId) => (kickConfigured() ? kickStreamIsLive(channelId) : null),
     market: markets ? (msg, claim) => openFromChat(msg, claim, {
       ...markets,
       sourceFor: (m) => kickChatSource(m.channelSlug || m.channelId, m.messageId),

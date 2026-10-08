@@ -61,6 +61,27 @@ async function tokenCall(params: Record<string, string>): Promise<KickTokens> {
   };
 }
 
+/** The app's own token (client credentials), for reading public data. Cached until a minute before it expires. */
+let appCache: { token: string; until: number } | null = null;
+export async function kickAppToken(): Promise<string> {
+  if (appCache && Date.now() < appCache.until) return appCache.token;
+  const t = await tokenCall({ grant_type: "client_credentials" });
+  appCache = { token: t.accessToken, until: (t.expiresAt ?? Date.now() + 3_600_000) - 60_000 };
+  return t.accessToken;
+}
+
+/** Is the channel live now? /livestreams answers with one row for a live channel
+ *  and none for one that is not (checked against the live API, 8 Oct). */
+export async function kickStreamIsLive(broadcasterUserId: string): Promise<boolean> {
+  const res = await fetch(`${API}/livestreams?broadcaster_user_id=${encodeURIComponent(broadcasterUserId)}&limit=1`, {
+    headers: { authorization: `Bearer ${await kickAppToken()}`, accept: "application/json" },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`kick livestreams ${res.status}`);
+  const j = (await res.json()) as { data?: unknown[] };
+  return (j.data?.length ?? 0) > 0;
+}
+
 export const exchangeCode = (code: string, verifier: string, redirectUri: string): Promise<KickTokens> =>
   tokenCall({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: redirectUri });
 
