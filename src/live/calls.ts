@@ -60,6 +60,8 @@ export const CALL_MINUTES_MAX = 30;
 export const QUESTION_MAX = 180;
 /** How often chat hears the running split while a call is open. */
 export const SPLIT_GAP_MS = 45_000;
+/** How often a channel's runners hear how !yes and !no work when nothing is open. */
+export const PICK_HELP_GAP_MS = 10 * 60_000;
 
 const YES_WORD = /^(yes|evet)$/i;
 const NO_WORD = /^(no|hay[ıi]r)$/i;
@@ -151,6 +153,7 @@ export const LIVE_COPY = {
   busy: (q: string) => `One call at a time: "${q}" is still running.`,
   settleFirst: (q: string) => `Settle "${q}" first: !call yes or !call no.`,
   help: "Mods: !call <question> opens a quick vote (!call 5m <question> for five minutes), chat answers !yes or !no, settle with !call yes or !call no.",
+  pickHelp: "No vote is open. Start one with !call <question>, then chat answers !yes or !no. Take a market's YES or NO on its link.",
   marketHelp: "!oddie <a claim with a yes or no and a date> opens a real market anybody can take, and oddie settles it. Reply !oddie to a message to open one on it.",
   hello: "oddie is here. !oddie <claim> opens a real market anybody can take, settled by oddie. Mods run quick votes with !call <question>, and chat answers !yes or !no.",
 };
@@ -188,8 +191,9 @@ export interface LiveDeps {
 }
 
 const lastSplit = new Map<string, number>();
+const lastPickHelp = new Map<string, number>();
 /** Test seam. */
-export function _resetLive(): void { lastSplit.clear(); }
+export function _resetLive(): void { lastSplit.clear(); lastPickHelp.clear(); }
 
 async function sayQuiet(deps: LiveDeps, m: { platform: Platform; channelId: string }, text: string, replyTo?: string): Promise<void> {
   try { await deps.say(m.platform, m.channelId, text, replyTo); }
@@ -205,6 +209,25 @@ async function lockAndSay(call: LiveCall, deps: LiveDeps): Promise<boolean> {
 }
 
 /**
+ * !yes or !no with nothing open. From a viewer it is chat. From the channel's
+ * owner or a mod it is a mistake worth one line: the first Twitch pilot typed
+ * one with a market open in chat and no call, and heard nothing back. Once per
+ * ten minutes per channel, so a mod hammering !yes is answered once. A locked
+ * call gets its own line and its own ten minutes, how to settle it: a runner's
+ * !yes there most likely means the result.
+ */
+async function pickHelp(msg: ChatMessage, call: LiveCall | null, now: number, deps: LiveDeps): Promise<string> {
+  if (!msg.canRun) return "no-open-call";
+  const key = `${msg.platform}:${msg.channelId}:${call?.id ?? ""}`;
+  const last = lastPickHelp.get(key);
+  if (last !== undefined && now - last < PICK_HELP_GAP_MS) return "no-open-call";
+  for (const [k, at] of lastPickHelp) if (now - at >= PICK_HELP_GAP_MS) lastPickHelp.delete(k);
+  lastPickHelp.set(key, now);
+  await sayQuiet(deps, msg, call ? LIVE_COPY.settleFirst(call.question) : LIVE_COPY.pickHelp, msg.messageId);
+  return "pick-help";
+}
+
+/**
  * One chat line. Returns what it did, for the log and the tests. Ordinary
  * chat, and anything a viewer may not do, costs nothing and says nothing: a
  * bot that answers every refusal becomes the loudest thing in the room.
@@ -216,7 +239,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
 
   if (cmd.kind === "pick") {
     const call = await deps.store.current(msg.platform, msg.channelId);
-    if (!call || call.lockedAt !== null) return "no-open-call";
+    if (!call || call.lockedAt !== null) return pickHelp(msg, call, now, deps);
     if (now >= call.closesAt) { await lockAndSay(call, deps); return "late"; }
     const fresh = await deps.store.pick(call, msg.senderId, msg.senderName, cmd.side, now);
     if (!fresh) return "already-picked";

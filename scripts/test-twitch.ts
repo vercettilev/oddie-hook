@@ -119,6 +119,51 @@ console.log("\nthe webhook, through the real router");
   server.close();
 }
 
+console.log("\n!yes or !no with nothing open, through the real router and Twitch's own reply");
+{
+  // Live on 8 Oct: the first Twitch pilot's !yes or !no came in with no call
+  // open, and the log said only action="no-open-call" runner=true.
+  _resetLiveStore(); _resetLive();
+  await saveChannel({ platform: "twitch", channelId: "1001", slug: "streamer", name: "Streamer", avatar: null,
+    accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  const sent: Array<{ broadcaster: string; sender: string; text: string; replyTo?: string }> = [];
+  const chat: TwitchChat = { send: async (_t, b, s, text, replyTo) => { sent.push({ broadcaster: b, sender: s, text, replyTo }); } };
+  const did: Array<{ action: unknown; runner: unknown }> = [];
+  const app = express();
+  app.use(twitchRouter({
+    appBaseUrl: "https://app.oddie.fun", pageHtml: () => "<p>page</p>", pageOpen: () => true, pageClosed: (res) => { res.status(404).end(); },
+    log: (line, extra) => { if (line === "twitch chat command") did.push({ action: extra?.action, runner: extra?.runner }); },
+    secret: () => SECRET, chat, voice: "",
+  }));
+  const server = app.listen(0);
+  const port = (server.address() as AddressInfo).port;
+  /** One signed chat line, back once the router has logged what it did. */
+  const line = async (text: string, over: Record<string, unknown>) => {
+    const b = JSON.stringify({ subscription: { type: "channel.chat.message" }, event: ev({ message: { text }, ...over }) });
+    const ts = new Date().toISOString();
+    const id = `msg-${Math.random().toString(36).slice(2, 10)}`;
+    const before = did.length;
+    await fetch(`http://127.0.0.1:${port}/live/twitch/webhook`, {
+      method: "POST", body: b,
+      headers: { "content-type": "application/json", "Twitch-Eventsub-Message-Id": id, "Twitch-Eventsub-Message-Timestamp": ts,
+        "Twitch-Eventsub-Message-Signature": sign(id, ts, b), "Twitch-Eventsub-Message-Type": "notification" },
+    });
+    for (let i = 0; i < 100 && did.length === before; i++) await new Promise((r) => setTimeout(r, 10));
+    return did[did.length - 1];
+  };
+  const viewer = await line("!no", { message_id: "b0b0b0b0-0000-4000-8000-000000000001" });
+  check("a viewer's !no is chat: nothing is said", viewer?.action === "no-open-call" && viewer.runner === false && sent.length === 0,
+    JSON.stringify({ viewer, sent }));
+  const first = await line("!no", { chatter_user_id: "1001", message_id: "b0b0b0b0-0000-4000-8000-000000000002" });
+  check("the streamer's !no hears how !yes and !no work, as a Twitch reply to it",
+    first?.action === "pick-help" && first.runner === true && sent.length === 1 && sent[0].broadcaster === "1001"
+    && sent[0].text === LIVE_COPY.pickHelp && sent[0].replyTo === "b0b0b0b0-0000-4000-8000-000000000002", JSON.stringify({ first, sent }));
+  const again = await line("!yes", { chatter_user_id: "3003", badges: [{ set_id: "moderator" }], message_id: "b0b0b0b0-0000-4000-8000-000000000003" });
+  check("...and a mod's !yes right after is not answered twice", again?.action === "no-open-call" && again.runner === true && sent.length === 1,
+    JSON.stringify({ again, sent }));
+  server.close();
+}
+
 console.log("\nthe sign-in");
 {
   _resetLiveStore(); _resetLive();

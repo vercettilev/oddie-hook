@@ -12,7 +12,7 @@ import type { AddressInfo } from "node:net";
 import bs58 from "bs58";
 import express from "express";
 import {
-  parseCommand, handleChat, lockDue, pointsFor, LIVE_COPY, SPLIT_GAP_MS, _resetLive, type ChatMessage, type LiveDeps,
+  parseCommand, handleChat, lockDue, pointsFor, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, _resetLive, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
@@ -132,6 +132,45 @@ console.log("\na call, start to finish");
   const out = await handleChat(r.line("mod", "!call no", true), r.deps);
   check("settling an open call locks it first", out === "settled" && /The whole room went the other way/.test(r.said[1]?.text ?? ""));
   check("the copy never says nobody", Object.values(LIVE_COPY).every((v) => typeof v !== "string" || !/nobody/i.test(v)));
+}
+
+console.log("\n!yes or !no with nothing open");
+{
+  // Live on 8 Oct: the first Twitch pilot typed one with a market open in chat
+  // and no call, and heard nothing.
+  const r = room();
+  check("a viewer's is chat, and nothing is said", (await handleChat(r.line("v1", "!no"), r.deps)) === "no-open-call" && r.said.length === 0);
+  const first = r.line("owner", "!no", true);
+  check("the streamer or a mod hears how !yes and !no work, as a reply",
+    (await handleChat(first, r.deps)) === "pick-help" && r.said.length === 1
+    && r.said[0]?.text === LIVE_COPY.pickHelp && r.said[0]?.replyTo === first.messageId, JSON.stringify(r.said));
+  r.tick(60_000);
+  check("...once: not again in that channel for a while, whoever asks",
+    (await handleChat(r.line("owner", "!yes", true), r.deps)) === "no-open-call"
+    && (await handleChat(r.line("mod", "!evet", true), r.deps)) === "no-open-call" && r.said.length === 1);
+  check("...while another channel's runner still hears it",
+    (await handleChat({ ...r.line("mod", "!yes", true), channelId: "200" }, r.deps)) === "pick-help" && r.said.length === 2);
+  r.tick(PICK_HELP_GAP_MS - 60_000 - 1);
+  check("...nor a moment before ten minutes are up", (await handleChat(r.line("mod", "!no", true), r.deps)) === "no-open-call" && r.said.length === 2);
+  r.tick(1);
+  check("...and the first channel hears it again ten minutes on",
+    (await handleChat(r.line("mod", "!no", true), r.deps)) === "pick-help" && r.said.length === 3);
+  check("the copy never says bet, gambling, free or real money",
+    Object.values(LIVE_COPY).every((v) => typeof v !== "string" || !/\bbet(s|ting)?\b|gambl|\bfree\b|real money|real sol/i.test(v)));
+
+  await handleChat(r.line("mod", "!call 1m clutch this round?", true), r.deps);
+  check("a runner's !yes on an open call is an answer like anybody's", (await handleChat(r.line("owner", "!yes", true), r.deps)) === "picked");
+  r.tick(60_000);
+  await lockDue(r.deps);
+  const said = r.said.length;
+  const settle = r.line("owner", "!yes", true);
+  check("on a locked call, a runner's !yes hears how to settle it",
+    (await handleChat(settle, r.deps)) === "pick-help" && r.said.length === said + 1
+    && r.said[said]?.text === LIVE_COPY.settleFirst("clutch this round?") && r.said[said]?.replyTo === settle.messageId, JSON.stringify(r.said[said]));
+  check("...a viewer's late one is still chat",
+    (await handleChat(r.line("v2", "!yes"), r.deps)) === "no-open-call" && r.said.length === said + 1);
+  check("...and the runner hears it once", (await handleChat(r.line("mod", "!no", true), r.deps)) === "no-open-call" && r.said.length === said + 1);
+  check("the call still settles", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled");
 }
 
 console.log("\nKick's side");
