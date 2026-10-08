@@ -23,11 +23,14 @@
  * WHO DOES WHAT. The channel's owner and its moderators open, settle and
  * cancel calls; everybody answers. One call at a time per channel, one answer
  * per person, and an answer is final: a call changed after the room has moved
- * is a call made with hindsight.
+ * is a call made with hindsight. One kind of call oddie settles itself: a
+ * coin's candle (src/live/priceCall.ts), read the moment it closes.
  *
  * Platform-free on purpose: Kick is the first adapter (src/kick), Twitch plugs
  * into the same engine with its own client.
  */
+
+import { binanceCandles, candleWindow, outcomeFor, parsePriceCall, priceText, sizeLabel, type Candle, type CandleSource, type PriceCall } from "./priceCall.js";
 
 export type Platform = "kick" | "twitch";
 export type Side = "yes" | "no";
@@ -141,8 +144,15 @@ export const LIVE_COPY = {
   split: (q: string, t: Tally, msLeft: number) =>
     `"${q}" ${yesPct(t)}% YES from ${n(t.yes + t.no, "call", "calls")}, ${left(msLeft)} left. !yes or !no`,
   locked: (t: Tally) => t.yes + t.no
-    ? `Calls are locked: ${yesPct(t)}% YES from ${n(t.yes + t.no, "call", "calls")}. The result is next.`
+    ? `Calls are locked: ${yesPct(t)}% YES from ${n(t.yes + t.no, "call", "calls")}. Mods settle it with !call yes or !call no.`
     : "Calls are locked for this one. The next one is yours.",
+  lockedCandle: (t: Tally, pc: PriceCall) =>
+    `${t.yes + t.no ? `Calls are locked: ${yesPct(t)}% YES from ${n(t.yes + t.no, "call", "calls")}.` : "Calls are locked for this one."} oddie settles it when the ${sizeLabel(pc.size)} candle closes.`,
+  candleRead: (pc: PriceCall, c: Candle, venue: string) => pc.test.kind === "green" || pc.test.kind === "red"
+    ? `${pc.asset} ${sizeLabel(pc.size)} candle opened ${priceText(c.open)}, closed ${priceText(c.close)} on ${venue}.`
+    : `${pc.asset} ${sizeLabel(pc.size)} candle closed at ${priceText(c.close)} on ${venue}.`,
+  candleWaits: (q: string, pc: PriceCall) => `"${q}" settles when the ${sizeLabel(pc.size)} candle closes, then the next one opens.`,
+  candleToMods: (q: string) => `"${q}" is yours to settle: !call yes or !call no.`,
   settled: (outcome: Side, right: number, total: number, points: number, url: string) => {
     const it = `It's ${outcome.toUpperCase()}.`;
     if (!total) return `${it} The next one opens with !call. Standings: ${url}`;
@@ -188,12 +198,27 @@ export interface LiveDeps {
   log(line: string, extra?: Record<string, unknown>): void;
   /** The market door (src/live/claims.ts). Absent: !oddie is only explained. */
   market?(msg: ChatMessage, claim: string): Promise<string>;
+  /** Where a candle call's result is read. Absent: Binance. */
+  candles?: CandleSource;
 }
+
+/** A candle call between its lock and its result. */
+interface CandleWait { call: LiveCall; pc: PriceCall; openAt: number; closeAt: number; nextTryAt: number; busy: boolean }
+
+/** A finished candle is on Binance within a second or two of the close. */
+export const CANDLE_GRACE_MS = 3_000;
+export const CANDLE_RETRY_MS = 15_000;
+/** How long after the close oddie keeps reading before the call goes back to the mods. */
+export const CANDLE_GIVE_UP_MS = 10 * 60_000;
 
 const lastSplit = new Map<string, number>();
 const lastPickHelp = new Map<string, number>();
+/** Candle calls oddie settles itself, from their lock on. Kept in memory: a
+ *  restart between a lock and its close leaves that one call to the mods,
+ *  which is where every call lived before. */
+const candleWaits = new Map<string, CandleWait>();
 /** Test seam. */
-export function _resetLive(): void { lastSplit.clear(); lastPickHelp.clear(); }
+export function _resetLive(): void { lastSplit.clear(); lastPickHelp.clear(); candleWaits.clear(); }
 
 async function sayQuiet(deps: LiveDeps, m: { platform: Platform; channelId: string }, text: string, replyTo?: string): Promise<void> {
   try { await deps.say(m.platform, m.channelId, text, replyTo); }
@@ -202,10 +227,65 @@ async function sayQuiet(deps: LiveDeps, m: { platform: Platform; channelId: stri
 
 /** Lock a call that is due and tell the room. Once, whoever gets there first. */
 async function lockAndSay(call: LiveCall, deps: LiveDeps): Promise<boolean> {
-  if (!(await deps.store.lock(call.id, deps.now()))) return false;
+  const now = deps.now();
+  if (!(await deps.store.lock(call.id, now))) return false;
   lastSplit.delete(call.id);
-  await sayQuiet(deps, call, LIVE_COPY.locked(await deps.store.tally(call.id)));
+  const tally = await deps.store.tally(call.id);
+  const pc = parsePriceCall(call.question);
+  if (!pc) { await sayQuiet(deps, call, LIVE_COPY.locked(tally)); return true; }
+  const { openAt, closeAt } = candleWindow(pc, call.openedAt);
+  candleWaits.set(call.id, { call, pc, openAt, closeAt, nextTryAt: closeAt + CANDLE_GRACE_MS, busy: false });
+  await sayQuiet(deps, call, LIVE_COPY.lockedCandle(tally, pc));
   return true;
+}
+
+/**
+ * Read a locked candle call's candle and settle it, as a mod's !call yes would,
+ * with the number in front. A mod who settled or canceled first wins: the
+ * store settles once. Not readable by ten minutes after the close, the call
+ * goes back to the mods in one line.
+ */
+async function settleCandle(w: CandleWait, deps: LiveDeps): Promise<boolean> {
+  const source = deps.candles ?? binanceCandles;
+  const now = deps.now();
+  const candle = await source.candle(w.pc.asset, w.pc.size, w.openAt).catch((e) => {
+    deps.log("live candle not read", { id: w.call.id, asset: w.pc.asset, size: w.pc.size, err: (e as Error).message });
+    return null;
+  });
+  if (!candle) {
+    if (now - w.closeAt < CANDLE_GIVE_UP_MS) { w.nextTryAt = now + CANDLE_RETRY_MS; return false; }
+    candleWaits.delete(w.call.id);
+    const still = await deps.store.current(w.call.platform, w.call.channelId);
+    if (still?.id === w.call.id) await sayQuiet(deps, w.call, LIVE_COPY.candleToMods(w.call.question));
+    deps.log("live candle handed to mods", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id });
+    return false;
+  }
+  const outcome = outcomeFor(w.pc.test, candle);
+  const tally = await deps.store.tally(w.call.id);
+  const points = pointsFor(tally, outcome);
+  const done = await deps.store.settle(w.call.id, outcome, points, now);
+  candleWaits.delete(w.call.id);
+  if (!done) return false;
+  const url = await deps.standingsUrl(w.call.platform, w.call.channelId);
+  await sayQuiet(deps, w.call, `${LIVE_COPY.candleRead(w.pc, candle, source.venue)} ${LIVE_COPY.settled(outcome, done.right, done.total, points, url)}`);
+  deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome, right: done.right, total: done.total, by: "candle" });
+  return true;
+}
+
+async function settleCandles(deps: LiveDeps): Promise<number> {
+  let n = 0;
+  for (const w of [...candleWaits.values()]) {
+    if (w.busy || deps.now() < w.nextTryAt) continue;
+    w.busy = true;
+    try { if (await settleCandle(w, deps)) n++; }
+    catch (e) {
+      // The store blinked: the candle is still there next time.
+      w.nextTryAt = deps.now() + CANDLE_RETRY_MS;
+      deps.log("live candle not settled", { id: w.call.id, err: (e as Error).message });
+    }
+    finally { w.busy = false; }
+  }
+  return n;
 }
 
 /**
@@ -267,7 +347,10 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
 
   if (cmd.kind === "open") {
     if (call) {
-      await sayQuiet(deps, msg, call.lockedAt !== null || now >= call.closesAt ? LIVE_COPY.settleFirst(call.question) : LIVE_COPY.busy(call.question), msg.messageId);
+      const waiting = candleWaits.get(call.id);
+      const line = waiting ? LIVE_COPY.candleWaits(call.question, waiting.pc)
+        : call.lockedAt !== null || now >= call.closesAt ? LIVE_COPY.settleFirst(call.question) : LIVE_COPY.busy(call.question);
+      await sayQuiet(deps, msg, line, msg.messageId);
       return "busy";
     }
     const opened = await deps.store.open({
@@ -286,6 +369,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (cmd.kind === "cancel") {
     if (!(await deps.store.cancel(call.id, now))) return "no-call";
     lastSplit.delete(call.id);
+    candleWaits.delete(call.id);
     await sayQuiet(deps, msg, LIVE_COPY.canceled);
     return "canceled";
   }
@@ -294,6 +378,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   // after the result is known.
   if (call.lockedAt === null) await deps.store.lock(call.id, now);
   lastSplit.delete(call.id);
+  candleWaits.delete(call.id);
   const tally = await deps.store.tally(call.id);
   const points = pointsFor(tally, cmd.outcome);
   const done = await deps.store.settle(call.id, cmd.outcome, points, now);
@@ -303,11 +388,13 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   return "settled";
 }
 
-/** The clock: calls whose time is up are locked and announced. */
+/** The clock: calls whose time is up are locked and announced, and candle
+ *  calls whose candle has closed are settled. */
 export async function lockDue(deps: LiveDeps): Promise<number> {
   let n = 0;
   for (const call of await deps.store.due(deps.now()).catch(() => [] as LiveCall[])) {
     if (await lockAndSay(call, deps).catch(() => false)) n++;
   }
+  await settleCandles(deps);
   return n;
 }
