@@ -36,16 +36,25 @@ html{-webkit-tap-highlight-color:transparent}
 <body><div class="s">
 <header><a class="home" href="/">&larr; oddie</a>
 <h1>Privacy</h1>
-<p class="upd">Last updated 7 September 2026</p></header>
-<div class="note"><p><b>The short version.</b> We keep your public X profile, a random id
-for your browser, and your wallet address. We do not sell any of it, we do not run ads, and we never
-post as you.</p></div>
+<p class="upd">Last updated 8 October 2026</p></header>
+<div class="note"><p><b>The short version.</b> We keep what oddie needs to run markets and votes:
+the commands typed in stream chats that use oddie, your public X or Telegram name if you sign in, a
+random id for your browser, and your wallet address. We do not sell any of it and we do not run ads.</p></div>
 
 <h2>What we keep, and why</h2>
 <ul>
+<li><b>Stream chats.</b> When a streamer adds oddie to a Kick or Twitch channel, oddie reads that
+channel's chat to answer its commands (<code>!oddie</code>, <code>!call</code>, <code>!yes</code>,
+<code>!no</code>, <code>!result</code>). We keep the commands and the name of whoever typed them, to run
+votes, open markets and show standings. Every other chat message is read and not kept.</li>
+<li><b>A streamer's channel.</b> Its name, picture, and the access the streamer granted, stored
+encrypted, so oddie can post in that chat, pin a vote where the streamer allows it, and pay the
+channel's 2% to the wallet the streamer chooses.</li>
 <li><b>Your X profile.</b> When you connect X, we read what your profile already shows the world: your
 handle, display name, bio, join date, post count, follower counts, and your pinned post. We use it to
-build your Genesis card and to know which handle a ticket belongs to.</li>
+show your name on oddie.</li>
+<li><b>Telegram.</b> If you use @oddiefunbot, your Telegram name and the messages you send it or tag it
+in, to open markets and pay whoever opened them.</li>
 <li><b>A device id.</b> A random string stored in your own browser so that coming back to oddie finds
 your account without asking you to connect again. It is not tied to anything outside oddie.</li>
 <li><b>Your wallet address.</b> Public by nature. We use it to show your positions and to make sure one
@@ -56,8 +65,9 @@ public whether or not we keep a copy.</li>
 
 <h2>What we never do</h2>
 <ul>
-<li>We never post, reply, follow, or send a DM as you. Connecting X does not give oddie the ability to
-write from your account.</li>
+<li>We never post, reply, follow, or send a DM as you. Connecting X or Telegram does not give oddie the
+ability to write from your account. A streamer who adds oddie lets it post in their own chat, and
+nowhere else.</li>
 <li>We do not sell or rent your data, and we do not run advertising.</li>
 <li>We do not read your private messages, and we do not see anything on X that a logged-out visitor
 cannot already see.</li>
@@ -66,6 +76,8 @@ cannot already see.</li>
 <h2>Who else sees it</h2>
 <ul>
 <li><b>X</b> handles the sign-in itself. Their terms and privacy policy apply to that step.</li>
+<li><b>Kick and Twitch</b> deliver the chat of channels that added oddie, under their own terms.</li>
+<li><b>Telegram</b> delivers the messages sent to @oddiefunbot, under its own terms.</li>
 <li><b>Solana.</b> Every market, bet, payout and refund is written to a public blockchain. Anyone can
 read it, and nobody, including us, can delete it.</li>
 <li><b>Our hosting and database provider</b>, which stores the data above so the site can work.</li>
@@ -85,6 +97,8 @@ operator, a preview cookie. No tracking or advertising cookies.</p>
 <p>The Sign out button on <a href="https://app.oddie.fun/profile">your profile</a> unlinks your X
 account from this browser. To have your stored profile deleted, email <a href="mailto:lev@oddie.fun">lev@oddie.fun</a>
 from the account you want removed, or send it from the X handle itself, and we will remove it.</p>
+<p>A streamer can remove oddie in their Kick or Twitch connection settings at any time, and email
+<a href="mailto:lev@oddie.fun">lev@oddie.fun</a> to have the channel and its votes deleted.</p>
 <p>What is already on chain cannot be deleted by us or by anyone. That is how a public blockchain works,
 and it is worth knowing before you take a side.</p>
 
