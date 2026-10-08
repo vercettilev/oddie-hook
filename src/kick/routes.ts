@@ -251,9 +251,11 @@ export function kickRouter(d: KickRouteDeps): Router {
     try { body = JSON.parse(raw.toString("utf8")); } catch { return; }
     const msg = chatFromKick(body);
     if (!msg) return;
+    // oddie's own lines come back through the feed too; they are never commands.
+    if (msg.senderName.toLowerCase() === voiceSlugFrom(d)) msg.fromOddie = true;
     const action = await handleChat(msg, engine).catch((e) => { d.log("kick chat failed", { err: (e as Error).message }); return "error"; });
     // What a command did, never what anybody wrote: ordinary chat is not logged.
-    if (action !== "chat") d.log("kick chat command", { channel: msg.channelId, action, runner: msg.canRun });
+    if (action !== "chat" && action !== "own") d.log("kick chat command", { channel: msg.channelId, action, runner: msg.canRun });
   });
 
   /** The channel's page, its standings, and the streamer's 2%: shared with Twitch. */

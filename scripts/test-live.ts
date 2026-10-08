@@ -12,7 +12,8 @@ import type { AddressInfo } from "node:net";
 import bs58 from "bs58";
 import express from "express";
 import {
-  parseCommand, handleChat, lockDue, pointsFor, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, _resetLive, type ChatMessage, type LiveDeps,
+  parseCommand, handleChat, lockDue, remindOpen, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
+  EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, _resetLive, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
@@ -39,15 +40,19 @@ console.log("what a chat line asks for");
   check("...and so are !evet and !hayır", (parseCommand("!evet") as { side: string }).side === "yes" && (parseCommand("!hayır") as { side: string }).side === "no");
   check("a command must start the line", parseCommand("i'd say !yes") === null && parseCommand("!yesss") === null);
   const o = parseCommand("!call will I win this game?");
-  check("!call opens a call, three minutes by default", o?.kind === "open" && (o as { minutes: number }).minutes === 3
+  check("!call opens a call that stays open until it is settled", o?.kind === "open" && (o as { minutes: number | null }).minutes === null
     && (o as { question: string }).question === "will I win this game?");
   const f = parseCommand("!call 5m will I win?");
   check("...a length at the start sets the minutes", f?.kind === "open" && (f as { minutes: number }).minutes === 5 && (f as { question: string }).question === "will I win?");
   const q = parseCommand("!call will he hit 5m followers");
-  check("...but a number inside the question stays in it", q?.kind === "open" && (q as { minutes: number }).minutes === 3 && /5m followers/.test((q as { question: string }).question));
+  check("...but a number inside the question stays in it", q?.kind === "open" && (q as { minutes: number | null }).minutes === null && /5m followers/.test((q as { question: string }).question));
   check("...never longer than thirty", (parseCommand("!call 90m ok?") as { minutes: number }).minutes === 30);
-  check("!call yes and !call no settle", (parseCommand("!call yes") as { outcome: string }).outcome === "yes" && (parseCommand("!call hayir") as { outcome: string }).outcome === "no");
-  check("!call cancel cancels", parseCommand("!call iptal")?.kind === "cancel");
+  check("!call yes and !call no settle", (parseCommand("!call yes") as { outcome: string }).outcome === "yes" && (parseCommand("!call hayir") as { outcome: string }).outcome === "no"
+    && (parseCommand("!call yes") as { which: number | null }).which === null);
+  check("...and a number names which call waiting", (parseCommand("!call yes 2") as { which: number }).which === 2
+    && (parseCommand("!call no #1") as { which: number; outcome: string }).which === 1 && parseCommand("!call no #1")?.kind === "settle");
+  check("!call cancel cancels, a number names which", parseCommand("!call iptal")?.kind === "cancel"
+    && (parseCommand("!call cancel 3") as { which: number }).which === 3);
   check("!call alone asks for help", parseCommand("!call")?.kind === "help");
   const mk = parseCommand("!oddie BTC above 120k by Friday?");
   check("!oddie is the market door, whatever follows is the claim", mk?.kind === "market" && (mk as { claim: string }).claim === "BTC above 120k by Friday?");
@@ -60,17 +65,26 @@ console.log("\nthe points");
   check("right with 20% agreeing is worth 80", pointsFor({ yes: 2, no: 8 }, "yes") === 80);
   check("right with everybody is 1, never 0", pointsFor({ yes: 5, no: 0 }, "yes") === 1);
   check("no answers, no points", pointsFor({ yes: 0, no: 0 }, "no") === 0);
+  check("an answer at the start keeps all its points", pointsAt(80, 0) === 80 && earlyShare(0) === 1);
+  check("...half an hour in, half", pointsAt(80, EARLY_HALF_LIFE_MS) === 40);
+  check("...an hour in, a quarter", pointsAt(80, 2 * EARLY_HALF_LIFE_MS) === 20);
+  check("...never below a tenth, and a right answer is never 0", pointsAt(80, 10 * EARLY_HALF_LIFE_MS) === 8 && pointsAt(1, 10 * EARLY_HALF_LIFE_MS) === 1);
+  check("...and a wrong one is still 0", pointsAt(0, 0) === 0);
 }
 
 // A room: a streamer, a mod, viewers, and a clock we move.
 function room() {
   _resetLiveStore(); _resetLive();
   let clock = 1_800_000_000_000;
-  const said: Array<{ text: string; replyTo?: string }> = [];
+  const said: Array<{ text: string; replyTo?: string; id: string }> = [];
+  const pins: string[] = [];
+  let unpins = 0;
   const deps: LiveDeps = {
     store: liveStore,
     now: () => clock,
-    say: async (_p, _c, text, replyTo) => { said.push({ text, replyTo }); },
+    say: async (_p, _c, text, replyTo) => { const id = `said-${said.length + 1}`; said.push({ text, replyTo, id }); return id; },
+    pin: async (_p, _c, id) => { pins.push(id); },
+    unpin: async () => { unpins++; },
     standingsUrl: async () => "https://app.oddie.fun/live/kick/streamer",
     log: () => {},
   };
@@ -78,25 +92,25 @@ function room() {
   const line = (who: string, text: string, canRun = false): ChatMessage => ({
     platform: "kick", channelId: "100", messageId: `m${++n}`, senderId: who, senderName: who, canRun, text,
   });
-  return { deps, said, line, tick: (ms: number) => { clock += ms; } };
+  return { deps, said, pins, unpins: () => unpins, line, tick: (ms: number) => { clock += ms; } };
 }
 
-console.log("\na call, start to finish");
+console.log("\na timed call, start to finish");
 {
   const r = room();
   check("a viewer cannot open a call, and hears nothing about it",
     (await handleChat(r.line("v1", "!call will he win?"), r.deps)) === "not-allowed" && r.said.length === 0);
-  check("the streamer or a mod can", (await handleChat(r.line("mod", "!call will he win this game?", true), r.deps)) === "opened");
-  check("...and the room hears how to answer and where the standings are",
-    r.said[0]?.text === LIVE_COPY.opened("will he win this game?", 3, "https://app.oddie.fun/live/kick/streamer"));
-  check("one call at a time", (await handleChat(r.line("mod2", "!call another?", true), r.deps)) === "busy"
-    && r.said[1]?.text === LIVE_COPY.busy("will he win this game?") && r.said[1]?.replyTo === "m3");
+  check("the streamer or a mod can", (await handleChat(r.line("mod", "!call 3m will he win this game?", true), r.deps)) === "opened");
+  check("...and the room hears how to answer, how long, and where the standings are",
+    r.said[0]?.text === LIVE_COPY.opened("will he win this game?", 3, "https://app.oddie.fun/live/kick/streamer")
+    && /lock in 3 min, earlier calls score more/.test(r.said[0]?.text ?? ""));
+  check("...and the line is pinned where the platform can", r.pins.length === 1 && r.pins[0] === r.said[0]?.id);
   for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!no"], ["d", "!no"], ["e", "!no"]] as const) await handleChat(r.line(who, side), r.deps);
   check("one answer per person, and it is final", (await handleChat(r.line("a", "!no"), r.deps)) === "already-picked");
-  check("the split is not repeated on every answer", r.said.length === 2);
+  check("the split is not repeated on every answer", r.said.length === 1);
   r.tick(SPLIT_GAP_MS);
   await handleChat(r.line("f", "!yes"), r.deps);
-  check("...but the room hears it every so often", /33% YES from 6 calls/.test(r.said[2]?.text ?? ""), r.said[2]?.text);
+  check("...but the room hears it every so often", /33% YES from 6 calls, 3 min left/.test(r.said[1]?.text ?? ""), r.said[1]?.text);
   r.tick(3 * 60_000);
   check("after the time is up an answer is late", (await handleChat(r.line("g", "!yes"), r.deps)) === "late");
   check("...and the call locks, said once", r.said.filter((s) => s.text.startsWith("Calls are locked")).length === 1);
@@ -104,11 +118,12 @@ console.log("\na call, start to finish");
   check("the clock does not lock it twice", r.said.filter((s) => s.text.startsWith("Calls are locked")).length === 1);
   check("a viewer cannot settle", (await handleChat(r.line("a", "!call yes"), r.deps)) === "not-allowed");
   check("the mod settles", (await handleChat(r.line("mod", "!call yes", true), r.deps)) === "settled");
-  check("...and the room hears who was right and what it was worth",
-    r.said[r.said.length - 1]?.text === "It's YES. 2 of 6 called it right, +67 each. Standings: https://app.oddie.fun/live/kick/streamer",
+  check("...and the room hears which call, who was right and what it was worth",
+    r.said[r.said.length - 1]?.text === `It's YES: "will he win this game?". 2 of 6 called it right, up to +67, earlier calls scored more. Standings: https://app.oddie.fun/live/kick/streamer`,
     r.said[r.said.length - 1]?.text);
   const st = await channelStandings("kick", "100");
   check("the standings count only the right answers", st.length === 6 && st[0].points === 67 && st.filter((s) => s.points > 0).length === 2);
+  check("...and the later right answer scored a little less", st.find((s) => s.userId === "f")?.points === 66, JSON.stringify(st.find((s) => s.userId === "f")));
   check("a settled call is not settled again", (await handleChat(r.line("mod", "!call no", true), r.deps)) === "no-call");
   check("the next call can open", (await handleChat(r.line("mod", "!call 1m next round?", true), r.deps)) === "opened");
   check("...a mod can cancel it", (await handleChat(r.line("mod", "!call cancel", true), r.deps)) === "canceled");
@@ -120,10 +135,17 @@ console.log("\na call, start to finish");
   await handleChat(r.line("owner", "!call 2m clutch this round?", true), r.deps);
   r.tick(2 * 60_000 + 1);
   check("the clock locks a call whose time is up", (await lockDue(r.deps)) === 1 && /Calls are locked for this one/.test(r.said[1]?.text ?? ""));
-  check("a new call waits for the old one to be settled",
-    (await handleChat(r.line("owner", "!call again?", true), r.deps)) === "busy" && r.said[2]?.text === LIVE_COPY.settleFirst("clutch this round?"));
-  await handleChat(r.line("owner", "!call no", true), r.deps);
-  check("settling a call nobody answered says what is next", /It's NO\. The next one opens with !call/.test(r.said[3]?.text ?? ""));
+  check("a new call opens while the old one waits for its result",
+    (await handleChat(r.line("owner", "!call again?", true), r.deps)) === "opened" && r.said[2]?.text.startsWith('oddie call: "again?"'));
+  const which = r.line("owner", "!call no", true);
+  check("with two waiting, a bare !call no asks which, as a reply",
+    (await handleChat(which, r.deps)) === "which" && r.said[3]?.text === LIVE_COPY.which("no", ["clutch this round?", "again?"]) && r.said[3]?.replyTo === which.messageId,
+    r.said[3]?.text);
+  check("...!call no 1 settles the oldest", (await handleChat(r.line("owner", "!call no 1", true), r.deps)) === "settled"
+    && r.said[4]?.text.startsWith(`It's NO: "clutch this round?". The next one opens with !call`), r.said[4]?.text);
+  check("...and then the one left needs no number", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled"
+    && r.said[5]?.text.startsWith(`It's YES: "again?".`));
+  check("with nothing waiting, a settle does nothing", (await handleChat(r.line("owner", "!call yes 3", true), r.deps)) === "no-call");
 }
 {
   const r = room();
@@ -132,6 +154,96 @@ console.log("\na call, start to finish");
   const out = await handleChat(r.line("mod", "!call no", true), r.deps);
   check("settling an open call locks it first", out === "settled" && /The whole room went the other way/.test(r.said[1]?.text ?? ""));
   check("the copy never says nobody", Object.values(LIVE_COPY).every((v) => typeof v !== "string" || !/nobody/i.test(v)));
+}
+
+console.log("\na call open until it is settled (8 Oct: \"before the stream ends?\" locking in three minutes read as broken)");
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call btc reclaims 82.5k before the stream ends?", true), r.deps);
+  check("the room hears it stays open, and that early calls score more",
+    r.said[0]?.text === LIVE_COPY.opened("btc reclaims 82.5k before the stream ends?", null, "https://app.oddie.fun/live/kick/streamer")
+    && /Open until it's settled, earlier calls score more/.test(r.said[0]?.text ?? ""), r.said[0]?.text);
+  await handleChat(r.line("a", "!yes"), r.deps);
+  r.tick(2 * 60 * 60_000);
+  check("two hours on, an answer still counts", (await handleChat(r.line("b", "!no"), r.deps)) === "picked");
+  check("...the split says no clock", /50% YES from 2 calls\. !yes or !no, earlier calls score more/.test(r.said[r.said.length - 1]?.text ?? ""), r.said[r.said.length - 1]?.text);
+  check("...and the clock does not lock it", (await lockDue(r.deps)) === 0);
+  await handleChat(r.line("owner", "!call yes", true), r.deps);
+  const st = await channelStandings("kick", "100");
+  check("settled, the early right answer keeps its points", st.find((x) => x.userId === "a")?.points === 50, JSON.stringify(st));
+  check("...the pin comes down with the call", r.unpins() === 1);
+}
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call nobody settles this?", true), r.deps);
+  r.tick(CALL_OPEN_MAX_MS);
+  check("a call nobody ever settles stops taking answers after twelve hours", (await lockDue(r.deps)) === 1);
+}
+
+console.log("\na new call takes the room; the old one waits for its result");
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call btc above 83k tonight?", true), r.deps);
+  for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!yes"]] as const) await handleChat(r.line(who, side), r.deps);
+  check("a second !call opens", (await handleChat(r.line("mod", "!call this candle closes green?", true), r.deps)) === "opened");
+  const sw = r.said.findIndex((x) => x.text.startsWith("Locked "));
+  check("...after the room hears the first one locked, with its answers kept",
+    sw >= 0 && r.said[sw].text === LIVE_COPY.switched("btc above 83k tonight?", { yes: 2, no: 1 }) && /67% YES from 3 calls\. It waits for its result/.test(r.said[sw].text),
+    r.said[sw]?.text);
+  check("...and the new one is pinned", r.pins.length === 2);
+  check("!yes now goes to the new call", (await handleChat(r.line("a", "!no"), r.deps)) === "picked");
+  const waiting = await liveStore.unsettled("kick", "100");
+  check("both wait, oldest first, one taking answers", waiting.length === 2 && waiting[0].question === "btc above 83k tonight?"
+    && waiting[0].lockedAt !== null && waiting[1].lockedAt === null);
+  check("a bare !call cancel cancels the one taking answers", (await handleChat(r.line("mod", "!call cancel", true), r.deps)) === "canceled"
+    && (await liveStore.unsettled("kick", "100")).length === 1);
+  check("...the first still settles, alone, with no number", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled"
+    && r.said[r.said.length - 1]?.text.startsWith(`It's YES: "btc above 83k tonight?". 2 of 3 called it right`), r.said[r.said.length - 1]?.text);
+  const r2 = room();
+  await handleChat(r2.line("owner", "!call one?", true), r2.deps);
+  await handleChat(r2.line("owner", "!call two?", true), r2.deps);
+  check("a number that names no call asks which", (await handleChat(r2.line("owner", "!call yes 5", true), r2.deps)) === "which");
+  check("...and so does a bare cancel with only waiting calls", (await handleChat(r2.line("owner", "!call no 2", true), r2.deps)) === "settled"
+    && (await handleChat(r2.line("owner", "!call open?", true), r2.deps)) === "opened"
+    && (await handleChat(r2.line("owner", "!call 1m quick?", true), r2.deps)) === "opened"
+    && (await liveStore.unsettled("kick", "100")).length === 3);
+}
+
+console.log("\nseen later: the reminder, and the pin again");
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call will he win the final?", true), r.deps);
+  await handleChat(r.line("a", "!yes"), r.deps);
+  r.tick(REMIND_GAP_MS);
+  check("a quiet room is not talked at", (await remindOpen(r.deps)) === 0);
+  await handleChat(r.line("v", "gg that was close"), r.deps);
+  const before = r.said.length;
+  check("a room that moved hears the call again after a quarter hour", (await remindOpen(r.deps)) === 1
+    && r.said[before]?.text === LIVE_COPY.reminder("will he win the final?", { yes: 1, no: 0 }, null)
+    && /^Still open: "will he win the final\?" 100% YES from 1 call\. Type !yes or !no, earlier calls score more\.$/.test(r.said[before]?.text ?? ""), r.said[before]?.text);
+  check("...and the reminder is pinned", r.pins[r.pins.length - 1] === r.said[before]?.id && r.pins.length === 2);
+  await handleChat(r.line("v", "lol"), r.deps);
+  check("...not again right away", (await remindOpen(r.deps)) === 0);
+  r.tick(REMIND_GAP_MS);
+  check("...nor a quarter hour on if nothing was said since it", (await remindOpen(r.deps)) === 0);
+  await handleChat(r.line("v", "anyone?"), r.deps);
+  check("...but again once chat moved", (await remindOpen(r.deps)) === 1);
+  await handleChat(r.line("owner", "!call 5m quick one?", true), r.deps);
+  r.tick(REMIND_GAP_MS);
+  await handleChat(r.line("v", "go go"), r.deps);
+  check("a short timed call is not reminded", (await remindOpen(r.deps)) === 0);
+  const r2 = room();
+  await handleChat(r2.line("owner", "!call quiet one?", true), r2.deps);
+  r2.tick(REMIND_GAP_MS);
+  check("oddie's own line coming back is not a command, nor the room moving",
+    (await handleChat({ ...r2.line("oddiefun", LIVE_COPY.marketHelp), fromOddie: true }, r2.deps)) === "own" && (await remindOpen(r2.deps)) === 0);
+  check("no line of oddie's reads as a command, even echoed back as the channel",
+    [LIVE_COPY.marketHelp, LIVE_COPY.help, LIVE_COPY.pickHelp, LIVE_COPY.hello, LIVE_COPY.canceled, LIVE_COPY.settleFirst("q"), LIVE_COPY.which("yes", ["a"]),
+      LIVE_COPY.opened("q", null, "u"), LIVE_COPY.reminder("q", { yes: 1, no: 0 }, null), LIVE_COPY.switched("q", { yes: 0, no: 0 }),
+      LIVE_COPY.split("q", { yes: 1, no: 1 }, null), LIVE_COPY.locked({ yes: 0, no: 0 }), LIVE_COPY.settled("q", "yes", 1, 2, 50, "u"), MARKET_COPY.unmarketable]
+      .every((t) => parseCommand(t) === null));
+  check("the reminder copy never says bet, gambling, free or real money",
+    !/\bbet(s|ting)?\b|gambl|\bfree\b|real money|real sol/i.test(LIVE_COPY.reminder("q", { yes: 1, no: 1 }, 60_000) + LIVE_COPY.switched("q", { yes: 1, no: 0 }) + LIVE_COPY.which("yes", ["a", "b"])));
 }
 
 console.log("\n!yes or !no with nothing open");
@@ -583,8 +695,10 @@ console.log("\nthe lines no memory test reaches");
     /app\.use\(kickRouter\(\{/.test(server) && /app\.use\(twitchRouter\(\{/.test(server)
     && /if \(kickConfigured\(\) \|\| twitchConfigured\(\)\) \{[\s\S]{0,900}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
-  check("one live call per channel is the database's rule",
-    /CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_open ON live_call \(platform, channel_id\)\s+WHERE settled_at IS NULL AND canceled_at IS NULL/.test(store));
+  check("one call taking answers per channel is the database's rule, and the old one-unsettled index goes",
+    /CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_voting ON live_call \(platform, channel_id\)\s+WHERE locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL/.test(store)
+    && /DROP INDEX IF EXISTS live_call_one_open;/.test(store) && !/CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_open/.test(store));
+  check("the reminder runs with the lock clock", /remindOpen\(clock\)/.test(server));
   check("one answer per person is the primary key", /PRIMARY KEY \(call_id, platform, user_id\)/.test(store));
   check("no column is called `right`: RIGHT is reserved, and ORDER BY right is a syntax error Postgres found live",
     !/\bAS right\b/.test(store) && !/ORDER BY[^`]*\bright\b/.test(store));

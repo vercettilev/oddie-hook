@@ -17,13 +17,23 @@
  *   oddie answers with POST /helix/chat/messages. That takes a user access
  *   token with user:write:chat; with user:bot or channel:bot in it the line
  *   carries Twitch's chat bot badge.
+ *
+ *   A call's line is pinned with PUT /helix/chat/pins (taken down with DELETE),
+ *   made with the STREAMER's token: the broadcaster is a moderator of their own
+ *   chat, so oddie's account needs no mod badge anywhere. That takes
+ *   moderator:manage:chat_messages and user:bot. Checked against the live API on
+ *   8 Oct with an app token: PUT, PATCH and DELETE /chat/pins answer 401 naming
+ *   exactly those two scopes, and POST /chat/pins is 404. A channel that signed
+ *   in before the scope was asked for is refused, and keeps the reminders.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ChatMessage } from "../live/calls.js";
 
 const API = "https://api.twitch.tv/helix";
 const ID = "https://id.twitch.tv/oauth2";
-export const TWITCH_SCOPES = ["user:read:chat", "user:write:chat", "user:bot", "channel:bot"];
+export const TWITCH_SCOPES = ["user:read:chat", "user:write:chat", "user:bot", "channel:bot", "moderator:manage:chat_messages"];
+/** How long a call's line stays pinned; the reminder pins the next one before it runs out. */
+export const PIN_SECONDS = 1800;
 const TIMEOUT_MS = 10_000;
 
 /** All three: the app, its secret, and the secret our webhooks are signed with. */
@@ -127,9 +137,9 @@ export async function subscribeToChat(app: string, broadcasterUserId: string, ca
   }
 }
 
-/** One line in a channel's chat, from the account the token belongs to. */
-export async function sendChat(token: string, broadcasterId: string, senderId: string, message: string, replyTo?: string): Promise<void> {
-  const j = await api<{ data?: Array<{ is_sent?: boolean; drop_reason?: { code?: string; message?: string } | null }> }>(token, "POST", "/chat/messages", {
+/** One line in a channel's chat, from the account the token belongs to: its id, when Twitch gives one. */
+export async function sendChat(token: string, broadcasterId: string, senderId: string, message: string, replyTo?: string): Promise<string | null> {
+  const j = await api<{ data?: Array<{ message_id?: string; is_sent?: boolean; drop_reason?: { code?: string; message?: string } | null }> }>(token, "POST", "/chat/messages", {
     broadcaster_id: broadcasterId, sender_id: senderId, message: message.slice(0, 500),
     ...(replyTo ? { reply_parent_message_id: replyTo } : {}),
   });
@@ -140,6 +150,27 @@ export async function sendChat(token: string, broadcasterId: string, senderId: s
     err.status = 422;
     throw err;
   }
+  return r?.message_id ? String(r.message_id) : null;
+}
+
+/** The message pinned in a channel's chat now, if any (null: nothing pinned). */
+export async function pinnedChat(token: string, broadcasterId: string, moderatorId: string): Promise<string | null> {
+  const q = new URLSearchParams({ broadcaster_id: broadcasterId, moderator_id: moderatorId });
+  const j = await api<{ data?: Array<{ message_id?: string; id?: string; message?: { id?: string } }> }>(token, "GET", `/chat/pins?${q}`);
+  const p = j.data?.[0];
+  return p ? String(p.message_id ?? p.id ?? p.message?.id ?? "?") : null;
+}
+
+/** Pin a line in a channel's chat, by a moderator or the broadcaster themself. */
+export async function pinChat(token: string, broadcasterId: string, moderatorId: string, messageId: string, seconds = PIN_SECONDS): Promise<void> {
+  const q = new URLSearchParams({ broadcaster_id: broadcasterId, moderator_id: moderatorId });
+  await api(token, "PUT", `/chat/pins?${q}`, { message_id: messageId, duration_seconds: seconds });
+}
+
+/** Take a pinned line down. */
+export async function unpinChat(token: string, broadcasterId: string, moderatorId: string, messageId: string): Promise<void> {
+  const q = new URLSearchParams({ broadcaster_id: broadcasterId, moderator_id: moderatorId, message_id: messageId });
+  await api(token, "DELETE", `/chat/pins?${q}`);
 }
 
 /* ---------------------------------------------------------- webhooks -- */

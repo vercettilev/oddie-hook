@@ -7,9 +7,9 @@
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import express from "express";
-import { _resetLive, LIVE_COPY } from "../src/live/calls.js";
+import { _resetLive, handleChat, LIVE_COPY } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelById, _resetLiveStore } from "../src/store/live.js";
-import { chatFromTwitch, verifyTwitchSignature } from "../src/twitch/client.js";
+import { authorizeUrl, chatFromTwitch, verifyTwitchSignature, TWITCH_SCOPES, PIN_SECONDS } from "../src/twitch/client.js";
 import { twitchRouter, twitchEngineDeps, type TwitchChat, type TwitchSignIn } from "../src/twitch/routes.js";
 import { ownerCookieName } from "../src/live/owner.js";
 import { MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
@@ -164,6 +164,85 @@ console.log("\n!yes or !no with nothing open, through the real router and Twitch
   server.close();
 }
 
+console.log("\noddie's own lines, coming back through Twitch's chat feed");
+{
+  // Live on 8 Oct: oddie's "!oddie <a claim ...>" help line came back as a chat
+  // message from oddiefun, was read as a claim, and oddie answered itself.
+  _resetLiveStore(); _resetLive();
+  await saveChannel({ platform: "twitch", channelId: "1001", slug: "streamer", name: "Streamer", avatar: null,
+    accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  const sent: string[] = [];
+  const did: unknown[] = [];
+  const app = express();
+  app.use(twitchRouter({
+    appBaseUrl: "https://app.oddie.fun", pageHtml: () => "<p>page</p>", pageOpen: () => true, pageClosed: (res) => { res.status(404).end(); },
+    log: (l, extra) => { if (l === "twitch chat command") did.push(extra?.action); },
+    secret: () => SECRET, chat: { send: async (_t, _b, _s, text) => { sent.push(text); return null; } }, voice: "oddiefun",
+  }));
+  const server = app.listen(0);
+  const port = (server.address() as AddressInfo).port;
+  const post = async (event: Record<string, unknown>) => {
+    const b = JSON.stringify({ subscription: { type: "channel.chat.message" }, event: ev(event) });
+    const ts = new Date().toISOString(); const id = `own-${Math.random().toString(36).slice(2, 10)}`;
+    await fetch(`http://127.0.0.1:${port}/live/twitch/webhook`, { method: "POST", body: b, headers: { "content-type": "application/json",
+      "Twitch-Eventsub-Message-Id": id, "Twitch-Eventsub-Message-Timestamp": ts, "Twitch-Eventsub-Message-Signature": sign(id, ts, b), "Twitch-Eventsub-Message-Type": "notification" } });
+    await new Promise((r) => setTimeout(r, 80));
+  };
+  await post({ chatter_user_id: "9009", chatter_user_login: "oddiefun", message_id: "own-1", message: { text: "!oddie <a claim with a yes or no and a date> opens a real market" } });
+  check("a line from oddie's own account is never a command: nothing said, nothing logged", sent.length === 0 && did.length === 0, JSON.stringify({ sent, did }));
+  await post({ chatter_user_id: "2002", chatter_user_login: "viewer", message_id: "own-2", message: { text: "!oddie" } });
+  check("...while a viewer's bare !oddie still hears how", sent.length === 1 && sent[0] === LIVE_COPY.marketHelp && did[0] === "market-help");
+  server.close();
+}
+
+console.log("\na call's line pinned, with the streamer's own token, never over their pin");
+{
+  _resetLiveStore(); _resetLive();
+  process.env.LIVE_TOKEN_KEY = "live-token-key-for-tests";
+  check("the sign-in asks for pins (moderator:manage:chat_messages, with user:bot)",
+    TWITCH_SCOPES.includes("moderator:manage:chat_messages") && TWITCH_SCOPES.includes("user:bot")
+    && /moderator%3Amanage%3Achat_messages/.test(authorizeUrl({ state: "s", redirectUri: "https://app.oddie.fun/live/twitch/callback" })));
+  for (const [id, slug, tok] of [["7001", "pinme", "s-tok"], ["7002", "ownpin", "o-tok"], ["7003", "oldsignin", "x-tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug, avatar: null, accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  let n = 0;
+  const sent: Array<{ token: string; broadcaster: string; sender: string; text: string }> = [];
+  const pins: Array<{ token: string; broadcaster: string; moderator: string; id: string }> = [];
+  const unpins: Array<{ broadcaster: string; id: string }> = [];
+  const theirs = new Map<string, string>([["7002", "their-own-pin"]]);
+  let pinCalls = 0;
+  const chat: TwitchChat = {
+    send: async (token, b, sender, text) => { sent.push({ token, broadcaster: b, sender, text }); return `line-${++n}`; },
+    pinned: async (_t, b) => theirs.get(b) ?? null,
+    pin: async (token, b, m, id) => {
+      pinCalls++;
+      if (b === "7003") { const e = new Error("twitch PUT /chat/pins 401 needs moderator:manage:chat_messages") as Error & { status?: number }; e.status = 401; throw e; }
+      pins.push({ token, broadcaster: b, moderator: m, id }); theirs.set(b, id);
+    },
+    unpin: async (_t, b, _m, id) => { unpins.push({ broadcaster: b, id }); theirs.delete(b); },
+  };
+  const logs: string[] = [];
+  const engine = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  const msg = (channelId: string, text: string, i: number) => ({ platform: "twitch" as const, channelId, messageId: `in-${i}`, senderId: channelId, senderName: "owner", canRun: true, text });
+  await handleChat(msg("7001", "!call btc above 83k tonight?", 1), engine);
+  check("oddie says the call as its own account", sent[0]?.sender === "9009" && sent[0]?.token === "v-tok" && sent[0]?.text.startsWith('oddie call: "btc above 83k tonight?"'));
+  check("...and the streamer's token pins that line in their chat, as its own moderator",
+    pins.length === 1 && pins[0].token === "s-tok" && pins[0].broadcaster === "7001" && pins[0].moderator === "7001" && pins[0].id === "line-1", JSON.stringify(pins));
+  check("...for half an hour, the reminder pins the next one before it runs out", PIN_SECONDS === 1800);
+  await handleChat(msg("7001", "!call yes", 2), engine);
+  check("settled, oddie's pin comes down", unpins.length === 1 && unpins[0].broadcaster === "7001" && unpins[0].id === "line-1");
+  await handleChat(msg("7002", "!call will he win?", 3), engine);
+  check("a channel with its own pin keeps it", pins.length === 1 && logs.includes("twitch pin skipped, the channel has its own pin"));
+  await handleChat(msg("7003", "!call first?", 4), engine);
+  check("a channel that signed in before pins is refused, and that is logged",
+    pins.length === 1 && logs.includes("twitch pin refused, the channel signs in again to allow it"));
+  const before = pinCalls;
+  await handleChat(msg("7003", "!call yes", 5), engine);
+  await handleChat(msg("7003", "!call second?", 6), engine);
+  check("...and it is not asked again for a while", pinCalls === before);
+  check("the call itself went on everywhere", sent.filter((x) => x.text.startsWith("oddie call:")).length === 4);
+}
+
 console.log("\nthe sign-in");
 {
   _resetLiveStore(); _resetLive();
@@ -191,8 +270,8 @@ console.log("\nthe sign-in");
     return { loc, res: await fetch(`${base}/live/twitch/callback?state=${state}&code=abc`, { redirect: "manual" }) };
   };
   const first = await signInOnce();
-  check("the door goes to Twitch with the four chat scopes", first.loc.host === "id.twitch.tv"
-    && first.loc.searchParams.get("scope") === "user:read:chat user:write:chat user:bot channel:bot");
+  check("the door goes to Twitch with the four chat scopes and the pin", first.loc.host === "id.twitch.tv"
+    && first.loc.searchParams.get("scope") === "user:read:chat user:write:chat user:bot channel:bot moderator:manage:chat_messages");
   const setCookie = first.res.headers.get("set-cookie") ?? "";
   check("Twitch's sign-in ends with Twitch's own owner cookie, on its own path", setCookie.startsWith(`${ownerCookieName("twitch")}=`)
     && /Path=\/api\/live\/twitch/.test(setCookie) && /HttpOnly/.test(setCookie)

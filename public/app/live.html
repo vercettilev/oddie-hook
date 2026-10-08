@@ -293,6 +293,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .now__how{margin:12px 0 0;font-size:15px;color:rgba(11,13,4,.72)}
 .now__how code{font-family:var(--mono);font-weight:800;background:var(--ink);color:var(--yellow);padding:2px 6px}
 .idle{margin:0 0 34px}
+.wait li{border-left-color:var(--cream)}
 
 .res{list-style:none;margin:0 0 34px;padding:0;display:grid;gap:12px}
 .res li{border-left:3px solid var(--fg-3);padding:2px 0 2px 12px}
@@ -599,6 +600,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   function countdown() {
     var el = document.getElementById("left");
     if (!el || !data || !data.current) return;
+    // A call with no length takes answers until the channel settles it.
+    if (data.current.timed === false) { el.textContent = "open until it's settled"; return; }
     var ms = new Date(data.current.closesAt).getTime() - Date.now();
     if (ms <= 0 || data.current.locked) { el.textContent = "locked"; return; }
     var s = Math.ceil(ms / 1000);
@@ -643,9 +646,19 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
         + '<div class="bar" role="img" aria-label="' + c.yesPct + ' percent yes"><i style="width:' + (total ? c.yesPct : 50) + '%"></i></div>'
         + '<p class="now__n"><span class="y">YES ' + (total ? c.yesPct : 0) + "%</span><span class=\"n\">NO " + (total ? 100 - c.yesPct : 0) + "%</span></p>"
         + (c.locked ? '<p class="now__how">Calls are in. The result is next.</p>'
-          : '<p class="now__how">Type <code>!yes</code> or <code>!no</code> in the stream chat.</p>')
+          : '<p class="now__how">Type <code>!yes</code> or <code>!no</code> in the stream chat. Earlier calls score more.</p>')
         + "</section>";
-    } else {
+    }
+    // Calls a newer one took the room from: answers in, the result still to come.
+    var wt = j.waiting || [];
+    if (wt.length) {
+      html += '<h2>Waiting for the result</h2><ul class="res wait">' + wt.map(function (w) {
+        var t = w.yes + w.no;
+        return '<li><p class="res__q">' + esc(w.question) + '</p><p class="res__m">'
+          + (t ? '<span class="y">YES ' + w.yesPct + "%</span> · " + t + (t === 1 ? " call" : " calls") : "no calls yet") + "</p></li>";
+      }).join("") + "</ul>";
+    }
+    if (!c && !wt.length) {
       html += '<p class="lede idle">Between calls. The next one opens in chat, and it lands here the moment it does.</p>';
     }
 

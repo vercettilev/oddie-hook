@@ -7,7 +7,7 @@
 import express, { type Router } from "express";
 import { randomBytes } from "node:crypto";
 import {
-  appToken, authorizeUrl, chatFromTwitch, eventSubSecret, exchangeCode, me, refreshTokens, sendChat,
+  appToken, authorizeUrl, chatFromTwitch, eventSubSecret, exchangeCode, me, pinChat, pinnedChat, refreshTokens, sendChat, unpinChat,
   subscribeToChat, twitchConfigured, verifyTwitchSignature, WEBHOOK_MAX_AGE_MS, type TwitchTokens,
 } from "./client.js";
 import { handleChat, LIVE_COPY, type LiveDeps, type Platform } from "../live/calls.js";
@@ -42,11 +42,14 @@ const twitchSignIn: TwitchSignIn = {
   subscribe: async (id, callback, secret) => subscribeToChat(await appToken(), id, callback, secret),
 };
 
-/** How a line reaches a Twitch chat. */
+/** How a line reaches a Twitch chat, and how a call's line is pinned there. */
 export interface TwitchChat {
-  send(token: string, broadcasterId: string, senderId: string, text: string, replyTo?: string): Promise<void>;
+  send(token: string, broadcasterId: string, senderId: string, text: string, replyTo?: string): Promise<string | null | void>;
+  pinned?(token: string, broadcasterId: string, moderatorId: string): Promise<string | null>;
+  pin?(token: string, broadcasterId: string, moderatorId: string, messageId: string): Promise<void>;
+  unpin?(token: string, broadcasterId: string, moderatorId: string, messageId: string): Promise<void>;
 }
-const twitchChat: TwitchChat = { send: sendChat };
+const twitchChat: TwitchChat = { send: sendChat, pinned: pinnedChat, pin: pinChat, unpin: unpinChat };
 
 const pending = new Map<string, number>();
 const seen = new Map<string, number>();
@@ -74,48 +77,107 @@ async function tokenFor(ch: LiveChannel, force = false): Promise<string> {
 const voiceCannotPost = new Map<string, number>();
 const VOICE_RETRY_MS = 10 * 60_000;
 
+/**
+ * PINS. A call's line is pinned with the streamer's own token (they are a
+ * moderator of their own chat), never over a pin the channel made itself: only
+ * into an empty spot or over oddie's own last one. A channel that signed in
+ * before pins were asked for is refused; it is not asked again for six hours,
+ * and its calls still get the reminder.
+ */
+const pinnedByUs = new Map<string, string>();
+/** Lines oddie sent, by id: one that comes back through the chat feed is oddie's own. */
+const sentByUs = new Set<string>();
+const SENT_MAX = 2_000;
+function remember(id: string | null): string | null {
+  if (!id) return id;
+  sentByUs.add(id);
+  if (sentByUs.size > SENT_MAX) for (const k of [...sentByUs].slice(0, SENT_MAX / 2)) sentByUs.delete(k);
+  return id;
+}
+const pinRefused = new Map<string, number>();
+const PIN_RETRY_MS = 6 * 60 * 60_000;
+
 export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" | "markets" | "voice">, chat: TwitchChat = twitchChat): LiveDeps {
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const voiceLogin = (d.voice ?? process.env.TWITCH_VOICE_CHANNEL ?? "oddiefun").trim().toLowerCase();
   const status = (e: unknown) => (e as { status?: number }).status;
-  /** Say it as `from`, refreshing its token once on a 401. */
-  const as = async (from: LiveChannel, channelId: string, text: string, replyTo?: string) => {
-    try { await chat.send(await tokenFor(from), channelId, from.channelId, text, replyTo); }
+  /** Act with `from`'s token, refreshing it once on a 401. */
+  const withToken = async <T>(from: LiveChannel, f: (token: string) => Promise<T>): Promise<T> => {
+    try { return await f(await tokenFor(from)); }
     catch (e) {
       if (status(e) !== 401) throw e;
-      await chat.send(await tokenFor(from, true), channelId, from.channelId, text, replyTo);
+      return f(await tokenFor(from, true));
     }
   };
-  const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<boolean> => {
-    if (!voiceLogin) return false;
+  /** Say it as `from`: the line's id, when Twitch gives one. */
+  const as = async (from: LiveChannel, channelId: string, text: string, replyTo?: string): Promise<string | null> =>
+    remember((await withToken(from, (t) => chat.send(t, channelId, from.channelId, text, replyTo))) || null);
+  const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<{ said: boolean; id: string | null }> => {
+    const no = { said: false, id: null };
+    if (!voiceLogin) return no;
     const failedAt = voiceCannotPost.get(channelId);
-    if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return false;
+    if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return no;
     const voice = await channelBySlug("twitch", voiceLogin).catch(() => null);
-    if (!voice?.active || !voice.accessToken || voice.channelId === channelId) return false;
-    try { await as(voice, channelId, text, replyTo); voiceCannotPost.delete(channelId); return true; }
+    if (!voice?.active || !voice.accessToken || voice.channelId === channelId) return no;
+    try { const id = await as(voice, channelId, text, replyTo); voiceCannotPost.delete(channelId); return { said: true, id }; }
     catch (e) {
       voiceCannotPost.set(channelId, Date.now());
       // The message carries Twitch's drop reason (followers-only, a verified
       // email the channel requires, a ban), which is the one thing worth knowing.
       d.log("twitch voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
-      return false;
+      return no;
     }
   };
-  const say = async (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<void> => {
+  const say = async (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<string | void> => {
     const ch = await channelById("twitch", channelId);
     if (!ch?.active) return;
-    if (await sayAsVoice(channelId, text, replyTo)) return;
-    await as(ch, channelId, text, replyTo);
+    const voice = await sayAsVoice(channelId, text, replyTo);
+    if (voice.said) return voice.id ?? undefined;
+    return (await as(ch, channelId, text, replyTo)) ?? undefined;
+  };
+  const pin = async (_p: Platform, channelId: string, messageId: string): Promise<void> => {
+    if (!chat.pin) return;
+    const refusedAt = pinRefused.get(channelId);
+    if (refusedAt !== undefined && Date.now() - refusedAt < PIN_RETRY_MS) return;
+    const ch = await channelById("twitch", channelId);
+    if (!ch?.active || !ch.accessToken) return;
+    try {
+      const there = chat.pinned ? await withToken(ch, (t) => chat.pinned!(t, channelId, channelId)) : null;
+      if (there && there !== pinnedByUs.get(channelId)) {
+        d.log("twitch pin skipped, the channel has its own pin", { channel: channelId });
+        return;
+      }
+      await withToken(ch, (t) => chat.pin!(t, channelId, channelId, messageId));
+      pinnedByUs.set(channelId, messageId);
+    } catch (e) {
+      if (status(e) === 401 || status(e) === 403) {
+        pinRefused.set(channelId, Date.now());
+        d.log("twitch pin refused, the channel signs in again to allow it", { channel: channelId, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
+        return;
+      }
+      throw e;
+    }
+  };
+  const unpin = async (_p: Platform, channelId: string): Promise<void> => {
+    const id = pinnedByUs.get(channelId);
+    if (!id || !chat.unpin) return;
+    pinnedByUs.delete(channelId);
+    const ch = await channelById("twitch", channelId);
+    if (!ch?.active || !ch.accessToken) return;
+    // A pin that already ran out is fine: the line is down either way.
+    await withToken(ch, (t) => chat.unpin!(t, channelId, channelId, id)).catch(() => {});
   };
   const markets = d.markets;
   return {
     store: liveStore,
     now: () => Date.now(),
     say,
+    pin,
+    unpin,
     market: markets ? (msg, claim) => openFromChat(msg, claim, {
       ...markets,
       sourceFor: (m) => twitchChatSource(m.channelSlug || m.channelId, m.messageId),
-      say: (m, text) => say("twitch", m.channelId, text, m.messageId),
+      say: async (m, text) => { await say("twitch", m.channelId, text, m.messageId); },
     }) : undefined,
     standingsUrl: async (_p, channelId) => {
       const ch = await channelById("twitch", channelId).catch(() => null);
@@ -129,6 +191,7 @@ export function twitchRouter(d: TwitchRouteDeps): Router {
   const r = express.Router();
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const redirectUri = `${base}/live/twitch/callback`;
+  const voiceLogin = (d.voice ?? process.env.TWITCH_VOICE_CHANNEL ?? "oddiefun").trim().toLowerCase();
   const callback = `${base}/live/twitch/webhook`;
   const engine = d.engine ?? twitchEngineDeps(d, d.chat);
   const tw = d.signIn ?? twitchSignIn;
@@ -220,9 +283,12 @@ export function twitchRouter(d: TwitchRouteDeps): Router {
     if (seen.size > SEEN_MAX) for (const k of [...seen.keys()].slice(0, SEEN_MAX / 2)) seen.delete(k);
     const msg = chatFromTwitch(body.event);
     if (!msg) return;
+    // oddie's own lines come back too: from its account, or a line it sent as
+    // the channel when its account could not post.
+    if (msg.senderName.toLowerCase() === voiceLogin || sentByUs.has(msg.messageId)) msg.fromOddie = true;
     const action = await handleChat(msg, engine).catch((e) => { d.log("twitch chat failed", { err: (e as Error).message }); return "error"; });
     // What a command did, never what anybody wrote: ordinary chat is not logged.
-    if (action !== "chat") d.log("twitch chat command", { channel: msg.channelId, action, runner: msg.canRun });
+    if (action !== "chat" && action !== "own") d.log("twitch chat command", { channel: msg.channelId, action, runner: msg.canRun });
   });
 
   /** The channel's page, its standings, and the streamer's 2%: shared with Kick. */

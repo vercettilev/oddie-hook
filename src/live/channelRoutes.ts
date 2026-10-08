@@ -79,12 +79,15 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     res.set("Cache-Control", "no-store");
     const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
     if (!ch) return res.status(404).json({ error: "unknown" });
-    const [current, recent, standings] = await Promise.all([
-      liveStore.current(platform, ch.channelId).catch(() => null),
+    const [unsettled, recent, standings] = await Promise.all([
+      liveStore.unsettled(platform, ch.channelId).catch(() => []),
       recentCalls(platform, ch.channelId, 10).catch(() => []),
       channelStandings(platform, ch.channelId, 20).catch(() => []),
     ]);
-    const tally = current ? await liveStore.tally(current.id).catch(() => ({ yes: 0, no: 0 })) : null;
+    const current = unsettled.find((c) => c.lockedAt === null) ?? null;
+    const tallies = await Promise.all(unsettled.map((c) => liveStore.tally(c.id).catch(() => ({ yes: 0, no: 0 }))));
+    const tallyOf = (id: string) => tallies[unsettled.findIndex((c) => c.id === id)] ?? { yes: 0, no: 0 };
+    const tally = current ? tallyOf(current.id) : null;
     const markets = await marketsOf(ch.channelId);
     // Only to the streamer's own browser: where their 2% goes, and how many
     // markets pay it.
@@ -99,9 +102,14 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
       ...(owner ? { owner } : {}),
       markets: markets.map((m) => ({ slug: m.slug, question: m.question, hook: m.hook, closesAt: m.closesAt, outcome: m.outcome })),
       current: current && tally ? {
-        question: current.question, closesAt: new Date(current.closesAt).toISOString(),
-        locked: current.lockedAt !== null || Date.now() >= current.closesAt, yes: tally.yes, no: tally.no, yesPct: yesPct(tally),
+        question: current.question, closesAt: new Date(current.closesAt).toISOString(), timed: current.timed,
+        locked: current.timed && Date.now() >= current.closesAt, yes: tally.yes, no: tally.no, yesPct: yesPct(tally),
       } : null,
+      // Locked, answers in, the result still to come: a new call took the room.
+      waiting: unsettled.filter((c) => c.lockedAt !== null).map((c) => {
+        const t = tallyOf(c.id);
+        return { question: c.question, yes: t.yes, no: t.no, yesPct: yesPct(t) };
+      }),
       recent: recent.filter((c) => c.settledAt !== null).map((c) => ({
         question: c.question, outcome: c.outcome, yes: c.yes, no: c.no, points: c.points,
         settledAt: c.settledAt ? new Date(c.settledAt).toISOString() : null,

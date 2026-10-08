@@ -2,8 +2,9 @@
  * The store behind live calls (src/live/calls.ts): the channels that added
  * oddie, their calls, and every answer.
  *
- * The rules that matter are the database's, not a read's: one live call per
- * channel is a partial unique index, one answer per person is the primary key,
+ * The rules that matter are the database's, not a read's: one call taking
+ * answers per channel is a partial unique index (any number may wait for their
+ * result), one answer per person is the primary key,
  * and locking or settling a call is a conditional UPDATE that exactly one
  * caller wins. Two moderators, two webhook retries or two instances during a
  * deploy all meet the same answer.
@@ -14,7 +15,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { storeDb, storeSchema, STORE_PERSISTENT } from "./markets.js";
-import type { LiveCall, LiveStore, Platform, Side, Tally } from "../live/calls.js";
+import { pointsAt, type LiveCall, type LiveStore, type Platform, type Side, type Tally } from "../live/calls.js";
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS live_channel (
@@ -49,10 +50,18 @@ CREATE TABLE IF NOT EXISTS live_call (
   no_count        int,
   points          int
 );
--- ONE LIVE CALL PER CHANNEL, said by the database: two moderators opening at
--- the same moment get one call and one refusal.
-CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_open ON live_call (platform, channel_id)
-  WHERE settled_at IS NULL AND canceled_at IS NULL;
+-- A call opened with a length locks on its own; one without takes answers
+-- until it is settled (8 Oct). Rows from before were all timed.
+ALTER TABLE live_call ADD COLUMN IF NOT EXISTS timed boolean NOT NULL DEFAULT true;
+-- ONE CALL TAKING ANSWERS PER CHANNEL, said by the database: two moderators
+-- opening at the same moment get one call and one refusal. Calls waiting for
+-- their result are not counted: a new call locks the running one and opens.
+-- The old index counted every unsettled call; it goes, or the second call
+-- waiting for a result would be refused. (Rolling back past this: settle or
+-- cancel the extra waiting calls first, or the old index cannot be built.)
+DROP INDEX IF EXISTS live_call_one_open;
+CREATE UNIQUE INDEX IF NOT EXISTS live_call_one_voting ON live_call (platform, channel_id)
+  WHERE locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL;
 CREATE INDEX IF NOT EXISTS live_call_due_idx ON live_call (closes_at) WHERE locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS live_pick (
@@ -159,24 +168,39 @@ const memPicks: MemPick[] = [];
 let memSeq = 0;
 
 type CallRow = { id: string; platform: Platform; channel_id: string; question: string; opened_at: Date; closes_at: Date;
-  locked_at: Date | null; outcome: Side | null; settled_at: Date | null };
+  timed: boolean | null; locked_at: Date | null; outcome: Side | null; settled_at: Date | null };
 const callFrom = (r: CallRow): LiveCall => ({
   id: String(r.id), platform: r.platform, channelId: r.channel_id, question: r.question,
-  openedAt: new Date(r.opened_at).getTime(), closesAt: new Date(r.closes_at).getTime(),
+  openedAt: new Date(r.opened_at).getTime(), closesAt: new Date(r.closes_at).getTime(), timed: r.timed !== false,
   lockedAt: r.locked_at ? new Date(r.locked_at).getTime() : null, outcome: r.outcome,
   settledAt: r.settled_at ? new Date(r.settled_at).getTime() : null,
 });
-const CALL_COLS = `id, platform, channel_id, question, opened_at, closes_at, locked_at, outcome, settled_at`;
+const CALL_COLS = `id, platform, channel_id, question, opened_at, closes_at, timed, locked_at, outcome, settled_at`;
+const takingAnswers = (c: MemCall) => c.lockedAt === null && c.settledAt === null && c.canceledAt === null;
 
 export const liveStore: LiveStore = {
   async current(platform, channelId) {
     if (!STORE_PERSISTENT) {
-      return [...memCalls.values()].find((c) => c.platform === platform && c.channelId === channelId && c.settledAt === null && c.canceledAt === null) ?? null;
+      const c = [...memCalls.values()].find((x) => x.platform === platform && x.channelId === channelId && takingAnswers(x));
+      return c ? { ...c } : null;
     }
     await schema();
     const { rows } = await storeDb().query<CallRow>(
-      `SELECT ${CALL_COLS} FROM live_call WHERE platform = $1 AND channel_id = $2 AND settled_at IS NULL AND canceled_at IS NULL`, [platform, channelId]);
+      `SELECT ${CALL_COLS} FROM live_call WHERE platform = $1 AND channel_id = $2 AND locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL`, [platform, channelId]);
     return rows[0] ? callFrom(rows[0]) : null;
+  },
+
+  async unsettled(platform, channelId) {
+    if (!STORE_PERSISTENT) {
+      return [...memCalls.values()]
+        .filter((c) => c.platform === platform && c.channelId === channelId && c.settledAt === null && c.canceledAt === null)
+        .sort((a, b) => a.openedAt - b.openedAt || Number(a.id) - Number(b.id)).map((c) => ({ ...c }));
+    }
+    await schema();
+    const { rows } = await storeDb().query<CallRow>(
+      `SELECT ${CALL_COLS} FROM live_call WHERE platform = $1 AND channel_id = $2 AND settled_at IS NULL AND canceled_at IS NULL
+        ORDER BY opened_at, id LIMIT 20`, [platform, channelId]);
+    return rows.map(callFrom);
   },
 
   async open(i) {
@@ -184,16 +208,16 @@ export const liveStore: LiveStore = {
       if (await this.current(i.platform, i.channelId)) return null;
       const id = String(++memSeq);
       const c: MemCall = { id, platform: i.platform, channelId: i.channelId, question: i.question, openedAt: i.openedAt, closesAt: i.closesAt,
-        lockedAt: null, outcome: null, settledAt: null, canceledAt: null, yesCount: null, noCount: null, points: null,
+        timed: i.timed, lockedAt: null, outcome: null, settledAt: null, canceledAt: null, yesCount: null, noCount: null, points: null,
         openedById: i.openedById, openedByName: i.openedByName };
       memCalls.set(id, c);
       return { ...c };
     }
     await schema();
     const { rows } = await storeDb().query<CallRow>(
-      `INSERT INTO live_call (platform, channel_id, question, opened_by_id, opened_by_name, opened_at, closes_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING ${CALL_COLS}`,
-      [i.platform, i.channelId, i.question, i.openedById, i.openedByName, new Date(i.openedAt), new Date(i.closesAt)]);
+      `INSERT INTO live_call (platform, channel_id, question, opened_by_id, opened_by_name, opened_at, closes_at, timed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING ${CALL_COLS}`,
+      [i.platform, i.channelId, i.question, i.openedById, i.openedByName, new Date(i.openedAt), new Date(i.closesAt), i.timed]);
     return rows[0] ? callFrom(rows[0]) : null;
   },
 
@@ -243,25 +267,39 @@ export const liveStore: LiveStore = {
       if (!c || c.settledAt !== null || c.canceledAt !== null) return null;
       const t = await this.tally(callId);
       Object.assign(c, { outcome, settledAt: at, lockedAt: c.lockedAt ?? at, yesCount: t.yes, noCount: t.no, points });
-      let right = 0;
-      for (const p of memPicks) if (p.callId === callId) { p.points = p.side === outcome ? points : 0; if (p.side === outcome) right++; }
-      return { right, total: t.yes + t.no };
+      let right = 0, top = 0;
+      for (const p of memPicks) {
+        if (p.callId !== callId) continue;
+        p.points = p.side === outcome ? pointsAt(points, p.at - c.openedAt) : 0;
+        if (p.side === outcome) { right++; top = Math.max(top, p.points); }
+      }
+      return { right, total: t.yes + t.no, top };
     }
     await schema();
     const client = await storeDb().connect();
     try {
       await client.query("BEGIN");
-      const upd = await client.query(
+      const upd = await client.query<{ opened_at: Date }>(
         `UPDATE live_call SET outcome = $2, settled_at = $3, locked_at = COALESCE(locked_at, $3), points = $4,
                 yes_count = (SELECT count(*) FROM live_pick WHERE call_id = $1 AND side = 'yes'),
                 no_count  = (SELECT count(*) FROM live_pick WHERE call_id = $1 AND side = 'no')
-          WHERE id = $1 AND settled_at IS NULL AND canceled_at IS NULL`, [callId, outcome, new Date(at), points]);
+          WHERE id = $1 AND settled_at IS NULL AND canceled_at IS NULL RETURNING opened_at`, [callId, outcome, new Date(at), points]);
       if (!upd.rowCount) { await client.query("ROLLBACK"); return null; }
-      await client.query(`UPDATE live_pick SET points = CASE WHEN side = $2 THEN $3 ELSE 0 END WHERE call_id = $1`, [callId, outcome, points]);
-      const { rows } = await client.query<{ right_count: number; total: number }>(
-        `SELECT count(*) FILTER (WHERE side = $2)::int AS right_count, count(*)::int AS total FROM live_pick WHERE call_id = $1`, [callId, outcome]);
+      // Each right answer by how early it came: worked out here, with the same
+      // pointsAt the memory store and the tests use, so there is one formula.
+      const openedAt = new Date(upd.rows[0].opened_at).getTime();
+      const { rows: picks } = await client.query<{ user_id: string; side: Side; at: Date }>(
+        `SELECT user_id, side, at FROM live_pick WHERE call_id = $1`, [callId]);
+      const scored = picks.map((p) => ({ id: p.user_id, pts: p.side === outcome ? pointsAt(points, new Date(p.at).getTime() - openedAt) : 0 }));
+      if (scored.length) {
+        await client.query(
+          `UPDATE live_pick SET points = u.pts FROM unnest($2::text[], $3::int[]) AS u(user_id, pts)
+            WHERE live_pick.call_id = $1 AND live_pick.user_id = u.user_id`,
+          [callId, scored.map((x) => x.id), scored.map((x) => x.pts)]);
+      }
       await client.query("COMMIT");
-      return rows[0] ? { right: rows[0].right_count, total: rows[0].total } : { right: 0, total: 0 };
+      const right = picks.filter((p) => p.side === outcome).length;
+      return { right, total: picks.length, top: Math.max(0, ...scored.map((x) => x.pts)) };
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       throw e;
@@ -283,12 +321,20 @@ export const liveStore: LiveStore = {
 
   async due(now) {
     if (!STORE_PERSISTENT) {
-      return [...memCalls.values()].filter((c) => c.lockedAt === null && c.settledAt === null && c.canceledAt === null && c.closesAt <= now).map((c) => ({ ...c }));
+      return [...memCalls.values()].filter((c) => takingAnswers(c) && c.closesAt <= now).map((c) => ({ ...c }));
     }
     await schema();
     const { rows } = await storeDb().query<CallRow>(
       `SELECT ${CALL_COLS} FROM live_call WHERE locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL AND closes_at <= $1 LIMIT 50`,
       [new Date(now)]);
+    return rows.map(callFrom);
+  },
+
+  async takingAnswers() {
+    if (!STORE_PERSISTENT) return [...memCalls.values()].filter(takingAnswers).map((c) => ({ ...c }));
+    await schema();
+    const { rows } = await storeDb().query<CallRow>(
+      `SELECT ${CALL_COLS} FROM live_call WHERE locked_at IS NULL AND settled_at IS NULL AND canceled_at IS NULL ORDER BY opened_at LIMIT 200`);
     return rows.map(callFrom);
   },
 };

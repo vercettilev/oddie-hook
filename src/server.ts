@@ -22,7 +22,7 @@ import { kickRouter, kickEngineDeps } from "./kick/routes.js";
 import { kickConfigured } from "./kick/client.js";
 import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
-import { lockDue, type LiveDeps } from "./live/calls.js";
+import { lockDue, remindOpen, type LiveDeps } from "./live/calls.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -1925,9 +1925,15 @@ if (kickConfigured() || twitchConfigured()) {
   const clock: LiveDeps = {
     ...kickEng,
     say: (p, c, t, r) => (p === "twitch" ? twEng.say(p, c, t, r) : kickEng.say(p, c, t, r)),
+    // Pins are Twitch's; on Kick the reminder alone keeps a long call in sight.
+    pin: (p, c, id) => (p === "twitch" && twEng.pin ? twEng.pin(p, c, id) : Promise.resolve()),
+    unpin: (p, c) => (p === "twitch" && twEng.unpin ? twEng.unpin(p, c) : Promise.resolve()),
     standingsUrl: (p, c) => (p === "twitch" ? twEng.standingsUrl(p, c) : kickEng.standingsUrl(p, c)),
   };
-  setInterval(() => { void lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message })); }, 5_000);
+  setInterval(() => {
+    void lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message }));
+    void remindOpen(clock).catch((e) => liveLog("live reminder failed", { err: (e as Error).message }));
+  }, 5_000);
 }
 
 app.get("/following", (req, res) => {
