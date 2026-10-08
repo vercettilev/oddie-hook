@@ -18,6 +18,10 @@ import {
   streamOpenedSlugs, streamOpenerOf, streamThreadsForSlug, kickChatSource,
 } from "../src/store/markets.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
+import { _setPace } from "../src/live/pace.js";
+
+// A chat's lines go out a second apart in production; here, at once.
+_setPace({ gapMs: 0, retryMs: [0, 0] });
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -241,6 +245,46 @@ console.log("\na call's line pinned, with the streamer's own token, never over t
   await handleChat(msg("7003", "!call second?", 6), engine);
   check("...and it is not asked again for a while", pinCalls === before);
   check("the call itself went on everywhere", sent.filter((x) => x.text.startsWith("oddie call:")).length === 4);
+}
+
+console.log("\n\"too quickly\" is no refusal (8 Oct: one 429 and oddie spoke as the streamer for ten minutes)");
+{
+  _resetLiveStore(); _resetLive();
+  _setPace({ gapMs: 60, retryMs: [10, 10] });
+  for (const [id, slug, tok] of [["7101", "bee", "b-tok"], ["7102", "other", "c-tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug, avatar: null, accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  const sent: Array<{ token: string; b: string; text: string; at: number }> = [];
+  let slow = 0;
+  const tooQuick = () => {
+    const e = new Error("twitch POST /chat/messages 429 Your message was not sent because you are sending messages too quickly.") as Error & { status?: number };
+    e.status = 429; return e;
+  };
+  const chat: TwitchChat = {
+    send: async (token, b, _s, text) => {
+      if (token === "v-tok" && slow > 0) { slow--; throw tooQuick(); }
+      sent.push({ token, b, text, at: Date.now() }); return `q-${sent.length}`;
+    },
+  };
+  const logs: string[] = [];
+  const eng = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  await Promise.all([eng.say("twitch", "7101", "Locked it"), eng.say("twitch", "7101", "oddie call: next"), eng.say("twitch", "7102", "elsewhere")]);
+  const at = (t: string) => sent.find((x) => x.text === t)?.at ?? NaN;
+  check("two lines for one chat go out in order, a gap apart", at("oddie call: next") - at("Locked it") >= 55, JSON.stringify(sent));
+  check("...while another chat does not wait for them", at("elsewhere") < at("oddie call: next"));
+  check("...all from oddie's own account", sent.length === 3 && sent.every((x) => x.token === "v-tok"));
+  sent.length = 0; slow = 1;
+  await eng.say("twitch", "7101", "patient");
+  check("a 429 is waited out and the line still comes from oddie's account", sent.length === 1 && sent[0].token === "v-tok", JSON.stringify(sent));
+  sent.length = 0; slow = 5;
+  await eng.say("twitch", "7101", "handed on");
+  check("still too quick after waiting twice: that one line goes as the channel's account",
+    sent.length === 1 && sent[0].token === "b-tok" && logs.includes("twitch voice slowed down, this line goes as the channel's account"), JSON.stringify(sent));
+  slow = 0; sent.length = 0;
+  await eng.say("twitch", "7101", "mine again");
+  check("...and the next line is oddie's again: the voice was never benched",
+    sent.length === 1 && sent[0].token === "v-tok" && !logs.includes("twitch voice cannot post here, sending as the channel's account"), JSON.stringify(sent));
+  _setPace({ gapMs: 0, retryMs: [0, 0] });
 }
 
 console.log("\nthe sign-in");

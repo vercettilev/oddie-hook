@@ -27,6 +27,10 @@ import {
   createCommunityMarket, markCommunityResolved, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets,
 } from "../src/store/markets.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
+import { _setPace } from "../src/live/pace.js";
+
+// A chat's lines go out a second apart in production; here, at once.
+_setPace({ gapMs: 0, retryMs: [0, 0] });
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -221,6 +225,21 @@ console.log("\na new call takes the room; the old one waits for its result");
     && (await handleChat(r2.line("owner", "!call open?", true), r2.deps)) === "opened"
     && (await handleChat(r2.line("owner", "!call 1m quick?", true), r2.deps)) === "opened"
     && (await liveStore.unsettled("kick", "100")).length === 3);
+}
+
+console.log("\nthe same question again, while it takes answers (8 Oct: a candle call typed twice opened its twin)");
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call will I win this game?", true), r.deps);
+  await handleChat(r.line("a", "!yes"), r.deps);
+  r.tick(60_000);
+  check("the same question again is said again, not opened twice",
+    (await handleChat(r.line("owner", "!call Will I win this game", true), r.deps)) === "again"
+    && r.said[r.said.length - 1]?.text === LIVE_COPY.reminder("will I win this game?", { yes: 1, no: 0 }, null), r.said[r.said.length - 1]?.text);
+  check("...pinned again, its answers kept, one call taking them",
+    r.pins.length === 2 && (await liveStore.unsettled("kick", "100")).length === 1 && !r.said.some((x) => x.text.startsWith("Locked ")));
+  check("a different question still takes the room", (await handleChat(r.line("owner", "!call will I win the next one?", true), r.deps)) === "opened"
+    && (await liveStore.unsettled("kick", "100")).length === 2);
 }
 
 console.log("\nseen later: the reminder, and the pin again");
@@ -641,6 +660,21 @@ console.log("\noddie speaks as itself in every chat");
   await replyShy.say("kick", "900", "still said", "msg-2");
   check("a reply Kick will not take across channels still goes out from oddie, as a plain line",
     noReply.join("|") === "voice-tok:900:still said:-", noReply.join("|"));
+  // "Too quickly" is no refusal (live on Twitch, 8 Oct): waited out, never benched.
+  let slow = 0;
+  const quick = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "oddiefun" }, {
+    bot: async () => { throw fail(404); },
+    user: async (t, ch, text) => { if (t === "voice-tok" && slow > 0) { slow--; throw fail(429); } sent.push(`user:${t}:${ch}:${text}`); },
+  });
+  sent.length = 0; slow = 1;
+  await quick.say("kick", "900", "patient");
+  check("a 429 is waited out and the line still comes from oddie's account", sent.join("|") === "user:voice-tok:900:patient", sent.join("|"));
+  sent.length = 0; slow = 5;
+  await quick.say("kick", "900", "handed on");
+  slow = 0;
+  await quick.say("kick", "900", "mine again");
+  check("...still too quick after waiting: that one line goes as the channel's, the next is oddie's again",
+    sent.join("|") === "user:lev-tok:900:handed on|user:voice-tok:900:mine again", sent.join("|"));
   const plain = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "" }, chat);
   sent.length = 0;
   await plain.say("kick", "900", "old way");

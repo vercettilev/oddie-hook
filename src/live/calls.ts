@@ -358,6 +358,15 @@ async function sayQuiet(deps: LiveDeps, m: { platform: Platform; channelId: stri
   catch (e) { deps.log("live chat line not delivered", { err: (e as Error).message }); return null; }
 }
 
+/** The same words, and for a price question the same moment: "the next 5m
+ *  candle" asked again once the candle has turned is the next round. */
+function sameCall(call: LiveCall, question: string, now: number): boolean {
+  const words = (q: string) => q.toLowerCase().replace(/\s+/g, " ").replace(/[\s?!.]+$/, "").trim();
+  if (words(call.question) !== words(question)) return false;
+  const pc = parsePriceCall(question);
+  return !pc || planFor(pc, now).to === planFor(pc, call.openedAt).to;
+}
+
 /** Pin a call's line where the platform can; a refusal never stops the call. */
 async function pinQuiet(deps: LiveDeps, m: { platform: Platform; channelId: string }, messageId: string | null): Promise<void> {
   if (!messageId || !deps.pin) return;
@@ -519,9 +528,19 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (cmd.kind === "settle-help") { await sayQuiet(deps, msg, LIVE_COPY.settleOnly, msg.messageId); return "settle-help"; }
 
   if (cmd.kind === "open") {
+    const running = await deps.store.current(msg.platform, msg.channelId);
+    // The same question while it still takes answers is the streamer bringing it
+    // back up, not a second vote. Live on 8 Oct the same candle question twice in
+    // ninety seconds locked the first and opened its twin, and one candle would
+    // have been settled twice. So it is said again where everybody sees it.
+    if (running && running.closesAt > now && sameCall(running, cmd.question, now)) {
+      lastSaid.set(running.id, now);
+      const id = await sayQuiet(deps, msg, LIVE_COPY.reminder(running.question, await deps.store.tally(running.id), running.timed ? running.closesAt - now : null));
+      await pinQuiet(deps, msg, id);
+      return "again";
+    }
     // The new call takes the room. The one taking answers keeps them and waits
     // for its result, so nothing anybody said is lost.
-    const running = await deps.store.current(msg.platform, msg.channelId);
     if (running && (await deps.store.lock(running.id, now))) {
       lastSplit.delete(running.id); lastSaid.delete(running.id);
       await sayQuiet(deps, msg, LIVE_COPY.switched(running.question, await deps.store.tally(running.id), waitForPrice(running)));

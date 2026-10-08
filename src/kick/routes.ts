@@ -13,6 +13,7 @@ import {
 } from "./client.js";
 import { handleChat, LIVE_COPY, lockDue, type LiveDeps, type Platform } from "../live/calls.js";
 import { addChannelRoutes, type ChannelPayoutDeps } from "../live/channelRoutes.js";
+import { notNow, paced, patiently } from "../live/pace.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { kickChatSource, type ChannelMarket } from "../store/markets.js";
@@ -96,6 +97,8 @@ const botCannotPost = new Set<string>();
  * us with chat:write like any other) into the channel it answers, the way any
  * viewer's line does. Where that is refused (followers-only chat, a ban), the
  * channel's own path takes over and the voice is tried again ten minutes on.
+ * "Too quickly" is no refusal: the lines to a chat go out a second apart and a
+ * 429 is waited out (src/live/pace.ts).
  */
 const voiceCannotPost = new Map<string, number>();
 const VOICE_RETRY_MS = 10 * 60_000;
@@ -128,22 +131,26 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
     const send = async (force: boolean, reply?: string) => chat.user(await tokenFor(voice, force), channelId, text, reply);
     const st = (e: unknown) => (e as { status?: number }).status;
     try {
-      try { await send(false, replyTo); }
+      try { await patiently(() => send(false, replyTo)); }
       catch (e) {
-        if (st(e) === 401) await send(true, replyTo);
+        if (st(e) === 401) await patiently(() => send(true, replyTo));
         // A reply may not reach across channels; the line itself still can.
-        else if (replyTo && (st(e) === 400 || st(e) === 422)) await send(false);
+        else if (replyTo && (st(e) === 400 || st(e) === 422)) await patiently(() => send(false));
         else throw e;
       }
       voiceCannotPost.delete(channelId);
       return true;
     } catch (e) {
+      if (notNow(st(e))) {
+        d.log("kick voice slowed down, this line goes as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null });
+        return false;
+      }
       voiceCannotPost.set(channelId, Date.now());
       d.log("kick voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null });
       return false;
     }
   };
-  const say = async (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<void> => {
+  const say = (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<void> => paced(`kick:${channelId}`, async () => {
     const ch = await channelById("kick", channelId);
     if (!ch?.active) return;
     if (await sayAsVoice(channelId, text, replyTo)) return;
@@ -153,7 +160,7 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
       if ((e as { status?: number }).status !== 401) throw e;
       await deliver(await tokenFor(ch, true), channelId, text, replyTo);
     }
-  };
+  });
   const markets = d.markets;
   return {
     store: liveStore,

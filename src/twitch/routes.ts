@@ -13,6 +13,7 @@ import {
 import { handleChat, LIVE_COPY, type LiveDeps, type Platform } from "../live/calls.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
+import { notNow, paced, patiently } from "../live/pace.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { twitchChatSource } from "../store/markets.js";
 import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
@@ -72,7 +73,8 @@ async function tokenFor(ch: LiveChannel, force = false): Promise<string> {
  * account (the voice channel, once it has signed in like any streamer) so it
  * never reads as the streamer typing. Where that is refused (a ban,
  * followers-only, AutoMod) the streamer's own account says it, and the voice
- * is tried again ten minutes on.
+ * is tried again ten minutes on. "Too quickly" is no refusal: the lines to a
+ * chat go out a second apart and a 429 is waited out (src/live/pace.ts).
  */
 const voiceCannotPost = new Map<string, number>();
 const VOICE_RETRY_MS = 10 * 60_000;
@@ -119,8 +121,12 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return no;
     const voice = await channelBySlug("twitch", voiceLogin).catch(() => null);
     if (!voice?.active || !voice.accessToken || voice.channelId === channelId) return no;
-    try { const id = await as(voice, channelId, text, replyTo); voiceCannotPost.delete(channelId); return { said: true, id }; }
+    try { const id = await patiently(() => as(voice, channelId, text, replyTo)); voiceCannotPost.delete(channelId); return { said: true, id }; }
     catch (e) {
+      if (notNow(status(e))) {
+        d.log("twitch voice slowed down, this line goes as the channel's account", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
+        return no;
+      }
       voiceCannotPost.set(channelId, Date.now());
       // The message carries Twitch's drop reason (followers-only, a verified
       // email the channel requires, a ban), which is the one thing worth knowing.
@@ -128,13 +134,13 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
       return no;
     }
   };
-  const say = async (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<string | void> => {
+  const say = (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<string | void> => paced(`twitch:${channelId}`, async () => {
     const ch = await channelById("twitch", channelId);
     if (!ch?.active) return;
     const voice = await sayAsVoice(channelId, text, replyTo);
     if (voice.said) return voice.id ?? undefined;
     return (await as(ch, channelId, text, replyTo)) ?? undefined;
-  };
+  });
   const pin = async (_p: Platform, channelId: string, messageId: string): Promise<void> => {
     if (!chat.pin) return;
     const refusedAt = pinRefused.get(channelId);

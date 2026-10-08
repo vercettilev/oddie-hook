@@ -239,4 +239,20 @@ await lockDue(deps);
 ok(last().startsWith(`BTC 30m candle closed at 82,182.01 on Binance. It's YES: "will BTC close current 30min candle above 82k?". The next one opens with !call.`), `empty result line: ${last()}`);
 eq(await handleChat(msg("!call next round?", "bee", true), deps), "opened", "the next one opens");
 
+// Live on 8 Oct: the same candle question twice in ninety seconds opened its
+// twin, and one candle would have been settled twice.
+reset();
+eq(await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", true), deps), "opened", "a candle call opens");
+now = opened + 90_000;
+eq(await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", true), deps), "again", "the same question again is said again");
+ok(last().startsWith('Still open: "will BTC close the next 30m candle green?"'), `...as the reminder line: ${last()}`);
+eq((await liveStore.unsettled("twitch", "1372956063")).length, 1, "...one call, still taking answers");
+// The same words once the candle has turned are the next round.
+reset();
+now = Date.parse("2026-10-08T13:59:00Z");
+await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", true), deps);
+now = Date.parse("2026-10-08T14:00:30Z");
+eq(await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", true), deps), "opened", "after the candle turned, the same words open the next round");
+eq((await liveStore.unsettled("twitch", "1372956063")).length, 2, "...and each round waits for its own candle");
+
 console.log(`test-price-call: ${checks} checks passed`);

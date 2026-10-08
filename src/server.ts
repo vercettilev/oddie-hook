@@ -1935,9 +1935,17 @@ if (kickConfigured() || twitchConfigured()) {
     },
     standingsUrl: (p, c) => (p === "twitch" ? twEng.standingsUrl(p, c) : kickEng.standingsUrl(p, c)),
   };
+  // A tick can outlast five seconds now that a chat's lines go out a second
+  // apart (src/live/pace.ts): the next one waits for it instead of reading the
+  // same due calls again.
+  let ticking = false;
   setInterval(() => {
-    void lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message }));
-    void remindOpen(clock).catch((e) => liveLog("live reminder failed", { err: (e as Error).message }));
+    if (ticking) return;
+    ticking = true;
+    void Promise.all([
+      lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message })),
+      remindOpen(clock).catch((e) => liveLog("live reminder failed", { err: (e as Error).message })),
+    ]).finally(() => { ticking = false; });
   }, 5_000);
   // One read now, so the log says whether price calls can be settled from here.
   void probePriceSource(liveLog);
