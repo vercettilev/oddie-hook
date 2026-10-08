@@ -334,6 +334,22 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .quick{margin:26px 0 0;color:var(--fg-2);font-size:15px;line-height:1.55;max-width:56ch}
 .quick b{color:var(--cream)}
 .quick code{font-family:var(--mono);font-weight:800;color:var(--yellow)}
+/* EVERY COMMAND, ONE LINE EACH (Bee Empire, 8 Oct: "a list of commands for
+   oddie in your website, and a short description for each"). Folded under the
+   quick calls so the three steps stay the page; /live#commands opens it. */
+.cmds{margin:22px 0 0;max-width:62ch}
+.cmds summary{cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-2)}
+@media (hover:hover){.cmds summary:hover{color:var(--cream)}}
+.cmds summary:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.cmds h3{margin:18px 0 8px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-3)}
+/* The command on its own line and what it does under it: a streamer copies
+   the whole line, so nothing else ever shares it. */
+.cmds dl{margin:0;font-size:15px;line-height:1.45}
+.cmds dt{color:var(--fg-3)}
+.cmds dt code{font-family:var(--mono);font-weight:800;color:var(--yellow)}
+.cmds dd{margin:2px 0 12px;color:var(--fg-2)}
 
 /* THE STREAMER'S 2%, on their own browser only. The same sticker as the
    running call, tilted the other way, with the one pink control on it. */
@@ -455,7 +471,22 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + (q === "failed" ? '<p class="note">Connecting to ' + qp + ' needs one more try. Press Add oddie to ' + qp + ' again.</p>' : "")
       + '<p class="quick"><b>Quick calls:</b> <code>!call will I win this round?</code> &rarr; chat <code>!yes</code> or <code>!no</code> '
       + "&rarr; <code>!call yes</code> or <code>!call no</code> settles it.</p>"
+      + '<details class="cmds" id="commands"><summary>All commands</summary>'
+      + "<h3>Everybody in chat</h3><dl>"
+      + "<dt><code>!yes</code> or <code>!no</code></dt><dd>Answer the open vote. Earlier answers score more.</dd>"
+      + "<dt><code>!result yes</code> or <code>!result no</code></dt><dd>Say how it ended. oddie settles price calls by itself.</dd>"
+      + "<dt><code>!oddie BTC above 120k by Friday?</code></dt><dd>Open a market anybody can take a side of.</dd>"
+      + "</dl><h3>Streamer and mods</h3><dl>"
+      + "<dt><code>!call will I win this round?</code></dt><dd>Open a vote. It stays open until it's settled.</dd>"
+      + "<dt><code>!call 5m will I win?</code></dt><dd>A vote that locks in 5 minutes.</dd>"
+      + "<dt><code>!call yes</code> or <code>!call no</code></dt><dd>Settle the vote.</dd>"
+      + "<dt><code>!call cancel</code></dt><dd>Cancel the open vote.</dd>"
+      + "</dl></details>"
       + '<p class="hint" style="margin-top:14px">18+ only &middot; real SOL on Solana</p>';
+    // The page is drawn after the browser looked for #commands, so the link a
+    // streamer is sent opens and scrolls to the list itself.
+    var cmds = document.getElementById("commands");
+    if (cmds && location.hash === "#commands") { cmds.open = true; cmds.scrollIntoView(); }
     return;
   }
 
