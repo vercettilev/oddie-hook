@@ -87,6 +87,8 @@ export type LiveCommand =
   /** which: the call's number in the waiting list (1 = oldest), null when not said. */
   | { kind: "settle"; outcome: Side; which: number | null }
   | { kind: "cancel"; which: number | null }
+  /** "!call yes <more>": a settle word with a sentence after it. Neither a result nor a question. */
+  | { kind: "settle-help" }
   | { kind: "help" }
   | { kind: "market"; claim: string }
   /** What happened, from anybody in the room: `!result yes`. */
@@ -142,6 +144,12 @@ export function parseCommand(raw: string): LiveCommand | null {
   if (settle) return { kind: "settle", outcome: YES_WORD.test(settle[1]) ? "yes" : "no", which: settle[2] ? Number(settle[2]) : null };
   const cancel = /^(cancel|iptal)(?:\s+#?(\d{1,2}))?$/i.exec(rest);
   if (cancel) return { kind: "cancel", which: cancel[2] ? Number(cancel[2]) : null };
+  // A settle word with more after it is neither. Live on 8 Oct a streamer pasted
+  // "!call yes in chat (the 13:30 utc candle closed ...)" from a DM and it opened
+  // as a question on stream, while the call he meant stayed unsettled. Settling
+  // on it would guess; "!call no way he clutches this" reads as a question but
+  // costs one rephrase, and a junk call costs the room.
+  if (/^(yes|evet|no|hay[ıi]r|cancel|iptal)\b/i.test(rest)) return { kind: "settle-help" };
   // A length only at the START, where it cannot be part of the question:
   // "!call 5m will I win" is five minutes; "will he hit 5m followers" is not.
   let minutes: number | null = null;
@@ -250,6 +258,7 @@ export const LIVE_COPY = {
   canceled: "Call canceled. The next one opens with !call.",
   busy: (q: string) => `One call at a time: "${q}" is still running.`,
   settleFirst: (q: string) => `To settle "${short(q)}": !call yes or !call no.`,
+  settleOnly: "To settle, type only !call yes or !call no. To open a call, start with the question.",
   help: "Mods: !call <question> opens a vote (!call 5m <question> locks in five minutes), chat answers !yes or !no. oddie settles price calls itself; for anything else anybody types !result yes or !result no when it's over, and mods can always settle with !call yes or !call no.",
   pickHelp: "No vote is open. Start one with !call <question>, then chat answers !yes or !no. Take a market's YES or NO on its link.",
   // No line of oddie's starts with a command: an echo of it is never one.
@@ -507,6 +516,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (!msg.canRun) return "not-allowed";
 
   if (cmd.kind === "help") { await sayQuiet(deps, msg, LIVE_COPY.help, msg.messageId); return "help"; }
+  if (cmd.kind === "settle-help") { await sayQuiet(deps, msg, LIVE_COPY.settleOnly, msg.messageId); return "settle-help"; }
 
   if (cmd.kind === "open") {
     // The new call takes the room. The one taking answers keeps them and waits

@@ -56,6 +56,10 @@ console.log("what a chat line asks for");
   check("!call cancel cancels, a number names which", parseCommand("!call iptal")?.kind === "cancel"
     && (parseCommand("!call cancel 3") as { which: number }).which === 3);
   check("!call alone asks for help", parseCommand("!call")?.kind === "help");
+  check("!call yes/no/cancel with more after it is not a question",
+    parseCommand("!call yes in chat (the 13:30 utc candle)")?.kind === "settle-help"
+    && parseCommand("!call no way he clutches this")?.kind === "settle-help" && parseCommand("!call cancel that one")?.kind === "settle-help"
+    && parseCommand("!call yesterday's high breaks?")?.kind === "open");
   const mk = parseCommand("!oddie BTC above 120k by Friday?");
   check("!oddie is the market door, whatever follows is the claim", mk?.kind === "market" && (mk as { claim: string }).claim === "BTC above 120k by Friday?");
   check("...and bare !oddie is the door with no claim yet", parseCommand("!oddie")?.kind === "market" && (parseCommand("!oddie") as { claim: string }).claim === "");
@@ -119,6 +123,14 @@ console.log("\na timed call, start to finish");
   await lockDue(r.deps);
   check("the clock does not lock it twice", r.said.filter((s) => s.text.startsWith("Calls are locked")).length === 1);
   check("a viewer cannot settle", (await handleChat(r.line("a", "!call yes"), r.deps)) === "not-allowed");
+  // Live, 8 Oct: a streamer pasted a DM line and it opened as a question on stream.
+  const pasted = "!call yes in chat (the 13:30 utc candle closed at 82,182 on binance)";
+  const before = r.said.length;
+  check("a settle word with a sentence after it neither opens nor settles",
+    (await handleChat(r.line("mod", pasted, true), r.deps)) === "settle-help");
+  check("...the mod hears how to settle, as a reply",
+    r.said.length === before + 1 && r.said[before]?.text === LIVE_COPY.settleOnly);
+  check("...a viewer's is still chat", (await handleChat(r.line("a", pasted), r.deps)) === "not-allowed" && r.said.length === before + 1);
   check("the mod settles", (await handleChat(r.line("mod", "!call yes", true), r.deps)) === "settled");
   check("...and the room hears which call, who was right and what it was worth",
     r.said[r.said.length - 1]?.text === `It's YES: "will he win this game?". 2 of 6 called it right, up to +67, earlier calls scored more. Standings: https://app.oddie.fun/live/kick/streamer`,
