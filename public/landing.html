@@ -1799,10 +1799,12 @@ html{-webkit-tap-highlight-color:transparent}
 
     bindLinks(false);
 
-    // Firlar, hedefi biraz gecer, geri oturur. easeInOutQuart iki ucta da
-    // cok yavasti ve uzun mesafede 1500ms suruyordu: "kasilan" his oydu.
-    function ease(t) { var c1 = 1.30, c3 = c1 + 1, u = t - 1;
-      return 1 + c3 * u * u * u + c1 * u * u; }
+    // Firlar ve hedefe oturur. easeInOutQuart iki ucta da cok yavasti ve uzun
+    // mesafede 1500ms suruyordu: "kasilan" his oydu. Sonra easeOutBack geldi;
+    // butonda ve kartta guzel, ama butun sayfa hedefi gecip geri donunce goz
+    // bir an nerede oldugunu kaybediyordu. Ziplama --zip ile butonlarda ve
+    // ortaya cikista kaliyor; kaydirma easeOutQuint: hizli cikis, asmadan durus.
+    function ease(t) { var u = 1 - t; return 1 - u * u * u * u * u; }
 
     function bindLinks(instant) {
       document.addEventListener("click", function (e) {
@@ -1848,7 +1850,7 @@ html{-webkit-tap-highlight-color:transparent}
           if (done) return;
           if (t0 === null) t0 = ts;
           var p = Math.min(1, (ts - t0) / dur);
-          // easeOutBack hedefi asar; belgenin disina tasmasin diye kirpiliyor.
+          // Belgenin disina tasmasin diye kirpiliyor (sayfa sonuna yakin hedefler).
           window.scrollTo(0, Math.max(0, Math.min(enCok, start + dist * ease(p))));
           if (p < 1) requestAnimationFrame(step); else finish();
         }
