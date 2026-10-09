@@ -16,6 +16,7 @@ import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTrie
   eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, walletsOfPerson, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
 import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolution.js";
 import { announceToRoom, roomChatId } from "./telegram/room.js";
+import { relayOwnTweets, ROOM_TWEETS_CURSOR } from "./telegram/tweetRelay.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
 import { kickRouter, kickEngineDeps } from "./kick/routes.js";
@@ -68,7 +69,7 @@ import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
-import { TAGLINE } from "./brand.js";
+import { TAGLINE, X_HANDLE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { renderPersonCard, type PersonCard } from "./card/renderPersonCard.js";
 import { runMentionSweep, SWEEP_CAP } from "./x/mentionLoop.js";
@@ -6632,6 +6633,51 @@ async function startTelegram(): Promise<void> {
   }
 }
 if (TG.tgToken()) void startTelegram();
+
+/* ------------------------------------------------- @oddiefun into the Room --
+ * The account's own posts, relayed to the Room as they go up (src/telegram/
+ * tweetRelay.ts). It needs both bots: the X credential to read, the Telegram
+ * token to post. ROOM_TWEETS=off switches it off; TELEGRAM_DRY_RUN logs what it
+ * would post instead of posting it.
+ *
+ * Every three minutes by default. The read sends since_id, so an idle one
+ * returns nothing and costs nothing (X bills per post returned); the floor
+ * protects the rate limit, not the bill.
+ */
+const ROOM_TWEETS = (process.env.ROOM_TWEETS ?? "on").toLowerCase() !== "off";
+const ROOM_TWEETS_MS = (() => {
+  const raw = Number(process.env.ROOM_TWEETS_MS ?? 180_000);
+  return Number.isFinite(raw) ? Math.max(30_000, raw) : 180_000;
+})();
+let relaying = false;
+async function relayTweetsToRoom(): Promise<void> {
+  if (relaying) return;
+  relaying = true;
+  try {
+    const r = await relayOwnTweets({
+      chatId: roomChatId(),
+      handle: X_HANDLE.replace(/^@/, ""),
+      ownTweets: (since) => X.ownTweets(since),
+      cursorGet: () => botStateGet(ROOM_TWEETS_CURSOR),
+      cursorSet: (id) => botStateSet(ROOM_TWEETS_CURSOR, id),
+      send: async (chatId, text) => {
+        if (TG_DRY_RUN) { console.log(JSON.stringify({ evt: "room_tweet", dryRun: true, text })); return; }
+        await TG.sendMessage(chatId, text, null);
+      },
+      log: (msg, extra) => console.error(`[room] ${msg}`, extra ?? {}),
+    });
+    if (r.posted || r.stalled || r.outcome === "primed") console.log(JSON.stringify({ evt: "room_tweets", ...r }));
+  } catch (e) {
+    console.error("[room] tweet relay failed:", (e as Error).message);
+  } finally {
+    relaying = false;
+  }
+}
+if (ROOM_TWEETS && TG.tgToken() && X.xConfigured()) {
+  setInterval(relayTweetsToRoom, ROOM_TWEETS_MS).unref();
+  setTimeout(relayTweetsToRoom, 45_000).unref();
+  console.log(`[room] ${X_HANDLE} posts relay ON, every ${Math.round(ROOM_TWEETS_MS / 1000)}s${TG_DRY_RUN ? ", DRY RUN (nothing is posted)" : ""}`);
+}
 
 // The feed starts with everything that happened before it existed, under the
 // names of the people who did it.

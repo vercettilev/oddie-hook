@@ -1,10 +1,11 @@
 /**
- * The X API v2 client, user context, exactly the four calls the bot makes.
+ * The X API v2 client, user context, exactly the calls the bot makes.
  *
- * No SDK. The surface is small (one read, one write, one media upload, one
- * token refresh) and every X library we would pull in wraps the same four
- * fetches in a dependency that has to be trusted with a credential that can
- * post as @oddiefun. Four fetches are cheaper to audit than that.
+ * No SDK. The surface is small (three reads: mentions, one post, its own
+ * posts; two writes; one media upload; one token refresh) and every X library
+ * we would pull in wraps the same fetches in a dependency that has to be
+ * trusted with a credential that can post as @oddiefun. A few fetches are
+ * cheaper to audit than that.
  *
  * AUTH, AND THE TRAP THAT DEFINES THIS FILE.
  *
@@ -157,14 +158,23 @@ async function refresh(): Promise<Access> {
   return { token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 7200) * 1000 };
 }
 
+/* ONE REFRESH AT A TIME. Two callers that both find the token expired used to
+   refresh in parallel with the same stored refresh token; X honours the first
+   and answers the second with invalid_grant, because the token it sent was
+   spent a moment earlier. The mention sweep, a settlement reply and the Room's
+   tweet relay all reach here on their own timers, so concurrent callers now
+   share the refresh already in flight. */
+let inflight: Promise<Access> | null = null;
+
 export async function accessToken(force = false): Promise<string> {
   if (!force && cached && cached.expiresAt - SKEW_MS > Date.now()) return cached.token;
-  cached = await refresh();
+  inflight ??= refresh().finally(() => { inflight = null; });
+  cached = await inflight;
   return cached.token;
 }
 
 /** Test seam: drop the cached access token. */
-export function _resetTokenCache(): void { cached = null; }
+export function _resetTokenCache(): void { cached = null; inflight = null; }
 
 /* ------------------------------------------------------------- requests ---- */
 
@@ -238,6 +248,60 @@ export async function mentions(sinceId: string | null, max = 20): Promise<{ item
     createdAt: t.created_at ?? null,
   }));
   return { items, newestId: body.meta?.newest_id ?? null };
+}
+
+/* ------------------------------------------------------------ own posts ---- */
+
+export interface OwnTweet {
+  id: string;
+  /** The whole post: a long post's full text, not its 280-character preview. */
+  text: string;
+  /** Its t.co links and where they really go, to put the real ones back. */
+  urls: Array<{ url: string; expanded: string }>;
+  quotedId: string | null;
+  repliedToId: string | null;
+  createdAt: string | null;
+}
+
+interface OwnTweetsResponse {
+  data?: Array<{
+    id: string; text: string; created_at?: string;
+    referenced_tweets?: Array<{ type: string; id: string }>;
+    entities?: { urls?: Array<{ url: string; expanded_url?: string }> };
+    note_tweet?: { text: string; entities?: { urls?: Array<{ url: string; expanded_url?: string }> } };
+  }>;
+}
+
+/**
+ * The account's own posts since the last one seen, newest first, for the
+ * Room's relay (src/telegram/tweetRelay.ts). Replies and retweets are left out
+ * by X itself (`exclude`); quotes come back flagged, for the caller to drop.
+ *
+ * 100 per read, the most X allows, so a cursor that has fallen behind still
+ * catches up in one call instead of skipping what did not fit. With since_id
+ * an idle read returns nothing, and reads are billed per post returned.
+ */
+export async function ownTweets(sinceId: string | null): Promise<OwnTweet[]> {
+  const qs = new URLSearchParams({
+    max_results: "100",
+    exclude: "replies,retweets",
+    "tweet.fields": "created_at,referenced_tweets,entities,note_tweet",
+  });
+  if (sinceId) qs.set("since_id", sinceId);
+  const body = await call<OwnTweetsResponse>(`/users/${BOT_USER_ID}/tweets?${qs}`);
+  return (body.data ?? []).map((t) => {
+    const note = t.note_tweet;
+    const urls = (note?.entities?.urls ?? t.entities?.urls ?? [])
+      .map((u) => ({ url: u.url, expanded: u.expanded_url ?? u.url }));
+    return {
+      id: t.id,
+      text: note?.text ?? t.text,
+      urls,
+      quotedId: t.referenced_tweets?.find((r) => r.type === "quoted")?.id ?? null,
+      repliedToId: t.referenced_tweets?.find((r) => r.type === "replied_to")?.id ?? null,
+      createdAt: t.created_at ?? null,
+    };
+  });
 }
 
 /* ---------------------------------------------------------------- posts ---- */
