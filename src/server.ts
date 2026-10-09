@@ -454,7 +454,6 @@ async function renderLanding(): Promise<string> {
    * page ticks down from its deadline. Neither is ever invented: no funded
    * market, no first card; nothing closing soon, no second; neither, nothing.
    * A failed read prints nothing at all, as before. */
-  let liveStrip = "";
   const liveProof = await (async (): Promise<string> => {
     try {
       /* openCommunityMarkets rather than liveMarketData().all: the same rows,
@@ -518,13 +517,6 @@ async function renderLanding(): Promise<string> {
         .sort((a, b) => new Date(a.m.closesAt as string).getTime() - new Date(b.m.closesAt as string).getTime())[0];
       if (soon) {
         const at = new Date(soon.m.closesAt as string).toISOString();
-        /* The same market, once more, above the fold: the hero's live strip.
-           Same rule, same clock, so the two can never disagree. */
-        liveStrip = '<a class="live" href="' + href(soon.m) + '">'
-          + '<span class="live__dot" aria-hidden="true"></span><span class="live__k">Live</span>'
-          + '<span class="live__q">' + title(soon.m) + "</span>"
-          + '<b class="live__t clock" data-at="' + escHtml(at) + '">' + escHtml(whenText(soon.m.closesAt as string)) + "</b>"
-          + '<span class="live__go">Take a side <i aria-hidden="true">&rarr;</i></span></a>';
         cards.push('<a class="proof proof--hot" href="' + href(soon.m) + '">'
           + '<span class="proof__k">Closing soon</span>'
           + '<span class="proof__q">' + title(soon.m) + "</span>"
@@ -557,8 +549,7 @@ async function renderLanding(): Promise<string> {
 
   const html = LANDING_HTML
     .replace("<!--BOARD-->", boardHtml)
-    .replace("<!--LIVE-->", liveProof)
-    .replace("<!--LIVESTRIP-->", liveStrip);
+    .replace("<!--LIVE-->", liveProof);
 
   // Only a COMPLETE render earns a place in the cache. Caching a degraded one
   // pins whatever was missing at boot to the front door for the next full
