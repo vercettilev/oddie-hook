@@ -1,0 +1,25 @@
+{
+  "bpm": 150,
+  "note": "Every cue is in beats from the first frame (one beat = 0.4 s). teaser.html and build_audio.py both read this file, so picture and score cannot drift apart.",
+  "bars": { "intro": 0, "build": 4, "rise": 8, "drop": 10, "outro": 16, "end": 19 },
+  "typeRate": 0.034,
+  "lines": [
+    { "text": "every stream has a take.", "at": 0.5, "out": 3.25 },
+    { "text": "every chat thinks it's right.", "at": 4.5, "out": 7.25 },
+    { "text": "nobody ever had to prove it.", "at": 8.5, "out": 11.25 },
+    { "text": "until now.", "at": 12.5, "out": 16 }
+  ],
+  "subliminal": [2.5, 6.5, 10.5, 14.5],
+  "logoSlams": [16, 17, 18, 19],
+  "chatPull": 22,
+  "card": 24,
+  "words": [28, 29, 30, 31],
+  "riseWords": [36, 37, 38, 39],
+  "blackout": 39.6,
+  "paletteSwap": 44,
+  "stickers": [48, 49, 50, 51, 52, 53, 54, 55],
+  "tiles": [56, 57, 58, 59],
+  "tagline": [60, 61],
+  "strobe": [62, 64],
+  "outro": { "soon": 65, "shine": 67, "footer": 68, "fade": 74 }
+}
