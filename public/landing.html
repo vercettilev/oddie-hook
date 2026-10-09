@@ -1612,7 +1612,13 @@ html{-webkit-tap-highlight-color:transparent}
     function card(cls) {
       return '<img class="' + cls + '" src="' + CARD_SRC + '" width="720" height="377" decoding="async" alt="The market card: BTC to $88k by Friday?">';
     }
-    function m(beat, at, cls, html) { return { beat: beat, at: at, cls: cls, html: html }; }
+    /* THE PACE (Lev, 9 Oct: "burası daha hızlı aksın"). Every time below is
+       written at the first tempo and played at PACE of it, so the rhythm
+       between the lines stays the one that was approved and the whole story
+       moves faster: a door took 11 seconds and now takes 7. END is set on its
+       own, because the last line still has to be read before the next door. */
+    var PACE = 0.6;
+    function m(beat, at, cls, html) { return { beat: beat, at: at * PACE, cls: cls, html: html }; }
 
     function kick() {
       var TAG = "!oddie BTC hits 88k by Friday?";
@@ -1704,7 +1710,7 @@ html{-webkit-tap-highlight-color:transparent}
       { where: "Replies on X", mark: "#mk-x", p: "x", story: x() },
       { where: "Telegram group", mark: "#mk-telegram", p: "tg", story: tg() }
     ];
-    var BEAT_AT = [0, 2400, 5000], END = 11000;
+    var BEAT_AT = [0, 2400 * PACE, 5000 * PACE], END = 7000;
     var door = 0, beat = 0, timers = [], onScreen = false, warmed = false, held = false;
     /* The card is fetched before its first door plays, not as it appears. */
     function warm() { if (!warmed) { warmed = true; new Image().src = CARD_SRC; } }
@@ -1748,20 +1754,23 @@ html{-webkit-tap-highlight-color:transparent}
       onScreen = vis;
     }, { threshold: 0.35 }).observe(tale);
     /* PAUSE WHILE HELD (WCAG 2.2.2: anything that moves on its own for more
-       than five seconds can be paused). A pointer resting on the chat or focus
-       inside it freezes it where it is, so a line can be read to the end; it
-       picks up from the same step when they leave. A tap on a step or a door
-       still plays, because that was asked for. */
+       than five seconds can be paused). Keyboard focus inside the chat freezes
+       it where it is, so a line can be read to the end; it picks up from the
+       same step when focus leaves. A tap on a step or a door still plays,
+       because that was asked for.
+       NOT UNDER THE MOUSE (Lev, 9 Oct). It froze under a resting pointer, and
+       a cursor resting in the middle of the page is most cursors: the chat
+       sits right there, so for most visitors it simply looked stuck. Only a
+       keyboard's focus holds it now; a click's focus does not. */
     function hold() { if (held) return; held = true; stop(); }
     function letGo() {
       if (!held) return;
       held = false;
       if (onScreen) play(beat);
     }
-    tale.addEventListener("pointerenter", function (e) { if (e.pointerType === "mouse") hold(); });
-    tale.addEventListener("pointerleave", function (e) { if (e.pointerType === "mouse" && !tale.contains(document.activeElement)) letGo(); });
-    tale.addEventListener("focusin", hold);
-    tale.addEventListener("focusout", function (e) { if (!tale.contains(e.relatedTarget) && !tale.matches(":hover")) letGo(); });
+    function byKeyboard(el) { try { return el.matches(":focus-visible"); } catch (e) { return true; } }
+    tale.addEventListener("focusin", function (e) { if (byKeyboard(e.target)) hold(); });
+    tale.addEventListener("focusout", function (e) { if (!tale.contains(e.relatedTarget)) letGo(); });
   })();
 
   (function () {
