@@ -18,6 +18,7 @@ import {
   placeCall,
   recordSurfacer,
   _memGrant,
+  _settleSideJobs,
   callsMadeFor,
   DAILY_EARNING_MARKETS,
   positionsFor,
@@ -41,7 +42,7 @@ console.log("\nthe crowd ladder: geometric rungs, once per market, to the surfac
   });
   await recordSurfacer(slug, { deviceId: SURFACER });
   const live = (await openCommunityMarkets()) as unknown as Market[];
-  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const flush = () => _settleSideJobs(); // the awards are placeCall's side jobs, not awaited by it
   const caller = (n: number) => `device-laddercall-${String(n).padStart(3, "0")}`;
   const call = async (n: number) => {
     _memGrant(caller(n), 10);
@@ -92,7 +93,7 @@ console.log("\nthe daily earning cap: bounds the reward, never the playing");
 {
   const DEV = "device-dailycap000001";
   const live = (await openCommunityMarkets()) as unknown as Market[];
-  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const flush = () => _settleSideJobs(); // the awards are placeCall's side jobs, not awaited by it
   // More distinct markets in one day than the cap allows.
   const slugs: string[] = [];
   for (let i = 0; i < DAILY_EARNING_MARKETS + 6; i++) {

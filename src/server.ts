@@ -9,7 +9,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
-import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
+import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT, nextMarketId } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
@@ -3707,7 +3707,7 @@ async function openMarketFromClaim(input: {
   // created went on being served by the feed: a market nobody could ever take a
   // side in, because the account the bet needs does not exist. Minting first
   // means the failure path writes nothing, so there is no orphan to clean up.
-  const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
+  const marketId = nextMarketId(); // also the on-chain market_id (u64)
   const lazy = input.mint === "on-demand";
   const minted = lazy
     ? null

@@ -1333,6 +1333,22 @@ export function _memGrant(deviceId: string, tokens: number): void {
   memBalance.set(deviceId, { ...cur, tokens: cur.tokens + tokens });
 }
 
+/** placeCall's best-effort side jobs (participation awards, opposite-side
+ *  notices) are deliberately not awaited on the call path, but they are
+ *  tracked, so a caller can wait for them to land. Waiting a timer tick
+ *  instead is a race: the in-memory path lazily `import()`s accounts.js, and
+ *  the first load of it can take longer than a tick on a busy machine. Both
+ *  jobs never reject. */
+const sideJobs = new Set<Promise<void>>();
+function sideJob(job: Promise<void>): void {
+  sideJobs.add(job);
+  void job.finally(() => sideJobs.delete(job));
+}
+/** Resolves once every side job fired so far, and any they fire, has landed. */
+export async function _settleSideJobs(): Promise<void> {
+  while (sideJobs.size) await Promise.all([...sideJobs]);
+}
+
 /**
  * Read a device's wallet. Predictions never accrue passively — the daily grant
  * is an ACTIVE claim (claimStatus/claimDaily) — so this only ensures the row
@@ -1417,8 +1433,8 @@ export async function placeCall(
       entryPct: pctAt, at: new Date().toISOString(), closedAt: null, exitPct: null, proceeds: null,
     });
     const distinct = new Set(memCalls.filter((c) => c.slug === rec.slug && c.deviceId).map((c) => c.deviceId)).size;
-    void awardParticipation(rec.slug, deviceId, firstEver, distinct);
-    void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
+    sideJob(awardParticipation(rec.slug, deviceId, firstEver, distinct));
+    sideJob(notifyOppositeSide(rec.slug, rec.market.question, deviceId, side));
     return { ok: true, id: memId, balance: w.tokens - tokens, calls: rec.calls.length, pctAt, firstEver };
   }
 
@@ -1450,8 +1466,8 @@ export async function placeCall(
     const distinct = await db().query<{ n: number }>(
       `SELECT count(DISTINCT device_id)::int n FROM market_call WHERE slug=$1 AND device_id IS NOT NULL`, [rec.slug],
     ).then((r) => r.rows[0]?.n ?? 0).catch(() => 0);
-    void awardParticipation(rec.slug, deviceId, firstEver, distinct);
-    void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
+    sideJob(awardParticipation(rec.slug, deviceId, firstEver, distinct));
+    sideJob(notifyOppositeSide(rec.slug, rec.market.question, deviceId, side));
     return { ok: true, id: ins.rows[0].id, balance: upd.rows[0].tokens, calls: rec.calls.length, pctAt, firstEver };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -3649,6 +3665,18 @@ export async function feeLog(limit = 100): Promise<FeeLogRow[]> {
   }));
 }
 
+/** A fresh community market id: the clock in ms, but never the same number
+ *  twice in this process. The id is the market's venueId AND its on-chain
+ *  market_id, so two markets opened in the same millisecond (two chats at
+ *  once, or a test with no timer between creates) must not share it: the
+ *  second would collide on chain, and getSlug, which matches live markets by
+ *  venueId, would hand one market the other's question. */
+let lastMarketId = 0;
+export function nextMarketId(): number {
+  lastMarketId = Math.max(Date.now(), lastMarketId + 1);
+  return lastMarketId;
+}
+
 /** Create a community market (base slug + community row). Returns its slug and
  *  the numeric id used BOTH as the market's venueId and its on-chain market_id. */
 export async function createCommunityMarket(input: {
@@ -3678,7 +3706,7 @@ export async function createCommunityMarket(input: {
    *  to later. */
   priceCheck?: PriceCheck | null;
 }): Promise<{ slug: string; marketId: number; market: Market }> {
-  const marketId = input.marketId ?? Date.now(); // unique-per-ms; also the on-chain market_id (u64)
+  const marketId = input.marketId ?? nextMarketId();
   const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
   const category = input.category?.trim() || "Community";
   const resolutionCriteria = input.resolutionCriteria?.trim() || null;
