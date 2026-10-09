@@ -458,13 +458,7 @@ function b64ToBytes(b64) {
   function fmtSol(n) { return String(Math.floor(n * 1e4) / 1e4); }
 
   /**
-   * What this bet pays if it wins, at the odds as they stand right now.
-   *
-   * Mirrors the program's arithmetic (resolve_market then claim_winnings): the
-   * fee comes off the whole pool first, and the rest is split across the
-   * winning side in proportion to stake. Your own money is inside both of
-   * those totals, which is the part people get wrong when they estimate it
-   * themselves, and it is why the number moves as others join.
+   * What this bet pays if it wins, as the pool stands right now.
    *
    * A live estimate, not a promise, and it says so. Every later bet on the
    * other side raises it and every later bet on yours lowers it, so quoting it
@@ -472,15 +466,7 @@ function b64ToBytes(b64) {
    * wrong by the time the market resolves.
    */
   function payoutHint(side, sol, yesLamports, noLamports, feeBps, protoBps) {
-    const mine = sol * 1e9;
-    const same = (side === "yes" ? yesLamports : noLamports) + mine;
-    const other = side === "yes" ? noLamports : yesLamports;
-    const pool = same + other;
-    // BOTH fees, because both are deducted before winners are paid. Quoting a
-    // return against only one of them advertises money the vault will not have.
-    const totalBps = (feeBps || 0) + (protoBps || 0);
-    const distributable = pool - Math.floor((pool * totalBps) / 10000);
-    const take = (mine / same) * distributable / 1e9;
+    const pays = payoutLamports(side, sol, yesLamports, noLamports, feeBps, protoBps);
     // A market with nothing on the other side pays you back your own stake
     // minus the fee, which is not a win and should not be dressed as one.
     // Three grey lines sat between the amount and the button, which is exactly
@@ -501,8 +487,37 @@ function b64ToBytes(b64) {
     // moves, under small print quoting a 4% cut that this case never pays.
     // The sheet says it as a tag under the button ("No taker? Full refund.",
     // see feeNoteHTML), so this line stays free for the payout figure.
-    if (other <= 0) return "";
-    return `Wins about ${take.toFixed(3)} SOL at today's odds. Moves as others bet.`;
+    if (pays === null) return "";
+    return `Wins about ${fmtSol(pays / 1e9)} SOL as the pool stands. Moves as others bet.`;
+  }
+
+  /**
+   * The same figure in lamports, for the market page as well as this sheet.
+   * One copy of the arithmetic, so the number under the page's YES and the one
+   * on the sheet it opens cannot disagree.
+   *
+   * The program's own arithmetic, resolve_market then claim_winnings, to the
+   * lamport: each fee floors on its own the way resolve_market fixes them,
+   * both come off the whole pool, and the rest is split across the winning
+   * side in proportion to stake, floored. Your own money is inside both of
+   * those totals, which is the part people get wrong when they estimate it
+   * themselves, and it is why the number moves as others join. BigInt because
+   * a stake times a pool passes 2^53 long before either is large.
+   *
+   * Null when the other side holds nothing: there is nothing to win there, and
+   * a lone side comes back whole and fee-free, which the floor tag says.
+   */
+  function payoutLamports(side, sol, yesLamports, noLamports, feeBps, protoBps) {
+    const lam = (v) => BigInt(Math.max(0, Math.floor(Number(v) || 0)));
+    const mine = lam(Math.round(Number(sol) * 1e9));   // the stake path's own rounding
+    const other = lam(side === "yes" ? noLamports : yesLamports);
+    if (mine === BigInt(0) || other === BigInt(0)) return null;
+    const same = lam(side === "yes" ? yesLamports : noLamports) + mine;
+    const pool = same + other;
+    // BOTH fees, because both are deducted before winners are paid. Quoting a
+    // return against only one of them advertises money the vault will not have.
+    const fee = (bps) => (pool * lam(bps)) / BigInt(10000);
+    return Number((mine * (pool - fee(feeBps) - fee(protoBps))) / same);
   }
 
   /* THE SHEET, AS A SHEET (Lev, 2 Oct, the Apple pass). Behind ?sheet=v2
@@ -2417,6 +2432,9 @@ function b64ToBytes(b64) {
     /* Sayfanin kendi tutar chip'lerini cizebilmesi icin. Kopyalanmis bir dizi
        iki yerde ayrisir; sheet ile sayfa ayni rakamlari gostermek zorunda. */
     presets: PRESETS.slice(),
+    // What a stake pays if its side wins, for the figure under the page's
+    // buttons. Same function as the sheet's line; see payoutLamports.
+    payout: payoutLamports,
     // The positions page needs the wallet before it can ask a single question,
     // and connectWallet carries things a page must not reimplement: the Phantom
     // check, the mobile universal link that reopens the page inside Phantom

@@ -186,6 +186,15 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 }
 .side small{display:block;font-family:var(--mono);font-size:10.5px;font-weight:700;
   letter-spacing:.1em;margin-top:7px;opacity:.72}
+/* What being right pays, under the button that pays it (see showWins). The
+   word is quiet and the figure carries its side's colour, so the eye reads
+   the number and the button above it tells it which side. min-height holds
+   the row while "Other" waits for a number. */
+.side-win{margin:2px 0 0;min-height:1.4em;text-align:center;
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--fg-3)}
+.side-win b{font-weight:800;color:var(--yellow)}
+.side-win--n b{color:var(--pink)}
 
 /* ---- outcome, when there is one ---- */
 .verdict{border:3px solid var(--cream);padding:16px 18px;margin:0 0 22px;
@@ -1207,7 +1216,20 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
               + "</p>"
             : "")
         + '<button class="side side--y" data-side="yes"' + (off ? " disabled" : "") + ">YES" + pctY + "</button>"
-        + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO" + pctN + "</button></div>";
+        + '<button class="side side--n" data-side="no"' + (off ? " disabled" : "") + ">NO" + pctN + "</button>"
+        /* WHAT BEING RIGHT PAYS, UNDER THE SIDE THAT PAYS IT, before anything
+           is signed (Lev, 9 Oct). Bee put 0.04 SOL on the open side of a 0.1
+           SOL pool and collected 0.1344, and nothing on this page said that
+           was on offer: the page priced the market and never priced the
+           stake. Filled by showWins() for the amount that is lit, so a chip
+           tap moves it. The row exists whenever the pool holds anything,
+           so picking "Other" empties the figures without the buttons jumping;
+           a side whose other side is empty stays blank, because there is
+           nothing to win there and the floor tag already says what comes back. */
+        + (!off && P.length && m.pool && (m.pool.yesLamports > 0 || m.pool.noLamports > 0)
+            ? '<p class="side-win side-win--y" data-win="yes"></p><p class="side-win side-win--n" data-win="no"></p>'
+            : "")
+        + "</div>";
       // A market opened in a stream reaches a stream's audience: said plainly,
       // next to the buttons that take the money.
       if (!off && (m.origin === "kick" || m.origin === "twitch")) html += '<p class="adult">18+ only · on Solana</p>';
@@ -1362,7 +1384,22 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       if (amt) {
         amt.innerHTML = stake === null ? "any amount" : "<b>" + esc(String(stake)) + " SOL</b>";
       }
+      showWins();
     }
+    /* The payout is chain.js's figure, not one worked out here: the sheet
+       quotes the same function, so the page and the sheet cannot disagree
+       about one stake. Floored to four places, never rounded up, like every
+       figure this product prints beside somebody's money. */
+    function showWins() {
+      var pay = window.OddieChain && window.OddieChain.payout;
+      Array.prototype.forEach.call(view.querySelectorAll(".side-win"), function (el) {
+        var l = pay && stake > 0
+          ? pay(el.dataset.win, stake, m.pool.yesLamports, m.pool.noLamports, m.creatorFeeBps, m.protocolFeeBps)
+          : null;
+        el.innerHTML = l > 0 ? "win <b>~" + String(Math.floor(l / 1e5) / 1e4) + " SOL</b>" : "";
+      });
+    }
+    showWins();
 
     Array.prototype.forEach.call(view.querySelectorAll(".stake"), function (b) {
       b.addEventListener("click", function () {

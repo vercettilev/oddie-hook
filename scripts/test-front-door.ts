@@ -313,18 +313,32 @@ console.log("\nthe first bet is told what happens if nobody comes");
   // pool, and a full refund when the winning side holds nothing.
   check("the program takes no fee from a pool with one side (lib.rs)",
     /if winning_total == 0 \{\s*return Ok\(0\);/.test(lib) && /if pool == winning_total \{\s*return Ok\(0\);/.test(lib));
-  const start = chain.indexOf("  function payoutHint(");
+  // From fmtSol, because the line formats its figure with it.
+  const start = chain.indexOf("  function fmtSol(");
   const end = chain.indexOf("  /* THE SHEET, AS A SHEET");
-  check("payoutHint is where this test looks for it", start > 0 && end > start);
-  const payoutHint = new Function(chain.slice(start, end) + "\nreturn payoutHint;")();
+  check("payoutHint is where this test looks for it",
+    start > 0 && end > start && chain.indexOf("  function payoutHint(") > start && chain.indexOf("  function payoutLamports(") < end);
+  const { payoutHint, payoutLamports } = new Function(chain.slice(start, end) + "\nreturn { payoutHint, payoutLamports };")();
   check("the sheet says the floor as a tag, not in the payout line",
     payoutHint("yes", 0.1, 0, 0, 200, 200) === "" && payoutHint("no", 0.5, 0, 1e8, 200, 200) === ""
     && chain.includes('<span class="chain-tag chain-tag--floor" id="chainfloor" hidden>No taker? Full refund.</span>'));
   check("...shown while the chosen side's other side is empty, including joining the only side there is",
     chain.includes('if (floorTag) floorTag.hidden = !(side && (side === "yes" ? noLamports : yesLamports) === 0);'));
   check("taking the empty side is a payout estimate, after both fees",
-    payoutHint("no", 0.1, 1e8, 0, 200, 200) === "Wins about 0.192 SOL at today's odds. Moves as others bet.",
+    payoutHint("no", 0.1, 1e8, 0, 200, 200) === "Wins about 0.192 SOL as the pool stands. Moves as others bet.",
     payoutHint("no", 0.1, 1e8, 0, 200, 200));
+  // Bee, 8 Oct: 0.04 SOL on NO against 0.1 on YES, settled NO, collected 0.1344.
+  check("the estimate is what the program paid, to the lamport",
+    payoutLamports("no", 0.04, 1e8, 0, 200, 200) === 134_400_000, payoutLamports("no", 0.04, 1e8, 0, 200, 200));
+  check("...nothing to win where the other side is empty",
+    payoutLamports("yes", 0.5, 1e8, 0, 200, 200) === null && payoutLamports("no", 0.5, 0, 0, 200, 200) === null);
+  // 149 lamports: each 2% floors to 2, while 4% at once would floor to 5.
+  check("...each fee floors on its own, the way resolve_market fixes them",
+    payoutLamports("yes", 1e-7, 0, 49, 200, 200) === 145, payoutLamports("yes", 1e-7, 0, 49, 200, 200));
+  check("...and the market page quotes the same function, under each side",
+    chain.includes("payout: payoutLamports,")
+    && page.includes("window.OddieChain && window.OddieChain.payout")
+    && page.includes('<p class="side-win side-win--y" data-win="yes"></p><p class="side-win side-win--n" data-win="no"></p>'));
   check("the market page says it under the first-in line, while bets are open",
     page.includes("if (!closed && !resolved) {\n        html += '<p class=\"first-floor\">No taker? Full refund.</p>';"));
   check("...and on a phone it stays beside that line",
