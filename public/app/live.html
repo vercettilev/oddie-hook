@@ -741,7 +741,21 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       html += '<p class="mine">Your channel? <a href="/live/' + P + '/connect">Sign in with ' + PN + '</a> to collect 2% of every market opened here.</p>';
     }
     // Repainted only when something changed, so a link somebody is on keeps its focus.
-    if (html !== lastBody) { bodyEl.innerHTML = html; lastBody = html; }
+    if (html !== lastBody) {
+      /* The repaint is a new bar, so on its own a vote snapped the odds to the
+         new split. When the same call is still up, the bar starts where the
+         old one stood and its transition carries it the rest of the way. */
+      var was = bodyEl.querySelector(".now .bar i"), wasQ = bodyEl.querySelector(".now__q");
+      var from = was && wasQ && c && wasQ.textContent === c.question ? was.style.width : "";
+      bodyEl.innerHTML = html; lastBody = html;
+      var bar = bodyEl.querySelector(".now .bar i");
+      if (bar && from && from !== bar.style.width) {
+        var to = bar.style.width;
+        bar.style.width = from;
+        void bar.offsetWidth;   // without the reflow the browser merges both widths and nothing moves
+        bar.style.width = to;
+      }
+    }
     countdown();
   }
 
