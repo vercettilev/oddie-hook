@@ -130,12 +130,16 @@ console.log("\nsmall things a stranger reads wrong");
   check("signed out, the profile does not offer the same two doors twice", /if \(!x && !tg\) return;/.test(you));
 }
 
-console.log("\nno live strip, the other side, two columns");
+console.log("\nlive strip, the other side, two columns");
 {
   const chain = readFileSync("public/chain.js", "utf8");
-  // The hero's live strip is gone (Lev, 9 Oct): the closing-soon card below is the one place it shows.
-  check("the hero has no live strip, and the server fills no slot for one",
-    !/<!--LIVESTRIP-->/.test(landing) && !/class="live"/.test(landing) && !/liveStrip/.test(server));
+  check("the hero has a live strip slot, filled by the server", /<!--LIVESTRIP-->/.test(landing)
+    && /\.replace\("<!--LIVESTRIP-->", liveStrip\)/.test(server));
+  check("...from the same closing-soon market as the card, with the same clock",
+    /liveStrip = '<a class="live" href="' \+ href\(soon\.m\)/.test(server) && /class="live__t clock" data-at="/.test(server));
+  check("...led by the question, with no pulsing dot or Live label in front",
+    /liveStrip = '<a class="live" href="' \+ href\(soon\.m\) \+ '">'\n\s*\+ '<span class="live__q">/.test(server)
+    && !/live__dot|live__k/.test(server + landing));
   check("the receipt asks for the other side, in words that stay true",
     /pays when somebody <em>takes \$\{otherSide\.toUpperCase\(\)\}<\/em>/.test(chain)
     && /is <em>more for your \$\{side\.toUpperCase\(\)\}<\/em>/.test(chain));
