@@ -12,7 +12,7 @@ if (process.env.DATABASE_URL) {
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, setHandle,
   noticesFor, notifyClosingSoon, openCallsSummaryFor,
-  _memGrant,
+  _memGrant, _settleSideJobs, nextMarketId,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -28,9 +28,11 @@ const soon = (hoursOut: number) => Math.floor(Date.now() / 1000) + Math.round(ho
 // notifyOppositeSide is fired with `void` inside placeCall — deliberately not
 // awaited, the same "best-effort side job, must never block the call itself"
 // idiom awardParticipation already uses. That means placeCall's own promise
-// resolves before the notification write lands, so a caller that wants to
-// assert on the notification needs to give the event loop a tick first.
-const flush = () => new Promise((r) => setTimeout(r, 0));
+// resolves before the notification write lands. Wait for the job itself, not
+// a timer tick: on the in-memory path it lazily import()s accounts.js, and the
+// first load of that can outlast a tick when the machine is busy (it did,
+// inside the full `npm test` chain).
+const flush = () => _settleSideJobs();
 const call = async (slug: string, deviceId: string, side: "yes" | "no", tokens = 10): Promise<void> => {
   const live = (await openCommunityMarkets()) as unknown as Market[];
   _memGrant(deviceId, tokens); // see test-settlement.ts's note: production only ever stakes CALL_COST now
@@ -139,6 +141,20 @@ console.log("\nclosing-soon: a market with no open positions is never touched");
   await mkAt("An empty market nobody called, closing soon?", 50, soon(1));
   const sent = await notifyClosingSoon();
   check("nothing sent for a market with zero callers", sent === 0, String(sent));
+}
+
+console.log("\nmarket ids: two markets opened back to back never share one");
+{
+  // The id is the venueId getSlug matches live markets by, and the on-chain
+  // market_id. Back to back means the same millisecond, which Date.now() alone
+  // could not tell apart: the batched notice above once named the wrong market.
+  const [one, two] = await Promise.all([
+    createCommunityMarket({ question: "Back to back, first?", closeTime: soon(48) }),
+    createCommunityMarket({ question: "Back to back, second?", closeTime: soon(48) }),
+  ]);
+  check("distinct ids, even in one millisecond", one.marketId !== two.marketId, `${one.marketId} vs ${two.marketId}`);
+  const ids = Array.from({ length: 1000 }, () => nextMarketId());
+  check("a thousand in a row are all distinct and rising", ids.every((id, i) => i === 0 || id > ids[i - 1]));
 }
 
 console.log("\nopen-calls summary: the home page's Zeigarnik hook");
