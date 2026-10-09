@@ -24,9 +24,9 @@ if (process.env.DATABASE_URL) {
 }
 
 import { readFileSync } from "node:fs";
-import { runMentionSweep, stripLeadingMentions, stripBotHandle, addressesBot, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB } from "../src/x/mentionLoop.js";
+import { runMentionSweep, stripLeadingMentions, stripBotHandle, addressesBot, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB, _resetModelPause } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
-import { botStateGet, _memMentionOutcome, _memMentionReason, _resetBotState } from "../src/store/markets.js";
+import { botStateGet, _memMentionOutcome, _memMentionReason, _memMentionAttempts, _resetBotState } from "../src/store/markets.js";
 import { SINCE_KEY } from "../src/x/client.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
 import type { Mention } from "../src/x/client.js";
@@ -398,6 +398,60 @@ async function main() {
     check("a tag that keeps failing is given up on after three goes", calls === 3, `calls=${calls}`);
     check("...and the watermark is released so the bot is not stuck",
       (await botStateGet(SINCE_KEY)) === "506", String(await botStateGet(SINCE_KEY)));
+  }
+  {
+    // AN EMPTY MODEL BALANCE IS NOT THE CLAIM'S FAULT. 9 Oct 2026: three sweeps
+    // ten seconds apart spent a tag's three goes on "credit balance is too low"
+    // and the tag was decided forever, with nobody told. Now it waits without
+    // spending a go, the sweep pauses, and the operator hears about it once.
+    _resetBotState(); _resetModelPause();
+    let clock = 1_000_000;
+    let broke = true;
+    let calls = 0;
+    const alerts: string[] = [];
+    const { deps, spy } = harness({
+      now: () => clock,
+      mentions: async () => ({ items: [mention("507")], newestId: "507" }),
+      extract: async () => {
+        calls++;
+        if (broke) throw new Error('extract 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}');
+        return goodExtraction("Will Bitcoin hit $200k before 2027?");
+      },
+      alertOps: async (t) => { alerts.push(t); },
+    });
+    const r1 = await runMentionSweep(deps);
+    check("an empty model balance holds the tag", r1.retried === 1 && spy.posted.length === 0, JSON.stringify(r1.decisions));
+    check("...without spending one of its goes", _memMentionAttempts("507") === 0, String(_memMentionAttempts("507")));
+    check("...and tells the operator", alerts.length === 1 && alerts[0].includes("credit balance"), JSON.stringify(alerts));
+    for (let i = 0; i < 5; i++) await runMentionSweep(deps);
+    check("...then pauses instead of calling the model every sweep", calls === 1, `calls=${calls}`);
+    clock += 61_000;
+    await runMentionSweep(deps);
+    check("...tries again once the pause runs out, still without spending a go",
+      calls === 2 && _memMentionAttempts("507") === 0, `calls=${calls} attempts=${_memMentionAttempts("507")}`);
+    check("...and does not tell the operator twice", alerts.length === 1, String(alerts.length));
+    check("...and the watermark still waits for the tag", (await botStateGet(SINCE_KEY)) === null, String(await botStateGet(SINCE_KEY)));
+    broke = false;
+    clock += 3 * 60_000;
+    const r3 = await runMentionSweep(deps);
+    check("once the balance is back the tag opens, exactly once",
+      r3.replied === 1 && spy.posted.length === 1, JSON.stringify(r3.decisions));
+    _resetModelPause();
+  }
+  {
+    // A busy model (429, 5xx) clears by itself: it keeps the ordinary retry,
+    // spends a go, and nobody is woken up for it.
+    _resetBotState(); _resetModelPause();
+    const alerts: string[] = [];
+    const { deps } = harness({
+      mentions: async () => ({ items: [mention("508")], newestId: "508" }),
+      extract: async () => { throw new Error("extract 529 overloaded"); },
+      alertOps: async (t) => { alerts.push(t); },
+    });
+    await runMentionSweep(deps);
+    check("a busy model spends a go as before", _memMentionAttempts("508") === 1, String(_memMentionAttempts("508")));
+    check("...and sends no alert", alerts.length === 0, JSON.stringify(alerts));
+    _resetModelPause();
   }
 
   /* --------------------------------------------------- the gate is silent -- */

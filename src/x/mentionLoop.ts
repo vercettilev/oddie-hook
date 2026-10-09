@@ -27,6 +27,7 @@ import type { Mention } from "./client.js";
 import { buildRefusalReply, buildTweetReply } from "../matching/tweetReply.js";
 import { claimMention, settleMention, botStateGet, botStateSet, PERSISTENT } from "../store/markets.js";
 import { SINCE_KEY } from "./client.js";
+import { modelOutage, type ModelOutage } from "../telegram/loop.js";
 
 export interface MintedMarket {
   ok: true;
@@ -48,6 +49,10 @@ export interface SweepDeps {
    *  name the subject; absent means "stop climbing here". */
   tweet(id: string): Promise<{ id: string; text: string; authorHandle: string | null; repliedToId?: string | null } | null>;
   extract(text: string): Promise<Extraction>;
+  /** Tell the operator, privately, about an outage only a person can fix. */
+  alertOps?(text: string): Promise<void>;
+  /** Clock seam for the model pause. */
+  now?(): number;
   /** An OPEN market already made from this source post, if there is one. */
   existingMarket?(sourceUrl: string): Promise<{ slug: string; question: string } | null>;
   openMarket(input: {
@@ -257,6 +262,42 @@ async function postOrPlain(
   }
 }
 
+/* WHEN THE MODEL IS OUT, A TAG WAITS INSTEAD OF BURNING ITS GOES.
+   An empty Anthropic balance, a refused key or a missing one fails every claim
+   the same way, and only a person can fix it. Counted as attempts, it spent a
+   tag's three goes in twenty seconds (9 Oct 2026: three sweeps ten seconds
+   apart) and the tag was then decided forever, with nobody told. So these three
+   kinds hold the tag without counting a go, pause the sweep with a growing gap
+   (no X read, no model call, the watermark stays), and tell the operator in a
+   private message, once per kind every three hours. Telegram parks the same
+   three kinds (src/telegram/loop.ts). Busy and network outages clear by
+   themselves and keep the ordinary retry. */
+const PERSON_FIXES = new Set<ModelOutage>(["billing", "auth", "config"]);
+const ALERT_GAP_MS = 3 * 3600_000;
+let pausedUntil = 0;
+let pauseTries = 0;
+const lastAlert = new Map<ModelOutage, number>();
+/** A minute, then two, four, eight, and every fifteen after that. */
+const pauseGap = (tries: number): number => Math.min(15 * 60_000, 60_000 * 2 ** Math.max(0, tries - 1));
+
+export const X_OPS_COPY: Record<"billing" | "auth" | "config", string> = {
+  billing: "oddie can't read claims on X right now: the Anthropic credit balance is empty.\n\n"
+    + "Tags on X are waiting and will open by themselves once it is topped up:\nhttps://console.anthropic.com/settings/billing",
+  auth: "oddie can't read claims on X right now: Anthropic refused the API key (ANTHROPIC_API_KEY on Railway).\n\nTags on X are waiting.",
+  config: "oddie can't read claims on X right now: ANTHROPIC_API_KEY is not set on Railway.\n\nTags on X are waiting.",
+};
+
+/** Test seam. */
+export function _resetModelPause(): void { pausedUntil = 0; pauseTries = 0; lastAlert.clear(); }
+
+async function alertOnce(kind: ModelOutage, deps: SweepDeps, now: number): Promise<void> {
+  if (!deps.alertOps || !PERSON_FIXES.has(kind)) return;
+  const last = lastAlert.get(kind);
+  if (last !== undefined && now - last < ALERT_GAP_MS) return;
+  lastAlert.set(kind, now);
+  await deps.alertOps(X_OPS_COPY[kind as "billing" | "auth" | "config"]).catch(() => {});
+}
+
 export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
   const log = deps.log ?? (() => {});
   const result: SweepResult = { looked: 0, replied: 0, skipped: 0, failed: 0, retried: 0, decisions: [], newestId: null };
@@ -275,6 +316,11 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
   if (!deps.dryRun && !(deps.durable ?? PERSISTENT)) {
     throw new Error("refusing to post: DATABASE_URL is unset, so the once-only ledger would not survive a restart");
   }
+
+  // The model is out and the operator has been told: nothing to do until the
+  // pause runs out, and nothing read, so the watermark cannot move.
+  const now = deps.now ? deps.now() : Date.now();
+  if (now < pausedUntil) return result;
 
   const sinceId = await botStateGet(SINCE_KEY);
   const { items, newestId } = await deps.mentions(sinceId, 20);
@@ -580,6 +626,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // limit is not our budget. A long-form post was a ~6k-token user message
       // on a call that already carries a 1.5k-token system prompt.
       let ex = await deps.extract(claimText.slice(0, 4000));
+      pauseTries = 0; // the model answered: whatever paused the sweep is over
 
       /* WHEN TWO POSTS DID NOT NAME THE THING, WALK UP THE THREAD.
          The parent usually carries the subject and the tagger carries the
@@ -761,7 +808,9 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
          on a successful write throws exactly the same way), and re-posting is
          the one failure this file treats as unrecoverable. */
       const outcome = postAttempted ? "failed" : "retry";
-      await settleMention(m.id, outcome, { reason: (e as Error).message.slice(0, 300) });
+      const outage = postAttempted ? null : modelOutage(e);
+      const waits = outage !== null && PERSON_FIXES.has(outage);
+      await settleMention(m.id, outcome, { reason: (e as Error).message.slice(0, 300), free: waits });
       decide(outcome, { reason: (e as Error).message.slice(0, 120) });
       /* THE BODY, NOT JUST THE STATUS. "x POST /tweets -> 403" says a request
          was refused and nothing about why, and X always explains itself in the
@@ -776,6 +825,16 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       })();
       log(postAttempted ? "sweep item failed after posting, not retrying" : "sweep item failed before posting, will retry",
         { tweetId: m.id, err: (e as Error).message, detail });
+      if (waits && outage) {
+        // Every tag after this one would fail the same way: stop here, hold the
+        // watermark on this tag (decide set retryFrom), and wait for a person.
+        pauseTries++;
+        pausedUntil = now + pauseGap(pauseTries);
+        await alertOnce(outage, deps, now);
+        log("the model is out: tag held without spending a go, sweep paused",
+          { tweetId: m.id, kind: outage, minutes: Math.round(pauseGap(pauseTries) / 60_000) });
+        break;
+      }
     }
   }
 

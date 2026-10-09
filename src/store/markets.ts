@@ -6587,7 +6587,10 @@ export async function settleMention(
   tweetId: string,
   outcome: Exclude<MentionOutcome, "claimed">,
   extra: { reason?: string | null; slug?: string | null; replyId?: string | null;
-           claimText?: string | null } = {},
+           claimText?: string | null;
+           /** A retry that does not spend one of the tag's goes: the model was
+            *  out (an empty balance, a refused key), not the claim or the world. */
+           free?: boolean } = {},
 ): Promise<void> {
   if (!PERSISTENT) {
     // The author is carried forward from the claim row: settleMention is not
@@ -6599,7 +6602,7 @@ export async function settleMention(
       author: prev?.author ?? null, claimText: extra.claimText ?? prev?.claimText ?? null,
       // Counted on the way OUT, so a row that is never picked back up does not
       // silently spend a go it never got.
-      attempts: (prev?.attempts ?? 0) + (outcome === "retry" ? 1 : 0),
+      attempts: (prev?.attempts ?? 0) + (outcome === "retry" && !extra.free ? 1 : 0),
     });
     if (extra.replyId) memMentionReply.set(tweetId, extra.replyId);
     return;
@@ -6608,10 +6611,10 @@ export async function settleMention(
   await db().query(
     `UPDATE x_mention SET outcome=$2, reason=$3, slug=$4, reply_id=$5, at=now(),
             claim_text = COALESCE($6, claim_text),
-            attempts = attempts + (CASE WHEN $2 = 'retry' THEN 1 ELSE 0 END)
+            attempts = attempts + (CASE WHEN $2 = 'retry' AND NOT $7 THEN 1 ELSE 0 END)
       WHERE tweet_id=$1`,
     [tweetId, outcome, extra.reason ?? null, extra.slug ?? null, extra.replyId ?? null,
-     extra.claimText ?? null],
+     extra.claimText ?? null, extra.free === true],
   );
 }
 
@@ -6628,6 +6631,11 @@ export function _memSeasonCredit(deviceId: string, amount: number, daysAgo = 0):
 
 export function _memMentionOutcome(tweetId: string): MentionOutcome | null {
   return memMentions.get(tweetId)?.outcome ?? null;
+}
+
+/** Test seam: how many goes a tag has spent. */
+export function _memMentionAttempts(tweetId: string): number | null {
+  return memMentions.get(tweetId)?.attempts ?? null;
 }
 
 /** Test seam: the reason string, which the teaching cap reads rather than

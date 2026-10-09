@@ -6137,6 +6137,7 @@ const X_POLL_MS = (() => {
 function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
   return {
     mentions: (since, max) => X.mentions(since, max),
+    alertOps: (text) => tgOpsAlert(text),
     tweet: (id) => X.tweet(id),
     extract: (text) => runExtract(text),
     existingMarket: (sourceUrl) => openMarketForSourcePost(sourceUrl),
