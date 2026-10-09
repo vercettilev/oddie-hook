@@ -205,6 +205,7 @@ main.wrap{padding-top:34px;padding-bottom:72px}
 @media (hover:hover){.collect:hover{transform:translate(-2px,-2px);box-shadow:5px 6px 0 rgba(2,3,2,.45)}}
 .collect:active{transform:translate(2px,2px);box-shadow:none}
 .collect:focus-visible{outline:3px solid var(--black);outline-offset:4px}
+@media (prefers-reduced-motion:reduce){.collect{transition:none}.collect:active{transform:none}@media (hover:hover){.collect:hover{transform:none}}}
 
 /* ---- the claim, at source: artik bir kart degil, ust satirdaki bir baglanti ---- */
 .src__a{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.1em;

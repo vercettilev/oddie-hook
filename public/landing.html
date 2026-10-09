@@ -994,9 +994,10 @@
     gap:14px 16px;margin:clamp(20px,2.6vw,34px) 0 0}
   .door{display:flex;align-items:center;gap:10px;min-height:58px;padding:9px 14px 9px 10px;
     background:var(--cream);color:var(--ink);border:3px solid var(--ink);text-decoration:none;
-    box-shadow:5px 6px 0 var(--pink);transition:transform .12s,box-shadow .12s}
+    box-shadow:5px 6px 0 var(--pink);
+    transition:translate .13s var(--zip),scale .13s var(--zip),box-shadow .13s ease-out}
   .door:nth-child(1){rotate:-1.6deg}.door:nth-child(2){rotate:1.2deg}.door:nth-child(3){rotate:-.8deg}
-  @media (hover:hover){.door:hover{transform:translate(1px,1px);box-shadow:3px 4px 0 var(--pink)}}
+  @media (hover:hover){.door:hover{translate:1px 1px;box-shadow:3px 4px 0 var(--pink)}}
   .door:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
   .door__t{display:flex;flex-direction:column;line-height:1.1;text-align:left}
   .door__t b{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:-.01em}
@@ -1011,7 +1012,7 @@
   .close .door{box-shadow:5px 6px 0 var(--ink)}
   @media (max-width:900px){.doors{grid-template-columns:1fr;max-width:420px}
     .close .doors{margin-inline:auto;width:100%}}
-  @media (prefers-reduced-motion:reduce){.door{transition:none}}
+  @media (prefers-reduced-motion:reduce){.door{transition:none}@media (hover:hover){.door:hover{translate:none}}}
   /* The pink star sat under the X composer; with the doors there it lands
      beside the last one instead of on top of the middle one. */
   .A__hero::after{left:auto;right:44%;bottom:-6px}
@@ -1159,13 +1160,18 @@
      by the server only when one closes inside 48 hours; otherwise nothing. */
   .live{position:relative;z-index:6;display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px 12px;
     margin-top:22px;padding:10px 16px;background:var(--ink);color:var(--cream);text-decoration:none;
-    border:3px solid var(--ink);box-shadow:5px 6px 0 var(--pink);rotate:-.6deg;max-width:100%}
+    border:3px solid var(--ink);box-shadow:5px 6px 0 var(--pink);rotate:-.6deg;max-width:100%;
+    transition:scale .13s var(--zip),box-shadow .13s ease-out}
   @media (hover:hover){.live:hover{box-shadow:3px 4px 0 var(--pink)}}
   .live:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
-  .live__dot{width:10px;height:10px;border-radius:50%;background:var(--pink);flex:none;
-    animation:livepulse 1.6s infinite}
-  @keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(255,45,120,.7)}70%{box-shadow:0 0 0 9px rgba(255,45,120,0)}100%{box-shadow:0 0 0 0 rgba(255,45,120,0)}}
-  @media (prefers-reduced-motion:reduce){.live__dot{animation:none}}
+  .live__dot{position:relative;width:10px;height:10px;border-radius:50%;background:var(--pink);flex:none}
+  /* The pulse is a ring that scales and fades, not a growing box-shadow: it
+     loops for as long as the page is open, and transform and opacity run on
+     the compositor where a shadow repaints every frame. */
+  .live__dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--pink);
+    animation:livepulse 1.6s cubic-bezier(.22,.61,.36,1) infinite}
+  @keyframes livepulse{0%{transform:scale(1);opacity:.7}70%,100%{transform:scale(2.8);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.live__dot::after{animation:none;opacity:0}.live{transition:none}}
   .live__k{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--pink)}
   .live__q{font-family:var(--display);font-size:18px;text-transform:uppercase}
   .live__t{font-family:var(--mono);font-size:13px;color:var(--yellow);font-variant-numeric:tabular-nums}
