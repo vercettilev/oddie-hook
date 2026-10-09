@@ -137,6 +137,9 @@ console.log("\nlive strip, the other side, two columns");
     && /\.replace\("<!--LIVESTRIP-->", liveStrip\)/.test(server));
   check("...from the same closing-soon market as the card, with the same clock",
     /liveStrip = '<a class="live" href="' \+ href\(soon\.m\)/.test(server) && /class="live__t clock" data-at="/.test(server));
+  check("...led by the question, with no pulsing dot or Live label in front",
+    /liveStrip = '<a class="live" href="' \+ href\(soon\.m\) \+ '">'\n\s*\+ '<span class="live__q">/.test(server)
+    && !/live__dot|live__k/.test(server + landing));
   check("the receipt asks for the other side, in words that stay true",
     /pays when somebody <em>takes \$\{otherSide\.toUpperCase\(\)\}<\/em>/.test(chain)
     && /is <em>more for your \$\{side\.toUpperCase\(\)\}<\/em>/.test(chain));

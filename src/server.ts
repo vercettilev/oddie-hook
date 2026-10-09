@@ -519,9 +519,9 @@ async function renderLanding(): Promise<string> {
       if (soon) {
         const at = new Date(soon.m.closesAt as string).toISOString();
         /* The same market, once more, above the fold: the hero's live strip.
-           Same rule, same clock, so the two can never disagree. */
+           Same rule, same clock, so the two can never disagree. No pulsing
+           dot or "Live" label in front (Lev, 9 Oct): the question leads. */
         liveStrip = '<a class="live" href="' + href(soon.m) + '">'
-          + '<span class="live__dot" aria-hidden="true"></span><span class="live__k">Live</span>'
           + '<span class="live__q">' + title(soon.m) + "</span>"
           + '<b class="live__t clock" data-at="' + escHtml(at) + '">' + escHtml(whenText(soon.m.closesAt as string)) + "</b>"
           + '<span class="live__go">Take a side <i aria-hidden="true">&rarr;</i></span></a>';

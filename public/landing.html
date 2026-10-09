@@ -1164,15 +1164,7 @@
     transition:scale .13s var(--zip),box-shadow .13s ease-out}
   @media (hover:hover){.live:hover{box-shadow:3px 4px 0 var(--pink)}}
   .live:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
-  .live__dot{position:relative;width:10px;height:10px;border-radius:50%;background:var(--pink);flex:none}
-  /* The pulse is a ring that scales and fades, not a growing box-shadow: it
-     loops for as long as the page is open, and transform and opacity run on
-     the compositor where a shadow repaints every frame. */
-  .live__dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--pink);
-    animation:livepulse 1.6s cubic-bezier(.22,.61,.36,1) infinite}
-  @keyframes livepulse{0%{transform:scale(1);opacity:.7}70%,100%{transform:scale(2.8);opacity:0}}
-  @media (prefers-reduced-motion:reduce){.live__dot::after{animation:none;opacity:0}.live{transition:none}}
-  .live__k{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--pink)}
+  @media (prefers-reduced-motion:reduce){.live{transition:none}}
   .live__q{font-family:var(--display);font-size:18px;text-transform:uppercase}
   .live__t{font-family:var(--mono);font-size:13px;color:var(--yellow);font-variant-numeric:tabular-nums}
   .live__go{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
