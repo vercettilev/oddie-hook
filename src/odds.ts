@@ -52,6 +52,35 @@ export type OddsView =
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
+ * The two fees resolve_market fixes, in lamports, when the pool settles with
+ * `winningLamports` on the winning side.
+ *
+ * The program's own rule (lib.rs, resolve_market and cap_fees): nothing when
+ * nobody won or nobody lost; otherwise each fee is its rate of the whole pool,
+ * floored on its own, and the two together never pass what the losing side
+ * staked, scaled down in step when they would. That last part is what keeps a
+ * winner from collecting less than they put in. BigInt, because pool x bps
+ * passes 2^53 at pools this program can hold.
+ */
+export function fixedFees(
+  poolLamports: number,
+  winningLamports: number,
+  takeout: Takeout,
+): { creator: number; protocol: number } {
+  const pool = BigInt(Math.max(0, Math.floor(poolLamports)));
+  const winning = BigInt(Math.max(0, Math.floor(winningLamports)));
+  if (winning === BigInt(0) || pool <= winning) return { creator: 0, protocol: 0 };
+  const rate = (bps: number) => (pool * BigInt(Math.max(0, Math.floor(bps)))) / BigInt(10_000);
+  let creator = rate(takeout.creatorBps), protocol = rate(takeout.protocolBps);
+  const losing = pool - winning, fees = creator + protocol;
+  if (fees > losing) {
+    creator = (creator * losing) / fees;
+    protocol = (protocol * losing) / fees;
+  }
+  return { creator: Number(creator), protocol: Number(protocol) };
+}
+
+/**
  * @param yesLamports  staked on yes, from the vault
  * @param noLamports   staked on no, from the vault
  * @param takeout      the market's own rates, which are frozen at creation and
@@ -74,7 +103,13 @@ export function oddsFromPools(
   if (no === 0) return { state: "one-sided", side: "yes", totalLamports: total };
   if (yes === 0) return { state: "one-sided", side: "no", totalLamports: total };
 
-  const keep = 1 - (Math.max(0, takeout.creatorBps) + Math.max(0, takeout.protocolBps)) / 10_000;
+  /* What one unit on a side collects if it wins, after the fees the program
+     would fix for that outcome. On a thin other side the cap holds the fee to
+     what that side staked, so the crowded side pays at least 1x, never less. */
+  const pays = (winning: number): number => {
+    const f = fixedFees(total, winning, takeout);
+    return round2((total - f.creator - f.protocol) / winning);
+  };
   /* NOT CLAMPED TO [1,99]. The old API line clamped, which is how a pool that
      was 100% one way published itself as 99 -- a number nobody's money made.
      Inside this branch both sides are funded, so the raw share is already
@@ -84,8 +119,8 @@ export function oddsFromPools(
   return {
     state: "priced",
     yesPct: Math.round((yes / total) * 100),
-    yesPays: round2((total * keep) / yes),
-    noPays: round2((total * keep) / no),
+    yesPays: pays(yes),
+    noPays: pays(no),
     totalLamports: total,
   };
 }

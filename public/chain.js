@@ -516,8 +516,13 @@ function b64ToBytes(b64) {
     const pool = same + other;
     // BOTH fees, because both are deducted before winners are paid. Quoting a
     // return against only one of them advertises money the vault will not have.
-    const fee = (bps) => (pool * lam(bps)) / BigInt(10000);
-    return Number((mine * (pool - fee(feeBps) - fee(protoBps))) / same);
+    let c = (pool * lam(feeBps)) / BigInt(10000), p = (pool * lam(protoBps)) / BigInt(10000);
+    // ...and together never more than the other side staked, scaled down in
+    // step when they would be (lib.rs, cap_fees). So being right always pays
+    // at least the stake back.
+    const fees = c + p;
+    if (fees > other) { c = (c * other) / fees; p = (p * other) / fees; }
+    return Number((mine * (pool - c - p)) / same);
   }
 
   /* THE SHEET, AS A SHEET (Lev, 2 Oct, the Apple pass). Behind ?sheet=v2

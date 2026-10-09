@@ -200,6 +200,18 @@ console.log("\nreal-money fee: the creator fee, deducted on-chain at resolve");
   const emptySlug = "fee-real-market-empty";
   await logRealFee(emptySlug, 0);
   check("a zero-lamport vault logs nothing", (await feeLog(300)).every((r) => r.slug !== emptySlug));
+
+  // The rate times the pool is only the most the program takes. Once the read
+  // sees the market settled, the ledger books what resolve_market fixed: the
+  // losing side's 1 SOL under the cap, and nothing at all on a one-sided pool.
+  const cappedSlug = "fee-real-market-capped";
+  await logRealFee(cappedSlug, 1001 * 1_000_000_000, 200, { creator: 500_000_000, protocol: 500_000_000 });
+  const capped = (await feeLog(400)).filter((r) => r.slug === cappedSlug);
+  check("a capped market books the fee the program fixed, not the rate's",
+    capped.length === 2 && capped.every((r) => r.feeAmount === 500_000_000), JSON.stringify(capped));
+  const soloSlug = "fee-real-market-one-sided";
+  await logRealFee(soloSlug, 2_000_000_000, 200, { creator: 0, protocol: 0 });
+  check("...and a one-sided market books none", (await feeLog(400)).every((r) => r.slug !== soloSlug));
 }
 
 // --- the tagger signs up AFTER their market exists ---------------------------

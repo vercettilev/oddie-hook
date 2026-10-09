@@ -3382,12 +3382,20 @@ export async function logRealFee(
    * before rates could differ.
    */
   creatorFeeBps: number = CREATOR_FEE_BPS_REAL,
+  /**
+   * The amounts resolve_market actually fixed, read off the settled market.
+   * The rate times the pool is only the most the program takes: it takes
+   * nothing from a pool with one side, and never more than the losing side
+   * staked, so a ledger recomputed from the rate booked fees the vault never
+   * deducted. Absent when the read did not see the market settled yet.
+   */
+  fixed?: { creator: number; protocol: number },
 ): Promise<void> {
   try {
     if (totalVaultLamports <= 0) return;
     const surfacer = await surfacerFor(slug);
-    const creatorFeeAmount = Math.floor((totalVaultLamports * creatorFeeBps) / 10000);
-    const protocolFeeAmount = Math.floor((totalVaultLamports * PROTOCOL_FEE_BPS_REAL) / 10000);
+    const creatorFeeAmount = fixed ? fixed.creator : Math.floor((totalVaultLamports * creatorFeeBps) / 10000);
+    const protocolFeeAmount = fixed ? fixed.protocol : Math.floor((totalVaultLamports * PROTOCOL_FEE_BPS_REAL) / 10000);
     if (creatorFeeAmount > 0) {
       await logFee({
         slug, marketKind: "real", feeKind: "creator",

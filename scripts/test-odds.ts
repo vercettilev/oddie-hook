@@ -1,6 +1,6 @@
 // One definition of what a pool is worth. These pin the three things that were
 // actually wrong in production, not the shape of the function.
-import { oddsFromPools, type OddsView } from "../src/odds.js";
+import { oddsFromPools, fixedFees, type OddsView } from "../src/odds.js";
 import { renderCard } from "../src/card/renderCard.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -61,6 +61,24 @@ const FEE = { creatorBps: 200, protocolBps: 200 }; // the 4% this product charge
     Extract<OddsView, { state: "priced" }>;
   check("a market that pays no creator hands more to its winners",
     v.yesPays === 1.96, String(v.yesPays));
+}
+
+/* THE CAP. The fee comes out of what the losers staked and never past it
+   (lib.rs, cap_fees), so a crowded side pays at least its stake back. Before
+   the cap, 99 SOL on yes against 1 on no quoted yes at 0.97x: right, and down. */
+{
+  const v = oddsFromPools(99 * SOL, 1 * SOL, FEE) as Extract<OddsView, { state: "priced" }>;
+  check("the crowded side pays its stake back, not less", v.yesPays === 1, String(v.yesPays));
+  check("...and the lonely side still pays the full 4% off", v.noPays === 96, String(v.noPays));
+  const thin = fixedFees(1001 * SOL, 1000 * SOL, FEE);
+  check("1000 right against 1 wrong: the fee is the 1, split as opened",
+    thin.creator === 0.5 * SOL && thin.protocol === 0.5 * SOL, JSON.stringify(thin));
+  const even = fixedFees(2 * SOL, 1 * SOL, FEE);
+  check("...and an even pool is untouched", even.creator === 0.04 * SOL && even.protocol === 0.04 * SOL,
+    JSON.stringify(even));
+  check("...nobody won, or nobody lost: no fee",
+    JSON.stringify(fixedFees(2 * SOL, 0, FEE)) === JSON.stringify(fixedFees(2 * SOL, 2 * SOL, FEE))
+    && fixedFees(2 * SOL, 0, FEE).creator === 0 && fixedFees(2 * SOL, 2 * SOL, FEE).protocol === 0);
 }
 
 /* THE READ THAT FAILED. An unreadable pool is never an empty one: a page that

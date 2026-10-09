@@ -52,7 +52,7 @@ import { runExtract, extractEnabled, EXTRACT_KEY_ENV, unsettleablePhrase, addres
 import { inferenceProvider } from "./inference.js";
 import { buildTweetReply, buildTweetQuote, buildVerdict } from "./matching/tweetReply.js";
 import { winBonus, CREATOR_FEE_BPS_REAL, PROTOCOL_FEE_BPS_REAL } from "./store/economy.js";
-import { oddsFromPools } from "./odds.js";
+import { oddsFromPools, fixedFees } from "./odds.js";
 import * as TG from "./telegram/client.js";
 import { runTelegramSweep, releaseOrphanedParks, parkedCount, type TgSweepDeps } from "./telegram/loop.js";
 import { earnKey, earnToken, verifyEarnToken } from "./telegram/earnToken.js";
@@ -4558,11 +4558,20 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   const poolLam = yesLam + noLam;
   // Both fees are stored per market, so a rate change never reprices an open
   // pool; the preview has to use the market's own numbers, not today's.
-  const feeBps = (detail.creatorFeeBps ?? CREATOR_FEE_BPS_REAL) + PROTOCOL_FEE_BPS_REAL;
+  const takeout = {
+    creatorBps: live?.creatorFeeBps ?? detail.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
+    protocolBps: live?.protocolFeeBps ?? PROTOCOL_FEE_BPS_REAL,
+  };
+  const feeBps = takeout.creatorBps + takeout.protocolBps;
   // A pool with no winners is refunded in full and takes no fee at all, which
-  // is the program's rule (lib.rs: winning_total == 0 -> both fees zero).
-  const payout = (winningLam: number) =>
-    winningLam === 0 ? poolLam : poolLam - Math.floor((poolLam * feeBps) / 10_000);
+  // is the program's rule (lib.rs: winning_total == 0 -> both fees zero). Any
+  // other outcome pays the pool less the fees resolve_market would fix, which
+  // never pass what the losing side staked (see fixedFees).
+  const payout = (winningLam: number) => {
+    if (winningLam === 0) return poolLam;
+    const f = fixedFees(poolLam, winningLam, takeout);
+    return poolLam - f.creator - f.protocol;
+  };
   /* WHO WINS IS A QUESTION ONLY THE POSITION ACCOUNT CAN ANSWER.
      chain_entry now has a row per side a wallet staked, so a wallet sitting on
      both sides is filed under both. It used to keep one row per wallet, under
@@ -4717,7 +4726,8 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       void fetchMarketOnChain(detail.onchainPubkey).then((state) => {
         // state.creatorFeeBps, not the constant: the ledger must record what the
         // program fixed on THIS market, which is 0 for one with no creator.
-        if (state) void logRealFee(slug, state.totalYesLamports + state.totalNoLamports, state.creatorFeeBps);
+        if (state) void logRealFee(slug, state.totalYesLamports + state.totalNoLamports, state.creatorFeeBps,
+          state.resolved ? { creator: state.creatorFeeLamports, protocol: state.protocolFeeLamports } : undefined);
       }).catch(() => {});
       return resolvedOnChain;
     }).catch(() => {});

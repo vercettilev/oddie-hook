@@ -133,7 +133,11 @@ console.log("\nthe detail panel: the screen that settles real money");
   check("the fee comes from the market's own stored rate, not today's",
     /detail\.creatorFeeBps/.test(route));
   check("a pool with no winners previews as a full refund, no fee",
-    /winningLam === 0 \? poolLam/.test(route));
+    /if \(winningLam === 0\) return poolLam;/.test(route));
+  // A one-sided pool used to preview the full 4% off, which the program never
+  // takes; and a thin losing side caps it. fixedFees carries both rules.
+  check("...and any other outcome pays the pool less the fees the program would fix",
+    /fixedFees\(poolLam, winningLam, takeout\)/.test(route));
   // chain_entry files a wallet under the side of its FIRST stake, so counting
   // winners from it said "pays 0.192 SOL to 0 wallets" on a market where one
   // wallet held 0.1 on each side: a payout with nobody to pay.

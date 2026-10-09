@@ -330,6 +330,10 @@ console.log("\nthe first bet is told what happens if nobody comes");
   // Bee, 8 Oct: 0.04 SOL on NO against 0.1 on YES, settled NO, collected 0.1344.
   check("the estimate is what the program paid, to the lamport",
     payoutLamports("no", 0.04, 1e8, 0, 200, 200) === 134_400_000, payoutLamports("no", 0.04, 1e8, 0, 200, 200));
+  // 1 SOL onto a YES of 0.1 against a NO of 0.04: 4% of 1.14 is 0.0456, more
+  // than the 0.04 the other side holds. Capped, being right returns the 1 SOL.
+  check("...and on a thin other side, being right pays the stake back (the cap)",
+    payoutLamports("yes", 1, 1e8, 4e7, 200, 200) === 1_000_000_000, payoutLamports("yes", 1, 1e8, 4e7, 200, 200));
   check("...nothing to win where the other side is empty",
     payoutLamports("yes", 0.5, 1e8, 0, 200, 200) === null && payoutLamports("no", 0.5, 0, 0, 200, 200) === null);
   // 149 lamports: each 2% floors to 2, while 4% at once would floor to 5.
