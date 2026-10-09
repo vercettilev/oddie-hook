@@ -26,7 +26,7 @@
 
 import { auditCitations, auditSupports, type AuditResult } from "./audit.js";
 import { runPropose, type Proposal, type Side } from "./verdict.js";
-import { messagesUrl, authHeaders, MODEL } from "../inference.js";
+import { messagesUrl, authHeaders, MODEL, personFixOutage } from "../inference.js";
 import { checkPrice, type PriceCheck } from "../price/index.js";
 
 const VERIFY_TIMEOUT_MS = 60_000;
@@ -379,7 +379,11 @@ export function shouldRetry(
 
 /** Did this decision cost a model call? The `error` gate counts: runPropose can
  *  throw after the request went out, and treating it as free would let a market
- *  whose every attempt times out be retried at full price forever. */
+ *  whose every attempt times out be retried at full price forever. Except an
+ *  outage only a person can fix (an empty balance, a refused or missing key):
+ *  that request was turned away before any work, and counting it pushed a
+ *  market twelve hours down the backoff for an outage nobody had fixed yet. */
 export function decisionWasPaid(d: OracleDecision): boolean {
-  return d.proposal !== undefined || d.gate === "error";
+  if (d.proposal !== undefined) return true;
+  return d.gate === "error" && personFixOutage(d.reason) === null;
 }

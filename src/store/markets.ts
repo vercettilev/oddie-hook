@@ -12,6 +12,7 @@ import { Market } from "../venues/types.js";
 import { randomHandle, validateHandle } from "./handles.js";
 import { fetchSourcePost } from "../venues/xOembed.js";
 import type { PriceCheck } from "../price/index.js";
+import { personFixOutage } from "../inference.js";
 
 // Slugs are the product. One gets tweeted on day 1 and a stranger opens it on
 // day 6, after however many redeploys happened in between. So they have to
@@ -6797,25 +6798,31 @@ export async function oracleAttemptFor(slug: string): Promise<OracleAttempt> {
     return {
       lastGate: last?.gate ?? null,
       lastDecidedAt: last?.decidedAt ?? null,
-      paidAttempts: rows.filter((r) => r.paid).length,
+      paidAttempts: rows.filter((r) => r.paid && !(r.gate === "error" && personFixOutage(r.reason))).length,
     };
   }
   await ensureSchema();
   // count(*) comes back as a bigint STRING unless it is cast at the edge, and a
   // `number` annotation on it would be an unchecked lie no in-memory test could
   // ever expose.
-  const { rows } = await db().query<{ gate: string | null; decided_at: Date | null; paid_attempts: number }>(
-    `SELECT
-       (SELECT gate       FROM oracle_decision WHERE slug = $1 ORDER BY id DESC LIMIT 1) AS gate,
-       (SELECT decided_at FROM oracle_decision WHERE slug = $1 ORDER BY id DESC LIMIT 1) AS decided_at,
-       (SELECT count(*)::int FROM oracle_decision WHERE slug = $1 AND paid) AS paid_attempts`,
+  const { rows } = await db().query<{ gate: string | null; decided_at: Date | null }>(
+    `SELECT gate, decided_at FROM oracle_decision WHERE slug = $1 ORDER BY id DESC LIMIT 1`,
+    [slug],
+  );
+  /* THE PAID ROWS ARE READ, NOT COUNTED IN SQL. Rows written before an outage
+     was known to be free say paid=true, and the one classifier that knows
+     which errors those were lives in code (personFixOutage); a second copy of
+     it as a SQL pattern would be the copy that drifts. A market's paid rows
+     are a handful, so reading them costs nothing. */
+  const paid = await db().query<{ gate: string; reason: string | null }>(
+    `SELECT gate, reason FROM oracle_decision WHERE slug = $1 AND paid`,
     [slug],
   );
   const r = rows[0];
   return {
     lastGate: r?.gate ?? null,
     lastDecidedAt: r?.decided_at ? r.decided_at.toISOString() : null,
-    paidAttempts: r?.paid_attempts ?? 0,
+    paidAttempts: paid.rows.filter((x) => !(x.gate === "error" && personFixOutage(x.reason))).length,
   };
 }
 

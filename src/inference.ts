@@ -60,3 +60,20 @@ export function authHeaders(): Record<string, string> {
 export function inferenceProvider(): { host: string; model: string; auth: string; anthropic: boolean } {
   return { host: BASE, model: MODEL, auth: AUTH, anthropic: BASE === "https://api.anthropic.com" };
 }
+
+/**
+ * Is this failure the model being out for a reason only a person can fix?
+ * An empty credit balance, a key Anthropic refused, or no key at all. Waiting
+ * changes none of them, and the call never ran, so wherever a retry budget is
+ * kept (the X loop, the oracle's backoff) it must not count as an attempt.
+ * 9 Oct 2026: two of these were counted as paid oracle attempts overnight and
+ * pushed a settled-by-arithmetic-in-spirit market twelve hours down the line.
+ * Read off the message, because the record keeps only the message.
+ */
+export function personFixOutage(message: string | null | undefined): "billing" | "auth" | "config" | null {
+  const m = String(message ?? "");
+  if (/credit balance is too low/i.test(m)) return "billing";
+  if (/^[a-z]+ (401|403)\b/i.test(m)) return "auth";
+  if (/unavailable\W+set [A-Z_]+|no key: set [A-Z_]+/.test(m)) return "config";
+  return null;
+}

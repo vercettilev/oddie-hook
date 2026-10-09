@@ -452,6 +452,13 @@ console.log("\nasking the same stuck market again, forever, at full price");
   // full price forever, because runPropose can throw AFTER the request went out.
   check("an error counts as paid", decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: "" }));
   check("a free gate does not", !decisionWasPaid({ slug: "s", settle: null, gate: "no-criteria", reason: "" }));
+  // 9 Oct 2026: an empty balance was counted twice overnight and pushed a
+  // market twelve hours down the backoff. Those requests never ran.
+  const broke = 'verdict 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}';
+  check("an empty model balance is not an attempt", !decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: broke }));
+  check("...nor a refused key", !decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: 'verdict 401 {"type":"error","error":{"type":"authentication_error"}}' }));
+  check("...nor a missing key", !decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: "inference unavailable: set ANTHROPIC_API_KEY" }));
+  check("...but an overloaded model still is", decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: "verdict 529 overloaded" }));
 }
 
 console.log("\nthe record is written, and it is what the policy reads");
@@ -469,6 +476,7 @@ console.log("\nthe record is written, and it is what the policy reads");
   check("another market's rows do not leak in", (await oracleAttemptFor("other")).paidAttempts === 1);
   check("a market with no history is empty, not an error", (await oracleAttemptFor("nope")).lastGate === null);
 
+
   check("refusals are recorded, not just settlements", _memOracleDecisions().filter((r) => r.settle === null).length === 2);
   const counts = await oracleGateCounts(7);
   check("gates can be counted across the board", counts["proposer-abstained"] === 1 && counts["settled"] === 1, JSON.stringify(counts));
@@ -479,6 +487,15 @@ console.log("\nthe record is written, and it is what the policy reads");
   check("freshly decided, it is held", !shouldRetry(await oracleAttemptFor("m9")).retry);
   _memBackdateOracle("m9", 7 * 60);
   check("seven hours later, it is asked again", shouldRetry(await oracleAttemptFor("m9")).retry);
+  _resetOracleDecisions();
+
+  // Rows written before the outage was known to be free say paid=true. The
+  // count reads past them, or the market waits on an outage nobody had fixed.
+  await recordOracleDecision({ slug: "m10", settle: null, gate: "error", paid: true,
+    reason: 'verdict 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}' });
+  await recordOracleDecision({ slug: "m10", settle: null, gate: "error", paid: true, reason: "verdict 529 overloaded" });
+  check("an old empty-balance row does not count as an attempt", (await oracleAttemptFor("m10")).paidAttempts === 1,
+    String((await oracleAttemptFor("m10")).paidAttempts));
   _resetOracleDecisions();
 }
 
