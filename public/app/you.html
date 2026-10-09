@@ -70,6 +70,7 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
 .big:active:not(:disabled){transform:translate(2px,3px);box-shadow:2px 3px 0 var(--yellow-deep)}
 .big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
 .big:disabled{opacity:.5;cursor:not-allowed;transform:none}
+@media (prefers-reduced-motion:reduce){.big{transition:none}.big:active:not(:disabled){transform:none}@media (hover:hover){.big:hover:not(:disabled){transform:none}}}
 .later{display:block;margin-top:14px;background:none;border:0;padding:8px 0;cursor:pointer;
   font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.12em;
   text-transform:uppercase;color:var(--fg-3)}

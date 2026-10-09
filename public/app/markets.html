@@ -120,7 +120,9 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(30px,6.4vw,50px);
   color:var(--ink);border:3px solid var(--black);padding:16px 22px;cursor:pointer;
   box-shadow:6px 7px 0 var(--yellow-deep);transition:transform .12s ease,box-shadow .12s ease}
 @media (hover:hover){.big:hover{background:var(--yellow-hi);transform:translate(-2px,-2px);box-shadow:8px 9px 0 var(--yellow-deep)}}
+.big:active{transform:translate(2px,3px);box-shadow:2px 3px 0 var(--yellow-deep)}
 .big:focus-visible{outline:3px solid var(--cream);outline-offset:4px}
+@media (prefers-reduced-motion:reduce){.big{transition:none}.big:active{transform:none}@media (hover:hover){.big:hover{transform:none}}}
 /* The way past the gate. Quiet on purpose: findable, never competing with
    the button that does the thing. */
 .later{display:block;margin-top:14px;background:none;border:0;padding:8px 0;cursor:pointer;
