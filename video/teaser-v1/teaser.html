@@ -1,0 +1,304 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>oddie teaser</title>
+<style>
+  @font-face{font-family:'Anton';src:url(../../assets/fonts/Anton.ttf)}
+  @font-face{font-family:'Fredoka';font-weight:700;src:url(../../assets/fonts/Fredoka_700Bold.ttf)}
+  @font-face{font-family:'Nunito';font-weight:700;src:url(../../assets/fonts/Nunito_700Bold.ttf)}
+  :root{
+    --yellow:#FCF604; --pink:#FF2D78; --pink-deep:#A3053F; --ink:#0B0D04; --black:#020302;
+    --display:'Anton',sans-serif; --mono:'DejaVu Sans Mono',ui-monospace,monospace;
+  }
+  html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:var(--black)}
+  #world{position:absolute;inset:0}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:var(--black)}
+  .scene{position:absolute;inset:0;display:none;overflow:hidden}
+  .center{display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .disp{font-family:var(--display);text-transform:uppercase;line-height:.9;letter-spacing:.005em;white-space:nowrap}
+  .mono{font-family:var(--mono);font-weight:700}
+
+  /* S0/S1 prompt */
+  #prompt{font-size:150px;color:var(--yellow)}
+  #prompt .cur{display:inline-block;width:.55em;height:.9em;background:var(--yellow);vertical-align:-.08em;margin-left:.06em}
+
+  /* S2 platforms */
+  .plat .word{font-size:430px}
+  .plat .chat{position:absolute;left:96px;bottom:92px;font-size:40px;padding:18px 26px;border-radius:14px;
+    background:rgba(0,0,0,.55);color:#fff;filter:blur(1.2px)}
+  .plat .chat b{color:var(--yellow)}
+  .plat .tag{position:absolute;right:96px;top:84px;font-size:26px;letter-spacing:.3em}
+
+  /* S3 market */
+  #card{width:1040px;padding:54px 60px 50px;border-radius:34px;background:#111306;
+    border:3px solid #2a2d14;box-shadow:0 40px 120px rgba(0,0,0,.6),0 0 0 1px rgba(252,246,4,.08) inset}
+  #card .k{font-size:24px;letter-spacing:.28em;color:var(--pink);display:flex;align-items:center;gap:16px}
+  #card .k i{width:16px;height:16px;border-radius:50%;background:var(--pink);display:inline-block}
+  #card .q{margin:34px 0 40px;display:flex;flex-wrap:wrap;gap:18px}
+  #card .q span{height:62px;border-radius:10px;background:#2b2e16}
+  #card .odds{display:flex;justify-content:space-between;font-family:var(--display);font-size:120px;line-height:1}
+  #card .odds .y{color:var(--yellow)} #card .odds .n{color:var(--pink)}
+  #card .odds small{font-size:44px;opacity:.9;margin-right:16px;vertical-align:.5em}
+  #card .meter{margin-top:28px;height:26px;border-radius:13px;background:var(--pink);overflow:hidden}
+  #card .meter i{display:block;height:100%;background:var(--yellow)}
+  #card .foot{margin-top:28px;font-size:24px;color:#8e936c;letter-spacing:.12em;display:flex;justify-content:space-between}
+  #s3 .over{position:absolute;top:100px;width:100%;text-align:center;font-size:30px;letter-spacing:.4em;color:#ddd}
+
+  /* S4 slams */
+  .slam{font-size:330px}
+  #crowd{position:absolute;left:0;right:0;bottom:-20px;width:1920px}
+
+  /* S5 portal */
+  #portal{position:absolute;left:50%;top:50%;width:1122px;height:1402px;transform-origin:50% 62%}
+  #s5 .shade{position:absolute;left:0;right:0;bottom:0;height:380px;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.88) 70%)}
+  #s5 .whisper{position:absolute;bottom:176px;width:100%;text-align:center;font-size:34px;letter-spacing:.5em;padding-left:.5em;box-sizing:border-box;color:var(--yellow);text-shadow:0 0 18px rgba(252,246,4,.55)}
+
+  /* S6 ticker */
+  #s6{background:var(--yellow)}
+  #s6 .pb{font-size:46px;letter-spacing:.55em;color:var(--ink);margin-bottom:30px;padding-left:.55em}
+  #ticker{font-size:470px;color:var(--pink);
+    -webkit-text-stroke:14px var(--black);paint-order:stroke fill;text-shadow:22px 24px 0 var(--black)}
+  #mark6{position:absolute;width:1254px;height:1254px;left:50%;top:50%;opacity:.14}
+
+  /* S7 coming soon */
+  #s7 .tk{font-size:64px;color:var(--pink);letter-spacing:.1em}
+  #soon{font-size:250px;color:var(--yellow);margin-top:24px}
+  #s7 .url{font-size:30px;letter-spacing:.45em;color:#bbb;margin-top:54px;padding-left:.45em}
+  #mark7{width:150px;height:150px;border-radius:34px;margin-bottom:46px;box-shadow:0 0 0 4px var(--black),10px 12px 0 var(--pink)}
+
+  /* overlays */
+  #grain{position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;opacity:.32}
+  #scan{position:absolute;inset:0;pointer-events:none;opacity:.10;
+    background:repeating-linear-gradient(0deg,#000 0 2px,transparent 2px 5px)}
+  #vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%)}
+  #flash{position:absolute;inset:0;pointer-events:none;background:#fff;opacity:0}
+  #bars{position:absolute;inset:0;pointer-events:none}
+  #bars:before,#bars:after{content:"";position:absolute;left:0;right:0;height:0;background:#000}
+  #bars:before{top:0}#bars:after{bottom:0}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="world">
+    <!-- S0/S1: the call is typed -->
+    <div class="scene center" id="s1"><div id="prompt" class="mono"><span id="typed"></span><span class="cur" id="cur"></span></div></div>
+
+    <!-- S2: every chat -->
+    <div class="scene center plat" id="p0" style="background:#9146FF;color:#fff">
+      <div class="word disp">TWITCH</div><div class="tag mono">LIVE</div>
+      <div class="chat mono">chat ▸ <b>!oddie</b> he clutches this</div></div>
+    <div class="scene center plat" id="p1" style="background:#53FC18;color:#020302">
+      <div class="word disp">KICK</div><div class="tag mono">LIVE</div>
+      <div class="chat mono">chat ▸ <b>!oddie</b> 100k by friday</div></div>
+    <div class="scene center plat" id="p2" style="background:#020302;color:#fff">
+      <div class="word disp" style="font-size:520px">X</div><div class="tag mono">REPLY</div>
+      <div class="chat mono">@oddiefun <b>call it</b></div></div>
+    <div class="scene center plat" id="p3" style="background:#229ED9;color:#fff">
+      <div class="word disp">TELEGRAM</div><div class="tag mono">GROUP</div>
+      <div class="chat mono">group ▸ <b>@oddiefunbot</b> we ship tonight?</div></div>
+
+    <!-- S3: a market, glimpsed -->
+    <div class="scene center" id="s3">
+      <div class="over mono">ONE CALL &nbsp;→&nbsp; ONE MARKET</div>
+      <div id="card">
+        <div class="k mono"><i></i>LIVE · CALL OPEN</div>
+        <div class="q"><span style="width:300px"></span><span style="width:180px"></span><span style="width:390px"></span><span style="width:240px"></span><span style="width:120px"></span></div>
+        <div class="odds"><div class="y"><small>YES</small><span id="yp">50</span>%</div><div class="n"><span id="np">50</span>%<small style="margin:0 0 0 16px">NO</small></div></div>
+        <div class="meter"><i id="fill" style="width:50%"></i></div>
+        <div class="foot mono"><span>POOL ███.█ SOL</span><span>SETTLES ██:██</span></div>
+      </div>
+    </div>
+
+    <!-- S4: slams -->
+    <div class="scene center" id="w0" style="background:var(--yellow);color:var(--ink)"><div class="slam disp">ANY CHAT.</div></div>
+    <div class="scene center" id="w1" style="background:var(--pink);color:var(--yellow)"><div class="slam disp">ANY CLAIM.</div></div>
+    <div class="scene center" id="w2" style="background:var(--black);color:var(--yellow)"><div class="slam disp">ONE CALL.</div>
+      <img id="crowd" src="../../public/brand/crowd-strip.webp"></div>
+
+    <!-- S5: the build -->
+    <div class="scene" id="s5" style="background:#000">
+      <img id="portal" src="../../brand/oddieupscale-2x.webp">
+      <div class="shade"></div>
+      <div class="whisper mono" id="whisper">THE CROWD DECIDES</div>
+    </div>
+
+    <!-- S6: powered by -->
+    <div class="scene center" id="s6">
+      <img id="mark6" src="../../brand/oddiepink.png">
+      <div class="pb mono" id="pb">POWERED BY</div>
+      <div id="ticker" class="disp">$ODDIE</div>
+    </div>
+
+    <!-- S7: coming soon -->
+    <div class="scene center" id="s7" style="background:var(--black)">
+      <img id="mark7" src="../../brand/oddiepink.png">
+      <div class="tk disp">$ODDIE</div>
+      <div id="soon" class="disp">COMING SOON</div>
+      <div class="url mono">ODDIE.FUN</div>
+    </div>
+  </div>
+
+  <canvas id="grain" width="480" height="270"></canvas>
+  <div id="scan"></div>
+  <div id="vig"></div>
+  <div id="bars"></div>
+  <div id="flash"></div>
+</div>
+
+<script>
+// Every frame is a pure function of t (seconds), so the render is deterministic.
+const DUR = 20;
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const easeIn = x => x * x * x;
+const expOut = x => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x);
+function rnd(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+// Beat grid shared with the audio script (keep in sync with build_audio.py).
+const T = {
+  type0: 1.0, typeEnd: 2.0,
+  plat: [2.2, 2.8, 3.4, 4.0], platEnd: 4.6,
+  card: 4.6, cardEnd: 7.4,
+  words: [7.4, 8.2, 9.0], wordsEnd: 9.8,
+  build: 9.8, buildEnd: 13.0,
+  hit: 13.0, hitEnd: 16.6,
+  soon: 16.6,
+};
+const HITS = [T.typeEnd, ...T.plat, T.card, ...T.words, T.hit, T.soon];
+
+const scenes = ['s1','p0','p1','p2','p3','s3','w0','w1','w2','s5','s6','s7'];
+function show(id) { for (const s of scenes) $(s).style.display = s === id ? 'flex' : 'none'; if (id === 's5') $('s5').style.display = 'block'; }
+
+// grain
+const g = $('grain').getContext('2d');
+const img = g.createImageData(480, 270);
+function grain(frame) {
+  let seed = frame * 9301 + 49297;
+  for (let i = 0; i < img.data.length; i += 4) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    const v = (seed >> 16) & 255;
+    img.data[i] = img.data[i+1] = img.data[i+2] = v; img.data[i+3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+
+function sinceHit(t) { let d = Infinity; for (const h of HITS) if (t >= h) d = Math.min(d, t - h); return d; }
+
+window.render = function (t, frame) {
+  const world = $('world');
+  let shake = 0, zoom = 1, flash = 0, rgb = 0, bars = 0;
+
+  const dh = sinceHit(t);
+  shake = dh < 0.35 ? (1 - dh / 0.35) * 18 : 0;
+  rgb = dh < 0.25 ? (1 - dh / 0.25) * 14 : 0;
+
+  if (t < T.plat[0]) {
+    show('s1');
+    const word = '!oddie';
+    const n = t < T.type0 ? 0 : Math.min(word.length, Math.floor((t - T.type0) / ((T.typeEnd - T.type0 - 0.2) / word.length)) + 1);
+    $('typed').textContent = word.slice(0, n);
+    $('cur').style.opacity = (Math.floor(t * 3.2) % 2 === 0 || (t > T.type0 && t < T.typeEnd)) ? 1 : 0;
+    zoom = 1 + prog(t, 0, T.plat[0]) * 0.08 + (t > T.typeEnd ? easeIn(prog(t, T.typeEnd, T.plat[0])) * 1.6 : 0);
+    if (t > T.typeEnd) flash = (1 - prog(t, T.typeEnd, T.typeEnd + 0.12)) * 0.7;
+    $('s1').style.opacity = 1;
+  } else if (t < T.platEnd) {
+    let i = 0; while (i < 3 && t >= T.plat[i + 1]) i++;
+    show('p' + i);
+    const p = prog(t, T.plat[i], T.plat[i] + 0.6);
+    zoom = 1.18 - easeOut(p) * 0.18 + p * 0.03;
+    flash = (1 - prog(t, T.plat[i], T.plat[i] + 0.08)) * 0.55;
+    const chat = $('p' + i).querySelector('.chat');
+    chat.style.transform = `translateY(${(1 - easeOut(prog(t, T.plat[i] + 0.05, T.plat[i] + 0.3))) * 60}px)`;
+    chat.style.opacity = prog(t, T.plat[i] + 0.05, T.plat[i] + 0.2);
+  } else if (t < T.cardEnd) {
+    show('s3');
+    const p = prog(t, T.card, T.cardEnd);
+    const odds = 50 + easeOut(prog(t, T.card + 0.5, T.card + 2.3)) * 23 + Math.sin(t * 9) * 0.6 * prog(t, T.card + 0.5, T.card + 2.3);
+    const y = Math.round(odds);
+    $('yp').textContent = y; $('np').textContent = 100 - y;
+    $('fill').style.width = odds + '%';
+    const card = $('card');
+    const inP = easeOut(prog(t, T.card, T.card + 0.45));
+    const outP = easeIn(prog(t, T.cardEnd - 0.5, T.cardEnd));
+    card.style.transform = `perspective(1600px) rotateX(${(1 - inP) * 28 + Math.sin(t * 0.8) * 2}deg) rotateY(${-8 + p * 16}deg) scale(${1.05 + inP * 0.2 + outP * 1.8})`;
+    card.style.filter = `blur(${outP * 18 + (1 - inP) * 10}px)`;
+    card.style.opacity = 1 - outP;
+    $('s3').querySelector('.over').style.opacity = prog(t, T.card + 0.4, T.card + 0.8) * (1 - outP);
+    zoom = 1;
+  } else if (t < T.wordsEnd) {
+    let i = 0; while (i < 2 && t >= T.words[i + 1]) i++;
+    show('w' + i);
+    const p = prog(t, T.words[i], T.words[i] + 0.8);
+    zoom = 1.45 - expOut(p * 1.4) * 0.45 + p * 0.04;
+    flash = (1 - prog(t, T.words[i], T.words[i] + 0.1)) * 0.6;
+    if (i === 2) $('crowd').style.transform = `translateY(${(1 - easeOut(prog(t, T.words[2] + 0.1, T.words[2] + 0.6))) * 320}px)`;
+  } else if (t < T.hit) {
+    show('s5');
+    const p = prog(t, T.build, T.buildEnd);
+    const s = 0.8 + easeIn(p) * 1.15;
+    $('portal').style.transform = `translate(-50%,-58%) scale(${s})`;
+    // the portal light flickers harder as the hit nears
+    const fl = 0.75 + 0.25 * Math.sin(t * 31) * p + (rnd(frame) < p * 0.35 ? -0.35 : 0);
+    $('portal').style.filter = `brightness(${fl * (0.6 + p * 0.9)}) saturate(${1 + p * 0.6})`;
+    $('s5').style.opacity = prog(t, T.build, T.build + 0.5);
+    $('whisper').style.opacity = prog(t, T.build + 0.6, T.build + 1.1) * (1 - prog(t, T.buildEnd - 0.3, T.buildEnd - 0.05));
+    $('whisper').style.letterSpacing = $('whisper').style.paddingLeft = (0.5 + p * 0.3) + 'em';
+    shake = p * p * 7;
+    rgb = p * p * 8;
+    bars = 1 - prog(t, T.buildEnd - 0.4, T.buildEnd) ;
+    flash = easeIn(prog(t, T.buildEnd - 0.35, T.buildEnd));
+  } else if (t < T.soon) {
+    show('s6');
+    const p = prog(t, T.hit, T.hitEnd);
+    const slam = expOut(prog(t, T.hit, T.hit + 0.35));
+    $('ticker').style.transform = `scale(${2.6 - slam * 1.6 + p * 0.06})`;
+    $('ticker').style.opacity = prog(t, T.hit, T.hit + 0.05);
+    $('pb').style.opacity = prog(t, T.hit + 0.55, T.hit + 0.85);
+    $('pb').style.transform = `translateY(${(1 - easeOut(prog(t, T.hit + 0.55, T.hit + 0.9))) * 30}px)`;
+    $('mark6').style.transform = `translate(-50%,-50%) scale(${1.0 + p * 0.25}) rotate(${-6 + p * 6}deg)`;
+    flash = (1 - prog(t, T.hit, T.hit + 0.25));
+    shake = Math.max(shake, (1 - prog(t, T.hit, T.hit + 0.9)) * 26);
+    // the ticker breathes through the hold, and drops out on the cut
+    const out = easeIn(prog(t, T.soon - 0.25, T.soon));
+    zoom = 1 + out * 0.5;
+    $('s6').style.opacity = 1;
+  } else {
+    show('s7');
+    const p = prog(t, T.soon, DUR);
+    const a = easeOut(prog(t, T.soon, T.soon + 0.6));
+    $('soon').style.letterSpacing = (0.3 - a * 0.29) + 'em';
+    $('soon').style.opacity = a;
+    $('soon').style.filter = `blur(${(1 - a) * 14}px)`;
+    $('s7').querySelector('.tk').style.opacity = prog(t, T.soon + 0.5, T.soon + 0.9);
+    $('mark7').style.opacity = prog(t, T.soon + 0.8, T.soon + 1.2);
+    $('mark7').style.transform = `scale(${0.6 + easeOut(prog(t, T.soon + 0.8, T.soon + 1.3)) * 0.4})`;
+    $('s7').querySelector('.url').style.opacity = prog(t, T.soon + 1.3, T.soon + 1.8);
+    zoom = 1 + p * 0.04;
+    flash = (1 - prog(t, T.soon, T.soon + 0.15)) * 0.4;
+    $('s7').style.opacity = 1 - prog(t, DUR - 0.6, DUR - 0.05);
+  }
+
+  const sx = (rnd(frame * 3.1) - 0.5) * 2 * shake, sy = (rnd(frame * 7.7) - 0.5) * 2 * shake;
+  world.style.transform = `translate(${sx}px,${sy}px) scale(${zoom})`;
+  world.style.filter = rgb > 0.5
+    ? `drop-shadow(${rgb}px 0 0 rgba(255,45,120,.85)) drop-shadow(${-rgb}px 0 0 rgba(0,240,255,.6))`
+    : 'none';
+  $('flash').style.opacity = clamp(flash);
+  const bh = bars * 130;
+  $('bars').style.boxShadow = `inset 0 ${bh}px 0 #000, inset 0 ${-bh}px 0 #000`;
+  grain(frame);
+};
+
+window.DUR = DUR;
+window.ready = Promise.all([document.fonts.ready, ...[...document.images].map(i => i.decode().catch(() => {}))]);
+if (!navigator.webdriver) {
+  // preview mode: plays in a browser tab
+  const t0 = performance.now(); let f = 0;
+  (function loop() { const t = ((performance.now() - t0) / 1000) % DUR; render(t, f++); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>

@@ -19,6 +19,11 @@ regenerate rather than editing an icon by hand.
                     the band's visible slice, crushed-black pixels fall from 49%
                     to 38% and horizontal gradient energy rises 43%, which is
                     why the band no longer reads as a flat dark strip.
+- `oddieupscale-2x.webp` 2244x2804. oddieupscale.png run through Real-ESRGAN
+                    (realesr-general-x4v3) at 4x, resampled to 2x, WebP q92. Made by
+                    video/teaser-v1/upscale.py for the teaser's push into the portal,
+                    which went soft past 1:1. Edges and sparks come out sharper; the
+                    darkest rock texture comes out a little flatter.
 - `oddieimage.png`  1122x1402. The first pink pass, superseded by oddieupscale.
                     Same render as oddiegraphic with pink embers and pink rim
                     light added, which is what ties it to the rest of the brand.
