@@ -433,6 +433,26 @@ ALTER TABLE community_market ADD COLUMN IF NOT EXISTS price_check jsonb;
 -- page says "settled" without a date rather than guessing one.
 ALTER TABLE community_market ADD COLUMN IF NOT EXISTS resolved_at timestamptz;
 
+-- THE LAST market_id HANDED OUT, so the next one is never the same.
+--
+-- market_id was Date.now(), which is unique per millisecond and no finer. Two
+-- markets opened in the same millisecond shared one, and the second one's
+-- market_slug upsert rewrote the first market's question under the people
+-- holding it and came back with the first one's slug. nextMarketId bumps this
+-- one row in a single statement, so no two callers in any process read the same
+-- value. It is still the clock -- GREATEST(last + 1, now) -- because the id is
+-- read as when a market opened.
+--
+-- Raised on every boot to the highest id already in use, so a database that
+-- predates this row, or an id written from somewhere else, is never reissued.
+CREATE TABLE IF NOT EXISTS market_id_clock (
+  id      boolean PRIMARY KEY DEFAULT true CHECK (id),  -- one row, ever
+  last_id bigint NOT NULL
+);
+INSERT INTO market_id_clock (id, last_id)
+  SELECT true, COALESCE(MAX(market_id), 0) FROM community_market
+  ON CONFLICT (id) DO UPDATE SET last_id = GREATEST(market_id_clock.last_id, EXCLUDED.last_id);
+
 -- Every extraction, logged for later prompt tuning: the input argument, the
 -- engine's structured output, and (on publish) the operator's final edits.
 CREATE TABLE IF NOT EXISTS extraction_log (
@@ -3657,6 +3677,61 @@ export async function feeLog(limit = 100): Promise<FeeLogRow[]> {
   }));
 }
 
+let memLastMarketId = 0;
+
+/**
+ * The id a new community market opens under: its on-chain market_id (u64, the
+ * PDA seed) and its market_slug venue_id, so it has to be unique. It was
+ * Date.now(), which is unique per millisecond and no finer, and two markets
+ * opened in the same millisecond collided — see market_id_clock.
+ *
+ * Still the clock, because the rest of the store reads it as one (the in-memory
+ * createdAt, newest-first ordering): Date.now(), or one past the last id handed
+ * out if that is later. In Postgres the last id is one row every process bumps
+ * in the same statement that reads it.
+ */
+export async function nextMarketId(): Promise<number> {
+  if (!PERSISTENT) return (memLastMarketId = Math.max(Date.now(), memLastMarketId + 1));
+  await ensureSchema();
+  const { rows } = await db().query<{ last_id: string }>(
+    `INSERT INTO market_id_clock AS c (id, last_id) VALUES (true, $1)
+     ON CONFLICT (id) DO UPDATE SET last_id = GREATEST(c.last_id + 1, EXCLUDED.last_id)
+     RETURNING last_id`,
+    [Date.now()],
+  );
+  return Number(rows[0].last_id);
+}
+
+/**
+ * createSlug for a market being OPENED, which must not exist yet.
+ *
+ * createSlug upserts on (venue, venue_id), which is right for a venue market: it
+ * is re-read all day and may reword itself. For an opening it is a merge, and a
+ * second market arriving on an id the first already held rewrote the first
+ * one's question and came back with the first one's slug. nextMarketId stops
+ * ids repeating; this makes a repeat loud if one ever gets through anyway (an
+ * id passed in by a caller, a process still on the old code mid-deploy).
+ */
+async function openSlug(market: Market): Promise<SlugRecord> {
+  if (!PERSISTENT) {
+    const holder = [...mem.values()].find((r) => r.market.venue === market.venue && r.market.venueId === market.venueId);
+    if (holder) throw new Error(`market id ${market.venueId} is already ${holder.slug}`);
+    return createSlug(market);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<SlugRow>(
+    `INSERT INTO market_slug (slug, venue, venue_id, question, yes_pct, closes_at, volume_usd, venue_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (venue, venue_id) DO NOTHING
+     RETURNING *`,
+    [slugFor(market), market.venue, market.venueId, market.question, market.yesPct, market.closesAt, market.volumeUsd, market.venueUrl],
+  );
+  if (rows[0]) return rowToRecord(rows[0], []);
+  const holder = await db().query<{ slug: string }>(
+    `SELECT slug FROM market_slug WHERE venue = $1 AND venue_id = $2`, [market.venue, market.venueId]);
+  throw new Error(`market id ${market.venueId} is already ${holder.rows[0]?.slug ?? "taken"}`);
+}
+
 /** Create a community market (base slug + community row). Returns its slug and
  *  the numeric id used BOTH as the market's venueId and its on-chain market_id. */
 export async function createCommunityMarket(input: {
@@ -3686,7 +3761,7 @@ export async function createCommunityMarket(input: {
    *  to later. */
   priceCheck?: PriceCheck | null;
 }): Promise<{ slug: string; marketId: number; market: Market }> {
-  const marketId = input.marketId ?? Date.now(); // unique-per-ms; also the on-chain market_id (u64)
+  const marketId = input.marketId ?? await nextMarketId(); // also the on-chain market_id (u64)
   const yesPct = Math.max(1, Math.min(99, Math.round(input.yesPct ?? 50)));
   const category = input.category?.trim() || "Community";
   const resolutionCriteria = input.resolutionCriteria?.trim() || null;
@@ -3707,7 +3782,7 @@ export async function createCommunityMarket(input: {
     venueUrl: "",
     tags: [],
   };
-  const rec = await createSlug(market);
+  const rec = await openSlug(market);
 
   if (!PERSISTENT) {
     memCommunity.set(rec.slug, {

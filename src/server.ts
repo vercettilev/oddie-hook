@@ -32,7 +32,7 @@ import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
   savePushSubscription, pushSubscriptionsFor, dropPushSubscription, rememberPerson, tgOpenedToday, setPersonWallet, personWallet, tgOpenedSlugs, nameCreatorOnRow, tgOpenerOf } from "./store/markets.js";
 import { sendPush, vapidFromEnv } from "./push/webpush.js";
 import { findDuplicate } from "./matching/duplicate.js";
-import { createCommunityMarket, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
+import { createCommunityMarket, nextMarketId, setCommunityOnchain, openCommunityMarkets, adminListCommunity, communityMarketDetail, markCommunityResolved, logExtraction, logTweetReply, listTweetReplies } from "./store/markets.js";
 import { adoptSurfacedMarkets, recordSurfacer, awardSurface, seasonPointsLog, usersActivity, handleFromSourceUrl, sourceUrlKind } from "./store/markets.js";
 import { resolvedOnchainMarkets } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
@@ -3707,7 +3707,7 @@ async function openMarketFromClaim(input: {
   // created went on being served by the feed: a market nobody could ever take a
   // side in, because the account the bet needs does not exist. Minting first
   // means the failure path writes nothing, so there is no orphan to clean up.
-  const marketId = Date.now(); // unique-per-ms; also the on-chain market_id (u64)
+  const marketId = await nextMarketId(); // also the on-chain market_id (u64); never reissued, see nextMarketId
   const lazy = input.mint === "on-demand";
   const minted = lazy
     ? null
