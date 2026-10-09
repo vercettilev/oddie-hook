@@ -142,7 +142,10 @@ console.log("\na timed call, start to finish");
   const st = await channelStandings("kick", "100");
   check("the standings count only the right answers", st.length === 6 && st[0].points === 67 && st.filter((s) => s.points > 0).length === 2);
   check("...and the later right answer scored a little less", st.find((s) => s.userId === "f")?.points === 66, JSON.stringify(st.find((s) => s.userId === "f")));
-  check("a settled call is not settled again", (await handleChat(r.line("mod", "!call no", true), r.deps)) === "no-call");
+  const twice = r.line("mod", "!call no", true);
+  check("a settled call is not settled again: the mod hears how calls work, as a reply",
+    (await handleChat(twice, r.deps)) === "pick-help" && r.said[r.said.length - 1]?.text === LIVE_COPY.pickHelp
+    && r.said[r.said.length - 1]?.replyTo === twice.messageId);
   check("the next call can open", (await handleChat(r.line("mod", "!call 1m next round?", true), r.deps)) === "opened");
   check("...a mod can cancel it", (await handleChat(r.line("mod", "!call cancel", true), r.deps)) === "canceled");
   const rec = await recentCalls("kick", "100");
@@ -163,7 +166,9 @@ console.log("\na timed call, start to finish");
     && r.said[4]?.text.startsWith(`It's NO: "clutch this round?". The next one opens with !call`), r.said[4]?.text);
   check("...and then the one left needs no number", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled"
     && r.said[5]?.text.startsWith(`It's YES: "again?".`));
-  check("with nothing waiting, a settle does nothing", (await handleChat(r.line("owner", "!call yes 3", true), r.deps)) === "no-call");
+  check("with nothing waiting, a settle settles nothing: the runner hears how calls work",
+    (await handleChat(r.line("owner", "!call yes 3", true), r.deps)) === "pick-help" && r.said.length === 7 && r.said[6]?.text === LIVE_COPY.pickHelp,
+    JSON.stringify(r.said.slice(6)));
 }
 {
   const r = room();
@@ -461,6 +466,18 @@ console.log("\n!yes or !no with nothing open");
     (await handleChat(r.line("v2", "!yes"), r.deps)) === "no-open-call" && r.said.length === said + 1);
   check("...and the runner hears it once", (await handleChat(r.line("mod", "!no", true), r.deps)) === "no-open-call" && r.said.length === said + 1);
   check("the call still settles", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled");
+
+  // Live on 8 Oct, nineteen seconds after the pilot's !no: a !call settle with
+  // nothing to settle, and silence again.
+  check("a runner's settle with nothing waiting shares the same ten minutes",
+    (await handleChat(r.line("mod", "!call yes", true), r.deps)) === "no-call" && r.said.length === said + 2);
+  r.tick(PICK_HELP_GAP_MS);
+  const empty = r.line("owner", "!call cancel", true);
+  check("...and past them hears how calls work, as a reply",
+    (await handleChat(empty, r.deps)) === "pick-help" && r.said.length === said + 3
+    && r.said[said + 2]?.text === LIVE_COPY.pickHelp && r.said[said + 2]?.replyTo === empty.messageId, JSON.stringify(r.said[said + 2]));
+  check("...while a viewer's is still refused in silence",
+    (await handleChat(r.line("v3", "!call yes"), r.deps)) === "not-allowed" && r.said.length === said + 3);
 }
 
 console.log("\nKick's side");

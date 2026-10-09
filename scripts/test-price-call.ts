@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { nextClock, outcomeFor, parsePriceCall, planFor, readPriceCall, timeLabel, type PriceCall, type PriceSource } from "../src/live/priceCall.js";
-import { PRICE_GIVE_UP_MS, handleChat, lockDue, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
+import { PRICE_GIVE_UP_MS, STREAM_POLL_MS, handleChat, lockDue, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { liveStore, _resetLiveStore } from "../src/store/live.js";
 
 let checks = 0;
@@ -205,6 +205,12 @@ now = Date.parse("2026-10-08T14:00:00Z") + PRICE_GIVE_UP_MS + 1_000;
 await lockDue(deps);
 eq(last(), `"will BTC close current 30min candle above 82k?" is yours to settle: !call yes or !call no.`, "handed to the mods");
 ok((await liveStore.unsettled("twitch", "1372956063")).length === 1, "still waiting, for the mods");
+const readsAtHandOver = reads;
+for (let i = 0; i < 5; i++) { now += STREAM_POLL_MS; await lockDue(deps); }
+eq(said.filter((s) => s.includes("is yours to settle")).length, 1, "handed over once, not again every minute");
+eq(reads, readsAtHandOver, "...and not read again after the hand-over");
+eq(await handleChat(msg("!yes", "bee", true), deps), "pick-help", "once handed back, a runner's !yes is answered");
+eq(last(), `To settle "will BTC close current 30min candle above 82k?": !call yes or !call no.`, "...with how to settle it");
 eq(await handleChat(msg("!call yes", "bee", true), deps), "settled", "a mod settles it");
 
 // A mod who settles first wins; oddie stays quiet after.
@@ -219,6 +225,21 @@ now = Date.parse("2026-10-08T14:00:04Z");
 await lockDue(deps);
 eq(reads, 0, "no read for a settled call");
 eq(said.length, lines, "and no second result");
+
+// A runner's !yes while oddie reads the candle: the candle settles it, and a
+// mod's settle would beat the number, so the hint never says "!call yes" here.
+reset();
+await handleChat(msg("!call will BTC close current 30min candle above 82k?", "bee", true), deps);
+await handleChat(msg("!yes", "viewer"), deps);
+now = lockAt;
+await lockDue(deps);
+eq(await handleChat(msg("!yes", "bee", true), deps), "pick-help", "a runner's !yes while the candle is read is answered");
+eq(last(), `Locked "will BTC close current 30min candle above 82k?" at 100% YES from 1 call. oddie settles it when the 30m candle closes.`,
+  "...with what oddie waits for, not how to settle it");
+eq(await handleChat(msg("!no", "viewer2"), deps), "no-open-call", "a viewer's is still chat");
+now = Date.parse("2026-10-08T14:00:04Z");
+await lockDue(deps);
+ok(last().startsWith(`BTC 30m candle closed at 82,182.01 on Binance. It's YES: "will BTC close current 30min candle above 82k?".`), `...and the candle settles it: ${last()}`);
 
 // Any other call: the lock line says who settles it.
 reset();

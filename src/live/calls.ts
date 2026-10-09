@@ -242,7 +242,8 @@ export const LIVE_COPY = {
   lockedPrice: (t: Tally, when: string) =>
     `${t.yes + t.no ? `Calls are locked: ${split(t)}.` : "Calls are locked for this one."} oddie settles it ${when}.`,
   priceToMods: (q: string) => `"${q}" is yours to settle: !call yes or !call no.`,
-  /** A new call took the room: the old one keeps its answers and waits. */
+  /** A new call took the room: the old one keeps its answers and waits. Also a
+   *  runner's answer to a stray !yes while oddie reads a price call. */
   switched: (q: string, t: Tally, when: string | null = null) => (t.yes + t.no
     ? `Locked "${short(q)}" at ${split(t)}.`
     : `Locked "${short(q)}".`) + (when ? ` oddie settles it ${when}.` : " It waits for its result."),
@@ -327,10 +328,14 @@ export const PRICE_POLL_MS = 15_000;
 export const PRICE_GIVE_UP_MS = 10 * 60_000;
 
 const lastSplit = new Map<string, number>();
-/** Price calls oddie settles itself, from their lock on. Kept in memory: a
- *  restart between a lock and its answer leaves that one call to the mods,
- *  which is where every call lived before. */
+/** Price calls oddie settles itself, from their lock on. Kept in memory: after
+ *  a restart the clock gives each locked price call its wait back. */
 const priceWaits = new Map<string, PriceWait>();
+/** Price calls oddie could not read and handed to the mods. The clock gives a
+ *  locked price call its wait back after a restart; without this it gave one
+ *  back a minute after the hand-over too, and the room heard "yours to settle"
+ *  every minute until a mod did. */
+const handedToMods = new Set<string>();
 const lastPickHelp = new Map<string, number>();
 /** A room call's reports, from its first !result until the majority settles it. */
 interface Reports { call: LiveCall; votes: Map<string, Side>; closeAt: number; extended: boolean }
@@ -345,11 +350,11 @@ const lastActivity = new Map<string, number>();
 const lastSaid = new Map<string, number>();
 /** Test seam. */
 export function _resetLive(): void {
-  lastSplit.clear(); lastPickHelp.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear();
+  lastSplit.clear(); lastPickHelp.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
   reports.clear(); toldPrice.clear(); seenLive.clear(); lastWatch = 0;
 }
 /** Test seam: what a restart forgets (the waits and reports in memory), the store keeps. */
-export function _forgetWaits(): void { priceWaits.clear(); reports.clear(); lastWatch = 0; }
+export function _forgetWaits(): void { priceWaits.clear(); handedToMods.clear(); reports.clear(); lastWatch = 0; }
 
 const roomKey = (m: { platform: Platform; channelId: string }) => `${m.platform}:${m.channelId}`;
 
@@ -428,6 +433,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   if (!read) {
     if (now - w.plan.to < PRICE_GIVE_UP_MS) { w.nextTryAt = now + PRICE_POLL_MS; return false; }
     priceWaits.delete(w.call.id);
+    handedToMods.add(w.call.id);
     const still = (await deps.store.unsettled(w.call.platform, w.call.channelId).catch(() => [] as LiveCall[])).some((c) => c.id === w.call.id);
     if (still) await sayQuiet(deps, w.call, LIVE_COPY.priceToMods(w.call.question));
     deps.log("live price handed to mods", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id });
@@ -461,21 +467,29 @@ async function settlePrices(deps: LiveDeps): Promise<number> {
 }
 
 /**
- * !yes or !no with nothing taking answers. From a viewer it is chat. From the
- * channel's owner or a mod it is a mistake worth one line: the first Twitch
- * pilot typed one with a market open in chat and no call, and heard nothing
- * back. Once per ten minutes per channel, so a mod hammering !yes is answered
- * once. A call waiting for its result gets its own line and its own ten
- * minutes, how to settle it: a runner's !yes there most likely means the result.
+ * !yes or !no with nothing taking answers, or a settle with nothing to settle.
+ * From a viewer it is chat. From the channel's owner or a mod it is a mistake
+ * worth one line: the first Twitch pilot typed !yes or !no with a market open
+ * in chat and no call, then !call yes, no or cancel, and heard nothing back
+ * either time.
+ * Once per ten minutes per channel, so a mod hammering !yes is answered once.
+ * A call waiting for its result gets its own line and its own ten minutes: how
+ * to settle it, since a runner's !yes there most likely means the result. A
+ * price call is the exception: oddie reads it, and a mod's settle would beat
+ * the number, so the line says what it waits for instead.
  */
-async function pickHelp(msg: ChatMessage, waiting: LiveCall | null, now: number, deps: LiveDeps): Promise<string> {
-  if (!msg.canRun) return "no-open-call";
+async function pickHelp(msg: ChatMessage, waiting: LiveCall | null, now: number, deps: LiveDeps, quiet = "no-open-call"): Promise<string> {
+  if (!msg.canRun) return quiet;
   const key = `${roomKey(msg)}:${waiting?.id ?? ""}`;
   const last = lastPickHelp.get(key);
-  if (last !== undefined && now - last < PICK_HELP_GAP_MS) return "no-open-call";
+  if (last !== undefined && now - last < PICK_HELP_GAP_MS) return quiet;
   for (const [k, at] of lastPickHelp) if (now - at >= PICK_HELP_GAP_MS) lastPickHelp.delete(k);
   lastPickHelp.set(key, now);
-  await sayQuiet(deps, msg, waiting ? LIVE_COPY.settleFirst(waiting.question) : LIVE_COPY.pickHelp, msg.messageId);
+  const price = waiting ? priceWaits.get(waiting.id) : undefined;
+  const line = !waiting ? LIVE_COPY.pickHelp
+    : price ? LIVE_COPY.switched(waiting.question, await deps.store.tally(waiting.id), whenText(price.pc, price.plan))
+    : LIVE_COPY.settleFirst(waiting.question);
+  await sayQuiet(deps, msg, line, msg.messageId);
   return "pick-help";
 }
 
@@ -574,7 +588,8 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   // settle or cancel: which call. One waiting is that one; a number names one;
   // a bare cancel means the one taking answers; anything else is asked.
   const waiting = await deps.store.unsettled(msg.platform, msg.channelId);
-  if (!waiting.length) return "no-call";
+  // Nothing to settle: the runner hears how calls work, as a stray !yes would.
+  if (!waiting.length) return pickHelp(msg, null, now, deps, "no-call");
   let target: LiveCall | undefined;
   if (cmd.which !== null) target = waiting[cmd.which - 1];
   else if (waiting.length === 1) target = waiting[0];
@@ -697,7 +712,7 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
       continue;
     }
     if (parsePriceCall(c.question)) {
-      if (c.lockedAt !== null && !priceWaits.has(c.id)) waitForPrice(c);
+      if (c.lockedAt !== null && !priceWaits.has(c.id) && !handedToMods.has(c.id)) waitForPrice(c);
       continue;
     }
     const k = roomKey(c);
