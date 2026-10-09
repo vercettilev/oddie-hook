@@ -1,17 +1,19 @@
 /**
- * The Room hears about every market, wherever it was opened.
+ * The Room hears about every market, wherever it was opened, and nothing else.
  *
  * WHY. The Room (t.me/oddieroom) exists to find the other side of a bet. A
  * market opened under a tweet or in a Kick chat used to stay where it was
- * born: its bet pings and its result went only to the Telegram messages that
- * had tagged it, and a market opened on X had none. So the one room built to
- * take the other side never saw most of the markets that needed it.
+ * born, so the one room built to take the other side never saw most of the
+ * markets that needed it.
  *
- * HOW. One message in the Room per new market, then a ledger row keyed
- * `tg:<room>:<message>` exactly like the row a tag in a group writes. That row
- * is all the rest of the system needs: tgThreadsForSlug returns it, so every
- * later bet ping ("NO is wide open.") and the settlement post arrive as replies
- * to this announcement, through the code that already serves group tags.
+ * A FEED, NOT A THREAD. One message in the Room per new market, and that is
+ * all it ever gets. The Room is read-only, so it should read as a list of open
+ * calls. The announcement used to be recorded as a thread of the market (a
+ * `tg:<room>:<message>` ledger row), which made every bet ping ("NO is wide
+ * open.") and the settlement post land under it too, and the feed filled up
+ * with follow-ups. It is no longer recorded: tgThreadsForSlug never returns
+ * the Room, so pings and results stay in the chats where the market was
+ * argued, and the button on the announcement is where anyone follows it.
  *
  * WHAT IT SAYS. The market and where it was opened, never who opened it. A
  * person shows up only when they did something in public and chose to be
@@ -67,8 +69,6 @@ export function roomText(headline: string, where: string | null): string {
 export interface RoomDeps {
   chatId: number | null;
   send(chatId: number, text: string, url: string): Promise<{ message_id: number }>;
-  /** Writes the ledger row that makes this message a thread of the market. */
-  record(key: string, slug: string): Promise<void>;
   log(msg: string, extra?: Record<string, unknown>): void;
 }
 
@@ -81,11 +81,7 @@ export async function announceToRoom(
   if (deps.chatId === null || !m.slug || !m.headline.trim()) return "off";
   if (isRoomSource(m.sourceUrl, deps.chatId)) return "room-source";
   try {
-    const sent = await deps.send(deps.chatId, roomText(m.headline, openedOn(m.sourceUrl)), m.url);
-    // Recorded after the send, because the key IS the sent message. A record
-    // that fails leaves an announcement with no pings under it, which is the
-    // old behaviour, not a broken one.
-    await deps.record(`tg:${deps.chatId}:${sent.message_id}`, m.slug);
+    await deps.send(deps.chatId, roomText(m.headline, openedOn(m.sourceUrl)), m.url);
     return "announced";
   } catch (err) {
     deps.log("room announcement not delivered", { slug: m.slug, err: (err as Error).message });

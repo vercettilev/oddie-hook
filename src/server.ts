@@ -3747,14 +3747,12 @@ async function openMarketFromClaim(input: {
   // A market opened is something its opener did, for the people who follow them.
   void socialOpen(slug, identifiablePayee, creatorWallet)
     .catch((e) => console.error("[social] open event failed (non-fatal):", (e as Error).message));
-  // The Room hears about it, whatever door it came through (src/telegram/room.ts).
+  // The Room hears about it, whatever door it came through, and hears nothing
+  // after: one post per market, never a thread (src/telegram/room.ts).
   if (TG.tgToken()) {
     void announceToRoom({
       chatId: roomChatId(),
       send: (chatId, text, url) => TG.sendMessage(chatId, text, null, { text: "Take a side", url }),
-      record: async (key, s) => {
-        if (await claimMention(key, null)) await settleMention(key, "replied", { slug: s, reason: "announced" });
-      },
       log: (msg, extra) => console.error(`[room] ${msg}`, extra ?? {}),
     }, { slug, headline: foldIds(input.hook || question), url: `${APP_BASE_URL}/m/${slug}`, sourceUrl });
   }

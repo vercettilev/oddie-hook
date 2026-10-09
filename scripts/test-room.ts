@@ -1,12 +1,12 @@
-// The Room announcement: which markets reach it, what it says, and the ledger
-// row that makes later bet pings and the result land under it.
+// The Room announcement: which markets reach it, what it says, and that it is
+// the only thing the Room ever gets about a market (no thread, so no bet pings
+// or result under it).
 //
-// Offline: the Telegram send and the ledger write are fakes.
+// Offline: the Telegram send is a fake.
 //
 // Run with: npm run test-room
 
 import { announceToRoom, isRoomSource, openedOn, roomChatId, roomText, type RoomDeps } from "../src/telegram/room.js";
-import { parseTgKey } from "../src/telegram/resolution.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -49,29 +49,34 @@ check("never names anybody", !/opened by|@/i.test(t));
 console.log("\nannouncing");
 function fake(chatId: number | null) {
   const sent: Array<{ chatId: number; text: string; url: string }> = [];
-  const rows: Array<{ key: string; slug: string }> = [];
   const deps: RoomDeps = {
     chatId,
     send: async (c, text, url) => { sent.push({ chatId: c, text, url }); return { message_id: 77 }; },
-    record: async (key, slug) => { rows.push({ key, slug }); },
     log: () => {},
   };
-  return { deps, sent, rows };
+  return { deps, sent };
 }
+// A feed, not a thread: the Room's deps have no way to record the announcement
+// as one. If a `record` comes back, this line stops being an error and
+// `npm run typecheck` fails on the unused directive.
+const _noThread: RoomDeps = {
+  chatId: -1, send: async () => ({ message_id: 1 }), log: () => {},
+  // @ts-expect-error the Room never becomes a thread of a market
+  record: async () => {},
+};
+void _noThread;
 const m = { slug: "btc-200k", headline: "BTC to $200k by 2027?", url: "https://app.oddie.fun/m/btc-200k", sourceUrl: "https://x.com/someone/status/1" };
 {
   const f = fake(ROOM);
   const out = await announceToRoom(f.deps, m);
   check("a market from X is announced", out === "announced" && f.sent.length === 1 && f.sent[0].chatId === ROOM);
   check("the button carries the market link", f.sent[0]?.url === m.url);
-  check("the ledger row is the sent message", f.rows[0]?.key === `tg:${ROOM}:77` && f.rows[0]?.slug === "btc-200k");
-  const parsed = parseTgKey(f.rows[0]?.key ?? "");
-  check("...in the shape the result and bet pings read", parsed?.chatId === ROOM && parsed?.messageId === 77);
+  check("one message, and nothing else is sent", f.sent.length === 1);
 }
 {
   const f = fake(ROOM);
   const out = await announceToRoom(f.deps, { ...m, sourceUrl: "https://t.me/oddieroom/9" });
-  check("a market tagged in the Room is skipped", out === "room-source" && f.sent.length === 0 && f.rows.length === 0);
+  check("a market tagged in the Room is skipped", out === "room-source" && f.sent.length === 0);
 }
 {
   const f = fake(null);
@@ -82,7 +87,7 @@ const m = { slug: "btc-200k", headline: "BTC to $200k by 2027?", url: "https://a
   const f = fake(ROOM);
   f.deps.send = async () => { throw new Error("Bad Request: chat not found"); };
   const out = await announceToRoom(f.deps, m);
-  check("a failed send writes no row", out === "failed" && f.rows.length === 0);
+  check("a failed send is reported, not thrown", out === "failed");
 }
 
 if (failures) { console.error(`\n${failures} room check(s) failed`); process.exit(1); }
