@@ -527,6 +527,14 @@ pub mod oddie_chain {
     /// market pays refunds instead of winnings (see claim_winnings), and taking
     /// a cut of a refund would mean charging people to be given their own money
     /// back.
+    ///
+    /// NEVER MORE THAN THE LOSING SIDE PUT IN. The fee is a share of the pool,
+    /// but it is paid out of what the losers staked, and when they staked less
+    /// than the fee the rest came out of the winners' own stakes: 1000 SOL right
+    /// against 1 SOL wrong charged 40 SOL to win 1, and every winner collected
+    /// less than they put in. So the two fees are scaled down together until
+    /// they fit inside the losing side, and a winner always gets at least their
+    /// stake back.
     pub fn resolve_market(ctx: Context<ResolveMarket>, outcome: u8) -> Result<()> {
         require!(outcome == SIDE_YES || outcome == SIDE_NO, OddieError::BadSide);
         let m = &mut ctx.accounts.market;
@@ -573,8 +581,12 @@ pub mod oddie_chain {
                 / 10_000u128;
             u64::try_from(fee).map_err(|_| OddieError::MathOverflow.into())
         };
-        m.creator_fee_lamports = bps_to_lamports(m.creator_fee_bps)?;
-        m.protocol_fee_lamports = bps_to_lamports(m.protocol_fee_bps)?;
+        let creator_fee = bps_to_lamports(m.creator_fee_bps)?;
+        let protocol_fee = bps_to_lamports(m.protocol_fee_bps)?;
+        let losing_total = pool.checked_sub(winning_total).ok_or(OddieError::MathOverflow)?;
+        let (creator_fee, protocol_fee) = cap_fees(creator_fee, protocol_fee, losing_total)?;
+        m.creator_fee_lamports = creator_fee;
+        m.protocol_fee_lamports = protocol_fee;
         Ok(())
     }
 
@@ -841,6 +853,64 @@ fn pay_from_vault(vault: &AccountInfo, to: &AccountInfo, amount: u64) -> Result<
     **vault.try_borrow_mut_lamports()? -= amount;
     **to.try_borrow_mut_lamports()? += amount;
     Ok(())
+}
+
+/// The two fees, fitted inside what the losing side staked (see resolve_market).
+///
+/// Scaled together, so the creator and oddie keep the split the market was
+/// opened with, and each floors on its own: the sum of two floors can only
+/// fall short of the cap, never pass it. Under the cap they pass through
+/// untouched, which is every pool where the losers put in at least the fee.
+fn cap_fees(creator_fee: u64, protocol_fee: u64, losing_total: u64) -> Result<(u64, u64)> {
+    let fees = creator_fee.checked_add(protocol_fee).ok_or(OddieError::MathOverflow)?;
+    if fees <= losing_total {
+        return Ok((creator_fee, protocol_fee));
+    }
+    // fees > losing_total >= 0, so fees is never zero here.
+    let scale = |fee: u64| -> Result<u64> {
+        let v = (fee as u128)
+            .checked_mul(losing_total as u128)
+            .ok_or(OddieError::MathOverflow)?
+            / fees as u128;
+        u64::try_from(v).map_err(|_| OddieError::MathOverflow.into())
+    };
+    Ok((scale(creator_fee)?, scale(protocol_fee)?))
+}
+
+#[cfg(test)]
+mod cap_fees_tests {
+    use super::cap_fees;
+
+    #[test]
+    fn under_the_cap_the_fees_pass_through() {
+        // 1 SOL against 1 SOL: 4% of 2 SOL is 0.08, well inside the losing 1.
+        assert_eq!(cap_fees(40_000_000, 40_000_000, 1_000_000_000).unwrap(), (40_000_000, 40_000_000));
+        // Exactly at the cap is still under it.
+        assert_eq!(cap_fees(5, 5, 10).unwrap(), (5, 5));
+    }
+
+    #[test]
+    fn a_thin_losing_side_caps_the_fee_at_what_it_staked() {
+        // 1000 SOL right against 1 SOL wrong: 2% + 2% of 1001 SOL is 40.04 SOL,
+        // and the losers put in 1. The fee becomes that 1, split as opened.
+        let (c, p) = cap_fees(20_020_000_000, 20_020_000_000, 1_000_000_000).unwrap();
+        assert_eq!((c, p), (500_000_000, 500_000_000));
+        assert!(c + p <= 1_000_000_000);
+    }
+
+    #[test]
+    fn an_uneven_split_keeps_its_shape_and_never_passes_the_cap() {
+        // A market opened at 3% + 1%: the cap keeps three parts to one.
+        let (c, p) = cap_fees(300, 100, 7).unwrap();
+        assert_eq!((c, p), (5, 1));
+        assert!(c + p <= 7);
+    }
+
+    #[test]
+    fn nothing_lost_means_nothing_taken() {
+        assert_eq!(cap_fees(40, 40, 0).unwrap(), (0, 0));
+        assert_eq!(cap_fees(0, 0, 0).unwrap(), (0, 0));
+    }
 }
 
 // --- accounts ---------------------------------------------------------------

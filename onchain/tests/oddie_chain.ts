@@ -23,6 +23,9 @@ const SIDE_YES = 0;
 const SIDE_NO = 1;
 const FEE_BPS = 200;      // 2% to whoever's argument it was
 const PROTOCOL_BPS = 200; // 2% to oddie. 4% total, split down the middle
+// create_market has taken the rule since the criteria hash (0333c13); the
+// calls here kept the old six arguments, and every test failed at the first mint.
+const CRITERIA = "Resolves YES if the test passes.";
 
 describe("oddie_chain", () => {
   const provider = anchor.AnchorProvider.env();
@@ -56,7 +59,7 @@ describe("oddie_chain", () => {
     const id = freshId();
     const { market, vault } = pdas(id);
     await program.methods
-      .createMarket(id, "Will the test pass?", new BN(Math.floor(Date.now() / 1000) + 3600), creator, feeBps, protoBps)
+      .createMarket(id, "Will the test pass?", new BN(Math.floor(Date.now() / 1000) + 3600), creator, feeBps, protoBps, CRITERIA)
       .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
       .rpc();
     return { id, market, vault };
@@ -217,6 +220,56 @@ describe("oddie_chain", () => {
     assert.isAtMost(Math.abs(protoGot - expectedProto), 10000, `oddie got ${protoGot}, wanted ~${expectedProto}`);
   });
 
+  it("never takes more than the losing side put in, so a winner gets their stake back", async () => {
+    // 3 SOL right against 0.1 wrong. 4% of 3.1 SOL is 0.124, more than the 0.1
+    // the losers staked: uncapped, the winner collected 2.976 of their own 3
+    // for being right. Capped, the fee is the losers' 0.1, split as opened.
+    const creator = await funded();
+    const big = await funded();
+    const small = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, big, SIDE_YES, 3);
+    await stake(market, vault, small, SIDE_NO, 0.1);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    const m = await program.account.market.fetch(market);
+    const losing = 0.1 * LAMPORTS_PER_SOL;
+    assert.equal(m.creatorFeeLamports.toNumber(), losing / 2, "the creator's half of the cap");
+    assert.equal(m.protocolFeeLamports.toNumber(), losing / 2, "oddie's half of the cap");
+
+    const rent = await positionRent(market, big.publicKey);
+    const before = await provider.connection.getBalance(big.publicKey);
+    await claim(market, vault, big);
+    const got = (await provider.connection.getBalance(big.publicKey)) - before;
+    assert.equal(got, 3 * LAMPORTS_PER_SOL + rent, "the whole stake back, and the rent");
+
+    // Both fees still come out of what is left, to the lamport.
+    await program.methods.claimCreatorFee()
+      .accounts({ creator: creator.publicKey, market, vault })
+      .signers([creator]).rpc();
+    await program.methods.claimProtocolFee()
+      .accounts({ authority: authority.publicKey, market, vault }).rpc();
+  });
+
+  it("leaves the fee alone when the losing side covers it", async () => {
+    // 3 SOL against 0.2: 4% of 3.2 is 0.128, inside the losing 0.2. The cap
+    // binds only where the fee would have come out of the winners' stakes.
+    const creator = await funded();
+    const big = await funded();
+    const small = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, big, SIDE_YES, 3);
+    await stake(market, vault, small, SIDE_NO, 0.2);
+    await program.methods.resolveMarket(SIDE_YES)
+      .accounts({ authority: authority.publicKey, market }).rpc();
+
+    const m = await program.account.market.fetch(market);
+    const pool = m.totalYes.toNumber() + m.totalNo.toNumber();
+    assert.equal(m.creatorFeeLamports.toNumber(), Math.floor((pool * FEE_BPS) / 10000));
+    assert.equal(m.protocolFeeLamports.toNumber(), Math.floor((pool * PROTOCOL_BPS) / 10000));
+  });
+
   /* ------------------------------------------------------- the protocol fee --
    * The half that pays for the product. It has to be as unstealable as the
    * creator's and as invisible when it was never charged, or "markets opened
@@ -305,7 +358,7 @@ describe("oddie_chain", () => {
     await failsWith(
       program.methods
         .createMarket(id, "Will the split hide the takeout?", new BN(Math.floor(Date.now() / 1000) + 3600),
-          creator.publicKey, 600, 600)   // 6% + 6%, each under the individual cap
+          creator.publicKey, 600, 600, CRITERIA)   // 6% + 6%, each under the individual cap
         .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
         .rpc(),
       "FeeTooHigh");
@@ -451,7 +504,7 @@ describe("oddie_chain", () => {
     await failsWith(
       program.methods
         .createMarket(id, "Will the rug pull?", new BN(Math.floor(Date.now() / 1000) + 3600),
-          creator.publicKey, 5000, 0)
+          creator.publicKey, 5000, 0, CRITERIA)
         .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
         .rpc(),
       "FeeTooHigh");
