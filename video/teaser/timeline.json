@@ -1,25 +1,24 @@
 {
   "bpm": 150,
   "note": "Every cue is in beats from the first frame (one beat = 0.4 s). teaser.html and build_audio.py both read this file, so picture and score cannot drift apart.",
-  "bars": { "intro": 0, "build": 4, "rise": 8, "drop": 10, "outro": 16, "end": 19 },
-  "typeRate": 0.034,
+  "bars": { "city": 0, "oracle": 2, "streets": 4, "boss": 8, "drop": 10, "hero": 11, "pump": 12, "roster": 14, "outro": 16, "end": 19 },
+  "typeRate": 0.04,
   "lines": [
-    { "text": "every stream has a take.", "at": 0.5, "out": 3.25 },
-    { "text": "every chat thinks it's right.", "at": 4.5, "out": 7.25 },
-    { "text": "nobody ever had to prove it.", "at": 8.5, "out": 11.25 },
-    { "text": "until now.", "at": 12.5, "out": 16 }
+    { "text": "watched everything.", "at": 0.25, "out": 3.6 },
+    { "text": "said nothing.", "at": 4.25, "out": 7.6 }
   ],
-  "subliminal": [2.5, 6.5, 10.5, 14.5],
-  "logoSlams": [16, 17, 18, 19],
-  "chatPull": 22,
-  "card": 24,
-  "words": [28, 29, 30, 31],
-  "riseWords": [36, 37, 38, 39],
-  "blackout": 39.6,
-  "paletteSwap": 44,
-  "stickers": [48, 49, 50, 51, 52, 53, 54, 55],
-  "tiles": [56, 57, 58, 59],
-  "tagline": [60, 61],
-  "strobe": [62, 64],
-  "outro": { "soon": 65, "shine": 67, "footer": 68, "fade": 74 }
+  "glitches": [2.75, 6.75],
+  "untilNow": 12.5,
+  "hearts": [0, 4, 32, 34, 36, 68, 72],
+  "flicker": [[0, 0.04], [0.08, 0.11], [0.17, 0.2], [0.26, 0.28], [0.33, 99]],
+  "archetypes": [
+    { "art": "prophet", "brag": "I call it before the chart does." },
+    { "art": "loudest", "brag": "Loudest in every room. Usually right." },
+    { "art": "og", "brag": "Here before it was cool." },
+    { "art": "rookie", "brag": "Day one. Remember the name." }
+  ],
+  "boss": { "relax": 33, "line": 36, "text": "the next big call is...", "rate": 0.05, "roll": [37, 39], "puff": 39, "hush": 39.5 },
+  "drop": { "kick": [0, 6, 10], "clap": [4, 12] },
+  "roster": { "fill": 56, "spin": 57, "lock": 60, "strobe": 62, "jumps": 16, "curve": 1.7 },
+  "outro": { "soon": 65, "footer": 67, "fade": 74 }
 }
