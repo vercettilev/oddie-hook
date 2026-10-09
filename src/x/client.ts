@@ -197,6 +197,9 @@ export interface Mention {
   authorHandle: string | null;
   /** The tweet this mention is a reply to, which is the claim being tagged. */
   repliedToId: string | null;
+  /** Who wrote that tweet. When it is us, the mention is a reply under our own
+   *  post, and X put our handle at its front whether or not anyone asked. */
+  inReplyToUserId?: string | null;
   createdAt: string | null;
 }
 
@@ -204,6 +207,7 @@ interface MentionsResponse {
   data?: Array<{
     id: string; text: string; author_id: string; created_at?: string;
     referenced_tweets?: Array<{ type: string; id: string }>;
+    in_reply_to_user_id?: string;
   }>;
   includes?: { users?: Array<{ id: string; username: string }> };
   meta?: { newest_id?: string; result_count?: number };
@@ -221,7 +225,7 @@ interface MentionsResponse {
 export async function mentions(sinceId: string | null, max = 20): Promise<{ items: Mention[]; newestId: string | null }> {
   const qs = new URLSearchParams({
     max_results: String(Math.max(5, Math.min(100, max))),
-    "tweet.fields": "created_at,referenced_tweets,author_id",
+    "tweet.fields": "created_at,referenced_tweets,author_id,in_reply_to_user_id",
     expansions: "author_id",
     "user.fields": "username",
   });
@@ -235,6 +239,7 @@ export async function mentions(sinceId: string | null, max = 20): Promise<{ item
     authorId: t.author_id,
     authorHandle: byId.get(t.author_id) ?? null,
     repliedToId: t.referenced_tweets?.find((r) => r.type === "replied_to")?.id ?? null,
+    inReplyToUserId: t.in_reply_to_user_id ?? null,
     createdAt: t.created_at ?? null,
   }));
   return { items, newestId: body.meta?.newest_id ?? null };

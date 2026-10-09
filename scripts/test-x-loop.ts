@@ -24,7 +24,7 @@ if (process.env.DATABASE_URL) {
 }
 
 import { readFileSync } from "node:fs";
-import { runMentionSweep, stripLeadingMentions, stripBotHandle, addressesBot, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB, _resetModelPause } from "../src/x/mentionLoop.js";
+import { runMentionSweep, stripLeadingMentions, stripBotHandle, addressesBot, asksInWords, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB, _resetModelPause } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
 import { botStateGet, _memMentionOutcome, _memMentionReason, _memMentionAttempts, _resetBotState } from "../src/store/markets.js";
 import { SINCE_KEY } from "../src/x/client.js";
@@ -248,6 +248,58 @@ async function main() {
     const r = await runMentionSweep(deps);
     check("its own reply coming back as a mention is skipped", r.skipped === 1 && spy.posted.length === 0);
     check("...and recorded, so it is not reconsidered", _memMentionOutcome("300") === "skipped");
+  }
+
+  /* ------------------------------------------- a reply under our own post -- */
+  // 9 Oct: "😳😳" under the launch post was graded with the launch post as the
+  // claim and got the teaching card, publicly. X puts our handle at the front
+  // of every reply under our posts, so that alone is not a tag.
+  const LAUNCH = "twitch. kick. x. telegram.\none call for all markets.\n\noddie.";
+  {
+    _resetBotState();
+    let reads = 0, graded = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("310", { text: "@Oddiefun 😳😳", inReplyToUserId: BOT })], newestId: "310" }),
+      tweet: async (id) => { reads++; return { id, text: LAUNCH, authorHandle: "Oddiefun" }; },
+      extract: async () => { graded++; return goodExtraction("Will oddie launch?"); },
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+    });
+    const r = await runMentionSweep(deps);
+    check("a reaction under our own post gets no reply at all", spy.posted.length === 0 && r.skipped === 1);
+    check("...costs no read and no model call", reads === 0 && graded === 0, `reads ${reads}, graded ${graded}`);
+    check("...and is recorded as a reply to ours", _memMentionReason("310") === "reply-to-ours", _memMentionReason("310") ?? "");
+  }
+  {
+    // The same kind of reply with X not saying whose post it answers: the
+    // parent's author decides, and still nothing is graded or said.
+    _resetBotState();
+    let graded = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("311", { text: "@Oddiefun this is sick, when token" })], newestId: "311" }),
+      tweet: async (id) => ({ id, text: LAUNCH, authorHandle: "Oddiefun" }),
+      extract: async () => { graded++; return goodExtraction("Will oddie launch?"); },
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+    });
+    await runMentionSweep(deps);
+    check("...caught by the parent's author when X leaves the field out", spy.posted.length === 0 && graded === 0);
+  }
+  {
+    // Asked in their own words under our post: the claim is theirs, never ours.
+    _resetBotState();
+    const seen: string[] = [];
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("312", {
+        text: "@Oddiefun Bitcoin hits $200k before 2027, price it @oddiefun", inReplyToUserId: BOT,
+      })], newestId: "312" }),
+      tweet: async (id) => ({ id, text: LAUNCH, authorHandle: "Oddiefun" }),
+      extract: async (t) => { seen.push(t); return goodExtraction("Will Bitcoin hit $200k before 2027?"); },
+    });
+    await runMentionSweep(deps);
+    check("asked in their own words under our post, it still opens a market", spy.minted.length === 1 && spy.posted.length === 1);
+    check("...graded on their words, never on our post",
+      seen.length === 1 && !/one call for all markets/.test(seen[0]) && /200k/.test(seen[0]), seen[0]);
   }
 
   /* ---------------------------------------------------------- exactly once -- */
@@ -1210,6 +1262,14 @@ async function main() {
     !addressesBot("@chase prediction markets for livestreams, check out @oddiefun", "oddiefun"));
   check("addressesBot: a longer handle is somebody else",
     !addressesBot("@chase big fan of the work at @oddiefunny and @oddiefun", "oddiefun"));
+  check("asksInWords: the handle X writes in front of a reply under our post is not asking",
+    !asksInWords("@Oddiefun 😳😳", "oddiefun"));
+  check("asksInWords: our handle in the person's own words asks",
+    asksInWords("@Oddiefun @alice BTC 200k by 2027 @oddiefun", "oddiefun"));
+  check("asksInWords: typed in front a second time, next to X's copy, asks",
+    asksInWords("@Oddiefun @oddiefun BTC 200k by 2027", "oddiefun"));
+  check("asksInWords: a longer handle is somebody else",
+    !asksInWords("@Oddiefun ask @oddiefunny about it", "oddiefun"));
   check("stripLeadingMentions only takes handles off the FRONT",
     stripLeadingMentions("@a @b real text @c") === "real text @c");
   check("tweetUrl falls back to the handle-free form",

@@ -226,6 +226,27 @@ export function addressesBot(text: string, handle: string): boolean {
   return rest.slice(0, at).trim().split(/\s+/).filter(Boolean).length <= 2;
 }
 
+/**
+ * A REPLY UNDER OUR OWN POST IS NOT A TAG.
+ *
+ * X writes the handle of the post being answered at the front of every reply,
+ * so each reply under one of @oddiefun's posts reaches the bot as a mention
+ * that opens on our handle, which addressesBot reads as being asked. 9 Oct:
+ * "😳😳" under the launch post was graded with the launch post itself as the
+ * claim and got the teaching card, publicly, and Lev deleted it. Under our own
+ * post that leading block is routing, so only our handle in the words the
+ * person wrote asks for anything: after the block, or typed into it a second
+ * time next to the one X put there.
+ */
+export function asksInWords(text: string, handle: string): boolean {
+  const h = handle.replace(/^@+/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(h)) return false;
+  const ours = new RegExp(`@${h}\\b`, "gi");
+  const lead = /^(?:\s*@[A-Za-z0-9_]{1,15})+/.exec(text)?.[0] ?? "";
+  if ((lead.match(ours) ?? []).length >= 2) return true;
+  return new RegExp(`@${h}\\b`, "i").test(text.slice(lead.length));
+}
+
 /** Tweets are addressed by handle in the URL, but any handle resolves; the id
  *  is what makes it canonical. `i/web` is X's own handle-free form. */
 export function tweetUrl(handle: string | null, id: string): string {
@@ -350,6 +371,16 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       await claimMention(m.id, m.authorHandle);
       await settleMention(m.id, "skipped", { reason: "self" });
       decide("skipped", { reason: "self" });
+      continue;
+    }
+
+    // A reply under our own post that never asked for us (see asksInWords):
+    // nothing read, nothing graded, nothing said, nothing charged.
+    if (m.inReplyToUserId && m.inReplyToUserId === deps.botUserId
+        && !asksInWords(m.text, deps.botHandle ?? "oddiefun")) {
+      const first = await claimMention(m.id, m.authorHandle);
+      if (first) await settleMention(m.id, "skipped", { reason: "reply-to-ours" });
+      decide("skipped", { reason: first ? "reply-to-ours" : "already-decided" });
       continue;
     }
 
@@ -526,7 +557,19 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       // would grade the word "@oddiefun".
       const bot = deps.botHandle ?? "oddiefun";
       const parent = m.repliedToId ? await deps.tweet(m.repliedToId) : null;
-      const parentText = parent ? stripBotHandle(parent.text, bot).trim() : "";
+      /* OUR OWN POST IS NEVER THE ARGUMENT (see asksInWords). The top of the
+         sweep already let go of replies under our posts that did not ask; this
+         catches the same reply when X did not say whose post it answers, by
+         the parent's author, and keeps our own words out of the claim when
+         somebody under our post did ask. */
+      const underOurs = (m.inReplyToUserId != null && m.inReplyToUserId === deps.botUserId)
+        || (parent?.authorHandle ?? "").toLowerCase() === bot.replace(/^@+/, "").toLowerCase();
+      if (underOurs && !asksInWords(m.text, bot)) {
+        await settleMention(m.id, "skipped", { reason: "reply-to-ours" });
+        decide("skipped", { reason: "reply-to-ours" });
+        continue;
+      }
+      const parentText = parent && !underOurs ? stripBotHandle(parent.text, bot).trim() : "";
       // Tagging is not required to be a reply. With no parent the mention IS
       // the claim, so the person's own post becomes the market.
       const ownText = stripBotHandle(stripLeadingMentions(m.text), bot).trim();
