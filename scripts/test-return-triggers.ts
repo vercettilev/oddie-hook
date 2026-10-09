@@ -12,7 +12,7 @@ if (process.env.DATABASE_URL) {
 import {
   createCommunityMarket, openCommunityMarkets, placeCall, setHandle,
   noticesFor, notifyClosingSoon, openCallsSummaryFor,
-  _memGrant,
+  _memGrant, _flushNotices,
 } from "../src/store/markets.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -29,14 +29,20 @@ const soon = (hoursOut: number) => Math.floor(Date.now() / 1000) + Math.round(ho
 // awaited, the same "best-effort side job, must never block the call itself"
 // idiom awardParticipation already uses. That means placeCall's own promise
 // resolves before the notification write lands, so a caller that wants to
-// assert on the notification needs to give the event loop a tick first.
-const flush = () => new Promise((r) => setTimeout(r, 0));
+// assert on the notification has to wait for that write.
+//
+// NOT one setTimeout(0), which is what this used to wait. The write sits
+// behind displayHandleFor's dynamic import of accounts.js, and that takes as
+// long as the module loader takes. Whether one timer tick covered it came down
+// to how the loader happened to schedule that work, and where it didn't, the
+// opposite-side checks below failed 2-3 per run. _flushNotices waits on the
+// write itself.
 const call = async (slug: string, deviceId: string, side: "yes" | "no", tokens = 10): Promise<void> => {
   const live = (await openCommunityMarkets()) as unknown as Market[];
   _memGrant(deviceId, tokens); // see test-settlement.ts's note: production only ever stakes CALL_COST now
   const r = await placeCall(slug, side, tokens, deviceId, live);
   if (!r.ok) throw new Error(`placeCall ${slug} ${deviceId}: ${JSON.stringify(r)}`);
-  await flush();
+  await _flushNotices();
 };
 
 // NOT String(n).repeat(32).slice(0,32) — for single-repeated-digit n (1, 11,

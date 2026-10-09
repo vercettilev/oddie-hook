@@ -1438,7 +1438,7 @@ export async function placeCall(
     });
     const distinct = new Set(memCalls.filter((c) => c.slug === rec.slug && c.deviceId).map((c) => c.deviceId)).size;
     void awardParticipation(rec.slug, deviceId, firstEver, distinct);
-    void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
+    void trackNotice(notifyOppositeSide(rec.slug, rec.market.question, deviceId, side));
     return { ok: true, id: memId, balance: w.tokens - tokens, calls: rec.calls.length, pctAt, firstEver };
   }
 
@@ -1471,7 +1471,7 @@ export async function placeCall(
       `SELECT count(DISTINCT device_id)::int n FROM market_call WHERE slug=$1 AND device_id IS NOT NULL`, [rec.slug],
     ).then((r) => r.rows[0]?.n ?? 0).catch(() => 0);
     void awardParticipation(rec.slug, deviceId, firstEver, distinct);
-    void notifyOppositeSide(rec.slug, rec.market.question, deviceId, side);
+    void trackNotice(notifyOppositeSide(rec.slug, rec.market.question, deviceId, side));
     return { ok: true, id: ins.rows[0].id, balance: upd.rows[0].tokens, calls: rec.calls.length, pctAt, firstEver };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -5797,6 +5797,25 @@ export async function notifyOppositeSide(slug: string, question: string, callerD
   } catch (err) {
     console.error("[notify] opposite-side failed:", (err as Error).message);
   }
+}
+
+/** Notices placeCall has fired and not yet seen land. The call never waits on
+ *  its notice, so this is the only handle anything has on one in flight — it
+ *  exists for _flushNotices, and each notice removes itself once written. */
+const noticesInFlight = new Set<Promise<void>>();
+function trackNotice(p: Promise<void>): Promise<void> {
+  noticesInFlight.add(p);
+  return p.finally(() => noticesInFlight.delete(p));
+}
+
+/** Test-only escape hatch, same convention as _memGrant: resolves once every
+ *  notice placeCall has fired so far has been written. placeCall resolves
+ *  before its notice lands, on purpose, and how long the write takes after
+ *  that is no fixed number of ticks — on the in-memory backend it waits on
+ *  displayHandleFor's dynamic import — so a test asserting on a notice awaits
+ *  this, never a timer. */
+export async function _flushNotices(): Promise<void> {
+  while (noticesInFlight.size) await Promise.all(noticesInFlight);
 }
 
 const CLOSING_SOON_WINDOW_MS = 24 * 60 * 60 * 1000;
