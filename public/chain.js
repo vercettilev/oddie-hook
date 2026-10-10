@@ -124,20 +124,35 @@ async function signAndSubmit(tx, onSigned){
     throw new Error("This wallet will not work here. Use Phantom.");
   }
   const signed = await w.signTransaction(tx);
-  if (onSigned) onSigned();
-  // Default options on purpose: the wallet has just signed, so requiring the
-  // signature here turns a wallet that quietly returned an unsigned envelope
-  // into an error we can name instead of bytes the cluster refuses later.
-  const bytes = signed.serialize();
-  let b64 = "";
-  for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
-  const r = await fetch("/api/chain/submit", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ txBase64: btoa(b64) }),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) throw new Error(SUBMIT_ERROR[j && j.error] || SUBMIT_ERROR.unavailable);
-  return { signature: j.signature, confirmed: j.confirmed !== false };
+  /* WHAT THE BUTTON SAYS WHILE SOLANA WORKS. A user wrote (10 Oct) that the
+     wait after signing "seemed like a long time" and asked for something in
+     between. The wait itself was ours (the server waited a minute on a
+     websocket that never answered; it polls now and answers in seconds), but
+     the label still has to move, so a slow block never reads as a dead
+     button. onSigned receives the words to show. */
+  const say = (t) => { if (onSigned) onSigned(t); };
+  say("Sending…");
+  const later = [
+    setTimeout(() => say("On Solana, confirming…"), 2500),
+    setTimeout(() => say("Still confirming…"), 10000),
+  ];
+  try {
+    // Default options on purpose: the wallet has just signed, so requiring the
+    // signature here turns a wallet that quietly returned an unsigned envelope
+    // into an error we can name instead of bytes the cluster refuses later.
+    const bytes = signed.serialize();
+    let b64 = "";
+    for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
+    const r = await fetch("/api/chain/submit", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ txBase64: btoa(b64) }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(SUBMIT_ERROR[j && j.error] || SUBMIT_ERROR.unavailable);
+    return { signature: j.signature, confirmed: j.confirmed !== false };
+  } finally {
+    later.forEach(clearTimeout);
+  }
 }
 
 /**
@@ -387,7 +402,7 @@ function b64ToBytes(b64) {
     const w3 = await loadWeb3();
     const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
     say("Confirm in your wallet…");
-    const out = await signAndSubmit(tx, () => say("Sending…"));
+    const out = await signAndSubmit(tx, (t) => say(t));
     return { signature: out.signature, confirmed: out.confirmed, url: txUrl(out.signature, CLUSTER) };
   }
 
@@ -917,7 +932,7 @@ function b64ToBytes(b64) {
         btn.textContent = "Confirm in wallet…";
         // The label has to move off "Confirm in wallet" the moment the wallet
         // is done, or it sits there stale while the server broadcasts.
-        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Sending…"; });
+        const { signature, confirmed } = await signAndSubmit(tx, (t) => { btn.textContent = t; });
         // The receipt is offered at the exact moment they feel like a genius,
         // because that is the moment they will actually post it. It opens as
         // its own page: the og image puts the card in the tweet, and posting it
@@ -1017,12 +1032,12 @@ function b64ToBytes(b64) {
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         btn.textContent = "Confirm in wallet…";
-        const { signature, confirmed } = await signAndSubmit(tx, () => { btn.textContent = "Sending…"; });
+        const { signature, confirmed } = await signAndSubmit(tx, (t) => { btn.textContent = t; });
         const sol = pj.lamports ? (pj.lamports / 1e9).toFixed(3).replace(/0+$/, "").replace(/\.$/, "") : null;
         body.innerHTML = `<h3>${confirmed ? "Back in your wallet ✓" : "Sent"}</h3>
           <p class="cnote">${confirmed
             ? `${sol ? `${sol} SOL` : "Your stake"} is on its way back, on ${clusterLabel(CLUSTER)}.`
-            : "It is on the network and we lost sight of it while it settled. Follow the link before trying again."}</p>
+            : "It reached Solana, but we could not watch it land from here. Open the link to see it before you try again."}</p>
           <p class="chain-sig">On Solana: <a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></p>
           ${homeLink()}
           <button class="cclose">Done</button>`;
@@ -1108,7 +1123,7 @@ function b64ToBytes(b64) {
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         btn.textContent = "Confirm in wallet…";
-        const { signature } = await signAndSubmit(tx, () => { btn.textContent = "Sending…"; });
+        const { signature } = await signAndSubmit(tx, (t) => { btn.textContent = t; });
         // The server may have shortened the window to the market's own close,
         // because the program refuses a listing that outlives the market. Say
         // the date it actually stands until rather than the one that was asked
@@ -1824,7 +1839,7 @@ function b64ToBytes(b64) {
           const w3 = await loadWeb3();
           const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
           stakeBtn.textContent = "Confirm in wallet…";
-          const { signature, confirmed } = await signAndSubmit(tx, () => { stakeBtn.textContent = "Sending…"; });
+          const { signature, confirmed } = await signAndSubmit(tx, (t) => { stakeBtn.textContent = t; });
           // confirmed:false means it WAS broadcast and we could not watch it
           // land. Never render that as a failure: the program allows adding to
           // a position on the same side, so a retry over a stake that is
@@ -1861,7 +1876,7 @@ function b64ToBytes(b64) {
                 : "Your call is on chain now."}${testnet ? ` On ${label}.` : ""}</p>
             </div>`
             : `<h3>Sent</h3>
-            <p class="cnote">${sol} SOL on ${side.toUpperCase()} is on the network. We lost sight of it while it settled, so check the link before staking again.</p>`}
+            <p class="cnote">${sol} SOL on ${side.toUpperCase()} reached Solana, but we could not watch it land from here. Open the link to see it before you stake again.</p>`}
             <!-- BRING THE OTHER SIDE (Lev, 1 Oct). Pari-mutuel: a YES only pays
                  out of NO money, so the one useful thing to do after a bet is
                  fetch somebody who disagrees. Said as exactly that, true for
@@ -2387,7 +2402,7 @@ function b64ToBytes(b64) {
         const w3 = await loadWeb3();
         const tx = w3.Transaction.from(b64ToBytes(pj.txBase64));
         b.textContent = "Confirm in your wallet…";
-        const { signature, confirmed } = await signAndSubmit(tx, () => { b.textContent = "Sending…"; });
+        const { signature, confirmed } = await signAndSubmit(tx, (t) => { b.textContent = t; });
         const row = b.closest(".cc-item");
         row.innerHTML = `<span class="cc-q">${confirmed ? "Collected ✓" : "Sent, still confirming"}</span>
           <span class="cc-meta"><a href="${txUrl(signature, CLUSTER)}" target="_blank" rel="noopener">${short(signature)} ↗</a></span>`;

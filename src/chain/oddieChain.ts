@@ -1127,6 +1127,67 @@ function errText(e: unknown): string {
  * carry the user's signature, to the same node the rest of the server reads
  * from. Non-custodial is unchanged, because a signature is the whole of custody.
  */
+/**
+ * CONFIRMATION BY POLLING, NOT BY WEBSOCKET.
+ *
+ * web3.js's confirmTransaction waits for a signatureSubscribe notification and
+ * only gives up once the chain has walked past the blockhash's last valid
+ * height, about a minute later. From this host the subscription never
+ * delivered: the log said "Signature … has expired: block height exceeded"
+ * for stakes that were confirmed within seconds, so every stake sat on
+ * "Sending…" for a minute and then came back as lost, and its bookkeeping
+ * (the entry stamp, the other side's notice) was skipped. Measured on
+ * 10 Oct 2026 from a user's screenshots and the server log.
+ *
+ * getSignatureStatuses needs no socket and answers in a second or two. The
+ * block height is checked every few polls so a dropped transaction is called
+ * expired instead of waited on, with one last look through history before
+ * that verdict, since the status cache can age out between polls.
+ *
+ * Pure apart from its deps, so the tests drive the clock.
+ */
+export interface ConfirmDeps {
+  status: (signature: string, searchHistory: boolean) => Promise<{ err: unknown; confirmationStatus?: string | null } | null>;
+  blockHeight: () => Promise<number>;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
+}
+export type ConfirmOutcome =
+  | { state: "confirmed" }
+  | { state: "rejected"; err: unknown }
+  | { state: "unknown"; reason: "expired" | "timeout" };
+export const CONFIRM_POLL_MS = 700;
+export const CONFIRM_TIMEOUT_MS = 45_000;
+
+export async function confirmByPolling(
+  signature: string,
+  lastValidBlockHeight: number,
+  deps: ConfirmDeps,
+  opts: { pollMs?: number; timeoutMs?: number; heightEvery?: number } = {},
+): Promise<ConfirmOutcome> {
+  const pollMs = opts.pollMs ?? CONFIRM_POLL_MS;
+  const timeoutMs = opts.timeoutMs ?? CONFIRM_TIMEOUT_MS;
+  const heightEvery = opts.heightEvery ?? 6;
+  const started = deps.now();
+  const settled = (s: { err: unknown; confirmationStatus?: string | null } | null): ConfirmOutcome | null => {
+    if (!s) return null;
+    if (s.err) return { state: "rejected", err: s.err };
+    if (s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized") return { state: "confirmed" };
+    return null; // "processed": one node has seen it, the cluster has not voted yet
+  };
+  for (let i = 0; ; i++) {
+    const out = settled(await deps.status(signature, false));
+    if (out) return out;
+    if (i > 0 && i % heightEvery === 0 && (await deps.blockHeight()) > lastValidBlockHeight) {
+      return settled(await deps.status(signature, true)) ?? { state: "unknown", reason: "expired" };
+    }
+    if (deps.now() - started >= timeoutMs) {
+      return settled(await deps.status(signature, true)) ?? { state: "unknown", reason: "timeout" };
+    }
+    await deps.sleep(pollMs);
+  }
+}
+
 export interface SubmitResult { ok: boolean; signature?: string; confirmed?: boolean; error?: string; badRequest?: boolean }
 
 export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
@@ -1231,12 +1292,17 @@ export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
      */
     try {
       const bh = await c.connection.getLatestBlockhash("confirmed");
-      const res = await c.connection.confirmTransaction(
-        { signature, blockhash: bh.blockhash, lastValidBlockHeight: bh.lastValidBlockHeight },
-        "confirmed",
-      );
-      if (res.value.err) return { ok: false, error: "rejected", signature };
-      return { ok: true, signature, confirmed: true };
+      const outcome = await confirmByPolling(signature, bh.lastValidBlockHeight, {
+        status: async (s, searchHistory) =>
+          (await c.connection.getSignatureStatuses([s], { searchTransactionHistory: searchHistory })).value[0] ?? null,
+        blockHeight: () => c.connection.getBlockHeight("confirmed"),
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        now: Date.now,
+      });
+      if (outcome.state === "rejected") return { ok: false, error: "rejected", signature };
+      if (outcome.state === "confirmed") return { ok: true, signature, confirmed: true };
+      console.error(`[chain] sent but not confirmed in time (${outcome.reason}): ${signature}`);
+      return { ok: true, signature, confirmed: false };
     } catch (e) {
       console.error("[chain] confirm failed but it was sent:", errText(e));
       return { ok: true, signature, confirmed: false };
