@@ -247,6 +247,13 @@ export function asksInWords(text: string, handle: string): boolean {
   return new RegExp(`@${h}\\b`, "i").test(text.slice(lead.length));
 }
 
+/** Whether a post carries our handle anywhere in its text. */
+export function namesHandle(text: string, handle: string): boolean {
+  const h = handle.replace(/^@+/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(h)) return false;
+  return new RegExp(`@${h}\\b`, "i").test(text);
+}
+
 /** Tweets are addressed by handle in the URL, but any handle resolves; the id
  *  is what makes it canonical. `i/web` is X's own handle-free form. */
 export function tweetUrl(handle: string | null, id: string): string {
@@ -567,6 +574,20 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       if (underOurs && !asksInWords(m.text, bot)) {
         await settleMention(m.id, "skipped", { reason: "reply-to-ours" });
         decide("skipped", { reason: "reply-to-ours" });
+        continue;
+      }
+      /* A HANDLE INHERITED FROM THE POST ABOVE IS NOT A TAG EITHER. 10 Oct: a
+         reviewer's post named @oddiefun, somebody answered that post with
+         "Review moor.fund ser.", X copied our handle to the front of their
+         reply, and the bot taught them in public, under the review. When the
+         post being answered already carries our handle, the copy at the front
+         of the reply is X's routing, exactly as under our own post, and only
+         our handle in the words the person wrote asks for anything. Silent and
+         free, like "named": nothing read, nothing graded, nothing charged. */
+      if (!underOurs && parent && namesHandle(parent.text, bot) && !asksInWords(m.text, bot)) {
+        await settleMention(m.id, "skipped", { reason: "inherited-mention" });
+        decide("skipped", { reason: "inherited-mention" });
+        log("our handle came down from the post above: not a tag", { tweetId: m.id, handle: m.authorHandle });
         continue;
       }
       const parentText = parent && !underOurs ? stripBotHandle(parent.text, bot).trim() : "";

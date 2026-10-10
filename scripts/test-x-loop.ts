@@ -24,7 +24,7 @@ if (process.env.DATABASE_URL) {
 }
 
 import { readFileSync } from "node:fs";
-import { runMentionSweep, stripLeadingMentions, stripBotHandle, addressesBot, asksInWords, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB, _resetModelPause } from "../src/x/mentionLoop.js";
+import { runMentionSweep, stripLeadingMentions, stripBotHandle, addressesBot, asksInWords, namesHandle, tweetUrl, SWEEP_CAP, TEACH_CAP, MAX_CLIMB, _resetModelPause } from "../src/x/mentionLoop.js";
 import type { SweepDeps, MintResult } from "../src/x/mentionLoop.js";
 import { botStateGet, _memMentionOutcome, _memMentionReason, _memMentionAttempts, _resetBotState } from "../src/store/markets.js";
 import { SINCE_KEY } from "../src/x/client.js";
@@ -818,6 +818,43 @@ async function main() {
     check("...and is recorded as named, not taught",
       String(_memMentionReason("645")).endsWith("/named"), _memMentionReason("645") ?? "");
   }
+  {
+    // Inherited, not asked: the 10 Oct reply under a reviewer's post. The
+    // reviewer's post named us, X copied our handle to the front of the reply
+    // "Review moor.fund ser.", and the bot taught the replier in public.
+    _resetBotState();
+    let spent = 0, extracted = 0;
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("650", {
+        text: "@GuiBibeau @Oddiefun Review moor.fund ser.", inReplyToUserId: "u-gui", repliedToId: "gui-post",
+      })], newestId: "650" }),
+      tweet: async (id) => ({ id, text: "I review Colosseum landing pages! Next up @oddiefun oddie.fun", authorHandle: "GuiBibeau" }),
+      extract: async () => { extracted++; return { ...goodExtraction(""), resolvability: "unresolvable", question: "", reason: "no claim" }; },
+      teachPng: async () => Buffer.from("teach"),
+      refusalsUsed: async () => 0,
+      spendMiss: async () => { spent++; return { spent: true, left: 4 }; },
+    });
+    await runMentionSweep(deps);
+    check("a handle inherited from the post above is not a tag: nothing posted", spy.posted.length === 0 && spy.minted.length === 0);
+    check("...nothing read by the model", extracted === 0);
+    check("...costs them nothing", spent === 0);
+    check("...and is recorded as inherited", _memMentionReason("650") === "inherited-mention", _memMentionReason("650") ?? "");
+  }
+  {
+    // The same thread, but the person typed our handle themselves: asked.
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("651", {
+        text: "@GuiBibeau @Oddiefun BTC 200k by 2027? @oddiefun", inReplyToUserId: "u-gui", repliedToId: "gui-post",
+      })], newestId: "651" }),
+      tweet: async (id) => ({ id, text: "I review Colosseum landing pages! Next up @oddiefun oddie.fun", authorHandle: "GuiBibeau" }),
+      extract: async () => goodExtraction("Will BTC hit $200k by 2027?"),
+    });
+    await runMentionSweep(deps);
+    check("our handle in the person's own words under that post still opens a market", spy.minted.length === 1 && spy.posted.length === 1);
+  }
+  check("namesHandle: finds our handle inside a post", namesHandle("Next up @oddiefun oddie.fun", "oddiefun"));
+  check("namesHandle: a longer handle is somebody else", !namesHandle("ask @oddiefunny", "oddiefun"));
   {
     _resetBotState();
     const { deps, spy } = harness({
