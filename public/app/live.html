@@ -389,6 +389,8 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .strm{transform:rotate(-.2deg)}
 .strm__url{font-family:var(--mono);font-size:12.5px;letter-spacing:.02em;background:var(--ink);color:var(--yellow);padding:6px 10px;word-break:break-all}
 .strm__in{font:inherit;font-size:15px;padding:9px 12px;border:3px solid var(--black);background:#fff;color:var(--ink);min-width:0;width:min(260px,100%)}
+.strm__on{color:var(--pink-deep)}
+.strm__where{margin:10px 0 0}.strm__where code{font-family:var(--mono);font-size:12px;background:rgba(11,13,4,.08);padding:2px 6px;word-break:break-all}
 .own__alt:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .own__n{margin:12px 0 0;font-size:13.5px;line-height:1.45;color:rgba(11,13,4,.62);max-width:52ch}
 .own__e{margin:10px 0 0;font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--pink-deep)}
@@ -558,11 +560,24 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
           + '<div class="own__act"><input class="strm__in" id="cs2-nick" placeholder="FACEIT nickname" maxlength="40" autocomplete="off">'
           + '<button class="own__alt" type="button" id="cs2-go">Link</button></div>';
     }
+    /* THE GAME'S OWN FEED (src/games/gsi.ts): one file in the game's cfg
+       folder and every match opens its own call, any mode. Said before the
+       FACEIT account because it needs no account at all. */
+    var gsi = "";
+    if (owner.gsi) {
+      var cfg = location.origin + owner.gsi.cfgPath;
+      gsi = '<p class="own__p" id="gsi-p"><b>CS2 or Dota 2:</b> every match you play opens its own call and settles from the result. '
+        + (owner.gsi.talking ? '<b class="strm__on">Your game is connected.</b>' : 'Download the file below and drop it in the game\'s cfg folder, then restart the game.') + '</p>'
+        + '<div class="own__act"><a class="own__alt" href="' + esc(cfg) + '" download="gamestate_integration_oddie.cfg">Download the config file</a>'
+        + '<button class="own__alt" type="button" id="gsi-where">Where does it go?</button></div>'
+        + '<div class="strm__where" id="gsi-paths" hidden><p class="own__p"><b>CS2:</b> <code>Steam/steamapps/common/Counter-Strike Global Offensive/game/csgo/cfg/</code></p>'
+        + '<p class="own__p"><b>Dota 2:</b> <code>Steam/steamapps/common/dota 2 beta/game/dota/cfg/gamestate_integration/</code> and add <code>-gamestateintegration</code> to the launch options.</p></div>';
+    }
     return '<section class="own strm" aria-labelledby="strm-t"><p class="own__k">On your stream</p>'
       + '<h2 class="own__t" id="strm-t">Put the call on the picture</h2>'
       + '<p class="own__p">Add this link in OBS as a Browser Source, 1920×1080. The live call, the split and the result show on the stream, and it stays empty between calls.</p>'
       + '<div class="own__act"><code class="strm__url" id="ov-url">' + esc(url) + '</code><button class="own__alt" type="button" id="ov-copy">Copy link</button></div>'
-      + cs2 + '<p class="own__e" id="strm-e" role="status"></p></section>';
+      + gsi + cs2 + '<p class="own__e" id="strm-e" role="status"></p></section>';
   }
   function wireStream() {
     var cp = document.getElementById("ov-copy");
@@ -572,6 +587,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
         .catch(function () {});
     });
     var e = document.getElementById("strm-e");
+    var where = document.getElementById("gsi-where"), paths = document.getElementById("gsi-paths");
+    if (where && paths) where.addEventListener("click", function () { paths.hidden = !paths.hidden; });
     function post(nick) {
       return fetch("/api/live/" + P + "/faceit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nick: nick }) })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j }; }); });

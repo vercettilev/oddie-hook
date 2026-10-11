@@ -314,7 +314,11 @@ export interface LiveStore {
   /** Null unlinks AND stops oddie looking for one again; a link turns the looking back on. */
   setFaceit(platform: Platform, channelId: string, link: { id: string; nick: string } | null): Promise<void>;
   /** Every channel with a FACEIT account: the clock's game pass walks them. */
-  withFaceit(): Promise<Array<{ platform: Platform; channelId: string; name: string | null; faceitId: string; faceitNick: string }>>;
+  withFaceit(): Promise<Array<{ platform: Platform; channelId: string; name: string | null; faceitId: string; faceitNick: string; gsiSeenAt: number | null }>>;
+  /** The channel's Game State Integration token (src/games/gsi.ts): made on first ask when `create`. */
+  gsiToken(platform: Platform, channelId: string, create: boolean): Promise<string | null>;
+  channelByGsiToken(token: string): Promise<{ platform: Platform; channelId: string; slug: string; name: string | null } | null>;
+  markGsiSeen(platform: Platform, channelId: string, at: number): Promise<void>;
   /** Active channels with no account that oddie has not looked for lately. */
   withoutFaceit(now: number): Promise<Array<{ platform: Platform; channelId: string; slug: string; name: string | null }>>;
   markFaceitProbe(platform: Platform, channelId: string, at: number): Promise<void>;

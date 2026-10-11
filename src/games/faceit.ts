@@ -102,6 +102,10 @@ export function scoreText(m: GameMatch, mine: Faction): string | null {
   const theirs: Faction = mine === "faction1" ? "faction2" : "faction1";
   return `${m.score[mine]}-${m.score[theirs]}`;
 }
+/** The same, from a score already read from the streamer's side. */
+export function scoreTextFrom(score: { mine: number; theirs: number } | null): string | null {
+  return score ? `${score.mine}-${score.theirs}` : null;
+}
 
 /** The live client. `fetchImpl` is the test seam. */
 export function faceitSource(key: string, fetchImpl: typeof fetch = fetch): GameSource {

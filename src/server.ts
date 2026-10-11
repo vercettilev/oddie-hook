@@ -24,6 +24,7 @@ import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { lockDue, remindOpen, type LiveDeps } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
+import { handleGsi } from "./live/gsiCalls.js";
 import { configureFaceit } from "./games/faceit.js";
 import { allStandings } from "./store/live.js";
 import { probePriceSource } from "./live/priceCall.js";
@@ -1944,6 +1945,16 @@ if (kickConfigured() || twitchConfigured()) {
   }, 5_000);
   // One read now, so the log says whether price calls can be settled from here.
   void probePriceSource(liveLog);
+  /* THE GAME TALKS HERE (src/games/gsi.ts): CS2 or Dota 2 on the streamer's
+     machine posts its state to this URL, several times a second while a
+     round is live. The token names the channel; the body is read only on a
+     transition. Always 200: the game does not retry on status, and a
+     stranger's token learns nothing from the difference. */
+  app.post("/api/gsi/:token", express.json({ limit: "256kb" }), async (req, res) => {
+    const out = await handleGsi(String(req.params.token ?? ""), req.body, clock).catch((e) => { liveLog("gsi failed", { err: (e as Error).message }); return "nothing"; });
+    if (out !== "nothing" && out !== "unknown-token") liveLog("gsi", { out });
+    res.status(200).end();
+  });
 }
 
 app.get("/following", (req, res) => {

@@ -15,6 +15,8 @@ import { cookieValue, ownerCookieName, ownerKeyFromEnv, verifyOwnerToken } from 
 import type { ChannelMarket } from "../store/markets.js";
 import { channelBySlug, channelStandings, liveStore, recentCalls } from "../store/live.js";
 import { faceitConfigured } from "../games/faceit.js";
+import { gsiConfig } from "../games/gsi.js";
+import { GSI_STALE_MS } from "./gameCalls.js";
 
 /**
  * A CHANNEL'S 2%, from the server: the same person store, challenge and
@@ -32,6 +34,8 @@ export interface ChannelPayoutDeps {
 }
 
 export interface ChannelPageDeps {
+  /** Where the app lives: the URL the game's config file posts to. */
+  appBaseUrl: string;
   pageHtml(): string;
   /** The overlay for OBS (public/app/overlay.html). Absent: no overlay route. */
   overlayHtml?(): string;
@@ -85,6 +89,19 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(d.overlayHtml());
   });
 
+  /* THE GAME'S CONFIG FILE (src/games/gsi.ts): one download for the channel's
+     owner, with a token made on the first ask. The game posts to /api/gsi/<token>. */
+  r.get(`/live/${platform}/:slug/gsi.cfg`, async (req, res) => {
+    const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
+    if (!ch) return res.status(404).type("text").send("unknown channel");
+    if (ownerOf(platform, req) !== ch.channelId) return res.status(401).type("text").send("sign in with your channel first");
+    const token = await liveStore.gsiToken(platform, ch.channelId, true).catch(() => null);
+    if (!token) return res.status(503).type("text").send("try again");
+    const base = d.appBaseUrl.replace(/\/+$/, "");
+    res.set("Cache-Control", "no-store").set("Content-Disposition", 'attachment; filename="gamestate_integration_oddie.cfg"')
+      .type("text/plain").send(gsiConfig(`${base}/api/gsi/${token}`, token));
+  });
+
   /* THE STREAMER'S CS2 ACCOUNT, from their own page. oddie finds it by name
      (src/live/gameCalls.ts); this is for a name that differs, and for "not me".
      Owner cookie only, like the wallet. An empty nickname unlinks and stops
@@ -132,6 +149,8 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
         overlayPath: `/live/${platform}/${encodeURIComponent(ch.slug)}/overlay`,
         faceit: ch.faceitNick ? { nick: ch.faceitNick } : null,
         faceitAvailable: !!faceitConfigured(),
+        // The game's own feed: the config to download, and whether the game is talking right now.
+        gsi: { cfgPath: `/live/${platform}/${encodeURIComponent(ch.slug)}/gsi.cfg`, talking: ch.gsiSeenAt != null && Date.now() - ch.gsiSeenAt < GSI_STALE_MS, seenAt: ch.gsiSeenAt ?? null },
       }))
       : null;
     res.json({

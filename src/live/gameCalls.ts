@@ -15,6 +15,9 @@
  * call is done. An offline channel gets no calls at all.
  */
 import { faceitConfigured, scoreText, sideFor, type GameMatch, type GameSource } from "../games/faceit.js";
+
+/** A game that has not talked for this long is not on (src/live/gsiCalls.ts reads it too). */
+export const GSI_STALE_MS = 2 * 60_000;
 import { CALL_OPEN_MAX_MS, LIVE_COPY, pointsFor, type LiveCall, type LiveDeps, type Platform } from "./calls.js";
 
 /** How often linked channels are asked about their matches. */
@@ -29,6 +32,7 @@ export const GAME_COPY = {
   result: (name: string, won: boolean, score: string | null, map: string | null) =>
     `${name} ${won ? "won" : "lost"}${score ? ` ${score}` : ""}${map ? ` on ${map}` : ""}.`,
   cancelled: (q: string) => `That match was cancelled, so "${q}" is canceled. No points.`,
+  abandoned: (q: string) => `No result came in for "${q}" before the next match started, so it's canceled. No points.`,
   unreadable: (q: string) => `The match ended without a result oddie can read, so "${q}" is yours to settle: !call yes or !call no.`,
 };
 
@@ -97,6 +101,8 @@ export async function watchGames(deps: LiveDeps): Promise<number> {
   const linked = await deps.store.withFaceit().catch(() => []);
   let n = 0;
   for (const ch of linked) {
+    // The game itself is talking (src/live/gsiCalls.ts): it opens and settles this channel's matches.
+    if (ch.gsiSeenAt != null && now - ch.gsiSeenAt < GSI_STALE_MS) continue;
     const link = { id: ch.faceitId, name: ch.name || ch.faceitNick };
     const waiting = (await deps.store.unsettled(ch.platform, ch.channelId).catch(() => [] as LiveCall[])).filter((c) => c.matchId);
     for (const c of waiting) {
