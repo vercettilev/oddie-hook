@@ -23,6 +23,8 @@ import { kickConfigured } from "./kick/client.js";
 import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { lockDue, remindOpen, type LiveDeps } from "./live/calls.js";
+import { watchGames } from "./live/gameCalls.js";
+import { configureFaceit } from "./games/faceit.js";
 import { allStandings } from "./store/live.js";
 import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
@@ -1924,6 +1926,9 @@ if (kickConfigured() || twitchConfigured()) {
   // A tick can outlast five seconds now that a chat's lines go out a second
   // apart (src/live/pace.ts): the next one waits for it instead of reading the
   // same due calls again.
+  // CS2 on FACEIT (src/games/faceit.ts): with a key, a linked channel gets a
+  // call per match, opened and settled by the clock's game pass.
+  liveLog(configureFaceit(process.env.FACEIT_API_KEY) ? "faceit on" : "faceit off: no FACEIT_API_KEY, !faceit says so");
   let ticking = false;
   setInterval(() => {
     if (ticking) return;
@@ -1931,6 +1936,7 @@ if (kickConfigured() || twitchConfigured()) {
     void Promise.all([
       lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message })),
       remindOpen(clock).catch((e) => liveLog("live reminder failed", { err: (e as Error).message })),
+      watchGames(clock).catch((e) => liveLog("live game pass failed", { err: (e as Error).message })),
     ]).finally(() => { ticking = false; });
   }, 5_000);
   // One read now, so the log says whether price calls can be settled from here.

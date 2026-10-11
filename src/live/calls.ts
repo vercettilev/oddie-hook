@@ -58,6 +58,7 @@
  */
 
 import { binancePrices, parsePriceCall, planFor, readPriceCall, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
+import { faceitConfigured, type GameSource } from "../games/faceit.js";
 
 export type Platform = "kick" | "twitch";
 export type Side = "yes" | "no";
@@ -92,7 +93,9 @@ export type LiveCommand =
   | { kind: "help" }
   | { kind: "market"; claim: string }
   /** What happened, from anybody in the room: `!result yes`. */
-  | { kind: "report"; side: Side };
+  | { kind: "report"; side: Side }
+  /** `!faceit <nick>` links the channel's FACEIT account; `!faceit off` unlinks; bare, it says how. */
+  | { kind: "faceit"; arg: string };
 
 export const CALL_MINUTES_MAX = 30;
 /** A call with no length takes answers until it is settled; this only stops one
@@ -135,6 +138,9 @@ export function parseCommand(raw: string): LiveCommand | null {
   // !oddie is the market door; whatever follows is the claim, read like a tag.
   const market = /^!oddie(?=\s|$)\s*(.*)$/i.exec(text);
   if (market) return { kind: "market", claim: market[1].trim() };
+  // The channel's FACEIT account: every match it plays opens a call by itself.
+  const fx = /^!faceit(?=\s|$)\s*(.*)$/i.exec(text);
+  if (fx) return { kind: "faceit", arg: fx[1].trim().replace(/^@/, "").slice(0, 40) };
   const m = /^!call(?=\s|$)\s*(.*)$/i.exec(text);
   if (!m) return null;
   const rest = m[1].trim();
@@ -177,6 +183,8 @@ export interface LiveCall {
   lockedAt: number | null;
   outcome: Side | null;
   settledAt: number | null;
+  /** The FACEIT match this call is about: oddie opened it and settles it (src/live/gameCalls.ts). */
+  matchId: string | null;
 }
 
 export interface Tally { yes: number; no: number }
@@ -265,6 +273,13 @@ export const LIVE_COPY = {
   // No line of oddie's starts with a command: an echo of it is never one.
   marketHelp: "Open a market with !oddie and a claim with a yes or no and a date, anybody can take it and oddie settles it. Reply !oddie to a message to open one on it.",
   hello: "oddie is here. !oddie <claim> opens a real market anybody can take, settled by oddie. Mods run votes with !call <question>, and chat answers !yes or !no.",
+  /* CS2 on FACEIT (src/games/faceit.ts, src/live/gameCalls.ts). */
+  faceitHow: "Mods: !faceit <nickname> links this channel's FACEIT account. Every CS2 match it plays then opens a call by itself, and oddie settles it from the result.",
+  faceitStatus: (nick: string) => `FACEIT: linked to ${nick}. Every match opens a call by itself. !faceit off unlinks.`,
+  faceitLinked: (nick: string) => `FACEIT linked: ${nick}. From now on every match ${nick} plays opens a call by itself, and oddie settles it when the match ends.`,
+  faceitUnlinked: "FACEIT unlinked. Calls open with !call again.",
+  faceitNotFound: (nick: string) => `No FACEIT player called "${nick}". Check the spelling on faceit.com.`,
+  faceitOff: "FACEIT is not set up on oddie yet.",
 };
 
 /* --------------------------------------------------------------- engine -- */
@@ -277,7 +292,7 @@ export interface LiveStore {
   unsettled(platform: Platform, channelId: string): Promise<LiveCall[]>;
   /** Opens a call, or returns null when the channel already has one taking
    *  answers (the store enforces it, so two mods at once cannot open two). */
-  open(input: { platform: Platform; channelId: string; question: string; openedById: string; openedByName: string; openedAt: number; closesAt: number; timed: boolean }): Promise<LiveCall | null>;
+  open(input: { platform: Platform; channelId: string; question: string; openedById: string; openedByName: string; openedAt: number; closesAt: number; timed: boolean; matchId?: string | null }): Promise<LiveCall | null>;
   /** One answer per person per call: true when this one is new. */
   pick(call: LiveCall, userId: string, username: string, side: Side, at: number): Promise<boolean>;
   tally(callId: string): Promise<Tally>;
@@ -294,6 +309,11 @@ export interface LiveStore {
   /** Every call not settled or canceled, in every channel, oldest first: the
    *  clock walks them for waits a restart lost and streams that ended. */
   everyUnsettled(): Promise<LiveCall[]>;
+  /** The channel's FACEIT account, set with !faceit. */
+  faceit(platform: Platform, channelId: string): Promise<{ id: string; nick: string } | null>;
+  setFaceit(platform: Platform, channelId: string, link: { id: string; nick: string } | null): Promise<void>;
+  /** Every channel with a FACEIT account: the clock's game pass walks them. */
+  withFaceit(): Promise<Array<{ platform: Platform; channelId: string; faceitId: string; faceitNick: string }>>;
 }
 
 export interface LiveDeps {
@@ -316,6 +336,9 @@ export interface LiveDeps {
   /** Is the channel live now? null when the platform did not answer. Absent: a
    *  stream's end is never seen, and room calls wait for a report or the mods. */
   streamLive?(platform: Platform, channelId: string): Promise<boolean | null>;
+  /** Where FACEIT matches are read (src/games/faceit.ts). Absent: the one
+   *  configured at boot from FACEIT_API_KEY, if any. */
+  games?: GameSource;
 }
 
 /** A price call between its lock and its result. */
@@ -538,6 +561,30 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
 
   if (!msg.canRun) return "not-allowed";
 
+  /* THE CHANNEL'S FACEIT ACCOUNT. Linked once, by a runner; from then on the
+     clock opens a call per match and settles it (src/live/gameCalls.ts). */
+  if (cmd.kind === "faceit") {
+    const games = deps.games ?? faceitConfigured();
+    if (!games) { await sayQuiet(deps, msg, LIVE_COPY.faceitOff, msg.messageId); return "faceit-off"; }
+    if (!cmd.arg) {
+      const cur = await deps.store.faceit(msg.platform, msg.channelId).catch(() => null);
+      await sayQuiet(deps, msg, cur ? LIVE_COPY.faceitStatus(cur.nick) : LIVE_COPY.faceitHow, msg.messageId);
+      return "faceit-how";
+    }
+    if (/^(off|unlink|remove|stop)$/i.test(cmd.arg)) {
+      await deps.store.setFaceit(msg.platform, msg.channelId, null);
+      await sayQuiet(deps, msg, LIVE_COPY.faceitUnlinked, msg.messageId);
+      deps.log("faceit unlinked", { platform: msg.platform, channel: msg.channelId });
+      return "faceit-unlinked";
+    }
+    const p = await games.player(cmd.arg).catch((e) => { deps.log("faceit player not read", { nick: cmd.arg, err: (e as Error).message }); return null; });
+    if (!p) { await sayQuiet(deps, msg, LIVE_COPY.faceitNotFound(cmd.arg), msg.messageId); return "faceit-not-found"; }
+    await deps.store.setFaceit(msg.platform, msg.channelId, { id: p.id, nick: p.nick });
+    await sayQuiet(deps, msg, LIVE_COPY.faceitLinked(p.nick), msg.messageId);
+    deps.log("faceit linked", { platform: msg.platform, channel: msg.channelId, nick: p.nick });
+    return "faceit-linked";
+  }
+
   if (cmd.kind === "help") { await sayQuiet(deps, msg, LIVE_COPY.help, msg.messageId); return "help"; }
   if (cmd.kind === "settle-help") { await sayQuiet(deps, msg, LIVE_COPY.settleOnly, msg.messageId); return "settle-help"; }
 
@@ -715,6 +762,8 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
       if (c.lockedAt !== null && !priceWaits.has(c.id) && !handedToMods.has(c.id)) waitForPrice(c);
       continue;
     }
+    // A match call is FACEIT's to settle, stream or no stream (src/live/gameCalls.ts).
+    if (c.matchId) continue;
     const k = roomKey(c);
     roomsBy.set(k, [...(roomsBy.get(k) ?? []), c]);
   }
