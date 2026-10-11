@@ -179,6 +179,7 @@ const WHO_HTML = readFileSync(path.join(__dirname, "../public/app/who.html"), "u
 const PERSON_HTML = readFileSync(path.join(__dirname, "../public/app/person.html"), "utf8");
 const FOLLOWING_HTML = readFileSync(path.join(__dirname, "../public/app/following.html"), "utf8");
 const LIVE_HTML = readFileSync(path.join(__dirname, "../public/app/live.html"), "utf8");
+const OVERLAY_HTML = readFileSync(path.join(__dirname, "../public/app/overlay.html"), "utf8");
 /** The list: every open market, newest first. The app's front door. */
 const MARKETS_HTML = readFileSync(path.join(__dirname, "../public/app/markets.html"), "utf8");
 
@@ -1863,6 +1864,7 @@ const kickMarkets = {
 app.use(kickRouter({
   appBaseUrl: APP_BASE_URL,
   pageHtml: () => stampApp(LIVE_HTML),
+  overlayHtml: () => OVERLAY_HTML,
   pageOpen: (req) => appOpenFor(req),
   pageClosed: (res) => appClosed(res),
   log: liveLog,
@@ -1881,6 +1883,7 @@ app.use(kickRouter({
 app.use(twitchRouter({
   appBaseUrl: APP_BASE_URL,
   pageHtml: () => stampApp(LIVE_HTML),
+  overlayHtml: () => OVERLAY_HTML,
   pageOpen: (req) => appOpenFor(req),
   pageClosed: (res) => appClosed(res),
   log: liveLog,

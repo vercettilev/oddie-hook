@@ -14,6 +14,7 @@ import { yesPct, type Platform } from "./calls.js";
 import { cookieValue, ownerCookieName, ownerKeyFromEnv, verifyOwnerToken } from "./owner.js";
 import type { ChannelMarket } from "../store/markets.js";
 import { channelBySlug, channelStandings, liveStore, recentCalls } from "../store/live.js";
+import { faceitConfigured } from "../games/faceit.js";
 
 /**
  * A CHANNEL'S 2%, from the server: the same person store, challenge and
@@ -32,6 +33,8 @@ export interface ChannelPayoutDeps {
 
 export interface ChannelPageDeps {
   pageHtml(): string;
+  /** The overlay for OBS (public/app/overlay.html). Absent: no overlay route. */
+  overlayHtml?(): string;
   pageOpen(req: Request): boolean;
   pageClosed(res: Response): void;
   log(line: string, extra?: Record<string, unknown>): void;
@@ -75,6 +78,34 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     res.set("Cache-Control", "no-cache").type("html").send(d.pageHtml());
   });
 
+  /** The call on the picture: a transparent page for an OBS browser source. */
+  r.get(`/live/${platform}/:slug/overlay`, (req, res) => {
+    if (!d.overlayHtml) return res.status(404).type("text").send("no overlay");
+    if (!d.pageOpen(req)) return d.pageClosed(res);
+    res.set("Cache-Control", "no-cache").set("X-Robots-Tag", "noindex, nofollow").type("html").send(d.overlayHtml());
+  });
+
+  /* THE STREAMER'S CS2 ACCOUNT, from their own page. oddie finds it by name
+     (src/live/gameCalls.ts); this is for a name that differs, and for "not me".
+     Owner cookie only, like the wallet. An empty nickname unlinks and stops
+     oddie looking. */
+  r.post(`/api/live/${platform}/faceit`, express.json({ limit: "2kb" }), async (req, res) => {
+    const channelId = ownerOf(platform, req);
+    if (!channelId) return res.status(401).json({ ok: false, reason: "sign-in" });
+    const games = faceitConfigured();
+    if (!games) return res.status(503).json({ ok: false, reason: "no-faceit" });
+    const nick = String(req.body?.nick ?? "").trim().replace(/^@/, "").slice(0, 40);
+    if (!nick) {
+      await liveStore.setFaceit(platform, channelId, null);
+      return res.json({ ok: true, faceit: null });
+    }
+    const p = await games.player(nick).catch(() => null);
+    if (!p) return res.status(404).json({ ok: false, reason: "not-found" });
+    await liveStore.setFaceit(platform, channelId, { id: p.id, nick: p.nick });
+    d.log("faceit linked from the page", { platform, channel: channelId, nick: p.nick });
+    res.json({ ok: true, faceit: { nick: p.nick, cs2: p.playsCs2 } });
+  });
+
   r.get(`/api/live/${platform}/:slug`, async (req, res) => {
     res.set("Cache-Control", "no-store");
     const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
@@ -95,7 +126,13 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
       ? await Promise.all([
         d.payout.wallet(`${platform}:${ch.channelId}`).catch(() => null),
         d.payout.openedSlugs(ch.channelId).catch(() => [] as string[]),
-      ]).then(([wallet, slugs]) => ({ wallet, markets: slugs.length }))
+      ]).then(([wallet, slugs]) => ({
+        wallet, markets: slugs.length,
+        // Their stream's two things: the overlay for OBS, and the CS2 account oddie reads matches from.
+        overlayPath: `/live/${platform}/${encodeURIComponent(ch.slug)}/overlay`,
+        faceit: ch.faceitNick ? { nick: ch.faceitNick } : null,
+        faceitAvailable: !!faceitConfigured(),
+      }))
       : null;
     res.json({
       platform, slug: ch.slug, name: ch.name, avatar: ch.avatar, url: CHANNEL_URL[platform](ch.slug),

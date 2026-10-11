@@ -20,7 +20,7 @@
  */
 import type { Side } from "../live/calls.js";
 
-export interface GamePlayer { id: string; nick: string }
+export interface GamePlayer { id: string; nick: string; /** FACEIT lists CS2 under their games. */ playsCs2: boolean }
 export type Faction = "faction1" | "faction2";
 export interface GameMatch {
   id: string;
@@ -115,7 +115,7 @@ export function faceitSource(key: string, fetchImpl: typeof fetch = fetch): Game
     async player(nick) {
       const p = obj(await get(`/players?nickname=${encodeURIComponent(nick.trim())}`));
       const id = str(p.player_id), name = str(p.nickname);
-      return id && name ? { id, nick: name } : null;
+      return id && name ? { id, nick: name, playsCs2: "cs2" in obj(p.games) } : null;
     },
     async ongoing(playerId) {
       const r = obj(await get(`/players/${encodeURIComponent(playerId)}/matches?type=ongoing&offset=0&limit=5`));

@@ -385,6 +385,10 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   padding:8px 0;min-height:44px;color:rgba(11,13,4,.7);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 @media (hover:hover){.own__alt:hover{color:var(--ink)}}
 .own__addr{text-transform:none}
+/* The stream card: the overlay link and the CS2 account, under the wallet card. */
+.strm{transform:rotate(-.2deg)}
+.strm__url{font-family:var(--mono);font-size:12.5px;letter-spacing:.02em;background:var(--ink);color:var(--yellow);padding:6px 10px;word-break:break-all}
+.strm__in{font:inherit;font-size:15px;padding:9px 12px;border:3px solid var(--black);background:#fff;color:var(--ink);min-width:0;width:min(260px,100%)}
 .own__alt:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 .own__n{margin:12px 0 0;font-size:13.5px;line-height:1.45;color:rgba(11,13,4,.62);max-width:52ch}
 .own__e{margin:10px 0 0;font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--pink-deep)}
@@ -492,7 +496,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + "<dt><code>!call 5m will I win?</code></dt><dd>A vote that locks in 5 minutes.</dd>"
       + "<dt><code>!call yes</code> or <code>!call no</code></dt><dd>Settle the vote.</dd>"
       + "<dt><code>!call cancel</code></dt><dd>Cancel the open vote.</dd>"
-      + "<dt><code>!faceit yournick</code></dt><dd>Links your FACEIT account. Every CS2 match you play opens a call by itself, settled from the result.</dd>"
+      + "<dt><code>!faceit off</code></dt><dd>CS2 matches open their own calls, found from your name. This turns that off; <code>!faceit yournick</code> links a different account.</dd>"
       + "</dl></details>"
       + '<p class="hint" style="margin-top:14px">18+ only &middot; on Solana</p>';
     // The page is drawn after the browser looked for #commands, so the link a
@@ -536,6 +540,58 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + '<button class="own__alt" type="button" id="own-alt">Use another wallet</button></div>'
       + '<p class="own__e" id="own-e" role="status"></p></section>';
     document.getElementById("own-alt").addEventListener("click", function () { ownMode = "ask"; paintOwner(); });
+    ownEl.insertAdjacentHTML("beforeend", streamCard()); wireStream();
+  }
+
+  /* ON THEIR STREAM (11 Oct): the overlay link for OBS, and the CS2 account
+     oddie reads matches from. oddie links the account by name on its own; the
+     card is for a name that differs, and for "not me". */
+  function streamCard() {
+    if (!owner) return "";
+    var url = location.origin + (owner.overlayPath || ("/live/" + P + "/" + encodeURIComponent(SLUG) + "/overlay"));
+    var cs2 = "";
+    if (owner.faceitAvailable) {
+      cs2 = owner.faceit
+        ? '<p class="own__p" id="cs2-p"><b>CS2:</b> every match you play opens its own call and settles from the result, as <b>' + esc(owner.faceit.nick)
+          + '</b> on FACEIT. <button class="own__alt" type="button" id="cs2-off">Not me</button></p>'
+        : '<p class="own__p" id="cs2-p"><b>Play CS2 on FACEIT?</b> Every match you play opens its own call and settles from the result. oddie links it by name; if yours differs, type it.</p>'
+          + '<div class="own__act"><input class="strm__in" id="cs2-nick" placeholder="FACEIT nickname" maxlength="40" autocomplete="off">'
+          + '<button class="own__alt" type="button" id="cs2-go">Link</button></div>';
+    }
+    return '<section class="own strm" aria-labelledby="strm-t"><p class="own__k">On your stream</p>'
+      + '<h2 class="own__t" id="strm-t">Put the call on the picture</h2>'
+      + '<p class="own__p">Add this link in OBS as a Browser Source, 1920×1080. The live call, the split and the result show on the stream, and it stays empty between calls.</p>'
+      + '<div class="own__act"><code class="strm__url" id="ov-url">' + esc(url) + '</code><button class="own__alt" type="button" id="ov-copy">Copy link</button></div>'
+      + cs2 + '<p class="own__e" id="strm-e" role="status"></p></section>';
+  }
+  function wireStream() {
+    var cp = document.getElementById("ov-copy");
+    if (cp) cp.addEventListener("click", function () {
+      navigator.clipboard.writeText(document.getElementById("ov-url").textContent)
+        .then(function () { cp.textContent = "Copied"; setTimeout(function () { cp.textContent = "Copy link"; }, 1800); })
+        .catch(function () {});
+    });
+    var e = document.getElementById("strm-e");
+    function post(nick) {
+      return fetch("/api/live/" + P + "/faceit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nick: nick }) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j }; }); });
+    }
+    var go = document.getElementById("cs2-go"), nick = document.getElementById("cs2-nick");
+    if (go && nick) {
+      var submit = function () {
+        var v = (nick.value || "").trim();
+        if (!v) return;
+        go.disabled = true; e.textContent = "Looking…";
+        post(v).then(function (r) {
+          if (!r.ok) { e.textContent = r.j && r.j.reason === "not-found" ? "No FACEIT player called " + v + "." : "Could not link it. Try again."; go.disabled = false; return; }
+          e.textContent = ""; ownKey = ""; load();
+        }).catch(function () { e.textContent = "Could not link it. Try again."; go.disabled = false; });
+      };
+      go.addEventListener("click", submit);
+      nick.addEventListener("keydown", function (ev) { if (ev.key === "Enter") submit(); });
+    }
+    var off = document.getElementById("cs2-off");
+    if (off) off.addEventListener("click", function () { off.disabled = true; post("").then(function () { ownKey = ""; load(); }).catch(function () { off.disabled = false; }); });
   }
 
   function askWallet() {
@@ -570,6 +626,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     if (go) go.addEventListener("click", function () { link(go); });
     var back = document.getElementById("own-back");
     if (back) back.addEventListener("click", function () { ownMode = "view"; paintOwner(); });
+    ownEl.insertAdjacentHTML("beforeend", streamCard()); wireStream();
   }
 
   function signedOut() {

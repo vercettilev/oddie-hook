@@ -24,6 +24,8 @@ export interface KickRouteDeps {
   appBaseUrl: string;
   /** The page, already stamped for this deploy. */
   pageHtml(): string;
+  /** The overlay for OBS (public/app/overlay.html). Absent: no overlay route. */
+  overlayHtml?(): string;
   /** The app's own gate, for the page. */
   pageOpen(req: Request): boolean;
   pageClosed(res: Response): void;

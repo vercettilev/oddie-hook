@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { handleChat, lockDue, parseCommand, LIVE_COPY, STREAM_POLL_MS, _resetLive, _forgetWaits, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { GAME_COPY, GAME_POLL_MS, matchQuestion, watchGames, _resetGames } from "../src/live/gameCalls.js";
 import { faceitSource, mapName, parseMatch, scoreText, sideFor, type GameMatch, type GameSource } from "../src/games/faceit.js";
-import { liveStore, channelStandings, _resetLiveStore } from "../src/store/live.js";
+import { liveStore, saveChannel, channelStandings, _resetLiveStore } from "../src/store/live.js";
 import { _setPace } from "../src/live/pace.js";
 
 _setPace({ gapMs: 0, retryMs: [0, 0] });
@@ -66,14 +66,16 @@ const rawMatch = (over: Record<string, unknown> = {}) => ({
     ok(/Bearer test-key/.test(String((init?.headers as Record<string, string>)?.Authorization)), "the key goes as a bearer");
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
     if (/\/players\?nickname=s1mple$/.test(u)) return json({ player_id: "p-s1", nickname: "s1mple" });
+    if (/\/players\?nickname=rain$/.test(u)) return json({ player_id: "p-rain", nickname: "rain", games: { cs2: { game_player_id: "7656" } } });
     if (/\/players\?nickname=/.test(u)) return json({ errors: [{ message: "not found" }] }, 404);
     if (/\/players\/p-s1\/matches\?type=ongoing/.test(u)) return json({ items: [{ ...rawMatch(), game: "cs2" }, { ...rawMatch({ match_id: "other", status: "FINISHED" }) }] });
     if (/\/matches\/m1$/.test(u)) return json(rawMatch({ status: "FINISHED", results: { winner: "faction1", score: { faction1: 13, faction2: 9 } } }));
     return json({}, 500);
   }) as typeof fetch;
   const src = faceitSource("test-key", fetchImpl);
-  eq(await src.player("s1mple"), { id: "p-s1", nick: "s1mple" }, "a nickname resolves to a player");
+  eq(await src.player("s1mple"), { id: "p-s1", nick: "s1mple", playsCs2: false }, "a nickname resolves to a player (no games listed: no CS2)");
   eq(await src.player("nobody"), null, "404 is nobody");
+  eq((await src.player("rain"))?.playsCs2, true, "CS2 under their games means they play it");
   eq((await src.ongoing("p-s1"))?.id, "m1", "the ongoing match is the live one");
   const m = (await src.match("m1"))!;
   eq([m.status, m.winner, scoreText(m, "faction1")], ["finished", "faction1", "13-9"], "a match is read with its result");
@@ -88,8 +90,10 @@ let now = 1_800_000_000_000;
 let live: boolean | null = true;
 let ongoing: GameMatch | null = null;
 const matches = new Map<string, GameMatch>();
+let playerCalls = 0;
 const games: GameSource = {
-  player: async (nick) => (nick.toLowerCase() === "s1mple" ? { id: "p-s1", nick: "s1mple" } : null),
+  player: async (nick) => { playerCalls++; return nick.toLowerCase() === "s1mple" ? { id: "p-s1", nick: "s1mple", playsCs2: true }
+    : nick.toLowerCase() === "chessguy" ? { id: "p-chess", nick: "chessguy", playsCs2: false } : null; },
   ongoing: async () => ongoing,
   match: async (id) => matches.get(id) ?? null,
 };
@@ -107,6 +111,33 @@ const msg = (text: string, over: Partial<ChatMessage> = {}): ChatMessage =>
 const last = () => said[said.length - 1] ?? "";
 const tick = async () => { now += GAME_POLL_MS; return watchGames(deps); };
 const reset = () => { _resetLive(); _forgetWaits(); _resetGames(); _resetLiveStore(); said.length = 0; logs.length = 0; ongoing = null; matches.clear(); live = true; };
+
+/* found by name, not typed */
+{
+  reset();
+  await saveChannel({ platform: "twitch", channelId: "c1", slug: "s1mple", name: "S1mple", avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
+  await saveChannel({ platform: "twitch", channelId: "c2", slug: "chessguy", name: "Chess Guy", avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
+  await saveChannel({ platform: "twitch", channelId: "c3", slug: "nobody", name: null, avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
+  await saveChannel({ platform: "twitch", channelId: "c4", slug: "s1mple2", name: null, avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: false });
+  eq((await liveStore.withoutFaceit(now)).map((c) => c.slug).sort(), ["chessguy", "nobody", "s1mple"], "every active channel with no account is looked up");
+  playerCalls = 0;
+  eq(await tick(), 0, "the first pass links and opens nothing yet");
+  eq(playerCalls, 3, "...one lookup per channel");
+  eq(await liveStore.faceit("twitch", "c1"), { id: "p-s1", nick: "s1mple" }, "the streamer with the same name on FACEIT and CS2 there is linked");
+  eq(await liveStore.faceit("twitch", "c2"), null, "a FACEIT account without CS2 is not");
+  eq(await liveStore.faceit("twitch", "c3"), null, "a name FACEIT does not know is not");
+  eq(said.length, 0, "...and nobody in chat heard a thing");
+  eq(await tick(), 0, "the next pass");
+  eq(playerCalls, 3, "...does not look the same names up again today");
+  eq(await handleChat(msg("!faceit off"), deps), "faceit-unlinked", "!faceit off unlinks");
+  eq((await liveStore.withoutFaceit(now + 48 * 3_600_000)).map((c) => c.slug).sort(), ["chessguy", "nobody"], "...and stops oddie looking for that channel, even days later");
+  eq(await handleChat(msg("!faceit s1mple"), deps), "faceit-linked", "a typed name links again");
+  ongoing = parseMatch(rawMatch());
+  eq(await tick(), 1, "the match opens a call");
+  ok(/^S1mple is in a match on Mirage\. Does S1mple win it\?/.test(last()), "the room hears the streamer's own name, never FACEIT: " + last());
+  ok(!/faceit/i.test(last()), "...not the source");
+  eq((await liveStore.current("twitch", "c1"))?.question, "S1mple wins this match on Mirage?", "the question carries the stream name too");
+}
 
 /* linking */
 {

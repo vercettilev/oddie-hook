@@ -309,11 +309,15 @@ export interface LiveStore {
   /** Every call not settled or canceled, in every channel, oldest first: the
    *  clock walks them for waits a restart lost and streams that ended. */
   everyUnsettled(): Promise<LiveCall[]>;
-  /** The channel's FACEIT account, set with !faceit. */
+  /** The channel's FACEIT account: found by oddie from the channel's name, or set with !faceit. */
   faceit(platform: Platform, channelId: string): Promise<{ id: string; nick: string } | null>;
+  /** Null unlinks AND stops oddie looking for one again; a link turns the looking back on. */
   setFaceit(platform: Platform, channelId: string, link: { id: string; nick: string } | null): Promise<void>;
   /** Every channel with a FACEIT account: the clock's game pass walks them. */
-  withFaceit(): Promise<Array<{ platform: Platform; channelId: string; faceitId: string; faceitNick: string }>>;
+  withFaceit(): Promise<Array<{ platform: Platform; channelId: string; name: string | null; faceitId: string; faceitNick: string }>>;
+  /** Active channels with no account that oddie has not looked for lately. */
+  withoutFaceit(now: number): Promise<Array<{ platform: Platform; channelId: string; slug: string; name: string | null }>>;
+  markFaceitProbe(platform: Platform, channelId: string, at: number): Promise<void>;
 }
 
 export interface LiveDeps {

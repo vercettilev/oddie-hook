@@ -79,6 +79,10 @@ CREATE INDEX IF NOT EXISTS live_pick_user_idx ON live_pick (platform, user_id);
 -- call by itself and settles from the result (src/live/gameCalls.ts).
 ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS faceit_id text;
 ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS faceit_nick text;
+-- oddie looks the account up from the channel's name (once a day at most)
+-- unless the channel said !faceit off; when it last looked, and whether it may.
+ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS faceit_auto boolean NOT NULL DEFAULT true;
+ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS faceit_probed_at timestamptz;
 -- A call about a FACEIT match carries the match id: one match, one call, ever.
 ALTER TABLE live_call ADD COLUMN IF NOT EXISTS match_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS live_call_match_idx ON live_call (platform, channel_id, match_id) WHERE match_id IS NOT NULL;
@@ -122,8 +126,10 @@ export function openToken(platform: Platform, sealed: string | null): string | n
 export interface LiveChannel {
   platform: Platform; channelId: string; slug: string; name: string | null; avatar: string | null;
   accessToken: string | null; refreshToken: string | null; tokenExpiresAt: number | null; active: boolean;
-  /** The channel's FACEIT account, when linked (!faceit). A save without them keeps what is there. */
+  /** The channel's FACEIT account, when linked. A save without these keeps what is there. */
   faceitId?: string | null; faceitNick?: string | null;
+  /** Whether oddie may look the account up from the channel's name, and when it last did. */
+  faceitAuto?: boolean; faceitProbedAt?: number | null;
 }
 
 const memChannels = new Map<string, LiveChannel>();
@@ -132,7 +138,8 @@ const ck = (p: Platform, id: string) => `${p}:${id}`;
 export async function saveChannel(ch: LiveChannel): Promise<void> {
   if (!STORE_PERSISTENT) {
     const was = memChannels.get(ck(ch.platform, ch.channelId));
-    memChannels.set(ck(ch.platform, ch.channelId), { ...ch, faceitId: ch.faceitId ?? was?.faceitId ?? null, faceitNick: ch.faceitNick ?? was?.faceitNick ?? null });
+    memChannels.set(ck(ch.platform, ch.channelId), { ...ch, faceitId: ch.faceitId ?? was?.faceitId ?? null, faceitNick: ch.faceitNick ?? was?.faceitNick ?? null,
+      faceitAuto: ch.faceitAuto ?? was?.faceitAuto ?? true, faceitProbedAt: ch.faceitProbedAt ?? was?.faceitProbedAt ?? null });
     return;
   }
   await schema();
@@ -151,12 +158,13 @@ export async function saveChannel(ch: LiveChannel): Promise<void> {
 
 type ChannelRow = { platform: Platform; channel_id: string; slug: string; name: string | null; avatar: string | null;
   token_enc: string | null; refresh_enc: string | null; token_expires_at: Date | null; active: boolean;
-  faceit_id?: string | null; faceit_nick?: string | null };
+  faceit_id?: string | null; faceit_nick?: string | null; faceit_auto?: boolean | null; faceit_probed_at?: Date | null };
 const fromRow = (r: ChannelRow): LiveChannel => ({
   platform: r.platform, channelId: r.channel_id, slug: r.slug, name: r.name, avatar: r.avatar,
   accessToken: openToken(r.platform, r.token_enc), refreshToken: openToken(r.platform, r.refresh_enc),
   tokenExpiresAt: r.token_expires_at ? new Date(r.token_expires_at).getTime() : null, active: r.active,
   faceitId: r.faceit_id ?? null, faceitNick: r.faceit_nick ?? null,
+  faceitAuto: r.faceit_auto !== false, faceitProbedAt: r.faceit_probed_at ? new Date(r.faceit_probed_at).getTime() : null,
 });
 
 export async function channelById(platform: Platform, channelId: string): Promise<LiveChannel | null> {
@@ -376,22 +384,45 @@ export const liveStore: LiveStore = {
     if (!STORE_PERSISTENT) {
       const k = ck(platform, channelId);
       const was = memChannels.get(k) ?? { platform, channelId, slug: channelId, name: null, avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true };
-      memChannels.set(k, { ...was, faceitId: link?.id ?? null, faceitNick: link?.nick ?? null });
+      memChannels.set(k, { ...was, faceitId: link?.id ?? null, faceitNick: link?.nick ?? null, faceitAuto: !!link });
       return;
     }
     await schema();
-    await storeDb().query(`UPDATE live_channel SET faceit_id = $3, faceit_nick = $4 WHERE platform = $1 AND channel_id = $2`,
-      [platform, channelId, link?.id ?? null, link?.nick ?? null]);
+    await storeDb().query(`UPDATE live_channel SET faceit_id = $3, faceit_nick = $4, faceit_auto = $5 WHERE platform = $1 AND channel_id = $2`,
+      [platform, channelId, link?.id ?? null, link?.nick ?? null, !!link]);
   },
   async withFaceit() {
     if (!STORE_PERSISTENT) {
       return [...memChannels.values()].filter((c) => c.active && c.faceitId && c.faceitNick)
-        .map((c) => ({ platform: c.platform, channelId: c.channelId, faceitId: c.faceitId!, faceitNick: c.faceitNick! }));
+        .map((c) => ({ platform: c.platform, channelId: c.channelId, name: c.name, faceitId: c.faceitId!, faceitNick: c.faceitNick! }));
     }
     await schema();
-    const { rows } = await storeDb().query<{ platform: Platform; channel_id: string; faceit_id: string; faceit_nick: string }>(
-      `SELECT platform, channel_id, faceit_id, faceit_nick FROM live_channel WHERE active AND faceit_id IS NOT NULL AND faceit_nick IS NOT NULL LIMIT 500`);
-    return rows.map((r) => ({ platform: r.platform, channelId: r.channel_id, faceitId: r.faceit_id, faceitNick: r.faceit_nick }));
+    const { rows } = await storeDb().query<{ platform: Platform; channel_id: string; name: string | null; faceit_id: string; faceit_nick: string }>(
+      `SELECT platform, channel_id, name, faceit_id, faceit_nick FROM live_channel WHERE active AND faceit_id IS NOT NULL AND faceit_nick IS NOT NULL LIMIT 500`);
+    return rows.map((r) => ({ platform: r.platform, channelId: r.channel_id, name: r.name, faceitId: r.faceit_id, faceitNick: r.faceit_nick }));
+  },
+  async withoutFaceit(now) {
+    const gap = 24 * 60 * 60_000;
+    if (!STORE_PERSISTENT) {
+      return [...memChannels.values()]
+        .filter((c) => c.active && !c.faceitId && c.faceitAuto !== false && (c.faceitProbedAt == null || now - c.faceitProbedAt >= gap))
+        .map((c) => ({ platform: c.platform, channelId: c.channelId, slug: c.slug, name: c.name }));
+    }
+    await schema();
+    const { rows } = await storeDb().query<{ platform: Platform; channel_id: string; slug: string; name: string | null }>(
+      `SELECT platform, channel_id, slug, name FROM live_channel
+        WHERE active AND faceit_id IS NULL AND faceit_auto AND (faceit_probed_at IS NULL OR faceit_probed_at < $1)
+        ORDER BY faceit_probed_at NULLS FIRST LIMIT 50`, [new Date(now - gap)]);
+    return rows.map((r) => ({ platform: r.platform, channelId: r.channel_id, slug: r.slug, name: r.name }));
+  },
+  async markFaceitProbe(platform, channelId, at) {
+    if (!STORE_PERSISTENT) {
+      const c = memChannels.get(ck(platform, channelId));
+      if (c) c.faceitProbedAt = at;
+      return;
+    }
+    await schema();
+    await storeDb().query(`UPDATE live_channel SET faceit_probed_at = $3 WHERE platform = $1 AND channel_id = $2`, [platform, channelId, new Date(at)]);
   },
 };
 
