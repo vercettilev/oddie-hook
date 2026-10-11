@@ -96,4 +96,36 @@ const run = (answers: Status[], o: Parameters<typeof scripted>[1] = {}, lastVali
   eq(s.stats().heightReads, 2, "height read at polls 2 and 4, and a confirm returns before the height is read");
 }
 
+/* the same bytes go out again while the cluster has not seen the signature */
+{
+  let resent = 0;
+  const s = scripted([null, null, null, null, null, null, { err: null, confirmationStatus: "confirmed" }], { heights: [10] });
+  s.deps.resend = async () => { resent++; };
+  const out = await confirmByPolling("sig", 100, s.deps, { pollMs: 10, timeoutMs: 10_000, heightEvery: 100, resendEvery: 3 });
+  eq(out, { state: "confirmed" } as ConfirmOutcome, "confirmed after resends");
+  eq(resent, 1, "resent at poll 3 only (poll 6 answered confirmed before any resend)");
+}
+{
+  let resent = 0;
+  const s = scripted([null, null, null, null, null, null, null, { err: null, confirmationStatus: "confirmed" }], { heights: [10] });
+  s.deps.resend = async () => { resent++; };
+  await confirmByPolling("sig", 100, s.deps, { pollMs: 10, timeoutMs: 10_000, heightEvery: 100, resendEvery: 3 });
+  eq(resent, 2, "resent at polls 3 and 6");
+}
+{
+  // once a node has seen it ("processed") nothing is resent
+  let resent = 0;
+  const s = scripted([null, { err: null, confirmationStatus: "processed" }, { err: null, confirmationStatus: "processed" }, { err: null, confirmationStatus: "processed" }, { err: null, confirmationStatus: "confirmed" }], { heights: [10] });
+  s.deps.resend = async () => { resent++; };
+  await confirmByPolling("sig", 100, s.deps, { pollMs: 10, timeoutMs: 10_000, heightEvery: 100, resendEvery: 1 });
+  eq(resent, 0, "a seen transaction is never resent");
+}
+{
+  // a resend that throws does not end the wait
+  const s = scripted([null, null, null, { err: null, confirmationStatus: "confirmed" }], { heights: [10] });
+  s.deps.resend = async () => { throw new Error("already processed"); };
+  const out = await confirmByPolling("sig", 100, s.deps, { pollMs: 10, timeoutMs: 10_000, heightEvery: 100, resendEvery: 1 });
+  eq(out, { state: "confirmed" } as ConfirmOutcome, "resend errors are swallowed");
+}
+
 console.log(`test-chain-confirm: ${checks} checks passed`);

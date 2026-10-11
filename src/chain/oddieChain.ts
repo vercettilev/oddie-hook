@@ -1151,6 +1151,13 @@ export interface ConfirmDeps {
   blockHeight: () => Promise<number>;
   sleep: (ms: number) => Promise<void>;
   now: () => number;
+  /** Broadcast the same signed bytes again. Same signature, so it can never
+   *  double-spend; it only gives a transaction the cluster dropped another
+   *  chance while its blockhash is still valid. Errors are the caller's to
+   *  swallow. Called only while the cluster has not seen the signature at
+   *  all. 10 Oct: a 0.1 SOL stake was sent once with three RPC retries, never
+   *  landed, and the user read "sent" for a stake that did not exist. */
+  resend?: () => Promise<void>;
 }
 export type ConfirmOutcome =
   | { state: "confirmed" }
@@ -1163,11 +1170,12 @@ export async function confirmByPolling(
   signature: string,
   lastValidBlockHeight: number,
   deps: ConfirmDeps,
-  opts: { pollMs?: number; timeoutMs?: number; heightEvery?: number } = {},
+  opts: { pollMs?: number; timeoutMs?: number; heightEvery?: number; resendEvery?: number } = {},
 ): Promise<ConfirmOutcome> {
   const pollMs = opts.pollMs ?? CONFIRM_POLL_MS;
   const timeoutMs = opts.timeoutMs ?? CONFIRM_TIMEOUT_MS;
   const heightEvery = opts.heightEvery ?? 6;
+  const resendEvery = opts.resendEvery ?? 3;
   const started = deps.now();
   const settled = (s: { err: unknown; confirmationStatus?: string | null } | null): ConfirmOutcome | null => {
     if (!s) return null;
@@ -1176,8 +1184,10 @@ export async function confirmByPolling(
     return null; // "processed": one node has seen it, the cluster has not voted yet
   };
   for (let i = 0; ; i++) {
-    const out = settled(await deps.status(signature, false));
+    const s = await deps.status(signature, false);
+    const out = settled(s);
     if (out) return out;
+    if (s === null && deps.resend && i > 0 && i % resendEvery === 0) await deps.resend().catch(() => {});
     if (i > 0 && i % heightEvery === 0 && (await deps.blockHeight()) > lastValidBlockHeight) {
       return settled(await deps.status(signature, true)) ?? { state: "unknown", reason: "expired" };
     }
@@ -1298,9 +1308,23 @@ export async function submitSignedTx(txBase64: string): Promise<SubmitResult> {
         blockHeight: () => c.connection.getBlockHeight("confirmed"),
         sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         now: Date.now,
+        // skipPreflight: it passed preflight once; maxRetries 0: this loop is
+        // the retry.
+        resend: async () => { await c.connection.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }); },
       });
       if (outcome.state === "rejected") return { ok: false, error: "rejected", signature };
       if (outcome.state === "confirmed") return { ok: true, signature, confirmed: true };
+      /* EXPIRED IS A NO, NOT A MAYBE. The chain has walked past the last
+         height at which this blockhash can be included and a history search
+         still does not know the signature, so the stake cannot land any
+         more and nothing left the wallet. Saying "sent" here (10 Oct, a 0.1
+         SOL stake) left the user believing in a bet that did not exist; the
+         expired error re-arms the button and says nothing was staked. A
+         timeout is still a maybe: the blockhash may have a few blocks left. */
+      if (outcome.reason === "expired") {
+        console.error(`[chain] never landed, blockhash expired: ${signature}`);
+        return { ok: false, error: "expired", signature };
+      }
       console.error(`[chain] sent but not confirmed in time (${outcome.reason}): ${signature}`);
       return { ok: true, signature, confirmed: false };
     } catch (e) {
