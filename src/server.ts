@@ -10,6 +10,7 @@ import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { rereadMisreadMarkets } from "./store/markets.js";
+import { byMarketOrder } from "./marketOrder.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
@@ -4305,19 +4306,8 @@ app.get("/api/v1/markets", async (req, res) => {
       creatorFeeBps: state?.creatorFeeBps ?? m.creatorFeeBps,
     };
   });
-  /* BUSIEST FIRST, AND THE TIE-BREAKS ARE THE HONEST ONES.
-     Pool is the signal a trader is actually looking for: a market with money in
-     it is a market somebody disagreed about. Stakers comes next and quietly
-     handles the unreadable case, where the pool reads as 0 but our own record
-     knows wallets went in -- an RPC we could not reach must not demote a funded
-     market below an empty one. Views break a tie only between markets that both
-     have nothing in them, which is the one place attention is the best number
-     available. Newest last, so a fresh market still outranks a stale twin. */
-  items.sort((a, b) =>
-    (b.pool?.totalSol ?? 0) - (a.pool?.totalSol ?? 0)
-    || (b.stakers ?? 0) - (a.stakers ?? 0)
-    || ((views[b.slug] ?? 0) - (views[a.slug] ?? 0))
-    || String(b.closesAt ?? "").localeCompare(String(a.closesAt ?? "")));
+  // Money first; among empty markets the soonest close first. See src/marketOrder.ts.
+  items.sort(byMarketOrder(views));
   const page = items.slice(0, limit);
 
   res.json({
