@@ -11,6 +11,9 @@ import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
 import { rereadMisreadMarkets } from "./store/markets.js";
 import { byMarketOrder } from "./marketOrder.js";
+import { retireStaleMarkets } from "./staleBoard.js";
+import { retireMarket } from "./store/markets.js";
+import { stakedInVault } from "./chain/oddieChain.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
@@ -6081,6 +6084,30 @@ async function sweepClosingSoon(): Promise<void> {
 }
 setInterval(sweepClosingSoon, CLOSING_SOON_SWEEP_MS).unref();
 setTimeout(sweepClosingSoon, 60_000).unref(); // first pass shortly after boot
+
+// Markets that closed two days ago with nothing in them and no verdict leave
+// the board (src/staleBoard.ts): every six hours, first pass shortly after boot.
+const STALE_SWEEP_MS = 6 * 3600_000;
+let sweepingStale = false;
+async function sweepStaleBoard(): Promise<void> {
+  if (sweepingStale) return;
+  sweepingStale = true;
+  try {
+    const { retired, refused } = await retireStaleMarkets({
+      list: adminListCommunity,
+      vault: async (pubkey) => (isChainEnabled() ? stakedInVault(pubkey) : null),
+      retire: retireMarket,
+      now: Date.now,
+    });
+    if (retired.length || refused.length) console.log(JSON.stringify({ evt: "board_stale", retired, refused }));
+  } catch (err) {
+    console.error("[board] stale sweep failed:", (err as Error).message);
+  } finally {
+    sweepingStale = false;
+  }
+}
+setInterval(sweepStaleBoard, STALE_SWEEP_MS).unref();
+setTimeout(sweepStaleBoard, 90_000).unref();
 
 /* --------------------------------------------------------- the X bot loop ---
  * The autonomous half. Everything the sweep needs is wired here because this
