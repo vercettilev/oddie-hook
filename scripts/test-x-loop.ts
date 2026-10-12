@@ -131,6 +131,23 @@ async function main() {
     check("...and costs the tagger no ticket", spends.length === 0, JSON.stringify(spends));
   }
 
+  /* ------------------------------------ a market opened under its own words -- */
+  {
+    /* A price claim already decided at the open is read at its close and opens
+       under new words (src/price/index.ts readAtOpen, 12 Oct). The reply says
+       those, never the extraction's "at any point". */
+    _resetBotState();
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("160")], newestId: "160" }),
+      extract: async () => ({ ...goodExtraction("Will Solana (SOL) trade above $100 at any point in October 2026?"), hook: "SOL above $100 in Oct?" }),
+      openMarket: async () => ({ ok: true, slug: "sol-100", question: "Will $SOL be above $100 at the end of October 2026?", hook: "SOL above $100 at end of Oct?" }) as MintResult,
+    });
+    await runMentionSweep(deps);
+    const text = spy.posted[0]?.text ?? "";
+    check("a market read at its close is announced in its own words",
+      text.includes("Will $SOL be above $100 at the end of October 2026?") && text.includes("SOL above $100 at end of Oct?") && !/at any point/.test(text), text);
+  }
+
   /* ---------------------------------------------- the claim is the PARENT -- */
   {
     _resetBotState();

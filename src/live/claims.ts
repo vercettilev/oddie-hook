@@ -107,7 +107,9 @@ export async function openFromChat(msg: ChatMessage, claimText: string, deps: Ch
       return "existing";
     }
     const url = `${base}/m/${minted.slug}`;
-    await deps.say(msg, MARKET_COPY.opened(ex.hook || ex.question, url, channel));
+    // The market's own words: a price claim already decided at the open is read
+    // at its close and opens under a new question and headline.
+    await deps.say(msg, MARKET_COPY.opened((minted.hook === undefined ? ex.hook : minted.hook) || minted.question || ex.question, url, channel));
     // "opened" is what the daily cap counts.
     await deps.settle(key, "replied", { slug: minted.slug, reason: "opened", claimText: text });
     deps.log("market opened from chat", { platform: msg.platform, channel: msg.channelId, slug: minted.slug });

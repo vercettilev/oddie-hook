@@ -173,6 +173,23 @@ function harness(updates: TgUpdate[], over: Partial<TgSweepDeps> = {}): { deps: 
     String(_memMentionReason("tg:-1001234567890:11")));
 }
 
+/* ------------------------------------- a market opened under its own words -- */
+{
+  /* A price claim already decided at the open is read at its close and opens
+     under new words (src/price/index.ts readAtOpen, 12 Oct). The answer says
+     those, never the extraction's "at any point". */
+  _resetBotState();
+  const parent = msg({ message_id: 10, chat: PUBLIC, from: noname, text: "Solana above $100 in october?" });
+  const { deps, spy } = harness([upd(1, msg({ message_id: 11, chat: PUBLIC, from: alice, reply_to_message: parent }))], {
+    extract: async () => ({ ...goodExtraction("Will Solana (SOL) trade above $100 at any point in October 2026?"), hook: "SOL above $100 in Oct?" } as Extraction),
+    openMarket: async () => ({ ok: true, slug: "sol-100", question: "Will $SOL be above $100 at the end of October 2026?", hook: "SOL above $100 at end of Oct?" }) as MintResult,
+  });
+  await runTelegramSweep(deps);
+  const text = spy.replies[0]?.text ?? "";
+  check("a market read at its close is answered in its own words",
+    text.includes("Will $SOL be above $100 at the end of October 2026?") && text.includes("SOL above $100 at end of Oct?") && !/at any point/.test(text), text);
+}
+
 /* ----------------------------------------------------------- identity -- */
 {
   _resetBotState();

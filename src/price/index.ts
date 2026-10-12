@@ -316,6 +316,112 @@ export function criteriaSentence(c: PriceCheck): string {
   return `Settles from the on-chain price of $${c.symbol} (${c.chain} mint ${c.mint}). YES if its ${what} is ${dir} ${money(c.target)} ${when}, read from the hourly candles of its deepest pool on GeckoTerminal${basis}. NO otherwise.`;
 }
 
+/* ------------------------------------------------------ the open -- */
+
+/* A PERIOD ALREADY DECIDED WHEN ITS MARKET OPENS IS READ AT ITS END.
+   Live on 2026-10-12 a streamer typed "Solana above $100 in october?" with SOL
+   at $108. The claim came out as a touch, "above $100 at any point between
+   this market opening and October 31", which is a YES on the first hourly
+   candle: whoever took NO had lost before they staked, and the market sat
+   open for nineteen days waiting for a close that could not change it. Asked
+   inside October with the price already past the level, the question is where
+   SOL ends the month (Lev), so that is the market that opens: the same level,
+   read at the close. The mirror holds for "always": a hold already broken at
+   the open is a NO from the first candle, and where it ends the period is the
+   question left.
+   The window still opens at the market's open, so the at-close value is a
+   candle formed after it, and the question and headline are rewritten from
+   the check, because the model's words said "at any point". */
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** When an at-close market is read, in a bettor's words. A close in the last
+ *  hour of a UTC day (or on midnight) is that day's end, on a month's last day
+ *  the month's end; any other close names its hour. `short` is for a headline. */
+function closeWhen(iso: string, short = false): string {
+  let t = new Date(iso);
+  if (t.getUTCHours() === 0 && t.getUTCMinutes() === 0) t = new Date(t.getTime() - 60_000);
+  const y = t.getUTCFullYear();
+  const mo = t.getUTCMonth();
+  const d = t.getUTCDate();
+  const month = MONTHS[mo];
+  if (t.getUTCHours() === 23) {
+    const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    if (d === lastDay) return short ? `at end of ${month.slice(0, 3)}` : `at the end of ${month} ${y}`;
+    return short ? `on ${month.slice(0, 3)} ${d}` : `at the end of ${month} ${d}, ${y} (UTC)`;
+  }
+  const hm = `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")} UTC`;
+  return short ? `at ${hm}` : `at ${hm} on ${month} ${d}, ${y}`;
+}
+
+const dirWords = (op: PriceOp) =>
+  op === ">=" ? "at or above" : op === ">" ? "above" : op === "<=" ? "at or below" : "below";
+
+/** The question an at-close check asks, for a market whose own words read it another way. */
+export function closeQuestion(c: PriceCheck): string {
+  const what = c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
+  return `Will ${what} be ${dirWords(c.op)} ${money(c.target)} ${closeWhen(c.to)}?`;
+}
+
+/** Its headline, short like the extractor's: "SOL above $100 at end of Oct?".
+ *  Null when a long ticker pushes it past what a headline holds; the question
+ *  stands in for it then. */
+export function closeHook(c: PriceCheck): string | null {
+  const dir = c.op === ">=" || c.op === ">" ? "above" : "below";
+  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} ${dir} ${money(c.target)} ${closeWhen(c.to, true)}?`;
+  return hook.length <= 40 ? hook : null;
+}
+
+/** The price now, read where the oracle reads it at settle: the newest hourly
+ *  candle of the pinned pool, in the claim's own metric. Never throws. */
+export async function priceNow(check: PriceCheck): Promise<{ ok: true; value: number } | { ok: false; why: string }> {
+  const unit = check.metric === "mc" ? check.supply : 1;
+  if (!(unit > 0)) return { ok: false, why: "no supply was recorded for this market" };
+  let candles: Candle[];
+  try {
+    candles = await priceFeed().ohlcv(check.chain, check.pool, "hour", 1);
+  } catch (e) {
+    return { ok: false, why: `the price could not be read: ${(e as Error).message}` };
+  }
+  // The newest by its start, whatever order the source sends them in. Its
+  // close is the last trade, which is the price now on a pool.
+  let newest: Candle | null = null;
+  for (const c of candles) if (!newest || c[0] > newest[0]) newest = c;
+  if (!newest || !(newest[4] > 0)) return { ok: false, why: "the pool has no candle to read" };
+  return { ok: true, value: newest[4] * unit };
+}
+
+/** What the price at the open already says: a touch met now is a YES, an
+ *  "always" broken now is a NO. Null while still open, and always for
+ *  "at-close", which only the close decides. */
+export function decidedAtOpen(check: PriceCheck, value: number): "yes" | "no" | null {
+  if (check.mode === "touch") return satisfies(value, check.op, check.target) ? "yes" : null;
+  if (check.mode === "always") return satisfies(value, check.op, check.target) ? null : "no";
+  return null;
+}
+
+export type AtOpen =
+  /** Nothing to change: an at-close claim, or one the price has not decided. */
+  | { kind: "as-is"; now: number | null }
+  /** The price could not be read: the market opens as it reads, and the caller logs why. */
+  | { kind: "unread"; why: string }
+  /** Decided at the open, so read at the close: the check, the criteria, the question and the headline to open under. */
+  | { kind: "reread"; now: number; was: "yes" | "no"; check: PriceCheck; sentence: string; question: string; hook: string | null };
+
+/** Read a pinned check against the price at the open, before anything is minted. */
+export async function readAtOpen(check: PriceCheck): Promise<AtOpen> {
+  if (check.mode === "at-close") return { kind: "as-is", now: null };
+  const now = await priceNow(check);
+  if (!now.ok) return { kind: "unread", why: now.why };
+  const was = decidedAtOpen(check, now.value);
+  if (!was) return { kind: "as-is", now: now.value };
+  const atClose: PriceCheck = { ...check, mode: "at-close" };
+  return {
+    kind: "reread", now: now.value, was, check: atClose,
+    sentence: criteriaSentence(atClose), question: closeQuestion(atClose), hook: closeHook(atClose),
+  };
+}
+
 export interface PriceVerdict {
   outcome: "yes" | "no" | null;
   why: string;

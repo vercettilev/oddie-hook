@@ -615,6 +615,22 @@ console.log("\nthe market door: !oddie <claim>, like a tag on X or Telegram");
   check("...and says nothing about this channel earning from it", !/earns 2%/.test(twin.said[0] ?? ""));
   check("...and is recorded as existing, never as opened", _memMentionReason("kick:131980691:id-twin") === "existing",
     String(_memMentionReason("kick:131980691:id-twin")));
+  /* A PRICE CLAIM READ AT ITS CLOSE. Live on 12 Oct, Bee's "Solana above $100
+     in october?" came out as "at any point in October" with SOL at $108. The
+     mint now reads it where October ends and opens it under new words
+     (src/price/index.ts readAtOpen); the chat hears those, never the
+     extraction's. */
+  const reread = world({
+    extract: async () => ({ ...good("Will Solana (SOL) trade above $100 at any point in October 2026?"), hook: "SOL above $100 in Oct?" } as Extraction),
+    openMarket: async () => ({ ok: true, slug: "sol-100", question: "Will $SOL be above $100 at the end of October 2026?", hook: "SOL above $100 at end of Oct?" }) as never,
+  });
+  await openFromChat(viewer("id-reread", "x", { channelSlug: "bee_empire" }), "Solana above $100 in october?", reread.deps);
+  check("a market read at its close is announced in its own words",
+    reread.said[0] === MARKET_COPY.opened("SOL above $100 at end of Oct?", "https://app.oddie.fun/m/sol-100", "bee_empire"), reread.said[0]);
+  const noHook = world({ openMarket: async () => ({ ok: true, slug: "sol-100b", question: "Will $SOL be above $100 at the end of October 2026?", hook: null }) as never });
+  await openFromChat(viewer("id-reread-2", "x"), "Solana above $100 in october?", noHook.deps);
+  check("...and with no headline of its own, by its question, never the extraction's headline",
+    noHook.said[0] === MARKET_COPY.opened("Will $SOL be above $100 at the end of October 2026?", "https://app.oddie.fun/m/sol-100b", "oddiefun"), noHook.said[0]);
   const linked = world({ payoutWallet: async (id) => (id === "kick:131980691" ? "Wal1etOfTheStreamer" : null) });
   await openFromChat(viewer("id-7", "x"), "claim", linked.deps);
   check("a channel that linked a wallet is named on the market from the start", linked.opened[0]?.creatorWallet === "Wal1etOfTheStreamer");

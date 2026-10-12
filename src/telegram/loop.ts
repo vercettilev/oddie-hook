@@ -476,7 +476,10 @@ async function finishClaim(
   }
 
   const permalink = `${deps.baseUrl.replace(/\/+$/, "")}/m/${minted.slug}`;
-  const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook });
+  // The market's own words: a price claim read at its close opens under new ones.
+  const question = minted.question || ex.question;
+  const hook = minted.hook === undefined ? ex.hook : minted.hook ?? "";
+  const reply = buildTweetReply({ question, permalink, hook });
   /* THE INCENTIVE, SAID WHERE THE ROOM CAN SEE IT. "Bring the room, own the
      room" only works if the room can see that opening a market pays. Only
      under a market that just opened: a pointer to an existing one was
@@ -485,7 +488,7 @@ async function finishClaim(
   /* In a guest reply the preview above the text is the card and the page's
      own title, and the button is the link, so the full reply said the
      question three times. The headline and the opener are what is left. */
-  await job.answer(job.guest ? `${ex.hook || ex.question}\n\n${openerLine}` : `${reply.primary}\n\n${openerLine}`, minted.slug);
+  await job.answer(job.guest ? `${hook || question}\n\n${openerLine}` : `${reply.primary}\n\n${openerLine}`, minted.slug);
   /* "opened" is what the daily cap counts: a pointer to a market that
      already existed opened nothing and costs the person nothing. A guest
      reply keeps its inline id: it is the only way to show the result there. */

@@ -36,8 +36,13 @@ export interface MintedMarket {
    *  and slug is that market. Every door answers it as an existing market,
    *  never as one it just opened. */
   existed?: boolean;
-  /** The existing market's question, when existed. */
+  /** The market's own question: the existing one's when existed, else the one
+   *  it opened under. A price claim decided at the open is read at its close
+   *  and opens under new words, so every door repeats these, never the model's. */
   question?: string;
+  /** The headline it opened under, null for none. Absent (a door that does
+   *  not say): the extraction's. */
+  hook?: string | null;
 }
 export type MintResult = MintedMarket | { ok: false; status: number; error: string };
 
@@ -831,7 +836,7 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
          the product where the refund rule can be stated as an instruction
          rather than as documentation: under a market they just opened, "one new
          bettor here brings it back" is something they can go and do. */
-      const reply = buildTweetReply({ question: ex.question, permalink, hook: ex.hook, tagsLeft });
+      const reply = buildTweetReply({ question: minted.question || ex.question, permalink, hook: minted.hook === undefined ? ex.hook : minted.hook ?? "", tagsLeft });
 
 
       // The card is the thing that stops a scroll, but a reply with no card is

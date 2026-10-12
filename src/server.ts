@@ -52,7 +52,7 @@ import { oracleAvailable } from "./oracle/verdict.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank, bestCalls } from "./store/standings.js";
-import { resolvePriceClaim, type PriceClaim, type PriceCheck } from "./price/index.js";
+import { resolvePriceClaim, readAtOpen, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { hookFor, viewCounts, recordView } from "./store/markets.js";
@@ -1855,7 +1855,7 @@ const kickMarkets = {
       claimText: input.claimText ?? null, resolvability: input.resolvability, hook: input.hook ?? null,
       mint: "on-demand",
     });
-    return out.ok ? { ok: true as const, slug: out.slug, existed: Boolean(out.existed), question: out.question } : { ok: false as const, status: out.status, error: out.error };
+    return out.ok ? { ok: true as const, slug: out.slug, existed: Boolean(out.existed), question: out.question, hook: out.hook } : { ok: false as const, status: out.status, error: out.error };
   },
   claim: (key: string, author: string) => claimMention(key, author),
   settle: (key: string, outcome: "replied" | "skipped" | "failed", extra: { reason?: string; slug?: string; claimText?: string | null }) =>
@@ -3509,7 +3509,12 @@ type OpenMarketResult =
       /** Set when nothing was opened because this claim already had a market.
        *  The slug above is that market's: every caller then links the one that
        *  exists instead of minting a twin beside it. */
-      existed?: true; question?: string }
+      existed?: true;
+      /** The market's own words: the existing one's question when existed,
+       *  else the question and headline it opened under. A price claim already
+       *  decided at the open is read at its close and opens under new words
+       *  (readAtOpen), so every door repeats these, never the extraction's. */
+      question?: string; hook?: string | null }
   | { ok: false; status: number; error: string };
 
 /**
@@ -3629,7 +3634,9 @@ async function openMarketFromClaim(input: {
   mint?: "now" | "on-demand";
 }): Promise<OpenMarketResult> {
   const bad = (status: number, error: string): OpenMarketResult => ({ ok: false, status, error });
-  const question = input.question.trim();
+  // Both rewritten below when a price claim is read at its close instead.
+  let question = input.question.trim();
+  let hook = input.hook ?? null;
   const category = (input.category ?? "Community").trim() || "Community";
   const yesPct = Number(input.yesPct ?? 50);
   const resolutionCriteria = input.resolutionCriteria != null ? String(input.resolutionCriteria).trim() : null;
@@ -3702,7 +3709,15 @@ async function openMarketFromClaim(input: {
      may leave them empty for these, because the sources that show a memecoin's
      market cap are the ones it is forbidden to cite. If the token could not be
      pinned and the model left nothing, there is no rule to settle by and the
-     market is refused rather than opened blind. */
+     market is refused rather than opened blind.
+
+     FOUR: the price at the open is read where the oracle will read it, and a
+     touch it already meets, or an "always" it already breaks, is read at the
+     close instead (readAtOpen, src/price/index.ts): the same level where the
+     period ends, under a question and headline that say so. Starting the
+     window now was not enough on its own: "Solana above $100 in october?"
+     opened on 12 Oct as "at any point", with SOL at $108. A price that cannot
+     be read leaves the market as it reads, logged. */
   let priceCheck: PriceCheck | null = null;
   let criteria = resolutionCriteria;
   if (input.priceClaim) {
@@ -3714,6 +3729,28 @@ async function openMarketFromClaim(input: {
     if (r.ok) {
       priceCheck = r.check;
       criteria = r.sentence;
+      const atOpen = await readAtOpen(r.check);
+      if (atOpen.kind === "reread") {
+        priceCheck = atOpen.check;
+        criteria = atOpen.sentence;
+        question = atOpen.question;
+        hook = atOpen.hook;
+        console.log(JSON.stringify({
+          evt: "price_open", line: "decided at the open, read at the close", was: atOpen.was, now: atOpen.now,
+          symbol: r.check.symbol, op: r.check.op, target: r.check.target, mode: r.check.mode, question,
+        }));
+      } else if (atOpen.kind === "unread") {
+        console.log(JSON.stringify({
+          evt: "price_open", line: "price not read at the open, opened as it reads", why: atOpen.why,
+          symbol: r.check.symbol, op: r.check.op, target: r.check.target, mode: r.check.mode,
+        }));
+      }
+    } else if (criteria && input.priceClaim.mode !== "at-close") {
+      // Opens on the model's own rule, as before: no pinned price to check it against.
+      console.log(JSON.stringify({
+        evt: "price_open", line: "no pinned price at the open, opened on the model's rule", why: r.why,
+        symbol: input.priceClaim.symbol, op: input.priceClaim.op, target: input.priceClaim.target, mode: input.priceClaim.mode,
+      }));
     } else if (!criteria) {
       /* THIS REFUSAL COST A REAL TAG, and the shape of the mistake is worth
          keeping. A claim about BTC reads as a price claim, correctly, and BTC
@@ -3795,7 +3832,7 @@ async function openMarketFromClaim(input: {
      that exists to pay its caller, and every Telegram market -- reached the
      chain unnamed: ensureMinted reads the creator off the row and found null.
      Both ends of that path were tested; this line between them was not. */
-  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria: criteria, resolvability, hook: input.hook ?? null, marketId, creatorFeeBps, creatorWallet, priceCheck });
+  const { slug } = await createCommunityMarket({ question, closeTime, category, yesPct, resolutionCriteria: criteria, resolvability, hook, marketId, creatorFeeBps, creatorWallet, priceCheck });
   if (minted) await setCommunityOnchain(slug, minted.pubkey, minted.signature);
   void logExtraction("publish", question, { slug, question, category, yesPct, closeTime, resolutionCriteria, resolvability });
 
@@ -3819,11 +3856,11 @@ async function openMarketFromClaim(input: {
         if (await claimMention(key, null)) await settleMention(key, "replied", { slug: s, reason: "announced" });
       },
       log: (msg, extra) => console.error(`[room] ${msg}`, extra ?? {}),
-    }, { slug, headline: foldIds(input.hook || question), url: `${APP_BASE_URL}/m/${slug}`, sourceUrl });
+    }, { slug, headline: foldIds(hook || question), url: `${APP_BASE_URL}/m/${slug}`, sourceUrl });
   }
 
   return {
-    ok: true, slug, marketId,
+    ok: true, slug, marketId, question, hook,
     onchain: minted ? { pubkey: minted.pubkey, explorer: explorerUrl(minted.pubkey), signature: minted.signature } : null,
   };
 }
@@ -6235,7 +6272,7 @@ function sweepDeps(overrides: Partial<SweepDeps> = {}): SweepDeps {
         // not. It gets minted the moment somebody actually turns up.
         mint: "on-demand",
       });
-      return out.ok ? { ok: true, slug: out.slug, existed: Boolean(out.existed), question: out.question } : { ok: false, status: out.status, error: out.error };
+      return out.ok ? { ok: true, slug: out.slug, existed: Boolean(out.existed), question: out.question, hook: out.hook } : { ok: false, status: out.status, error: out.error };
     },
     cardPng: async (slug) => {
       const { all } = await liveMarketData();
@@ -6626,7 +6663,7 @@ async function startTelegram(): Promise<void> {
         hook: input.hook ?? null,
         mint: "on-demand", // no rent until somebody actually stakes
       });
-      return out.ok ? { ok: true, slug: out.slug, existed: Boolean(out.existed), question: out.question } : { ok: false, status: out.status, error: out.error };
+      return out.ok ? { ok: true, slug: out.slug, existed: Boolean(out.existed), question: out.question, hook: out.hook } : { ok: false, status: out.status, error: out.error };
     },
     reply: (o) => tgReply(o, log),
     guestAnswer: (q, c) => TG.answerGuestQuery(q, c),
