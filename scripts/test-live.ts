@@ -901,9 +901,9 @@ console.log("\nthe lines no memory test reaches");
     && /RAW_WEBHOOKS\.has\(req\.path\) \? next\(\) : jsonBody\(req, res, next\)/.test(server)
     && !/^app\.use\(express\.json\(\)\);$/m.test(server));
   check("the live pages are app pages", /\(m\|market\|w\|u\|live\)/.test(server) && /\|following\|live\)/.test(server));
-  check("the Kick and Twitch routers are mounted, and the clock runs only where one of them is set up",
-    /app\.use\(kickRouter\(\{/.test(server) && /app\.use\(twitchRouter\(\{/.test(server)
-    && /if \(kickConfigured\(\) \|\| twitchConfigured\(\)\) \{[\s\S]{0,1600}lockDue\(clock\)/.test(server));
+  check("the Kick, Twitch and YouTube routers are mounted, and the clock runs only where one of them is set up",
+    /app\.use\(kickRouter\(\{/.test(server) && /app\.use\(twitchRouter\(\{/.test(server) && /app\.use\(youtubeRouter\(\{/.test(server)
+    && /if \(kickConfigured\(\) \|\| twitchConfigured\(\) \|\| youtubeConfigured\(\)\) \{[\s\S]{0,2400}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
   check("the leaderboard's SQL groups by platform and person, names the last channel, and never says RIGHT bare",
     /WHERE c\.settled_at IS NOT NULL AND lower\(p\.username\) <> ALL\(\$2::text\[\]\)\s+GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1`, \[n, HOUSE_ACCOUNTS\]/.test(store)

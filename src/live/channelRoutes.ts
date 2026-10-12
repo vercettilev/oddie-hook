@@ -51,6 +51,8 @@ export interface ChannelPageDeps {
 const CHANNEL_URL: Record<Platform, (slug: string) => string> = {
   kick: (s) => `https://kick.com/${s}`,
   twitch: (s) => `https://www.twitch.tv/${s}`,
+  // A YouTube channel's slug is its handle, or its UC… id when it has none.
+  youtube: (s) => (/^UC[\w-]{22}$/.test(s) ? `https://www.youtube.com/channel/${s}` : `https://www.youtube.com/@${s}`),
 };
 
 /** The channel this browser signed in as on this platform, or null. */
@@ -77,7 +79,7 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
   /** A channel's page on oddie, and what it reads. */
   r.get(`/live/${platform}/:slug`, (req, res, next) => {
     // The sign-in and webhook paths are the platform router's own.
-    if (["connect", "callback", "webhook"].includes(req.params.slug)) return next();
+    if (["connect", "callback", "webhook", "voice"].includes(req.params.slug)) return next();
     if (!d.pageOpen(req)) return d.pageClosed(res);
     res.set("Cache-Control", "no-cache").type("html").send(d.pageHtml());
   });

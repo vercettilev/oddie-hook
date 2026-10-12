@@ -22,7 +22,9 @@ import { kickRouter, kickEngineDeps } from "./kick/routes.js";
 import { kickConfigured } from "./kick/client.js";
 import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
-import { lockDue, remindOpen, type LiveDeps } from "./live/calls.js";
+import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
+import { youtubeConfigured } from "./youtube/client.js";
+import { lockDue, remindOpen, type LiveDeps, type Platform } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
 import { watchFrames } from "./live/frameCalls.js";
@@ -1901,6 +1903,16 @@ app.use(twitchRouter({
     nameMarkets: async (channelId, wallet) => nameOpenedMarkets(await streamOpenedSlugs("twitch", channelId).catch(() => [] as string[]), wallet),
   },
 }));
+/* YOUTUBE (src/youtube): votes only, no market and no 2%, so the page has no
+   payout and no market list. The watcher below finds streams and reads chats. */
+app.use(youtubeRouter({
+  appBaseUrl: APP_BASE_URL,
+  pageHtml: () => stampApp(LIVE_HTML),
+  overlayHtml: () => OVERLAY_HTML,
+  pageOpen: (req) => appOpenFor(req),
+  pageClosed: (res) => appClosed(res),
+  log: liveLog,
+}));
 /* THE LEADERBOARD'S ROWS: points from the votes in every stream chat (Lev,
    8 Oct, the board is the live product's). Usernames and points, the same
    things every channel page already shows; one grouped read per visit. */
@@ -1913,21 +1925,24 @@ app.get("/api/live/standings", async (_req, res) => {
 });
 
 /* The clock only runs where a channel can exist to need it. One clock for
-   both platforms: a due call is said through its own platform's voice. */
-if (kickConfigured() || twitchConfigured()) {
+   every platform: a due call is said through its own platform's voice. */
+if (kickConfigured() || twitchConfigured() || youtubeConfigured()) {
   const kickEng = kickEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
   const twEng = twitchEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
+  const ytEng = youtubeEngineDeps({ log: liveLog });
+  const engOf = (p: Platform): LiveDeps => (p === "twitch" ? twEng : p === "youtube" ? ytEng : kickEng);
   const clock: LiveDeps = {
     ...kickEng,
-    say: (p, c, t, r) => (p === "twitch" ? twEng.say(p, c, t, r) : kickEng.say(p, c, t, r)),
-    // Pins are Twitch's; on Kick the reminder alone keeps a long call in sight.
+    say: (p, c, t, r) => engOf(p).say(p, c, t, r),
+    // Pins are Twitch's; on Kick and YouTube the reminder alone keeps a long call in sight.
     pin: (p, c, id) => (p === "twitch" && twEng.pin ? twEng.pin(p, c, id) : Promise.resolve()),
     unpin: (p, c) => (p === "twitch" && twEng.unpin ? twEng.unpin(p, c) : Promise.resolve()),
     streamLive: (p, c) => {
-      const eng = p === "twitch" ? twEng : kickEng;
+      const eng = engOf(p);
       return eng.streamLive ? eng.streamLive(p, c) : Promise.resolve(null);
     },
-    standingsUrl: (p, c) => (p === "twitch" ? twEng.standingsUrl(p, c) : kickEng.standingsUrl(p, c)),
+    // YouTube's is "": no line there carries a link.
+    standingsUrl: (p, c) => engOf(p).standingsUrl(p, c),
   };
   // A tick can outlast five seconds now that a chat's lines go out a second
   // apart (src/live/pace.ts): the next one waits for it instead of reading the
@@ -1951,7 +1966,23 @@ if (kickConfigured() || twitchConfigured()) {
      linked, nothing installed. Wired after the clock so the clock's own lines
      stay where test-live looks for them. */
   const frames = frameSource();
-  clock.streamGame = (p, c) => { const eng = p === "twitch" ? twEng : kickEng; return eng.streamGame ? eng.streamGame(p, c) : Promise.resolve(null); };
+  // The picture is read on Twitch and Kick; a YouTube stream is not looked at.
+  clock.streamGame = (p, c) => { if (p === "youtube") return Promise.resolve(null); const eng = engOf(p); return eng.streamGame ? eng.streamGame(p, c) : Promise.resolve(null); };
+  /* YOUTUBE (src/youtube/routes.ts): once a minute the watcher looks for the
+     connected channels' streams and reads each live chat over one connection. */
+  if (youtubeConfigured()) {
+    let watching = false;
+    const watch = () => {
+      if (watching) return;
+      watching = true;
+      void watchYouTube({ engine: ytEng, log: liveLog })
+        .catch((e) => liveLog("youtube watcher failed", { err: (e as Error).message }))
+        .finally(() => { watching = false; });
+    };
+    setTimeout(watch, 10_000);
+    setInterval(watch, 60_000);
+    liveLog("youtube on");
+  }
   clock.frames = frames.source ?? undefined;
   liveLog(frames.source ? `frames on: ${frames.why}` : `frames off: ${frames.why}`);
   // One read now, so the log says whether price calls can be settled from here.

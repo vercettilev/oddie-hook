@@ -54,14 +54,15 @@
  * never past the moment its answer is known.
  *
  * Platform-free on purpose: Kick is the first adapter (src/kick), Twitch plugs
- * into the same engine with its own client.
+ * into the same engine with its own client, and YouTube (src/youtube) runs it
+ * votes only (deps.votesOnly).
  */
 
 import { binancePrices, parsePriceCall, planFor, readPriceCall, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
 
-export type Platform = "kick" | "twitch";
+export type Platform = "kick" | "twitch" | "youtube";
 export type Side = "yes" | "no";
 
 export interface ChatMessage {
@@ -234,9 +235,10 @@ export const LIVE_COPY = {
   /** `room`: a moment only the stream shows, settled by the room's !result. */
   opened: (q: string, minutes: number | null, url: string, room = false) => {
     const how = room ? " When it's over, anybody types !result yes or !result no." : "";
+    const where = url ? ` Standings: ${url}` : "";
     return minutes === null
-      ? `oddie call: "${q}" Type !yes or !no. Open until it's settled, earlier calls score more.${how} Standings: ${url}`
-      : `oddie call: "${q}" Type !yes or !no, calls lock in ${minutes} min, earlier calls score more.${how} Standings: ${url}`;
+      ? `oddie call: "${q}" Type !yes or !no. Open until it's settled, earlier calls score more.${how}${where}`
+      : `oddie call: "${q}" Type !yes or !no, calls lock in ${minutes} min, earlier calls score more.${how}${where}`;
   },
   reportOpened: (q: string) => `Result in for "${short(q)}": type !result yes or !result no in the next minute. Mods can settle it with !call yes or !call no.`,
   reportTie: (q: string, yes: number, no: number) => `"${short(q)}" is tied ${yes}-${no}. One more minute: !result yes or !result no.`,
@@ -263,9 +265,10 @@ export const LIVE_COPY = {
     : `Locked "${short(q)}".`) + (when ? ` oddie settles it ${when}.` : " It waits for its result."),
   settled: (q: string, outcome: Side, right: number, total: number, top: number, url: string) => {
     const it = `It's ${outcome.toUpperCase()}: "${short(q, 80)}".`;
-    if (!total) return `${it} The next one opens with !call. Standings: ${url}`;
-    if (!right) return `${it} The whole room went the other way this time. Standings: ${url}`;
-    return `${it} ${right} of ${total} called it right, up to +${top}, earlier calls scored more. Standings: ${url}`;
+    const where = url ? ` Standings: ${url}` : "";
+    if (!total) return `${it} The next one opens with !call.${where}`;
+    if (!right) return `${it} The whole room went the other way this time.${where}`;
+    return `${it} ${right} of ${total} called it right, up to +${top}, earlier calls scored more.${where}`;
   },
   /** More than one call waits and the command did not say which. */
   which: (verb: string, qs: string[]) =>
@@ -290,6 +293,12 @@ export const LIVE_COPY = {
   matchesHow: "Mods: while this channel plays CS2 or Dota 2, oddie opens a call for every match and settles it when the match ends, read off the stream itself. !matches off stops that, !matches on brings it back.",
   matchesOff: "Match calls off. oddie opens no more calls on this channel's matches by itself. !call still works, and !matches on brings them back.",
   matchesOn: "Match calls on. Every CS2 or Dota 2 match this channel plays opens a call by itself, settled when it ends.",
+  /* A channel that runs votes only (YouTube, whose rules keep money out of the chat): oddie
+     never names a market there, and never posts a link. */
+  helloVotes: "oddie is here. Mods open a vote with !call <question>, chat answers !yes or !no, and oddie settles price calls itself.",
+  votesHere: "Here oddie runs votes: mods open one with !call <question>, chat answers !yes or !no.",
+  pickHelpVotes: "No vote is open. Start one with !call <question>, then chat answers !yes or !no.",
+  matchesElsewhere: "Match calls read off the stream run on Twitch and Kick. Here mods open them with !call <question>.",
 };
 
 /* --------------------------------------------------------------- engine -- */
@@ -354,6 +363,9 @@ export interface LiveDeps {
   log(line: string, extra?: Record<string, unknown>): void;
   /** The market door (src/live/claims.ts). Absent: !oddie is only explained. */
   market?(msg: ChatMessage, claim: string): Promise<string>;
+  /** Votes only (YouTube): !oddie, the help lines and the match calls never name a
+   *  market there, and standingsUrl gives "" so no line carries a link. */
+  votesOnly?: boolean;
   /** Where a price call's numbers are read. Absent: Binance. */
   prices?: PriceSource;
   /** Is the channel live now? null when the platform did not answer. Absent: a
@@ -536,7 +548,7 @@ async function pickHelp(msg: ChatMessage, waiting: LiveCall | null, now: number,
   for (const [k, at] of lastPickHelp) if (now - at >= PICK_HELP_GAP_MS) lastPickHelp.delete(k);
   lastPickHelp.set(key, now);
   const price = waiting ? priceWaits.get(waiting.id) : undefined;
-  const line = !waiting ? LIVE_COPY.pickHelp
+  const line = !waiting ? (deps.votesOnly ? LIVE_COPY.pickHelpVotes : LIVE_COPY.pickHelp)
     : price ? LIVE_COPY.switched(waiting.question, await deps.store.tally(waiting.id), whenText(price.pc, price.plan))
     : LIVE_COPY.settleFirst(waiting.question);
   await sayQuiet(deps, msg, line, msg.messageId);
@@ -578,6 +590,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   // The market door is for everybody, like a tag on X or Telegram. Bare, under
   // a message, it means that message; bare on its own it asks how.
   if (cmd.kind === "market") {
+    if (deps.votesOnly) { await sayQuiet(deps, msg, LIVE_COPY.votesHere, msg.messageId); return "votes-only"; }
     const claim = cmd.claim || (msg.replyText ?? "").trim();
     if (!claim || !deps.market) { await sayQuiet(deps, msg, LIVE_COPY.marketHelp, msg.messageId); return "market-help"; }
     return deps.market(msg, claim);
@@ -615,6 +628,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   /* MATCH CALLS FROM THE STREAM (src/live/frameCalls.ts): on for every channel
      until a runner says otherwise. The picture pass reads the flag. */
   if (cmd.kind === "matches") {
+    if (deps.votesOnly) { await sayQuiet(deps, msg, LIVE_COPY.matchesElsewhere, msg.messageId); return "matches-elsewhere"; }
     if (/^(off|stop|no)$/i.test(cmd.arg)) {
       await deps.store.setMatchCalls(msg.platform, msg.channelId, false);
       await sayQuiet(deps, msg, LIVE_COPY.matchesOff, msg.messageId);

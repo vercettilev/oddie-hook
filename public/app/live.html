@@ -451,11 +451,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
 <script>
 (function () {
   var view = document.getElementById("view");
-  var m = /^\/live\/(kick|twitch)\/([^\/]+)\/?$/.exec(location.pathname);
+  var m = /^\/live\/(kick|twitch|youtube)\/([^\/]+)\/?$/.exec(location.pathname);
   var SLUG = m ? decodeURIComponent(m[2]) : null;
   /* One page for both platforms: everything that names the platform reads it here. */
   var P = m ? m[1] : "kick";
-  var PN = P === "twitch" ? "Twitch" : "Kick";
+  var PN = P === "twitch" ? "Twitch" : P === "youtube" ? "YouTube" : "Kick";
   function esc(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
@@ -469,7 +469,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   /* THE PAGE FOR STREAMERS, at /live. */
   if (!SLUG) {
     var qs = new URLSearchParams(location.search);
-    var qp = qs.get("twitch") ? "Twitch" : "Kick", q = qs.get("kick") || qs.get("twitch");
+    var qp = qs.get("twitch") ? "Twitch" : qs.get("youtube") ? "YouTube" : "Kick", q = qs.get("kick") || qs.get("twitch") || qs.get("youtube");
     document.title = "oddie for streamers";
     /* THREE STEPS, ONE LINE EACH (Lev, 2 Oct, the hypercasual cut). The lede
        said the steps in a paragraph before the steps said them again, and the
@@ -527,9 +527,21 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   function kicker() { return '<p class="own__k">' + (justConnected ? "oddie is in your chat" : "Your channel") + "</p>"; }
   function ownSay(t) { var e = document.getElementById("own-e"); if (e) e.textContent = t; }
 
+  /* YOUTUBE, right after signing in: votes only, so no wallet. Two steps left,
+     both on their side: oddie as a moderator, then going live. */
+  var voiceJustConnected = new URLSearchParams(location.search).get("voice") === "1";
+  function youtubeSteps() {
+    if (voiceJustConnected) return '<section class="own"><p class="own__k">oddie\'s voice</p><h2 class="own__t">This channel now speaks for oddie on YouTube</h2></section>';
+    if (!justConnected) return "";
+    return '<section class="own" aria-labelledby="own-t"><p class="own__k">oddie is set for your channel</p>'
+      + '<h2 class="own__t" id="own-t">Two steps and you\'re ready</h2>'
+      + '<p class="own__p"><b>1.</b> In YouTube Studio, open Settings, then Community, and add <b>@oddiefun</b> as a moderator. Its lines then reach your chat right away.</p>'
+      + '<p class="own__p"><b>2.</b> Go live. oddie joins your chat by itself; open a vote with <code>!call will I win this round?</code></p></section>';
+  }
+
   function paintOwner() {
     if (!ownEl) return;
-    if (!owner) { ownEl.innerHTML = ""; return; }
+    if (!owner) { ownEl.innerHTML = P === "youtube" ? youtubeSteps() : ""; return; }
     if (!owner.wallet || ownMode === "ask") return askWallet();
     var n = Number(owner.markets || 0);
     ownEl.innerHTML = '<section class="own" aria-labelledby="own-t">' + kicker()
@@ -741,6 +753,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     if (!headEl) {
       view.innerHTML = '<div id="head"></div><div id="own"></div><div id="body"></div>';
       headEl = document.getElementById("head"); ownEl = document.getElementById("own"); bodyEl = document.getElementById("body");
+      // A YouTube page has no owner card to wait for: its two steps paint now.
+      if (P === "youtube") paintOwner();
     }
     document.title = (j.name || j.slug) + " calls on oddie";
     var head = '<section class="ch">' + (j.avatar ? '<img src="' + esc(j.avatar) + '" alt="" width="64" height="64">' : "")
@@ -812,7 +826,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     }
     // For a streamer whose week ran out, or who is on another browser. Not
     // while their own card is up: that card already says it.
-    if (!j.owner && !ownEl.firstChild) {
+    if (!j.owner && !ownEl.firstChild && P !== "youtube") {
       html += '<p class="mine">Your channel? <a href="/live/' + P + '/connect">Sign in with ' + PN + '</a> to collect 2% of every market opened here.</p>';
     }
     // Repainted only when something changed, so a link somebody is on keeps its focus.
