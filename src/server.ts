@@ -9,6 +9,7 @@ import type { Market } from "./venues/types.js";
 import { nearTwins } from "./matching/matcher.js";
 import { matchSemantic, matchVenue, replyCopy, semanticEnabled, SEMANTIC_KEY_ENV } from "./matching/semantic.js";
 import { categorize, categorizeText, CATEGORIES } from "./matching/categorize.js";
+import { rereadMisreadMarkets } from "./store/markets.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
@@ -6715,6 +6716,12 @@ void ensureProfilesForAll()
   .then(() => backfillSocialEvents())
   .then((n) => { if (n) console.log(JSON.stringify({ evt: "social_backfill", added: n })); })
   .catch((e) => console.error("[social] backfill failed (non-fatal):", (e as Error).message));
+
+// Four markets oddie read the wrong way on 12 Oct, put right once and only
+// while nobody has touched them (see rereadMisreadMarkets). Later boots no-op.
+void rereadMisreadMarkets()
+  .then((slugs) => { if (slugs.length) console.log(JSON.stringify({ evt: "market_reread", slugs })); })
+  .catch((e) => console.error("[reread] failed (non-fatal):", (e as Error).message));
 
 const PORT = Number(process.env.PORT ?? 3000);
 app.listen(PORT, () =>

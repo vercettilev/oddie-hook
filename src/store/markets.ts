@@ -8202,3 +8202,88 @@ export async function releaseQuotaToken(apiKey: string, scope: string, capacity:
     );
   } catch { /* a refund we could not make is not worth failing a request over */ }
 }
+
+/* ------------------------------------------------ four markets read wrong -- */
+
+/**
+ * FOUR MARKETS ODDIE READ THE WRONG WAY, put right once (12 Oct 2026, Lev).
+ *
+ * bee_empire's chat opened "Solana above $100 in october?", "$HYPE below $100
+ * this month?", "Gold below $4,200 this week?" and "$CL above $90 this week?".
+ * Oddie read each as "at any point", which the price had already done when the
+ * market opened: a YES on the first candle, a NO lost before anybody staked,
+ * and a market open for days waiting on a close that could not change it.
+ * Asked inside the period with the price past the line, the question is where
+ * the price ends the period, and that is what these four now ask: SOL and HYPE
+ * at the end of October on the price rail (the same check, read at the close),
+ * gold and CL at Friday's close. Neither of those trades at the weekend, and a
+ * Sunday close would keep the market open two days after its answer was known.
+ *
+ * ONLY WHILE NOTHING HAS TOUCHED THEM, and the statement itself checks it: not
+ * minted (no criteria_hash commits the old words), not settled, not retired, no
+ * free calls, and still reading exactly the old question. A stake that lands
+ * before the deploy leaves that market as it is. The old question is also what
+ * makes this a one-way door: once a market reads the new words, every later
+ * boot finds nothing to do. New markets cannot open this way once the price
+ * check at the open ships (touch-open-guard); this is for the four already open.
+ */
+const REREAD_2026_10_12 = `
+WITH fix(slug, old_question, question, closes_at, hook, criteria, mode) AS (
+  VALUES
+  ('will-the-price-of-hype-hyperliquid-cd6c76',
+   'Will the price of HYPE (Hyperliquid) drop below $100 at any point during October 2026?',
+   'Will $HYPE be below $100 at the end of October 2026?',
+   timestamptz '2026-10-31 23:59:00+00',
+   'HYPE below $100 at end of Oct?',
+   'Settles from the on-chain price of $HYPE (solana mint 98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g). YES if its price is below $100 at 2026-10-31 UTC, read from the hourly candles of its deepest pool on GeckoTerminal. NO otherwise.',
+   'at-close'),
+  ('will-solana-sol-trade-above-100-f30c28',
+   'Will Solana (SOL) trade above $100 at any point in October 2026?',
+   'Will $SOL be above $100 at the end of October 2026?',
+   timestamptz '2026-10-31 23:59:00+00',
+   'SOL above $100 at end of Oct?',
+   'Settles from the on-chain price of $SOL (solana mint So11111111111111111111111111111111111111112). YES if its price is above $100 at 2026-10-31 UTC, read from the hourly candles of its deepest pool on GeckoTerminal. NO otherwise.',
+   'at-close'),
+  ('will-the-price-of-gold-xauusd-176a74',
+   'Will the price of gold (XAU/USD) trade below $4,200 per ounce at any point during the week ending October 18, 2026?',
+   'Will spot gold (XAU/USD) be below $4,200 per ounce at Friday''s close on October 16, 2026?',
+   timestamptz '2026-10-16 21:00:00+00',
+   'Gold below $4,200 at Friday''s close?',
+   'Resolves YES if the spot price of gold (XAU/USD) is below $4,200.00 per troy ounce at the weekly close on Friday, October 16, 2026 (21:00 UTC), per widely reported gold spot price data (e.g. the gold price listing on tradingeconomics.com). Resolves NO otherwise.',
+   NULL),
+  ('will-the-token-cl-clusdt-trade-7ee94c',
+   'Will the token $CL (CL/USDT) trade above $90 at any point this week?',
+   'Will CL/USDT (Bybit''s WTI crude oil perpetual) be above $90 at Friday''s close on October 16, 2026?',
+   timestamptz '2026-10-16 21:00:00+00',
+   'CL above $90 at Friday''s close?',
+   'Resolves YES if the last traded price of CL/USDT on Bybit (the CLUSDT perpetual, which tracks WTI crude oil) is above $90 at the weekly close on Friday, October 16, 2026 (21:00 UTC), per Bybit''s CLUSDT price history. Resolves NO otherwise.',
+   NULL)
+), ok AS (
+  SELECT f.* FROM fix f
+  JOIN community_market c ON c.slug = f.slug
+  JOIN market_slug s0 ON s0.slug = f.slug AND s0.question = f.old_question
+  WHERE c.onchain_pubkey IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM market_call mc WHERE mc.slug = f.slug)
+), s AS (
+  UPDATE market_slug m SET question = ok.question, closes_at = ok.closes_at
+  FROM ok WHERE m.slug = ok.slug
+  RETURNING m.slug
+), c AS (
+  UPDATE community_market cm SET resolution_criteria = ok.criteria, hook = ok.hook,
+    price_check = CASE WHEN ok.mode IS NULL THEN cm.price_check
+                       ELSE jsonb_set(cm.price_check, '{mode}', to_jsonb(ok.mode::text)) END
+  FROM ok WHERE cm.slug = ok.slug
+  RETURNING cm.slug
+)
+SELECT c.slug FROM c JOIN s USING (slug) ORDER BY c.slug`;
+
+/** Puts the four right if they still read the old way; the slugs it changed. */
+export async function rereadMisreadMarkets(): Promise<string[]> {
+  if (!PERSISTENT) return [];
+  const { rows } = await db().query<{ slug: string }>(REREAD_2026_10_12);
+  return rows.map((r) => r.slug);
+}
+
+/** The statement itself, for the test that runs it against a copy of the schema. */
+export const REREAD_2026_10_12_SQL = REREAD_2026_10_12;
+
