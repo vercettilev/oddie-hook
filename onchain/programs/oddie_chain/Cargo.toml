@@ -17,7 +17,11 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
+# allow-missing-optionals: resolve_market's vault is an OPTIONAL trailing
+# account (the swSOL guard). Without this feature Anchor 1.x rejects a call that
+# leaves a trailing optional out, and the server deployed today resolves with
+# exactly two accounts; it has to keep working across the program upgrade.
+anchor-lang = { version = "1.1.2", features = ["init-if-needed", "allow-missing-optionals"] }
 # Anchor 1.x's solana_program shim no longer re-exports a hash module, and the
 # question commitment has to be computed BY THE PROGRAM: a hash the caller
 # supplies is a hash the caller can pick.

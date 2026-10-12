@@ -43,6 +43,8 @@
 //! gates every on-chain path behind ONCHAIN_ENABLED, which defaults to false.
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
+use anchor_lang::solana_program::program::{invoke, invoke_signed};
 use solana_sha256_hasher::hash;
 use anchor_lang::system_program;
 
@@ -92,6 +94,29 @@ pub const MAX_TOTAL_FEE_BPS: u16 = 1_000;
 /// so reaching it means nobody settled at all. Anything shorter would let a
 /// staker walk out of a market that is merely late.
 pub const REFUND_AFTER_CLOSE_SECS: i64 = 30 * 24 * 60 * 60;
+
+/// SWSOL, SANCTUM'S STAKED-SOL POOL. A market's SOL sits in its vault doing
+/// nothing until the market settles, and on a market that runs for weeks that
+/// is weeks of staking rewards nobody gets. park_swsol moves part of it into
+/// swSOL while the market is open and unpark_swsol brings it back before anyone
+/// is paid. 1 swSOL is always 1 SOL: it does not accrue value, the rewards are
+/// paid to the integrator off chain, and the integrator is named by a memo
+/// `sols:<address>` in the same transaction as the mint.
+///
+/// Every address and instruction byte below is Sanctum's own, from the core
+/// crate they published (igneous-labs/inf-1.5#204, vendor/sols/core: keys.rs,
+/// pda.rs, instructions/user/{mint,burn_then_claim}.rs) and checked against
+/// mainnet on 12 Oct 2026. The pool is the PDA of [SWSOL_MINT] under the swSOL
+/// program; it is pinned here rather than derived so the address a reviewer
+/// reads is the address the program checks.
+pub const SWSOL_PROGRAM_ID: Pubkey = pubkey!("so1f7APRw5pJ5iNJrM9g5X9tQgXzk8kMUnXxDNdt99b");
+pub const SWSOL_MINT: Pubkey = pubkey!("swso1x7A8Dy36znxtcstSVLNseeCQzNV3wVAfa5GGLu");
+pub const SWSOL_POOL: Pubkey = pubkey!("CugxVX9C5N1gmGTB4DGLjTcod1jTJtJFXgnkm9ExjyDP");
+pub const SPL_TOKEN_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+/// swSOL instruction discriminants. Data is the discriminant, then the amount as
+/// a little-endian u64 (Sanctum's U64OptIxData with Some(amount)).
+const SWSOL_IX_MINT: u8 = 0;
+const SWSOL_IX_BURN_THEN_CLAIM: u8 = 5;
 
 #[program]
 pub mod oddie_chain {
@@ -550,6 +575,22 @@ pub mod oddie_chain {
         // is a process and key-custody problem; a compromised authority can do
         // far worse than resolve early.
 
+        // EVERY STAKED LAMPORT IS BACK BEFORE THE VERDICT. Payouts are priced
+        // against total_yes + total_no and paid from the vault, so a market
+        // settled while part of its pool sits in swSOL would pay its first
+        // winners and leave the last ones short until somebody unparked. When
+        // the vault is passed, the program refuses that state outright; the
+        // server that parks is the server that passes it. It is optional only so
+        // the server deployed before swSOL, which never parks and resolves with
+        // two accounts, keeps working across the upgrade.
+        if let Some(vault) = &ctx.accounts.vault {
+            let ai = vault.to_account_info();
+            let rent = Rent::get()?.minimum_balance(ai.data_len());
+            let owed = m.total_yes.checked_add(m.total_no).ok_or(OddieError::MathOverflow)?;
+            let need = rent.checked_add(owed).ok_or(OddieError::MathOverflow)?;
+            require!(ai.lamports() >= need, OddieError::StakesParked);
+        }
+
         m.resolved = true;
         m.winning_side = outcome;
 
@@ -833,6 +874,153 @@ pub mod oddie_chain {
         )?;
         Ok(())
     }
+
+    /// Park `amount` of an open market's vault in swSOL.
+    ///
+    /// The SOL goes straight from the vault into Sanctum's pool account and
+    /// swSOL is minted for it in the same instruction, to a token account the
+    /// vault itself owns. That is the shape Sanctum's Mint asks for ("SOL
+    /// already in the pool, in the same transaction"), and doing both here
+    /// rather than as two instructions is what makes it safe: Mint is
+    /// permissionless, so SOL left unminted in the pool for even one
+    /// instruction is SOL anybody could mint to themselves.
+    ///
+    /// The vault keeps its rent (pay_from_vault), only the market's authority
+    /// can park, only while the market is open, and the program checks that
+    /// exactly `amount` swSOL arrived before it lets the transaction stand. The
+    /// attribution memo is the caller's to add as its own instruction.
+    pub fn park_swsol(ctx: Context<ParkSwsol>, amount: u64) -> Result<()> {
+        require!(amount > 0, OddieError::ZeroAmount);
+        let m = &ctx.accounts.market;
+        require!(!m.resolved, OddieError::AlreadyResolved);
+        require!(Clock::get()?.unix_timestamp < m.close_time, OddieError::MarketClosed);
+
+        let vault = ctx.accounts.vault.to_account_info();
+        let held = ctx.accounts.vault_swsol.to_account_info();
+        let before = swsol_balance(&held, vault.key)?;
+
+        pay_from_vault(&vault, &ctx.accounts.swsol_pool.to_account_info(), amount)?;
+        let ix = Instruction {
+            program_id: SWSOL_PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(SWSOL_MINT, false),
+                AccountMeta::new(held.key(), false),
+                // Read-only to Sanctum. Passed writable because this instruction
+                // has just credited it, and the runtime carries that credit
+                // into the call.
+                AccountMeta::new(SWSOL_POOL, false),
+                AccountMeta::new_readonly(SPL_TOKEN_ID, false),
+                // Not one of Mint's accounts: trailing, and there only so the
+                // runtime sees both sides of the transfer above. It carries the
+                // lamport changes of exactly the accounts in the call into the
+                // call and checks they balance, so a vault debited outside the
+                // list next to a pool credited inside it fails as unbalanced.
+                AccountMeta::new(vault.key(), false),
+            ],
+            data: swsol_ix_data(SWSOL_IX_MINT, amount),
+        };
+        invoke(
+            &ix,
+            &[
+                ctx.accounts.swsol_mint.to_account_info(),
+                held.clone(),
+                ctx.accounts.swsol_pool.to_account_info(),
+                ctx.accounts.token_program.to_account_info(),
+                vault.clone(),
+                ctx.accounts.swsol_program.to_account_info(),
+            ],
+        )?;
+
+        let after = swsol_balance(&held, vault.key)?;
+        require!(after == before.checked_add(amount).ok_or(OddieError::MathOverflow)?, OddieError::SwsolMintMismatch);
+        Ok(())
+    }
+
+    /// Bring `amount` of a market's swSOL back into its vault as SOL.
+    ///
+    /// The only place the SOL can go is the vault: it is Sanctum's BurnThenClaim
+    /// with the vault as both the signer for the swSOL and the account the SOL
+    /// is claimed to, and every account is pinned or derived from seeds. So
+    /// unparking can never take money anywhere; at worst it brings it home
+    /// early, and that is why it does not need the authority once the market
+    /// is closed or settled. A market whose authority stops signing still gets
+    /// its SOL back, and refund_after_deadline still has something to refund.
+    ///
+    /// Before that, while the market is open, only the authority unparks:
+    /// otherwise anybody could burn the position the moment it was made and
+    /// the pool would never earn anything.
+    ///
+    /// Sanctum pays claims from the pool's liquid reserve, which it refills
+    /// every few minutes; a claim larger than the reserve fails and is retried,
+    /// and it fails whole, so the vault is never half-returned.
+    pub fn unpark_swsol(ctx: Context<UnparkSwsol>, amount: u64) -> Result<()> {
+        require!(amount > 0, OddieError::ZeroAmount);
+        let m = &ctx.accounts.market;
+        let open = !m.resolved && Clock::get()?.unix_timestamp < m.close_time;
+        require!(!open || ctx.accounts.caller.key() == m.authority, OddieError::UnparkNotYours);
+
+        let vault = ctx.accounts.vault.to_account_info();
+        let held = ctx.accounts.vault_swsol.to_account_info();
+        let before_swsol = swsol_balance(&held, vault.key)?;
+        require!(before_swsol >= amount, OddieError::NotEnoughSwsol);
+        let before = vault.lamports();
+
+        let market_key = m.key();
+        let bump = [m.vault_bump];
+        let seeds: &[&[u8]] = &[b"vault", market_key.as_ref(), &bump];
+        let ix = Instruction {
+            program_id: SWSOL_PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(SWSOL_MINT, false),
+                AccountMeta::new(vault.key(), false),   // out: the SOL comes back here
+                AccountMeta::new(SWSOL_POOL, false),
+                AccountMeta::new(held.key(), false),    // inp: the swSOL burned
+                AccountMeta::new_readonly(vault.key(), true), // user: the vault signs for its own swSOL
+                AccountMeta::new_readonly(SPL_TOKEN_ID, false),
+            ],
+            data: swsol_ix_data(SWSOL_IX_BURN_THEN_CLAIM, amount),
+        };
+        invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.swsol_mint.to_account_info(),
+                vault.clone(),
+                ctx.accounts.swsol_pool.to_account_info(),
+                held.clone(),
+                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.swsol_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+
+        let after_swsol = swsol_balance(&held, vault.key)?;
+        require!(after_swsol == before_swsol - amount, OddieError::SwsolMintMismatch);
+        let back = vault.lamports().checked_sub(before).ok_or(OddieError::SwsolClaimShort)?;
+        require!(back >= amount, OddieError::SwsolClaimShort);
+        Ok(())
+    }
+}
+
+/// The swSOL a vault holds, read from its token account, after checking the
+/// account is what it claims to be: owned by the token program, of the swSOL
+/// mint, and with the vault as its owner. Only this program can sign for the
+/// vault, so nothing else can move what such an account holds.
+fn swsol_balance(acc: &AccountInfo, vault: &Pubkey) -> Result<u64> {
+    require_keys_eq!(*acc.owner, SPL_TOKEN_ID, OddieError::SwsolBadAccount);
+    let data = acc.try_borrow_data()?;
+    require!(data.len() >= 72, OddieError::SwsolBadAccount);
+    let mint = Pubkey::new_from_array(data[0..32].try_into().unwrap());
+    let owner = Pubkey::new_from_array(data[32..64].try_into().unwrap());
+    require_keys_eq!(mint, SWSOL_MINT, OddieError::SwsolBadAccount);
+    require_keys_eq!(owner, *vault, OddieError::SwsolBadAccount);
+    Ok(u64::from_le_bytes(data[64..72].try_into().unwrap()))
+}
+
+fn swsol_ix_data(discm: u8, amount: u64) -> Vec<u8> {
+    let mut d = Vec::with_capacity(9);
+    d.push(discm);
+    d.extend_from_slice(&amount.to_le_bytes());
+    d
 }
 
 /// Move lamports out of the vault PDA.
@@ -1153,6 +1341,62 @@ pub struct ResolveMarket<'info> {
         has_one = authority @ OddieError::WrongAuthority
     )]
     pub market: Account<'info, Market>,
+    /// Optional and trailing: see the swSOL guard in resolve_market.
+    #[account(seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
+    pub vault: Option<Account<'info, Vault>>,
+}
+
+#[derive(Accounts)]
+pub struct ParkSwsol<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [b"market", market.market_id.to_le_bytes().as_ref()],
+        bump = market.bump,
+        has_one = authority @ OddieError::WrongAuthority
+    )]
+    pub market: Account<'info, Market>,
+    #[account(mut, seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
+    pub vault: Account<'info, Vault>,
+    /// CHECK: the vault's swSOL token account; swsol_balance checks its program, mint and owner.
+    #[account(mut)]
+    pub vault_swsol: UncheckedAccount<'info>,
+    /// CHECK: pinned to Sanctum's swSOL mint.
+    #[account(mut, address = SWSOL_MINT)]
+    pub swsol_mint: UncheckedAccount<'info>,
+    /// CHECK: pinned to Sanctum's swSOL pool.
+    #[account(mut, address = SWSOL_POOL)]
+    pub swsol_pool: UncheckedAccount<'info>,
+    /// CHECK: pinned to the SPL token program.
+    #[account(address = SPL_TOKEN_ID)]
+    pub token_program: UncheckedAccount<'info>,
+    /// CHECK: pinned to Sanctum's swSOL program.
+    #[account(address = SWSOL_PROGRAM_ID)]
+    pub swsol_program: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UnparkSwsol<'info> {
+    /// Anyone once the market is closed or settled; only the authority before.
+    pub caller: Signer<'info>,
+    #[account(seeds = [b"market", market.market_id.to_le_bytes().as_ref()], bump = market.bump)]
+    pub market: Account<'info, Market>,
+    #[account(mut, seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
+    pub vault: Account<'info, Vault>,
+    /// CHECK: the vault's swSOL token account; swsol_balance checks its program, mint and owner.
+    #[account(mut)]
+    pub vault_swsol: UncheckedAccount<'info>,
+    /// CHECK: pinned to Sanctum's swSOL mint.
+    #[account(mut, address = SWSOL_MINT)]
+    pub swsol_mint: UncheckedAccount<'info>,
+    /// CHECK: pinned to Sanctum's swSOL pool.
+    #[account(mut, address = SWSOL_POOL)]
+    pub swsol_pool: UncheckedAccount<'info>,
+    /// CHECK: pinned to the SPL token program.
+    #[account(address = SPL_TOKEN_ID)]
+    pub token_program: UncheckedAccount<'info>,
+    /// CHECK: pinned to Sanctum's swSOL program.
+    #[account(address = SWSOL_PROGRAM_ID)]
+    pub swsol_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -1414,4 +1658,17 @@ pub enum OddieError {
     CriteriaTooLong,
     #[msg("this market is not in the old format, so there is nothing to migrate")]
     NotOldMarket,
+    /* swSOL, appended for the same reason as everything above. */
+    #[msg("part of this market's pool is still parked in swSOL; unpark it before settling")]
+    StakesParked,
+    #[msg("that is not this vault's swSOL account")]
+    SwsolBadAccount,
+    #[msg("the swSOL minted or burned does not match the SOL that moved")]
+    SwsolMintMismatch,
+    #[msg("swSOL came back as less SOL than was parked")]
+    SwsolClaimShort,
+    #[msg("the vault does not hold that much swSOL")]
+    NotEnoughSwsol,
+    #[msg("only the market's authority can unpark while the market is open")]
+    UnparkNotYours,
 }
