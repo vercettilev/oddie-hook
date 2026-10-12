@@ -341,6 +341,19 @@ export function priceText(n: number): string {
 /** How long after a moment its second is on the source for good. */
 export const PRICE_SETTLE_LAG_MS = 3_000;
 
+/**
+ * Which way a touch looks from the price at the open, and whether the level is
+ * already behind it. "Will SOL go above 100 this hour" asked with SOL at 108
+ * was a YES at the first read, so whoever answered !yes scored for a result
+ * everybody could already see. A touch already met at the open asks where the
+ * price ends up, the reading Lev chose for markets on 12 Oct, and is read like
+ * an "at" call at the end of its window.
+ */
+export function touchAtOpen(pc: Extract<PriceCall, { kind: "touch" }>, ref: number): { dir: "up" | "down"; met: boolean } {
+  const dir = pc.dir === "either" ? (pc.level >= ref ? "up" : "down") : pc.dir;
+  return { dir, met: dir === "up" ? ref >= pc.level : ref <= pc.level };
+}
+
 export type PriceRead = { outcome: "yes" | "no"; said: string };
 
 /**
@@ -369,11 +382,20 @@ export async function readPriceCall(pc: PriceCall, plan: PricePlan, openedAt: nu
   }
   const end = Math.min(plan.to, now - PRICE_SETTLE_LAG_MS);
   if (end <= plan.from) return "wait";
-  let dir = pc.dir;
-  if (dir === "either") {
-    const ref = await source.priceAt(pc.asset, openedAt);
-    if (ref === null) return null;
-    dir = pc.level >= ref ? "up" : "down";
+  // The price at the open: which way an "either" looks, and whether any touch
+  // was already met. An up or down touch with no price at the open is looked
+  // for as before; an "either" cannot be.
+  const ref = await source.priceAt(pc.asset, openedAt);
+  if (ref === null && pc.dir === "either") return null;
+  const open = ref === null ? null : touchAtOpen(pc, ref);
+  const dir = open?.dir ?? (pc.dir === "either" ? "up" : pc.dir);
+  if (open?.met) {
+    if (!ready) return "wait";
+    const p = await source.priceAt(pc.asset, plan.to);
+    if (p === null) return null;
+    const zone = pc.until.kind === "clock" ? pc.until : undefined;
+    const yes = dir === "up" ? p >= pc.level : p <= pc.level;
+    return { outcome: yes ? "yes" : "no", said: `${pc.asset} was ${priceText(p)} at ${timeLabel(plan.to, zone)} on ${source.venue}.` };
   }
   const ex = await source.extremes(pc.asset, plan.from, end);
   if (!ex) return null;
@@ -384,13 +406,14 @@ export async function readPriceCall(pc: PriceCall, plan: PricePlan, openedAt: nu
   return { outcome: "no", said: `${mark} on ${source.venue}.` };
 }
 
-/** What the room hears about when a price call settles. */
-export function whenText(pc: PriceCall, plan: PricePlan): string {
+/** What the room hears about when a price call settles. `atEnd`: a touch the
+ *  price was already past at the open, read where its window ends. */
+export function whenText(pc: PriceCall, plan: PricePlan, atEnd = false): string {
   if (pc.kind === "candle") return `when the ${sizeLabel(pc.size)} candle closes`;
   if (pc.kind === "at") return `at ${timeLabel(plan.to, pc.when.kind === "clock" ? pc.when : undefined)}`;
   const until = pc.until.kind === "candle" ? `when the ${sizeLabel(pc.until.size)} candle closes`
     : `at ${timeLabel(plan.to, pc.until.kind === "clock" ? pc.until : undefined)}`;
-  return `the moment ${pc.asset} touches ${priceText(pc.level)}, or ${until}`;
+  return atEnd ? until : `the moment ${pc.asset} touches ${priceText(pc.level)}, or ${until}`;
 }
 
 /* -------------------------------------------------------------- source -- */

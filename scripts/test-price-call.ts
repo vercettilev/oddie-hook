@@ -3,7 +3,7 @@
  * and what the room hears from lock to result. In memory, no network.
  */
 import assert from "node:assert/strict";
-import { nextClock, outcomeFor, parsePriceCall, planFor, readPriceCall, timeLabel, type PriceCall, type PriceSource } from "../src/live/priceCall.js";
+import { nextClock, outcomeFor, parsePriceCall, planFor, readPriceCall, timeLabel, whenText, type PriceCall, type PriceSource } from "../src/live/priceCall.js";
 import { PRICE_GIVE_UP_MS, STREAM_POLL_MS, handleChat, lockDue, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { liveStore, _resetLiveStore } from "../src/store/live.js";
 
@@ -123,6 +123,38 @@ const fake: PriceSource = {
   prices = { [opened]: 83500 };
   ex = { high: 83600, low: 82990 };
   eq(await readPriceCall(hit, hp, opened, fake, opened + 120_000), { outcome: "yes", said: "BTC low was 82,990 on Binance." }, "from above, hitting 83k is a move down");
+}
+
+{
+  /* A TOUCH ALREADY MET AT THE OPEN (12 Oct): "go above 82k" asked with BTC
+     at 82.5k was a YES at the first read. It asks where the price ends up,
+     the reading Lev chose for markets, so it is read at the end of its window. */
+  const up = parsePriceCall("will BTC go above 82k this 30m candle")!;
+  const upPlan = planFor(up, opened);
+  prices = { [opened]: 82500, [upPlan.to]: 82100 };
+  ex = { high: 82600, low: 82400 };
+  eq(await readPriceCall(up, upPlan, opened, fake, opened + 120_000), "wait", "already above at the open: no YES at the first read");
+  eq(await readPriceCall(up, upPlan, opened, fake, upPlan.to + 5_000), { outcome: "yes", said: "BTC was 82,100 at 14:00 UTC on Binance." }, "...read where its window ends");
+  prices = { [opened]: 82500, [upPlan.to]: 81900 };
+  eq(await readPriceCall(up, upPlan, opened, fake, upPlan.to + 5_000), { outcome: "no", said: "BTC was 81,900 at 14:00 UTC on Binance." }, "...and NO when it ends below");
+  const down = parsePriceCall("will ETH drop below 4k within the next hour")!;
+  const downPlan = planFor(down, opened);
+  prices = { [opened]: 3950, [downPlan.to]: 3990 };
+  ex = { high: 3999, low: 3900 };
+  eq(await readPriceCall(down, downPlan, opened, fake, opened + 120_000), "wait", "already below at the open: the same, under the line");
+  eq(await readPriceCall(down, downPlan, opened, fake, downPlan.to + 5_000), { outcome: "yes", said: "ETH was 3,990 at 14:43 UTC on Binance." }, "...read at the end of the hour");
+  prices = {};
+  ex = { high: 82600, low: 82400 };
+  eq(await readPriceCall(up, upPlan, opened, fake, opened + 120_000), { outcome: "yes", said: "BTC high was 82,600 on Binance." }, "no price at the open: an up or down touch is looked for as before");
+  const hit = parsePriceCall("will BTC hit 83k in the next 15 min?")!;
+  const hp = planFor(hit, opened);
+  prices = { [opened]: 83000, [hp.to]: 82950 };
+  ex = { high: 83100, low: 82900 };
+  eq(await readPriceCall(hit, hp, opened, fake, opened + 120_000), "wait", "a hit already sitting on its level waits for the end too");
+  eq(await readPriceCall(hit, hp, opened, fake, hp.to + 5_000), { outcome: "no", said: "BTC was 82,950 at 13:58 UTC on Binance." }, "...and reads it there");
+  eq(whenText(up, upPlan, true), "when the 30m candle closes", "the room hears when it is read: a candle's close");
+  eq(whenText(down, downPlan, true), "at 14:43 UTC", "...or a moment");
+  eq(whenText(down, downPlan), "the moment ETH touches 4,000, or at 14:43 UTC", "...and a touch still ahead keeps its line");
 }
 
 /* -------------------------------------------------------------- engine -- */
@@ -275,5 +307,29 @@ await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", t
 now = Date.parse("2026-10-08T14:00:30Z");
 eq(await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", true), deps), "opened", "after the candle turned, the same words open the next round");
 eq((await liveStore.unsettled("twitch", "1372956063")).length, 2, "...and each round waits for its own candle");
+
+// A touch the price is already past at the open: the room hears when it is
+// read, the first read settles nothing, and the end of the window does.
+reset();
+await handleChat(msg("!call will BTC go above 82k this 30m candle", "bee", true), deps);
+await handleChat(msg("!yes", "viewer"), deps);
+prices = { [opened]: 82500 };
+ex = { high: 82600, low: 82400 };
+now = lockAt;
+await lockDue(deps);
+eq(last(), "Calls are locked: 100% YES from 1 call. oddie settles it when the 30m candle closes.", "lock line: read when the candle closes, not the moment it touches");
+now += 20_000;
+await lockDue(deps);
+ok(!said.some((s) => s.includes("It's YES")), "no YES at the first read");
+eq(await handleChat(msg("!yes", "bee", true), deps), "pick-help", "a runner's !yes while it waits is answered");
+eq(last(), `Locked "will BTC go above 82k this 30m candle" at 100% YES from 1 call. oddie settles it when the 30m candle closes.`, "...with when it is read");
+const readsBeforeEnd = reads;
+now = Date.parse("2026-10-08T13:59:00Z");
+await lockDue(deps);
+eq(reads, readsBeforeEnd, "not read again before the window ends");
+prices = { [opened]: 82500, [Date.parse("2026-10-08T14:00:00Z")]: 81900 };
+now = Date.parse("2026-10-08T14:00:04Z");
+await lockDue(deps);
+eq(last(), `BTC was 81,900 at 14:00 UTC on Binance. It's NO: "will BTC go above 82k this 30m candle". The whole room went the other way this time. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "settled on where it ended");
 
 console.log(`test-price-call: ${checks} checks passed`);

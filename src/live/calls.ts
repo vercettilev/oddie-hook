@@ -58,7 +58,7 @@
  * votes only (deps.votesOnly).
  */
 
-import { binancePrices, parsePriceCall, planFor, readPriceCall, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
+import { binancePrices, parsePriceCall, planFor, readPriceCall, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
 
@@ -380,8 +380,9 @@ export interface LiveDeps {
   frames?: FrameSource;
 }
 
-/** A price call between its lock and its result. */
-interface PriceWait { call: LiveCall; pc: PriceCall; plan: PricePlan; nextTryAt: number; busy: boolean }
+/** A price call between its lock and its result. `atEnd`: a touch the price
+ *  was already past at the open, read where its window ends (readPriceCall). */
+interface PriceWait { call: LiveCall; pc: PriceCall; plan: PricePlan; atEnd: boolean; nextTryAt: number; busy: boolean }
 
 /** How often a touch is looked for while its window is open, and how soon a
  *  source that did not answer is asked again. */
@@ -448,13 +449,21 @@ async function unpinQuiet(deps: LiveDeps, m: { platform: Platform; channelId: st
 
 /** A locked call that names a coin's price waits for it; any other waits for the
  *  mods. Returns when it settles, for the room ("when the 30m candle closes"). */
-function waitForPrice(call: LiveCall): string | null {
+async function waitForPrice(call: LiveCall, deps: LiveDeps): Promise<string | null> {
   const pc = parsePriceCall(call.question);
   if (!pc) return null;
   const plan = planFor(pc, call.openedAt);
+  // A touch the price was already past at the open is read where its window
+  // ends, and the room hears that moment. Unread, it is looked for as a touch;
+  // readPriceCall reads the open again either way.
+  let atEnd = false;
+  if (pc.kind === "touch") {
+    const ref = await (deps.prices ?? binancePrices).priceAt(pc.asset, call.openedAt).catch(() => null);
+    atEnd = ref !== null && touchAtOpen(pc, ref).met;
+  }
   // A touch is looked for from the lock on; anything else is read once its time is up.
-  priceWaits.set(call.id, { call, pc, plan, nextTryAt: pc.kind === "touch" ? 0 : plan.to + PRICE_SETTLE_LAG_MS, busy: false });
-  return whenText(pc, plan);
+  priceWaits.set(call.id, { call, pc, plan, atEnd, nextTryAt: pc.kind === "touch" && !atEnd ? 0 : plan.to + PRICE_SETTLE_LAG_MS, busy: false });
+  return whenText(pc, plan, atEnd);
 }
 
 /** The pin is for the call taking answers: with none left in the channel, it comes down. */
@@ -469,7 +478,7 @@ async function lockAndSay(call: LiveCall, deps: LiveDeps): Promise<boolean> {
   if (!(await deps.store.lock(call.id, deps.now()))) return false;
   lastSplit.delete(call.id); lastSaid.delete(call.id);
   const tally = await deps.store.tally(call.id);
-  const when = waitForPrice(call);
+  const when = await waitForPrice(call, deps);
   await sayQuiet(deps, call, when ? LIVE_COPY.lockedPrice(tally, when) : LIVE_COPY.locked(tally));
   await unpinIfIdle(deps, call);
   return true;
@@ -549,7 +558,7 @@ async function pickHelp(msg: ChatMessage, waiting: LiveCall | null, now: number,
   lastPickHelp.set(key, now);
   const price = waiting ? priceWaits.get(waiting.id) : undefined;
   const line = !waiting ? (deps.votesOnly ? LIVE_COPY.pickHelpVotes : LIVE_COPY.pickHelp)
-    : price ? LIVE_COPY.switched(waiting.question, await deps.store.tally(waiting.id), whenText(price.pc, price.plan))
+    : price ? LIVE_COPY.switched(waiting.question, await deps.store.tally(waiting.id), whenText(price.pc, price.plan, price.atEnd))
     : LIVE_COPY.settleFirst(waiting.question);
   await sayQuiet(deps, msg, line, msg.messageId);
   return "pick-help";
@@ -664,7 +673,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     // for its result, so nothing anybody said is lost.
     if (running && (await deps.store.lock(running.id, now))) {
       lastSplit.delete(running.id); lastSaid.delete(running.id);
-      await sayQuiet(deps, msg, LIVE_COPY.switched(running.question, await deps.store.tally(running.id), waitForPrice(running)));
+      await sayQuiet(deps, msg, LIVE_COPY.switched(running.question, await deps.store.tally(running.id), await waitForPrice(running, deps)));
     }
     // A price call oddie settles itself, so it does not stay open until a mod
     // settles it: three minutes by default, never past the moment its answer is known.
@@ -819,7 +828,7 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
       continue;
     }
     if (parsePriceCall(c.question)) {
-      if (c.lockedAt !== null && !priceWaits.has(c.id) && !handedToMods.has(c.id)) waitForPrice(c);
+      if (c.lockedAt !== null && !priceWaits.has(c.id) && !handedToMods.has(c.id)) await waitForPrice(c, deps);
       continue;
     }
     // A match call is FACEIT's to settle, stream or no stream (src/live/gameCalls.ts).
