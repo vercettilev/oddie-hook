@@ -59,6 +59,7 @@
 
 import { binancePrices, parsePriceCall, planFor, readPriceCall, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
+import type { FrameSource } from "../games/frames.js";
 
 export type Platform = "kick" | "twitch";
 export type Side = "yes" | "no";
@@ -95,7 +96,9 @@ export type LiveCommand =
   /** What happened, from anybody in the room: `!result yes`. */
   | { kind: "report"; side: Side }
   /** `!faceit <nick>` links the channel's FACEIT account; `!faceit off` unlinks; bare, it says how. */
-  | { kind: "faceit"; arg: string };
+  | { kind: "faceit"; arg: string }
+  /** `!matches off` / `!matches on`: whether oddie opens a call per match from the stream by itself; bare, it says how. */
+  | { kind: "matches"; arg: string };
 
 export const CALL_MINUTES_MAX = 30;
 /** A call with no length takes answers until it is settled; this only stops one
@@ -141,6 +144,9 @@ export function parseCommand(raw: string): LiveCommand | null {
   // The channel's FACEIT account: every match it plays opens a call by itself.
   const fx = /^!faceit(?=\s|$)\s*(.*)$/i.exec(text);
   if (fx) return { kind: "faceit", arg: fx[1].trim().replace(/^@/, "").slice(0, 40) };
+  // Match calls read off the stream itself: on until the channel says otherwise.
+  const mt = /^!matches(?=\s|$)\s*(.*)$/i.exec(text);
+  if (mt) return { kind: "matches", arg: mt[1].trim().slice(0, 20) };
   const m = /^!call(?=\s|$)\s*(.*)$/i.exec(text);
   if (!m) return null;
   const rest = m[1].trim();
@@ -280,6 +286,10 @@ export const LIVE_COPY = {
   faceitUnlinked: "FACEIT unlinked. Calls open with !call again.",
   faceitNotFound: (nick: string) => `No FACEIT player called "${nick}". Check the spelling on faceit.com.`,
   faceitOff: "FACEIT is not set up on oddie yet.",
+  /* Match calls read off the stream itself (src/live/frameCalls.ts). */
+  matchesHow: "Mods: while this channel plays CS2 or Dota 2, oddie opens a call for every match and settles it when the match ends, read off the stream itself. !matches off stops that, !matches on brings it back.",
+  matchesOff: "Match calls off. oddie opens no more calls on this channel's matches by itself. !call still works, and !matches on brings them back.",
+  matchesOn: "Match calls on. Every CS2 or Dota 2 match this channel plays opens a call by itself, settled when it ends.",
 };
 
 /* --------------------------------------------------------------- engine -- */
@@ -322,6 +332,11 @@ export interface LiveStore {
   /** Active channels with no account that oddie has not looked for lately. */
   withoutFaceit(now: number): Promise<Array<{ platform: Platform; channelId: string; slug: string; name: string | null }>>;
   markFaceitProbe(platform: Platform, channelId: string, at: number): Promise<void>;
+  /** Every active channel, for the picture pass (src/live/frameCalls.ts): with
+   *  what else may read it (a FACEIT account, a talking game) and whether it wants match calls. */
+  channels(): Promise<Array<{ platform: Platform; channelId: string; slug: string; name: string | null; faceitId: string | null; matchCalls: boolean; gsiSeenAt: number | null }>>;
+  /** `!matches off` and `!matches on`: whether oddie may open match calls from the stream by itself. */
+  setMatchCalls(platform: Platform, channelId: string, on: boolean): Promise<void>;
 }
 
 export interface LiveDeps {
@@ -347,6 +362,10 @@ export interface LiveDeps {
   /** Where FACEIT matches are read (src/games/faceit.ts). Absent: the one
    *  configured at boot from FACEIT_API_KEY, if any. */
   games?: GameSource;
+  /** The stream's state and category now, for the picture pass (src/live/frameCalls.ts). */
+  streamGame?(platform: Platform, channelId: string): Promise<{ live: boolean; game: string | null } | null>;
+  /** Where a picture of the stream is taken and read (src/games/frames.ts). Absent: no picture pass. */
+  frames?: FrameSource;
 }
 
 /** A price call between its lock and its result. */
@@ -591,6 +610,25 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     await sayQuiet(deps, msg, LIVE_COPY.faceitLinked(p.nick), msg.messageId);
     deps.log("faceit linked", { platform: msg.platform, channel: msg.channelId, nick: p.nick });
     return "faceit-linked";
+  }
+
+  /* MATCH CALLS FROM THE STREAM (src/live/frameCalls.ts): on for every channel
+     until a runner says otherwise. The picture pass reads the flag. */
+  if (cmd.kind === "matches") {
+    if (/^(off|stop|no)$/i.test(cmd.arg)) {
+      await deps.store.setMatchCalls(msg.platform, msg.channelId, false);
+      await sayQuiet(deps, msg, LIVE_COPY.matchesOff, msg.messageId);
+      deps.log("match calls off", { platform: msg.platform, channel: msg.channelId });
+      return "matches-off";
+    }
+    if (/^(on|start|yes)$/i.test(cmd.arg)) {
+      await deps.store.setMatchCalls(msg.platform, msg.channelId, true);
+      await sayQuiet(deps, msg, LIVE_COPY.matchesOn, msg.messageId);
+      deps.log("match calls on", { platform: msg.platform, channel: msg.channelId });
+      return "matches-on";
+    }
+    await sayQuiet(deps, msg, LIVE_COPY.matchesHow, msg.messageId);
+    return "matches-how";
   }
 
   if (cmd.kind === "help") { await sayQuiet(deps, msg, LIVE_COPY.help, msg.messageId); return "help"; }

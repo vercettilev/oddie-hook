@@ -88,6 +88,9 @@ ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS faceit_probed_at timestamptz;
 ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS gsi_token text;
 ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS gsi_seen_at timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS live_channel_gsi_token_idx ON live_channel (gsi_token) WHERE gsi_token IS NOT NULL;
+-- Match calls read off the stream itself (src/live/frameCalls.ts): on for
+-- every channel until it says !matches off.
+ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS match_calls boolean NOT NULL DEFAULT true;
 -- A call about a FACEIT match carries the match id: one match, one call, ever.
 ALTER TABLE live_call ADD COLUMN IF NOT EXISTS match_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS live_call_match_idx ON live_call (platform, channel_id, match_id) WHERE match_id IS NOT NULL;
@@ -137,6 +140,8 @@ export interface LiveChannel {
   faceitAuto?: boolean; faceitProbedAt?: number | null;
   /** Game State Integration: the token in the streamer's config file, and when the game last talked. */
   gsiToken?: string | null; gsiSeenAt?: number | null;
+  /** Whether oddie may open a call per match from the stream by itself (!matches off says no). */
+  matchCalls?: boolean;
 }
 
 const memChannels = new Map<string, LiveChannel>();
@@ -147,7 +152,8 @@ export async function saveChannel(ch: LiveChannel): Promise<void> {
     const was = memChannels.get(ck(ch.platform, ch.channelId));
     memChannels.set(ck(ch.platform, ch.channelId), { ...ch, faceitId: ch.faceitId ?? was?.faceitId ?? null, faceitNick: ch.faceitNick ?? was?.faceitNick ?? null,
       faceitAuto: ch.faceitAuto ?? was?.faceitAuto ?? true, faceitProbedAt: ch.faceitProbedAt ?? was?.faceitProbedAt ?? null,
-      gsiToken: ch.gsiToken ?? was?.gsiToken ?? null, gsiSeenAt: ch.gsiSeenAt ?? was?.gsiSeenAt ?? null });
+      gsiToken: ch.gsiToken ?? was?.gsiToken ?? null, gsiSeenAt: ch.gsiSeenAt ?? was?.gsiSeenAt ?? null,
+      matchCalls: ch.matchCalls ?? was?.matchCalls ?? true });
     return;
   }
   await schema();
@@ -167,7 +173,7 @@ export async function saveChannel(ch: LiveChannel): Promise<void> {
 type ChannelRow = { platform: Platform; channel_id: string; slug: string; name: string | null; avatar: string | null;
   token_enc: string | null; refresh_enc: string | null; token_expires_at: Date | null; active: boolean;
   faceit_id?: string | null; faceit_nick?: string | null; faceit_auto?: boolean | null; faceit_probed_at?: Date | null;
-  gsi_token?: string | null; gsi_seen_at?: Date | null };
+  gsi_token?: string | null; gsi_seen_at?: Date | null; match_calls?: boolean | null };
 const fromRow = (r: ChannelRow): LiveChannel => ({
   platform: r.platform, channelId: r.channel_id, slug: r.slug, name: r.name, avatar: r.avatar,
   accessToken: openToken(r.platform, r.token_enc), refreshToken: openToken(r.platform, r.refresh_enc),
@@ -175,6 +181,7 @@ const fromRow = (r: ChannelRow): LiveChannel => ({
   faceitId: r.faceit_id ?? null, faceitNick: r.faceit_nick ?? null,
   faceitAuto: r.faceit_auto !== false, faceitProbedAt: r.faceit_probed_at ? new Date(r.faceit_probed_at).getTime() : null,
   gsiToken: r.gsi_token ?? null, gsiSeenAt: r.gsi_seen_at ? new Date(r.gsi_seen_at).getTime() : null,
+  matchCalls: r.match_calls !== false,
 });
 
 export async function channelById(platform: Platform, channelId: string): Promise<LiveChannel | null> {
@@ -459,6 +466,28 @@ export const liveStore: LiveStore = {
         WHERE active AND faceit_id IS NULL AND faceit_auto AND (faceit_probed_at IS NULL OR faceit_probed_at < $1)
         ORDER BY faceit_probed_at NULLS FIRST LIMIT 50`, [new Date(now - gap)]);
     return rows.map((r) => ({ platform: r.platform, channelId: r.channel_id, slug: r.slug, name: r.name }));
+  },
+  /* The picture pass (src/live/frameCalls.ts) walks every active channel and
+     steps aside for the ones something else reads. */
+  async channels() {
+    if (!STORE_PERSISTENT) {
+      return [...memChannels.values()].filter((c) => c.active)
+        .map((c) => ({ platform: c.platform, channelId: c.channelId, slug: c.slug, name: c.name, faceitId: c.faceitId ?? null, matchCalls: c.matchCalls !== false, gsiSeenAt: c.gsiSeenAt ?? null }));
+    }
+    await schema();
+    const { rows } = await storeDb().query<{ platform: Platform; channel_id: string; slug: string; name: string | null; faceit_id: string | null; match_calls: boolean | null; gsi_seen_at: Date | null }>(
+      `SELECT platform, channel_id, slug, name, faceit_id, match_calls, gsi_seen_at FROM live_channel WHERE active ORDER BY connected_at LIMIT 500`);
+    return rows.map((r) => ({ platform: r.platform, channelId: r.channel_id, slug: r.slug, name: r.name, faceitId: r.faceit_id ?? null, matchCalls: r.match_calls !== false,
+      gsiSeenAt: r.gsi_seen_at ? new Date(r.gsi_seen_at).getTime() : null }));
+  },
+  async setMatchCalls(platform, channelId, on) {
+    if (!STORE_PERSISTENT) {
+      const c = memChannels.get(ck(platform, channelId));
+      if (c) c.matchCalls = on;
+      return;
+    }
+    await schema();
+    await storeDb().query(`UPDATE live_channel SET match_calls = $3 WHERE platform = $1 AND channel_id = $2`, [platform, channelId, on]);
   },
   async markFaceitProbe(platform, channelId, at) {
     if (!STORE_PERSISTENT) {

@@ -73,13 +73,19 @@ export async function kickAppToken(): Promise<string> {
 /** Is the channel live now? /livestreams answers with one row for a live channel
  *  and none for one that is not (checked against the live API, 8 Oct). */
 export async function kickStreamIsLive(broadcasterUserId: string): Promise<boolean> {
+  return (await kickStreamInfo(broadcasterUserId)).live;
+}
+
+/** The channel's stream now: live or not, and in which category ("Counter-Strike 2", "Dota 2"). */
+export async function kickStreamInfo(broadcasterUserId: string): Promise<{ live: boolean; game: string | null }> {
   const res = await fetch(`${API}/livestreams?broadcaster_user_id=${encodeURIComponent(broadcasterUserId)}&limit=1`, {
     headers: { authorization: `Bearer ${await kickAppToken()}`, accept: "application/json" },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`kick livestreams ${res.status}`);
-  const j = (await res.json()) as { data?: unknown[] };
-  return (j.data?.length ?? 0) > 0;
+  const j = (await res.json()) as { data?: Array<{ category?: { name?: string } | null }> };
+  const s = j.data?.[0];
+  return s ? { live: true, game: s.category?.name || null } : { live: false, game: null };
 }
 
 export const exchangeCode = (code: string, verifier: string, redirectUri: string): Promise<KickTokens> =>

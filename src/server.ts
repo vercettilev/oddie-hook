@@ -25,7 +25,9 @@ import { twitchConfigured } from "./twitch/client.js";
 import { lockDue, remindOpen, type LiveDeps } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
+import { watchFrames } from "./live/frameCalls.js";
 import { configureFaceit } from "./games/faceit.js";
+import { frameSource } from "./games/frames.js";
 import { allStandings } from "./store/live.js";
 import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
@@ -1941,8 +1943,17 @@ if (kickConfigured() || twitchConfigured()) {
       lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message })),
       remindOpen(clock).catch((e) => liveLog("live reminder failed", { err: (e as Error).message })),
       watchGames(clock).catch((e) => liveLog("live game pass failed", { err: (e as Error).message })),
+      watchFrames(clock).catch((e) => liveLog("live picture pass failed", { err: (e as Error).message })),
     ]).finally(() => { ticking = false; });
   }, 5_000);
+  /* THE PICTURE (src/games/frames.ts, src/live/frameCalls.ts): a channel live
+     in CS2 or Dota 2 gets a call per match read off its own stream, nothing
+     linked, nothing installed. Wired after the clock so the clock's own lines
+     stay where test-live looks for them. */
+  const frames = frameSource();
+  clock.streamGame = (p, c) => { const eng = p === "twitch" ? twEng : kickEng; return eng.streamGame ? eng.streamGame(p, c) : Promise.resolve(null); };
+  clock.frames = frames.source ?? undefined;
+  liveLog(frames.source ? `frames on: ${frames.why}` : `frames off: ${frames.why}`);
   // One read now, so the log says whether price calls can be settled from here.
   void probePriceSource(liveLog);
   /* THE GAME TALKS HERE (src/games/gsi.ts): CS2 or Dota 2 on the streamer's

@@ -7,7 +7,7 @@
 import express, { type Router } from "express";
 import { randomBytes } from "node:crypto";
 import {
-  appToken, authorizeUrl, chatFromTwitch, eventSubSecret, exchangeCode, me, pinChat, pinnedChat, refreshTokens, sendChat, streamIsLive, unpinChat,
+  appToken, authorizeUrl, chatFromTwitch, eventSubSecret, exchangeCode, me, pinChat, pinnedChat, refreshTokens, sendChat, streamInfo, streamIsLive, unpinChat,
   subscribeToChat, twitchConfigured, verifyTwitchSignature, WEBHOOK_MAX_AGE_MS, type TwitchTokens,
 } from "./client.js";
 import { handleChat, LIVE_COPY, type LiveDeps, type Platform } from "../live/calls.js";
@@ -181,6 +181,7 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     pin,
     unpin,
     streamLive: async (_p, channelId) => streamIsLive(await appToken(), channelId),
+    streamGame: async (_p, channelId) => streamInfo(await appToken(), channelId),
     market: markets ? (msg, claim) => openFromChat(msg, claim, {
       ...markets,
       sourceFor: (m) => twitchChatSource(m.channelSlug || m.channelId, m.messageId),

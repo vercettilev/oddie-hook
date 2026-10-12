@@ -155,8 +155,14 @@ export async function sendChat(token: string, broadcasterId: string, senderId: s
 
 /** Is the channel live now? The app token is enough: /streams lists only live ones. */
 export async function streamIsLive(app: string, userId: string): Promise<boolean> {
-  const j = await api<{ data?: unknown[] }>(app, "GET", `/streams?user_id=${encodeURIComponent(userId)}&type=live`);
-  return (j.data?.length ?? 0) > 0;
+  return (await streamInfo(app, userId)).live;
+}
+
+/** The channel's stream now: live or not, and in which category ("Counter-Strike", "Dota 2", "Just Chatting"). */
+export async function streamInfo(app: string, userId: string): Promise<{ live: boolean; game: string | null }> {
+  const j = await api<{ data?: Array<{ game_name?: string }> }>(app, "GET", `/streams?user_id=${encodeURIComponent(userId)}&type=live`);
+  const s = j.data?.[0];
+  return s ? { live: true, game: s.game_name || null } : { live: false, game: null };
 }
 
 /** The message pinned in a channel's chat now, if any (null: nothing pinned). */
