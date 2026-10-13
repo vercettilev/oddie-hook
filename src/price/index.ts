@@ -18,7 +18,7 @@
 // target proves a touch, while proving it NEVER touched requires the whole
 // window. So a YES can settle on partial history and a NO cannot.
 
-import { priceFeed, type Candle } from "./feed.js";
+import { priceFeed, BYBIT_CHAIN, type Candle } from "./feed.js";
 
 export type PriceOp = ">=" | ">" | "<=" | "<";
 /** touch: true at any point in the window. at-close: true at the close time.
@@ -277,6 +277,28 @@ export async function resolvePriceClaim(
   return { ok: true, check, sentence: criteriaSentence(check) };
 }
 
+/** The commodities a claim can name, by the symbol the extractor gives them:
+ *  each pinned to its Bybit perpetual (src/price/feed.ts), whose candles are
+ *  read at the open and at settle like a token's pool. */
+export const COMMODITIES: Readonly<Record<string, { pool: string; name: string; short: string }>> = {
+  XAU: { pool: "XAUUSDT", name: "gold (XAU/USD)", short: "Gold" },
+  XAG: { pool: "XAGUSDT", name: "silver (XAG/USD)", short: "Silver" },
+  CL: { pool: "CLUSDT", name: "WTI crude oil (CL)", short: "WTI" },
+  BZ: { pool: "BZUSDT", name: "Brent crude oil (BZ)", short: "Brent" },
+};
+
+/** A commodity's price claim pinned to its Bybit perpetual, or null for
+ *  anything else. A unit price only: a metal has no market cap. */
+export function commodityCheck(claim: PriceClaim, window: { from: string; to: string }): PriceCheck | null {
+  const symbol = claim.symbol.replace(/^\$/, "").trim().toUpperCase();
+  const c = COMMODITIES[symbol];
+  if (!c || claim.metric !== "price" || !(claim.target > 0)) return null;
+  return {
+    chain: BYBIT_CHAIN, mint: c.pool, symbol, name: c.name, pool: c.pool, supply: 0,
+    metric: "price", op: claim.op, target: claim.target, mode: claim.mode, from: window.from, to: window.to,
+  };
+}
+
 const money = (n: number) =>
   n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 2)}M`
   : n >= 1_000 ? `$${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`
@@ -317,6 +339,11 @@ export function criteriaSentence(c: PriceCheck): string {
   const basis = c.metric === "mc"
     ? ` against a supply of ${Math.round(c.supply).toLocaleString("en-US")} tokens fixed when this market opened`
     : "";
+  // A commodity names its Bybit perpetual, and its level in full: "$4,250" is
+  // the rule, where a rounded "$4.3K" would be a different one.
+  if (c.chain === BYBIT_CHAIN) {
+    return `Settles from the price of ${c.name} on Bybit's ${c.pool} perpetual. YES if its price is ${dir} ${exactUsd(c.target)} ${when}, read from the hourly candles of ${c.pool} on Bybit. NO otherwise.`;
+  }
   return `Settles from the on-chain price of $${c.symbol} (${c.chain} mint ${c.mint}). YES if its ${what} is ${dir} ${money(c.target)} ${when}, read from the hourly candles of its deepest pool on GeckoTerminal${basis}. NO otherwise.`;
 }
 
@@ -362,7 +389,18 @@ const dirWords = (op: PriceOp) =>
   op === ">=" ? "at or above" : op === ">" ? "above" : op === "<=" ? "at or below" : "below";
 
 /** What an at-close question is built from: a pinned check, or a claim on a coin no token is pinned for. */
-type CloseRead = Pick<PriceCheck, "symbol" | "metric" | "op" | "target" | "to">;
+type CloseRead = Pick<PriceCheck, "symbol" | "metric" | "op" | "target" | "to"> & { chain?: string };
+
+/** Who the question is about: "$SOL", "$TOK's market cap", "gold (XAU/USD)". */
+const subjectOf = (c: CloseRead) => c.chain === BYBIT_CHAIN
+  ? COMMODITIES[c.symbol]?.name ?? c.symbol
+  : c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
+/** The same in a headline: "SOL", "TOK mc", "Gold". */
+const shortOf = (c: CloseRead) => c.chain === BYBIT_CHAIN
+  ? COMMODITIES[c.symbol]?.short ?? c.symbol
+  : `${c.symbol}${c.metric === "mc" ? " mc" : ""}`;
+/** The level as the rail writes it: a commodity's always in full. */
+const levelOf = (c: CloseRead, usd: (n: number) => string) => (c.chain === BYBIT_CHAIN ? exactUsd : usd)(c.target);
 
 /** A level written out in full: "$83,250", "$0.00002". Where the words are the
  *  whole rule, a rounded "$83.3K" would be a different level. */
@@ -370,8 +408,7 @@ const exactUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionD
 
 /** The question an at-close check asks, for a market whose own words read it another way. */
 export function closeQuestion(c: CloseRead, usd: (n: number) => string = money): string {
-  const what = c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
-  return `Will ${what} be ${dirWords(c.op)} ${usd(c.target)} ${closeWhen(c.to)}?`;
+  return `Will ${subjectOf(c)} be ${dirWords(c.op)} ${levelOf(c, usd)} ${closeWhen(c.to)}?`;
 }
 
 /** Its headline, short like the extractor's: "SOL above $100 at end of Oct?".
@@ -379,28 +416,26 @@ export function closeQuestion(c: CloseRead, usd: (n: number) => string = money):
  *  stands in for it then. */
 export function closeHook(c: CloseRead, usd: (n: number) => string = money): string | null {
   const dir = c.op === ">=" || c.op === ">" ? "above" : "below";
-  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} ${dir} ${usd(c.target)} ${closeWhen(c.to, true)}?`;
+  const hook = `${shortOf(c)} ${dir} ${levelOf(c, usd)} ${closeWhen(c.to, true)}?`;
   return hook.length <= 40 ? hook : null;
 }
 
 /** Already on that side at the open: does it stay there. "Will $SOL stay above $100 through the end of October 2026?" */
 export function holdQuestion(c: CloseRead, usd: (n: number) => string = money): string {
-  const what = c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
-  return `Will ${what} stay ${dirWords(c.op)} ${usd(c.target)} ${untilWhen(c.to)}?`;
+  return `Will ${subjectOf(c)} stay ${dirWords(c.op)} ${levelOf(c, usd)} ${untilWhen(c.to)}?`;
 }
 export function holdHook(c: CloseRead, usd: (n: number) => string = money): string | null {
   const dir = c.op === ">=" || c.op === ">" ? "above" : "below";
-  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} stays ${dir} ${usd(c.target)} ${untilWhen(c.to, true)}?`;
+  const hook = `${shortOf(c)} stays ${dir} ${levelOf(c, usd)} ${untilWhen(c.to, true)}?`;
   return hook.length <= 40 ? hook : null;
 }
 /** Not there at the open: does it get there. "Will $SOL trade above $150 at any point before the end of October 2026?" */
 export function reachQuestion(c: CloseRead, usd: (n: number) => string = money): string {
-  const what = c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
-  return `Will ${what} ${c.metric === "mc" ? "be" : "trade"} ${dirWords(c.op)} ${usd(c.target)} at any point ${beforeWhen(c.to)}?`;
+  return `Will ${subjectOf(c)} ${c.metric === "mc" ? "be" : "trade"} ${dirWords(c.op)} ${levelOf(c, usd)} at any point ${beforeWhen(c.to)}?`;
 }
 export function reachHook(c: CloseRead, usd: (n: number) => string = money): string | null {
   const dir = c.op === ">=" || c.op === ">" ? "above" : "below";
-  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} ${dir} ${usd(c.target)} ${beforeWhen(c.to, true)}?`;
+  const hook = `${shortOf(c)} ${dir} ${levelOf(c, usd)} ${beforeWhen(c.to, true)}?`;
   return hook.length <= 40 ? hook : null;
 }
 

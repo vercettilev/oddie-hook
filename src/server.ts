@@ -56,7 +56,7 @@ import { oracleAvailable } from "./oracle/verdict.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank, bestCalls } from "./store/standings.js";
-import { resolvePriceClaim, readAtOpen, readSpotAtOpen, type PriceClaim, type PriceCheck } from "./price/index.js";
+import { resolvePriceClaim, readAtOpen, readSpotAtOpen, commodityCheck, criteriaSentence, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { hookFor, viewCounts, recordView } from "./store/markets.js";
@@ -3725,11 +3725,13 @@ async function openMarketFromClaim(input: {
   let priceCheck: PriceCheck | null = null;
   let criteria = resolutionCriteria;
   if (input.priceClaim) {
-    const r = await resolvePriceClaim(
-      input.priceClaim,
-      { from: new Date().toISOString(), to: new Date(closeTime * 1000).toISOString() },
-      { text: input.claimText ?? null },
-    );
+    const window = { from: new Date().toISOString(), to: new Date(closeTime * 1000).toISOString() };
+    // Gold, silver and oil are pinned to their Bybit perpetual, never searched
+    // for as a token: a Solana coin called XAU is not the metal.
+    const commodity = commodityCheck(input.priceClaim, window);
+    const r = commodity
+      ? { ok: true as const, check: commodity, sentence: criteriaSentence(commodity) }
+      : await resolvePriceClaim(input.priceClaim, window, { text: input.claimText ?? null });
     if (r.ok) {
       priceCheck = r.check;
       criteria = r.sentence;

@@ -14,8 +14,8 @@
 if (process.env.DATABASE_URL) { console.error("refusing to run against a database"); process.exit(1); }
 
 import { readFileSync } from "node:fs";
-import { _setPriceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
-import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, readSpotAtOpen, closeQuestion, closeHook, holdQuestion, holdHook, reachQuestion, reachHook, type PriceCheck, type SpotPrice } from "../src/price/index.js";
+import { _setPriceFeed, priceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
+import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, readSpotAtOpen, closeQuestion, closeHook, holdQuestion, holdHook, reachQuestion, reachHook, commodityCheck, type PriceCheck, type SpotPrice } from "../src/price/index.js";
 import { BINANCE_ASSETS } from "../src/live/priceCall.js";
 import { samePriceBet } from "../src/matching/duplicate.js";
 import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
@@ -554,6 +554,81 @@ console.log("\nA coin with no token pinned on chain, read from its spot price");
     ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "PEPE", "WIF", "BONK", "TON"].every((s) => BINANCE_ASSETS.has(s)) && !BINANCE_ASSETS.has("HYPE") && !BINANCE_ASSETS.has("CL"));
 }
 
+console.log("\nGold, silver and oil on Bybit's candles");
+{
+  /* bee_empire's gold and CL markets (12 Oct) had no price behind them: no
+     Solana pool trades the metal, so the open could not read it and the rule
+     was prose for a page-settled oracle. Bybit lists all four as perpetuals and
+     serves their candles with no key; a commodity now rides the token rail. */
+  _setPriceFeed(null);
+  const realFetch = globalThis.fetch;
+  const urls: string[] = [];
+  const bybit = (body: unknown) => (async (u: string | URL | Request) => { urls.push(String(u)); return new Response(JSON.stringify(body), { status: 200 }); }) as typeof fetch;
+  try {
+    globalThis.fetch = bybit({ retCode: 0, retMsg: "OK", result: { list: [
+      ["1760353200000", "4188.44", "4194.45", "4186.71", "4193.07", "120.5", "1"],
+      ["1760349600000", "4193.94", "4196.61", "4186.62", "4188.44", "98.1", "1"],
+    ] } });
+    const got = await priceFeed().ohlcv("bybit", "XAUUSDT", "hour", 2, 1760400000);
+    check("Bybit's candles come back in the feed's shape, seconds and numbers",
+      JSON.stringify(got) === JSON.stringify([[1760353200, 4188.44, 4194.45, 4186.71, 4193.07, 120.5], [1760349600, 4193.94, 4196.61, 4186.62, 4188.44, 98.1]]), JSON.stringify(got));
+    check("...asked of the linear perpetual, hourly, up to the moment given",
+      /api\.bybit\.com\/v5\/market\/kline\?category=linear&symbol=XAUUSDT&interval=60&limit=2&end=1760400000000/.test(urls[0] ?? ""), urls[0]);
+    globalThis.fetch = bybit({ retCode: 10001, retMsg: "params error: symbol invalid" });
+    const refused = await priceFeed().ohlcv("bybit", "NOPEUSDT", "hour", 1).catch((e) => e as Error);
+    check("...and a refusal from Bybit is an error, never an empty history", refused instanceof Error && /symbol invalid/.test(refused.message), String(refused));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const WIN = { from: "2026-10-13T11:00:00.000Z", to: "2026-10-16T21:00:00.000Z" };
+  const gold = commodityCheck({ symbol: "XAU", metric: "price", op: "<", target: 4200, mode: "within" }, WIN);
+  check("gold is pinned to Bybit's XAUUSDT, never searched for as a token",
+    gold?.chain === "bybit" && gold.pool === "XAUUSDT" && gold.mint === "XAUUSDT" && gold.symbol === "XAU", JSON.stringify(gold));
+  check("...as are silver, WTI and Brent, however the symbol is written",
+    commodityCheck({ symbol: "XAG", metric: "price", op: ">", target: 50, mode: "touch" }, WIN)?.pool === "XAGUSDT"
+    && commodityCheck({ symbol: "$cl", metric: "price", op: ">", target: 90, mode: "touch" }, WIN)?.pool === "CLUSDT"
+    && commodityCheck({ symbol: "BZ", metric: "price", op: "<", target: 80, mode: "touch" }, WIN)?.pool === "BZUSDT");
+  check("...while a token is not a commodity, and a metal has no market cap",
+    commodityCheck({ symbol: "SOL", metric: "price", op: ">", target: 100, mode: "touch" }, WIN) === null
+    && commodityCheck({ symbol: "XAU", metric: "mc", op: ">", target: 1e12, mode: "touch" }, WIN) === null);
+
+  const rule = criteriaSentence({ ...gold!, mode: "at-close", target: 4250 });
+  check("its rule names the perpetual and the level in full",
+    rule === "Settles from the price of gold (XAU/USD) on Bybit's XAUUSDT perpetual. YES if its price is below $4,250 at 2026-10-16 UTC, read from the hourly candles of XAUUSDT on Bybit. NO otherwise.", rule);
+
+  const H = Date.parse("2026-10-13T11:00:00Z") / 1000;
+  const at = (price: number) => _setPriceFeed({
+    searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
+    async ohlcv(chain, pool) { return chain === "bybit" && pool === "XAUUSDT" ? [[H, price, price, price, price, 1]] as Candle[] : []; },
+  });
+  at(4193.88);
+  const stays = await readAtOpen(gold!);
+  check("gold below $4,200 with gold at $4,193.88 asks whether it stays there",
+    stays.kind === "within" && stays.reading === "hold" && stays.check.mode === "always"
+    && stays.question === "Will gold (XAU/USD) stay below $4,200 until 21:00 UTC on October 16, 2026?"
+    && stays.hook === "Gold stays below $4,200 until 21:00 UTC?", JSON.stringify(stays));
+  check("...under a rule on Bybit's candles, the whole way", stays.kind === "within" && /^Settles from the price of gold \(XAU\/USD\) on Bybit's XAUUSDT perpetual\. YES if its price is below \$4,200 continuously from this market opening/.test(stays.sentence), stays.kind === "within" ? stays.sentence : "");
+  at(4250);
+  const gets = await readAtOpen(gold!);
+  check("...and with gold above it, whether it gets there",
+    gets.kind === "within" && gets.reading === "reach" && gets.question === "Will gold (XAU/USD) trade below $4,200 at any point before 21:00 UTC on October 16, 2026?", JSON.stringify(gets));
+  at(4193.88);
+  const hit = await readAtOpen({ ...gold!, op: "<=", target: 4250.5, mode: "touch" });
+  check("a move already made at the open is read at the close, the level never rounded",
+    hit.kind === "reread" && hit.question === "Will gold (XAU/USD) be at or below $4,250.5 at 21:00 UTC on October 16, 2026?", JSON.stringify(hit));
+
+  if (stays.kind === "within") {
+    serve([], {}, [[H + 3600, 4190, 4199, 4185, 4195, 1], [H + 7200, 4195, 4203, 4190, 4198, 1]]);
+    const v = await checkPrice(stays.check);
+    check("the oracle settles it from the candles: an hour over $4,200 ends the hold", v.outcome === "no" && v.observed === 4203, v.why);
+  }
+  const silver = commodityCheck({ symbol: "XAG", metric: "price", op: "<", target: 4200, mode: "always" }, WIN)!;
+  check("two gold claims alike are one market, and gold is never silver",
+    samePriceBet(stays.kind === "within" ? stays.check : gold!, commodityCheck({ symbol: "XAU", metric: "price", op: "<", target: 4200, mode: "always" }, WIN)!)
+    && !samePriceBet(silver, commodityCheck({ symbol: "XAU", metric: "price", op: "<", target: 4200, mode: "always" }, WIN)!));
+}
+
 console.log("\nwired where every market is born");
 {
   const server = readFileSync("src/server.ts", "utf8");
@@ -571,7 +646,11 @@ console.log("\nwired where every market is born");
   check("a coin with no token pinned is read from Binance at the open, and the market opens under the words it settles by",
     /BINANCE_ASSETS\.has\(pc\.symbol\)\s*\? await readSpotAtOpen\(pc, new Date\(closeTime \* 1000\)\.toISOString\(\), binancePrices\)/.test(unpinned)
     && /criteria = spot\.sentence;\s*question = spot\.question;\s*hook = spot\.hook;/.test(unpinned), unpinned.slice(0, 200));
+  check("a commodity is pinned to its Bybit perpetual before any token search",
+    /const commodity = commodityCheck\(input\.priceClaim, window\);\s*const r = commodity\s*\? \{ ok: true as const, check: commodity, sentence: criteriaSentence\(commodity\) \}\s*: await resolvePriceClaim\(/.test(born));
   const prompt = readFileSync("src/matching/extractClaim.ts", "utf8");
+  check("the extractor names gold, silver and oil by the symbols the rail knows",
+    prompt.includes("or about the PRICE of gold, silver or crude oil") && prompt.includes("exactly XAU for gold, XAG for silver, CL for WTI crude and for crude oil named without a grade, BZ for Brent crude"));
   check("the extractor marks a level over a period for the open to read: above means above, below means below",
     prompt.includes("8. A LEVEL OVER A PERIOD: ABOVE MEANS ABOVE, BELOW MEANS BELOW.") && prompt.includes('"within" for a level over a period with no move named')
     && prompt.includes('"below X this week" (rule 8)') && /enum: \["touch", "at-close", "always", "within"\]/.test(prompt));

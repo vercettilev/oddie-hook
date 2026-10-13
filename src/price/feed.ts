@@ -218,6 +218,7 @@ const liveFeed: PriceFeed = {
   },
 
   async ohlcv(chain, pool, timeframe, limit, beforeUnix) {
+    if (chain === BYBIT_CHAIN) return bybitCandles(pool, timeframe, limit, beforeUnix);
     const q = new URLSearchParams({ aggregate: "1", limit: String(Math.min(limit, 1000)) });
     if (beforeUnix) q.set("before_timestamp", String(beforeUnix));
     const d = await getJson(
@@ -229,6 +230,29 @@ const liveFeed: PriceFeed = {
       .map((c) => [Number(c[0]), Number(c[1]), Number(c[2]), Number(c[3]), Number(c[4]), Number(c[5] ?? 0)] as Candle);
   },
 };
+
+/* GOLD, SILVER AND OIL ARE NOT TOKENS, AND BYBIT LISTS ALL FOUR.
+   A claim about gold or crude had no price behind it here: no Solana pool
+   trades the metal, and the page-settled oracle needs a page to read. Bybit
+   runs linear perpetuals on gold (XAUUSDT), silver (XAGUSDT), WTI (CLUSDT) and
+   Brent (BZUSDT), and serves their candles from a public endpoint with no key,
+   the same shape GeckoTerminal serves a pool's. So a commodity rides the same
+   rail as a token: its "pool" is the Bybit symbol, read at the open and at
+   settle. "$CL above $90 this week?" on 12 Oct was about CLUSDT itself. */
+export const BYBIT_CHAIN = "bybit";
+const BYBIT = "https://api.bybit.com/v5/market";
+
+async function bybitCandles(symbol: string, timeframe: "day" | "hour", limit: number, beforeUnix?: number): Promise<Candle[]> {
+  const q = new URLSearchParams({ category: "linear", symbol, interval: timeframe === "hour" ? "60" : "D", limit: String(Math.min(limit, 1000)) });
+  if (beforeUnix) q.set("end", String(beforeUnix * 1000));
+  const d = await getJson(`${BYBIT}/kline?${q}`);
+  if (d?.retCode !== 0) throw new Error(`bybit kline ${symbol} answered ${d?.retCode}: ${d?.retMsg ?? "no message"}`);
+  const list: any[] = d?.result?.list ?? [];
+  // [start in ms, open, high, low, close, volume, turnover], newest first.
+  return list
+    .filter((k) => Array.isArray(k) && k.length >= 5 && k.slice(0, 5).every((x: unknown) => Number.isFinite(Number(x))))
+    .map((k) => [Math.floor(Number(k[0]) / 1000), Number(k[1]), Number(k[2]), Number(k[3]), Number(k[4]), Number(k[5] ?? 0)] as Candle);
+}
 
 let feed: PriceFeed = liveFeed;
 
