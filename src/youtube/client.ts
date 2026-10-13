@@ -2,13 +2,14 @@
  * YouTube, spoken to directly. Documented at developers.google.com/youtube/v3
  * (read 12 Oct 2026):
  *
- *   A streamer signs in with Google once, with youtube.readonly. That names
- *   their channel and proves it is theirs; oddie keeps no token of theirs.
+ *   A streamer pastes their channel's link and nothing else: oddie looks the
+ *   channel up with its own token (channels.list, 1 unit). Nobody signs in to
+ *   Google but oddie's own channel.
  *
  *   oddie's own channel (the voice: YOUTUBE_VOICE_CHANNEL, default "oddiefun")
- *   signs in once more, with youtube.force-ssl and offline access. Its token
- *   reads every chat oddie is in and writes oddie's lines, so a line in any
- *   chat comes from oddie's account, never the streamer's.
+ *   signs in once, with youtube.force-ssl and offline access. Its token reads
+ *   every chat oddie is in and writes oddie's lines, so a line in any chat
+ *   comes from oddie's account, never the streamer's.
  *
  *   A channel's stream is found without the streamer: its public feed
  *   (youtube.com/feeds/videos.xml) names its newest videos, and videos.list
@@ -36,7 +37,6 @@ const AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN = "https://oauth2.googleapis.com/token";
 const API = "https://www.googleapis.com/youtube/v3";
 const FEED = "https://www.youtube.com/feeds/videos.xml";
-export const STREAMER_SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"];
 export const VOICE_SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"];
 /** The longest line YouTube's chat takes. */
 export const CHAT_MAX = 200;
@@ -54,19 +54,19 @@ export function voiceHandle(): string {
 
 export interface YouTubeTokens { accessToken: string; refreshToken: string | null; expiresAt: number | null }
 
-export function authorizeUrl(o: { state: string; redirectUri: string; voice: boolean }): string {
+/** Google's sign-in for oddie's own channel, the one account that keeps a token. */
+export function authorizeUrl(o: { state: string; redirectUri: string }): string {
   const q = new URLSearchParams({
     client_id: process.env.YOUTUBE_CLIENT_ID ?? "",
     redirect_uri: o.redirectUri,
     response_type: "code",
-    scope: (o.voice ? VOICE_SCOPES : STREAMER_SCOPES).join(" "),
+    scope: VOICE_SCOPES.join(" "),
     state: o.state,
     include_granted_scopes: "true",
-    // Only oddie's own account keeps a token; a streamer's sign-in is used once.
-    access_type: o.voice ? "offline" : "online",
-    // A channel can live on a brand account: let the streamer pick it. The voice
-    // is asked to consent again, which is what makes Google send a refresh token.
-    prompt: o.voice ? "consent select_account" : "select_account",
+    access_type: "offline",
+    // The channel can live on a brand account: let it be picked. Consent is asked
+    // again, which is what makes Google send a refresh token.
+    prompt: "consent select_account",
   });
   return `${AUTH}?${q}`;
 }
@@ -123,16 +123,80 @@ async function api<T>(token: string, method: string, path: string, body?: unknow
 }
 
 export interface YouTubeChannel { channelId: string; handle: string; name: string; avatar: string | null }
+type ChannelItem = { id: string; snippet?: { title?: string; customUrl?: string; thumbnails?: { default?: { url?: string } } } };
 
-/** The channel of the account that just signed in: its id, handle (no @), title and picture. */
-export async function me(token: string): Promise<YouTubeChannel> {
-  const j = await api<{ items?: Array<{ id: string; snippet?: { title?: string; customUrl?: string; thumbnails?: { default?: { url?: string } } } }> }>(
-    token, "GET", "/channels?part=snippet&mine=true");
-  const c = j.items?.[0];
-  if (!c) throw new Error("youtube channels: this account has no channel");
+function channelOf(c: ChannelItem): YouTubeChannel {
   // A channel without a handle is known by its UC… id.
   const handle = String(c.snippet?.customUrl ?? "").replace(/^@/, "").trim();
   return { channelId: String(c.id), handle: handle || String(c.id), name: c.snippet?.title || handle || String(c.id), avatar: c.snippet?.thumbnails?.default?.url || null };
+}
+
+/** The channel of the account that just signed in: its id, handle (no @), title and picture. */
+export async function me(token: string): Promise<YouTubeChannel> {
+  const j = await api<{ items?: ChannelItem[] }>(token, "GET", "/channels?part=snippet&mine=true");
+  const c = j.items?.[0];
+  if (!c) throw new Error("youtube channels: this account has no channel");
+  return channelOf(c);
+}
+
+/** What a streamer pasted, read: a handle, a channel id, a video of theirs, or an old /user/ name. */
+export type ChannelRef = { by: "handle"; handle: string } | { by: "id"; id: string } | { by: "video"; id: string } | { by: "user"; name: string };
+
+// Handles are 3 to 30 letters or digits from any script, plus _ - . and the middle dot.
+const HANDLE = /^[\p{L}\p{M}\p{N}_.\-·]{3,30}$/u;
+const CHANNEL_ID = /^UC[\w-]{22}$/;
+const VIDEO_ID = /^[\w-]{11}$/;
+
+/**
+ * Whatever a streamer pastes for their channel: the address from the browser
+ * (youtube.com/@name, /channel/UC…, a /watch or /live link of their stream, a
+ * youtu.be link, an old /c/ or /user/ address), the handle with or without its
+ * @, or the UC… id. Null for anything that is not YouTube.
+ */
+export function parseChannelRef(input: string): ChannelRef | null {
+  const s = String(input ?? "").trim().replace(/^<|>$/g, "");
+  if (!s || s.length > 300) return null;
+  const handle = (h: string): ChannelRef | null => (HANDLE.test(h) ? { by: "handle", handle: h.toLowerCase() } : null);
+  if (s.startsWith("@")) return handle(s.slice(1));
+  if (CHANNEL_ID.test(s)) return { by: "id", id: s };
+  let u: URL | null = null;
+  try { u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`); } catch { u = null; }
+  const host = u ? u.hostname.toLowerCase().replace(/^(www|m|music)\./, "") : "";
+  if (u && host === "youtu.be") {
+    const id = u.pathname.split("/")[1] ?? "";
+    return VIDEO_ID.test(id) ? { by: "video", id } : null;
+  }
+  if (u && host === "youtube.com") {
+    let parts: string[];
+    try { parts = u.pathname.split("/").filter(Boolean).map(decodeURIComponent); } catch { return null; }
+    const [a = "", b = ""] = parts;
+    if (a.startsWith("@")) return handle(a.slice(1));
+    if (a === "channel") return CHANNEL_ID.test(b) ? { by: "id", id: b } : null;
+    if (a === "watch") { const v = u.searchParams.get("v") ?? ""; return VIDEO_ID.test(v) ? { by: "video", id: v } : null; }
+    if (a === "live" || a === "shorts" || a === "embed") return VIDEO_ID.test(b) ? { by: "video", id: b } : null;
+    if (a === "user") return HANDLE.test(b) ? { by: "user", name: b } : null;
+    // An old custom address (/c/name, or just /name) is the handle on most channels now.
+    if (a === "c") return handle(b);
+    return parts.length === 1 ? handle(a) : null;
+  }
+  // A bare name: the handle, typed without its @.
+  return /[\s/:]/.test(s) ? null : handle(s);
+}
+
+/** The channel a pasted link names, looked up with oddie's token: 1 unit, 2 for a video link. Null when YouTube knows no such channel. */
+export async function channelLookup(token: string, ref: ChannelRef): Promise<YouTubeChannel | null> {
+  let q: string;
+  if (ref.by === "video") {
+    const v = await api<{ items?: Array<{ snippet?: { channelId?: string } }> }>(token, "GET", `/videos?part=snippet&id=${encodeURIComponent(ref.id)}`);
+    const id = v.items?.[0]?.snippet?.channelId;
+    if (!id) return null;
+    q = `id=${encodeURIComponent(id)}`;
+  } else if (ref.by === "id") q = `id=${encodeURIComponent(ref.id)}`;
+  else if (ref.by === "user") q = `forUsername=${encodeURIComponent(ref.name)}`;
+  else q = `forHandle=${encodeURIComponent(`@${ref.handle}`)}`;
+  const j = await api<{ items?: ChannelItem[] }>(token, "GET", `/channels?part=snippet&${q}`);
+  const c = j.items?.[0];
+  return c ? channelOf(c) : null;
 }
 
 /** The newest videos on a channel, newest first, from its public feed. No token, no quota. */

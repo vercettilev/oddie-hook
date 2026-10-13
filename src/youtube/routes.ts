@@ -5,34 +5,38 @@
  * (src/live/channelRoutes); the rules are the engine's (src/live/calls.ts),
  * run votes only: no market, no 2%, no link (see src/youtube/client.ts).
  *
- * THE STREAMER DOES THREE THINGS, ONCE: signs in with Google (that names the
- * channel), adds @oddiefun as a moderator in YouTube Studio (so oddie's lines
- * are never held back or slowed), and goes live. Nothing is installed and
- * nothing is typed to start: the watcher sees the stream and oddie joins.
+ * THE STREAMER DOES TWO THINGS: pastes their channel's link on /live, and goes
+ * live. Nobody signs in to Google but oddie's own channel, and nothing is
+ * installed: the watcher sees the stream and oddie joins its chat.
+ *
+ * ANYBODY CAN PASTE A LINK, so a pasted channel never hears oddie uninvited:
+ * oddie says nothing in a chat until the channel's owner or one of its mods has
+ * used a command there. Votes are the whole of it on YouTube (no money, no
+ * link), so a channel needs no proof of who pasted it beyond that.
  */
 import express, { type Router } from "express";
 import { randomBytes } from "node:crypto";
 import {
-  authorizeUrl, chatFromYouTube, exchangeCode, me, recentVideoIds, refreshTokens, sendChat, splitForChat, streamChat, videosLive,
-  voiceHandle, youtubeConfigured, type ChatPage, type LiveVideo, type YouTubeChannel, type YouTubeTokens,
+  authorizeUrl, channelLookup, chatFromYouTube, exchangeCode, me, parseChannelRef, recentVideoIds, refreshTokens, sendChat, splitForChat,
+  streamChat, videosLive, voiceHandle, youtubeConfigured, type ChannelRef, type ChatPage, type LiveVideo, type YouTubeChannel, type YouTubeTokens,
 } from "./client.js";
-import { handleChat, LIVE_COPY, type LiveDeps } from "../live/calls.js";
+import { handleChat, type LiveDeps } from "../live/calls.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { paced, patiently } from "../live/pace.js";
-import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
 
 /** Everything oddie asks of Google, in one place: the tests replace it. */
 export interface YouTubeApi {
   exchangeCode(code: string, redirectUri: string): Promise<YouTubeTokens>;
   me(token: string): Promise<YouTubeChannel>;
+  channelLookup(token: string, ref: ChannelRef): Promise<YouTubeChannel | null>;
   refreshTokens(refreshToken: string): Promise<YouTubeTokens>;
   recentVideoIds(channelId: string): Promise<string[]>;
   videosLive(token: string, ids: string[]): Promise<LiveVideo[]>;
   streamChat(token: string, liveChatId: string, pageToken: string | null, onPage: (p: ChatPage) => Promise<void> | void, signal: AbortSignal): Promise<{ pageToken: string | null; offline: boolean }>;
   sendChat(token: string, liveChatId: string, text: string): Promise<string | null>;
 }
-export const youtubeApi: YouTubeApi = { exchangeCode, me, refreshTokens, recentVideoIds, videosLive, streamChat, sendChat };
+export const youtubeApi: YouTubeApi = { exchangeCode, me, channelLookup, refreshTokens, recentVideoIds, videosLive, streamChat, sendChat };
 
 export interface YouTubeRouteDeps extends ChannelPageDeps {
   appBaseUrl: string;
@@ -54,14 +58,54 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((ok) => {
 const liveChats = new Map<string, { videoId: string; liveChatId: string }>();
 /** What the watcher last saw: on air or not. Absent: not looked at yet. */
 const onAir = new Map<string, boolean>();
-/** Channels that signed in for the first time: they hear hello on their first stream, since there is no chat before it. */
-const greetOnLive = new Set<string>();
+/** Channels whose owner or a mod has used a command: oddie speaks in their chat. */
+const awake = new Set<string>();
+/**
+ * What each video was when last asked. A video that is neither live nor
+ * coming up is a recording, and a recording never goes live: it is not asked
+ * about again, so a channel costs nothing between its streams.
+ */
+const videoState = new Map<string, LiveVideo["state"]>();
+const VIDEOS_MAX = 20_000;
 /** Lines oddie sent, by id: one that comes back through the stream is oddie's own. */
 const sentByUs = new Set<string>();
 const SENT_MAX = 2_000;
 /** After YouTube said the day's quota is spent, oddie stops asking until this time. */
 let quotaRestUntil = 0;
 const QUOTA_REST_MS = 60 * 60_000;
+
+/*
+ * WHAT A STRANGER CAN SPEND. Adding a channel and checking one ask YouTube with
+ * oddie's quota and anybody can call them, so they share a small daily budget
+ * of their own (the quota's day starts at midnight Pacific) and a pace per
+ * caller. The streams oddie is already in can never be starved by them.
+ */
+const PUBLIC_UNITS_PER_DAY = 600;
+let publicDay = "", publicSpent = 0;
+function spendPublic(units: number, now: number): boolean {
+  const day = new Date(now - 8 * 3_600_000).toISOString().slice(0, 10);
+  if (day !== publicDay) { publicDay = day; publicSpent = 0; }
+  if (publicSpent + units > PUBLIC_UNITS_PER_DAY) return false;
+  publicSpent += units;
+  return true;
+}
+const addsBy = new Map<string, number[]>();
+const ADD_WINDOW_MS = 10 * 60_000;
+const ADDS_PER_WINDOW = 6;
+function addAllowed(who: string, now: number): boolean {
+  const recent = (addsBy.get(who) ?? []).filter((t) => now - t < ADD_WINDOW_MS);
+  const ok = recent.length < ADDS_PER_WINDOW;
+  if (ok) recent.push(now);
+  if (addsBy.size > 5_000) addsBy.clear();
+  addsBy.set(who, recent);
+  return ok;
+}
+/** How many channels oddie watches on YouTube at most, oddie's own not counted. */
+const maxChannels = () => Math.max(1, Math.floor(Number(process.env.YOUTUBE_MAX_CHANNELS) || 50));
+/** A check reads a chat this long, one check at a time. */
+const checkReadMs = () => Math.max(10, Math.floor(Number(process.env.YOUTUBE_CHECK_MS) || 12_000));
+const CHECK_GAP_MS = 20_000;
+let lastCheckAt = 0;
 
 interface Reader {
   channelId: string; slug: string; liveChatId: string;
@@ -73,7 +117,8 @@ const SEEN_MAX = 5_000;
 /** Test seam. */
 export function _resetYouTube(): void {
   for (const r of readers.values()) r.abort.abort();
-  readers.clear(); liveChats.clear(); onAir.clear(); greetOnLive.clear(); sentByUs.clear(); quotaRestUntil = 0;
+  readers.clear(); liveChats.clear(); onAir.clear(); awake.clear(); videoState.clear(); sentByUs.clear(); quotaRestUntil = 0;
+  addsBy.clear(); publicDay = ""; publicSpent = 0; lastCheckAt = 0;
 }
 /** Test seam: the chats the watcher is reading now. */
 export const _readers = (): Array<{ channelId: string; liveChatId: string; done: boolean }> =>
@@ -171,7 +216,13 @@ async function readPage(r: Reader, p: ChatPage, voiceId: string, engine: LiveDep
     const msg = chatFromYouTube(it, { channelId: r.channelId, slug: r.slug }, voiceId);
     if (!msg) continue;
     if (sentByUs.has(msg.messageId)) msg.fromOddie = true;
+    // Until the owner or a mod has used a command here, only they reach the
+    // engine: a viewer in a chat somebody merely pasted cannot make oddie talk.
+    const asleep = !awake.has(r.channelId);
+    if (asleep && !msg.canRun && !msg.fromOddie) continue;
     const action = await handleChat(msg, engine).catch((e) => { log("youtube chat failed", { err: (e as Error).message }); return "error"; });
+    const command = action !== "chat" && action !== "own" && action !== "error";
+    if (asleep && msg.canRun && command) { awake.add(r.channelId); log("youtube chat woke oddie", { channel: r.channelId, action }); }
     // What a command did, never what anybody wrote: ordinary chat is not logged.
     if (action !== "chat" && action !== "own") log("youtube chat command", { channel: r.channelId, action, runner: msg.canRun });
   }
@@ -220,10 +271,11 @@ function stopReader(r: Reader): void {
 
 /**
  * The watcher's pass, once a minute: each connected channel's newest videos
- * from its public feed, one videos.list for all of them (1 unit), and for a
- * channel on air its chat read over one connection. A channel that went off
- * air has its reader stopped; one that went live for the first time since it
- * signed in hears hello.
+ * from its public feed, one videos.list for those that may be live (1 unit, and
+ * none at all when every one is a known recording), and for a channel on air
+ * its chat read over one connection. A channel that went off air has its
+ * reader stopped. Nobody is greeted: oddie's first line in a chat answers the
+ * owner's or a mod's first command.
  */
 export async function watchYouTube(w: { engine: LiveDeps; log: Log; api?: YouTubeApi; now?: () => number }): Promise<{ live: number; reading: number }> {
   const api = w.api ?? youtubeApi;
@@ -242,7 +294,7 @@ export async function watchYouTube(w: { engine: LiveDeps; log: Log; api?: YouTub
       return [] as string[];
     }));
   }
-  const ids = [...new Set([...idsOf.values()].flat())];
+  const ids = [...new Set([...idsOf.values()].flat())].filter((id) => videoState.get(id) !== "none");
   let videos: LiveVideo[] = [];
   if (ids.length) {
     try { videos = await withVoice(api, voice, (t) => api.videosLive(t, ids)); }
@@ -252,6 +304,10 @@ export async function watchYouTube(w: { engine: LiveDeps; log: Log; api?: YouTub
       // Nothing known: the readers stay as they are.
       return { live: 0, reading: readers.size };
     }
+    // One YouTube does not answer for (removed, or made private) is done too.
+    const answered = new Map(videos.map((v) => [v.videoId, v.state] as const));
+    for (const id of ids) videoState.set(id, answered.get(id) ?? "none");
+    if (videoState.size > VIDEOS_MAX) for (const k of [...videoState.keys()].slice(0, VIDEOS_MAX / 2)) videoState.delete(k);
   }
   const liveOf = new Map<string, LiveVideo>();
   for (const v of videos) if (v.state === "live" && v.liveChatId) liveOf.set(v.channelId, v);
@@ -270,38 +326,50 @@ export async function watchYouTube(w: { engine: LiveDeps; log: Log; api?: YouTub
     // A reader for this chat that is still reading stays; a new stream (or one that stopped) gets a new one.
     if (r && r.liveChatId === v.liveChatId && !r.done) continue;
     if (r) stopReader(r);
+    // A vote still open from before (a restart, a new stream) means the owner
+    // already brought oddie in: its viewers can answer straight away.
+    if (!awake.has(c.channelId) && await w.engine.store.current("youtube", c.channelId).catch(() => null)) awake.add(c.channelId);
     startReader(api, voice, { channelId: c.channelId, slug: c.slug }, v.liveChatId!, w.engine, w.log, now);
     w.log("youtube stream on air, oddie joins its chat", { channel: c.channelId, video: v.videoId });
-    if (greetOnLive.delete(c.channelId)) {
-      await w.engine.say("youtube", c.channelId, LIVE_COPY.helloVotes)
-        .catch((e) => w.log("youtube hello not delivered", { channel: c.channelId, err: (e as Error).message.slice(0, 160) }));
-    }
   }
   return { live, reading: readers.size };
 }
 
 /* ------------------------------------------------------------ router -- */
 
-const pending = new Map<string, { at: number; voice: boolean }>();
+const pending = new Map<string, { at: number }>();
+
+/** A channel oddie is in, as the store keeps it, from what YouTube said; a token it had stays. */
+async function keepChannel(found: YouTubeChannel, tokens: YouTubeTokens | null): Promise<{ before: LiveChannel | null }> {
+  const before = await channelById("youtube", found.channelId).catch(() => null);
+  await saveChannel({
+    platform: "youtube", channelId: found.channelId, slug: found.handle, name: found.name, avatar: found.avatar,
+    accessToken: tokens ? tokens.accessToken : before?.accessToken ?? null,
+    refreshToken: tokens ? tokens.refreshToken : before?.refreshToken ?? null,
+    tokenExpiresAt: tokens ? tokens.expiresAt : before?.tokenExpiresAt ?? null,
+    active: true,
+  });
+  return { before };
+}
 
 export function youtubeRouter(d: YouTubeRouteDeps): Router {
   const r = express.Router();
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const redirectUri = `${base}/live/youtube/callback`;
   const api = d.api ?? youtubeApi;
-  const secure = base.startsWith("https:");
+  const ready = () => d.api || youtubeConfigured();
 
-  const begin = (voice: boolean) => (_req: express.Request, res: express.Response) => {
-    if (!d.api && !youtubeConfigured()) return res.status(503).type("text").send("oddie for YouTube is almost here.");
+  /** A streamer adds oddie by pasting their link on /live: this old address leads there. */
+  r.get("/live/youtube/connect", (_req, res) => res.redirect(`${base}/live#youtube`));
+
+  /** oddie's own channel, once: the account every line goes out from. */
+  r.get("/live/youtube/voice", (_req, res) => {
+    if (!ready()) return res.status(503).type("text").send("oddie for YouTube is almost here.");
     for (const [k, p] of pending) if (Date.now() - p.at > 10 * 60_000) pending.delete(k);
     const state = randomBytes(16).toString("hex");
-    pending.set(state, { at: Date.now(), voice });
-    res.redirect(authorizeUrl({ state, redirectUri, voice }));
-  };
-  /** A streamer adds oddie to their channel. */
-  r.get("/live/youtube/connect", begin(false));
-  /** oddie's own channel, once: the account every line goes out from. */
-  r.get("/live/youtube/voice", begin(true));
+    pending.set(state, { at: Date.now() });
+    res.redirect(authorizeUrl({ state, redirectUri }));
+  });
 
   r.get("/live/youtube/callback", async (req, res) => {
     const state = String(req.query.state ?? "");
@@ -313,31 +381,102 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
     try {
       const t = await api.exchangeCode(code, redirectUri);
       const who = await api.me(t.accessToken);
-      const isVoice = p.voice && !!voiceHandle() && who.handle.toLowerCase() === voiceHandle();
-      const before = await channelById("youtube", who.channelId).catch(() => null);
-      // A streamer's token was for their name and is not kept. oddie's own
-      // channel keeps its token; signed in again through the streamer door, it
-      // keeps the one it had.
-      const keep = isVoice ? t : { accessToken: before?.accessToken ?? null, refreshToken: before?.refreshToken ?? null, expiresAt: before?.tokenExpiresAt ?? null };
-      const ch: LiveChannel = {
-        platform: "youtube", channelId: who.channelId, slug: who.handle, name: who.name, avatar: who.avatar,
-        accessToken: keep.accessToken, refreshToken: keep.refreshToken, tokenExpiresAt: keep.expiresAt, active: true,
-      };
-      await saveChannel(ch);
+      const isVoice = !!voiceHandle() && who.handle.toLowerCase() === voiceHandle();
+      // Only oddie's own channel keeps a token. Another channel signed in at this
+      // door is added the way a pasted link adds it.
+      await keepChannel(who, isVoice ? t : null);
       if (isVoice) {
-        d.log(t.refreshToken ? "youtube voice connected" : "youtube voice connected WITHOUT a refresh token, sign in at /live/youtube/voice again", { channel: ch.slug });
-        return res.redirect(`${base}/live/youtube/${encodeURIComponent(ch.slug)}?voice=1`);
+        d.log(t.refreshToken ? "youtube voice connected" : "youtube voice connected WITHOUT a refresh token, sign in at /live/youtube/voice again", { channel: who.handle });
+        return res.redirect(`${base}/live/youtube/${encodeURIComponent(who.handle)}?voice=1`);
       }
-      // Hello once, on the first stream: signing in again is not a second arrival.
-      const fresh = !before?.active;
-      if (fresh) greetOnLive.add(ch.channelId);
-      const key = ownerKeyFromEnv("youtube");
-      if (key) res.append("Set-Cookie", ownerCookie(ownerToken(ch.channelId, key), secure, undefined, "youtube"));
-      d.log(fresh ? "youtube channel connected" : "youtube channel signed in", { channel: ch.slug });
-      res.redirect(`${base}/live/youtube/${encodeURIComponent(ch.slug)}${fresh ? "?connected=1" : ""}`);
+      d.log("youtube channel added at oddie's own door", { channel: who.handle });
+      res.redirect(`${base}/live/youtube/${encodeURIComponent(who.handle)}?added=1`);
     } catch (e) {
       d.log("youtube connect failed", { err: (e as Error).message });
       res.redirect(`${base}/live?youtube=failed`);
+    }
+  });
+
+  /**
+   * A streamer pastes their channel's link: oddie looks it up and watches it
+   * from then on. Answers with the channel's page, or with which of a short list
+   * of things to tell the streamer (`error`): link, voice, busy, full, soon,
+   * retry.
+   */
+  r.post("/live/youtube/add", express.json({ limit: "4kb" }), async (req, res) => {
+    const ref = parseChannelRef(String((req.body as { channel?: unknown } | undefined)?.channel ?? ""));
+    if (!ref) return res.status(400).json({ ok: false, error: "link" });
+    const voice = ready() ? await voiceChannel() : null;
+    if (!voice) return res.status(503).json({ ok: false, error: "soon" });
+    const now = Date.now();
+    if (!addAllowed(req.ip ?? "", now) || !spendPublic(ref.by === "video" ? 2 : 1, now)) return res.status(429).json({ ok: false, error: "busy" });
+    let found: YouTubeChannel | null;
+    try { found = await withVoice(api, voice, (t) => api.channelLookup(t, ref)); }
+    catch (e) {
+      d.log("youtube channel lookup failed", { err: (e as Error).message.slice(0, 160) });
+      return res.status(502).json({ ok: false, error: "retry" });
+    }
+    if (!found) return res.status(404).json({ ok: false, error: "link" });
+    if (found.channelId === voice.channelId) return res.status(400).json({ ok: false, error: "voice" });
+    const was = await channelById("youtube", found.channelId).catch(() => null);
+    if (!was?.active) {
+      const n = (await liveStore.channels().catch(() => [])).filter((c) => c.platform === "youtube" && c.channelId !== voice.channelId).length;
+      if (n >= maxChannels()) {
+        d.log("youtube channel limit reached", { limit: maxChannels() });
+        return res.status(429).json({ ok: false, error: "full" });
+      }
+    }
+    try { await keepChannel(found, null); }
+    catch (e) {
+      d.log("youtube channel not saved", { channel: found.handle, err: (e as Error).message.slice(0, 160) });
+      return res.status(500).json({ ok: false, error: "retry" });
+    }
+    d.log(was?.active ? "youtube channel added again" : "youtube channel added", { channel: found.handle });
+    res.json({ ok: true, slug: found.handle, url: `/live/youtube/${encodeURIComponent(found.handle)}?added=1` });
+  });
+
+  /**
+   * Can oddie see this channel's stream and read its chat? A short look, the
+   * way the watcher would take it: the channel's newest videos (or the stream
+   * link pasted), which one is live, and its chat read for a few seconds.
+   * Answers with counts only, never what anybody wrote. One look at a time.
+   */
+  r.get("/live/youtube/check", async (req, res) => {
+    const ref = parseChannelRef(String(req.query.channel ?? ""));
+    if (!ref) return res.status(400).json({ ok: false, error: "link" });
+    const voice = ready() ? await voiceChannel() : null;
+    if (!voice) return res.status(503).json({ ok: false, error: "soon" });
+    const now = Date.now();
+    if (now - lastCheckAt < CHECK_GAP_MS || !spendPublic(8, now)) return res.status(429).json({ ok: false, error: "busy" });
+    lastCheckAt = now;
+    try {
+      const found = await withVoice(api, voice, (t) => api.channelLookup(t, ref));
+      if (!found) return res.status(404).json({ ok: false, error: "link" });
+      const ids = ref.by === "video" ? [ref.id] : await api.recentVideoIds(found.channelId);
+      const videos = ids.length ? await withVoice(api, voice, (t) => api.videosLive(t, ids)) : [];
+      const v = videos.find((x) => x.state === "live" && x.liveChatId && x.channelId === found.channelId);
+      let chat: { pages: number; items: number; readable: number; ms: number } | null = null;
+      if (v) {
+        const t0 = Date.now(), stop = new AbortController();
+        const timer = setTimeout(() => stop.abort(), checkReadMs());
+        let pages = 0, items = 0, readable = 0;
+        try {
+          await withVoice(api, voice, (t) => api.streamChat(t, v.liveChatId!, null, (pg) => {
+            pages++;
+            for (const it of pg.items ?? []) {
+              items++;
+              if (chatFromYouTube(it, { channelId: found.channelId, slug: found.handle }, voice.channelId)) readable++;
+            }
+          }, stop.signal));
+        } catch (e) { if (!stop.signal.aborted) throw e; }
+        finally { clearTimeout(timer); }
+        chat = { pages, items, readable, ms: Date.now() - t0 };
+      }
+      d.log("youtube check", { channel: found.handle, feed: ids.length, live: v?.videoId ?? null, pages: chat?.pages ?? null, items: chat?.items ?? null, readable: chat?.readable ?? null });
+      res.json({ ok: true, channel: { handle: found.handle, name: found.name }, feed: ids.length, live: v ? { videoId: v.videoId } : null, chat });
+    } catch (e) {
+      d.log("youtube check failed", { err: (e as Error).message.slice(0, 160) });
+      res.status(502).json({ ok: false, error: "retry", reason: reason(e) || null });
     }
   });
 

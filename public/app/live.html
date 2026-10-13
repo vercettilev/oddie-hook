@@ -338,6 +338,21 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .add--tw{background:#9146FF;color:#fff}
 @media (hover:hover){.add--tw:hover{background:#A970FF}}
 .note{margin:14px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--pink)}
+/* YOUTUBE: votes only, so no wallet and no sign-in. The streamer pastes their
+   channel's link and that is the whole setup. */
+.add--yt{background:#FF0033;color:#fff;cursor:pointer;touch-action:manipulation}
+@media (hover:hover){.add--yt:hover{background:#FF3358}}
+.add--yt:disabled{opacity:.6;cursor:progress}
+.yt{margin:34px 0 0;max-width:62ch}
+.yt__t{margin:0 0 8px;padding:0;border:0;font-family:var(--display);font-weight:400;font-size:clamp(24px,5vw,30px);line-height:1.05;letter-spacing:.02em;text-transform:uppercase;color:var(--cream)}
+.yt__p{margin:0 0 14px;color:var(--fg-2);font-size:15.5px;line-height:1.55}
+.yt__p code{font-family:var(--mono);font-weight:800;color:var(--yellow)}
+.yt__row{display:flex;flex-wrap:wrap;gap:12px 14px;align-items:stretch}
+.yt__in{flex:1 1 240px;min-width:0;min-height:52px;padding:0 14px;border:3px solid var(--black);background:var(--cream);color:var(--ink);
+  font-family:var(--mono);font-size:16px;font-weight:700;box-shadow:5px 5px 0 var(--pink-deep);border-radius:0}
+.yt__in::placeholder{color:rgba(11,13,4,.45)}
+.yt__in:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* A sentence, not an address: whole words, balanced. .who breaks anywhere
    because it usually holds a wallet. */
 .who--say{word-break:normal;overflow-wrap:break-word;text-wrap:balance}
@@ -372,6 +387,7 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
   padding:3px 8px;vertical-align:middle;white-space:nowrap}
 .own__p{margin:0 0 14px;font-size:15.5px;line-height:1.5;color:rgba(11,13,4,.78);max-width:52ch}
 .own__p b{color:var(--ink)}
+.own--yt .own__p code{font-family:var(--mono);font-weight:800;background:var(--ink);color:var(--yellow);padding:1px 6px;white-space:nowrap}
 .own__act{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
 .pay{font-family:var(--display);font-weight:400;font-size:18px;letter-spacing:.04em;text-transform:uppercase;text-decoration:none;
   padding:11px 24px 10px;min-height:48px;border:3px solid var(--black);background:var(--pink);color:var(--cream);
@@ -486,6 +502,12 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + (q === "expired" ? '<p class="note">That link expired. Press Add oddie to ' + qp + ' again.</p>' : "")
       + (q === "declined" ? '<p class="note">No problem. Press Add oddie to ' + qp + ' whenever you are ready.</p>' : "")
       + (q === "failed" ? '<p class="note">Connecting to ' + qp + ' needs one more try. Press Add oddie to ' + qp + ' again.</p>' : "")
+      + '<section class="yt" id="youtube" aria-labelledby="yt-t"><h2 class="yt__t" id="yt-t">On YouTube</h2>'
+      + '<p class="yt__p">Paste your channel link, go live, and open a vote with <code>!call will I win this round?</code> Your chat answers, oddie keeps score.</p>'
+      + '<form class="yt__row" id="yt-f" novalidate><label class="vh" for="yt-in">Your YouTube channel link</label>'
+      + '<input class="yt__in" id="yt-in" name="channel" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="youtube.com/@yourchannel">'
+      + '<button class="add add--yt" type="submit" id="yt-go">Add oddie</button></form>'
+      + '<p class="note" id="yt-note" role="status" aria-live="polite"></p></section>'
       + '<p class="quick"><b>Quick calls:</b> <code>!call will I win this round?</code> &rarr; chat <code>!yes</code> or <code>!no</code> '
       + "&rarr; <code>!call yes</code> or <code>!call no</code> settles it.</p>"
       + '<details class="cmds" id="commands"><summary>All commands</summary>'
@@ -505,6 +527,32 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     // streamer is sent opens and scrolls to the list itself.
     var cmds = document.getElementById("commands");
     if (cmds && location.hash === "#commands") { cmds.open = true; cmds.scrollIntoView(); }
+    /* YOUTUBE: the link is the whole setup. What comes back names the one
+       thing to say, never a status code. */
+    var ytF = document.getElementById("yt-f"), ytIn = document.getElementById("yt-in"),
+      ytGo = document.getElementById("yt-go"), ytNote = document.getElementById("yt-note");
+    var YT_SAY = {
+      link: "Paste your channel's link, like youtube.com/@yourname.",
+      voice: "That's oddie's own channel. Paste yours and you're set.",
+      busy: "Lots of channels are joining right now. Try again in a few minutes.",
+      full: "Every YouTube spot is taken right now. Try again soon.",
+      soon: "oddie for YouTube is almost here."
+    };
+    ytF.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      if (ytGo.disabled) return;
+      var v = ytIn.value.trim();
+      if (!v) { ytNote.textContent = YT_SAY.link; ytIn.focus(); return; }
+      ytGo.disabled = true; ytGo.textContent = "Adding…"; ytNote.textContent = "";
+      try {
+        var r = await fetch("/live/youtube/add", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ channel: v }) });
+        var j = await r.json().catch(function () { return {}; });
+        if (r.ok && j.url) { location.href = j.url; return; }
+        ytNote.textContent = YT_SAY[j.error] || "That didn't go through. Try once more.";
+      } catch (_) { ytNote.textContent = "That didn't go through. Try once more."; }
+      ytGo.disabled = false; ytGo.textContent = "Add oddie";
+    });
+    if (location.hash === "#youtube") { document.getElementById("youtube").scrollIntoView(); ytIn.focus(); }
     return;
   }
 
@@ -527,16 +575,18 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   function kicker() { return '<p class="own__k">' + (justConnected ? "oddie is in your chat" : "Your channel") + "</p>"; }
   function ownSay(t) { var e = document.getElementById("own-e"); if (e) e.textContent = t; }
 
-  /* YOUTUBE, right after signing in: votes only, so no wallet. Two steps left,
-     both on their side: oddie as a moderator, then going live. */
+  /* YOUTUBE, right after the link was pasted: votes only, so no wallet. What
+     is left is all on their side: go live and open a vote. */
   var voiceJustConnected = new URLSearchParams(location.search).get("voice") === "1";
+  var ytAdded = new URLSearchParams(location.search).get("added") === "1";
+  if (ytAdded) { try { history.replaceState(null, "", location.pathname); } catch (_) { /* the card still shows */ } }
   function youtubeSteps() {
     if (voiceJustConnected) return '<section class="own"><p class="own__k">oddie\'s voice</p><h2 class="own__t">This channel now speaks for oddie on YouTube</h2></section>';
-    if (!justConnected) return "";
-    return '<section class="own" aria-labelledby="own-t"><p class="own__k">oddie is set for your channel</p>'
-      + '<h2 class="own__t" id="own-t">Two steps and you\'re ready</h2>'
-      + '<p class="own__p"><b>1.</b> In YouTube Studio, open Settings, then Community, and add <b>@oddiefun</b> as a moderator. Its lines then reach your chat right away.</p>'
-      + '<p class="own__p"><b>2.</b> Go live. oddie joins your chat by itself; open a vote with <code>!call will I win this round?</code></p></section>';
+    if (!ytAdded) return "";
+    return '<section class="own own--yt" aria-labelledby="own-t"><p class="own__k">oddie is set for your channel</p>'
+      + '<h2 class="own__t" id="own-t">Go live and open a vote</h2>'
+      + '<p class="own__p">Type <code>!call will I win this round?</code> in your chat. Chat answers <code>!yes</code> or <code>!no</code>, and <code>!call yes</code> or <code>!call no</code> settles it.</p>'
+      + '<p class="own__p">oddie joins public streams a few minutes after they start and answers as <b>@oddiefun</b>. For replies that skip slow mode and filters, add @oddiefun as a moderator in YouTube Studio, under Settings, then Community.</p></section>';
   }
 
   function paintOwner() {

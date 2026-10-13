@@ -1,7 +1,8 @@
 // oddie on YouTube: the chat stream's framing, a chat item as the engine reads
-// it, lines cut to 200 characters, the sign-in (a streamer's and oddie's own),
-// and the watcher reading a live chat end to end, with Google faked at its
-// edges. YouTube runs votes only: no line may name a market or carry a link.
+// it, lines cut to 200 characters, a channel added by its pasted link, oddie's
+// own sign-in, the watcher reading a live chat end to end, and the check a
+// streamer's link can be given, with Google faked at its edges. YouTube runs
+// votes only: no line may name a market or carry a link.
 //
 // Run with: npm run test-youtube
 
@@ -9,9 +10,8 @@ import type { AddressInfo } from "node:net";
 import express from "express";
 import { _resetLive, LIVE_COPY } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelById, _resetLiveStore } from "../src/store/live.js";
-import { chatFromYouTube, jsonSplitter, splitForChat, CHAT_MAX, YouTubeError, type ChatPage, type LiveVideo } from "../src/youtube/client.js";
+import { chatFromYouTube, jsonSplitter, parseChannelRef, splitForChat, CHAT_MAX, YouTubeError, type ChannelRef, type ChatPage, type LiveVideo, type YouTubeChannel } from "../src/youtube/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube, _resetYouTube, _readers, type YouTubeApi } from "../src/youtube/routes.js";
-import { ownerCookieName } from "../src/live/owner.js";
 import { _setPace } from "../src/live/pace.js";
 
 _setPace({ gapMs: 0, retryMs: [0, 0] });
@@ -56,7 +56,7 @@ console.log("\nlines YouTube takes");
 }
 
 console.log("\nwhat a chat item becomes");
-const ch = { channelId: "UCstreamer000000000000001", slug: "streamer" };
+const ch = { channelId: "UCstreamer00000000000001", slug: "streamer" };
 const item = (over: Record<string, unknown> = {}, author: Record<string, unknown> = {}) => ({
   id: "msg-1",
   snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: "!call will I win?", textMessageDetails: { messageText: "!call will I win?" } },
@@ -75,6 +75,27 @@ const item = (over: Record<string, unknown> = {}, author: Record<string, unknown
     chatFromYouTube(item({ snippet: { type: "superChatEvent", displayMessage: "!call x" } }), ch, null) === null && chatFromYouTube(null, ch, null) === null);
 }
 
+console.log("\nwhat a streamer pastes");
+{
+  const same = (a: ChannelRef | null, b: ChannelRef) => JSON.stringify(a) === JSON.stringify(b);
+  const handle = (h: string): ChannelRef => ({ by: "handle", handle: h });
+  check("the address from the browser", same(parseChannelRef("https://www.youtube.com/@Streamer"), handle("streamer")));
+  check("...with a tab after it, and without https or www", same(parseChannelRef("youtube.com/@Streamer/streams"), handle("streamer"))
+    && same(parseChannelRef("m.youtube.com/@streamer?si=abc"), handle("streamer")));
+  check("the handle alone, with or without its @", same(parseChannelRef("@streamer"), handle("streamer")) && same(parseChannelRef("  streamer "), handle("streamer")));
+  check("a handle in any script", same(parseChannelRef("youtube.com/@%C3%A7a%C4%9Fla.tv"), handle("çağla.tv")));
+  check("a channel's UC… id, bare or in its address",
+    same(parseChannelRef("UCstreamer00000000000001"), { by: "id", id: "UCstreamer00000000000001" })
+    && same(parseChannelRef("https://youtube.com/channel/UCstreamer00000000000001/live"), { by: "id", id: "UCstreamer00000000000001" }));
+  check("a link to the stream itself", same(parseChannelRef("https://www.youtube.com/watch?v=vid00000001&t=3"), { by: "video", id: "vid00000001" })
+    && same(parseChannelRef("youtu.be/vid00000001"), { by: "video", id: "vid00000001" })
+    && same(parseChannelRef("youtube.com/live/vid00000001?feature=share"), { by: "video", id: "vid00000001" }));
+  check("an old /user/ or /c/ address", same(parseChannelRef("youtube.com/user/OldName"), { by: "user", name: "OldName" })
+    && same(parseChannelRef("youtube.com/c/Streamer"), handle("streamer")));
+  check("anything that is not a YouTube channel is not one", ["", "twitch.tv/streamer", "https://kick.com/streamer", "youtube.com", "youtube.com/feed/subscriptions", "my channel", "ab", "x".repeat(400)]
+    .every((s) => parseChannelRef(s) === null));
+}
+
 /* --------------------------------------------- Google, faked at its edges -- */
 
 interface Sent { chat: string; text: string }
@@ -82,14 +103,34 @@ const sent: Sent[] = [];
 const pages: ChatPage[] = [];
 let liveState: LiveVideo["state"] = "live";
 let streamEnd: "open" | "offline" = "open";
-let streams = 0;
-let me = { channelId: ch.channelId, handle: "streamer", name: "Streamer", avatar: null as string | null };
+let currentVideo = "vid00000001";
+let streams = 0, videoCalls = 0;
+const known: Record<string, YouTubeChannel> = {
+  streamer: { channelId: ch.channelId, handle: "streamer", name: "Streamer", avatar: null },
+  oddiefun: { channelId: "UCoddie00000000000000001", handle: "oddiefun", name: "oddie", avatar: null },
+  someone: { channelId: "UCsomeone000000000000001", handle: "someone", name: "Someone", avatar: null },
+};
+// chan01, chan02…: channels that exist, made up on demand.
+const lookup = (ref: ChannelRef): YouTubeChannel | null => {
+  if (ref.by === "handle") {
+    const n = /^chan(\d{2})$/.exec(ref.handle);
+    return known[ref.handle] ?? (n ? { channelId: `UCchan${n[1]}${"0".repeat(16)}`, handle: ref.handle, name: `Chan ${n[1]}`, avatar: null } : null);
+  }
+  if (ref.by === "id") return Object.values(known).find((c) => c.channelId === ref.id) ?? null;
+  if (ref.by === "video") return ref.id.startsWith("vid") ? known.streamer : null;
+  return null;
+};
+let me = known.streamer;
 const api: YouTubeApi = {
   exchangeCode: async (code) => ({ accessToken: `at-${code}`, refreshToken: `rt-${code}`, expiresAt: Date.now() + 3_600_000 }),
   me: async () => me,
+  channelLookup: async (_t, ref) => lookup(ref),
   refreshTokens: async () => ({ accessToken: "at-fresh", refreshToken: null, expiresAt: Date.now() + 3_600_000 }),
-  recentVideoIds: async (channelId) => (channelId === ch.channelId ? ["vid00000001"] : []),
-  videosLive: async (_t, ids) => ids.map((id) => ({ videoId: id, channelId: ch.channelId, state: liveState, liveChatId: liveState === "live" ? "chat-1" : null })),
+  recentVideoIds: async (channelId) => (channelId === ch.channelId ? [currentVideo] : []),
+  videosLive: async (_t, ids) => {
+    videoCalls++;
+    return ids.map((id) => ({ videoId: id, channelId: ch.channelId, state: liveState, liveChatId: liveState === "live" ? "chat-1" : null }));
+  },
   streamChat: async (_t, _chat, pageToken, onPage, signal) => {
     streams++;
     for (;;) {
@@ -111,88 +152,115 @@ const server = app.listen(0);
 const port = (server.address() as AddressInfo).port;
 const base = `http://localhost:${port}`;
 const get = (path: string) => fetch(`${base}${path}`, { redirect: "manual" });
+const add = async (channel: unknown) => {
+  const r = await fetch(`${base}/live/youtube/add`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ channel }) });
+  return { status: r.status, body: (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string; url?: string; slug?: string } };
+};
 const stateOf = (loc: string) => new URL(loc).searchParams.get("state") ?? "";
 
-console.log("\nthe sign-in, through the real router");
+console.log("\nadding a channel, through the real router");
 {
-  const r = await get("/live/youtube/connect");
-  const loc = r.headers.get("location") ?? "";
-  const u = new URL(loc);
-  check("a streamer is sent to Google for their channel's name only", r.status === 302 && u.host === "accounts.google.com"
-    && u.searchParams.get("scope") === "https://www.googleapis.com/auth/youtube.readonly" && u.searchParams.get("access_type") === "online", loc.slice(0, 120));
-  const cb = await get(`/live/youtube/callback?state=${stateOf(loc)}&code=s1`);
-  check("back from Google: the channel's page, with the steps", cb.status === 302 && (cb.headers.get("location") ?? "").endsWith("/live/youtube/streamer?connected=1"), cb.headers.get("location") ?? "");
-  check("...the owner cookie is set for YouTube", (cb.headers.get("set-cookie") ?? "").startsWith(`${ownerCookieName("youtube")}=`));
-  const saved = await channelById("youtube", ch.channelId);
-  check("...and the streamer's token is not kept", !!saved?.active && saved.accessToken === null && saved.refreshToken === null && saved.slug === "streamer");
-  const again = await get("/live/youtube/callback?state=nope&code=s2");
-  check("a state nobody asked for is an expired link", (again.headers.get("location") ?? "").endsWith("/live?youtube=expired"));
+  const c = await get("/live/youtube/connect");
+  check("the old sign-in address leads to the paste box on /live", c.status === 302 && (c.headers.get("location") ?? "").endsWith("/live#youtube"), c.headers.get("location") ?? "");
+  const early = await add("youtube.com/@streamer");
+  check("before oddie's own channel is in, a link waits (\"almost here\")", early.status === 503 && early.body.error === "soon", JSON.stringify(early));
 
   const v = await get("/live/youtube/voice");
   const vu = new URL(v.headers.get("location") ?? "");
   check("oddie's own channel asks to write, and to keep its token", vu.searchParams.get("scope") === "https://www.googleapis.com/auth/youtube.force-ssl"
     && vu.searchParams.get("access_type") === "offline" && (vu.searchParams.get("prompt") ?? "").includes("consent"));
-  me = { channelId: "UCoddie00000000000000001", handle: "oddiefun", name: "oddie", avatar: null };
+  me = known.oddiefun;
   const vcb = await get(`/live/youtube/callback?state=${stateOf(v.headers.get("location") ?? "")}&code=v1`);
   const voice = await channelById("youtube", "UCoddie00000000000000001");
   check("...signed in, it keeps the token every line goes out with", (vcb.headers.get("location") ?? "").endsWith("/live/youtube/oddiefun?voice=1")
     && voice?.accessToken === "at-v1" && voice.refreshToken === "rt-v1");
-  const c2 = await get("/live/youtube/connect");
-  await get(`/live/youtube/callback?state=${stateOf(c2.headers.get("location") ?? "")}&code=v2`);
-  check("...and through the streamer door again, it keeps the token it had", (await channelById("youtube", "UCoddie00000000000000001"))?.refreshToken === "rt-v1");
-  me = { channelId: "UCsomeone000000000000001", handle: "someone", name: "Someone", avatar: null };
+  const again = await get("/live/youtube/callback?state=nope&code=s2");
+  check("a state nobody asked for is an expired link", (again.headers.get("location") ?? "").endsWith("/live?youtube=expired"));
+  me = known.someone;
   const v3 = await get("/live/youtube/voice");
-  await get(`/live/youtube/callback?state=${stateOf(v3.headers.get("location") ?? "")}&code=x1`);
-  check("another channel through oddie's door keeps no token", (await channelById("youtube", "UCsomeone000000000000001"))?.refreshToken === null);
-  // That channel is not part of what follows.
+  const v3cb = await get(`/live/youtube/callback?state=${stateOf(v3.headers.get("location") ?? "")}&code=x1`);
+  check("another channel at oddie's door is added like a pasted link, and keeps no token",
+    (v3cb.headers.get("location") ?? "").endsWith("/live/youtube/someone?added=1") && (await channelById("youtube", "UCsomeone000000000000001"))?.refreshToken === null);
+
+  const bad = await add("twitch.tv/streamer");
+  check("a link that is not a YouTube channel is asked for again", bad.status === 400 && bad.body.error === "link");
+  const ok = await add("https://www.youtube.com/@Streamer/streams");
+  const saved = await channelById("youtube", ch.channelId);
+  check("a pasted link adds the channel and leads to its page", ok.status === 200 && ok.body.url === "/live/youtube/streamer?added=1", JSON.stringify(ok));
+  check("...watched from now on, with no token of theirs", !!saved?.active && saved.slug === "streamer" && saved.accessToken === null && saved.refreshToken === null);
+  const none = await add("@nobody");
+  check("a channel YouTube does not know is asked for again", none.status === 404 && none.body.error === "link");
+  const self = await add("@oddiefun");
+  check("oddie's own channel is not a streamer's", self.status === 400 && self.body.error === "voice");
+  const stream = await add("youtu.be/vid00000001");
+  check("a link to the stream finds its channel", stream.status === 200 && stream.body.slug === "streamer");
+  // "someone" (added at oddie's door) is not part of what follows.
   const someone = await channelById("youtube", "UCsomeone000000000000001");
   if (someone) await saveChannel({ ...someone, active: false });
+
+  process.env.YOUTUBE_MAX_CHANNELS = "2";
+  const first = await add("@chan01");
+  const full = await add("@chan02");
+  check("channels fill up to the limit, oddie's own not counted", first.status === 200 && full.status === 429 && full.body.error === "full", `${first.status} ${full.status}`);
+  delete process.env.YOUTUBE_MAX_CHANNELS;
+  const paced = await add("@chan01");
+  check("seven links in ten minutes from one caller: the seventh waits", paced.status === 429 && paced.body.error === "busy", JSON.stringify(paced));
+  const chan01 = await channelById("youtube", `UCchan01${"0".repeat(16)}`);
+  if (chan01) await saveChannel({ ...chan01, active: false });
 }
 
 console.log("\nthe watcher, a live chat end to end");
+_resetYouTube();
 const engine = youtubeEngineDeps({ log }, api);
 const settle = () => wait(40);
 const now = () => Date.now();
+const say = (id: string, text: string, author: Record<string, unknown> = {}) =>
+  pages.push({ items: [item({ id, snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: text } }, author)] });
 {
   const out = await watchYouTube({ engine, log, api });
-  check("a connected channel on air is found, and its chat is read", out.live === 1 && _readers().some((r) => r.liveChatId === "chat-1" && !r.done), JSON.stringify(out));
-  check("...its first stream since signing in opens with hello", sent.length === 1 && sent[0].text === LIVE_COPY.helloVotes && sent[0].chat === "chat-1");
+  check("a channel on air is found, and its chat is read", out.live === 1 && _readers().some((r) => r.liveChatId === "chat-1" && !r.done), JSON.stringify(out));
+  check("...and nobody is greeted: oddie arrives quietly", sent.length === 0, JSON.stringify(sent));
   const again = await watchYouTube({ engine, log, api });
-  check("the next pass keeps the same reader, and hello is said once", again.reading === 1 && streams === 1 && sent.length === 1);
+  check("the next pass keeps the same reader", again.reading === 1 && streams === 1 && sent.length === 0);
 
   pages.push({ items: [item({ id: "old-1", snippet: { type: "textMessageEvent", publishedAt: new Date(now() - 3_600_000).toISOString(), displayMessage: "!call from before oddie arrived" } }, { isChatOwner: true })] });
   await settle();
-  check("the chat's history is not taken for commands", sent.length === 1 && !(await liveStore.current("youtube", ch.channelId)));
+  check("the chat's history is not taken for commands", sent.length === 0 && !(await liveStore.current("youtube", ch.channelId)));
 
-  pages.push({ items: [item({ id: "open-1", snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: "!call will I win this round?" } }, { isChatOwner: true })] });
+  say("early-1", "!oddie BTC above 150k by Friday?");
+  say("early-2", "!call will I win?");
+  await settle();
+  check("before the owner or a mod has used a command, a viewer cannot make oddie talk", sent.length === 0 && !(await liveStore.current("youtube", ch.channelId)), JSON.stringify(sent));
+
+  say("open-1", "!call will I win this round?", { isChatOwner: true });
   await settle();
   const call = await liveStore.current("youtube", ch.channelId);
-  const opened = sent.slice(1);
+  const opened = sent.slice();
   check("the owner's !call opens a vote", call?.question === "will I win this round?", JSON.stringify(call));
   check("...said without a link, every line within 200 characters", opened.length >= 1 && opened.every((s) => noLink(s.text) && s.text.length <= CHAT_MAX), JSON.stringify(opened));
 
-  pages.push({ items: [item({ id: "yes-1", snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: "!yes" } })] });
+  say("yes-1", "!yes");
   await settle();
-  check("a viewer's !yes counts", call ? (await liveStore.tally(call.id)).yes === 1 : false);
+  check("from then on, a viewer's !yes counts", call ? (await liveStore.tally(call.id)).yes === 1 : false);
 
   const before = sent.length;
-  pages.push({ items: [item({ id: "mk-1", snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: "!oddie BTC above 150k by Friday?" } })] });
+  say("mk-1", "!oddie BTC above 150k by Friday?");
   await settle();
   const mk = sent.slice(before).map((s) => s.text);
   check("!oddie opens no market here: the room hears how votes work", mk.length === 1 && mk[0] === LIVE_COPY.votesHere && noMarket(mk[0]), JSON.stringify(mk));
 
   const own = sent.length;
-  pages.push({ items: [item({ id: "own-1", snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: "!call oddie's own line" } }, { channelId: "UCoddie00000000000000001", isChatModerator: true })] });
+  say("own-1", "!call oddie's own line", { channelId: "UCoddie00000000000000001", isChatModerator: true });
   await settle();
   check("oddie's own line coming back is never a command", sent.length === own && (await liveStore.current("youtube", ch.channelId))?.question === "will I win this round?");
 
-  pages.push({ items: [item({ id: "set-1", snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: "!call yes" } }, { isChatModerator: true })] });
+  say("set-1", "!call yes", { isChatModerator: true });
   await settle();
   const res = sent[sent.length - 1]?.text ?? "";
   check("a moderator settles it, and the result carries no link", res.startsWith("It's YES") && noLink(res), res);
 
   const help = sent.length;
-  pages.push({ items: [item({ id: "help-1", snippet: { type: "textMessageEvent", publishedAt: new Date().toISOString(), displayMessage: "!call" } }, { isChatOwner: true })] });
+  say("help-1", "!call", { isChatOwner: true });
   await settle();
   const helpLines = sent.slice(help).map((s) => s.text);
   check("the help, longer than a line, goes out in parts of at most 200", helpLines.length >= 2 && helpLines.every((t) => t.length <= CHAT_MAX), helpLines.map((t) => t.length).join(","));
@@ -206,11 +274,43 @@ const now = () => Date.now();
   const quiet = sent.length;
   await engine.say("youtube", ch.channelId, "anybody there?");
   check("...and nothing is said into a chat that is gone", sent.length === quiet);
-
-  liveState = "live"; streamEnd = "offline";
+  const asked = videoCalls;
   await watchYouTube({ engine, log, api });
+  check("a stream that ended is a recording, never asked about again", videoCalls === asked, `${asked} -> ${videoCalls}`);
+
+  currentVideo = "vid00000002"; liveState = "live";
+  await watchYouTube({ engine, log, api });
+  check("the next stream is a new video, found on the next pass", _readers().some((r) => !r.done) && videoCalls === asked + 1);
+  say("open-2", "!call will the next one hit?", { isChatModerator: true });
+  await settle();
+  const next = await liveStore.current("youtube", ch.channelId);
+
+  // A restart: oddie forgets who woke it, the vote stays open.
+  _resetYouTube();
+  await watchYouTube({ engine, log, api });
+  say("yes-2", "!yes");
+  await settle();
+  check("after a restart, viewers can answer a vote that is still open", next ? (await liveStore.tally(next.id)).yes === 1 : false, JSON.stringify(next));
+
+  streamEnd = "offline";
   await settle();
   check("a chat that ends with its stream closes its reader", _readers().every((r) => r.done));
+}
+
+console.log("\nchecking a channel");
+{
+  _resetYouTube(); liveState = "live"; streamEnd = "open"; currentVideo = "vid00000004";
+  process.env.YOUTUBE_CHECK_MS = "60";
+  pages.push({ items: [item({ id: "c-1" }), item({ id: "c-2", snippet: { type: "superChatEvent", displayMessage: "hi" } })] });
+  const r = await get("/live/youtube/check?channel=youtube.com/@streamer");
+  const j = (await r.json()) as { ok?: boolean; live?: { videoId?: string } | null; chat?: { pages: number; items: number; readable: number } | null };
+  check("a channel on air: its stream is found and its chat read, in counts only", r.status === 200 && j.live?.videoId === "vid00000004"
+    && (j.chat?.pages ?? 0) >= 1 && j.chat?.items === 2 && j.chat?.readable === 1 && !JSON.stringify(j).includes("will I win"), JSON.stringify(j));
+  const soon = await get("/live/youtube/check?channel=@streamer");
+  check("one check at a time: the next one right after waits", soon.status === 429);
+  const wrong = await get("/live/youtube/check?channel=twitch.tv/streamer");
+  check("a link that is not YouTube is asked for again", wrong.status === 400);
+  delete process.env.YOUTUBE_CHECK_MS;
 }
 
 console.log("\nwhen YouTube says no");
