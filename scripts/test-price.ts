@@ -15,7 +15,8 @@ if (process.env.DATABASE_URL) { console.error("refusing to run against a databas
 
 import { readFileSync } from "node:fs";
 import { _setPriceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
-import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, closeQuestion, closeHook, type PriceCheck } from "../src/price/index.js";
+import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, readSpotAtOpen, closeQuestion, closeHook, type PriceCheck, type SpotPrice } from "../src/price/index.js";
+import { BINANCE_ASSETS } from "../src/live/priceCall.js";
 import { samePriceBet } from "../src/matching/duplicate.js";
 import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
 import { decide } from "../src/oracle/oracle.js";
@@ -347,7 +348,7 @@ console.log("\nA period already decided when its market opens");
   check("...one it has not met yet is still a market", decidedAtOpen({ ...SOL, target: 150 }, 108.46) === null);
   // bee_empire's HYPE market the same day: "below $100 at any point during
   // October" with bridged HYPE at about $83.6.
-  check("...and the same holds under the line", decidedAtOpen({ ...SOL, symbol: "HYPE", op: "<", target: 100 }, 83.6) === "yes");
+  check("...and the same holds under the line", decidedAtOpen({ ...SOL, op: "<", target: 100 }, 83.6) === "yes");
   const HOLD: PriceCheck = { ...SOL, op: ">=", mode: "always" };
   check("an \"always\" already broken at the open is decided NO", decidedAtOpen(HOLD, 95) === "no");
   check("...one that holds is still a market", decidedAtOpen(HOLD, 108.46) === null);
@@ -429,6 +430,53 @@ console.log("\nA period already decided when its market opens");
     closeHook(at("2026-10-31T23:59:00Z", { symbol: "VERYLONGTICKER16", metric: "mc", target: 123_450_000 })) === null);
 }
 
+console.log("\nA coin with no token pinned on chain, read from its spot price");
+{
+  /* BTC is not a Solana token, so the check above never ran on it and its
+     market opened on the model's own rule. "BTC hits 80k this week" said with
+     BTC at 83,080 (Binance, 12 Oct boot log) opened "at any point" and was over
+     before anybody staked. */
+  const asked: Array<{ asset: string; t: number }> = [];
+  const spot = (price: number | null | Error): SpotPrice => ({
+    venue: "Binance",
+    async priceAt(asset, t) { asked.push({ asset, t }); if (price instanceof Error) throw price; return price; },
+  });
+  const BTC = { symbol: "BTC", metric: "price" as const, op: ">=" as const, target: 80_000, mode: "touch" as const };
+  const CLOSE = "2026-10-16T23:59:00.000Z";
+  const AT = Date.parse("2026-10-12T20:38:18Z");
+
+  const btc = await readSpotAtOpen(BTC, CLOSE, spot(83_080.02), AT);
+  check("a touch BTC already meets at the open is read at the close", btc.kind === "reread" && btc.was === "yes" && btc.now === 83_080.02, JSON.stringify(btc));
+  check("...read from the spot price at the open", asked[0]?.asset === "BTC" && asked[0]?.t === AT, JSON.stringify(asked));
+  if (btc.kind === "reread") {
+    check("...asking where BTC ends the window, the level in full",
+      btc.question === "Will $BTC be at or above $80,000 at the end of October 16, 2026 (UTC)?", btc.question);
+    check("...under a headline that says so", btc.hook === "BTC above $80,000 on Oct 16?", String(btc.hook));
+    check("...and a rule the oracle can settle from a page, at the close minute",
+      btc.sentence === "Settles from the BTC/USD price on CoinMarketCap. YES if it is at or above $80,000 at 23:59 UTC on 2026-10-16. NO otherwise.", btc.sentence);
+    check("...which passes the wall every market is born behind",
+      unsettleablePhrase(btc.sentence) === null && unsettleablePhrase(btc.question) === null && addressInQuestion(btc.question) === null && btc.question.length <= 180);
+  }
+  const odd = await readSpotAtOpen({ ...BTC, target: 83_250 }, CLOSE, spot(83_300), AT);
+  check("a level that is not round is never rounded into another one",
+    odd.kind === "reread" && odd.question.includes("$83,250") && odd.sentence.includes("$83,250"), JSON.stringify(odd));
+  const hold = await readSpotAtOpen({ ...BTC, mode: "always" }, CLOSE, spot(79_000), AT);
+  check("an \"always\" already broken at the open is read at the close too", hold.kind === "reread" && hold.was === "no", JSON.stringify(hold));
+  const ahead = await readSpotAtOpen({ ...BTC, target: 90_000 }, CLOSE, spot(83_080.02), AT);
+  check("a touch still ahead of the price opens as it reads", ahead.kind === "as-is" && ahead.now === 83_080.02, JSON.stringify(ahead));
+  asked.length = 0;
+  const close = await readSpotAtOpen({ ...BTC, mode: "at-close" }, CLOSE, spot(83_080.02), AT);
+  const cap = await readSpotAtOpen({ ...BTC, metric: "mc" }, CLOSE, spot(83_080.02), AT);
+  check("an at-close claim and a market cap are left alone, without asking for a price",
+    close.kind === "as-is" && cap.kind === "as-is" && asked.length === 0);
+  const down = await readSpotAtOpen(BTC, CLOSE, spot(new Error("binance klines 451")), AT);
+  const none = await readSpotAtOpen(BTC, CLOSE, spot(null), AT);
+  check("a spot price that cannot be read leaves the market as it reads, with the reason",
+    down.kind === "unread" && /Binance did not answer: binance klines 451/.test(down.why) && none.kind === "unread", JSON.stringify({ down, none }));
+  check("the coins read this way are the ones the stream votes read from Binance",
+    ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "PEPE", "WIF", "BONK", "TON"].every((s) => BINANCE_ASSETS.has(s)) && !BINANCE_ASSETS.has("HYPE") && !BINANCE_ASSETS.has("CL"));
+}
+
 console.log("\nwired where every market is born");
 {
   const server = readFileSync("src/server.ts", "utf8");
@@ -442,6 +490,10 @@ console.log("\nwired where every market is born");
     && born.includes("ok: true, slug, marketId, question, hook,") && (server.match(/question: out\.question, hook: out\.hook/g) ?? []).length === 3);
   check("a price that cannot be read is logged, never a refusal",
     born.includes('line: "price not read at the open, opened as it reads"') && born.includes("line: \"no pinned price at the open, opened on the model's rule\""));
+  const unpinned = born.slice(born.indexOf('} else if (criteria && input.priceClaim.mode !== "at-close") {'), born.indexOf("} else if (!criteria) {"));
+  check("a coin with no token pinned is read from Binance at the open, and the market opens under the words it settles by",
+    /BINANCE_ASSETS\.has\(pc\.symbol\)\s*\? await readSpotAtOpen\(pc, new Date\(closeTime \* 1000\)\.toISOString\(\), binancePrices\)/.test(unpinned)
+    && /criteria = spot\.sentence;\s*question = spot\.question;\s*hook = spot\.hook;/.test(unpinned), unpinned.slice(0, 200));
   const prompt = readFileSync("src/matching/extractClaim.ts", "utf8");
   check("the extractor reads a level over a period at the period's end",
     prompt.includes("8. A LEVEL OVER A PERIOD IS READ WHERE THE PERIOD ENDS.") && prompt.includes('"below X this week" (rule 8)'));

@@ -357,18 +357,25 @@ function closeWhen(iso: string, short = false): string {
 const dirWords = (op: PriceOp) =>
   op === ">=" ? "at or above" : op === ">" ? "above" : op === "<=" ? "at or below" : "below";
 
+/** What an at-close question is built from: a pinned check, or a claim on a coin no token is pinned for. */
+type CloseRead = Pick<PriceCheck, "symbol" | "metric" | "op" | "target" | "to">;
+
+/** A level written out in full: "$83,250", "$0.00002". Where the words are the
+ *  whole rule, a rounded "$83.3K" would be a different level. */
+const exactUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: n >= 1 ? 2 : 12 })}`;
+
 /** The question an at-close check asks, for a market whose own words read it another way. */
-export function closeQuestion(c: PriceCheck): string {
+export function closeQuestion(c: CloseRead, usd: (n: number) => string = money): string {
   const what = c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
-  return `Will ${what} be ${dirWords(c.op)} ${money(c.target)} ${closeWhen(c.to)}?`;
+  return `Will ${what} be ${dirWords(c.op)} ${usd(c.target)} ${closeWhen(c.to)}?`;
 }
 
 /** Its headline, short like the extractor's: "SOL above $100 at end of Oct?".
  *  Null when a long ticker pushes it past what a headline holds; the question
  *  stands in for it then. */
-export function closeHook(c: PriceCheck): string | null {
+export function closeHook(c: CloseRead, usd: (n: number) => string = money): string | null {
   const dir = c.op === ">=" || c.op === ">" ? "above" : "below";
-  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} ${dir} ${money(c.target)} ${closeWhen(c.to, true)}?`;
+  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} ${dir} ${usd(c.target)} ${closeWhen(c.to, true)}?`;
   return hook.length <= 40 ? hook : null;
 }
 
@@ -394,7 +401,7 @@ export async function priceNow(check: PriceCheck): Promise<{ ok: true; value: nu
 /** What the price at the open already says: a touch met now is a YES, an
  *  "always" broken now is a NO. Null while still open, and always for
  *  "at-close", which only the close decides. */
-export function decidedAtOpen(check: PriceCheck, value: number): "yes" | "no" | null {
+export function decidedAtOpen(check: Pick<PriceCheck, "mode" | "op" | "target">, value: number): "yes" | "no" | null {
   if (check.mode === "touch") return satisfies(value, check.op, check.target) ? "yes" : null;
   if (check.mode === "always") return satisfies(value, check.op, check.target) ? null : "no";
   return null;
@@ -419,6 +426,51 @@ export async function readAtOpen(check: PriceCheck): Promise<AtOpen> {
   return {
     kind: "reread", now: now.value, was, check: atClose,
     sentence: criteriaSentence(atClose), question: closeQuestion(atClose), hook: closeHook(atClose),
+  };
+}
+
+/* A COIN WITH NO TOKEN PINNED ON CHAIN IS READ WHERE A CHART WATCHER READS IT.
+   BTC, ETH and the rest are not Solana tokens, so the check above never ran on
+   them and their markets open on the model's own rule. "BTC hits 80k this
+   week" said with BTC at 83k opened "at any point" and was over before anybody
+   staked, the same trap as SOL's. Their price at the open comes from the spot
+   venue the stream votes already read (src/live/priceCall.ts binancePrices);
+   decided, the claim is read at the close like a pinned one, and the rule is
+   written out in full because on this rail the words are what settles it. */
+
+/** A spot price by ticker. src/live/priceCall.ts binancePrices is one. */
+export interface SpotPrice { venue: string; priceAt(asset: string, t: number): Promise<number | null> }
+
+export type SpotAtOpen =
+  | { kind: "as-is"; now: number | null }
+  | { kind: "unread"; why: string }
+  | { kind: "reread"; now: number; was: "yes" | "no"; sentence: string; question: string; hook: string | null };
+
+/** The rule for a coin's claim read at its close, for the oracle that settles
+ *  it from a page: a source it can open, the level in full, and the minute. */
+export function closeCriteria(c: Pick<CloseRead, "symbol" | "op" | "target" | "to">): string {
+  const t = new Date(c.to);
+  const hm = `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
+  return `Settles from the ${c.symbol}/USD price on CoinMarketCap. YES if it is ${dirWords(c.op)} ${exactUsd(c.target)} at ${hm} UTC on ${day(c.to)}. NO otherwise.`;
+}
+
+/** A coin's price claim against its spot price at the open. Only a unit price:
+ *  a market cap is not something a spot pair can answer. */
+export async function readSpotAtOpen(claim: PriceClaim, to: string, source: SpotPrice, at = Date.now()): Promise<SpotAtOpen> {
+  if (claim.mode === "at-close" || claim.metric !== "price") return { kind: "as-is", now: null };
+  let now: number | null;
+  try {
+    now = await source.priceAt(claim.symbol, at);
+  } catch (e) {
+    return { kind: "unread", why: `${source.venue} did not answer: ${(e as Error).message}` };
+  }
+  if (now === null || !(now > 0)) return { kind: "unread", why: `${source.venue} has no ${claim.symbol} price` };
+  const was = decidedAtOpen(claim, now);
+  if (!was) return { kind: "as-is", now };
+  const read: CloseRead = { symbol: claim.symbol, metric: claim.metric, op: claim.op, target: claim.target, to };
+  return {
+    kind: "reread", now, was,
+    sentence: closeCriteria(read), question: closeQuestion(read, exactUsd), hook: closeHook(read, exactUsd),
   };
 }
 

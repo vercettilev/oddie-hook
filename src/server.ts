@@ -36,7 +36,7 @@ import { watchFrames } from "./live/frameCalls.js";
 import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
 import { allStandings } from "./store/live.js";
-import { probePriceSource } from "./live/priceCall.js";
+import { probePriceSource, binancePrices, BINANCE_ASSETS } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -56,7 +56,7 @@ import { oracleAvailable } from "./oracle/verdict.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank, bestCalls } from "./store/standings.js";
-import { resolvePriceClaim, readAtOpen, type PriceClaim, type PriceCheck } from "./price/index.js";
+import { resolvePriceClaim, readAtOpen, readSpotAtOpen, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { hookFor, viewCounts, recordView } from "./store/markets.js";
@@ -3750,11 +3750,27 @@ async function openMarketFromClaim(input: {
         }));
       }
     } else if (criteria && input.priceClaim.mode !== "at-close") {
-      // Opens on the model's own rule, as before: no pinned price to check it against.
-      console.log(JSON.stringify({
-        evt: "price_open", line: "no pinned price at the open, opened on the model's rule", why: r.why,
-        symbol: input.priceClaim.symbol, op: input.priceClaim.op, target: input.priceClaim.target, mode: input.priceClaim.mode,
-      }));
+      // No token pinned on chain. A coin the stream votes read from Binance is
+      // read there at the open (readSpotAtOpen); anything else opens on the
+      // model's own rule, as before.
+      const pc = input.priceClaim;
+      const spot = pc.metric === "price" && BINANCE_ASSETS.has(pc.symbol)
+        ? await readSpotAtOpen(pc, new Date(closeTime * 1000).toISOString(), binancePrices)
+        : null;
+      if (spot?.kind === "reread") {
+        criteria = spot.sentence;
+        question = spot.question;
+        hook = spot.hook;
+        console.log(JSON.stringify({
+          evt: "price_open", line: "decided at the open, read at the close", source: binancePrices.venue, was: spot.was, now: spot.now,
+          symbol: pc.symbol, op: pc.op, target: pc.target, mode: pc.mode, question,
+        }));
+      } else if (spot?.kind !== "as-is") {
+        console.log(JSON.stringify({
+          evt: "price_open", line: "no pinned price at the open, opened on the model's rule", why: spot?.why ?? r.why,
+          symbol: pc.symbol, op: pc.op, target: pc.target, mode: pc.mode,
+        }));
+      }
     } else if (!criteria) {
       /* THIS REFUSAL COST A REAL TAG, and the shape of the mistake is worth
          keeping. A claim about BTC reads as a price claim, correctly, and BTC

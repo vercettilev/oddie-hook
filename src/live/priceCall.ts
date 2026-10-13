@@ -61,6 +61,10 @@ const COINS: Record<string, string> = {
 /** Tickers that are also English words: read only as $TON or TON. */
 const SHOUTED_ONLY: Record<string, string> = { ton: "TON", link: "LINK", dot: "DOT" };
 
+/** Every ticker above, each with a USDT pair on Binance: the coins whose price a
+ *  market can read at its open when no token is pinned on chain (server.ts). */
+export const BINANCE_ASSETS: ReadonlySet<string> = new Set([...Object.values(COINS), ...Object.values(SHOUTED_ONLY)]);
+
 /** Time zones a chat writes, to the zone that keeps its daylight saving right. */
 const ZONES: Record<string, string> = {
   utc: "UTC", gmt: "UTC",
