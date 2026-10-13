@@ -8277,13 +8277,71 @@ WITH fix(slug, old_question, question, closes_at, hook, criteria, mode) AS (
 )
 SELECT c.slug FROM c JOIN s USING (slug) ORDER BY c.slug`;
 
-/** Puts the four right if they still read the old way; the slugs it changed. */
+/**
+ * AND THEN READ THE WAY THEY WERE MEANT (13 Oct 2026, Lev): "sol above 100
+ * dediyse üstünde, below dediyse altında". Above means above and below means
+ * below: with the price already on that side when the market opened, the
+ * question is whether it STAYS there until the period ends, not where it ends.
+ * SOL (low since the open $101.57) and HYPE (high $83.92) stay on the price
+ * rail as holds; CL (low $91.46) says it in words. Gold is left as it is: it
+ * went over $4,200 this morning, so as a hold it would already be over.
+ * The same one-way door: only from yesterday's words, only while untouched.
+ */
+const REREAD_2026_10_13 = `
+WITH fix(slug, old_question, question, closes_at, hook, criteria, mode) AS (
+  VALUES
+  ('will-the-price-of-hype-hyperliquid-cd6c76',
+   'Will $HYPE be below $100 at the end of October 2026?',
+   'Will $HYPE stay below $100 through the end of October 2026?',
+   timestamptz '2026-10-31 23:59:00+00',
+   'HYPE stays below $100 through Oct?',
+   'Settles from the on-chain price of $HYPE (solana mint 98sMhvDwXj1RQi5c5Mndm3vPe9cBqPrbLaufMXFNMh5g). YES if its price is below $100 continuously from this market opening on 2026-10-12 to 2026-10-31 UTC, read from the hourly candles of its deepest pool on GeckoTerminal. NO otherwise.',
+   'always'),
+  ('will-solana-sol-trade-above-100-f30c28',
+   'Will $SOL be above $100 at the end of October 2026?',
+   'Will $SOL stay above $100 through the end of October 2026?',
+   timestamptz '2026-10-31 23:59:00+00',
+   'SOL stays above $100 through Oct?',
+   'Settles from the on-chain price of $SOL (solana mint So11111111111111111111111111111111111111112). YES if its price is above $100 continuously from this market opening on 2026-10-12 to 2026-10-31 UTC, read from the hourly candles of its deepest pool on GeckoTerminal. NO otherwise.',
+   'always'),
+  ('will-the-token-cl-clusdt-trade-7ee94c',
+   'Will CL/USDT (Bybit''s WTI crude oil perpetual) be above $90 at Friday''s close on October 16, 2026?',
+   'Will CL/USDT (Bybit''s WTI crude oil perpetual) stay above $90 through Friday''s close on October 16, 2026?',
+   timestamptz '2026-10-16 21:00:00+00',
+   'CL stays above $90 through Friday?',
+   'Resolves YES if the price of CL/USDT on Bybit (the CLUSDT perpetual, which tracks WTI crude oil) stays above $90 from this market''s opening on October 12, 2026 until the weekly close on Friday, October 16, 2026 (21:00 UTC), that is, if its lowest traded price in that period is above $90, per Bybit''s CLUSDT price history. Resolves NO if it trades at or below $90 at any point in that period.',
+   NULL)
+), ok AS (
+  SELECT f.* FROM fix f
+  JOIN community_market c ON c.slug = f.slug
+  JOIN market_slug s0 ON s0.slug = f.slug AND s0.question = f.old_question
+  WHERE c.onchain_pubkey IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM market_call mc WHERE mc.slug = f.slug)
+), s AS (
+  UPDATE market_slug m SET question = ok.question, closes_at = ok.closes_at
+  FROM ok WHERE m.slug = ok.slug
+  RETURNING m.slug
+), c AS (
+  UPDATE community_market cm SET resolution_criteria = ok.criteria, hook = ok.hook,
+    price_check = CASE WHEN ok.mode IS NULL THEN cm.price_check
+                       ELSE jsonb_set(cm.price_check, '{mode}', to_jsonb(ok.mode::text)) END
+  FROM ok WHERE cm.slug = ok.slug
+  RETURNING cm.slug
+)
+SELECT c.slug FROM c JOIN s USING (slug) ORDER BY c.slug`;
+
+/** Puts the four right if they still read an old way; the slugs it changed. */
 export async function rereadMisreadMarkets(): Promise<string[]> {
   if (!PERSISTENT) return [];
-  const { rows } = await db().query<{ slug: string }>(REREAD_2026_10_12);
-  return rows.map((r) => r.slug);
+  const changed: string[] = [];
+  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13]) {
+    const { rows } = await db().query<{ slug: string }>(sql);
+    changed.push(...rows.map((r) => r.slug));
+  }
+  return changed;
 }
 
-/** The statement itself, for the test that runs it against a copy of the schema. */
+/** The statements themselves, for the test that runs them against a copy of the schema. */
 export const REREAD_2026_10_12_SQL = REREAD_2026_10_12;
+export const REREAD_2026_10_13_SQL = REREAD_2026_10_13;
 

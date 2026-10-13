@@ -3734,7 +3734,20 @@ async function openMarketFromClaim(input: {
       priceCheck = r.check;
       criteria = r.sentence;
       const atOpen = await readAtOpen(r.check);
-      if (atOpen.kind === "reread") {
+      if (atOpen.kind === "within") {
+        // A level over a period, made concrete by the price at the open.
+        priceCheck = atOpen.check;
+        criteria = atOpen.sentence;
+        question = atOpen.question;
+        hook = atOpen.hook;
+        console.log(JSON.stringify({
+          evt: "price_open",
+          line: atOpen.reading === "hold" ? "on that side at the open: stays there to the close"
+            : atOpen.reading === "reach" ? "not there at the open: gets there before the close"
+            : "price not read at the open: read at the close",
+          now: atOpen.now, why: atOpen.why, symbol: r.check.symbol, op: r.check.op, target: r.check.target, mode: atOpen.check.mode, question,
+        }));
+      } else if (atOpen.kind === "reread") {
         priceCheck = atOpen.check;
         criteria = atOpen.sentence;
         question = atOpen.question;
@@ -3757,7 +3770,16 @@ async function openMarketFromClaim(input: {
       const spot = pc.metric === "price" && BINANCE_ASSETS.has(pc.symbol)
         ? await readSpotAtOpen(pc, new Date(closeTime * 1000).toISOString(), binancePrices)
         : null;
-      if (spot?.kind === "reread") {
+      if (spot?.kind === "within") {
+        criteria = spot.sentence;
+        question = spot.question;
+        hook = spot.hook;
+        console.log(JSON.stringify({
+          evt: "price_open", source: binancePrices.venue, now: spot.now,
+          line: spot.reading === "hold" ? "on that side at the open: stays there to the close" : "not there at the open: gets there before the close",
+          symbol: pc.symbol, op: pc.op, target: pc.target, mode: pc.mode, question,
+        }));
+      } else if (spot?.kind === "reread") {
         criteria = spot.sentence;
         question = spot.question;
         hook = spot.hook;

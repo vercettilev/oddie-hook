@@ -15,7 +15,7 @@ if (process.env.DATABASE_URL) { console.error("refusing to run against a databas
 
 import { readFileSync } from "node:fs";
 import { _setPriceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
-import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, readSpotAtOpen, closeQuestion, closeHook, type PriceCheck, type SpotPrice } from "../src/price/index.js";
+import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, readSpotAtOpen, closeQuestion, closeHook, holdQuestion, holdHook, reachQuestion, reachHook, type PriceCheck, type SpotPrice } from "../src/price/index.js";
 import { BINANCE_ASSETS } from "../src/live/priceCall.js";
 import { samePriceBet } from "../src/matching/duplicate.js";
 import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
@@ -428,6 +428,65 @@ console.log("\nA period already decided when its market opens");
     closeQuestion(at("2026-10-31T23:59:00Z", { symbol: "TOK", metric: "mc", op: ">=", target: 4_000_000 })) === "Will $TOK's market cap be at or above $4M at the end of October 2026?");
   check("...and a ticker too long for a headline leaves only the question",
     closeHook(at("2026-10-31T23:59:00Z", { symbol: "VERYLONGTICKER16", metric: "mc", target: 123_450_000 })) === null);
+
+  /* ABOVE MEANS ABOVE, BELOW MEANS BELOW (Lev, 13 Oct). The extractor marks a
+     level over a period with no move named as "within", and the price at the
+     open makes it concrete: already on that side, does it stay there until the
+     period ends; not there, does it get there before then. */
+  const WITHIN: PriceCheck = { ...SOL, mode: "within" };
+  quote(live);
+  const stays = await readAtOpen(WITHIN);
+  check("SOL above $100 in October, with SOL at $108: does it stay above $100 to the end",
+    stays.kind === "within" && stays.reading === "hold" && stays.now === 108.46 && stays.check.mode === "always"
+    && stays.question === "Will $SOL stay above $100 through the end of October 2026?" && stays.hook === "SOL stays above $100 through Oct?",
+    JSON.stringify(stays));
+  if (stays.kind === "within") {
+    check("...same token, pool, level and window",
+      stays.check.mint === SOL.mint && stays.check.pool === SOL.pool && stays.check.op === ">" && stays.check.target === 100
+      && stays.check.from === SOL.from && stays.check.to === SOL.to);
+    check("...under criteria that hold the whole window from the open",
+      stays.sentence === criteriaSentence(stays.check) && /is above \$100 continuously from this market opening on 2026-10-12 to 2026-10-31 UTC/.test(stays.sentence)
+      && !/at any point/.test(stays.sentence), stays.sentence);
+    check("...which pass the wall every market is born behind",
+      unsettleablePhrase(stays.sentence) === null && unsettleablePhrase(stays.question) === null
+      && addressInQuestion(stays.question) === null && stays.question.length <= 180);
+    const firstHour = Date.parse("2026-10-12T20:00:00Z") / 1000;
+    const lastHour = Date.parse("2026-10-31T22:00:00Z") / 1000;
+    serve([], {}, [[firstHour, 108, 109, 101.6, 104, 1], [lastHour, 110, 111, 109, 110, 1]]);
+    let held2 = await checkPrice(stays.check);
+    check("...the oracle settles it YES when SOL never dips under $100", held2.outcome === "yes", held2.why);
+    serve([], {}, [[firstHour, 108, 109, 99.5, 104, 1], [lastHour, 110, 111, 109, 110, 1]]);
+    held2 = await checkPrice(stays.check);
+    check("...and NO the hour it does, even if it ends the month above", held2.outcome === "no", held2.why);
+  }
+  quote([[H20, 83.7, 83.9, 83.4, 83.6, 1]]);
+  const hypeStays = await readAtOpen({ ...WITHIN, symbol: "HYPE", op: "<", target: 100 });
+  check("HYPE below $100 this month, with HYPE at $83.6: does it stay below $100",
+    hypeStays.kind === "within" && hypeStays.reading === "hold" && hypeStays.check.mode === "always"
+    && hypeStays.question === "Will $HYPE stay below $100 through the end of October 2026?" && hypeStays.hook === "HYPE stays below $100 through Oct?",
+    JSON.stringify(hypeStays));
+  quote(live);
+  const gets = await readAtOpen({ ...WITHIN, target: 150 });
+  check("SOL above $150 in October, with SOL at $108: does it get above $150 before the end",
+    gets.kind === "within" && gets.reading === "reach" && gets.check.mode === "touch"
+    && gets.question === "Will $SOL trade above $150 at any point before the end of October 2026?" && gets.hook === "SOL above $150 by end of Oct?"
+    && /at any point between this market opening on 2026-10-12 and 2026-10-31 UTC/.test(gets.sentence), JSON.stringify(gets));
+  quote(new Error("https://api.geckoterminal.com/... answered 429"));
+  const unread = await readAtOpen(WITHIN);
+  check("a price that cannot be read at the open gets the reading the open cannot decide: the close",
+    unread.kind === "within" && unread.reading === "close" && unread.check.mode === "at-close" && /answered 429/.test(unread.why ?? "")
+    && unread.question === "Will $SOL be above $100 at the end of October 2026?", JSON.stringify(unread));
+  const never = await checkPrice({ ...SOL, mode: "within" });
+  check("the oracle gives no verdict on a level over a period that was never read at the open", never.outcome === null, never.why);
+  const hold = (to: string, o: Partial<PriceCheck> = {}) => ({ ...SOL, mode: "always" as const, to, ...o });
+  check("a hold to a day's end, and to an hour, say so",
+    holdQuestion(hold("2026-10-17T23:59:00Z")) === "Will $SOL stay above $100 through the end of October 17, 2026 (UTC)?"
+    && holdHook(hold("2026-10-17T23:59:00Z")) === "SOL stays above $100 through Oct 17?"
+    && holdQuestion(hold("2026-10-13T15:00:00Z")) === "Will $SOL stay above $100 until 15:00 UTC on October 13, 2026?"
+    && holdHook(hold("2026-10-13T15:00:00Z")) === "SOL stays above $100 until 15:00 UTC?", holdQuestion(hold("2026-10-13T15:00:00Z")));
+  check("...and so does a reach",
+    reachQuestion(hold("2026-10-17T23:59:00Z")) === "Will $SOL trade above $100 at any point before the end of October 17, 2026 (UTC)?"
+    && reachHook(hold("2026-10-13T15:00:00Z")) === "SOL above $100 by 15:00 UTC?", reachQuestion(hold("2026-10-17T23:59:00Z")));
 }
 
 console.log("\nA coin with no token pinned on chain, read from its spot price");
@@ -462,6 +521,23 @@ console.log("\nA coin with no token pinned on chain, read from its spot price");
     odd.kind === "reread" && odd.question.includes("$83,250") && odd.sentence.includes("$83,250"), JSON.stringify(odd));
   const hold = await readSpotAtOpen({ ...BTC, mode: "always" }, CLOSE, spot(79_000), AT);
   check("an \"always\" already broken at the open is read at the close too", hold.kind === "reread" && hold.was === "no", JSON.stringify(hold));
+  // Above means above, below means below (Lev, 13 Oct), on a coin's spot price too.
+  const btcStays = await readSpotAtOpen({ ...BTC, op: ">", mode: "within" }, CLOSE, spot(83_080.02), AT);
+  check("BTC above $80,000 this week, with BTC at $83,080: does it stay above to the close",
+    btcStays.kind === "within" && btcStays.reading === "hold"
+    && btcStays.question === "Will $BTC stay above $80,000 through the end of October 16, 2026 (UTC)?"
+    && btcStays.hook === "BTC stays above $80,000 through Oct 16?"
+    && btcStays.sentence === "Settles from the BTC/USD price on CoinMarketCap. YES if it stays above $80,000 from this market's opening until 23:59 UTC on 2026-10-16. NO if it trades at or below $80,000 at any point in that period.",
+    JSON.stringify(btcStays));
+  const btcGets = await readSpotAtOpen({ ...BTC, op: ">", target: 90_000, mode: "within" }, CLOSE, spot(83_080.02), AT);
+  check("BTC above $90,000 this week, with BTC at $83,080: does it get there before the close",
+    btcGets.kind === "within" && btcGets.reading === "reach"
+    && btcGets.question === "Will $BTC trade above $90,000 at any point before the end of October 16, 2026 (UTC)?"
+    && btcGets.sentence === "Settles from the BTC/USD price on CoinMarketCap. YES if it trades above $90,000 at any point between this market's opening and 23:59 UTC on 2026-10-16. NO otherwise.",
+    JSON.stringify(btcGets));
+  check("...both pass the wall every market is born behind",
+    btcStays.kind === "within" && btcGets.kind === "within"
+    && [btcStays.sentence, btcStays.question, btcGets.sentence, btcGets.question].every((t) => unsettleablePhrase(t) === null && addressInQuestion(t) === null));
   const ahead = await readSpotAtOpen({ ...BTC, target: 90_000 }, CLOSE, spot(83_080.02), AT);
   check("a touch still ahead of the price opens as it reads", ahead.kind === "as-is" && ahead.now === 83_080.02, JSON.stringify(ahead));
   asked.length = 0;
@@ -495,8 +571,9 @@ console.log("\nwired where every market is born");
     /BINANCE_ASSETS\.has\(pc\.symbol\)\s*\? await readSpotAtOpen\(pc, new Date\(closeTime \* 1000\)\.toISOString\(\), binancePrices\)/.test(unpinned)
     && /criteria = spot\.sentence;\s*question = spot\.question;\s*hook = spot\.hook;/.test(unpinned), unpinned.slice(0, 200));
   const prompt = readFileSync("src/matching/extractClaim.ts", "utf8");
-  check("the extractor reads a level over a period at the period's end",
-    prompt.includes("8. A LEVEL OVER A PERIOD IS READ WHERE THE PERIOD ENDS.") && prompt.includes('"below X this week" (rule 8)'));
+  check("the extractor marks a level over a period for the open to read: above means above, below means below",
+    prompt.includes("8. A LEVEL OVER A PERIOD: ABOVE MEANS ABOVE, BELOW MEANS BELOW.") && prompt.includes('"within" for a level over a period with no move named')
+    && prompt.includes('"below X this week" (rule 8)') && /enum: \["touch", "at-close", "always", "within"\]/.test(prompt));
 }
 
 _setPriceFeed(null);

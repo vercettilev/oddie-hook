@@ -22,8 +22,12 @@ import { priceFeed, type Candle } from "./feed.js";
 
 export type PriceOp = ">=" | ">" | "<=" | "<";
 /** touch: true at any point in the window. at-close: true at the close time.
- *  always: true at every point in the window. */
-export type PriceMode = "touch" | "at-close" | "always";
+ *  always: true at every point in the window.
+ *  within: a level over a period with no move named ("SOL above $100 in
+ *  October"). Above means above and below means below: the price at the open
+ *  decides which of the other two it is (readAtOpen), so "within" never reaches
+ *  the oracle. */
+export type PriceMode = "touch" | "at-close" | "always" | "within";
 
 /** What a model is allowed to produce: language, and nothing identifying. */
 export interface PriceClaim {
@@ -379,6 +383,41 @@ export function closeHook(c: CloseRead, usd: (n: number) => string = money): str
   return hook.length <= 40 ? hook : null;
 }
 
+/** Already on that side at the open: does it stay there. "Will $SOL stay above $100 through the end of October 2026?" */
+export function holdQuestion(c: CloseRead, usd: (n: number) => string = money): string {
+  const what = c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
+  return `Will ${what} stay ${dirWords(c.op)} ${usd(c.target)} ${untilWhen(c.to)}?`;
+}
+export function holdHook(c: CloseRead, usd: (n: number) => string = money): string | null {
+  const dir = c.op === ">=" || c.op === ">" ? "above" : "below";
+  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} stays ${dir} ${usd(c.target)} ${untilWhen(c.to, true)}?`;
+  return hook.length <= 40 ? hook : null;
+}
+/** Not there at the open: does it get there. "Will $SOL trade above $150 at any point before the end of October 2026?" */
+export function reachQuestion(c: CloseRead, usd: (n: number) => string = money): string {
+  const what = c.metric === "mc" ? `$${c.symbol}'s market cap` : `$${c.symbol}`;
+  return `Will ${what} ${c.metric === "mc" ? "be" : "trade"} ${dirWords(c.op)} ${usd(c.target)} at any point ${beforeWhen(c.to)}?`;
+}
+export function reachHook(c: CloseRead, usd: (n: number) => string = money): string | null {
+  const dir = c.op === ">=" || c.op === ">" ? "above" : "below";
+  const hook = `${c.symbol}${c.metric === "mc" ? " mc" : ""} ${dir} ${usd(c.target)} ${beforeWhen(c.to, true)}?`;
+  return hook.length <= 40 ? hook : null;
+}
+
+/* A HOLD RUNS UP TO THE CLOSE, A REACH HAPPENS BEFORE IT. closeWhen names the
+   moment; these name the stretch that ends there, in the same words. */
+function untilWhen(iso: string, short = false): string {
+  const at = closeWhen(iso, short);
+  if (short) return at.startsWith("at end of ") ? `through ${at.slice(10)}` : at.startsWith("on ") ? `through ${at.slice(3)}` : `until ${at.slice(3)}`;
+  return at.startsWith("at the end of ") ? `through the end of ${at.slice(14)}` : `until ${at.slice(3)}`;
+}
+function beforeWhen(iso: string, short = false): string {
+  const at = closeWhen(iso, short);
+  if (short) return at.startsWith("at end of ") ? `by end of ${at.slice(10)}` : `by ${at.slice(3)}`;
+  return at.startsWith("at the end of ") ? `before the end of ${at.slice(14)}` : `before ${at.slice(3)}`;
+}
+
+
 /** The price now, read where the oracle reads it at settle: the newest hourly
  *  candle of the pinned pool, in the claim's own metric. Never throws. */
 export async function priceNow(check: PriceCheck): Promise<{ ok: true; value: number } | { ok: false; why: string }> {
@@ -413,10 +452,32 @@ export type AtOpen =
   /** The price could not be read: the market opens as it reads, and the caller logs why. */
   | { kind: "unread"; why: string }
   /** Decided at the open, so read at the close: the check, the criteria, the question and the headline to open under. */
-  | { kind: "reread"; now: number; was: "yes" | "no"; check: PriceCheck; sentence: string; question: string; hook: string | null };
+  | { kind: "reread"; now: number; was: "yes" | "no"; check: PriceCheck; sentence: string; question: string; hook: string | null }
+  /** A level over a period, made concrete by the price at the open: a hold if
+   *  the price is already on that side, a reach if not, and the close if the
+   *  price could not be read (`why`). */
+  | { kind: "within"; now: number | null; reading: "hold" | "reach" | "close"; why?: string; check: PriceCheck; sentence: string; question: string; hook: string | null };
 
 /** Read a pinned check against the price at the open, before anything is minted. */
 export async function readAtOpen(check: PriceCheck): Promise<AtOpen> {
+  /* ABOVE MEANS ABOVE, BELOW MEANS BELOW (Lev, 13 Oct). "Solana above $100 in
+     October?" asked with SOL at $108 is "does it stay above $100 until October
+     ends"; asked with SOL at $90 it is "does it get above $100 before then".
+     The words are the same and only the price at the open tells them apart,
+     so this is where the reading is made. A price that cannot be read gets the
+     one reading the open cannot decide: where the period ends. */
+  if (check.mode === "within") {
+    const now = await priceNow(check);
+    if (!now.ok) {
+      const atClose: PriceCheck = { ...check, mode: "at-close" };
+      return { kind: "within", now: null, reading: "close", why: now.why, check: atClose,
+        sentence: criteriaSentence(atClose), question: closeQuestion(atClose), hook: closeHook(atClose) };
+    }
+    const there = satisfies(now.value, check.op, check.target);
+    const next: PriceCheck = { ...check, mode: there ? "always" : "touch" };
+    return { kind: "within", now: now.value, reading: there ? "hold" : "reach", check: next, sentence: criteriaSentence(next),
+      question: there ? holdQuestion(next) : reachQuestion(next), hook: there ? holdHook(next) : reachHook(next) };
+  }
   if (check.mode === "at-close") return { kind: "as-is", now: null };
   const now = await priceNow(check);
   if (!now.ok) return { kind: "unread", why: now.why };
@@ -444,7 +505,9 @@ export interface SpotPrice { venue: string; priceAt(asset: string, t: number): P
 export type SpotAtOpen =
   | { kind: "as-is"; now: number | null }
   | { kind: "unread"; why: string }
-  | { kind: "reread"; now: number; was: "yes" | "no"; sentence: string; question: string; hook: string | null };
+  | { kind: "reread"; now: number; was: "yes" | "no"; sentence: string; question: string; hook: string | null }
+  /** A level over a period on a coin's spot price: a hold if it is already on that side, a reach if not. */
+  | { kind: "within"; now: number; reading: "hold" | "reach"; sentence: string; question: string; hook: string | null };
 
 /** The rule for a coin's claim read at its close, for the oracle that settles
  *  it from a page: a source it can open, the level in full, and the minute. */
@@ -452,6 +515,20 @@ export function closeCriteria(c: Pick<CloseRead, "symbol" | "op" | "target" | "t
   const t = new Date(c.to);
   const hm = `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
   return `Settles from the ${c.symbol}/USD price on CoinMarketCap. YES if it is ${dirWords(c.op)} ${exactUsd(c.target)} at ${hm} UTC on ${day(c.to)}. NO otherwise.`;
+}
+
+const flipOp = (op: PriceOp): PriceOp => (op === ">" ? "<=" : op === ">=" ? "<" : op === "<" ? ">=" : ">");
+const minuteOf = (iso: string) => {
+  const t = new Date(iso);
+  return `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
+};
+/** A coin's hold, for the oracle that settles it from a page: on that side the whole way, and what breaks it. */
+export function holdCriteria(c: Pick<CloseRead, "symbol" | "op" | "target" | "to">): string {
+  return `Settles from the ${c.symbol}/USD price on CoinMarketCap. YES if it stays ${dirWords(c.op)} ${exactUsd(c.target)} from this market's opening until ${minuteOf(c.to)} UTC on ${day(c.to)}. NO if it trades ${dirWords(flipOp(c.op))} ${exactUsd(c.target)} at any point in that period.`;
+}
+/** A coin's reach: there at any point before the close. */
+export function reachCriteria(c: Pick<CloseRead, "symbol" | "op" | "target" | "to">): string {
+  return `Settles from the ${c.symbol}/USD price on CoinMarketCap. YES if it trades ${dirWords(c.op)} ${exactUsd(c.target)} at any point between this market's opening and ${minuteOf(c.to)} UTC on ${day(c.to)}. NO otherwise.`;
 }
 
 /** A coin's price claim against its spot price at the open. Only a unit price:
@@ -465,6 +542,14 @@ export async function readSpotAtOpen(claim: PriceClaim, to: string, source: Spot
     return { kind: "unread", why: `${source.venue} did not answer: ${(e as Error).message}` };
   }
   if (now === null || !(now > 0)) return { kind: "unread", why: `${source.venue} has no ${claim.symbol} price` };
+  if (claim.mode === "within") {
+    // Above means above, below means below: see readAtOpen.
+    const read: CloseRead = { symbol: claim.symbol, metric: claim.metric, op: claim.op, target: claim.target, to };
+    const there = satisfies(now, claim.op, claim.target);
+    return there
+      ? { kind: "within", now, reading: "hold", sentence: holdCriteria(read), question: holdQuestion(read, exactUsd), hook: holdHook(read, exactUsd) }
+      : { kind: "within", now, reading: "reach", sentence: reachCriteria(read), question: reachQuestion(read, exactUsd), hook: reachHook(read, exactUsd) };
+  }
   const was = decidedAtOpen(claim, now);
   if (!was) return { kind: "as-is", now };
   const read: CloseRead = { symbol: claim.symbol, metric: claim.metric, op: claim.op, target: claim.target, to };
@@ -494,6 +579,9 @@ const extremeOf = (c: Candle, op: PriceOp) => (op === ">=" || op === ">" ? c[2] 
  * which the oracle reports as a market a person still has to look at.
  */
 export async function checkPrice(check: PriceCheck): Promise<PriceVerdict> {
+  // readAtOpen turns "within" into a hold, a reach or a close before anything
+  // is stored; one that reaches the oracle was never read, and has no verdict.
+  if (check.mode === "within") return { outcome: null, why: "a level over a period that was never read at the open", observed: null, candles: 0 };
   const from = Math.floor(new Date(check.from).getTime() / 1000);
   const to = Math.floor(new Date(check.to).getTime() / 1000);
   if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) {
