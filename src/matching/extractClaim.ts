@@ -93,7 +93,7 @@ Rules, in order:
 5. The question must be about the SAME event, threshold, person and date the argument is actually about — never a related-but-different one.
 6. The appropriateness gate runs ALONGSIDE resolvability, never instead of it. Judge both. If the subject crosses a line above, set appropriate false and refuse even if the claim is otherwise cleanly resolvable.
 7. A market call that names NO asset at all ("all time highs by Christmas", "new highs this month", "we print a new ATH before Q1") is, on this product, about crypto's benchmark: read it as Bitcoin, write "Bitcoin" in the question and "BTC" in the hook, and settle it on BTC/USD against its previous all-time high. This is not a guess at what they meant, it is the one reading a stranger on crypto Twitter would give it, and the question says it out loud so nobody bets on a different one. Apply it ONLY when nothing in the text names another asset, index, sector or group: a ticker, "SOL", "stocks", "the S&P", "alts", "memecoins", a company or a team always wins, and a group like "alts" with no single measurable member stays unresolvable.
-8. A LEVEL OVER A PERIOD: ABOVE MEANS ABOVE, BELOW MEANS BELOW. A claim that puts a price above or below a level within a period, and names no move to get there ("Solana above $100 in October?", "gold below $4,200 this week", "HYPE under $100 this month"), says the price is on that side of the level for that period. If the price is already on that side when the market opens, the question is whether it STAYS there until the period ends; if it is not, whether it GETS there before the period ends. You do not see the price, so: set price_claim's mode to "within", keep the claimant's own words in the question ("Will Solana (SOL) be above $100 in October?"), and write resolution_criteria that state both cases on the source you name: "Resolves YES if <asset> is <above/below> <level> when this market opens and stays <above/below> it until <the end of the period>, or, if it is not <above/below> <level> when this market opens, if it trades <above/below> <level> at any point before <the end of the period>. Resolves NO otherwise." "At any point" alone belongs only to a claim that names a move to the level: hits, reaches, touches, breaks, dips to, pumps past; "at the close" alone only to a claim that names the moment: on Friday, at the end of October, closes above. Getting this wrong is not a matter of taste: the price may already sit past the level, and then a reading that ignores it is answered before anybody can take a side.`;
+8. A LEVEL OVER A PERIOD: ABOVE MEANS ABOVE, BELOW MEANS BELOW. A claim that puts a price above or below a level within a period, and names no move to get there ("Solana above $100 in October?", "gold below $4,200 this week", "HYPE under $100 this month"), says the price is on that side of the level for that period. If the price is already on that side when the market opens, the question is whether it STAYS there until the period ends; if it is not, whether it GETS there before the period ends. You do not see the price, so: set price_claim's mode to "within", keep the claimant's own words in the question, adding neither "at any point" nor "at the end" ("Will Solana (SOL) be above $100 in October?"), and write resolution_criteria that state both cases on the source you name: "Resolves YES if <asset> is <above/below> <level> when this market opens and stays <above/below> it until <the end of the period>, or, if it is not <above/below> <level> when this market opens, if it trades <above/below> <level> at any point before <the end of the period>. Resolves NO otherwise." "At any point" alone belongs only to a claim that names a move to the level: hits, reaches, touches, breaks, dips to, pumps past; "at the close" alone only to a claim that names the moment: on Friday, at the end of October, closes above. Getting this wrong is not a matter of taste: the price may already sit past the level, and then a reading that ignores it is answered before anybody can take a side.`;
 
 const SCHEMA = {
   type: "object",
@@ -275,6 +275,11 @@ export function addressInQuestion(question: string): string | null {
   return m ? m[0] : null;
 }
 
+/** A level over a period's question without the "at any point" rule 8 rules out. */
+export function withinQuestion(question: string): string {
+  return question.replace(/\s*\bat any (?:point|time|moment)\b/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+
 function normalize(v: Record<string, unknown>): Extraction {
   const str = (x: unknown) => (typeof x === "string" ? x.trim() : "");
   const category = (EXTRACT_CATEGORIES as readonly string[]).includes(String(v.category))
@@ -289,6 +294,13 @@ function normalize(v: Record<string, unknown>): Extraction {
   let resolution_criteria = str(v.resolution_criteria).slice(0, 600);
   const close_time = typeof v.close_time === "string" && v.close_time.trim() ? v.close_time.trim() : null;
   const price_claim = parsePriceClaim(v.price_claim);
+  // BACKSTOP 3 (rule 8). A level over a period keeps the claimant's own words.
+  // Measured on the live model, 13 Oct: "$CL above $90 this week?" came back
+  // "within", with criteria naming both cases, under the question "Will $CL be
+  // above $90 at any point this week?": the reading Lev ruled out, in the line
+  // a bettor reads first. A pinned or Binance coin gets its question rewritten
+  // at the open; a ticker on neither rail keeps this one.
+  if (price_claim?.mode === "within") question = withinQuestion(question);
 
   // Appropriateness gate: separate from resolvability, either one blocks. Fail
   // closed on a non-true value.

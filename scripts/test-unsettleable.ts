@@ -16,7 +16,7 @@
 //
 //   npm run test-unsettleable
 
-import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
+import { unsettleablePhrase, addressInQuestion, withinQuestion, extractClaim } from "../src/matching/extractClaim.js";
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -78,6 +78,44 @@ console.log("\nan address is an identifier, never a name");
   // The criteria are exactly where an address belongs, so nothing checks them.
   check("criteria may carry an address, and this check never looks at them",
     typeof addressInQuestion === "function");
+}
+
+console.log("\na level over a period keeps the claimant's words (rule 8)");
+{
+  // Measured on the live model, 13 Oct: "within", criteria naming both cases,
+  // and a question that said the one thing rule 8 rules out.
+  check("the question that came back loses its \"at any point\"",
+    withinQuestion("Will $CL be above $90 at any point this week?") === "Will $CL be above $90 this week?");
+  check("...in any of its forms",
+    withinQuestion("Will HYPE trade below $100 at any time during October 2026?") === "Will HYPE trade below $100 during October 2026?"
+    && withinQuestion("Will SOL be above $100 At Any Moment in October?") === "Will SOL be above $100 in October?");
+  check("...and a question without it is left alone",
+    withinQuestion("Will Solana (SOL) be above $100 in October 2026?") === "Will Solana (SOL) be above $100 in October 2026?");
+
+  // Through the extractor itself, with the model's answer from that run.
+  const answer = {
+    question: "Will $CL be above $90 at any point this week?",
+    resolution_criteria: "Resolves YES if the token $CL is above $90 when this market opens and stays above $90 until the end of this week, or, if it is not above $90 when this market opens, if it trades above $90 at any point before the end of this week. Resolves NO otherwise.",
+    price_claim: { symbol: "CL", metric: "price", op: ">", target: 90, mode: "within" },
+    close_time: "2099-01-01T00:00:00Z", close_time_inferred: false, category: "Crypto", resolvability: "clean",
+    appropriate: true, appropriate_reason: "", reason: "clean", hook: "$CL above $90?",
+  };
+  const realFetch = globalThis.fetch;
+  const hadKey = process.env.INFERENCE_API_KEY;
+  process.env.INFERENCE_API_KEY = "test";
+  const reply = (a: unknown) => (async () => new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(a) }] }), { status: 200 })) as typeof fetch;
+  try {
+    globalThis.fetch = reply(answer);
+    const ex = await extractClaim("$CL above $90 this week?");
+    check("the extractor hands on the claimant's words, the mode and the both-case rule",
+      ex.question === "Will $CL be above $90 this week?" && ex.price_claim?.mode === "within" && ex.resolution_criteria === answer.resolution_criteria, ex.question);
+    globalThis.fetch = reply({ ...answer, price_claim: { ...answer.price_claim, mode: "touch" }, question: "Will $CL trade above $90 at any point this week?" });
+    const touch = await extractClaim("$CL hits $90 this week");
+    check("...while a move named keeps its \"at any point\"", touch.question === "Will $CL trade above $90 at any point this week?", touch.question);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (hadKey === undefined) delete process.env.INFERENCE_API_KEY; else process.env.INFERENCE_API_KEY = hadKey;
+  }
 }
 
 console.log(`\n${fail === 0 ? "all unsettleable checks passed." : `${fail} FAILED`} (${pass} passed)`);
