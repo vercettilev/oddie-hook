@@ -8330,11 +8330,28 @@ WITH fix(slug, old_question, question, closes_at, hook, criteria, mode) AS (
 )
 SELECT c.slug FROM c JOIN s USING (slug) ORDER BY c.slug`;
 
+/**
+ * AND GOLD COMES OFF THE BOARD (13 Oct 2026, Lev). Read the way it was meant,
+ * "gold stays below $4,200 this week", it was answered when gold went to
+ * $4,206 that morning; what stood was a different market, Friday's close.
+ * Nobody had money in it, so it is retired rather than settled: off the feed,
+ * the permalink still loads. Unminted, unsettled, unretired, no free calls,
+ * and only from the words it carried that day: one way, like the two above.
+ */
+const RETIRE_GOLD_2026_10_13 = `
+UPDATE community_market c SET retired_at = now()
+  FROM market_slug s
+ WHERE c.slug = 'will-the-price-of-gold-xauusd-176a74' AND s.slug = c.slug
+   AND s.question = 'Will spot gold (XAU/USD) be below $4,200 per ounce at Friday''s close on October 16, 2026?'
+   AND c.onchain_pubkey IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
+   AND NOT EXISTS (SELECT 1 FROM market_call mc WHERE mc.slug = c.slug)
+RETURNING c.slug`;
+
 /** Puts the four right if they still read an old way; the slugs it changed. */
 export async function rereadMisreadMarkets(): Promise<string[]> {
   if (!PERSISTENT) return [];
   const changed: string[] = [];
-  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13]) {
+  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13]) {
     const { rows } = await db().query<{ slug: string }>(sql);
     changed.push(...rows.map((r) => r.slug));
   }
@@ -8344,4 +8361,5 @@ export async function rereadMisreadMarkets(): Promise<string[]> {
 /** The statements themselves, for the test that runs them against a copy of the schema. */
 export const REREAD_2026_10_12_SQL = REREAD_2026_10_12;
 export const REREAD_2026_10_13_SQL = REREAD_2026_10_13;
+export const RETIRE_GOLD_2026_10_13_SQL = RETIRE_GOLD_2026_10_13;
 
