@@ -19,6 +19,7 @@ import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, dec
 import { BINANCE_ASSETS } from "../src/live/priceCall.js";
 import { samePriceBet } from "../src/matching/duplicate.js";
 import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
+import { retryOnDeadlock } from "../src/store/markets.js";
 import { decide } from "../src/oracle/oracle.js";
 import { _setProposer } from "../src/oracle/verdict.js";
 
@@ -574,6 +575,28 @@ console.log("\nwired where every market is born");
   check("the extractor marks a level over a period for the open to read: above means above, below means below",
     prompt.includes("8. A LEVEL OVER A PERIOD: ABOVE MEANS ABOVE, BELOW MEANS BELOW.") && prompt.includes('"within" for a level over a period with no move named')
     && prompt.includes('"below X this week" (rule 8)') && /enum: \["touch", "at-close", "always", "within"\]/.test(prompt));
+}
+
+console.log("\nthe one-way boot step lands even beside the schema");
+{
+  /* Live on 13 Oct: the deploy logged "[reread] failed (non-fatal): deadlock
+     detected" and SOL, HYPE, CL and gold all kept yesterday's words. The step
+     ran its UPDATEs without waiting for the schema, beside the boot DDL. */
+  const store = readFileSync("src/store/markets.ts", "utf8");
+  const step = store.slice(store.indexOf("export async function rereadMisreadMarkets("), store.indexOf("export async function retryOnDeadlock"));
+  check("it waits for the schema before its first statement",
+    step.indexOf("await ensureSchema();") > 0 && step.indexOf("await ensureSchema();") < step.indexOf("db().query"));
+  check("...and runs each statement through the deadlock retry", /await retryOnDeadlock\(\(\) => db\(\)\.query/.test(step));
+  const deadlock = Object.assign(new Error("deadlock detected"), { code: "40P01" });
+  let calls = 0;
+  const twice = await retryOnDeadlock(async () => { if (++calls < 3) throw deadlock; return "landed"; }, 3, 0).catch(() => "threw");
+  check("a deadlock is run again until it lands", twice === "landed" && calls === 3, String(calls));
+  calls = 0;
+  const other = await retryOnDeadlock(async () => { calls++; throw Object.assign(new Error("syntax"), { code: "42601" }); }, 3, 0).catch((e) => e as Error);
+  check("...anything else is thrown at once", other instanceof Error && other.message === "syntax" && calls === 1, String(calls));
+  calls = 0;
+  const stuck = await retryOnDeadlock(async () => { calls++; throw deadlock; }, 3, 0).catch((e) => e as Error);
+  check("...and a deadlock that keeps coming is thrown after three goes", stuck === deadlock && calls === 3, String(calls));
 }
 
 _setPriceFeed(null);

@@ -8350,12 +8350,30 @@ RETURNING c.slug`;
 /** Puts the four right if they still read an old way; the slugs it changed. */
 export async function rereadMisreadMarkets(): Promise<string[]> {
   if (!PERSISTENT) return [];
+  /* THE SCHEMA FIRST, like every other read and write in this file. Run beside
+     it at boot, these UPDATEs met the DDL's table locks in the other order: the
+     13 Oct deploy logged "deadlock detected" and none of the three steps landed.
+     A deadlock aborts one statement whole, so it is simply run again. */
+  await ensureSchema();
   const changed: string[] = [];
   for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13]) {
-    const { rows } = await db().query<{ slug: string }>(sql);
+    const { rows } = await retryOnDeadlock(() => db().query<{ slug: string }>(sql));
     changed.push(...rows.map((r) => r.slug));
   }
   return changed;
+}
+
+/** Postgres ends one side of a deadlock (40P01) and that statement lands whole
+ *  or not at all, so it can run again. Anything else is thrown as it came. */
+export async function retryOnDeadlock<T>(run: () => Promise<T>, tries = 3, waitMs = 500): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await run();
+    } catch (e) {
+      if ((e as { code?: string }).code !== "40P01" || i >= tries) throw e;
+      await new Promise((r) => setTimeout(r, waitMs * i));
+    }
+  }
 }
 
 /** The statements themselves, for the test that runs them against a copy of the schema. */
