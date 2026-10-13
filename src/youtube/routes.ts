@@ -18,7 +18,8 @@ import express, { type Router } from "express";
 import { randomBytes } from "node:crypto";
 import {
   authorizeUrl, channelLookup, chatFromYouTube, exchangeCode, me, parseChannelRef, recentVideoIds, refreshTokens, sendChat, splitForChat,
-  streamChat, videosLive, voiceHandle, youtubeConfigured, type ChannelRef, type ChatPage, type LiveVideo, type YouTubeChannel, type YouTubeTokens,
+  streamChat, uploadsVideoIds, videosLive, voiceHandle, youtubeConfigured, type ChannelRef, type ChatPage, type LiveVideo, type YouTubeChannel,
+  type YouTubeTokens,
 } from "./client.js";
 import { handleChat, type LiveDeps } from "../live/calls.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
@@ -32,11 +33,12 @@ export interface YouTubeApi {
   channelLookup(token: string, ref: ChannelRef): Promise<YouTubeChannel | null>;
   refreshTokens(refreshToken: string): Promise<YouTubeTokens>;
   recentVideoIds(channelId: string): Promise<string[]>;
+  uploadsVideoIds(token: string, channelId: string): Promise<string[]>;
   videosLive(token: string, ids: string[]): Promise<LiveVideo[]>;
   streamChat(token: string, liveChatId: string, pageToken: string | null, onPage: (p: ChatPage) => Promise<void> | void, signal: AbortSignal): Promise<{ pageToken: string | null; offline: boolean }>;
   sendChat(token: string, liveChatId: string, text: string): Promise<string | null>;
 }
-export const youtubeApi: YouTubeApi = { exchangeCode, me, channelLookup, refreshTokens, recentVideoIds, videosLive, streamChat, sendChat };
+export const youtubeApi: YouTubeApi = { exchangeCode, me, channelLookup, refreshTokens, recentVideoIds, uploadsVideoIds, videosLive, streamChat, sendChat };
 
 export interface YouTubeRouteDeps extends ChannelPageDeps {
   appBaseUrl: string;
@@ -67,6 +69,15 @@ const awake = new Set<string>();
  */
 const videoState = new Map<string, LiveVideo["state"]>();
 const VIDEOS_MAX = 20_000;
+/**
+ * When each channel's newest videos were last looked up, and what they were.
+ * Looking costs a unit while the public feed is down, so a channel is looked
+ * at every few minutes; a video already known to be live or coming up is
+ * still asked about every pass.
+ */
+const looked = new Map<string, { at: number; ids: string[] }>();
+const lookEveryMs = () => (process.env.YOUTUBE_LOOK_MS === undefined ? 5 * 60_000 : Math.max(0, Number(process.env.YOUTUBE_LOOK_MS) || 0));
+let feedDownSaidAt = 0;
 /** Lines oddie sent, by id: one that comes back through the stream is oddie's own. */
 const sentByUs = new Set<string>();
 const SENT_MAX = 2_000;
@@ -101,7 +112,7 @@ function addAllowed(who: string, now: number): boolean {
   return ok;
 }
 /** How many channels oddie watches on YouTube at most, oddie's own not counted. */
-const maxChannels = () => Math.max(1, Math.floor(Number(process.env.YOUTUBE_MAX_CHANNELS) || 50));
+const maxChannels = () => Math.max(1, Math.floor(Number(process.env.YOUTUBE_MAX_CHANNELS) || 10));
 /** A check reads a chat this long, one check at a time. */
 const checkReadMs = () => Math.max(10, Math.floor(Number(process.env.YOUTUBE_CHECK_MS) || 12_000));
 const CHECK_GAP_MS = 20_000;
@@ -117,8 +128,20 @@ const SEEN_MAX = 5_000;
 /** Test seam. */
 export function _resetYouTube(): void {
   for (const r of readers.values()) r.abort.abort();
-  readers.clear(); liveChats.clear(); onAir.clear(); awake.clear(); videoState.clear(); sentByUs.clear(); quotaRestUntil = 0;
-  addsBy.clear(); publicDay = ""; publicSpent = 0; lastCheckAt = 0;
+  readers.clear(); liveChats.clear(); onAir.clear(); awake.clear(); videoState.clear(); looked.clear(); sentByUs.clear(); quotaRestUntil = 0;
+  addsBy.clear(); publicDay = ""; publicSpent = 0; lastCheckAt = 0; feedDownSaidAt = 0;
+}
+
+/** A channel's newest videos: its public feed (free), or its uploads playlist (1 unit) while the feed is down. */
+async function newestVideos(api: YouTubeApi, voice: LiveChannel, channelId: string, log: Log): Promise<{ ids: string[]; source: "feed" | "uploads" }> {
+  try { return { ids: await api.recentVideoIds(channelId), source: "feed" }; }
+  catch (e) {
+    if (Date.now() - feedDownSaidAt > 60 * 60_000) {
+      feedDownSaidAt = Date.now();
+      log("youtube feed down, reading uploads playlists instead", { status: status(e) ?? null });
+    }
+    return { ids: await withVoice(api, voice, (t) => api.uploadsVideoIds(t, channelId)), source: "uploads" };
+  }
 }
 /** Test seam: the chats the watcher is reading now. */
 export const _readers = (): Array<{ channelId: string; liveChatId: string; done: boolean }> =>
@@ -232,15 +255,27 @@ async function readPage(r: Reader, p: ChatPage, voiceId: string, engine: LiveDep
 function startReader(api: YouTubeApi, voice: LiveChannel, ch: { channelId: string; slug: string }, liveChatId: string, engine: LiveDeps, log: Log, now: number): Reader {
   const r: Reader = { channelId: ch.channelId, slug: ch.slug, liveChatId, abort: new AbortController(), startedAt: now, seen: new Set(), pageToken: null, done: false };
   readers.set(ch.channelId, r);
+  /* WHAT READING COSTS. Every connection is 5 units, and over REST YouTube
+     closes one after about ten seconds (measured 13 Oct 2026), so a chat is
+     read over many. Counted here and said every half hour and at the end, so
+     the units a stream really takes are in the log. */
+  let conns = 0, openMs = 0, since = Date.now();
+  const tally = (why: string) => {
+    if (conns) log("youtube chat reading", { channel: r.channelId, why, connections: conns, units: conns * 5, avgSeconds: Math.round(openMs / conns / 100) / 10, minutes: Math.round((Date.now() - since) / 60_000) });
+    conns = 0; openMs = 0; since = Date.now();
+  };
   void (async () => {
     let backoff = 2_000;
     while (!r.abort.signal.aborted) {
+      const t0 = Date.now();
       try {
         const end = await withVoice(api, voice, (t) => api.streamChat(t, liveChatId, r.pageToken, (p) => readPage(r, p, voice.channelId, engine, log), r.abort.signal));
+        conns++; openMs += Date.now() - t0;
+        if (Date.now() - since > 30 * 60_000) tally("half hour");
         r.pageToken = end.pageToken;
-        if (end.offline) { r.done = true; log("youtube chat ended with the stream", { channel: r.channelId }); break; }
+        if (end.offline) { r.done = true; tally("stream ended"); log("youtube chat ended with the stream", { channel: r.channelId }); break; }
         backoff = 2_000;
-        await sleep(1_000, r.abort.signal);   // the connection closed with the chat still on: open it again
+        await sleep(2_000, r.abort.signal);   // the connection closed with the chat still on: open it again
       } catch (e) {
         if (r.abort.signal.aborted) break;
         const why = reason(e);
@@ -260,6 +295,7 @@ function startReader(api: YouTubeApi, voice: LiveChannel, ch: { channelId: strin
         backoff = Math.min(backoff * 2, 60_000);
       }
     }
+    tally(r.done ? "closed" : "stopped");
   })();
   return r;
 }
@@ -289,10 +325,21 @@ export async function watchYouTube(w: { engine: LiveDeps; log: Log; api?: YouTub
     .filter((c) => c.platform === "youtube" && c.slug.toLowerCase() !== handle && c.channelId !== voice.channelId);
   const idsOf = new Map<string, string[]>();
   for (const c of chans) {
-    idsOf.set(c.channelId, await api.recentVideoIds(c.channelId).catch((e) => {
-      w.log("youtube feed not read", { channel: c.channelId, err: (e as Error).message.slice(0, 160) });
-      return [] as string[];
-    }));
+    const last = looked.get(c.channelId);
+    if (last && now - last.at < lookEveryMs()) { idsOf.set(c.channelId, last.ids); continue; }
+    try {
+      const { ids } = await newestVideos(api, voice, c.channelId, w.log);
+      looked.set(c.channelId, { at: now, ids });
+      idsOf.set(c.channelId, ids);
+    } catch (e) {
+      if (spent(e) && reason(e) !== "rateLimitExceeded") {
+        quotaRestUntil = now + QUOTA_REST_MS;
+        w.log("youtube quota spent, the watcher waits an hour");
+        return { live: 0, reading: readers.size };
+      }
+      w.log("youtube videos of a channel not read", { channel: c.channelId, err: (e as Error).message.slice(0, 160) });
+      idsOf.set(c.channelId, last?.ids ?? []);
+    }
   }
   const ids = [...new Set([...idsOf.values()].flat())].filter((id) => videoState.get(id) !== "none");
   let videos: LiveVideo[] = [];
@@ -452,7 +499,8 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
     try {
       const found = await withVoice(api, voice, (t) => api.channelLookup(t, ref));
       if (!found) return res.status(404).json({ ok: false, error: "link" });
-      const ids = ref.by === "video" ? [ref.id] : await api.recentVideoIds(found.channelId);
+      const seen = ref.by === "video" ? { ids: [ref.id], source: "link" as const } : await newestVideos(api, voice, found.channelId, d.log);
+      const ids = seen.ids;
       const videos = ids.length ? await withVoice(api, voice, (t) => api.videosLive(t, ids)) : [];
       const v = videos.find((x) => x.state === "live" && x.liveChatId && x.channelId === found.channelId);
       let chat: { pages: number; items: number; readable: number; ms: number } | null = null;
@@ -472,8 +520,8 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
         finally { clearTimeout(timer); }
         chat = { pages, items, readable, ms: Date.now() - t0 };
       }
-      d.log("youtube check", { channel: found.handle, feed: ids.length, live: v?.videoId ?? null, pages: chat?.pages ?? null, items: chat?.items ?? null, readable: chat?.readable ?? null });
-      res.json({ ok: true, channel: { handle: found.handle, name: found.name }, feed: ids.length, live: v ? { videoId: v.videoId } : null, chat });
+      d.log("youtube check", { channel: found.handle, source: seen.source, videos: ids.length, live: v?.videoId ?? null, pages: chat?.pages ?? null, items: chat?.items ?? null, readable: chat?.readable ?? null, ms: chat?.ms ?? null });
+      res.json({ ok: true, channel: { handle: found.handle, name: found.name }, source: seen.source, videos: ids.length, live: v ? { videoId: v.videoId } : null, chat });
     } catch (e) {
       d.log("youtube check failed", { err: (e as Error).message.slice(0, 160) });
       res.status(502).json({ ok: false, error: "retry", reason: reason(e) || null });

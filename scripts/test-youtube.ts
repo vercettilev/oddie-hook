@@ -18,6 +18,8 @@ _setPace({ gapMs: 0, retryMs: [0, 0] });
 process.env.YOUTUBE_CLIENT_ID = "test-client";
 process.env.YOUTUBE_CLIENT_SECRET = "test-secret-0123456789";
 process.env.YOUTUBE_VOICE_CHANNEL = "oddiefun";
+// Every pass looks a channel up, unless a test says otherwise.
+process.env.YOUTUBE_LOOK_MS = "0";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -104,7 +106,8 @@ const pages: ChatPage[] = [];
 let liveState: LiveVideo["state"] = "live";
 let streamEnd: "open" | "offline" = "open";
 let currentVideo = "vid00000001";
-let streams = 0, videoCalls = 0;
+let streams = 0, videoCalls = 0, feedCalls = 0, uploadsCalls = 0;
+let feedDown = false;
 const known: Record<string, YouTubeChannel> = {
   streamer: { channelId: ch.channelId, handle: "streamer", name: "Streamer", avatar: null },
   oddiefun: { channelId: "UCoddie00000000000000001", handle: "oddiefun", name: "oddie", avatar: null },
@@ -126,7 +129,12 @@ const api: YouTubeApi = {
   me: async () => me,
   channelLookup: async (_t, ref) => lookup(ref),
   refreshTokens: async () => ({ accessToken: "at-fresh", refreshToken: null, expiresAt: Date.now() + 3_600_000 }),
-  recentVideoIds: async (channelId) => (channelId === ch.channelId ? [currentVideo] : []),
+  recentVideoIds: async (channelId) => {
+    feedCalls++;
+    if (feedDown) throw new YouTubeError("youtube feed 404 <!DOCTYPE html>", 404, "<!DOCTYPE html>");
+    return channelId === ch.channelId ? [currentVideo] : [];
+  },
+  uploadsVideoIds: async (_t, channelId) => { uploadsCalls++; return channelId === ch.channelId ? [currentVideo] : []; },
   videosLive: async (_t, ids) => {
     videoCalls++;
     return ids.map((id) => ({ videoId: id, channelId: ch.channelId, state: liveState, liveChatId: liveState === "live" ? "chat-1" : null }));
@@ -134,9 +142,10 @@ const api: YouTubeApi = {
   streamChat: async (_t, _chat, pageToken, onPage, signal) => {
     streams++;
     for (;;) {
+      // A stopped reader takes nothing more: what is queued is for whoever reads next.
+      if (signal.aborted) return { pageToken: pageToken ?? "pt-1", offline: false };
       while (pages.length) await onPage(pages.shift()!);
       if (streamEnd === "offline") return { pageToken: pageToken ?? "pt-1", offline: true };
-      if (signal.aborted) return { pageToken: pageToken ?? "pt-1", offline: false };
       await wait(3);
     }
   },
@@ -295,16 +304,39 @@ const say = (id: string, text: string, author: Record<string, unknown> = {}) =>
   streamEnd = "offline";
   await settle();
   check("a chat that ends with its stream closes its reader", _readers().every((r) => r.done));
+  check("...and what reading it cost is in the log", logs.some((l) => l === "youtube chat reading"));
+}
+
+console.log("\nfinding streams while the public feed is down");
+{
+  _resetYouTube(); liveState = "live"; streamEnd = "open"; currentVideo = "vid00000003"; feedDown = true;
+  const before = uploadsCalls;
+  const out = await watchYouTube({ engine, log, api });
+  check("the feed answers 404: the uploads playlist finds the stream instead", out.live === 1 && uploadsCalls === before + 1
+    && _readers().some((r) => !r.done), JSON.stringify(out));
+  check("...and the log says so once, not every pass", logs.filter((l) => l.startsWith("youtube feed down")).length === 1);
+  await watchYouTube({ engine, log, api });
+  check("...said once an hour at most", logs.filter((l) => l.startsWith("youtube feed down")).length === 1);
+
+  _resetYouTube(); feedDown = false;
+  process.env.YOUTUBE_LOOK_MS = String(5 * 60_000);
+  const f0 = feedCalls, v0 = videoCalls;
+  await watchYouTube({ engine, log, api });
+  await watchYouTube({ engine, log, api });
+  check("a channel is looked up once every few minutes, while its live video is asked about every pass",
+    feedCalls === f0 + 1 && videoCalls === v0 + 2, `feed ${feedCalls - f0}, videos ${videoCalls - v0}`);
+  process.env.YOUTUBE_LOOK_MS = "0";
 }
 
 console.log("\nchecking a channel");
 {
   _resetYouTube(); liveState = "live"; streamEnd = "open"; currentVideo = "vid00000004";
+  await settle();   // the readers just stopped are gone before anything is queued
   process.env.YOUTUBE_CHECK_MS = "60";
   pages.push({ items: [item({ id: "c-1" }), item({ id: "c-2", snippet: { type: "superChatEvent", displayMessage: "hi" } })] });
   const r = await get("/live/youtube/check?channel=youtube.com/@streamer");
-  const j = (await r.json()) as { ok?: boolean; live?: { videoId?: string } | null; chat?: { pages: number; items: number; readable: number } | null };
-  check("a channel on air: its stream is found and its chat read, in counts only", r.status === 200 && j.live?.videoId === "vid00000004"
+  const j = (await r.json()) as { ok?: boolean; source?: string; live?: { videoId?: string } | null; chat?: { pages: number; items: number; readable: number } | null };
+  check("a channel on air: its stream is found and its chat read, in counts only", r.status === 200 && j.live?.videoId === "vid00000004" && j.source === "feed"
     && (j.chat?.pages ?? 0) >= 1 && j.chat?.items === 2 && j.chat?.readable === 1 && !JSON.stringify(j).includes("will I win"), JSON.stringify(j));
   const soon = await get("/live/youtube/check?channel=@streamer");
   check("one check at a time: the next one right after waits", soon.status === 429);

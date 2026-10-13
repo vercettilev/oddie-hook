@@ -12,8 +12,11 @@
  *   comes from oddie's account, never the streamer's.
  *
  *   A channel's stream is found without the streamer: its public feed
- *   (youtube.com/feeds/videos.xml) names its newest videos, and videos.list
- *   says which one is live and where its chat is (activeLiveChatId).
+ *   (youtube.com/feeds/videos.xml, no quota) names its newest videos, and
+ *   videos.list says which one is live and where its chat is
+ *   (activeLiveChatId). The feed has answered 404 for hours at a time since
+ *   December 2025 (measured 13 Oct 2026: every channel, from every network),
+ *   so the channel's uploads playlist (playlistItems, 1 unit) stands in.
  *
  *   The chat is read over ONE long connection (liveChatMessages.streamList; the
  *   REST path is /liveChat/messages/stream), never polled: polling every few
@@ -205,6 +208,18 @@ export async function recentVideoIds(channelId: string, n = 3): Promise<string[]
   if (!res.ok) throw await failure(res, "feed");
   const xml = await res.text();
   return [...xml.matchAll(/<yt:videoId>([\w-]{11})<\/yt:videoId>/g)].map((m) => m[1]).slice(0, n);
+}
+
+/**
+ * The newest videos on a channel from its uploads playlist (UU…), newest
+ * first: 1 unit. A stream is on it from the moment it is scheduled or goes
+ * live. For when the public feed is down.
+ */
+export async function uploadsVideoIds(token: string, channelId: string, n = 5): Promise<string[]> {
+  if (!CHANNEL_ID.test(channelId)) return [];
+  const j = await api<{ items?: Array<{ contentDetails?: { videoId?: string } }> }>(
+    token, "GET", `/playlistItems?part=contentDetails&maxResults=${n}&playlistId=UU${encodeURIComponent(channelId.slice(2))}`);
+  return (j.items ?? []).map((i) => String(i.contentDetails?.videoId ?? "")).filter((id) => VIDEO_ID.test(id));
 }
 
 export interface LiveVideo { videoId: string; channelId: string; state: "live" | "upcoming" | "none"; liveChatId: string | null }
