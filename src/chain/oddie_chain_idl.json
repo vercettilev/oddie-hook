@@ -838,6 +838,117 @@
       "args": []
     },
     {
+      "name": "park_swsol",
+      "docs": [
+        "Park `amount` of an open market's vault in swSOL.",
+        "",
+        "The SOL goes straight from the vault into Sanctum's pool account and",
+        "swSOL is minted for it in the same instruction, to a token account the",
+        "vault itself owns. That is the shape Sanctum's Mint asks for (\"SOL",
+        "already in the pool, in the same transaction\"), and doing both here",
+        "rather than as two instructions is what makes it safe: Mint is",
+        "permissionless, so SOL left unminted in the pool for even one",
+        "instruction is SOL anybody could mint to themselves.",
+        "",
+        "The vault keeps its rent (pay_from_vault), only the market's authority",
+        "can park, only while the market is open, and the program checks that",
+        "exactly `amount` swSOL arrived before it lets the transaction stand. The",
+        "attribution memo is the caller's to add as its own instruction."
+      ],
+      "discriminator": [
+        54,
+        251,
+        131,
+        252,
+        136,
+        167,
+        252,
+        6
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_swsol",
+          "writable": true
+        },
+        {
+          "name": "swsol_mint",
+          "writable": true,
+          "address": "swso1x7A8Dy36znxtcstSVLNseeCQzNV3wVAfa5GGLu"
+        },
+        {
+          "name": "swsol_pool",
+          "writable": true,
+          "address": "CugxVX9C5N1gmGTB4DGLjTcod1jTJtJFXgnkm9ExjyDP"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "swsol_program",
+          "address": "so1f7APRw5pJ5iNJrM9g5X9tQgXzk8kMUnXxDNdt99b"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "refund_after_deadline",
       "docs": [
         "Take what you are owed: a share of the pool if you were right, or your",
@@ -983,7 +1094,15 @@
         "NO FEE WHEN THERE ARE NO WINNERS. If nobody backed the winning side the",
         "market pays refunds instead of winnings (see claim_winnings), and taking",
         "a cut of a refund would mean charging people to be given their own money",
-        "back."
+        "back.",
+        "",
+        "NEVER MORE THAN THE LOSING SIDE PUT IN. The fee is a share of the pool,",
+        "but it is paid out of what the losers staked, and when they staked less",
+        "than the fee the rest came out of the winners' own stakes: 1000 SOL right",
+        "against 1 SOL wrong charged 40 SOL to win 1, and every winner collected",
+        "less than they put in. So the two fees are scaled down together until",
+        "they fit inside the losing side, and a winner always gets at least their",
+        "stake back."
       ],
       "discriminator": [
         155,
@@ -1028,6 +1147,31 @@
                 "kind": "account",
                 "path": "market.market_id",
                 "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Optional and trailing: see the swSOL guard in resolve_market."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
               }
             ]
           }
@@ -1397,6 +1541,120 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "unpark_swsol",
+      "docs": [
+        "Bring `amount` of a market's swSOL back into its vault as SOL.",
+        "",
+        "The only place the SOL can go is the vault: it is Sanctum's BurnThenClaim",
+        "with the vault as both the signer for the swSOL and the account the SOL",
+        "is claimed to, and every account is pinned or derived from seeds. So",
+        "unparking can never take money anywhere; at worst it brings it home",
+        "early, and that is why it does not need the authority once the market",
+        "is closed or settled. A market whose authority stops signing still gets",
+        "its SOL back, and refund_after_deadline still has something to refund.",
+        "",
+        "Before that, while the market is open, only the authority unparks:",
+        "otherwise anybody could burn the position the moment it was made and",
+        "the pool would never earn anything.",
+        "",
+        "Sanctum pays claims from the pool's liquid reserve, which it refills",
+        "every few minutes; a claim larger than the reserve fails and is retried,",
+        "and it fails whole, so the vault is never half-returned."
+      ],
+      "discriminator": [
+        41,
+        4,
+        76,
+        135,
+        169,
+        222,
+        169,
+        23
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone once the market is closed or settled; only the authority before."
+          ],
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.market_id",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_swsol",
+          "writable": true
+        },
+        {
+          "name": "swsol_mint",
+          "writable": true,
+          "address": "swso1x7A8Dy36znxtcstSVLNseeCQzNV3wVAfa5GGLu"
+        },
+        {
+          "name": "swsol_pool",
+          "writable": true,
+          "address": "CugxVX9C5N1gmGTB4DGLjTcod1jTJtJFXgnkm9ExjyDP"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "swsol_program",
+          "address": "so1f7APRw5pJ5iNJrM9g5X9tQgXzk8kMUnXxDNdt99b"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1598,6 +1856,36 @@
       "code": 6028,
       "name": "NotOldMarket",
       "msg": "this market is not in the old format, so there is nothing to migrate"
+    },
+    {
+      "code": 6029,
+      "name": "StakesParked",
+      "msg": "part of this market's pool is still parked in swSOL; unpark it before settling"
+    },
+    {
+      "code": 6030,
+      "name": "SwsolBadAccount",
+      "msg": "that is not this vault's swSOL account"
+    },
+    {
+      "code": 6031,
+      "name": "SwsolMintMismatch",
+      "msg": "the swSOL minted or burned does not match the SOL that moved"
+    },
+    {
+      "code": 6032,
+      "name": "SwsolClaimShort",
+      "msg": "swSOL came back as less SOL than was parked"
+    },
+    {
+      "code": 6033,
+      "name": "NotEnoughSwsol",
+      "msg": "the vault does not hold that much swSOL"
+    },
+    {
+      "code": 6034,
+      "name": "UnparkNotYours",
+      "msg": "only the market's authority can unpark while the market is open"
     }
   ],
   "types": [

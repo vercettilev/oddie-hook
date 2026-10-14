@@ -14,6 +14,8 @@ import { byMarketOrder } from "./marketOrder.js";
 import { retireStaleMarkets } from "./staleBoard.js";
 import { retireMarket } from "./store/markets.js";
 import { stakedInVault } from "./chain/oddieChain.js";
+import { sweepSwsol } from "./swsolSweep.js";
+import { readVaultHoldings, parkVault, unparkVault } from "./chain/oddieChain.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
@@ -6148,6 +6150,46 @@ async function sweepStaleBoard(): Promise<void> {
 }
 setInterval(sweepStaleBoard, STALE_SWEEP_MS).unref();
 setTimeout(sweepStaleBoard, 90_000).unref();
+
+// A long market's idle SOL is parked in swSOL and is home before its close
+// (src/swsolSweep.ts): every thirty minutes, first pass shortly after boot.
+// Bringing SOL home always runs; parking waits for SWSOL_PARK_ENABLED=true.
+const SWSOL_SWEEP_MS = 30 * 60_000;
+const SWSOL_PARK_ENABLED = (process.env.SWSOL_PARK_ENABLED ?? "").toLowerCase() === "true";
+let sweepingSwsol = false;
+async function sweepSwsolVaults(): Promise<void> {
+  if (sweepingSwsol || !isChainEnabled()) return;
+  sweepingSwsol = true;
+  try {
+    const { moved, failed } = await sweepSwsol({
+      list: adminListCommunity,
+      markets: async (pubkeys) => {
+        const reads = await readMarkets(pubkeys);
+        return new Map(pubkeys.map((pk) => {
+          const r = reads.get(pk);
+          return [pk, r?.ok ? { resolved: r.state.resolved, closeTime: r.state.closeTime } : null] as const;
+        }));
+      },
+      holdings: readVaultHoldings,
+      adminLamports: async () => {
+        const sol = await adminBalanceSol();
+        return sol === null ? null : Math.round(sol * 1e9);
+      },
+      park: parkVault,
+      unpark: unparkVault,
+      parkEnabled: SWSOL_PARK_ENABLED,
+      now: Date.now,
+    });
+    for (const m of moved) console.log(JSON.stringify({ evt: "swsol", ...m }));
+    for (const m of failed) console.error(JSON.stringify({ evt: "swsol_failed", ...m }));
+  } catch (err) {
+    console.error("[swsol] sweep failed:", (err as Error).message);
+  } finally {
+    sweepingSwsol = false;
+  }
+}
+setInterval(sweepSwsolVaults, SWSOL_SWEEP_MS).unref();
+setTimeout(sweepSwsolVaults, 150_000).unref();
 
 /* --------------------------------------------------------- the X bot loop ---
  * The autonomous half. Everything the sweep needs is wired here because this

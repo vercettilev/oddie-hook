@@ -621,22 +621,24 @@ export type ResolveResult =
  *
  * Null means the chain could not be reached, which callers must treat as a
  * refusal rather than as zero.
+ *
+ * Stakes parked in swSOL are stakes too. A vault whose pool is parked holds
+ * little more than its rent in SOL, and reading only the SOL would call it
+ * empty: exactly the answer that lets a sweep retire or close it.
  */
 export async function stakedInVault(marketPubkey: string): Promise<number | null> {
   const c = await load();
   if (!c) return null;
   try {
     const marketPk = new c.web3.PublicKey(marketPubkey);
-    const [vaultPk] = c.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("vault"), marketPk.toBuffer()],
-      c.program.programId,
-    );
-    const [balance, rentMin] = await Promise.all([
-      c.connection.getBalance(vaultPk),
+    const a = swsolAccountsFor(c, marketPk);
+    const [balance, rentMin, parked] = await Promise.all([
+      c.connection.getBalance(a.vault),
       c.connection.getMinimumBalanceForRentExemption(8 + 33),
+      swsolHeld(c, a),
     ]);
-    if (balance === 0) return 0;
-    return Math.max(0, balance - rentMin);
+    if (balance === 0) return parked;
+    return Math.max(0, balance - rentMin) + parked;
   } catch {
     return null;
   }
@@ -731,10 +733,24 @@ export async function resolveMarketOnChain(marketPubkey: string, outcome: "yes" 
 
   try {
     const marketPk = new c.web3.PublicKey(marketPubkey);
+    /* EVERY STAKED LAMPORT IS HOME IN THE SAME TRANSACTION AS THE VERDICT.
+       Part of a long market's pool can be parked in swSOL, and the payouts are
+       priced against the whole pool and paid from the vault. So whatever is
+       parked is unparked in front of the resolve, in one transaction: if Sanctum
+       cannot pay the claim right now, the verdict waits with it rather than
+       landing on a vault that cannot pay its last winners. The vault is passed
+       so the program checks the same thing on its own side (StakesParked); a
+       swSOL read that fails is taken as nothing parked, and that check is what
+       stops a guess from settling a short vault. */
+    const a = swsolAccountsFor(c, marketPk);
+    const parked = await swsolHeld(c, a).catch(() => 0);
+    const pre = parked > 0 ? [await unparkInstruction(c, c.admin.publicKey, marketPk, a, parked)] : [];
     const signature = await c.program.methods
       .resolveMarket(outcome === "yes" ? 0 : 1)
-      .accountsStrict({ authority: c.admin.publicKey, market: marketPk })
+      .accountsStrict({ authority: c.admin.publicKey, market: marketPk, vault: a.vault })
+      .preInstructions(pre)
       .rpc();
+    if (parked > 0) console.log(JSON.stringify({ evt: "swsol", action: "unpark_at_resolve", market: marketPubkey, lamports: parked, signature }));
     console.log(`[chain] resolved ${marketPk.toBase58()} -> ${outcome} (sig ${signature.slice(0, 8)}…)`);
     return { ok: true, signature, alreadyResolved: false };
   } catch (e) {
@@ -1897,4 +1913,183 @@ export function entryShareOf(state: { totalYesLamports: number; totalNoLamports:
   if (pool <= 0) return 50;
   const mine = side === "yes" ? state.totalYesLamports : state.totalNoLamports;
   return Math.max(0, Math.min(100, Math.round((100 * mine) / pool)));
+}
+
+// --- swSOL: a market's idle SOL, staked while the market runs ----------------
+
+/* Sanctum's swSOL (learn.sanctum.so/docs/technical-documentation/swsol): 1 swSOL
+   is 1 SOL, the staking rewards are paid to the integrator off chain, and a
+   mint is credited by a `sols:<address>` memo in the same transaction.
+   park_swsol and unpark_swsol pin the same program, mint and pool, so a wrong
+   address here fails inside our program rather than moving anything. */
+const SWSOL_PROGRAM = "so1f7APRw5pJ5iNJrM9g5X9tQgXzk8kMUnXxDNdt99b";
+const SWSOL_MINT = "swso1x7A8Dy36znxtcstSVLNseeCQzNV3wVAfa5GGLu";
+const SWSOL_POOL = "CugxVX9C5N1gmGTB4DGLjTcod1jTJtJFXgnkm9ExjyDP";
+const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const MEMO_PROGRAM = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+/** The address Sanctum credits our mints to (Telegram, 12 Oct 2026). It is the
+ *  admin wallet today, but it is what Sanctum has on file rather than whichever
+ *  key signs, so a rotated admin key keeps being credited. */
+const SWSOL_ATTRIBUTION = "J3bEmhdy7CeZeJRXHSJe2JEDyC39kmEWfBKUrYCQuPVY";
+
+interface SwsolAccounts {
+  vault: Anchor.web3.PublicKey;
+  vaultSwsol: Anchor.web3.PublicKey;
+  swsolMint: Anchor.web3.PublicKey;
+  swsolPool: Anchor.web3.PublicKey;
+  tokenProgram: Anchor.web3.PublicKey;
+  swsolProgram: Anchor.web3.PublicKey;
+}
+
+/** Every account park_swsol and unpark_swsol take besides the signer and the
+ *  market. The vault's swSOL lives in its associated token account. */
+function swsolAccountsFor(c: ChainClient, marketPk: Anchor.web3.PublicKey): SwsolAccounts {
+  const P = c.web3.PublicKey;
+  const [vault] = P.findProgramAddressSync([Buffer.from("vault"), marketPk.toBuffer()], c.program.programId);
+  const swsolMint = new P(SWSOL_MINT);
+  const tokenProgram = new P(TOKEN_PROGRAM);
+  const [vaultSwsol] = P.findProgramAddressSync(
+    [vault.toBuffer(), tokenProgram.toBuffer(), swsolMint.toBuffer()],
+    new P(ATA_PROGRAM),
+  );
+  return { vault, vaultSwsol, swsolMint, swsolPool: new P(SWSOL_POOL), tokenProgram, swsolProgram: new P(SWSOL_PROGRAM) };
+}
+
+/** The swSOL amount in a vault's token account, after the same three checks the
+ *  program makes: owned by the token program, of the swSOL mint, owned by the
+ *  vault. Anything else throws rather than reading as a number. */
+function swsolAmountOf(info: { owner: Anchor.web3.PublicKey; data: Buffer }, a: SwsolAccounts): number {
+  if (info.owner.toBase58() !== TOKEN_PROGRAM || info.data.length < 72) throw new Error("not a token account");
+  if (!info.data.subarray(0, 32).equals(a.swsolMint.toBuffer())) throw new Error("not swSOL");
+  if (!info.data.subarray(32, 64).equals(a.vault.toBuffer())) throw new Error("not the vault's");
+  return Number(info.data.readBigUInt64LE(64));
+}
+
+/** The swSOL a vault holds, in lamports. A vault that never parked has no token
+ *  account, which is zero rather than unknown. Throws when it cannot be read. */
+async function swsolHeld(c: ChainClient, a: SwsolAccounts): Promise<number> {
+  const info = await c.connection.getAccountInfo(a.vaultSwsol);
+  return info ? swsolAmountOf(info as { owner: Anchor.web3.PublicKey; data: Buffer }, a) : 0;
+}
+
+async function unparkInstruction(
+  c: ChainClient, caller: Anchor.web3.PublicKey, marketPk: Anchor.web3.PublicKey, a: SwsolAccounts, lamports: number,
+): Promise<Anchor.web3.TransactionInstruction> {
+  return c.program.methods.unparkSwsol(new c.BN(lamports))
+    .accountsStrict({
+      caller, market: marketPk, vault: a.vault, vaultSwsol: a.vaultSwsol,
+      swsolMint: a.swsolMint, swsolPool: a.swsolPool, tokenProgram: a.tokenProgram, swsolProgram: a.swsolProgram,
+    })
+    .instruction();
+}
+
+/** What a vault holds: SOL above its own rent, and SOL parked as swSOL. */
+export interface VaultHoldings {
+  solLamports: number;
+  swsolLamports: number;
+}
+
+/**
+ * Many vaults in as few round trips as the RPC allows: each vault and its swSOL
+ * account, two per market, up to a hundred accounts a call. A market whose pair
+ * could not be read maps to null, and nothing is decided about it on a guess.
+ */
+export async function readVaultHoldings(marketPubkeys: string[]): Promise<Map<string, VaultHoldings | null>> {
+  const out = new Map<string, VaultHoldings | null>();
+  const c = await load();
+  const rentMin = c ? await c.connection.getMinimumBalanceForRentExemption(8 + 33).catch(() => null) : null;
+  if (!c || rentMin === null) {
+    for (const pk of marketPubkeys) out.set(pk, null);
+    return out;
+  }
+  const CHUNK = 50;
+  for (let i = 0; i < marketPubkeys.length; i += CHUNK) {
+    const slice = marketPubkeys.slice(i, i + CHUNK);
+    const accs = slice.map((pk) => swsolAccountsFor(c, new c.web3.PublicKey(pk)));
+    let infos: Array<{ lamports: number; owner: Anchor.web3.PublicKey; data: Buffer } | null>;
+    try {
+      infos = (await c.connection.getMultipleAccountsInfo(accs.flatMap((a) => [a.vault, a.vaultSwsol]))) as typeof infos;
+    } catch (e) {
+      console.error(`[chain] readVaultHoldings chunk of ${slice.length} unreadable:`, (e as Error).message);
+      for (const pk of slice) out.set(pk, null);
+      continue;
+    }
+    slice.forEach((pk, j) => {
+      const vault = infos[2 * j];
+      const held = infos[2 * j + 1];
+      try {
+        out.set(pk, {
+          solLamports: vault ? Math.max(0, vault.lamports - rentMin) : 0,
+          swsolLamports: held ? swsolAmountOf(held, accs[j]) : 0,
+        });
+      } catch (e) {
+        console.error(`[chain] readVaultHoldings ${pk.slice(0, 8)}…:`, (e as Error).message);
+        out.set(pk, null);
+      }
+    });
+  }
+  return out;
+}
+
+export type SwsolMove = { ok: true; signature: string } | { ok: false; error: string };
+
+/**
+ * Park `lamports` of a market's vault in swSOL: one transaction that creates the
+ * vault's swSOL account if this is its first park, carries the attribution memo
+ * Sanctum credits us by, and calls park_swsol, which moves the SOL into the
+ * pool and mints swSOL to the vault in the same instruction. Only the market's
+ * authority can, only while the market is open, and the program checks that
+ * exactly `lamports` of swSOL arrived.
+ */
+export async function parkVault(marketPubkey: string, lamports: number): Promise<SwsolMove> {
+  const c = await load();
+  if (!c) return { ok: false, error: "chain layer not configured" };
+  try {
+    const marketPk = new c.web3.PublicKey(marketPubkey);
+    const a = swsolAccountsFor(c, marketPk);
+    const createHeld = new c.web3.TransactionInstruction({
+      programId: new c.web3.PublicKey(ATA_PROGRAM),
+      keys: [
+        { pubkey: c.admin.publicKey, isSigner: true, isWritable: true },
+        { pubkey: a.vaultSwsol, isSigner: false, isWritable: true },
+        { pubkey: a.vault, isSigner: false, isWritable: false },
+        { pubkey: a.swsolMint, isSigner: false, isWritable: false },
+        { pubkey: c.web3.SystemProgram.programId, isSigner: false, isWritable: false },
+        { pubkey: a.tokenProgram, isSigner: false, isWritable: false },
+      ],
+      data: Buffer.from([1]), // CreateIdempotent: a no-op once the account exists
+    });
+    const memo = new c.web3.TransactionInstruction({
+      programId: new c.web3.PublicKey(MEMO_PROGRAM),
+      keys: [],
+      data: Buffer.from(`sols:${SWSOL_ATTRIBUTION}`, "utf8"),
+    });
+    const signature = await c.program.methods.parkSwsol(new c.BN(lamports))
+      .accountsStrict({
+        authority: c.admin.publicKey, market: marketPk, vault: a.vault, vaultSwsol: a.vaultSwsol,
+        swsolMint: a.swsolMint, swsolPool: a.swsolPool, tokenProgram: a.tokenProgram, swsolProgram: a.swsolProgram,
+      })
+      .preInstructions([createHeld, memo])
+      .rpc();
+    return { ok: true, signature };
+  } catch (e) {
+    return { ok: false, error: ((e as Error).message ?? String(e)).slice(0, 300) };
+  }
+}
+
+/** Bring `lamports` of a market's swSOL back into its vault as SOL. The only
+ *  place it can go is the vault: the program pins every account and the vault
+ *  signs for itself. */
+export async function unparkVault(marketPubkey: string, lamports: number): Promise<SwsolMove> {
+  const c = await load();
+  if (!c) return { ok: false, error: "chain layer not configured" };
+  try {
+    const marketPk = new c.web3.PublicKey(marketPubkey);
+    const ix = await unparkInstruction(c, c.admin.publicKey, marketPk, swsolAccountsFor(c, marketPk), lamports);
+    const signature = await c.program.provider.sendAndConfirm!(new c.web3.Transaction().add(ix));
+    return { ok: true, signature };
+  } catch (e) {
+    return { ok: false, error: ((e as Error).message ?? String(e)).slice(0, 300) };
+  }
 }
