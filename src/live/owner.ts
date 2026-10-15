@@ -40,7 +40,7 @@ export function ownerKey(secret: string, platform: Platform = "kick"): Buffer {
 
 /** The key from the environment, or null where Kick is not set up. */
 export function ownerKeyFromEnv(platform: Platform = "kick"): Buffer | null {
-  const raw = process.env.LIVE_TOKEN_KEY || (platform === "kick" ? process.env.KICK_CLIENT_SECRET : platform === "youtube" ? process.env.YOUTUBE_CLIENT_SECRET : process.env.TWITCH_CLIENT_SECRET);
+  const raw = process.env.LIVE_TOKEN_KEY || (platform === "kick" ? process.env.KICK_CLIENT_SECRET : platform === "youtube" ? process.env.YOUTUBE_CLIENT_SECRET : platform === "x" ? process.env.TWITTER_CLIENT_SECRET : process.env.TWITCH_CLIENT_SECRET);
   return raw ? ownerKey(raw, platform) : null;
 }
 

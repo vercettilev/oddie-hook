@@ -1,0 +1,223 @@
+// oddie in X live chat (src/x/live.ts): oddie's own sign-in, a streamer's,
+// the activity stream's framing, a broadcast.chat event as the engine reads
+// it, and a live chat end to end, with X faked at its edges. X live runs
+// votes only, like YouTube: no line may name a market or carry a link, and
+// every line fits X's 140 characters.
+//
+// Run with: npm run test-x-live
+
+import type { AddressInfo } from "node:net";
+import express from "express";
+import { _resetLive } from "../src/live/calls.js";
+import { liveStore, channelById, saveChannel, _resetLiveStore } from "../src/store/live.js";
+import {
+  chatFromX, onXEvent, xEngineDeps, xLiveApi, xLiveRouter, _liveIn, _resetXLive, X_CHAT_MAX,
+  type XActivityEvent, type XLiveApi,
+} from "../src/x/live.js";
+import { _setPace } from "../src/live/pace.js";
+
+_setPace({ gapMs: 0, retryMs: [0, 0] });
+process.env.TWITTER_CLIENT_ID = "test-client";
+process.env.TWITTER_CLIENT_SECRET = "test-secret-0123456789";
+process.env.X_APP_BEARER_TOKEN = "test-bearer";
+
+let failures = 0;
+const check = (n: string, ok: boolean, d = "") => {
+  if (ok) console.log(`  ✓ ${n}`);
+  else { failures++; console.log(`  ✗ ${n}${d ? "  " + d : ""}`); }
+};
+const noLink = (t: string) => !/https?:\/\/|oddie\.fun|\bwww\./i.test(t);
+const noMarket = (t: string) => !/\bmarkets?\b|!oddie|2%/i.test(t);
+
+const ODDIE = "1000000000000000001", STREAMER = "2000000000000000002", VIEWER = "3000000000000000003", MOD = "4000000000000000004";
+const users: Record<string, { id: string; username: string }> = {
+  "at-voice": { id: ODDIE, username: "Oddiefun" },
+  "at-streamer": { id: STREAMER, username: "AleksaFlamingo" },
+  "at-other": { id: "5000000000000000005", username: "someone" },
+};
+
+const sent: Array<{ token: string; broadcast: string; text: string; replyTo?: string }> = [];
+const subs: Array<{ token: string; user: string; ev: string }> = [];
+let failChatSub = false, refreshes = 0, rejectNext401 = false;
+const api: XLiveApi = {
+  exchangeCode: async (code) => ({ accessToken: `at-${code}`, refreshToken: `rt-${code}`, expiresAt: Date.now() + 7_200_000 }),
+  refreshTokens: async (rt) => { refreshes++; return { accessToken: `at-voice`, refreshToken: `${rt}+`, expiresAt: Date.now() + 7_200_000 }; },
+  me: async (token) => {
+    const u = users[token];
+    if (!u) throw Object.assign(new Error("unknown token"), { status: 401 });
+    return { ...u, name: u.username, avatar: null };
+  },
+  subscribe: async (token, user, ev) => {
+    if (failChatSub && ev === "broadcast.chat") throw Object.assign(new Error("x subscribe 403"), { status: 403 });
+    subs.push({ token, user, ev });
+    return `sub-${subs.length}`;
+  },
+  sendChat: async (token, broadcast, text, replyTo) => {
+    if (rejectNext401) { rejectNext401 = false; throw Object.assign(new Error("x broadcast chat 401"), { status: 401 }); }
+    if (token !== "at-voice") throw Object.assign(new Error("wrong token"), { status: 403 });
+    sent.push({ token, broadcast, text, replyTo });
+    return `ts-${sent.length}`;
+  },
+  stream: async () => {},
+};
+
+_resetLiveStore(); _resetLive(); _resetXLive();
+const log = () => {};
+const app = express();
+const xl = xLiveRouter({ appBaseUrl: "https://app.test", redirectUri: "https://oddie.test/api/auth/twitter/callback", pageHtml: () => "<html></html>", pageOpen: () => true, pageClosed: (res) => res.status(404).end(), log, api });
+app.use(xl.router);
+// What server.ts does: X's one registered callback hands this file its own states.
+app.get("/api/auth/twitter/callback", async (req, res) => {
+  const state = String(req.query.state ?? "");
+  if (state.startsWith("xl_") && await xl.callback(state, req.query, res)) return;
+  res.status(418).send("site sign-in");
+});
+const server = app.listen(0);
+const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+const get = (p: string) => fetch(base + p, { redirect: "manual" });
+const stateOf = (loc: string) => new URL(loc).searchParams.get("state") ?? "";
+const signIn = async (door: string, code: string) => {
+  const a = await get(door);
+  const loc = a.headers.get("location") ?? "";
+  const cb = await get(`/api/auth/twitter/callback?state=${stateOf(loc)}&code=${code}`);
+  return { authorize: new URL(loc), back: cb.headers.get("location") ?? "", status: cb.status };
+};
+
+console.log("oddie's own account");
+{
+  const v = await signIn("/live/x/voice", "voice");
+  check("the voice door asks X for chat writing", v.authorize.origin === "https://x.com" && /broadcast\.write/.test(v.authorize.searchParams.get("scope") ?? "")
+    && v.authorize.searchParams.get("redirect_uri") === "https://oddie.test/api/auth/twitter/callback" && v.authorize.searchParams.get("code_challenge_method") === "S256");
+  const voice = await channelById("x", ODDIE);
+  check("signed in, it keeps the token every line goes out with", v.back.endsWith("/live/x/Oddiefun?voice=1") && voice?.accessToken === "at-voice" && voice.refreshToken === "rt-voice");
+  check("nobody subscribes oddie to its own chat", subs.length === 0);
+  const other = await signIn("/live/x/voice", "other");
+  check("another account at oddie's door is turned away", other.back.endsWith("/live?x=voice") && !(await channelById("x", "5000000000000000005")));
+  const stray = await get("/api/auth/twitter/callback?state=xl_nope&code=1");
+  check("a state this file never issued goes on to the site's own sign-in", stray.status === 418);
+  const site = await get("/api/auth/twitter/callback?state=abc&code=1");
+  check("...and so does every ordinary sign-in", site.status === 418);
+}
+
+console.log("\na streamer connects");
+{
+  const s = await signIn("/live/x/connect", "streamer");
+  const scope = s.authorize.searchParams.get("scope") ?? "";
+  check("the streamer is asked to let oddie read chat, not to write", /broadcast\.read/.test(scope) && !/broadcast\.write/.test(scope));
+  check("they land on their page", s.back.endsWith("/live/x/AleksaFlamingo?added=1"), s.back);
+  check("their chat, and when they go live and stop, with their own token",
+    subs.length === 3 && subs.every((x) => x.token === "at-streamer" && x.user === STREAMER)
+    && ["broadcast.chat", "broadcast.start", "broadcast.end"].every((e) => subs.some((x) => x.ev === e)));
+  const ch = await channelById("x", STREAMER);
+  check("the channel is kept", ch?.slug === "AleksaFlamingo" && ch.active === true);
+  failChatSub = true;
+  const bad = await signIn("/live/x/connect", "streamer");
+  check("when X refuses the chat subscription, the streamer is told to go again", bad.back.endsWith("/live?x=subscribe"), bad.back);
+  failChatSub = false;
+  const page = await get("/live/x/AleksaFlamingo");
+  check("the channel's page is served", page.status === 200);
+}
+
+console.log("\nwhat a chat event becomes");
+let n = 0;
+const chat = (text: string, from: { id: string; username: string } = { id: VIEWER, username: "viewer" }, over: Record<string, unknown> = {}): XActivityEvent => ({
+  event_uuid: `ev-${++n}`, created_at: new Date().toISOString(), event_type: "broadcast.chat",
+  filter: { user_id: STREAMER },
+  payload: { broadcast_id: "1mGPaZaAdNqJN", message_id: `m-${n}`, message: text, is_subscriber: false, is_moderator: false, author: { data: from }, ...over },
+});
+{
+  const m = chatFromX(chat("!call will I win?"), { slug: "AleksaFlamingo" }, ODDIE);
+  check("a viewer's line reads as every chat line does", m?.platform === "x" && m.channelId === STREAMER && m.senderId === VIEWER && m.senderName === "viewer"
+    && m.text === "!call will I win?" && m.canRun === false && m.fromOddie === false && m.channelSlug === "AleksaFlamingo");
+  check("the host runs calls (X calls the host no moderator)", chatFromX(chat("!x", { id: STREAMER, username: "AleksaFlamingo" }), null, ODDIE)?.canRun === true);
+  check("...and so does a moderator", chatFromX(chat("!x", { id: MOD, username: "mod" }, { is_moderator: true }), null, ODDIE)?.canRun === true);
+  check("a line from @oddiefun is oddie's own", chatFromX(chat("noted.", { id: ODDIE, username: "Oddiefun" }), null, ODDIE)?.fromOddie === true);
+  check("an event with no text is nothing", chatFromX({ ...chat(""), payload: { broadcast_id: "b" } }, null, null) === null);
+}
+
+console.log("\na live chat, end to end");
+{
+  const engine = xEngineDeps({ log }, api);
+  const w = { engine, log };
+  check("before the stream, oddie does not know it is on air", (await engine.streamLive!("x", STREAMER)) === null);
+  await onXEvent({ event_uuid: "start-1", event_type: "broadcast.start", filter: { user_id: STREAMER }, payload: { broadcast_id: "1mGPaZaAdNqJN" } }, w);
+  check("broadcast.start puts it on air", _liveIn(STREAMER) === "1mGPaZaAdNqJN" && (await engine.streamLive!("x", STREAMER)) === true);
+
+  const before = sent.length;
+  const open = chat("!call will I win this round?", { id: STREAMER, username: "AleksaFlamingo" });
+  await onXEvent(open, w);
+  const call = await liveStore.current("x", STREAMER);
+  check("the host's !call opens a vote", call?.question.toLowerCase().includes("will i win this round") === true, JSON.stringify(call));
+  const said = sent.slice(before);
+  check("oddie says so in that broadcast's chat, as @oddiefun", said.length >= 1 && said.every((s) => s.broadcast === "1mGPaZaAdNqJN" && s.token === "at-voice"));
+  check("every line fits X's 140 characters", said.every((s) => s.text.length <= X_CHAT_MAX), said.map((s) => s.text.length).join(","));
+  check("no line names a market or carries a link", said.every((s) => noLink(s.text) && noMarket(s.text)), said.map((s) => s.text).join(" | "));
+
+  const yes = chat("!yes");
+  await onXEvent(yes, w);
+  await onXEvent(yes, w);   // the stream handing the same event over twice
+  await onXEvent(chat("!no", { id: MOD, username: "mod" }), w);
+  const t = await liveStore.tally(call!.id);
+  check("viewers answer, once each, even when an event comes twice", t.yes === 1 && t.no === 1, JSON.stringify(t));
+
+  const old = chat("!no", { id: "6000000000000000006", username: "late" }, {});
+  old.created_at = new Date(Date.now() - 10 * 60_000).toISOString();
+  await onXEvent(old, w);
+  check("a line from minutes ago is history, not an answer", (await liveStore.tally(call!.id)).no === 1);
+
+  const ownBefore = sent.length;
+  await onXEvent(chat("!call oddie's own line", { id: ODDIE, username: "Oddiefun" }, { is_moderator: true }), w);
+  check("oddie's own line is never a command", sent.length === ownBefore && (await liveStore.current("x", STREAMER))?.id === call!.id);
+
+  await onXEvent(chat("!call yes", { id: MOD, username: "mod" }, { is_moderator: true }), w);
+  check("a moderator settles it", (await liveStore.current("x", STREAMER)) === null);
+
+  const unknown: XActivityEvent = { ...chat("!call hi"), filter: { user_id: "9999999999999999999" } };
+  check("chat from a streamer oddie does not know is left alone", (await onXEvent(unknown, w)) === "unknown-channel");
+
+  // The voice's token runs out: one refresh, then the line goes out.
+  const voice = await channelById("x", ODDIE);
+  await saveChannel({ ...voice!, tokenExpiresAt: Date.now() - 1_000 });
+  const r0 = refreshes, s0 = sent.length;
+  await engine.say("x", STREAMER, "noted.");
+  check("a voice token past its time is refreshed once, and the line goes out", refreshes === r0 + 1 && sent.length === s0 + 1);
+  check("...and X's new refresh token is kept, the old one being dead", (await channelById("x", ODDIE))?.refreshToken === "rt-voice+");
+  rejectNext401 = true;
+  const r1 = refreshes;
+  await engine.say("x", STREAMER, "noted again.");
+  check("a 401 refreshes and tries once more", refreshes === r1 + 1 && sent.at(-1)?.text === "noted again.");
+
+  const long = "word ".repeat(70).trim();
+  const s1 = sent.length;
+  await engine.say("x", STREAMER, long);
+  check("a long line is cut into lines X takes", sent.length - s1 >= 3 && sent.slice(s1).every((s) => s.text.length <= X_CHAT_MAX));
+
+  await onXEvent({ event_uuid: "end-1", event_type: "broadcast.end", filter: { user_id: STREAMER }, payload: { broadcast_id: "1mGPaZaAdNqJN" } }, w);
+  const s2 = sent.length;
+  await engine.say("x", STREAMER, "anyone there?");
+  check("broadcast.end takes it off air: nothing is said, and the engine knows", sent.length === s2 && (await engine.streamLive!("x", STREAMER)) === false);
+
+  await onXEvent(chat("!call back again?", { id: STREAMER, username: "AleksaFlamingo" }, { broadcast_id: "2nNewBroadcast" }), w);
+  check("a chat line from a new broadcast puts it back on air, even with its start missed", _liveIn(STREAMER) === "2nNewBroadcast" && sent.at(-1)?.broadcast === "2nNewBroadcast");
+}
+
+console.log("\nthe activity stream's framing");
+{
+  const realFetch = globalThis.fetch;
+  const chunks = ['{"data":{"event_uuid":"s1","event_type":"broadcast.chat"}}\r\n\r\n{"data":{"event_', 'uuid":"s2","event_type":"broadcast.end"}}\n', "\n", 'not json\n{"data":{"event_uuid":"s3"}}\n'];
+  let asked = "", auth = "";
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    asked = String(url); auth = String((init?.headers as Record<string, string>)?.authorization ?? "");
+    const enc = new TextEncoder();
+    return new Response(new ReadableStream({ start(c) { for (const k of chunks) c.enqueue(enc.encode(k)); c.close(); } }), { status: 200 });
+  }) as typeof fetch;
+  const got: string[] = [];
+  await xLiveApi.stream((e) => { got.push(String(e.event_uuid)); }, new AbortController().signal);
+  globalThis.fetch = realFetch;
+  check("the app's stream is read with the app's bearer", asked === "https://api.x.com/2/activity/stream" && auth === "Bearer test-bearer");
+  check("one event per line, a line cut anywhere, keep-alives and junk skipped", got.join(",") === "s1,s2,s3", got.join(","));
+}
+
+server.close();
+console.log(failures ? `\n${failures} FAILED` : "\nall x live checks passed.");
+process.exit(failures ? 1 : 0);

@@ -467,11 +467,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
 <script>
 (function () {
   var view = document.getElementById("view");
-  var m = /^\/live\/(kick|twitch|youtube)\/([^\/]+)\/?$/.exec(location.pathname);
+  var m = /^\/live\/(kick|twitch|youtube|x)\/([^\/]+)\/?$/.exec(location.pathname);
   var SLUG = m ? decodeURIComponent(m[2]) : null;
   /* One page for both platforms: everything that names the platform reads it here. */
   var P = m ? m[1] : "kick";
-  var PN = P === "twitch" ? "Twitch" : P === "youtube" ? "YouTube" : "Kick";
+  var PN = P === "twitch" ? "Twitch" : P === "youtube" ? "YouTube" : P === "x" ? "X" : "Kick";
   function esc(s) {
     return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c];
@@ -486,6 +486,9 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   if (!SLUG) {
     var qs = new URLSearchParams(location.search);
     var qp = qs.get("twitch") ? "Twitch" : qs.get("youtube") ? "YouTube" : "Kick", q = qs.get("kick") || qs.get("twitch") || qs.get("youtube");
+    /* X live has no button here yet: a streamer gets /live/x/connect from us,
+       and a sign-in that came back short says how to go again. */
+    var qx = qs.get("x");
     document.title = "oddie for streamers";
     /* THREE STEPS, ONE LINE EACH (Lev, 2 Oct, the hypercasual cut). The lede
        said the steps in a paragraph before the steps said them again, and the
@@ -502,6 +505,9 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + (q === "expired" ? '<p class="note">That link expired. Press Add oddie to ' + qp + ' again.</p>' : "")
       + (q === "declined" ? '<p class="note">No problem. Press Add oddie to ' + qp + ' whenever you are ready.</p>' : "")
       + (q === "failed" ? '<p class="note">Connecting to ' + qp + ' needs one more try. Press Add oddie to ' + qp + ' again.</p>' : "")
+      + (qx === "declined" ? '<p class="note">No problem. <a href="/live/x/connect">Connect X</a> whenever you are ready.</p>' : "")
+      + (qx && qx !== "declined" && qx !== "voice" ? '<p class="note">Connecting X needs one more try. <a href="/live/x/connect">Connect X again</a>.</p>' : "")
+      + (qx === "voice" ? '<p class="note">That door is for oddie\'s own account. Streamers: <a href="/live/x/connect">connect X here</a>.</p>' : "")
       + '<section class="yt" id="youtube" aria-labelledby="yt-t"><h2 class="yt__t" id="yt-t">On YouTube</h2>'
       + '<p class="yt__p">Paste your channel link, go live, and open a vote with <code>!call will I win this round?</code> Your chat answers, oddie keeps score.</p>'
       + '<form class="yt__row" id="yt-f" novalidate><label class="vh" for="yt-in">Your YouTube channel link</label>'
@@ -589,9 +595,19 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + '<p class="own__p">oddie joins public streams a few minutes after they start and answers as <b>@oddiefun</b>. For replies that skip slow mode and filters, add @oddiefun as a moderator in YouTube Studio, under Settings, then Community.</p></section>';
   }
 
+  /* X, right after the streamer signed in: votes only, like YouTube. */
+  function xSteps() {
+    if (voiceJustConnected) return '<section class="own"><p class="own__k">oddie\'s voice</p><h2 class="own__t">This account now speaks for oddie in X live chat</h2></section>';
+    if (!ytAdded) return "";
+    return '<section class="own own--yt" aria-labelledby="own-t"><p class="own__k">oddie is set for your X lives</p>'
+      + '<h2 class="own__t" id="own-t">Go live and open a vote</h2>'
+      + '<p class="own__p">Type <code>!call will I win this round?</code> in your live chat. Chat answers <code>!yes</code> or <code>!no</code>, and <code>!call yes</code> or <code>!call no</code> settles it.</p>'
+      + '<p class="own__p">oddie answers as <b>@oddiefun</b> in every live you start. If your chat is open only to people you follow, follow @oddiefun.</p></section>';
+  }
+
   function paintOwner() {
     if (!ownEl) return;
-    if (!owner) { ownEl.innerHTML = P === "youtube" ? youtubeSteps() : ""; return; }
+    if (!owner) { ownEl.innerHTML = P === "youtube" ? youtubeSteps() : P === "x" ? xSteps() : ""; return; }
     if (!owner.wallet || ownMode === "ask") return askWallet();
     var n = Number(owner.markets || 0);
     ownEl.innerHTML = '<section class="own" aria-labelledby="own-t">' + kicker()
@@ -804,7 +820,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       view.innerHTML = '<div id="head"></div><div id="own"></div><div id="body"></div>';
       headEl = document.getElementById("head"); ownEl = document.getElementById("own"); bodyEl = document.getElementById("body");
       // A YouTube page has no owner card to wait for: its two steps paint now.
-      if (P === "youtube") paintOwner();
+      if (P === "youtube" || P === "x") paintOwner();
     }
     document.title = (j.name || j.slug) + " calls on oddie";
     var head = '<section class="ch">' + (j.avatar ? '<img src="' + esc(j.avatar) + '" alt="" width="64" height="64">' : "")
@@ -876,7 +892,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     }
     // For a streamer whose week ran out, or who is on another browser. Not
     // while their own card is up: that card already says it.
-    if (!j.owner && !ownEl.firstChild && P !== "youtube") {
+    if (!j.owner && !ownEl.firstChild && P !== "youtube" && P !== "x") {
       html += '<p class="mine">Your channel? <a href="/live/' + P + '/connect">Sign in with ' + PN + '</a> to collect 2% of every market opened here.</p>';
     }
     // Repainted only when something changed, so a link somebody is on keeps its focus.

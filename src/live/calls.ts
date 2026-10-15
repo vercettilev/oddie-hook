@@ -62,7 +62,7 @@ import { binancePrices, parsePriceCall, planFor, readPriceCall, touchAtOpen, whe
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
 
-export type Platform = "kick" | "twitch" | "youtube";
+export type Platform = "kick" | "twitch" | "youtube" | "x";
 export type Side = "yes" | "no";
 
 export interface ChatMessage {

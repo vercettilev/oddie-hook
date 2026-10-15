@@ -53,6 +53,7 @@ const CHANNEL_URL: Record<Platform, (slug: string) => string> = {
   twitch: (s) => `https://www.twitch.tv/${s}`,
   // A YouTube channel's slug is its handle, or its UC… id when it has none.
   youtube: (s) => (/^UC[\w-]{22}$/.test(s) ? `https://www.youtube.com/channel/${s}` : `https://www.youtube.com/@${s}`),
+  x: (s) => `https://x.com/${s}`,
 };
 
 /** The channel this browser signed in as on this platform, or null. */

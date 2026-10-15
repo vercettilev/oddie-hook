@@ -31,6 +31,7 @@ import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
 import { youtubeConfigured } from "./youtube/client.js";
+import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter } from "./x/live.js";
 import { lockDue, remindOpen, type LiveDeps, type Platform } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
@@ -1920,6 +1921,19 @@ app.use(youtubeRouter({
   pageClosed: (res) => appClosed(res),
   log: liveLog,
 }));
+/* X LIVE (src/x/live.ts): votes only, like YouTube. A streamer signs in with X
+   once; every broadcast they own sends its chat over the app's activity
+   stream. Both sign-ins come back through X's one registered callback. */
+const xLive = xLiveRouter({
+  appBaseUrl: APP_BASE_URL,
+  redirectUri: redirectUri(BASE_URL, "twitter"),
+  pageHtml: () => stampApp(LIVE_HTML),
+  overlayHtml: () => OVERLAY_HTML,
+  pageOpen: (req) => appOpenFor(req),
+  pageClosed: (res) => appClosed(res),
+  log: liveLog,
+});
+app.use(xLive.router);
 /* THE LEADERBOARD'S ROWS: points from the votes in every stream chat (Lev,
    8 Oct, the board is the live product's). Usernames and points, the same
    things every channel page already shows; one grouped read per visit. */
@@ -1933,11 +1947,12 @@ app.get("/api/live/standings", async (_req, res) => {
 
 /* The clock only runs where a channel can exist to need it. One clock for
    every platform: a due call is said through its own platform's voice. */
-if (kickConfigured() || twitchConfigured() || youtubeConfigured()) {
+if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfigured()) {
   const kickEng = kickEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
   const twEng = twitchEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
   const ytEng = youtubeEngineDeps({ log: liveLog });
-  const engOf = (p: Platform): LiveDeps => (p === "twitch" ? twEng : p === "youtube" ? ytEng : kickEng);
+  const xEng = xEngineDeps({ log: liveLog });
+  const engOf = (p: Platform): LiveDeps => (p === "twitch" ? twEng : p === "youtube" ? ytEng : p === "x" ? xEng : kickEng);
   const clock: LiveDeps = {
     ...kickEng,
     say: (p, c, t, r) => engOf(p).say(p, c, t, r),
@@ -1974,7 +1989,7 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured()) {
      stay where test-live looks for them. */
   const frames = frameSource();
   // The picture is read on Twitch and Kick; a YouTube stream is not looked at.
-  clock.streamGame = (p, c) => { if (p === "youtube") return Promise.resolve(null); const eng = engOf(p); return eng.streamGame ? eng.streamGame(p, c) : Promise.resolve(null); };
+  clock.streamGame = (p, c) => { if (p === "youtube" || p === "x") return Promise.resolve(null); const eng = engOf(p); return eng.streamGame ? eng.streamGame(p, c) : Promise.resolve(null); };
   /* YOUTUBE (src/youtube/routes.ts): once a minute the watcher looks for the
      connected channels' streams and reads each live chat over one connection. */
   if (youtubeConfigured()) {
@@ -1990,6 +2005,10 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured()) {
     setInterval(watch, 60_000);
     liveLog("youtube on");
   }
+  /* X LIVE (src/x/live.ts): one activity stream carries every connected
+     streamer's chat; it stays open for the life of the process. */
+  if (xLiveConfigured()) { startXStream({ engine: xEng, log: liveLog }); liveLog("x live on"); }
+  else liveLog(`x live off: ${xLiveMissing().join(", ")} not set`);
   clock.frames = frames.source ?? undefined;
   liveLog(frames.source ? `frames on: ${frames.why}` : `frames off: ${frames.why}`);
   // One read now, so the log says whether price calls can be settled from here.
@@ -3083,6 +3102,8 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
   // One-shot, consumed UP FRONT so even a Cancel on the provider's screen can
   // send the person back where they started (the returnTo lives in the state).
   const state = typeof req.query.state === "string" ? req.query.state : null;
+  // A streamer (or oddie's own account) connecting X live chat: src/x/live.ts issued that state.
+  if (p === "twitter" && state?.startsWith("xl_") && await xLive.callback(state, req.query, res)) return;
   const pendingAuth = state ? consume(state) : null;
   const back = (params: string) => {
     if (pendingAuth?.returnTo) {

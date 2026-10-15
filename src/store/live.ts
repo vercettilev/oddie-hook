@@ -105,7 +105,7 @@ async function schema(): Promise<void> {
 /* ------------------------------------------------------------- sealing -- */
 
 function tokenKey(platform: Platform): Buffer | null {
-  const raw = process.env.LIVE_TOKEN_KEY || (platform === "kick" ? process.env.KICK_CLIENT_SECRET : platform === "youtube" ? process.env.YOUTUBE_CLIENT_SECRET : process.env.TWITCH_CLIENT_SECRET);
+  const raw = process.env.LIVE_TOKEN_KEY || (platform === "kick" ? process.env.KICK_CLIENT_SECRET : platform === "youtube" ? process.env.YOUTUBE_CLIENT_SECRET : platform === "x" ? process.env.TWITTER_CLIENT_SECRET : process.env.TWITCH_CLIENT_SECRET);
   return raw ? createHash("sha256").update(`oddie-live:${raw}`).digest() : null;
 }
 
