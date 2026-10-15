@@ -969,7 +969,10 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   function render(m) {
     if (typeof m.solUsd === "number") { SOL_USD = m.solUsd; window.ODDIE_SOL_USD = SOL_USD; }
     var poolNow = null;   // okunabilir ve dolu bir havuz varsa asagida doluyor
-    var closed = m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false;
+    /* Off the board: the page stays up for the links already shared, betting
+       is closed, and the server refuses a stake here too. */
+    var retired = Boolean(m.retired);
+    var closed = retired || (m.closesAt ? new Date(m.closesAt).getTime() <= Date.now() : false);
     var resolved = Boolean(m.resolved && m.outcome);
     var src = m.oddsSource;
     var bits = [];
@@ -1234,8 +1237,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       // next to the buttons that take the money.
       if (!off && (m.origin === "kick" || m.origin === "twitch")) html += '<p class="adult">18+ only · on Solana</p>';
       if (closed) {
-        html += '<div class="pool pool--quiet"><div class="pool__n">Betting is over.</div>'
-          + '<div class="pool__k">Waiting on the result. Your bet stays in the pool</div></div>';
+        html += retired
+          ? '<div class="pool pool--quiet"><div class="pool__n">Betting is closed.</div>'
+            + '<div class="pool__k">See what\'s open on the <a href="/markets">markets page</a></div></div>'
+          : '<div class="pool pool--quiet"><div class="pool__n">Betting is over.</div>'
+            + '<div class="pool__k">Waiting on the result. Your bet stays in the pool</div></div>';
       }
     }
 

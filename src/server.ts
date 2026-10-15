@@ -3944,6 +3944,7 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   if (detail.onchainPubkey) return { pubkey: detail.onchainPubkey };
   if (!isChainEnabled()) return null;
   if (detail.resolvedOutcome) return null; // nothing to stake in
+  if (detail.retiredAt) return null;       // off the board: no rent spent on it
 
   // THE path for bot-created markets: the claims route mints on-demand, so this
   // is where a Telegram market actually reaches the chain.
@@ -4454,6 +4455,9 @@ async function marketDetailPayload(
     })(),
     resolved: Boolean(state?.resolved ?? detail.resolvedOutcome),
     outcome: state?.winningSide ?? detail.resolvedOutcome ?? null,
+    /* Off the board: the page stays up for the links already shared and shows
+       betting closed, and position/prepare refuses it. */
+    retired: Boolean(detail.retiredAt),
     pool: unreadable ? null : { yesLamports: yes, noLamports: no, totalSol: total / 1e9 },
     /* ONE DEFINITION, in src/odds.ts, because this line and the card disagreed
        by 41 points on a live market. The clamp is what is gone: Math.min(99, ...)
@@ -5242,6 +5246,11 @@ if (realStakesReady) {
     const detail = await communityMarketDetail(slug);
     if (!detail) return res.status(404).json({ ok: false, reason: "unknown-market" });
     if (detail.resolvedOutcome) return res.status(409).json({ ok: false, reason: "already-resolved" });
+    /* OFF THE BOARD, NO NEW MONEY. A retired market's page stays up for the
+       links already shared, and the oracle sweeps the board only, so a stake
+       here would sit unsettled: on 15 Oct one did, on the gold market a shared
+       link still pointed at. The page shows betting closed; this is the rule. */
+    if (detail.retiredAt) return res.status(409).json({ ok: false, reason: "closed" });
     // Markets the bot opened carry no on-chain account until somebody wants to
     // stake in one. This is that moment. It is also the LAST line of defence
     // rather than the intended one: /api/chain/ensure below is called when the

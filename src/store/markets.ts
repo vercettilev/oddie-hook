@@ -5061,6 +5061,9 @@ export interface CommunityMarketDetail {
    *  never). ensureMinted reads this: a market minted on demand has no other
    *  way to learn who opened it. */
   creatorWallet: string | null;
+  /** When the market was taken off the board. Its page stays up for the links
+   *  already shared, and it takes no new money. */
+  retiredAt?: string | null;
   positions: CommunityDetailPosition[];
 }
 
@@ -5508,12 +5511,12 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
       priceCheck: meta.priceCheck ?? null,
       hook: meta.hook ?? null,
       creatorFeeBps: meta.creatorFeeBps ?? CREATOR_FEE_BPS_REAL,
-      creatorWallet: meta.creatorWallet ?? null, positions,
+      creatorWallet: meta.creatorWallet ?? null, retiredAt: meta.retiredAt ?? null, positions,
     };
   }
   await ensureSchema();
-  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null; creator_wallet: string | null; price_check: PriceCheck | null }>(`
-    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.creator_wallet, c.price_check
+  const meta = await db().query<{ question: string; yes_pct: number; closes_at: Date | null; market_id: string; resolved_outcome: "yes" | "no" | null; onchain_pubkey: string | null; onchain_sig: string | null; resolution_criteria: string | null; resolvability: string | null; hook: string | null; creator_fee_bps: number | null; creator_wallet: string | null; price_check: PriceCheck | null; retired_at: Date | null }>(`
+    SELECT s.question, s.yes_pct, s.closes_at, c.market_id, c.resolved_outcome, c.onchain_pubkey, c.onchain_sig, c.resolution_criteria, c.resolvability, c.hook, c.creator_fee_bps, c.creator_wallet, c.price_check, c.retired_at
       FROM community_market c JOIN market_slug s ON s.slug = c.slug WHERE c.slug = $1`, [slug]);
   if (!meta.rows.length) return null;
   const m = meta.rows[0];
@@ -5527,6 +5530,7 @@ export async function communityMarketDetail(slug: string): Promise<CommunityMark
     hook: m.hook,
     creatorFeeBps: m.creator_fee_bps ?? CREATOR_FEE_BPS_REAL,
     creatorWallet: m.creator_wallet,
+    retiredAt: m.retired_at ? m.retired_at.toISOString() : null,
     positions: pos.rows.map((r) => ({ deviceId: r.device_id, side: r.side, tokens: r.tokens, entryPct: r.pct_at, closed: Boolean(r.closed_at), proceeds: r.proceeds })),
   };
 }
@@ -8347,6 +8351,21 @@ UPDATE community_market c SET retired_at = now()
    AND NOT EXISTS (SELECT 1 FROM market_call mc WHERE mc.slug = c.slug)
 RETURNING c.slug`;
 
+/*
+ * 15 OCT: THE GOLD MARKET GOES BACK ON THE BOARD. It came off on 13 Oct with
+ * nothing in it, but its page stayed up, a bet came in through a shared link
+ * and minted it, and the rule it was minted with (below $4,200 at Friday's
+ * close) is a fair question. The oracle sweeps the board only, so a market
+ * holding money cannot stay off it. One-way: once it is back, or settled, this
+ * matches nothing. Retired markets take no new money from now on (position
+ * prepare and ensureMinted refuse them), so this is the only one.
+ */
+const RETURN_GOLD_2026_10_15 = `
+UPDATE community_market c SET retired_at = NULL
+ WHERE c.slug = 'will-the-price-of-gold-xauusd-176a74'
+   AND c.retired_at IS NOT NULL AND c.onchain_pubkey IS NOT NULL AND c.resolved_outcome IS NULL
+RETURNING c.slug`;
+
 /** Puts the four right if they still read an old way; the slugs it changed. */
 export async function rereadMisreadMarkets(): Promise<string[]> {
   if (!PERSISTENT) return [];
@@ -8356,7 +8375,7 @@ export async function rereadMisreadMarkets(): Promise<string[]> {
      A deadlock aborts one statement whole, so it is simply run again. */
   await ensureSchema();
   const changed: string[] = [];
-  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13]) {
+  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13, RETURN_GOLD_2026_10_15]) {
     const { rows } = await retryOnDeadlock(() => db().query<{ slug: string }>(sql));
     changed.push(...rows.map((r) => r.slug));
   }
@@ -8380,4 +8399,5 @@ export async function retryOnDeadlock<T>(run: () => Promise<T>, tries = 3, waitM
 export const REREAD_2026_10_12_SQL = REREAD_2026_10_12;
 export const REREAD_2026_10_13_SQL = REREAD_2026_10_13;
 export const RETIRE_GOLD_2026_10_13_SQL = RETIRE_GOLD_2026_10_13;
+export const RETURN_GOLD_2026_10_15_SQL = RETURN_GOLD_2026_10_15;
 
