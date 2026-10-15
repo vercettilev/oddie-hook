@@ -207,14 +207,25 @@ function untilFrom(text: string): When | null {
   return ways.length === 1 ? ways[0] : null;
 }
 
+/* "Close the hour green" is a candle without the word. The pitch to the first
+   YouTube host used exactly that, and it went to the room as a !result call
+   (15 Oct, live test). Only the hour: everyone's hour turns at the same moment,
+   while "the day" has the same whose-today problem as a touch "today". */
+function hourFrom(text: string): "current" | "next" | null {
+  if (/\bnext hour\b/.test(text)) return "next";
+  if (/\b(the|this|current|the current) hour\b/.test(text)) return "current";
+  return null;
+}
+
 function candleCall(text: string, asset: string): PriceCall | null {
-  if (!/\bcandles?\b/.test(text)) return null;
-  const size = sizeFrom(text);
+  const hour = /\bcandles?\b/.test(text) ? null : hourFrom(text);
+  if (!hour && !/\bcandles?\b/.test(text)) return null;
+  const size = hour ? "1h" : sizeFrom(text);
   if (!size) return null;
   const colors = [...new Set([...text.matchAll(/\b(green|red)\b/g)].map((m) => m[1]))];
   const level = levelTestFrom(text);
   if (level === "many" || colors.length + (level ? 1 : 0) !== 1) return null;
-  const which = /\bnext\b/.test(text) ? "next" : "current";
+  const which = hour ?? (/\bnext\b/.test(text) ? "next" : "current");
   if (colors.length) return { kind: "candle", asset, size, which, test: { kind: colors[0] as "green" | "red" } };
   // A level is about where the candle CLOSES. "Go above 82k this candle" is a
   // move on the way, which is a touch, below.

@@ -22,6 +22,11 @@ const read: Array<[string, PriceCall]> = [
   ["TON 15 min candle close red?", { kind: "candle", asset: "TON", size: "15m", which: "current", test: { kind: "red" } }],
   ["will PEPE 15m candle close above 0.00001", { kind: "candle", asset: "PEPE", size: "15m", which: "current", test: { kind: "above", level: 0.00001 } }],
   ["will bitcoin close this half hour candle above 1.2m", { kind: "candle", asset: "BTC", size: "30m", which: "current", test: { kind: "above", level: 1200000 } }],
+  // the hour without the word "candle" (15 Oct: the YouTube pitch said exactly this)
+  ["will btc close the hour green?", { kind: "candle", asset: "BTC", size: "1h", which: "current", test: { kind: "green" } }],
+  ["will SOL close green this hour", { kind: "candle", asset: "SOL", size: "1h", which: "current", test: { kind: "green" } }],
+  ["will ETH close the next hour red", { kind: "candle", asset: "ETH", size: "1h", which: "next", test: { kind: "red" } }],
+  ["will BTC close above 82k this hour?", { kind: "candle", asset: "BTC", size: "1h", which: "current", test: { kind: "above", level: 82000 } }],
   // at a moment
   ["will BTC be above 82k in 10 minutes?", { kind: "at", asset: "BTC", when: { kind: "in", minutes: 10 }, test: { kind: "above", level: 82000 } }],
   ["SOL under 150 in 30 min?", { kind: "at", asset: "SOL", when: { kind: "in", minutes: 30 }, test: { kind: "below", level: 150 } }],
@@ -60,6 +65,8 @@ for (const q of [
   "will BTC hit 83k in the next 4h candle",            // a window that has not started
   "will BTC be above 82k in 10 minutes or at 18:00 UTC", // two times
   "will btc go up in 10 minutes",                      // no level
+  "will BTC close the day green",                      // whose day?
+  "will BTC be above 82k this hour",                   // a close or a moment? left alone
 ]) eq(parsePriceCall(q), null, `left to the channel: ${q}`);
 
 /* ---------------------------------------------------------------- time -- */
