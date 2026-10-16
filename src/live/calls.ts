@@ -731,7 +731,9 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   /* MATCH CALLS FROM THE STREAM (src/live/frameCalls.ts): on for every channel
      until a runner says otherwise. The picture pass reads the flag. */
   if (cmd.kind === "matches") {
-    if (deps.votesOnly) { await sayQuiet(deps, msg, LIVE_COPY.matchesElsewhere, msg.messageId); return "matches-elsewhere"; }
+    // YouTube's stream is never read. X Live runs votes too, but its screen
+    // is read (src/live/screenCalls.ts), so its streamer can turn that off.
+    if (deps.votesOnly && msg.platform === "youtube") { await sayQuiet(deps, msg, LIVE_COPY.matchesElsewhere, msg.messageId); return "matches-elsewhere"; }
     if (/^(off|stop|no)$/i.test(cmd.arg)) {
       await deps.store.setMatchCalls(msg.platform, msg.channelId, false);
       await sayQuiet(deps, msg, LIVE_COPY.matchesOff, msg.messageId);

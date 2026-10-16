@@ -1980,7 +1980,8 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   const kickEng = kickEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
   const twEng = twitchEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
   const ytEng = youtubeEngineDeps({ log: liveLog });
-  const xEng = xEngineDeps({ log: liveLog, markets: kickMarkets, appBaseUrl: APP_BASE_URL });
+  // X Live runs votes: its chat refuses any line with a link (src/x/live.ts).
+  const xEng = xEngineDeps({ log: liveLog });
   const engOf = (p: Platform): LiveDeps => (p === "twitch" ? twEng : p === "youtube" ? ytEng : p === "x" ? xEng : kickEng);
   const clock: LiveDeps = {
     ...kickEng,
@@ -5064,23 +5065,6 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       for (const t of threads) {
         await eng.say("twitch", t.channelId, text, t.messageId)
           .catch((e) => liveLog("twitch result not delivered", { slug, channel: t.channelId, err: (e as Error).message }));
-      }
-    }).catch(() => {});
-  }
-
-  /* AND IN X LIVE CHAT, the same way. A line only goes out while the stream
-     that opened it is live: X live chat has no "after" to post into. */
-  if (xLiveConfigured()) {
-    void chainDone.then(async () => {
-      const threads = await streamThreadsForSlug("x", slug).catch(() => []);
-      if (!threads.length) return;
-      const d = await communityMarketDetail(slug).catch(() => null);
-      const headline = d ? foldIds(d.hook || d.question) : slug;
-      const text = `It's ${outcome.toUpperCase()}: "${headline}" Winners collect at ${APP_BASE_URL}/m/${slug}`;
-      const eng = xEngineDeps({ log: liveLog });
-      for (const t of threads) {
-        await eng.say("x", t.channelId, text, t.messageId)
-          .catch((e) => liveLog("x live result not delivered", { slug, channel: t.channelId, err: (e as Error).message }));
       }
     }).catch(() => {});
   }

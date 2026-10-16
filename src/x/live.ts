@@ -34,9 +34,8 @@ import { accessToken, adoptTokens, botUserId, BOT_SCOPES, xConfigured } from "./
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { paced, patiently } from "../live/pace.js";
 import { channelById, liveStore, saveChannel } from "../store/live.js";
-import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
-import { botStateGet, botStateSet, xLiveChatSource } from "../store/markets.js";
+import { botStateGet, botStateSet } from "../store/markets.js";
 import { splitForChat } from "../youtube/client.js";
 
 const API = "https://api.x.com/2";
@@ -250,17 +249,15 @@ async function withVoice<T>(voice: XVoice, f: (token: string) => Promise<T>): Pr
 
 /* ------------------------------------------------------------- engine -- */
 
-/** The market door's own parts (src/live/claims.ts), as server.ts builds them for every stream. */
-export type XMarkets = Omit<ChatMarketDeps, "sourceFor" | "say">;
-
 /**
  * The engine's hands on X. Every line goes out from @oddiefun into the
  * broadcast the streamer is live in, cut to X's 140 characters, a second
- * apart. No pins. With `markets`, !oddie opens a real market and the channel
- * earns its 2%, as on Kick and Twitch (Lev, 16 Oct); without, votes only.
+ * apart. No pins, no market, no link: X's live chat refuses any line with a
+ * link in it (400 "message cannot contain urls", Lev's live on 16 Oct), and a
+ * market is nothing without its link. So X Live runs votes, settled by the
+ * streamer or off the screen (src/live/screenCalls.ts).
  */
-export function xEngineDeps(d: { log: Log; markets?: XMarkets; appBaseUrl?: string }, api: XLiveApi = xLiveApi, voice: XVoice = botVoice): LiveDeps {
-  const base = (d.appBaseUrl ?? "").replace(/\/+$/, "");
+export function xEngineDeps(d: { log: Log }, api: XLiveApi = xLiveApi, voice: XVoice = botVoice): LiveDeps {
   const say = async (_p: unknown, channelId: string, text: string, replyTo?: string): Promise<string | void> => {
     const broadcast = liveIn.get(channelId);
     if (!broadcast) return;   // off air: no chat to say it in
@@ -272,23 +269,13 @@ export function xEngineDeps(d: { log: Log; markets?: XMarkets; appBaseUrl?: stri
     }
     return first ?? undefined;
   };
-  const markets = d.markets;
   return {
     store: liveStore,
     now: () => Date.now(),
     say,
-    standingsUrl: async (_p, channelId) => {
-      if (!markets || !base) return "";
-      const ch = await channelById("x", channelId).catch(() => null);
-      return `${base}/live/x/${encodeURIComponent(ch?.slug ?? channelId)}`;
-    },
+    standingsUrl: async () => "",
     streamLive: async (_p, channelId) => (liveIn.has(channelId) ? true : ended.has(channelId) ? false : null),
-    market: markets ? (msg, claim) => openFromChat(msg, claim, {
-      ...markets,
-      sourceFor: (m) => xLiveChatSource(m.channelSlug || m.channelId, m.messageId),
-      say: async (m, text) => { await say("x", m.channelId, text, m.messageId); },
-    }) : undefined,
-    votesOnly: !markets,
+    votesOnly: true,
     log: d.log,
   };
 }
