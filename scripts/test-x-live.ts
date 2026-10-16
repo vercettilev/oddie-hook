@@ -226,6 +226,19 @@ console.log("\nthe activity stream's framing");
   check("one event per line, a line cut anywhere, keep-alives and junk skipped", got.join(",") === "s1,s2,s3", got.join(","));
 }
 
+console.log("\nhow often an X stream's picture changes");
+{
+  const { probeThumbnail } = await import("../src/x/live.js");
+  const bodies = ["a", "a", "b", "b", "b", "c"];
+  let i = 0;
+  const lines: Array<[string, Record<string, unknown> | undefined]> = [];
+  const fetcher = (async () => new Response(bodies[Math.min(i++, bodies.length - 1)], { headers: { "content-type": "image/jpeg" } })) as unknown as typeof fetch;
+  const out = await probeThumbnail("https://x.test/thumb.jpg", "b1", (l, e) => lines.push([l, e]), { everyMs: 15_000, forMs: 75_000, fetcher, sleep: async () => {} });
+  const done = lines.find(([l]) => l === "x thumbnail probe done")?.[1];
+  check("the picture is fetched on a beat and each change is counted", out.fetches === 6 && out.changes === 2, JSON.stringify(out));
+  check("...and the log says when it changed", done?.gapsSeconds === "30,45" && lines.filter(([l]) => l === "x thumbnail changed").length === 2, JSON.stringify(done));
+}
+
 server.close();
 console.log(failures ? `\n${failures} FAILED` : "\nall x live checks passed.");
 process.exit(failures ? 1 : 0);

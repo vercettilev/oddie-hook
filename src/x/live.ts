@@ -298,6 +298,42 @@ export function chatFromX(ev: XActivityEvent, ch: { slug: string } | null, voice
   };
 }
 
+/* HOW OFTEN AN X STREAM'S PICTURE CHANGES. broadcast.start hands over a live
+   thumbnail URL. Whether it can stand in for frames (a moment read off the
+   stream, as src/live/frameCalls.ts does on Twitch and Kick) depends on how
+   often it is refreshed, which X does not document. So for the first minutes
+   of a broadcast it is fetched on a beat and every change is logged. */
+const probing = new Set<string>();
+export async function probeThumbnail(url: string, broadcast: string, log: Log, o: {
+  everyMs?: number; forMs?: number; fetcher?: typeof fetch; sleep?: (ms: number) => Promise<void>;
+} = {}): Promise<{ fetches: number; changes: number }> {
+  const everyMs = o.everyMs ?? 15_000, forMs = o.forMs ?? 5 * 60_000;
+  const get = o.fetcher ?? fetch;
+  const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  if (probing.has(broadcast)) return { fetches: 0, changes: 0 };
+  probing.add(broadcast);
+  let fetches = 0, changes = 0, last = "", lastAt = 0;
+  const gaps: number[] = [];
+  try {
+    for (let t = 0; t <= forMs; t += everyMs) {
+      if (t) await sleep(everyMs);
+      try {
+        const res = await get(url, { signal: AbortSignal.timeout(10_000) });
+        const body = Buffer.from(await res.arrayBuffer());
+        fetches++;
+        const hash = createHash("sha256").update(body).digest("hex").slice(0, 12);
+        if (fetches === 1) log("x thumbnail first", { broadcast, status: res.status, bytes: body.length, type: res.headers.get("content-type"), cache: res.headers.get("cache-control"), modified: res.headers.get("last-modified") });
+        if (hash !== last) {
+          if (last) { changes++; gaps.push(Math.round((t - lastAt) / 1000)); log("x thumbnail changed", { broadcast, atSecond: Math.round(t / 1000), bytes: body.length }); }
+          last = hash; lastAt = t;
+        }
+      } catch (e) { log("x thumbnail not read", { broadcast, err: (e as Error).message.slice(0, 120) }); }
+    }
+  } finally { probing.delete(broadcast); }
+  log("x thumbnail probe done", { broadcast, fetches, changes, everySeconds: everyMs / 1000, gapsSeconds: gaps.join(",") || null });
+  return { fetches, changes };
+}
+
 /** One event off the stream. */
 export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: Log; now?: () => number }): Promise<string> {
   const id = str(ev.event_uuid);
@@ -316,6 +352,7 @@ export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: L
       // The live thumbnail X hands over: logged to learn how often it changes,
       // the way to read a moment off an X stream (frames) without scraping.
       w.log("x broadcast on air", { channel: owner, broadcast, thumbnail: str(ev.payload?.thumbnail_url) });
+      { const thumb = str(ev.payload?.thumbnail_url); if (thumb && broadcast) void probeThumbnail(thumb, broadcast, w.log); }
       return "start";
     case "broadcast.end":
       if (!broadcast || liveIn.get(owner) === broadcast) liveIn.delete(owner);
