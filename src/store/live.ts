@@ -523,8 +523,9 @@ export interface CallSummary { id: string; question: string; outcome: Side | nul
 export interface Range { since?: number; until?: number }
 const FAR = Date.UTC(9999, 0, 1);
 const inRange = (at: number | null, r: Range): boolean => at !== null && at >= (r.since ?? 0) && at < (r.until ?? FAR);
-/** oddie's own voice and the founder's test account never rank (Lev, 8 Oct). */
-export const HOUSE_ACCOUNTS = ["oddiefun", "levvercetti"];
+/** oddie's own voice and the founder's accounts never rank (Lev, 8 Oct; Spot
+ *  and Poppin added 16 Oct: "spot da benim hesabım"). */
+export const HOUSE_ACCOUNTS = ["oddiefun", "levvercetti", "usespotdotfun", "poppin_so"];
 const isHouse = (name: string | null): boolean => HOUSE_ACCOUNTS.includes(String(name ?? "").replace(/^@+/, "").toLowerCase());
 
 /** A channel's standings: every settled call in the window, summed per person. */
