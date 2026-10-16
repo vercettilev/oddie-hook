@@ -7,7 +7,7 @@
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { liveStore, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS } from "../src/live/screenCalls.js";
+import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS } from "../src/live/screenCalls.js";
 import { cleanSeen, parseScreen, screenPrompt, screenSource, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { onXEvent, xEngineDeps, xThumbnail, _resetXLive, type XLiveApi, type XVoice } from "../src/x/live.js";
 
@@ -142,6 +142,11 @@ console.log("\nwhat does not settle");
   x.readings.push(yes());
   await x.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
   check("the streamer's own !call settles first, and the screen says nothing after", x.said.length === settled && x.counts().asks === 1);
+
+  const z = await room();
+  await handleChat(z.line("nova", "!call will I make it to the final?", true), z.deps);
+  await z.at(SCREEN_MAX_AGE_MS + 1_000);
+  check("a call open past its third hour is not looked at any more: !call yes still settles it", z.counts().grabs === 0);
 
   const y = await room();
   await handleChat(y.line("nova", "!call will I win this match?", true), y.deps);
