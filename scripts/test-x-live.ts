@@ -114,6 +114,11 @@ console.log("\na streamer connects");
   const bad = await signIn("/live/x/connect", "streamer");
   check("when X refuses the chat subscription, the streamer is told to go again", bad.back.endsWith("/live?x=subscribe"), bad.back);
   failChatSub = false;
+  const subsBefore = subs.length;
+  const self = await signIn("/live/x/connect", "voice");
+  const voiceNow = await channelById("x", ODDIE);
+  check("oddie's own account at the streamers' door is turned away, its writing token untouched",
+    self.back.endsWith("/live?x=is-voice") && subs.length === subsBefore && voiceNow?.accessToken === "at-voice" && voiceNow.refreshToken === "rt-voice", self.back);
   const page = await get("/live/x/AleksaFlamingo");
   check("the channel's page is served", page.status === 200);
 }

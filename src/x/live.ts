@@ -434,6 +434,13 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
         d.log("x voice sign-in by another account, refused", { handle: who.username });
         fail("voice"); return true;
       }
+      // oddie's own account at the streamers' door would trade its writing token
+      // for a reading one (16 Oct, live: the browser was still signed in as
+      // @oddiefun). Nothing is saved; the person is told to switch accounts.
+      if (p.kind === "streamer" && isVoice) {
+        d.log("x streamer door used by oddie's own account, nothing changed", { handle: who.username });
+        fail("is-voice"); return true;
+      }
       await saveChannel({
         platform: "x", channelId: who.id, slug: who.username, name: who.name, avatar: who.avatar,
         accessToken: t.accessToken, refreshToken: t.refreshToken, tokenExpiresAt: t.expiresAt, active: true,

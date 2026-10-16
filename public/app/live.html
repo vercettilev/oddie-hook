@@ -506,7 +506,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + (q === "declined" ? '<p class="note">No problem. Press Add oddie to ' + qp + ' whenever you are ready.</p>' : "")
       + (q === "failed" ? '<p class="note">Connecting to ' + qp + ' needs one more try. Press Add oddie to ' + qp + ' again.</p>' : "")
       + (qx === "declined" ? '<p class="note">No problem. <a href="/live/x/connect">Connect X</a> whenever you are ready.</p>' : "")
-      + (qx && qx !== "declined" && qx !== "voice" ? '<p class="note">Connecting X needs one more try. <a href="/live/x/connect">Connect X again</a>.</p>' : "")
+      + (qx === "is-voice" ? '<p class="note">You are signed in to X as @oddiefun. Switch to your own account, then <a href="/live/x/connect">connect X</a>.</p>' : "")
+      + (qx && qx !== "declined" && qx !== "voice" && qx !== "is-voice" ? '<p class="note">Connecting X needs one more try. <a href="/live/x/connect">Connect X again</a>.</p>' : "")
       + (qx === "voice" ? '<p class="note">That door is for oddie\'s own account. Streamers: <a href="/live/x/connect">connect X here</a>.</p>' : "")
       + '<section class="yt" id="youtube" aria-labelledby="yt-t"><h2 class="yt__t" id="yt-t">On YouTube</h2>'
       + '<p class="yt__p">Paste your channel link, go live, and open a vote with <code>!call will I win this round?</code> Your chat answers, oddie keeps score.</p>'
