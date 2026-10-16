@@ -659,11 +659,14 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     const fresh = await deps.store.pick(call, msg.senderId, msg.senderName, cmd.side, now);
     if (!fresh) return "already-picked";
     // Who answered since the last split line: said by name in the next one.
+    // The first answer is said at once (Lev's live, 16 Oct: a !yes with no
+    // word back reads as broken); after it, a line at most every 30 seconds,
+    // and the clock says the ones still waiting (sayVotes).
     const since = newSince.get(call.id) ?? { yes: [], no: [] };
     since[cmd.side].push(msg.senderName);
     newSince.set(call.id, since);
-    const last = lastSplit.get(call.id) ?? call.openedAt;
-    if (now - last >= SPLIT_GAP_MS) {
+    const last = lastSplit.get(call.id);
+    if (last === undefined || now - last >= SPLIT_GAP_MS) {
       lastSplit.set(call.id, now);
       newSince.delete(call.id);
       await sayQuiet(deps, msg, LIVE_COPY.split(await deps.store.tally(call.id), since.yes, since.no, call.timed ? call.closesAt - now : null));
@@ -790,7 +793,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       if (other) await sayQuiet(deps, msg, LIVE_COPY.busy(other.question), msg.messageId);
       return "busy";
     }
-    lastSplit.set(opened.id, now); lastSaid.set(opened.id, now);
+    lastSaid.set(opened.id, now);
     const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId)));
     await pinQuiet(deps, msg, id);
     await sayLastWeek(deps, msg, now);
@@ -992,6 +995,27 @@ export async function remindOpen(deps: LiveDeps): Promise<number> {
     lastSaid.set(call.id, now);
     const id = await sayQuiet(deps, call, LIVE_COPY.reminder(call.question, await deps.store.tally(call.id), call.timed ? call.closesAt - now : null, isRoomCall(call)));
     await pinQuiet(deps, call, id);
+    n++;
+  }
+  return n;
+}
+
+/** The answers since the last split line, said by the clock once the gap is
+ *  up. A call's first answer, and any after the gap, is said at once (the
+ *  pick); one inside the gap waits for the next, and on a quiet stream there
+ *  may be none. Returns how many lines it said. */
+export async function sayVotes(deps: LiveDeps): Promise<number> {
+  if (!newSince.size) return 0;
+  const now = deps.now();
+  let n = 0;
+  const live = await deps.store.takingAnswers().catch(() => [] as LiveCall[]);
+  for (const call of live) {
+    const since = newSince.get(call.id);
+    if (!since || (!since.yes.length && !since.no.length)) continue;
+    if (now - (lastSplit.get(call.id) ?? 0) < SPLIT_GAP_MS) continue;
+    lastSplit.set(call.id, now);
+    newSince.delete(call.id);
+    await sayQuiet(deps, call, LIVE_COPY.split(await deps.store.tally(call.id), since.yes, since.no, call.timed ? call.closesAt - now : null));
     n++;
   }
   return n;

@@ -12,7 +12,7 @@ import type { AddressInfo } from "node:net";
 import bs58 from "bs58";
 import express from "express";
 import {
-  parseCommand, handleChat, lockDue, remindOpen, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
+  parseCommand, handleChat, lockDue, remindOpen, sayVotes, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
   EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, REPORT_WINDOW_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
@@ -105,6 +105,25 @@ function room() {
   return { deps, said, pins, unpins: () => unpins, line, tick: (ms: number) => { clock += ms; } };
 }
 
+console.log("\na call's first answer is said at once, the rest by the clock (Lev's live, 16 Oct)");
+{
+  const r = room();
+  await handleChat(r.line("mod", "!call will he clutch this?", true), r.deps);
+  await handleChat(r.line("spot", "!yes"), r.deps);
+  check("the first answer is said at once: the chat sees it counted",
+    r.said.length === 2 && r.said[1]?.text === LIVE_COPY.split({ yes: 1, no: 0 }, ["spot"], [], null), r.said[1]?.text);
+  await handleChat(r.line("bo", "!no"), r.deps);
+  check("an answer inside the next 30 seconds waits", r.said.length === 2);
+  check("...and the clock does not say it before the gap is up", (await sayVotes(r.deps)) === 0 && r.said.length === 2);
+  r.tick(SPLIT_GAP_MS);
+  check("once the gap is up, the clock says who answered and where it stands",
+    (await sayVotes(r.deps)) === 1 && r.said[2]?.text === LIVE_COPY.split({ yes: 1, no: 1 }, [], ["bo"], null), r.said[2]?.text);
+  r.tick(SPLIT_GAP_MS);
+  check("...once: with nobody new, the clock says nothing more", (await sayVotes(r.deps)) === 0 && r.said.length === 3);
+  await handleChat(r.line("cy", "!no"), r.deps);
+  check("an answer after the gap is still said at once, by the pick", r.said.length === 4 && r.said[3]?.text.startsWith("@cy no → "), r.said[3]?.text);
+}
+
 console.log("\na timed call, start to finish");
 {
   const r = room();
@@ -117,10 +136,11 @@ console.log("\na timed call, start to finish");
   check("...and the line is pinned where the platform can", r.pins.length === 1 && r.pins[0] === r.said[0]?.id);
   for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!no"], ["d", "!no"], ["e", "!no"]] as const) await handleChat(r.line(who, side), r.deps);
   check("one answer per person, and it is final", (await handleChat(r.line("a", "!no"), r.deps)) === "already-picked");
-  check("the split is not repeated on every answer", r.said.length === 1);
+  check("the first answer is said at once", r.said[1]?.text === "@a yes → 100% yes, 3 min left", r.said[1]?.text);
+  check("...and the split is not repeated on every answer", r.said.length === 2);
   r.tick(SPLIT_GAP_MS);
   await handleChat(r.line("f", "!yes"), r.deps);
-  check("...but the room hears who answered, by name, and where it stands", r.said[1]?.text === "@a @f yes · @b @c @d +1 no → 67% no, 3 min left", r.said[1]?.text);
+  check("...but the room hears who answered since, by name, and where it stands", r.said[2]?.text === "@f yes · @b @c @d +1 no → 67% no, 3 min left", r.said[2]?.text);
   r.tick(3 * 60_000);
   check("after the time is up an answer is late", (await handleChat(r.line("g", "!yes"), r.deps)) === "late");
   check("...and the call locks, said once", r.said.filter((s) => s.text.startsWith("Calls are locked")).length === 1);
@@ -175,7 +195,7 @@ console.log("\na timed call, start to finish");
   await handleChat(r.line("mod", "!call will he win?", true), r.deps);
   await handleChat(r.line("a", "!yes"), r.deps);
   const out = await handleChat(r.line("mod", "!call no", true), r.deps);
-  check("settling an open call locks it first", out === "settled" && /The room went the other way/.test(r.said[1]?.text ?? ""));
+  check("settling an open call locks it first", out === "settled" && r.said.some((x) => /The room went the other way/.test(x.text)), JSON.stringify(r.said.map((x) => x.text)));
   check("the copy never says nobody", Object.values(LIVE_COPY).every((v) => typeof v !== "string" || !/nobody/i.test(v)));
 }
 
@@ -189,7 +209,7 @@ console.log("\na call open until it is settled (8 Oct: \"before the stream ends?
   await handleChat(r.line("a", "!yes"), r.deps);
   r.tick(2 * 60 * 60_000);
   check("two hours on, an answer still counts", (await handleChat(r.line("b", "!no"), r.deps)) === "picked");
-  check("...the split says no clock", r.said[r.said.length - 1]?.text === "@a yes · @b no → 50% yes", r.said[r.said.length - 1]?.text);
+  check("...the split says no clock", r.said[r.said.length - 1]?.text === "@b no → 50% yes", r.said[r.said.length - 1]?.text);
   check("...and the clock does not lock it", (await lockDue(r.deps)) === 0);
   await handleChat(r.line("owner", "!call yes", true), r.deps);
   const st = await channelStandings("kick", "100");

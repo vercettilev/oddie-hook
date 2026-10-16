@@ -32,7 +32,7 @@ import { twitchConfigured } from "./twitch/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
 import { youtubeConfigured } from "./youtube/client.js";
 import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter, xThumbnail } from "./x/live.js";
-import { lockDue, remindOpen, weekStart, type LiveDeps, type Platform } from "./live/calls.js";
+import { lockDue, remindOpen, sayVotes, weekStart, type LiveDeps, type Platform } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
 import { watchFrames } from "./live/frameCalls.js";
@@ -2001,6 +2001,7 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
     void Promise.all([
       lockDue(clock).catch((e) => liveLog("live clock failed", { err: (e as Error).message })),
       remindOpen(clock).catch((e) => liveLog("live reminder failed", { err: (e as Error).message })),
+      sayVotes(clock).catch((e) => liveLog("live answers line failed", { err: (e as Error).message })),
       watchGames(clock).catch((e) => liveLog("live game pass failed", { err: (e as Error).message })),
       watchFrames(clock).catch((e) => liveLog("live picture pass failed", { err: (e as Error).message })),
     ]).finally(() => { ticking = false; });
