@@ -157,14 +157,43 @@ async function refresh(): Promise<Access> {
   return { token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 7200) * 1000 };
 }
 
+/* ONE REFRESH AT A TIME. Two at once would spend the same refresh token, X
+   revokes a spent one, and the second would leave the chain dead. The reply
+   bot and X live chat (src/x/live.ts) both speak as @oddiefun on this one
+   chain, so they can ask at the same moment. */
+let refreshing: Promise<Access> | null = null;
+
 export async function accessToken(force = false): Promise<string> {
   if (!force && cached && cached.expiresAt - SKEW_MS > Date.now()) return cached.token;
-  cached = await refresh();
+  refreshing ??= refresh().finally(() => { refreshing = null; });
+  cached = await refreshing;
   return cached.token;
 }
 
+/** Everything @oddiefun's one token is for: the reply bot's posts and cards,
+ *  and X live chat (broadcast.*). scripts/x-authorize.ts asks for the same. */
+export const BOT_SCOPES = "tweet.read tweet.write media.write users.read offline.access broadcast.read broadcast.write";
+
+/** @oddiefun's own user id: its lines coming back through a chat are its own. */
+export const botUserId = (): string => BOT_USER_ID;
+
+/**
+ * A NEW CONSENT FROM @ODDIEFUN BECOMES THE ONE CHAIN (16 Oct, live: X revokes
+ * an account's earlier tokens for this app the moment it consents again, so a
+ * second chain for X live chat killed the reply bot's, which then failed every
+ * refresh with invalid_request). The consent at /live/x/voice asks for
+ * BOT_SCOPES and lands here: the store first, so a restart reads it, then
+ * memory. The env seed is marked spent, or it would win over this token on the
+ * next refresh.
+ */
+export async function adoptTokens(t: { accessToken: string; refreshToken: string; expiresAt: number }): Promise<void> {
+  if (SEED_REFRESH) await botStateSet(SEED_KEY, SEED_REFRESH);
+  await botStateSet(REFRESH_KEY, t.refreshToken);
+  cached = { token: t.accessToken, expiresAt: t.expiresAt };
+}
+
 /** Test seam: drop the cached access token. */
-export function _resetTokenCache(): void { cached = null; }
+export function _resetTokenCache(): void { cached = null; refreshing = null; }
 
 /* ------------------------------------------------------------- requests ---- */
 

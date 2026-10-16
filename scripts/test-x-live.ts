@@ -12,8 +12,10 @@ import { _resetLive } from "../src/live/calls.js";
 import { liveStore, channelById, saveChannel, _resetLiveStore } from "../src/store/live.js";
 import {
   chatFromX, onXEvent, xEngineDeps, xLiveApi, xLiveRouter, _liveIn, _resetXLive, X_CHAT_MAX,
-  type XActivityEvent, type XLiveApi,
+  type XActivityEvent, type XLiveApi, type XVoice,
 } from "../src/x/live.js";
+import { accessToken, adoptTokens, BOT_SCOPES, _resetTokenCache } from "../src/x/client.js";
+import { botStateGet } from "../src/store/markets.js";
 import { _setPace } from "../src/live/pace.js";
 
 _setPace({ gapMs: 0, retryMs: [0, 0] });
@@ -39,9 +41,16 @@ const users: Record<string, { id: string; username: string }> = {
 const sent: Array<{ token: string; broadcast: string; text: string; replyTo?: string }> = [];
 const subs: Array<{ token: string; user: string; ev: string }> = [];
 let failChatSub = false, refreshes = 0, rejectNext401 = false;
+/* @oddiefun as the reply bot holds it (src/x/client.ts): one token chain. */
+const adopted: Array<{ accessToken: string; refreshToken: string }> = [];
+const voice: XVoice = {
+  ready: () => true,
+  token: async (force) => { if (force) refreshes++; return "at-voice"; },
+  userId: () => ODDIE,
+  adopt: async (t) => { adopted.push(t); },
+};
 const api: XLiveApi = {
   exchangeCode: async (code) => ({ accessToken: `at-${code}`, refreshToken: `rt-${code}`, expiresAt: Date.now() + 7_200_000 }),
-  refreshTokens: async (rt) => { refreshes++; return { accessToken: `at-voice`, refreshToken: `${rt}+`, expiresAt: Date.now() + 7_200_000 }; },
   me: async (token) => {
     const u = users[token];
     if (!u) throw Object.assign(new Error("unknown token"), { status: 401 });
@@ -64,7 +73,7 @@ const api: XLiveApi = {
 _resetLiveStore(); _resetLive(); _resetXLive();
 const log = () => {};
 const app = express();
-const xl = xLiveRouter({ appBaseUrl: "https://app.test", redirectUri: "https://oddie.test/api/auth/twitter/callback", pageHtml: () => "<html></html>", pageOpen: () => true, pageClosed: (res) => res.status(404).end(), log, api });
+const xl = xLiveRouter({ appBaseUrl: "https://app.test", redirectUri: "https://oddie.test/api/auth/twitter/callback", pageHtml: () => "<html></html>", pageOpen: () => true, pageClosed: (res) => res.status(404).end(), log, api, voice });
 app.use(xl.router);
 // What server.ts does: X's one registered callback hands this file its own states.
 app.get("/api/auth/twitter/callback", async (req, res) => {
@@ -86,13 +95,16 @@ const signIn = async (door: string, code: string) => {
 console.log("oddie's own account");
 {
   const v = await signIn("/live/x/voice", "voice");
-  check("the voice door asks X for chat writing", v.authorize.origin === "https://x.com" && /broadcast\.write/.test(v.authorize.searchParams.get("scope") ?? "")
+  check("the voice door asks for everything the reply bot needs, and chat writing", v.authorize.origin === "https://x.com"
+    && v.authorize.searchParams.get("scope") === BOT_SCOPES && /broadcast\.write/.test(BOT_SCOPES) && /tweet\.write/.test(BOT_SCOPES) && /media\.write/.test(BOT_SCOPES)
     && v.authorize.searchParams.get("redirect_uri") === "https://oddie.test/api/auth/twitter/callback" && v.authorize.searchParams.get("code_challenge_method") === "S256");
-  const voice = await channelById("x", ODDIE);
-  check("signed in, it keeps the token every line goes out with", v.back.endsWith("/live/x/Oddiefun?voice=1") && voice?.accessToken === "at-voice" && voice.refreshToken === "rt-voice");
+  check("signed in, the token becomes the bot's own, the one chain replies and chat share",
+    v.back.endsWith("/live/x/Oddiefun?voice=1") && adopted.length === 1 && adopted[0].accessToken === "at-voice" && adopted[0].refreshToken === "rt-voice");
+  check("...and no second copy of it is kept as a channel", !(await channelById("x", ODDIE)));
   check("nobody subscribes oddie to its own chat", subs.length === 0);
   const other = await signIn("/live/x/voice", "other");
-  check("another account at oddie's door is turned away", other.back.endsWith("/live?x=voice") && !(await channelById("x", "5000000000000000005")));
+  check("another account at oddie's door is turned away, the bot's token untouched",
+    other.back.endsWith("/live?x=voice") && adopted.length === 1 && !(await channelById("x", "5000000000000000005")));
   const stray = await get("/api/auth/twitter/callback?state=xl_nope&code=1");
   check("one of ours this process never saw goes back to /live to try again, not to the site's sign-in",
     (stray.headers.get("location") ?? "").endsWith("/live?x=expired"));
@@ -119,9 +131,8 @@ console.log("\na streamer connects");
   failChatSub = false;
   const subsBefore = subs.length;
   const self = await signIn("/live/x/connect", "voice");
-  const voiceNow = await channelById("x", ODDIE);
-  check("oddie's own account at the streamers' door is turned away, its writing token untouched",
-    self.back.endsWith("/live?x=is-voice") && subs.length === subsBefore && voiceNow?.accessToken === "at-voice" && voiceNow.refreshToken === "rt-voice", self.back);
+  check("oddie's own account at the streamers' door is turned away, nothing saved or adopted",
+    self.back.endsWith("/live?x=is-voice") && subs.length === subsBefore && adopted.length === 1 && !(await channelById("x", ODDIE)), self.back);
   const page = await get("/live/x/AleksaFlamingo");
   check("the channel's page is served", page.status === 200);
 }
@@ -145,8 +156,8 @@ const chat = (text: string, from: { id: string; username: string } = { id: VIEWE
 
 console.log("\na live chat, end to end");
 {
-  const engine = xEngineDeps({ log }, api);
-  const w = { engine, log };
+  const engine = xEngineDeps({ log }, api, voice);
+  const w = { engine, log, voice };
   check("before the stream, oddie does not know it is on air", (await engine.streamLive!("x", STREAMER)) === null);
   await onXEvent({ event_uuid: "start-1", event_type: "broadcast.start", filter: { user_id: STREAMER }, payload: { broadcast_id: "1mGPaZaAdNqJN" } }, w);
   check("broadcast.start puts it on air", _liveIn(STREAMER) === "1mGPaZaAdNqJN" && (await engine.streamLive!("x", STREAMER)) === true);
@@ -183,13 +194,6 @@ console.log("\na live chat, end to end");
   const unknown: XActivityEvent = { ...chat("!call hi"), filter: { user_id: "9999999999999999999" } };
   check("chat from a streamer oddie does not know is left alone", (await onXEvent(unknown, w)) === "unknown-channel");
 
-  // The voice's token runs out: one refresh, then the line goes out.
-  const voice = await channelById("x", ODDIE);
-  await saveChannel({ ...voice!, tokenExpiresAt: Date.now() - 1_000 });
-  const r0 = refreshes, s0 = sent.length;
-  await engine.say("x", STREAMER, "noted.");
-  check("a voice token past its time is refreshed once, and the line goes out", refreshes === r0 + 1 && sent.length === s0 + 1);
-  check("...and X's new refresh token is kept, the old one being dead", (await channelById("x", ODDIE))?.refreshToken === "rt-voice+");
   rejectNext401 = true;
   const r1 = refreshes;
   await engine.say("x", STREAMER, "noted again.");
@@ -224,6 +228,31 @@ console.log("\nthe activity stream's framing");
   globalThis.fetch = realFetch;
   check("the app's stream is read with the app's bearer", asked === "https://api.x.com/2/activity/stream" && auth === "Bearer test-bearer");
   check("one event per line, a line cut anywhere, keep-alives and junk skipped", got.join(",") === "s1,s2,s3", got.join(","));
+}
+
+console.log("\n@oddiefun's one token chain (src/x/client.ts)");
+{
+  const realFetch = globalThis.fetch;
+  const asked: string[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (String(url).includes("/2/oauth2/token")) {
+      asked.push(new URLSearchParams(String(init?.body ?? "")).get("refresh_token") ?? "");
+      await new Promise((r) => setTimeout(r, 20));
+      return new Response(JSON.stringify({ access_token: `fresh-${asked.length}`, refresh_token: `r${asked.length + 1}`, expires_in: 7200 }), { status: 200 });
+    }
+    return realFetch(url, init);
+  }) as typeof fetch;
+  _resetTokenCache();
+  await adoptTokens({ accessToken: "a1", refreshToken: "r1", expiresAt: Date.now() + 7_200_000 });
+  check("an adopted consent is the token the bot speaks with, no refresh needed", (await accessToken()) === "a1" && asked.length === 0);
+  check("...and its refresh token is the one stored for the next restart", (await botStateGet("x_refresh_token")) === "r1");
+  await adoptTokens({ accessToken: "a1", refreshToken: "r1", expiresAt: Date.now() - 1 });
+  const [a, b] = await Promise.all([accessToken(), accessToken()]);
+  check("two callers at once share ONE refresh: a second would spend a dead token and end the chain",
+    asked.length === 1 && asked[0] === "r1" && a === "fresh-1" && b === "fresh-1", JSON.stringify(asked));
+  check("...and the rotated token is stored", (await botStateGet("x_refresh_token")) === "r2");
+  globalThis.fetch = realFetch;
+  _resetTokenCache();
 }
 
 console.log("\nhow often an X stream's picture changes");

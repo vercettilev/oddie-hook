@@ -34,7 +34,11 @@ const REDIRECT = process.env.X_AUTH_REDIRECT ?? `http://127.0.0.1:${PORT}/callba
 // it, and a token missing it fails the upload with a 403 that looks exactly
 // like a broken endpoint. Adding it here means an existing bot has to walk
 // this flow again before its replies can carry an image.
-const SCOPES = "tweet.read tweet.write media.write users.read offline.access";
+// broadcast.read and broadcast.write are X live chat's (src/x/live.ts): the bot
+// and the chat speak as @oddiefun on ONE token chain, because X revokes an
+// account's earlier tokens for this app when it consents again (16 Oct). The
+// same list is BOT_SCOPES in src/x/client.ts, and /live/x/voice asks for it too.
+const SCOPES = "tweet.read tweet.write media.write users.read offline.access broadcast.read broadcast.write";
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error("Set TWITTER_CLIENT_ID and TWITTER_CLIENT_SECRET first.");

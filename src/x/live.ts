@@ -17,10 +17,12 @@
  * the app's one persistent stream (GET /2/activity/stream, app bearer). No
  * webhook: nothing to register, no CRC to answer.
  *
- * HOW A LINE GOES OUT. POST /2/broadcasts/{id}/chat as @oddiefun, with a token
- * oddie's own account grants once at /live/x/voice (broadcast.write). That
- * token lives on oddie's own row in live_channel, sealed, and is separate from
- * the reply bot's (src/x/client.ts), so neither can rotate the other's away.
+ * HOW A LINE GOES OUT. POST /2/broadcasts/{id}/chat as @oddiefun, on the reply
+ * bot's own token (src/x/client.ts). ONE CHAIN FOR @ODDIEFUN: X revokes an
+ * account's earlier tokens for this app the moment it consents again, and on
+ * 16 Oct a second chain for this file killed the reply bot's (every refresh
+ * then failed with invalid_request). So /live/x/voice asks for everything the
+ * bot needs plus broadcast.write, and its token becomes the bot's.
  *
  * Both sign-ins come back through the callback X already knows,
  * /api/auth/twitter/callback: server.ts hands this file the states it issued.
@@ -28,9 +30,10 @@
 import express, { type Response, type Router } from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { handleChat, type ChatMessage, type LiveDeps } from "../live/calls.js";
+import { accessToken, adoptTokens, botUserId, BOT_SCOPES, xConfigured } from "./client.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { paced, patiently } from "../live/pace.js";
-import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
+import { channelById, liveStore, saveChannel } from "../store/live.js";
 import { splitForChat } from "../youtube/client.js";
 
 const API = "https://api.x.com/2";
@@ -39,7 +42,6 @@ const TOKEN_URL = "https://api.x.com/2/oauth2/token";
 /** users.read cannot be asked for without tweet.read. offline.access keeps the
  *  token alive past two hours, for subscribing again later. */
 const STREAMER_SCOPE = "tweet.read users.read broadcast.read offline.access";
-const VOICE_SCOPE = "tweet.read users.read broadcast.read broadcast.write offline.access";
 /** X's limit for one chat line. */
 export const X_CHAT_MAX = 140;
 const CHAT_EVENTS = ["broadcast.chat", "broadcast.start", "broadcast.end"] as const;
@@ -107,7 +109,6 @@ async function tokenRequest(form: Record<string, string>): Promise<XTokens> {
 /** Everything oddie asks of X here, in one place: the tests replace it. */
 export interface XLiveApi {
   exchangeCode(code: string, verifier: string, redirectUri: string): Promise<XTokens>;
-  refreshTokens(refreshToken: string): Promise<XTokens>;
   me(token: string): Promise<XUser>;
   /** One Activity API subscription for this user. "duplicate" when it already exists. */
   subscribe(token: string, userId: string, eventType: string): Promise<string>;
@@ -122,7 +123,6 @@ const STREAM_SILENCE_MS = 90_000;
 
 export const xLiveApi: XLiveApi = {
   exchangeCode: (code, verifier, redirectUri) => tokenRequest({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: redirectUri }),
-  refreshTokens: (refreshToken) => tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken }),
   async me(token) {
     const j = await call<{ data?: { id?: string; username?: string; name?: string; profile_image_url?: string } }>(
       `${API}/users/me?user.fields=profile_image_url`, { token }, "x users/me");
@@ -197,48 +197,36 @@ const slugOf = new Map<string, string>();
 
 /** Test seam. */
 export function _resetXLive(): void {
-  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); pending.clear(); finished.clear(); voiceRefresh = null;
+  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); pending.clear(); finished.clear();
 }
 /** Test seam: the broadcast a streamer is live in, as oddie knows it. */
 export const _liveIn = (channelId: string): string | undefined => liveIn.get(channelId);
 
 /* -------------------------------------------------------------- voice -- */
 
-/** oddie's own account, once it has granted a token that lasts. */
-async function voiceChannel(): Promise<LiveChannel | null> {
-  const ch = await channelBySlug("x", xVoiceHandle()).catch(() => null);
-  return ch?.active && ch.refreshToken ? ch : null;
+/** @oddiefun, as the bot holds it: one token chain for replies and live chat. */
+export interface XVoice {
+  /** Set up at all (the bot's client, user id and seed). */
+  ready(): boolean;
+  /** A token that speaks as @oddiefun; `force` refreshes it. */
+  token(force?: boolean): Promise<string>;
+  /** @oddiefun's user id: its own lines coming back are never commands. */
+  userId(): string | null;
+  /** A fresh consent from /live/x/voice becomes the account's one chain. */
+  adopt(t: { accessToken: string; refreshToken: string; expiresAt: number }): Promise<void>;
 }
+export const botVoice: XVoice = {
+  ready: () => xConfigured(),
+  token: (force) => accessToken(force),
+  userId: () => botUserId() || null,
+  adopt: (t) => adoptTokens(t),
+};
 
-/* X rotates the refresh token on every refresh and kills the old one, so two
-   refreshes at once leave one of them holding a dead token. One at a time. */
-let voiceRefresh: Promise<string> | null = null;
-
-async function voiceToken(api: XLiveApi, ch: LiveChannel, force = false): Promise<string> {
-  const stale = !ch.accessToken || ch.tokenExpiresAt === null || ch.tokenExpiresAt - Date.now() < 60_000;
-  if (!(force || stale)) return ch.accessToken!;
-  voiceRefresh ??= (async () => {
-    // Read again: another refresh may have just written a newer token.
-    const now = (await channelById("x", ch.channelId).catch(() => null)) ?? ch;
-    if (!force && now.accessToken && now.tokenExpiresAt !== null && now.tokenExpiresAt - Date.now() >= 60_000) {
-      Object.assign(ch, now);
-      return now.accessToken;
-    }
-    if (!now.refreshToken) throw new Error("x voice has no refresh token");
-    const t = await api.refreshTokens(now.refreshToken);
-    const next: LiveChannel = { ...now, accessToken: t.accessToken, refreshToken: t.refreshToken ?? now.refreshToken, tokenExpiresAt: t.expiresAt };
-    await saveChannel(next);
-    Object.assign(ch, next);
-    return t.accessToken;
-  })().finally(() => { voiceRefresh = null; });
-  return voiceRefresh;
-}
-
-async function withVoice<T>(api: XLiveApi, ch: LiveChannel, f: (token: string) => Promise<T>): Promise<T> {
-  try { return await f(await voiceToken(api, ch)); }
+async function withVoice<T>(voice: XVoice, f: (token: string) => Promise<T>): Promise<T> {
+  try { return await f(await voice.token()); }
   catch (e) {
     if (status(e) !== 401) throw e;
-    return f(await voiceToken(api, ch, true));
+    return f(await voice.token(true));
   }
 }
 
@@ -249,15 +237,14 @@ async function withVoice<T>(api: XLiveApi, ch: LiveChannel, f: (token: string) =
  * broadcast the streamer is live in, cut to X's 140 characters, a second
  * apart. No pins, no market, no link.
  */
-export function xEngineDeps(d: { log: Log }, api: XLiveApi = xLiveApi): LiveDeps {
+export function xEngineDeps(d: { log: Log }, api: XLiveApi = xLiveApi, voice: XVoice = botVoice): LiveDeps {
   const say = async (_p: unknown, channelId: string, text: string, replyTo?: string): Promise<string | void> => {
     const broadcast = liveIn.get(channelId);
     if (!broadcast) return;   // off air: no chat to say it in
-    const voice = await voiceChannel();
-    if (!voice) { d.log("x voice not connected, line not said", { channel: channelId }); return; }
+    if (!voice.ready()) { d.log("x voice not set up, line not said", { channel: channelId }); return; }
     let first: string | null = null;
     for (const [i, line] of splitForChat(text, X_CHAT_MAX).entries()) {
-      const id = await paced(`x:${channelId}`, () => patiently(() => withVoice(api, voice, (t) => api.sendChat(t, broadcast, line, i === 0 ? replyTo : undefined))));
+      const id = await paced(`x:${channelId}`, () => patiently(() => withVoice(voice, (t) => api.sendChat(t, broadcast, line, i === 0 ? replyTo : undefined))));
       first ??= id;
     }
     return first ?? undefined;
@@ -335,7 +322,7 @@ export async function probeThumbnail(url: string, broadcast: string, log: Log, o
 }
 
 /** One event off the stream. */
-export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: Log; now?: () => number }): Promise<string> {
+export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: Log; now?: () => number; voice?: XVoice }): Promise<string> {
   const id = str(ev.event_uuid);
   if (id) {
     if (seenEvents.has(id)) return "seen";
@@ -371,8 +358,7 @@ export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: L
         slug = ch.slug;
         slugOf.set(owner, slug);
       }
-      const voice = await voiceChannel();
-      const msg = chatFromX(ev, { slug }, voice?.channelId ?? null);
+      const msg = chatFromX(ev, { slug }, (w.voice ?? botVoice).userId());
       if (!msg) return "unreadable";
       const action = await handleChat(msg, w.engine).catch((e) => { w.log("x chat failed", { err: (e as Error).message }); return "error"; });
       // What a command did, never what anybody wrote: ordinary chat is not logged.
@@ -390,7 +376,7 @@ export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: L
  * once, so a refusal for too many (a deploy's old instance still holding one)
  * waits a full minute.
  */
-export function startXStream(w: { engine: LiveDeps; log: Log; api?: XLiveApi }): () => void {
+export function startXStream(w: { engine: LiveDeps; log: Log; api?: XLiveApi; voice?: XVoice }): () => void {
   const api = w.api ?? xLiveApi;
   const stop = new AbortController();
   void (async () => {
@@ -399,7 +385,7 @@ export function startXStream(w: { engine: LiveDeps; log: Log; api?: XLiveApi }):
       const t0 = Date.now();
       try {
         w.log("x activity stream connecting");
-        await api.stream((ev) => onXEvent(ev, { engine: w.engine, log: w.log }).then(() => {}), stop.signal);
+        await api.stream((ev) => onXEvent(ev, { engine: w.engine, log: w.log, voice: w.voice }).then(() => {}), stop.signal);
         if (stop.signal.aborted) break;
         w.log("x activity stream closed, reconnecting", { seconds: Math.round((Date.now() - t0) / 1000) });
       } catch (e) {
@@ -430,14 +416,16 @@ export interface XLiveRouteDeps extends ChannelPageDeps {
   appBaseUrl: string;
   /** The callback X already knows: /api/auth/twitter/callback on the public base. */
   redirectUri: string;
-  /** Test seam. */
+  /** Test seams. */
   api?: XLiveApi;
+  voice?: XVoice;
 }
 
 export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state: string, query: Record<string, unknown>, res: Response): Promise<boolean> } {
   const r = express.Router();
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const api = d.api ?? xLiveApi;
+  const voice = d.voice ?? botVoice;
   const ready = () => Boolean(d.api) || xLiveConfigured();
 
   const authorize = (kind: Pending["kind"]) => (_req: express.Request, res: Response) => {
@@ -449,7 +437,7 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
     pending.set(state, { kind, verifier, at: Date.now() });
     const q = new URLSearchParams({
       response_type: "code", client_id: clientId() || "test", redirect_uri: d.redirectUri,
-      scope: kind === "voice" ? VOICE_SCOPE : STREAMER_SCOPE, state,
+      scope: kind === "voice" ? BOT_SCOPES : STREAMER_SCOPE, state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
     });
     res.redirect(`${AUTHORIZE_URL}?${q}`);
@@ -457,7 +445,7 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
 
   /** A streamer, once: sign in with X and allow oddie to read your broadcasts' chat. */
   r.get("/live/x/connect", authorize("streamer"));
-  /** oddie's own account, once: the token every line goes out with. */
+  /** oddie's own account: the one token the reply bot and X live chat both speak with. */
   r.get("/live/x/voice", authorize("voice"));
 
   /** The states this file issued (they start xl_), back through X's one registered callback. False: not ours. */
@@ -480,7 +468,8 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
     try {
       const t = await api.exchangeCode(code, p.verifier, d.redirectUri);
       const who = await api.me(t.accessToken);
-      const isVoice = who.username.toLowerCase() === xVoiceHandle();
+      const id = voice.userId();
+      const isVoice = id ? who.id === id : who.username.toLowerCase() === xVoiceHandle();
       if (p.kind === "voice" && !isVoice) {
         d.log("x voice sign-in by another account, refused", { handle: who.username });
         fail("voice"); return true;
@@ -492,16 +481,23 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
         d.log("x streamer door used by oddie's own account, nothing changed", { handle: who.username });
         fail("is-voice"); return true;
       }
+      if (p.kind === "voice") {
+        if (!t.refreshToken) {
+          d.log("x voice consent came back WITHOUT a refresh token, nothing changed", { handle: who.username });
+          fail("failed"); return true;
+        }
+        // The consent that just happened revoked the account's older tokens:
+        // this one is now the bot's and the chat's.
+        await voice.adopt({ accessToken: t.accessToken, refreshToken: t.refreshToken, expiresAt: t.expiresAt });
+        d.log("x voice connected: replies and X live chat share this token", { handle: who.username });
+        go(`${base}/live/x/${encodeURIComponent(who.username)}?voice=1`);
+        return true;
+      }
       await saveChannel({
         platform: "x", channelId: who.id, slug: who.username, name: who.name, avatar: who.avatar,
         accessToken: t.accessToken, refreshToken: t.refreshToken, tokenExpiresAt: t.expiresAt, active: true,
       });
       slugOf.set(who.id, who.username);
-      if (p.kind === "voice") {
-        d.log(t.refreshToken ? "x voice connected" : "x voice connected WITHOUT a refresh token, sign in at /live/x/voice again", { handle: who.username });
-        go(`${base}/live/x/${encodeURIComponent(who.username)}?voice=1`);
-        return true;
-      }
       // Chat is the one that matters; start and end only say when the stream is on air.
       const subs: Record<string, string> = {};
       for (const ev of CHAT_EVENTS) {
