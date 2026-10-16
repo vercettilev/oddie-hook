@@ -94,9 +94,12 @@ console.log("oddie's own account");
   const other = await signIn("/live/x/voice", "other");
   check("another account at oddie's door is turned away", other.back.endsWith("/live?x=voice") && !(await channelById("x", "5000000000000000005")));
   const stray = await get("/api/auth/twitter/callback?state=xl_nope&code=1");
-  check("a state this file never issued goes on to the site's own sign-in", stray.status === 418);
+  check("one of ours this process never saw goes back to /live to try again, not to the site's sign-in",
+    (stray.headers.get("location") ?? "").endsWith("/live?x=expired"));
+  const again = await get(`/api/auth/twitter/callback?state=${stateOf(v.authorize.toString())}&code=voice`);
+  check("X's return loaded a second time lands where the first did", (again.headers.get("location") ?? "").endsWith("/live/x/Oddiefun?voice=1"), again.headers.get("location") ?? "");
   const site = await get("/api/auth/twitter/callback?state=abc&code=1");
-  check("...and so does every ordinary sign-in", site.status === 418);
+  check("an ordinary sign-in goes on to the site's own", site.status === 418);
 }
 
 console.log("\na streamer connects");

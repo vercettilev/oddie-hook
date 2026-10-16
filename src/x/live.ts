@@ -197,7 +197,7 @@ const slugOf = new Map<string, string>();
 
 /** Test seam. */
 export function _resetXLive(): void {
-  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); pending.clear(); voiceRefresh = null;
+  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); pending.clear(); finished.clear(); voiceRefresh = null;
 }
 /** Test seam: the broadcast a streamer is live in, as oddie knows it. */
 export const _liveIn = (channelId: string): string | undefined => liveIn.get(channelId);
@@ -382,6 +382,10 @@ export function startXStream(w: { engine: LiveDeps; log: Log; api?: XLiveApi }):
 interface Pending { kind: "streamer" | "voice"; verifier: string; at: number }
 const pending = new Map<string, Pending>();
 const PENDING_TTL_MS = 10 * 60_000;
+/* Where each finished sign-in sent the person. X's return can load twice (16 Oct,
+   live: the second load found its state spent and fell through to the site's
+   own sign-in, which said "expired" over a connection that had worked). */
+const finished = new Map<string, { at: number; to: string }>();
 
 export interface XLiveRouteDeps extends ChannelPageDeps {
   appBaseUrl: string;
@@ -417,12 +421,20 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
   /** oddie's own account, once: the token every line goes out with. */
   r.get("/live/x/voice", authorize("voice"));
 
-  /** The states this file issued, back through X's one registered callback. False: not ours. */
+  /** The states this file issued (they start xl_), back through X's one registered callback. False: not ours. */
   async function callback(state: string, query: Record<string, unknown>, res: Response): Promise<boolean> {
+    const done = finished.get(state);
+    if (done && Date.now() - done.at < PENDING_TTL_MS) { res.redirect(done.to); return true; }
     const p = pending.get(state);
-    if (!p) return false;
+    // One of ours that this process never saw (a restart in between): try again from /live.
+    if (!p) { res.redirect(`${base}/live?x=expired`); return true; }
     pending.delete(state);
-    const fail = (why: string) => res.redirect(`${base}/live?x=${why}`);
+    const go = (to: string) => {
+      for (const [k, f] of finished) if (Date.now() - f.at > PENDING_TTL_MS) finished.delete(k);
+      finished.set(state, { at: Date.now(), to });
+      res.redirect(to);
+    };
+    const fail = (why: string) => go(`${base}/live?x=${why}`);
     if (typeof query.error === "string") { fail("declined"); return true; }
     const code = typeof query.code === "string" ? query.code : "";
     if (!code || Date.now() - p.at > PENDING_TTL_MS) { fail("expired"); return true; }
@@ -448,7 +460,7 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
       slugOf.set(who.id, who.username);
       if (p.kind === "voice") {
         d.log(t.refreshToken ? "x voice connected" : "x voice connected WITHOUT a refresh token, sign in at /live/x/voice again", { handle: who.username });
-        res.redirect(`${base}/live/x/${encodeURIComponent(who.username)}?voice=1`);
+        go(`${base}/live/x/${encodeURIComponent(who.username)}?voice=1`);
         return true;
       }
       // Chat is the one that matters; start and end only say when the stream is on air.
@@ -461,7 +473,7 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
         }
       }
       d.log("x channel connected", { handle: who.username, ...subs });
-      res.redirect(`${base}/live/x/${encodeURIComponent(who.username)}?added=1`);
+      go(`${base}/live/x/${encodeURIComponent(who.username)}?added=1`);
     } catch (e) {
       d.log("x connect failed", { status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
       fail("failed");
