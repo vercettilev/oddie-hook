@@ -123,10 +123,9 @@ console.log("\na streamer connects");
   const s = { authorize: new URL(firstLoc), back: cb.headers.get("location") ?? "" };
   const scope = s.authorize.searchParams.get("scope") ?? "";
   check("the streamer is asked to let oddie read chat, not to write", /broadcast\.read/.test(scope) && !/broadcast\.write/.test(scope));
-  check("they land on their page, signed in as the channel", s.back.endsWith("/live/x/AleksaFlamingo?connected=1"), s.back);
+  check("they land on their page, which says how to open a vote", s.back.endsWith("/live/x/AleksaFlamingo?added=1"), s.back);
   const cookie = cb.headers.get("set-cookie") ?? "";
-  check("...with X's own owner cookie, so the page offers the wallet the 2% goes to",
-    cookie.startsWith(`${ownerCookieName("x")}=`) && /Path=\/api\/live\/x/.test(cookie) && /HttpOnly/.test(cookie), cookie);
+  check("...and no owner cookie: X Live runs votes, there is no 2% wallet to offer", !cookie.includes(`${ownerCookieName("x")}=`), cookie);
   check("their chat, and when they go live and stop, with their own token",
     subs.length === 3 && subs.every((x) => x.token === "at-streamer" && x.user === STREAMER)
     && ["broadcast.chat", "broadcast.start", "broadcast.end"].every((e) => subs.some((x) => x.ev === e)));

@@ -20,7 +20,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
 <link rel="manifest" href="/site.webmanifest?v=3">
 <meta name="theme-color" content="#FCF604">
-<meta name="description" content="Your chat calls it: !oddie on Kick, Twitch or X Live opens a market in seconds, it settles itself, and the channel earns 2% of every pool. Also under posts on X and in Telegram.">
+<meta name="description" content="Your chat calls it: !oddie on Kick or Twitch opens a market in seconds, it settles itself, and the channel earns 2% of every pool. Also on X and Telegram.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/">
@@ -1056,7 +1056,6 @@
      page. The X and Telegram fonts are the system stack, as on X. */
   .tale__screen{margin:0 -14px -12px;padding:0 14px 12px;border-top:1px solid transparent}
   .tale__screen[data-app="x"]{background:#000;border-top-color:#2f3336;padding-inline:0}
-  .tale__screen[data-app="xl"]{background:#000;border-top-color:#2f3336}
   .tale__screen[data-app="tg"]{background:#0e1621;padding-inline:10px}
   /* Twitch: Kick's line grammar on Twitch's own ground, font and name colours. */
   .tale__screen[data-app="tw"]{background:#18181b;border-top-color:#2f2f35}
@@ -1082,17 +1081,6 @@
   .kc__rp{display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.5;color:rgba(251,252,244,.5);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .kc__rp svg{flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-  /* X LIVE CHAT (Lev, 16 Oct): as X draws a broadcast's chat, an avatar, the
-     name and @handle on one line, the message under it, no borders. */
-  .xl{display:grid;grid-template-columns:32px minmax(0,1fr);column-gap:10px;color:#e7e9ea;
-    font:400 14.5px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  .xl + .xl{margin-top:10px}
-  .xl__av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:14px}
-  .xl__h{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .xl__h b{font-weight:700}
-  .xl__h span{color:#71767b}
-  .xl__t{margin:1px 0 0;overflow-wrap:anywhere}
-  .xl i{font-style:normal;color:#1d9bf0}
   /* X: avatar, name, @handle and age, the post, the action row; the posts
      above the bot's reply are joined by the thread line. */
   .xp{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:10px 14px 9px;
@@ -1339,8 +1327,9 @@ html{-webkit-tap-highlight-color:transparent}
         <div class="doors">
           <a class="door" href="https://app.oddie.fun/live/kick/connect"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-kick"/></svg><span class="door__t"><b>Add to Kick</b><small>Markets and votes in your chat</small></span></a>
           <a class="door" href="https://app.oddie.fun/live/twitch/connect"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-twitch"/></svg><span class="door__t"><b>Add to Twitch</b><small>Markets and votes in your chat</small></span></a>
-          <!-- X LIVE (Lev, 16 Oct): the same markets and votes, in X's live chat. -->
-          <a class="door" href="https://app.oddie.fun/live/x/connect"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-x"/></svg><span class="door__t"><b>Add to X Live</b><small>Markets and votes in your live chat</small></span></a>
+          <!-- X LIVE (Lev, 16 Oct): votes in X's live chat, settled off the
+               stream. X's chat takes no link, so no market opens there. -->
+          <a class="door" href="https://app.oddie.fun/live/x/connect"><svg class="mk" width="34" height="34" aria-hidden="true"><use href="#mk-x"/></svg><span class="door__t"><b>Add to X Live</b><small>Votes in your live chat</small></span></a>
         </div>
         <p class="also">Also on
           <a href="https://x.com/intent/post?text=%40oddiefun%20" target="_blank" rel="noopener"><svg class="mk" width="18" height="18" aria-hidden="true"><use href="#mk-x"/></svg><span>X posts</span></a>
@@ -1420,7 +1409,7 @@ html{-webkit-tap-highlight-color:transparent}
             <span class="tale__doors" aria-label="Where it works">
               <button class="tale__door" type="button" data-plat="0" aria-label="Kick"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-kick"/></svg></button>
               <button class="tale__door" type="button" data-plat="1" aria-label="Twitch"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-twitch"/></svg></button>
-              <button class="tale__door" type="button" data-plat="2" aria-label="X Live"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-x"/></svg></button>
+              <button class="tale__door" type="button" data-plat="2" aria-label="X"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-x"/></svg></button>
               <button class="tale__door" type="button" data-plat="3" aria-label="Telegram"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-telegram"/></svg></button>
             </span></p>
           <div class="tale__screen" data-app="kick"><div class="tale__feed" aria-live="off">
@@ -1494,7 +1483,7 @@ html{-webkit-tap-highlight-color:transparent}
       <div class="cr__row">
         <article class="cr">
           <div class="cr__h"><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-kick"/></svg><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-twitch"/></svg><svg class="mk" width="26" height="26" aria-hidden="true"><use href="#mk-x"/></svg><h3>Streamers</h3></div>
-          <p>Your channel earns <b>2%</b>.</p>
+          <p>Your channel earns <b>2%</b> on Kick and Twitch.</p>
           <span class="cr__gos"><a class="cr__go" href="https://app.oddie.fun/live/kick/connect">Add to Kick <i aria-hidden="true">&rarr;</i></a><a class="cr__go" href="https://app.oddie.fun/live/twitch/connect">Add to Twitch <i aria-hidden="true">&rarr;</i></a><a class="cr__go" href="https://app.oddie.fun/live/x/connect">Add to X Live <i aria-hidden="true">&rarr;</i></a></span>
         </article>
         <article class="cr cr--minor">
@@ -1663,29 +1652,28 @@ html{-webkit-tap-highlight-color:transparent}
       ];
     }
 
-    /* X Live: the same engine and lines as Kick and Twitch, drawn the way X
-       draws a broadcast's chat. oddie's market line is longer than X's 140
-       characters, so it goes as two messages, the 2% aside second, and so
-       it does here. */
-    function xlive() {
+    function x() {
+      var SHORT = "<i>app.oddie.fun/m/will-bit…</i>";
+      var ACTS = '<p class="xp__a" aria-hidden="true">' + ["r", "rt", "l", "v", "s"].map(function (i) {
+        return '<svg viewBox="0 0 24 24"><use href="#xi-' + i + '"/></svg>'; }).join("") + "</p>";
       var WHO = {
-        m: ['<span class="xl__av" style="background:#e8743b" aria-hidden="true">M</span>', "Mike", "@mike_trades"],
-        j: ['<span class="xl__av" style="background:#7856ff" aria-hidden="true">J</span>', "Jules", "@0xjules"],
-        o: ['<img class="xl__av" src="/brand/mark.webp?v=3" alt="">', "Oddie", "@oddiefun"]
+        m: ['<span class="xp__av" style="background:#e8743b" aria-hidden="true">M</span>', "Mike", "@mike_trades"],
+        j: ['<span class="xp__av" style="background:#7856ff" aria-hidden="true">J</span>', "Jules", "@0xjules"],
+        o: ['<img class="xp__av" src="/brand/mark.webp?v=3" alt="">', "oddie", "@oddiefun"]
       };
-      function line(w, text) {
+      function post(w, ago, text, media) {
         var W = WHO[w];
-        return W[0] + '<div><p class="xl__h"><b>' + W[1] + "</b> <span>" + W[2] + '</span></p><p class="xl__t">' + text + "</p></div>";
+        return W[0] + '<div><p class="xp__h"><b>' + W[1] + "</b> <span>" + W[2] + " · " + ago + "</span></p>"
+          + '<p class="xp__t">' + text + "</p>" + (media || "") + ACTS + "</div>";
       }
-      var link = "<i>" + LINK + "</i>";
       return [
-        m(0, 300, "xl", line("m", "no way btc sees 88k this week")),
-        m(0, 1300, "xl", line("j", "!oddie BTC hits 88k by Friday?")),
-        m(1, 2700, "xl", line("o", 'Market open: "' + HOOK + '" Take YES or NO: ' + link)),
-        m(1, 3100, "xl", line("o", "(this channel earns 2% of the pool)")),
-        m(2, 5300, "xl", line("j", "YES. 0.1 in")),
-        m(2, 6000, "xl", line("m", "NO. see you at midnight")),
-        m(2, 7200, "xl", line("o", "It's NO: \"" + HOOK + "\" Winners collect at " + link))
+        m(0, 300, "xp xp--chain", post("m", "11h", "no way btc sees 88k this week")),
+        m(0, 1300, "xp xp--chain", post("j", "11h", "<i>@oddiefun</i> BTC hits 88k by Friday?")),
+        m(1, 2700, "xp", post("o", "11h", "Pick a side, real SOL on it ↓\n" + SHORT, card("xp__m"))),
+        m(2, 5300, "xp", post("j", "11h", "YES. 0.1 in")),
+        m(2, 6000, "xp", post("m", "11h", "NO. see you at midnight")),
+        m(2, 7200, "xp", post("o", "1m", "Settled: NO.\n\nEveryone who called it is paid from the pool, on chain.\n\n" + SHORT)),
+        m(2, 8300, "xp", post("o", "1m", "<i>@0xjules</i>, the market you opened drew real SOL, so it earned you a creator cut."))
       ];
     }
 
@@ -1716,7 +1704,7 @@ html{-webkit-tap-highlight-color:transparent}
     var DOORS = [
       { where: "Kick chat", mark: "#mk-kick", p: "kick", story: kick() },
       { where: "Twitch chat", mark: "#mk-twitch", p: "tw", story: twitch() },
-      { where: "X live chat", mark: "#mk-x", p: "xl", story: xlive() },
+      { where: "Replies on X", mark: "#mk-x", p: "x", story: x() },
       { where: "Telegram group", mark: "#mk-telegram", p: "tg", story: tg() }
     ];
     var BEAT_AT = [0, 2400 * PACE, 5000 * PACE], END = 7000;

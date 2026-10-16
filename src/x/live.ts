@@ -34,7 +34,6 @@ import { accessToken, adoptTokens, botUserId, BOT_SCOPES, xConfigured } from "./
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { paced, patiently } from "../live/pace.js";
 import { channelById, liveStore, saveChannel } from "../store/live.js";
-import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { botStateGet, botStateSet } from "../store/markets.js";
 import { splitForChat } from "../youtube/client.js";
 
@@ -536,11 +535,8 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
         }
       }
       d.log("x channel connected", { handle: who.username, ...subs });
-      // Signed in as the channel: its page offers the wallet its 2% goes to,
-      // the way Kick's and Twitch's sign-ins do (src/live/owner.ts).
-      const key = ownerKeyFromEnv("x");
-      if (key) res.append("Set-Cookie", ownerCookie(ownerToken(who.id, key), base.startsWith("https:"), undefined, "x"));
-      go(`${base}/live/x/${encodeURIComponent(who.username)}?connected=1`);
+      // Votes only, so no wallet to offer: the page says how to start one.
+      go(`${base}/live/x/${encodeURIComponent(who.username)}?added=1`);
     } catch (e) {
       d.log("x connect failed", { status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
       fail("failed");

@@ -1923,10 +1923,11 @@ app.use(youtubeRouter({
   pageClosed: (res) => appClosed(res),
   log: liveLog,
 }));
-/* X LIVE (src/x/live.ts): markets and votes, the channel's 2% exactly as on
-   Kick and Twitch (Lev, 16 Oct). A streamer signs in with X once; every
-   broadcast they own sends its chat over the app's activity stream. Both
-   sign-ins come back through X's one registered callback. */
+/* X LIVE (src/x/live.ts): votes, settled by the streamer or off the screen.
+   Its live chat takes no link, so no market and no 2% there (16 Oct). A
+   streamer signs in with X once; every broadcast they own sends its chat over
+   the app's activity stream. Both sign-ins come back through X's one
+   registered callback. */
 const xLive = xLiveRouter({
   appBaseUrl: APP_BASE_URL,
   redirectUri: redirectUri(BASE_URL, "twitter"),
@@ -1935,15 +1936,6 @@ const xLive = xLiveRouter({
   pageOpen: (req) => appOpenFor(req),
   pageClosed: (res) => appClosed(res),
   log: liveLog,
-  channelMarkets: (channelId, limit) => streamChannelMarkets("x", channelId, limit),
-  // A channel's 2%: the person is x:<X user id>, otherwise exactly Kick's.
-  payout: {
-    domain: (req) => walletDomain(req),
-    wallet: (personId) => personWallet(personId),
-    setWallet: (personId, wallet) => setPersonWallet(personId, wallet),
-    openedSlugs: (channelId) => streamOpenedSlugs("x", channelId),
-    nameMarkets: async (channelId, wallet) => nameOpenedMarkets(await streamOpenedSlugs("x", channelId).catch(() => [] as string[]), wallet),
-  },
 });
 app.use(xLive.router);
 /* THE LEADERBOARD'S ROWS: points from the votes in every stream chat (Lev,

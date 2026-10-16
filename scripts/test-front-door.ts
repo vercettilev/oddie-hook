@@ -13,9 +13,7 @@ import { filesUnder } from "./inline-blocks.js";
 import { MARKET_COPY } from "../src/live/claims.js";
 import { buildTweetReply } from "../src/matching/tweetReply.js";
 import { TG_COPY } from "../src/telegram/loop.js";
-import { resolutionText } from "../src/x/resolutionReply.js";
-import { splitForChat } from "../src/youtube/client.js";
-import { X_CHAT_MAX } from "../src/x/live.js";
+import { resolutionText, authorCreditText } from "../src/x/resolutionReply.js";
 import { tgResolutionText } from "../src/telegram/resolution.js";
 import { slugFor } from "../src/store/markets.js";
 
@@ -40,19 +38,24 @@ console.log("the landing leads with livestreams and names every door (7 Oct)");
   for (const [door, href] of [
     ["Kick", "https://app.oddie.fun/live/kick/connect"],
     ["Twitch", "https://app.oddie.fun/live/twitch/connect"],
-    // X Live joined them (Lev, 16 Oct): the same markets and votes, in X's live chat.
+    // X Live joined them (Lev, 16 Oct), for votes: X's live chat takes no link.
     ["X Live", "https://app.oddie.fun/live/x/connect"],
   ]) {
     const n = landing.split(`<a class="door" href="${href}">`).length - 1;
     // Once, in the hero: the closing ask that repeated them went (Lev, 2 Oct).
     check(`${door} is a door in the hero, straight to its sign-in`, n === 1, `${n} found`);
   }
+  check("X Live's door offers votes, and no line puts a market in X's live chat",
+    landing.includes("<b>Add to X Live</b><small>Votes in your live chat</small>")
+    && !/X Live opens a market|Markets and votes in your live chat|X live chat", mark/.test(landing));
   check("...and posts on X and Telegram are one quiet line under them",
+    landing.includes("<span>X posts</span>") &&
     /<p class="also">Also on[\s\S]{0,200}href="https:\/\/x\.com\/intent\/post\?text=%40oddiefun%20"[\s\S]{0,300}href="https:\/\/t\.me\/oddiefunbot"/.test(landing));
   check("the creators field has a card per door",
     /id="creators"[\s\S]*?<h3>Streamers<\/h3>[\s\S]*?<h3>Creators on X<\/h3>[\s\S]*?<h3>Communities<\/h3>/.test(landing));
-  check("...and the streamer card adds it to Kick, to Twitch and to X Live",
-    /<h3>Streamers<\/h3>[\s\S]{0,300}href="https:\/\/app\.oddie\.fun\/live\/kick\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/twitch\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/x\/connect"/.test(landing));
+  check("...and the streamer card adds it to Kick, to Twitch and to X Live, the 2% where it is earned",
+    /<h3>Streamers<\/h3>[\s\S]{0,300}href="https:\/\/app\.oddie\.fun\/live\/kick\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/twitch\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/x\/connect"/.test(landing)
+    && landing.includes("<p>Your channel earns <b>2%</b> on Kick and Twitch.</p>"));
   check("...and the nav can reach it", /href="#creators">For creators</.test(landing));
   check("the hero chat is in English, the page speaks to everyone", !/cumaya|görmez/.test(landing));
   check("no card says KOL", !/\bKOLs?\b/.test(landing));
@@ -464,9 +467,13 @@ console.log("\nthe secondary pages say less (the hypercasual cut, round two)");
     you.includes("Results on your phone: tap <b>Share</b>, then <b>Add to Home Screen</b>.")
     && !you.includes("The wallet comes later."));
   check("the streamer page is three one-line steps, with no lede restating them",
-    !live.includes('<p class="lede">Anyone in your chat turns a claim') && live.includes("<li><span><b>Add oddie to your Kick, Twitch or X Live.</b></span></li>"));
+    !live.includes('<p class="lede">Anyone in your chat turns a claim') && live.includes("<li><span><b>Add oddie to your Kick or Twitch channel.</b></span></li>"));
   check("...with one door per platform", live.includes('href="/live/kick/connect">Add oddie to Kick</a>')
-    && live.includes('href="/live/twitch/connect">Add oddie to Twitch</a>') && live.includes('href="/live/x/connect">Add oddie to X Live</a>'));
+    && live.includes('href="/live/twitch/connect">Add oddie to Twitch</a>'));
+  check("X Live has its own votes section on /live, like YouTube, with no market and no 2%",
+    live.includes('<h2 class="yt__t" id="xl-t">On X Live</h2>')
+    && live.includes("<code>!call will I win this round?</code> Your chat answers. When the result shows on your stream, oddie settles it.</p>")
+    && live.includes('href="/live/x/connect">Add oddie to X Live</a>') && live.includes('P !== "youtube" && P !== "x"'));
 }
 
 console.log("\nthe landing tells it once, as one chat (the hypercasual cut, round two)");
@@ -475,24 +482,22 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
   const script = landing.slice(landing.indexOf("HOW IT WORKS, AS ONE CHAT"));
   check("how it works is one chat window, not three cards", landing.includes('<div class="tale reveal" id="tale">')
     && !landing.includes('<div class="steps reveal">') && !landing.includes('class="step__cap"'));
-  // X's door is its live chat now, not a reply thread (Lev, 16 Oct): the streams first, then Telegram.
   check("...that plays on every door, streams first",
     script.indexOf('where: "Kick chat"') < script.indexOf('where: "Twitch chat"')
-    && script.indexOf('where: "Twitch chat"') < script.indexOf('where: "X live chat"')
-    && script.indexOf('where: "X live chat"') < script.indexOf('where: "Telegram group"')
-    && !script.includes('where: "Replies on X"')
-    && script.includes('var TAG = "!oddie BTC hits 88k by Friday?"') && script.includes('line("j", "!oddie BTC hits 88k by Friday?")')
+    && script.indexOf('where: "Twitch chat"') < script.indexOf('where: "Replies on X"')
+    && script.includes('where: "Replies on X"') && script.includes('where: "Telegram group"')
+    && script.includes('var TAG = "!oddie BTC hits 88k by Friday?"') && script.includes('"<i>@oddiefun</i> BTC hits 88k by Friday?"')
     && script.includes('"<i>@oddiefunbot</i> BTC hits 88k by Friday?"'));
   check("...each door drawn as its own app (Lev, 2 Oct: X and Telegram did not look like X and Telegram)",
-    script.includes('p: "kick"') && script.includes('p: "tw"') && script.includes('p: "xl"') && script.includes('p: "tg"')
+    script.includes('p: "kick"') && script.includes('p: "tw"') && script.includes('p: "x"') && script.includes('p: "tg"')
     && /\.tale__screen\[data-app="tw"\]\{background:#18181b;/.test(landing)
-    && /\.tale__screen\[data-app="xl"\]\{background:#000;/.test(landing) && /\.tale__screen\[data-app="tg"\]\{background:#0e1621;/.test(landing)
-    && landing.includes(".xl__av{") && landing.includes(".tg__bub::before"));
+    && /\.tale__screen\[data-app="x"\]\{background:#000;/.test(landing) && /\.tale__screen\[data-app="tg"\]\{background:#0e1621;/.test(landing)
+    && landing.includes(".xp--chain::before") && landing.includes(".tg__bub::before"));
   check("...and the window keeps one height on every door, so a switch never moves the page",
     /\.tale--js \.tale__feed\{height:\d+px;/.test(landing)
-    && !/\.tale__screen\[data-app="(?:x|xl|tg|tw)"\]\{[^}]*(?:padding:|padding-(?:top|bottom)|height)/.test(landing));
-  check("the card in the Telegram photo is the real card, not a drawing of one",
-    script.includes('var CARD_SRC = "/brand/tale-card.webp";') && script.includes('card("tg__ph")')
+    && !/\.tale__screen\[data-app="(?:x|tg|tw)"\]\{[^}]*(?:padding:|padding-(?:top|bottom)|height)/.test(landing));
+  check("the card in the X reply and the Telegram photo is the real card, not a drawing of one",
+    script.includes('var CARD_SRC = "/brand/tale-card.webp";') && script.includes('card("xp__m")') && script.includes('card("tg__ph")')
     && !landing.includes('class="mcard__s"') && statSync("public/brand/tale-card.webp").size < 40_000);
   {
     /* EVERY LINE A BOT SAYS ON SCREEN IS WHAT ITS CODE SAYS, built here from
@@ -519,24 +524,16 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
       && script.includes(`'${twA.replace(TW_HOOK, "' + HK + '")}' + link + "${twB}"`)
       && script.includes(`"It's YES: \\"" + HK + "\\" Winners collect at " + link`));
     const reply = buildTweetReply({ question: twin.question, permalink: LINK, hook: HOOK }).primary;
-    check("Telegram opens with the reply the bot builds for that link",
+    check("X and Telegram open with the reply the bot builds for that link",
       reply.endsWith(`\n\nPick a side, real SOL on it ↓\n${LINK}`)
-      && script.includes('"Pick a side, real SOL on it ↓\\n" + link + "\\n\\n'));
-    /* X LIVE says what the chat bot says, in the lines X takes: the market
-       line is longer than 140, so it goes in two (splitForChat at X_CHAT_MAX),
-       the 2% aside second, and the result fits in one. */
-    const [xA, xB, xC] = splitForChat(MARKET_COPY.opened(HOOK, LINK, "this channel"), X_CHAT_MAX);
-    const xResult = `It's NO: "${HOOK}" Winners collect at ${LINK}`;
-    check("X Live says what the chat bot says, in X's 140-character lines",
-      xA === `Market open: "${HOOK}" Take YES or NO: ${LINK}` && xB === "(this channel earns 2% of the pool)" && xC === undefined
-      && script.includes(`line("o", 'Market open: "' + HOOK + '" Take YES or NO: ' + link)`) && script.includes(`line("o", "${xB}")`)
-      && splitForChat(xResult, X_CHAT_MAX).length === 1 && script.includes('line("o", "It\'s NO: \\"" + HOOK + "\\" Winners collect at " + link)'));
+      && script.includes('"Pick a side, real SOL on it ↓\\n" + SHORT') && script.includes('"Pick a side, real SOL on it ↓\\n" + link + "\\n\\n'));
     check("...Telegram names the opener the way TG_COPY does",
       script.includes(js(`\n\n${TG_COPY.opener("Jules", "oddiefunbot").split("\n")[0]}`)));
     const settled = resolutionText(twin.question, "no", LINK, 1);
-    check("step three settles in the bot's own words in Telegram",
+    check("step three settles in the bots' own words, on X and in Telegram",
       settled === tgResolutionText({ outcome: "no", pool: 2, won: 1, marketUrl: LINK })
-      && script.includes(js(settled.slice(0, settled.lastIndexOf("\n\n") + 2))));
+      && script.includes(js(settled.slice(0, settled.lastIndexOf("\n\n") + 2)))
+      && script.includes(`"<i>@0xjules</i>${authorCreditText("0xjules", LINK).split("\n")[0].slice("@0xjules".length)}"`));
   }
   check("without script it is the whole Kick conversation",
     tale.includes('<div class="tale__screen" data-app="kick"><div class="tale__feed" aria-live="off">')
@@ -546,7 +543,7 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
   check("the hero says the pitch once, to the streamer; the doors say where",
     landing.includes("<span>Your chat calls the market. You earn 2%.</span>") && !landing.includes("It opens in seconds and pays out on its own."));
   check("the creators are a row per door, each still saying who earns",
-    landing.includes("<p>Your channel earns <b>2%</b>.</p>") && landing.includes("<p>You earn <b>2%</b>, either side.</p>")
+    landing.includes("<p>Your channel earns <b>2%</b> on Kick and Twitch.</p>") && landing.includes("<p>You earn <b>2%</b>, either side.</p>")
     && landing.includes("<p>The opener earns <b>2%</b>.</p>"));
   check("the offer heads the creators field, in the words Lev approved (folded in by his call, 2 Oct)",
     landing.indexOf('<h2 class="offer__hd">Open a market,<br>earn <span class="lo">2%</span> of the pool.</h2>') > landing.indexOf('id="creators"')
