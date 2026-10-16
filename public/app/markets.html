@@ -619,6 +619,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       return '<a class="by by--twitch" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">'
         + mark("twitch") + "twitch.tv/" + esc(o.handle) + "</a>";
     }
+    // Opened in an X live chat: the streamer's X, marked live.
+    if (o.platform === "x" && o.handle) {
+      return '<a class="by by--x" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">'
+        + mark("x") + "x.com/" + esc(o.handle) + " · live</a>";
+    }
     if (o.platform === "telegram") {
       return o.handle
         ? '<a class="by by--tg" href="' + esc(o.url) + '" target="_blank" rel="noopener noreferrer">' + mark("telegram") + "@" + esc(o.handle) + "</a>"

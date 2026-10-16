@@ -15,7 +15,13 @@ import {
   type XActivityEvent, type XLiveApi, type XVoice,
 } from "../src/x/live.js";
 import { accessToken, adoptTokens, BOT_SCOPES, _resetTokenCache } from "../src/x/client.js";
-import { botStateGet } from "../src/store/markets.js";
+import {
+  botStateGet, claimMention, settleMention, xLiveChatSource, sourceUrlKind, sourcePostKey, isWebSourceUrl,
+  streamOpenedSlugs, streamOpenerOf, streamThreadsForSlug,
+} from "../src/store/markets.js";
+import { MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
+import { ownerCookieName } from "../src/live/owner.js";
+import type { Extraction } from "../src/matching/extractClaim.js";
 import { _setPace } from "../src/live/pace.js";
 
 _setPace({ gapMs: 0, retryMs: [0, 0] });
@@ -116,10 +122,16 @@ console.log("oddie's own account");
 
 console.log("\na streamer connects");
 {
-  const s = await signIn("/live/x/connect", "streamer");
+  const first = await get("/live/x/connect");
+  const firstLoc = first.headers.get("location") ?? "";
+  const cb = await get(`/api/auth/twitter/callback?state=${stateOf(firstLoc)}&code=streamer`);
+  const s = { authorize: new URL(firstLoc), back: cb.headers.get("location") ?? "" };
   const scope = s.authorize.searchParams.get("scope") ?? "";
   check("the streamer is asked to let oddie read chat, not to write", /broadcast\.read/.test(scope) && !/broadcast\.write/.test(scope));
-  check("they land on their page", s.back.endsWith("/live/x/AleksaFlamingo?added=1"), s.back);
+  check("they land on their page, signed in as the channel", s.back.endsWith("/live/x/AleksaFlamingo?connected=1"), s.back);
+  const cookie = cb.headers.get("set-cookie") ?? "";
+  check("...with X's own owner cookie, so the page offers the wallet the 2% goes to",
+    cookie.startsWith(`${ownerCookieName("x")}=`) && /Path=\/api\/live\/x/.test(cookie) && /HttpOnly/.test(cookie), cookie);
   check("their chat, and when they go live and stop, with their own token",
     subs.length === 3 && subs.every((x) => x.token === "at-streamer" && x.user === STREAMER)
     && ["broadcast.chat", "broadcast.start", "broadcast.end"].every((e) => subs.some((x) => x.ev === e)));
@@ -228,6 +240,51 @@ console.log("\nthe activity stream's framing");
   globalThis.fetch = realFetch;
   check("the app's stream is read with the app's bearer", asked === "https://api.x.com/2/activity/stream" && auth === "Bearer test-bearer");
   check("one event per line, a line cut anywhere, keep-alives and junk skipped", got.join(",") === "s1,s2,s3", got.join(","));
+}
+
+console.log("\nthe market door: !oddie in an X live chat (Lev, 16 Oct)");
+{
+  const src = xLiveChatSource("AleksaFlamingo", "2090000000000000004");
+  check("xlive-chat:<username>/<message id>, its own kind, never a link", src === "xlive-chat:aleksaflamingo/2090000000000000004"
+    && sourceUrlKind(src) === "xlive" && !isWebSourceUrl(src), src);
+  check("one message, one market, and never an x: key the resolution would quote as a tweet",
+    sourcePostKey(src) === "xlive:2090000000000000004");
+  _resetLive();
+  const opened: Array<{ openerId: string; sourceUrl: string }> = [];
+  const good = { question: "Will BTC close above $120k on Friday?", resolution_criteria: "CoinGecko daily close.", price_claim: null,
+    close_time: "2026-10-23T23:59:00Z", close_time_inferred: false, category: "Crypto", resolvability: "clean",
+    appropriate: true, reason: "clean", hook: "BTC to 120k by Friday?" } as unknown as Extraction;
+  const markets: Omit<ChatMarketDeps, "say" | "sourceFor"> = {
+    extract: async () => good,
+    existingMarket: async () => null,
+    openMarket: async (i) => { opened.push({ openerId: i.openerId, sourceUrl: i.sourceUrl }); return { ok: true, slug: "will-bitcoin-btc-close-above-120000-on-fri-9c1a2b" } as never; },
+    claim: (k, a) => claimMention(k, a),
+    settle: (k, o, x) => settleMention(k, o, x),
+    openedToday: async () => 0,
+    dailyCap: 5,
+    baseUrl: "https://app.oddie.fun",
+    log: () => {},
+  };
+  const eng = xEngineDeps({ log, markets, appBaseUrl: "https://app.oddie.fun" }, api, voice);
+  check("with markets, X live is not votes-only", eng.votesOnly === false);
+  check("...and its standings are the channel's page", (await eng.standingsUrl("x", STREAMER)) === "https://app.oddie.fun/live/x/AleksaFlamingo");
+  await onXEvent({ event_uuid: "mk-start", event_type: "broadcast.start", filter: { user_id: STREAMER }, payload: { broadcast_id: "3mMarket" } }, { engine: eng, log, voice });
+  const s0 = sent.length;
+  const line = chat("!oddie BTC closes above 120k on Friday");
+  line.payload = { ...line.payload, broadcast_id: "3mMarket" };
+  check("a viewer's !oddie in the live chat opens a market", (await onXEvent(line, { engine: eng, log, voice })) === "market-opened");
+  check("...that the CHANNEL opened, its 2% the streamer's, from this chat message",
+    opened[0]?.openerId === `x:${STREAMER}` && opened[0]?.sourceUrl === xLiveChatSource("AleksaFlamingo", String(line.payload?.message_id)), JSON.stringify(opened));
+  const said = sent.slice(s0).map((x) => x.text);
+  const full = MARKET_COPY.opened("BTC to 120k by Friday?", "https://app.oddie.fun/m/will-bitcoin-btc-close-above-120000-on-fri-9c1a2b", "AleksaFlamingo");
+  check("...and says so in that broadcast's chat, the 2% aside as its own line under X's 140",
+    said.join(" ") === full && said.length === 2 && said[1].startsWith("(") && said.every((t) => t.length <= X_CHAT_MAX), JSON.stringify(said));
+  check("the channel's markets, opener and result thread are read off the ledger",
+    (await streamOpenedSlugs("x", STREAMER)).includes("will-bitcoin-btc-close-above-120000-on-fri-9c1a2b")
+    && (await streamOpenerOf("will-bitcoin-btc-close-above-120000-on-fri-9c1a2b")) === `x:${STREAMER}`
+    && (await streamThreadsForSlug("x", "will-bitcoin-btc-close-above-120000-on-fri-9c1a2b"))[0]?.channelId === STREAMER && (await streamOpenedSlugs("twitch", STREAMER)).length === 0);
+  const twice = await onXEvent({ ...line, event_uuid: "mk-again" }, { engine: eng, log, voice });
+  check("the same line twice is one market", twice === "already-handled" && opened.length === 1, twice);
 }
 
 console.log("\n@oddiefun's one token chain (src/x/client.ts)");

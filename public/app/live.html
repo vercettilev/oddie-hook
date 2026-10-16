@@ -344,6 +344,9 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .adds{display:flex;flex-wrap:wrap;gap:14px}
 .add--tw{background:#9146FF;color:#fff}
 @media (hover:hover){.add--tw:hover{background:#A970FF}}
+/* X Live: X's own black, outlined so it holds on the dark page. */
+.add--x{background:#020302;color:#FBFCF4;border-color:#FBFCF4}
+@media (hover:hover){.add--x:hover{background:#1a1b18}}
 .note{margin:14px 0 0;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--pink)}
 /* YOUTUBE: votes only, so no wallet and no sign-in. The streamer pastes their
    channel's link and that is the whole setup. */
@@ -493,8 +496,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   if (!SLUG) {
     var qs = new URLSearchParams(location.search);
     var qp = qs.get("twitch") ? "Twitch" : qs.get("youtube") ? "YouTube" : "Kick", q = qs.get("kick") || qs.get("twitch") || qs.get("youtube");
-    /* X live has no button here yet: a streamer gets /live/x/connect from us,
-       and a sign-in that came back short says how to go again. */
+    /* X Live's sign-in comes back with ?x=<why> when it fell short. */
     var qx = qs.get("x");
     document.title = "oddie for streamers";
     /* THREE STEPS, ONE LINE EACH (Lev, 2 Oct, the hypercasual cut). The lede
@@ -503,12 +505,13 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     view.innerHTML = '<div class="say"><h1 class="who who--say">Your chat calls it. oddie settles it.</h1>'
       + '<img class="st" src="/brand/st-judge.webp" alt="" width="110" height="110"></div>'
       + '<ol class="steps">'
-      + "<li><span><b>Add oddie to your Kick or Twitch channel.</b></span></li>"
+      + "<li><span><b>Add oddie to your Kick, Twitch or X Live.</b></span></li>"
       + "<li><span><b>Chat types</b> <code>!oddie BTC above 120k by Friday?</code></span></li>"
       + "<li><span><b>Connect a wallet.</b> You earn 2% of every pool.</span></li>"
       + "</ol>"
       + '<div class="adds"><a class="add" href="/live/kick/connect">Add oddie to Kick</a>'
-      + '<a class="add add--tw" href="/live/twitch/connect">Add oddie to Twitch</a></div>'
+      + '<a class="add add--tw" href="/live/twitch/connect">Add oddie to Twitch</a>'
+      + '<a class="add add--x" href="/live/x/connect">Add oddie to X Live</a></div>'
       + (q === "expired" ? '<p class="note">That link expired. Press Add oddie to ' + qp + ' again.</p>' : "")
       + (q === "declined" ? '<p class="note">No problem. Press Add oddie to ' + qp + ' whenever you are ready.</p>' : "")
       + (q === "failed" ? '<p class="note">Connecting to ' + qp + ' needs one more try. Press Add oddie to ' + qp + ' again.</p>' : "")
@@ -918,7 +921,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     }
     // For a streamer whose week ran out, or who is on another browser. Not
     // while their own card is up: that card already says it.
-    if (!j.owner && !ownEl.firstChild && P !== "youtube" && P !== "x") {
+    if (!j.owner && !ownEl.firstChild && P !== "youtube") {
       html += '<p class="mine">Your channel? <a href="/live/' + P + '/connect">Sign in with ' + PN + '</a> to collect 2% of every market opened here.</p>';
     }
     // Repainted only when something changed, so a link somebody is on keeps its focus.

@@ -17,7 +17,7 @@ import { stakedInVault } from "./chain/oddieChain.js";
 import { sweepSwsol } from "./swsolSweep.js";
 import { readVaultHoldings, parkVault, unparkVault } from "./chain/oddieChain.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
-import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
+import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, XLIVE_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
   canonicalForWallet, canonicalForIdentity, personByUsername, setFollow, isFollowing, followCounts, followersOf, recordSocialEvent,
   eventsBy, followeesOf, markFeedSeen, feedSeenAt, peopleToFollow, reachFor, openerProfile, backfillSocialEvents, ensureProfile, ensureProfilesForAll, parkedMentionRows, tgIdForHandle, boardPeople, walletsOfPerson, type SocialEvent, type FeedItem, type PublicPerson } from "./store/markets.js";
@@ -1921,9 +1921,10 @@ app.use(youtubeRouter({
   pageClosed: (res) => appClosed(res),
   log: liveLog,
 }));
-/* X LIVE (src/x/live.ts): votes only, like YouTube. A streamer signs in with X
-   once; every broadcast they own sends its chat over the app's activity
-   stream. Both sign-ins come back through X's one registered callback. */
+/* X LIVE (src/x/live.ts): markets and votes, the channel's 2% exactly as on
+   Kick and Twitch (Lev, 16 Oct). A streamer signs in with X once; every
+   broadcast they own sends its chat over the app's activity stream. Both
+   sign-ins come back through X's one registered callback. */
 const xLive = xLiveRouter({
   appBaseUrl: APP_BASE_URL,
   redirectUri: redirectUri(BASE_URL, "twitter"),
@@ -1932,6 +1933,15 @@ const xLive = xLiveRouter({
   pageOpen: (req) => appOpenFor(req),
   pageClosed: (res) => appClosed(res),
   log: liveLog,
+  channelMarkets: (channelId, limit) => streamChannelMarkets("x", channelId, limit),
+  // A channel's 2%: the person is x:<X user id>, otherwise exactly Kick's.
+  payout: {
+    domain: (req) => walletDomain(req),
+    wallet: (personId) => personWallet(personId),
+    setWallet: (personId, wallet) => setPersonWallet(personId, wallet),
+    openedSlugs: (channelId) => streamOpenedSlugs("x", channelId),
+    nameMarkets: async (channelId, wallet) => nameOpenedMarkets(await streamOpenedSlugs("x", channelId).catch(() => [] as string[]), wallet),
+  },
 });
 app.use(xLive.router);
 /* THE LEADERBOARD'S ROWS: points from the votes in every stream chat (Lev,
@@ -1968,7 +1978,7 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   const kickEng = kickEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
   const twEng = twitchEngineDeps({ appBaseUrl: APP_BASE_URL, log: liveLog, markets: kickMarkets });
   const ytEng = youtubeEngineDeps({ log: liveLog });
-  const xEng = xEngineDeps({ log: liveLog });
+  const xEng = xEngineDeps({ log: liveLog, markets: kickMarkets, appBaseUrl: APP_BASE_URL });
   const engOf = (p: Platform): LiveDeps => (p === "twitch" ? twEng : p === "youtube" ? ytEng : p === "x" ? xEng : kickEng);
   const clock: LiveDeps = {
     ...kickEng,
@@ -4256,7 +4266,7 @@ function marketPayload(slug: string, detail: { question: string; closesAt: strin
   };
 }
 
-interface OpenedBy { platform: "kick" | "twitch" | "telegram"; handle: string | null; url: string | null }
+interface OpenedBy { platform: "kick" | "twitch" | "telegram" | "x"; handle: string | null; url: string | null }
 /** Where a market was opened, when that was not X: the Kick channel (public,
  *  it is the channel's name) or the Telegram opener's @name. One definition
  *  for the list card and the market page, so the two chips cannot disagree. */
@@ -4274,6 +4284,11 @@ async function openedByFor(slug: string, sourceUrl: string | null | undefined): 
   if (kind === "twitch") {
     const m = TWITCH_CHAT_SOURCE.exec(String(sourceUrl));
     return m ? { platform: "twitch", handle: m[1], url: `https://www.twitch.tv/${m[1]}` } : null;
+  }
+  // An X live chat: the streamer's X account, the way a Twitch market names its channel.
+  if (kind === "xlive") {
+    const m = XLIVE_CHAT_SOURCE.exec(String(sourceUrl));
+    return m ? { platform: "x", handle: m[1], url: `https://x.com/${m[1]}` } : null;
   }
   return null;
 }
@@ -5021,6 +5036,23 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
       for (const t of threads) {
         await eng.say("twitch", t.channelId, text, t.messageId)
           .catch((e) => liveLog("twitch result not delivered", { slug, channel: t.channelId, err: (e as Error).message }));
+      }
+    }).catch(() => {});
+  }
+
+  /* AND IN X LIVE CHAT, the same way. A line only goes out while the stream
+     that opened it is live: X live chat has no "after" to post into. */
+  if (xLiveConfigured()) {
+    void chainDone.then(async () => {
+      const threads = await streamThreadsForSlug("x", slug).catch(() => []);
+      if (!threads.length) return;
+      const d = await communityMarketDetail(slug).catch(() => null);
+      const headline = d ? foldIds(d.hook || d.question) : slug;
+      const text = `It's ${outcome.toUpperCase()}: "${headline}" Winners collect at ${APP_BASE_URL}/m/${slug}`;
+      const eng = xEngineDeps({ log: liveLog });
+      for (const t of threads) {
+        await eng.say("x", t.channelId, text, t.messageId)
+          .catch((e) => liveLog("x live result not delivered", { slug, channel: t.channelId, err: (e as Error).message }));
       }
     }).catch(() => {});
   }

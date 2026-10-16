@@ -636,6 +636,9 @@ main.wrap{padding-top:calc(var(--seam-h) + 18px)}
 @media (hover:hover){.eyebrow .by--kick:hover{background:#6BFF3A}}
 .eyebrow .by--twitch{background:#9146FF;color:#fff}
 @media (hover:hover){.eyebrow .by--twitch:hover{background:#A970FF}}
+/* An X live chat the market was opened in: X's own black, leading back to the streamer. */
+.eyebrow .by--xlive{background:#020302;color:#FBFCF4;box-shadow:inset 0 0 0 1px rgba(251,252,244,.35)}
+@media (hover:hover){.eyebrow .by--xlive:hover{background:#1a1b18}}
 .adult{margin:10px 0 0;font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3)}
 /* AN OPENER WITH AN ODDIE NAME is somebody you can follow, so their chip
    carries their picture and leads to their page, where the Follow button is.
@@ -867,6 +870,11 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     return '<a class="by by--twitch" href="https://www.twitch.tv/' + encodeURIComponent(h)
       + '" target="_blank" rel="noopener noreferrer">twitch.tv/' + esc(h) + "</a>";
   }
+  function xLiveChip(handle) {
+    var h = String(handle);
+    return '<a class="by by--xlive" href="https://x.com/' + encodeURIComponent(h)
+      + '" target="_blank" rel="noopener noreferrer">x.com/' + esc(h) + " · live</a>";
+  }
   function kickChip(handle) {
     var h = String(handle);
     return '<a class="by by--kick" href="https://kick.com/' + encodeURIComponent(h)
@@ -981,6 +989,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     else if (m.openedBy && m.openedBy.platform === "telegram" && m.openedBy.handle) bits.push(tgChip(m.openedBy.handle));
     else if (m.openedBy && m.openedBy.platform === "kick" && m.openedBy.handle) bits.push(kickChip(m.openedBy.handle));
     else if (m.openedBy && m.openedBy.platform === "twitch" && m.openedBy.handle) bits.push(twitchChip(m.openedBy.handle));
+    else if (m.openedBy && m.openedBy.platform === "x" && m.openedBy.handle) bits.push(xLiveChip(m.openedBy.handle));
     /* Cozulmus markette sayac hic eklenmiyor. Onceden asagida bir filtre
        vardi ama "closes in" ariyordu, oysa metin hep "... left" idi: filtre
        hicbir zaman hicbir sey elemiyordu ve cozulmus market de geri sayiyordu. */

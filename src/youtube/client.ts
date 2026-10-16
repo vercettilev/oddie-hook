@@ -363,8 +363,12 @@ export function splitForChat(text: string, max = CHAT_MAX): string[] {
   while (rest.length > max) {
     const w = rest.slice(0, max + 1);
     const end = Math.max(w.lastIndexOf(". "), w.lastIndexOf("? "), w.lastIndexOf("! "));
+    // An aside in brackets goes whole to the next line: on X (140) the market
+    // line ended "...earns 2%" and then "of the pool)" on its own (16 Oct).
+    const aside = w.lastIndexOf(" (");
     let cut: number;
     if (end >= max * 0.4) cut = end + 1;            // keep the full stop
+    else if (aside >= max * 0.4) cut = aside;
     else { const sp = w.lastIndexOf(" "); cut = sp > 0 ? sp : max; }
     out.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();

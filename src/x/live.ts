@@ -34,6 +34,9 @@ import { accessToken, adoptTokens, botUserId, BOT_SCOPES, xConfigured } from "./
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { paced, patiently } from "../live/pace.js";
 import { channelById, liveStore, saveChannel } from "../store/live.js";
+import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
+import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
+import { xLiveChatSource } from "../store/markets.js";
 import { splitForChat } from "../youtube/client.js";
 
 const API = "https://api.x.com/2";
@@ -232,12 +235,17 @@ async function withVoice<T>(voice: XVoice, f: (token: string) => Promise<T>): Pr
 
 /* ------------------------------------------------------------- engine -- */
 
+/** The market door's own parts (src/live/claims.ts), as server.ts builds them for every stream. */
+export type XMarkets = Omit<ChatMarketDeps, "sourceFor" | "say">;
+
 /**
  * The engine's hands on X. Every line goes out from @oddiefun into the
  * broadcast the streamer is live in, cut to X's 140 characters, a second
- * apart. No pins, no market, no link.
+ * apart. No pins. With `markets`, !oddie opens a real market and the channel
+ * earns its 2%, as on Kick and Twitch (Lev, 16 Oct); without, votes only.
  */
-export function xEngineDeps(d: { log: Log }, api: XLiveApi = xLiveApi, voice: XVoice = botVoice): LiveDeps {
+export function xEngineDeps(d: { log: Log; markets?: XMarkets; appBaseUrl?: string }, api: XLiveApi = xLiveApi, voice: XVoice = botVoice): LiveDeps {
+  const base = (d.appBaseUrl ?? "").replace(/\/+$/, "");
   const say = async (_p: unknown, channelId: string, text: string, replyTo?: string): Promise<string | void> => {
     const broadcast = liveIn.get(channelId);
     if (!broadcast) return;   // off air: no chat to say it in
@@ -249,13 +257,23 @@ export function xEngineDeps(d: { log: Log }, api: XLiveApi = xLiveApi, voice: XV
     }
     return first ?? undefined;
   };
+  const markets = d.markets;
   return {
     store: liveStore,
     now: () => Date.now(),
     say,
-    standingsUrl: async () => "",
+    standingsUrl: async (_p, channelId) => {
+      if (!markets || !base) return "";
+      const ch = await channelById("x", channelId).catch(() => null);
+      return `${base}/live/x/${encodeURIComponent(ch?.slug ?? channelId)}`;
+    },
     streamLive: async (_p, channelId) => (liveIn.has(channelId) ? true : ended.has(channelId) ? false : null),
-    votesOnly: true,
+    market: markets ? (msg, claim) => openFromChat(msg, claim, {
+      ...markets,
+      sourceFor: (m) => xLiveChatSource(m.channelSlug || m.channelId, m.messageId),
+      say: async (m, text) => { await say("x", m.channelId, text, m.messageId); },
+    }) : undefined,
+    votesOnly: !markets,
     log: d.log,
   };
 }
@@ -508,7 +526,11 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
         }
       }
       d.log("x channel connected", { handle: who.username, ...subs });
-      go(`${base}/live/x/${encodeURIComponent(who.username)}?added=1`);
+      // Signed in as the channel: its page offers the wallet its 2% goes to,
+      // the way Kick's and Twitch's sign-ins do (src/live/owner.ts).
+      const key = ownerKeyFromEnv("x");
+      if (key) res.append("Set-Cookie", ownerCookie(ownerToken(who.id, key), base.startsWith("https:"), undefined, "x"));
+      go(`${base}/live/x/${encodeURIComponent(who.username)}?connected=1`);
     } catch (e) {
       d.log("x connect failed", { status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
       fail("failed");

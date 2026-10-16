@@ -3789,7 +3789,7 @@ export function handleFromSourceUrl(url: string | null | undefined): string | nu
  * and is deliberately narrow. This decides whether we will show the market at
  * all, and is allowed to be wider.
  */
-export type SourceKind = "x" | "telegram" | "kick" | "twitch";
+export type SourceKind = "x" | "telegram" | "kick" | "twitch" | "xlive";
 /**
  * A TELEGRAM MESSAGE WITH NO PUBLIC LINK: a private chat, which is where guest
  * mode lets the bot be tagged, and a basic group, which is what two friends get
@@ -3831,6 +3831,21 @@ export const twitchChatSource = (channelLogin: string, messageId: string): strin
   return `twitch-chat:${login}/${id}`;
 };
 
+/**
+ * AN X LIVE CHAT MESSAGE (src/x/live.ts, Lev 16 Oct: markets in X live chat
+ * too). A chat line in a broadcast has no link of its own either, so
+ * `xlive-chat:<streamer's X username>/<message id>`. Its own kind, not "x":
+ * "x" means a tweet, whose id gets quoted and whose author gets paid, and a
+ * chat message is neither. Never printed as a link.
+ */
+export const XLIVE_CHAT_SOURCE = /^xlive-chat:([a-z0-9_]{1,15})\/([0-9a-f-]{8,64})$/i;
+export const xLiveChatSource = (username: string, messageId: string): string => {
+  const name = username.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 15) || "channel";
+  const id = /^[0-9a-f-]{8,64}$/i.test(messageId) ? messageId.toLowerCase()
+    : createHash("sha256").update(messageId).digest("hex").slice(0, 32);
+  return `xlive-chat:${name}/${id}`;
+};
+
 /** Only a real web link is ever printed as a link. */
 export const isWebSourceUrl = (url: string | null | undefined): boolean =>
   typeof url === "string" && /^https?:\/\//i.test(url);
@@ -3840,6 +3855,7 @@ export function sourceUrlKind(url: string | null | undefined): SourceKind | null
   if (TG_PRIVATE_SOURCE.test(String(url))) return "telegram";
   if (KICK_CHAT_SOURCE.test(String(url))) return "kick";
   if (TWITCH_CHAT_SOURCE.test(String(url))) return "twitch";
+  if (XLIVE_CHAT_SOURCE.test(String(url))) return "xlive";
   let u: URL;
   try { u = new URL(String(url)); } catch { return null; }
   if (u.protocol !== "https:" && u.protocol !== "http:") return null;
@@ -3887,6 +3903,9 @@ export function sourcePostKey(url: string | null | undefined): string | null {
   if (kick) return `kick:${kick[2].toLowerCase()}`;
   const twitch = TWITCH_CHAT_SOURCE.exec(String(url));
   if (twitch) return `twitch:${twitch[2].toLowerCase()}`;
+  // Never "x:": that prefix is a tweet id, and the resolution would quote it.
+  const xlive = XLIVE_CHAT_SOURCE.exec(String(url));
+  if (xlive) return `xlive:${xlive[2].toLowerCase()}`;
   const u = new URL(String(url));
   if (kind === "x") {
     const id = /\/status\/(\d+)/.exec(u.pathname)?.[1];
@@ -5318,8 +5337,9 @@ export async function tgThreadsForSlug(slug: string): Promise<Array<{ key: strin
   return rows.map((r) => ({ key: r.tweet_id, reason: r.reason, replyId: r.reply_id, author: r.author }));
 }
 
-/** A stream platform, as it prefixes the ledger key: <platform>:<channel id>:<message id>. */
-export type StreamPlatform = "kick" | "twitch";
+/** A stream platform, as it prefixes the ledger key: <platform>:<channel id>:<message id>.
+ *  "x" is X live chat (src/x/live.ts); a tweet's ledger key is its bare id, never "x:". */
+export type StreamPlatform = "kick" | "twitch" | "x";
 
 /** The channels of one platform a market was opened from, for its result. */
 export async function streamThreadsForSlug(platform: StreamPlatform, slug: string): Promise<Array<{ channelId: string; messageId: string }>> {
@@ -5377,7 +5397,7 @@ export const kickOpenedSlugs = (channelId: string) => streamOpenedSlugs("kick", 
 export async function streamOpenerOf(slug: string): Promise<string | null> {
   if (!slug) return null;
   let key: string | null = null;
-  const stream = (k: string) => k.startsWith("kick:") || k.startsWith("twitch:");
+  const stream = (k: string) => k.startsWith("kick:") || k.startsWith("twitch:") || k.startsWith("x:");
   if (!PERSISTENT) {
     key = [...memMentions.values()].find((m) =>
       m.slug === slug && m.outcome === "replied" && m.reason === "opened" && stream(m.tweetId))?.tweetId ?? null;
@@ -5385,14 +5405,14 @@ export async function streamOpenerOf(slug: string): Promise<string | null> {
     await ensureSchema();
     const { rows } = await db().query<{ tweet_id: string }>(
       `SELECT tweet_id FROM x_mention
-        WHERE slug = $1 AND outcome = 'replied' AND reason = 'opened' AND (tweet_id LIKE 'kick:%' OR tweet_id LIKE 'twitch:%')
+        WHERE slug = $1 AND outcome = 'replied' AND reason = 'opened' AND (tweet_id LIKE 'kick:%' OR tweet_id LIKE 'twitch:%' OR tweet_id LIKE 'x:%')
         ORDER BY at ASC LIMIT 1`,
       [slug],
     );
     key = rows[0]?.tweet_id ?? null;
   }
   if (!key) return null;
-  const platform: StreamPlatform = key.startsWith("twitch:") ? "twitch" : "kick";
+  const platform: StreamPlatform = key.startsWith("twitch:") ? "twitch" : key.startsWith("x:") ? "x" : "kick";
   const channel = channelOfKey(platform, key);
   return channel ? `${platform}:${channel}` : null;
 }
