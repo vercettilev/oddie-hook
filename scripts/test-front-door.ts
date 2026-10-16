@@ -53,8 +53,11 @@ console.log("the landing leads with livestreams and names every door (7 Oct)");
     /<p class="also">Also on[\s\S]{0,200}href="https:\/\/x\.com\/intent\/post\?text=%40oddiefun%20"[\s\S]{0,300}href="https:\/\/t\.me\/oddiefunbot"/.test(landing));
   check("the creators field has a card per door",
     /id="creators"[\s\S]*?<h3>Streamers<\/h3>[\s\S]*?<h3>Creators on X<\/h3>[\s\S]*?<h3>Communities<\/h3>/.test(landing));
-  check("...and the streamer card adds it to Kick, to Twitch and to X Live, the 2% where it is earned",
-    /<h3>Streamers<\/h3>[\s\S]{0,300}href="https:\/\/app\.oddie\.fun\/live\/kick\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/twitch\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/x\/connect"/.test(landing)
+  check("the hero's doors go X Live, Kick, Twitch (Lev, 16 Oct)",
+    landing.indexOf('<a class="door" href="https://app.oddie.fun/live/x/connect">') < landing.indexOf('<a class="door" href="https://app.oddie.fun/live/kick/connect">')
+    && landing.indexOf('<a class="door" href="https://app.oddie.fun/live/kick/connect">') < landing.indexOf('<a class="door" href="https://app.oddie.fun/live/twitch/connect">'));
+  check("...and the streamer card adds it to X Live, to Kick and to Twitch, the 2% where it is earned",
+    /<h3>Streamers<\/h3>[\s\S]{0,300}href="https:\/\/app\.oddie\.fun\/live\/x\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/kick\/connect"[\s\S]{0,200}href="https:\/\/app\.oddie\.fun\/live\/twitch\/connect"/.test(landing)
     && landing.includes("<p>Your channel earns <b>2%</b> on Kick and Twitch.</p>"));
   check("...and the nav can reach it", /href="#creators">For creators</.test(landing));
   check("the hero chat is in English, the page speaks to everyone", !/cumaya|görmez/.test(landing));
