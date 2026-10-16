@@ -36,7 +36,7 @@ import { paced, patiently } from "../live/pace.js";
 import { channelById, liveStore, saveChannel } from "../store/live.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
-import { xLiveChatSource } from "../store/markets.js";
+import { botStateGet, botStateSet, xLiveChatSource } from "../store/markets.js";
 import { splitForChat } from "../youtube/client.js";
 
 const API = "https://api.x.com/2";
@@ -197,10 +197,25 @@ const SEEN_MAX = 10_000;
 const STALE_MS = 2 * 60_000;
 /** Each streamer's page name, looked up once. */
 const slugOf = new Map<string, string>();
+/** Each live streamer's picture: the live thumbnail broadcast.start hands over,
+ *  a full frame renewed about every two seconds (measured 16 Oct). Kept in the
+ *  store too, so a restart mid-stream still has it; gone when the stream ends. */
+const thumbOf = new Map<string, string>();
+const thumbKey = (channelId: string) => `x_live_thumb:${channelId}`;
+
+/** The picture of a streamer's live broadcast now, as a URL, or null (src/games/screen.ts). */
+export async function xThumbnail(channelId: string): Promise<string | null> {
+  if (!liveIn.has(channelId) && ended.has(channelId)) return null;
+  const known = thumbOf.get(channelId);
+  if (known) return known;
+  const stored = await botStateGet(thumbKey(channelId)).catch(() => null);
+  if (stored) thumbOf.set(channelId, stored);
+  return stored || null;
+}
 
 /** Test seam. */
 export function _resetXLive(): void {
-  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); pending.clear(); finished.clear();
+  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); thumbOf.clear(); pending.clear(); finished.clear();
 }
 /** Test seam: the broadcast a streamer is live in, as oddie knows it. */
 export const _liveIn = (channelId: string): string | undefined => liveIn.get(channelId);
@@ -357,11 +372,19 @@ export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: L
       // The live thumbnail X hands over: logged to learn how often it changes,
       // the way to read a moment off an X stream (frames) without scraping.
       w.log("x broadcast on air", { channel: owner, broadcast, thumbnail: str(ev.payload?.thumbnail_url) });
-      { const thumb = str(ev.payload?.thumbnail_url); if (thumb && broadcast) void probeThumbnail(thumb, broadcast, w.log); }
+      {
+        const thumb = str(ev.payload?.thumbnail_url);
+        if (thumb && /^https:\/\//i.test(thumb)) {
+          thumbOf.set(owner, thumb);
+          await botStateSet(thumbKey(owner), thumb).catch(() => {});
+        }
+      }
       return "start";
     case "broadcast.end":
       if (!broadcast || liveIn.get(owner) === broadcast) liveIn.delete(owner);
       ended.add(owner);
+      thumbOf.delete(owner);
+      await botStateSet(thumbKey(owner), "").catch(() => {});
       w.log("x broadcast ended", { channel: owner, broadcast });
       return "end";
     case "broadcast.chat": {

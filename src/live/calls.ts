@@ -61,6 +61,7 @@
 import { binancePrices, parsePriceCall, planFor, readPriceCall, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
+import type { ScreenSource } from "../games/screen.js";
 
 export type Platform = "kick" | "twitch" | "youtube" | "x";
 export type Side = "yes" | "no";
@@ -267,6 +268,8 @@ export const LIVE_COPY = {
   reportOpened: (q: string) => `Result in for "${short(q)}": type !result yes or !result no in the next minute. Mods can settle it with !call yes or !call no.`,
   reportTie: (q: string, yes: number, no: number) => `"${short(q)}" is tied ${yes}-${no}. One more minute: !result yes or !result no.`,
   reportToMods: (q: string) => `"${short(q)}" is still tied. Mods settle it: !call yes or !call no.`,
+  /** The evidence the screen settled a call on (src/live/screenCalls.ts), in front of the result. */
+  onScreen: (seen: string) => (seen ? `On stream: ${seen}.` : "On stream."),
   roomSays: (agree: number, total: number, outcome: Side) => `${agree} of ${n(total, "report", "reports")} ${total === 1 ? "says" : "say"} ${outcome.toUpperCase()}.`,
   priceNoReport: (q: string) => `oddie reads "${short(q)}" off the price, no report needed.`,
   noResult: (q: string) => `No result came in for "${short(q)}" before the stream ended, so it's canceled. No points.`,
@@ -326,9 +329,12 @@ export const LIVE_COPY = {
   faceitNotFound: (nick: string) => `No FACEIT player called "${nick}". Check the spelling on faceit.com.`,
   faceitOff: "FACEIT is not set up on oddie yet.",
   /* Match calls read off the stream itself (src/live/frameCalls.ts). */
-  matchesHow: "Mods: while this channel plays CS2 or Dota 2, oddie opens a call for every match and settles it when the match ends, read off the stream itself. !matches off stops that, !matches on brings it back.",
-  matchesOff: "Match calls off. oddie opens no more calls on this channel's matches by itself. !call still works, and !matches on brings them back.",
-  matchesOn: "Match calls on. Every CS2 or Dota 2 match this channel plays opens a call by itself, settled when it ends.",
+  /* The stream read by oddie (Lev, 16 Oct): a call settles itself when its
+     result shows on screen (src/live/screenCalls.ts), and on Twitch and Kick a
+     CS2 or Dota 2 match opens its own call (src/live/frameCalls.ts). One switch for both. */
+  matchesHow: "Mods: oddie reads this stream. A call settles itself when its result shows on screen, and on Twitch and Kick every CS2 or Dota 2 match opens a call by itself. !matches off stops that, !matches on brings it back.",
+  matchesOff: "Stream reading off. Calls settle with !call yes or !call no, and no match opens a call by itself. !matches on brings it back.",
+  matchesOn: "Stream reading on. A call settles itself when its result shows on screen, and CS2 or Dota 2 matches open their own calls where oddie can read them.",
   /* A channel that runs votes only (YouTube, whose rules keep money out of the chat): oddie
      never names a market there, and never posts a link. */
   helloVotes: "oddie is here. Mods open a vote with !call <question>, chat answers !yes or !no, and oddie settles price calls itself.",
@@ -420,6 +426,8 @@ export interface LiveDeps {
   streamGame?(platform: Platform, channelId: string): Promise<{ live: boolean; game: string | null } | null>;
   /** Where a picture of the stream is taken and read (src/games/frames.ts). Absent: no picture pass. */
   frames?: FrameSource;
+  /** Where a room call's answer is read off the stream (src/games/screen.ts). Absent: the screen settles nothing. */
+  screen?: ScreenSource;
 }
 
 /** A price call between its lock and its result. `atEnd`: a touch the price
@@ -436,7 +444,7 @@ const lastSplit = new Map<string, number>();
 /** Who answered each call since its last split line, by side. */
 const newSince = new Map<string, { yes: string[]; no: string[] }>();
 /** A moment only the stream shows: settled by the room's !result, not by a price or a match. */
-const isRoomCall = (c: LiveCall): boolean => !c.matchId && !parsePriceCall(c.question);
+export const isRoomCall = (c: LiveCall): boolean => !c.matchId && !parsePriceCall(c.question);
 /** Price calls oddie settles itself, from their lock on. Kept in memory: after
  *  a restart the clock gives each locked price call its wait back. */
 const priceWaits = new Map<string, PriceWait>();
@@ -877,6 +885,25 @@ async function settleOnReports(r: Reports, outcome: Side, deps: LiveDeps): Promi
   const url = await deps.standingsUrl(r.call.platform, r.call.channelId);
   await sayQuiet(deps, r.call, `${LIVE_COPY.roomSays(agree, r.votes.size, outcome)} ${LIVE_COPY.settled(r.call.question, outcome, done.right, done.total, done.top, url, done.winners)}`);
   deps.log("live call settled", { platform: r.call.platform, channel: r.call.channelId, id: r.call.id, outcome, right: done.right, total: done.total, by: "room" });
+  return true;
+}
+
+/**
+ * THE SCREEN SETTLED IT (src/live/screenCalls.ts): a room call whose answer
+ * showed on the stream, read twice in a row. Settled as a mod's !call would,
+ * with what was on screen in front. False when somebody settled it first.
+ */
+export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string, deps: LiveDeps): Promise<boolean> {
+  const now = deps.now();
+  if (call.lockedAt === null) await deps.store.lock(call.id, now).catch(() => false);
+  lastSplit.delete(call.id); newSince.delete(call.id); lastSaid.delete(call.id); reports.delete(call.id);
+  const tally = await deps.store.tally(call.id);
+  const done = await deps.store.settle(call.id, outcome, pointsFor(tally, outcome), now);
+  if (!done) return false;
+  await unpinIfIdle(deps, call);
+  const url = await deps.standingsUrl(call.platform, call.channelId);
+  await sayQuiet(deps, call, `${LIVE_COPY.onScreen(seen)} ${LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners)}`);
+  deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
   return true;
 }
 

@@ -31,14 +31,16 @@ import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
 import { youtubeConfigured } from "./youtube/client.js";
-import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter } from "./x/live.js";
+import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter, xThumbnail } from "./x/live.js";
 import { lockDue, remindOpen, weekStart, type LiveDeps, type Platform } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
 import { watchFrames } from "./live/frameCalls.js";
 import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
-import { allStandings, callerRecord, streaksFor } from "./store/live.js";
+import { fetchPicture, screenSource } from "./games/screen.js";
+import { watchScreens } from "./live/screenCalls.js";
+import { allStandings, callerRecord, channelById, streaksFor } from "./store/live.js";
 import { probePriceSource, binancePrices, BINANCE_ASSETS } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
@@ -2037,6 +2039,32 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   if (xLiveConfigured()) { startXStream({ engine: xEng, log: liveLog }); liveLog("x live on"); }
   else liveLog(`x live off: ${xLiveMissing().join(", ")} not set`);
   clock.frames = frames.source ?? undefined;
+  /* THE SCREEN SETTLES A ROOM CALL (src/live/screenCalls.ts): its answer read
+     off the stream, twice in a row. X's picture is its live thumbnail; Twitch's
+     and Kick's are a frame of the stream, where ffmpeg is here to take one. */
+  const fromStream = (platform: "twitch" | "kick") => async (channelId: string): Promise<Buffer | null> => {
+    const src = frames.source;
+    const ch = src ? await channelById(platform, channelId).catch(() => null) : null;
+    const playlist = src && ch ? await src.playlist(platform, ch.slug).catch(() => null) : null;
+    return src && playlist ? src.grab(playlist) : null;
+  };
+  const screen = screenSource({
+    x: async (channelId) => { const url = await xThumbnail(channelId); return url ? fetchPicture(url) : null; },
+    ...(frames.source ? { twitch: fromStream("twitch"), kick: fromStream("kick") } : {}),
+  });
+  clock.screen = screen.source ?? undefined;
+  liveLog(screen.source ? `screen on: ${screen.why}` : `screen off: ${screen.why}`);
+  // Its own beat: a picture and a read take seconds, and the clock's tick
+  // (price results, reminders) never waits for them.
+  if (clock.screen) {
+    let screening = false;
+    setInterval(() => {
+      if (screening) return;
+      screening = true;
+      void watchScreens(clock).catch((e) => liveLog("live screen pass failed", { err: (e as Error).message }))
+        .finally(() => { screening = false; });
+    }, 5_000);
+  }
   liveLog(frames.source ? `frames on: ${frames.why}` : `frames off: ${frames.why}`);
   // One read now, so the log says whether price calls can be settled from here.
   void probePriceSource(liveLog);
