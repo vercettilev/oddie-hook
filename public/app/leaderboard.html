@@ -96,6 +96,16 @@ tbody td{padding:14px 10px;border-bottom:1px solid var(--line);vertical-align:mi
   color:var(--fg-3);padding:40px 0}
 .err{border:3px solid var(--pink);padding:15px 17px;font-size:14px;color:var(--cream)}
 @media (max-width:520px){ .hide-sm{display:none} tbody td{padding:12px 6px} }
+/* THIS WEEK, OR ALL TIME (Lev, 16 Oct). The week turns over Monday 00:00 UTC,
+   so a newcomer can top it; all time is one tap away. */
+.range{display:flex;gap:8px;margin:0 0 18px}
+.range button{font:inherit;font-family:var(--display);font-size:16px;letter-spacing:.03em;padding:8px 14px;
+  border:2px solid var(--line);background:transparent;color:var(--fg-2);cursor:pointer;border-radius:999px}
+.range button[aria-pressed="true"]{border-color:var(--yellow);color:var(--ink);background:var(--yellow)}
+@media (hover:hover){.range button[aria-pressed="false"]:hover{color:var(--cream);border-color:var(--fg-3)}}
+.range button:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+/* A run of right calls, next to the name. */
+.fire{font-family:var(--display);font-size:15px;letter-spacing:.02em;color:var(--yellow);margin-left:6px;white-space:nowrap}
 
 /* ---- brand: a movement, not a terminal ---- */
 .mark{display:inline-flex;align-items:center;gap:10px}
@@ -327,6 +337,10 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
        with money, what settled) left with it: their rows were weeks old and
        none of them came from a stream. -->
   <p class="rule">Points from votes in stream chats.</p>
+  <div class="range" role="group" aria-label="Which board">
+    <button type="button" data-range="week" aria-pressed="true">This week</button>
+    <button type="button" data-range="all" aria-pressed="false">All time</button>
+  </div>
   <div id="view"><p class="load">Counting the votes&hellip;</p></div>
 </main>
 
@@ -341,41 +355,62 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  var WHERE = { twitch: "twitch.tv/", kick: "kick.com/" };
+  /* Where each name was called, in the platform's own address form. */
+  var WHERE = { twitch: "twitch.tv/", kick: "kick.com/", youtube: "youtube.com/@", x: "x.com/" };
+  var STREAK = 3;
+  var range = "week", asked = 0;
+  var buttons = document.querySelectorAll(".range button");
+  Array.prototype.forEach.call(buttons, function (b) {
+    b.addEventListener("click", function () {
+      if (b.getAttribute("data-range") === range) return;
+      range = b.getAttribute("data-range");
+      Array.prototype.forEach.call(buttons, function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      load();
+    });
+  });
 
-  fetch("/api/live/standings")
+  function load() {
+  var mine = ++asked;
+  fetch("/api/live/standings?range=" + range)
     .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("server said " + r.status)); })
     .then(function (j) {
+      if (mine !== asked) return;   // the other tab was asked for since
       var rows = (j || {}).standings || [];
       /* EMPTY IS NOT AN APOLOGY: the first name here is whoever calls a vote
          right in a stream, and the door to that is adding oddie to one. */
       if (!rows.length) {
         view.innerHTML = '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
-          + "<h3>Nobody yet</h3>"
-          + '<p>The first votes from a stream land here. <a href="/live">Add oddie to your stream</a></p></div>';
+          + "<h3>" + (range === "week" ? "This week is open" : "Nobody yet") + "</h3>"
+          + (range === "week"
+            ? "<p>The first right call this week puts a name here. It turns over every Monday.</p>"
+            : '<p>The first votes from a stream land here. <a href="/live">Add oddie to your stream</a></p>') + "</div>";
         return;
       }
       // Each name says where it was called, and that channel's page is one tap.
       view.innerHTML = '<section class="stand">'
         + "<table><thead><tr>"
         + '<th class="r"></th><th>Who</th>'
-        + '<th class="num hide-sm">Right</th><th class="num">Points</th>'
+        + '<th class="num">Right</th><th class="num">Points</th>'
         + "</tr></thead><tbody>"
         + rows.map(function (s) {
             return "<tr>"
               + '<td class="r' + (s.rank <= 3 ? " r--top" : "") + '">#' + s.rank + "</td>"
-              + '<td class="who"><b>' + esc(s.username) + "</b>"
+              + '<td class="who"><b>' + esc(s.username)
+              + (s.streak >= STREAK ? '<span class="fire" title="' + s.streak + ' right calls in a row">🔥' + s.streak + "</span>" : "") + "</b>"
               + '<a class="ch" href="/live/' + encodeURIComponent(s.platform) + "/" + encodeURIComponent(s.channel) + '">'
               + esc((WHERE[s.platform] || "") + s.channel) + "</a></td>"
-              + '<td class="num hide-sm wl">' + s.right + "/" + s.calls + "</td>"
+              + '<td class="num wl">' + s.right + "/" + s.calls + "</td>"
               + '<td class="num"><span class="pts">' + s.points + "</span></td>"
               + "</tr>";
           }).join("")
         + "</tbody></table></section>";
     })
     .catch(function (e) {
+      if (mine !== asked) return;
       console.warn("[leaderboard]", e && e.message);
       view.innerHTML = '<div class="err">The leaderboard did not load. Reload the page.</div>';
     });
+  }
+  load();
 })();
 </script>

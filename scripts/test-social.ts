@@ -265,7 +265,7 @@ console.log("\nthe lines no memory test reaches");
   // The leaderboard is the stream votes (Lev, 8 Oct), read from every channel at once.
   const lb = readFileSync("public/app/leaderboard.html", "utf8");
   check("the leaderboard reads the votes from every stream chat",
-    lb.includes('fetch("/api/live/standings")') && server.includes('app.get("/api/live/standings"'));
+    lb.includes('fetch("/api/live/standings?range=" + range)') && server.includes('app.get("/api/live/standings"'));
   // Live took Following's place in the nav (Lev, 8 Oct); /following still opens.
   for (const f of ["markets", "market", "you", "leaderboard", "who", "person", "following", "live"]) {
     const html = readFileSync(`public/app/${f}.html`, "utf8");

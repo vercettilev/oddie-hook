@@ -406,6 +406,22 @@ export async function accountsFor(deviceId: string): Promise<Account[]> {
   return rows.map((a) => ({ provider: a.provider, handle: a.handle, name: a.display_name, bonusGranted: a.bonus_granted_at !== null }));
 }
 
+/** The provider's own id for the account this browser signed in with: for X,
+ *  the same user id X live chat reports (src/x/live.ts). Null when none. */
+export async function providerUidFor(deviceId: string, provider: Provider): Promise<string | null> {
+  if (!STORE_PERSISTENT) {
+    const canon = _memDeviceAccount.get(deviceId);
+    return (canon && memAccounts.find((a) => a.canonicalDevice === canon && a.provider === provider)?.uid) || null;
+  }
+  await storeSchema();
+  const { rows } = await storeDb().query<{ provider_uid: string }>(
+    `SELECT a.provider_uid FROM account a
+      WHERE a.provider = $2 AND a.canonical_device = (
+        SELECT a2.canonical_device FROM device_account da JOIN account a2 ON a2.id = da.account_id WHERE da.device_id = $1)
+      ORDER BY a.created_at LIMIT 1`, [deviceId, provider]);
+  return rows[0]?.provider_uid ?? null;
+}
+
 interface AcctRow {
   id: number; provider: Provider; provider_uid: string;
   handle: string | null; display_name: string | null;

@@ -32,13 +32,13 @@ import { twitchConfigured } from "./twitch/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
 import { youtubeConfigured } from "./youtube/client.js";
 import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter } from "./x/live.js";
-import { lockDue, remindOpen, type LiveDeps, type Platform } from "./live/calls.js";
+import { lockDue, remindOpen, weekStart, type LiveDeps, type Platform } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
 import { watchFrames } from "./live/frameCalls.js";
 import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
-import { allStandings } from "./store/live.js";
+import { allStandings, callerRecord, streaksFor } from "./store/live.js";
 import { probePriceSource, binancePrices, BINANCE_ASSETS } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
@@ -99,7 +99,7 @@ import { ticketsLeft, spendTicketForMiss, spendTicketForTag, creditFundedBettor,
 import { renderPositionCard } from "./card/renderPositionCard.js";
 import { postResolution } from "./x/resolutionReply.js";
 import { tweetCopy } from "./card/tweetCopy.js";
-import { linkAccount, accountsFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice, devicesForWallets, canonicalFor } from "./store/accounts.js";
+import { linkAccount, accountsFor, providerUidFor, disconnectDevice, twitterHandleForWallet, twitterHandlesForWallets, walletForTwitterHandle, walletsForDevice, devicesForWallets, canonicalFor } from "./store/accounts.js";
 import { authorizeUrl, consume, identify, isConfigured, isProvider, missingSecretEnv, pkce, PROVIDERS, redirectUri, remember } from "./auth/oauth.js";
 import { issueChallenge, consumeChallenge, verifyWalletSignature, shortAddress, WALLET_ADDRESS, signInDomain } from "./auth/wallet.js";
 
@@ -1937,12 +1937,29 @@ app.use(xLive.router);
 /* THE LEADERBOARD'S ROWS: points from the votes in every stream chat (Lev,
    8 Oct, the board is the live product's). Usernames and points, the same
    things every channel page already shows; one grouped read per visit. */
-app.get("/api/live/standings", async (_req, res) => {
+app.get("/api/live/standings", async (req, res) => {
   res.set("Cache-Control", "no-store");
-  const rows = await allStandings(50).catch(() => null);
+  // ?range=week is this week's board (Monday 00:00 UTC on, Lev 16 Oct); anything else is all time.
+  const week = req.query.range === "week";
+  const rows = await allStandings(50, week ? { since: weekStart(Date.now()) } : {}).catch(() => null);
   if (!rows) return res.status(503).json({ error: "unavailable" });
-  res.json({ standings: rows.map((s, i) => ({ rank: i + 1, platform: s.platform, username: s.username, channel: s.channel,
-    right: s.right, calls: s.calls, points: s.points })) });
+  const runs = await streaksFor(rows.map((s) => ({ platform: s.platform, userId: s.userId }))).catch(() => new Map<string, number>());
+  res.json({ range: week ? "week" : "all", standings: rows.map((s, i) => ({ rank: i + 1, platform: s.platform, username: s.username, channel: s.channel,
+    right: s.right, calls: s.calls, points: s.points, streak: runs.get(`${s.platform}:${s.userId}`) ?? 0 })) });
+});
+
+/* YOUR CALLS ON PROFILE: somebody signed in with X here is the same X account
+   that answers in X live chats, so those votes are theirs without linking
+   anything. Other platforms' votes need their own sign-in, later. */
+app.get("/api/live/me", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const q = req.query.deviceId;
+  const deviceId = typeof q === "string" && DEVICE_ID.test(q) ? q : null;
+  if (!deviceId) return res.status(400).json({ error: "missing_device" });
+  const uid = await providerUidFor(deviceId, "twitter").catch(() => null);
+  if (!uid) return res.json({ x: null });
+  const r = await callerRecord("x", uid, null, Date.now()).catch(() => null);
+  res.json({ x: r && r.calls ? { right: r.right, calls: r.calls, streak: r.streak } : null });
 });
 
 /* The clock only runs where a channel can exist to need it. One clock for

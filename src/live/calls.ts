@@ -98,6 +98,8 @@ export type LiveCommand =
   | { kind: "report"; side: Side }
   /** `!faceit <nick>` links the channel's FACEIT account; `!faceit off` unlinks; bare, it says how. */
   | { kind: "faceit"; arg: string }
+  /** `!me`: the caller's own record, said back to them. Anybody's. */
+  | { kind: "me" }
   /** `!matches off` / `!matches on`: whether oddie opens a call per match from the stream by itself; bare, it says how. */
   | { kind: "matches"; arg: string };
 
@@ -114,6 +116,20 @@ export const REMIND_GAP_MS = 15 * 60_000;
 /** A price call with no length takes answers this long, never past the moment its answer is known. */
 export const PRICE_CALL_LOCK_MS = 3 * 60_000;
 export const QUESTION_MAX = 180;
+/** A run of right calls is said next to the name from this many on (🔥3). */
+export const STREAK_SHOWN = 3;
+/** A person hears their own record (!me) at most this often in one chat. */
+export const ME_GAP_MS = 10 * 60_000;
+export const WEEK_MS = 7 * 24 * 60 * 60_000;
+/** Monday 00:00 UTC of the week `ms` is in: the weekly boards turn over there. */
+export function weekStart(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+}
+/** Somebody who called it, and their run of right calls with this one in. */
+export interface Winner { name: string; streak: number }
+/** What !me says: settled calls answered and right, the run now, the place in this channel this week. */
+export interface CallerRecord { right: number; calls: number; streak: number; weekRank: number | null }
 /** How often chat hears who answered and the running split while a call is open. */
 export const SPLIT_GAP_MS = 30_000;
 /** How often a channel's runners hear how !yes and !no work when nothing is open. */
@@ -139,6 +155,7 @@ export function parseCommand(raw: string): LiveCommand | null {
   if (pick) return { kind: "pick", side: YES_WORD.test(pick[1]) ? "yes" : "no" };
   const report = /^!(result|sonu[cç])\s+(yes|evet|no|hay[ıi]r)(?=\s|$)/i.exec(text);
   if (report) return { kind: "report", side: YES_WORD.test(report[2]) ? "yes" : "no" };
+  if (/^!me(?=\s|$)/i.test(text)) return { kind: "me" };
   // !oddie is the market door; whatever follows is the claim, read like a tag.
   const market = /^!oddie(?=\s|$)\s*(.*)$/i.exec(text);
   if (market) return { kind: "market", claim: market[1].trim() };
@@ -233,8 +250,12 @@ const short = (q: string, max = 60) => (q.length > max ? q.slice(0, max - 1).tri
 /* WHO, SAID IN A FEW NAMES (Lev, 16 Oct: oddie's lines were too long, and the
    room wants to see who called what). Three names, then how many more. */
 const at = (name: string) => `@${name.replace(/^@+/, "")}`;
-const who = (names: string[], count = names.length) =>
-  names.slice(0, 3).map(at).join(" ") + (count > 3 ? ` +${count - 3}` : "");
+type Named = string | Winner;
+const nameOf = (w: Named) => (typeof w === "string" ? w : w.name);
+const runOf = (w: Named) => (typeof w === "string" || w.streak < STREAK_SHOWN ? 0 : w.streak);
+const fire = (n: number) => (n >= STREAK_SHOWN ? ` 🔥${n}` : "");
+const who = (names: Named[], count = names.length) =>
+  names.slice(0, 3).map((w) => at(nameOf(w)) + fire(runOf(w))).join(" ") + (count > 3 ? ` +${count - 3}` : "");
 const leading = (t: Tally) => (t.no > t.yes ? `${100 - yesPct(t)}% no` : `${yesPct(t)}% yes`);
 
 export const LIVE_COPY = {
@@ -269,14 +290,22 @@ export const LIVE_COPY = {
   switched: (q: string, t: Tally, when: string | null = null) => (t.yes + t.no
     ? `Locked "${short(q)}" at ${split(t)}.`
     : `Locked "${short(q)}".`) + (when ? ` oddie settles it ${when}.` : " It waits for its result."),
-  /** `names`: who called it right, earliest first. `top` stays on the page. */
-  settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, names: string[] = []) => {
+  /** `winners`: who called it right, earliest first; a run of 🔥3 or more is
+   *  named first, so the streaks are what the room sees. `top` stays on the page. */
+  settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, winners: Named[] = []) => {
     const it = `${outcome.toUpperCase()}: "${short(q, 50)}".`;
     const where = url ? ` Standings: ${url}` : "";
     if (!total) return `${it} The next one opens with !call.${where}`;
     if (!right) return `${it} The room went the other way.${where}`;
-    return `${it} ${names.length ? who(names, right) : `${right} of ${total}`} called it.${where}`;
+    const shown = [...winners].sort((a, b) => runOf(b) - runOf(a));
+    return `${it} ${shown.length ? who(shown, right) : `${right} of ${total}`} called it.${where}`;
   },
+  /** !me, to the person who asked. Never a link: it is said on every platform. */
+  me: (name: string, r: CallerRecord) => r.calls
+    ? `${at(name)}: ${r.right}/${r.calls} right${fire(r.streak).replace(/^ /, " · ")}${r.weekRank ? ` · #${r.weekRank} here this week` : ""}`
+    : `${at(name)}: your record starts with the next result. !yes or !no on the next call`,
+  /** The week's first call in a channel names last week's best there. */
+  lastWeekTop: (name: string, right: number, calls: number) => `last week's top caller here: ${at(name)}, ${right}/${calls} right`,
   /** More than one call waits and the command did not say which. */
   which: (verb: string, qs: string[]) =>
     `Which one? ${qs.slice(0, 5).map((q, i) => `!call ${verb} ${i + 1} for "${short(q, 40)}"`).join(", ")}`,
@@ -284,7 +313,7 @@ export const LIVE_COPY = {
   busy: (q: string) => `One call at a time: "${q}" is still running.`,
   settleFirst: (q: string) => `To settle "${short(q)}": !call yes or !call no.`,
   settleOnly: "To settle, type only !call yes or !call no. To open a call, start with the question.",
-  help: "Mods: !call <question> opens a vote (!call 5m <question> locks in five minutes), chat answers !yes or !no. oddie settles price calls itself; for anything else anybody types !result yes or !result no when it's over, and mods can always settle with !call yes or !call no.",
+  help: "Mods: !call <question> opens a vote (!call 5m <question> locks in five minutes), chat answers !yes or !no. oddie settles price calls itself; for anything else anybody types !result yes or !result no when it's over, and mods can always settle with !call yes or !call no. !me shows your record.",
   pickHelp: "No vote is open. Start one with !call <question>, then chat answers !yes or !no. Take a market's YES or NO on its link.",
   // No line of oddie's starts with a command: an echo of it is never one.
   marketHelp: "Open a market with !oddie and a claim with a yes or no and a date, anybody can take it and oddie settles it. Reply !oddie to a message to open one on it.",
@@ -326,7 +355,13 @@ export interface LiveStore {
   lock(callId: string, at: number): Promise<boolean>;
   /** Settles once and scores each right answer by how early it came (pointsAt
    *  over `points`); null when already settled. `top` is the best one scored. */
-  settle(callId: string, outcome: Side, points: number, at: number): Promise<{ right: number; total: number; top: number; names?: string[] } | null>;
+  settle(callId: string, outcome: Side, points: number, at: number): Promise<{ right: number; total: number; top: number; winners?: Winner[] } | null>;
+  /** !me. Absent: !me is chat. */
+  record?(platform: Platform, userId: string, channelId: string, now: number): Promise<CallerRecord>;
+  /** Calls the channel opened at or after `since`: the week's first call says last week's best. */
+  openedSince?(platform: Platform, channelId: string, since: number): Promise<number>;
+  /** The channel's best caller over [since, until), with at least one right call. */
+  topCaller?(platform: Platform, channelId: string, since: number, until: number): Promise<{ username: string; right: number; calls: number } | null>;
   cancel(callId: string, at: number): Promise<boolean>;
   /** Calls taking answers whose time is up. */
   due(now: number): Promise<LiveCall[]>;
@@ -411,6 +446,8 @@ const priceWaits = new Map<string, PriceWait>();
  *  every minute until a mod did. */
 const handedToMods = new Set<string>();
 const lastPickHelp = new Map<string, number>();
+/** When each person last heard their own record, per chat. */
+const lastMe = new Map<string, number>();
 /** A room call's reports, from its first !result until the majority settles it. */
 interface Reports { call: LiveCall; votes: Map<string, Side>; closeAt: number; extended: boolean }
 const reports = new Map<string, Reports>();
@@ -424,7 +461,7 @@ const lastActivity = new Map<string, number>();
 const lastSaid = new Map<string, number>();
 /** Test seam. */
 export function _resetLive(): void {
-  lastSplit.clear(); newSince.clear(); lastPickHelp.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
+  lastSplit.clear(); newSince.clear(); lastPickHelp.clear(); lastMe.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
   reports.clear(); toldPrice.clear(); seenLive.clear(); lastWatch = 0;
 }
 /** Test seam: what a restart forgets (the waits and reports in memory), the store keeps. */
@@ -444,6 +481,20 @@ function sameCall(call: LiveCall, question: string, now: number): boolean {
   if (words(call.question) !== words(question)) return false;
   const pc = parsePriceCall(question);
   return !pc || planFor(pc, now).to === planFor(pc, call.openedAt).to;
+}
+
+/**
+ * THE WEEK TURNS OVER (Lev, 16 Oct): the channel's first call of the week names
+ * last week's best caller there, after the call's own line. The store counts
+ * the week's calls, so a restart or a second instance does not say it twice.
+ */
+async function sayLastWeek(deps: LiveDeps, m: { platform: Platform; channelId: string }, now: number): Promise<void> {
+  if (!deps.store.openedSince || !deps.store.topCaller) return;
+  const week = weekStart(now);
+  const n = await deps.store.openedSince(m.platform, m.channelId, week).catch(() => 0);
+  if (n !== 1) return;
+  const top = await deps.store.topCaller(m.platform, m.channelId, week - WEEK_MS, week).catch(() => null);
+  if (top) await sayQuiet(deps, m, LIVE_COPY.lastWeekTop(top.username, top.right, top.calls));
 }
 
 /** Pin a call's line where the platform can; a refusal never stops the call. */
@@ -527,7 +578,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   priceWaits.delete(w.call.id);
   if (!done) return false;
   const url = await deps.standingsUrl(w.call.platform, w.call.channelId);
-  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.names)}`);
+  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners)}`);
   deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome: read.outcome, right: done.right, total: done.total, by: "price" });
   return true;
 }
@@ -624,6 +675,25 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   // What happened is anybody's to say: the room settles the moments only it saw.
   if (cmd.kind === "report") return report(msg, cmd.side, now, deps);
 
+  /* !ME (Lev, 16 Oct): a viewer's own record, said to them in the chat they
+     asked in. Once per ten minutes per person per chat, so a room asking all
+     at once is answered once each, and a store without records says nothing. */
+  if (cmd.kind === "me") {
+    if (!deps.store.record) return "chat";
+    const key = `${roomKey(msg)}:${msg.senderId}`;
+    const last = lastMe.get(key);
+    if (last !== undefined && now - last < ME_GAP_MS) return "me-quiet";
+    for (const [k, t] of lastMe) if (now - t >= ME_GAP_MS) lastMe.delete(k);
+    lastMe.set(key, now);
+    const r = await deps.store.record(msg.platform, msg.senderId, msg.channelId, now).catch((e) => {
+      deps.log("live record not read", { err: (e as Error).message });
+      return null;
+    });
+    if (!r) return "me-quiet";
+    await sayQuiet(deps, msg, LIVE_COPY.me(msg.senderName, r), msg.messageId);
+    return "me";
+  }
+
   if (!msg.canRun) return "not-allowed";
 
   /* THE CHANNEL'S FACEIT ACCOUNT. Linked once, by a runner; from then on the
@@ -713,6 +783,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     lastSplit.set(opened.id, now); lastSaid.set(opened.id, now);
     const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId)));
     await pinQuiet(deps, msg, id);
+    await sayLastWeek(deps, msg, now);
     deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null });
     return "opened";
   }
@@ -748,7 +819,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   const done = await deps.store.settle(target.id, cmd.outcome, points, now);
   if (!done) return "no-call";
   await unpinIfIdle(deps, msg);
-  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.names));
+  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.winners));
   deps.log("live call settled", { platform: msg.platform, channel: msg.channelId, id: target.id, outcome: cmd.outcome, right: done.right, total: done.total });
   return "settled";
 }
@@ -804,7 +875,7 @@ async function settleOnReports(r: Reports, outcome: Side, deps: LiveDeps): Promi
   const agree = [...r.votes.values()].filter((v) => v === outcome).length;
   await unpinIfIdle(deps, r.call);
   const url = await deps.standingsUrl(r.call.platform, r.call.channelId);
-  await sayQuiet(deps, r.call, `${LIVE_COPY.roomSays(agree, r.votes.size, outcome)} ${LIVE_COPY.settled(r.call.question, outcome, done.right, done.total, done.top, url, done.names)}`);
+  await sayQuiet(deps, r.call, `${LIVE_COPY.roomSays(agree, r.votes.size, outcome)} ${LIVE_COPY.settled(r.call.question, outcome, done.right, done.total, done.top, url, done.winners)}`);
   deps.log("live call settled", { platform: r.call.platform, channel: r.call.channelId, id: r.call.id, outcome, right: done.right, total: done.total, by: "room" });
   return true;
 }

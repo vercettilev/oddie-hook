@@ -319,6 +319,13 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .std .r{width:44px;color:var(--fg-3)} .std .num{text-align:right}
 .std .pts{color:var(--yellow)}
 .std tr:nth-child(-n+3) .r{color:var(--yellow)}
+/* This week or all time (Lev, 16 Oct), and a run of right calls by the name. */
+.strange{display:flex;gap:8px;margin:0 0 12px}
+.strange button{font:inherit;font-family:var(--display);font-size:15px;letter-spacing:.03em;padding:6px 12px;
+  border:2px solid var(--line);background:transparent;color:var(--fg-2);cursor:pointer;border-radius:999px}
+.strange button[aria-pressed="true"]{border-color:var(--yellow);background:var(--yellow);color:var(--ink)}
+.strange button:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+.std .fire{color:var(--yellow);margin-left:6px;white-space:nowrap}
 
 /* The page for streamers: three steps and the one button. */
 .steps{list-style:none;counter-reset:s;margin:0 0 30px;padding:0;display:grid;gap:14px}
@@ -564,6 +571,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   }
 
   var timer = null, data = null;
+  /* Which standings the page shows: this week first (Lev, 16 Oct). */
+  var stRange = "week";
   var headEl = null, ownEl = null, bodyEl = null, lastHead = "", lastBody = "";
 
   /* ------------------------------------------------ the streamer's 2% --
@@ -820,6 +829,13 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     if (!headEl) {
       view.innerHTML = '<div id="head"></div><div id="own"></div><div id="body"></div>';
       headEl = document.getElementById("head"); ownEl = document.getElementById("own"); bodyEl = document.getElementById("body");
+      // The standings' two tabs live in the repainted body: one listener, here.
+      bodyEl.addEventListener("click", function (e) {
+        var b = e.target && e.target.closest ? e.target.closest("[data-st]") : null;
+        if (!b || b.getAttribute("data-st") === stRange) return;
+        stRange = b.getAttribute("data-st");
+        render(data);
+      });
       // A YouTube page has no owner card to wait for: its two steps paint now.
       if (P === "youtube" || P === "x") paintOwner();
     }
@@ -882,14 +898,23 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       }).join("") + "</ul>";
     }
 
-    var st = j.standings || [];
-    if (st.length) {
-      html += "<h2>Standings</h2><table class=\"std\"><thead><tr><th class=\"r\"></th><th>Who</th><th class=\"num\">Right</th><th class=\"num\">Points</th></tr></thead><tbody>"
-        + st.map(function (s) {
-          return '<tr><td class="r">#' + s.rank + "</td><td>" + esc(s.username) + '</td><td class="num">' + s.right + "/" + s.calls
-            + '</td><td class="num pts">' + s.points + "</td></tr>";
-        }).join("") + "</tbody></table>";
-      html += '<p class="hint">Being right scores more when the room disagreed, and when you called it early.</p>';
+    var stAll = j.standings || [], stWeek = j.standingsWeek || [];
+    if (stAll.length || stWeek.length) {
+      var st = stRange === "week" ? stWeek : stAll;
+      html += "<h2>Standings</h2><div class=\"strange\" role=\"group\" aria-label=\"Which standings\">"
+        + '<button type="button" data-st="week" aria-pressed="' + (stRange === "week") + '">This week</button>'
+        + '<button type="button" data-st="all" aria-pressed="' + (stRange === "all") + '">All time</button></div>';
+      if (st.length) {
+        html += "<table class=\"std\"><thead><tr><th class=\"r\"></th><th>Who</th><th class=\"num\">Right</th><th class=\"num\">Points</th></tr></thead><tbody>"
+          + st.map(function (s) {
+            return '<tr><td class="r">#' + s.rank + "</td><td>" + esc(s.username)
+              + (s.streak >= 3 ? '<span class="fire" title="' + s.streak + ' right calls in a row">🔥' + s.streak + "</span>" : "")
+              + '</td><td class="num">' + s.right + "/" + s.calls + '</td><td class="num pts">' + s.points + "</td></tr>";
+          }).join("") + "</tbody></table>";
+      } else {
+        html += '<p class="hint">This week is open: the first right call puts a name here. It turns over every Monday.</p>';
+      }
+      html += '<p class="hint">Being right scores more when the room disagreed, and when you called it early. 🔥 is right calls in a row. Type !me in chat for yours.</p>';
     }
     // For a streamer whose week ran out, or who is on another browser. Not
     // while their own card is up: that card already says it.

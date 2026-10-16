@@ -141,7 +141,7 @@ console.log("\none word, one meaning\n");
   check("the leaderboard has its Points column", lb.includes(">Points<"));
   check("...one unit on the page: the openers' People column is gone", !lb.includes(">People<"));
   check("...under one rule sentence that says where points come from",
-    lb.includes('<p class="rule">Points from votes in stream chats.</p>') && lb.includes('fetch("/api/live/standings")'));
+    lb.includes('<p class="rule">Points from votes in stream chats.</p>') && lb.includes('fetch("/api/live/standings?range=" + range)'));
   check("the opener board names what it counts",
     withoutComments.includes("<span>People</span>"));
 }

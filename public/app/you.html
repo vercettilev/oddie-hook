@@ -179,6 +179,8 @@ h2 b{color:var(--yellow);font-weight:800}
   -webkit-mask-size:100% 100%;mask-size:100% 100%;
   -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
 main.wrap{padding-top:calc(var(--seam-h) + 18px)}
+.mycalls{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.02em;color:var(--fg-2);margin:4px 0 14px}
+.mycalls b{color:var(--yellow);font-weight:400} .mycalls a{color:var(--cream)}
 .sub{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.02em;
   color:var(--fg-3);text-transform:uppercase}
 /* HEIGHT:AUTO IS LOAD-BEARING, and its absence was measured rather than
@@ -558,6 +560,9 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   <h1><img class="pfp" id="pfp" alt="" hidden><span id="who">Your profile</span> <img class="hsticker" src="/brand/st-riding.webp" alt=""></h1>
   <p class="sub" id="sub"></p>
   <p class="idbar" id="idbar" hidden><button type="button" id="idedit-open">Edit profile</button><a id="mypage" hidden>Your page</a></p>
+  <!-- YOUR CALLS (Lev, 16 Oct): the votes this X account gave in X live chats,
+       shown only once one has settled. -->
+  <p class="mycalls" id="mycalls" hidden></p>
   <!-- YOUR NAME AND PICTURE ON ODDIE, and whether your bets carry them. One
        small panel, opened on demand: most visits are about money, not this. -->
   <section class="idedit" id="idedit" hidden aria-label="Edit profile">
@@ -1781,6 +1786,23 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
               ? ' <a href="/m/' + encodeURIComponent(mine[0].slug) + '">Share the last one you opened</a>'
               : "");
         box.hidden = false;
+      })
+      .catch(function () {});
+  })();
+
+  /* YOUR CALLS: the record behind !me, for the X account signed in here. */
+  (function () {
+    var did = (window.OddieId && window.OddieId.get()) || "";
+    var el = document.getElementById("mycalls");
+    if (!did || !el) return;
+    fetch("/api/live/me?deviceId=" + encodeURIComponent(did), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var x = j && j.x;
+        if (!x || !x.calls) return;
+        el.innerHTML = "Your calls in X lives: <b>" + x.right + "/" + x.calls + "</b> right"
+          + (x.streak >= 3 ? " · <b>🔥" + x.streak + "</b>" : "") + ' · <a href="/leaderboard">Leaderboard</a>';
+        el.hidden = false;
       })
       .catch(function () {});
   })();

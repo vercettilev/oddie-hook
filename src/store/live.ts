@@ -15,7 +15,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { storeDb, storeSchema, STORE_PERSISTENT } from "./markets.js";
-import { pointsAt, type LiveCall, type LiveStore, type Platform, type Side, type Tally } from "../live/calls.js";
+import { pointsAt, weekStart, type CallerRecord, type LiveCall, type LiveStore, type Platform, type Side, type Tally, type Winner } from "../live/calls.js";
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS live_channel (
@@ -317,17 +317,18 @@ export const liveStore: LiveStore = {
         p.points = p.side === outcome ? pointsAt(points, p.at - c.openedAt) : 0;
         if (p.side === outcome) { right++; top = Math.max(top, p.points); won.push(p); }
       }
-      return { right, total: t.yes + t.no, top, names: won.sort((a, b) => a.at - b.at).map((p) => p.username) };
+      return { right, total: t.yes + t.no, top,
+        winners: won.sort((a, b) => a.at - b.at).map((p): Winner => ({ name: p.username, streak: memStreak(p.platform, p.userId) })) };
     }
     await schema();
     const client = await storeDb().connect();
     try {
       await client.query("BEGIN");
-      const upd = await client.query<{ opened_at: Date }>(
+      const upd = await client.query<{ opened_at: Date; platform: Platform }>(
         `UPDATE live_call SET outcome = $2, settled_at = $3, locked_at = COALESCE(locked_at, $3), points = $4,
                 yes_count = (SELECT count(*) FROM live_pick WHERE call_id = $1 AND side = 'yes'),
                 no_count  = (SELECT count(*) FROM live_pick WHERE call_id = $1 AND side = 'no')
-          WHERE id = $1 AND settled_at IS NULL AND canceled_at IS NULL RETURNING opened_at`, [callId, outcome, new Date(at), points]);
+          WHERE id = $1 AND settled_at IS NULL AND canceled_at IS NULL RETURNING opened_at, platform`, [callId, outcome, new Date(at), points]);
       if (!upd.rowCount) { await client.query("ROLLBACK"); return null; }
       // Each right answer by how early it came: worked out here, with the same
       // pointsAt the memory store and the tests use, so there is one formula.
@@ -343,13 +344,22 @@ export const liveStore: LiveStore = {
       }
       await client.query("COMMIT");
       const right = picks.filter((p) => p.side === outcome).length;
+      // Who called it, earliest first, each with their run of right calls now
+      // that this one counts (read after the commit, so it does).
+      const won = picks.filter((p) => p.side === outcome);
+      const platform = upd.rows[0].platform;
+      const runs = await streaksFor(won.map((p) => ({ platform, userId: p.user_id }))).catch(() => new Map<string, number>());
       return { right, total: picks.length, top: Math.max(0, ...scored.map((x) => x.pts)),
-        names: picks.filter((p) => p.side === outcome).map((p) => p.username ?? p.user_id) };
+        winners: won.map((p): Winner => ({ name: p.username ?? p.user_id, streak: runs.get(`${platform}:${p.user_id}`) ?? 0 })) };
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       throw e;
     } finally { client.release(); }
   },
+
+  record: (platform, userId, channelId, now) => callerRecord(platform, userId, channelId, now),
+  openedSince: (platform, channelId, since) => openedSince(platform, channelId, since),
+  topCaller: (platform, channelId, since, until) => topCaller(platform, channelId, { since, until }),
 
   async cancel(callId, at) {
     if (!STORE_PERSISTENT) {
@@ -508,13 +518,22 @@ export interface StandingRow { userId: string; username: string; points: number;
 export interface CallSummary { id: string; question: string; outcome: Side | null; yes: number; no: number; points: number | null;
   closesAt: number; lockedAt: number | null; settledAt: number | null }
 
-/** A channel's standings: every settled call, summed per person. */
-export async function channelStandings(platform: Platform, channelId: string, limit = 20): Promise<StandingRow[]> {
+/** A window of settled calls, [since, until): the week's boards (Lev, 16 Oct).
+ *  An end left out is open. */
+export interface Range { since?: number; until?: number }
+const FAR = Date.UTC(9999, 0, 1);
+const inRange = (at: number | null, r: Range): boolean => at !== null && at >= (r.since ?? 0) && at < (r.until ?? FAR);
+/** oddie's own voice and the founder's test account never rank (Lev, 8 Oct). */
+export const HOUSE_ACCOUNTS = ["oddiefun", "levvercetti"];
+const isHouse = (name: string | null): boolean => HOUSE_ACCOUNTS.includes(String(name ?? "").replace(/^@+/, "").toLowerCase());
+
+/** A channel's standings: every settled call in the window, summed per person. */
+export async function channelStandings(platform: Platform, channelId: string, limit = 20, range: Range = {}): Promise<StandingRow[]> {
   if (!STORE_PERSISTENT) {
     const by = new Map<string, StandingRow>();
     for (const p of memPicks) {
       const c = memCalls.get(p.callId);
-      if (!c || c.platform !== platform || c.channelId !== channelId || c.settledAt === null) continue;
+      if (!c || c.platform !== platform || c.channelId !== channelId || !inRange(c.settledAt, range) || isHouse(p.username)) continue;
       const r = by.get(p.userId) ?? { userId: p.userId, username: p.username, points: 0, right: 0, calls: 0 };
       r.points += p.points ?? 0; r.calls++; if ((p.points ?? 0) > 0) r.right++;
       by.set(p.userId, r);
@@ -529,8 +548,10 @@ export async function channelStandings(platform: Platform, channelId: string, li
     `SELECT p.user_id, max(p.username) AS username, sum(COALESCE(p.points, 0))::int AS points,
             count(*) FILTER (WHERE p.points > 0)::int AS right_count, count(*)::int AS calls
        FROM live_pick p JOIN live_call c ON c.id = p.call_id
-      WHERE c.platform = $1 AND c.channel_id = $2 AND c.settled_at IS NOT NULL
-      GROUP BY p.user_id ORDER BY points DESC, right_count DESC LIMIT $3`, [platform, channelId, Math.max(1, Math.min(100, limit))]);
+      WHERE c.platform = $1 AND c.channel_id = $2 AND c.settled_at IS NOT NULL AND c.settled_at >= $4 AND c.settled_at < $5
+        AND COALESCE(lower(p.username), '') <> ALL($6::text[])
+      GROUP BY p.user_id ORDER BY points DESC, right_count DESC LIMIT $3`,
+    [platform, channelId, Math.max(1, Math.min(100, limit)), new Date(range.since ?? 0), new Date(range.until ?? FAR), HOUSE_ACCOUNTS]);
   return rows.map((r) => ({ userId: r.user_id, username: r.username, points: r.points, right: r.right_count, calls: r.calls }));
 }
 
@@ -541,16 +562,14 @@ export async function channelStandings(platform: Platform, channelId: string, li
  * row names the channel they last called in.
  */
 export interface GlobalStandingRow extends StandingRow { platform: Platform; channel: string }
-/** The house never ranks: oddie's own voice account and the founder's test
- *  account, whose test votes sat on the board as players (Lev, 8 Oct, "evet"). */
-export const HOUSE_ACCOUNTS = ["oddiefun", "levvercetti"];
-export async function allStandings(limit = 50): Promise<GlobalStandingRow[]> {
+/** The house never ranks (HOUSE_ACCOUNTS): their test votes sat on the board as players (Lev, 8 Oct, "evet"). */
+export async function allStandings(limit = 50, range: Range = {}): Promise<GlobalStandingRow[]> {
   const n = Math.max(1, Math.min(100, limit));
   if (!STORE_PERSISTENT) {
     const by = new Map<string, GlobalStandingRow & { lastAt: number }>();
     for (const p of memPicks) {
       const c = memCalls.get(p.callId);
-      if (!c || c.settledAt === null || HOUSE_ACCOUNTS.includes(p.username.toLowerCase())) continue;
+      if (!c || c.settledAt === null || !inRange(c.settledAt, range) || isHouse(p.username)) continue;
       const slug = memChannels.get(ck(c.platform, c.channelId))?.slug ?? c.channelId;
       const r = by.get(`${c.platform}:${p.userId}`)
         ?? { platform: c.platform, userId: p.userId, username: p.username, points: 0, right: 0, calls: 0, channel: slug, lastAt: -1 };
@@ -569,10 +588,92 @@ export async function allStandings(limit = 50): Promise<GlobalStandingRow[]> {
        FROM live_pick p
        JOIN live_call c ON c.id = p.call_id
        LEFT JOIN live_channel ch ON ch.platform = c.platform AND ch.channel_id = c.channel_id
-      WHERE c.settled_at IS NOT NULL AND lower(p.username) <> ALL($2::text[])
-      GROUP BY c.platform, p.user_id ORDER BY points DESC, right_count DESC LIMIT $1`, [n, HOUSE_ACCOUNTS]);
+      WHERE c.settled_at IS NOT NULL AND COALESCE(lower(p.username), '') <> ALL($2::text[]) AND c.settled_at >= $3 AND c.settled_at < $4
+      GROUP BY c.platform, p.user_id ORDER BY points DESC, right_count DESC LIMIT $1`, [n, HOUSE_ACCOUNTS, new Date(range.since ?? 0), new Date(range.until ?? FAR)]);
   return rows.map((r) => ({ platform: r.platform, userId: r.user_id, username: r.username, points: r.points, right: r.right_count,
     calls: r.calls, channel: r.channel ?? "" }));
+}
+
+/* ----------------------------------------------------------- records --
+   WHAT A CALLER SEES OF THEMSELVES (Lev, 16 Oct): the record was kept from the
+   first vote but shown nowhere a viewer looks. A streak is right calls in a
+   row, newest first, across every channel the person answered in; a person is
+   a platform's user id, as everywhere on the board. */
+
+function memStreak(platform: Platform, userId: string): number {
+  const mine = memPicks
+    .filter((p) => p.platform === platform && p.userId === userId)
+    .map((p) => ({ p, c: memCalls.get(p.callId) }))
+    .filter((x): x is { p: MemPick; c: MemCall } => !!x.c && x.c.settledAt !== null && x.c.outcome !== null)
+    .sort((a, b) => b.c.settledAt! - a.c.settledAt! || Number(b.c.id) - Number(a.c.id));
+  let n = 0;
+  for (const x of mine) { if (x.p.side !== x.c.outcome) break; n++; }
+  return n;
+}
+
+/** Each person's run of right calls now, keyed platform:userId. Nobody answered yet: absent. */
+export async function streaksFor(people: Array<{ platform: Platform; userId: string }>): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!people.length) return out;
+  if (!STORE_PERSISTENT) {
+    for (const w of people) out.set(`${w.platform}:${w.userId}`, memStreak(w.platform, w.userId));
+    return out;
+  }
+  await schema();
+  const { rows } = await storeDb().query<{ platform: Platform; user_id: string; streak: number }>(
+    `WITH who AS (SELECT DISTINCT * FROM unnest($1::text[], $2::text[]) AS w(platform, user_id)),
+          h AS (SELECT p.platform, p.user_id, (p.side = c.outcome) AS ok,
+                       row_number() OVER (PARTITION BY p.platform, p.user_id ORDER BY c.settled_at DESC, c.id DESC) AS rn
+                  FROM live_pick p JOIN live_call c ON c.id = p.call_id
+                  JOIN who ON who.platform = p.platform AND who.user_id = p.user_id
+                 WHERE c.settled_at IS NOT NULL AND c.outcome IS NOT NULL)
+     SELECT platform, user_id, COALESCE(min(rn) FILTER (WHERE NOT ok) - 1, count(*))::int AS streak
+       FROM h GROUP BY platform, user_id`,
+    [people.map((w) => w.platform), people.map((w) => w.userId)]);
+  for (const r of rows) out.set(`${r.platform}:${r.user_id}`, r.streak);
+  return out;
+}
+
+/** !me: every settled call the person answered, their streak, and their place in this channel's week. */
+export async function callerRecord(platform: Platform, userId: string, channelId: string | null, now: number): Promise<CallerRecord> {
+  let right = 0, calls = 0;
+  if (!STORE_PERSISTENT) {
+    for (const p of memPicks) {
+      const c = memCalls.get(p.callId);
+      if (p.platform !== platform || p.userId !== userId || !c || c.settledAt === null) continue;
+      calls++; if (p.side === c.outcome) right++;
+    }
+  } else {
+    await schema();
+    const { rows } = await storeDb().query<{ calls: number; right_count: number }>(
+      `SELECT count(*)::int AS calls, count(*) FILTER (WHERE p.side = c.outcome)::int AS right_count
+         FROM live_pick p JOIN live_call c ON c.id = p.call_id
+        WHERE p.platform = $1 AND p.user_id = $2 AND c.settled_at IS NOT NULL`, [platform, userId]);
+    right = rows[0]?.right_count ?? 0; calls = rows[0]?.calls ?? 0;
+  }
+  const streak = (await streaksFor([{ platform, userId }])).get(`${platform}:${userId}`) ?? 0;
+  let weekRank: number | null = null;
+  if (channelId && calls) {
+    const week = await channelStandings(platform, channelId, 100, { since: weekStart(now) });
+    const i = week.findIndex((r) => r.userId === userId);
+    weekRank = i >= 0 ? i + 1 : null;
+  }
+  return { right, calls, streak, weekRank };
+}
+
+/** How many calls the channel opened at or after `since`, whatever became of them. */
+export async function openedSince(platform: Platform, channelId: string, since: number): Promise<number> {
+  if (!STORE_PERSISTENT) return [...memCalls.values()].filter((c) => c.platform === platform && c.channelId === channelId && c.openedAt >= since).length;
+  await schema();
+  const { rows } = await storeDb().query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM live_call WHERE platform = $1 AND channel_id = $2 AND opened_at >= $3`, [platform, channelId, new Date(since)]);
+  return rows[0]?.n ?? 0;
+}
+
+/** The channel's best caller over a window, with at least one right call. */
+export async function topCaller(platform: Platform, channelId: string, range: Range): Promise<{ username: string; right: number; calls: number } | null> {
+  const [top] = await channelStandings(platform, channelId, 1, range);
+  return top && top.right > 0 ? { username: top.username, right: top.right, calls: top.calls } : null;
 }
 
 /** The channel's latest calls, newest first, with their counts. */

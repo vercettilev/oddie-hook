@@ -10,10 +10,10 @@
  */
 import express, { type Request, type Response, type Router } from "express";
 import { consumeChallenge, issueChallenge, verifyWalletSignature, WALLET_ADDRESS } from "../auth/wallet.js";
-import { yesPct, type Platform } from "./calls.js";
+import { weekStart, yesPct, type Platform } from "./calls.js";
 import { cookieValue, ownerCookieName, ownerKeyFromEnv, verifyOwnerToken } from "./owner.js";
 import type { ChannelMarket } from "../store/markets.js";
-import { channelBySlug, channelStandings, liveStore, recentCalls } from "../store/live.js";
+import { channelBySlug, channelStandings, liveStore, recentCalls, streaksFor, type StandingRow } from "../store/live.js";
 import { faceitConfigured } from "../games/faceit.js";
 import { gsiConfig } from "../games/gsi.js";
 import { GSI_STALE_MS } from "./gameCalls.js";
@@ -130,11 +130,16 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     res.set("Cache-Control", "no-store");
     const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
     if (!ch) return res.status(404).json({ error: "unknown" });
-    const [unsettled, recent, standings] = await Promise.all([
+    const [unsettled, recent, standings, standingsWeek] = await Promise.all([
       liveStore.unsettled(platform, ch.channelId).catch(() => []),
       recentCalls(platform, ch.channelId, 10).catch(() => []),
-      channelStandings(platform, ch.channelId, 20).catch(() => []),
+      channelStandings(platform, ch.channelId, 20).catch(() => [] as StandingRow[]),
+      channelStandings(platform, ch.channelId, 20, { since: weekStart(Date.now()) }).catch(() => [] as StandingRow[]),
     ]);
+    // Each name's run of right calls, for the 🔥 next to it (Lev, 16 Oct).
+    const runs = await streaksFor([...standings, ...standingsWeek].map((s) => ({ platform, userId: s.userId }))).catch(() => new Map<string, number>());
+    const row = (s: StandingRow, i: number) => ({ rank: i + 1, username: s.username, points: s.points, right: s.right, calls: s.calls,
+      streak: runs.get(`${platform}:${s.userId}`) ?? 0 });
     const current = unsettled.find((c) => c.lockedAt === null) ?? null;
     const tallies = await Promise.all(unsettled.map((c) => liveStore.tally(c.id).catch(() => ({ yes: 0, no: 0 }))));
     const tallyOf = (id: string) => tallies[unsettled.findIndex((c) => c.id === id)] ?? { yes: 0, no: 0 };
@@ -173,7 +178,8 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
         question: c.question, outcome: c.outcome, yes: c.yes, no: c.no, points: c.points,
         settledAt: c.settledAt ? new Date(c.settledAt).toISOString() : null,
       })),
-      standings: standings.map((s, i) => ({ rank: i + 1, username: s.username, points: s.points, right: s.right, calls: s.calls })),
+      standings: standings.map(row),
+      standingsWeek: standingsWeek.map(row),
     });
   });
 

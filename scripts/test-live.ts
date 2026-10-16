@@ -923,7 +923,7 @@ console.log("\nthe lines no memory test reaches");
     && /if \(kickConfigured\(\) \|\| twitchConfigured\(\) \|\| youtubeConfigured\(\) \|\| xLiveConfigured\(\)\) \{[\s\S]{0,2600}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
   check("the leaderboard's SQL groups by platform and person, names the last channel, and never says RIGHT bare",
-    /WHERE c\.settled_at IS NOT NULL AND lower\(p\.username\) <> ALL\(\$2::text\[\]\)\s+GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1`, \[n, HOUSE_ACCOUNTS\]/.test(store)
+    /WHERE c\.settled_at IS NOT NULL AND COALESCE\(lower\(p\.username\), ''\) <> ALL\(\$2::text\[\]\) AND c\.settled_at >= \$3 AND c\.settled_at < \$4\s+GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1`, \[n, HOUSE_ACCOUNTS, new Date\(range\.since \?\? 0\), new Date\(range\.until \?\? FAR\)\]/.test(store)
     && /\(array_agg\(COALESCE\(ch\.slug, c\.channel_id\) ORDER BY c\.settled_at DESC\)\)\[1\] AS channel/.test(store)
     && /app\.get\("\/api\/live\/standings"/.test(server));
   check("one call taking answers per channel is the database's rule, and the old one-unsettled index goes",
