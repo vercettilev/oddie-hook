@@ -186,7 +186,7 @@ const lockAt = opened + 3 * 60_000 + 1_000;
 // The pilot's call, start to finish, with nobody settling it by hand.
 reset();
 eq(await handleChat(msg("!call will BTC close current 30min candle above 82k?", "bee", true), deps), "opened", "opens");
-ok(/calls lock in 3 min, earlier calls score more/.test(said[0] ?? ""), `a candle call takes answers for three minutes: ${said[0]}`);
+ok(/!yes or !no, locks in 3 min/.test(said[0] ?? ""), `a candle call takes answers for three minutes: ${said[0]}`);
 eq(await handleChat(msg("!yes", "bee", true), deps), "picked", "bee picks");
 eq(await handleChat(msg("!no", "viewer"), deps), "picked", "a viewer picks");
 now = lockAt;
@@ -199,7 +199,7 @@ eq(reads, 0, "nothing read before the close");
 now = Date.parse("2026-10-08T14:00:04Z");
 await lockDue(deps);
 eq(reads, 1, "read once after the close");
-eq(last(), `BTC 30m candle closed at 82,182.01 on Binance. It's YES: "will BTC close current 30min candle above 82k?". 1 of 2 called it right, up to +50, earlier calls scored more. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "the result line");
+eq(last(), `BTC 30m candle closed at 82,182.01 on Binance. YES: "will BTC close current 30min candle above 82k?". @bee called it. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "the result line");
 ok((await liveStore.unsettled("twitch", "1372956063")).every((c) => !c.question.includes("30min candle")), "settled: only the new call is left");
 ok(logged.includes("live call settled"), "logged as settled");
 await lockDue(deps);
@@ -222,7 +222,7 @@ eq(reads, before, "waits between looks");
 ex = { high: 83010, low: 82400 };
 now += 15_000;
 await lockDue(deps);
-eq(last(), `BTC high was 83,010 on Binance. It's YES: "will BTC hit 83k in the next 15 min?". 1 of 1 called it right, up to +1, earlier calls scored more. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "touched: settled at once");
+eq(last(), `BTC high was 83,010 on Binance. YES: "will BTC hit 83k in the next 15 min?". @viewer called it. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "touched: settled at once");
 
 // The source is down: retries, then hands the call back to the mods.
 reset();
@@ -278,7 +278,7 @@ eq(last(), `Locked "will BTC close current 30min candle above 82k?" at 100% YES 
 eq(await handleChat(msg("!no", "viewer2"), deps), "no-open-call", "a viewer's is still chat");
 now = Date.parse("2026-10-08T14:00:04Z");
 await lockDue(deps);
-ok(last().startsWith(`BTC 30m candle closed at 82,182.01 on Binance. It's YES: "will BTC close current 30min candle above 82k?".`), `...and the candle settles it: ${last()}`);
+ok(last().startsWith(`BTC 30m candle closed at 82,182.01 on Binance. YES: "will BTC close current 30min candle above 82k?".`), `...and the candle settles it: ${last()}`);
 
 // Any other call: the lock line says who settles it.
 reset();
@@ -296,7 +296,7 @@ await lockDue(deps);
 eq(last(), "Calls are locked for this one. oddie settles it when the 30m candle closes.", "empty candle lock line");
 now = Date.parse("2026-10-08T14:00:04Z");
 await lockDue(deps);
-ok(last().startsWith(`BTC 30m candle closed at 82,182.01 on Binance. It's YES: "will BTC close current 30min candle above 82k?". The next one opens with !call.`), `empty result line: ${last()}`);
+ok(last().startsWith(`BTC 30m candle closed at 82,182.01 on Binance. YES: "will BTC close current 30min candle above 82k?". The next one opens with !call.`), `empty result line: ${last()}`);
 eq(await handleChat(msg("!call next round?", "bee", true), deps), "opened", "the next one opens");
 
 // Live on 8 Oct: the same candle question twice in ninety seconds opened its
@@ -305,7 +305,7 @@ reset();
 eq(await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", true), deps), "opened", "a candle call opens");
 now = opened + 90_000;
 eq(await handleChat(msg("!call will BTC close the next 30m candle green?", "bee", true), deps), "again", "the same question again is said again");
-ok(last().startsWith('Still open: "will BTC close the next 30m candle green?"'), `...as the reminder line: ${last()}`);
+ok(last().startsWith('still open: "will BTC close the next 30m candle green?"'), `...as the reminder line: ${last()}`);
 eq((await liveStore.unsettled("twitch", "1372956063")).length, 1, "...one call, still taking answers");
 // The same words once the candle has turned are the next round.
 reset();
@@ -337,6 +337,6 @@ eq(reads, readsBeforeEnd, "not read again before the window ends");
 prices = { [opened]: 82500, [Date.parse("2026-10-08T14:00:00Z")]: 81900 };
 now = Date.parse("2026-10-08T14:00:04Z");
 await lockDue(deps);
-eq(last(), `BTC was 81,900 at 14:00 UTC on Binance. It's NO: "will BTC go above 82k this 30m candle". The whole room went the other way this time. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "settled on where it ended");
+eq(last(), `BTC was 81,900 at 14:00 UTC on Binance. NO: "will BTC go above 82k this 30m candle". The room went the other way. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "settled on where it ended");
 
 console.log(`test-price-call: ${checks} checks passed`);

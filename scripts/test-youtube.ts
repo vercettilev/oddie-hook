@@ -266,7 +266,7 @@ const say = (id: string, text: string, author: Record<string, unknown> = {}) =>
   say("set-1", "!call yes", { isChatModerator: true });
   await settle();
   const res = sent[sent.length - 1]?.text ?? "";
-  check("a moderator settles it, and the result carries no link", res.startsWith("It's YES") && noLink(res), res);
+  check("a moderator settles it, and the result carries no link", res.startsWith("YES:") && noLink(res), res);
 
   const help = sent.length;
   say("help-1", "!call", { isChatOwner: true });

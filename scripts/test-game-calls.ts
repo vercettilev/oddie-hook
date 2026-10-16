@@ -181,7 +181,7 @@ const reset = () => { _resetLive(); _forgetWaits(); _resetGames(); _resetLiveSto
   said.length = 0;
   eq(await tick(), 1, "the finished match settles the call");
   ok(last().startsWith(GAME_COPY.result("s1mple", true, "13-9", "Mirage")), "chat hears the score first: " + last());
-  ok(/It's YES/.test(last()), "...and the outcome");
+  ok(/YES: "/.test(last()), "...and the outcome");
   eq((await liveStore.unsettled("twitch", "c1")).length, 0, "nothing left waiting");
   const rows = await channelStandings("twitch", "c1");
   ok(rows.some((r) => r.username === "alice" && r.points > 0) && !rows.some((r) => r.username === "bob" && r.points > 0), "alice scored, bob did not");
@@ -243,7 +243,7 @@ const reset = () => { _resetLive(); _forgetWaits(); _resetGames(); _resetLiveSto
   live = true;
   eq(await tick(), 1, "and settles when FACEIT says so");
   ok(last().startsWith(GAME_COPY.result("s1mple", false, "7-13", "Mirage")), "a loss is said as a loss: " + last());
-  ok(/It's NO/.test(last()), "...and NO");
+  ok(/NO: "/.test(last()), "...and NO");
 }
 
 /* no source configured: the pass is a no-op */

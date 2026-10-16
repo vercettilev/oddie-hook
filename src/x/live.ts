@@ -313,7 +313,9 @@ export async function onXEvent(ev: XActivityEvent, w: { engine: LiveDeps; log: L
     case "broadcast.start":
       if (broadcast) liveIn.set(owner, broadcast);
       ended.delete(owner);
-      w.log("x broadcast on air", { channel: owner, broadcast });
+      // The live thumbnail X hands over: logged to learn how often it changes,
+      // the way to read a moment off an X stream (frames) without scraping.
+      w.log("x broadcast on air", { channel: owner, broadcast, thumbnail: str(ev.payload?.thumbnail_url) });
       return "start";
     case "broadcast.end":
       if (!broadcast || liveIn.get(owner) === broadcast) liveIn.delete(owner);

@@ -311,12 +311,13 @@ export const liveStore: LiveStore = {
       const t = await this.tally(callId);
       Object.assign(c, { outcome, settledAt: at, lockedAt: c.lockedAt ?? at, yesCount: t.yes, noCount: t.no, points });
       let right = 0, top = 0;
+      const won: MemPick[] = [];
       for (const p of memPicks) {
         if (p.callId !== callId) continue;
         p.points = p.side === outcome ? pointsAt(points, p.at - c.openedAt) : 0;
-        if (p.side === outcome) { right++; top = Math.max(top, p.points); }
+        if (p.side === outcome) { right++; top = Math.max(top, p.points); won.push(p); }
       }
-      return { right, total: t.yes + t.no, top };
+      return { right, total: t.yes + t.no, top, names: won.sort((a, b) => a.at - b.at).map((p) => p.username) };
     }
     await schema();
     const client = await storeDb().connect();
@@ -331,8 +332,8 @@ export const liveStore: LiveStore = {
       // Each right answer by how early it came: worked out here, with the same
       // pointsAt the memory store and the tests use, so there is one formula.
       const openedAt = new Date(upd.rows[0].opened_at).getTime();
-      const { rows: picks } = await client.query<{ user_id: string; side: Side; at: Date }>(
-        `SELECT user_id, side, at FROM live_pick WHERE call_id = $1`, [callId]);
+      const { rows: picks } = await client.query<{ user_id: string; username: string | null; side: Side; at: Date }>(
+        `SELECT user_id, username, side, at FROM live_pick WHERE call_id = $1 ORDER BY at`, [callId]);
       const scored = picks.map((p) => ({ id: p.user_id, pts: p.side === outcome ? pointsAt(points, new Date(p.at).getTime() - openedAt) : 0 }));
       if (scored.length) {
         await client.query(
@@ -342,7 +343,8 @@ export const liveStore: LiveStore = {
       }
       await client.query("COMMIT");
       const right = picks.filter((p) => p.side === outcome).length;
-      return { right, total: picks.length, top: Math.max(0, ...scored.map((x) => x.pts)) };
+      return { right, total: picks.length, top: Math.max(0, ...scored.map((x) => x.pts)),
+        names: picks.filter((p) => p.side === outcome).map((p) => p.username ?? p.user_id) };
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       throw e;

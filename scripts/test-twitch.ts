@@ -103,7 +103,7 @@ console.log("\nthe webhook, through the real router");
   const ok = await post("notification", JSON.stringify({ subscription: { type: "channel.chat.message" }, event: ev({ chatter_user_id: "1001" }) }));
   await new Promise((r) => setTimeout(r, 50));
   check("a signed chat line opens a call", ok.status === 204 && (await liveStore.current("twitch", "1001"))?.question === "will I win?"
-    && said[0]?.startsWith('oddie call: "will I win?"'), `${ok.status} ${said[0]}`);
+    && said[0]?.startsWith('call: "will I win?"'), `${ok.status} ${said[0]}`);
   const forged = await post("notification", JSON.stringify({ event: ev({ message: { text: "!call cancel" }, chatter_user_id: "1001" }) }),
     { "Twitch-Eventsub-Message-Signature": "sha256=" + "0".repeat(64) });
   check("a forged one is refused", forged.status === 403 && (await liveStore.current("twitch", "1001")) !== null);
@@ -229,7 +229,7 @@ console.log("\na call's line pinned, with the streamer's own token, never over t
   const engine = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
   const msg = (channelId: string, text: string, i: number) => ({ platform: "twitch" as const, channelId, messageId: `in-${i}`, senderId: channelId, senderName: "owner", canRun: true, text });
   await handleChat(msg("7001", "!call btc above 83k tonight?", 1), engine);
-  check("oddie says the call as its own account", sent[0]?.sender === "9009" && sent[0]?.token === "v-tok" && sent[0]?.text.startsWith('oddie call: "btc above 83k tonight?"'));
+  check("oddie says the call as its own account", sent[0]?.sender === "9009" && sent[0]?.token === "v-tok" && sent[0]?.text.startsWith('call: "btc above 83k tonight?"'));
   check("...and the streamer's token pins that line in their chat, as its own moderator",
     pins.length === 1 && pins[0].token === "s-tok" && pins[0].broadcaster === "7001" && pins[0].moderator === "7001" && pins[0].id === "line-1", JSON.stringify(pins));
   check("...for half an hour, the reminder pins the next one before it runs out", PIN_SECONDS === 1800);
@@ -244,7 +244,7 @@ console.log("\na call's line pinned, with the streamer's own token, never over t
   await handleChat(msg("7003", "!call yes", 5), engine);
   await handleChat(msg("7003", "!call second?", 6), engine);
   check("...and it is not asked again for a while", pinCalls === before);
-  check("the call itself went on everywhere", sent.filter((x) => x.text.startsWith("oddie call:")).length === 4);
+  check("the call itself went on everywhere", sent.filter((x) => x.text.startsWith('call: "')).length === 4);
 }
 
 console.log("\n\"too quickly\" is no refusal (8 Oct: one 429 and oddie spoke as the streamer for ten minutes)");

@@ -114,8 +114,8 @@ export const REMIND_GAP_MS = 15 * 60_000;
 /** A price call with no length takes answers this long, never past the moment its answer is known. */
 export const PRICE_CALL_LOCK_MS = 3 * 60_000;
 export const QUESTION_MAX = 180;
-/** How often chat hears the running split while a call is open. */
-export const SPLIT_GAP_MS = 45_000;
+/** How often chat hears who answered and the running split while a call is open. */
+export const SPLIT_GAP_MS = 30_000;
 /** How often a channel's runners hear how !yes and !no work when nothing is open. */
 export const PICK_HELP_GAP_MS = 10 * 60_000;
 /** After the first !result, how long the room has to report before the majority settles it. */
@@ -230,27 +230,33 @@ const left = (ms: number): string => {
 };
 const split = (t: Tally) => `${yesPct(t)}% YES from ${n(t.yes + t.no, "call", "calls")}`;
 const short = (q: string, max = 60) => (q.length > max ? q.slice(0, max - 1).trimEnd() + "…" : q);
+/* WHO, SAID IN A FEW NAMES (Lev, 16 Oct: oddie's lines were too long, and the
+   room wants to see who called what). Three names, then how many more. */
+const at = (name: string) => `@${name.replace(/^@+/, "")}`;
+const who = (names: string[], count = names.length) =>
+  names.slice(0, 3).map(at).join(" ") + (count > 3 ? ` +${count - 3}` : "");
+const leading = (t: Tally) => (t.no > t.yes ? `${100 - yesPct(t)}% no` : `${yesPct(t)}% yes`);
 
 export const LIVE_COPY = {
   /** `room`: a moment only the stream shows, settled by the room's !result. */
-  opened: (q: string, minutes: number | null, url: string, room = false) => {
-    const how = room ? " When it's over, anybody types !result yes or !result no." : "";
-    const where = url ? ` Standings: ${url}` : "";
-    return minutes === null
-      ? `oddie call: "${q}" Type !yes or !no. Open until it's settled, earlier calls score more.${how}${where}`
-      : `oddie call: "${q}" Type !yes or !no, calls lock in ${minutes} min, earlier calls score more.${how}${where}`;
-  },
+  /** One short line (Lev, 16 Oct). How a moment only the stream shows gets its
+   *  result (!result) is said by the reminder, once the call has been open a while. */
+  opened: (q: string, minutes: number | null, url: string) =>
+    `call: "${q}" !yes or !no${minutes === null ? "" : `, locks in ${minutes} min`}${url ? `. Standings: ${url}` : ""}`,
   reportOpened: (q: string) => `Result in for "${short(q)}": type !result yes or !result no in the next minute. Mods can settle it with !call yes or !call no.`,
   reportTie: (q: string, yes: number, no: number) => `"${short(q)}" is tied ${yes}-${no}. One more minute: !result yes or !result no.`,
   reportToMods: (q: string) => `"${short(q)}" is still tied. Mods settle it: !call yes or !call no.`,
   roomSays: (agree: number, total: number, outcome: Side) => `${agree} of ${n(total, "report", "reports")} ${total === 1 ? "says" : "say"} ${outcome.toUpperCase()}.`,
   priceNoReport: (q: string) => `oddie reads "${short(q)}" off the price, no report needed.`,
   noResult: (q: string) => `No result came in for "${short(q)}" before the stream ended, so it's canceled. No points.`,
-  split: (q: string, t: Tally, msLeft: number | null) => msLeft === null
-    ? `"${q}" ${split(t)}. !yes or !no, earlier calls score more`
-    : `"${q}" ${split(t)}, ${left(msLeft)} left. !yes or !no`,
-  reminder: (q: string, t: Tally, msLeft: number | null) =>
-    `Still open: "${q}"${t.yes + t.no ? ` ${split(t)}` : ""}${msLeft === null ? "" : `, ${left(msLeft)} left`}. Type !yes or !no, earlier calls score more.`,
+  /** The answers since the last such line, by name, and where the room stands. */
+  split: (t: Tally, yesBy: string[], noBy: string[], msLeft: number | null) => {
+    const sides = [yesBy.length ? `${who(yesBy)} yes` : "", noBy.length ? `${who(noBy)} no` : ""].filter(Boolean).join(" · ");
+    return `${sides ? `${sides} → ` : ""}${leading(t)}${msLeft === null ? "" : `, ${left(msLeft)} left`}`;
+  },
+  /** `room`: a moment only the stream shows, settled by the room's !result. */
+  reminder: (q: string, t: Tally, msLeft: number | null, room = false) =>
+    `still open: "${q}"${t.yes + t.no ? ` ${leading(t)}` : ""}${msLeft === null ? "" : `, ${left(msLeft)} left`}. !yes or !no${room ? ". Over? !result yes or !result no" : ""}`,
   locked: (t: Tally) => t.yes + t.no
     ? `Calls are locked: ${split(t)}. Mods settle it with !call yes or !call no.`
     : "Calls are locked for this one. The next one is yours.",
@@ -263,12 +269,13 @@ export const LIVE_COPY = {
   switched: (q: string, t: Tally, when: string | null = null) => (t.yes + t.no
     ? `Locked "${short(q)}" at ${split(t)}.`
     : `Locked "${short(q)}".`) + (when ? ` oddie settles it ${when}.` : " It waits for its result."),
-  settled: (q: string, outcome: Side, right: number, total: number, top: number, url: string) => {
-    const it = `It's ${outcome.toUpperCase()}: "${short(q, 80)}".`;
+  /** `names`: who called it right, earliest first. `top` stays on the page. */
+  settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, names: string[] = []) => {
+    const it = `${outcome.toUpperCase()}: "${short(q, 50)}".`;
     const where = url ? ` Standings: ${url}` : "";
     if (!total) return `${it} The next one opens with !call.${where}`;
-    if (!right) return `${it} The whole room went the other way this time.${where}`;
-    return `${it} ${right} of ${total} called it right, up to +${top}, earlier calls scored more.${where}`;
+    if (!right) return `${it} The room went the other way.${where}`;
+    return `${it} ${names.length ? who(names, right) : `${right} of ${total}`} called it.${where}`;
   },
   /** More than one call waits and the command did not say which. */
   which: (verb: string, qs: string[]) =>
@@ -319,7 +326,7 @@ export interface LiveStore {
   lock(callId: string, at: number): Promise<boolean>;
   /** Settles once and scores each right answer by how early it came (pointsAt
    *  over `points`); null when already settled. `top` is the best one scored. */
-  settle(callId: string, outcome: Side, points: number, at: number): Promise<{ right: number; total: number; top: number } | null>;
+  settle(callId: string, outcome: Side, points: number, at: number): Promise<{ right: number; total: number; top: number; names?: string[] } | null>;
   cancel(callId: string, at: number): Promise<boolean>;
   /** Calls taking answers whose time is up. */
   due(now: number): Promise<LiveCall[]>;
@@ -391,6 +398,10 @@ export const PRICE_POLL_MS = 15_000;
 export const PRICE_GIVE_UP_MS = 10 * 60_000;
 
 const lastSplit = new Map<string, number>();
+/** Who answered each call since its last split line, by side. */
+const newSince = new Map<string, { yes: string[]; no: string[] }>();
+/** A moment only the stream shows: settled by the room's !result, not by a price or a match. */
+const isRoomCall = (c: LiveCall): boolean => !c.matchId && !parsePriceCall(c.question);
 /** Price calls oddie settles itself, from their lock on. Kept in memory: after
  *  a restart the clock gives each locked price call its wait back. */
 const priceWaits = new Map<string, PriceWait>();
@@ -413,7 +424,7 @@ const lastActivity = new Map<string, number>();
 const lastSaid = new Map<string, number>();
 /** Test seam. */
 export function _resetLive(): void {
-  lastSplit.clear(); lastPickHelp.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
+  lastSplit.clear(); newSince.clear(); lastPickHelp.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
   reports.clear(); toldPrice.clear(); seenLive.clear(); lastWatch = 0;
 }
 /** Test seam: what a restart forgets (the waits and reports in memory), the store keeps. */
@@ -476,7 +487,7 @@ async function unpinIfIdle(deps: LiveDeps, m: { platform: Platform; channelId: s
 /** Lock a call that is due and tell the room. Once, whoever gets there first. */
 async function lockAndSay(call: LiveCall, deps: LiveDeps): Promise<boolean> {
   if (!(await deps.store.lock(call.id, deps.now()))) return false;
-  lastSplit.delete(call.id); lastSaid.delete(call.id);
+  lastSplit.delete(call.id); newSince.delete(call.id); lastSaid.delete(call.id);
   const tally = await deps.store.tally(call.id);
   const when = await waitForPrice(call, deps);
   await sayQuiet(deps, call, when ? LIVE_COPY.lockedPrice(tally, when) : LIVE_COPY.locked(tally));
@@ -516,7 +527,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   priceWaits.delete(w.call.id);
   if (!done) return false;
   const url = await deps.standingsUrl(w.call.platform, w.call.channelId);
-  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url)}`);
+  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.names)}`);
   deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome: read.outcome, right: done.right, total: done.total, by: "price" });
   return true;
 }
@@ -588,10 +599,15 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     if (call.timed && now >= call.closesAt) { await lockAndSay(call, deps); return "late"; }
     const fresh = await deps.store.pick(call, msg.senderId, msg.senderName, cmd.side, now);
     if (!fresh) return "already-picked";
+    // Who answered since the last split line: said by name in the next one.
+    const since = newSince.get(call.id) ?? { yes: [], no: [] };
+    since[cmd.side].push(msg.senderName);
+    newSince.set(call.id, since);
     const last = lastSplit.get(call.id) ?? call.openedAt;
     if (now - last >= SPLIT_GAP_MS) {
       lastSplit.set(call.id, now);
-      await sayQuiet(deps, msg, LIVE_COPY.split(call.question, await deps.store.tally(call.id), call.timed ? call.closesAt - now : null));
+      newSince.delete(call.id);
+      await sayQuiet(deps, msg, LIVE_COPY.split(await deps.store.tally(call.id), since.yes, since.no, call.timed ? call.closesAt - now : null));
     }
     return "picked";
   }
@@ -665,14 +681,14 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     // have been settled twice. So it is said again where everybody sees it.
     if (running && running.closesAt > now && sameCall(running, cmd.question, now)) {
       lastSaid.set(running.id, now);
-      const id = await sayQuiet(deps, msg, LIVE_COPY.reminder(running.question, await deps.store.tally(running.id), running.timed ? running.closesAt - now : null));
+      const id = await sayQuiet(deps, msg, LIVE_COPY.reminder(running.question, await deps.store.tally(running.id), running.timed ? running.closesAt - now : null, isRoomCall(running)));
       await pinQuiet(deps, msg, id);
       return "again";
     }
     // The new call takes the room. The one taking answers keeps them and waits
     // for its result, so nothing anybody said is lost.
     if (running && (await deps.store.lock(running.id, now))) {
-      lastSplit.delete(running.id); lastSaid.delete(running.id);
+      lastSplit.delete(running.id); newSince.delete(running.id); lastSaid.delete(running.id);
       await sayQuiet(deps, msg, LIVE_COPY.switched(running.question, await deps.store.tally(running.id), await waitForPrice(running, deps)));
     }
     // A price call oddie settles itself, so it does not stay open until a mod
@@ -695,7 +711,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       return "busy";
     }
     lastSplit.set(opened.id, now); lastSaid.set(opened.id, now);
-    const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId), !parsePriceCall(opened.question)));
+    const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId)));
     await pinQuiet(deps, msg, id);
     deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null });
     return "opened";
@@ -717,7 +733,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
 
   if (cmd.kind === "cancel") {
     if (!(await deps.store.cancel(target.id, now))) return "no-call";
-    lastSplit.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id); reports.delete(target.id);
+    lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id); reports.delete(target.id);
     await unpinIfIdle(deps, msg);
     await sayQuiet(deps, msg, LIVE_COPY.canceled);
     return "canceled";
@@ -726,13 +742,13 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   // settle: a call still taking answers is locked first, so a late answer
   // cannot slip in after the result is known.
   if (target.lockedAt === null) await deps.store.lock(target.id, now);
-  lastSplit.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id); reports.delete(target.id);
+  lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id); reports.delete(target.id);
   const tally = await deps.store.tally(target.id);
   const points = pointsFor(tally, cmd.outcome);
   const done = await deps.store.settle(target.id, cmd.outcome, points, now);
   if (!done) return "no-call";
   await unpinIfIdle(deps, msg);
-  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId)));
+  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.names));
   deps.log("live call settled", { platform: msg.platform, channel: msg.channelId, id: target.id, outcome: cmd.outcome, right: done.right, total: done.total });
   return "settled";
 }
@@ -772,7 +788,7 @@ async function report(msg: ChatMessage, side: Side, now: number, deps: LiveDeps)
     return "price-call";
   }
   reports.set(target.id, { call: target, votes: new Map([[msg.senderId, side]]), closeAt: now + REPORT_WINDOW_MS, extended: false });
-  if (target.lockedAt === null && (await deps.store.lock(target.id, now))) { lastSplit.delete(target.id); lastSaid.delete(target.id); }
+  if (target.lockedAt === null && (await deps.store.lock(target.id, now))) { lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); }
   await sayQuiet(deps, msg, LIVE_COPY.reportOpened(target.question));
   await unpinIfIdle(deps, msg);
   deps.log("live call reported", { platform: msg.platform, channel: msg.channelId, id: target.id });
@@ -788,7 +804,7 @@ async function settleOnReports(r: Reports, outcome: Side, deps: LiveDeps): Promi
   const agree = [...r.votes.values()].filter((v) => v === outcome).length;
   await unpinIfIdle(deps, r.call);
   const url = await deps.standingsUrl(r.call.platform, r.call.channelId);
-  await sayQuiet(deps, r.call, `${LIVE_COPY.roomSays(agree, r.votes.size, outcome)} ${LIVE_COPY.settled(r.call.question, outcome, done.right, done.total, done.top, url)}`);
+  await sayQuiet(deps, r.call, `${LIVE_COPY.roomSays(agree, r.votes.size, outcome)} ${LIVE_COPY.settled(r.call.question, outcome, done.right, done.total, done.top, url, done.names)}`);
   deps.log("live call settled", { platform: r.call.platform, channel: r.call.channelId, id: r.call.id, outcome, right: done.right, total: done.total, by: "room" });
   return true;
 }
@@ -850,7 +866,7 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
       const yes = r ? [...r.votes.values()].filter((v) => v === "yes").length : 0, no = r ? r.votes.size - yes : 0;
       if (r && yes !== no) { await settleOnReports(r, yes > no ? "yes" : "no", deps).catch(() => false); continue; }
       if (!(await deps.store.cancel(c.id, now).catch(() => false))) continue;
-      lastSplit.delete(c.id); lastSaid.delete(c.id);
+      lastSplit.delete(c.id); newSince.delete(c.id); lastSaid.delete(c.id);
       await sayQuiet(deps, c, LIVE_COPY.noResult(c.question));
     }
     await unpinIfIdle(deps, calls[0]);
@@ -874,7 +890,7 @@ export async function remindOpen(deps: LiveDeps): Promise<number> {
     const said = lastSaid.get(call.id) ?? call.openedAt;
     if (now - said < REMIND_GAP_MS || (lastActivity.get(roomKey(call)) ?? 0) <= said) continue;
     lastSaid.set(call.id, now);
-    const id = await sayQuiet(deps, call, LIVE_COPY.reminder(call.question, await deps.store.tally(call.id), call.timed ? call.closesAt - now : null));
+    const id = await sayQuiet(deps, call, LIVE_COPY.reminder(call.question, await deps.store.tally(call.id), call.timed ? call.closesAt - now : null, isRoomCall(call)));
     await pinQuiet(deps, call, id);
     n++;
   }

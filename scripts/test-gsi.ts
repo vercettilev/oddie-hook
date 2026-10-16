@@ -116,7 +116,7 @@ let TOK = "";
   eq(await handleChat(msg("!no", { senderId: "u2", senderName: "bob", canRun: false }), deps), "picked", "another answers the other way");
   said.length = 0;
   eq(await handleGsi(TOK, withTok(cs2({ phase: "gameover", round: 22, team_ct: { score: 13 }, team_t: { score: 9 } }), TOK), deps), "settled", "gameover settles from the score");
-  ok(last().startsWith(GAME_COPY.result("S1mple", true, "13-9", "Mirage")) && /It's YES/.test(last()), "chat hears the score and the outcome: " + last());
+  ok(last().startsWith(GAME_COPY.result("S1mple", true, "13-9", "Mirage")) && /YES: "/.test(last()), "chat hears the score and the outcome: " + last());
   eq(await handleGsi(TOK, withTok(cs2({ phase: "gameover", team_ct: { score: 13 }, team_t: { score: 9 } }), TOK), deps), "nothing", "gameover said again does nothing");
   const rows = await channelStandings("twitch", "c1");
   ok(rows.some((r) => r.username === "alice" && r.points > 0) && !rows.some((r) => r.username === "bob" && r.points > 0), "alice scored, bob did not");
@@ -128,7 +128,7 @@ let TOK = "";
   eq((await liveStore.current("twitch", "c1"))?.question, matchQuestion("S1mple", "Ancient"), "...named after its map");
   said.length = 0;
   eq(await handleGsi(TOK, withTok(cs2({ name: "de_ancient", phase: "gameover", round: 24, team_ct: { score: 11 }, team_t: { score: 13 } }, { team: "CT" }), TOK), deps), "settled", "settled from the side they ended on");
-  ok(last().startsWith(GAME_COPY.result("S1mple", false, "11-13", "Ancient")) && /It's NO/.test(last()), "a loss is said as a loss: " + last());
+  ok(last().startsWith(GAME_COPY.result("S1mple", false, "11-13", "Ancient")) && /NO: "/.test(last()), "a loss is said as a loss: " + last());
 }
 
 /* a draw goes to the mods, once */
@@ -171,7 +171,7 @@ let TOK = "";
   eq(await handleGsi(TOK, withTok(dota({ radiant_score: 20 }), TOK), deps), "nothing", "the same match again is nothing");
   said.length = 0;
   eq(await handleGsi(TOK, withTok(dota({ game_state: "DOTA_GAMERULES_STATE_POST_GAME", win_team: "dire", radiant_score: 20, dire_score: 41 }), TOK), deps), "settled", "post game settles");
-  ok(last().startsWith(GAME_COPY.result("S1mple", false, "20-41", null)) && /It's NO/.test(last()), "a Dota loss, scores from the streamer's side: " + last());
+  ok(last().startsWith(GAME_COPY.result("S1mple", false, "20-41", null)) && /NO: "/.test(last()), "a Dota loss, scores from the streamer's side: " + last());
   eq(await handleGsi(TOK, withTok(dota({ matchid: "7002" }), TOK), deps), "opened", "a new match id is a new match");
 }
 

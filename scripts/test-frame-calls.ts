@@ -171,7 +171,7 @@ const reset = async () => {
   said.length = 0;
   queue.push(end("win"));
   eq(await tick(FRAME_POINT_MS), 1, "the end screen settles");
-  ok(last().startsWith(GAME_COPY.result("S1mple", true, null, "Mirage")) && /It's YES/.test(last()), "chat hears the result, no stale score: " + last());
+  ok(last().startsWith(GAME_COPY.result("S1mple", true, null, "Mirage")) && /YES: "/.test(last()), "chat hears the result, no stale score: " + last());
   const rows = await channelStandings("twitch", "c1");
   ok(rows.some((r) => r.username === "alice" && r.points > 0) && !rows.some((r) => r.username === "bob" && r.points > 0), "alice scored, bob did not");
   queue.push(end("win"));
@@ -192,7 +192,7 @@ const reset = async () => {
   said.length = 0;
   queue.push(end("loss"));
   eq(await tick(FRAME_POINT_MS), 1, "a loss settles");
-  ok(last().startsWith(GAME_COPY.result("S1mple", false, "4-13", "Mirage")) && /It's NO/.test(last()), "the final score from the streamer's side: " + last());
+  ok(last().startsWith(GAME_COPY.result("S1mple", false, "4-13", "Mirage")) && /NO: "/.test(last()), "the final score from the streamer's side: " + last());
 }
 
 /* a tie goes to the mods, once */

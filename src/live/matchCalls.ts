@@ -56,7 +56,7 @@ export async function settleMatchCall(deps: LiveDeps, ch: MatchChannel, call: Li
   const done = await deps.store.settle(call.id, side, pointsFor(tally, side), now);
   if (!done) return false;
   const url = await deps.standingsUrl(ch.platform, ch.channelId);
-  await sayQuiet(deps, ch, `${GAME_COPY.result(ch.name || ch.slug, won, scoreTextFrom(score), map)} ${LIVE_COPY.settled(call.question, side, done.right, done.total, done.top, url)}`);
+  await sayQuiet(deps, ch, `${GAME_COPY.result(ch.name || ch.slug, won, scoreTextFrom(score), map)} ${LIVE_COPY.settled(call.question, side, done.right, done.total, done.top, url, done.names)}`);
   deps.log("live call settled", { platform: ch.platform, channel: ch.channelId, id: call.id, outcome: side, right: done.right, total: done.total, by });
   return true;
 }

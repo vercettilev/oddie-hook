@@ -70,7 +70,7 @@ async function settleFromMatch(call: LiveCall, m: GameMatch, link: { id: string;
   const done = await deps.store.settle(call.id, r.side, pointsFor(tally, r.side), now);
   if (!done) return false;
   const url = await deps.standingsUrl(call.platform, call.channelId);
-  await sayQuiet(deps, call, `${GAME_COPY.result(link.name, r.side === "yes", scoreText(m, r.mine), m.map)} ${LIVE_COPY.settled(call.question, r.side, done.right, done.total, done.top, url)}`);
+  await sayQuiet(deps, call, `${GAME_COPY.result(link.name, r.side === "yes", scoreText(m, r.mine), m.map)} ${LIVE_COPY.settled(call.question, r.side, done.right, done.total, done.top, url, done.names)}`);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome: r.side, right: done.right, total: done.total, by: "faceit" });
   return true;
 }
