@@ -7,7 +7,7 @@
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { liveStore, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS } from "../src/live/screenCalls.js";
+import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS } from "../src/live/screenCalls.js";
 import { cleanSeen, parseScreen, screenPrompt, screenSource, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { onXEvent, xEngineDeps, xThumbnail, _resetXLive, type XLiveApi, type XVoice } from "../src/x/live.js";
 
@@ -81,12 +81,35 @@ console.log("\nthe streamer opens it, the screen settles it");
   check("one sure YES is not enough", r.counts().asks === 2 && (await liveStore.unsettled("kick", "100")).length === 1);
   const before = r.said.length;
   const n = await r.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS + SCREEN_CONFIRM_MS);
-  check("the same sure YES eight seconds later settles it", n === 1 && (await liveStore.unsettled("kick", "100")).length === 0);
+  check("the same sure YES at the next look settles it", n === 1 && (await liveStore.unsettled("kick", "100")).length === 0);
   check("...said with what was on screen, then the result and who called it",
     r.said.length === before + 1 && r.last() === 'On stream: VICTORY. YES: "will I win this match?". @mika called it.', r.last());
   check("...a line that never reads as a command", parseCommand(r.last()) === null);
   await r.at(SCREEN_GRACE_MS + 10 * SCREEN_EVERY_MS);
   check("a settled call is not looked at again", r.counts().asks === 3);
+}
+
+console.log("\nthe server's beat: every second, a look only when one falls due");
+{
+  const r = await room();
+  let lists = 0;
+  const store = r.deps.store;
+  r.deps.store = new Proxy(store, {
+    get: (t, k) => (k === "everyUnsettled" ? async () => { lists++; return t.everyUnsettled(); } : Reflect.get(t, k)),
+  });
+  await handleChat(r.line("nova", "!call will I win this match?", true), r.deps);
+  r.readings.push(unclear, yes(0.95, "VICTORY"), yes(0.95, "VICTORY"));
+  await r.at(SCREEN_GRACE_MS);
+  const listed = lists;
+  for (let t = SCREEN_TICK_MS; t < SCREEN_EVERY_MS; t += SCREEN_TICK_MS) await r.at(SCREEN_GRACE_MS + t);
+  check("a pass between two looks asks the reader nothing", r.counts().asks === 1, `asks ${r.counts().asks}`);
+  check("...and does not ask the store either", lists === listed, `lists ${lists - listed}`);
+  await r.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS);
+  check("the next look comes when it falls due", r.counts().asks === 2);
+  check("the result screen, up a few seconds, is looked at again within them",
+    SCREEN_CONFIRM_MS <= 2_000 && SCREEN_EVERY_MS <= 4_000 && SCREEN_TICK_MS <= SCREEN_CONFIRM_MS);
+  await r.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS + SCREEN_CONFIRM_MS);
+  check("...and settles there", (await liveStore.unsettled("kick", "100")).length === 0 && r.counts().asks === 3);
 }
 
 console.log("\nwhat does not settle");

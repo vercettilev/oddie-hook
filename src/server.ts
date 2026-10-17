@@ -39,7 +39,7 @@ import { watchFrames } from "./live/frameCalls.js";
 import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
 import { fetchPicture, screenSource } from "./games/screen.js";
-import { watchScreens } from "./live/screenCalls.js";
+import { SCREEN_TICK_MS, watchScreens } from "./live/screenCalls.js";
 import { allStandings, callerRecord, channelById, streaksFor } from "./store/live.js";
 import { probePriceSource, binancePrices, BINANCE_ASSETS } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
@@ -2049,7 +2049,9 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   clock.screen = screen.source ?? undefined;
   liveLog(screen.source ? `screen on: ${screen.why}` : `screen off: ${screen.why}`);
   // Its own beat: a picture and a read take seconds, and the clock's tick
-  // (price results, reminders) never waits for them.
+  // (price results, reminders) never waits for them. Every second, so a look
+  // happens when it falls due (a result screen is up for seconds); a pass with
+  // nothing due only checks the time.
   if (clock.screen) {
     let screening = false;
     setInterval(() => {
@@ -2057,7 +2059,7 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
       screening = true;
       void watchScreens(clock).catch((e) => liveLog("live screen pass failed", { err: (e as Error).message }))
         .finally(() => { screening = false; });
-    }, 5_000);
+    }, SCREEN_TICK_MS);
   }
   liveLog(frames.source ? `frames on: ${frames.why}` : `frames off: ${frames.why}`);
   // One read now, so the log says whether price calls can be settled from here.

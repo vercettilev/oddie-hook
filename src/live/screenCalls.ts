@@ -2,19 +2,31 @@
  * THE SCREEN SETTLES IT: when to look, and when a look is enough.
  *
  * Every room call (opened with !call, not a price, not a match oddie opened
- * itself) on a live stream gets its picture read every five seconds
+ * itself) on a live stream gets its picture read every four seconds
  * (src/games/screen.ts): a victory or defeat screen does not stay up long
- * (Lev, 16 Oct). One reading never settles anything. A sure yes or no is
- * looked at again six seconds later (X keeps its picture cached up to five,
- * so this is a new one), and only the same sure answer twice in a row
- * settles the call, with what was on screen said in front of the result. Anything unclear in between starts over. Room reports (!result) and
+ * (Lev, 16 Oct; Showdown's VICTORY screen stays about six seconds). One
+ * reading never settles anything. A sure yes or no is looked at again two
+ * seconds later, while it is still up, and only the same sure answer twice in
+ * a row settles the call, with what was on screen said in front of the
+ * result. On Twitch and Kick that second look is a new frame; on X it can be
+ * the same picture, which X caches up to five seconds. Anything unclear in
+ * between starts over. Room reports (!result) and
  * the streamer's own !call yes keep working the whole time; whoever is first
  * settles it, once.
  *
- * WHAT IT COSTS. About 0.17 of a cent a look, so about $1.20 an hour while a
- * call is open on X (its pictures are bigger) and $0.50 on Twitch or Kick.
- * Only while a call is open and the stream live, never past a call's third
- * hour, and never more than 720 looks a channel an hour.
+ * WHY THESE NUMBERS (Aleksa's Showdown stream, 16 Oct, read 17 Oct: 470
+ * frames, two questions, 940 reads, not one wrong sure answer). On its frames
+ * two seconds apart, looks every five seconds with the second one six seconds
+ * later never caught the six-second VICTORY screen; every four seconds with
+ * the second two seconds later caught it 98 times in 100. The server's pass
+ * runs every second so a look happens when it falls due, not at the next
+ * five-second beat; a picture and a read take a couple of seconds, so on
+ * Twitch and Kick the second look lands nearer three seconds after the first.
+ *
+ * WHAT IT COSTS. About 0.17 of a cent a look on X (its pictures are bigger)
+ * and 0.07 on Twitch or Kick, so about $1.50 and $0.60 an hour while a call
+ * is open. Only while a call is open and the stream live, never past a call's
+ * third hour, and never more than 900 looks a channel an hour.
  *
  * WHAT IT NEVER DOES. It never looks in the first minute of a call, so the
  * last match's result screen, still up when the next call opens, cannot
@@ -26,10 +38,10 @@ import { personFixOutage } from "../inference.js";
 import { isRoomCall, settleOnScreen, type LiveCall, type LiveDeps } from "./calls.js";
 
 /** How often an open room call's picture is read: a result screen does not stay up long. */
-export const SCREEN_EVERY_MS = 5_000;
-/** A sure answer is looked at again this soon, while the result is still on screen
- *  and past X's five-second picture cache, so it is a new picture. */
-export const SCREEN_CONFIRM_MS = 6_000;
+export const SCREEN_EVERY_MS = 4_000;
+/** A sure answer is looked at again this soon, while the result is still on screen:
+ *  six seconds later, Showdown's VICTORY screen was always gone. */
+export const SCREEN_CONFIRM_MS = 2_000;
 /** The second sure answer has to come within this long of the first. */
 export const SCREEN_AGREE_MS = 3 * 60_000;
 /** How sure the reader must be for an answer to count at all. */
@@ -38,8 +50,12 @@ export const SCREEN_SURE = 0.85;
 export const SCREEN_GRACE_MS = 60_000;
 /** At most this many pictures a tick, read side by side. */
 export const SCREENS_PER_PASS = 3;
-/** At most this many pictures a channel an hour: one every five seconds. */
-export const SCREEN_PER_HOUR = 720;
+/** At most this many pictures a channel an hour: one every four seconds. */
+export const SCREEN_PER_HOUR = 900;
+/** The server runs the pass this often; a pass between two looks only checks the time. */
+export const SCREEN_TICK_MS = 1_000;
+/** The open calls are listed from the store at most this often, not every tick. */
+export const SCREEN_LIST_MS = 5_000;
 /** A call open longer than this is not looked at any more: a forgotten call
  *  would otherwise be read all day. The streamer's !call yes still settles it. */
 export const SCREEN_MAX_AGE_MS = 3 * 60 * 60_000;
@@ -55,10 +71,13 @@ const liveAt = new Map<string, { at: number; live: boolean }>();
 let channelsAt = 0;
 let channelInfo = new Map<string, { name: string; matchCalls: boolean }>();
 let outageUntil = 0;
+let listed: LiveCall[] = [];
+let listedAt = 0;
 
 /** Test seam. */
 export function _resetScreens(): void {
   looks.clear(); spent.clear(); liveAt.clear(); channelInfo = new Map(); channelsAt = 0; outageUntil = 0;
+  listed = []; listedAt = 0;
 }
 
 const keyOf = (c: { platform: string; channelId: string }) => `${c.platform}:${c.channelId}`;
@@ -98,8 +117,16 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   if (!source) return 0;
   const now = deps.now();
   if (now < outageUntil) return 0;
-  const calls = (await deps.store.everyUnsettled().catch(() => [] as LiveCall[]))
-    .filter((c) => isRoomCall(c) && now - c.openedAt <= SCREEN_MAX_AGE_MS);
+  const watched = (cs: LiveCall[]) => cs.filter((c) => isRoomCall(c) && now - c.openedAt <= SCREEN_MAX_AGE_MS);
+  // The store is asked again whenever a look falls due, so a call settled some
+  // other way is never looked at after, and every five seconds for new calls;
+  // a pass with nothing due only checks the time.
+  const dueNow = watched(listed).some((c) => now >= (looks.get(c.id)?.nextAt ?? 0));
+  if (dueNow || !listedAt || now - listedAt >= SCREEN_LIST_MS || now < listedAt) {
+    listed = await deps.store.everyUnsettled().catch(() => [] as LiveCall[]);
+    listedAt = now;
+  }
+  const calls = watched(listed);
   const open = new Set(calls.map((c) => c.id));
   for (const id of looks.keys()) if (!open.has(id)) looks.delete(id);
   if (!calls.length) return 0;
@@ -118,7 +145,10 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   }
   // Side by side: three streams' reads take as long as one.
   const outs = await Promise.all(take.map(({ call, name }) => lookOnce(deps, source, call, name, now)));
-  return outs.filter(Boolean).length;
+  const settled = outs.filter(Boolean).length;
+  // A call this pass settled leaves the list at the next pass, not five seconds on.
+  if (settled) listedAt = 0;
+  return settled;
 }
 
 /** One look at one call: true when it settled the call. */
