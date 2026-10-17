@@ -8,7 +8,9 @@
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { liveStore, saveChannel, _resetLiveStore } from "../src/store/live.js";
 import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS } from "../src/live/screenCalls.js";
-import { cleanSeen, parseScreen, screenPrompt, screenSource, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { cleanSeen, parseScreen, screenPrompt, screenSource, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { decodeFrame } from "../src/games/frames.js";
+import { spawnSync } from "node:child_process";
 import { onXEvent, xEngineDeps, xThumbnail, _resetXLive, type XLiveApi, type XVoice } from "../src/x/live.js";
 
 let failures = 0;
@@ -191,6 +193,24 @@ console.log("\nX's picture is its live thumbnail");
   check("broadcast.start's live thumbnail is the stream's picture", (await xThumbnail("200")) === "https://prod-fastly.example/latest.jpg?token=t");
   await onXEvent({ event_uuid: "e1", event_type: "broadcast.end", filter: { user_id: "200" }, payload: { broadcast_id: "b1" } }, w);
   check("...and the stream's end takes it away", (await xThumbnail("200")) === null);
+}
+
+console.log("\nTwitch and Kick pictures are read full size");
+{
+  const ff = process.env.FFMPEG_PATH ?? "ffmpeg";
+  const made = spawnSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=30", "-frames:v", "2", "-f", "mpegts", "pipe:1"]);
+  const seg = made.status === 0 ? made.stdout : null;
+  // A JPEG's width sits in its frame header (SOF0..SOF2), two bytes after the height.
+  const width = (j: Buffer | null) => {
+    if (!j) return 0;
+    for (let i = 2; i + 9 < j.length; i++) if (j[i] === 0xff && j[i + 1] >= 0xc0 && j[i + 1] <= 0xc2) return j.readUInt16BE(i + 7);
+    return 0;
+  };
+  if (!seg?.length) console.log("  (no ffmpeg here: skipped)");
+  else {
+    check("a stream frame for the screen is decoded at full size", width(await decodeFrame(seg, ff, SCREEN_FRAME_WIDTH)) === 1280);
+    check("...while the match reader keeps its small one", width(await decodeFrame(seg, ff)) === 640);
+  }
 }
 
 console.log(failures ? `\n${failures} FAILED` : "\nall screen checks passed.");

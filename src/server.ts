@@ -38,7 +38,7 @@ import { handleGsi } from "./live/gsiCalls.js";
 import { watchFrames } from "./live/frameCalls.js";
 import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
-import { fetchPicture, screenSource } from "./games/screen.js";
+import { fetchPicture, screenSource, SCREEN_FRAME_WIDTH } from "./games/screen.js";
 import { SCREEN_TICK_MS, watchScreens } from "./live/screenCalls.js";
 import { allStandings, callerRecord, channelById, streaksFor } from "./store/live.js";
 import { probePriceSource, binancePrices, BINANCE_ASSETS } from "./live/priceCall.js";
@@ -2035,12 +2035,13 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   clock.frames = frames.source ?? undefined;
   /* THE SCREEN SETTLES A ROOM CALL (src/live/screenCalls.ts): its answer read
      off the stream, twice in a row. X's picture is its live thumbnail; Twitch's
-     and Kick's are a frame of the stream, where ffmpeg is here to take one. */
+     and Kick's are a full-size frame of the stream, where ffmpeg is here to
+     take one (a result banner's small print needs it: src/games/screen.ts). */
   const fromStream = (platform: "twitch" | "kick") => async (channelId: string): Promise<Buffer | null> => {
     const src = frames.source;
     const ch = src ? await channelById(platform, channelId).catch(() => null) : null;
     const playlist = src && ch ? await src.playlist(platform, ch.slug).catch(() => null) : null;
-    return src && playlist ? src.grab(playlist) : null;
+    return src && playlist ? src.grab(playlist, SCREEN_FRAME_WIDTH) : null;
   };
   const screen = screenSource({
     x: async (channelId) => { const url = await xThumbnail(channelId); return url ? fetchPicture(url) : null; },

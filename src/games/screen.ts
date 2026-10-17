@@ -12,7 +12,8 @@
  * broadcast.start (src/x/live.ts): measured 16 Oct, a full-resolution frame
  * of the stream renewed about every two seconds, its text readable. On Twitch
  * and Kick, one frame of the HLS stream, as the match reader takes it
- * (src/games/frames.ts). YouTube has no picture here.
+ * (src/games/frames.ts) but at full size, SCREEN_FRAME_WIDTH. YouTube has no
+ * picture here.
  *
  * WHAT IT ASKS. The question as the streamer typed it, and the streamer's
  * name, so "will I win" has a subject. The model answers yes, no or unclear,
@@ -40,6 +41,12 @@ export interface ScreenSource {
   ask(jpeg: Buffer, question: string, streamer: string): Promise<ScreenReading | null>;
 }
 
+/** A Twitch or Kick frame is read this wide, the stream's own 720p, not the match
+ *  reader's 640: on Aleksa's Showdown stream (17 Oct) a timeout banner, "ENEMY
+ *  TIMEOUT / WINNER: ALEKSAFLAMINGO", read at 640 came back a sure "no" 7 times
+ *  in 16; at full size it read right 32 times in 32, a hand's result panel became
+ *  readable, and 101 frames of the whole stream gave no false answer. */
+export const SCREEN_FRAME_WIDTH = 1280;
 const ASK_TIMEOUT_MS = 20_000;
 const FETCH_TIMEOUT_MS = 10_000;
 

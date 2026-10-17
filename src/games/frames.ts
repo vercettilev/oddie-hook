@@ -54,8 +54,8 @@ export interface FrameReading {
 export interface FrameSource {
   /** The stream's HLS playlist now, or null when the platform gives none. */
   playlist(platform: Platform, slug: string): Promise<string | null>;
-  /** One picture of the stream, JPEG, or null when none could be taken. */
-  grab(playlistUrl: string): Promise<Buffer | null>;
+  /** One picture of the stream, JPEG, `width` wide (FRAME_WIDTH unless said), or null when none could be taken. */
+  grab(playlistUrl: string, width?: number): Promise<Buffer | null>;
   /** What the picture shows, or null when the reader did not answer in JSON. */
   read(jpeg: Buffer): Promise<FrameReading | null>;
 }
@@ -208,10 +208,10 @@ function installedFfmpeg(): string | null {
 /** Test seam. */
 export function _setFfmpeg(path: string | null | undefined): void { ffmpegFound = path; }
 
-/** One picture out of a segment: the first frame, scaled to FRAME_WIDTH, JPEG. */
-export function decodeFrame(segment: Buffer, ffmpeg: string): Promise<Buffer | null> {
+/** One picture out of a segment: the first frame, scaled to `width` (FRAME_WIDTH unless said), JPEG. */
+export function decodeFrame(segment: Buffer, ffmpeg: string, width = FRAME_WIDTH): Promise<Buffer | null> {
   return new Promise((resolve) => {
-    const p = spawn(ffmpeg, ["-loglevel", "error", "-i", "pipe:0", "-frames:v", "1", "-vf", `scale=${FRAME_WIDTH}:-2`, "-f", "image2", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"], { stdio: ["pipe", "pipe", "ignore"] });
+    const p = spawn(ffmpeg, ["-loglevel", "error", "-i", "pipe:0", "-frames:v", "1", "-vf", `scale=${width}:-2`, "-f", "image2", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"], { stdio: ["pipe", "pipe", "ignore"] });
     const out: Buffer[] = [];
     const timer = setTimeout(() => { p.kill("SIGKILL"); }, DECODE_TIMEOUT_MS);
     p.stdout.on("data", (d: Buffer) => out.push(d));
@@ -223,12 +223,12 @@ export function decodeFrame(segment: Buffer, ffmpeg: string): Promise<Buffer | n
 }
 
 /** One picture of the stream behind a master playlist. */
-export async function grabFrame(masterUrl: string, ffmpeg: string): Promise<Buffer | null> {
+export async function grabFrame(masterUrl: string, ffmpeg: string, width = FRAME_WIDTH): Promise<Buffer | null> {
   const variant = pickVariant(await fetchText(masterUrl), masterUrl);
   if (!variant) return null;
   const seg = lastSegment(await fetchText(variant), variant);
   if (!seg) return null;
-  return decodeFrame(await fetchBytes(seg), ffmpeg);
+  return decodeFrame(await fetchBytes(seg), ffmpeg, width);
 }
 
 /* ---------------------------------------------------------------- model -- */
@@ -264,7 +264,7 @@ export function frameSource(): { source: FrameSource | null; why: string } {
     why: `ffmpeg ${ffmpeg}, ${FRAME_MODEL}`,
     source: {
       playlist: (platform, slug) => (platform === "twitch" ? twitchPlaylist(slug) : kickPlaylist(slug)),
-      grab: (url) => grabFrame(url, ffmpeg),
+      grab: (url, width) => grabFrame(url, ffmpeg, width),
       read: readFrame,
     },
   };

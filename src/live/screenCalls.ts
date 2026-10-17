@@ -23,9 +23,10 @@
  * five-second beat; a picture and a read take a couple of seconds, so on
  * Twitch and Kick the second look lands nearer three seconds after the first.
  *
- * WHAT IT COSTS. About 0.17 of a cent a look on X (its pictures are bigger)
- * and 0.07 on Twitch or Kick, so about $1.50 and $0.60 an hour while a call
- * is open. Only while a call is open and the stream live, never past a call's
+ * WHAT IT COSTS. About 0.17 of a cent a look, every platform's picture being
+ * full size (src/games/screen.ts SCREEN_FRAME_WIDTH), so about $1.50 an hour
+ * while a call is open: a Showdown game of ten to sixteen minutes, 25 to 40
+ * cents. Only while a call is open and the stream live, never past a call's
  * third hour, and never more than 900 looks a channel an hour.
  *
  * WHAT IT NEVER DOES. It never looks in the first minute of a call, so the
