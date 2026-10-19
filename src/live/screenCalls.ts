@@ -10,9 +10,8 @@
  * a row settles the call, with what was on screen said in front of the
  * result. On Twitch and Kick that second look is a new frame; on X it can be
  * the same picture, which X caches up to five seconds. Anything unclear in
- * between starts over. Room reports (!result) and
- * the streamer's own !call yes keep working the whole time; whoever is first
- * settles it, once.
+ * between starts over. The streamer's own !call yes or !call no keeps working
+ * the whole time; whoever is first settles it, once.
  *
  * WHY THESE NUMBERS (Aleksa's Showdown stream, 16 Oct, read 17 Oct: 470
  * frames, two questions, 940 reads, not one wrong sure answer). On its frames

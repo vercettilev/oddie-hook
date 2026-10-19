@@ -208,7 +208,7 @@ function untilFrom(text: string): When | null {
 }
 
 /* "Close the hour green" is a candle without the word. The pitch to the first
-   YouTube host used exactly that, and it went to the room as a !result call
+   YouTube host used exactly that, and it went to the room as a moment's call
    (15 Oct, live test). Only the hour: everyone's hour turns at the same moment,
    while "the day" has the same whose-today problem as a touch "today". */
 function hourFrom(text: string): "current" | "next" | null {

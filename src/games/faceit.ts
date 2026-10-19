@@ -14,7 +14,7 @@
  * Nothing here scrapes faceit.com.
  *
  * NARROW ON PURPOSE. The only call this opens is "does the streamer's team win
- * this match". Rounds and clutches stay the room's (!call, !result): FACEIT
+ * this match". Rounds and clutches stay the streamer's (!call): FACEIT
  * publishes round data only after the match, and a wrong result in a live chat
  * costs more than a mod typing !call yes.
  */
