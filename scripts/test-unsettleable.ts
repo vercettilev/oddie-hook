@@ -16,7 +16,7 @@
 //
 //   npm run test-unsettleable
 
-import { unsettleablePhrase, addressInQuestion, withinQuestion, extractClaim } from "../src/matching/extractClaim.js";
+import { unsettleablePhrase, addressInQuestion, withinQuestion, extractClaim, holdAsWithin } from "../src/matching/extractClaim.js";
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -112,6 +112,40 @@ console.log("\na level over a period keeps the claimant's words (rule 8)");
     globalThis.fetch = reply({ ...answer, price_claim: { ...answer.price_claim, mode: "touch" }, question: "Will $CL trade above $90 at any point this week?" });
     const touch = await extractClaim("$CL hits $90 this week");
     check("...while a move named keeps its \"at any point\"", touch.question === "Will $CL trade above $90 at any point this week?", touch.question);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (hadKey === undefined) delete process.env.INFERENCE_API_KEY; else process.env.INFERENCE_API_KEY = hadKey;
+  }
+}
+
+console.log("\na hold verb is a level over a period (15 Oct, Bee's nine claims)");
+{
+  const claim = (mode: "touch" | "at-close" | "always" | "within", op: ">" | ">=" | "<" | "<=" = ">") =>
+    ({ symbol: "ETH", metric: "price" as const, op, target: 2350, mode });
+  check("\"stay above … by the end of this week\" read at the close becomes rule 8",
+    holdAsWithin("will ETH stay above 2350 by the end of this week?", claim("at-close"))?.mode === "within");
+  check("...and so does one read as a hold", holdAsWithin("Will BTC stay above 80k by the end of this week?", claim("always"))?.mode === "within");
+  check("holds, remains, keeps and under all count", ["HYPE holds under 100 all week", "SOL remains below 100 this month", "keeps under 100 till friday"]
+    .every((t) => holdAsWithin(t, claim("at-close", "<"))?.mode === "within"));
+  check("a hold the other way round from the op is left alone", holdAsWithin("will ETH stay above 2350?", claim("at-close", "<"))?.mode === "at-close");
+  check("no hold verb, nothing changes", holdAsWithin("will ETH be above 2350 at the end of this week?", claim("at-close"))?.mode === "at-close"
+    && holdAsWithin("ETH hits 2350 this week", claim("touch"))?.mode === "touch");
+
+  // Through the extractor, with the answer the model gave for ETH that night.
+  const answer = {
+    question: "Will Ethereum (ETH) be above $2,350 at the end of this week?",
+    resolution_criteria: "Resolves YES if the ETH/USD price is above $2,350 at 23:59 UTC on 2026-10-18 per CoinMarketCap. Resolves NO otherwise.",
+    price_claim: { symbol: "ETH", metric: "price", op: ">", target: 2350, mode: "at-close" },
+    close_time: "2099-01-01T00:00:00Z", close_time_inferred: false, category: "Crypto", resolvability: "clean",
+    appropriate: true, appropriate_reason: "", reason: "clean", hook: "ETH above 2350?",
+  };
+  const realFetch = globalThis.fetch;
+  const hadKey = process.env.INFERENCE_API_KEY;
+  process.env.INFERENCE_API_KEY = "test";
+  try {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(answer) }] }), { status: 200 })) as typeof fetch;
+    const ex = await extractClaim("will ETH stay above 2350 by the end of this week?");
+    check("the extractor hands on a hold as rule 8, whatever the model said", ex.price_claim?.mode === "within", JSON.stringify(ex.price_claim));
   } finally {
     globalThis.fetch = realFetch;
     if (hadKey === undefined) delete process.env.INFERENCE_API_KEY; else process.env.INFERENCE_API_KEY = hadKey;

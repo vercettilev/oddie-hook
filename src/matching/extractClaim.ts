@@ -214,7 +214,28 @@ export async function extractClaim(text: string): Promise<Extraction> {
     v = inThePast(second) ? { ...second, close_time: null, resolvability: "unresolvable",
       reason: "we could not pin a deadline in the future for this one" } : second;
   }
-  return normalize(v);
+  const out = normalize(v);
+  const claim = holdAsWithin(text, out.price_claim);
+  return claim === out.price_claim ? out : { ...out, price_claim: claim, question: withinQuestion(out.question) };
+}
+
+/* BACKSTOP 4 (15 Oct). "STAY" IS A HOLD, AND A HOLD IS RULE 8.
+   Bee typed nine claims of one shape, "will X stay above N by the end of this
+   week?", every price above its level at the open (Binance, 15 Oct 18:59-19:10
+   UTC). The model read five as a hold and four (ETH, HYPE, XRP, BNB) as the
+   value at the week's close, so one sentence opened two kinds of market. A hold
+   verb in the claimant's own words is not a judgment call: it is a level over a
+   period, and rule 8 reads it at the open (stays, if the price is already on
+   that side; gets there, if not), with the question and the rule written by
+   code on every rail. */
+const HOLD_VERB = /\b(?:stay|stays|staying|hold|holds|holding|remain|remains|remaining|keep|keeps|keeping)\s+(?:at\s+or\s+)?(above|over|below|under)\b/i;
+export function holdAsWithin(text: string, claim: PriceClaim | null): PriceClaim | null {
+  if (!claim || claim.mode === "within") return claim;
+  const m = HOLD_VERB.exec(String(text ?? ""));
+  if (!m) return claim;
+  const up = /^(above|over)$/i.test(m[1]);
+  const sameWay = up ? claim.op === ">" || claim.op === ">=" : claim.op === "<" || claim.op === "<=";
+  return sameWay ? { ...claim, mode: "within" } : claim;
 }
 
 /** Trust the schema, but never let a malformed field become a live market: clamp
