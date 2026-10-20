@@ -15,7 +15,7 @@
  * Everything it touches is injected, so this file talks to no database, no
  * model and no chain. That is also what makes it testable without either.
  */
-import { shouldRetry, decisionWasPaid, type OracleDecision } from "./oracle.js";
+import { shouldRetry, decisionWasPaid, decidableBeforeClose, type OracleDecision } from "./oracle.js";
 import type { PriceCheck } from "../price/index.js";
 
 export interface OracleSweepMarket {
@@ -24,6 +24,9 @@ export interface OracleSweepMarket {
   closesAt: string | null;
   resolvedOutcome: "yes" | "no" | null;
   retiredAt: string | null;
+  /** Its price rule, when it has one: a touch made or a hold broken settles
+   *  before the close (decide, code gate 2), so those are read while open. */
+  priceCheck?: PriceCheck | null;
 }
 
 export interface OracleSweepDeps {
@@ -79,6 +82,8 @@ export interface OracleSweepResult {
   unreadable: number;
   /** Hit the limit and stopped early, so there is more to do next tick. */
   truncated: boolean;
+  /** Open markets whose price rule was read before their close. */
+  early: number;
   settled: number;
   failed: number;
 }
@@ -88,20 +93,27 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
   // would be deciding a market nobody can see or stake in.
   const board = (await deps.board()).filter((m) => !m.resolvedOutcome && !m.retiredAt);
   const out: OracleSweepResult = {
-    seen: board.length, decided: [], held: 0, unreadable: 0, truncated: false, settled: 0, failed: 0,
+    seen: board.length, decided: [], held: 0, unreadable: 0, truncated: false, early: 0, settled: 0, failed: 0,
   };
   const limit = deps.limit ?? Infinity;
   const now = (deps.asOf ?? new Date()).getTime();
+  let asked = 0;
 
   for (const m of board) {
+    const open = Boolean(m.closesAt && Date.parse(m.closesAt) > now);
     /* STILL OPEN: NOT ASKED, NOT COUNTED. decide() refuses a market before its
        close anyway (gate "not-closed"), so asking costs nothing but a slot. The
        board comes newest first, and on 20 Oct its five newest were all open:
        every sweep spent the limit on them and stopped, and the closed markets
        below (gold, with 0.01 SOL in it, four days past its close) never came
-       up. */
-    if (m.closesAt && Date.parse(m.closesAt) > now) continue;
-    if (out.decided.length >= limit) { out.truncated = true; break; }
+       up.
+       EXCEPT A PRICE RULE ITS CANDLES CAN DECIDE (20 Oct): a touch made or a
+       hold broken settles before the close. Reading one costs no model call,
+       so it takes no slot from the limit either, and a read that decides
+       nothing is not written down: it is the same question next sweep, free.
+       Past the limit the sweep goes on for those rather than stopping. */
+    if (open && !decidableBeforeClose(m.priceCheck)) continue;
+    if (!open && asked >= limit) { out.truncated = true; continue; }
 
     const read = await deps.criteria(m.slug).catch((e) => ({ ok: false as const, error: (e as Error).message }));
     if (!read.ok) {
@@ -126,6 +138,10 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
       { slug: m.slug, question: m.question, criteria: read.criteria, closeTime: m.closesAt, priceCheck: read.priceCheck ?? null },
       deps.asOf,
     );
+    if (open) {
+      out.early++;
+      if (!d.settle) continue;
+    } else asked++;
     out.decided.push(d);
 
     // Written down BEFORE anything is announced, and best-effort by

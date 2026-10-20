@@ -160,6 +160,44 @@ console.log("\nthe limit bounds the bill, and counts the right thing");
   check("...so a closed market behind them is settled", h.settled.join(",") === "gold" && !r.truncated, `settled ${h.settled.join(",")}`);
 }
 
+console.log("\na price rule its candles can decide is read before its close");
+{
+  /* 20 Oct: Bee's ETH market traded at $2,478 the day it opened and took bets
+     for five more days. An open market with a touch or a hold is read every
+     sweep; a read that decides nothing is not written down, and none of it
+     takes a slot from the limit. */
+  const later = new Date(Date.now() + 5 * 86_400_000).toISOString();
+  const pc = (mode: string) => ({ chain: "binance", mint: "ETHUSDT", symbol: "ETH", name: "Ethereum (ETH)", pool: "ETHUSDT", supply: 0, metric: "price", op: ">", target: 2400, mode, from: "2026-10-20T12:05:38.584Z", to: later }) as unknown as OracleSweepMarket["priceCheck"];
+  const board = [
+    market("eth-touch", { closesAt: later, priceCheck: pc("touch") }),
+    market("btc-hold", { closesAt: later, priceCheck: pc("always") }),
+    market("near-close", { closesAt: later, priceCheck: pc("at-close") }),
+    market("fed-words", { closesAt: later }),
+    market("gold"),
+  ];
+  const rule = async (slug: string) => ({ ok: true as const, criteria: "a rule long enough to pass the code gate", priceCheck: board.find((m) => m.slug === slug)?.priceCheck ?? null });
+  const still = (slug: string) => ({ slug, settle: null, gate: "not-closed", reason: "still open" } as OracleDecision);
+  const h = harness(board, {
+    limit: 1,
+    criteria: rule,
+    decide: async (m: { slug: string }) => { h.asked.push(m.slug); return m.slug === "btc-hold" ? still(m.slug) : yes(m.slug); },
+  });
+  const r = await oracleSweep(h.deps);
+  check("open markets whose touch or hold can be decided are read, and only they", h.asked.join(",") === "eth-touch,btc-hold,gold", `asked ${h.asked.join(",")}`);
+  check("...a decided one settles before its close", h.settled.join(",") === "eth-touch,gold", `settled ${h.settled.join(",")}`);
+  check("...one that decides nothing is not written down", h.recorded.join(",") === "eth-touch,gold", `recorded ${h.recorded.join(",")}`);
+  check("...and none of it takes the limit's one slot from the closed market", r.early === 2 && !r.truncated, `early ${r.early}, truncated ${r.truncated}`);
+
+  const past = harness([market("a"), market("b"), market("eth-touch", { closesAt: later, priceCheck: pc("touch") })], {
+    limit: 1,
+    criteria: rule,
+    decide: async (m: { slug: string }) => { past.asked.push(m.slug); return yes(m.slug); },
+  });
+  const r2 = await oracleSweep(past.deps);
+  check("past the limit the sweep still reads the open price markets below it",
+    past.asked.join(",") === "a,eth-touch" && r2.truncated && past.settled.join(",") === "a,eth-touch", `asked ${past.asked.join(",")}, truncated ${r2.truncated}`);
+}
+
 console.log("\na settlement that fails is reported, not swallowed");
 {
   const h = harness([market("a")], { settle: async () => false });

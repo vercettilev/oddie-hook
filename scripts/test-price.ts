@@ -20,7 +20,7 @@ import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, dec
 import { BINANCE_ASSETS } from "../src/live/priceCall.js";
 import { samePriceBet } from "../src/matching/duplicate.js";
 import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
-import { retryOnDeadlock, PRICE_RULES_2026_10_20_SQL } from "../src/store/markets.js";
+import { retryOnDeadlock, PRICE_RULES_2026_10_20_SQL, COIN_RULES_2026_10_20_SQL } from "../src/store/markets.js";
 import { decide } from "../src/oracle/oracle.js";
 import { _setProposer } from "../src/oracle/verdict.js";
 
@@ -284,6 +284,55 @@ d = await decide(
   new Date("2026-08-04T00:00:00Z"),
 );
 check("an open price market is still refused for being open", d.gate === "not-closed", d.gate);
+
+/* 20 OCT: A PRICE RULE ITS CANDLES HAVE DECIDED SETTLES BEFORE ITS CLOSE.
+   Bee's ETH market traded at $2,478 the day it opened and took bets for five
+   more days. A touch made or a hold broken settles at once; anything else, and
+   every price AT the close, waits for the close. */
+{
+  const MID = new Date("2026-08-02T06:30:00Z");   // hour 30.5 of 48: still open
+  const open = (pc: PriceCheck) => decide({ slug: "s", question: "q", criteria: criteriaSentence(pc), closeTime: WINDOW.to, priceCheck: pc }, MID);
+  const failing = (count: () => void) => _setPriceFeed({
+    searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
+    async ohlcv() { count(); throw new Error("429 Too Many Requests"); },
+  });
+
+  serve([], {}, [c(0, 1), c(20, 5), c(29, 1)]);
+  d = await open(CHECK);
+  check("a touch already made settles YES before the close", d.settle === "yes" && d.gate === "settled" && /before the close/.test(d.reason), `${d.gate}: ${d.reason}`);
+  check("...without a model", proposerCalls === 0, `proposer ran ${proposerCalls} time(s)`);
+
+  serve([], {}, [c(0, 1), c(20, 1), c(40, 5)]);
+  d = await open(CHECK);
+  check("a candle after now cannot settle it early", d.gate === "not-closed" && d.settle === null, `${d.gate}: ${d.reason}`);
+
+  serve([], {}, [c(0, 1), c(20, 1), c(29, 1)]);
+  d = await open(CHECK);
+  check("a touch not made yet waits for the close: never an early NO", d.gate === "not-closed" && d.settle === null, `${d.gate}: ${d.reason}`);
+
+  const hold: PriceCheck = { ...CHECK, mode: "always", target: 1_000_000 };
+  serve([], {}, [c(0, 2), c(20, 2, 2, 0.5), c(29, 2)]);
+  d = await open(hold);
+  check("a hold already broken settles NO before the close", d.settle === "no" && d.gate === "settled" && /before the close/.test(d.reason), `${d.gate}: ${d.reason}`);
+
+  serve([], {}, [c(0, 2), c(20, 2), c(29, 2)]);
+  d = await open(hold);
+  check("a hold still holding waits for the close: never an early YES", d.gate === "not-closed" && d.settle === null, `${d.gate}: ${d.reason}`);
+
+  let reads = 0;
+  failing(() => reads++);
+  d = await open({ ...CHECK, mode: "at-close" });
+  check("a price at the close is never read before the close", d.gate === "not-closed" && reads === 0, `${d.gate}, ${reads} read(s)`);
+
+  failing(() => reads++);
+  d = await open(CHECK);
+  check("a source that did not answer leaves it open, not unreadable", d.gate === "not-closed" && d.settle === null && reads > 0, `${d.gate}: ${d.reason}`);
+
+  serve([], {}, [c(0, 1), c(20, 5), c(29, 1)]);
+  d = await decide({ slug: "s", question: "q", criteria: criteriaSentence(CHECK), closeTime: WINDOW.to, priceCheck: CHECK }, new Date(Date.parse(WINDOW.from) - 3600_000));
+  check("a market read before its window opens decides nothing", d.gate === "not-closed", `${d.gate}: ${d.reason}`);
+  check("...and none of it asked the model", proposerCalls === 0, `proposer ran ${proposerCalls} time(s)`);
+}
 
 _setProposer(null as any);
 /* THE PUBLISHED SENTENCE IS THE HASHED ONE, so it has to say what the code
@@ -630,6 +679,21 @@ console.log("\nAn exchange pair is read to the minute");
   check("fifty days of hours are read in pages, and a break on the first day is found",
     v.outcome === "no" && v.observed === 79_999 && asked.filter((a) => a.timeframe === "hour").length === 2, `${v.outcome}: ${v.why} ${JSON.stringify(asked)}`);
 
+  /* 20 OCT: Bee's ETH market, read the evening it opened. ETH opened at
+     $2,387 and traded at $2,478 that afternoon: a YES at once, read to the last
+     whole minute before now and never from a minute after it. */
+  const BEE = spotCheck({ symbol: "ETH", metric: "price", op: ">", target: 2400, mode: "touch" }, { from: "2026-10-20T12:05:38.584Z", to: "2026-10-25T23:59:00.000Z" })!;
+  const EVENING = new Date("2026-10-20T19:30:20Z");
+  const beeAt = () => decide({ slug: "e7bd97", question: "q", criteria: criteriaSentence(BEE), closeTime: BEE.to, priceCheck: BEE }, EVENING);
+  market((m) => (m === sec("2026-10-20T15:42:00Z") ? 2478 : 2387));
+  let early = await beeAt();
+  check("an exchange touch made this afternoon settles YES this evening, five days before the close",
+    early.settle === "yes" && early.gate === "settled" && early.reason.includes("$2,478") && early.reason.includes("by 2026-10-20T19:30:00.000Z"), `${early.gate}: ${early.reason}`);
+  check("...asking for nothing that starts after the last whole minute", asked.length > 0 && asked.every((a) => (a.before ?? Infinity) < sec("2026-10-20T19:30:00Z")), JSON.stringify(asked));
+  market((m) => (m === sec("2026-10-20T19:31:00Z") ? 2478 : 2387));
+  early = await beeAt();
+  check("...and a move after now is no move yet", early.gate === "not-closed" && early.settle === null, `${early.gate}: ${early.reason}`);
+
   _setPriceFeed(null);
   const realFetch = globalThis.fetch;
   const urls: string[] = [];
@@ -838,7 +902,36 @@ console.log("\nsix closed markets get the price rule their words state, once");
     sql.slice(sql.indexOf("UPDATE"), sql.indexOf("FROM fix f")).trim() === "UPDATE community_market c SET price_check = f.pc"
     && sql.includes("c.price_check IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL"));
   check("...and only while each still reads as it closed", sql.includes("JOIN market_slug s ON s.slug = f.slug AND s.question = f.question"));
-  check("it runs at boot with the other one-way steps", /RETURN_GOLD_2026_10_15, PRICE_RULES_2026_10_20\]/.test(store));
+  check("it runs at boot with the other one-way steps", /RETURN_GOLD_2026_10_15, PRICE_RULES_2026_10_20[,\]]/.test(store));
+}
+
+console.log("\nsix open coin markets get the price rule their words state, once");
+{
+  /* 20 Oct, evening: three Bitcoin markets from before any big coin had a
+     venue, and three of Bee's opened 2h40m before the Binance rail, all six
+     naming CoinMarketCap. The boot step pins each to its Binance pair and
+     touches nothing else. */
+  const sql = COIN_RULES_2026_10_20_SQL;
+  const store = readFileSync("src/store/markets.ts", "utf8");
+  const rows = [...sql.matchAll(/\('([a-z0-9-]+)',\s*'((?:[^']|'')*)',\s*'(\{[^']*\})'::jsonb\)/g)]
+    .map((m) => ({ slug: m[1], question: m[2].replace(/''/g, "'"), check: JSON.parse(m[3]) as PriceCheck }));
+  check("six markets, each named by its slug and the words it opened under",
+    rows.length === 6 && rows.every((r) => r.question.startsWith("Will ") && r.question.endsWith("?")), rows.map((r) => r.slug).join(","));
+  check("each is exactly the check a new market of its coin is pinned to",
+    rows.every((r) => JSON.stringify(spotCheck({ symbol: r.check.symbol, metric: "price", op: r.check.op, target: r.check.target, mode: r.check.mode }, { from: r.check.from, to: r.check.to })) === JSON.stringify(r.check)),
+    JSON.stringify(rows.map((r) => r.check.pool)));
+  check("each rule is the one its words state",
+    rows.map((r) => `${r.check.symbol} ${r.check.op} ${r.check.target} ${r.check.mode} ${r.check.to.slice(0, 16)}`).join(" | ")
+      === "BTC >= 200000 touch 2026-12-31T23:59 | BTC >= 100000 touch 2026-12-31T23:59 | BTC > 126199.63 touch 2026-12-31T23:59 | BTC >= 80000 always 2026-10-25T23:59 | ETH > 2400 touch 2026-10-25T23:59 | BTC > 85000 touch 2026-10-30T23:59",
+    rows.map((r) => `${r.check.symbol} ${r.check.op} ${r.check.target} ${r.check.mode} ${r.check.to}`).join(" | "));
+  check("...each read from the minute its market opened, never earlier",
+    rows.map((r) => r.check.from).join(",") === "2026-09-26T09:37:28.483Z,2026-09-27T07:28:50.562Z,2026-10-09T20:59:49.181Z,2026-10-20T12:05:03.230Z,2026-10-20T12:05:38.584Z,2026-10-20T12:07:28.139Z",
+    rows.map((r) => r.check.from).join(","));
+  check("only the price_check is set, and only where there is none, no outcome and no retirement",
+    sql.slice(sql.indexOf("UPDATE"), sql.indexOf("FROM fix f")).trim() === "UPDATE community_market c SET price_check = f.pc"
+    && sql.includes("c.price_check IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL"));
+  check("...and only while each still reads as it opened", sql.includes("JOIN market_slug s ON s.slug = f.slug AND s.question = f.question"));
+  check("it runs at boot after the six closed ones", /PRICE_RULES_2026_10_20, COIN_RULES_2026_10_20\]/.test(store));
 }
 
 _setPriceFeed(null);

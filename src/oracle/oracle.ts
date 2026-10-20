@@ -168,6 +168,37 @@ export function _setSecondOpinion(fn: SecondFn | null): void {
   secondImpl = fn ?? secondOpinion;
 }
 
+/** A price rule its candles can decide before its close: a touch, once made,
+ *  and a hold, once broken. A price AT the close only the close decides. */
+export function decidableBeforeClose(check: Pick<PriceCheck, "mode"> | null | undefined): boolean {
+  return check?.mode === "touch" || check?.mode === "always";
+}
+
+/*
+ * A PRICE RULE ITS CANDLES HAVE DECIDED SETTLES THEN, NOT AT ITS CLOSE (Lev,
+ * 20 Oct). Bee's "$ETH above $2,400 at any point before 25 Oct" opened at
+ * $2,387, traded at $2,478 the same day, and stayed open for bets for five more
+ * days, every NO staked into it a certain loss. A touch that happened cannot
+ * unhappen and a hold that broke cannot unbreak: that is the asymmetry
+ * checkPrice is built on, a YES from a touch and a NO from a hold resting on
+ * the one candle that shows it. So those two are read over the window so far,
+ * up to the last whole minute, and settle the moment they read that way.
+ * Everything else waits for the close: a touch not made yet, a hold still
+ * holding, a price at the close, and every read that did not work. The
+ * stream's price calls settle a touch the same way (src/live/priceCall.ts).
+ */
+async function decidedSoFar(check: PriceCheck, now: Date): Promise<{ outcome: "yes" | "no"; reason: string } | null> {
+  if (!decidableBeforeClose(check)) return null;
+  // Whole minutes only, and never past the rule's own end.
+  const upTo = Math.min(Math.floor(now.getTime() / 60_000) * 60_000, Date.parse(check.to));
+  if (!(upTo > Date.parse(check.from))) return null;
+  const at = new Date(upTo).toISOString();
+  const v = await checkPrice({ ...check, to: at }).catch(() => null);
+  const outcome = check.mode === "touch" ? "yes" : "no";
+  if (v?.outcome !== outcome) return null;
+  return { outcome, reason: `${v.why} by ${at}, before the close, read from ${v.candles} published candle(s) of ${check.symbol}` };
+}
+
 /** Run one market through every gate. Never throws: a thrown error IS an
  *  abstention, and a scheduled run must not die on one bad market. */
 export async function decide(m: OracleInput, now = new Date()): Promise<OracleDecision> {
@@ -183,8 +214,12 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
 
   // Code gate 2. Settling before the close is settling a question that is still
   // open. The program permits early resolution deliberately (an operator
-  // sometimes must), but an unattended oracle is exactly who should not.
+  // sometimes must), but an unattended oracle is exactly who should not. The
+  // one exception is a price rule its candles have already decided, which is
+  // a fact and not a guess (decidedSoFar).
   if (m.closeTime && new Date(m.closeTime) > now) {
+    const early = m.priceCheck ? await decidedSoFar(m.priceCheck, now) : null;
+    if (early) return { ...base, settle: early.outcome, gate: "settled", reason: early.reason };
     return { ...base, settle: null, gate: "not-closed", reason: `still open until ${m.closeTime}` };
   }
 

@@ -6370,7 +6370,7 @@ async function sweepOracle(): Promise<void> {
     // when it acts is a loop you cannot tell apart from a stopped one.
     console.log(JSON.stringify({
       evt: "oracle_sweep", seen: r.seen, decided: r.decided.length, held: r.held,
-      unreadable: r.unreadable, truncated: r.truncated,
+      unreadable: r.unreadable, truncated: r.truncated, early: r.early,
       settled: r.settled, failed: r.failed, dryRun: ORACLE_DRY_RUN,
     }));
   } catch (e) {

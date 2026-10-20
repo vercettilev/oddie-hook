@@ -8428,6 +8428,51 @@ UPDATE community_market c SET price_check = f.pc
    AND c.price_check IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
 RETURNING c.slug`;
 
+/*
+ * 20 OCT, EVENING: SIX OPEN COIN MARKETS GET THE PRICE RULE THEIR WORDS STATE
+ * (Lev: "yap"). Three are Bitcoin markets opened before any big coin had a
+ * venue in code: $200,000 and $100,000 by the end of 2026 (26 and 27 Sep) and
+ * a new all-time high (9 Oct). Three are Bee's, opened from his Twitch chat at
+ * 12:05 UTC today, 2h40m before the Binance rail went live: BTC holding
+ * $80,000 through Sunday, ETH above $2,400 and BTC above $85,000. All six
+ * name CoinMarketCap, no page the oracle can open shows a price over a
+ * stretch, and each would have closed into the paid rounds of failed
+ * citations the six above sat behind. Each is pinned to its Binance pair from
+ * the minute it opened, like the six above. The all-time high is Binance's
+ * own record before that market opened, $126,199.63 on 6 Oct 2025 (the words'
+ * "roughly $126,000"), and "exceeds" is strictly above it. The hold breaks
+ * only below $80,000, which is what its words say. Only the price_check is
+ * set, under the same guards: words, minted or not, stay as they opened.
+ */
+const COIN_RULES_2026_10_20 = `
+WITH fix(slug, question, pc) AS (
+  VALUES
+  ('will-bitcoin-btc-reach-a-price-f34a9c',
+   'Will Bitcoin (BTC) reach a price of $200,000 before January 1, 2027?',
+   '{"chain":"binance","mint":"BTCUSDT","symbol":"BTC","name":"Bitcoin (BTC)","pool":"BTCUSDT","supply":0,"metric":"price","op":">=","target":200000,"mode":"touch","from":"2026-09-26T09:37:28.483Z","to":"2026-12-31T23:59:00.000Z"}'::jsonb),
+  ('will-bitcoin-btc-reach-a-price-173a38',
+   'Will Bitcoin (BTC) reach a price of $100,000 before the end of 2026?',
+   '{"chain":"binance","mint":"BTCUSDT","symbol":"BTC","name":"Bitcoin (BTC)","pool":"BTCUSDT","supply":0,"metric":"price","op":">=","target":100000,"mode":"touch","from":"2026-09-27T07:28:50.562Z","to":"2026-12-31T23:59:00.000Z"}'::jsonb),
+  ('will-bitcoin-reach-a-new-alltime-733bbd',
+   'Will Bitcoin reach a new all-time high (above its previous record of roughly $126,000) by the end of 2026?',
+   '{"chain":"binance","mint":"BTCUSDT","symbol":"BTC","name":"Bitcoin (BTC)","pool":"BTCUSDT","supply":0,"metric":"price","op":">","target":126199.63,"mode":"touch","from":"2026-10-09T20:59:49.181Z","to":"2026-12-31T23:59:00.000Z"}'::jsonb),
+  ('will-bitcoin-btc-stay-above-80000-16e4c1',
+   'Will Bitcoin (BTC) stay above $80,000 through Sunday?',
+   '{"chain":"binance","mint":"BTCUSDT","symbol":"BTC","name":"Bitcoin (BTC)","pool":"BTCUSDT","supply":0,"metric":"price","op":">=","target":80000,"mode":"always","from":"2026-10-20T12:05:03.230Z","to":"2026-10-25T23:59:00.000Z"}'::jsonb),
+  ('will-eth-trade-above-2400-at-e7bd97',
+   'Will $ETH trade above $2,400 at any point before the end of October 25, 2026 (UTC)?',
+   '{"chain":"binance","mint":"ETHUSDT","symbol":"ETH","name":"Ethereum (ETH)","pool":"ETHUSDT","supply":0,"metric":"price","op":">","target":2400,"mode":"touch","from":"2026-10-20T12:05:38.584Z","to":"2026-10-25T23:59:00.000Z"}'::jsonb),
+  ('will-btc-trade-above-85000-at-ae854b',
+   'Will $BTC trade above $85,000 at any point before the end of October 30, 2026 (UTC)?',
+   '{"chain":"binance","mint":"BTCUSDT","symbol":"BTC","name":"Bitcoin (BTC)","pool":"BTCUSDT","supply":0,"metric":"price","op":">","target":85000,"mode":"touch","from":"2026-10-20T12:07:28.139Z","to":"2026-10-30T23:59:00.000Z"}'::jsonb)
+)
+UPDATE community_market c SET price_check = f.pc
+  FROM fix f
+  JOIN market_slug s ON s.slug = f.slug AND s.question = f.question
+ WHERE c.slug = f.slug
+   AND c.price_check IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
+RETURNING c.slug`;
+
 /** Puts the markets above right if they still read an old way; the slugs it changed. */
 export async function rereadMisreadMarkets(): Promise<string[]> {
   if (!PERSISTENT) return [];
@@ -8437,7 +8482,7 @@ export async function rereadMisreadMarkets(): Promise<string[]> {
      A deadlock aborts one statement whole, so it is simply run again. */
   await ensureSchema();
   const changed: string[] = [];
-  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13, RETURN_GOLD_2026_10_15, PRICE_RULES_2026_10_20]) {
+  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13, RETURN_GOLD_2026_10_15, PRICE_RULES_2026_10_20, COIN_RULES_2026_10_20]) {
     const { rows } = await retryOnDeadlock(() => db().query<{ slug: string }>(sql));
     changed.push(...rows.map((r) => r.slug));
   }
@@ -8463,4 +8508,5 @@ export const REREAD_2026_10_13_SQL = REREAD_2026_10_13;
 export const RETIRE_GOLD_2026_10_13_SQL = RETIRE_GOLD_2026_10_13;
 export const RETURN_GOLD_2026_10_15_SQL = RETURN_GOLD_2026_10_15;
 export const PRICE_RULES_2026_10_20_SQL = PRICE_RULES_2026_10_20;
+export const COIN_RULES_2026_10_20_SQL = COIN_RULES_2026_10_20;
 
