@@ -91,8 +91,16 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
     seen: board.length, decided: [], held: 0, unreadable: 0, truncated: false, settled: 0, failed: 0,
   };
   const limit = deps.limit ?? Infinity;
+  const now = (deps.asOf ?? new Date()).getTime();
 
   for (const m of board) {
+    /* STILL OPEN: NOT ASKED, NOT COUNTED. decide() refuses a market before its
+       close anyway (gate "not-closed"), so asking costs nothing but a slot. The
+       board comes newest first, and on 20 Oct its five newest were all open:
+       every sweep spent the limit on them and stopped, and the closed markets
+       below (gold, with 0.01 SOL in it, four days past its close) never came
+       up. */
+    if (m.closesAt && Date.parse(m.closesAt) > now) continue;
     if (out.decided.length >= limit) { out.truncated = true; break; }
 
     const read = await deps.criteria(m.slug).catch((e) => ({ ok: false as const, error: (e as Error).message }));

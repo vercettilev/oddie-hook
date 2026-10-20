@@ -131,6 +131,16 @@ console.log("\nthe limit bounds the bill, and counts the right thing");
   await oracleSweep(h.deps);
   check("a held market does not eat a slot", h.asked.join(",") === "a,b", `asked ${h.asked.join(",")}`);
 }
+{
+  // 20 Oct: the board comes newest first, its five newest were all still open,
+  // and with a limit of five the closed gold market below them was never asked.
+  const later = new Date(Date.now() + 7 * 86_400_000).toISOString();
+  const open = ["o1", "o2", "o3", "o4", "o5", "o6"].map((s) => market(s, { closesAt: later }));
+  const h = harness([...open, market("gold")], { limit: 5 });
+  const r = await oracleSweep(h.deps);
+  check("markets still open do not use up the limit", h.asked.join(",") === "gold", `asked ${h.asked.join(",")}`);
+  check("...so a closed market behind them is settled", h.settled.join(",") === "gold" && !r.truncated, `settled ${h.settled.join(",")}`);
+}
 
 console.log("\na settlement that fails is reported, not swallowed");
 {
