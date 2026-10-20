@@ -558,9 +558,9 @@ console.log("\nThe big coins on Binance spot");
     spotCheck({ symbol: "BTC", metric: "mc", op: ">", target: 1e12, mode: "touch" }, WIN) === null
     && spotCheck({ symbol: "HYPE", metric: "price", op: ">", target: 50, mode: "touch" }, WIN) === null
     && spotCheck({ symbol: "XAU", metric: "price", op: ">", target: 4000, mode: "touch" }, WIN) === null);
-  check("the coins are the ones the stream votes read from Binance, less TON, whose pair stopped trading in June",
-    Object.keys(SPOT_COINS).every((s) => BINANCE_ASSETS.has(s))
-    && [...BINANCE_ASSETS].every((s) => s === "TON" ? !(s in SPOT_COINS) : s in SPOT_COINS), Object.keys(SPOT_COINS).join(","));
+  check("the coins are the ones the stream votes read from Binance, and TON, whose pairs stopped trading in June, is in neither",
+    Object.keys(SPOT_COINS).length === BINANCE_ASSETS.size && Object.keys(SPOT_COINS).every((s) => BINANCE_ASSETS.has(s))
+    && !BINANCE_ASSETS.has("TON") && !("TON" in SPOT_COINS), Object.keys(SPOT_COINS).join(","));
 
   const AT = Date.parse(WIN.from) / 1000;
   const now = (price: number, newest = Math.floor(AT / 3600) * 3600) => _setPriceFeed({

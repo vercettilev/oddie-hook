@@ -301,8 +301,7 @@ export function commodityCheck(claim: PriceClaim, window: { from: string; to: st
 
 /** The big coins, each read from its USDT pair on Binance spot (src/price/feed.ts):
  *  the coins the stream votes settle from Binance (src/live/priceCall.ts
- *  BINANCE_ASSETS), all but TON, whose pair there has not traded since June.
- *  The name is what the rule calls the coin. */
+ *  BINANCE_ASSETS), the same list. The name is what the rule calls the coin. */
 export const SPOT_COINS: Readonly<Record<string, string>> = {
   BTC: "Bitcoin (BTC)", ETH: "Ethereum (ETH)", SOL: "Solana (SOL)", BNB: "BNB", XRP: "XRP",
   DOGE: "Dogecoin (DOGE)", ADA: "Cardano (ADA)", AVAX: "Avalanche (AVAX)", SUI: "Sui (SUI)",

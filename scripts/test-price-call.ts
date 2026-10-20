@@ -19,7 +19,7 @@ const read: Array<[string, PriceCall]> = [
   ["will btc close the next 5m candle green", { kind: "candle", asset: "BTC", size: "5m", which: "next", test: { kind: "green" } }],
   ["$SOL 1h candle closes below 150.5?", { kind: "candle", asset: "SOL", size: "1h", which: "current", test: { kind: "below", level: 150.5 } }],
   ["will ethereum close the daily candle over $4,100", { kind: "candle", asset: "ETH", size: "1d", which: "current", test: { kind: "above", level: 4100 } }],
-  ["TON 15 min candle close red?", { kind: "candle", asset: "TON", size: "15m", which: "current", test: { kind: "red" } }],
+  ["LINK 15 min candle close red?", { kind: "candle", asset: "LINK", size: "15m", which: "current", test: { kind: "red" } }],
   ["will PEPE 15m candle close above 0.00001", { kind: "candle", asset: "PEPE", size: "15m", which: "current", test: { kind: "above", level: 0.00001 } }],
   ["will bitcoin close this half hour candle above 1.2m", { kind: "candle", asset: "BTC", size: "30m", which: "current", test: { kind: "above", level: 1200000 } }],
   // the hour without the word "candle" (15 Oct: the YouTube pitch said exactly this)
@@ -53,6 +53,9 @@ for (const q of [
   "will BTC or ETH close the 5m candle green",         // two coins
   "will BTC close the 5m candle above 82k? red alert", // two tests
   "will the 5m candle close above a ton",              // no coin
+  "will the 5m candle close above a link",             // a word, not LINK
+  "TON 15 min candle close red?",                      // TON's pairs on Binance stopped trading in June
+  "will $TON be above 2 in 10 minutes?",
   "will the chart go above 82k in 10 minutes",         // no coin
   "will I clutch this round",
   "will BTC be above 82k at 18:00",                    // whose 18:00?
@@ -287,6 +290,20 @@ await handleChat(msg("!yes", "viewer"), deps);
 now = lockAt;
 await lockDue(deps);
 eq(last(), "Calls are locked: 100% YES from 1 call. Mods settle it with !call yes or !call no.", "a mod's call");
+
+// TON: its pairs on Binance stopped trading on 30 June. The room used to hear
+// "oddie settles it at 13:53 UTC", nothing could be read, and ten minutes past
+// that the call came back to the mods. It is theirs from the lock now.
+reset();
+await handleChat(msg("!call 3m will $TON be above 2 in 10 minutes?", "bee", true), deps);
+await handleChat(msg("!yes", "viewer"), deps);
+now = lockAt;
+await lockDue(deps);
+eq(last(), "Calls are locked: 100% YES from 1 call. Mods settle it with !call yes or !call no.", "a TON call is the mods' from the lock");
+now = opened + 25 * 60_000;
+await lockDue(deps);
+eq(reads, 0, "...and nothing is read for it");
+eq(said.filter((s) => s.includes("is yours to settle")).length, 0, "...so it is never handed back later");
 
 // Nobody answered a candle call: oddie still settles it, so the channel is free.
 reset();

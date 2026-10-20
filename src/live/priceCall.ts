@@ -58,8 +58,12 @@ const COINS: Record<string, string> = {
   avax: "AVAX", sui: "SUI", ltc: "LTC", litecoin: "LTC", trx: "TRX", tron: "TRX",
   pepe: "PEPE", wif: "WIF", bonk: "BONK", shib: "SHIB", chainlink: "LINK", polkadot: "DOT",
 };
-/** Tickers that are also English words: read only as $TON or TON. */
-const SHOUTED_ONLY: Record<string, string> = { ton: "TON", link: "LINK", dot: "DOT" };
+/** Tickers that are also English words: read only as $LINK or LINK. TON was one
+ *  until every TON pair on Binance stopped trading (30 June 2026, all BREAK on
+ *  20 Oct): oddie told the room it would settle a TON call, read nothing for ten
+ *  minutes past its moment, then handed it to the mods. A TON call is the
+ *  channel's from the start now, like any call no price can answer. */
+const SHOUTED_ONLY: Record<string, string> = { link: "LINK", dot: "DOT" };
 
 /** Every ticker above, each with a USDT pair on Binance: the coins whose price a
  *  market can read at its open when no token is pinned on chain (server.ts). */
