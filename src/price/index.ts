@@ -752,11 +752,10 @@ async function candlesIn(check: PriceCheck, timeframe: "minute" | "hour", a: num
     const want = Math.min(Math.floor((end - first) / step) + 1, 1000);
     const got = await priceFeed().ohlcv(check.chain, check.pool, timeframe, want, end);
     for (const c of got) if (c[0] >= first && c[0] <= last) out.set(c[0], c);
-    const oldest = got.reduce((m, c) => Math.min(m, c[0]), Infinity);
-    // A short page is the start of the pair's history; a page with nothing at
-    // or before `end` would ask the same thing again forever.
-    if (got.length < want || !(oldest <= end)) break;
-    end = oldest - step;
+    // The next page starts where this one's slots did, whatever came back: a
+    // stretch nothing traded in is not the start of the history, and stopping
+    // at a short page would leave the window's start unread.
+    end -= want * step;
   }
   return [...out.values()].sort((x, y) => x[0] - y[0]);
 }

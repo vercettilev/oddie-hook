@@ -25,6 +25,10 @@
 // resolveSymbol). GeckoTerminal is the only free source that returns OHLCV, and
 // the HIGH of a candle is the entire answer to "did it ever touch".
 
+import { Readable } from "node:stream";
+import { createGunzip } from "node:zlib";
+import { createInterface } from "node:readline";
+
 const DEXSCREENER = "https://api.dexscreener.com";
 const GECKOTERMINAL = "https://api.geckoterminal.com/api/v2";
 const FEED_TIMEOUT_MS = 20_000;
@@ -86,6 +90,9 @@ export type Timeframe = "day" | "hour" | "minute";
  *  history when what actually happened was a rate limit. */
 export class NotFound extends Error {}
 
+/** A 403: the source refused this caller, which asking again does not change. */
+class Refused extends Error {}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /* THE FREE TIER'S RATE LIMIT IS THE REAL CONSTRAINT, not coverage.
@@ -131,13 +138,16 @@ async function getJson(url: string, tries = 4): Promise<any> {
       // first, so this was invisible until the candidate union went in.
       const r = await fetch(url, { signal: ctl.signal, headers: { accept: "application/json", "user-agent": "oddie/1.0 (+https://oddie.fun)" } });
       if (r.status === 404) throw new NotFound(`${url} answered 404`);
+      // Bybit answers a US address 403 every time; three more tries only made
+      // every sweep wait seventeen seconds to hear it again.
+      if (r.status === 403) throw new Refused(`${url} answered 403`);
       // GeckoTerminal's free tier is ~30 calls a minute and the oracle sweeps a
       // whole board in one go, so 429 is an ordinary event here, not an error.
       if (r.status === 429 || r.status >= 500) throw new Error(`${url} answered ${r.status}`);
       if (!r.ok) throw new Error(`${url} answered ${r.status}`);
       return await r.json();
     } catch (e) {
-      if (e instanceof NotFound) throw e;
+      if (e instanceof NotFound || e instanceof Refused) throw e;
       last = e as Error;
       if (i < tries - 1) await sleep(BACKOFF_MS[Math.min(i, BACKOFF_MS.length - 1)]);
     } finally {
@@ -250,6 +260,17 @@ export const BYBIT_CHAIN = "bybit";
 const BYBIT = "https://api.bybit.com/v5/market";
 
 async function bybitCandles(symbol: string, timeframe: Timeframe, limit: number, beforeUnix?: number): Promise<Candle[]> {
+  if (Date.now() < bybitRefusedUntil) return bybitArchiveCandles(symbol, timeframe, limit, beforeUnix);
+  try {
+    return await bybitLiveCandles(symbol, timeframe, limit, beforeUnix);
+  } catch (e) {
+    if (!/answered 403/.test((e as Error).message)) throw e;
+    bybitRefusedUntil = Date.now() + 6 * 3600_000;
+    return bybitArchiveCandles(symbol, timeframe, limit, beforeUnix);
+  }
+}
+
+async function bybitLiveCandles(symbol: string, timeframe: Timeframe, limit: number, beforeUnix?: number): Promise<Candle[]> {
   const interval = timeframe === "minute" ? "1" : timeframe === "hour" ? "60" : "D";
   const q = new URLSearchParams({ category: "linear", symbol, interval, limit: String(Math.min(limit, 1000)) });
   if (beforeUnix) q.set("end", String(beforeUnix * 1000));
@@ -260,6 +281,89 @@ async function bybitCandles(symbol: string, timeframe: Timeframe, limit: number,
   return list
     .filter((k) => Array.isArray(k) && k.length >= 5 && k.slice(0, 5).every((x: unknown) => Number.isFinite(Number(x))))
     .map((k) => [Math.floor(Number(k[0]) / 1000), Number(k[1]), Number(k[2]), Number(k[3]), Number(k[4]), Number(k[5] ?? 0)] as Candle);
+}
+
+/* AND WHEN BYBIT'S LIVE API REFUSES, BYBIT'S OWN PUBLIC ARCHIVE. The live API
+   answers this server 403 (first production read, 20 Oct: the server runs in
+   the US, and Bybit's API serves no US address). Bybit also publishes every
+   trade of every perpetual, one file per UTC day, at public.bybit.com, and
+   that answers from here. So a window is read from the same trades, made into
+   minute candles here: a candle's high is its highest trade, as Bybit's are.
+   A day's file comes out early the next morning (UTC). A day not out yet is an
+   error, never a window that ends early: a hold read from a window cut short
+   is a hold nobody tested. Today has no file, so on this server the price of a
+   commodity at its open is not read, and the market opens as it reads. */
+const BYBIT_ARCHIVE = "https://public.bybit.com/trading";
+let bybitRefusedUntil = 0;
+/** Minute candles of one symbol's UTC day, by start, for the days a sweep reads. */
+const archiveDays = new Map<string, Map<number, Candle>>();
+
+async function bybitArchiveDay(symbol: string, day: string): Promise<Map<number, Candle>> {
+  const key = `${symbol}:${day}`;
+  const kept = archiveDays.get(key);
+  if (kept) return kept;
+  const url = `${BYBIT_ARCHIVE}/${encodeURIComponent(symbol)}/${encodeURIComponent(symbol)}${day}.csv.gz`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(120_000), headers: { "user-agent": "oddie/1.0 (+https://oddie.fun)" } });
+  if (res.status === 404) throw new Error(`Bybit's archive has no ${symbol} file for ${day} yet`);
+  if (!res.ok || !res.body) throw new Error(`${url} answered ${res.status}`);
+  const lines = createInterface({ input: Readable.fromWeb(res.body as never).pipe(createGunzip()), crlfDelay: Infinity });
+  // timestamp,symbol,side,size,price,... with a header; by name where there is one.
+  let at = -1, px = -1, qty = -1;
+  const acc = new Map<number, { o: number; h: number; l: number; c: number; v: number; first: number; last: number }>();
+  for await (const line of lines) {
+    const f = line.split(",");
+    if (at < 0) {
+      const head = f.map((h) => h.trim().toLowerCase());
+      if (head.includes("timestamp")) { at = head.indexOf("timestamp"); px = head.indexOf("price"); qty = head.indexOf("size"); continue; }
+      at = 0; qty = 3; px = 4;
+    }
+    let t = Number(f[at]);
+    const p = Number(f[px]);
+    if (!Number.isFinite(t) || !(p > 0)) continue;
+    if (t > 1e12) t /= 1000;
+    const v = qty >= 0 ? Number(f[qty]) || 0 : 0;
+    const m = Math.floor(t / 60) * 60;
+    const a = acc.get(m);
+    if (!a) { acc.set(m, { o: p, h: p, l: p, c: p, v, first: t, last: t }); continue; }
+    if (p > a.h) a.h = p;
+    if (p < a.l) a.l = p;
+    a.v += v;
+    if (t < a.first) { a.first = t; a.o = p; }
+    if (t >= a.last) { a.last = t; a.c = p; }
+  }
+  if (px < 0) throw new Error(`${url} has no price column`);
+  const minutes = new Map<number, Candle>();
+  for (const [m, a] of acc) minutes.set(m, [m, a.o, a.h, a.l, a.c, a.v]);
+  // A sweep reads a few windows of a few days; nothing needs a month kept.
+  if (archiveDays.size >= 32) archiveDays.delete(archiveDays.keys().next().value as string);
+  archiveDays.set(key, minutes);
+  return minutes;
+}
+
+/** The candles the live API would have served, built from the archive's minutes:
+ *  every one of the size asked that starts in the `limit` slots ending at `beforeUnix`. */
+async function bybitArchiveCandles(symbol: string, timeframe: Timeframe, limit: number, beforeUnix?: number): Promise<Candle[]> {
+  const step = timeframe === "minute" ? 60 : timeframe === "hour" ? 3600 : 86_400;
+  const end = Math.floor((beforeUnix ?? Date.now() / 1000) / step) * step;
+  const start = end - (Math.min(limit, 1000) - 1) * step;
+  const minutes: Candle[] = [];
+  for (let d = Math.floor(start / 86_400) * 86_400; d < end + step; d += 86_400) {
+    const day = await bybitArchiveDay(symbol, new Date(d * 1000).toISOString().slice(0, 10));
+    for (const c of day.values()) if (c[0] >= start && c[0] < end + step) minutes.push(c);
+  }
+  // Oldest first, so a bucket opens on its first minute and closes on its last.
+  minutes.sort((a, b) => a[0] - b[0]);
+  const out = new Map<number, Candle>();
+  for (const c of minutes) {
+    const b = Math.floor(c[0] / step) * step;
+    const k = out.get(b);
+    if (!k) { out.set(b, [b, c[1], c[2], c[3], c[4], c[5]]); continue; }
+    k[2] = Math.max(k[2], c[2]);
+    k[3] = Math.min(k[3], c[3]);
+    k[4] = c[4];
+    k[5] += c[5];
+  }
+  return [...out.values()];
 }
 
 /* BTC, ETH AND THE OTHER BIG COINS ARE READ ON BINANCE SPOT, like the metals on

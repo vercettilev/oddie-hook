@@ -14,6 +14,7 @@
 if (process.env.DATABASE_URL) { console.error("refusing to run against a database"); process.exit(1); }
 
 import { readFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { _setPriceFeed, priceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
 import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, closeQuestion, closeHook, holdQuestion, holdHook, reachQuestion, reachHook, commodityCheck, spotCheck, SPOT_COINS, type PriceCheck } from "../src/price/index.js";
 import { BINANCE_ASSETS } from "../src/live/priceCall.js";
@@ -720,6 +721,45 @@ console.log("\nGold, silver and oil on Bybit's candles");
     serve([], {}, [[H + 3600, 4190, 4199, 4185, 4195, 1], [H + 7200, 4195, 4203, 4190, 4198, 1]]);
     const v = await checkPrice(stays.check);
     check("the oracle settles it from the candles: an hour over $4,200 ends the hold", v.outcome === "no" && v.observed === 4203, v.why);
+  }
+  {
+    /* 20 OCT: BYBIT'S LIVE API ANSWERS THE SERVER 403. The server runs in the
+       US. Bybit's own public archive of every trade, one file a day, answers,
+       so a window is read from those trades. Last of the Bybit checks: once
+       refused, the live API is not asked again for hours. */
+    _setPriceFeed(null);
+    const realFetch = globalThis.fetch;
+    const urls: string[] = [];
+    const s = (iso: string) => Date.parse(iso) / 1000;
+    const file = (rows: Array<[string, number]>) => gzipSync(Buffer.from(["timestamp,symbol,side,size,price,tickDirection,trdMatchID,grossValue,homeNotional,foreignNotional",
+      ...rows.map(([iso, p]) => `${(Date.parse(iso) / 1000).toFixed(4)},CLUSDT,Buy,2,${p},PlusTick,x,1,2,${p * 2}`)].join("\n")));
+    // Out of order on purpose: a candle opens on its earliest trade, not its first line.
+    const day16 = file([["2026-10-16T20:58:40Z", 91.2], ["2026-10-16T20:58:10Z", 91.5], ["2026-10-16T20:59:05Z", 91.0], ["2026-10-16T20:59:59Z", 91.3], ["2026-10-16T21:00:00Z", 95]]);
+    globalThis.fetch = (async (u: string | URL | Request) => {
+      const url = String(u);
+      urls.push(url);
+      if (url.startsWith("https://api.bybit.com")) return new Response("Forbidden", { status: 403 });
+      if (url === "https://public.bybit.com/trading/CLUSDT/CLUSDT2026-10-16.csv.gz") return new Response(day16, { status: 200 });
+      return new Response("Not Found", { status: 404 });
+    }) as typeof fetch;
+    try {
+      const minutes = await priceFeed().ohlcv("bybit", "CLUSDT", "minute", 2, s("2026-10-16T20:59:00Z"));
+      check("refused by Bybit's live API, the feed reads Bybit's own trade archive",
+        urls[0]?.startsWith("https://api.bybit.com") === true && urls[1] === "https://public.bybit.com/trading/CLUSDT/CLUSDT2026-10-16.csv.gz", urls.join(" "));
+      check("...into minute candles: open on the earliest trade, high, low, close on the latest",
+        JSON.stringify(minutes.sort((a, b) => a[0] - b[0])) === JSON.stringify([[s("2026-10-16T20:58:00Z"), 91.5, 91.5, 91.2, 91.2, 4], [s("2026-10-16T20:59:00Z"), 91, 91.3, 91, 91.3, 4]]), JSON.stringify(minutes));
+      const hour = await priceFeed().ohlcv("bybit", "CLUSDT", "hour", 1, s("2026-10-16T20:00:00Z"));
+      check("...and hours from its minutes", JSON.stringify(hour) === JSON.stringify([[s("2026-10-16T20:00:00Z"), 91.5, 91.5, 91, 91.3, 8]]), JSON.stringify(hour));
+      check("...without asking the live API again once it has refused", urls.filter((u) => u.startsWith("https://api.bybit.com")).length === 1, urls.join(" "));
+      const cl = commodityCheck({ symbol: "CL", metric: "price", op: ">", target: 91, mode: "at-close" }, { from: "2026-10-16T20:00:00.000Z", to: "2026-10-16T21:00:00.000Z" })!;
+      let v = await checkPrice(cl);
+      check("the close is the last trade before it, and the trade at the close itself does not count", v.outcome === "yes" && v.observed === 91.3, `${v.outcome} ${v.observed}: ${v.why}`);
+      v = await checkPrice({ ...cl, to: "2026-10-17T01:00:00.000Z", mode: "always", target: 90 });
+      check("a day whose file is not out yet is unreadable, never a window cut short",
+        v.outcome === null && v.candles === 0 && /no CLUSDT file for 2026-10-17 yet/.test(v.why), `${v.outcome}: ${v.why}`);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   }
   const silver = commodityCheck({ symbol: "XAG", metric: "price", op: "<", target: 4200, mode: "always" }, WIN)!;
   check("two gold claims alike are one market, and gold is never silver",
