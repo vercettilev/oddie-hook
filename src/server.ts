@@ -41,7 +41,7 @@ import { frameSource } from "./games/frames.js";
 import { fetchPicture, screenSource, SCREEN_FRAME_WIDTH } from "./games/screen.js";
 import { SCREEN_TICK_MS, watchScreens } from "./live/screenCalls.js";
 import { allStandings, callerRecord, channelById, streaksFor } from "./store/live.js";
-import { probePriceSource, binancePrices, BINANCE_ASSETS } from "./live/priceCall.js";
+import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
 import { refusalRepliesTo, toldAboutMarket, walletsInMarket, sourcePostKey,
@@ -61,7 +61,7 @@ import { oracleAvailable } from "./oracle/verdict.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank, bestCalls } from "./store/standings.js";
-import { resolvePriceClaim, readAtOpen, readSpotAtOpen, commodityCheck, criteriaSentence, type PriceClaim, type PriceCheck } from "./price/index.js";
+import { resolvePriceClaim, readAtOpen, commodityCheck, spotCheck, criteriaSentence, probeExchangeRails, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { hookFor, viewCounts, recordView } from "./store/markets.js";
@@ -3801,11 +3801,12 @@ async function openMarketFromClaim(input: {
   let criteria = resolutionCriteria;
   if (input.priceClaim) {
     const window = { from: new Date().toISOString(), to: new Date(closeTime * 1000).toISOString() };
-    // Gold, silver and oil are pinned to their Bybit perpetual, never searched
-    // for as a token: a Solana coin called XAU is not the metal.
-    const commodity = commodityCheck(input.priceClaim, window);
-    const r = commodity
-      ? { ok: true as const, check: commodity, sentence: criteriaSentence(commodity) }
+    // Gold, silver and oil are pinned to their Bybit perpetual and the big
+    // coins to their Binance spot pair, never searched for as a token: a Solana
+    // coin called XAU is not the metal, and the rule names where it is read.
+    const exchange = commodityCheck(input.priceClaim, window) ?? spotCheck(input.priceClaim, window);
+    const r = exchange
+      ? { ok: true as const, check: exchange, sentence: criteriaSentence(exchange) }
       : await resolvePriceClaim(input.priceClaim, window, { text: input.claimText ?? null });
     if (r.ok) {
       priceCheck = r.check;
@@ -3839,37 +3840,6 @@ async function openMarketFromClaim(input: {
           symbol: r.check.symbol, op: r.check.op, target: r.check.target, mode: r.check.mode,
         }));
       }
-    } else if (criteria && input.priceClaim.mode !== "at-close") {
-      // No token pinned on chain. A coin the stream votes read from Binance is
-      // read there at the open (readSpotAtOpen); anything else opens on the
-      // model's own rule, as before.
-      const pc = input.priceClaim;
-      const spot = pc.metric === "price" && BINANCE_ASSETS.has(pc.symbol)
-        ? await readSpotAtOpen(pc, new Date(closeTime * 1000).toISOString(), binancePrices)
-        : null;
-      if (spot?.kind === "within") {
-        criteria = spot.sentence;
-        question = spot.question;
-        hook = spot.hook;
-        console.log(JSON.stringify({
-          evt: "price_open", source: binancePrices.venue, now: spot.now,
-          line: spot.reading === "hold" ? "on that side at the open: stays there to the close" : "not there at the open: gets there before the close",
-          symbol: pc.symbol, op: pc.op, target: pc.target, mode: pc.mode, question,
-        }));
-      } else if (spot?.kind === "reread") {
-        criteria = spot.sentence;
-        question = spot.question;
-        hook = spot.hook;
-        console.log(JSON.stringify({
-          evt: "price_open", line: "decided at the open, read at the close", source: binancePrices.venue, was: spot.was, now: spot.now,
-          symbol: pc.symbol, op: pc.op, target: pc.target, mode: pc.mode, question,
-        }));
-      } else if (spot?.kind !== "as-is") {
-        console.log(JSON.stringify({
-          evt: "price_open", line: "no pinned price at the open, opened on the model's rule", why: spot?.why ?? r.why,
-          symbol: pc.symbol, op: pc.op, target: pc.target, mode: pc.mode,
-        }));
-      }
     } else if (!criteria) {
       /* THIS REFUSAL COST A REAL TAG, and the shape of the mistake is worth
          keeping. A claim about BTC reads as a price claim, correctly, and BTC
@@ -3884,6 +3854,11 @@ async function openMarketFromClaim(input: {
          reads like: a market with no rule at all is the one thing that must
          never open. */
       return bad(422, `this price claim could not be pinned to a token and it carries no other rule: ${r.why}`);
+    } else {
+      console.log(JSON.stringify({
+        evt: "price_open", line: "no pinned price at the open, opened on the model's rule", why: r.why,
+        symbol: input.priceClaim.symbol, op: input.priceClaim.op, target: input.priceClaim.target, mode: input.priceClaim.mode,
+      }));
     }
   }
 
@@ -6598,6 +6573,10 @@ if (ORACLE_ENABLED) {
     console.log(`[oracle] settle loop ON, every ${Math.round(ORACLE_POLL_MS / 60_000)}m, up to ${ORACLE_MAX_PER_SWEEP} per sweep, ${ORACLE_DRY_RUN ? "DRY RUN (nothing is settled)" : "SETTLING FOR REAL"} — ${avail.why}`);
   }
 }
+
+// Whether the exchange rails answer from here: Binance for the big coins,
+// Bybit for gold and oil (src/price/index.ts). Free, so once at every boot.
+setTimeout(() => void probeExchangeRails((line) => console.log(JSON.stringify(line))), 20_000).unref();
 
 if (X_BOT_ENABLED) {
   if (!X.xConfigured()) {

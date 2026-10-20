@@ -8386,7 +8386,49 @@ UPDATE community_market c SET retired_at = NULL
    AND c.retired_at IS NOT NULL AND c.onchain_pubkey IS NOT NULL AND c.resolved_outcome IS NULL
 RETURNING c.slug`;
 
-/** Puts the four right if they still read an old way; the slugs it changed. */
+/*
+ * 20 OCT: SIX CLOSED MARKETS GET THE PRICE RULE THEIR WORDS ALREADY STATE
+ * (Lev: "kendiliğinden sonuçlanması lazım", nothing settled by hand). Each one's
+ * rule is a price at a minute or over a stretch: gold below $4,200 at Friday's
+ * 21:00 UTC close, CL above $90 the whole week on Bybit's own perpetual, and
+ * ETH, XRP, BNB and SUI at or through 23:59 UTC on 18 Oct. The oracle reads a
+ * page for those, no page it can open shows a price at a minute, and all six
+ * sat closed behind three paid rounds of failed citations. Gold and CL are read
+ * on Bybit and the coins on Binance, the venues those rails read, from the
+ * minute each market opened. Only the price_check is set: the words, minted or
+ * not, stay the words they opened under. One way: a market that has a check,
+ * an outcome or is off the board, or reads otherwise, is left alone.
+ */
+const PRICE_RULES_2026_10_20 = `
+WITH fix(slug, question, pc) AS (
+  VALUES
+  ('will-the-price-of-gold-xauusd-176a74',
+   'Will spot gold (XAU/USD) be below $4,200 per ounce at Friday''s close on October 16, 2026?',
+   '{"chain":"bybit","mint":"XAUUSDT","symbol":"XAU","name":"gold (XAU/USD)","pool":"XAUUSDT","supply":0,"metric":"price","op":"<","target":4200,"mode":"at-close","from":"2026-10-12T19:46:01.262Z","to":"2026-10-16T21:00:00.000Z"}'::jsonb),
+  ('will-the-token-cl-clusdt-trade-7ee94c',
+   'Will CL/USDT (Bybit''s WTI crude oil perpetual) stay above $90 through Friday''s close on October 16, 2026?',
+   '{"chain":"bybit","mint":"CLUSDT","symbol":"CL","name":"WTI crude oil (CL)","pool":"CLUSDT","supply":0,"metric":"price","op":">","target":90,"mode":"always","from":"2026-10-12T19:49:16.183Z","to":"2026-10-16T21:00:00.000Z"}'::jsonb),
+  ('will-ethereum-eth-be-above-2350-d3e930',
+   'Will Ethereum (ETH) be above $2,350 at the end of this week?',
+   '{"chain":"binance","mint":"ETHUSDT","symbol":"ETH","name":"Ethereum (ETH)","pool":"ETHUSDT","supply":0,"metric":"price","op":">","target":2350,"mode":"at-close","from":"2026-10-15T19:01:17.498Z","to":"2026-10-18T23:59:00.000Z"}'::jsonb),
+  ('will-xrp-xrp-be-above-130-7dce61',
+   'Will XRP (XRP) be above $1.30 at the end of this week?',
+   '{"chain":"binance","mint":"XRPUSDT","symbol":"XRP","name":"XRP","pool":"XRPUSDT","supply":0,"metric":"price","op":">","target":1.3,"mode":"at-close","from":"2026-10-15T19:06:52.512Z","to":"2026-10-18T23:59:00.000Z"}'::jsonb),
+  ('will-bnb-bnb-be-above-710-ef7adb',
+   'Will BNB (BNB) be above $710 at the end of this week?',
+   '{"chain":"binance","mint":"BNBUSDT","symbol":"BNB","name":"BNB","pool":"BNBUSDT","supply":0,"metric":"price","op":">","target":710,"mode":"at-close","from":"2026-10-15T19:08:21.886Z","to":"2026-10-18T23:59:00.000Z"}'::jsonb),
+  ('will-sui-sui-stay-above-100-9f35e2',
+   'Will Sui (SUI) stay above $1.00 through the end of this week?',
+   '{"chain":"binance","mint":"SUIUSDT","symbol":"SUI","name":"Sui (SUI)","pool":"SUIUSDT","supply":0,"metric":"price","op":">","target":1,"mode":"always","from":"2026-10-15T19:10:41.334Z","to":"2026-10-18T23:59:00.000Z"}'::jsonb)
+)
+UPDATE community_market c SET price_check = f.pc
+  FROM fix f
+  JOIN market_slug s ON s.slug = f.slug AND s.question = f.question
+ WHERE c.slug = f.slug
+   AND c.price_check IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL
+RETURNING c.slug`;
+
+/** Puts the markets above right if they still read an old way; the slugs it changed. */
 export async function rereadMisreadMarkets(): Promise<string[]> {
   if (!PERSISTENT) return [];
   /* THE SCHEMA FIRST, like every other read and write in this file. Run beside
@@ -8395,7 +8437,7 @@ export async function rereadMisreadMarkets(): Promise<string[]> {
      A deadlock aborts one statement whole, so it is simply run again. */
   await ensureSchema();
   const changed: string[] = [];
-  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13, RETURN_GOLD_2026_10_15]) {
+  for (const sql of [REREAD_2026_10_12, REREAD_2026_10_13, RETIRE_GOLD_2026_10_13, RETURN_GOLD_2026_10_15, PRICE_RULES_2026_10_20]) {
     const { rows } = await retryOnDeadlock(() => db().query<{ slug: string }>(sql));
     changed.push(...rows.map((r) => r.slug));
   }
@@ -8420,4 +8462,5 @@ export const REREAD_2026_10_12_SQL = REREAD_2026_10_12;
 export const REREAD_2026_10_13_SQL = REREAD_2026_10_13;
 export const RETIRE_GOLD_2026_10_13_SQL = RETIRE_GOLD_2026_10_13;
 export const RETURN_GOLD_2026_10_15_SQL = RETURN_GOLD_2026_10_15;
+export const PRICE_RULES_2026_10_20_SQL = PRICE_RULES_2026_10_20;
 

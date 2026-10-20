@@ -1,4 +1,6 @@
-// The two price sources, and nothing else.
+// The price sources, and nothing else: two for tokens, and two exchanges for
+// what is not a token (gold and oil on Bybit, the big coins on Binance; both
+// at the bottom of this file).
 //
 // WHY THIS FILE EXISTS AT ALL. The rest of the oracle settles a market by
 // reading a sentence off a page and auditing that the sentence is really there.
@@ -72,8 +74,12 @@ export interface PriceFeed {
    *  union in resolvePriceClaim. */
   searchPools(query: string): Promise<PoolHit[]>;
   tokenInfo(chain: string, mint: string): Promise<TokenInfo | null>;
-  ohlcv(chain: string, pool: string, timeframe: "day" | "hour", limit: number, beforeUnix?: number): Promise<Candle[]>;
+  /** Candles that start at or before `beforeUnix`. "minute" is asked of the
+   *  exchange rails only (src/price/index.ts exchangeWindow). */
+  ohlcv(chain: string, pool: string, timeframe: Timeframe, limit: number, beforeUnix?: number): Promise<Candle[]>;
 }
+
+export type Timeframe = "day" | "hour" | "minute";
 
 /** Thrown when the SOURCE said this token does not exist, as opposed to the
  *  source not answering. Conflating the two told a user their coin had no price
@@ -219,6 +225,7 @@ const liveFeed: PriceFeed = {
 
   async ohlcv(chain, pool, timeframe, limit, beforeUnix) {
     if (chain === BYBIT_CHAIN) return bybitCandles(pool, timeframe, limit, beforeUnix);
+    if (chain === BINANCE_CHAIN) return binanceCandles(pool, timeframe, limit, beforeUnix);
     const q = new URLSearchParams({ aggregate: "1", limit: String(Math.min(limit, 1000)) });
     if (beforeUnix) q.set("before_timestamp", String(beforeUnix));
     const d = await getJson(
@@ -242,14 +249,37 @@ const liveFeed: PriceFeed = {
 export const BYBIT_CHAIN = "bybit";
 const BYBIT = "https://api.bybit.com/v5/market";
 
-async function bybitCandles(symbol: string, timeframe: "day" | "hour", limit: number, beforeUnix?: number): Promise<Candle[]> {
-  const q = new URLSearchParams({ category: "linear", symbol, interval: timeframe === "hour" ? "60" : "D", limit: String(Math.min(limit, 1000)) });
+async function bybitCandles(symbol: string, timeframe: Timeframe, limit: number, beforeUnix?: number): Promise<Candle[]> {
+  const interval = timeframe === "minute" ? "1" : timeframe === "hour" ? "60" : "D";
+  const q = new URLSearchParams({ category: "linear", symbol, interval, limit: String(Math.min(limit, 1000)) });
   if (beforeUnix) q.set("end", String(beforeUnix * 1000));
   const d = await getJson(`${BYBIT}/kline?${q}`);
   if (d?.retCode !== 0) throw new Error(`bybit kline ${symbol} answered ${d?.retCode}: ${d?.retMsg ?? "no message"}`);
   const list: any[] = d?.result?.list ?? [];
   // [start in ms, open, high, low, close, volume, turnover], newest first.
   return list
+    .filter((k) => Array.isArray(k) && k.length >= 5 && k.slice(0, 5).every((x: unknown) => Number.isFinite(Number(x))))
+    .map((k) => [Math.floor(Number(k[0]) / 1000), Number(k[1]), Number(k[2]), Number(k[3]), Number(k[4]), Number(k[5] ?? 0)] as Candle);
+}
+
+/* BTC, ETH AND THE OTHER BIG COINS ARE READ ON BINANCE SPOT, like the metals on
+   Bybit. They are not Solana tokens, so a market on one had no price behind it:
+   its rule named CoinMarketCap, whose pages no reader can open, and on 20 Oct
+   ETH, XRP, BNB and SUI sat closed for two days behind a wall of failed
+   citations. Binance serves the same candles the stream votes already settle
+   from (src/live/priceCall.ts), from its public market-data host, which answers
+   from where the server runs. The "pool" is the USDT pair. */
+export const BINANCE_CHAIN = "binance";
+const BINANCE = "https://data-api.binance.vision/api/v3";
+
+async function binanceCandles(symbol: string, timeframe: Timeframe, limit: number, beforeUnix?: number): Promise<Candle[]> {
+  const interval = timeframe === "minute" ? "1m" : timeframe === "hour" ? "1h" : "1d";
+  const q = new URLSearchParams({ symbol, interval, limit: String(Math.min(limit, 1000)) });
+  if (beforeUnix) q.set("endTime", String(beforeUnix * 1000));
+  const d = await getJson(`${BINANCE}/klines?${q}`);
+  if (!Array.isArray(d)) throw new Error(`binance klines ${symbol} answered ${JSON.stringify(d).slice(0, 160)}`);
+  // [open time in ms, open, high, low, close, volume, close time, ...], oldest first.
+  return d
     .filter((k) => Array.isArray(k) && k.length >= 5 && k.slice(0, 5).every((x: unknown) => Number.isFinite(Number(x))))
     .map((k) => [Math.floor(Number(k[0]) / 1000), Number(k[1]), Number(k[2]), Number(k[3]), Number(k[4]), Number(k[5] ?? 0)] as Candle);
 }

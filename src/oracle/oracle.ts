@@ -359,10 +359,23 @@ export interface RetryVerdict {
 export function shouldRetry(
   a: { lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number },
   now = new Date(),
+  opts: { priced?: boolean } = {},
 ): RetryVerdict {
   if (!a.lastGate) return { retry: true, why: "never tried" };
   if (FREE_GATES.has(a.lastGate as OracleDecision["gate"])) {
     return { retry: true, why: "the last answer cost nothing to reach" };
+  }
+  /* A MARKET WITH A PRICE RULE IS ANSWERED FROM CANDLES, WHICH COST NOTHING.
+     What the model's earlier attempts cost is no reason to wait, because the
+     next answer is arithmetic (decide, code gate 3). On 20 Oct six markets that
+     had just been given a price rule sat behind three paid attempts each,
+     waiting a day to be asked a question that no longer needed asking. Only
+     the price read's own last word still holds: a window its history cannot
+     cover stays covered by nobody. */
+  if (opts.priced) {
+    return a.lastGate === "price-undetermined"
+      ? { retry: false, why: "the price history cannot cover this market's window; a person has to look at it" }
+      : { retry: true, why: "a price market is answered from published candles, which costs nothing" };
   }
   if (PERMANENT_GATES.has(a.lastGate as OracleDecision["gate"])) {
     return { retry: false, why: "the criteria themselves are not checkable; a person has to rewrite them" };

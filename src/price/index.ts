@@ -18,7 +18,7 @@
 // target proves a touch, while proving it NEVER touched requires the whole
 // window. So a YES can settle on partial history and a NO cannot.
 
-import { priceFeed, BYBIT_CHAIN, type Candle } from "./feed.js";
+import { priceFeed, BYBIT_CHAIN, BINANCE_CHAIN, type Candle } from "./feed.js";
 
 export type PriceOp = ">=" | ">" | "<=" | "<";
 /** touch: true at any point in the window. at-close: true at the close time.
@@ -299,6 +299,33 @@ export function commodityCheck(claim: PriceClaim, window: { from: string; to: st
   };
 }
 
+/** The big coins, each read from its USDT pair on Binance spot (src/price/feed.ts):
+ *  the coins the stream votes settle from Binance (src/live/priceCall.ts
+ *  BINANCE_ASSETS), all but TON, whose pair there has not traded since June.
+ *  The name is what the rule calls the coin. */
+export const SPOT_COINS: Readonly<Record<string, string>> = {
+  BTC: "Bitcoin (BTC)", ETH: "Ethereum (ETH)", SOL: "Solana (SOL)", BNB: "BNB", XRP: "XRP",
+  DOGE: "Dogecoin (DOGE)", ADA: "Cardano (ADA)", AVAX: "Avalanche (AVAX)", SUI: "Sui (SUI)",
+  LTC: "Litecoin (LTC)", TRX: "TRON (TRX)", PEPE: "Pepe (PEPE)", WIF: "dogwifhat (WIF)",
+  BONK: "Bonk (BONK)", SHIB: "Shiba Inu (SHIB)", LINK: "Chainlink (LINK)", DOT: "Polkadot (DOT)",
+};
+
+/** A big coin's price claim pinned to its Binance spot pair, or null for
+ *  anything else. A unit price only: a spot pair has no supply to multiply. */
+export function spotCheck(claim: PriceClaim, window: { from: string; to: string }): PriceCheck | null {
+  const symbol = claim.symbol.replace(/^\$/, "").trim().toUpperCase();
+  const name = SPOT_COINS[symbol];
+  if (!name || claim.metric !== "price" || !(claim.target > 0)) return null;
+  const pool = `${symbol}USDT`;
+  return {
+    chain: BINANCE_CHAIN, mint: pool, symbol, name, pool, supply: 0,
+    metric: "price", op: claim.op, target: claim.target, mode: claim.mode, from: window.from, to: window.to,
+  };
+}
+
+/** The rails on an exchange: a pair that trades every minute, read to the minute. */
+const EXCHANGES: ReadonlySet<string> = new Set([BYBIT_CHAIN, BINANCE_CHAIN]);
+
 const money = (n: number) =>
   n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 2)}M`
   : n >= 1_000 ? `$${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`
@@ -339,10 +366,21 @@ export function criteriaSentence(c: PriceCheck): string {
   const basis = c.metric === "mc"
     ? ` against a supply of ${Math.round(c.supply).toLocaleString("en-US")} tokens fixed when this market opened`
     : "";
-  // A commodity names its Bybit perpetual, and its level in full: "$4,250" is
-  // the rule, where a rounded "$4.3K" would be a different one.
-  if (c.chain === BYBIT_CHAIN) {
-    return `Settles from the price of ${c.name} on Bybit's ${c.pool} perpetual. YES if its price is ${dir} ${exactUsd(c.target)} ${when}, read from the hourly candles of ${c.pool} on Bybit. NO otherwise.`;
+  /* AN EXCHANGE RAIL NAMES ITS VENUE, THE PAIR AND THE MINUTE. A commodity is
+     read on its Bybit perpetual and a big coin on its Binance spot pair, the
+     level in full ("$4,250" is the rule, where a rounded "$4.3K" would be a
+     different one), and the close to the minute the market closes on, which is
+     the minute exchangeWindow reads. */
+  if (c.chain === BYBIT_CHAIN || c.chain === BINANCE_CHAIN) {
+    const [venue, pair] = c.chain === BYBIT_CHAIN ? ["Bybit", "perpetual"] : ["Binance", "spot pair"];
+    const level = exactUsd(c.target);
+    const at = `${minuteOf(c.to)} UTC on ${day(c.to)}`;
+    const read = `read from the ${c.pool} candles on ${venue}`;
+    const rule =
+      c.mode === "touch" ? `YES if its price is ${dir} ${level} at any point between this market's opening on ${day(c.from)} and ${at}, ${read}. NO otherwise.`
+      : c.mode === "always" ? `YES if its price stays ${dir} ${level} from this market's opening on ${day(c.from)} until ${at}, ${read}. NO if it trades ${dirWords(flipOp(c.op))} ${level} at any point in that period.`
+      : `YES if its price is ${dir} ${level} at ${at}, ${read}. NO otherwise.`;
+    return `Settles from the price of ${c.name} on ${venue}'s ${c.pool} ${pair}. ${rule}`;
   }
   return `Settles from the on-chain price of $${c.symbol} (${c.chain} mint ${c.mint}). YES if its ${what} is ${dir} ${money(c.target)} ${when}, read from the hourly candles of its deepest pool on GeckoTerminal${basis}. NO otherwise.`;
 }
@@ -399,12 +437,13 @@ const subjectOf = (c: CloseRead) => c.chain === BYBIT_CHAIN
 const shortOf = (c: CloseRead) => c.chain === BYBIT_CHAIN
   ? COMMODITIES[c.symbol]?.short ?? c.symbol
   : `${c.symbol}${c.metric === "mc" ? " mc" : ""}`;
-/** The level as the rail writes it: a commodity's always in full. */
-const levelOf = (c: CloseRead, usd: (n: number) => string) => (c.chain === BYBIT_CHAIN ? exactUsd : usd)(c.target);
+/** The level as the rail writes it: on an exchange always in full. */
+const levelOf = (c: CloseRead, usd: (n: number) => string) => (EXCHANGES.has(c.chain ?? "") ? exactUsd : usd)(c.target);
 
-/** A level written out in full: "$83,250", "$0.00002". Where the words are the
- *  whole rule, a rounded "$83.3K" would be a different level. */
-const exactUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: n >= 1 ? 2 : 12 })}`;
+/** A level written out in full: "$83,250", "$1.3075", "$0.00002". Where the
+ *  words are the whole rule, a rounded "$83.3K" would be a different level, and
+ *  so would "$1.31" for a coin quoted to four places. */
+const exactUsd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: n >= 1000 ? 2 : n >= 1 ? 4 : 12 })}`;
 
 /** The question an at-close check asks, for a market whose own words read it another way. */
 export function closeQuestion(c: CloseRead, usd: (n: number) => string = money): string {
@@ -469,6 +508,12 @@ export async function priceNow(check: PriceCheck): Promise<{ ok: true; value: nu
   let newest: Candle | null = null;
   for (const c of candles) if (!newest || c[0] > newest[0]) newest = c;
   if (!newest || !(newest[4] > 0)) return { ok: false, why: "the pool has no candle to read" };
+  // An exchange pair trades every minute, so a newest hour long before the
+  // window opens is a pair that stopped trading, not a quiet one: TON's pair on
+  // Binance last moved in June, and its June price is not the price now.
+  if (EXCHANGES.has(check.chain) && newest[0] < Date.parse(check.from) / 1000 - 2 * HOUR) {
+    return { ok: false, why: `${check.pool} has not traded since ${new Date(newest[0] * 1000).toISOString().slice(0, 10)}` };
+  }
   return { ok: true, value: newest[4] * unit };
 }
 
@@ -525,74 +570,20 @@ export async function readAtOpen(check: PriceCheck): Promise<AtOpen> {
   };
 }
 
-/* A COIN WITH NO TOKEN PINNED ON CHAIN IS READ WHERE A CHART WATCHER READS IT.
-   BTC, ETH and the rest are not Solana tokens, so the check above never ran on
-   them and their markets open on the model's own rule. "BTC hits 80k this
-   week" said with BTC at 83k opened "at any point" and was over before anybody
-   staked, the same trap as SOL's. Their price at the open comes from the spot
-   venue the stream votes already read (src/live/priceCall.ts binancePrices);
-   decided, the claim is read at the close like a pinned one, and the rule is
-   written out in full because on this rail the words are what settles it. */
-
-/** A spot price by ticker. src/live/priceCall.ts binancePrices is one. */
-export interface SpotPrice { venue: string; priceAt(asset: string, t: number): Promise<number | null> }
-
-export type SpotAtOpen =
-  | { kind: "as-is"; now: number | null }
-  | { kind: "unread"; why: string }
-  | { kind: "reread"; now: number; was: "yes" | "no"; sentence: string; question: string; hook: string | null }
-  /** A level over a period on a coin's spot price: a hold if it is already on that side, a reach if not. */
-  | { kind: "within"; now: number; reading: "hold" | "reach"; sentence: string; question: string; hook: string | null };
-
-/** The rule for a coin's claim read at its close, for the oracle that settles
- *  it from a page: a source it can open, the level in full, and the minute. */
-export function closeCriteria(c: Pick<CloseRead, "symbol" | "op" | "target" | "to">): string {
-  const t = new Date(c.to);
-  const hm = `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
-  return `Settles from the ${c.symbol}/USD price on CoinMarketCap. YES if it is ${dirWords(c.op)} ${exactUsd(c.target)} at ${hm} UTC on ${day(c.to)}. NO otherwise.`;
-}
+/* A BIG COIN IS READ WHERE A CHART WATCHER READS IT, AND SETTLED THERE TOO.
+   BTC, ETH and the rest are not Solana tokens, so until 20 Oct their markets
+   were read at the open from Binance's spot price and then left to a rule that
+   named CoinMarketCap, for an oracle that settles from a page. No page it can
+   open shows a price at a minute, so every one of them closed into a wall of
+   failed citations. Now a big coin is pinned to its Binance pair at the open
+   like gold to its Bybit perpetual (spotCheck), read there by readAtOpen, and
+   settled from the same pair's candles by code. */
 
 const flipOp = (op: PriceOp): PriceOp => (op === ">" ? "<=" : op === ">=" ? "<" : op === "<" ? ">=" : ">");
 const minuteOf = (iso: string) => {
   const t = new Date(iso);
   return `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
 };
-/** A coin's hold, for the oracle that settles it from a page: on that side the whole way, and what breaks it. */
-export function holdCriteria(c: Pick<CloseRead, "symbol" | "op" | "target" | "to">): string {
-  return `Settles from the ${c.symbol}/USD price on CoinMarketCap. YES if it stays ${dirWords(c.op)} ${exactUsd(c.target)} from this market's opening until ${minuteOf(c.to)} UTC on ${day(c.to)}. NO if it trades ${dirWords(flipOp(c.op))} ${exactUsd(c.target)} at any point in that period.`;
-}
-/** A coin's reach: there at any point before the close. */
-export function reachCriteria(c: Pick<CloseRead, "symbol" | "op" | "target" | "to">): string {
-  return `Settles from the ${c.symbol}/USD price on CoinMarketCap. YES if it trades ${dirWords(c.op)} ${exactUsd(c.target)} at any point between this market's opening and ${minuteOf(c.to)} UTC on ${day(c.to)}. NO otherwise.`;
-}
-
-/** A coin's price claim against its spot price at the open. Only a unit price:
- *  a market cap is not something a spot pair can answer. */
-export async function readSpotAtOpen(claim: PriceClaim, to: string, source: SpotPrice, at = Date.now()): Promise<SpotAtOpen> {
-  if (claim.mode === "at-close" || claim.metric !== "price") return { kind: "as-is", now: null };
-  let now: number | null;
-  try {
-    now = await source.priceAt(claim.symbol, at);
-  } catch (e) {
-    return { kind: "unread", why: `${source.venue} did not answer: ${(e as Error).message}` };
-  }
-  if (now === null || !(now > 0)) return { kind: "unread", why: `${source.venue} has no ${claim.symbol} price` };
-  if (claim.mode === "within") {
-    // Above means above, below means below: see readAtOpen.
-    const read: CloseRead = { symbol: claim.symbol, metric: claim.metric, op: claim.op, target: claim.target, to };
-    const there = satisfies(now, claim.op, claim.target);
-    return there
-      ? { kind: "within", now, reading: "hold", sentence: holdCriteria(read), question: holdQuestion(read, exactUsd), hook: holdHook(read, exactUsd) }
-      : { kind: "within", now, reading: "reach", sentence: reachCriteria(read), question: reachQuestion(read, exactUsd), hook: reachHook(read, exactUsd) };
-  }
-  const was = decidedAtOpen(claim, now);
-  if (!was) return { kind: "as-is", now };
-  const read: CloseRead = { symbol: claim.symbol, metric: claim.metric, op: claim.op, target: claim.target, to };
-  return {
-    kind: "reread", now, was,
-    sentence: closeCriteria(read), question: closeQuestion(read, exactUsd), hook: closeHook(read, exactUsd),
-  };
-}
 
 export interface PriceVerdict {
   outcome: "yes" | "no" | null;
@@ -625,6 +616,72 @@ export async function checkPrice(check: PriceCheck): Promise<PriceVerdict> {
   const unit = check.metric === "mc" ? check.supply : 1;
   if (!(unit > 0)) return { outcome: null, why: "no supply was recorded for this market", observed: null, candles: 0 };
 
+  let read: WindowRead;
+  try {
+    read = EXCHANGES.has(check.chain) ? await exchangeWindow(check, from, to) : await poolWindow(check, from, to);
+  } catch (e) {
+    return { outcome: null, why: `the price history could not be read: ${(e as Error).message}`, observed: null, candles: 0 };
+  }
+  const { inside, full } = read;
+  if (inside.length === 0) {
+    return { outcome: null, why: "no price history covers this market's window", observed: null, candles: 0 };
+  }
+  // A coin at $1.3072 is not "$1": on an exchange the number is written in full.
+  const usd = EXCHANGES.has(check.chain) ? exactUsd : (n: number) => money(Math.round(n));
+
+  if (check.mode === "at-close") {
+    // The newest candle inside the window IS the value at close: the query asked
+    // for everything up to the close, so a later candle would have come back if
+    // one existed, and an hour with no trade leaves the previous close standing.
+    const last = inside[inside.length - 1];
+    const value = last[4] * unit;
+    const ok = satisfies(value, check.op, check.target);
+    return { outcome: ok ? "yes" : "no", why: `${usd(value)} at close`, observed: value, candles: inside.length };
+  }
+
+  if (check.mode === "touch") {
+    const best = inside.reduce((m, c) => {
+      const v = extremeOf(c, check.op);
+      return m === null ? v : check.op === ">=" || check.op === ">" ? Math.max(m, v) : Math.min(m, v);
+    }, null as number | null)!;
+    const value = best * unit;
+    if (satisfies(value, check.op, check.target)) {
+      // Positive proof. A gap elsewhere in the window cannot unmake a candle
+      // that is right there, so partial history is enough for this one.
+      return { outcome: "yes", why: `it reached ${usd(value)} inside the window`, observed: value, candles: inside.length };
+    }
+    if (!full) {
+      return { outcome: null, why: "part of the window has no price history, so it cannot be shown it never got there", observed: value, candles: inside.length };
+    }
+    return { outcome: "no", why: `the furthest it got was ${usd(value)}`, observed: value, candles: inside.length };
+  }
+
+  // "always": one violation is positive proof of NO; a clean run needs the
+  // whole window to mean anything.
+  let worst: number | null = null;
+  for (const c of inside) {
+    const v = (check.op === ">=" || check.op === ">" ? c[3] : c[2]) * unit;
+    if (worst === null || (check.op === ">=" || check.op === ">" ? v < worst : v > worst)) worst = v;
+  }
+  if (worst !== null && !satisfies(worst, check.op, check.target)) {
+    return { outcome: "no", why: `it broke the condition at ${usd(worst)}`, observed: worst, candles: inside.length };
+  }
+  if (!full) {
+    return { outcome: null, why: "part of the window has no price history, so a clean run cannot be confirmed", observed: worst, candles: inside.length };
+  }
+  return { outcome: "yes", why: `it held the condition the whole window, worst was ${usd(worst ?? 0)}`, observed: worst, candles: inside.length };
+}
+
+interface WindowRead {
+  /** Every candle wholly inside the window, oldest first. */
+  inside: Candle[];
+  /** The history reaches back to the window's start, so a NO from a touch and
+   *  a YES from a hold may rest on it. */
+  full: boolean;
+}
+
+/** A token's pool, read the way it always was: one request, hourly or daily. */
+async function poolWindow(check: PriceCheck, from: number, to: number): Promise<WindowRead> {
   // Hourly while the window fits inside one request, daily beyond that. The
   // limit is the source's, not ours, and paging would buy precision nobody is
   // betting on: a three-month claim does not turn on which hour of a day.
@@ -634,12 +691,7 @@ export async function checkPrice(check: PriceCheck): Promise<PriceVerdict> {
   const need = Math.ceil(span / step) + 2;
 
   const limit = Math.min(need, 1000);
-  let candles: Candle[];
-  try {
-    candles = await priceFeed().ohlcv(check.chain, check.pool, timeframe, limit, to + step);
-  } catch (e) {
-    return { outcome: null, why: `the price history could not be read: ${(e as Error).message}`, observed: null, candles: 0 };
-  }
+  const candles = await priceFeed().ohlcv(check.chain, check.pool, timeframe, limit, to + step);
   // A short answer means the pool has no history older than what came back.
   // That is the difference between "we did not look far enough" and "there is
   // nothing further to look at", and it decides whether a NO is allowed below.
@@ -649,9 +701,6 @@ export async function checkPrice(check: PriceCheck): Promise<PriceVerdict> {
   // straddles the close would let a move made after the deadline settle the
   // market, which is the one error no amount of liquidity makes up for.
   const inside = candles.filter((c) => c[0] >= from && c[0] + step <= to).sort((a, b) => a[0] - b[0]);
-  if (inside.length === 0) {
-    return { outcome: null, why: "no price history covers this market's window", observed: null, candles: 0 };
-  }
 
   // COVERAGE IS NOT A CANDLE COUNT, and counting was the first thing this got
   // wrong. On a DEX a candle exists only where somebody traded, so a quiet
@@ -665,47 +714,66 @@ export async function checkPrice(check: PriceCheck): Promise<PriceVerdict> {
   // that exists: the close end is covered by construction. The other end is
   // covered if history reaches back past the window start, or if the pool simply
   // has nothing older.
-  const full = inside[0][0] <= from + step || exhausted;
+  return { inside, full: inside.length > 0 && (inside[0][0] <= from + step || exhausted) };
+}
 
+const MINUTE = 60;
+
+/* AN EXCHANGE PAIR IS READ TO THE MINUTE. Read by the hour like a pool, the
+   window lost both ends: a market opened at 19:49 began counting at 20:00, and
+   one closing at 23:59 was read at 23:00, an hour before the minute its rule
+   names. So the close is the last whole minute before it, and a hold or a
+   reach is read by the minute at both ends and by the hour between them, which
+   is the same high and low: an hour's high is the highest of its minutes. */
+async function exchangeWindow(check: PriceCheck, from: number, to: number): Promise<WindowRead> {
   if (check.mode === "at-close") {
-    // The newest candle inside the window IS the value at close: the query asked
-    // for everything up to the close, so a later candle would have come back if
-    // one existed, and an hour with no trade leaves the previous close standing.
-    const last = inside[inside.length - 1];
-    const value = last[4] * unit;
-    const ok = satisfies(value, check.op, check.target);
-    return { outcome: ok ? "yes" : "no", why: `${money(Math.round(value))} at close`, observed: value, candles: inside.length };
+    // An hour of minutes always holds the last one on a pair that trades every minute.
+    const inside = await candlesIn(check, "minute", Math.max(from, to - HOUR), to);
+    return { inside, full: inside.length > 0 };
   }
+  const h0 = Math.ceil(from / HOUR) * HOUR;
+  const h1 = Math.floor(to / HOUR) * HOUR;
+  const inside = h1 > h0
+    ? [...await candlesIn(check, "minute", from, h0), ...await candlesIn(check, "hour", h0, h1), ...await candlesIn(check, "minute", h1, to)]
+    : await candlesIn(check, "minute", from, to);
+  // Bracketed the way a pool's history is (see poolWindow): it reaches back to
+  // the window's start, and a minute with no candle is a minute nothing traded.
+  return { inside, full: inside.length > 0 && inside[0][0] < from + HOUR };
+}
 
-  if (check.mode === "touch") {
-    const best = inside.reduce((m, c) => {
-      const v = extremeOf(c, check.op);
-      return m === null ? v : check.op === ">=" || check.op === ">" ? Math.max(m, v) : Math.min(m, v);
-    }, null as number | null)!;
-    const value = best * unit;
-    if (satisfies(value, check.op, check.target)) {
-      // Positive proof. A gap elsewhere in the window cannot unmake a candle
-      // that is right there, so partial history is enough for this one.
-      return { outcome: "yes", why: `it reached ${money(Math.round(value))} inside the window`, observed: value, candles: inside.length };
-    }
-    if (!full) {
-      return { outcome: null, why: "part of the window has no price history, so it cannot be shown it never got there", observed: value, candles: inside.length };
-    }
-    return { outcome: "no", why: `the furthest it got was ${money(Math.round(value))}`, observed: value, candles: inside.length };
+/** Every candle of one size wholly inside [a, b), oldest first, paged back
+ *  from b a thousand at a time. */
+async function candlesIn(check: PriceCheck, timeframe: "minute" | "hour", a: number, b: number): Promise<Candle[]> {
+  const step = timeframe === "hour" ? HOUR : MINUTE;
+  const first = Math.ceil(a / step) * step;
+  const last = Math.floor(b / step) * step - step;
+  const out = new Map<number, Candle>();
+  for (let end = last, pages = 0; end >= first && pages < 50; pages++) {
+    const want = Math.min(Math.floor((end - first) / step) + 1, 1000);
+    const got = await priceFeed().ohlcv(check.chain, check.pool, timeframe, want, end);
+    for (const c of got) if (c[0] >= first && c[0] <= last) out.set(c[0], c);
+    const oldest = got.reduce((m, c) => Math.min(m, c[0]), Infinity);
+    // A short page is the start of the pair's history; a page with nothing at
+    // or before `end` would ask the same thing again forever.
+    if (got.length < want || !(oldest <= end)) break;
+    end = oldest - step;
   }
+  return [...out.values()].sort((x, y) => x[0] - y[0]);
+}
 
-  // "always": one violation is positive proof of NO; a clean run needs the
-  // whole window to mean anything.
-  let worst: number | null = null;
-  for (const c of inside) {
-    const v = (check.op === ">=" || check.op === ">" ? c[3] : c[2]) * unit;
-    if (worst === null || (check.op === ">=" || check.op === ">" ? v < worst : v > worst)) worst = v;
+/** One read of each exchange rail at boot, so the log says whether the markets
+ *  pinned to it can be opened and settled from where the server runs. Bybit
+ *  had never been read from production when gold and oil were pinned to it. */
+export async function probeExchangeRails(log: (line: Record<string, unknown>) => void): Promise<void> {
+  const rails = [{ chain: BINANCE_CHAIN, pool: "BTCUSDT" }, { chain: BYBIT_CHAIN, pool: "XAUUSDT" }];
+  const out: Record<string, unknown> = { evt: "price_rails" };
+  for (const r of rails) {
+    try {
+      const [newest] = (await priceFeed().ohlcv(r.chain, r.pool, "minute", 1)).sort((a, b) => b[0] - a[0]);
+      out[r.chain] = newest ? { ok: true, pool: r.pool, close: newest[4], at: new Date(newest[0] * 1000).toISOString() } : { ok: false, pool: r.pool, why: "no candle" };
+    } catch (e) {
+      out[r.chain] = { ok: false, pool: r.pool, why: (e as Error).message.slice(0, 200) };
+    }
   }
-  if (worst !== null && !satisfies(worst, check.op, check.target)) {
-    return { outcome: "no", why: `it broke the condition at ${money(Math.round(worst))}`, observed: worst, candles: inside.length };
-  }
-  if (!full) {
-    return { outcome: null, why: "part of the window has no price history, so a clean run cannot be confirmed", observed: worst, candles: inside.length };
-  }
-  return { outcome: "yes", why: `it held the condition the whole window, worst was ${money(Math.round(worst ?? 0))}`, observed: worst, candles: inside.length };
+  log(out);
 }

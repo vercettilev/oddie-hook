@@ -15,11 +15,11 @@ if (process.env.DATABASE_URL) { console.error("refusing to run against a databas
 
 import { readFileSync } from "node:fs";
 import { _setPriceFeed, priceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
-import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, readSpotAtOpen, closeQuestion, closeHook, holdQuestion, holdHook, reachQuestion, reachHook, commodityCheck, type PriceCheck, type SpotPrice } from "../src/price/index.js";
+import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, closeQuestion, closeHook, holdQuestion, holdHook, reachQuestion, reachHook, commodityCheck, spotCheck, SPOT_COINS, type PriceCheck } from "../src/price/index.js";
 import { BINANCE_ASSETS } from "../src/live/priceCall.js";
 import { samePriceBet } from "../src/matching/duplicate.js";
 import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
-import { retryOnDeadlock } from "../src/store/markets.js";
+import { retryOnDeadlock, PRICE_RULES_2026_10_20_SQL } from "../src/store/markets.js";
 import { decide } from "../src/oracle/oracle.js";
 import { _setProposer } from "../src/oracle/verdict.js";
 
@@ -490,68 +490,165 @@ console.log("\nA period already decided when its market opens");
     && reachHook(hold("2026-10-13T15:00:00Z")) === "SOL above $100 by 15:00 UTC?", reachQuestion(hold("2026-10-17T23:59:00Z")));
 }
 
-console.log("\nA coin with no token pinned on chain, read from its spot price");
+console.log("\nThe big coins on Binance spot");
 {
-  /* BTC is not a Solana token, so the check above never ran on it and its
-     market opened on the model's own rule. "BTC hits 80k this week" said with
-     BTC at 83,080 (Binance, 12 Oct boot log) opened "at any point" and was over
-     before anybody staked. */
-  const asked: Array<{ asset: string; t: number }> = [];
-  const spot = (price: number | null | Error): SpotPrice => ({
-    venue: "Binance",
-    async priceAt(asset, t) { asked.push({ asset, t }); if (price instanceof Error) throw price; return price; },
-  });
-  const BTC = { symbol: "BTC", metric: "price" as const, op: ">=" as const, target: 80_000, mode: "touch" as const };
-  const CLOSE = "2026-10-16T23:59:00.000Z";
-  const AT = Date.parse("2026-10-12T20:38:18Z");
+  /* BTC, ETH and the rest are not Solana tokens. Until 20 Oct their markets
+     were read at the open from Binance and then left to a rule naming
+     CoinMarketCap, which the page-settled oracle cannot open: ETH, XRP, BNB and
+     SUI closed on 18 Oct and sat there. Now a big coin is pinned to its Binance
+     pair like gold to Bybit's, and settled from that pair's candles. */
+  const WIN = { from: "2026-10-12T20:38:18.000Z", to: "2026-10-16T23:59:00.000Z" };
+  const btc = spotCheck({ symbol: "BTC", metric: "price", op: ">=", target: 80_000, mode: "touch" }, WIN);
+  check("BTC is pinned to Binance's BTCUSDT, never searched for as a token",
+    btc?.chain === "binance" && btc.pool === "BTCUSDT" && btc.mint === "BTCUSDT" && btc.symbol === "BTC" && btc.name === "Bitcoin (BTC)" && btc.supply === 0, JSON.stringify(btc));
+  check("...however the ticker is written",
+    spotCheck({ symbol: "$eth", metric: "price", op: ">", target: 2350, mode: "at-close" }, WIN)?.pool === "ETHUSDT"
+    && spotCheck({ symbol: "Sol", metric: "price", op: ">", target: 100, mode: "within" }, WIN)?.pool === "SOLUSDT");
+  check("...while a market cap, a coin Binance does not list and a metal are not this rail's",
+    spotCheck({ symbol: "BTC", metric: "mc", op: ">", target: 1e12, mode: "touch" }, WIN) === null
+    && spotCheck({ symbol: "HYPE", metric: "price", op: ">", target: 50, mode: "touch" }, WIN) === null
+    && spotCheck({ symbol: "XAU", metric: "price", op: ">", target: 4000, mode: "touch" }, WIN) === null);
+  check("the coins are the ones the stream votes read from Binance, less TON, whose pair stopped trading in June",
+    Object.keys(SPOT_COINS).every((s) => BINANCE_ASSETS.has(s))
+    && [...BINANCE_ASSETS].every((s) => s === "TON" ? !(s in SPOT_COINS) : s in SPOT_COINS), Object.keys(SPOT_COINS).join(","));
 
-  const btc = await readSpotAtOpen(BTC, CLOSE, spot(83_080.02), AT);
-  check("a touch BTC already meets at the open is read at the close", btc.kind === "reread" && btc.was === "yes" && btc.now === 83_080.02, JSON.stringify(btc));
-  check("...read from the spot price at the open", asked[0]?.asset === "BTC" && asked[0]?.t === AT, JSON.stringify(asked));
-  if (btc.kind === "reread") {
+  const AT = Date.parse(WIN.from) / 1000;
+  const now = (price: number, newest = Math.floor(AT / 3600) * 3600) => _setPriceFeed({
+    searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
+    async ohlcv(chain, pool) { return chain === "binance" && pool === "BTCUSDT" ? [[newest, price, price, price, price, 1]] as Candle[] : []; },
+  });
+  now(83_080.02);
+  const hit = await readAtOpen(btc!);
+  check("a touch BTC already meets at the open is read at the close", hit.kind === "reread" && hit.was === "yes" && hit.now === 83_080.02, JSON.stringify(hit));
+  if (hit.kind === "reread") {
     check("...asking where BTC ends the window, the level in full",
-      btc.question === "Will $BTC be at or above $80,000 at the end of October 16, 2026 (UTC)?", btc.question);
-    check("...under a headline that says so", btc.hook === "BTC above $80,000 on Oct 16?", String(btc.hook));
-    check("...and a rule the oracle can settle from a page, at the close minute",
-      btc.sentence === "Settles from the BTC/USD price on CoinMarketCap. YES if it is at or above $80,000 at 23:59 UTC on 2026-10-16. NO otherwise.", btc.sentence);
-    check("...which passes the wall every market is born behind",
-      unsettleablePhrase(btc.sentence) === null && unsettleablePhrase(btc.question) === null && addressInQuestion(btc.question) === null && btc.question.length <= 180);
+      hit.question === "Will $BTC be at or above $80,000 at the end of October 16, 2026 (UTC)?", hit.question);
+    check("...under a headline that says so", hit.hook === "BTC above $80,000 on Oct 16?", String(hit.hook));
+    check("...and a rule naming Binance's pair and the minute it is read at",
+      hit.sentence === "Settles from the price of Bitcoin (BTC) on Binance's BTCUSDT spot pair. YES if its price is at or above $80,000 at 23:59 UTC on 2026-10-16, read from the BTCUSDT candles on Binance. NO otherwise.", hit.sentence);
+    check("...stored as the check the oracle settles by", hit.check.chain === "binance" && hit.check.mode === "at-close" && hit.check.pool === "BTCUSDT");
   }
-  const odd = await readSpotAtOpen({ ...BTC, target: 83_250 }, CLOSE, spot(83_300), AT);
+  // Above means above, below means below (Lev, 13 Oct), on a big coin too.
+  const stays = await readAtOpen({ ...btc!, op: ">", mode: "within" });
+  check("BTC above $80,000 this week, with BTC at $83,080: does it stay above to the close",
+    stays.kind === "within" && stays.reading === "hold" && stays.check.mode === "always"
+    && stays.question === "Will $BTC stay above $80,000 through the end of October 16, 2026 (UTC)?"
+    && stays.hook === "BTC stays above $80,000 through Oct 16?"
+    && stays.sentence === "Settles from the price of Bitcoin (BTC) on Binance's BTCUSDT spot pair. YES if its price stays above $80,000 from this market's opening on 2026-10-12 until 23:59 UTC on 2026-10-16, read from the BTCUSDT candles on Binance. NO if it trades at or below $80,000 at any point in that period.",
+    JSON.stringify(stays));
+  const gets = await readAtOpen({ ...btc!, op: ">", target: 90_000, mode: "within" });
+  check("BTC above $90,000 this week, with BTC at $83,080: does it get there before the close",
+    gets.kind === "within" && gets.reading === "reach" && gets.check.mode === "touch"
+    && gets.question === "Will $BTC trade above $90,000 at any point before the end of October 16, 2026 (UTC)?"
+    && gets.sentence === "Settles from the price of Bitcoin (BTC) on Binance's BTCUSDT spot pair. YES if its price is above $90,000 at any point between this market's opening on 2026-10-12 and 23:59 UTC on 2026-10-16, read from the BTCUSDT candles on Binance. NO otherwise.",
+    JSON.stringify(gets));
+  check("...and every one of them passes the wall every market is born behind",
+    hit.kind === "reread" && stays.kind === "within" && gets.kind === "within"
+    && [hit.sentence, hit.question, stays.sentence, stays.question, gets.sentence, gets.question]
+      .every((t) => unsettleablePhrase(t) === null && addressInQuestion(t) === null && t.length > 0)
+    && [hit.question, stays.question, gets.question].every((q) => q.length <= 180));
+  now(83_300);
+  const odd = await readAtOpen({ ...btc!, target: 83_250 });
   check("a level that is not round is never rounded into another one",
     odd.kind === "reread" && odd.question.includes("$83,250") && odd.sentence.includes("$83,250"), JSON.stringify(odd));
-  const hold = await readSpotAtOpen({ ...BTC, mode: "always" }, CLOSE, spot(79_000), AT);
-  check("an \"always\" already broken at the open is read at the close too", hold.kind === "reread" && hold.was === "no", JSON.stringify(hold));
-  // Above means above, below means below (Lev, 13 Oct), on a coin's spot price too.
-  const btcStays = await readSpotAtOpen({ ...BTC, op: ">", mode: "within" }, CLOSE, spot(83_080.02), AT);
-  check("BTC above $80,000 this week, with BTC at $83,080: does it stay above to the close",
-    btcStays.kind === "within" && btcStays.reading === "hold"
-    && btcStays.question === "Will $BTC stay above $80,000 through the end of October 16, 2026 (UTC)?"
-    && btcStays.hook === "BTC stays above $80,000 through Oct 16?"
-    && btcStays.sentence === "Settles from the BTC/USD price on CoinMarketCap. YES if it stays above $80,000 from this market's opening until 23:59 UTC on 2026-10-16. NO if it trades at or below $80,000 at any point in that period.",
-    JSON.stringify(btcStays));
-  const btcGets = await readSpotAtOpen({ ...BTC, op: ">", target: 90_000, mode: "within" }, CLOSE, spot(83_080.02), AT);
-  check("BTC above $90,000 this week, with BTC at $83,080: does it get there before the close",
-    btcGets.kind === "within" && btcGets.reading === "reach"
-    && btcGets.question === "Will $BTC trade above $90,000 at any point before the end of October 16, 2026 (UTC)?"
-    && btcGets.sentence === "Settles from the BTC/USD price on CoinMarketCap. YES if it trades above $90,000 at any point between this market's opening and 23:59 UTC on 2026-10-16. NO otherwise.",
-    JSON.stringify(btcGets));
-  check("...both pass the wall every market is born behind",
-    btcStays.kind === "within" && btcGets.kind === "within"
-    && [btcStays.sentence, btcStays.question, btcGets.sentence, btcGets.question].every((t) => unsettleablePhrase(t) === null && addressInQuestion(t) === null));
-  const ahead = await readSpotAtOpen({ ...BTC, target: 90_000 }, CLOSE, spot(83_080.02), AT);
-  check("a touch still ahead of the price opens as it reads", ahead.kind === "as-is" && ahead.now === 83_080.02, JSON.stringify(ahead));
-  asked.length = 0;
-  const close = await readSpotAtOpen({ ...BTC, mode: "at-close" }, CLOSE, spot(83_080.02), AT);
-  const cap = await readSpotAtOpen({ ...BTC, metric: "mc" }, CLOSE, spot(83_080.02), AT);
-  check("an at-close claim and a market cap are left alone, without asking for a price",
-    close.kind === "as-is" && cap.kind === "as-is" && asked.length === 0);
-  const down = await readSpotAtOpen(BTC, CLOSE, spot(new Error("binance klines 451")), AT);
-  const none = await readSpotAtOpen(BTC, CLOSE, spot(null), AT);
-  check("a spot price that cannot be read leaves the market as it reads, with the reason",
-    down.kind === "unread" && /Binance did not answer: binance klines 451/.test(down.why) && none.kind === "unread", JSON.stringify({ down, none }));
-  check("the coins read this way are the ones the stream votes read from Binance",
-    ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "PEPE", "WIF", "BONK", "TON"].every((s) => BINANCE_ASSETS.has(s)) && !BINANCE_ASSETS.has("HYPE") && !BINANCE_ASSETS.has("CL"));
+  const xrp = criteriaSentence(spotCheck({ symbol: "XRP", metric: "price", op: ">", target: 1.3075, mode: "at-close" }, WIN)!);
+  check("...nor a coin quoted to four places", xrp.includes("above $1.3075 at 23:59 UTC") && !xrp.includes("$1.31"), xrp);
+  now(83_080.02, Math.floor(Date.parse("2026-06-30T00:00:00Z") / 1000));
+  const dead = await readAtOpen({ ...btc!, op: ">", mode: "within" });
+  check("a pair whose newest candle is months old is not read as the price now",
+    dead.kind === "within" && dead.reading === "close" && /BTCUSDT has not traded since 2026-06-30/.test(dead.why ?? ""), JSON.stringify(dead));
+}
+
+console.log("\nAn exchange pair is read to the minute");
+{
+  /* An exchange that trades every minute, its candles built from one price per
+     minute and served the way Binance and Bybit serve them: the newest `limit`
+     that start at or before the time asked. Which sizes were asked is kept. */
+  const asked: Array<{ timeframe: string; limit: number; before?: number }> = [];
+  const market = (priceAt: (minute: number) => number) => {
+    asked.length = 0;
+    _setPriceFeed({
+      searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
+      async ohlcv(_chain, _pool, timeframe, limit, before) {
+        asked.push({ timeframe, limit, before });
+        const step = timeframe === "minute" ? 60 : timeframe === "hour" ? 3600 : 86_400;
+        const out: Candle[] = [];
+        for (let t = Math.floor((before ?? 0) / step) * step; out.length < limit; t -= step) {
+          let high = -Infinity;
+          let low = Infinity;
+          for (let m = t; m < t + step; m += 60) { high = Math.max(high, priceAt(m)); low = Math.min(low, priceAt(m)); }
+          out.push([t, priceAt(t), high, low, priceAt(t + step - 60), 1]);
+        }
+        return out;
+      },
+    });
+  };
+  const sec = (iso: string) => Date.parse(iso) / 1000;
+  const CLOSE = sec("2026-10-18T23:59:00Z");
+  const ETH = spotCheck({ symbol: "ETH", metric: "price", op: ">", target: 2350, mode: "at-close" }, { from: "2026-10-15T19:01:17.498Z", to: "2026-10-18T23:59:00.000Z" })!;
+
+  market((m) => (m >= CLOSE - 120 ? 2411.39 : 2300));
+  let v = await checkPrice(ETH);
+  check("a close at 23:59 is read at 23:59, the last whole minute, not at 23:00",
+    v.outcome === "yes" && v.observed === 2411.39 && v.why === "$2,411.39 at close", `${v.outcome} ${v.observed}: ${v.why}`);
+  check("...from minutes alone, an hour of them", asked.length === 1 && asked[0].timeframe === "minute" && asked[0].limit === 60 && asked[0].before === CLOSE - 60, JSON.stringify(asked));
+  market((m) => (m >= CLOSE ? 2411.39 : 2300));
+  v = await checkPrice(ETH);
+  check("...and a move made in the minute the market closes on does not count", v.outcome === "no" && v.observed === 2300, `${v.outcome}: ${v.why}`);
+
+  const OPEN = sec("2026-10-15T19:10:41.334Z");
+  const SUI = spotCheck({ symbol: "SUI", metric: "price", op: ">", target: 1, mode: "always" }, { from: "2026-10-15T19:10:41.334Z", to: "2026-10-18T23:59:00.000Z" })!;
+  const dipAt = (minute: number) => (m: number) => (m === minute ? 0.99 : 1.05);
+  market(dipAt(sec("2026-10-15T19:15:00Z")));
+  v = await checkPrice(SUI);
+  check("a hold broken in the market's first minutes is broken, though no whole hour had begun",
+    v.outcome === "no" && v.observed === 0.99, `${v.outcome}: ${v.why}`);
+  check("...read by the minute at both ends and by the hour between",
+    asked.map((a) => a.timeframe).join(",") === "minute,hour,minute", JSON.stringify(asked));
+  market(dipAt(sec("2026-10-15T19:10:00Z")));
+  v = await checkPrice(SUI);
+  check("...while a dip in the minute the market opened inside does not count", v.outcome === "yes", `${v.outcome}: ${v.why}`);
+  market(dipAt(sec("2026-10-18T23:30:00Z")));
+  v = await checkPrice(SUI);
+  check("...and one in the last hour, before the close, does", v.outcome === "no", `${v.outcome}: ${v.why}`);
+  market(dipAt(CLOSE));
+  v = await checkPrice(SUI);
+  check("...but not one at the close itself", v.outcome === "yes" && v.why === "it held the condition the whole window, worst was $1.05", `${v.outcome}: ${v.why}`);
+
+  const reach = spotCheck({ symbol: "SUI", metric: "price", op: ">=", target: 1.2, mode: "touch" }, { from: "2026-10-15T19:10:41.334Z", to: "2026-10-18T23:59:00.000Z" })!;
+  market((m) => (m === sec("2026-10-18T23:41:00Z") ? 1.21 : 1.05));
+  v = await checkPrice(reach);
+  check("a reach made in the last minutes before the close is a YES", v.outcome === "yes" && v.observed === 1.21, `${v.outcome}: ${v.why}`);
+  market(() => 1.05);
+  v = await checkPrice(reach);
+  check("...and none made is a NO, the whole window read", v.outcome === "no", `${v.outcome}: ${v.why}`);
+
+  const LONG = spotCheck({ symbol: "BTC", metric: "price", op: ">", target: 80_000, mode: "always" }, { from: "2026-09-01T00:00:00.000Z", to: "2026-10-21T00:00:00.000Z" })!;
+  market((m) => (m === sec("2026-09-01T03:07:00Z") ? 79_999 : 81_000));
+  v = await checkPrice(LONG);
+  check("fifty days of hours are read in pages, and a break on the first day is found",
+    v.outcome === "no" && v.observed === 79_999 && asked.filter((a) => a.timeframe === "hour").length === 2, `${v.outcome}: ${v.why} ${JSON.stringify(asked)}`);
+
+  _setPriceFeed(null);
+  const realFetch = globalThis.fetch;
+  const urls: string[] = [];
+  const answer = (body: unknown, status = 200) => (async (u: string | URL | Request) => { urls.push(String(u)); return new Response(JSON.stringify(body), { status }); }) as typeof fetch;
+  try {
+    globalThis.fetch = answer([[1792540680000, "2412.61", "2413.00", "2411.00", "2411.39", "52.1", 1792540739999, "1", 1, "1", "1", "0"]]);
+    const got = await priceFeed().ohlcv("binance", "ETHUSDT", "minute", 60, 1792540680);
+    check("Binance's klines come back in the feed's shape, seconds and numbers",
+      JSON.stringify(got) === JSON.stringify([[1792540680, 2412.61, 2413, 2411, 2411.39, 52.1]]), JSON.stringify(got));
+    check("...asked of the public market-data host, by the minute, up to the moment given",
+      /^https:\/\/data-api\.binance\.vision\/api\/v3\/klines\?symbol=ETHUSDT&interval=1m&limit=60&endTime=1792540680000$/.test(urls[0] ?? ""), urls[0]);
+    globalThis.fetch = answer({ code: -1121, msg: "Invalid symbol." });
+    const refused = await priceFeed().ohlcv("binance", "NOPEUSDT", "hour", 1).catch((e) => e as Error);
+    check("...and an answer that is not candles is an error, never an empty history", refused instanceof Error && /Invalid symbol/.test(refused.message), String(refused));
+    globalThis.fetch = answer({ retCode: 0, retMsg: "OK", result: { list: [] } });
+    await priceFeed().ohlcv("bybit", "CLUSDT", "minute", 10, 1760400000);
+    check("Bybit is asked for minutes as interval 1", /symbol=CLUSDT&interval=1&limit=10&end=1760400000000/.test(urls[urls.length - 1] ?? ""), urls[urls.length - 1]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 console.log("\nGold, silver and oil on Bybit's candles");
@@ -595,7 +692,7 @@ console.log("\nGold, silver and oil on Bybit's candles");
 
   const rule = criteriaSentence({ ...gold!, mode: "at-close", target: 4250 });
   check("its rule names the perpetual and the level in full",
-    rule === "Settles from the price of gold (XAU/USD) on Bybit's XAUUSDT perpetual. YES if its price is below $4,250 at 2026-10-16 UTC, read from the hourly candles of XAUUSDT on Bybit. NO otherwise.", rule);
+    rule === "Settles from the price of gold (XAU/USD) on Bybit's XAUUSDT perpetual. YES if its price is below $4,250 at 21:00 UTC on 2026-10-16, read from the XAUUSDT candles on Bybit. NO otherwise.", rule);
 
   const H = Date.parse("2026-10-13T11:00:00Z") / 1000;
   const at = (price: number) => _setPriceFeed({
@@ -608,7 +705,8 @@ console.log("\nGold, silver and oil on Bybit's candles");
     stays.kind === "within" && stays.reading === "hold" && stays.check.mode === "always"
     && stays.question === "Will gold (XAU/USD) stay below $4,200 until 21:00 UTC on October 16, 2026?"
     && stays.hook === "Gold stays below $4,200 until 21:00 UTC?", JSON.stringify(stays));
-  check("...under a rule on Bybit's candles, the whole way", stays.kind === "within" && /^Settles from the price of gold \(XAU\/USD\) on Bybit's XAUUSDT perpetual\. YES if its price is below \$4,200 continuously from this market opening/.test(stays.sentence), stays.kind === "within" ? stays.sentence : "");
+  check("...under a rule on Bybit's candles, the whole way", stays.kind === "within"
+    && stays.sentence === "Settles from the price of gold (XAU/USD) on Bybit's XAUUSDT perpetual. YES if its price stays below $4,200 from this market's opening on 2026-10-13 until 21:00 UTC on 2026-10-16, read from the XAUUSDT candles on Bybit. NO if it trades at or above $4,200 at any point in that period.", stays.kind === "within" ? stays.sentence : "");
   at(4250);
   const gets = await readAtOpen(gold!);
   check("...and with gold above it, whether it gets there",
@@ -642,12 +740,9 @@ console.log("\nwired where every market is born");
     && born.includes("ok: true, slug, marketId, question, hook,") && (server.match(/question: out\.question, hook: out\.hook/g) ?? []).length === 3);
   check("a price that cannot be read is logged, never a refusal",
     born.includes('line: "price not read at the open, opened as it reads"') && born.includes("line: \"no pinned price at the open, opened on the model's rule\""));
-  const unpinned = born.slice(born.indexOf('} else if (criteria && input.priceClaim.mode !== "at-close") {'), born.indexOf("} else if (!criteria) {"));
-  check("a coin with no token pinned is read from Binance at the open, and the market opens under the words it settles by",
-    /BINANCE_ASSETS\.has\(pc\.symbol\)\s*\? await readSpotAtOpen\(pc, new Date\(closeTime \* 1000\)\.toISOString\(\), binancePrices\)/.test(unpinned)
-    && /criteria = spot\.sentence;\s*question = spot\.question;\s*hook = spot\.hook;/.test(unpinned), unpinned.slice(0, 200));
-  check("a commodity is pinned to its Bybit perpetual before any token search",
-    /const commodity = commodityCheck\(input\.priceClaim, window\);\s*const r = commodity\s*\? \{ ok: true as const, check: commodity, sentence: criteriaSentence\(commodity\) \}\s*: await resolvePriceClaim\(/.test(born));
+  check("gold and oil are pinned to their Bybit perpetual and a big coin to its Binance pair, before any token search",
+    /const exchange = commodityCheck\(input\.priceClaim, window\) \?\? spotCheck\(input\.priceClaim, window\);\s*const r = exchange\s*\? \{ ok: true as const, check: exchange, sentence: criteriaSentence\(exchange\) \}\s*: await resolvePriceClaim\(/.test(born));
+  check("...so nothing reads a coin at the open and leaves its rule to a page any more", !born.includes("readSpotAtOpen") && !server.includes("binancePrices.venue"));
   const prompt = readFileSync("src/matching/extractClaim.ts", "utf8");
   check("the extractor names gold, silver and oil by the symbols the rail knows",
     prompt.includes("or about the PRICE of gold, silver or crude oil") && prompt.includes("exactly XAU for gold, XAG for silver, CL for WTI crude and for crude oil named without a grade, BZ for Brent crude"));
@@ -676,6 +771,34 @@ console.log("\nthe one-way boot step lands even beside the schema");
   calls = 0;
   const stuck = await retryOnDeadlock(async () => { calls++; throw deadlock; }, 3, 0).catch((e) => e as Error);
   check("...and a deadlock that keeps coming is thrown after three goes", stuck === deadlock && calls === 3, String(calls));
+}
+
+console.log("\nsix closed markets get the price rule their words state, once");
+{
+  /* 20 Oct: gold, CL, ETH, XRP, BNB and SUI closed with rules that name a
+     price at a minute, and the page-settled oracle could not read one. The
+     boot step gives each a price_check and touches nothing else. */
+  const sql = PRICE_RULES_2026_10_20_SQL;
+  const store = readFileSync("src/store/markets.ts", "utf8");
+  const rows = [...sql.matchAll(/\('([a-z0-9-]+)',\s*'((?:[^']|'')*)',\s*'(\{[^']*\})'::jsonb\)/g)]
+    .map((m) => ({ slug: m[1], question: m[2].replace(/''/g, "'"), check: JSON.parse(m[3]) as PriceCheck }));
+  check("six markets, each named by its slug and the words it closed under",
+    rows.length === 6 && rows.every((r) => r.question.startsWith("Will ") && r.question.endsWith("?")), rows.map((r) => r.slug).join(","));
+  check("gold and CL are read on Bybit, the coins on Binance, each on its own pair",
+    rows.every((r) => r.check.chain === (["XAU", "CL"].includes(r.check.symbol) ? "bybit" : "binance") && r.check.pool === r.check.mint
+      && r.check.pool === (r.check.chain === "bybit" ? commodityCheck({ symbol: r.check.symbol, metric: "price", op: ">", target: 1, mode: "touch" }, WINDOW)?.pool
+        : spotCheck({ symbol: r.check.symbol, metric: "price", op: ">", target: 1, mode: "touch" }, WINDOW)?.pool)), JSON.stringify(rows.map((r) => r.check.pool)));
+  check("each rule is the one its words state",
+    rows.map((r) => `${r.check.symbol} ${r.check.op} ${r.check.target} ${r.check.mode} ${r.check.to.slice(0, 16)}`).join(" | ")
+      === "XAU < 4200 at-close 2026-10-16T21:00 | CL > 90 always 2026-10-16T21:00 | ETH > 2350 at-close 2026-10-18T23:59 | XRP > 1.3 at-close 2026-10-18T23:59 | BNB > 710 at-close 2026-10-18T23:59 | SUI > 1 always 2026-10-18T23:59",
+    rows.map((r) => `${r.check.symbol} ${r.check.op} ${r.check.target} ${r.check.mode} ${r.check.to}`).join(" | "));
+  check("...each read from the minute its market opened, never earlier",
+    rows.every((r) => /^2026-10-1[25]T19:\d\d:\d\d\.\d{3}Z$/.test(r.check.from) && Date.parse(r.check.from) < Date.parse(r.check.to)));
+  check("only the price_check is set, and only where there is none, no outcome and no retirement",
+    sql.slice(sql.indexOf("UPDATE"), sql.indexOf("FROM fix f")).trim() === "UPDATE community_market c SET price_check = f.pc"
+    && sql.includes("c.price_check IS NULL AND c.resolved_outcome IS NULL AND c.retired_at IS NULL"));
+  check("...and only while each still reads as it closed", sql.includes("JOIN market_slug s ON s.slug = f.slug AND s.question = f.question"));
+  check("it runs at boot with the other one-way steps", /RETURN_GOLD_2026_10_15, PRICE_RULES_2026_10_20\]/.test(store));
 }
 
 _setPriceFeed(null);

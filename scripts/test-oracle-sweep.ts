@@ -112,6 +112,24 @@ console.log("\nthe retry record is consulted before the model");
   check("and it is counted as held", r.held === 1);
 }
 
+console.log("\na price rule is arithmetic, so a paid past does not hold it");
+{
+  // gold and five more on 20 Oct: three paid rounds of failed citations each,
+  // then a price rule. The record said wait a day; candles cost nothing.
+  const pc = { chain: "bybit", mint: "XAUUSDT", symbol: "XAU", name: "gold (XAU/USD)", pool: "XAUUSDT", supply: 0, metric: "price", op: "<", target: 4200, mode: "at-close", from: "2026-10-12T19:46:01.262Z", to: "2026-10-16T21:00:00.000Z" } as const;
+  const paidPast = async () => ({ lastGate: "citations-failed", lastDecidedAt: new Date().toISOString(), paidAttempts: 3 });
+  const seen: Array<unknown> = [];
+  const h = harness([market("gold"), market("words-only")], {
+    criteria: async (slug: string) => ({ ok: true as const, criteria: "a rule long enough to pass the code gate", priceCheck: slug === "gold" ? { ...pc } : null }),
+    attempt: paidPast,
+    decide: async (m: { slug: string; priceCheck?: unknown }) => { h.asked.push(m.slug); seen.push(m.priceCheck); return yes(m.slug); },
+  });
+  const r = await oracleSweep(h.deps);
+  check("the market with a price rule is asked at once", h.asked.join(",") === "gold", `asked ${h.asked.join(",")}`);
+  check("...with its rule handed to the oracle", (seen[0] as { pool?: string } | null)?.pool === "XAUUSDT");
+  check("...while one with only words still waits out its paid rounds", r.held === 1 && h.settled.join(",") === "gold", `held ${r.held}`);
+}
+
 console.log("\nthe limit bounds the bill, and counts the right thing");
 {
   const h = harness([market("a"), market("b"), market("c")], { limit: 2 });

@@ -56,7 +56,7 @@ console.log("\nthe gold market goes back on the board, once");
   check("only while it is off the board, minted, and unsettled",
     sql.includes("c.retired_at IS NOT NULL") && sql.includes("c.onchain_pubkey IS NOT NULL") && sql.includes("c.resolved_outcome IS NULL"));
   check("it clears retired_at and nothing else", /SET retired_at = NULL\s/.test(sql) && !/SET[^]*question|resolution_criteria|price_check/.test(sql.split("WHERE")[0]));
-  check("it runs at boot with the other one-way steps", /RETIRE_GOLD_2026_10_13, RETURN_GOLD_2026_10_15\]/.test(store));
+  check("it runs at boot with the other one-way steps", /RETIRE_GOLD_2026_10_13, RETURN_GOLD_2026_10_15[,\]]/.test(store));
 }
 
 console.log(failed ? `\n${failed} failed` : "\nretired market: all passed");

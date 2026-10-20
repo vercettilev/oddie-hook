@@ -112,9 +112,10 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
 
     // Ask the record before spending anything. A market whose criteria the
     // model has already judged uncheckable answers the same way at the same
-    // price every run, until a person rewrites them.
+    // price every run, until a person rewrites them. One with a price rule
+    // spends nothing, so its paid past does not hold it back.
     const attempt = await deps.attempt(m.slug).catch(() => ({ lastGate: null, lastDecidedAt: null, paidAttempts: 0 }));
-    const again = shouldRetry(attempt);
+    const again = shouldRetry(attempt, deps.asOf, { priced: Boolean(read.priceCheck) });
     if (!again.retry && !deps.force) {
       out.held++;
       deps.on?.held?.(m.slug, again.why);

@@ -448,6 +448,17 @@ console.log("\nasking the same stuck market again, forever, at full price");
   check("...and caps at a week", backoffMs(20) === 7 * 24 * H);
   check("no paid attempt means no wait", backoffMs(0) === 0);
 
+  // 20 OCT: six closed markets were given a price rule after three paid rounds
+  // of failed citations each. The rule is answered from candles, which cost
+  // nothing, so what the model's rounds cost must not keep them waiting a day.
+  const priced = (lastGate: string) =>
+    shouldRetry({ lastGate, lastDecidedAt: new Date(Date.now() - 1 * H).toISOString(), paidAttempts: 3 }, new Date(), { priced: true });
+  check("a market with a price rule is asked at once, whatever the model's rounds cost",
+    priced("citations-failed").retry && priced("not-checkable").retry && priced("second-opinion-disagreed").retry, priced("citations-failed").why);
+  check("...unless its own price read said the history cannot cover the window",
+    !priced("price-undetermined").retry && priced("price-undetermined").why.includes("person"), priced("price-undetermined").why);
+  check("...and without a price rule the same record still waits", !shouldRetry({ lastGate: "citations-failed", lastDecidedAt: new Date(Date.now() - 1 * H).toISOString(), paidAttempts: 3 }).retry);
+
   // A market whose every attempt times out would otherwise be free to retry at
   // full price forever, because runPropose can throw AFTER the request went out.
   check("an error counts as paid", decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: "" }));
