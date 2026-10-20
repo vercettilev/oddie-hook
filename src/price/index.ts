@@ -775,5 +775,21 @@ export async function probeExchangeRails(log: (line: Record<string, unknown>) =>
       out[r.chain] = { ok: false, pool: r.pool, why: (e as Error).message.slice(0, 200) };
     }
   }
+  /* AND THE TWO PUBLIC ARCHIVES that could stand in for Bybit's live API, which
+     answers this server 403 (20 Oct): Binance's daily minute candles for its
+     gold and oil perpetuals, and Bybit's own daily trade files. Only whether
+     they answer from here; nothing reads them yet. */
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  for (const [name, url] of [
+    ["binanceArchive", `https://data.binance.vision/data/futures/um/daily/klines/CLUSDT/1m/CLUSDT-1m-${yesterday}.zip`],
+    ["bybitArchive", "https://public.bybit.com/trading/CLUSDT/"],
+  ] as const) {
+    try {
+      const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(15_000), headers: { "user-agent": "oddie/1.0 (+https://oddie.fun)" } });
+      out[name] = { status: res.status, url };
+    } catch (e) {
+      out[name] = { status: null, url, why: (e as Error).message.slice(0, 200) };
+    }
+  }
   log(out);
 }
