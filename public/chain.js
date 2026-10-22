@@ -178,6 +178,9 @@ const PREPARE_REASON = {
   "self-fill": "That is your own seat.",
   "not-enough": "You do not hold that much on that side any more.",
   "closed": "Betting on this market has closed.",
+  // The price has already reached the level (or left the hold), so the result
+  // is known and the market settles within a minute.
+  "decided": "The price already decided this one. It settles in a minute.",
   "not-resolved": "This market has not settled yet.",
   // After a claim the position account is CLOSED (that is what returns its
   // rent), so "no position" and "already collected" look identical from here.

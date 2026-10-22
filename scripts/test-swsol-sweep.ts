@@ -106,5 +106,32 @@ const deps = (over: Partial<Sweep> = {}): Sweep => ({
   check("a board with nothing minted reads nothing and moves nothing", calls.length === 0 && out.moved.length === 0);
 }
 
+console.log("\nwhen Sanctum's program is not the one we reviewed\n");
+{
+  /* Audit, 22 Oct: park and unpark insist on one SOL a swSOL, and Sanctum's
+     program is upgradeable. A redeploy brings every parked lamport home and
+     parks nothing; a program we cannot read parks nothing. */
+  const one = (over: Partial<Sweep>) => deps({
+    list: async () => [row("long-parked", "LONGP")],
+    holdings: async (pks) => new Map(pks.map((pk) => [pk, { solLamports: 2 * SOL, swsolLamports: 500_000_000 }])),
+    ...over,
+  });
+  calls.length = 0;
+  let out = await sweepSwsol(one({ sanctumChanged: async () => false }));
+  check("the deploy we reviewed: a long market parks as before", same(calls, [["park", "LONGP", 2 * SOL]]) && out.sanctum === "same", calls);
+  calls.length = 0;
+  out = await sweepSwsol(one({ sanctumChanged: async () => true }));
+  check("a new deploy: what is parked comes home two months early, and nothing more is parked",
+    same(calls, [["unpark", "LONGP", 500_000_000]]) && out.sanctum === "changed", calls);
+  calls.length = 0;
+  out = await sweepSwsol(one({ sanctumChanged: async () => null }));
+  check("a program we cannot read: nothing is parked, nothing forced home", calls.length === 0 && out.sanctum === "unread", calls);
+  calls.length = 0;
+  out = await sweepSwsol(one({ sanctumChanged: async () => { throw new Error("rpc down"); } }));
+  check("...and a read that throws is the same as one we could not make", calls.length === 0 && out.sanctum === "unread", calls);
+  check("a market a day from its close still comes home whatever Sanctum is doing",
+    swsolAction(v(0.5, 0, 1), NOW, { ...on, parkEnabled: false })?.kind === "unpark");
+}
+
 console.log(failed === 0 ? "\nall swSOL sweep checks passed.\n" : `\n${failed} FAILED\n`);
 if (failed > 0) process.exit(1);

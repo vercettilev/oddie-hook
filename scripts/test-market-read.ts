@@ -12,7 +12,8 @@
  */
 process.env.ONCHAIN_ENABLED = "false";
 
-import { readMarket, readMarkets, readPositions, fetchMarketOnChain, forgetMarket } from "../src/chain/oddieChain.js";
+import { readMarket, readMarkets, readPositions, fetchMarketOnChain, forgetMarket, chainMarketIdFor } from "../src/chain/oddieChain.js";
+import { readFileSync } from "node:fs";
 
 let failed = 0;
 const check = (name: string, ok: boolean, extra?: unknown) => {
@@ -80,6 +81,28 @@ check("an empty position request is an empty map", (await readPositions([], WALL
 const bad = await readPositions([A], "not-a-real-pubkey");
 check("a malformed wallet reads unreadable, never absent",
   bad.size === 1 && !bad.get(A)!.ok && (bad.get(A) as { reason: string }).reason === "unreadable", bad.get(A));
+
+console.log("\nthe id a market goes on chain with\n");
+{
+  /* Audit, 22 Oct: create_market is open to anybody and the address comes from
+     the id alone, so a guessable id (the millisecond the market opened) was an
+     address somebody could take first and block the market from the chain. */
+  const key = new Uint8Array(64).map((_, i) => i * 7 + 3);
+  const other = new Uint8Array(64).map((_, i) => i * 11 + 5);
+  const a = chainMarketIdFor(key, "market:will-eth-trade-above-2400-at-e7bd97");
+  check("the same market always asks for the same id, so racing mints meet at one address",
+    a === chainMarketIdFor(key, "market:will-eth-trade-above-2400-at-e7bd97"));
+  check("...a different market for a different one", a !== chainMarketIdFor(key, "market:will-eth-trade-above-2400-at-e7bd98"));
+  check("...and nobody without the admin key can compute it", a !== chainMarketIdFor(other, "market:will-eth-trade-above-2400-at-e7bd97"));
+  const ids = Array.from({ length: 2000 }, (_, i) => chainMarketIdFor(key, `market:m${i}`));
+  check("every id is a whole number a JavaScript number holds exactly, never zero",
+    ids.every((n) => Number.isSafeInteger(n) && n > 0 && n < 2 ** 52), ids.find((n) => !(Number.isSafeInteger(n) && n > 0 && n < 2 ** 52)));
+  const upper = ids.filter((n) => n >= 2 ** 51).length;
+  check("...spread over the whole range, not clustered like milliseconds", upper > 850 && upper < 1150, upper);
+  const server = readFileSync("src/server.ts", "utf8");
+  check("both mints derive the id: from the slug, or from the claim before it has one",
+    server.includes("idSeed: `market:${slug}`") && server.includes("idSeed: `claim:${marketId}:${question}`"));
+}
 
 console.log(failed === 0 ? "\nall market read checks passed.\n" : `\n${failed} FAILED\n`);
 if (failed > 0) process.exit(1);

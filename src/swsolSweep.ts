@@ -46,10 +46,10 @@ export interface VaultView {
 export type SwsolAction = { kind: "park" | "unpark"; lamports: number } | null;
 
 export function swsolAction(
-  v: VaultView, now: number, opts: { parkEnabled: boolean; adminLamports: number | null },
+  v: VaultView, now: number, opts: { parkEnabled: boolean; adminLamports: number | null; homeNow?: boolean },
 ): SwsolAction {
   const left = v.closeTimeMs - now;
-  if (v.resolved || left <= UNPARK_BEFORE_CLOSE_MS) {
+  if (v.resolved || left <= UNPARK_BEFORE_CLOSE_MS || opts.homeNow) {
     return v.parkedLamports > 0 ? { kind: "unpark", lamports: v.parkedLamports } : null;
   }
   if (!opts.parkEnabled || left < PARK_MIN_LEFT_MS) return null;
@@ -74,6 +74,13 @@ export interface SwsolDeps {
   /** What each vault holds; null when it could not be read. */
   holdings(pubkeys: string[]): Promise<Map<string, { solLamports: number; swsolLamports: number } | null>>;
   adminLamports(): Promise<number | null>;
+  /**
+   * Has Sanctum redeployed its program since the deploy we reviewed? Null when
+   * it could not be read. Changed brings every parked lamport home and parks
+   * nothing; unread parks nothing (audit, 22 Oct: unpark insists on one SOL a
+   * swSOL, and Sanctum's program can change what a swSOL is worth).
+   */
+  sanctumChanged?(): Promise<boolean | null>;
   park(pubkey: string, lamports: number): Promise<SwsolMoveResult>;
   unpark(pubkey: string, lamports: number): Promise<SwsolMoveResult>;
   parkEnabled: boolean;
@@ -89,11 +96,13 @@ export interface SwsolMoveLog {
   error?: string;
 }
 
-export async function sweepSwsol(d: SwsolDeps): Promise<{ moved: SwsolMoveLog[]; failed: SwsolMoveLog[] }> {
+export async function sweepSwsol(d: SwsolDeps): Promise<{ moved: SwsolMoveLog[]; failed: SwsolMoveLog[]; sanctum: "same" | "changed" | "unread" }> {
   const rows = (await d.list()).filter((r): r is SwsolCandidate & { onchainPubkey: string } => Boolean(r.onchainPubkey));
   const moved: SwsolMoveLog[] = [];
   const failed: SwsolMoveLog[] = [];
-  if (rows.length === 0) return { moved, failed };
+  const changed = d.sanctumChanged ? await d.sanctumChanged().catch(() => null) : false;
+  const sanctum = changed === null ? "unread" : changed ? "changed" : "same";
+  if (rows.length === 0) return { moved, failed, sanctum };
   const pubkeys = rows.map((r) => r.onchainPubkey);
   const [markets, holdings, admin] = await Promise.all([d.markets(pubkeys), d.holdings(pubkeys), d.adminLamports()]);
   let adminLeft = admin;
@@ -110,8 +119,9 @@ export async function sweepSwsol(d: SwsolDeps): Promise<{ moved: SwsolMoveLog[];
         parkedLamports: h.swsolLamports,
       },
       now,
-      // A retired market only ever brings SOL home.
-      { parkEnabled: d.parkEnabled && !r.retiredAt, adminLamports: adminLeft },
+      // A retired market only ever brings SOL home, and so does every market
+      // while Sanctum's program is not the one we reviewed or cannot be read.
+      { parkEnabled: d.parkEnabled && !r.retiredAt && sanctum === "same", adminLamports: adminLeft, homeNow: sanctum === "changed" },
     );
     if (!action) continue;
     const res = action.kind === "park"
@@ -122,5 +132,5 @@ export async function sweepSwsol(d: SwsolDeps): Promise<{ moved: SwsolMoveLog[];
     else failed.push({ ...entry, error: res.error });
     if (action.kind === "park" && adminLeft !== null) adminLeft -= PARK_COST_LAMPORTS;
   }
-  return { moved, failed };
+  return { moved, failed, sanctum };
 }

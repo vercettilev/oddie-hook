@@ -198,6 +198,35 @@ console.log("\na price rule its candles can decide is read before its close");
     past.asked.join(",") === "a,eth-touch" && r2.truncated && past.settled.join(",") === "a,eth-touch", `asked ${past.asked.join(",")}, truncated ${r2.truncated}`);
 }
 
+console.log("\nthe minute loop reads open price markets, the half-hour one closed markets");
+{
+  /* Audit, 22 Oct: a decided price market took bets until the next half-hour
+     sweep. The server now reads open price markets every minute (scope
+     "open") and leaves the closed ones, and their model, to the half hour
+     (scope "closed"). */
+  const later = new Date(Date.now() + 5 * 86_400_000).toISOString();
+  const pc = (chain: string) => ({ chain, mint: "M", symbol: "S", name: "S", pool: "P", supply: 0, metric: "price", op: ">", target: 1, mode: "touch", from: "2026-10-20T00:00:00.000Z", to: later }) as unknown as OracleSweepMarket["priceCheck"];
+  const board = [
+    market("eth", { closesAt: later, priceCheck: pc("binance") }),
+    market("ore", { closesAt: later, priceCheck: pc("solana") }),
+    market("gold"),
+  ];
+  const rule = async (slug: string) => ({ ok: true as const, criteria: "a rule long enough to pass the code gate", priceCheck: board.find((m) => m.slug === slug)?.priceCheck ?? null });
+  const run = async (over: Partial<Parameters<typeof oracleSweep>[0]>) => {
+    const h = harness(board, { criteria: rule, ...over });
+    const r = await oracleSweep(h.deps);
+    return { asked: h.asked.join(","), r };
+  };
+  const minute = await run({ scope: "open", openFilter: (m) => m.priceCheck?.chain === "binance" });
+  check("the minute loop reads the open exchange market and nothing closed", minute.asked === "eth" && minute.r.early === 1, `asked ${minute.asked}`);
+  const fifth = await run({ scope: "open" });
+  check("...and every open price market when the filter lets it", fifth.asked === "eth,ore", `asked ${fifth.asked}`);
+  const half = await run({ scope: "closed" });
+  check("the half-hour sweep leaves open markets to the minute loop", half.asked === "gold" && half.r.early === 0, `asked ${half.asked}`);
+  const both = await run({});
+  check("...and with no scope it reads both, as before", both.asked === "eth,ore,gold", `asked ${both.asked}`);
+}
+
 console.log("\na settlement that fails is reported, not swallowed");
 {
   const h = harness([market("a")], { settle: async () => false });

@@ -27,7 +27,8 @@
 import { auditCitations, auditSupports, type AuditResult } from "./audit.js";
 import { runPropose, type Proposal, type Side } from "./verdict.js";
 import { messagesUrl, authHeaders, MODEL, personFixOutage } from "../inference.js";
-import { checkPrice, type PriceCheck } from "../price/index.js";
+import { checkPrice, decidedAtOpen, priceNow, type PriceCheck } from "../price/index.js";
+import { BYBIT_CHAIN } from "../price/feed.js";
 import { xSourcesIn, xPostsFor } from "./xPosts.js";
 
 const VERIFY_TIMEOUT_MS = 60_000;
@@ -187,8 +188,15 @@ export function decidableBeforeClose(check: Pick<PriceCheck, "mode"> | null | un
  * Everything else waits for the close: a touch not made yet, a hold still
  * holding, a price at the close, and every read that did not work. The
  * stream's price calls settle a touch the same way (src/live/priceCall.ts).
+ *
+ * THE PRICE NOW IS A TRADE INSIDE THE WINDOW TOO (audit, 22 Oct). Only whole
+ * candles count above, and a pool's are hours: a touch made at 14:05 waited
+ * for 15:00 and the next sweep, and every bet in between was a bet on a result
+ * already known. So the newest trade is read as well, and a touch it meets or
+ * a hold it breaks is the same proof, sooner. Not on Bybit's pairs, whose
+ * price now can be Pyth's (src/price/pyth.ts) rather than the venue's own.
  */
-async function decidedSoFar(check: PriceCheck, now: Date): Promise<{ outcome: "yes" | "no"; reason: string } | null> {
+export async function decidedSoFar(check: PriceCheck, now: Date): Promise<{ outcome: "yes" | "no"; reason: string } | null> {
   if (!decidableBeforeClose(check)) return null;
   // Whole minutes only, and never past the rule's own end.
   const upTo = Math.min(Math.floor(now.getTime() / 60_000) * 60_000, Date.parse(check.to));
@@ -196,8 +204,13 @@ async function decidedSoFar(check: PriceCheck, now: Date): Promise<{ outcome: "y
   const at = new Date(upTo).toISOString();
   const v = await checkPrice({ ...check, to: at }).catch(() => null);
   const outcome = check.mode === "touch" ? "yes" : "no";
-  if (v?.outcome !== outcome) return null;
-  return { outcome, reason: `${v.why} by ${at}, before the close, read from ${v.candles} published candle(s) of ${check.symbol}` };
+  if (v?.outcome === outcome) {
+    return { outcome, reason: `${v.why} by ${at}, before the close, read from ${v.candles} published candle(s) of ${check.symbol}` };
+  }
+  if (check.chain === BYBIT_CHAIN || now.getTime() >= Date.parse(check.to)) return null;
+  const p = await priceNow(check).catch(() => null);
+  if (!p?.ok || decidedAtOpen(check, p.value) !== outcome) return null;
+  return { outcome, reason: `it trades at $${Number(p.value.toPrecision(6))} now, ${now.toISOString()}, before the close: the newest trade of ${check.symbol}` };
 }
 
 /** Run one market through every gate. Never throws: a thrown error IS an

@@ -56,6 +56,15 @@ export interface OracleSweepDeps {
   settle: ((slug: string, outcome: "yes" | "no") => Promise<boolean>) | null;
   /** Ask again even where the record says not to. */
   force?: boolean;
+  /**
+   * Which markets this pass reads. "closed": only those past their close, the
+   * model's work, every half hour. "open": only open ones whose price rule a
+   * candle can decide, the server's minute loop. "all" (the default): both.
+   */
+  scope?: "all" | "closed" | "open";
+  /** Among those open markets, the ones this pass reads: an exchange every
+   *  minute, a pool less often (src/server.ts). All of them when absent. */
+  openFilter?: (m: OracleSweepMarket) => boolean;
   asOf?: Date;
   /**
    * Most decisions cost a model call, so an unbounded sweep is an unbounded
@@ -112,7 +121,9 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
        so it takes no slot from the limit either, and a read that decides
        nothing is not written down: it is the same question next sweep, free.
        Past the limit the sweep goes on for those rather than stopping. */
-    if (open && !decidableBeforeClose(m.priceCheck)) continue;
+    const scope = deps.scope ?? "all";
+    if (open && (scope === "closed" || !decidableBeforeClose(m.priceCheck) || (deps.openFilter && !deps.openFilter(m)))) continue;
+    if (!open && scope === "open") continue;
     if (!open && asked >= limit) { out.truncated = true; continue; }
 
     const read = await deps.criteria(m.slug).catch((e) => ({ ok: false as const, error: (e as Error).message }));

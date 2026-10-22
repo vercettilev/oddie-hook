@@ -15,7 +15,7 @@ import { retireStaleMarkets } from "./staleBoard.js";
 import { retireMarket } from "./store/markets.js";
 import { stakedInVault } from "./chain/oddieChain.js";
 import { sweepSwsol } from "./swsolSweep.js";
-import { readVaultHoldings, parkVault, unparkVault } from "./chain/oddieChain.js";
+import { readVaultHoldings, parkVault, unparkVault, swsolProgramSlot } from "./chain/oddieChain.js";
 import { type CommunityMarket, createSlug, getSlug, placeCall, leaderboard, recordEvent, slugFor, ensureHandle, settleMarket, crowdSplits, getShareCall, communityPlayerCounts, MARKET_FORMING_MIN, metricsSummary, deviceForHandle, surfacersFor, homeActivity, notifyClosingSoon, CALL_COST, botStateGet, PERSISTENT } from "./store/markets.js";
 import { mentionCandidates, markMentioned, dismissMention, mintShareTokenForMention, addToAllowlist, allowlistRows, settleMention, claimMention, kickThreadsForSlug, KICK_CHAT_SOURCE, kickOpenedSlugs, kickOpenerOf, kickChannelMarkets, TWITCH_CHAT_SOURCE, XLIVE_CHAT_SOURCE, streamThreadsForSlug, streamOpenedSlugs, streamChannelMarkets } from "./store/markets.js";
 import { openerCandidates, isTelegramPayoutWallet, tgThreadsForSlug, tgGuestTriesToday, isWebSourceUrl, recordBetNotices, betNoticesFor, unseenBetNoticeCount, markBetNoticesSeen, tgUserForWallet, botStateSet, AVATARS, profileFor, saveProfile, usernameState, normUsername, defaultAvatar, publicNameForWallet, type OddieProfile,
@@ -55,14 +55,15 @@ import { resolvedOnchainMarkets } from "./store/markets.js";
 import { communityPoolSizes } from "./store/markets.js";
 import { communityRecentCalls } from "./store/markets.js";
 import type { SurfacerInfo } from "./store/markets.js";
-import { oracleSweep } from "./oracle/sweep.js";
-import { decide } from "./oracle/oracle.js";
+import { oracleSweep, type OracleSweepDeps } from "./oracle/sweep.js";
+import { decide, decidableBeforeClose } from "./oracle/oracle.js";
+import { BINANCE_CHAIN, BYBIT_CHAIN } from "./price/feed.js";
 import { oracleAvailable } from "./oracle/verdict.js";
 import { probeXPostReader } from "./oracle/xPosts.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank, bestCalls } from "./store/standings.js";
-import { resolvePriceClaim, readAtOpen, commodityCheck, spotCheck, criteriaSentence, probeExchangeRails, type PriceClaim, type PriceCheck } from "./price/index.js";
+import { resolvePriceClaim, readAtOpen, commodityCheck, spotCheck, criteriaSentence, probeExchangeRails, priceNow, decidedAtOpen, type PriceClaim, type PriceCheck } from "./price/index.js";
 import type { PricedCall, Standing } from "./store/standings.js";
 import { setFeaturedMarkets, getFeaturedSlugs } from "./store/markets.js";
 import { hookFor, viewCounts, recordView } from "./store/markets.js";
@@ -3906,7 +3907,7 @@ async function openMarketFromClaim(input: {
   const lazy = input.mint === "on-demand";
   const minted = lazy
     ? null
-    : await mintMarket({ marketId, question, closeTime, creator: creatorWallet,
+    : await mintMarket({ marketId, idSeed: `claim:${marketId}:${question}`, question, closeTime, creator: creatorWallet,
         creatorFeeBps, protocolFeeBps: PROTOCOL_FEE_BPS_REAL,
         /* The rule goes on chain WITH the market, in the same transaction, or
            the commitment is worth nothing: a hash written afterwards is a hash
@@ -4006,7 +4007,7 @@ async function ensureMinted(slug: string): Promise<{ pubkey: string } | null> {
   // There is no window now: a market that cannot be read is not minted, and a
   // market that can be read carries its own rate.
   const minted = await mintMarket({
-    marketId: detail.marketId, question: detail.question,
+    marketId: detail.marketId, idSeed: `market:${slug}`, question: detail.question,
     closeTime: Math.floor(new Date(detail.closesAt ?? Date.now()).getTime() / 1000),
     /* Off the ROW, like the rate and the creator beside it. This route mints on
        demand, sometimes long after the row was written, and the row is the only
@@ -5305,6 +5306,8 @@ if (realStakesReady) {
        here would sit unsettled: on 15 Oct one did, on the gold market a shared
        link still pointed at. The page shows betting closed; this is the rule. */
     if (detail.retiredAt) return res.status(409).json({ ok: false, reason: "closed" });
+    // A price that has already decided it takes no new money (decidedByPriceNow).
+    if (await decidedByPriceNow(slug, detail.priceCheck)) return res.status(409).json({ ok: false, reason: "decided" });
     // Markets the bot opened carry no on-chain account until somebody wants to
     // stake in one. This is that moment. It is also the LAST line of defence
     // rather than the intended one: /api/chain/ensure below is called when the
@@ -5580,6 +5583,8 @@ if (realStakesReady) {
     const detail = await communityMarketDetail(slug).catch(() => null);
     if (!detail?.onchainPubkey) return { err: 404 as const, reason: "not-minted" };
     if (detail.resolvedOutcome) return { err: 409 as const, reason: "already-resolved" };
+    // Nor a seat, bought or offered: a known result sold at face is a trap.
+    if (await decidedByPriceNow(slug, detail.priceCheck)) return { err: 409 as const, reason: "decided" };
     const state = await fetchMarketOnChain(detail.onchainPubkey).catch(() => null);
     if (!state) return { err: 503 as const, reason: "chain-unreachable" };
     if (state.resolved) return { err: 409 as const, reason: "already-resolved" };
@@ -6218,13 +6223,21 @@ setTimeout(sweepStaleBoard, 90_000).unref();
 // (src/swsolSweep.ts): every thirty minutes, first pass shortly after boot.
 // Bringing SOL home always runs; parking waits for SWSOL_PARK_ENABLED=true.
 const SWSOL_SWEEP_MS = 30 * 60_000;
+/* The deploy of Sanctum's swSOL program we reviewed (slot 451354174, read
+   22 Oct 2026). Any other slot means Sanctum changed its program: everything
+   parked comes home and nothing more is parked until a person reviews the new
+   deploy and sets SWSOL_REVIEWED_SLOT to its slot. */
+const SWSOL_REVIEWED_SLOT = (() => {
+  const raw = Number(process.env.SWSOL_REVIEWED_SLOT ?? 451_354_174);
+  return Number.isSafeInteger(raw) && raw > 0 ? raw : 451_354_174;
+})();
 const SWSOL_PARK_ENABLED = (process.env.SWSOL_PARK_ENABLED ?? "").toLowerCase() === "true";
 let sweepingSwsol = false;
 async function sweepSwsolVaults(): Promise<void> {
   if (sweepingSwsol || !isChainEnabled()) return;
   sweepingSwsol = true;
   try {
-    const { moved, failed } = await sweepSwsol({
+    const { moved, failed, sanctum } = await sweepSwsol({
       list: adminListCommunity,
       markets: async (pubkeys) => {
         const reads = await readMarkets(pubkeys);
@@ -6238,11 +6251,18 @@ async function sweepSwsolVaults(): Promise<void> {
         const sol = await adminBalanceSol();
         return sol === null ? null : Math.round(sol * 1e9);
       },
+      sanctumChanged: async () => {
+        const slot = await swsolProgramSlot();
+        return slot === null ? null : slot !== SWSOL_REVIEWED_SLOT;
+      },
       park: parkVault,
       unpark: unparkVault,
       parkEnabled: SWSOL_PARK_ENABLED,
       now: Date.now,
     });
+    if (sanctum === "changed") {
+      console.error(JSON.stringify({ evt: "swsol_program_changed", reviewedSlot: SWSOL_REVIEWED_SLOT, fix: "review Sanctum's new deploy, then set SWSOL_REVIEWED_SLOT to its slot" }));
+    }
     for (const m of moved) console.log(JSON.stringify({ evt: "swsol", ...m }));
     for (const m of failed) console.error(JSON.stringify({ evt: "swsol_failed", ...m }));
   } catch (err) {
@@ -6323,15 +6343,9 @@ const ORACLE_POLL_MS = (() => {
   return Math.max(300_000, raw);
 })();
 
-let oracleSweepRunning = false;
-async function sweepOracle(): Promise<void> {
-  // Re-entrancy guard, not politeness: a sweep can hold the loop through
-  // minutes of model calls, and two overlapping sweeps would ask about the same
-  // markets twice and pay twice.
-  if (oracleSweepRunning) return;
-  oracleSweepRunning = true;
-  try {
-    const r = await oracleSweep({
+/** Everything both sweeps share: the board, the record, the settle path. */
+function oracleSweepDeps(): Omit<OracleSweepDeps, "limit" | "scope" | "openFilter"> {
+  return {
       board: () => adminListCommunity(),
       criteria: async (slug) => {
         try {
@@ -6356,7 +6370,6 @@ async function sweepOracle(): Promise<void> {
       // and in one place: off-chain settlement, the on-chain resolve, the fee
       // log and the reply in the X thread.
       settle: ORACLE_DRY_RUN ? null : async (slug, outcome) => Boolean(await resolveCommunityMarket(slug, outcome)),
-      limit: ORACLE_MAX_PER_SWEEP,
       on: {
         decided: (d) => console.log(JSON.stringify({
           evt: "oracle_decision", slug: d.slug, gate: d.gate,
@@ -6366,6 +6379,81 @@ async function sweepOracle(): Promise<void> {
         failed: (slug, outcome) => console.error(JSON.stringify({ evt: "oracle_settle_failed", slug, outcome })),
         unreadable: (slug, error) => console.error(JSON.stringify({ evt: "oracle_unreadable", slug, error })),
       },
+  };
+}
+
+/*
+ * A PRICE ALREADY DECIDED IS SETTLED WITHIN A MINUTE (audit, 22 Oct). Open
+ * markets whose touch or hold a candle can decide are read every minute, apart
+ * from the half-hour sweep, so a decided one stops taking bets in a minute
+ * rather than at the next sweep: until then a bet on the known side dilutes
+ * the people who were right first. A pool is read every fifth minute: its
+ * candles are hours and its free source has a small budget. Bybit's pairs not
+ * at all: their history arrives a day late. Free, no model is asked.
+ */
+const PRICE_EARLY_MS = 60_000;
+const PRICE_EARLY_POOL_EVERY = 5;
+const PRICE_EARLY_ON = ORACLE_ENABLED && !ORACLE_DRY_RUN;
+let priceEarlyRunning = false;
+let priceEarlyPass = 0;
+async function sweepPriceEarly(): Promise<void> {
+  if (priceEarlyRunning) return;
+  priceEarlyRunning = true;
+  const pass = priceEarlyPass++;
+  try {
+    const r = await oracleSweep({
+      ...oracleSweepDeps(),
+      scope: "open",
+      openFilter: (m) => m.priceCheck?.chain === BINANCE_CHAIN
+        || (m.priceCheck?.chain !== BYBIT_CHAIN && pass % PRICE_EARLY_POOL_EVERY === 0),
+    });
+    // Said when it acted, and every half hour so a stopped loop shows.
+    if (r.settled || r.failed || pass % 30 === 0) {
+      console.log(JSON.stringify({ evt: "price_early_sweep", read: r.early, settled: r.settled, failed: r.failed, unreadable: r.unreadable }));
+    }
+  } catch (e) {
+    console.error("[oracle] price sweep failed:", (e as Error).message);
+  } finally {
+    priceEarlyRunning = false;
+  }
+}
+
+/*
+ * A PRICE THAT HAS DECIDED ITS MARKET TAKES NO NEW MONEY (audit, 22 Oct). The
+ * minute loop settles it, but a stake or a seat prepared inside that minute is
+ * a bet on a known result. So the price now is read before one is handed out,
+ * on an open market whose touch or hold it can decide, and a decided one is
+ * refused and the loop woken to settle it. At most one read a market every 20
+ * seconds, and a price that cannot be read never blocks a bet.
+ */
+const DECIDED_READ_MS = 20_000;
+const decidedRead = new Map<string, { at: number; decided: boolean }>();
+async function decidedByPriceNow(slug: string, check: PriceCheck | null | undefined): Promise<boolean> {
+  if (!PRICE_EARLY_ON || !check || !decidableBeforeClose(check) || check.chain === BYBIT_CHAIN) return false;
+  const now = Date.now();
+  if (!(now < Date.parse(check.to))) return false;
+  const seen = decidedRead.get(slug);
+  if (seen && now - seen.at < DECIDED_READ_MS) return seen.decided;
+  const p = await priceNow(check).catch(() => null);
+  const decided = Boolean(p?.ok && decidedAtOpen(check, p.value) !== null);
+  decidedRead.set(slug, { at: now, decided });
+  if (decided) void sweepPriceEarly();
+  return decided;
+}
+
+let oracleSweepRunning = false;
+async function sweepOracle(): Promise<void> {
+  // Re-entrancy guard, not politeness: a sweep can hold the loop through
+  // minutes of model calls, and two overlapping sweeps would ask about the same
+  // markets twice and pay twice.
+  if (oracleSweepRunning) return;
+  oracleSweepRunning = true;
+  try {
+    const r = await oracleSweep({
+      ...oracleSweepDeps(),
+      limit: ORACLE_MAX_PER_SWEEP,
+      // Open price markets are the minute loop's when it runs.
+      scope: PRICE_EARLY_ON ? "closed" : "all",
     });
     // Logged every sweep, including the empty ones: a loop that only speaks
     // when it acts is a loop you cannot tell apart from a stopped one.
@@ -6571,6 +6659,10 @@ if (ORACLE_ENABLED) {
     // Not at boot. A deploy restarts the process, and a sweep that runs on
     // every restart turns a bad afternoon of deploys into a bill.
     setTimeout(sweepOracle, 120_000).unref();
+    if (PRICE_EARLY_ON) {
+      setInterval(sweepPriceEarly, PRICE_EARLY_MS).unref();
+      console.log(`[oracle] price loop ON, every ${PRICE_EARLY_MS / 1000}s (pools every ${PRICE_EARLY_POOL_EVERY}m): a decided touch or hold settles before its close`);
+    }
     console.log(`[oracle] settle loop ON, every ${Math.round(ORACLE_POLL_MS / 60_000)}m, up to ${ORACLE_MAX_PER_SWEEP} per sweep, ${ORACLE_DRY_RUN ? "DRY RUN (nothing is settled)" : "SETTLING FOR REAL"} — ${avail.why}`);
   }
 }

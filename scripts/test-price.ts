@@ -292,31 +292,51 @@ check("an open price market is still refused for being open", d.gate === "not-cl
    every price AT the close, waits for the close. */
 {
   const MID = new Date("2026-08-02T06:30:00Z");   // hour 30.5 of 48: still open
+  const NOW = Date.parse(MID.toISOString()) / 1000;
   const open = (pc: PriceCheck) => decide({ slug: "s", question: "q", criteria: criteriaSentence(pc), closeTime: WINDOW.to, priceCheck: pc }, MID);
+  /* A pool as it stands at MID: nothing that starts after it, the newest
+     candle first among what is asked. The price now (no `before`) is the
+     newest candle there is, the hour still running included. */
+  const asOf = (candles: Candle[]) => _setPriceFeed({
+    searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
+    async ohlcv(_c, _p, _tf, limit, before) {
+      return candles.filter((x) => x[0] <= (before ?? NOW)).sort((a, b) => b[0] - a[0]).slice(0, limit);
+    },
+  });
   const failing = (count: () => void) => _setPriceFeed({
     searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
     async ohlcv() { count(); throw new Error("429 Too Many Requests"); },
   });
 
-  serve([], {}, [c(0, 1), c(20, 5), c(29, 1)]);
+  asOf([c(0, 1), c(20, 5), c(29, 1)]);
   d = await open(CHECK);
   check("a touch already made settles YES before the close", d.settle === "yes" && d.gate === "settled" && /before the close/.test(d.reason), `${d.gate}: ${d.reason}`);
   check("...without a model", proposerCalls === 0, `proposer ran ${proposerCalls} time(s)`);
 
-  serve([], {}, [c(0, 1), c(20, 1), c(40, 5)]);
+  asOf([c(0, 1), c(20, 1), c(29, 1), c(40, 5)]);
   d = await open(CHECK);
   check("a candle after now cannot settle it early", d.gate === "not-closed" && d.settle === null, `${d.gate}: ${d.reason}`);
 
-  serve([], {}, [c(0, 1), c(20, 1), c(29, 1)]);
+  asOf([c(0, 1), c(20, 1), c(29, 1)]);
   d = await open(CHECK);
   check("a touch not made yet waits for the close: never an early NO", d.gate === "not-closed" && d.settle === null, `${d.gate}: ${d.reason}`);
 
+  /* 22 OCT, THE AUDIT: a pool's candles are hours and only a whole one counts,
+     so a touch made at 30:05 waited for 31:00. The trade now is proof too. */
+  asOf([c(0, 1), c(20, 1), c(29, 1), c(30, 5)]);
+  d = await open(CHECK);
+  check("the price now settles a touch inside the hour still running", d.settle === "yes" && d.gate === "settled" && /trades at \$5000000 now/.test(d.reason), `${d.gate}: ${d.reason}`);
+
   const hold: PriceCheck = { ...CHECK, mode: "always", target: 1_000_000 };
-  serve([], {}, [c(0, 2), c(20, 2, 2, 0.5), c(29, 2)]);
+  asOf([c(0, 2), c(20, 2, 2, 0.5), c(29, 2)]);
   d = await open(hold);
   check("a hold already broken settles NO before the close", d.settle === "no" && d.gate === "settled" && /before the close/.test(d.reason), `${d.gate}: ${d.reason}`);
 
-  serve([], {}, [c(0, 2), c(20, 2), c(29, 2)]);
+  asOf([c(0, 2), c(20, 2), c(29, 2), c(30, 0.5)]);
+  d = await open(hold);
+  check("...and the price now breaks a hold inside the hour too", d.settle === "no" && d.gate === "settled" && /now/.test(d.reason), `${d.gate}: ${d.reason}`);
+
+  asOf([c(0, 2), c(20, 2), c(29, 2), c(30, 2)]);
   d = await open(hold);
   check("a hold still holding waits for the close: never an early YES", d.gate === "not-closed" && d.settle === null, `${d.gate}: ${d.reason}`);
 
@@ -329,7 +349,19 @@ check("an open price market is still refused for being open", d.gate === "not-cl
   d = await open(CHECK);
   check("a source that did not answer leaves it open, not unreadable", d.gate === "not-closed" && d.settle === null && reads > 0, `${d.gate}: ${d.reason}`);
 
-  serve([], {}, [c(0, 1), c(20, 5), c(29, 1)]);
+  // Bybit's pair: whole candles only. Its price now can be Pyth's, not Bybit's.
+  let nowReads = 0;
+  _setPriceFeed({
+    searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
+    async ohlcv(_c, _p, _tf, limit, before) {
+      if (before === undefined) { nowReads++; return [[Math.floor(NOW / 3600) * 3600, 9e9, 9e9, 9e9, 9e9, 1]] as Candle[]; }
+      return [];
+    },
+  });
+  d = await open({ ...CHECK, chain: "bybit", pool: "XAUUSDT", mint: "XAUUSDT", metric: "price", supply: 0, target: 4_200 });
+  check("a Bybit pair is never settled from its price now", d.gate === "not-closed" && nowReads === 0, `${d.gate}, ${nowReads} read(s) of the price now`);
+
+  asOf([c(0, 1), c(20, 5), c(29, 1)]);
   d = await decide({ slug: "s", question: "q", criteria: criteriaSentence(CHECK), closeTime: WINDOW.to, priceCheck: CHECK }, new Date(Date.parse(WINDOW.from) - 3600_000));
   check("a market read before its window opens decides nothing", d.gate === "not-closed", `${d.gate}: ${d.reason}`);
   check("...and none of it asked the model", proposerCalls === 0, `proposer ran ${proposerCalls} time(s)`);

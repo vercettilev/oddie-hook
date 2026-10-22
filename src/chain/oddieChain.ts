@@ -451,6 +451,12 @@ export async function mintMarket(args: {
    * committing to a truncated rule.
    */
   criteria: string;
+  /**
+   * What the on-chain id is derived from (chainMarketIdFor): the market's slug
+   * when it already has one, the claim being minted when it does not. Absent,
+   * `marketId` itself goes on chain, which only the backfill script still does.
+   */
+  idSeed?: string;
 }): Promise<MintResult | null> {
   const c = await load();
   if (!c) return null;
@@ -494,7 +500,8 @@ export async function mintMarket(args: {
       return null;
     }
 
-    const marketIdBn = new c.BN(args.marketId);
+    const chainId = args.idSeed ? chainMarketIdFor(c.admin.secretKey, args.idSeed) : args.marketId;
+    const marketIdBn = new c.BN(chainId);
     const market = marketPda(c, marketIdBn);
     const vault = vaultPda(c, market);
     const creatorPk = args.creator
@@ -517,9 +524,42 @@ export async function mintMarket(args: {
     );
     return { pubkey: market.toBase58(), signature };
   } catch (e) {
+    /* THE ADDRESS MAY ALREADY HOLD THIS VERY MARKET: a mint of ours that landed
+       while its answer was lost, or a second mint racing the first for the same
+       market, which now asks for the same id. That market is ours and is taken
+       as it stands, but only if every term matches: our authority, the
+       question, the rule and the close. Anything else at that address is not
+       ours and is never used. */
+    const adopted = args.idSeed ? await adoptOwnMarket(c, args).catch(() => null) : null;
+    if (adopted) return adopted;
     console.error("[chain] mintMarket failed; the market has no vault and must not be published:", (e as Error).message);
     return null;
   }
+}
+
+async function adoptOwnMarket(
+  c: ChainClient,
+  args: { idSeed?: string; question: string; closeTime: number; criteria: string },
+): Promise<MintResult | null> {
+  if (!args.idSeed) return null;
+  const market = marketPda(c, new c.BN(chainMarketIdFor(c.admin.secretKey, args.idSeed)));
+  // The IDL's account names resolve loosely here, as in fetchMarketOnChain.
+  const a = (await (c.program.account as any).market.fetchNullable(market).catch(() => null)) as Record<string, unknown> | null;
+  if (!a) return null;
+  const sha = (t: string) => createHash("sha256").update(t).digest();
+  const same = (v: unknown, want: Buffer) => Buffer.from(v as number[]).equals(want);
+  const ours = String(a.authority) === c.admin.publicKey.toBase58()
+    && same(a.questionHash, sha(args.question))
+    && same(a.criteriaHash, args.criteria ? sha(args.criteria) : Buffer.alloc(32))
+    && Number(a.closeTime) === args.closeTime;
+  if (!ours) {
+    console.error(JSON.stringify({ evt: "market_address_taken", market: market.toBase58(), authority: String(a.authority) }));
+    return null;
+  }
+  // The transaction that opened it is the oldest one at its address.
+  const sigs = await c.connection.getSignaturesForAddress(market, { limit: 1000 }).catch(() => []);
+  console.log(JSON.stringify({ evt: "market_adopted", market: market.toBase58() }));
+  return { pubkey: market.toBase58(), signature: sigs[sigs.length - 1]?.signature ?? "" };
 }
 
 /**
@@ -573,6 +613,26 @@ function marketPda(c: ChainClient, marketId: InstanceType<ChainClient["BN"]>) {
     [Buffer.from("market"), marketId.toArrayLike(Buffer, "le", 8)],
     c.programId,
   )[0];
+}
+
+/**
+ * THE ID A MARKET GOES ON CHAIN WITH IS NOT ONE ANYBODY CAN GUESS (audit,
+ * 22 Oct). create_market is open to any signer and a market's address comes
+ * from its id alone, so an id somebody can guess is an address somebody can
+ * take first: our mint then fails for good and nobody can stake in that
+ * market. The database's id is the millisecond the market opened, which a
+ * bot's line in chat dates to within a second. So the chain gets a keyed hash
+ * of what is being minted (the market's slug, or the claim on its way in),
+ * keyed by the admin key: nobody without that key can compute it, and the same
+ * market always asks for the same id, so two mints racing for one market still
+ * meet at one address. 52 bits, so a JavaScript number holds it exactly; never
+ * zero.
+ */
+export function chainMarketIdFor(adminSecret: Uint8Array, seed: string): number {
+  const key = createHash("sha256").update("oddie/market-id/v1").update(adminSecret).digest();
+  const h = createHmac("sha256", key).update(seed).digest();
+  const id = h.readUIntBE(0, 6) * 16 + (h[6] >> 4);
+  return id === 0 ? 1 : id;
 }
 
 function vaultPda(c: ChainClient, market: InstanceType<typeof c.web3.PublicKey>) {
@@ -1842,7 +1902,7 @@ export async function prepareCreatorFeeTx(args: {
 // READ the transaction it is about to broadcast, not merely check whose program
 // it calls.
 
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 /** Anchor's instruction discriminator: the first 8 bytes of
  *  sha256("global:<name>"). Computed rather than pasted, so it cannot drift
@@ -1995,6 +2055,30 @@ export interface VaultHoldings {
  * account, two per market, up to a hundred accounts a call. A market whose pair
  * could not be read maps to null, and nothing is decided about it on a guess.
  */
+/**
+ * The slot Sanctum's swSOL program was last deployed at, or null when it could
+ * not be read. Its program is upgradeable and holds every lamport we park, and
+ * park_swsol and unpark_swsol insist on exactly one SOL a swSOL: a redeploy
+ * that changed that would leave parked SOL unable to come home until our own
+ * program was upgraded. src/swsolSweep.ts brings everything home when this
+ * moves past the deploy we reviewed. An upgradeable program's account holds
+ * its ProgramData address at bytes 4..36; the ProgramData holds the slot at
+ * bytes 4..12.
+ */
+export async function swsolProgramSlot(): Promise<number | null> {
+  const c = await load();
+  if (!c) return null;
+  try {
+    const prog = await c.connection.getAccountInfo(new c.web3.PublicKey(SWSOL_PROGRAM));
+    if (!prog || prog.data.length < 36) return null;
+    const data = await c.connection.getAccountInfo(new c.web3.PublicKey(prog.data.subarray(4, 36)), { dataSlice: { offset: 0, length: 12 } });
+    if (!data || data.data.length < 12) return null;
+    return Number(data.data.readBigUInt64LE(4));
+  } catch {
+    return null;
+  }
+}
+
 export async function readVaultHoldings(marketPubkeys: string[]): Promise<Map<string, VaultHoldings | null>> {
   const out = new Map<string, VaultHoldings | null>();
   const c = await load();
