@@ -26,16 +26,27 @@
  * full size (src/games/screen.ts SCREEN_FRAME_WIDTH), so about $1.50 an hour
  * while a call is open: a Showdown game of ten to sixteen minutes, 25 to 40
  * cents. Only while a call is open and the stream live, never past a call's
- * third hour, and never more than 900 looks a channel an hour.
+ * third hour, and never more than 900 looks a call an hour.
+ *
+ * A TOURNAMENT IS NOT A GAME (Lev, 22 Oct). A call over more than one game,
+ * a tournament, a series or a night of play (src/games/screen.ts callScope),
+ * waits through many games for one result. Its reader says what the picture
+ * is, and only the event's own page settles it: a champion, final standings,
+ * the named player eliminated, read the same way by the strong model too. No
+ * game's result screen does, however sure the reading. It is looked at every
+ * eight seconds rather than four, for eight hours rather than three, and the
+ * strong model only when its page reads decided, a few looks a stream. Each
+ * call counts its own looks, so a tournament call left open beside a game's
+ * never eats the looks the game's result screen needs.
  *
  * WHAT IT NEVER DOES. It never looks in the first minute of a call, so the
  * last match's result screen, still up when the next call opens, cannot
- * settle it. It never looks at a call over more than one game (manyGames). It
- * never looks at a channel that said !matches off, at a stream
- * that is not live, or at a channel past its hourly budget. It never touches
+ * settle it. It never looks at a channel that said !matches off, at a stream
+ * that is not live, or at a call past its hourly budget. It never touches
  * a market: markets settle through their own resolution, never from a picture.
  */
 import { personFixOutage } from "../inference.js";
+import { callScope } from "../games/screen.js";
 import { isRoomCall, settleOnScreen, type LiveCall, type LiveDeps } from "./calls.js";
 
 /** How often an open room call's picture is read: a result screen does not stay up long. */
@@ -51,8 +62,11 @@ export const SCREEN_SURE = 0.85;
 export const SCREEN_GRACE_MS = 60_000;
 /** At most this many pictures a tick, read side by side. */
 export const SCREENS_PER_PASS = 3;
-/** At most this many pictures a channel an hour: one every four seconds. */
+/** At most this many pictures a call an hour: one every four seconds. */
 export const SCREEN_PER_HOUR = 900;
+/** An event call (a tournament, a series) is read this often: its result does
+ *  not hang on a six-second banner, and it is open for hours. */
+export const SCREEN_EVENT_EVERY_MS = 8_000;
 /** The server runs the pass this often; a pass between two looks only checks the time. */
 export const SCREEN_TICK_MS = 1_000;
 /** The open calls are listed from the store at most this often, not every tick. */
@@ -60,53 +74,12 @@ export const SCREEN_LIST_MS = 5_000;
 /** A call open longer than this is not looked at any more: a forgotten call
  *  would otherwise be read all day. The streamer's !call yes still settles it. */
 export const SCREEN_MAX_AGE_MS = 3 * 60 * 60_000;
+/** An event call is looked at this long: a tournament outlasts three hours. */
+export const SCREEN_EVENT_MAX_AGE_MS = 8 * 60 * 60_000;
 /** A channel off stream, opted out or over budget is asked again after this long. */
 export const SCREEN_IDLE_MS = 60_000;
 /** A reader outage only a person can fix pauses every look for this long. */
 export const SCREEN_OUTAGE_MS = 10 * 60_000;
-
-/* A WIN OVER MANY GAMES IS NEVER ON ONE GAME'S SCREEN (Lev, 22 Oct). In a
-   Showdown tournament every game ends on a WINNER banner, and a best of three
-   puts one up after every map, so "does GPPoker win Lucky 13?" read off the
-   screen would settle YES on the first game GPPoker took, hours before the
-   tournament is decided. A call about a tournament, a series, a final, a day
-   of play or the whole night is the mods' to settle when it is over: the
-   screen never looks at it. A call that names its one game ("this game",
-   "the next hand") is read as before, whatever else it says. */
-
-/** The one game a call can name. */
-const ONE_GAME = /\b(?:this|that|the next|next|the last|last)\s+(?:one|game|round|match|hand|map|fight|run|race|life|duel|battle|pot|flip|spin|draw|point|showdown|attempt|try|pull)\b/i;
-/** Words that put a call over more than one game. */
-const MANY_WORDS = new RegExp(`\\b(?:${[
-  /tournaments?|championships?|champions?|champ|trophy|trophies|series|brackets?|playoffs?/,
-  /finals|(?:semi|quarter)-?finals?|final table|whole thing|overall|podium|seasons?/,
-  // "the final", but not the last moment of one game: "the final boss", "the final round".
-  /the final(?!\s+(?:boss|round|hand|kill|circle|zone|lap|wave|stage|level|map|game|fight|card|river|question|score|minute))/,
-  /top\s*\d+|(?:1st|first|2nd|second|3rd|third)\s+place|(?:win|wins|winning|take|takes)\s+it\s+all|takes?\s+(?:it\s+)?(?:down|home)/,
-  /in a row|day\s*\d+|qualif(?:y|ies|ied|iers?|ication)|advances?|in the money|tonight|today|this week(?:end)?|(?:by|at|until) the end/,
-].map((r) => r.source).join("|")})\\b`, "i");
-/** A game's own nouns: what "win the ..." may name and still be one game. */
-const GAME_NOUN = "one|games?|rounds?|match(?:es)?|hands?|maps?|fights?|pots?|flips?|races?|duels?|battles?|points?|showdown|draws?|spins?|w|dub";
-/** "win" followed by an event's name: "win Lucky 13", "win the cup", "win 3 games".
- *  What may follow it in a call about one game: nothing, a word that names no
- *  event, or one of the game's own nouns. */
-const WIN_NAMES_EVENT = new RegExp(
-  `\\b(?:wins?|winning|won)\\s+(?:(?:the|a|an)\\s+(?!(?:(?:next|first|last)\\s+)?(?:${GAME_NOUN})\\b)` +
-  `|(?!(?:the|a|an|this|that|it|here|now|again|vs\\.?|versus|against|by|with|or|and|if|when|before|after|big|easy|easily|clean|fast|back|on|out|over|${GAME_NOUN}` +
-  `|in\\s+(?:\\d+|under|less|fewer|one|two|three|a|time))\\b))[a-z0-9$]`, "i");
-/** "the Lucky 13 winner", "winner of Lucky 13": a winner of something bigger than a game. */
-const WINNER_OF_EVENT = new RegExp(
-  `\\b(?!(?:the|a|an|this|that|next|last|my|his|her|their|our|your|be|is|round|game|hand|map|match|fight|race|pot)\\b)[\\w$']+\\s+winners?\\b` +
-  `|\\bwinners?\\s+of\\s+(?!(?:this|that|the\\s+(?:next\\s+)?(?:${GAME_NOUN}))\\b)`, "i");
-/** "in Lucky 13", "at Worlds": an event named by its own capitalized name. */
-const AT_EVENT = /\b(?:in|at)\s+(?!(?:This|That|The|A|An|My|His|Her|Their|Our|Your|One|Chat|Game|Round|Match|Hand|Map)\b)[A-Z][\w']*/;
-
-/** A call over more than one game, whose answer no single game's screen shows. */
-export function manyGames(question: string): boolean {
-  const q = String(question ?? "");
-  if (ONE_GAME.test(q)) return false;
-  return MANY_WORDS.test(q) || WIN_NAMES_EVENT.test(q) || WINNER_OF_EVENT.test(q) || AT_EVENT.test(q);
-}
 
 interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null }
 const looks = new Map<string, Look>();
@@ -125,6 +98,9 @@ export function _resetScreens(): void {
 }
 
 const keyOf = (c: { platform: string; channelId: string }) => `${c.platform}:${c.channelId}`;
+const isEvent = (c: LiveCall) => callScope(c.question) === "event";
+const everyOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_EVERY_MS : SCREEN_EVERY_MS);
+const maxAgeOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_MAX_AGE_MS : SCREEN_MAX_AGE_MS);
 
 async function channelsNow(deps: LiveDeps, now: number): Promise<Map<string, { name: string; matchCalls: boolean }>> {
   if (now - channelsAt < SCREEN_IDLE_MS && channelInfo.size) return channelInfo;
@@ -146,6 +122,7 @@ async function isLive(deps: LiveDeps, call: LiveCall, now: number): Promise<bool
   return live;
 }
 
+/** `k` is the call's id: each call counts its own looks. */
 function withinBudget(k: string, now: number): boolean {
   const hour = Math.floor(now / 3_600_000);
   const s = spent.get(k);
@@ -161,7 +138,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   if (!source) return 0;
   const now = deps.now();
   if (now < outageUntil) return 0;
-  const watched = (cs: LiveCall[]) => cs.filter((c) => isRoomCall(c) && !manyGames(c.question) && now - c.openedAt <= SCREEN_MAX_AGE_MS);
+  const watched = (cs: LiveCall[]) => cs.filter((c) => isRoomCall(c) && now - c.openedAt <= maxAgeOf(c));
   // The store is asked again whenever a look falls due, so a call settled some
   // other way is never looked at after, and every five seconds for new calls;
   // a pass with nothing due only checks the time.
@@ -173,6 +150,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   const calls = watched(listed);
   const open = new Set(calls.map((c) => c.id));
   for (const id of looks.keys()) if (!open.has(id)) looks.delete(id);
+  for (const id of spent.keys()) if (!open.has(id)) spent.delete(id);
   if (!calls.length) return 0;
   for (const c of calls) if (!looks.has(c.id)) looks.set(c.id, { nextAt: c.openedAt + SCREEN_GRACE_MS, decided: null });
   const due = calls.filter((c) => now >= looks.get(c.id)!.nextAt).sort((a, b) => looks.get(a.id)!.nextAt - looks.get(b.id)!.nextAt);
@@ -184,7 +162,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
     const l = looks.get(call.id)!;
     const k = keyOf(call);
     const ch = chans.get(k);
-    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || !withinBudget(k, now)) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
+    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || !withinBudget(call.id, now)) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
     take.push({ call, name: ch.name });
   }
   // Side by side: three streams' reads take as long as one.
@@ -201,20 +179,30 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
   if (!l) return false;
   try {
     const jpeg = await source.grab(call.platform, call.channelId);
-    if (!jpeg) { l.nextAt = now + SCREEN_EVERY_MS; l.decided = null; return false; }
+    if (!jpeg) { l.nextAt = now + everyOf(call); l.decided = null; return false; }
     const r = await source.ask(jpeg, call.question, name);
     deps.log("screen read", { platform: call.platform, channel: call.channelId, id: call.id, answer: r?.answer ?? null, sure: r?.sure ?? null, seen: r?.seen ?? null });
-    if (!r || r.answer === "unclear" || r.sure < SCREEN_SURE) { l.nextAt = now + SCREEN_EVERY_MS; l.decided = null; return false; }
+    // An event call is settled on the event's own page, never on one game's
+    // result, however sure the answer beside it (src/games/screen.ts).
+    if (!r || r.answer === "unclear" || r.sure < SCREEN_SURE || (isEvent(call) && r.screen !== "event")) { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+    let seen = r.seen;
+    if (isEvent(call)) {
+      // ...and only where the strong model reads the same page the same way.
+      const c = source.confirm ? await source.confirm(jpeg, call.question, name) : null;
+      deps.log("screen confirm", { platform: call.platform, channel: call.channelId, id: call.id, answer: c?.answer ?? null, sure: c?.sure ?? null, screen: c?.screen ?? null, seen: c?.seen ?? null });
+      if (!c || c.answer !== r.answer || c.sure < SCREEN_SURE || c.screen !== "event") { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+      seen = c.seen || r.seen;
+    }
     if (l.decided && l.decided.answer === r.answer && now - l.decided.at <= SCREEN_AGREE_MS) {
       looks.delete(call.id);
-      return settleOnScreen(call, r.answer, r.seen || l.decided.seen, deps);
+      return settleOnScreen(call, r.answer, seen || l.decided.seen, deps);
     }
     // The first sure answer: look again while it is still on screen.
-    l.decided = { answer: r.answer, at: now, seen: r.seen };
+    l.decided = { answer: r.answer, at: now, seen };
     l.nextAt = now + SCREEN_CONFIRM_MS;
     return false;
   } catch (e) {
-    l.nextAt = now + SCREEN_EVERY_MS; l.decided = null;
+    l.nextAt = now + everyOf(call); l.decided = null;
     const fix = personFixOutage((e as Error).message);
     if (fix) { outageUntil = now + SCREEN_OUTAGE_MS; deps.log("screen paused: the reader is out", { why: fix, err: (e as Error).message.slice(0, 200) }); }
     else deps.log("screen: call not read", { platform: call.platform, channel: call.channelId, id: call.id, err: (e as Error).message.slice(0, 200) });
