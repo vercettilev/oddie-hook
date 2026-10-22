@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { _setPriceFeed, priceFeed, type Candle, type Pair, type PoolHit, type TokenInfo } from "../src/price/feed.js";
 import { resolvePriceClaim, checkPrice, criteriaSentence, mintsIn, priceNow, decidedAtOpen, readAtOpen, closeQuestion, closeHook, holdQuestion, holdHook, reachQuestion, reachHook, commodityCheck, spotCheck, SPOT_COINS, type PriceCheck } from "../src/price/index.js";
+import { parsePriceUpdate, pythPrice, _setPythReader, PYTH_ACCOUNTS, PYTH_FRESH_S } from "../src/price/pyth.js";
 import { BINANCE_ASSETS } from "../src/live/priceCall.js";
 import { samePriceBet } from "../src/matching/duplicate.js";
 import { unsettleablePhrase, addressInQuestion } from "../src/matching/extractClaim.js";
@@ -829,6 +830,98 @@ console.log("\nGold, silver and oil on Bybit's candles");
   check("two gold claims alike are one market, and gold is never silver",
     samePriceBet(stays.kind === "within" ? stays.check : gold!, commodityCheck({ symbol: "XAU", metric: "price", op: "<", target: 4200, mode: "always" }, WIN)!)
     && !samePriceBet(silver, commodityCheck({ symbol: "XAU", metric: "price", op: "<", target: 4200, mode: "always" }, WIN)!));
+}
+
+console.log("\nGold at the open from Pyth on Solana, when Bybit cannot be read");
+{
+  /* 22 OCT: Bybit refuses this server and its archive is a day behind, so a
+     gold market opened with no price, and "gold above $4,200 this week" could
+     not be told apart as a hold or a reach. Pyth's gold on Solana stands in at
+     the open, and only well clear of the level: measured that day, Pyth sat $8
+     to $10 under Bybit's perpetual. */
+  // The real account, read from mainnet at 10:28 UTC on 22 Oct: gold at $4,092.09.
+  const REAL = Buffer.from("IvEjY51+9M0cRzfajUOUjvOlYNVt8J8QnvDN3omvjSjJtxOdRdRaswF2XSupBtvDLKF8wR9TEKienuH2QgUIxjhh8vi6TuNLsrpwPgAAAAAAeAAAAAAAAAD9////WeXZagAAAABY5dlqAAAAAL1dPgAAAAAAmgAAAAAAAADAEGsbAAAAAAA=", "base64");
+  const u = parsePriceUpdate(REAL);
+  check("Pyth's gold account is read: its feed, price, uncertainty and when it was published, fully verified",
+    u?.feed === PYTH_ACCOUNTS.XAUUSDT.feed && u.price === 4092.09 && u.conf === 0.12 && u.publishTime === Date.parse("2026-10-22T10:28:41Z") / 1000 && u.full, JSON.stringify(u));
+  check("...and bytes that are not a price account are not read", parsePriceUpdate(Buffer.alloc(134)) === null && parsePriceUpdate(REAL.subarray(0, 60)) === null);
+
+  const PUB = u!.publishTime * 1000;
+  const RECEIVER = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ";
+  let reads: string[] = [];
+  const account = (o: { owner?: string; data?: Buffer } | null | Error = {}) => _setPythReader(async (a) => {
+    reads.push(a);
+    if (o instanceof Error) throw o;
+    return o === null ? null : { owner: o.owner ?? RECEIVER, data: o.data ?? REAL };
+  });
+  account();
+  let p = await pythPrice("XAUUSDT", PUB + 30_000);
+  check("a price published half a minute ago is the price now", p.ok && p.price === 4092.09 && reads[0] === PYTH_ACCOUNTS.XAUUSDT.account, JSON.stringify(p));
+  p = await pythPrice("XAUUSDT", PUB + (PYTH_FRESH_S + 60) * 1000);
+  check("...four minutes ago it is not: Pyth's gold stops with the gold market, Bybit's perpetual does not",
+    !p.ok && /last published 4 minutes ago/.test(p.why), JSON.stringify(p));
+  account({ owner: "11111111111111111111111111111111" });
+  p = await pythPrice("XAUUSDT", PUB);
+  check("an account Pyth's receiver did not write is not Pyth's price", !p.ok && /receiver/.test(p.why), JSON.stringify(p));
+  // Partial verification carries a signature count: everything after it moves one byte.
+  account({ data: Buffer.concat([REAL.subarray(0, 40), Buffer.from([0, 3]), REAL.subarray(41)]) });
+  p = await pythPrice("XAUUSDT", PUB);
+  check("...nor a price only partly verified", !p.ok && /partly verified/.test(p.why), JSON.stringify(p));
+  const other = Buffer.from(REAL);
+  other[41] ^= 0xff;
+  account({ data: other });
+  check("...nor an account holding another feed", !(await pythPrice("XAUUSDT", PUB)).ok);
+  account(null);
+  check("...nor an account that is not there, as on devnet", !(await pythPrice("XAUUSDT", PUB)).ok);
+  account(new Error("the Solana RPC answered 429"));
+  p = await pythPrice("XAUUSDT", PUB);
+  check("an RPC that does not answer is no price, never a throw", !p.ok && /429/.test(p.why), JSON.stringify(p));
+  reads = [];
+  account();
+  check("silver, WTI and Brent have no current Pyth price on Solana, and nothing is read for them",
+    !(await pythPrice("XAGUSDT", PUB)).ok && !(await pythPrice("CLUSDT", PUB)).ok && !(await pythPrice("BZUSDT", PUB)).ok && reads.length === 0);
+
+  /* Through the open itself, with Bybit failing as it does on the server. The
+     price and publish time are rewritten into the real account: price at byte
+     73, its exponent at 89, the publish time at 93. */
+  const fresh = (price: number, at = Date.now()) => {
+    const b = Buffer.from(REAL);
+    b.writeBigInt64LE(BigInt(Math.round(price / 10 ** b.readInt32LE(89))), 73);
+    b.writeBigInt64LE(BigInt(Math.floor(at / 1000)), 93);
+    return b;
+  };
+  const unreadable = () => _setPriceFeed({
+    searchPairs: async () => [], searchPools: async () => [], tokenInfo: async () => null,
+    async ohlcv(_c, pool) { throw new Error(`Bybit's archive has no ${pool} file for today yet`); },
+  });
+  unreadable();
+  const WEEK = { from: new Date().toISOString(), to: new Date(Date.now() + 3 * 86_400_000).toISOString() };
+  const above = commodityCheck({ symbol: "XAU", metric: "price", op: ">", target: 4200, mode: "within" }, WEEK)!;
+  account({ data: fresh(4092.09) });
+  let o = await readAtOpen(above);
+  check("gold above $4,200 this week with Pyth at $4,092.09: whether it gets there",
+    o.kind === "within" && o.reading === "reach" && o.now === 4092.09 && o.check.mode === "touch", JSON.stringify(o));
+  check("...still settled from Bybit's candles, as the rule says",
+    o.kind === "within" && o.check.chain === "bybit" && /read from the XAUUSDT candles on Bybit/.test(o.sentence), o.kind === "within" ? o.sentence : "");
+  o = await readAtOpen({ ...above, target: 4000 });
+  check("...above $4,000: whether it stays there", o.kind === "within" && o.reading === "hold" && o.check.mode === "always", JSON.stringify(o));
+  o = await readAtOpen({ ...above, target: 4100 });
+  check("...above $4,100, 0.2% away, where Pyth and Bybit can disagree: where the week ends, as before",
+    o.kind === "within" && o.reading === "close" && /too close to say which side Bybit is on/.test(o.why ?? ""), JSON.stringify(o));
+  const met = await readAtOpen({ ...above, target: 4000, mode: "touch" });
+  check("a touch Pyth says is already met is read at the close", met.kind === "reread" && met.was === "yes", JSON.stringify(met));
+  account({ data: fresh(4092.09, Date.now() - 2 * 86_400_000) });
+  o = await readAtOpen(above);
+  check("over the weekend Pyth's Friday price is not the price now: where the week ends, as before",
+    o.kind === "within" && o.reading === "close" && /last published/.test(o.why ?? ""), JSON.stringify(o));
+  reads = [];
+  account({ data: fresh(4092.09) });
+  o = await readAtOpen(commodityCheck({ symbol: "XAG", metric: "price", op: ">", target: 50, mode: "within" }, WEEK)!);
+  check("silver is read where its week ends, as before, without asking Pyth", o.kind === "within" && o.reading === "close" && reads.length === 0, JSON.stringify(o));
+  o = await readAtOpen(spotCheck({ symbol: "BTC", metric: "price", op: ">", target: 90_000, mode: "within" }, WEEK)!);
+  check("...and a coin on Binance never asks Pyth", reads.length === 0, JSON.stringify(o));
+  _setPythReader(null);
+  _setPriceFeed(null);
 }
 
 console.log("\nwired where every market is born");

@@ -19,6 +19,7 @@
 // window. So a YES can settle on partial history and a NO cannot.
 
 import { priceFeed, BYBIT_CHAIN, BINANCE_CHAIN, type Candle } from "./feed.js";
+import { pythPrice, PYTH_MARGIN } from "./pyth.js";
 
 export type PriceOp = ">=" | ">" | "<=" | "<";
 /** touch: true at any point in the window. at-close: true at the close time.
@@ -500,20 +501,36 @@ export async function priceNow(check: PriceCheck): Promise<{ ok: true; value: nu
   try {
     candles = await priceFeed().ohlcv(check.chain, check.pool, "hour", 1);
   } catch (e) {
-    return { ok: false, why: `the price could not be read: ${(e as Error).message}` };
+    return pythOr(check, `the price could not be read: ${(e as Error).message}`);
   }
   // The newest by its start, whatever order the source sends them in. Its
   // close is the last trade, which is the price now on a pool.
   let newest: Candle | null = null;
   for (const c of candles) if (!newest || c[0] > newest[0]) newest = c;
-  if (!newest || !(newest[4] > 0)) return { ok: false, why: "the pool has no candle to read" };
+  if (!newest || !(newest[4] > 0)) return pythOr(check, "the pool has no candle to read");
   // An exchange pair trades every minute, so a newest hour long before the
   // window opens is a pair that stopped trading, not a quiet one: TON's pair on
   // Binance last moved in June, and its June price is not the price now.
   if (EXCHANGES.has(check.chain) && newest[0] < Date.parse(check.from) / 1000 - 2 * HOUR) {
-    return { ok: false, why: `${check.pool} has not traded since ${new Date(newest[0] * 1000).toISOString().slice(0, 10)}` };
+    return pythOr(check, `${check.pool} has not traded since ${new Date(newest[0] * 1000).toISOString().slice(0, 10)}`);
   }
   return { ok: true, value: newest[4] * unit };
+}
+
+/* GOLD'S PRICE AT THE OPEN COMES FROM PYTH WHEN BYBIT CANNOT BE READ (pyth.ts).
+   Bybit refuses this server and its archive is a day behind, so a gold market
+   opened with no price at all and "gold above $4,200 this week" could not be
+   told apart as a hold or a reach. Pyth's gold on Solana is current while the
+   gold market trades. It is not Bybit's price, so a level within PYTH_MARGIN
+   of it is left unread, as before, rather than called on the wrong side. */
+async function pythOr(check: PriceCheck, why: string): Promise<{ ok: true; value: number } | { ok: false; why: string }> {
+  if (check.chain !== BYBIT_CHAIN || check.metric !== "price") return { ok: false, why };
+  const p = await pythPrice(check.pool);
+  if (!p.ok) return { ok: false, why: `${why}; ${p.why}` };
+  if (Math.abs(p.price - check.target) <= check.target * PYTH_MARGIN) {
+    return { ok: false, why: `${why}; Pyth reads ${exactUsd(p.price)}, within ${PYTH_MARGIN * 100}% of the level, too close to say which side Bybit is on` };
+  }
+  return { ok: true, value: p.price };
 }
 
 /** What the price at the open already says: a touch met now is a YES, an
@@ -775,8 +792,8 @@ export async function probeExchangeRails(log: (line: Record<string, unknown>) =>
   }
   /* AND THE TWO PUBLIC ARCHIVES that could stand in for Bybit's live API, which
      answers this server 403 (20 Oct): Binance's daily minute candles for its
-     gold and oil perpetuals, and Bybit's own daily trade files. Only whether
-     they answer from here; nothing reads them yet. */
+     gold and oil perpetuals, and Bybit's own daily trade files, which settle
+     gold and oil now. Only whether they answer from here. */
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
   for (const [name, url] of [
     ["binanceArchive", `https://data.binance.vision/data/futures/um/daily/klines/CLUSDT/1m/CLUSDT-1m-${yesterday}.zip`],
@@ -789,5 +806,8 @@ export async function probeExchangeRails(log: (line: Record<string, unknown>) =>
       out[name] = { status: null, url, why: (e as Error).message.slice(0, 200) };
     }
   }
+  // Pyth's gold on Solana, which reads gold at a market's open (pyth.ts).
+  const gold = await pythPrice("XAUUSDT");
+  out.pyth = gold.ok ? { ok: true, pool: "XAUUSDT", price: gold.price, at: new Date(gold.publishTime * 1000).toISOString() } : { ok: false, pool: "XAUUSDT", why: gold.why.slice(0, 200) };
   log(out);
 }
