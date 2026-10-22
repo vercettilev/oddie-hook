@@ -5663,7 +5663,7 @@ if (realStakesReady) {
     const seat = seats.find((l) => l.seller === sellerPubkey);
     if (!seat) return res.status(409).json({ ok: false, reason: "seat-gone" });
 
-    const txBase64 = await prepareTakeListingTx({ marketPubkey: m.pubkey, sellerPubkey, buyerPubkey });
+    const txBase64 = await prepareTakeListingTx({ marketPubkey: m.pubkey, sellerPubkey, buyerPubkey, side: seat.side, lamports: seat.lamports });
     if (!txBase64) return res.status(502).json({ ok: false, reason: "chain-unreachable" });
     res.json({ ok: true, txBase64, lamports: seat.lamports, side: seat.side });
   });

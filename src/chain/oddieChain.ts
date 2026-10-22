@@ -1643,6 +1643,9 @@ export async function prepareCancelListingTx(args: {
 
 export async function prepareTakeListingTx(args: {
   marketPubkey: string; sellerPubkey: string; buyerPubkey: string;
+  /** The seat the buyer was shown. The program refuses the purchase if the
+   *  listing no longer says exactly this (ListingChanged, audit 22 Oct). */
+  side: "yes" | "no"; lamports: number;
 }): Promise<string | null> {
   const c = await load();
   if (!c) return null;
@@ -1651,7 +1654,7 @@ export async function prepareTakeListingTx(args: {
     const sellerPk = new c.web3.PublicKey(args.sellerPubkey);
     const buyerPk = new c.web3.PublicKey(args.buyerPubkey);
     const ix = await c.program.methods
-      .takeListing()
+      .takeListing(args.side === "yes" ? 0 : 1, new c.BN(args.lamports))
       .accountsStrict({
         buyer: buyerPk, seller: sellerPk, market: marketPk,
         listing: listingPda(c, marketPk, sellerPk),

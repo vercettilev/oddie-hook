@@ -335,7 +335,7 @@ pub mod oddie_chain {
     /// the property that makes this survivable and every withdraw-shaped exit
     /// not: paying somebody out of the vault takes the money from the people
     /// who were right.
-    pub fn take_listing(ctx: Context<TakeListing>) -> Result<()> {
+    pub fn take_listing(ctx: Context<TakeListing>, expected_side: u8, expected_amount: u64) -> Result<()> {
         let clock = Clock::get()?;
         let m = &ctx.accounts.market;
         require!(!m.resolved, OddieError::AlreadyResolved);
@@ -351,6 +351,13 @@ pub mod oddie_chain {
 
         let side = ctx.accounts.listing.side;
         let amount = ctx.accounts.listing.amount;
+        /* THE BUYER BUYS WHAT THEY SAW (audit, 22 Oct 2026). list_position
+           rewrites a seller's one listing in place, so between the moment a
+           buyer read it and the moment their transaction landed, the seller
+           could make it the other side or a bigger seat, and the buyer paid
+           for whatever stood there then. The buyer now names the side and the
+           size they agreed to, and anything else is refused. */
+        require!(side == expected_side && amount == expected_amount, OddieError::ListingChanged);
         require!(clock.unix_timestamp <= ctx.accounts.listing.expires_at, OddieError::ListingExpired);
         // A self-fill moves money in a circle and burns two rents doing it.
         // Anchor gets here first in practice: buyer and seller resolve to the
@@ -578,13 +585,12 @@ pub mod oddie_chain {
         // EVERY STAKED LAMPORT IS BACK BEFORE THE VERDICT. Payouts are priced
         // against total_yes + total_no and paid from the vault, so a market
         // settled while part of its pool sits in swSOL would pay its first
-        // winners and leave the last ones short until somebody unparked. When
-        // the vault is passed, the program refuses that state outright; the
-        // server that parks is the server that passes it. It is optional only so
-        // the server deployed before swSOL, which never parks and resolves with
-        // two accounts, keeps working across the upgrade.
-        if let Some(vault) = &ctx.accounts.vault {
-            let ai = vault.to_account_info();
+        // winners and leave the last ones short until somebody unparked. The
+        // program refuses that state outright. The vault was optional for the
+        // server deployed before swSOL; since the audit of 22 Oct 2026 it is
+        // required, so no resolve, from any script, can skip this check.
+        {
+            let ai = ctx.accounts.vault.to_account_info();
             let rent = Rent::get()?.minimum_balance(ai.data_len());
             let owed = m.total_yes.checked_add(m.total_no).ok_or(OddieError::MathOverflow)?;
             let need = rent.checked_add(owed).ok_or(OddieError::MathOverflow)?;
@@ -792,26 +798,17 @@ pub mod oddie_chain {
     pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
         let m = &ctx.accounts.market;
 
-        // THE MONEY IS CHECKED, NOT A DECODED CLAIM ABOUT THE MONEY.
+        // NOBODY IS OWED ANYTHING: the totals say so, and they are the check.
         //
-        // total_yes and total_no come out of the Market account, and this
-        // instruction closes accounts written by OTHER versions of this
-        // program. Anchor derives a discriminator from the struct NAME, so an
-        // account laid out by an older version passes the gate and is then read
-        // at the wrong offsets: fields land on each other's bytes and a pool
-        // with real SOL in it can decode as empty. Guarding an irreversible
-        // `close = authority` on those bytes means the guard is evaluated
-        // against exactly the corruption it exists to catch, and the failure
-        // mode is draining somebody else's stake into the admin wallet.
-        //
-        // The vault's lamport balance cannot be misread. It is the runtime's
-        // own number, it is what would actually be swept, and it is above its
-        // own rent if and only if somebody staked. So it is the load-bearing
-        // check, and the decoded totals stay only as a cheap early-out for the
-        // ordinary case.
-        let vault_ai = ctx.accounts.vault.to_account_info();
-        let vault_rent = Rent::get()?.minimum_balance(vault_ai.data_len());
-        require!(vault_ai.lamports() <= vault_rent, OddieError::MarketHasStakes);
+        // This used to test the vault's lamports too, against accounts laid out
+        // by OTHER versions of this program, which can decode as empty while
+        // holding a pool. None is left: on 22 Oct 2026 every one of this
+        // program's 55 accounts on mainnet was in the current layout. And the
+        // lamport test was a lock anybody could turn: one lamport sent to an
+        // empty vault put it above its rent, and the market's rent could never
+        // come back. Totals at zero mean nobody staked, or everybody who did
+        // took their stake back, so nothing in the vault belongs to anybody
+        // but the house, a donation included.
         require!(m.total_yes == 0 && m.total_no == 0, OddieError::MarketHasStakes);
         // Over, so nobody is going to stake now: resolved, or simply past its
         // close. Either is enough, and the second matters because an ignored
@@ -1341,9 +1338,9 @@ pub struct ResolveMarket<'info> {
         has_one = authority @ OddieError::WrongAuthority
     )]
     pub market: Account<'info, Market>,
-    /// Optional and trailing: see the swSOL guard in resolve_market.
+    /// Required since 22 Oct 2026: see the swSOL guard in resolve_market.
     #[account(seeds = [b"vault", market.key().as_ref()], bump = market.vault_bump)]
-    pub vault: Option<Account<'info, Vault>>,
+    pub vault: Account<'info, Vault>,
 }
 
 #[derive(Accounts)]
@@ -1671,4 +1668,7 @@ pub enum OddieError {
     NotEnoughSwsol,
     #[msg("only the market's authority can unpark while the market is open")]
     UnparkNotYours,
+    /* Audit, 22 Oct 2026, appended for the same reason as everything above. */
+    #[msg("this listing changed after you saw it")]
+    ListingChanged,
 }

@@ -7,8 +7,8 @@
 // What is pinned here is the same thing the main suite pins, money:
 //   · parked SOL leaves the vault only as swSOL the vault owns, 1:1
 //   · it comes back whole, and only ever to the vault
-//   · a market cannot be settled with stakes still parked, when the vault is passed
-//   · the server deployed before swSOL still resolves with two accounts
+//   · a market cannot be settled with stakes still parked
+//   · a resolve without the vault is refused (required since the 22 Oct audit)
 //   · once a market is settled or closed, anybody can bring its SOL home
 
 import * as anchor from "@coral-xyz/anchor";
@@ -58,11 +58,11 @@ describe("swSOL", function () {
   };
 
   /** A market that runs for a month: the kind worth parking. */
-  const openMarket = async () => {
+  const openMarket = async (closeInSecs = 30 * 86400) => {
     const id = new BN(++nextId);
     const { market, vault } = pdas(id);
     await program.methods
-      .createMarket(id, "Will the test pass?", new BN(Math.floor(Date.now() / 1000) + 30 * 86400), authority.publicKey, 200, 200, CRITERIA)
+      .createMarket(id, "Will the test pass?", new BN(Math.floor(Date.now() / 1000) + closeInSecs), authority.publicKey, 200, 200, CRITERIA)
       .accounts({ authority: authority.publicKey, market, vault, systemProgram: SystemProgram.programId })
       .rpc();
     return { market, vault };
@@ -114,7 +114,8 @@ describe("swSOL", function () {
     program.methods.resolveMarket(side).accountsStrict({ authority: authority.publicKey, market, vault }).rpc();
   /** Exactly what the server deployed before swSOL sends: two accounts. */
   const resolveOldServer = async (market: PublicKey, side: number) => {
-    const ix = await program.methods.resolveMarket(side).accountsStrict({ authority: authority.publicKey, market, vault: null }).instruction();
+    const vault = PublicKey.findProgramAddressSync([Buffer.from("vault"), market.toBuffer()], program.programId)[0];
+    const ix = await program.methods.resolveMarket(side).accountsStrict({ authority: authority.publicKey, market, vault }).instruction();
     ix.keys = ix.keys.slice(0, 2);
     return provider.sendAndConfirm(new Transaction().add(ix));
   };
@@ -172,17 +173,26 @@ describe("swSOL", function () {
     assert.equal(await bal(vault), vault0);
   });
 
-  it("lets anybody bring the SOL home once the market is settled, and the old two-account resolve still works", async () => {
-    const { market, vault } = await openMarket();
+  it("refuses a resolve without the vault, and lets anybody bring the SOL home once the market is closed", async () => {
+    const { market, vault } = await openMarket(12);
     const alice = await funded(), bob = await funded();
     await stake(market, vault, alice, 0, 1);
     await stake(market, vault, bob, 1, 1);
     const vault0 = await bal(vault);
     await park(market, vault, 1 * SOL);
-    await resolveOldServer(market, 0);
+    // The two-account resolve the pre-swSOL server sent: refused since 22 Oct,
+    // so no resolve can skip the parked-stakes check.
+    await failsWith(resolveOldServer(market, 0), "AccountNotEnoughKeys");
+    await failsWith(resolveWithVault(market, vault, 0), "StakesParked");
+    // Waited out on the CHAIN's clock, which is the one the program reads: a
+    // local validator's runs behind the wall clock.
+    const close = (await program.account.market.fetch(market)).closeTime.toNumber();
+    const chainNow = async () => Number((await conn.getAccountInfo(anchor.web3.SYSVAR_CLOCK_PUBKEY))!.data.readBigInt64LE(32));
+    while ((await chainNow()) <= close) await new Promise((r) => setTimeout(r, 1000));
     const stranger = await funded();
     await unpark(market, vault, 1 * SOL, stranger);
     assert.equal(await bal(vault), vault0);
+    await resolveWithVault(market, vault, 0);
     await claim(market, vault, alice);
   });
 

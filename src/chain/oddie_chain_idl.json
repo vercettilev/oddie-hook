@@ -1154,9 +1154,8 @@
         {
           "name": "vault",
           "docs": [
-            "Optional and trailing: see the swSOL guard in resolve_market."
+            "Required since 22 Oct 2026: see the swSOL guard in resolve_market."
           ],
-          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -1418,7 +1417,16 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "expected_side",
+          "type": "u8"
+        },
+        {
+          "name": "expected_amount",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "take_position",
@@ -1886,6 +1894,11 @@
       "code": 6034,
       "name": "UnparkNotYours",
       "msg": "only the market's authority can unpark while the market is open"
+    },
+    {
+      "code": 6035,
+      "name": "ListingChanged",
+      "msg": "this listing changed after you saw it"
     }
   ],
   "types": [

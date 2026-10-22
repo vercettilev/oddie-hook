@@ -101,8 +101,9 @@ describe("oddie_chain", () => {
       })
       .signers([seller]).rpc();
 
-  const takeSeat = async (market: PublicKey, seller: PublicKey, buyer: Keypair) =>
-    program.methods.takeListing()
+  /** The buyer names the seat they saw: its side and its size. */
+  const takeSeat = async (market: PublicKey, seller: PublicKey, buyer: Keypair, side = SIDE_YES, sol = 1) =>
+    program.methods.takeListing(side, new BN(sol * LAMPORTS_PER_SOL))
       .accounts({
         buyer: buyer.publicKey, seller, market,
         listing: listingPda(market, seller),
@@ -718,7 +719,7 @@ describe("oddie_chain", () => {
     await stake(market, vault, seller, SIDE_NO, 1);
     const expiry = Math.floor(Date.now() / 1000) + 600;
     await list(market, seller, SIDE_NO, 1, expiry);
-    await takeSeat(market, seller.publicKey, buyer);
+    await takeSeat(market, seller.publicKey, buyer, SIDE_NO, 1);
     const gone = await provider.connection.getAccountInfo(positionPda(market, seller.publicKey));
     assert.equal(gone, null, "an emptied position is closed, not left paying rent forever");
   });
@@ -746,6 +747,50 @@ describe("oddie_chain", () => {
     await takeSeat(market, seller.publicKey, buyer);
     // The listing is closed on fill, so it cannot be taken twice.
     await failsWith(takeSeat(market, seller.publicKey, buyer), "AccountNotInitialized");
+  });
+
+  it("sells the buyer only the seat they saw (audit, 22 Oct)", async () => {
+    // list_position rewrites a seller's one listing in place, so the seat a
+    // buyer read could become a bigger one or the other side before their
+    // transaction landed. The buyer names what they agreed to.
+    const creator = await funded();
+    const seller = await funded();
+    const buyer = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, seller, SIDE_YES, 2);
+    await stake(market, vault, seller, SIDE_NO, 1);
+    const now = Math.floor(Date.now() / 1000);
+    await list(market, seller, SIDE_YES, 1, now + 600);
+    await list(market, seller, SIDE_YES, 2, now + 600);
+    await failsWith(takeSeat(market, seller.publicKey, buyer, SIDE_YES, 1), "ListingChanged");
+    await list(market, seller, SIDE_NO, 1, now + 600);
+    await failsWith(takeSeat(market, seller.publicKey, buyer, SIDE_YES, 1), "ListingChanged");
+    await takeSeat(market, seller.publicKey, buyer, SIDE_NO, 1);
+    const bp = await program.account.position.fetch(positionPda(market, buyer.publicKey));
+    assert.equal(bp.amountNo.toNumber(), LAMPORTS_PER_SOL, "the seat they named");
+    assert.equal(bp.amountYes.toNumber(), 0, "and nothing else");
+  });
+
+  it("closes an empty market even after somebody sends its vault a lamport (audit, 22 Oct)", async () => {
+    // The vault used to be checked against its rent, so one donated lamport
+    // locked the market's rent for good.
+    const creator = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await program.methods.resolveMarket(SIDE_YES).accounts({ authority: authority.publicKey, market }).rpc();
+    await provider.sendAndConfirm(new anchor.web3.Transaction().add(
+      SystemProgram.transfer({ fromPubkey: authority.publicKey, toPubkey: vault, lamports: 1 })));
+    await program.methods.closeMarket().accounts({ authority: authority.publicKey, market, vault }).rpc();
+    assert.equal(await provider.connection.getAccountInfo(market), null, "the market's rent came back");
+    assert.equal(await provider.connection.getAccountInfo(vault), null, "and the vault's");
+  });
+
+  it("still never closes a market anybody holds a stake in", async () => {
+    const creator = await funded();
+    const user = await funded();
+    const { market, vault } = await openMarket(creator.publicKey);
+    await stake(market, vault, user, SIDE_YES, 1);
+    await program.methods.resolveMarket(SIDE_YES).accounts({ authority: authority.publicKey, market }).rpc();
+    await failsWith(program.methods.closeMarket().accounts({ authority: authority.publicKey, market, vault }).rpc(), "MarketHasStakes");
   });
 
   it("lets a seller take the offer down and get the rent back", async () => {
