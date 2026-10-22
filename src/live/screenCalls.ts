@@ -30,7 +30,8 @@
  *
  * WHAT IT NEVER DOES. It never looks in the first minute of a call, so the
  * last match's result screen, still up when the next call opens, cannot
- * settle it. It never looks at a channel that said !matches off, at a stream
+ * settle it. It never looks at a call over more than one game (manyGames). It
+ * never looks at a channel that said !matches off, at a stream
  * that is not live, or at a channel past its hourly budget. It never touches
  * a market: markets settle through their own resolution, never from a picture.
  */
@@ -63,6 +64,49 @@ export const SCREEN_MAX_AGE_MS = 3 * 60 * 60_000;
 export const SCREEN_IDLE_MS = 60_000;
 /** A reader outage only a person can fix pauses every look for this long. */
 export const SCREEN_OUTAGE_MS = 10 * 60_000;
+
+/* A WIN OVER MANY GAMES IS NEVER ON ONE GAME'S SCREEN (Lev, 22 Oct). In a
+   Showdown tournament every game ends on a WINNER banner, and a best of three
+   puts one up after every map, so "does GPPoker win Lucky 13?" read off the
+   screen would settle YES on the first game GPPoker took, hours before the
+   tournament is decided. A call about a tournament, a series, a final, a day
+   of play or the whole night is the mods' to settle when it is over: the
+   screen never looks at it. A call that names its one game ("this game",
+   "the next hand") is read as before, whatever else it says. */
+
+/** The one game a call can name. */
+const ONE_GAME = /\b(?:this|that|the next|next|the last|last)\s+(?:one|game|round|match|hand|map|fight|run|race|life|duel|battle|pot|flip|spin|draw|point|showdown|attempt|try|pull)\b/i;
+/** Words that put a call over more than one game. */
+const MANY_WORDS = new RegExp(`\\b(?:${[
+  /tournaments?|championships?|champions?|champ|trophy|trophies|series|brackets?|playoffs?/,
+  /finals|(?:semi|quarter)-?finals?|final table|whole thing|overall|podium|seasons?/,
+  // "the final", but not the last moment of one game: "the final boss", "the final round".
+  /the final(?!\s+(?:boss|round|hand|kill|circle|zone|lap|wave|stage|level|map|game|fight|card|river|question|score|minute))/,
+  /top\s*\d+|(?:1st|first|2nd|second|3rd|third)\s+place|(?:win|wins|winning|take|takes)\s+it\s+all|takes?\s+(?:it\s+)?(?:down|home)/,
+  /in a row|day\s*\d+|qualif(?:y|ies|ied|iers?|ication)|advances?|in the money|tonight|today|this week(?:end)?|(?:by|at|until) the end/,
+].map((r) => r.source).join("|")})\\b`, "i");
+/** A game's own nouns: what "win the ..." may name and still be one game. */
+const GAME_NOUN = "one|games?|rounds?|match(?:es)?|hands?|maps?|fights?|pots?|flips?|races?|duels?|battles?|points?|showdown|draws?|spins?|w|dub";
+/** "win" followed by an event's name: "win Lucky 13", "win the cup", "win 3 games".
+ *  What may follow it in a call about one game: nothing, a word that names no
+ *  event, or one of the game's own nouns. */
+const WIN_NAMES_EVENT = new RegExp(
+  `\\b(?:wins?|winning|won)\\s+(?:(?:the|a|an)\\s+(?!(?:(?:next|first|last)\\s+)?(?:${GAME_NOUN})\\b)` +
+  `|(?!(?:the|a|an|this|that|it|here|now|again|vs\\.?|versus|against|by|with|or|and|if|when|before|after|big|easy|easily|clean|fast|back|on|out|over|${GAME_NOUN}` +
+  `|in\\s+(?:\\d+|under|less|fewer|one|two|three|a|time))\\b))[a-z0-9$]`, "i");
+/** "the Lucky 13 winner", "winner of Lucky 13": a winner of something bigger than a game. */
+const WINNER_OF_EVENT = new RegExp(
+  `\\b(?!(?:the|a|an|this|that|next|last|my|his|her|their|our|your|be|is|round|game|hand|map|match|fight|race|pot)\\b)[\\w$']+\\s+winners?\\b` +
+  `|\\bwinners?\\s+of\\s+(?!(?:this|that|the\\s+(?:next\\s+)?(?:${GAME_NOUN}))\\b)`, "i");
+/** "in Lucky 13", "at Worlds": an event named by its own capitalized name. */
+const AT_EVENT = /\b(?:in|at)\s+(?!(?:This|That|The|A|An|My|His|Her|Their|Our|Your|One|Chat|Game|Round|Match|Hand|Map)\b)[A-Z][\w']*/;
+
+/** A call over more than one game, whose answer no single game's screen shows. */
+export function manyGames(question: string): boolean {
+  const q = String(question ?? "");
+  if (ONE_GAME.test(q)) return false;
+  return MANY_WORDS.test(q) || WIN_NAMES_EVENT.test(q) || WINNER_OF_EVENT.test(q) || AT_EVENT.test(q);
+}
 
 interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null }
 const looks = new Map<string, Look>();
@@ -117,7 +161,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   if (!source) return 0;
   const now = deps.now();
   if (now < outageUntil) return 0;
-  const watched = (cs: LiveCall[]) => cs.filter((c) => isRoomCall(c) && now - c.openedAt <= SCREEN_MAX_AGE_MS);
+  const watched = (cs: LiveCall[]) => cs.filter((c) => isRoomCall(c) && !manyGames(c.question) && now - c.openedAt <= SCREEN_MAX_AGE_MS);
   // The store is asked again whenever a look falls due, so a call settled some
   // other way is never looked at after, and every five seconds for new calls;
   // a pass with nothing due only checks the time.

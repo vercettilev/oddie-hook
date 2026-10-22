@@ -1,13 +1,13 @@
 // The screen settles it (src/live/screenCalls.ts, src/games/screen.ts): a room
 // call's answer read off the stream, the same sure answer twice in a row, never
-// in the call's first minute, never for a price or a match call, a channel that
-// said !matches off, or a stream that is not live.
+// in the call's first minute, never for a price or a match call, a call over
+// many games, a channel that said !matches off, or a stream that is not live.
 //
 // Run with: npm run test-screen-calls
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { liveStore, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS } from "../src/live/screenCalls.js";
+import { watchScreens, manyGames, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS } from "../src/live/screenCalls.js";
 import { cleanSeen, parseScreen, screenPrompt, screenSource, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
@@ -169,7 +169,7 @@ console.log("\nwhat does not settle");
   check("the streamer's own !call settles first, and the screen says nothing after", x.said.length === settled && x.counts().asks === 1);
 
   const z = await room();
-  await handleChat(z.line("nova", "!call will I make it to the final?", true), z.deps);
+  await handleChat(z.line("nova", "!call will I win this match?", true), z.deps);
   await z.at(SCREEN_MAX_AGE_MS + 1_000);
   check("a call open past its third hour is not looked at any more: !call yes still settles it", z.counts().grabs === 0);
 
@@ -180,6 +180,38 @@ console.log("\nwhat does not settle");
   y.readings.push(yes(), yes());
   await y.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS);
   check("a reader out of order pauses the looking rather than asking again and again", y.counts().asks === 1);
+}
+
+console.log("\na win over many games is the mods' to settle, never the screen's");
+{
+  // Every Showdown game ends on a WINNER banner: the first one GPPoker took
+  // would have settled the whole tournament.
+  const many = [
+    "Does GPPoker win Lucky 13?", "does gppoker win lucky 13", "Is GPPoker the Lucky 13 champion?", "Is GPPoker the Lucky 13 winner?",
+    "GPPoker takes down Lucky 13?", "Will Stan win the tournament?", "does NaVi win the series?", "will I make it to the final?",
+    "does he make the final table?", "will I win 3 in a row?", "will I win today?", "does he win it all?", "top 3 finish?",
+    "does GPPoker win a game in Lucky 13?", "will he win the title?", "will I win the next 2 games?",
+  ];
+  const one = [
+    "will I win this match?", "will I win?", "does he win this one?", "does Aleksa win this hand?", "win the hand?",
+    "will I win against Aleksa?", "will I win in 10 turns?", "does he win the next game?", "does he take the W?",
+    "does GPPoker win this game of Lucky 13?", "does he beat the final boss?", "will I survive the final round?", "top 10 this game?",
+  ];
+  const missed = many.filter((q) => !manyGames(q));
+  check("a tournament, a series, a final or a night is many games", !missed.length, missed.join(" | "));
+  const blocked = one.filter((q) => manyGames(q));
+  check("...one game is one game, also when it names the tournament it is in", !blocked.length, blocked.join(" | "));
+
+  const r = await room();
+  await handleChat(r.line("nova", "!call Does GPPoker win Lucky 13?", true), r.deps);
+  await handleChat(r.line("mika", "!yes"), r.deps);
+  r.readings.push(yes(0.95, "WINNER: GPPOKER"), yes(0.95, "WINNER: GPPOKER"));
+  for (let t = SCREEN_GRACE_MS; t <= SCREEN_GRACE_MS + 4 * SCREEN_EVERY_MS; t += SCREEN_TICK_MS) await r.at(t);
+  check("a game's WINNER banner settles no tournament: the call is never looked at",
+    r.counts().grabs === 0 && (await liveStore.unsettled("kick", "100")).length === 1, JSON.stringify(r.counts()));
+  await handleChat(r.line("nova", "!call yes", true), r.deps);
+  check("...and the mod's !call yes settles it when the tournament is over",
+    (await liveStore.unsettled("kick", "100")).length === 0 && /^YES: "Does GPPoker win Lucky 13\?"/.test(r.last()), r.last());
 }
 
 console.log("\nX's picture is its live thumbnail");
