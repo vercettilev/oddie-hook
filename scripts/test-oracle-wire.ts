@@ -262,6 +262,17 @@ console.log("\nA VERDICT NO SEARCH FED IS NOT A VERDICT");
   // ...nor turn an honest abstention into a scolding.
   reset(ok(noSearch({ ...GOOD, outcome: "undetermined", reasoning: "I could not find a source" })));
   check("an abstention keeps its own reason", (await proposeVerdict(MARKET)).reasoning.includes("could not find"));
+
+  // Posts read from X for a rule that names an account are evidence the model
+  // was fed, exactly like search results: a verdict quoting one is not memory.
+  const xPost = { id: "1001", handle: "Showdown_TCG", url: "https://x.com/Showdown_TCG/status/1001",
+    text: "GPPoker is our Lucky 13 champion and takes home the $13,000", createdAt: "2026-10-25T21:04:00.000Z" };
+  reset(ok(noSearch({ ...GOOD, citations: [{ url: xPost.url, quote: "GPPoker is our Lucky 13 champion" }] })));
+  const fromPosts = await proposeVerdict({ ...MARKET, criteria: "per the official announcement on the @Showdown_TCG X account", xPosts: [xPost] });
+  check("a verdict resting on posts read from X is not a verdict from memory", fromPosts.outcome === "yes", `${fromPosts.outcome}: ${fromPosts.reasoning}`);
+  const asked = JSON.stringify(sent[0]?.body.messages ?? "");
+  check("...and the posts reach the model with the address to cite",
+    asked.includes("POSTS FROM THE X ACCOUNTS THE CRITERIA NAME") && asked.includes(xPost.url) && asked.includes("GPPoker is our Lucky 13 champion"), asked.slice(0, 200));
 }
 
 console.log("\nTHE SEARCH BUDGET IS FOR THE MARKET, NOT FOR EACH REQUEST");

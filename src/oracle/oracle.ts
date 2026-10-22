@@ -28,6 +28,7 @@ import { auditCitations, auditSupports, type AuditResult } from "./audit.js";
 import { runPropose, type Proposal, type Side } from "./verdict.js";
 import { messagesUrl, authHeaders, MODEL, personFixOutage } from "../inference.js";
 import { checkPrice, type PriceCheck } from "../price/index.js";
+import { xSourcesIn, xPostsFor } from "./xPosts.js";
 
 const VERIFY_TIMEOUT_MS = 60_000;
 
@@ -266,9 +267,16 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
   // decorative: every test that swapped the proposer still stopped at a gate the
   // swap could not reach, so the rules below went unexercised while the suite
   // stayed green. One check, at the boundary it describes.
+  // A rule that names an X account as its source is answered from that
+  // account's own posts, read from X, because search cannot see a fresh post
+  // and the page audit cannot read one (xPosts.ts). Nothing is read for a rule
+  // that names none: every post costs money.
+  const xSources = xSourcesIn(criteria);
+  const xPosts = xSources.length ? await xPostsFor(xSources, m.closeTime, now.getTime()) : [];
+
   let proposal: Proposal;
   try {
-    proposal = await runPropose({ question: m.question, criteria, closeTime: m.closeTime });
+    proposal = await runPropose({ question: m.question, criteria, closeTime: m.closeTime, xPosts });
   } catch (e) {
     return { ...base, settle: null, gate: "error", reason: (e as Error).message };
   }
@@ -292,7 +300,7 @@ export async function decide(m: OracleInput, now = new Date()): Promise<OracleDe
   // against its own page is reported as that, rather than being swallowed by a
   // low-confidence abstention that happens to reach the same decision. Same
   // outcome, very different news.
-  const audit = await auditCitations(proposal.citations, m.closeTime ? new Date(m.closeTime) : null);
+  const audit = await auditCitations(proposal.citations, m.closeTime ? new Date(m.closeTime) : null, { xSources });
   const support = auditSupports(proposal.outcome, audit);
   if (!support.ok) {
     return { ...base, settle: null, gate: "citations-failed", proposal, audit, reason: support.why };

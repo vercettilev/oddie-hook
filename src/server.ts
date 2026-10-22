@@ -58,6 +58,7 @@ import type { SurfacerInfo } from "./store/markets.js";
 import { oracleSweep } from "./oracle/sweep.js";
 import { decide } from "./oracle/oracle.js";
 import { oracleAvailable } from "./oracle/verdict.js";
+import { probeXPostReader } from "./oracle/xPosts.js";
 import { oracleAttemptFor, recordOracleDecision } from "./store/markets.js";
 import { claimKeyLookup, claimKeyRecord, takeQuotaToken, releaseQuotaToken, callerScope, refusalForText, recordRefusalForText, openMarketForSourcePost, recordChainEntry, chainEntryFor, slugForOnchainPubkey, openEntriesFor, receiptWeight, logRealFee, feeLog, onchainMarketsSurfacedBy, surfacerFor, FULL_CREDIT_LAMPORTS, settledCalls, stakerCounts } from "./store/markets.js";
 import { priceCall, standingsFrom, denseRank, bestCalls } from "./store/standings.js";
@@ -6577,6 +6578,9 @@ if (ORACLE_ENABLED) {
 // Whether the exchange rails answer from here: Binance for the big coins,
 // Bybit for gold and oil (src/price/index.ts). Free, so once at every boot.
 setTimeout(() => void probeExchangeRails((line) => console.log(JSON.stringify(line))), 20_000).unref();
+// And whether a rule that names an X account can be read on X from here
+// (src/oracle/xPosts.ts): one owned read of our own posts at boot.
+if (X.xConfigured()) setTimeout(() => void probeXPostReader((line) => console.log(JSON.stringify(line))), 40_000).unref();
 
 if (X_BOT_ENABLED) {
   if (!X.xConfigured()) {

@@ -25,6 +25,8 @@
 // That is the right direction to be wrong in. The opposite arrangement — treat
 // unreachable as fine — is exactly how a fabricated source gets paid.
 
+import { xPostReader, xStatusUrl } from "./xPosts.js";
+
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_BYTES = 2_000_000; // a page bigger than this is not a source, it is a dump
 const UA = "oddie-oracle/1.0 (+https://oddie.fun)"; // plain ASCII: fetch rejects anything else in a header
@@ -317,8 +319,13 @@ export function _setPageFetcher(f: PageFetcher | null): void {
  * `closeTime` decides only whether a VERIFIED citation is additionally marked
  * stale; it never rescues one that failed on its words.
  */
-export async function auditCitation(c: Citation, closeTime: Date | null): Promise<AuditedCitation> {
+export async function auditCitation(c: Citation, closeTime: Date | null, opts: AuditOptions = {}): Promise<AuditedCitation> {
   const base = { url: c.url, quote: c.quote };
+
+  // An X post is read through the X API, never as a page: X renders its text
+  // in JavaScript, so a fetched post is always "unreachable". See xPosts.ts.
+  const status = xStatusUrl(c.url);
+  if (status) return auditXPost(c, status, closeTime, opts.xSources ?? []);
 
   // A URL we would not follow is not a source. http/https only: no file://, no
   // data:, nothing that reads our own disk or our own network.
@@ -400,6 +407,45 @@ export async function auditCitation(c: Citation, closeTime: Date | null): Promis
   return { ...base, status: "verified", datedAt, note: "quote found on the page" };
 }
 
+export interface AuditOptions {
+  /** The X accounts the market's rule names (xSourcesIn). A post by any other
+   *  account is not evidence, however well its words match. */
+  xSources?: string[];
+}
+
+/** A cited X post, checked the way a page is: the words must be in it, and it
+ *  is dated by when it went out. Two more rules a page does not need, because
+ *  anyone can post anything: the AUTHOR must be an account the rule names, and
+ *  the author is the one X reports, not whatever handle the address carries. */
+async function auditXPost(c: Citation, at: { handle: string | null; id: string }, closeTime: Date | null, sources: string[]): Promise<AuditedCitation> {
+  const base = { url: c.url, quote: c.quote };
+  const quote = normalizeText(c.quote);
+  if (quote.length < 12) {
+    return { ...base, status: "quote-absent", datedAt: null, note: "quote too short to mean anything" };
+  }
+  const named = new Set(sources.map((h) => h.toLowerCase()));
+  if (at.handle && !named.has(at.handle.toLowerCase())) {
+    return { ...base, status: "unreachable", datedAt: null, note: `an X post counts only from an account the rule names, and @${at.handle} is not one` };
+  }
+  const post = await xPostReader().post(at.id).catch(() => null);
+  if (!post) {
+    return { ...base, status: "unreachable", datedAt: null, note: "the post could not be read from X" };
+  }
+  if (!post.authorHandle || !named.has(post.authorHandle.toLowerCase())) {
+    return { ...base, status: "unreachable", datedAt: post.createdAt, note: `that post is by @${post.authorHandle ?? "unknown"}, not an account the rule names` };
+  }
+  if (!normalizeText(post.text).includes(quote)) {
+    return { ...base, status: "quote-absent", datedAt: post.createdAt, note: "the quoted words are not in that post" };
+  }
+  if (closeTime && post.createdAt && new Date(post.createdAt) < closeTime) {
+    return { ...base, status: "stale", datedAt: post.createdAt, note: "posted before the market closed" };
+  }
+  if (closeTime && !post.createdAt) {
+    return { ...base, status: "undated", datedAt: null, note: "quote found, but X gave no time for the post" };
+  }
+  return { ...base, status: "verified", datedAt: post.createdAt, note: `quote found in @${post.authorHandle}'s post, read from X` };
+}
+
 export interface AuditResult {
   citations: AuditedCitation[];
   /** Words found AND the page dated at or after the close. The only class a NO
@@ -423,8 +469,8 @@ export interface AuditResult {
   closeKnown: boolean;
 }
 
-export async function auditCitations(cites: Citation[], closeTime: Date | null): Promise<AuditResult> {
-  const citations = await Promise.all(cites.map((c) => auditCitation(c, closeTime)));
+export async function auditCitations(cites: Citation[], closeTime: Date | null, opts: AuditOptions = {}): Promise<AuditResult> {
+  const citations = await Promise.all(cites.map((c) => auditCitation(c, closeTime, opts)));
   return {
     citations,
     verified: citations.filter((c) => c.status === "verified").length,

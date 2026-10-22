@@ -343,6 +343,42 @@ export async function postTweet(opts: { text: string; quoteTweetId?: string; med
   return body.data;
 }
 
+/** One post by id with what the oracle's audit checks (src/oracle/xPosts.ts):
+ *  the full text (a long post keeps it in note_tweet), when it went out, and
+ *  who wrote it. Null for a post that is gone or hidden from us. */
+export async function postForAudit(id: string): Promise<{ id: string; text: string; createdAt: string | null; authorHandle: string | null } | null> {
+  try {
+    const body = await call<{
+      data?: { id: string; text: string; author_id: string; created_at?: string; note_tweet?: { text?: string } };
+      includes?: { users?: Array<{ id: string; username: string }> };
+    }>(`/tweets/${encodeURIComponent(id)}?expansions=author_id&user.fields=username&tweet.fields=created_at,note_tweet`);
+    if (!body.data) return null;
+    const u = body.includes?.users?.find((x) => x.id === body.data!.author_id);
+    return { id: body.data.id, text: body.data.note_tweet?.text || body.data.text, createdAt: body.data.created_at ?? null, authorHandle: u?.username ?? null };
+  } catch (e) {
+    if (e instanceof XError && (e.status === 403 || e.status === 404)) return null;
+    throw e;
+  }
+}
+
+/** An account's own posts since `startIso`, newest first, at most `max`.
+ *  Retweets left out: what the account said is the evidence, not what it
+ *  passed along. Billed per post returned, so the caller keeps `max` small. */
+export async function accountPosts(handle: string, startIso: string, max = 40): Promise<Array<{ id: string; text: string; createdAt: string | null }>> {
+  const user = await call<{ data?: { id: string } }>(`/users/by/username/${encodeURIComponent(handle)}`);
+  if (!user.data) return [];
+  const qs = new URLSearchParams({
+    max_results: String(Math.max(5, Math.min(100, max))),
+    // X takes whole seconds: an ISO string with milliseconds is a 400.
+    start_time: startIso.replace(/\.\d+Z$/, "Z"),
+    "tweet.fields": "created_at,note_tweet",
+    exclude: "retweets",
+  });
+  const body = await call<{ data?: Array<{ id: string; text: string; created_at?: string; note_tweet?: { text?: string } }> }>(
+    `/users/${encodeURIComponent(user.data.id)}/tweets?${qs}`);
+  return (body.data ?? []).map((t) => ({ id: t.id, text: t.note_tweet?.text || t.text, createdAt: t.created_at ?? null }));
+}
+
 /** One tweet by id, for reading the claim a mention was replying to.
  *  It also carries its OWN parent, so the loop can walk up a thread when two
  *  posts were not enough to name what the argument is about. Asking for

@@ -24,6 +24,7 @@
 
 import { messagesUrl, authHeaders, inferenceProvider, API_KEY_ENV, MODEL } from "../inference.js";
 import type { Citation } from "./audit.js";
+import type { XPost } from "./xPosts.js";
 
 const TIMEOUT_MS = 180_000; // searching is slow and this runs on a schedule, not in a request
 /** Every citation gets audited, so this is a sanity bound rather than a budget.
@@ -136,7 +137,8 @@ Rules:
 - If all you have is that you found no report of the event, that is "undetermined", not "no". An absence you did not look up in a complete record is not evidence.
 - checkable false means the criteria themselves cannot be checked by anyone: subjective wording, no threshold, no nameable source. That is a judgment about the QUESTION, and you make it whether or not you happened to find something.
 - A page showing a CURRENT value tells you nothing about what that value was at an earlier moment. A live price ticker, a league table today, a follower count now: quoting one of those to settle a question about a past date is not evidence, and the right answer there is "undetermined" unless you find a source that states the value AS OF the date the criteria name.
-- Never cite a page you did not open through search. Never construct a URL.`;
+- Never cite a page you did not open through search. Never construct a URL. The one exception is the X posts given to you in the message: those were read from X for you, and you cite one by the URL shown with it.
+- An X post given to you is what that account said, nothing more. It settles the market only where the criteria name that account as the source.`;
 
 interface Block { type: string; id?: string; name?: string; input?: unknown; text?: string; tool_use_id?: string; content?: unknown }
 
@@ -209,11 +211,20 @@ export async function proposeVerdict(m: {
   question: string;
   criteria: string;
   closeTime: string | null;
+  /** Posts by the X accounts the criteria name, read from X for this market
+   *  (xPosts.ts). Search cannot see a fresh post; these are how it gets read. */
+  xPosts?: XPost[];
 }): Promise<Proposal> {
   const avail = availability();
   if (!avail.ok) throw new Error(avail.why);
 
   const closed = m.closeTime ? `The market closed at ${m.closeTime} (UTC).` : "The market has no stated close time.";
+  const posts = m.xPosts ?? [];
+  const postBlock = posts.length
+    ? `\n\nPOSTS FROM THE X ACCOUNTS THE CRITERIA NAME
+Read from X for you, newest first. Quote one exactly and cite the URL shown with it.
+${posts.map((p) => `- ${p.createdAt ?? "time unknown"} ${p.url}\n  ${p.text.replace(/\s+/g, " ").slice(0, 600)}`).join("\n")}`
+    : "";
   const messages: Array<{ role: string; content: unknown }> = [
     {
       role: "user",
@@ -224,7 +235,7 @@ QUESTION
 ${m.question}
 
 RESOLUTION CRITERIA
-${m.criteria}
+${m.criteria}${postBlock}
 
 Search for the evidence, then call record_verdict exactly once.`,
     },
@@ -279,7 +290,8 @@ Search for the evidence, then call record_verdict exactly once.`,
     const call = assistantBlocks.find((b) => b.type === "tool_use" && b.name === "record_verdict");
     const deferred = deferredServerTools(assistantBlocks);
 
-    if (call && deferred.length === 0) return grounded(normalize(call.input as Record<string, unknown>), results, errors);
+    // The posts read from X fed the verdict as surely as a search result did.
+    if (call && deferred.length === 0) return grounded(normalize(call.input as Record<string, unknown>), results + posts.length, errors);
 
     if (call && deferred.length > 0) {
       // The verdict and the search request left in the same breath, so the
