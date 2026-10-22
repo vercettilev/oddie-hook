@@ -396,6 +396,21 @@ export async function runMentionSweep(deps: SweepDeps): Promise<SweepResult> {
       continue;
     }
 
+    /* A TAG X WILL NOT LET US ANSWER IS NOT TRIED. Since 23 Feb 2026 X lets an
+       API reply through only where the post's author mentioned us, and on a
+       long post it reads that from the first part alone (about 280
+       characters). Bee's market posts put @oddiefun at the end of 400-odd
+       characters: all four (12 to 20 Oct) were refused, decorated and plain,
+       each after a model call and a card. The tag is still recorded, with why;
+       nothing is graded, drawn or said, so it costs nothing. */
+    if (m.reachText !== undefined && !namesHandle(m.reachText, deps.botHandle ?? "oddiefun")) {
+      const first = await claimMention(m.id, m.authorHandle);
+      if (first) await settleMention(m.id, "skipped", { reason: "mention-past-280" });
+      decide("skipped", { reason: first ? "mention-past-280" : "already-decided" });
+      if (first) log("tag sits past what X lets us answer", { tweetId: m.id, handle: m.authorHandle });
+      continue;
+    }
+
     /* THE NAME IS NOT THE PERSON, and this is the only place both are in hand.
        Every ledger downstream keys on the handle, so somebody who renames
        leaves their tickets and their board position under a string anyone else

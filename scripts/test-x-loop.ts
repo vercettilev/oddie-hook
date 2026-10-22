@@ -267,6 +267,34 @@ async function main() {
     check("...and recorded, so it is not reconsidered", _memMentionOutcome("300") === "skipped");
   }
 
+  /* ------------------------------------- a tag X will not let us answer -- */
+  // 12-20 Oct: Bee's market posts ran 412-450 characters and named @oddiefun at
+  // the end. X lets an API reply through only where the author mentioned us,
+  // and reads that from the first part of a long post, so every reply was
+  // refused, decorated and plain, after a model call and a card each.
+  {
+    _resetBotState();
+    let graded = 0;
+    const long = "$HYPE above $80 by Oct 25? Bet it: https://app.oddie.fun/m/will-hype-trade-at-or-above-05747c Oddie = prediction market. "
+      .padEnd(390, "Connect a Solana wallet, take YES or NO in SOL. ") + " @HyperliquidX @ThinkingUSD @oddiefun 18+.";
+    const { deps, spy } = harness({
+      mentions: async () => ({ items: [mention("330", { text: long, reachText: long.slice(0, 280), repliedToId: null })], newestId: "330" }),
+      extract: async () => { graded++; return goodExtraction("Will HYPE trade at or above $80?"); },
+    });
+    const r = await runMentionSweep(deps);
+    check("a tag past the part of a long post X reads gets no reply attempt", spy.posted.length === 0 && r.skipped === 1, `posted ${spy.posted.length}, skipped ${r.skipped}`);
+    check("...costs no model call and no market", graded === 0 && spy.minted.length === 0, `graded ${graded}, minted ${spy.minted.length}`);
+    check("...and is recorded with why", _memMentionReason("330") === "mention-past-280", _memMentionReason("330") ?? "");
+
+    _resetBotState();
+    const upFront = "@oddiefun " + long;
+    const { deps: d2, spy: s2 } = harness({
+      mentions: async () => ({ items: [mention("331", { text: upFront, reachText: upFront.slice(0, 280) })], newestId: "331" }),
+    });
+    const r2 = await runMentionSweep(d2);
+    check("the same long post with the tag up front is answered as before", r2.replied === 1 && s2.posted.length === 1, `replied ${r2.replied}`);
+  }
+
   /* ------------------------------------------- a reply under our own post -- */
   // 9 Oct: "😳😳" under the launch post was graded with the launch post as the
   // claim and got the teaching card, publicly. X puts our handle at the front

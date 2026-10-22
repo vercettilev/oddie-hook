@@ -230,6 +230,10 @@ export interface Mention {
    *  post, and X put our handle at its front whether or not anyone asked. */
   inReplyToUserId?: string | null;
   createdAt: string | null;
+  /** On a long post, the first part of it: the text X itself goes by when it
+   *  decides whether we may reply (see mentionLoop's mention-past-280). Absent
+   *  on an ordinary post, whose whole text is that part. */
+  reachText?: string;
 }
 
 interface MentionsResponse {
@@ -237,6 +241,7 @@ interface MentionsResponse {
     id: string; text: string; author_id: string; created_at?: string;
     referenced_tweets?: Array<{ type: string; id: string }>;
     in_reply_to_user_id?: string;
+    note_tweet?: { text?: string };
   }>;
   includes?: { users?: Array<{ id: string; username: string }> };
   meta?: { newest_id?: string; result_count?: number };
@@ -254,7 +259,9 @@ interface MentionsResponse {
 export async function mentions(sinceId: string | null, max = 20): Promise<{ items: Mention[]; newestId: string | null }> {
   const qs = new URLSearchParams({
     max_results: String(Math.max(5, Math.min(100, max))),
-    "tweet.fields": "created_at,referenced_tweets,author_id,in_reply_to_user_id",
+    // note_tweet: a long post's full text. Without it `text` stops near 280
+    // characters and a claim written past that was read half-way.
+    "tweet.fields": "created_at,referenced_tweets,author_id,in_reply_to_user_id,note_tweet",
     expansions: "author_id",
     "user.fields": "username",
   });
@@ -264,7 +271,8 @@ export async function mentions(sinceId: string | null, max = 20): Promise<{ item
   const byId = new Map((body.includes?.users ?? []).map((u) => [u.id, u.username]));
   const items = (body.data ?? []).map((t) => ({
     id: t.id,
-    text: t.text,
+    text: t.note_tweet?.text || t.text,
+    ...(t.note_tweet?.text ? { reachText: t.text } : {}),
     authorId: t.author_id,
     authorHandle: byId.get(t.author_id) ?? null,
     repliedToId: t.referenced_tweets?.find((r) => r.type === "replied_to")?.id ?? null,
