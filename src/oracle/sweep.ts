@@ -16,6 +16,7 @@
  * model and no chain. That is also what makes it testable without either.
  */
 import { shouldRetry, decisionWasPaid, decidableBeforeClose, type OracleDecision } from "./oracle.js";
+import { xSourcesIn } from "./xPosts.js";
 import type { PriceCheck } from "../price/index.js";
 
 export interface OracleSweepMarket {
@@ -138,7 +139,7 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
     // price every run, until a person rewrites them. One with a price rule
     // spends nothing, so its paid past does not hold it back.
     const attempt = await deps.attempt(m.slug).catch(() => ({ lastGate: null, lastDecidedAt: null, paidAttempts: 0 }));
-    const again = shouldRetry(attempt, deps.asOf, { priced: Boolean(read.priceCheck) });
+    const again = shouldRetry(attempt, deps.asOf, { priced: Boolean(read.priceCheck), xSourced: xSourcesIn(read.criteria ?? "").length > 0 });
     if (!again.retry && !deps.force) {
       out.held++;
       deps.on?.held?.(m.slug, again.why);

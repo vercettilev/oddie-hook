@@ -47,6 +47,9 @@ export interface Extraction {
   close_time: string | null;
   /** True when close_time was inferred (the claim named no explicit deadline). */
   close_time_inferred: boolean;
+  /** When the one game, match or event the claim is about starts, if the text
+   *  gives it. The market closes then (closeAtStart). */
+  starts_at?: string | null;
   category: ExtractCategory;
   resolvability: Resolvability;
   /** The appropriateness gate, separate from resolvability: false = the subject
@@ -71,6 +74,7 @@ Return ONLY the structured object. Fields:
 - price_claim: fill this ONLY when the claim is about the PRICE or MARKET CAP of a token named by its ticker (e.g. "$BULLSHIT hits 4m this month", "$WIF stays under a dollar all week", "$BONK does 2x by Friday"), or about the PRICE of gold, silver or crude oil. Otherwise return null. Give: symbol (the ticker WITHOUT the $; for the commodities exactly XAU for gold, XAG for silver, CL for WTI crude and for crude oil named without a grade, BZ for Brent crude), metric ("mc" for market cap, "price" for unit price), op (">=", ">", "<=", "<"), target (the number in PLAIN USD — "4m" is 4000000, "50 cents" is 0.5), and mode ("touch" if reaching the level at ANY moment counts, which is what a move to it means: "hits"/"does"/"gets to"; "at-close" if only the value on the deadline counts, which is what "will be above X on <date>" means; "within" for a level over a period with no move named: "above X in October", "below X this week" (rule 8); "always" if the claim is that it holds the whole time, which is what "stays under"/"holds above" mean). NEVER guess a contract or mint address — you are not asked for one and must not invent one. ALWAYS write resolution_criteria as you normally would, even when you fill price_claim. If the ticker turns out to name a token we can price on-chain, your criteria are replaced by ones written from that token; if it does not — a major asset like BTC or ETH, a stock, a ticker shared by several coins — yours are the only rule the market has, and without them there is no market at all. Write the question and the close_time as normal too.
 - close_time: the claim's natural deadline in ISO 8601 (e.g. "2026-08-01T23:59:00Z"), computed RELATIVE TO the current date/time given in the user message. It must be in the FUTURE — never output a past date, and get the YEAR right by anchoring to the current date provided ("tonight" = later today, "this week" = within 7 days of now, etc.). If the text states or clearly implies a deadline, use it. If not, BIAS TOWARD THE SHORTEST REASONABLE WINDOW the claim supports, and set close_time_inferred true — a market that resolves soon brings the person back for the result; one that resolves in months kills the loop. Concretely: hours to a few days for anything time-sensitive (a game, a launch, a price move, "today/this week"); a week or two only when the claim genuinely needs it; do NOT infer months. Reserve far-out deadlines for claims that explicitly carry one ("by end of year", "in 2027", "before the election"). When unsure between a shorter and a longer window, choose the shorter. Use null only when no timeframe is possible at all (which usually also means unresolvable). NEVER output a close_time earlier than the current date/time in the user message: relative words take their meaning from THAT date and not from your own sense of the present, so if the user message says 2026-09-12 then "this year" ends 2026-12-31, "by year end" is 2026-12-31 and "next year" is 2027. Before you answer, compare the year you wrote against the year in the user message; if it is smaller, you got it wrong.
 - close_time_inferred: true if you chose the deadline rather than reading it from the text.
+- starts_at: when the claim is about ONE scheduled game, match, race, fight, show or stream and the text gives or clearly implies when it STARTS ("game starts 8pm CET", "kickoff at 3pm", "live at 20:00 tonight"), that start time in ISO 8601 UTC, converted from the stated time zone and computed relative to the current date/time exactly like close_time. Null otherwise, and always null for a price claim. Bets close when it starts, so nobody bets after watching it play out.
 - category: one of Crypto, Sports, Politics, Culture, Tech — the single best fit. There is no "Other". If nothing fits, that is itself a sign the claim may not be a clean market.
 - resolvability: one of clean | fuzzy | unresolvable.
     - clean: a specific, verifiable outcome with a bounded timeframe and a nameable public source. Only clean markets are eligible for auto-publish, so hold this bar HIGH.
@@ -115,6 +119,7 @@ const SCHEMA = {
     },
     close_time: { type: ["string", "null"] },
     close_time_inferred: { type: "boolean" },
+    starts_at: { type: ["string", "null"] },
     category: { type: "string", enum: EXTRACT_CATEGORIES as unknown as string[] },
     resolvability: { type: "string", enum: ["clean", "fuzzy", "unresolvable"] },
     appropriate: { type: "boolean" },
@@ -128,6 +133,7 @@ const SCHEMA = {
     "price_claim",
     "close_time",
     "close_time_inferred",
+    "starts_at",
     "category",
     "resolvability",
     "appropriate",
@@ -214,9 +220,27 @@ export async function extractClaim(text: string): Promise<Extraction> {
     v = inThePast(second) ? { ...second, close_time: null, resolvability: "unresolvable",
       reason: "we could not pin a deadline in the future for this one" } : second;
   }
-  const out = normalize(v);
+  const out = closeAtStart(normalize(v));
   const claim = holdAsWithin(text, out.price_claim);
   return claim === out.price_claim ? out : { ...out, price_claim: claim, question: withinQuestion(out.question) };
+}
+
+/* A GAME'S MARKET CLOSES WHEN THE GAME STARTS (23 Oct). Showdown's announcement
+   for "Beat Stan" ("Can GPPoker beat Stan? Game starts 8pm CET, picks close
+   then. Winner posted by @Showdown_TCG after the game.") came back with its
+   close at the end of the day, both times: the market would have taken bets
+   for hours after the winner was on screen, and whoever watched the stream
+   could back the side that had already won. The model reads the start; the
+   close is the earlier of the two. A start already past is a game under way,
+   whose market keeps its own close: a live market opened from a stream is the
+   product, not the hole. A price claim has its own window and no start. */
+export function closeAtStart(out: Extraction, now = Date.now()): Extraction {
+  if (out.price_claim || !out.starts_at) return out;
+  const start = Date.parse(out.starts_at);
+  if (!Number.isFinite(start) || start <= now) return out;
+  const close = out.close_time ? Date.parse(out.close_time) : NaN;
+  if (Number.isFinite(close) && close <= start) return out;
+  return { ...out, close_time: new Date(start).toISOString(), close_time_inferred: false };
 }
 
 /* BACKSTOP 4 (15 Oct). "STAY" IS A HOLD, AND A HOLD IS RULE 8.
@@ -363,6 +387,7 @@ function normalize(v: Record<string, unknown>): Extraction {
     price_claim: blocked ? null : price_claim,
     close_time,
     close_time_inferred: Boolean(v.close_time_inferred),
+    starts_at: typeof v.starts_at === "string" && v.starts_at.trim() ? v.starts_at.trim() : null,
     category,
     resolvability,
     appropriate,

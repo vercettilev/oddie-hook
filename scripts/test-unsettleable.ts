@@ -16,7 +16,7 @@
 //
 //   npm run test-unsettleable
 
-import { unsettleablePhrase, addressInQuestion, withinQuestion, extractClaim, holdAsWithin } from "../src/matching/extractClaim.js";
+import { closeAtStart, unsettleablePhrase, addressInQuestion, withinQuestion, extractClaim, holdAsWithin } from "../src/matching/extractClaim.js";
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -146,6 +146,44 @@ console.log("\na hold verb is a level over a period (15 Oct, Bee's nine claims)"
     globalThis.fetch = (async () => new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(answer) }] }), { status: 200 })) as typeof fetch;
     const ex = await extractClaim("will ETH stay above 2350 by the end of this week?");
     check("the extractor hands on a hold as rule 8, whatever the model said", ex.price_claim?.mode === "within", JSON.stringify(ex.price_claim));
+  } finally {
+    globalThis.fetch = realFetch;
+    if (hadKey === undefined) delete process.env.INFERENCE_API_KEY; else process.env.INFERENCE_API_KEY = hadKey;
+  }
+}
+
+console.log("\na game's market closes when the game starts (23 Oct, Showdown's Beat Stan)");
+{
+  // The model's answer for "Can GPPoker beat Stan? Game starts tonight at 8pm
+  // CET...", with the close it gave before the rule: the end of the day.
+  const start = new Date(Date.now() + 6 * 3600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const late = new Date(Date.now() + 11 * 3600_000).toISOString();
+  const answer = {
+    question: "Will GPPoker beat Stan in their match tonight?",
+    resolution_criteria: "Resolves YES if @Showdown_TCG announces GPPoker as the winner of tonight's game, and NO if Stan is announced as the winner.",
+    price_claim: null, close_time: late, close_time_inferred: true, starts_at: start,
+    category: "Culture", resolvability: "clean", appropriate: true, appropriate_reason: "", reason: "clean", hook: "GPPoker vs Stan?",
+  };
+  const realFetch = globalThis.fetch;
+  const hadKey = process.env.INFERENCE_API_KEY;
+  process.env.INFERENCE_API_KEY = "test";
+  const reply = (a: unknown) => (async () => new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(a) }] }), { status: 200 })) as typeof fetch;
+  try {
+    globalThis.fetch = reply(answer);
+    const ex = await extractClaim("Can GPPoker beat Stan? Game starts tonight at 8pm CET. Winner posted by @Showdown_TCG after the game.");
+    check("bets close when the game starts, not hours after the winner is on screen",
+      Date.parse(ex.close_time ?? "") === Date.parse(start) && ex.close_time_inferred === false, `${ex.close_time} vs ${start}`);
+    globalThis.fetch = reply({ ...answer, close_time: new Date(Date.now() + 3 * 3600_000).toISOString() });
+    const early = await extractClaim("same, with a deadline before the game");
+    check("...a close already before the start is left alone", Date.parse(early.close_time ?? "") < Date.parse(start), String(early.close_time));
+    globalThis.fetch = reply({ ...answer, starts_at: new Date(Date.now() - 600_000).toISOString() });
+    const live = await extractClaim("will I win this match? (opened from a stream, game under way)");
+    check("...a game already under way keeps its own close: a live market is the product", ex.close_time !== live.close_time && Date.parse(live.close_time ?? "") === Date.parse(late), String(live.close_time));
+    globalThis.fetch = reply({ ...answer, price_claim: { symbol: "BTC", metric: "price", op: ">", target: 100000, mode: "touch" } });
+    const price = await extractClaim("BTC above 100k by tonight");
+    check("...and a price claim has its own window, start or no start", Date.parse(price.close_time ?? "") === Date.parse(late), String(price.close_time));
+    check("closeAtStart on its own: no start, nothing changes",
+      closeAtStart({ ...ex, starts_at: null, close_time: late }).close_time === late);
   } finally {
     globalThis.fetch = realFetch;
     if (hadKey === undefined) delete process.env.INFERENCE_API_KEY; else process.env.INFERENCE_API_KEY = hadKey;

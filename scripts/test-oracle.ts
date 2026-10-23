@@ -16,7 +16,7 @@ import {
   auditCitation, auditCitations, auditSupports, normalizeText, htmlToText, documentDateOf,
   quoteCoversDate, _setPageFetcher, type AuditResult,
 } from "../src/oracle/audit.js";
-import { decide, shouldRetry, backoffMs, decisionWasPaid, _setSecondOpinion } from "../src/oracle/oracle.js";
+import { decide, shouldRetry, X_QUICK_RETRIES, backoffMs, decisionWasPaid, _setSecondOpinion } from "../src/oracle/oracle.js";
 import { recordOracleDecision, oracleAttemptFor, oracleGateCounts, _memOracleDecisions, _memBackdateOracle, _resetOracleDecisions } from "../src/store/markets.js";
 import { _setProposer, type Proposal, type Side } from "../src/oracle/verdict.js";
 
@@ -458,6 +458,16 @@ console.log("\nasking the same stuck market again, forever, at full price");
   check("...unless its own price read said the history cannot cover the window",
     !priced("price-undetermined").retry && priced("price-undetermined").why.includes("person"), priced("price-undetermined").why);
   check("...and without a price rule the same record still waits", !shouldRetry({ lastGate: "citations-failed", lastDecidedAt: new Date(Date.now() - 1 * H).toISOString(), paidAttempts: 3 }).retry);
+
+  // 23 OCT: a rule naming an X account waits on a post that comes minutes after
+  // the game. The first look after the close finds nothing; six hours of waiting
+  // after it would settle a game over by 20:15 the next morning.
+  const posted = (paidAttempts: number, hoursAgo: number) =>
+    shouldRetry({ lastGate: "citations-failed", lastDecidedAt: new Date(Date.now() - hoursAgo * H).toISOString(), paidAttempts }, new Date(), { xSourced: true });
+  check("a rule naming an X account is asked again an hour after its first look", posted(1, 1.05).retry && !posted(1, 0.5).retry, posted(1, 0.5).why);
+  check("...for its first few looks", posted(X_QUICK_RETRIES, 1.05).retry);
+  check("...then on the usual schedule", !posted(X_QUICK_RETRIES + 1, 1.05).retry && posted(X_QUICK_RETRIES + 1, 97).retry, posted(X_QUICK_RETRIES + 1, 1.05).why);
+  check("...and a rule naming none still waits six hours", !shouldRetry({ lastGate: "citations-failed", lastDecidedAt: new Date(Date.now() - 1.05 * H).toISOString(), paidAttempts: 1 }).retry);
 
   // A market whose every attempt times out would otherwise be free to retry at
   // full price forever, because runPropose can throw AFTER the request went out.

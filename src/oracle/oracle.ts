@@ -394,6 +394,9 @@ const PERMANENT_GATES = new Set<OracleDecision["gate"]>(["not-checkable", "price
  *  waiting on something slower than we are. */
 const FIRST_BACKOFF_MS = 6 * 3600_000;
 const MAX_BACKOFF_MS = 7 * 86_400_000;
+/** A rule naming an X account: this many retries an hour apart before the usual schedule. */
+export const X_QUICK_RETRIES = 4;
+export const X_RETRY_MS = 3600_000;
 
 export function backoffMs(paidAttempts: number): number {
   if (paidAttempts <= 0) return 0;
@@ -415,7 +418,7 @@ export interface RetryVerdict {
 export function shouldRetry(
   a: { lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number },
   now = new Date(),
-  opts: { priced?: boolean } = {},
+  opts: { priced?: boolean; xSourced?: boolean } = {},
 ): RetryVerdict {
   if (!a.lastGate) return { retry: true, why: "never tried" };
   if (FREE_GATES.has(a.lastGate as OracleDecision["gate"])) {
@@ -436,7 +439,15 @@ export function shouldRetry(
   if (PERMANENT_GATES.has(a.lastGate as OracleDecision["gate"])) {
     return { retry: false, why: "the criteria themselves are not checkable; a person has to rewrite them" };
   }
-  const wait = backoffMs(a.paidAttempts);
+  /* A RULE THAT NAMES AN X ACCOUNT IS WAITING ON A POST, AND IT COMES SOON
+     (23 Oct, Showdown's "Beat Stan"). Its market closes when the game starts
+     and the organizer posts the winner minutes after it ends, so the first look
+     after the close finds nothing yet, and six hours of waiting after that
+     would settle a game over by 20:15 the next morning. Its first retries come
+     an hour apart, then the usual schedule. */
+  const wait = opts.xSourced && a.paidAttempts <= X_QUICK_RETRIES
+    ? Math.min(X_RETRY_MS, backoffMs(a.paidAttempts))
+    : backoffMs(a.paidAttempts);
   if (wait === 0) return { retry: true, why: "never actually asked" };
   const since = a.lastDecidedAt ? now.getTime() - new Date(a.lastDecidedAt).getTime() : Infinity;
   if (!Number.isFinite(since) || since >= wait) {

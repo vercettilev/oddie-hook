@@ -130,6 +130,22 @@ console.log("\na price rule is arithmetic, so a paid past does not hold it");
   check("...while one with only words still waits out its paid rounds", r.held === 1 && h.settled.join(",") === "gold", `held ${r.held}`);
 }
 
+console.log("\na rule naming an X account is asked again within the hour");
+{
+  // Showdown's "Beat Stan" market (23 Oct): closed at the game's start, looked at
+  // once before the winner was posted, asked again an hour later.
+  const lookedOnce = async () => ({ lastGate: "citations-failed", lastDecidedAt: new Date(Date.now() - 65 * 60_000).toISOString(), paidAttempts: 1 });
+  const h = harness([market("beat-stan"), market("words-only")], {
+    criteria: async (slug: string) => ({ ok: true as const, priceCheck: null,
+      criteria: slug === "beat-stan" ? "Resolves YES if @Showdown_TCG announces GPPoker as the winner of tonight's game, NO if Stan is announced." : "Resolves YES if the official site says so, a rule long enough to pass the gate." }),
+    attempt: lookedOnce,
+    decide: async (m: { slug: string }) => { h.asked.push(m.slug); return yes(m.slug); },
+  });
+  const r = await oracleSweep(h.deps);
+  check("the market whose rule names @Showdown_TCG is asked again", h.asked.join(",") === "beat-stan", `asked ${h.asked.join(",")}`);
+  check("...while one naming no account waits its six hours", r.held === 1, `held ${r.held}`);
+}
+
 console.log("\nthe limit bounds the bill, and counts the right thing");
 {
   const h = harness([market("a"), market("b"), market("c")], { limit: 2 });
