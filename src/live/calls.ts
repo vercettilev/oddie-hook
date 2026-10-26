@@ -99,6 +99,8 @@ export type LiveCommand =
   | { kind: "faceit"; arg: string }
   /** `!me`: the caller's own record, said back to them. Anybody's. */
   | { kind: "me" }
+  /** `!top`: this stream's best three callers so far. Anybody's. */
+  | { kind: "top" }
   /** `!matches off` / `!matches on`: whether oddie opens a call per match from the stream by itself; bare, it says how. */
   | { kind: "matches"; arg: string };
 
@@ -119,6 +121,10 @@ export const QUESTION_MAX = 180;
 export const STREAK_SHOWN = 3;
 /** A person hears their own record (!me) at most this often in one chat. */
 export const ME_GAP_MS = 10 * 60_000;
+/** Results closer together than this are one stream; a longer gap starts the next. */
+export const STREAM_GAP_MS = 3 * 60 * 60_000;
+/** A room hears its stream's best callers (!top) at most this often. */
+export const TOP_GAP_MS = 60_000;
 export const WEEK_MS = 7 * 24 * 60 * 60_000;
 /** Monday 00:00 UTC of the week `ms` is in: the weekly boards turn over there. */
 export function weekStart(ms: number): number {
@@ -151,6 +157,7 @@ export function parseCommand(raw: string): LiveCommand | null {
   const pick = /^!(yes|evet|no|hay[ıi]r)(?=\s|$)/i.exec(text);
   if (pick) return { kind: "pick", side: YES_WORD.test(pick[1]) ? "yes" : "no" };
   if (/^!me(?=\s|$)/i.test(text)) return { kind: "me" };
+  if (/^!top(?=\s|$)/i.test(text)) return { kind: "top" };
   // !oddie is the market door; whatever follows is the claim, read like a tag.
   const market = /^!oddie(?=\s|$)\s*(.*)$/i.exec(text);
   if (market) return { kind: "market", claim: market[1].trim() };
@@ -298,6 +305,10 @@ export const LIVE_COPY = {
     : `${at(name)}: your record starts with the next result. !yes or !no on the next call`,
   /** The week's first call in a channel names last week's best there. */
   lastWeekTop: (name: string, right: number, calls: number) => `last week's top caller here: ${at(name)}, ${right}/${calls} right`,
+  /** This stream's best callers by points (Lev, 26 Oct), at most three. */
+  streamTop: (top: Array<{ username: string; points: number }>) =>
+    `top callers this stream: ${top.slice(0, 3).map((t) => `${at(t.username)} ${t.points} pts`).join(" · ")}`,
+  streamTopNone: "top callers this stream: none yet. !yes or !no on the next call",
   /** More than one call waits and the command did not say which. */
   which: (verb: string, qs: string[]) =>
     `Which one? ${qs.slice(0, 5).map((q, i) => `!call ${verb} ${i + 1} for "${short(q, 40)}"`).join(", ")}`,
@@ -359,6 +370,10 @@ export interface LiveStore {
   topCaller?(platform: Platform, channelId: string, since: number, until: number): Promise<{ username: string; right: number; calls: number } | null>;
   /** Keeps the picture a call was settled on, for its channel page. Absent: nothing kept. */
   saveFrame?(callId: string, jpeg: Buffer, seen: string): Promise<void>;
+  /** When the channel's latest results came in, newest first: where this stream's run of them starts. */
+  settledTimes?(platform: Platform, channelId: string, limit: number): Promise<number[]>;
+  /** The channel's best callers by points over results at or after `since`, best first; the house never ranks. */
+  topCallers?(platform: Platform, channelId: string, since: number, limit: number): Promise<Array<{ username: string; points: number }>>;
   cancel(callId: string, at: number): Promise<boolean>;
   /** Calls taking answers whose time is up. */
   due(now: number): Promise<LiveCall[]>;
@@ -447,6 +462,8 @@ const handedToMods = new Set<string>();
 const lastPickHelp = new Map<string, number>();
 /** When each person last heard their own record, per chat. */
 const lastMe = new Map<string, number>();
+/** When each room last heard its stream's best callers (!top). */
+const lastTop = new Map<string, number>();
 /** Per channel: seen live since its calls opened. A live channel going dark is the stream ending. */
 const seenLive = new Map<string, boolean>();
 let lastWatch = 0;
@@ -455,7 +472,7 @@ const lastActivity = new Map<string, number>();
 const lastSaid = new Map<string, number>();
 /** Test seam. */
 export function _resetLive(): void {
-  lastSplit.clear(); newSince.clear(); lastPickHelp.clear(); lastMe.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
+  lastSplit.clear(); newSince.clear(); lastPickHelp.clear(); lastMe.clear(); lastTop.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
   seenLive.clear(); lastWatch = 0;
 }
 /** Test seam: what a restart forgets (the waits in memory), the store keeps. */
@@ -466,6 +483,30 @@ const roomKey = (m: { platform: Platform; channelId: string }) => `${m.platform}
 async function sayQuiet(deps: LiveDeps, m: { platform: Platform; channelId: string }, text: string, replyTo?: string): Promise<string | null> {
   try { const id = await deps.say(m.platform, m.channelId, text, replyTo); return typeof id === "string" && id ? id : null; }
   catch (e) { deps.log("live chat line not delivered", { err: (e as Error).message }); return null; }
+}
+
+/**
+ * THIS STREAM'S BEST CALLERS (Lev, 26 Oct). A stream is the channel's latest
+ * run of results with no gap of STREAM_GAP_MS between them, the last one no
+ * longer ago than that: the store keeps results, not when a stream went live,
+ * and this reads the same on every platform. Null when the run is empty.
+ */
+async function streamTop(deps: LiveDeps, m: { platform: Platform; channelId: string }, now: number): Promise<{ results: number; top: Array<{ username: string; points: number }> } | null> {
+  if (!deps.store.settledTimes || !deps.store.topCallers) return null;
+  const times = await deps.store.settledTimes(m.platform, m.channelId, 50);
+  if (!times.length || now - times[0] > STREAM_GAP_MS) return null;
+  let start = times[0], results = 1;
+  for (let i = 1; i < times.length && start - times[i] <= STREAM_GAP_MS; i++) { start = times[i]; results++; }
+  const top = (await deps.store.topCallers(m.platform, m.channelId, start, 3)).filter((t) => t.points > 0);
+  return { results, top };
+}
+
+/** After a result, from the stream's second on, its best callers so far: X
+ *  closes the chat with the stream, so the room sees them before it ends,
+ *  wherever it ends. Never in the way of the result line said before it. */
+export async function sayStreamTop(deps: LiveDeps, m: { platform: Platform; channelId: string }, now: number): Promise<void> {
+  const s = await streamTop(deps, m, now).catch((e) => { deps.log("live stream top not read", { err: (e as Error).message }); return null; });
+  if (s && s.results >= 2 && s.top.length) await sayQuiet(deps, m, LIVE_COPY.streamTop(s.top));
 }
 
 /** The same words, and for a price question the same moment: "the next 5m
@@ -573,6 +614,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   if (!done) return false;
   const url = await deps.standingsUrl(w.call.platform, w.call.channelId);
   await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners)}`);
+  await sayStreamTop(deps, w.call, now);
   deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome: read.outcome, right: done.right, total: done.total, by: "price" });
   return true;
 }
@@ -686,6 +728,19 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     if (!r) return "me-quiet";
     await sayQuiet(deps, msg, LIVE_COPY.me(msg.senderName, r), msg.messageId);
     return "me";
+  }
+
+  /* !TOP (Lev, 26 Oct): this stream's best callers, for anybody. Once a
+     minute a room, so a room asking all at once hears it once. */
+  if (cmd.kind === "top") {
+    if (!deps.store.settledTimes || !deps.store.topCallers) return "chat";
+    const key = roomKey(msg);
+    const last = lastTop.get(key);
+    if (last !== undefined && now - last < TOP_GAP_MS) return "top-quiet";
+    lastTop.set(key, now);
+    const s = await streamTop(deps, msg, now).catch((e) => { deps.log("live stream top not read", { err: (e as Error).message }); return null; });
+    await sayQuiet(deps, msg, s?.top.length ? LIVE_COPY.streamTop(s.top) : LIVE_COPY.streamTopNone, msg.messageId);
+    return "top";
   }
 
   if (!msg.canRun) return "not-allowed";
@@ -816,6 +871,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (!done) return "no-call";
   await unpinIfIdle(deps, msg);
   await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.winners));
+  await sayStreamTop(deps, msg, now);
   deps.log("live call settled", { platform: msg.platform, channel: msg.channelId, id: target.id, outcome: cmd.outcome, right: done.right, total: done.total });
   return "settled";
 }
@@ -852,6 +908,7 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   await unpinIfIdle(deps, call);
   const url = await deps.standingsUrl(call.platform, call.channelId);
   await sayQuiet(deps, call, `${LIVE_COPY.onScreen(seen)} ${LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners)}`);
+  await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
   return true;
 }

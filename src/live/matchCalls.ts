@@ -10,7 +10,7 @@
  * WHAT, so a match call looks the same in the room whichever way it was seen.
  */
 import { scoreTextFrom } from "../games/faceit.js";
-import { CALL_OPEN_MAX_MS, LIVE_COPY, pointsFor, type LiveCall, type LiveDeps, type Platform } from "./calls.js";
+import { CALL_OPEN_MAX_MS, LIVE_COPY, pointsFor, sayStreamTop, type LiveCall, type LiveDeps, type Platform } from "./calls.js";
 import { GAME_COPY, matchQuestion } from "./gameCalls.js";
 
 export interface MatchChannel { platform: Platform; channelId: string; slug: string; name: string | null }
@@ -57,6 +57,7 @@ export async function settleMatchCall(deps: LiveDeps, ch: MatchChannel, call: Li
   if (!done) return false;
   const url = await deps.standingsUrl(ch.platform, ch.channelId);
   await sayQuiet(deps, ch, `${GAME_COPY.result(ch.name || ch.slug, won, scoreTextFrom(score), map)} ${LIVE_COPY.settled(call.question, side, done.right, done.total, done.top, url, done.winners)}`);
+  await sayStreamTop(deps, ch, now);
   deps.log("live call settled", { platform: ch.platform, channel: ch.channelId, id: call.id, outcome: side, right: done.right, total: done.total, by });
   return true;
 }

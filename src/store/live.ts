@@ -371,6 +371,9 @@ export const liveStore: LiveStore = {
   openedSince: (platform, channelId, since) => openedSince(platform, channelId, since),
   topCaller: (platform, channelId, since, until) => topCaller(platform, channelId, { since, until }),
   saveFrame: (callId, jpeg, seen) => saveCallFrame(callId, jpeg, seen),
+  settledTimes: (platform, channelId, limit) => settledTimes(platform, channelId, limit),
+  topCallers: async (platform, channelId, since, limit) =>
+    (await channelStandings(platform, channelId, limit, { since })).map((r) => ({ username: r.username, points: r.points })),
 
   async cancel(callId, at) {
     if (!STORE_PERSISTENT) {
@@ -682,6 +685,20 @@ export async function openedSince(platform: Platform, channelId: string, since: 
   const { rows } = await storeDb().query<{ n: number }>(
     `SELECT count(*)::int AS n FROM live_call WHERE platform = $1 AND channel_id = $2 AND opened_at >= $3`, [platform, channelId, new Date(since)]);
   return rows[0]?.n ?? 0;
+}
+
+/** When the channel's latest calls were settled, newest first: where a stream's run of results starts. */
+export async function settledTimes(platform: Platform, channelId: string, limit = 50): Promise<number[]> {
+  const n = Math.max(1, Math.min(200, limit));
+  if (!STORE_PERSISTENT) {
+    return [...memCalls.values()].filter((c) => c.platform === platform && c.channelId === channelId && c.settledAt !== null)
+      .map((c) => c.settledAt as number).sort((a, b) => b - a).slice(0, n);
+  }
+  await schema();
+  const { rows } = await storeDb().query<{ settled_at: Date }>(
+    `SELECT settled_at FROM live_call WHERE platform = $1 AND channel_id = $2 AND settled_at IS NOT NULL ORDER BY settled_at DESC LIMIT $3`,
+    [platform, channelId, n]);
+  return rows.map((r) => new Date(r.settled_at).getTime());
 }
 
 /** The channel's best caller over a window, with at least one right call. */

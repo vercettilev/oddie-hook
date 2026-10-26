@@ -50,7 +50,12 @@ function room(platform: "kick" | "x" = "kick", channelId = "100") {
     await handleChat(line("owner", `!call ${outcome}`, true), deps);
     clock += 60_000;
   };
-  return { deps, said, line, round, tick: (ms: number) => { clock += ms; }, now: () => clock, last: () => said[said.length - 1]?.text ?? "" };
+  return {
+    deps, said, line, round, tick: (ms: number) => { clock += ms; }, now: () => clock,
+    // The last line that is not the stream's best callers, which follow a
+    // result from the stream's second on (src/live/calls.ts sayStreamTop).
+    last: () => said.filter((x) => !x.text.startsWith("top callers this stream")).at(-1)?.text ?? "",
+  };
 }
 
 console.log("\na run of right calls");

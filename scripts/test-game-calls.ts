@@ -108,7 +108,9 @@ const deps: LiveDeps = {
 };
 const msg = (text: string, over: Partial<ChatMessage> = {}): ChatMessage =>
   ({ platform: "twitch", channelId: "c1", messageId: "x", senderId: "mod1", senderName: "mod", canRun: true, text, ...over });
-const last = () => said[said.length - 1] ?? "";
+// The last thing said that is not the stream's best callers, which follow a
+// result from the stream's second on (src/live/calls.ts sayStreamTop).
+const last = () => said.filter((t) => !t.startsWith("top callers this stream")).at(-1) ?? "";
 const tick = async () => { now += GAME_POLL_MS; return watchGames(deps); };
 const reset = () => { _resetLive(); _forgetWaits(); _resetGames(); _resetLiveStore(); said.length = 0; logs.length = 0; ongoing = null; matches.clear(); live = true; };
 
@@ -244,6 +246,7 @@ const reset = () => { _resetLive(); _forgetWaits(); _resetGames(); _resetLiveSto
   eq(await tick(), 1, "and settles when FACEIT says so");
   ok(last().startsWith(GAME_COPY.result("s1mple", false, "7-13", "Mirage")), "a loss is said as a loss: " + last());
   ok(/NO: "/.test(last()), "...and NO");
+  ok(/^top callers this stream: @/.test(said[said.length - 1] ?? ""), "...and, the stream's second result, its best callers after it: " + said[said.length - 1]);
 }
 
 /* no source configured: the pass is a no-op */

@@ -956,5 +956,55 @@ console.log("\nthe lines no memory test reaches");
     /!oddie BTC above 120k by Friday\?/.test(live) && /!call will I win this round\?/.test(live) && !/!oddie yes/.test(live));
 }
 
+console.log("\nthis stream's best callers (Lev, 26 Oct)");
+{
+  const r = room();
+  const last = () => r.said[r.said.length - 1]?.text ?? "";
+  const topAfter = (from: number) => r.said.slice(from).find((s) => s.text.startsWith("top callers this stream"))?.text ?? "";
+  check("!top before any result: none yet, and how to get on it",
+    (await handleChat(r.line("v1", "!top"), r.deps)) === "top" && last() === LIVE_COPY.streamTopNone, last());
+  check("...and a room asking again within the minute hears nothing", (await handleChat(r.line("v2", "!top"), r.deps)) === "top-quiet");
+  // First result: ana right at once, bo right ten minutes on, cy wrong, the house right too.
+  await handleChat(r.line("mod", "!call first game?", true), r.deps);
+  await handleChat(r.line("ana", "!yes"), r.deps);
+  r.tick(10 * 60_000);
+  for (const [who, side] of [["bo", "!yes"], ["cy", "!no"], ["levvercetti", "!yes"]] as const) await handleChat(r.line(who, side), r.deps);
+  let from = r.said.length;
+  await handleChat(r.line("mod", "!call yes", true), r.deps);
+  check("the stream's first result says no best callers yet: one result is the result line", topAfter(from) === "");
+  // Second result: cy right against half the room.
+  r.tick(5 * 60_000);
+  await handleChat(r.line("mod", "!call second game?", true), r.deps);
+  await handleChat(r.line("cy", "!no"), r.deps);
+  await handleChat(r.line("bo", "!yes"), r.deps);
+  r.tick(60_000);
+  from = r.said.length;
+  await handleChat(r.line("mod", "!call no", true), r.deps);
+  const top = topAfter(from);
+  check("from the second result on, the room hears its best three by points, best first, the house never",
+    top === "top callers this stream: @cy 50 pts · @ana 25 pts · @bo 20 pts", top);
+  check("...said after the result line, not before it", r.said[from]?.text.startsWith("NO:") === true && r.said[from + 1]?.text === top, r.said[from]?.text);
+  check("!top says the same", (await handleChat(r.line("v3", "!top"), r.deps)) === "top" && last() === top, last());
+  // Four hours on: the next stream starts from nothing.
+  r.tick(4 * 60 * 60_000);
+  check("hours after the last result, !top is a new stream's: none yet",
+    (await handleChat(r.line("v4", "!top"), r.deps)) === "top" && last() === LIVE_COPY.streamTopNone, last());
+  await handleChat(r.line("mod", "!call new stream?", true), r.deps);
+  await handleChat(r.line("dee", "!yes"), r.deps);
+  await handleChat(r.line("cy", "!no"), r.deps);
+  from = r.said.length;
+  await handleChat(r.line("mod", "!call yes", true), r.deps);
+  check("...whose first result says no best callers", topAfter(from) === "");
+  r.tick(5 * 60_000);
+  await handleChat(r.line("mod", "!call again?", true), r.deps);
+  await handleChat(r.line("dee", "!yes"), r.deps);
+  from = r.said.length;
+  await handleChat(r.line("mod", "!call yes", true), r.deps);
+  const next = topAfter(from);
+  check("...and whose best callers are its own: last stream's points stay with it", /^top callers this stream: @dee \d+ pts$/.test(next), next);
+  const long = LIVE_COPY.streamTop([{ username: "a".repeat(15), points: 1000 }, { username: "b".repeat(15), points: 999 }, { username: "c".repeat(15), points: 998 }]);
+  check("the line fits X live chat's 140 characters at its longest", long.length <= 140, String(long.length));
+}
+
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall live checks passed.\n");
 process.exit(failures ? 1 : 0);

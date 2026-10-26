@@ -96,7 +96,9 @@ const end = (result: "win" | "loss" | "tie", over: Partial<FrameReading> = {}): 
 const other = (): FrameReading => R({ view: "other", game: null });
 const msg = (text: string, over: Partial<ChatMessage> = {}): ChatMessage =>
   ({ platform: "twitch", channelId: "c1", messageId: "x", senderId: "mod1", senderName: "mod", canRun: true, text, ...over });
-const last = () => said[said.length - 1] ?? "";
+// The last thing said that is not the stream's best callers, which follow a
+// result from the stream's second on (src/live/calls.ts sayStreamTop).
+const last = () => said.filter((t) => !t.startsWith("top callers this stream")).at(-1) ?? "";
 const tick = async (ms = 0) => { now += ms; return watchFrames(deps); };
 const reset = async () => {
   _resetLive(); _forgetWaits(); _resetGames(); _resetGsi(); _resetFrames(); _resetLiveStore();
