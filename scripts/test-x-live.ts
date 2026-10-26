@@ -156,6 +156,14 @@ const chat = (text: string, from: { id: string; username: string } = { id: VIEWE
     && m.text === "!call will I win?" && m.canRun === false && m.fromOddie === false && m.channelSlug === "AleksaFlamingo");
   check("the host runs calls (X calls the host no moderator)", chatFromX(chat("!x", { id: STREAMER, username: "AleksaFlamingo" }), null, ODDIE)?.canRun === true);
   check("...and so does a moderator", chatFromX(chat("!x", { id: MOD, username: "mod" }, { is_moderator: true }), null, ODDIE)?.canRun === true);
+  const LEV = "1218142562483085313";
+  check("...and so does Lev's own account, on anyone's stream", chatFromX(chat("!call Can mika beat Stan?", { id: LEV, username: "levvercetti" }), null, ODDIE)?.canRun === true);
+  check("...by id, not by name: someone else called levvercetti does not",
+    chatFromX(chat("!call x", { id: "6000000000000000006", username: "levvercetti" }), null, ODDIE)?.canRun === false);
+  process.env.X_LIVE_OPERATORS = `${VIEWER}, `;
+  check("X_LIVE_OPERATORS names the accounts instead",
+    chatFromX(chat("!x"), null, ODDIE)?.canRun === true && chatFromX(chat("!x", { id: LEV, username: "levvercetti" }), null, ODDIE)?.canRun === false);
+  delete process.env.X_LIVE_OPERATORS;
   check("a line from @oddiefun is oddie's own", chatFromX(chat("noted.", { id: ODDIE, username: "Oddiefun" }), null, ODDIE)?.fromOddie === true);
   check("an event with no text is nothing", chatFromX({ ...chat(""), payload: { broadcast_id: "b" } }, null, null) === null);
 }

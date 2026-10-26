@@ -52,6 +52,11 @@ const clientSecret = () => process.env.TWITTER_CLIENT_SECRET ?? "";
 const appBearer = () => process.env.X_APP_BEARER_TOKEN ?? "";
 /** oddie's own account on X, the one every line goes out from. */
 export const xVoiceHandle = (): string => (process.env.X_LIVE_VOICE ?? "oddiefun").replace(/^@/, "").toLowerCase();
+/** Accounts that run calls in every connected stream's chat as its host does,
+ *  so a streamer busy playing never has to type the !call (Lev, 26 Oct, before
+ *  Showdown's first stream). By user id, which never passes to someone else as
+ *  a handle can: Lev's own @levvercetti unless X_LIVE_OPERATORS lists others. */
+const xOperators = (): string[] => (process.env.X_LIVE_OPERATORS ?? "1218142562483085313").split(",").map((s) => s.trim()).filter(Boolean);
 
 /** Everything missing, named, so the boot log says what to set. */
 export function xLiveMissing(): string[] {
@@ -297,7 +302,7 @@ export function chatFromX(ev: XActivityEvent, ch: { slug: string } | null, voice
     senderId,
     senderName: str(author.username) ?? senderId,
     // X reports the host as is_moderator false in their own broadcast.
-    canRun: senderId === owner || p.is_moderator === true,
+    canRun: senderId === owner || p.is_moderator === true || xOperators().includes(senderId),
     text,
     channelSlug: ch?.slug,
     fromOddie: voiceId !== null && senderId === voiceId,
