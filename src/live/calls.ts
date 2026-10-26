@@ -254,9 +254,12 @@ const who = (names: Named[], count = names.length) =>
 const leading = (t: Tally) => (t.no > t.yes ? `${100 - yesPct(t)}% no` : `${yesPct(t)}% yes`);
 
 export const LIVE_COPY = {
-  /** One short line (Lev, 16 Oct). */
+  /** One short line (Lev, 16 Oct) that says what to type, since a new room has
+   *  never seen !yes (Lev, 26 Oct, before Showdown's first stream). A call with
+   *  no length takes answers into the game, so it says early answers score more,
+   *  as a match's own call does (src/live/gameCalls.ts). */
   opened: (q: string, minutes: number | null, url: string) =>
-    `call: "${q}" !yes or !no${minutes === null ? "" : `, locks in ${minutes} min`}${url ? `. Standings: ${url}` : ""}`,
+    `call: "${q}" Type !yes or !no${minutes === null ? ", earlier calls score more" : `, locks in ${minutes} min`}${url ? `. Standings: ${url}` : ""}`,
   /** The evidence the screen settled a call on (src/live/screenCalls.ts), in front of the result. */
   onScreen: (seen: string) => (seen ? `On stream: ${seen}.` : "On stream."),
   noResult: (q: string) => `No result came in for "${short(q)}" before the stream ended, so it's canceled. No points.`,

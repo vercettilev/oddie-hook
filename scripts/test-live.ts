@@ -132,7 +132,9 @@ console.log("\na timed call, start to finish");
   check("the streamer or a mod can", (await handleChat(r.line("mod", "!call 3m will he win this game?", true), r.deps)) === "opened");
   check("...and the room hears how to answer, how long, and where the standings are",
     r.said[0]?.text === LIVE_COPY.opened("will he win this game?", 3, "https://app.oddie.fun/live/kick/streamer")
-    && /^call: "will he win this game\?" !yes or !no, locks in 3 min/.test(r.said[0]?.text ?? ""));
+    && /^call: "will he win this game\?" Type !yes or !no, locks in 3 min/.test(r.said[0]?.text ?? ""));
+  check("a call with no length says what to type and that early answers score more",
+    LIVE_COPY.opened("Can Ondřej beat Stan?", null, "") === 'call: "Can Ondřej beat Stan?" Type !yes or !no, earlier calls score more');
   check("...and the line is pinned where the platform can", r.pins.length === 1 && r.pins[0] === r.said[0]?.id);
   for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!no"], ["d", "!no"], ["e", "!no"]] as const) await handleChat(r.line(who, side), r.deps);
   check("one answer per person, and it is final", (await handleChat(r.line("a", "!no"), r.deps)) === "already-picked");

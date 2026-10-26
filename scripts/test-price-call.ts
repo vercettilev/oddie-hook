@@ -189,7 +189,7 @@ const lockAt = opened + 3 * 60_000 + 1_000;
 // The pilot's call, start to finish, with nobody settling it by hand.
 reset();
 eq(await handleChat(msg("!call will BTC close current 30min candle above 82k?", "bee", true), deps), "opened", "opens");
-ok(/!yes or !no, locks in 3 min/.test(said[0] ?? ""), `a candle call takes answers for three minutes: ${said[0]}`);
+ok(/Type !yes or !no, locks in 3 min/.test(said[0] ?? ""), `a candle call takes answers for three minutes: ${said[0]}`);
 eq(await handleChat(msg("!yes", "bee", true), deps), "picked", "bee picks");
 eq(await handleChat(msg("!no", "viewer"), deps), "picked", "a viewer picks");
 now = lockAt;
