@@ -31,7 +31,7 @@ import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
 import { youtubeConfigured } from "./youtube/client.js";
-import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter, xThumbnail } from "./x/live.js";
+import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter, xPicture } from "./x/live.js";
 import { lockDue, remindOpen, sayVotes, weekStart, type LiveDeps, type Platform } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
@@ -2036,17 +2036,21 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   else liveLog(`x live off: ${xLiveMissing().join(", ")} not set`);
   clock.frames = frames.source ?? undefined;
   /* THE SCREEN SETTLES A ROOM CALL (src/live/screenCalls.ts): its answer read
-     off the stream, twice in a row. X's picture is its live thumbnail; Twitch's
-     and Kick's are a full-size frame of the stream, where ffmpeg is here to
-     take one (a result banner's small print needs it: src/games/screen.ts). */
-  const fromStream = (platform: "twitch" | "kick") => async (channelId: string): Promise<Buffer | null> => {
+     off the stream, twice in a row. X's picture is its live thumbnail, or the
+     same stream's Twitch frame when X never handed one over; Twitch's and
+     Kick's are a full-size frame of the stream, where ffmpeg is here to take
+     one (a result banner's small print needs it: src/games/screen.ts). */
+  const frameOf = async (platform: "twitch" | "kick", slug: string): Promise<Buffer | null> => {
     const src = frames.source;
-    const ch = src ? await channelById(platform, channelId).catch(() => null) : null;
-    const playlist = src && ch ? await src.playlist(platform, ch.slug).catch(() => null) : null;
+    const playlist = src ? await src.playlist(platform, slug).catch(() => null) : null;
     return src && playlist ? src.grab(playlist, SCREEN_FRAME_WIDTH) : null;
   };
+  const fromStream = (platform: "twitch" | "kick") => async (channelId: string): Promise<Buffer | null> => {
+    const ch = frames.source ? await channelById(platform, channelId).catch(() => null) : null;
+    return ch ? frameOf(platform, ch.slug) : null;
+  };
   const screen = screenSource({
-    x: async (channelId) => { const url = await xThumbnail(channelId); return url ? fetchPicture(url) : null; },
+    x: (channelId) => xPicture(channelId, { fetchPicture, log: liveLog, ...(frames.source ? { twitchFrame: (login: string) => frameOf("twitch", login) } : {}) }),
     ...(frames.source ? { twitch: fromStream("twitch"), kick: fromStream("kick") } : {}),
   });
   clock.screen = screen.source ?? undefined;

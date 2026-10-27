@@ -305,6 +305,48 @@ console.log("\n@oddiefun's one token chain (src/x/client.ts)");
   _resetTokenCache();
 }
 
+console.log("\nan X stream's picture, from Twitch when X never said where it is");
+{
+  const { xPicture, xTwitchTwin } = await import("../src/x/live.js");
+  check("Aleksa's X account is paired with the same stream on Twitch by default", xTwitchTwin("1084242319") === "aleksaflamingo" && xTwitchTwin(STREAMER) === null);
+  process.env.X_TWITCH_TWINS = "123:SomeOne, 456:x, 789:ok_name:extra, abc:name";
+  check("X_TWITCH_TWINS pairs ids with logins and skips what is not id:login",
+    xTwitchTwin("123") === "someone" && xTwitchTwin("456") === null && xTwitchTwin("789") === null && xTwitchTwin("1084242319") === null);
+  process.env.X_TWITCH_TWINS = `${STREAMER}:aleksaflamingo`;
+
+  _resetXLive();
+  const engine = xEngineDeps({ log }, api, voice);
+  const lines: string[] = [];
+  const w = { engine, log, voice };
+  const fetched: string[] = [], asked: string[] = [];
+  let ownWorks = true;
+  const d = {
+    fetchPicture: async (url: string) => { fetched.push(url); return ownWorks ? Buffer.from("x-thumbnail") : null; },
+    twitchFrame: async (login: string) => { asked.push(login); return Buffer.from("twitch-frame"); },
+    log: (l: string) => { lines.push(l); },
+  };
+  await onXEvent(chat("hello from Restream", undefined, { broadcast_id: "3rdBroadcast" }), w);
+  const a = await xPicture(STREAMER, d);
+  await xPicture(STREAMER, d);
+  check("no broadcast.start, chat coming in: the picture is the stream's Twitch frame",
+    a?.toString() === "twitch-frame" && fetched.length === 0 && asked.join() === "aleksaflamingo,aleksaflamingo", JSON.stringify({ fetched, asked }));
+  check("...and the log says so once", lines.filter((l) => l === "x picture from twitch").length === 1, JSON.stringify(lines));
+
+  fetched.length = 0; asked.length = 0;
+  await onXEvent({ event_uuid: "start-twin", event_type: "broadcast.start", filter: { user_id: STREAMER }, payload: { broadcast_id: "4thBroadcast", thumbnail_url: "https://x.test/live.jpg" } }, w);
+  const b = await xPicture(STREAMER, d);
+  check("with a thumbnail from broadcast.start, X's own picture is read and Twitch is not asked", b?.toString() === "x-thumbnail" && fetched.join() === "https://x.test/live.jpg" && asked.length === 0);
+  ownWorks = false;
+  const c = await xPicture(STREAMER, d);
+  check("a thumbnail that no longer loads falls back to Twitch", c?.toString() === "twitch-frame" && asked.length === 1);
+
+  fetched.length = 0; asked.length = 0;
+  await onXEvent({ event_uuid: "end-twin", event_type: "broadcast.end", filter: { user_id: STREAMER }, payload: { broadcast_id: "4thBroadcast" } }, w);
+  check("after broadcast.end nothing is read, on X or Twitch", (await xPicture(STREAMER, d)) === null && fetched.length === 0 && asked.length === 0);
+  check("a streamer with no Twitch pair and no thumbnail has no picture", (await xPicture("7000000000000000007", d)) === null && asked.length === 0);
+  delete process.env.X_TWITCH_TWINS;
+}
+
 console.log("\nhow often an X stream's picture changes");
 {
   const { probeThumbnail } = await import("../src/x/live.js");

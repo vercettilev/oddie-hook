@@ -216,9 +216,41 @@ export async function xThumbnail(channelId: string): Promise<string | null> {
   return stored || null;
 }
 
+/** Streamers who send the same stream to Twitch at once, by X user id and
+ *  Twitch login (Lev, 27 Oct). Aleksa's first X broadcast through Restream
+ *  never sent broadcast.start, so there was no thumbnail to read, while its
+ *  chat came in; the same picture was live on Twitch, read there as a full
+ *  frame. X_TWITCH_TWINS lists them as id:login, comma separated. */
+const xTwitchTwins = (): Map<string, string> => new Map(
+  (process.env.X_TWITCH_TWINS ?? "1084242319:aleksaflamingo").split(",")
+    .map((pair) => pair.split(":").map((s) => s.trim()))
+    .filter(([id, login, rest]) => rest === undefined && /^\d+$/.test(id ?? "") && /^\w{3,25}$/.test(login ?? ""))
+    .map(([id, login]) => [id, login.toLowerCase()] as [string, string]),
+);
+export const xTwitchTwin = (channelId: string): string | null => xTwitchTwins().get(channelId) ?? null;
+/** Streamers whose picture came from Twitch, said once in the log. */
+const twinSaid = new Set<string>();
+
+/** The picture the screen reads for an X stream: its live thumbnail, or the
+ *  same stream's Twitch frame when X never said where its thumbnail is. */
+export async function xPicture(
+  channelId: string,
+  d: { fetchPicture: (url: string) => Promise<Buffer | null>; twitchFrame?: (login: string) => Promise<Buffer | null>; log?: Log },
+): Promise<Buffer | null> {
+  if (!liveIn.has(channelId) && ended.has(channelId)) return null;
+  const url = await xThumbnail(channelId);
+  const own = url ? await d.fetchPicture(url).catch(() => null) : null;
+  if (own) return own;
+  const login = xTwitchTwin(channelId);
+  if (!login || !d.twitchFrame) return null;
+  const jpeg = await d.twitchFrame(login).catch(() => null);
+  if (jpeg && !twinSaid.has(channelId)) { twinSaid.add(channelId); d.log?.("x picture from twitch", { channel: channelId, login }); }
+  return jpeg;
+}
+
 /** Test seam. */
 export function _resetXLive(): void {
-  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); thumbOf.clear(); pending.clear(); finished.clear();
+  liveIn.clear(); ended.clear(); seenEvents.clear(); slugOf.clear(); thumbOf.clear(); pending.clear(); finished.clear(); twinSaid.clear();
 }
 /** Test seam: the broadcast a streamer is live in, as oddie knows it. */
 export const _liveIn = (channelId: string): string | undefined => liveIn.get(channelId);
