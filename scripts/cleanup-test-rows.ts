@@ -15,7 +15,7 @@
 import pg from "pg";
 
 const TEST_DEVICES = [
-  "ed238db0-a84c-491b-ab2e-273c585e929a", // poppin.so-origin session (the /api/ev proof)
+  "ed238db0-a84c-491b-ab2e-273c585e929a", // a session from another origin (the /api/ev proof)
   "ddb3938c-8243-46cf-abe7-7aef4b0e416e", // paper-trading session, production
   "6292e497-81e2-4241-9654-c534dc696f66", // analytics session, production
   "race-test-device-0001", // balance race test

@@ -4511,7 +4511,7 @@ export interface UserActivity {
 // the total and visible under "show all". Real device ids are UUIDs or random
 // strings, so these literal/prefix matches can't collide with a genuine user.
 const KNOWN_TEST_DEVICE_IDS = new Set<string>([
-  "ed238db0-a84c-491b-ab2e-273c585e929a", // poppin.so-origin session
+  "ed238db0-a84c-491b-ab2e-273c585e929a", // a session from another origin
   "ddb3938c-8243-46cf-abe7-7aef4b0e416e", // paper-trading session, production
   "6292e497-81e2-4241-9654-c534dc696f66", // analytics session, production
   "race-test-device-0001",

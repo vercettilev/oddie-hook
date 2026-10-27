@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Tag Poppin into a take -> matched live Kalshi/Polymarket market -> branded odds card + slug page.",
+  "description": "Tag Oddie into a take -> matched live Kalshi/Polymarket market -> branded odds card + slug page.",
   "scripts": {
     "dev": "tsx watch --include \"./public/**\" src/server.ts",
     "start": "tsx src/server.ts",

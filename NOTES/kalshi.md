@@ -1,6 +1,6 @@
 # Kalshi: how it's queried, and the three traps
 
-**Status: ON.** `ENABLE_KALSHI=1`, set on the `poppin-hook` service. Read-only
+**Status: ON.** `ENABLE_KALSHI=1`, set on the `oddie-hook` service. Read-only
 odds source: nobody signs in, nobody deposits, nothing executes, and no card
 ever names the venue. It is here because it prices the Fed, CPI, GDP and
 unemployment questions Polymarket does not.
@@ -36,7 +36,7 @@ Kalshi generates these continuously, so they dominate the default ordering:
 | first non-MVE market appears at | ~13,000 markets in (page 12 of 1000) |
 
 So a `limit=200` page has **never** contained a real market. Every Kalshi
-market poppin ever ingested was a parlay.
+market oddie ever ingested was a parlay.
 
 Two consequences, both bad:
 

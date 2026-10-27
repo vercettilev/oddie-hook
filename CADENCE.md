@@ -3,7 +3,7 @@
 
 ## The locked flow (what we're testing)
 
-Someone tags @poppin under a take on X → we match the most relevant **live**
+Someone tags @oddiefun under a take on X → we match the most relevant **live**
 market (existing venues supply the liquidity; we never name them — the card
 shows Oddie brand + volume) → we reply with a branded odds card +
 `oddie.fun/market/[slug]` → the link opens **the feed with that market as the
@@ -26,7 +26,7 @@ push notifications.
 ### Week 1 — Manual wedge test (no bot yet)
 **Question:** does "tag → card → tap" happen at all?
 **Do:** run the hook locally; manually drop the branded card + slug link into
-15–20 live arguments/takes (from the @poppin account, only where it fits).
+15–20 live arguments/takes (from the @oddiefun account, only where it fits).
 **Measure:** card impressions → link taps → first call on the top card.
 **Kill/scale:** if taps/impressions is dismal across 20 good threads, the
 wedge framing needs work before any automation is worth it.
@@ -51,7 +51,7 @@ link-preview product, not a feed — rethink before building more.
 **Question:** does settling markets drive the loop?
 **Do:** when seeded markets resolve, auto-post outcome + who called it
 (opt-in tagging).
-**Measure:** quote-tweets/shares per resolution post, new tags of @poppin in
+**Measure:** quote-tweets/shares per resolution post, new tags of @oddiefun in
 the following 48h, return visits from resolution posts.
 **This is the viral engine hypothesis — it deserves its own week.**
 
@@ -71,7 +71,7 @@ only when tagged.
 ---
 
 ## Standing metrics (every week, same dashboard)
-- Tags of @poppin (leading, easy to juice — never optimize alone)
+- Tags of @oddiefun (leading, easy to juice — never optimize alone)
 - Link taps / card impressions
 - **Weekly active poppers** (made ≥1 call) — the north star
 - Feed depth (median cards/session)

@@ -22,7 +22,7 @@ if (!DATABASE_URL) {
     "No database URL.\n" +
       "  from your laptop:  DATABASE_PUBLIC_URL='postgresql://…' npm run events\n" +
       "                     (Railway dashboard -> Postgres -> Variables -> DATABASE_PUBLIC_URL)\n" +
-      "  from the container: railway ssh --service poppin-hook -- npm run events\n" +
+      "  from the container: railway ssh --service oddie-hook -- npm run events\n" +
       "                     (needs `railway ssh keys add` once)",
   );
   process.exit(1);
@@ -102,7 +102,7 @@ const chips = await q<{ cat: string; n: string }>(
 );
 
 const D = Number(devices), T = Number(tappers);
-console.log(`\n  Poppin — last ${days} days${opFilter ? `  (operator-clean: ${operators.length} device(s) excluded; --all to include)` : includeOperators ? "  (--all: operators INCLUDED)" : ""}\n`);
+console.log(`\n  Oddie — last ${days} days${opFilter ? `  (operator-clean: ${operators.length} device(s) excluded; --all to include)` : includeOperators ? "  (--all: operators INCLUDED)" : ""}\n`);
 console.log(`  how many came`);
 console.log(`    devices              ${D}`);
 console.log(`    feed views           ${views}   (${from_tweet} arrived on a /market/<slug> door)`);
