@@ -51,7 +51,7 @@ https://oddie.fun
 ## Your Name
 
 ```
-Levent Acar
+Lev
 ```
 
 ## Your E-mail
