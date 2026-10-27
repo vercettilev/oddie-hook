@@ -7,6 +7,7 @@
 // Run with: npm run test-x-live
 
 import type { AddressInfo } from "node:net";
+import { readFileSync } from "node:fs";
 import express from "express";
 import { _resetLive, settleOnScreen } from "../src/live/calls.js";
 import { liveStore, channelById, saveChannel, _resetLiveStore } from "../src/store/live.js";
@@ -261,8 +262,20 @@ console.log("\nX live: votes, no market, no link (its chat refuses links, Lev's 
   check("...and !matches on brings it back",
     (await onXEvent(chat("!matches on", host, on), w)) === "matches-on" && (await channelById("x", STREAMER))?.matchCalls === true);
   const call = await liveStore.current("x", STREAMER);
-  check("a call the screen settles is said in the live chat", Boolean(call) && await settleOnScreen(call!, "yes", "VICTORY 13-11", eng)
+  const FRAME = Buffer.from("\xff\xd8 the frame oddie read \xff\xd9", "latin1");
+  check("a call the screen settles is said in the live chat", Boolean(call) && await settleOnScreen(call!, "yes", "VICTORY 13-11", eng, FRAME)
     && sent.slice(s0).some((x) => x.text.startsWith("On stream: VICTORY 13-11.")));
+  const pageData = await (await get("/api/live/x/AleksaFlamingo")).json() as { recent?: Array<{ frame: string | null }> };
+  const framePath = pageData.recent?.[0]?.frame ?? "";
+  check("the channel's page data names the picture it was settled on", framePath === `/api/live/x/AleksaFlamingo/frame/${call?.id}`, framePath);
+  const img = framePath ? await get(framePath) : null;
+  const body = img ? Buffer.from(await img.arrayBuffer()) : Buffer.alloc(0);
+  check("...served as it was read, a picture kept for good",
+    img?.status === 200 && /image\/jpeg/.test(img.headers.get("content-type") ?? "") && body.equals(FRAME) && /immutable/.test(img.headers.get("cache-control") ?? ""),
+    `${img?.status} ${img?.headers.get("content-type")}`);
+  check("...and not through another channel's address", (await get(`/api/live/x/someone/frame/${call?.id}`)).status === 404);
+  const page = readFileSync("public/app/live.html", "utf8");
+  check("the channel page shows it under the settled call", /r\.frame \? '<figure class="res__f">/.test(page) && page.includes("What Oddie saw when it settled this"));
   const said = sent.slice(s0).map((x) => x.text);
   check("not one of those lines carries a link, and each fits X's 140", said.length >= 3 && said.every((t) => noLink(t) && t.length <= X_CHAT_MAX), said.join(" | "));
 }

@@ -13,7 +13,7 @@ import { consumeChallenge, issueChallenge, verifyWalletSignature, WALLET_ADDRESS
 import { weekStart, yesPct, type Platform } from "./calls.js";
 import { cookieValue, ownerCookieName, ownerKeyFromEnv, verifyOwnerToken } from "./owner.js";
 import type { ChannelMarket } from "../store/markets.js";
-import { channelBySlug, channelStandings, liveStore, recentCalls, streaksFor, type StandingRow } from "../store/live.js";
+import { callFrame, channelBySlug, channelStandings, liveStore, recentCalls, streaksFor, type StandingRow } from "../store/live.js";
 import { faceitConfigured } from "../games/faceit.js";
 import { gsiConfig } from "../games/gsi.js";
 import { GSI_STALE_MS } from "./gameCalls.js";
@@ -177,10 +177,23 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
       recent: recent.filter((c) => c.settledAt !== null).map((c) => ({
         question: c.question, outcome: c.outcome, yes: c.yes, no: c.no, points: c.points,
         settledAt: c.settledAt ? new Date(c.settledAt).toISOString() : null,
+        // The picture oddie settled it on, when the screen did (src/live/screenCalls.ts).
+        frame: c.frame ? `/api/live/${platform}/${encodeURIComponent(ch.slug)}/frame/${c.id}` : null,
       })),
       standings: standings.map(row),
       standingsWeek: standingsWeek.map(row),
     });
+  });
+
+  /* WHAT ODDIE SAW (Lev, 27 Oct, after Dibs asked how a settle can be
+     checked): the picture a call was settled on, served as it was read. A
+     settled picture never changes, so it can be kept anywhere. */
+  r.get(`/api/live/${platform}/:slug/frame/:id`, async (req, res) => {
+    const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
+    const f = ch ? await callFrame(platform, ch.channelId, req.params.id).catch(() => null) : null;
+    if (!f) return res.status(404).json({ error: "unknown" });
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+    res.type("image/jpeg").send(f.jpeg);
   });
 
   /* ------------------------------------------------ the streamer's 2% --

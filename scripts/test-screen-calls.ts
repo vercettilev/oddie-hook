@@ -7,7 +7,7 @@
 // Run with: npm run test-screen-calls
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
-import { liveStore, saveChannel, _resetLiveStore } from "../src/store/live.js";
+import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
 import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR } from "../src/live/screenCalls.js";
 import { callScope, cleanSeen, parseScreen, screenPrompt, screenSource, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame } from "../src/games/frames.js";
@@ -117,6 +117,11 @@ console.log("\nthe streamer opens it, the screen settles it");
   check("...said with what was on screen, then the result and who called it",
     r.said.length === before + 1 && r.last() === 'On stream: VICTORY. YES: "will I win this match?". @mika called it.', r.last());
   check("...a line that never reads as a command", parseCommand(r.last()) === null);
+  const [done] = await recentCalls("kick", "100", 1);
+  const kept = done ? await callFrame("kick", "100", done.id) : null;
+  check("...and the picture it was settled on is kept for the channel page, with what was read off it",
+    done?.frame === true && kept?.jpeg.toString() === "jpeg" && kept?.seen === "VICTORY", JSON.stringify({ frame: done?.frame, seen: kept?.seen }));
+  check("...for that channel's own calls only", (await callFrame("kick", "999", done?.id ?? "1")) === null && (await callFrame("kick", "100", "x1")) === null);
   await r.at(SCREEN_GRACE_MS + 10 * SCREEN_EVERY_MS);
   check("a settled call is not looked at again", r.counts().asks === 3);
 }

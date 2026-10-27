@@ -94,6 +94,14 @@ ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS match_calls boolean NOT NULL D
 -- A call about a FACEIT match carries the match id: one match, one call, ever.
 ALTER TABLE live_call ADD COLUMN IF NOT EXISTS match_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS live_call_match_idx ON live_call (platform, channel_id, match_id) WHERE match_id IS NOT NULL;
+-- The picture a call was settled on, kept so anybody can see what oddie saw
+-- (Lev, 27 Oct, after Dibs asked how a settle can be checked): one per call.
+CREATE TABLE IF NOT EXISTS live_call_frame (
+  call_id   bigint PRIMARY KEY REFERENCES live_call(id) ON DELETE CASCADE,
+  jpeg      bytea NOT NULL,
+  seen      text,
+  at        timestamptz NOT NULL DEFAULT now()
+);
 `;
 
 let ready: Promise<void> | null = null;
@@ -207,6 +215,8 @@ interface MemPick { callId: string; platform: Platform; userId: string; username
 const memCalls = new Map<string, MemCall>();
 const memPicks: MemPick[] = [];
 let memSeq = 0;
+/** The picture each call was settled on, by call id. */
+const memFrames = new Map<string, { jpeg: Buffer; seen: string }>();
 
 type CallRow = { id: string; platform: Platform; channel_id: string; question: string; opened_at: Date; closes_at: Date;
   timed: boolean | null; locked_at: Date | null; outcome: Side | null; settled_at: Date | null; match_id?: string | null };
@@ -360,6 +370,7 @@ export const liveStore: LiveStore = {
   record: (platform, userId, channelId, now) => callerRecord(platform, userId, channelId, now),
   openedSince: (platform, channelId, since) => openedSince(platform, channelId, since),
   topCaller: (platform, channelId, since, until) => topCaller(platform, channelId, { since, until }),
+  saveFrame: (callId, jpeg, seen) => saveCallFrame(callId, jpeg, seen),
 
   async cancel(callId, at) {
     if (!STORE_PERSISTENT) {
@@ -516,7 +527,9 @@ export const liveStore: LiveStore = {
 
 export interface StandingRow { userId: string; username: string; points: number; right: number; calls: number }
 export interface CallSummary { id: string; question: string; outcome: Side | null; yes: number; no: number; points: number | null;
-  closesAt: number; lockedAt: number | null; settledAt: number | null }
+  closesAt: number; lockedAt: number | null; settledAt: number | null;
+  /** Whether the picture the call was settled on is kept (callFrame). */
+  frame: boolean }
 
 /** A window of settled calls, [since, until): the week's boards (Lev, 16 Oct).
  *  An end left out is open. */
@@ -685,23 +698,50 @@ export async function recentCalls(platform: Platform, channelId: string, limit =
       if (c.platform !== platform || c.channelId !== channelId || c.canceledAt !== null) continue;
       const t = await liveStore.tally(c.id);
       out.push({ id: c.id, question: c.question, outcome: c.outcome, yes: t.yes, no: t.no, points: c.points,
-        closesAt: c.closesAt, lockedAt: c.lockedAt, settledAt: c.settledAt });
+        closesAt: c.closesAt, lockedAt: c.lockedAt, settledAt: c.settledAt, frame: memFrames.has(c.id) });
       if (out.length >= limit) break;
     }
     return out;
   }
   await schema();
   const { rows } = await storeDb().query<{ id: string; question: string; outcome: Side | null; yes: number; no: number; points: number | null;
-    closes_at: Date; locked_at: Date | null; settled_at: Date | null }>(
+    closes_at: Date; locked_at: Date | null; settled_at: Date | null; has_frame: boolean }>(
     `SELECT c.id, c.question, c.outcome, c.points, c.closes_at, c.locked_at, c.settled_at,
-            count(p.*) FILTER (WHERE p.side = 'yes')::int AS yes, count(p.*) FILTER (WHERE p.side = 'no')::int AS no
+            count(p.*) FILTER (WHERE p.side = 'yes')::int AS yes, count(p.*) FILTER (WHERE p.side = 'no')::int AS no,
+            EXISTS (SELECT 1 FROM live_call_frame f WHERE f.call_id = c.id) AS has_frame
        FROM live_call c LEFT JOIN live_pick p ON p.call_id = c.id
       WHERE c.platform = $1 AND c.channel_id = $2 AND c.canceled_at IS NULL
       GROUP BY c.id ORDER BY c.opened_at DESC LIMIT $3`, [platform, channelId, Math.max(1, Math.min(50, limit))]);
   return rows.map((r) => ({ id: String(r.id), question: r.question, outcome: r.outcome, yes: r.yes, no: r.no, points: r.points,
     closesAt: new Date(r.closes_at).getTime(), lockedAt: r.locked_at ? new Date(r.locked_at).getTime() : null,
-    settledAt: r.settled_at ? new Date(r.settled_at).getTime() : null }));
+    settledAt: r.settled_at ? new Date(r.settled_at).getTime() : null, frame: r.has_frame === true }));
+}
+
+/** The largest picture kept: a full-size stream frame is a few hundred KB. */
+export const FRAME_MAX_BYTES = 2_000_000;
+
+/** Keeps the picture a call was settled on; the first one kept stays. */
+export async function saveCallFrame(callId: string, jpeg: Buffer, seen: string): Promise<void> {
+  if (!jpeg.length || jpeg.length > FRAME_MAX_BYTES) return;
+  if (!STORE_PERSISTENT) { if (!memFrames.has(callId)) memFrames.set(callId, { jpeg, seen }); return; }
+  await schema();
+  await storeDb().query(`INSERT INTO live_call_frame (call_id, jpeg, seen) VALUES ($1, $2, $3) ON CONFLICT (call_id) DO NOTHING`,
+    [callId, jpeg, seen.slice(0, 300)]);
+}
+
+/** The picture a call of this channel was settled on, or null. */
+export async function callFrame(platform: Platform, channelId: string, callId: string): Promise<{ jpeg: Buffer; seen: string } | null> {
+  if (!/^\d{1,18}$/.test(callId)) return null;
+  if (!STORE_PERSISTENT) {
+    const c = memCalls.get(callId);
+    return c && c.platform === platform && c.channelId === channelId ? memFrames.get(callId) ?? null : null;
+  }
+  await schema();
+  const { rows } = await storeDb().query<{ jpeg: Buffer; seen: string | null }>(
+    `SELECT f.jpeg, f.seen FROM live_call_frame f JOIN live_call c ON c.id = f.call_id
+      WHERE f.call_id = $1 AND c.platform = $2 AND c.channel_id = $3`, [callId, platform, channelId]);
+  return rows[0] ? { jpeg: rows[0].jpeg, seen: rows[0].seen ?? "" } : null;
 }
 
 /** Test seam. */
-export function _resetLiveStore(): void { memChannels.clear(); memCalls.clear(); memPicks.length = 0; memSeq = 0; }
+export function _resetLiveStore(): void { memChannels.clear(); memCalls.clear(); memPicks.length = 0; memSeq = 0; memFrames.clear(); }

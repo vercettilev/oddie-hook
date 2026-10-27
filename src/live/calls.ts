@@ -357,6 +357,8 @@ export interface LiveStore {
   openedSince?(platform: Platform, channelId: string, since: number): Promise<number>;
   /** The channel's best caller over [since, until), with at least one right call. */
   topCaller?(platform: Platform, channelId: string, since: number, until: number): Promise<{ username: string; right: number; calls: number } | null>;
+  /** Keeps the picture a call was settled on, for its channel page. Absent: nothing kept. */
+  saveFrame?(callId: string, jpeg: Buffer, seen: string): Promise<void>;
   cancel(callId: string, at: number): Promise<boolean>;
   /** Calls taking answers whose time is up. */
   due(now: number): Promise<LiveCall[]>;
@@ -835,13 +837,18 @@ export async function lockDue(deps: LiveDeps): Promise<number> {
  * showed on the stream, read twice in a row. Settled as a mod's !call would,
  * with what was on screen in front. False when somebody settled it first.
  */
-export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string, deps: LiveDeps): Promise<boolean> {
+export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string, deps: LiveDeps, frame?: Buffer): Promise<boolean> {
   const now = deps.now();
   if (call.lockedAt === null) await deps.store.lock(call.id, now).catch(() => false);
   lastSplit.delete(call.id); newSince.delete(call.id); lastSaid.delete(call.id);
   const tally = await deps.store.tally(call.id);
   const done = await deps.store.settle(call.id, outcome, pointsFor(tally, outcome), now);
   if (!done) return false;
+  // The picture it was settled on, so anybody can see what oddie saw (Lev, 27
+  // Oct): kept on the channel page, since a live chat takes no picture.
+  if (frame && deps.store.saveFrame) {
+    await deps.store.saveFrame(call.id, frame, seen).catch((e) => deps.log("live frame not kept", { id: call.id, err: (e as Error).message.slice(0, 200) }));
+  }
   await unpinIfIdle(deps, call);
   const url = await deps.standingsUrl(call.platform, call.channelId);
   await sayQuiet(deps, call, `${LIVE_COPY.onScreen(seen)} ${LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners)}`);

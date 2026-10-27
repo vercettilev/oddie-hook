@@ -195,7 +195,7 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
     }
     if (l.decided && l.decided.answer === r.answer && now - l.decided.at <= SCREEN_AGREE_MS) {
       looks.delete(call.id);
-      return settleOnScreen(call, r.answer, seen || l.decided.seen, deps);
+      return settleOnScreen(call, r.answer, seen || l.decided.seen, deps, jpeg);
     }
     // The first sure answer: look again while it is still on screen.
     l.decided = { answer: r.answer, at: now, seen };
