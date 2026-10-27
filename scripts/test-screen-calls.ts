@@ -55,6 +55,8 @@ console.log("what the reader says");
   check("an event call is told that no game's result answers it, only the whole event decided",
     /not one game/.test(ev) && /WINNER: <name>/.test(ev) && /champion or trophy screen/.test(ev) && /knocked out/.test(ev), ev.slice(-400));
   check("...while a game call is asked as before", !/not one game/.test(p));
+  check("a game call is told a notice naming who was defeated is not the streamer's defeat",
+    /\("<name> DEFEATED"\) is not a defeat screen and does not say the streamer lost/.test(p));
   process.env.SCREEN_SETTLE = "off";
   check("SCREEN_SETTLE=off turns it off", screenSource({}).source === null);
   delete process.env.SCREEN_SETTLE;
