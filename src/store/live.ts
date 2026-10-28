@@ -540,9 +540,12 @@ export interface Range { since?: number; until?: number }
 const FAR = Date.UTC(9999, 0, 1);
 const inRange = (at: number | null, r: Range): boolean => at !== null && at >= (r.since ?? 0) && at < (r.until ?? FAR);
 /** oddie's own voice and the founder's accounts never rank (Lev, 8 Oct; Spot
- *  and Poppin added 16 Oct: "spot da benim hesabım"). */
-export const HOUSE_ACCOUNTS = ["oddiefun", "levvercetti", "usespotdotfun", "poppin_so"];
-const isHouse = (name: string | null): boolean => HOUSE_ACCOUNTS.includes(String(name ?? "").replace(/^@+/, "").toLowerCase());
+ *  added 16 Oct: "spot da benim hesabım"). HOUSE_ACCOUNTS_EXTRA names more,
+ *  comma separated, kept out of this public code (Lev, 28 Oct). */
+const HOUSE_BASE = ["oddiefun", "levvercetti", "usespotdotfun"];
+const handleOf = (name: string | null): string => String(name ?? "").trim().replace(/^@+/, "").toLowerCase();
+export const houseAccounts = (): string[] => [...HOUSE_BASE, ...(process.env.HOUSE_ACCOUNTS_EXTRA ?? "").split(",").map(handleOf).filter(Boolean)];
+const isHouse = (name: string | null): boolean => houseAccounts().includes(handleOf(name));
 
 /** A channel's standings: every settled call in the window, summed per person. */
 export async function channelStandings(platform: Platform, channelId: string, limit = 20, range: Range = {}): Promise<StandingRow[]> {
@@ -568,7 +571,7 @@ export async function channelStandings(platform: Platform, channelId: string, li
       WHERE c.platform = $1 AND c.channel_id = $2 AND c.settled_at IS NOT NULL AND c.settled_at >= $4 AND c.settled_at < $5
         AND COALESCE(lower(p.username), '') <> ALL($6::text[])
       GROUP BY p.user_id ORDER BY points DESC, right_count DESC LIMIT $3`,
-    [platform, channelId, Math.max(1, Math.min(100, limit)), new Date(range.since ?? 0), new Date(range.until ?? FAR), HOUSE_ACCOUNTS]);
+    [platform, channelId, Math.max(1, Math.min(100, limit)), new Date(range.since ?? 0), new Date(range.until ?? FAR), houseAccounts()]);
   return rows.map((r) => ({ userId: r.user_id, username: r.username, points: r.points, right: r.right_count, calls: r.calls }));
 }
 
@@ -579,7 +582,7 @@ export async function channelStandings(platform: Platform, channelId: string, li
  * row names the channel they last called in.
  */
 export interface GlobalStandingRow extends StandingRow { platform: Platform; channel: string }
-/** The house never ranks (HOUSE_ACCOUNTS): their test votes sat on the board as players (Lev, 8 Oct, "evet"). */
+/** The house never ranks (houseAccounts): their test votes sat on the board as players (Lev, 8 Oct, "evet"). */
 export async function allStandings(limit = 50, range: Range = {}): Promise<GlobalStandingRow[]> {
   const n = Math.max(1, Math.min(100, limit));
   if (!STORE_PERSISTENT) {
@@ -606,7 +609,7 @@ export async function allStandings(limit = 50, range: Range = {}): Promise<Globa
        JOIN live_call c ON c.id = p.call_id
        LEFT JOIN live_channel ch ON ch.platform = c.platform AND ch.channel_id = c.channel_id
       WHERE c.settled_at IS NOT NULL AND COALESCE(lower(p.username), '') <> ALL($2::text[]) AND c.settled_at >= $3 AND c.settled_at < $4
-      GROUP BY c.platform, p.user_id ORDER BY points DESC, right_count DESC LIMIT $1`, [n, HOUSE_ACCOUNTS, new Date(range.since ?? 0), new Date(range.until ?? FAR)]);
+      GROUP BY c.platform, p.user_id ORDER BY points DESC, right_count DESC LIMIT $1`, [n, houseAccounts(), new Date(range.since ?? 0), new Date(range.until ?? FAR)]);
   return rows.map((r) => ({ platform: r.platform, userId: r.user_id, username: r.username, points: r.points, right: r.right_count,
     calls: r.calls, channel: r.channel ?? "" }));
 }

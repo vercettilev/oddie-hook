@@ -15,7 +15,7 @@ import {
   parseCommand, handleChat, lockDue, remindOpen, sayVotes, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
   EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
-import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, _resetLiveStore } from "../src/store/live.js";
+import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, houseAccounts, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
 import { kickRouter, kickEngineDeps, type KickChat, type KickSignIn } from "../src/kick/routes.js";
 import { openFromChat, MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
@@ -278,6 +278,13 @@ console.log("\nthe leaderboard: every channel's votes in one table (Lev, 8 Oct)"
   check("the house never ranks: oddie's own account and the founder's test votes stay off the board", await (async () => {
     await vote("kick", "131980691", t0 + 1_500_000, [["oddiefun", "yes"], ["LevVercetti", "yes"]], "yes");
     return (await allStandings()).every((r) => !["oddiefun", "levvercetti"].includes(r.username.toLowerCase()));
+  })());
+  check("...nor any handle HOUSE_ACCOUNTS_EXTRA names, written any way", (() => {
+    process.env.HOUSE_ACCOUNTS_EXTRA = " house_extra_test , @Second_House ,";
+    const named = houseAccounts();
+    delete process.env.HOUSE_ACCOUNTS_EXTRA;
+    return named.includes("house_extra_test") && named.includes("second_house") && named.includes("oddiefun")
+      && !named.includes("") && !houseAccounts().includes("second_house");
   })());
   check("an open vote counts for nobody yet", await (async () => {
     await liveStore.open({ platform: "twitch", channelId: "7", question: "open?", openedById: "s", openedByName: "s", openedAt: t0 + 2_000_000, closesAt: t0 + 2_060_000, timed: true });
@@ -909,7 +916,7 @@ console.log("\nthe lines no memory test reaches");
     && /if \(kickConfigured\(\) \|\| twitchConfigured\(\) \|\| youtubeConfigured\(\) \|\| xLiveConfigured\(\)\) \{[\s\S]{0,2600}lockDue\(clock\)/.test(server));
   const store = readFileSync("src/store/live.ts", "utf8");
   check("the leaderboard's SQL groups by platform and person, names the last channel, and never says RIGHT bare",
-    /WHERE c\.settled_at IS NOT NULL AND COALESCE\(lower\(p\.username\), ''\) <> ALL\(\$2::text\[\]\) AND c\.settled_at >= \$3 AND c\.settled_at < \$4\s+GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1`, \[n, HOUSE_ACCOUNTS, new Date\(range\.since \?\? 0\), new Date\(range\.until \?\? FAR\)\]/.test(store)
+    /WHERE c\.settled_at IS NOT NULL AND COALESCE\(lower\(p\.username\), ''\) <> ALL\(\$2::text\[\]\) AND c\.settled_at >= \$3 AND c\.settled_at < \$4\s+GROUP BY c\.platform, p\.user_id ORDER BY points DESC, right_count DESC LIMIT \$1`, \[n, houseAccounts\(\), new Date\(range\.since \?\? 0\), new Date\(range\.until \?\? FAR\)\]/.test(store)
     && /\(array_agg\(COALESCE\(ch\.slug, c\.channel_id\) ORDER BY c\.settled_at DESC\)\)\[1\] AS channel/.test(store)
     && /app\.get\("\/api\/live\/standings"/.test(server));
   check("one call taking answers per channel is the database's rule, and the old one-unsettled index goes",
