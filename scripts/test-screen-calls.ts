@@ -324,7 +324,7 @@ console.log("\nA BR1 round's kills or time alive: the panel's number decides, no
     ["survive a minute this round?", "time>=60"], ["survive over a minute?", "time>=61"], ["will I last 1:30 this round?", "time>=90"],
     ["stay alive 45s?", "time>=45"], ["survive half a minute?", "time>=30"],
   ];
-  const show = (q: string) => { const r = statRule(q); return r ? `${r.stat}>=${r.atLeast}` : "none"; };
+  const show = (q: string) => { const r = statRule(q); return !r ? "none" : r.stat === "runtime" ? `runtime<${r.under}` : `${r.stat}>=${r.atLeast}`; };
   check("a call on kills or time alive names its number and threshold",
     rules.every(([q, want]) => show(q) === want), rules.filter(([q, want]) => show(q) !== want).map(([q]) => `${q} -> ${show(q)}`).join(" | "));
   /* VS Protocol (28 Oct): a run that reaches the ship ends on MISSION COMPLETE
@@ -348,6 +348,22 @@ console.log("\nA BR1 round's kills or time alive: the panel's number decides, no
     && parseStat(JSON.stringify({ screen: "panel", score: "1,240", sure: 0.95 }), s200)?.answer === "yes"
     && parseStat(JSON.stringify({ screen: "other", score: 240, sure: 0.95 }), s200)?.answer === "unclear"
     && parseStat(JSON.stringify({ screen: "panel", score: 224, sure: 0.95, seen: "" }), s200)?.seen === "SCORE 224");
+  /* A run's own time (28 Oct, Aleksa: "Will aleksa defeat his 2:05 min high
+     score"): VS Protocol's panel shows TIME 3:53.3 beside the score; faster wins. */
+  const runs: Array<[string, string]> = [
+    ["Will aleksa defeat his 2:05 min high score", "runtime<125"], ["Will Aleksa extract in under 4:00?", "runtime<240"],
+    ["Will Aleksa get to the ship in under 2:05?", "runtime<125"], ["Will Aleksa beat 2:05?", "runtime<125"],
+    ["Will Aleksa beat his 235 high score?", "score>=236"], ["Will Aleksa survive 2:05 this round?", "time>=125"],
+  ];
+  check("a call on how fast a run ends is under its time, a high score to beat is above it, surviving stays time alive",
+    runs.every(([q, want]) => show(q) === want), runs.filter(([q, want]) => show(q) !== want).map(([q]) => `${q} -> ${show(q)}`).join(" | "));
+  const rp = screenPrompt("Will Aleksa extract in under 4:00?", "Aleksa Flamingo");
+  check("its reader is asked for the round's own TIME, never the clock or a leaderboard's",
+    /The number asked about is the round's own TIME/.test(rp) && /not the time left on the clock, not a time on a leaderboard/.test(rp) && /like 3:53.3/.test(rp), rp.slice(-300));
+  const u240 = statRule("Will Aleksa extract in under 4:00?")!;
+  const at = (time: string) => parseStat(JSON.stringify({ screen: "panel", time, sure: 0.9 }), u240)?.answer;
+  check("3:53.3 is under 4:00, 4:04.2 and 5:08.9 are not, and a reader's dropped colon or quote mark still reads",
+    at("3:53.3") === "yes" && at("4:04.2") === "no" && at("5:08.9") === "no" && at("353.3") === "yes" && at("4'04.2") === "no" && at("363.9") === "unclear" && at("4:00") === "no");
   const judged = ["will I win this match?", "Will Aleksa win the next battle?", "Can Ondrej beat StanCifka?", "Will Aleksa win the Kill Race?",
     "will I get the first kill?", "will I kill the boss?", "will I survive this round?", "will I win in 10 minutes?", "will I get 10 kills tonight?",
     "Aleksa wins this hand?", "will I survive 3 rounds?"];
