@@ -39,6 +39,12 @@
  * call counts its own looks, so a tournament call left open beside a game's
  * never eats the looks the game's result screen needs.
  *
+ * A NUMBER IS CHECKED TWICE (28 Oct, BR1). A call on a round's kills or time
+ * alive (src/games/screen.ts statRule) is answered by comparing the number
+ * the reader copies off the round's result panel, never by the reader's own
+ * yes or no, and settles only where the strong model copies the same number
+ * into the same answer, twice in a row: once a round, a few cents.
+ *
  * WHAT IT NEVER DOES. It never looks in the first minute of a call, so the
  * last match's result screen, still up when the next call opens, cannot
  * settle it. It never looks at a channel that said !matches off, at a stream
@@ -46,7 +52,7 @@
  * a market: markets settle through their own resolution, never from a picture.
  */
 import { personFixOutage } from "../inference.js";
-import { callScope } from "../games/screen.js";
+import { callScope, statRule } from "../games/screen.js";
 import { isRoomCall, settleOnScreen, type LiveCall, type LiveDeps } from "./calls.js";
 
 /** How often an open room call's picture is read: a result screen does not stay up long. */
@@ -99,6 +105,8 @@ export function _resetScreens(): void {
 
 const keyOf = (c: { platform: string; channelId: string }) => `${c.platform}:${c.channelId}`;
 const isEvent = (c: LiveCall) => callScope(c.question) === "event";
+/** A call on one number of a round's result panel (src/games/screen.ts statRule). */
+const isStat = (c: LiveCall) => statRule(c.question) !== null;
 const everyOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_EVERY_MS : SCREEN_EVERY_MS);
 const maxAgeOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_MAX_AGE_MS : SCREEN_MAX_AGE_MS);
 
@@ -186,11 +194,13 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
     // result, however sure the answer beside it (src/games/screen.ts).
     if (!r || r.answer === "unclear" || r.sure < SCREEN_SURE || (isEvent(call) && r.screen !== "event")) { l.nextAt = now + everyOf(call); l.decided = null; return false; }
     let seen = r.seen;
-    if (isEvent(call)) {
-      // ...and only where the strong model reads the same page the same way.
+    if (isEvent(call) || isStat(call)) {
+      // ...and only where the strong model reads the same page the same way,
+      // and a number off a round's result panel only where it reads the same
+      // number into the same answer.
       const c = source.confirm ? await source.confirm(jpeg, call.question, name) : null;
       deps.log("screen confirm", { platform: call.platform, channel: call.channelId, id: call.id, answer: c?.answer ?? null, sure: c?.sure ?? null, screen: c?.screen ?? null, seen: c?.seen ?? null });
-      if (!c || c.answer !== r.answer || c.sure < SCREEN_SURE || c.screen !== "event") { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+      if (!c || c.answer !== r.answer || c.sure < SCREEN_SURE || (isEvent(call) && c.screen !== "event")) { l.nextAt = now + everyOf(call); l.decided = null; return false; }
       seen = c.seen || r.seen;
     }
     if (l.decided && l.decided.answer === r.answer && now - l.decided.at <= SCREEN_AGREE_MS) {

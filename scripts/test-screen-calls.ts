@@ -9,7 +9,7 @@
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
 import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR } from "../src/live/screenCalls.js";
-import { callScope, cleanSeen, parseScreen, screenPrompt, screenSource, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { callScope, cleanSeen, parseScreen, parseStat, screenPrompt, screenSource, statRule, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
 import { onXEvent, xEngineDeps, xThumbnail, _resetXLive, type XLiveApi, type XVoice } from "../src/x/live.js";
@@ -308,6 +308,73 @@ console.log("\nDoes GPPoker win Lucky 13: a game's banner settles nothing, the e
   await handleChat(m.line("nova", "!call yes", true), m.deps);
   check("...and a mod's !call yes settles the tournament whenever they like",
     (await liveStore.unsettled("kick", "100")).length === 0 && /^YES: "Does GPPoker win Lucky 13\?"/.test(m.last()), m.last());
+}
+
+console.log("\nA BR1 round's kills or time alive: the panel's number decides, not the reader's yes or no");
+{
+  /* Aleksa's 23 Oct BR1 stream, read 28 Oct: every round ends on "YOU'VE BEEN
+     ELIMINATED" over KILLS and SURVIVAL TIME, and the reader answered "Will
+     Aleksa get a kill this round?" a sure NO on nearly every one, KILLS 1
+     included (src/games/screen.ts). */
+  const rules: Array<[string, string]> = [
+    ["Will Aleksa get a kill this round?", "kills>=1"], ["Will Aleksa get 2 kills this round?", "kills>=2"],
+    ["will I get 2+ kills this round?", "kills>=2"], ["Aleksa gets at least 3 kills this round?", "kills>=3"],
+    ["more than 1 kill this round?", "kills>=2"], ["any kills this round?", "kills>=1"],
+    ["Will Aleksa survive 40 seconds this round?", "time>=40"], ["will I survive 2 minutes this round?", "time>=120"],
+    ["survive a minute this round?", "time>=60"], ["survive over a minute?", "time>=61"], ["will I last 1:30 this round?", "time>=90"],
+    ["stay alive 45s?", "time>=45"], ["survive half a minute?", "time>=30"],
+  ];
+  const show = (q: string) => { const r = statRule(q); return r ? `${r.stat}>=${r.atLeast}` : "none"; };
+  check("a call on kills or time alive names its number and threshold",
+    rules.every(([q, want]) => show(q) === want), rules.filter(([q, want]) => show(q) !== want).map(([q]) => `${q} -> ${show(q)}`).join(" | "));
+  const judged = ["will I win this match?", "Will Aleksa win the next battle?", "Can Ondrej beat StanCifka?", "Will Aleksa win the Kill Race?",
+    "will I get the first kill?", "will I kill the boss?", "will I survive this round?", "will I win in 10 minutes?", "will I get 10 kills tonight?",
+    "Aleksa wins this hand?", "will I survive 3 rounds?"];
+  check("...and every other call is judged as before, a whole night's kills included",
+    judged.every((q) => statRule(q) === null), judged.filter((q) => statRule(q) !== null).join(" | "));
+
+  const Q = "Will Aleksa get a kill this round?";
+  const p = screenPrompt(Q, "Aleksa Flamingo");
+  check("its reader is asked for the panel's numbers, not for an answer",
+    /"screen":"panel"\|"other"/.test(p) && /The number asked about is KILLS/.test(p) && /Do not answer the question/.test(p) && !/"answer":"yes"\|"no"\|"unclear"/.test(p), p.slice(-300));
+  check("...and a death card or a kill feed is no panel", /A death message, an elimination card, a kill feed/.test(p));
+  const kill1 = statRule(Q)!, alive40 = statRule("Will Aleksa survive 40 seconds this round?")!;
+  const read = (j: object, rule = kill1) => parseStat(JSON.stringify(j), rule);
+  check("KILLS 1 on the panel is a YES, said with what was read",
+    read({ screen: "panel", kills: 1, time: "00:41", sure: 0.95, seen: "YOU'VE BEEN ELIMINATED, KILLS 1" })?.answer === "yes"
+    && read({ screen: "panel", kills: 1, sure: 0.95, seen: "" })?.seen === "KILLS 1");
+  check("KILLS 0 is a NO, eliminated or not", read({ screen: "panel", kills: 0, sure: 0.95, seen: "KILLS 0" })?.answer === "no");
+  check("a death card, a missing number or no JSON is no answer",
+    read({ screen: "other", kills: 0, sure: 0.95, seen: "ELIMINATED BETTER LUCK NEXT TIME" })?.answer === "unclear"
+    && read({ screen: "panel", kills: null, sure: 0.95 })?.answer === "unclear" && parseStat("no json", kill1) === null);
+  check("SURVIVAL TIME is compared in seconds: 00:41 lives 40, 00:21 does not, 1:16 is 76",
+    read({ screen: "panel", time: "00:41", sure: 0.9 }, alive40)?.answer === "yes" && read({ screen: "panel", time: "00:21", sure: 0.9 }, alive40)?.answer === "no"
+    && read({ screen: "panel", time: "1:16", sure: 0.9 }, statRule("survive 76 seconds?")!)?.answer === "yes"
+    && read({ screen: "panel", time: "1:16", sure: 0.9 }, statRule("survive 77 seconds?")!)?.answer === "no");
+
+  const panel = (answer: "yes" | "no", seen: string): ScreenReading => ({ answer, sure: 0.95, seen });
+  const r = await room();
+  await handleChat(r.line("nova", `!call ${Q}`, true), r.deps);
+  await handleChat(r.line("mika", "!yes"), r.deps);
+  r.readings.push(panel("yes", "KILLS 1"));
+  r.strong.push(panel("no", "KILLS 0"));
+  await r.at(SCREEN_GRACE_MS); await r.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
+  check("a number the strong model reads differently settles nothing, and the next look waits its turn",
+    (await liveStore.unsettled("kick", "100")).length === 1 && r.counts().asks === 1 && r.counts().confirms === 1, JSON.stringify(r.counts()));
+  const t = SCREEN_GRACE_MS + SCREEN_EVERY_MS;
+  r.readings.push(panel("yes", "KILLS 1"), panel("yes", "KILLS 1"));
+  r.strong.push(panel("yes", "KILLS 1, SURVIVAL TIME 00:41"), panel("yes", "KILLS 1, SURVIVAL TIME 00:41"));
+  await r.at(t);
+  check("...one agreeing look is not enough", (await liveStore.unsettled("kick", "100")).length === 1);
+  await r.at(t + SCREEN_CONFIRM_MS);
+  check("the two agreeing twice in a row settle it, with the panel's numbers in front",
+    (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith(`On stream: KILLS 1, SURVIVAL TIME 00:41. YES: "${Q}"`), r.last());
+
+  const w = await room({ strong: false });
+  await handleChat(w.line("nova", `!call ${Q}`, true), w.deps);
+  w.readings.push(panel("yes", "KILLS 1"), panel("yes", "KILLS 1"));
+  await w.at(SCREEN_GRACE_MS); await w.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
+  check("with no strong model to ask, a number call waits for the streamer", (await liveStore.unsettled("kick", "100")).length === 1);
 }
 
 console.log("\nX's picture is its live thumbnail");
