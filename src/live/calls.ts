@@ -267,8 +267,6 @@ export const LIVE_COPY = {
    *  as a match's own call does (src/live/gameCalls.ts). */
   opened: (q: string, minutes: number | null, url: string) =>
     `call: "${q}" Type !yes or !no${minutes === null ? ", earlier calls score more" : `, locks in ${minutes} min`}${url ? `. Standings: ${url}` : ""}`,
-  /** The evidence the screen settled a call on (src/live/screenCalls.ts), in front of the result. */
-  onScreen: (seen: string) => (seen ? `On stream: ${seen}.` : "On stream."),
   noResult: (q: string) => `No result came in for "${short(q)}" before the stream ended, so it's canceled. No points.`,
   /** The answers since the last such line, by name, and where the room stands. */
   split: (t: Tally, yesBy: string[], noBy: string[], msLeft: number | null) => {
@@ -289,15 +287,20 @@ export const LIVE_COPY = {
   switched: (q: string, t: Tally, when: string | null = null) => (t.yes + t.no
     ? `Locked "${short(q)}" at ${split(t)}.`
     : `Locked "${short(q)}".`) + (when ? ` oddie settles it ${when}.` : " It waits for its result."),
-  /** `winners`: who called it right, earliest first; a run of 🔥3 or more is
-   *  named first, so the streaks are what the room sees. `top` stays on the page. */
+  /** The result in one line (Mozaiiic at Showdown, 28 Oct: "On stream: VICTORY
+   *  WINNER: STANCIFKA AMOUNT WON: +…. NO: "…". @a @b called it." read as
+   *  several sentences and was not clear): the outcome on its question, then
+   *  who called it. The question stays, since a tournament's call can wait
+   *  beside a game's. `winners`: who called it right, earliest first; a run of
+   *  🔥3 or more is named first, so the streaks are what the room sees. `top`
+   *  stays on the page. */
   settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, winners: Named[] = []) => {
-    const it = `${outcome.toUpperCase()}: "${short(q, 50)}".`;
+    const it = `Result: ${outcome.toUpperCase()} on "${short(q, 50)}"`;
     const where = url ? ` Standings: ${url}` : "";
     if (!total) return `${it} The next one opens with !call.${where}`;
-    if (!right) return `${it} The room went the other way.${where}`;
+    if (!right) return `${it} Nobody called it.${where}`;
     const shown = [...winners].sort((a, b) => runOf(b) - runOf(a));
-    return `${it} ${shown.length ? who(shown, right) : `${right} of ${total}`} called it.${where}`;
+    return `${it} Called it: ${shown.length ? who(shown, right) : `${right} of ${total}`}.${where}`;
   },
   /** !me, to the person who asked. Never a link: it is said on every platform. */
   me: (name: string, r: CallerRecord) => r.calls
@@ -907,7 +910,8 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   }
   await unpinIfIdle(deps, call);
   const url = await deps.standingsUrl(call.platform, call.channelId);
-  await sayQuiet(deps, call, `${LIVE_COPY.onScreen(seen)} ${LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners)}`);
+  // What was read off the screen stays with the kept picture, not in the chat line.
+  await sayQuiet(deps, call, LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners));
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
   return true;

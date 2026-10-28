@@ -263,8 +263,10 @@ console.log("\nX live: votes, no market, no link (its chat refuses links, Lev's 
     (await onXEvent(chat("!matches on", host, on), w)) === "matches-on" && (await channelById("x", STREAMER))?.matchCalls === true);
   const call = await liveStore.current("x", STREAMER);
   const FRAME = Buffer.from("\xff\xd8 the frame oddie read \xff\xd9", "latin1");
-  check("a call the screen settles is said in the live chat", Boolean(call) && await settleOnScreen(call!, "yes", "VICTORY 13-11", eng, FRAME)
-    && sent.slice(s0).some((x) => x.text.startsWith("On stream: VICTORY 13-11.")));
+  check("a call the screen settles is said in the live chat as one short line, the screen's own words left out (Mozaiiic, 28 Oct)",
+    Boolean(call) && await settleOnScreen(call!, "yes", "VICTORY 13-11", eng, FRAME)
+    && sent.slice(s0).filter((x) => x.text.startsWith('Result: YES on "')).length === 1
+    && sent.slice(s0).every((x) => !x.text.includes("VICTORY 13-11") && x.text.length <= X_CHAT_MAX), JSON.stringify(sent.slice(s0).map((x) => x.text)));
   const pageData = await (await get("/api/live/x/AleksaFlamingo")).json() as { recent?: Array<{ frame: string | null }> };
   const framePath = pageData.recent?.[0]?.frame ?? "";
   check("the channel's page data names the picture it was settled on", framePath === `/api/live/x/AleksaFlamingo/frame/${call?.id}`, framePath);

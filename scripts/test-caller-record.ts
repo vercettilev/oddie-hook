@@ -64,13 +64,13 @@ console.log("\na run of right calls");
   const r = room();
   await r.round("one?", [["ana", "!yes"], ["bo", "!no"]], "yes");
   await r.round("two?", [["ana", "!yes"], ["bo", "!yes"]], "yes");
-  check("two in a row is not a streak yet", r.last() === 'YES: "two?". @ana @bo called it.', r.last());
+  check("two in a row is not a streak yet", r.last() === 'Result: YES on "two?" Called it: @ana @bo.', r.last());
   await r.round("three?", [["bo", "!yes"], ["ana", "!yes"]], "yes");
   check("the third right call in a row lights it, and the streak is named first",
-    r.last() === 'YES: "three?". @ana 🔥3 @bo called it.', r.last());
+    r.last() === 'Result: YES on "three?" Called it: @ana 🔥3 @bo.', r.last());
   await r.round("four?", [["cy", "!no"], ["dee", "!no"], ["eli", "!no"], ["ana", "!no"]], "no");
   check("past three names, the streak still makes the line and the rest are counted",
-    r.last() === 'YES: "four?". @ana 🔥4 @cy @dee +1 called it.'.replace("YES", "NO"), r.last());
+    r.last() === 'Result: NO on "four?" Called it: @ana 🔥4 @cy @dee +1.', r.last());
   await r.round("five?", [["ana", "!yes"], ["bo", "!no"]], "no");
   const runs = await streaksFor([{ platform: "kick", userId: "ana" }, { platform: "kick", userId: "bo" }, { platform: "kick", userId: "nobody" }]);
   // bo: wrong, right, right, (no answer), right. A call somebody skipped is not part of their run.

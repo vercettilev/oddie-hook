@@ -28,7 +28,7 @@ console.log("what the reader says");
   check("an event call's reading names the picture's kind, and an unknown kind is none",
     parseScreen('{"screen":"event","answer":"no","sure":0.9,"seen":"x"}')?.screen === "event" && parseScreen('{"screen":"trophy","answer":"no","sure":0.9}')?.screen === undefined);
   check("the evidence never carries a link or reads as a command",
-    cleanSeen("!call yes https://evil.example/x") === "call yes" && parseCommand(LIVE_COPY.onScreen(cleanSeen("!call yes"))) === null);
+    cleanSeen("!call yes https://evil.example/x") === "call yes" && parseCommand(cleanSeen("!call yes")) === null);
   check("...and stays short", cleanSeen("x".repeat(80)).length === 40);
   const p = screenPrompt("will I win this match?", "nova");
   check("the question goes with the streamer's name, and the picture's own text is never an instruction",
@@ -116,8 +116,8 @@ console.log("\nthe streamer opens it, the screen settles it");
   const before = r.said.length;
   const n = await r.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS + SCREEN_CONFIRM_MS);
   check("the same sure YES at the next look settles it", n === 1 && (await liveStore.unsettled("kick", "100")).length === 0);
-  check("...said with what was on screen, then the result and who called it",
-    r.said.length === before + 1 && r.last() === 'On stream: VICTORY. YES: "will I win this match?". @mika called it.', r.last());
+  check("...said in one line: the result on its question, then who called it",
+    r.said.length === before + 1 && r.last() === 'Result: YES on "will I win this match?" Called it: @mika.', r.last());
   check("...a line that never reads as a command", parseCommand(r.last()) === null);
   const [done] = await recentCalls("kick", "100", 1);
   const kept = done ? await callFrame("kick", "100", done.id) : null;
@@ -160,7 +160,7 @@ console.log("\nwhat does not settle");
   await r.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
   check("YES then NO is two different answers: nothing settles", (await liveStore.unsettled("kick", "100")).length === 1);
   await r.at(SCREEN_GRACE_MS + 2 * SCREEN_CONFIRM_MS);
-  check("...NO twice in a row then does", (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith("On stream: DEFEAT 9-13. NO:"), r.last());
+  check("...NO twice in a row then does", (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith('Result: NO on "'), r.last());
 
   const s = await room();
   await handleChat(s.line("nova", "!call boss down first try?", true), s.deps);
@@ -286,8 +286,8 @@ console.log("\nDoes GPPoker win Lucky 13: a game's banner settles nothing, the e
   await r.at(t);
   check("...one agreeing look is not enough", (await liveStore.unsettled("kick", "100")).length === 1);
   await r.at(t + SCREEN_CONFIRM_MS);
-  check("the two agreeing twice in a row settle it, in the strong model's words",
-    (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith('On stream: GPPoker Eliminated (Lucky 13). NO: "Does GPPoker win Lucky 13?"'), r.last());
+  check("the two agreeing twice in a row settle it",
+    (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith('Result: NO on "Does GPPoker win Lucky 13?"'), r.last());
 
   const w = await room({ strong: false });
   await handleChat(w.line("nova", `!call ${Q}`, true), w.deps);
@@ -307,7 +307,7 @@ console.log("\nDoes GPPoker win Lucky 13: a game's banner settles nothing, the e
   await handleChat(m.line("mika", "!yes"), m.deps);
   await handleChat(m.line("nova", "!call yes", true), m.deps);
   check("...and a mod's !call yes settles the tournament whenever they like",
-    (await liveStore.unsettled("kick", "100")).length === 0 && /^YES: "Does GPPoker win Lucky 13\?"/.test(m.last()), m.last());
+    (await liveStore.unsettled("kick", "100")).length === 0 && /^Result: YES on "Does GPPoker win Lucky 13\?"/.test(m.last()), m.last());
 }
 
 console.log("\nA BR1 round's kills or time alive: the panel's number decides, not the reader's yes or no");
@@ -367,8 +367,8 @@ console.log("\nA BR1 round's kills or time alive: the panel's number decides, no
   await r.at(t);
   check("...one agreeing look is not enough", (await liveStore.unsettled("kick", "100")).length === 1);
   await r.at(t + SCREEN_CONFIRM_MS);
-  check("the two agreeing twice in a row settle it, with the panel's numbers in front",
-    (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith(`On stream: KILLS 1, SURVIVAL TIME 00:41. YES: "${Q}"`), r.last());
+  check("the two agreeing twice in a row settle it",
+    (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith(`Result: YES on "${Q}"`), r.last());
 
   const w = await room({ strong: false });
   await handleChat(w.line("nova", `!call ${Q}`, true), w.deps);

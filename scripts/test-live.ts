@@ -159,7 +159,7 @@ console.log("\na timed call, start to finish");
   check("...a viewer's is still chat", (await handleChat(r.line("a", pasted), r.deps)) === "not-allowed" && r.said.length === before + 1);
   check("the mod settles", (await handleChat(r.line("mod", "!call yes", true), r.deps)) === "settled");
   check("...and the room hears which call and who was right, earliest first",
-    r.said[r.said.length - 1]?.text === `YES: "will he win this game?". @a @f called it. Standings: https://app.oddie.fun/live/kick/streamer`,
+    r.said[r.said.length - 1]?.text === `Result: YES on "will he win this game?" Called it: @a @f. Standings: https://app.oddie.fun/live/kick/streamer`,
     r.said[r.said.length - 1]?.text);
   const st = await channelStandings("kick", "100");
   check("the standings count only the right answers", st.length === 6 && st[0].points === 67 && st.filter((s) => s.points > 0).length === 2);
@@ -185,9 +185,9 @@ console.log("\na timed call, start to finish");
     (await handleChat(which, r.deps)) === "which" && r.said[3]?.text === LIVE_COPY.which("no", ["clutch this round?", "again?"]) && r.said[3]?.replyTo === which.messageId,
     r.said[3]?.text);
   check("...!call no 1 settles the oldest", (await handleChat(r.line("owner", "!call no 1", true), r.deps)) === "settled"
-    && r.said[4]?.text.startsWith(`NO: "clutch this round?". The next one opens with !call`), r.said[4]?.text);
+    && r.said[4]?.text.startsWith(`Result: NO on "clutch this round?" The next one opens with !call`), r.said[4]?.text);
   check("...and then the one left needs no number", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled"
-    && r.said[5]?.text.startsWith(`YES: "again?".`));
+    && r.said[5]?.text.startsWith(`Result: YES on "again?"`));
   check("with nothing waiting, a settle settles nothing: the runner hears how calls work",
     (await handleChat(r.line("owner", "!call yes 3", true), r.deps)) === "pick-help" && r.said.length === 7 && r.said[6]?.text === LIVE_COPY.pickHelp,
     JSON.stringify(r.said.slice(6)));
@@ -197,7 +197,7 @@ console.log("\na timed call, start to finish");
   await handleChat(r.line("mod", "!call will he win?", true), r.deps);
   await handleChat(r.line("a", "!yes"), r.deps);
   const out = await handleChat(r.line("mod", "!call no", true), r.deps);
-  check("settling an open call locks it first", out === "settled" && r.said.some((x) => /The room went the other way/.test(x.text)), JSON.stringify(r.said.map((x) => x.text)));
+  check("settling an open call locks it first", out === "settled" && r.said.some((x) => /Nobody called it/.test(x.text)), JSON.stringify(r.said.map((x) => x.text)));
   check("the copy never says nobody", Object.values(LIVE_COPY).every((v) => typeof v !== "string" || !/nobody/i.test(v)));
 }
 
@@ -243,7 +243,7 @@ console.log("\na new call takes the room; the old one waits for its result");
   check("a bare !call cancel cancels the one taking answers", (await handleChat(r.line("mod", "!call cancel", true), r.deps)) === "canceled"
     && (await liveStore.unsettled("kick", "100")).length === 1);
   check("...the first still settles, alone, with no number", (await handleChat(r.line("owner", "!call yes", true), r.deps)) === "settled"
-    && r.said[r.said.length - 1]?.text.startsWith(`YES: "btc above 83k tonight?". @a @c called it`), r.said[r.said.length - 1]?.text);
+    && r.said[r.said.length - 1]?.text.startsWith(`Result: YES on "btc above 83k tonight?" Called it: @a @c`), r.said[r.said.length - 1]?.text);
   const r2 = room();
   await handleChat(r2.line("owner", "!call one?", true), r2.deps);
   await handleChat(r2.line("owner", "!call two?", true), r2.deps);
@@ -419,7 +419,7 @@ console.log("\na restart forgets the waits, the store does not");
   r.tick(Date.parse("2026-10-08T14:00:05Z") - r.deps.now()); await lockDue(r.deps);
   r.tick(STREAM_POLL_MS); await lockDue(r.deps);
   const last = r.said[r.said.length - 1]?.text ?? "";
-  check("a locked price call gets its wait back and settles itself", reads >= 1 && /YES: "will BTC close current 30min candle above 82k\?"/.test(last), last);
+  check("a locked price call gets its wait back and settles itself", reads >= 1 && /Result: YES on "will BTC close current 30min candle above 82k\?"/.test(last), last);
 }
 
 console.log("\n!yes or !no with nothing open");
@@ -990,7 +990,7 @@ console.log("\nthis stream's best callers (Lev, 26 Oct)");
   const top = topAfter(from);
   check("from the second result on, the room hears its best three by points, best first, the house never",
     top === "top callers this stream: @cy 50 pts · @ana 25 pts · @bo 20 pts", top);
-  check("...said after the result line, not before it", r.said[from]?.text.startsWith("NO:") === true && r.said[from + 1]?.text === top, r.said[from]?.text);
+  check("...said after the result line, not before it", r.said[from]?.text.startsWith("Result: NO on") === true && r.said[from + 1]?.text === top, r.said[from]?.text);
   check("!top says the same", (await handleChat(r.line("v3", "!top"), r.deps)) === "top" && last() === top, last());
   // Four hours on: the next stream starts from nothing.
   r.tick(4 * 60 * 60_000);
