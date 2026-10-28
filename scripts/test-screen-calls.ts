@@ -327,6 +327,27 @@ console.log("\nA BR1 round's kills or time alive: the panel's number decides, no
   const show = (q: string) => { const r = statRule(q); return r ? `${r.stat}>=${r.atLeast}` : "none"; };
   check("a call on kills or time alive names its number and threshold",
     rules.every(([q, want]) => show(q) === want), rules.filter(([q, want]) => show(q) !== want).map(([q]) => `${q} -> ${show(q)}`).join(" | "));
+  /* VS Protocol (28 Oct): a run that reaches the ship ends on MISSION COMPLETE
+     with its SCORE; a death shows no panel, so the call waits for the next. */
+  const scores: Array<[string, string]> = [
+    ["Will Aleksa score 200+ on the next extraction?", "score>=200"], ["Will Aleksa score over 235 on the next extraction?", "score>=236"],
+    ["at least 150 points this run?", "score>=150"], ["Will Aleksa score 200 or more points on the next extraction?", "score>=200"],
+  ];
+  check("a call on a round's score names its threshold",
+    scores.every(([q, want]) => show(q) === want), scores.filter(([q, want]) => show(q) !== want).map(([q]) => `${q} -> ${show(q)}`).join(" | "));
+  const notScores = ["score 13-11 this map?", "final score 13:11?", "will I score 2 goals?", "will I score 3+ headshots?", "will I beat my best score?"];
+  check("...but a match's score, a count of goals or a best score is no score threshold",
+    notScores.every((q) => statRule(q) === null), notScores.filter((q) => statRule(q) !== null).join(" | "));
+  const sp = screenPrompt("Will Aleksa score 200+ on the next extraction?", "Aleksa Flamingo");
+  check("a score call's reader is asked for the round's own SCORE off its result panel, never the score counting up during play",
+    /"score":<a number, or null>/.test(sp) && /not a best, a record or a rank/.test(sp) && /The score counting up during play/.test(sp) && !/"kills"/.test(sp), sp.slice(-300));
+  const s200 = statRule("Will Aleksa score 200+ on the next extraction?")!;
+  check("SCORE 224 on the panel is a YES, 189 a NO, play or a death no answer",
+    parseStat(JSON.stringify({ screen: "panel", score: 224, sure: 0.95, seen: "MISSION COMPLETE SCORE 224" }), s200)?.answer === "yes"
+    && parseStat(JSON.stringify({ screen: "panel", score: "189", sure: 0.95 }), s200)?.answer === "no"
+    && parseStat(JSON.stringify({ screen: "panel", score: "1,240", sure: 0.95 }), s200)?.answer === "yes"
+    && parseStat(JSON.stringify({ screen: "other", score: 240, sure: 0.95 }), s200)?.answer === "unclear"
+    && parseStat(JSON.stringify({ screen: "panel", score: 224, sure: 0.95, seen: "" }), s200)?.seen === "SCORE 224");
   const judged = ["will I win this match?", "Will Aleksa win the next battle?", "Can Ondrej beat StanCifka?", "Will Aleksa win the Kill Race?",
     "will I get the first kill?", "will I kill the boss?", "will I survive this round?", "will I win in 10 minutes?", "will I get 10 kills tonight?",
     "Aleksa wins this hand?", "will I survive 3 rounds?"];
