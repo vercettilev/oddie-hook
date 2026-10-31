@@ -4,10 +4,11 @@
  * network topology (is it behind Cloudflare or hitting Railway directly?)
  * wasn't known at the time this shipped:
  *
- *   1. A CDN-provided country header, if present (Cloudflare's cf-ipcountry
- *      is the one this checks; a plain Railway deployment never sets it, so
- *      this path is a no-op there and falls through cleanly). Free, exact,
- *      no local computation.
+ *   1. A CDN-provided country header (Cloudflare's cf-ipcountry), counted
+ *      only when the connection itself came from Cloudflare (see
+ *      src/net/edge.ts): anybody reaching Railway directly can send the same
+ *      header, so on any other connection it is ignored and this path falls
+ *      through cleanly. Free, exact, no local computation.
  *   2. geoip-lite — a self-hosted, offline, MaxMind-GeoLite2-derived
  *      database bundled in node_modules. No external API call per request:
  *      no per-request latency, no rate limit, no cost at scale, and no
@@ -21,8 +22,9 @@
  * flagged explicitly as "a real tradeoff a compliance review should bless" —
  * that review happened, and the call for real money is fail-closed. The
  * practical cost is the same trade in the other direction: local dev now
- * needs an explicit cf-ipcountry header (or a real, resolvable public IP) to
- * exercise the "allowed" path — see scripts/test-geo.ts's fakeReq usage —
+ * needs a cf-ipcountry header on a request from a Cloudflare address (or a
+ * real, resolvable public IP) to exercise the "allowed" path — see
+ * scripts/test-geo.ts's fakeReq usage —
  * and a small number of real users with unresolvable IPs will be blocked
  * even though they may not actually be in a restricted location. That's the
  * intended shape for money: default to no, not default to yes.
@@ -30,6 +32,7 @@
 import type { Request } from "express";
 import geoip from "geoip-lite";
 import { isRestrictedLocation } from "./restrictedRegions.js";
+import { clientIp, cloudflareCountry } from "../net/edge.js";
 
 export interface ClientLocation {
   country: string | null;
@@ -43,27 +46,22 @@ export interface ClientLocation {
 const CF_UNKNOWN = new Set(["XX", "T1"]);
 
 /**
- * The real client IP, not the reverse proxy sitting in front of this app.
- * Requires `app.set("trust proxy", true)` (set once, in server.ts) so
- * Express parses X-Forwarded-For instead of reporting the proxy's own
- * address — assumed to be Railway's edge, which overwrites rather than
- * trusts any client-supplied X-Forwarded-For before forwarding, same as any
- * standard reverse proxy. If that assumption is wrong for this specific
- * deployment, this degrades to trusting a client-controlled header — a real
- * residual risk, called out here rather than left implicit.
+ * The visitor's own IP (src/net/edge.ts): Cloudflare's CF-Connecting-IP when
+ * the connection came from Cloudflare, otherwise the address Railway's edge
+ * saw, which server.ts's trust proxy setting of 1 makes req.ip.
  */
-function clientIp(req: Request): string | null {
-  return req.ip ?? null;
+function visitorIp(req: Request): string | null {
+  const ip = clientIp(req);
+  return ip === "unknown" ? null : ip;
 }
 
 export function resolveClientCountry(req: Request): ClientLocation {
-  const cfCountry = req.headers["cf-ipcountry"];
-  const cf = (Array.isArray(cfCountry) ? cfCountry[0] : cfCountry)?.toUpperCase();
+  const cf = cloudflareCountry(req);
   if (cf && !CF_UNKNOWN.has(cf)) {
     return { country: cf, region: null, source: "cdn-header", restricted: isRestrictedLocation(cf, null) };
   }
 
-  const ip = clientIp(req);
+  const ip = visitorIp(req);
   const hit = ip ? geoip.lookup(ip) : null;
   // Fail CLOSED: no country, no benefit of the doubt — see the file-level
   // comment above. This is a deliberate policy overlay, not a call to

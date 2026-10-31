@@ -85,6 +85,7 @@ import {
 } from "./chain/oddieChain.js";
 import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
+import { clientIp, edgeLockedOut, viaCloudflare } from "./net/edge.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
@@ -120,10 +121,26 @@ const app = express();
 // service, so trusting one hop makes req.ip the address THAT proxy observed,
 // which is the real client and is not writable from outside.
 //
-// If a second proxy is ever added in front (a CDN), this number goes to 2. Too
-// low is safe (limits get stricter and collapse onto the proxy); too high is
-// the hole above.
+// A CDN in front does NOT change this number. Going to 2 would make req.ip
+// right through Cloudflare and caller-written around it; src/net/edge.ts reads
+// Cloudflare's own header instead, only when Cloudflare is the one connecting.
+// Too low is safe (limits get stricter and collapse onto the proxy); too high
+// is the hole above.
 app.set("trust proxy", 1);
+
+// Behind Cloudflare, only Cloudflare gets in (CLOUDFLARE_ONLY, src/net/edge.ts).
+// First in line, so a request that went around it costs one short 403.
+app.use((req, res, next) => {
+  if (!edgeLockedOut(req)) return next();
+  res.status(403).set("Cache-Control", "no-store").type("text").send("Use https://app.oddie.fun");
+});
+
+/** How this request reached us, for checking the Cloudflare setup from a
+ *  browser: "cloudflare" once the DNS name is proxied, "direct" before. The
+ *  only address it shows is the caller's own. */
+app.get("/api/edge", (req, res) => {
+  res.set("Cache-Control", "no-store").json({ via: viaCloudflare(req) ? "cloudflare" : "direct", ip: clientIp(req) });
+});
 
 // The split itself. Only GET/HEAD navigations are redirected: an API POST that
 // lands on the wrong host is a caller's bug and a 301 would silently turn it
@@ -237,7 +254,7 @@ const GENESIS_SEASON = (process.env.GENESIS_SEASON ?? "true").toLowerCase() === 
  *  tags rather than body attributes because the shells have no explicit
  *  <body>. Both stamps ride the same charset anchor. */
 
-const stampApp = (html: string): string => {
+const stampShell = (html: string): string => {
   const metas = (APP_X_GATE ? '\n<meta name="oddie-xgate" content="1">' : "")
     + (GENESIS_SEASON ? '\n<meta name="oddie-genesis" content="1">' : "");
   const stamped = metas ? html.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + metas) : html;
@@ -250,6 +267,15 @@ const stampApp = (html: string): string => {
      WHOLE link or this hides a word mid-sentence and leaves prose broken. */
   return GENESIS_SEASON ? stamped
     : stamped.split('<a href="/leaderboard">Leaderboard</a>').join('<a href="/leaderboard" hidden>Leaderboard</a>');
+};
+/* Both flags are read once at boot and every caller passes one of the shells
+   read at boot, so a shell stamps the same way every time. Stamp it once:
+   copying ~170 KB per request is what a flood of page loads spends CPU on. */
+const stampedShells = new Map<string, string>();
+const stampApp = (html: string): string => {
+  let out = stampedShells.get(html);
+  if (out === undefined) { out = stampShell(html); stampedShells.set(html, out); }
+  return out;
 };
 
 /**
@@ -633,7 +659,7 @@ app.get("/", async (req, res) => {
  * comes near, and a shared one so a spread-out flood still stops.
  */
 function meteredRoute(req: express.Request, res: express.Response, name: string, perIp: number): boolean {
-  const ip = String(req.ip ?? req.socket.remoteAddress ?? "unknown");
+  const ip = clientIp(req);
   if (overLimit(`${name}:${ip}`, perIp)) {
     res.status(429).json({ error: `rate limit: ${perIp} per hour` });
     return false;
@@ -4588,7 +4614,7 @@ app.get("/api/v1/markets/:slug", async (req, res) => {
  * would be the "tagged by anonymous" problem returning through a new door.
  */
 app.post("/api/v1/markets", async (req, res) => {
-  const ip = String(req.ip ?? req.socket.remoteAddress ?? "unknown");
+  const ip = clientIp(req);
   if (overLimit(`v1create:${ip}`, 5)) {
     return res.status(429).json({ ok: false, error: "rate limit: 5 markets per hour per client" });
   }
