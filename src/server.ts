@@ -85,7 +85,7 @@ import {
 } from "./chain/oddieChain.js";
 import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
-import { clientIp, edgeLockedOut, viaCloudflare } from "./net/edge.js";
+import { clientIp, edgeLockedOut, edgeMisconfigured, takeStamp, viaCloudflare } from "./net/edge.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { TAGLINE } from "./brand.js";
@@ -121,23 +121,28 @@ const app = express();
 // service, so trusting one hop makes req.ip the address THAT proxy observed,
 // which is the real client and is not writable from outside.
 //
-// A CDN in front does NOT change this number. Going to 2 would make req.ip
-// right through Cloudflare and caller-written around it; src/net/edge.ts reads
-// Cloudflare's own header instead, only when Cloudflare is the one connecting.
-// Too low is safe (limits get stricter and collapse onto the proxy); too high
-// is the hole above.
+// Cloudflare in front does NOT change this number: measured 2026-10-31,
+// Railway's edge already hands us the visitor's address behind Cloudflare, so
+// one hop is still the visitor (src/net/edge.ts). Too low is safe (limits get
+// stricter and collapse onto the proxy); too high is the hole above.
 app.set("trust proxy", 1);
 
 // Behind Cloudflare, only Cloudflare gets in (CLOUDFLARE_ONLY, src/net/edge.ts).
-// First in line, so a request that went around it costs one short 403.
+// First in line, so a request that went around it costs one short 403, and the
+// zone's stamp is taken off before anything else can see it.
 app.use((req, res, next) => {
+  takeStamp(req);
   if (!edgeLockedOut(req)) return next();
   res.status(403).set("Cache-Control", "no-store").type("text").send("Use https://app.oddie.fun");
 });
+{
+  const problem = edgeMisconfigured();
+  if (problem) console.error(`[edge] ${problem}`);
+}
 
 /** How this request reached us, for checking the Cloudflare setup from a
- *  browser: "cloudflare" once the DNS name is proxied, "direct" before. The
- *  only address it shows is the caller's own. */
+ *  browser: "cloudflare" when the zone stamped it, "direct" when it went
+ *  around. The only address it shows is the caller's own. */
 app.get("/api/edge", (req, res) => {
   res.set("Cache-Control", "no-store").json({ via: viaCloudflare(req) ? "cloudflare" : "direct", ip: clientIp(req) });
 });

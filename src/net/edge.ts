@@ -1,41 +1,29 @@
 /**
  * WHO IS ACTUALLY ON THE OTHER END OF A REQUEST.
  *
- * Railway's edge is the one proxy this service trusts (server.ts sets trust
- * proxy to 1), so req.ip is whatever connected to that edge. Without a CDN
- * that is the visitor. With app.oddie.fun proxied through Cloudflare it is one
- * of Cloudflare's own machines, and every per-visitor limit keyed on it
- * (meteredRoute, the v1 create quota) would collapse onto a handful of
- * Cloudflare addresses: a crowd watching one stream would share one hourly
- * quota and the first few people would spend it for everybody.
+ * Measured on 2026-10-31, with app.oddie.fun and oddie.fun proxied through
+ * Cloudflare: Railway's edge recognises Cloudflare by itself and hands this
+ * service the VISITOR's address, so req.ip (trust proxy 1, see server.ts) is
+ * the visitor whichever way the request came, and a forged X-Forwarded-For,
+ * X-Real-IP or CF-Connecting-IP changes nothing. Per-visitor limits
+ * (meteredRoute, the v1 create quota) need no help from here.
  *
- * Cloudflare writes the visitor's address into CF-Connecting-IP and the
- * visitor's country into CF-IPCountry. Those are ordinary request headers,
- * though, and anybody who reaches Railway without going through Cloudflare
- * can send them too. So they count only when the connection itself came from
- * one of Cloudflare's published ranges, and are ignored everywhere else.
+ * The same measurement takes away any way of telling, from addresses, whether
+ * a request came through Cloudflare at all: Cloudflare's own machine is never
+ * the address this service sees. And Railway's edge answers anybody who
+ * connects to it directly with our Host header, which walks around everything
+ * the Cloudflare zone does (its DDoS protection, its rate limiting rule).
  *
- * Bumping trust proxy to 2 instead would read the right address through
- * Cloudflare and a caller-written one around it, which is the hole the trust
- * proxy comment in server.ts describes.
+ * So the zone stamps its own requests. A Request Header Transform Rule in the
+ * Cloudflare dashboard sets x-oddie-edge on every request to a value only the
+ * zone and this service know (ORIGIN_SECRET in Railway). A request carrying it
+ * came through Cloudflare; one without it went around.
  */
+import { createHash, timingSafeEqual } from "node:crypto";
 import { BlockList, isIP } from "node:net";
 import type { Request } from "express";
 
-/* cloudflare.com/ips-v4 and /ips-v6, read 2026-10-31. Cloudflare changes these
-   rarely and announces it; an address missing from here only makes a visitor
-   look like a direct caller (keyed on the Cloudflare machine, and refused
-   while CLOUDFLARE_ONLY is on), it never lets a forged header through. */
-const CLOUDFLARE_V4 = [
-  "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
-  "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
-  "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
-  "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
-];
-const CLOUDFLARE_V6 = [
-  "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32",
-  "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32",
-];
+export const EDGE_HEADER = "x-oddie-edge";
 
 /* Addresses that never come in from the internet: loopback, the private
    ranges, carrier-grade NAT (Railway's own network) and IPv6 unique-local.
@@ -44,15 +32,9 @@ const CLOUDFLARE_V6 = [
    itself). */
 const INTERNAL_V4 = ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16"];
 const INTERNAL_V6 = ["::1/128", "fc00::/7", "fe80::/10"];
-
-function listOf(v4: string[], v6: string[]): BlockList {
-  const list = new BlockList();
-  for (const cidr of v4) { const [net, bits] = cidr.split("/"); list.addSubnet(net, Number(bits), "ipv4"); }
-  for (const cidr of v6) { const [net, bits] = cidr.split("/"); list.addSubnet(net, Number(bits), "ipv6"); }
-  return list;
-}
-const cloudflare = listOf(CLOUDFLARE_V4, CLOUDFLARE_V6);
-const internal = listOf(INTERNAL_V4, INTERNAL_V6);
+const internal = new BlockList();
+for (const cidr of INTERNAL_V4) { const [net, bits] = cidr.split("/"); internal.addSubnet(net, Number(bits), "ipv4"); }
+for (const cidr of INTERNAL_V6) { const [net, bits] = cidr.split("/"); internal.addSubnet(net, Number(bits), "ipv6"); }
 
 /** A clean address or null. Node reports IPv4 peers on a dual-stack socket as
  *  "::ffff:1.2.3.4"; the ranges above are written as plain IPv4. */
@@ -62,37 +44,53 @@ function bare(value: unknown): string | null {
   return isIP(v) ? v : null;
 }
 
-function inList(list: BlockList, ip: string | null): boolean {
-  if (!ip) return false;
-  return list.check(ip, isIP(ip) === 6 ? "ipv6" : "ipv4");
-}
-
 function header(req: Request, name: string): string | undefined {
   const v = req.headers[name];
   return Array.isArray(v) ? v[0] : v;
 }
 
-/** The address that connected to Railway's edge: the visitor, or Cloudflare. */
+/** Read per call rather than at boot, so a rotated secret needs no code path
+ *  of its own and the tests can set one. */
+const originSecret = (): string => (process.env.ORIGIN_SECRET ?? "").trim();
+const digest = (v: string): Buffer => createHash("sha256").update(v).digest();
+
+function stampMatches(req: Request): boolean {
+  const secret = originSecret();
+  const got = header(req, EDGE_HEADER);
+  if (!secret || !got) return false;
+  return timingSafeEqual(digest(got), digest(secret));
+}
+
+/* The stamp is checked once, by the first middleware, and then taken off the
+   request so no handler, error page or log line downstream ever holds the
+   value. What is remembered is only that it matched. */
+const stamped = new WeakSet<object>();
+
+/** First thing on every request: remember whether the zone stamped it, then
+ *  drop the header. */
+export function takeStamp(req: Request): void {
+  if (stampMatches(req)) stamped.add(req);
+  delete req.headers[EDGE_HEADER];
+}
+
+/** True when the request came through the Cloudflare zone. */
+export function viaCloudflare(req: Request): boolean {
+  return stamped.has(req) || stampMatches(req);
+}
+
+/** The address that connected to Railway's edge, which Railway reports as the
+ *  visitor's own even when Cloudflare is in between (see the top of the file). */
 export function peerIp(req: Request): string | null {
   return bare(req.ip) ?? bare(req.socket?.remoteAddress);
 }
 
-/** True when the request reached Railway from one of Cloudflare's machines. */
-export function viaCloudflare(req: Request): boolean {
-  return inList(cloudflare, peerIp(req));
-}
-
-/** The visitor's own address: Cloudflare's word for it when Cloudflare is the
- *  one asking, the connecting address otherwise. */
+/** The visitor's address, the key every per-visitor limit uses. */
 export function clientIp(req: Request): string {
-  if (viaCloudflare(req)) {
-    const told = bare(header(req, "cf-connecting-ip"));
-    if (told) return told;
-  }
   return peerIp(req) ?? "unknown";
 }
 
-/** Cloudflare's country for the visitor, only when Cloudflare sent it. */
+/** Cloudflare's country for the visitor, only on a request the zone stamped:
+ *  on any other request cf-ipcountry is a header the caller wrote. */
 export function cloudflareCountry(req: Request): string | null {
   if (!viaCloudflare(req)) return null;
   const v = header(req, "cf-ipcountry")?.trim().toUpperCase();
@@ -102,19 +100,26 @@ export function cloudflareCountry(req: Request): string | null {
 /**
  * THE CLOUDFLARE-ONLY SWITCH, BEHIND A FLAG.
  *
- * Proxying the DNS names through Cloudflare protects nothing on its own while
- * Railway still answers anybody who connects to it directly, by its
- * *.up.railway.app name or by its edge address with our Host header. With
- * CLOUDFLARE_ONLY=true every request from the internet that did not come
- * through Cloudflare gets a short 403 before any route runs. Off by default
- * and an env change rather than a deploy, so it goes on only after the proxy
- * is confirmed working (GET /api/edge answers "cloudflare") and comes off
- * just as fast.
+ * With CLOUDFLARE_ONLY=true every request from the internet that does not carry
+ * the zone's stamp gets a short 403 before any route runs, so going around
+ * Cloudflare buys a caller nothing heavier than that. Off by default and an
+ * env change rather than a deploy, so it goes on only once GET /api/edge
+ * answers "cloudflare" through the real domain, and comes off just as fast.
+ * With no ORIGIN_SECRET set there is nothing to check a stamp against, and the
+ * switch refuses nobody rather than everybody.
  */
 export const CLOUDFLARE_ONLY = (process.env.CLOUDFLARE_ONLY ?? "").toLowerCase() === "true";
 
 export function edgeLockedOut(req: Request, on: boolean = CLOUDFLARE_ONLY): boolean {
-  if (!on) return false;
+  if (!on || !originSecret()) return false;
   if (viaCloudflare(req)) return false;
-  return !inList(internal, peerIp(req));
+  const ip = peerIp(req);
+  return !(ip && internal.check(ip, isIP(ip) === 6 ? "ipv6" : "ipv4"));
+}
+
+/** Said once at boot when the switch is on but has no secret to check. */
+export function edgeMisconfigured(): string | null {
+  return CLOUDFLARE_ONLY && !originSecret()
+    ? "CLOUDFLARE_ONLY is on but ORIGIN_SECRET is empty, so nothing is locked"
+    : null;
 }

@@ -17,9 +17,11 @@ function check(name: string, ok: boolean, detail = ""): void {
 
 const fakeReq = (headers: Record<string, string>, ip: string | null): Request =>
   ({ headers, ip: ip ?? undefined }) as unknown as Request;
-// One of Cloudflare's published edge addresses (104.16.0.0/13): the header path
-// only counts on a connection that really came from Cloudflare.
-const CF_EDGE = "104.16.0.1";
+// The Cloudflare zone stamps its requests (src/net/edge.ts); the header path only
+// counts on a stamped request. Read per call, so setting it here is enough.
+const STAMP = "test-zone-stamp";
+process.env.ORIGIN_SECRET = STAMP;
+const viaCf = (headers: Record<string, string>): Record<string, string> => ({ ...headers, "x-oddie-edge": STAMP });
 
 console.log("\nisRestrictedLocation: the OFAC-comprehensive baseline, nothing more");
 {
@@ -57,33 +59,33 @@ console.log("\nisRestrictedLocation: the Ukraine sub-national carve-out");
 
 console.log("\nresolveClientCountry: CDN header path (Cloudflare cf-ipcountry)");
 {
-  const cu = resolveClientCountry(fakeReq({ "cf-ipcountry": "CU" }, CF_EDGE));
+  const cu = resolveClientCountry(fakeReq(viaCf({ "cf-ipcountry": "CU" }), "203.0.113.1"));
   check("a restricted CDN header is trusted directly, no geoip-lite lookup needed",
     cu.source === "cdn-header" && cu.restricted === true, JSON.stringify(cu));
 
-  const us = resolveClientCountry(fakeReq({ "cf-ipcountry": "US" }, CF_EDGE));
+  const us = resolveClientCountry(fakeReq(viaCf({ "cf-ipcountry": "US" }), "203.0.113.1"));
   check("an allowed CDN header passes through as not restricted",
     us.source === "cdn-header" && us.restricted === false, JSON.stringify(us));
 
-  const unknown = resolveClientCountry(fakeReq({ "cf-ipcountry": "XX" }, CF_EDGE));
+  const unknown = resolveClientCountry(fakeReq(viaCf({ "cf-ipcountry": "XX" }), "8.8.8.8"));
   check("Cloudflare's own 'unknown' marker (XX) is never treated as a real country — falls through to geoip-lite",
     unknown.source !== "cdn-header", JSON.stringify(unknown));
 
-  const tor = resolveClientCountry(fakeReq({ "cf-ipcountry": "T1" }, CF_EDGE));
+  const tor = resolveClientCountry(fakeReq(viaCf({ "cf-ipcountry": "T1" }), "8.8.8.8"));
   check("Cloudflare's Tor marker (T1) also falls through, not treated as a country",
     tor.source !== "cdn-header", JSON.stringify(tor));
 
   // The header is just a header: a caller that reaches Railway directly can
-  // write any country it likes. Only Cloudflare's own connection makes it count.
+  // write any country it likes. Only the zone's stamp makes it count.
   const forged = resolveClientCountry(fakeReq({ "cf-ipcountry": "US" }, "8.8.8.8"));
-  check("a cf-ipcountry header on a direct (non-Cloudflare) connection is ignored — geoip-lite decides",
+  check("a cf-ipcountry header on an unstamped (direct) request is ignored — geoip-lite decides",
     forged.source === "geoip-lite" && forged.country === "US", JSON.stringify(forged));
-  const forgedAway = resolveClientCountry(fakeReq({ "cf-ipcountry": "DE", "cf-connecting-ip": "8.8.8.8" }, "203.0.113.1"));
-  check("…and a forged header cannot move a direct caller out of where its own address puts it",
+  const forgedAway = resolveClientCountry(fakeReq({ "cf-ipcountry": "DE", "x-oddie-edge": "a-guess" }, "203.0.113.1"));
+  check("…and a wrong stamp is no stamp: a forged country cannot move a caller out of where its address puts it",
     forgedAway.source !== "cdn-header", JSON.stringify(forgedAway));
-  const behindCf = resolveClientCountry(fakeReq({ "cf-connecting-ip": "8.8.8.8" }, CF_EDGE));
-  check("behind Cloudflare with no country header, geoip-lite reads the visitor's address, not Cloudflare's",
-    behindCf.source === "geoip-lite" && behindCf.country === "US", JSON.stringify(behindCf));
+  const stampedNoCountry = resolveClientCountry(fakeReq(viaCf({}), "8.8.8.8"));
+  check("a stamped request with no country header falls back to geoip-lite on the visitor's address",
+    stampedNoCountry.source === "geoip-lite" && stampedNoCountry.country === "US", JSON.stringify(stampedNoCountry));
 }
 
 console.log("\nresolveClientCountry: geoip-lite fallback (no CDN header present)");

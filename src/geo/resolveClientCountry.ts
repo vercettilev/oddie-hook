@@ -5,10 +5,10 @@
  * wasn't known at the time this shipped:
  *
  *   1. A CDN-provided country header (Cloudflare's cf-ipcountry), counted
- *      only when the connection itself came from Cloudflare (see
- *      src/net/edge.ts): anybody reaching Railway directly can send the same
- *      header, so on any other connection it is ignored and this path falls
- *      through cleanly. Free, exact, no local computation.
+ *      only on a request the Cloudflare zone stamped (see src/net/edge.ts):
+ *      anybody reaching Railway directly can send the same header, so on any
+ *      other request it is ignored and this path falls through cleanly.
+ *      Free, exact, no local computation.
  *   2. geoip-lite — a self-hosted, offline, MaxMind-GeoLite2-derived
  *      database bundled in node_modules. No external API call per request:
  *      no per-request latency, no rate limit, no cost at scale, and no
@@ -22,8 +22,8 @@
  * flagged explicitly as "a real tradeoff a compliance review should bless" —
  * that review happened, and the call for real money is fail-closed. The
  * practical cost is the same trade in the other direction: local dev now
- * needs a cf-ipcountry header on a request from a Cloudflare address (or a
- * real, resolvable public IP) to exercise the "allowed" path — see
+ * needs a cf-ipcountry header on a stamped request (or a real, resolvable
+ * public IP) to exercise the "allowed" path — see
  * scripts/test-geo.ts's fakeReq usage —
  * and a small number of real users with unresolvable IPs will be blocked
  * even though they may not actually be in a restricted location. That's the
@@ -46,9 +46,9 @@ export interface ClientLocation {
 const CF_UNKNOWN = new Set(["XX", "T1"]);
 
 /**
- * The visitor's own IP (src/net/edge.ts): Cloudflare's CF-Connecting-IP when
- * the connection came from Cloudflare, otherwise the address Railway's edge
- * saw, which server.ts's trust proxy setting of 1 makes req.ip.
+ * The visitor's own IP (src/net/edge.ts): the address Railway's edge reports,
+ * which is the visitor's whether or not Cloudflare is in between, and which
+ * server.ts's trust proxy setting of 1 makes req.ip.
  */
 function visitorIp(req: Request): string | null {
   const ip = clientIp(req);
