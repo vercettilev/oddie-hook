@@ -1,23 +1,27 @@
 /**
  * WHO IS ACTUALLY ON THE OTHER END OF A REQUEST.
  *
- * Measured on 2026-10-31, with app.oddie.fun and oddie.fun proxied through
- * Cloudflare: Railway's edge recognises Cloudflare by itself and hands this
- * service the VISITOR's address, so req.ip (trust proxy 1, see server.ts) is
- * the visitor whichever way the request came, and a forged X-Forwarded-For,
- * X-Real-IP or CF-Connecting-IP changes nothing. Per-visitor limits
- * (meteredRoute, the v1 create quota) need no help from here.
+ * Measured on 2026-10-31, against Railway's own request log: req.ip (trust
+ * proxy 1, see server.ts) is NOT the visitor. It is one of Railway's edge
+ * servers (AS60068, Amsterdam, 152.233.x.x), whichever way the request came,
+ * while Railway's log shows the visitor's real address for the same request.
+ * So every per-visitor limit keyed on req.ip (meteredRoute, the v1 create
+ * quota) was quietly one limit shared by everybody behind the same edge
+ * server, and the geoip fallback placed every visitor in the Netherlands.
  *
- * The same measurement takes away any way of telling, from addresses, whether
- * a request came through Cloudflare at all: Cloudflare's own machine is never
- * the address this service sees. And Railway's edge answers anybody who
- * connects to it directly with our Host header, which walks around everything
- * the Cloudflare zone does (its DDoS protection, its rate limiting rule).
+ * The same measurement also means addresses cannot tell whether a request came
+ * through Cloudflare at all, and Railway's edge answers anybody who connects
+ * to it directly with our Host header, which walks around everything the
+ * Cloudflare zone does (its DDoS protection, its rate limiting rule).
  *
  * So the zone stamps its own requests. A Request Header Transform Rule in the
  * Cloudflare dashboard sets x-oddie-edge on every request to a value only the
  * zone and this service know (ORIGIN_SECRET in Railway). A request carrying it
- * came through Cloudflare; one without it went around.
+ * came through Cloudflare, and on such a request Cloudflare's own
+ * CF-Connecting-IP and CF-IPCountry are the visitor's (Cloudflare refuses a
+ * request that arrives already carrying CF-Connecting-IP). A request without
+ * the stamp went around Cloudflare, and its CF headers are whatever the caller
+ * wrote.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import { BlockList, isIP } from "node:net";
@@ -78,14 +82,19 @@ export function viaCloudflare(req: Request): boolean {
   return stamped.has(req) || stampMatches(req);
 }
 
-/** The address that connected to Railway's edge, which Railway reports as the
- *  visitor's own even when Cloudflare is in between (see the top of the file). */
+/** The address this service sees: Railway's edge server for anything from the
+ *  internet, the caller itself for anything internal (see the top of the file). */
 export function peerIp(req: Request): string | null {
   return bare(req.ip) ?? bare(req.socket?.remoteAddress);
 }
 
-/** The visitor's address, the key every per-visitor limit uses. */
+/** The visitor's address, the key every per-visitor limit uses: Cloudflare's
+ *  word for it on a stamped request, the address we see otherwise. */
 export function clientIp(req: Request): string {
+  if (viaCloudflare(req)) {
+    const told = bare(header(req, "cf-connecting-ip"));
+    if (told) return told;
+  }
   return peerIp(req) ?? "unknown";
 }
 

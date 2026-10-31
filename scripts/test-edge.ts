@@ -47,10 +47,20 @@ console.log("\ntakeStamp: checked once, then gone from the request");
   check("a wrong stamp is removed too, and the request stays direct", !(EDGE_HEADER in forged.headers) && !viaCloudflare(forged));
 }
 
-console.log("\nclientIp: the visitor, as Railway's edge reports it");
+console.log("\nclientIp: the visitor, from Cloudflare on a stamped request");
 {
-  check("the visitor's address is the key", clientIp(req(VISITOR)) === VISITOR);
-  check("a forged CF-Connecting-IP changes nothing", clientIp(req(VISITOR, { "cf-connecting-ip": "1.2.3.4" })) === VISITOR);
+  const RAILWAY_EDGE = "152.233.12.245"; // what req.ip actually is from the internet
+  check("stamped, the visitor is CF-Connecting-IP, not Railway's edge server",
+    clientIp(req(RAILWAY_EDGE, { [EDGE_HEADER]: STAMP, "cf-connecting-ip": VISITOR })) === VISITOR);
+  const taken = req(RAILWAY_EDGE, { [EDGE_HEADER]: STAMP, "cf-connecting-ip": VISITOR });
+  takeStamp(taken);
+  check("…and still after the first middleware has taken the stamp off", clientIp(taken) === VISITOR);
+  check("stamped over IPv6, same", clientIp(req(RAILWAY_EDGE, { [EDGE_HEADER]: STAMP, "cf-connecting-ip": "2001:db8::7" })) === "2001:db8::7");
+  check("stamped with a header that is not an address, fall back to the address we see",
+    clientIp(req(RAILWAY_EDGE, { [EDGE_HEADER]: STAMP, "cf-connecting-ip": "not-an-ip" })) === RAILWAY_EDGE);
+  check("unstamped, a forged CF-Connecting-IP changes nothing",
+    clientIp(req(RAILWAY_EDGE, { "cf-connecting-ip": "1.2.3.4" })) === RAILWAY_EDGE);
+  check("unstamped, the address we see is the key", clientIp(req(VISITOR)) === VISITOR);
   check("a mapped IPv4 peer is reported plainly", clientIp(req("::ffff:203.0.113.9")) === "203.0.113.9");
   check("no address at all reads as 'unknown', the key the old code used", clientIp(req(undefined)) === "unknown");
 }

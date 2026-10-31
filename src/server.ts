@@ -121,10 +121,13 @@ const app = express();
 // service, so trusting one hop makes req.ip the address THAT proxy observed,
 // which is the real client and is not writable from outside.
 //
-// Cloudflare in front does NOT change this number: measured 2026-10-31,
-// Railway's edge already hands us the visitor's address behind Cloudflare, so
-// one hop is still the visitor (src/net/edge.ts). Too low is safe (limits get
-// stricter and collapse onto the proxy); too high is the hole above.
+// MEASURED 2026-10-31: with one hop trusted, req.ip turned out to be one of
+// Railway's own edge servers, not the visitor, so the per-IP limits below were
+// shared by everybody behind the same edge server. They now key on clientIp
+// (src/net/edge.ts), which takes the visitor from Cloudflare's CF-Connecting-IP
+// on a request the Cloudflare zone stamped. This number stays 1: too low is
+// safe (limits get stricter and collapse onto the proxy); too high is the hole
+// above.
 app.set("trust proxy", 1);
 
 // Behind Cloudflare, only Cloudflare gets in (CLOUDFLARE_ONLY, src/net/edge.ts).

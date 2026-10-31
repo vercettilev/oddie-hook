@@ -46,9 +46,10 @@ export interface ClientLocation {
 const CF_UNKNOWN = new Set(["XX", "T1"]);
 
 /**
- * The visitor's own IP (src/net/edge.ts): the address Railway's edge reports,
- * which is the visitor's whether or not Cloudflare is in between, and which
- * server.ts's trust proxy setting of 1 makes req.ip.
+ * The visitor's own IP (src/net/edge.ts): Cloudflare's CF-Connecting-IP on a
+ * request the zone stamped. Otherwise req.ip, which from the internet is one
+ * of Railway's edge servers rather than the visitor (measured 2026-10-31), so
+ * the geoip fallback only means something behind Cloudflare.
  */
 function visitorIp(req: Request): string | null {
   const ip = clientIp(req);

@@ -83,6 +83,9 @@ console.log("\nresolveClientCountry: CDN header path (Cloudflare cf-ipcountry)")
   const forgedAway = resolveClientCountry(fakeReq({ "cf-ipcountry": "DE", "x-oddie-edge": "a-guess" }, "203.0.113.1"));
   check("…and a wrong stamp is no stamp: a forged country cannot move a caller out of where its address puts it",
     forgedAway.source !== "cdn-header", JSON.stringify(forgedAway));
+  const behindCf = resolveClientCountry(fakeReq(viaCf({ "cf-connecting-ip": "8.8.8.8" }), "152.233.12.245"));
+  check("stamped with no country header, geoip-lite reads the visitor Cloudflare names, not Railway's edge server",
+    behindCf.source === "geoip-lite" && behindCf.country === "US", JSON.stringify(behindCf));
   const stampedNoCountry = resolveClientCountry(fakeReq(viaCf({}), "8.8.8.8"));
   check("a stamped request with no country header falls back to geoip-lite on the visitor's address",
     stampedNoCountry.source === "geoip-lite" && stampedNoCountry.country === "US", JSON.stringify(stampedNoCountry));
