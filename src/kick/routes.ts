@@ -92,6 +92,25 @@ const kickChat: KickChat = { bot: sendChat, user: sendChatAsUser };
 const botCannotPost = new Set<string>();
 
 /**
+ * A REPLY KICK WILL NOT TAKE goes once more as a line of its own: a line sent
+ * as a reply that comes back 400 or 422. A reply may not reach across
+ * channels (oddie's account answering in another's chat), and on Twitch it
+ * may not reach an older line: live on 1 Nov a market's result, said as a
+ * reply to the line that opened it, was refused there from both accounts and
+ * never reached the chat (src/twitch/routes.ts). A refusal of the line itself
+ * goes to the caller, as before.
+ */
+async function replyOrAlone(send: (replyTo?: string) => Promise<void>, replyTo?: string, refused?: (status: number) => void): Promise<void> {
+  try { await send(replyTo); }
+  catch (e) {
+    const st = (e as { status?: number }).status;
+    if (!replyTo || (st !== 400 && st !== 422)) throw e;
+    refused?.(st);
+    await send();
+  }
+}
+
+/**
  * ONE VOICE IN EVERY CHAT. Speaking as the channel's own account meant that
  * in a stream oddie's answer arrived under the streamer's name: "oddiefun:
  * Market open..." in oddiefun's chat reads as the streamer typing it. So a
@@ -110,8 +129,10 @@ const voiceSlugFrom = (d: { voice?: string }): string =>
 export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets" | "voice">, chat: KickChat = kickChat): LiveDeps {
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const deliver = async (token: string, channelId: string, text: string, replyTo?: string) => {
+    const refused = (st: number) => d.log("kick reply refused, the line goes on its own", { channel: channelId, status: st });
     if (!botCannotPost.has(channelId)) {
-      try { await chat.bot(token, text, replyTo); return; }
+      // A reply the bot may not make is no reason to bench it: only the line is.
+      try { await replyOrAlone((r) => chat.bot(token, text, r), replyTo, refused); return; }
       catch (e) {
         const st = (e as { status?: number }).status;
         if (st !== 404 && st !== 400) throw e;
@@ -119,7 +140,7 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
         d.log("kick bot cannot post here, sending as the channel's account", { channel: channelId, status: st });
       }
     }
-    await chat.user(token, channelId, text, replyTo);
+    await replyOrAlone((r) => chat.user(token, channelId, text, r), replyTo, refused);
   };
   const voiceSlug = voiceSlugFrom(d);
   /** True when oddie's own account said it. False hands the line on. */
@@ -130,15 +151,17 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
     const voice = await channelBySlug("kick", voiceSlug).catch(() => null);
     // In its own chat the voice is the channel, and the channel's path is it.
     if (!voice?.active || !voice.accessToken || voice.channelId === channelId) return false;
-    const send = async (force: boolean, reply?: string) => chat.user(await tokenFor(voice, force), channelId, text, reply);
+    const send = async (force: boolean) => {
+      const token = await tokenFor(voice, force);
+      await replyOrAlone((r) => patiently(() => chat.user(token, channelId, text, r)), replyTo);
+    };
     const st = (e: unknown) => (e as { status?: number }).status;
     try {
-      try { await patiently(() => send(false, replyTo)); }
+      // An expired token says 401: refresh once and say it again, reply and all.
+      try { await send(false); }
       catch (e) {
-        if (st(e) === 401) await patiently(() => send(true, replyTo));
-        // A reply may not reach across channels; the line itself still can.
-        else if (replyTo && (st(e) === 400 || st(e) === 422)) await patiently(() => send(false));
-        else throw e;
+        if (st(e) !== 401) throw e;
+        await send(true);
       }
       voiceCannotPost.delete(channelId);
       return true;

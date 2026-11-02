@@ -738,6 +738,78 @@ console.log("\noddie speaks as itself in every chat");
   check("with no voice set, a channel speaks for itself as before", sent.some((x) => x === "user:lev-tok:900:old way"), sent.join("|"));
 }
 
+console.log("\na reply Kick will not take, on every path (Twitch, 1 Nov: two results never reached a chat)");
+{
+  _resetLiveStore();
+  await saveChannel({ platform: "kick", channelId: "131980691", slug: "oddiefun", name: "oddiefun", avatar: null,
+    accessToken: "voice-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  for (const [id, tok] of [["960", "bot-ok"], ["961", "no-bot"], ["962", "plain"], ["963", "down"], ["964", "shut"]]) {
+    await saveChannel({ platform: "kick", channelId: id, slug: `k${id}`, name: `k${id}`, avatar: null,
+      accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  const fail = (status: number) => { const e = new Error(`kick POST /chat ${status}`) as Error & { status?: number }; e.status = status; return e; };
+  // Kick refuses a reply to the line the market was opened from; the rest is as live.
+  const OLD = "opened-yesterday";
+  const tries: string[] = [];
+  const sent: string[] = [];
+  let expired = 0;
+  const chat: KickChat = {
+    bot: async (t, text, reply) => {
+      tries.push(`bot:${t}:${reply ?? "-"}`);
+      if (t === "no-bot") throw fail(404);
+      if (t === "down") throw fail(500);
+      if (t === "shut" || reply === OLD) throw fail(400);
+      sent.push(`bot:${t}:${text}:${reply ?? "-"}`);
+    },
+    user: async (t, ch, text, reply) => {
+      tries.push(`user:${t}:${ch}:${reply ?? "-"}`);
+      if (t === "voice-tok" && expired > 0) { expired--; throw fail(401); }
+      if (t === "shut" || reply === OLD) throw fail(400);
+      sent.push(`user:${t}:${ch}:${text}:${reply ?? "-"}`);
+    },
+  };
+  const logs: string[] = [];
+  const own = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "" }, chat);
+  const result = `It's NO: "NEAR above $5?" Winners collect at https://app.oddie.fun/m/near-above-5`;
+  const reset = () => { tries.length = 0; sent.length = 0; logs.length = 0; };
+  /** One line said, and the error it ended in: a lost line is a failed check, not a crash. */
+  const say = (deps: LiveDeps, channel: string, text: string, replyTo?: string) =>
+    deps.say("kick", channel, text, replyTo).then(() => null, (e) => e as Error & { status?: number });
+
+  let lost = await say(own, "960", result, OLD);
+  check("the channel's bot, refused the reply, says the result once more on its own",
+    !lost && sent.join("|") === `bot:bot-ok:${result}:-` && tries.join("|") === `bot:bot-ok:${OLD}|bot:bot-ok:-`, lost?.message ?? tries.join("|"));
+  check("...and the bot is not benched in that channel for it",
+    !logs.includes("kick bot cannot post here, sending as the channel's account") && logs.includes("kick reply refused, the line goes on its own"), logs.join("|"));
+  reset();
+  await say(own, "960", "the next line");
+  check("...so the next line is the bot's too", sent.join("|") === "bot:bot-ok:the next line:-", sent.join("|"));
+  reset();
+  await say(own, "960", "a fresh answer", "just-now");
+  check("a reply Kick takes is still a reply, asked once", tries.join("|") === "bot:bot-ok:just-now" && sent.length === 1, tries.join("|"));
+
+  reset();
+  lost = await say(own, "961", result, OLD);
+  check("where the bot cannot post, the channel's account says it, on its own too",
+    !lost && sent.join("|") === `user:no-bot:961:${result}:-` && tries.join("|") === `bot:no-bot:${OLD}|user:no-bot:961:${OLD}|user:no-bot:961:-`,
+    lost?.message ?? tries.join("|"));
+  reset();
+  lost = await say(own, "963", result, OLD);
+  check("an outage is not the reply's fault: asked once, never again without it", lost?.status === 500 && tries.join("|") === `bot:down:${OLD}`, tries.join("|"));
+  reset();
+  lost = await say(own, "964", result, OLD);
+  check("refused on its own as well, the line is not asked a third time: the 400 reaches the caller",
+    lost?.status === 400 && tries.length === 4 && tries.filter((x) => x.endsWith(":-")).length === 2 && sent.length === 0, tries.join("|"));
+
+  reset();
+  const voiced = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  expired = 1;
+  lost = await say(voiced, "962", result, OLD);
+  check("oddie's account, its token refreshed on the way, still says the result itself, on its own",
+    !lost && sent.join("|") === `user:voice-tok:962:${result}:-` && !logs.includes("kick voice cannot post here, sending as the channel's account"),
+    lost?.message ?? `${tries.join("|")} ${logs.join("|")}`);
+}
+
 console.log("\na streamer's 2%: which channel, which wallet, which markets");
 {
   // Which channel: a cookie from the end of Kick's own sign-in, never a link.

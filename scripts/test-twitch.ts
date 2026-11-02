@@ -297,7 +297,7 @@ console.log("\na reply Twitch will not take goes on its own (1 Nov: two results 
     const e = new Error(`twitch POST /chat/messages ${code} ${JSON.stringify({ error: code === 400 ? "Bad Request" : "Forbidden", status: code, message: why })}`) as Error & { status?: number };
     e.status = code; return e;
   };
-  // Twitch's own words for the line a market was opened from, a day on.
+  // Twitch's own words for a reply to the line a market was opened from.
   const cannotReply = () => twitchSays(400, "The request's input was not valid. Message cannot be replied to.");
   const tries: Array<{ token: string; b: string; replyTo?: string }> = [];
   const sent: Array<{ token: string; b: string; text: string; replyTo?: string }> = [];
