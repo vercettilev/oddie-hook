@@ -111,9 +111,25 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
       return f(await tokenFor(from, true));
     }
   };
-  /** Say it as `from`: the line's id, when Twitch gives one. */
+  /**
+   * Say it as `from`: the line's id, when Twitch gives one. A REPLY TWITCH WILL
+   * NOT TAKE goes once more as a line of its own. Live on 1 Nov: a result, said
+   * as a reply to the line that opened its market, came back 400 "Message
+   * cannot be replied to" from oddie's account, which was benched for ten
+   * minutes over it, and again from the channel's; neither of that night's two
+   * results reached the chat. A result names its market, so it reads the same
+   * without the thread. Only a 400: a ban or a drop refuses the account, not
+   * the reply.
+   */
   const as = async (from: LiveChannel, channelId: string, text: string, replyTo?: string): Promise<string | null> =>
-    remember((await withToken(from, (t) => chat.send(t, channelId, from.channelId, text, replyTo))) || null);
+    remember((await withToken(from, async (t) => {
+      try { return await chat.send(t, channelId, from.channelId, text, replyTo); }
+      catch (e) {
+        if (!replyTo || status(e) !== 400) throw e;
+        d.log("twitch reply refused, the line goes on its own", { channel: channelId, sender: from.slug, err: (e as Error).message.slice(0, 200) });
+        return chat.send(t, channelId, from.channelId, text);
+      }
+    })) || null);
   const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<{ said: boolean; id: string | null }> => {
     const no = { said: false, id: null };
     if (!voiceLogin) return no;

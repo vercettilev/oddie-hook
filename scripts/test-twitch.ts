@@ -287,6 +287,103 @@ console.log("\n\"too quickly\" is no refusal (8 Oct: one 429 and oddie spoke as 
   _setPace({ gapMs: 0, retryMs: [0, 0] });
 }
 
+console.log("\na reply Twitch will not take goes on its own (1 Nov: two results never reached a pilot's chat)");
+{
+  _resetLiveStore(); _resetLive();
+  for (const [id, slug, tok] of [["7201", "pilot", "p-tok"], ["7202", "banned", "n-tok"], ["7203", "broken", "k-tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug, avatar: null, accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  const twitchSays = (code: number, why: string) => {
+    const e = new Error(`twitch POST /chat/messages ${code} ${JSON.stringify({ error: code === 400 ? "Bad Request" : "Forbidden", status: code, message: why })}`) as Error & { status?: number };
+    e.status = code; return e;
+  };
+  // Twitch's own words for the line a market was opened from, a day on.
+  const cannotReply = () => twitchSays(400, "The request's input was not valid. Message cannot be replied to.");
+  const tries: Array<{ token: string; b: string; replyTo?: string }> = [];
+  const sent: Array<{ token: string; b: string; text: string; replyTo?: string }> = [];
+  const chat: TwitchChat = {
+    send: async (token, b, _s, text, replyTo) => {
+      tries.push({ token, b, replyTo });
+      if (b === "7202" && token === "v-tok") throw twitchSays(403, "The sender is not permitted to send chat messages to the broadcaster's chat room.");
+      if (b === "7203") throw replyTo ? cannotReply() : twitchSays(400, "The request's input was not valid.");
+      if (replyTo === "opened-yesterday") throw cannotReply();
+      sent.push({ token, b, text, replyTo }); return `r-${sent.length}`;
+    },
+  };
+  const logs: string[] = [];
+  const eng = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  const result = `It's NO: "NEAR above $5?" Winners collect at https://app.oddie.fun/m/near-above-5`;
+  const benched = "twitch voice cannot post here, sending as the channel's account";
+  const reset = () => { tries.length = 0; sent.length = 0; logs.length = 0; };
+  /** One line said, and the error it ended in: a lost line is a failed check, not a crash. */
+  const say = (channel: string, text: string, replyTo?: string) =>
+    eng.say("twitch", channel, text, replyTo).then(() => null, (e) => e as Error & { status?: number });
+
+  const lost = await say("7201", result, "opened-yesterday");
+  check("a result Twitch will not take as a reply still reaches the chat, from oddie's account, as a line of its own",
+    !lost && sent.length === 1 && sent[0].token === "v-tok" && sent[0].b === "7201" && sent[0].text === result && sent[0].replyTo === undefined,
+    lost?.message ?? JSON.stringify(sent));
+  check("...asked once as a reply and once without, no more",
+    tries.length === 2 && tries[0].replyTo === "opened-yesterday" && tries[1].replyTo === undefined, JSON.stringify(tries));
+  check("...and oddie's account is not benched for it", !logs.includes(benched) && logs.includes("twitch reply refused, the line goes on its own"), JSON.stringify(logs));
+  reset();
+  await say("7201", "the next line");
+  check("...so the next line is oddie's too", sent.length === 1 && sent[0].token === "v-tok", JSON.stringify(sent));
+  reset();
+  await say("7201", "a fresh answer", "just-now");
+  check("a reply Twitch takes is still a reply, asked once", tries.length === 1 && sent[0]?.replyTo === "just-now", JSON.stringify(tries));
+
+  reset();
+  const lostHere = await say("7202", result, "opened-yesterday");
+  check("where oddie's account may not post, the channel's says it, on its own too",
+    !lostHere && sent.length === 1 && sent[0].token === "n-tok" && sent[0].replyTo === undefined && logs.includes(benched),
+    lostHere?.message ?? JSON.stringify({ sent, logs }));
+  check("...a refusal of the account is never asked again without the reply: once from oddie, twice from the channel",
+    tries.length === 3 && tries[0].token === "v-tok" && tries[1].token === "n-tok" && tries[1].replyTo === "opened-yesterday" && tries[2].replyTo === undefined,
+    JSON.stringify(tries));
+
+  reset();
+  const failed = await say("7203", result, "opened-yesterday");
+  check("refused on its own as well, the line is not asked a third time: the 400 reaches the caller",
+    failed?.status === 400 && tries.length === 4 && tries.filter((x) => x.replyTo === undefined).length === 2 && sent.length === 0, JSON.stringify(tries));
+}
+
+console.log("\n...and through the real client, against Twitch's own 400");
+{
+  _resetLiveStore(); _resetLive();
+  for (const [id, slug, tok] of [["7301", "pilot2", "p-tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug, avatar: null, accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  const realFetch = globalThis.fetch;
+  const asked: Array<{ url: string; auth: string; body: Record<string, unknown> }> = [];
+  globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
+    const url = String(u);
+    if (!url.startsWith("https://api.twitch.tv/")) return realFetch(u, init);
+    const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    asked.push({ url, auth: String((init?.headers as Record<string, string> | undefined)?.authorization ?? ""), body });
+    if (body.reply_parent_message_id) {
+      return new Response(JSON.stringify({ error: "Bad Request", status: 400, message: "The request's input was not valid. Message cannot be replied to." }), { status: 400 });
+    }
+    return new Response(JSON.stringify({ data: [{ message_id: `line-${asked.length}`, is_sent: true, drop_reason: null }] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const eng = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "oddiefun" });
+    const result = `It's YES: "HYPE above $90 all week?" Winners collect at https://app.oddie.fun/m/hype-above-90`;
+    const id = await eng.say("twitch", "7301", result, "opened-yesterday").catch((e) => e as Error);
+    check("the second ask is the same line, from oddie's account, with no reply_parent_message_id",
+      asked.length === 2 && asked.every((a) => a.url === "https://api.twitch.tv/helix/chat/messages")
+      && asked[0].body.reply_parent_message_id === "opened-yesterday" && !("reply_parent_message_id" in asked[1].body)
+      && asked[1].body.message === result && asked[1].body.sender_id === "9009" && asked[1].body.broadcaster_id === "7301" && asked[1].auth === "Bearer v-tok",
+      JSON.stringify(asked));
+    check("...and Twitch's id for it comes back", id === "line-2", String(id));
+    asked.length = 0;
+    await eng.say("twitch", "7301", "x".repeat(600), "opened-yesterday").catch(() => {});
+    check("...under the same 500 characters as any line", asked.length === 2 && String(asked[1].body.message).length === 500, String(asked[1]?.body.message).length.toString());
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
 console.log("\nthe sign-in");
 {
   _resetLiveStore(); _resetLive();
