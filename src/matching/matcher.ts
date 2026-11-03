@@ -167,27 +167,34 @@ function parseThreshold(text: string): number | null {
 const PRICED_QUESTION = /\$\s?\d/;
 const HAS_NUMBER = /\d/;
 
-/** Very rough horizon parser: "today" -> 0, "this week" -> 7, "this year" -> days to Dec 31, etc. */
-function parseHorizonDays(text: string): number | null {
+/**
+ * Very rough horizon parser: "today" -> 0, "this week" -> 7, "this year" -> days to Dec 31, etc.
+ *
+ * `now` is passed in, never read here, because "this year" is measured from it:
+ * the same take is 175 days out on July 9 and 59 on Nov 2, under the 60-day bar
+ * of the horizon filter. Read off the wall clock, the matcher's own test meant
+ * something different every day, and went red on a clean main on Nov 2, 2026.
+ */
+function parseHorizonDays(text: string, now: number): number | null {
   const t = text.toLowerCase();
-  const now = new Date();
+  const year = new Date(now).getFullYear();
   if (/\btoday\b/.test(t)) return 0;
   if (/\bthis week\b/.test(t)) return 7;
   if (/\bthis month\b/.test(t)) return 30;
   if (/\bnext year\b/.test(t)) {
-    const endNext = new Date(now.getFullYear() + 1, 11, 31);
-    return Math.ceil((endNext.getTime() - now.getTime()) / 86_400_000);
+    const endNext = new Date(year + 1, 11, 31);
+    return Math.ceil((endNext.getTime() - now) / 86_400_000);
   }
   if (/\bthis year\b|\bby (the )?end of (the )?year\b|\beoy\b/.test(t)) {
-    const endYear = new Date(now.getFullYear(), 11, 31);
-    return Math.ceil((endYear.getTime() - now.getTime()) / 86_400_000);
+    const endYear = new Date(year, 11, 31);
+    return Math.ceil((endYear.getTime() - now) / 86_400_000);
   }
   return null;
 }
 
-function daysUntil(iso: string | null): number | null {
+function daysUntil(iso: string | null, now: number): number | null {
   if (!iso) return null;
-  const ms = new Date(iso).getTime() - Date.now();
+  const ms = new Date(iso).getTime() - now;
   return Number.isNaN(ms) ? null : ms / 86_400_000;
 }
 
@@ -254,7 +261,7 @@ function corroborates(tweetText: string, m: Market): boolean {
  * Hard-filter check: true if this market should be EXCLUDED as a candidate
  * for this tweet, independent of how well the words overlap.
  */
-function isDisqualified(tweetText: string, m: Market): boolean {
+function isDisqualified(tweetText: string, m: Market, now: number): boolean {
   // 1) Same asset named on both sides + both give a numeric threshold that
   //    disagrees materially -> different claim entirely, exclude.
   const tweetAssets = assetsIn(tweetText);
@@ -272,8 +279,8 @@ function isDisqualified(tweetText: string, m: Market): boolean {
   // 2) Tweet implies a long horizon ("this year") but the market resolves
   //    within days -> by the time the tweet's claim could play out, this
   //    market has already settled on unrelated timing. Exclude.
-  const tweetHorizon = parseHorizonDays(tweetText);
-  const marketHorizon = daysUntil(m.closesAt);
+  const tweetHorizon = parseHorizonDays(tweetText, now);
+  const marketHorizon = daysUntil(m.closesAt, now);
   if (tweetHorizon !== null && tweetHorizon >= 60 && marketHorizon !== null && marketHorizon <= 3) {
     return true;
   }
@@ -537,18 +544,22 @@ const TIE_EPSILON = 1e-9;
  * as the tweet?") is answered by lexical overlap alone. Liquidity only orders
  * markets that already passed, so a heavily-traded market can never buy its
  * way over the bar, and a thin one can never be dropped for being thin.
+ *
+ * `now` is the clock the horizon filter measures from. The app leaves it at
+ * the wall clock; the test pins it (see parseHorizonDays).
  */
 export function matchTweet(
   tweetText: string,
   markets: Market[],
   minScore = MIN_OVERLAP,
+  now = Date.now(),
 ): MatchResult | null {
   const tokens = new Set(tokenize(tweetText));
   if (tokens.size === 0) return null;
 
   const candidates: MatchResult[] = [];
   for (const market of markets) {
-    if (isDisqualified(tweetText, market)) continue; // structured check wins over lexical score
+    if (isDisqualified(tweetText, market, now)) continue; // structured check wins over lexical score
     const score = scoreMarket(tokens, market);
     if (score < minScore) continue;
     // Overlap is hits/max(3, size), so this recovers hits exactly.
@@ -583,13 +594,13 @@ export function matchTweet(
  * knowledge should override, so a market they reject never even reaches the
  * referee — cheap pruning, and one less way to be talked into a wrong card.
  */
-export function candidateMarkets(tweetText: string, markets: Market[], limit = 12): MatchResult[] {
+export function candidateMarkets(tweetText: string, markets: Market[], limit = 12, now = Date.now()): MatchResult[] {
   const tokens = new Set(tokenize(tweetText));
   if (tokens.size === 0) return [];
 
   const candidates: MatchResult[] = [];
   for (const market of markets) {
-    if (isDisqualified(tweetText, market)) continue;
+    if (isDisqualified(tweetText, market, now)) continue;
     const score = scoreMarket(tokens, market);
     if (score <= 0) continue; // zero-overlap markets enter via the volume fill, not here
     candidates.push({ market, score });
@@ -607,6 +618,6 @@ export function candidateMarkets(tweetText: string, markets: Market[], limit = 1
 /** The disqualifier, exported for the semantic stage's volume fill: a market
  *  structurally wrong for the tweet must not enter the candidate list through
  *  ANY door. Correctness gates apply everywhere; confidence gates do not. */
-export function disqualified(tweetText: string, m: Market): boolean {
-  return isDisqualified(tweetText, m);
+export function disqualified(tweetText: string, m: Market, now = Date.now()): boolean {
+  return isDisqualified(tweetText, m, now);
 }

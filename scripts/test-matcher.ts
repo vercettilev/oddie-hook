@@ -1,7 +1,7 @@
 // Offline, hermetic checks for the matcher. No network, no server.
 // Run with: npm run test-matcher
 //
-// Two rules this file tries to obey:
+// Three rules this file tries to obey:
 //
 // 1. Every decoy market is given MORE volume than the correct one. Volume is
 //    the tie-break, so if a hard filter is deleted (or `isDisqualified` is made
@@ -14,10 +14,16 @@
 //    market was excluded by the threshold check AND the horizon check, so
 //    either one could rot undetected behind the other.
 //
+// 3. Nothing here reads the wall clock. "this year" is measured from now, so a
+//    fixture timed off Date.now() meant something different every day: from
+//    Nov 2, 2026 (59 days left, under the 60-day bar) it went red on a clean
+//    main, and its Dec 31, 2026 closes would have kept it red from then on.
+//    Every check runs at NOW unless it moves the clock on purpose.
+//
 // The overlap numbers asserted at the bottom are the ones MIN_OVERLAP is
 // calibrated against. They live here, executed, rather than only in a comment.
 
-import { matchTweet } from "../src/matching/matcher.js";
+import { matchTweet as matchTweetAt } from "../src/matching/matcher.js";
 import { categorizeText } from "../src/matching/categorize.js";
 import type { Market } from "../src/venues/types.js";
 
@@ -38,7 +44,18 @@ function got(m: ReturnType<typeof matchTweet>): string {
   return m ? `"${m.market.question}" (${m.market.venueId}, score ${m.score.toFixed(3)})` : "null";
 }
 
-const IN_3H = new Date(Date.now() + 3 * 3_600_000).toISOString();
+/**
+ * The suite's clock. July 9 is the day the 3-hour market below is named for;
+ * "this year" then has 175 days left, well over the horizon filter's 60.
+ */
+const NOW = Date.parse("2026-07-09T12:00:00Z");
+
+/** matchTweet at NOW. A check that moves the clock calls matchTweetAt itself. */
+function matchTweet(tweet: string, markets: Market[], minScore?: number): ReturnType<typeof matchTweetAt> {
+  return matchTweetAt(tweet, markets, minScore, NOW);
+}
+
+const IN_3H = new Date(NOW + 3 * 3_600_000).toISOString();
 const YEAR_END = "2026-12-31T23:59:00Z";
 
 /** Decoys outrank the correct market on the tie-break, so a dead filter shows up. */
@@ -110,6 +127,28 @@ console.log("nothing suitable");
   // The correct market removed: the honest answer is null, not the best leftover.
   const r = matchTweet(BTC_TWEET, [btcWrongThreshold, btcWrongHorizon]);
   check("no correct market -> null rather than the runner-up", r === null, `got ${got(r)}`);
+}
+
+// ---------------------------------------------------------------------------
+// The horizon is measured from the matcher's clock, not the wall's.
+//
+// "this year" is the days left to Dec 31, so the same take is a long horizon at
+// NOW and a short one in December. On Dec 31 it means today, and a market that
+// closes in three hours is inside it. The plumbing is checked from both ends: if
+// the horizon parser goes back to the wall clock, the checks above go red in
+// November and December, and this one in every other month.
+//
+// 06:00 UTC, not noon: the parser reads the year in local time, and noon UTC on
+// Dec 31 is already New Year's Day in Auckland.
+// ---------------------------------------------------------------------------
+console.log("horizon follows the matcher's clock");
+{
+  const DEC_31 = Date.parse("2026-12-31T06:00:00Z");
+  const closingSoon = mk("BTC-DEC31", "Will Bitcoin close above $150,000 in 2026?", {
+    closesAt: new Date(DEC_31 + 3 * 3_600_000).toISOString(),
+  });
+  const r = matchTweetAt(BTC_TWEET, [closingSoon], undefined, DEC_31);
+  check('on Dec 31 "this year" means today: a market closing in 3 hours still matches', r?.market.venueId === "BTC-DEC31", `got ${got(r)}`);
 }
 
 // ---------------------------------------------------------------------------
