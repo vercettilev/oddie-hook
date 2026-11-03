@@ -1029,33 +1029,73 @@
      window has a fixed height once script runs, so the page never moves while
      it plays; without script it is the whole Kick conversation. No translate
      on .tale: it carries .reveal (see KAIDE above). */
-  .tale{grid-column:1/-1;width:100%;max-width:470px;margin:clamp(22px,3vw,40px) auto 0}
-  .tale__tabs{display:none;flex-wrap:wrap;gap:6px 16px;margin:0 0 16px}
-  .tale--js .tale__tabs{display:flex}
-  .tale__tab{background:none;border:0;padding:2px 0;cursor:pointer;font-family:var(--display);
-    font-size:clamp(20px,2.2vw,26px);line-height:1;text-transform:uppercase;color:rgba(251,252,244,.34)}
-  .tale__tab.on{color:var(--yellow);text-shadow:3px 4px 0 var(--pink)}
-  .tale__tab:focus-visible,.tale__door:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
-  .tale__chat{rotate:-1deg}
-  .tale__chat .chat__src{justify-content:space-between}
-  .tale__src{display:flex;align-items:center;gap:8px}
-  .tale__doors{display:none;gap:6px}
-  .tale--js .tale__doors{display:flex}
-  .tale__door{display:grid;place-items:center;width:30px;height:30px;padding:0;cursor:pointer;
-    background:none;border:1.5px solid rgba(251,252,244,.22);opacity:.55}
-  .tale__door.on{opacity:1;border-color:var(--yellow)}
+  /* EVERY DOOR, ITS OWN STREAM (Lev, 3 Nov, after CRSH). The window is a
+     stream page in small: the stream drawn on the left, the app's own chat on
+     the right, one door per platform above. Fixed heights once script runs,
+     so a story never moves the page. No translate on .tale: it carries
+     .reveal (see KAIDE above). */
+  .tale{grid-column:1/-1;width:100%;max-width:920px;margin:clamp(22px,3vw,40px) auto 0}
+  .tale__doors{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+  .tale:not(.tale--js) .tale__doors{display:none}
+  @media (max-width:420px){.tale__doors{gap:6px}.tale__door{gap:5px;padding:5px 8px;font-size:13px}.tale__door .mk{width:13px;height:13px}}
+  .tale__door{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:6px 12px;cursor:pointer;
+    background:transparent;color:rgba(251,252,244,.72);border:2px solid rgba(251,252,244,.22);
+    font-family:var(--display);font-size:15px;text-transform:uppercase;letter-spacing:.02em}
+  .tale__door[aria-selected="true"]{background:var(--yellow);color:var(--ink);border-color:var(--yellow)}
+  .tale__door:focus-visible{outline:3px solid var(--yellow);outline-offset:3px}
+  .tale__stage{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:14px;align-items:stretch}
+  @media (max-width:760px){.tale__stage{grid-template-columns:minmax(0,1fr)}}
+  .tale__chat{rotate:.6deg;display:flex;flex-direction:column;min-width:0}
+  .tale__cap{margin:16px 0 0;font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+    color:rgba(251,252,244,.66)}
+  .tale__cap b{color:var(--yellow);font-weight:700}
+  /* THE STREAM, DRAWN. Each scene is plain shapes in the page's own palette:
+     a game's HUD, a chart, a table, a map. The result arrives as a banner
+     across the middle, the moment Oddie reads. */
+  .sc{position:relative;aspect-ratio:16/9;overflow:hidden;background:#0b0f16;border:2px solid rgba(251,252,244,.22);
+    box-shadow:6px 7px 0 var(--pink);rotate:-.6deg;color:#fff;font-family:var(--mono)}
+  .sc svg{position:absolute;inset:0;width:100%;height:100%}
+  .sc__live{position:absolute;left:10px;top:10px;padding:2px 7px;background:#e01e3c;color:#fff;font-size:11px;font-weight:800;letter-spacing:.1em}
+  .sc__hud{position:absolute;left:0;right:0;top:10px;display:flex;justify-content:center;gap:12px;align-items:center;font-size:13px;font-weight:800}
+  .sc__hud b{padding:2px 10px;background:rgba(0,0,0,.55);font-size:15px}
+  .sc__ct{color:#7cc4ff} .sc__t{color:#ffb35c}
+  .sc__vs{position:absolute;right:12px;top:44px;padding:3px 9px;background:rgba(0,0,0,.6);color:#ff5d5d;font-size:13px;font-weight:800}
+  .sc__x{position:absolute;left:50%;top:52%;width:22px;height:22px;translate:-50% -50%}
+  .sc__x::before,.sc__x::after{content:"";position:absolute;background:#53FC19}
+  .sc__x::before{left:10px;top:0;width:2px;height:22px} .sc__x::after{top:10px;left:0;height:2px;width:22px}
+  .sc__ammo{position:absolute;right:12px;bottom:10px;font-size:14px;font-weight:800;color:#fff}
+  .sc__hp{position:absolute;left:12px;bottom:10px;font-size:14px;font-weight:800;color:#53FC19}
+  .sc__pair{position:absolute;left:12px;top:36px;margin:0;font-size:12px;font-weight:800;color:rgba(255,255,255,.8)}
+  .sc__px{position:absolute;right:12px;top:32px;margin:0;font-size:16px;font-weight:800;color:#26d07c}
+  .sc__clock{position:absolute;right:12px;bottom:10px;margin:0;font-size:12px;color:rgba(255,255,255,.7)}
+  /* The candle still forming is short until it closes, then it is the green one. */
+  .sc--chart .sc__last{scale:1 .14;transition:scale .6s cubic-bezier(.16,1,.3,1)}
+  .sc--chart.is-won .sc__last{scale:1 1}
+  .sc__felt{position:absolute;left:12%;right:12%;top:22%;bottom:16%;border-radius:50%;background:radial-gradient(ellipse at center,#1f6b46,#0f3b27);
+    border:5px solid #3a2414;display:flex;align-items:center;justify-content:center;gap:5px}
+  .sc__card{display:grid;place-items:center;width:9%;aspect-ratio:5/7;background:#fff;border-radius:4px;color:#111;font-size:13px;font-weight:800}
+  .sc__card.r{color:#d1203c}
+  .sc__seat{position:absolute;top:8%;padding:3px 8px;background:rgba(0,0,0,.6);font-size:12px;font-weight:800}
+  .sc__seat--a{left:6%} .sc__seat--b{right:6%}
+  .sc__left{position:absolute;right:12px;top:10px;margin:0;padding:2px 8px;background:rgba(0,0,0,.6);font-size:13px;font-weight:800}
+  .sc__ban{position:absolute;left:0;right:0;top:50%;translate:0 -50%;margin:0;padding:10px 0;text-align:center;
+    background:rgba(2,3,2,.72);font-family:var(--display);font-size:clamp(26px,4.2vw,44px);line-height:1;text-transform:uppercase;
+    color:var(--yellow);text-shadow:3px 3px 0 var(--pink);opacity:0;scale:.86;transition:opacity .25s ease-out,scale .35s cubic-bezier(.16,1,.3,1)}
+  .sc__ban small{display:block;margin-top:6px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:#fff;text-shadow:none}
+  .sc.is-won .sc__ban{opacity:1;scale:1}
+  /* The table's cards stay in sight: its result runs along the bottom. */
+  .sc--cards .sc__ban{top:auto;bottom:6%;translate:none}
+  @media (prefers-reduced-motion:reduce){.sc__ban,.sc--chart .sc__last{transition:none}}
   .chat{background:#0f1210;border:2px solid rgba(251,252,244,.22);padding:14px 14px 12px;
     color:var(--cream);box-shadow:6px 7px 0 var(--pink)}
   .chat__src{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
     letter-spacing:.12em;text-transform:uppercase;color:rgba(251,252,244,.66);margin:0 0 10px}
-  /* A REAL CALL (Lev, 3 Nov). The same chat window the scripted story used, so
-     the section keeps its look; inside it, the call as it happened: the
-     question, how the room split, the picture Oddie read and the result. */
+  /* A LIVE CALL (Lev, 3 Nov): the same chat window the story uses, with the
+     question, how the room splits and the door to watch it and call it. */
   .callc{grid-column:1/-1;width:100%;max-width:520px;margin:clamp(22px,3vw,40px) auto 0}
   .callc__chat{rotate:-1deg}
   .callc__src{justify-content:space-between;gap:12px}
   .callc__at{display:flex;align-items:center;gap:8px;min-width:0}
-  .callc__when{flex:none;color:rgba(251,252,244,.5)}
   .callc__live{flex:none;color:var(--ink);background:var(--yellow);padding:2px 7px;letter-spacing:.12em}
   .callc__q{margin:2px 0 10px;font-family:var(--display);font-size:clamp(22px,2.6vw,30px);line-height:1.05;
     text-transform:uppercase;color:var(--yellow)}
@@ -1065,16 +1105,6 @@
   .callc__v .n{color:var(--pink)}
   .callc__bar{height:8px;background:var(--pink);margin:0 0 8px}
   .callc__bar i{display:block;height:100%;background:var(--yellow)}
-  .callc__f{margin:12px 0 10px}
-  .callc__f img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;background:#000;
-    border:2px solid rgba(251,252,244,.22)}
-  .callc__f figcaption{margin:6px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
-    text-transform:uppercase;color:rgba(251,252,244,.5)}
-  .callc__r{margin:0;font-size:15px;line-height:1.45;color:var(--cream)}
-  .callc__r b{font-family:var(--display);font-weight:400;font-size:24px;margin-right:8px;vertical-align:-2px}
-  .callc__r b.y{color:var(--yellow)}
-  .callc__r b.n{color:var(--pink)}
-  .callc__who{margin:6px 0 0;font-size:14px;color:rgba(251,252,244,.72)}
   .callc__how{margin:10px 0 0;font-size:14px;line-height:1.5;color:rgba(251,252,244,.8)}
   .callc__how code{font-family:var(--mono);color:var(--yellow)}
   .callc__go{display:inline-block;margin:18px 0 0;font-family:var(--display);font-size:18px;
@@ -1082,76 +1112,38 @@
   .callc__go i{font-style:normal}
   .callc__go:focus-visible{text-decoration:underline}
   @media (hover:hover){.callc__go:hover{text-decoration:underline}}
-  /* EACH DOOR LOOKS LIKE ITS OWN APP (Lev, 2 Oct: the X and Telegram chats
-     did not look like X and Telegram). The screen under the frame's header is
-     drawn the way that app draws it: Kick's chat lines, an X thread, a
-     Telegram group in night mode. It bleeds to the frame's edges, and every
-     door gives it the same height and padding, so a switch never moves the
-     page. The X and Telegram fonts are the system stack, as on X. */
-  .tale__screen{margin:0 -14px -12px;padding:0 14px 12px;border-top:1px solid transparent}
-  .tale__screen[data-app="x"]{background:#000;border-top-color:#2f3336;padding-inline:0}
-  .tale__screen[data-app="tg"]{background:#0e1621;padding-inline:10px}
-  /* Twitch: Kick's line grammar on Twitch's own ground, font and name colours. */
-  .tale__screen[data-app="tw"]{background:#18181b;border-top-color:#2f2f35}
-  .tale__screen[data-app="tw"] .kc{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;color:#efeff1}
-  .tale__screen[data-app="tw"] .kc .k1{color:#FF7F50}
-  .tale__screen[data-app="tw"] .kc .k2{color:#1E90FF}
-  .tale__screen[data-app="tw"] .kc__rp{color:#adadb8}
-  .tale--js .tale__feed{height:330px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;
+  /* EACH CHAT LOOKS LIKE ITS OWN APP: Kick's lines, Twitch's on its own
+     ground and font, X Live's name over the message, YouTube's grey name in
+     the same line. */
+  .tale__feed{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:8px;min-height:0;
+    margin:0 -14px -12px;padding:4px 14px 12px}
+  .tale--js .tale__feed{height:300px;overflow:hidden;
     -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 30px);mask-image:linear-gradient(to bottom,transparent 0,#000 30px)}
+  @media (max-width:760px){.tale--js .tale__feed{height:250px}}
+  /* Side by side, the chat is exactly as tall as the stream: height 0 keeps
+     its lines out of the row's sizing and min-height fills the row the
+     16:9 stream sets. */
+  @media (min-width:761px){.tale--js .tale__chat{height:0;min-height:100%}.tale--js .tale__feed{height:auto}}
+  .tale__chat[data-app="tw"] .tale__feed{background:#18181b}
+  .tale__chat[data-app="xl"] .tale__feed{background:#000}
+  .tale__chat[data-app="yt"] .tale__feed{background:#0f0f0f}
   .tale--js .tale__feed .msg{animation:tale-in .35s ease-out both}
   @keyframes tale-in{from{opacity:0;translate:0 10px}to{opacity:1;translate:none}}
   @media (prefers-reduced-motion:reduce){.tale--js .tale__feed .msg{animation:none}}
-  .msg{margin:0}
-  /* Kick: a line per message, the name in its colour and a colon; the bot's
-     answer carries the line it replies to above it. */
-  .kc{font-size:14.5px;line-height:1.45;overflow-wrap:anywhere}
-  .kc + .kc{margin-top:8px}
+  .msg{margin:0;overflow-wrap:anywhere}
+  .kc{font-size:14px;line-height:1.45}
   .kc b{font-weight:800}
-  .kc .k1{color:#53FC19}
-  .kc .k2{color:#C3A6FF}
-  .kc .k0{color:var(--yellow)}
-  .kc .ln{text-decoration:underline;text-decoration-color:rgba(251,252,244,.35);text-underline-offset:2px}
-  .kc__rp{display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.5;color:rgba(251,252,244,.5);
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .kc__rp svg{flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-  /* X: avatar, name, @handle and age, the post, the action row; the posts
-     above the bot's reply are joined by the thread line. */
-  .xp{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:10px 14px 9px;
-    border-bottom:1px solid #2f3336;color:#e7e9ea;
-    font:400 14.5px/1.32 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  .xp--chain{border-bottom:0;padding-bottom:4px}
-  .xp--chain::before{content:"";position:absolute;left:30px;top:48px;bottom:-6px;width:2px;background:#333639}
-  .xp__av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:15px}
-  .xp__h{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .xp__h b{font-weight:700}
-  .xp__h span{color:#71767b}
-  .xp__t{margin:1px 0 0;white-space:pre-line;overflow-wrap:anywhere}
-  .xp i{font-style:normal;color:#1d9bf0}
-  .xp__m{display:block;width:100%;height:auto;margin-top:10px;border:1px solid #2f3336;border-radius:14px}
-  .xp__a{display:flex;justify-content:space-between;max-width:290px;margin:8px 0 0;color:#71767b}
-  .xp__a svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-  /* Telegram, night: a bubble with a tail, the name in its colour, the time
-     inside; the bot answers the tag it quotes, with the card as its photo. */
-  .tg{display:flex;align-items:flex-end;gap:8px;color:#f5f5f5;
-    font:400 14px/1.36 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  .tg + .tg{margin-top:6px}
-  .tg__av{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:13px;font-weight:600}
-  .tg__bub{position:relative;min-width:0;max-width:calc(100% - 46px);background:#182533;
-    border-radius:12px 12px 12px 0;padding:5px 9px 6px}
-  .tg__bub::before{content:"";position:absolute;left:-7px;bottom:0;width:8px;height:14px;
-    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 14'%3E%3Cpath d='M8 0v14H1.3C.4 14 0 13.1.6 12.4 3.7 9 6.9 4.9 8 0z' fill='%23182533'/%3E%3C/svg%3E") no-repeat}
-  .tg__bub--ph{width:250px}
-  .tg__n{display:block;font-size:13.5px;font-weight:600;line-height:1.3}
-  .tg__rp{display:block;margin:3px 0 5px;padding:2px 8px 3px;border-left:3px solid var(--c);border-radius:4px;
-    background:color-mix(in srgb,var(--c) 14%,transparent);font-size:13px;line-height:1.3;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .tg__rp b{display:block;color:var(--c);font-weight:600}
-  .tg__ph{display:block;width:calc(100% + 18px);height:auto;margin:5px -9px 6px}
-  .tg__t{margin:0;white-space:pre-line;overflow-wrap:anywhere}
-  .tg__t::after{content:"";display:inline-block;width:34px}
-  .tg i{font-style:normal;color:#6ab3f3;word-break:break-all}
-  .tg__tm{position:absolute;right:8px;bottom:4px;font-size:11px;color:#6d7f8f}
+  .kc .k1{color:#53FC19} .kc .k2{color:#C3A6FF} .kc .k3{color:#FF9F43} .kc .k0{color:var(--yellow)}
+  .tale__chat[data-app="tw"] .kc{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#efeff1}
+  .tale__chat[data-app="tw"] .kc .k1{color:#FF7F50} .tale__chat[data-app="tw"] .kc .k2{color:#1E90FF} .tale__chat[data-app="tw"] .kc .k3{color:#9ACD32}
+  .xl{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:5px;row-gap:1px;color:#e7e9ea;
+    font:400 14px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .xl b{font-weight:700} .xl span{color:#71767b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xl em{grid-column:1/-1;font-style:normal}
+  .xl b.k0{color:var(--yellow)}
+  .ytc{color:#f1f1f1;font:400 13.5px/1.4 Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+  .ytc b{font-weight:500;color:#aaa;margin-right:6px}
+  .ytc b.k0{color:#111;background:var(--yellow);padding:0 5px;border-radius:2px}
   .B .proof{grid-column:1/-1;justify-self:center;width:100%}
 
   /* ======================================================== FOR CREATORS ==
@@ -1260,7 +1252,7 @@ html{-webkit-tap-highlight-color:transparent}
 <!-- Istek sayfanin tamaminda ekranda kalsin diye masthead header'in DISINDA
      ve <body>'nin dogrudan cocugu: sticky bir eleman ebeveyninin disina
      tasamaz, nav .A'nin icinde kalsaydi 640px sonra birakirdi. -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-twitch" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#9146FF"/><path d="M8.2 5 6.5 8.4v10.1h3.4V20.2h1.7l1.7-1.7h2.8l3.4-3.4V5H8.2zm9.6 9.2-2 2h-3.4l-1.7 1.7v-1.7H7.9V6.4h9.9v7.8zm-2.6-5.1v3.4h-1.4V9.1h1.4zm-3.7 0v3.4h-1.4V9.1h1.4z" fill="#fff"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol><symbol id="xi-r" viewBox="0 0 24 24"><path d="M12 4.5c4.4 0 8 2.9 8 6.6s-3.6 6.6-8 6.6c-.9 0-1.8-.1-2.6-.3L5.5 19.5l.9-3.3C5 15 4 13.1 4 11.1 4 7.4 7.6 4.5 12 4.5z"/></symbol><symbol id="xi-rt" viewBox="0 0 24 24"><path d="M4.5 8 7 5.5 9.5 8M7 6v9.5a2 2 0 0 0 2 2h4.5M19.5 16 17 18.5 14.5 16M17 18V8.5a2 2 0 0 0-2-2h-4.5"/></symbol><symbol id="xi-l" viewBox="0 0 24 24"><path d="M12 19.5s-7.5-4.4-7.5-9.6A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.5 2.3c0 5.2-7.5 9.6-7.5 9.6z"/></symbol><symbol id="xi-v" viewBox="0 0 24 24"><path d="M6 19v-6M12 19V6M18 19v-9"/></symbol><symbol id="xi-s" viewBox="0 0 24 24"><path d="M12 15V4.5M8 8.5l4-4 4 4M5 13.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5"/></symbol></svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mk-kick" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M1.333 0h8v5.333H12V2.667h2.667V0h8v8H20v2.667h-2.667v2.666H20V16h2.667v8h-8v-2.667H12v-2.666H9.333V24h-8Z" fill="#53FC19" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-twitch" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#9146FF"/><path d="M8.2 5 6.5 8.4v10.1h3.4V20.2h1.7l1.7-1.7h2.8l3.4-3.4V5H8.2zm9.6 9.2-2 2h-3.4l-1.7 1.7v-1.7H7.9V6.4h9.9v7.8zm-2.6-5.1v3.4h-1.4V9.1h1.4zm-3.7 0v3.4h-1.4V9.1h1.4z" fill="#fff"/></symbol><symbol id="mk-x" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#020302"/><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z" fill="#FBFCF4" transform="translate(4.8 4.8) scale(.6)"/></symbol><symbol id="mk-youtube" viewBox="0 0 24 24"><rect width="24" height="24" rx="5.8" fill="#FF0000"/><path d="M9.7 7.6v8.8l7.2-4.4z" fill="#fff"/></symbol><symbol id="mk-telegram" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.3" fill="#fff"/><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" fill="#26A5E4"/></symbol><symbol id="xi-r" viewBox="0 0 24 24"><path d="M12 4.5c4.4 0 8 2.9 8 6.6s-3.6 6.6-8 6.6c-.9 0-1.8-.1-2.6-.3L5.5 19.5l.9-3.3C5 15 4 13.1 4 11.1 4 7.4 7.6 4.5 12 4.5z"/></symbol><symbol id="xi-rt" viewBox="0 0 24 24"><path d="M4.5 8 7 5.5 9.5 8M7 6v9.5a2 2 0 0 0 2 2h4.5M19.5 16 17 18.5 14.5 16M17 18V8.5a2 2 0 0 0-2-2h-4.5"/></symbol><symbol id="xi-l" viewBox="0 0 24 24"><path d="M12 19.5s-7.5-4.4-7.5-9.6A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.5 2.3c0 5.2-7.5 9.6-7.5 9.6z"/></symbol><symbol id="xi-v" viewBox="0 0 24 24"><path d="M6 19v-6M12 19V6M18 19v-9"/></symbol><symbol id="xi-s" viewBox="0 0 24 24"><path d="M12 15V4.5M8 8.5l4-4 4 4M5 13.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4.5"/></symbol></svg>
 <div class="topbar">
   <nav class="shell nav__in">
     <a class="brand" href="/" aria-label="Oddie home">
@@ -1438,35 +1430,38 @@ html{-webkit-tap-highlight-color:transparent}
            Without script it is the whole Kick conversation, static. With
            reduced motion it never moves on its own: the steps and the doors
            switch it. -->
-      <!-- A REAL CALL TAKES THIS PLACE (Lev, 3 Nov): the server swaps everything
-           between TALE and /TALE for the call taking answers on a streamer's
-           channel now, or the newest the screen settled, with the picture
-           Oddie read (renderLanding in src/server.ts). The scripted chat below
-           is what a page with no real call yet shows. -->
+      <!-- A LIVE CALL TAKES THIS PLACE (Lev, 3 Nov): while a streamer's channel
+           has a call taking answers, the server swaps everything between TALE
+           and /TALE for it (renderLanding in src/server.ts). The rest of the
+           time the four-door story below plays. -->
       <!--TALE-->
+      <!-- EVERY DOOR, ITS OWN STREAM (Lev, 3 Nov). Without script this is the
+           Kick story, finished: the round won on screen and the call settled in
+           chat. The script plays it, then Twitch, X Live and YouTube. -->
       <div class="tale reveal" id="tale">
-        <div class="tale__tabs" role="tablist" aria-label="How it works">
-          <button class="tale__tab" type="button" role="tab" data-beat="0">1. Call it</button>
-          <button class="tale__tab" type="button" role="tab" data-beat="1">2. It&rsquo;s a market</button>
-          <button class="tale__tab" type="button" role="tab" data-beat="2">3. It pays</button>
+        <div class="tale__doors" role="tablist" aria-label="Where it runs">
+          <button class="tale__door" type="button" role="tab" data-door="0" aria-selected="true"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg>Kick</button>
+          <button class="tale__door" type="button" role="tab" data-door="1" aria-selected="false"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-twitch"/></svg>Twitch</button>
+          <button class="tale__door" type="button" role="tab" data-door="2" aria-selected="false"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-x"/></svg>X Live</button>
+          <button class="tale__door" type="button" role="tab" data-door="3" aria-selected="false"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-youtube"/></svg>YouTube</button>
         </div>
-        <div class="chat tale__chat">
-          <p class="chat__src"><span class="tale__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> <span class="tale__where">Kick chat</span></span>
-            <span class="tale__doors" aria-label="Where it works">
-              <button class="tale__door" type="button" data-plat="0" aria-label="Kick"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-kick"/></svg></button>
-              <button class="tale__door" type="button" data-plat="1" aria-label="Twitch"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-twitch"/></svg></button>
-              <button class="tale__door" type="button" data-plat="2" aria-label="X"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-x"/></svg></button>
-              <button class="tale__door" type="button" data-plat="3" aria-label="Telegram"><svg class="mk" width="14" height="14" aria-hidden="true"><use href="#mk-telegram"/></svg></button>
-            </span></p>
-          <div class="tale__screen" data-app="kick"><div class="tale__feed" aria-live="off">
-            <p class="msg kc"><b class="k1">mike_trades</b>: no way btc sees 88k this week</p>
-            <p class="msg kc"><b class="k2">0xjules</b>: !oddie BTC hits 88k by Friday?</p>
-            <p class="msg kc"><span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @0xjules: !oddie BTC hits 88k by Friday?</span><b class="k0">oddiefun</b>: Market open: "BTC to $88k by Friday?" Take YES or NO: <span class="ln">https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7</span> (this channel earns 2% of the pool)</p>
-            <p class="msg kc"><b class="k2">0xjules</b>: YES. 0.1 in</p>
-            <p class="msg kc"><b class="k1">mike_trades</b>: NO. see you at midnight</p>
-            <p class="msg kc"><span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @0xjules: !oddie BTC hits 88k by Friday?</span><b class="k0">oddiefun</b>: It's NO: "BTC to $88k by Friday?" Winners collect at <span class="ln">https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7</span></p>
-          </div></div>
+        <div class="tale__stage">
+          <div class="tale__scene"><div class="sc sc--fps is-won" aria-hidden="true"><svg viewBox="0 0 320 180" preserveAspectRatio="none"><rect width="320" height="180" fill="#141b26"/><polygon points="0,0 110,45 110,120 0,180" fill="#182030"/><polygon points="320,0 210,45 210,120 320,180" fill="#1a2333"/><rect x="110" y="45" width="100" height="75" fill="#1d2533"/><rect x="146" y="62" width="28" height="58" fill="#3d5070"/><rect x="156" y="84" width="8" height="26" fill="#0a0d12"/><polygon points="0,180 110,120 210,120 320,180" fill="#10151e"/><rect x="226" y="108" width="30" height="24" fill="#4a3a26"/><rect x="58" y="118" width="26" height="22" fill="#4a3a26"/><polygon points="236,180 262,132 300,138 320,180" fill="#2b2f36"/></svg><span class="sc__live">LIVE</span><p class="sc__hud"><span class="sc__ct">CT 12</span><b>0:31</b><span class="sc__t">11 T</span></p><span class="sc__vs">1 v 2</span><i class="sc__x"></i><span class="sc__hp">&#9829; 64</span><span class="sc__ammo">18 / 90</span><p class="sc__ban">Round won<small>Clutch 1 v 2</small></p></div></div>
+          <div class="chat tale__chat" data-app="kick">
+            <p class="chat__src"><svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-kick"/></svg> <span class="tale__where">Kick chat</span></p>
+            <div class="tale__feed" aria-live="off">
+              <p class="msg kc"><b class="k2">kai</b>: 1v2 he's cooked</p>
+              <p class="msg kc"><b class="k1">rexplays</b>: !call Does he clutch this round?</p>
+              <p class="msg kc"><b class="k0">oddiefun</b>: call: "Does he clutch this round?" Type !yes or !no, earlier calls score more</p>
+              <p class="msg kc"><b class="k3">nova</b>: !yes</p>
+              <p class="msg kc"><b class="k2">kai</b>: !no</p>
+              <p class="msg kc"><b class="k1">mo</b>: !yes</p>
+              <p class="msg kc"><b class="k0">oddiefun</b>: @nova @mo yes · @kai no → 67% yes</p>
+              <p class="msg kc"><b class="k0">oddiefun</b>: Result: YES on "Does he clutch this round?" Called it: @nova @mo.</p>
+            </div>
+          </div>
         </div>
+        <p class="tale__cap">The stream shows the result. <b>Oddie settles it in seconds.</b></p>
       </div>
       <!--/TALE-->
 
@@ -1630,192 +1625,125 @@ html{-webkit-tap-highlight-color:transparent}
     setInterval(tick, 1000);
   })();
 
-  /* HOW IT WORKS, AS ONE CHAT (Lev, 2 Oct, the hypercasual cut). The window
-     plays the claim, the market and the payout, then the same story on the
-     next door: Kick, Twitch, X, Telegram, each drawn as that app draws it. What the
-     bot says is its real text for this market, cut short only where it
-     repeats the card: Kick from MARKET_COPY and the result notice in
-     server.ts; X from buildTweetReply, resolutionText and authorCreditText;
-     Telegram the same reply as the card's caption with TG_COPY.opener, then
-     tgResolutionText. The card is the real one, rendered by src/card for
-     this made-up market (its slug picks the "pick a side" CTA). It plays
-     only while it is on screen, a step or a door jumps to it, and with
-     reduced motion nothing moves on its own. */
+  /* HOW IT WORKS, ON EVERY DOOR (Lev, 3 Nov, after CRSH). Four streams, one
+     per door, each chat drawn as that app draws it: a shooter's round on
+     Kick, a 5-minute candle on Twitch, a card game on X Live, a battle royale
+     on YouTube. The chat opens a call, the room answers, the stream shows the
+     result and Oddie settles it. Every line Oddie says is its real line for
+     that call (LIVE_COPY in src/live/calls.ts; test-front-door builds each
+     one from it). It plays only while on screen, a door jumps to its story,
+     and with reduced motion nothing moves on its own: a door shows its story
+     finished. Without script the Kick story is there, finished. */
   (function () {
     var tale = document.getElementById("tale");
     if (!tale) return;
-    var screen = tale.querySelector(".tale__screen");
-    var feed = tale.querySelector(".tale__feed");
-    var tabs = [].slice.call(tale.querySelectorAll(".tale__tab"));
-    var doors = [].slice.call(tale.querySelectorAll(".tale__door"));
-    var where = tale.querySelector(".tale__where");
-    var srcMark = tale.querySelector(".tale__src use");
-    var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    var HOOK = "BTC to $88k by Friday?";
-    var LINK = "https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7";
-    var CARD_SRC = "/brand/tale-card.webp";
-    function card(cls) {
-      return '<img class="' + cls + '" src="' + CARD_SRC + '" width="720" height="377" decoding="async" alt="The market card: BTC to $88k by Friday?">';
-    }
-    /* THE PACE (Lev, 9 Oct: "burası daha hızlı aksın"). Every time below is
-       written at the first tempo and played at PACE of it, so the rhythm
-       between the lines stays the one that was approved and the whole story
-       moves faster: a door took 11 seconds and now takes 7. END is set on its
-       own, because the last line still has to be read before the next door. */
-    var PACE = 0.6;
-    function m(beat, at, cls, html) { return { beat: beat, at: at * PACE, cls: cls, html: html }; }
+    var sceneEl = tale.querySelector(".tale__scene"), chat = tale.querySelector(".tale__chat");
+    var feed = tale.querySelector(".tale__feed"), src = chat.querySelector(".chat__src");
+    var doors = Array.prototype.slice.call(tale.querySelectorAll(".tale__door"));
+    var reduced = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)").matches : false;
+    function esc(t) { return String(t).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
 
-    function kick() {
-      var TAG = "!oddie BTC hits 88k by Friday?";
-      var RE = '<span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @0xjules: ' + TAG + "</span>";
-      function say(c, who, text, re) { return (re ? RE : "") + '<b class="' + c + '">' + who + "</b>: " + text; }
-      var link = '<span class="ln">' + LINK + "</span>";
-      return [
-        m(0, 300, "kc", say("k1", "mike_trades", "no way btc sees 88k this week")),
-        m(0, 1300, "kc", say("k2", "0xjules", TAG)),
-        m(1, 2700, "kc", say("k0", "oddiefun", 'Market open: "' + HOOK + '" Take YES or NO: ' + link + " (this channel earns 2% of the pool)", 1)),
-        m(2, 5300, "kc", say("k2", "0xjules", "YES. 0.1 in")),
-        m(2, 6000, "kc", say("k1", "mike_trades", "NO. see you at midnight")),
-        m(2, 7200, "kc", say("k0", "oddiefun", "It's NO: \"" + HOOK + "\" Winners collect at " + link, 1))
-      ];
+    /* The four streams, drawn: plain shapes, a HUD, and the result banner. */
+    var FPS = '<div class="sc sc--fps" aria-hidden="true"><svg viewBox="0 0 320 180" preserveAspectRatio="none"><rect width="320" height="180" fill="#141b26"/><polygon points="0,0 110,45 110,120 0,180" fill="#182030"/><polygon points="320,0 210,45 210,120 320,180" fill="#1a2333"/><rect x="110" y="45" width="100" height="75" fill="#1d2533"/><rect x="146" y="62" width="28" height="58" fill="#3d5070"/><rect x="156" y="84" width="8" height="26" fill="#0a0d12"/><polygon points="0,180 110,120 210,120 320,180" fill="#10151e"/><rect x="226" y="108" width="30" height="24" fill="#4a3a26"/><rect x="58" y="118" width="26" height="22" fill="#4a3a26"/><polygon points="236,180 262,132 300,138 320,180" fill="#2b2f36"/></svg><span class="sc__live">LIVE</span><p class="sc__hud"><span class="sc__ct">CT 12</span><b>0:31</b><span class="sc__t">11 T</span></p><span class="sc__vs">1 v 2</span><i class="sc__x"></i><span class="sc__hp">&#9829; 64</span><span class="sc__ammo">18 / 90</span><p class="sc__ban">Round won<small>Clutch 1 v 2</small></p></div>';
+    var CANDLES = [[118, 96, 128, 90], [96, 104, 108, 92], [104, 88, 110, 84], [88, 92, 98, 80], [92, 78, 96, 72], [78, 84, 90, 74],
+      [84, 70, 88, 64], [70, 76, 80, 66], [76, 64, 80, 58], [64, 72, 76, 60], [72, 60, 74, 54], [60, 66, 70, 56], [66, 58, 70, 52]];
+    function chart() {
+      var bars = CANDLES.map(function (c, i) {
+        var x = 14 + i * 21, up = c[1] < c[0], top = Math.min(c[0], c[1]), h = Math.max(2, Math.abs(c[0] - c[1]));
+        return '<line x1="' + (x + 6) + '" x2="' + (x + 6) + '" y1="' + c[3] + '" y2="' + c[2] + '" stroke="' + (up ? "#26d07c" : "#f0465a") + '"/>'
+          + '<rect x="' + x + '" y="' + top + '" width="12" height="' + h + '" fill="' + (up ? "#26d07c" : "#f0465a") + '"/>';
+      }).join("");
+      return '<div class="sc sc--chart" aria-hidden="true"><svg viewBox="0 0 320 180" preserveAspectRatio="none"><rect width="320" height="180" fill="#0e1117"/>'
+        + '<g stroke="#1c222c"><line x1="0" x2="320" y1="45" y2="45"/><line x1="0" x2="320" y1="90" y2="90"/><line x1="0" x2="320" y1="135" y2="135"/></g>'
+        + bars + '<rect class="sc__last" x="287" y="30" width="12" height="28" fill="#26d07c" style="transform-box:fill-box;transform-origin:50% 100%"/></svg>'
+        + '<span class="sc__live">LIVE</span><p class="sc__pair">BTC/USDT &middot; 5m</p><p class="sc__px">88,412</p><p class="sc__clock">closes in 0:07</p>'
+        + '<p class="sc__ban">Closed green &#9650;<small>BTC/USDT &middot; 5m candle</small></p></div>';
     }
+    var CARDS = '<div class="sc sc--cards" aria-hidden="true"><span class="sc__live">LIVE</span><span class="sc__seat sc__seat--a">KAI &middot; 860</span><span class="sc__seat sc__seat--b">MIRA &middot; 1,240</span>'
+      + '<div class="sc__felt"><i class="sc__card">K&#9824;</i><i class="sc__card r">K&#9830;</i><i class="sc__card">7&#9827;</i><i class="sc__card r">2&#9829;</i><i class="sc__card">K&#9827;</i></div>'
+      + '<p class="sc__ban">Victory<small>Winner: Mira</small></p></div>';
+    var BR = '<div class="sc sc--br" aria-hidden="true"><svg viewBox="0 0 320 180" preserveAspectRatio="none"><rect width="320" height="180" fill="#16301f"/>'
+      + '<path d="M0 120 C60 100 90 140 150 118 S250 90 320 112 V180 H0Z" fill="#1d3d27"/><path d="M40 0 C80 30 60 60 110 70 S180 40 220 0Z" fill="#12261a"/>'
+      + '<circle cx="168" cy="92" r="58" fill="none" stroke="#a78bfa" stroke-width="3" stroke-dasharray="6 5"/><circle cx="170" cy="95" r="4" fill="#FCF604"/>'
+      + '<circle cx="142" cy="80" r="3" fill="#f0465a"/><circle cx="196" cy="110" r="3" fill="#f0465a"/></svg>'
+      + '<span class="sc__live">LIVE</span><p class="sc__left">3 LEFT</p><p class="sc__ban">#1 Winner<small>Last one standing</small></p></div>';
 
-    /* Twitch: the same engine and the same lines as Kick (MARKET_COPY and the
-       result notice), drawn the way Twitch draws its chat, on its own market:
-       the streams that argue about coins are on Twitch too. */
-    function twitch() {
-      var HK = "SOL above $150 by Sunday?";
-      var LK = "https://app.oddie.fun/m/will-solana-sol-be-above-150-by-7c41d2";
-      var TAG = "!oddie SOL above $150 by Sunday?";
-      var RE = '<span class="kc__rp"><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6a4 4 0 0 0 4 4h12M15 9l5 5-5 5"/></svg>Replying to @kaitrades: ' + TAG + "</span>";
-      function say(c, who, text, re) { return (re ? RE : "") + '<b class="' + c + '">' + who + "</b>: " + text; }
-      var link = '<span class="ln">' + LK + "</span>";
-      return [
-        m(0, 300, "kc", say("k1", "degen_mo", "sol is seeing 150 by sunday. calling it now")),
-        m(0, 1300, "kc", say("k2", "kaitrades", TAG)),
-        m(1, 2700, "kc", say("k0", "oddiefun", 'Market open: "' + HK + '" Take YES or NO: ' + link + " (this channel earns 2% of the pool)", 1)),
-        m(2, 5300, "kc", say("k1", "degen_mo", "YES. 0.5 in")),
-        m(2, 6000, "kc", say("k2", "kaitrades", "NO. see you sunday")),
-        m(2, 7200, "kc", say("k0", "oddiefun", "It's YES: \"" + HK + "\" Winners collect at " + link, 1))
-      ];
-    }
-
-    function x() {
-      var SHORT = "<i>app.oddie.fun/m/will-bit…</i>";
-      var ACTS = '<p class="xp__a" aria-hidden="true">' + ["r", "rt", "l", "v", "s"].map(function (i) {
-        return '<svg viewBox="0 0 24 24"><use href="#xi-' + i + '"/></svg>'; }).join("") + "</p>";
-      var WHO = {
-        m: ['<span class="xp__av" style="background:#e8743b" aria-hidden="true">M</span>', "Mike", "@mike_trades"],
-        j: ['<span class="xp__av" style="background:#7856ff" aria-hidden="true">J</span>', "Jules", "@0xjules"],
-        o: ['<img class="xp__av" src="/brand/mark.webp?v=3" alt="">', "oddie", "@oddiefun"]
-      };
-      function post(w, ago, text, media) {
-        var W = WHO[w];
-        return W[0] + '<div><p class="xp__h"><b>' + W[1] + "</b> <span>" + W[2] + " · " + ago + "</span></p>"
-          + '<p class="xp__t">' + text + "</p>" + (media || "") + ACTS + "</div>";
-      }
-      return [
-        m(0, 300, "xp xp--chain", post("m", "11h", "no way btc sees 88k this week")),
-        m(0, 1300, "xp xp--chain", post("j", "11h", "<i>@oddiefun</i> BTC hits 88k by Friday?")),
-        m(1, 2700, "xp", post("o", "11h", "Pick a side, real SOL on it ↓\n" + SHORT, card("xp__m"))),
-        m(2, 5300, "xp", post("j", "11h", "YES. 0.1 in")),
-        m(2, 6000, "xp", post("m", "11h", "NO. see you at midnight")),
-        m(2, 7200, "xp", post("o", "1m", "Settled: NO.\n\nEveryone who called it is paid from the pool, on chain.\n\n" + SHORT)),
-        m(2, 8300, "xp", post("o", "1m", "<i>@0xjules</i>, the market you opened drew real SOL, so it earned you a creator cut."))
-      ];
-    }
-
-    function tg() {
-      var WHO = {
-        m: ['<span class="tg__av" style="background:linear-gradient(#ffcd6a,#ffa85c)" aria-hidden="true">M</span>', "Mike", "#ffa357"],
-        j: ['<span class="tg__av" style="background:linear-gradient(#82b1ff,#665fff)" aria-hidden="true">J</span>', "Jules", "#b48bf2"],
-        o: ['<img class="tg__av" src="/brand/mark.webp?v=3" alt="">', "oddiebot", "#5fd0e6"]
-      };
-      var QUOTE = '<span class="tg__rp" style="--c:#b48bf2"><b>Jules</b>@oddiefunbot BTC hits 88k by Friday?</span>';
-      function bub(w, time, text, quote, photo) {
-        var W = WHO[w];
-        return W[0] + '<div class="tg__bub' + (photo ? " tg__bub--ph" : "") + '"><b class="tg__n" style="color:' + W[2] + '">' + W[1] + "</b>"
-          + (quote ? QUOTE : "") + (photo ? card("tg__ph") : "")
-          + '<p class="tg__t">' + text + '</p><span class="tg__tm">' + time + "</span></div>";
-      }
-      var link = "<i>" + LINK + "</i>";
-      return [
-        m(0, 300, "tg", bub("m", "12:37", "no way btc sees 88k this week")),
-        m(0, 1300, "tg", bub("j", "12:38", "<i>@oddiefunbot</i> BTC hits 88k by Friday?")),
-        m(1, 2700, "tg", bub("o", "12:38", "Pick a side, real SOL on it ↓\n" + link + "\n\nOpened by Jules, who earns 2% of the pool.", 0, 1)),
-        m(2, 5300, "tg", bub("j", "12:41", "YES. 0.1 in")),
-        m(2, 6000, "tg", bub("m", "12:43", "NO. see you at midnight")),
-        m(2, 7200, "tg", bub("o", "00:01", "Settled: NO.\n\nEveryone who called it is paid from the pool, on chain.\n\n" + link, 1))
-      ];
-    }
-
-    var DOORS = [
-      { where: "Kick chat", mark: "#mk-kick", p: "kick", story: kick() },
-      { where: "Twitch chat", mark: "#mk-twitch", p: "tw", story: twitch() },
-      { where: "Replies on X", mark: "#mk-x", p: "x", story: x() },
-      { where: "Telegram group", mark: "#mk-telegram", p: "tg", story: tg() }
+    /* [at ms, colour class, name, handle (X only), what they type]. Oddie's
+       lines are LIVE_COPY.opened, .split and .settled for that call. */
+    var STORIES = [
+      { app: "kick", where: "Kick chat", mark: "#mk-kick", scene: function () { return FPS; }, won: 7000, lines: [
+        [600, "k2", "kai", "", "1v2 he's cooked"],
+        [1500, "k1", "rexplays", "", "!call Does he clutch this round?"],
+        [2400, "k0", "oddiefun", "", "call: \"Does he clutch this round?\" Type !yes or !no, earlier calls score more"],
+        [3300, "k3", "nova", "", "!yes"], [3800, "k2", "kai", "", "!no"], [4300, "k1", "mo", "", "!yes"],
+        [5200, "k0", "oddiefun", "", "@nova @mo yes · @kai no → 67% yes"],
+        [8200, "k0", "oddiefun", "", "Result: YES on \"Does he clutch this round?\" Called it: @nova @mo."]] },
+      { app: "tw", where: "Twitch chat", mark: "#mk-twitch", scene: chart, won: 7000, lines: [
+        [600, "k3", "lena", "", "chop city today"],
+        [1500, "k1", "chartgoblin", "", "!call BTC closes this 5m candle green?"],
+        [2400, "k0", "oddiefun", "", "call: \"BTC closes this 5m candle green?\" Type !yes or !no, earlier calls score more"],
+        [3300, "k2", "tom", "", "!yes"], [3800, "k3", "lena", "", "!no"], [4300, "k1", "ash", "", "!yes"],
+        [5200, "k0", "oddiefun", "", "@tom @ash yes · @lena no → 67% yes"],
+        [8200, "k0", "oddiefun", "", "Result: YES on \"BTC closes this 5m candle green?\" Called it: @tom @ash."]] },
+      { app: "xl", where: "X Live chat", mark: "#mk-x", scene: function () { return CARDS; }, won: 7000, lines: [
+        [600, "", "Pia", "@piaplays", "mira never folds lol"],
+        [1500, "", "Table Night", "@tablenight", "!call Can Kai beat Mira?"],
+        [2400, "k0", "Oddie", "@Oddiefun", "call: \"Can Kai beat Mira?\" Type !yes or !no, earlier calls score more"],
+        [3300, "", "Jules", "@jules", "!yes"], [3800, "", "Pia", "@piaplays", "!no"], [4300, "", "Dex", "@dexdraws", "!no"],
+        [5200, "k0", "Oddie", "@Oddiefun", "@jules yes · @piaplays @dexdraws no → 67% no"],
+        [8200, "k0", "Oddie", "@Oddiefun", "Result: NO on \"Can Kai beat Mira?\" Called it: @piaplays @dexdraws."]] },
+      { app: "yt", where: "YouTube live chat", mark: "#mk-youtube", scene: function () { return BR; }, won: 7000, lines: [
+        [600, "", "@sammy", "", "storm's closing fast"],
+        [1500, "", "@luna_plays", "", "!call Does she win this match?"],
+        [2400, "k0", "@Oddie", "", "call: \"Does she win this match?\" Type !yes or !no, earlier calls score more"],
+        [3300, "", "@sammy", "", "!yes"], [3800, "", "@raytm", "", "!yes"], [4300, "", "@lu", "", "!no"],
+        [5200, "k0", "@Oddie", "", "@sammy @raytm yes · @lu no → 67% yes"],
+        [8200, "k0", "@Oddie", "", "Result: YES on \"Does she win this match?\" Called it: @sammy @raytm."]] },
     ];
-    var BEAT_AT = [0, 2400 * PACE, 5000 * PACE], END = 7000;
-    var door = 0, beat = 0, timers = [], onScreen = false, warmed = false, held = false;
-    /* The card is fetched before its first door plays, not as it appears. */
-    function warm() { if (!warmed) { warmed = true; new Image().src = CARD_SRC; } }
-    function story(d) { return DOORS[d].story; }
+    var STORY_MS = 11500;
+
+    function msg(app, l) {
+      if (app === "xl") return '<p class="msg xl"><b class="' + l[1] + '">' + esc(l[2]) + "</b><span>" + esc(l[3]) + "</span><em>" + esc(l[4]) + "</em></p>";
+      if (app === "yt") return '<p class="msg ytc"><b class="' + l[1] + '">' + esc(l[2]) + "</b>" + esc(l[4]) + "</p>";
+      return '<p class="msg kc"><b class="' + l[1] + '">' + esc(l[2]) + "</b>: " + esc(l[4]) + "</p>";
+    }
+
+    var cur = 0, timers = [], visible = false;
     function stop() { timers.forEach(clearTimeout); timers = []; }
-    function setBeat(b) {
-      beat = b;
-      tabs.forEach(function (t, i) { t.classList.toggle("on", i === b); t.setAttribute("aria-selected", i === b ? "true" : "false"); });
-    }
-    function setDoor(d) {
-      door = d;
-      doors.forEach(function (x, i) { x.classList.toggle("on", i === d); x.setAttribute("aria-pressed", i === d ? "true" : "false"); });
-      where.textContent = DOORS[d].where;
-      if (srcMark) srcMark.setAttribute("href", DOORS[d].mark);
-      screen.setAttribute("data-app", DOORS[d].p);
-    }
-    function add(m) { var el = document.createElement("div"); el.className = "msg " + m.cls; el.innerHTML = m.html; feed.appendChild(el); }
-    function upTo(b) { feed.innerHTML = ""; story(door).forEach(function (m) { if (m.beat <= b) add(m); }); setBeat(b); }
-    function play(from) {
-      stop();
-      if (reduced) { upTo(from); return; }
-      var msgs = story(door), t0 = BEAT_AT[from];
+    function show(i, finished) {
+      stop(); cur = i;
+      var st = STORIES[i];
+      doors.forEach(function (d) { d.setAttribute("aria-selected", String(Number(d.getAttribute("data-door")) === i)); });
+      chat.setAttribute("data-app", st.app);
+      src.innerHTML = '<svg class="mk" width="16" height="16" aria-hidden="true"><use href="' + st.mark + '"/></svg> <span class="tale__where">' + st.where + "</span>";
+      sceneEl.innerHTML = st.scene();
+      var sc = sceneEl.firstChild;
+      if (finished) {
+        sc.classList.add("is-won");
+        feed.innerHTML = st.lines.map(function (l) { return msg(st.app, l); }).join("");
+        return;
+      }
       feed.innerHTML = "";
-      msgs.forEach(function (m) { if (m.beat < from) add(m); });
-      setBeat(from);
-      BEAT_AT.forEach(function (at, b) { if (b > from) timers.push(setTimeout(function () { setBeat(b); }, at - t0)); });
-      msgs.forEach(function (m) { if (m.beat >= from) timers.push(setTimeout(function () { add(m); }, m.at - t0)); });
-      timers.push(setTimeout(function () { setDoor((door + 1) % DOORS.length); play(0); }, END - t0));
+      st.lines.forEach(function (l) {
+        timers.push(setTimeout(function () { feed.insertAdjacentHTML("beforeend", msg(st.app, l)); }, l[0]));
+      });
+      timers.push(setTimeout(function () { sc.classList.add("is-won"); }, st.won));
+      timers.push(setTimeout(function () { show((cur + 1) % STORIES.length); }, STORY_MS));
     }
+
     tale.classList.add("tale--js");
-    setDoor(0);
-    tabs.forEach(function (t) { t.addEventListener("click", function () { play(Number(t.getAttribute("data-beat"))); }); });
-    doors.forEach(function (x) { x.addEventListener("click", function () { warm(); setDoor(Number(x.getAttribute("data-plat"))); play(reduced ? 1 : 0); }); });
-    if (reduced) { upTo(1); return; }
-    upTo(2);   // until it is on screen, the whole Kick story, still
-    if (!("IntersectionObserver" in window)) { warm(); play(0); return; }
-    new IntersectionObserver(function (entries) {
-      var vis = entries[entries.length - 1].isIntersecting;
-      if (vis && !onScreen && !held) { warm(); play(0); }
-      if (!vis && onScreen) stop();
-      onScreen = vis;
+    doors.forEach(function (d) {
+      d.addEventListener("click", function () { show(Number(d.getAttribute("data-door")), reduced || !visible); });
+    });
+    if (reduced) { show(0, true); return; }
+    // The story plays only while it is on screen and the tab is in front.
+    function wake() { if (visible && !document.hidden) show(cur); else stop(); }
+    document.addEventListener("visibilitychange", wake);
+    if (!("IntersectionObserver" in window)) { visible = true; wake(); return; }
+    new IntersectionObserver(function (es) {
+      var now = es[es.length - 1].isIntersecting;
+      if (now !== visible) { visible = now; wake(); }
     }, { threshold: 0.35 }).observe(tale);
-    /* PAUSE WHILE HELD (WCAG 2.2.2: anything that moves on its own for more
-       than five seconds can be paused). Keyboard focus inside the chat freezes
-       it where it is, so a line can be read to the end; it picks up from the
-       same step when focus leaves. A tap on a step or a door still plays,
-       because that was asked for.
-       NOT UNDER THE MOUSE (Lev, 9 Oct). It froze under a resting pointer, and
-       a cursor resting in the middle of the page is most cursors: the chat
-       sits right there, so for most visitors it simply looked stuck. Only a
-       keyboard's focus holds it now; a click's focus does not. */
-    function hold() { if (held) return; held = true; stop(); }
-    function letGo() {
-      if (!held) return;
-      held = false;
-      if (onScreen) play(beat);
-    }
-    function byKeyboard(el) { try { return el.matches(":focus-visible"); } catch (e) { return true; } }
-    tale.addEventListener("focusin", function (e) { if (byKeyboard(e.target)) hold(); });
-    tale.addEventListener("focusout", function (e) { if (!tale.contains(e.relatedTarget)) letGo(); });
   })();
 
   (function () {

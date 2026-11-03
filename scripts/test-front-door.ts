@@ -10,12 +10,7 @@ import { readFileSync, statSync } from "node:fs";
 import { solUsd, _setSolUsd } from "../src/price/solUsd.js";
 import { _setPriceFeed, type PriceFeed } from "../src/price/feed.js";
 import { filesUnder } from "./inline-blocks.js";
-import { MARKET_COPY } from "../src/live/claims.js";
-import { buildTweetReply } from "../src/matching/tweetReply.js";
-import { TG_COPY } from "../src/telegram/loop.js";
-import { resolutionText, authorCreditText } from "../src/x/resolutionReply.js";
-import { tgResolutionText } from "../src/telegram/resolution.js";
-import { slugFor } from "../src/store/markets.js";
+import { LIVE_COPY } from "../src/live/calls.js";
 
 let failures = 0;
 const check = (n: string, ok: boolean, d = "") => {
@@ -479,70 +474,42 @@ console.log("\nthe secondary pages say less (the hypercasual cut, round two)");
     && live.includes('href="/live/x/connect">Add oddie to X Live</a>') && live.includes('P !== "youtube" && P !== "x"'));
 }
 
-console.log("\nthe landing tells it once, as one chat (the hypercasual cut, round two)");
+console.log("\nhow it works plays a call on every door (Lev, 3 Nov, after CRSH)");
 {
   const tale = landing.slice(landing.indexOf('<div class="tale reveal" id="tale">'));
-  const script = landing.slice(landing.indexOf("HOW IT WORKS, AS ONE CHAT"));
-  check("how it works is one chat window, not three cards", landing.includes('<div class="tale reveal" id="tale">')
-    && !landing.includes('<div class="steps reveal">') && !landing.includes('class="step__cap"'));
-  check("...that plays on every door, streams first",
-    script.indexOf('where: "Kick chat"') < script.indexOf('where: "Twitch chat"')
-    && script.indexOf('where: "Twitch chat"') < script.indexOf('where: "Replies on X"')
-    && script.includes('where: "Replies on X"') && script.includes('where: "Telegram group"')
-    && script.includes('var TAG = "!oddie BTC hits 88k by Friday?"') && script.includes('"<i>@oddiefun</i> BTC hits 88k by Friday?"')
-    && script.includes('"<i>@oddiefunbot</i> BTC hits 88k by Friday?"'));
-  check("...each door drawn as its own app (Lev, 2 Oct: X and Telegram did not look like X and Telegram)",
-    script.includes('p: "kick"') && script.includes('p: "tw"') && script.includes('p: "x"') && script.includes('p: "tg"')
-    && /\.tale__screen\[data-app="tw"\]\{background:#18181b;/.test(landing)
-    && /\.tale__screen\[data-app="x"\]\{background:#000;/.test(landing) && /\.tale__screen\[data-app="tg"\]\{background:#0e1621;/.test(landing)
-    && landing.includes(".xp--chain::before") && landing.includes(".tg__bub::before"));
-  check("...and the window keeps one height on every door, so a switch never moves the page",
-    /\.tale--js \.tale__feed\{height:\d+px;/.test(landing)
-    && !/\.tale__screen\[data-app="(?:x|tg|tw)"\]\{[^}]*(?:padding:|padding-(?:top|bottom)|height)/.test(landing));
-  check("the card in the X reply and the Telegram photo is the real card, not a drawing of one",
-    script.includes('var CARD_SRC = "/brand/tale-card.webp";') && script.includes('card("xp__m")') && script.includes('card("tg__ph")')
-    && !landing.includes('class="mcard__s"') && statSync("public/brand/tale-card.webp").size < 40_000);
-  {
-    /* EVERY LINE A BOT SAYS ON SCREEN IS WHAT ITS CODE SAYS, built here from
-       that code for the market on screen. The market is a made-up twin of the
-       live BTC one: its slug comes from its own id, and the X reply picks its
-       CTA from the link, so the twin's id was chosen to land on "pick a side". */
-    const HOOK = "BTC to $88k by Friday?";
-    const twin = { venue: "community" as const, venueId: "demo-btc-88k-4", question: "Will Bitcoin (BTC) reach $88,000 by Friday?",
-      yesPct: 50, closesAt: null, volumeUsd: 0, venueUrl: "", tags: [] };
-    const LINK = `https://app.oddie.fun/m/${slugFor(twin)}`;
-    const js = (s: string) => s.replace(/\n/g, "\\n");
-    const [kickA, kickB] = MARKET_COPY.opened(HOOK, "\u0000", "this channel").split("\u0000");
-    check("the market on screen is the twin, never a live one", LINK === "https://app.oddie.fun/m/will-bitcoin-btc-reach-88000-by-215eb7"
-      && script.includes(`var LINK = "${LINK}";`) && !/will-bitcoin-btc-reach-88000-by-(?!215eb7)[0-9a-f]{6}/.test(landing));
-    check("Kick says what the chat bot says, opening and settling",
-      tale.includes(`${kickA}<span class="ln">${LINK}</span>${kickB}`)
-      && server.includes('`It\'s ${outcome.toUpperCase()}: "${headline}" Winners collect at ${APP_BASE_URL}/m/${slug}`')
-      && tale.includes(`It's NO: "${HOOK}" Winners collect at <span class="ln">${LINK}</span>`));
-    // Twitch runs the same engine, so its lines are Kick's, on its own market.
-    const TW_HOOK = "SOL above $150 by Sunday?";
-    const [twA, twB] = MARKET_COPY.opened(TW_HOOK, "\u0000", "this channel").split("\u0000");
-    check("Twitch says what the chat bot says, opening and settling",
-      script.includes(`var HK = "${TW_HOOK}";`)
-      && script.includes(`'${twA.replace(TW_HOOK, "' + HK + '")}' + link + "${twB}"`)
-      && script.includes(`"It's YES: \\"" + HK + "\\" Winners collect at " + link`));
-    const reply = buildTweetReply({ question: twin.question, permalink: LINK, hook: HOOK }).primary;
-    check("X and Telegram open with the reply the bot builds for that link",
-      reply.endsWith(`\n\nPick a side, real SOL on it ↓\n${LINK}`)
-      && script.includes('"Pick a side, real SOL on it ↓\\n" + SHORT') && script.includes('"Pick a side, real SOL on it ↓\\n" + link + "\\n\\n'));
-    check("...Telegram names the opener the way TG_COPY does",
-      script.includes(js(`\n\n${TG_COPY.opener("Jules", "oddiefunbot").split("\n")[0]}`)));
-    const settled = resolutionText(twin.question, "no", LINK, 1);
-    check("step three settles in the bots' own words, on X and in Telegram",
-      settled === tgResolutionText({ outcome: "no", pool: 2, won: 1, marketUrl: LINK })
-      && script.includes(js(settled.slice(0, settled.lastIndexOf("\n\n") + 2)))
-      && script.includes(`"<i>@0xjules</i>${authorCreditText("0xjules", LINK).split("\n")[0].slice("@0xjules".length)}"`));
+  const script = landing.slice(landing.indexOf("HOW IT WORKS, ON EVERY DOOR"));
+  check("how it works is one stream page, one door per platform, in this order",
+    landing.includes('<div class="tale reveal" id="tale">')
+    && ["Kick", "Twitch", "X Live", "YouTube"].every((n, i) => new RegExp(`data-door="${i}"[^>]*>(?:<svg[^]*?</svg>)?${n}</button>`).test(tale)));
+  check("...each door its own kind of stream: a shooter, a chart, a card game, a battle royale",
+    ['app: "kick"', 'app: "tw"', 'app: "xl"', 'app: "yt"'].every((k, i, all) => script.includes(k) && (i === 0 || script.indexOf(all[i - 1]) < script.indexOf(k)))
+    && ["sc--fps", "sc--chart", "sc--cards", "sc--br"].every((k) => script.includes(k)));
+  /* EVERY LINE ODDIE SAYS ON SCREEN IS ITS REAL LINE for that call, built here
+     from LIVE_COPY: the call opening, the room's split and the result. */
+  const stories = [
+    { q: "Does he clutch this round?", yes: ["nova", "mo"], no: ["kai"], outcome: "yes" as const },
+    { q: "BTC closes this 5m candle green?", yes: ["tom", "ash"], no: ["lena"], outcome: "yes" as const },
+    { q: "Can Kai beat Mira?", yes: ["jules"], no: ["piaplays", "dexdraws"], outcome: "no" as const },
+    { q: "Does she win this match?", yes: ["sammy", "raytm"], no: ["lu"], outcome: "yes" as const },
+  ];
+  const linesOf = (st: (typeof stories)[number]) => {
+    const t = { yes: st.yes.length, no: st.no.length };
+    const right = st.outcome === "yes" ? st.yes : st.no;
+    return [LIVE_COPY.opened(st.q, null, ""), LIVE_COPY.split(t, st.yes, st.no, null),
+      LIVE_COPY.settled(st.q, st.outcome, right.length, t.yes + t.no, 0, "", right)];
+  };
+  for (const st of stories) {
+    const missing = linesOf(st).filter((l) => !script.includes(JSON.stringify(l)));
+    check(`Oddie says its real lines for "${st.q}"`, missing.length === 0, missing.join(" | "));
   }
-  check("without script it is the whole Kick conversation",
-    tale.includes('<div class="tale__screen" data-app="kick"><div class="tale__feed" aria-live="off">')
-    && tale.includes('<p class="msg kc"><b class="k2">0xjules</b>: !oddie BTC hits 88k by Friday?</p>'));
+  check("without script it is the Kick story, finished: the round won and the call settled",
+    tale.includes('<div class="sc sc--fps is-won"') && linesOf(stories[0]).every((l) => tale.includes(`<b class="k0">oddiefun</b>: ${l}</p>`)));
   check("it moves only on screen, and never on its own with reduced motion",
-    script.includes("if (reduced) { upTo(1); return; }") && script.includes("}, { threshold: 0.35 }).observe(tale);"));
+    script.includes("if (reduced) { show(0, true); return; }") && script.includes("}, { threshold: 0.35 }).observe(tale);"));
+  check("the caption says the one number", tale.includes("<b>Oddie settles it in seconds.</b>"));
+  check("a live call takes the story's place, and nothing else does",
+    server.includes(".replace(/<!--TALE-->[\\s\\S]*?<!--\\/TALE-->/, (tale) => callCard || tale)")
+    && server.includes("const { live } = await showcaseCalls();"));
   // The pitch carries the one number now (Lev, 3 Nov): a call settles in
   // seconds. The 2% stays where it is true, under Streamers, checked below.
   check("the hero says the pitch once, with its one number; the doors say where",

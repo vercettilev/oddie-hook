@@ -598,18 +598,16 @@ async function renderLanding(): Promise<string> {
     }
   })();
 
-  /* A REAL CALL WHERE THE MADE-UP ONE STOOD (Lev, 3 Nov, after CRSH, whose
-     front door is a live stream with a live question on it). How it works
-     played a scripted BTC market in a Kick chat, and the one thing only Oddie
-     does, a call settled off the stream seconds after the result, was nowhere
-     on the page. The section now shows one real call: the one taking answers
-     on a streamer's channel right now, else the newest the screen settled,
-     with the picture Oddie read. With neither (a new install, a failed read)
-     the scripted chat stays, so How it works is never an empty shelf. */
+  /* A LIVE CALL ON THE FRONT DOOR (Lev, 3 Nov, after CRSH, whose front door
+     is a live stream with a live question on it). While a streamer's channel
+     has a call taking answers, How it works shows that call, with the door
+     to watch it and call it. The rest of the time it plays the four-door
+     story (public/landing.html): a settled call from a niche game read worse
+     than a drawn one any stranger understands (Lev: a shooter, a chart). */
   const callCard = await (async (): Promise<string> => {
     try {
-      const { live, settled } = await showcaseCalls();
-      const sc: ShowcaseCall | null = live ?? settled;
+      const { live } = await showcaseCalls();
+      const sc: ShowcaseCall | null = live;
       if (!sc) return "";
       const where = ({ kick: "Kick", twitch: "Twitch", x: "X Live", youtube: "YouTube Live" } as const)[sc.platform];
       const mark = sc.platform === "youtube" ? ""
@@ -622,29 +620,12 @@ async function renderLanding(): Promise<string> {
         + "<span>" + total + (total === 1 ? " call" : " calls") + "</span></p>";
       const head = (right: string) => '<p class="chat__src callc__src"><span class="callc__at">' + mark + who + " &middot; " + where + "</span>" + right + "</p>"
         + '<p class="callc__q">' + escHtml(sc.question) + "</p>";
-      if (sc === live) {
-        return '<div class="callc reveal"><div class="chat callc__chat">' + head('<b class="callc__live">Live</b>')
-          + '<div class="callc__bar" role="img" aria-label="' + pct + ' percent yes"><i style="width:' + (total ? pct : 50) + '%"></i></div>' + split
-          + '<p class="callc__how">Type <code>!yes</code> or <code>!no</code> in the stream chat. Oddie settles it off the stream, seconds after the result.</p></div>'
-          + '<a class="callc__go" href="' + escHtml(page) + '">Watch it and call it <i aria-hidden="true">&rarr;</i></a></div>';
-      }
-      const ago = (ms: number): string => {
-        const m = Math.max(1, Math.round((Date.now() - ms) / 60_000));
-        return m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)} days ago`;
-      };
-      const frame = `${APP_BASE_URL}/api/live/${sc.platform}/${encodeURIComponent(sc.slug)}/frame/${sc.id}`;
-      const out = sc.outcome === "yes" ? "y" : "n";
-      const names = sc.calledIt.map((n) => "@" + escHtml(n.replace(/^@+/, "")));
-      const calledIt = !names.length ? "Nobody called it."
-        : (names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " and " + names[names.length - 1]) + " called it.";
-      return '<div class="callc reveal"><div class="chat callc__chat">' + head(sc.settledAt ? '<span class="callc__when">' + ago(sc.settledAt) + "</span>" : "") + split
-        + '<figure class="callc__f"><img src="' + escHtml(frame) + '" alt="The stream as Oddie read it when it settled this call" width="640" height="360" loading="lazy">'
-        + "<figcaption>What Oddie saw</figcaption></figure>"
-        + '<p class="callc__r"><b class="' + out + '">' + (sc.outcome === "yes" ? "YES" : "NO") + "</b> Settled off the stream, seconds after the result.</p>"
-        + '<p class="callc__who">' + calledIt + "</p></div>"
-        + '<a class="callc__go" href="' + escHtml(page) + '">Every call from ' + who + ' <i aria-hidden="true">&rarr;</i></a></div>';
+      return '<div class="callc reveal"><div class="chat callc__chat">' + head('<b class="callc__live">Live</b>')
+        + '<div class="callc__bar" role="img" aria-label="' + pct + ' percent yes"><i style="width:' + (total ? pct : 50) + '%"></i></div>' + split
+        + '<p class="callc__how">Type <code>!yes</code> or <code>!no</code> in the stream chat. Oddie settles it off the stream, seconds after the result.</p></div>'
+        + '<a class="callc__go" href="' + escHtml(page) + '">Watch it and call it <i aria-hidden="true">&rarr;</i></a></div>';
     } catch {
-      return "";   // a read that failed leaves the scripted chat in place
+      return "";   // a read that failed leaves the story in place
     }
   })();
 
