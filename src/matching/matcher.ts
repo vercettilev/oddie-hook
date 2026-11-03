@@ -168,19 +168,25 @@ const PRICED_QUESTION = /\$\s?\d/;
 const HAS_NUMBER = /\d/;
 
 /**
- * Very rough horizon parser: "today" -> 0, "this week" -> 7, "this year" -> days to Dec 31, etc.
+ * Days until the end of the year a take names: "this year", "by end of year"
+ * and "eoy" run to Dec 31, "next year" to Dec 31 of the next. Very rough.
+ *
+ * Null for anything else, including a take that also names a nearer window
+ * ("today", "this week", "this month"): that is not a year-long claim. Those
+ * windows used to come back as 0, 7 and 30, guesses rather than dates, and the
+ * horizon filter never acted on them. It must not start to: a flat 30 for "this
+ * month", set against a real close time, throws out the month-end market
+ * itself in the month's last days.
  *
  * `now` is passed in, never read here, because "this year" is measured from it:
- * the same take is 175 days out on July 9 and 59 on Nov 2, under the 60-day bar
- * of the horizon filter. Read off the wall clock, the matcher's own test meant
- * something different every day, and went red on a clean main on Nov 2, 2026.
+ * the same take is 175 days out on July 9 and 59 on Nov 2. Read off the wall
+ * clock, the matcher's own test meant something different every day, and went
+ * red on a clean main on Nov 2, 2026.
  */
 function parseHorizonDays(text: string, now: number): number | null {
   const t = text.toLowerCase();
+  if (/\btoday\b|\bthis week\b|\bthis month\b/.test(t)) return null;
   const year = new Date(now).getFullYear();
-  if (/\btoday\b/.test(t)) return 0;
-  if (/\bthis week\b/.test(t)) return 7;
-  if (/\bthis month\b/.test(t)) return 30;
   if (/\bnext year\b/.test(t)) {
     const endNext = new Date(year + 1, 11, 31);
     return Math.ceil((endNext.getTime() - now) / 86_400_000);
@@ -276,12 +282,18 @@ function isDisqualified(tweetText: string, m: Market, now: number): boolean {
     }
   }
 
-  // 2) Tweet implies a long horizon ("this year") but the market resolves
-  //    within days -> by the time the tweet's claim could play out, this
-  //    market has already settled on unrelated timing. Exclude.
+  // 2) Tweet names a year ("this year") but the market resolves within days,
+  //    while the claim still has a week or more to run after it settles -> the
+  //    market asks about something sooner, on unrelated timing. Exclude.
+  //
+  //    The week is counted from the market's close, not from today. The rule
+  //    was "the take reaches 60+ days out", and "this year" drops under 60 on
+  //    Nov 2: from then to Dec 31 a year-end take landed on whichever next-day
+  //    market was busiest. From Dec 24 the year ends within a week of a
+  //    next-day market's close, and that market counts again.
   const tweetHorizon = parseHorizonDays(tweetText, now);
   const marketHorizon = daysUntil(m.closesAt, now);
-  if (tweetHorizon !== null && tweetHorizon >= 60 && marketHorizon !== null && marketHorizon <= 3) {
+  if (tweetHorizon !== null && marketHorizon !== null && marketHorizon <= 3 && tweetHorizon - marketHorizon >= 7) {
     return true;
   }
 

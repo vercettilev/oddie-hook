@@ -16,9 +16,9 @@
 //
 // 3. Nothing here reads the wall clock. "this year" is measured from now, so a
 //    fixture timed off Date.now() meant something different every day: from
-//    Nov 2, 2026 (59 days left, under the 60-day bar) it went red on a clean
-//    main, and its Dec 31, 2026 closes would have kept it red from then on.
-//    Every check runs at NOW unless it moves the clock on purpose.
+//    Nov 2, 2026 (59 days left, under the 60-day bar the rule then had) it went
+//    red on a clean main, and its Dec 31, 2026 closes would have kept it red
+//    from then on. Every check runs at NOW unless it moves the clock on purpose.
 //
 // The overlap numbers asserted at the bottom are the ones MIN_OVERLAP is
 // calibrated against. They live here, executed, rather than only in a comment.
@@ -46,7 +46,7 @@ function got(m: ReturnType<typeof matchTweet>): string {
 
 /**
  * The suite's clock. July 9 is the day the 3-hour market below is named for;
- * "this year" then has 175 days left, well over the horizon filter's 60.
+ * "this year" then has 175 days left.
  */
 const NOW = Date.parse("2026-07-09T12:00:00Z");
 
@@ -135,8 +135,8 @@ console.log("nothing suitable");
 // "this year" is the days left to Dec 31, so the same take is a long horizon at
 // NOW and a short one in December. On Dec 31 it means today, and a market that
 // closes in three hours is inside it. The plumbing is checked from both ends: if
-// the horizon parser goes back to the wall clock, the checks above go red in
-// November and December, and this one in every other month.
+// the horizon parser goes back to the wall clock, the checks above go red from
+// Dec 24 on, and this one before it.
 //
 // 06:00 UTC, not noon: the parser reads the year in local time, and noon UTC on
 // Dec 31 is already New Year's Day in Auckland.
@@ -149,6 +149,45 @@ console.log("horizon follows the matcher's clock");
   });
   const r = matchTweetAt(BTC_TWEET, [closingSoon], undefined, DEC_31);
   check('on Dec 31 "this year" means today: a market closing in 3 hours still matches', r?.market.venueId === "BTC-DEC31", `got ${got(r)}`);
+}
+
+// ---------------------------------------------------------------------------
+// The horizon rule counts the week from the market's close.
+//
+// It used to ask whether the take reached 60+ days out, and "this year" drops
+// under 60 on Nov 2: from then to Dec 31 a year-end take landed on the busiest
+// next-day market. The decoy here is a next-day market with 100x the volume, so
+// a rule that goes back to an absolute bar fails the first three checks. The
+// dates keep clear of Dec 23, the last day the week still bites, because the
+// parser reads the year in local time.
+// ---------------------------------------------------------------------------
+console.log("horizon rule counts from the market's close");
+{
+  const nextDayAfter = (now: number) =>
+    mk("BTC-NEXT-DAY", "Will Bitcoin close above $150,000 tomorrow?", {
+      closesAt: new Date(now + 86_400_000).toISOString(),
+      volumeUsd: DECOY_VOLUME,
+    });
+  for (const day of ["2026-11-02", "2026-12-15", "2026-12-21"]) {
+    const now = Date.parse(`${day}T12:00:00Z`);
+    const r = matchTweetAt(BTC_TWEET, [nextDayAfter(now), btcRight], undefined, now);
+    check(`${day}: a "this year" take keeps the year-end market over a busier next-day one`, r?.market.venueId === "BTC-RIGHT", `got ${got(r)}`);
+  }
+  {
+    // From Dec 24 the year ends within a week of the next-day market's close.
+    const now = Date.parse("2026-12-28T12:00:00Z");
+    const r = matchTweetAt(BTC_TWEET, [nextDayAfter(now)], undefined, now);
+    check("Dec 28: with the year ending within a week, a next-day market counts", r?.market.venueId === "BTC-NEXT-DAY", `got ${got(r)}`);
+  }
+  {
+    // "this month" is a guess (it used to be a flat 30), not a date, and stays
+    // out of the rule. Counted against a real close, 30 would throw out the
+    // month-end market itself here.
+    const now = Date.parse("2026-11-28T12:00:00Z");
+    const november = mk("BTC-NOV", "Will Bitcoin reach $70,000 in November?", { closesAt: "2026-11-30T23:59:00Z" });
+    const r = matchTweetAt("bitcoin is definitely hitting 70k this month, no doubt", [november], undefined, now);
+    check('Nov 28: a "this month" take still reaches the month-end market', r?.market.venueId === "BTC-NOV", `got ${got(r)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
