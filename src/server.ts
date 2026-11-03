@@ -1102,6 +1102,9 @@ const TERMS_HTML = readFileSync(path.join(__dirname, "../public/terms.html"), "u
 const PRIVACY_HTML = readFileSync(path.join(__dirname, "../public/privacy.html"), "utf8");
 app.get(["/terms", "/terms.html"], (_req, res) => res.type("html").send(TERMS_HTML));
 app.get(["/privacy", "/privacy.html"], (_req, res) => res.type("html").send(PRIVACY_HTML));
+// How a result is decided (Lev, 3 Nov): the screen's rules and where to check one.
+const SETTLES_HTML = readFileSync(path.join(__dirname, "../public/settles.html"), "utf8");
+app.get(["/settles", "/settles.html"], (_req, res) => res.type("html").send(SETTLES_HTML));
 
 
 app.get("/preview", (_req, res) => {

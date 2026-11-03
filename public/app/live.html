@@ -982,7 +982,9 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
             + '" alt="The stream as Oddie read it when it settled this call" loading="lazy" width="520" height="292"></a>'
             + "<figcaption>What Oddie saw when it settled this</figcaption></figure>" : "")
           + "</li>";
-      }).join("") + "</ul>";
+      }).join("") + "</ul>"
+        // How a result is decided, for anybody who wants to check one (Lev, 3 Nov).
+        + '<p class="hint"><a href="/settles">How Oddie settles a call</a></p>';
     }
 
     var stAll = j.standings || [], stSeason = j.standingsSeason || [];

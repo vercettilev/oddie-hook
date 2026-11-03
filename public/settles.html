@@ -1,0 +1,59 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How Oddie settles &middot; oddie</title>
+<meta name="description" content="How a call in a stream chat settles off the stream, what happens when Oddie is not sure, and how to check any result.">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<link rel="icon" href="/favicon-32.png?v=3" sizes="32x32" type="image/png">
+<!-- HOW A RESULT IS DECIDED, IN ONE PLACE (Lev, 3 Nov, after CRSH pins its
+     "Market Rules & Settlement Policy" in every chat). A product whose results
+     come from a model reading the screen has to say how, plainly, and point
+     at the picture behind each one. Every rule here is the code's own:
+     src/live/screenCalls.ts (looks, sure twice, the first minute), calls.ts
+     (a stream that ends first), and the oracle for markets. -->
+<style>*{box-sizing:border-box}
+body{margin:0;background:#FBFCF4;color:#0B0D04;font-family:'Nunito',system-ui,-apple-system,sans-serif;
+font-weight:600;line-height:1.6;padding:0 20px 90px}
+.s{max-width:62ch;margin:0 auto}
+header{padding:34px 0 10px}
+a.home{font:800 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;
+text-transform:uppercase;color:#A3053F;text-decoration:none}
+@media (hover:hover){a.home:hover{text-decoration:underline}}
+h1{font-family:'Anton','Arial Narrow','Helvetica Neue',sans-serif;font-weight:400;text-transform:uppercase;
+font-size:clamp(34px,7vw,54px);line-height:.98;letter-spacing:.01em;margin:14px 0 18px}
+h2{font-family:'Anton','Arial Narrow','Helvetica Neue',sans-serif;font-weight:400;text-transform:uppercase;
+font-size:22px;letter-spacing:.02em;margin:32px 0 8px}
+p{font-size:16px;margin:0 0 12px}
+pre{margin:0 0 12px;padding:10px 14px;background:#0B0D04;color:#FCF604;font:800 15px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-x:auto}
+a{color:#A3053F}
+.note{background:#FCF604;border:3px solid #0B0D04;box-shadow:5px 6px 0 #A3053F;padding:16px 18px;margin:8px 0 22px}
+.note p:last-child{margin:0}
+footer{margin-top:40px;padding-top:18px;border-top:2px solid #E3E5D6;
+font:700 12px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#494E2D}
+footer a{color:#494E2D;margin-right:14px}
+html{-webkit-tap-highlight-color:transparent}
+</style></head>
+<body><div class="s">
+<header><a class="home" href="/">&larr; oddie</a>
+<h1>How Oddie settles</h1></header>
+
+<div class="note"><p>A call in a stream chat settles off the stream itself. Oddie reads the result on screen, and the picture it read is public under the call.</p></div>
+
+<h2>A call settles off the stream</h2>
+<p>While a call is open, Oddie looks at the stream every few seconds. It settles the call only when it reads the same result twice in a row, a couple of seconds apart, and is sure both times.</p>
+<p>It waits a minute after a call opens before it looks, so the end of the last game never settles the next call.</p>
+<p>A call about a whole tournament or a night settles on the event&rsquo;s own result screen, and a second, stronger model has to read it the same way.</p>
+
+<h2>When Oddie is not sure</h2>
+<p>The call stays open, and the streamer or a mod settles it:</p>
+<pre>!call yes</pre>
+<pre>!call no</pre>
+<p>If the stream ends before a result, the call is canceled and nobody scores.</p>
+
+<h2>Every result can be checked</h2>
+<p>The picture Oddie settled a call on is kept, and it is shown under the call on the channel&rsquo;s page on oddie.</p>
+
+<h2>Markets settle from their own rule</h2>
+<p>A market with SOL in it never settles from a picture. It settles from the rule written when it opened: a price claim from published price candles, anything else from public sources. Its rule, fee and refunds are on its own page.</p>
+
+<footer><a href="/">Home</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a></footer>
+</div></body></html>
