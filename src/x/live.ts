@@ -32,7 +32,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { handleChat, type ChatMessage, type LiveDeps } from "../live/calls.js";
 import { accessToken, adoptTokens, botUserId, BOT_SCOPES, xConfigured } from "./client.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
+import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { paced, patiently } from "../live/pace.js";
+import { creditInvite, sharedCookieDomain } from "../live/referrals.js";
 import { channelById, channelBySlug, liveStore, saveChannel } from "../store/live.js";
 import { botStateGet, botStateSet } from "../store/markets.js";
 import { splitForChat } from "../youtube/client.js";
@@ -485,12 +487,17 @@ export interface XLiveRouteDeps extends ChannelPageDeps {
   voice?: XVoice;
 }
 
-export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state: string, query: Record<string, unknown>, res: Response): Promise<boolean> } {
+export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state: string, query: Record<string, unknown>, res: Response, cookie?: string): Promise<boolean> } {
   const r = express.Router();
   const base = d.appBaseUrl.replace(/\/+$/, "");
   const api = d.api ?? xLiveApi;
   const voice = d.voice ?? botVoice;
   const ready = () => Boolean(d.api) || xLiveConfigured();
+  /* X's one callback comes back to the landing's host while the channel page
+     lives on the app's: there the owner cookie names the shared domain, or
+     the page would never see it. */
+  const hostOf = (u: string): string => { try { return new URL(u).hostname; } catch { return ""; } };
+  const ownerDomain = hostOf(d.redirectUri) !== hostOf(base) ? sharedCookieDomain(d.redirectUri) : null;
 
   const authorize = (kind: Pending["kind"]) => (_req: express.Request, res: Response) => {
     if (!ready()) return res.status(503).type("text").send("oddie for X live is almost here.");
@@ -512,8 +519,9 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
   /** oddie's own account: the one token the reply bot and X live chat both speak with. */
   r.get("/live/x/voice", authorize("voice"));
 
-  /** The states this file issued (they start xl_), back through X's one registered callback. False: not ours. */
-  async function callback(state: string, query: Record<string, unknown>, res: Response): Promise<boolean> {
+  /** The states this file issued (they start xl_), back through X's one registered callback. False: not ours.
+   *  `cookie` is the request's Cookie header: the invite it may carry (src/live/referrals.ts). */
+  async function callback(state: string, query: Record<string, unknown>, res: Response, cookie?: string): Promise<boolean> {
     const done = finished.get(state);
     if (done && Date.now() - done.at < PENDING_TTL_MS) { res.redirect(done.to); return true; }
     const p = pending.get(state);
@@ -557,11 +565,18 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
         go(`${base}/live/x/${encodeURIComponent(who.username)}?voice=1`);
         return true;
       }
+      // undefined, not null, when the read fails: only a channel we know was
+      // never here is a first connect, which an invite may claim.
+      const before = await channelById("x", who.id).catch(() => undefined);
       await saveChannel({
         platform: "x", channelId: who.id, slug: who.username, name: who.name, avatar: who.avatar,
         accessToken: t.accessToken, refreshToken: t.refreshToken, tokenExpiresAt: t.expiresAt, active: true,
       });
       slugOf.set(who.id, who.username);
+      // A first connect through another channel's invite (src/live/referrals.ts):
+      // as soon as the channel exists, so a retry after a failed subscription
+      // is not taken for a second arrival that loses it.
+      await creditInvite(cookie, { platform: "x", channelId: who.id, slug: who.username }, before === null, d.log);
       // Chat is the one that matters; start and end only say when the stream is on air.
       const subs: Record<string, string> = {};
       for (const ev of CHAT_EVENTS) {
@@ -572,6 +587,12 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
         }
       }
       d.log("x channel connected", { handle: who.username, ...subs });
+      /* X has just said which account this browser is: the owner cookie, as
+         Kick's and Twitch's sign-ins leave it (src/live/owner.ts). It went in
+         07ab0c5, when votes only left no wallet to offer; the channel's own
+         invite link is the reason now (Lev, 3 Nov). */
+      const key = ownerKeyFromEnv("x");
+      if (key) res.append("Set-Cookie", ownerCookie(ownerToken(who.id, key), base.startsWith("https:"), undefined, "x", ownerDomain));
       // Votes only, so no wallet to offer: the page says how to start one.
       go(`${base}/live/x/${encodeURIComponent(who.username)}?added=1`);
     } catch (e) {

@@ -36,6 +36,7 @@ import { lockDue, remindOpen, sayVotes, seasonEnd, seasonStart, weekStart, type 
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
 import { watchFrames } from "./live/frameCalls.js";
+import { referralRouter, sharedCookieDomain } from "./live/referrals.js";
 import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
 import { fetchPicture, screenSource, SCREEN_FRAME_WIDTH } from "./games/screen.js";
@@ -208,6 +209,8 @@ function hostFor(path: string): "app" | "apex" | "shared" {
 }
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROSTER_HTML = readFileSync(path.join(__dirname, "../public/roster.html"), "utf8");
+/** The admin's referral ledger (src/live/referrals.ts). */
+const REFERRALS_HTML = readFileSync(path.join(__dirname, "../public/referrals.html"), "utf8");
 /** The rebuilt market page. Read once at boot like every other shell here,
  *  which means an edit to it needs a server restart to be visible. */
 const MARKET_HTML = readFileSync(path.join(__dirname, "../public/app/market.html"), "utf8");
@@ -3254,7 +3257,7 @@ app.get("/api/auth/:provider/callback", async (req, res) => {
   // send the person back where they started (the returnTo lives in the state).
   const state = typeof req.query.state === "string" ? req.query.state : null;
   // A streamer (or oddie's own account) connecting X live chat: src/x/live.ts issued that state.
-  if (p === "twitter" && state?.startsWith("xl_") && await xLive.callback(state, req.query, res)) return;
+  if (p === "twitter" && state?.startsWith("xl_") && await xLive.callback(state, req.query, res, req.headers.cookie)) return;
   const pendingAuth = state ? consume(state) : null;
   const back = (params: string) => {
     if (pendingAuth?.returnTo) {
@@ -6213,6 +6216,21 @@ app.get("/api/admin/fees", requireAdmin, async (req, res) => {
     res.status(500).json({ error: "fee log unavailable" });
   }
 });
+
+/* A STREAMER WHO BRINGS A STREAMER (src/live/referrals.ts, Lev 3 Nov): the
+   invite link, and the admin's ledger of what is owed out of Oddie's own fee
+   with the payouts recorded by hand against it. Nothing in it sends SOL. The
+   invite cookie names the shared domain, so X's callback on the landing's
+   host reads an invite opened on the app's. */
+app.use(referralRouter({
+  appBaseUrl: APP_BASE_URL,
+  cookieDomain: sharedCookieDomain(APP_BASE_URL),
+  adminOk: (req) => adminOk(req),
+  adminHtml: () => REFERRALS_HTML,
+  log: liveLog,
+  // Trying invites locally without signing in anywhere: memory store only.
+  dev: process.env.LIVE_DEV_SEED === "1",
+}));
 
 // Internal wedge metrics (read-only, admin). All-time over the data we log.
 app.get("/api/metrics", requireAdmin, async (_req, res) => {

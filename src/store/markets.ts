@@ -3638,6 +3638,33 @@ export async function marketsSurfacedBy(rawDeviceId: string, limit = 50): Promis
   }));
 }
 
+/**
+ * The protocol fee each market's resolve recorded, by slug: Oddie's 2% as
+ * logRealFee booked it, the referral ledger's only source for it
+ * (src/live/referrals.ts). Read as recorded, never worked out again from a
+ * rate: the program caps the fee at the losing side and takes nothing from a
+ * one-sided pool. A market with no row is absent. A market logged twice keeps
+ * its latest row.
+ */
+export async function recordedProtocolFees(slugs: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!slugs.length) return out;
+  if (!PERSISTENT) {
+    const wanted = new Set(slugs);
+    for (const r of memFeeLog) {
+      if (r.marketKind === "real" && r.feeKind === "protocol" && r.enforced && wanted.has(r.slug)) out.set(r.slug, r.feeAmount);
+    }
+    return out;
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; fee_amount: string }>(
+    `SELECT DISTINCT ON (slug) slug, fee_amount FROM market_fee_log
+      WHERE slug = ANY($1::text[]) AND market_kind = 'real' AND fee_kind = 'protocol' AND enforced = true
+      ORDER BY slug, id DESC`, [slugs]);
+  for (const r of rows) out.set(r.slug, Number(r.fee_amount));
+  return out;
+}
+
 /** Recent fee events, newest first — the admin audit view over market_fee_log. */
 export async function feeLog(limit = 100): Promise<FeeLogRow[]> {
   const n = Math.max(1, Math.min(500, Math.floor(limit)));
@@ -5392,6 +5419,30 @@ export async function streamOpenedSlugs(platform: StreamPlatform, channelId: str
 }
 export const kickOpenedSlugs = (channelId: string) => streamOpenedSlugs("kick", channelId);
 
+/** Every market opened in this channel's chat and when, oldest first: the
+ *  referral window counts from these (src/live/referrals.ts). The moment is
+ *  the ledger row's, as the page's list reads it (streamChannelMarkets). */
+export async function streamOpenedMarkets(platform: StreamPlatform, channelId: string): Promise<Array<{ slug: string; openedAt: number }>> {
+  if (!channelId) return [];
+  if (!PERSISTENT) {
+    const first = new Map<string, number>();
+    for (const m of memMentions.values()) {
+      if (m.outcome !== "replied" || m.reason !== "opened" || !m.slug || channelOfKey(platform, m.tweetId) !== channelId) continue;
+      first.set(m.slug, Math.min(first.get(m.slug) ?? m.at, m.at));
+    }
+    return [...first].map(([slug, openedAt]) => ({ slug, openedAt })).sort((a, b) => a.openedAt - b.openedAt);
+  }
+  await ensureSchema();
+  const { rows } = await db().query<{ slug: string; opened_at: Date }>(
+    `SELECT slug, min(at) AS opened_at FROM x_mention
+      WHERE tweet_id LIKE $2 AND split_part(tweet_id, ':', 2) = $1
+        AND outcome = 'replied' AND reason = 'opened' AND slug IS NOT NULL
+      GROUP BY slug ORDER BY min(at) ASC`,
+    [channelId, `${platform}:%`],
+  );
+  return rows.map((r) => ({ slug: r.slug, openedAt: new Date(r.opened_at).getTime() }));
+}
+
 /** The channel a market was opened in, as its person id (<platform>:<channel
  *  id>), or null when the market did not come from a stream. */
 export async function streamOpenerOf(slug: string): Promise<string | null> {
@@ -6433,6 +6484,9 @@ interface MentionRow {
   /** The exact text the engine graded, so a refusal can be re-read later
    *  without an X call and without depending on the post still existing. */
   claimText: string | null;
+  /** When the row was last claimed or decided, as Postgres's `at`: a market's
+   *  opening moment, which the referral window is counted from. */
+  at: number;
 }
 const memMentions = new Map<string, MentionRow>();
 /** The reply id per ledger row, in memory. Postgres keeps it in x_mention.reply_id;
@@ -6540,10 +6594,10 @@ export async function claimMention(tweetId: string, author: string | null): Prom
       // A row in `retry` is the one kind that may be picked back up, and only
       // while it has goes left. Everything else is decided forever.
       if (prev.outcome !== "retry" || prev.attempts >= MENTION_ATTEMPTS) return false;
-      memMentions.set(tweetId, { ...prev, outcome: "claimed", author: prev.author ?? author });
+      memMentions.set(tweetId, { ...prev, outcome: "claimed", author: prev.author ?? author, at: Date.now() });
       return true;
     }
-    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null, author, attempts: 0, claimText: null });
+    memMentions.set(tweetId, { tweetId, outcome: "claimed", reason: null, slug: null, author, attempts: 0, claimText: null, at: Date.now() });
     return true;
   }
   await ensureSchema();
@@ -6636,6 +6690,7 @@ export async function settleMention(
       // Counted on the way OUT, so a row that is never picked back up does not
       // silently spend a go it never got.
       attempts: (prev?.attempts ?? 0) + (outcome === "retry" && !extra.free ? 1 : 0),
+      at: Date.now(),
     });
     if (extra.replyId) memMentionReply.set(tweetId, extra.replyId);
     return;

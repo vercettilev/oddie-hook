@@ -19,6 +19,7 @@ import { renderCardPng } from "../card/renderPng.js";
 import { faceitConfigured } from "../games/faceit.js";
 import { gsiConfig } from "../games/gsi.js";
 import { GSI_STALE_MS } from "./gameCalls.js";
+import { inviteCard } from "./referrals.js";
 
 /**
  * A CHANNEL'S 2%, from the server: the same person store, challenge and
@@ -205,6 +206,9 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     const tallyOf = (id: string) => tallies[unsettled.findIndex((c) => c.id === id)] ?? { yes: 0, no: 0 };
     const tally = current ? tallyOf(current.id) : null;
     const markets = await marketsOf(ch.channelId);
+    // The owner's invite link and what it brought (src/live/referrals.ts), on
+    // every platform: on X and YouTube, which pay no 2%, it is their whole card.
+    const invite = ownerOf(platform, req) === ch.channelId ? await inviteCard(ch).catch(() => null) : null;
     // Only to the streamer's own browser: where their 2% goes, and how many
     // markets pay it.
     const owner = d.payout && ownerOf(platform, req) === ch.channelId
@@ -219,8 +223,9 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
         faceitAvailable: !!faceitConfigured(),
         // The game's own feed: the config to download, and whether the game is talking right now.
         gsi: { cfgPath: `/live/${platform}/${encodeURIComponent(ch.slug)}/gsi.cfg`, talking: ch.gsiSeenAt != null && Date.now() - ch.gsiSeenAt < GSI_STALE_MS, seenAt: ch.gsiSeenAt ?? null },
+        invite,
       }))
-      : null;
+      : invite ? { invite } : null;
     res.json({
       platform, slug: ch.slug, name: ch.name, avatar: ch.avatar, url: CHANNEL_URL[platform](ch.slug),
       ...(owner ? { owner } : {}),

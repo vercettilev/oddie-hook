@@ -655,7 +655,10 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
 
   function paintOwner() {
     if (!ownEl) return;
-    if (!owner) { ownEl.innerHTML = P === "youtube" ? youtubeSteps() : P === "x" ? xSteps() : ""; return; }
+    // X and YouTube pay no 2%: their owner's card is the invite, under the steps.
+    if (!owner || P === "youtube" || P === "x") {
+      ownEl.innerHTML = (P === "youtube" ? youtubeSteps() : P === "x" ? xSteps() : "") + inviteCard(); wireInvite(); return;
+    }
     if (!owner.wallet || ownMode === "ask") return askWallet();
     var n = Number(owner.markets || 0);
     ownEl.innerHTML = '<section class="own" aria-labelledby="own-t">' + kicker()
@@ -669,6 +672,39 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + '<p class="own__e" id="own-e" role="status"></p></section>';
     document.getElementById("own-alt").addEventListener("click", function () { ownMode = "ask"; paintOwner(); });
     ownEl.insertAdjacentHTML("beforeend", streamCard()); wireStream();
+    ownEl.insertAdjacentHTML("beforeend", inviteCard()); wireInvite();
+  }
+
+  /* THE INVITE (Lev, 3 Nov): a streamer who brings a streamer gets part of
+     Oddie's fee on the markets in their chat (src/live/referrals.ts). The
+     link, the one line of terms, and what it has brought: nothing more. */
+  function inviteCard() {
+    var v = owner && owner.invite;
+    if (!v) return "";
+    var n = Number(v.brought || 0);
+    var got = n ? (n === 1 ? "1 channel" : n + " channels") + " joined with your link. Earned so far: <b>" + esc(sol(v.earnedLamports)) + " SOL</b>. "
+      + (v.wallet ? "Payouts go to <b>" + esc(short(v.wallet)) + "</b> in SOL."
+        : P === "kick" || P === "twitch" ? "Connect a wallet above to get paid." : "Your earnings wait here until you add a wallet.")
+      : "Nobody has joined with your link yet.";
+    return '<section class="own strm" aria-labelledby="inv-t"><p class="own__k">Your invite link</p>'
+      + '<h2 class="own__t" id="inv-t">Invite a streamer</h2>'
+      + '<p class="own__p">' + esc(v.terms) + "</p>"
+      + '<div class="own__act"><code class="strm__url" id="inv-url">' + esc(location.origin + v.path) + '</code>'
+      + '<button class="own__alt" type="button" id="inv-copy">Copy link</button></div>'
+      + '<p class="own__n">' + got + "</p></section>";
+  }
+  function wireInvite() {
+    var cp = document.getElementById("inv-copy");
+    if (cp) cp.addEventListener("click", function () {
+      navigator.clipboard.writeText(document.getElementById("inv-url").textContent)
+        .then(function () { cp.textContent = "Copied"; setTimeout(function () { cp.textContent = "Copy link"; }, 1800); })
+        .catch(function () {});
+    });
+  }
+  /* SOL for a person to read: four places, never a long tail of zeros. */
+  function sol(l) {
+    var s = Number(l || 0) / 1e9;
+    return !s ? "0" : s < 0.0001 ? "under 0.0001" : String(Number(s.toFixed(4)));
   }
 
   /* ON THEIR STREAM (11 Oct): the overlay link for OBS, and the CS2 account
@@ -770,6 +806,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     var back = document.getElementById("own-back");
     if (back) back.addEventListener("click", function () { ownMode = "view"; paintOwner(); });
     ownEl.insertAdjacentHTML("beforeend", streamCard()); wireStream();
+    ownEl.insertAdjacentHTML("beforeend", inviteCard()); wireInvite();
   }
 
   function signedOut() {
