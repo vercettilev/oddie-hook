@@ -12,7 +12,8 @@
 // sides and compares them. There is nothing here that can drift.
 //
 //   npm run resolve-reconcile              report only, changes nothing
-//   npm run resolve-reconcile -- --apply   push our verdict to the chain
+//   npm run resolve-reconcile -- --apply   push our verdict to the chain, and
+//                                          book the fee that verdict fixed
 //
 // Needs DATABASE_URL on production and the chain layer configured with the same
 // admin key the server resolves with. It never prints key material.
@@ -20,10 +21,21 @@
 // SAFE TO RUN REPEATEDLY. A market already carrying the right verdict on chain
 // is reported as agreed and never touched.
 
-import { cluster, isChainEnabled, fetchMarketOnChain, resolveMarketOnChain } from "../src/chain/oddieChain.js";
-import { mintedMarketsForBackfill } from "../src/store/markets.js";
+import { cluster, isChainEnabled, fetchMarketOnChain, readMarket, resolveMarketOnChain } from "../src/chain/oddieChain.js";
+import { logRealFee, mintedMarketsForBackfill } from "../src/store/markets.js";
+import { bookFeeAfterResolve, type FeeBookDeps } from "../src/feeLedger.js";
 
 const APPLY = process.argv.includes("--apply");
+
+// The server books the fee of every verdict it lands, and only of those, so a
+// verdict this run lands is booked here or nowhere. Same rule as the server's
+// (src/feeLedger.ts): what the program fixed, never the rate times the pool.
+const feeBooking: FeeBookDeps = {
+  read: (pubkey) => readMarket(pubkey),
+  wait: (ms) => new Promise<void>((done) => setTimeout(done, ms)),
+  book: logRealFee,
+  log: (evt, extra) => console.error(`      ${evt} ${JSON.stringify(extra)}`),
+};
 
 function die(msg: string): never {
   console.error(`\n  ${msg}\n`);
@@ -80,6 +92,12 @@ for (const r of rows) {
   if (out.ok) {
     fixed++;
     console.log(`  + ${r.slug} -> ${dbOutcome}${out.alreadyResolved ? " (already there)" : ` (${out.signature?.slice(0, 8)}…)`}`);
+    // Already there means another resolve landed it between our read and our
+    // write, and whoever lands a verdict books its fee.
+    if (!out.alreadyResolved) {
+      const fee = await bookFeeAfterResolve(r.slug, r.onchainPubkey, feeBooking).catch((e) => `failed: ${(e as Error).message}`);
+      console.log(`      fee ${fee}`);
+    }
   } else {
     failed++;
     console.error(`  ! ${r.slug} could not be pushed: ${out.reason}, ${out.error}`);
