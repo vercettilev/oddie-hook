@@ -589,6 +589,44 @@ console.log("\nan eliminated tie does not veto the match");
 }
 
 // ---------------------------------------------------------------------------
+// A hard filter's elimination does not promote the runner-up.
+//
+// The filters remove a market that cannot answer the take. They do not pick one
+// that can, and whatever ranked below used to be published: on the frozen
+// board, "Toronto Tempo vs. Dallas Wings, Toronto Tempo this year" lost its own
+// game market (0.800) to the horizon filter and landed on the Dallas Cowboys at
+// 0.200, on the one word `dallas`. A disqualified market that scored STRICTLY
+// better than the answer now voids the match, unless the answer is corroborated.
+// Each part has a check that goes red without it: the first below if the rule
+// is removed, the second if a tie is allowed to veto, the last two if the
+// corroboration exception is dropped.
+// ---------------------------------------------------------------------------
+console.log("\na hard filter's elimination does not promote the runner-up");
+{
+  const take = "Toronto Tempo vs. Dallas Wings, Toronto Tempo this year";
+  const game = mk("WNBA-GAME", "Toronto Tempo vs. Dallas Wings — Toronto Tempo", { closesAt: IN_3H });
+  const nfl = mk("NFL-DAL", "NFL Champion 2027 — Dallas Cowboys", { volumeUsd: DECOY_VOLUME });
+  const r = matchTweet(take, [game, nfl]);
+  check('a game take that loses its game to the horizon filter does not land on "Dallas Cowboys"', r === null, `got ${got(r)}`);
+
+  // A tie is not a veto. The same matchup's season market scores what the game
+  // did, and it is the year-long question the take is asking.
+  const season = mk("WNBA-SEASON", "Toronto Tempo vs. Dallas Wings: season series — Toronto Tempo");
+  const tied = matchTweet(take, [game, nfl, season]);
+  check("...but a market that ties the removed one still answers it", tied?.market.venueId === "WNBA-SEASON", `got ${got(tied)}`);
+}
+{
+  // The exception, and the case that forced it: the 0.200 calibration take
+  // shares `fed` and `cuts` with the zero-cuts market (0.400), which the
+  // direction filter removes. The hike market agrees with the take's direction,
+  // so the filter itself chose it, and the card stands.
+  const zeroCuts = mk("FED-CUTS-0", "How many Fed rate cuts in 2026? — 0 (0 bps)", { volumeUsd: DECOY_VOLUME });
+  const r = matchTweet(HIKE_TWEET, [fedHike, zeroCuts]);
+  check("a corroborated answer survives a better-scoring market the direction filter removed", r?.market.venueId === "FED-HIKE", `got ${got(r)}`);
+  check("...at its own 0.200", near(r?.score ?? -1, 0.2), `score ${r?.score.toFixed(3)}`);
+}
+
+// ---------------------------------------------------------------------------
 // Categorizer. The feed's chips are only useful if the buckets are, and the
 // rules are ordered, so the order is what's asserted here. Every case below is
 // one that a plausible reordering or a broader keyword would get wrong — the

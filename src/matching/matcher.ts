@@ -570,13 +570,19 @@ export function matchTweet(
   if (tokens.size === 0) return null;
 
   const candidates: MatchResult[] = [];
+  let bestDisqualified = 0; // the best score a hard filter took out, see the end
   for (const market of markets) {
-    if (isDisqualified(tweetText, market, now)) continue; // structured check wins over lexical score
     const score = scoreMarket(tokens, market);
     if (score < minScore) continue;
     // Overlap is hits/max(3, size), so this recovers hits exactly.
     const hits = Math.round(score * Math.max(OVERLAP_FLOOR, tokens.size));
     if (isShort(tokens.size) && hits < 2 && !corroborates(tweetText, market)) continue;
+    if (isDisqualified(tweetText, market, now)) {
+      // Structured check wins over lexical score. Asked after the gates, so
+      // only a market that would otherwise have been a candidate counts.
+      bestDisqualified = Math.max(bestDisqualified, score);
+      continue;
+    }
     candidates.push({ market, score });
   }
 
@@ -590,7 +596,32 @@ export function matchTweet(
     if (Math.abs(byOverlap) > TIE_EPSILON) return byOverlap;
     return b.market.volumeUsd - a.market.volumeUsd; // tie-break: the market people actually trade
   });
-  return survivors[0];
+  const best = survivors[0];
+
+  // ELIMINATION IS NOT SILENCE, for the hard filters too (see resolveFamilies).
+  // A filter removes a market that cannot answer the take. It does not say
+  // what can, and whatever ranked below is promoted: on the frozen board,
+  // "Toronto Tempo vs. Dallas Wings, Toronto Tempo this year" loses its own
+  // game market to the horizon filter at 0.800 and lands on the Dallas
+  // Cowboys' NFL title market at 0.200, on the one word `dallas`. So a
+  // disqualified market that scored STRICTLY better than the answer voids the
+  // match; with the referee on, matchSemantic asks it instead. A tie does not,
+  // for the reason given in resolveFamilies.
+  //
+  // Unless the answer is corroborated: then the structure the filters read
+  // chose it over the market they removed. "no way the fed cuts, they're
+  // hiking again" shares `fed` and `cuts` with the zero-cuts outcome of "How
+  // many Fed rate cuts in 2026?" (0.400) and loses it to the direction filter;
+  // the hike market it keeps (0.200) agrees on the direction. That is the
+  // calibration case MIN_OVERLAP is pinned to, and without the exception it
+  // went silent.
+  //
+  // Measured on the frozen board moved to 28 clocks, over its own questions
+  // with and without a year added: 660 runs go silent, every one the question
+  // of a market closing within days with a year added. The 140 runs the
+  // direction filter promotes keep their card, and so do the 908 ties.
+  if (bestDisqualified > best.score + TIE_EPSILON && !corroborates(tweetText, best.market)) return null;
+  return best;
 }
 
 /**
