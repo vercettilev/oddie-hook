@@ -322,13 +322,37 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .std td{padding:10px 0;border-bottom:1px solid var(--line);font-family:var(--display);font-size:18px;letter-spacing:.02em}
 .std .r{width:44px;color:var(--fg-3)} .std .num{text-align:right}
 .std .pts{color:var(--yellow)}
-.std tr:nth-child(-n+3) .r{color:var(--yellow)}
 /* This week or all time (Lev, 16 Oct), and a run of right calls by the name. */
 .strange{display:flex;gap:8px;margin:0 0 12px}
 .strange button{font:inherit;font-family:var(--display);font-size:15px;letter-spacing:.03em;padding:6px 12px;
   border:2px solid var(--line);background:transparent;color:var(--fg-2);cursor:pointer;border-radius:999px}
 .strange button[aria-pressed="true"]{border-color:var(--yellow);background:var(--yellow);color:var(--ink)}
 .strange button:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+/* THE STREAM ABOVE THE CALL (Lev, 3 Nov, after CRSH): the platform's player,
+   or on X the live picture, in a 16:9 box the page never reflows around. */
+.onair{margin:0 0 22px}
+.onair__box{position:relative;aspect-ratio:16/9;background:#000;border:3px solid var(--black);box-shadow:8px 9px 0 var(--pink-deep);overflow:hidden}
+.onair__box iframe,.onair__box img{position:absolute;inset:0;width:100%;height:100%;border:0;object-fit:cover}
+.onair__k{display:flex;align-items:center;gap:10px;margin:10px 0 0;font-family:var(--mono);font-size:12px;font-weight:800;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3)}
+.onair__k b{background:var(--pink);color:#fff;padding:2px 8px}
+.onair__k a{color:var(--yellow);text-decoration:none}
+/* THE TOP THREE, WITH FACES (Lev, 3 Nov, after CRSH's podium). A caller's
+   own picture is not something a stream chat hands over, so each name gets
+   one of Oddie's own faces, the same one every time. */
+.podium{display:grid;grid-template-columns:repeat(3,1fr);align-items:end;gap:10px;margin:4px 0 18px}
+.pod{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:14px 6px 12px;
+  background:rgba(255,255,255,.04);border:2px solid var(--line);min-width:0}
+.pod{grid-row:1}
+.pod--1{grid-column:2;border-color:var(--yellow);padding-top:18px}
+.pod--2{grid-column:1} .pod--3{grid-column:3}
+.pod img{width:52px;height:52px;border-radius:50%;border:3px solid var(--black);background:var(--yellow);box-shadow:3px 4px 0 var(--pink-deep)}
+.pod--1 img{width:68px;height:68px}
+.pod__r{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--fg-3)}
+.pod--1 .pod__r{color:var(--yellow)}
+.pod__n{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--display);font-size:18px;letter-spacing:.02em}
+.pod__p{font-family:var(--display);font-size:22px;color:var(--yellow);line-height:1}
+.pod__m{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--fg-3)}
 .std .fire{color:var(--yellow);margin-left:6px;white-space:nowrap}
 
 /* The page for streamers: three steps and the one button. */
@@ -582,8 +606,9 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   }
 
   var timer = null, data = null;
-  /* Which standings the page shows: this week first (Lev, 16 Oct). */
-  var stRange = "week";
+  /* Which standings the page shows: the season first (Lev, 3 Nov; this week
+     was first since 16 Oct, until the month became the season). */
+  var stRange = "season";
   var headEl = null, ownEl = null, bodyEl = null, lastHead = "", lastBody = "";
 
   /* ------------------------------------------------ the streamer's 2% --
@@ -835,11 +860,52 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     return { cls: "o", text: "Open" + (day ? " · closes " + esc(day) : "") };
   }
 
+  /* THE STREAM ABOVE THE CALL (Lev, 3 Nov, after CRSH's page, where the
+     question sits under the stream it is about). Painted apart from the
+     poll's body, so a vote coming in never reloads the player. X has no
+     player to embed: its live picture is fetched again on every poll and
+     swapped in only once it has loaded, so it never blinks. */
+  var airEl = null, airKey = "", airImg = null;
+  function paintAir(s, name) {
+    var key = s ? s.player : "";
+    if (key !== airKey) {
+      airKey = key; airImg = null;
+      if (!s) {
+        airEl.innerHTML = "";
+      } else if (P === "x") {
+        // The box waits for the first picture: until one loads, the line alone says it is live.
+        airEl.innerHTML = '<section class="onair"><div class="onair__box" hidden><img alt="' + esc(name) + ' live on X, as Oddie sees it"></div>'
+          + '<p class="onair__k"><b>Live</b><a href="' + esc(s.watch) + '" target="_blank" rel="noopener">Watch on X</a></p></section>';
+        airImg = airEl.querySelector("img");
+      } else {
+        // Twitch plays only inside the host it is told it is embedded in.
+        var src = s.player + (P === "twitch" ? "&parent=" + encodeURIComponent(location.hostname) : "");
+        airEl.innerHTML = '<section class="onair"><div class="onair__box"><iframe src="' + esc(src) + '" title="' + esc(name) + " live on " + PN
+          + '" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div></section>';
+      }
+    }
+    if (s && airImg) {
+      var next = new Image(), img = airImg;
+      next.onload = function () { if (airImg === img) { img.src = next.src; img.parentNode.hidden = false; } };
+      next.src = s.player + "?t=" + Date.now();
+    }
+  }
+
+  /* One of Oddie's own faces for a name, the same one every time: a chat
+     never hands over its people's pictures. */
+  function face(name) {
+    var h = 0, t = String(name || "").toLowerCase();
+    for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+    var k = (h % 12) + 1;
+    return "/avatars/a" + (k < 10 ? "0" : "") + k + ".webp";
+  }
+
   function render(j) {
     data = j;
     if (!headEl) {
-      view.innerHTML = '<div id="head"></div><div id="own"></div><div id="body"></div>';
+      view.innerHTML = '<div id="head"></div><div id="onair"></div><div id="own"></div><div id="body"></div>';
       headEl = document.getElementById("head"); ownEl = document.getElementById("own"); bodyEl = document.getElementById("body");
+      airEl = document.getElementById("onair");
       // The standings' two tabs live in the repainted body: one listener, here.
       bodyEl.addEventListener("click", function (e) {
         var b = e.target && e.target.closest ? e.target.closest("[data-st]") : null;
@@ -854,6 +920,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
     var head = '<section class="ch">' + (j.avatar ? '<img src="' + esc(j.avatar) + '" alt="" width="64" height="64">' : "")
       + '<div><h1 class="who">' + esc(j.name || j.slug) + '</h1><a href="' + esc(j.url) + '" target="_blank" rel="noopener">Watch on ' + PN + '</a></div></section>';
     if (head !== lastHead) { headEl.innerHTML = head; lastHead = head; }
+    paintAir(j.stream || null, j.name || j.slug);
 
     if (!ownBusy) {
       var next = j.owner ? JSON.stringify(j.owner) : "";
@@ -914,21 +981,34 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       }).join("") + "</ul>";
     }
 
-    var stAll = j.standings || [], stWeek = j.standingsWeek || [];
-    if (stAll.length || stWeek.length) {
-      var st = stRange === "week" ? stWeek : stAll;
+    var stAll = j.standings || [], stSeason = j.standingsSeason || [];
+    if (stAll.length || stSeason.length) {
+      var st = stRange === "season" ? stSeason : stAll;
+      // "Nov 30": the season's last day. The season is a UTC month, so the date
+      // is read in UTC too, or a reader east of Greenwich sees "Dec 1".
+      var ends = j.season && j.season.endsAt ? new Date(new Date(j.season.endsAt).getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
       html += "<h2>Standings</h2><div class=\"strange\" role=\"group\" aria-label=\"Which standings\">"
-        + '<button type="button" data-st="week" aria-pressed="' + (stRange === "week") + '">This week</button>'
+        + '<button type="button" data-st="season" aria-pressed="' + (stRange === "season") + '">This month</button>'
         + '<button type="button" data-st="all" aria-pressed="' + (stRange === "all") + '">All time</button></div>';
       if (st.length) {
-        html += "<table class=\"std\"><thead><tr><th class=\"r\"></th><th>Who</th><th class=\"num\">Right</th><th class=\"num\">Points</th></tr></thead><tbody>"
-          + st.map(function (s) {
-            return '<tr><td class="r">#' + s.rank + "</td><td>" + esc(s.username)
-              + (s.streak >= 3 ? '<span class="fire" title="' + s.streak + ' right calls in a row">🔥' + s.streak + "</span>" : "")
-              + '</td><td class="num">' + s.right + "/" + s.calls + '</td><td class="num pts">' + s.points + "</td></tr>";
-          }).join("") + "</tbody></table>";
+        var fire = function (s) { return s.streak >= 3 ? '<span class="fire" title="' + s.streak + ' right calls in a row">🔥' + s.streak + "</span>" : ""; };
+        // The podium is for points: a name still at 0 waits in the table under it.
+        var top = st.slice(0, 3).filter(function (s) { return s.points > 0; });
+        html += (top.length ? '<div class="podium">' + top.map(function (s) {
+          return '<div class="pod pod--' + s.rank + '"><span class="pod__r">#' + s.rank + '</span><img src="' + face(s.username) + '" alt="" width="52" height="52">'
+            + '<span class="pod__n" title="' + esc(s.username) + '">' + esc(s.username) + "</span>"
+            + '<span class="pod__p">' + s.points + '</span><span class="pod__m">' + s.right + "/" + s.calls + " right" + fire(s) + "</span></div>";
+        }).join("") + "</div>" : "");
+        if (st.length > top.length) {
+          html += "<table class=\"std\"><thead><tr><th class=\"r\"></th><th>Who</th><th class=\"num\">Right</th><th class=\"num\">Points</th></tr></thead><tbody>"
+            + st.slice(top.length).map(function (s) {
+              return '<tr><td class="r">#' + s.rank + "</td><td>" + esc(s.username) + fire(s)
+                + '</td><td class="num">' + s.right + "/" + s.calls + '</td><td class="num pts">' + s.points + "</td></tr>";
+            }).join("") + "</tbody></table>";
+        }
+        if (stRange === "season" && ends) html += '<p class="hint">This month&rsquo;s board closes ' + esc(ends) + ".</p>";
       } else {
-        html += '<p class="hint">This week is open: the first right call puts a name here. It turns over every Monday.</p>';
+        html += '<p class="hint">This month is open: the first right call puts a name here.' + (ends ? " It closes " + esc(ends) + "." : "") + "</p>";
       }
       html += '<p class="hint">Being right scores more when the room disagreed, and when you called it early. 🔥 is right calls in a row. Type !me in chat for yours.</p>';
     }

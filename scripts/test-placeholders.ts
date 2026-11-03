@@ -83,13 +83,24 @@ for (const name of unique) {
     where.length ? "" : `no file under public/ contains ${slot}, so the .replace() is a no-op`);
 }
 
+/* A BLOCK SLOT is swapped whole: <!--NAME--> ... <!--/NAME--> in the page, and
+   a regex /<!--NAME-->[\s\S]*?<!--\/NAME-->/ in the server (the front door's
+   real call, which takes the scripted chat's place, 3 Nov). Both markers have
+   to be in a page, or the regex matches nothing and the swap never happens. */
+const blocks = [...new Set([...server.matchAll(/\/<!--([A-Z_]+)-->\[\\s\\S\]\*\?<!--\\\/\1-->\//g)].map((m) => m[1]))];
+for (const name of blocks) {
+  check(`<!--${name}--> ... <!--/${name}--> exists in a page the server serves`,
+    haystack.includes(`<!--${name}-->`) && haystack.includes(`<!--/${name}-->`),
+    `the server swaps this block but no page has both markers`);
+}
+
 // And the other direction, which is the cheaper half of the same mistake: a
 // slot sitting in a page that nothing fills renders as a literal HTML comment
 // forever, which is harmless but means somebody's feature is silently absent.
 const inPages = [...haystack.matchAll(/<!--([A-Z_]{3,})-->/g)].map((m) => m[1]);
 for (const name of [...new Set(inPages)]) {
   check(`<!--${name}--> in a page is actually filled by the server`,
-    server.includes(`"<!--${name}-->"`),
+    server.includes(`"<!--${name}-->"`) || blocks.includes(name),
     `the slot exists but no .replace() targets it`);
 }
 

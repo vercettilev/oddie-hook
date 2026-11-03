@@ -316,6 +316,7 @@ export function twitchRouter(d: TwitchRouteDeps): Router {
   });
 
   /** The channel's page, its standings, and the streamer's 2%: shared with Kick. */
-  addChannelRoutes(r, "twitch", d);
+  // The player above the call while the channel is on air (src/live/channelRoutes.ts).
+  addChannelRoutes(r, "twitch", { ...d, streamLive: d.streamLive ?? (async (c) => (twitchConfigured() ? streamIsLive(await appToken(), c) : null)) });
   return r;
 }

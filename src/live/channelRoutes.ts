@@ -10,7 +10,7 @@
  */
 import express, { type Request, type Response, type Router } from "express";
 import { consumeChallenge, issueChallenge, verifyWalletSignature, WALLET_ADDRESS } from "../auth/wallet.js";
-import { weekStart, yesPct, type Platform } from "./calls.js";
+import { seasonEnd, seasonStart, weekStart, yesPct, type Platform } from "./calls.js";
 import { cookieValue, ownerCookieName, ownerKeyFromEnv, verifyOwnerToken } from "./owner.js";
 import type { ChannelMarket } from "../store/markets.js";
 import { callFrame, channelBySlug, channelStandings, liveStore, recentCalls, streaksFor, type StandingRow } from "../store/live.js";
@@ -46,7 +46,35 @@ export interface ChannelPageDeps {
   channelMarkets?(channelId: string, limit: number): Promise<ChannelMarket[]>;
   /** Where a channel's 2% goes. Absent, the page never offers it. */
   payout?: ChannelPayoutDeps;
+  /** Whether the channel is on air now; null when the platform cannot say.
+   *  Absent: the page never shows a player. */
+  streamLive?(channelId: string): Promise<boolean | null>;
+  /** Where to watch this broadcast, when the platform knows a better place
+   *  than the channel itself (an X broadcast's own link). */
+  watchUrl?(channelId: string): string | null;
 }
+
+/* THE STREAM ABOVE THE CALL (Lev, 3 Nov, after CRSH, whose page is the stream
+   with its question under it). Somebody who lands here from a post could read
+   the call but not see the game it is about. While the channel is on air the
+   page now shows it: the platform's own player where it has one, and on X,
+   which has no player to embed, the live picture its API hands over. */
+const PLAYER: Record<Platform, (ch: { slug: string; channelId: string }) => string> = {
+  // Twitch requires the embedding host as a parent: the page adds it, from where it runs.
+  twitch: (c) => `https://player.twitch.tv/?channel=${encodeURIComponent(c.slug)}&muted=true`,
+  kick: (c) => `https://player.kick.com/${encodeURIComponent(c.slug)}?muted=true&autoplay=true`,
+  youtube: (c) => `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(c.channelId)}&mute=1&autoplay=1`,
+  x: (c) => `/api/live/x/${encodeURIComponent(c.slug)}/picture`,
+};
+/** How long a channel's on-air answer is kept: Twitch and Kick each cost a
+ *  request to the platform, and every viewer polls this page every few seconds. */
+const LIVE_TTL_MS = 30_000;
+/* LOCAL PREVIEW ONLY. With no database (npm run dev), DEV_STREAM_LIVE names
+   channels to treat as on air, as platform:slug comma separated, so the player
+   can be looked at without a platform account. Production always has a
+   database, so this is empty there. */
+const DEV_ON_AIR = new Set(process.env.DATABASE_URL ? []
+  : (process.env.DEV_STREAM_LIVE ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
 
 const CHANNEL_URL: Record<Platform, (slug: string) => string> = {
   kick: (s) => `https://kick.com/${s}`,
@@ -68,6 +96,16 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
      markets under it change when somebody opens one: read a channel's list at
      most every fifteen seconds. */
   const marketCache = new Map<string, { at: number; rows: ChannelMarket[] }>();
+  const liveCache = new Map<string, { at: number; live: boolean | null }>();
+  const onAir = async (channelId: string, slug: string): Promise<boolean | null> => {
+    if (DEV_ON_AIR.has(`${platform}:${slug.toLowerCase()}`)) return true;
+    if (!d.streamLive) return null;
+    const hit = liveCache.get(channelId);
+    if (hit && Date.now() - hit.at < LIVE_TTL_MS) return hit.live;
+    const live = await d.streamLive(channelId).catch(() => hit?.live ?? null);
+    liveCache.set(channelId, { at: Date.now(), live });
+    return live;
+  };
   const marketsOf = async (channelId: string): Promise<ChannelMarket[]> => {
     if (!d.channelMarkets) return [];
     const hit = marketCache.get(channelId);
@@ -130,14 +168,17 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     res.set("Cache-Control", "no-store");
     const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
     if (!ch) return res.status(404).json({ error: "unknown" });
-    const [unsettled, recent, standings, standingsWeek] = await Promise.all([
+    const now = Date.now();
+    const [unsettled, recent, standings, standingsWeek, standingsSeason, live] = await Promise.all([
       liveStore.unsettled(platform, ch.channelId).catch(() => []),
       recentCalls(platform, ch.channelId, 10).catch(() => []),
       channelStandings(platform, ch.channelId, 20).catch(() => [] as StandingRow[]),
-      channelStandings(platform, ch.channelId, 20, { since: weekStart(Date.now()) }).catch(() => [] as StandingRow[]),
+      channelStandings(platform, ch.channelId, 20, { since: weekStart(now) }).catch(() => [] as StandingRow[]),
+      channelStandings(platform, ch.channelId, 20, { since: seasonStart(now) }).catch(() => [] as StandingRow[]),
+      onAir(ch.channelId, ch.slug),
     ]);
     // Each name's run of right calls, for the 🔥 next to it (Lev, 16 Oct).
-    const runs = await streaksFor([...standings, ...standingsWeek].map((s) => ({ platform, userId: s.userId }))).catch(() => new Map<string, number>());
+    const runs = await streaksFor([...standings, ...standingsWeek, ...standingsSeason].map((s) => ({ platform, userId: s.userId }))).catch(() => new Map<string, number>());
     const row = (s: StandingRow, i: number) => ({ rank: i + 1, username: s.username, points: s.points, right: s.right, calls: s.calls,
       streak: runs.get(`${platform}:${s.userId}`) ?? 0 });
     const current = unsettled.find((c) => c.lockedAt === null) ?? null;
@@ -164,6 +205,8 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     res.json({
       platform, slug: ch.slug, name: ch.name, avatar: ch.avatar, url: CHANNEL_URL[platform](ch.slug),
       ...(owner ? { owner } : {}),
+      // On air: the player to show above the call, and where to watch it in full.
+      stream: live ? { live: true, player: PLAYER[platform](ch), watch: d.watchUrl?.(ch.channelId) ?? CHANNEL_URL[platform](ch.slug) } : null,
       markets: markets.map((m) => ({ slug: m.slug, question: m.question, hook: m.hook, closesAt: m.closesAt, outcome: m.outcome })),
       current: current && tally ? {
         question: current.question, closesAt: new Date(current.closesAt).toISOString(), timed: current.timed,
@@ -182,6 +225,9 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
       })),
       standings: standings.map(row),
       standingsWeek: standingsWeek.map(row),
+      // The month's board and the moment it closes (seasonEnd): the page counts down to it.
+      standingsSeason: standingsSeason.map(row),
+      season: { endsAt: new Date(seasonEnd(now)).toISOString() },
     });
   });
 

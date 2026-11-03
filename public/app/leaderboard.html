@@ -106,6 +106,22 @@ tbody td{padding:14px 10px;border-bottom:1px solid var(--line);vertical-align:mi
 .range button:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
 /* A run of right calls, next to the name. */
 .fire{font-family:var(--display);font-size:15px;letter-spacing:.02em;color:var(--yellow);margin-left:6px;white-space:nowrap}
+/* THE TOP THREE, WITH FACES (Lev, 3 Nov, after CRSH's podium); live.html has
+   the same podium for a channel's own board. */
+.podium{display:grid;grid-template-columns:repeat(3,1fr);align-items:end;gap:10px;margin:18px 0 6px}
+.pod{grid-row:1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:14px 6px 12px;
+  background:rgba(255,255,255,.04);border:2px solid var(--line);min-width:0;color:var(--fg);text-decoration:none}
+.pod--1{grid-column:2;border-color:var(--yellow);padding-top:18px}
+.pod--2{grid-column:1} .pod--3{grid-column:3}
+.pod img{width:52px;height:52px;border-radius:50%;border:3px solid var(--black);background:var(--yellow);box-shadow:3px 4px 0 var(--pink-deep)}
+.pod--1 img{width:68px;height:68px}
+.pod__r{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.12em;color:var(--fg-3)}
+.pod--1 .pod__r{color:var(--yellow)}
+.pod__n{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--display);font-size:18px;letter-spacing:.02em}
+.pod__p{font-family:var(--display);font-size:22px;color:var(--yellow);line-height:1}
+.pod__m{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--fg-3)}
+.pod:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+.closes{margin:14px 0 0;font-size:14px;color:var(--fg-3)}
 
 /* ---- brand: a movement, not a terminal ---- */
 .mark{display:inline-flex;align-items:center;gap:10px}
@@ -338,7 +354,7 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
        none of them came from a stream. -->
   <p class="rule">Points from votes in stream chats.</p>
   <div class="range" role="group" aria-label="Which board">
-    <button type="button" data-range="week" aria-pressed="true">This week</button>
+    <button type="button" data-range="season" aria-pressed="true">This month</button>
     <button type="button" data-range="all" aria-pressed="false">All time</button>
   </div>
   <div id="view"><p class="load">Counting the votes&hellip;</p></div>
@@ -358,7 +374,8 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
   /* Where each name was called, in the platform's own address form. */
   var WHERE = { twitch: "twitch.tv/", kick: "kick.com/", youtube: "youtube.com/@", x: "x.com/" };
   var STREAK = 3;
-  var range = "week", asked = 0;
+  /* The season first (Lev, 3 Nov): a calendar month, with the day it closes. */
+  var range = "season", asked = 0;
   var buttons = document.querySelectorAll(".range button");
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
@@ -368,6 +385,18 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       load();
     });
   });
+
+  /* One of Oddie's own faces for a name, the same one every time (live.html has the twin). */
+  function face(name) {
+    var h = 0, t = String(name || "").toLowerCase();
+    for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+    var k = (h % 12) + 1;
+    return "/avatars/a" + (k < 10 ? "0" : "") + k + ".webp";
+  }
+  /* "Nov 30": the season's last day, read in UTC like the season itself. */
+  function ends(j) {
+    return j && j.endsAt ? new Date(new Date(j.endsAt).getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : "";
+  }
 
   function load() {
   var mine = ++asked;
@@ -380,14 +409,27 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
          right in a stream, and the door to that is adding oddie to one. */
       if (!rows.length) {
         view.innerHTML = '<div class="poster"><img src="/brand/st-waiting.webp" alt="">'
-          + "<h3>" + (range === "week" ? "This week is open" : "Nobody yet") + "</h3>"
-          + (range === "week"
-            ? "<p>The first right call this week puts a name here. It turns over every Monday.</p>"
+          + "<h3>" + (range === "season" ? "This month is open" : "Nobody yet") + "</h3>"
+          + (range === "season"
+            ? "<p>The first right call this month puts a name here." + (ends(j) ? " It closes " + esc(ends(j)) + "." : "") + "</p>"
             : '<p>The first votes from a stream land here. <a href="/live">Add oddie to your stream</a></p>') + "</div>";
         return;
       }
+      // The top three on a podium with Oddie's faces, the rest in the table under it.
+      var fire = function (s) { return s.streak >= STREAK ? '<span class="fire" title="' + s.streak + ' right calls in a row">🔥' + s.streak + "</span>" : ""; };
+      // The podium is for points: a name still at 0 waits in the table under it.
+      var top = rows.slice(0, 3).filter(function (s) { return s.points > 0; });
+      var podium = !top.length ? "" : '<div class="podium">' + top.map(function (s) {
+        return '<a class="pod pod--' + s.rank + '" href="/live/' + encodeURIComponent(s.platform) + "/" + encodeURIComponent(s.channel) + '">'
+          + '<span class="pod__r">#' + s.rank + '</span><img src="' + face(s.username) + '" alt="" width="52" height="52">'
+          + '<span class="pod__n" title="' + esc(s.username) + '">' + esc(s.username) + "</span>"
+          + '<span class="pod__p">' + s.points + '</span><span class="pod__m">' + s.right + "/" + s.calls + " right" + fire(s) + "</span></a>";
+      }).join("") + "</div>";
+      var closes = range === "season" && ends(j) ? '<p class="closes">This month&rsquo;s board closes ' + esc(ends(j)) + ".</p>" : "";
+      rows = rows.slice(top.length);
+      if (!rows.length) { view.innerHTML = podium + closes; return; }
       // Each name says where it was called, and that channel's page is one tap.
-      view.innerHTML = '<section class="stand">'
+      view.innerHTML = podium + '<section class="stand">'
         + "<table><thead><tr>"
         + '<th class="r"></th><th>Who</th>'
         + '<th class="num">Right</th><th class="num">Points</th>'
@@ -395,15 +437,14 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
         + rows.map(function (s) {
             return "<tr>"
               + '<td class="r' + (s.rank <= 3 ? " r--top" : "") + '">#' + s.rank + "</td>"
-              + '<td class="who"><b>' + esc(s.username)
-              + (s.streak >= STREAK ? '<span class="fire" title="' + s.streak + ' right calls in a row">🔥' + s.streak + "</span>" : "") + "</b>"
+              + '<td class="who"><b>' + esc(s.username) + fire(s) + "</b>"
               + '<a class="ch" href="/live/' + encodeURIComponent(s.platform) + "/" + encodeURIComponent(s.channel) + '">'
               + esc((WHERE[s.platform] || "") + s.channel) + "</a></td>"
               + '<td class="num wl">' + s.right + "/" + s.calls + "</td>"
               + '<td class="num"><span class="pts">' + s.points + "</span></td>"
               + "</tr>";
           }).join("")
-        + "</tbody></table></section>";
+        + "</tbody></table></section>" + closes;
     })
     .catch(function (e) {
       if (mine !== asked) return;

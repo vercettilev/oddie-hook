@@ -529,6 +529,7 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
   });
 
   /** The channel's page and its standings: shared with Kick and Twitch. */
-  addChannelRoutes(r, "youtube", d);
+  // The player above the call while the channel is on air (src/live/channelRoutes.ts).
+  addChannelRoutes(r, "youtube", { ...d, streamLive: d.streamLive ?? (async (c) => (onAir.has(c) ? onAir.get(c)! : null)) });
   return r;
 }

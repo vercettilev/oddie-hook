@@ -32,7 +32,7 @@ import { twitchConfigured } from "./twitch/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
 import { youtubeConfigured } from "./youtube/client.js";
 import { startXStream, xEngineDeps, xLiveConfigured, xLiveMissing, xLiveRouter, xPicture } from "./x/live.js";
-import { lockDue, remindOpen, sayVotes, weekStart, type LiveDeps, type Platform } from "./live/calls.js";
+import { lockDue, remindOpen, sayVotes, seasonEnd, seasonStart, weekStart, type LiveDeps, type Platform } from "./live/calls.js";
 import { watchGames } from "./live/gameCalls.js";
 import { handleGsi } from "./live/gsiCalls.js";
 import { watchFrames } from "./live/frameCalls.js";
@@ -40,7 +40,7 @@ import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
 import { fetchPicture, screenSource, SCREEN_FRAME_WIDTH } from "./games/screen.js";
 import { SCREEN_TICK_MS, watchScreens } from "./live/screenCalls.js";
-import { allStandings, callerRecord, channelById, streaksFor } from "./store/live.js";
+import { allStandings, callerRecord, channelById, showcaseCalls, streaksFor, type ShowcaseCall } from "./store/live.js";
 import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
@@ -595,6 +595,56 @@ async function renderLanding(): Promise<string> {
     }
   })();
 
+  /* A REAL CALL WHERE THE MADE-UP ONE STOOD (Lev, 3 Nov, after CRSH, whose
+     front door is a live stream with a live question on it). How it works
+     played a scripted BTC market in a Kick chat, and the one thing only Oddie
+     does, a call settled off the stream seconds after the result, was nowhere
+     on the page. The section now shows one real call: the one taking answers
+     on a streamer's channel right now, else the newest the screen settled,
+     with the picture Oddie read. With neither (a new install, a failed read)
+     the scripted chat stays, so How it works is never an empty shelf. */
+  const callCard = await (async (): Promise<string> => {
+    try {
+      const { live, settled } = await showcaseCalls();
+      const sc: ShowcaseCall | null = live ?? settled;
+      if (!sc) return "";
+      const where = ({ kick: "Kick", twitch: "Twitch", x: "X Live", youtube: "YouTube Live" } as const)[sc.platform];
+      const mark = sc.platform === "youtube" ? ""
+        : '<svg class="mk" width="16" height="16" aria-hidden="true"><use href="#mk-' + sc.platform + '"/></svg> ';
+      const page = `${APP_BASE_URL}/live/${sc.platform}/${encodeURIComponent(sc.slug)}`;
+      const who = escHtml(sc.name || sc.slug);
+      const total = sc.yes + sc.no;
+      const pct = total ? Math.round((sc.yes / total) * 100) : 0;
+      const split = '<p class="callc__v"><span class="y">YES ' + pct + '%</span><span class="n">NO ' + (total ? 100 - pct : 0) + "%</span>"
+        + "<span>" + total + (total === 1 ? " call" : " calls") + "</span></p>";
+      const head = (right: string) => '<p class="chat__src callc__src"><span class="callc__at">' + mark + who + " &middot; " + where + "</span>" + right + "</p>"
+        + '<p class="callc__q">' + escHtml(sc.question) + "</p>";
+      if (sc === live) {
+        return '<div class="callc reveal"><div class="chat callc__chat">' + head('<b class="callc__live">Live</b>')
+          + '<div class="callc__bar" role="img" aria-label="' + pct + ' percent yes"><i style="width:' + (total ? pct : 50) + '%"></i></div>' + split
+          + '<p class="callc__how">Type <code>!yes</code> or <code>!no</code> in the stream chat. Oddie settles it off the stream, seconds after the result.</p></div>'
+          + '<a class="callc__go" href="' + escHtml(page) + '">Watch it and call it <i aria-hidden="true">&rarr;</i></a></div>';
+      }
+      const ago = (ms: number): string => {
+        const m = Math.max(1, Math.round((Date.now() - ms) / 60_000));
+        return m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)} days ago`;
+      };
+      const frame = `${APP_BASE_URL}/api/live/${sc.platform}/${encodeURIComponent(sc.slug)}/frame/${sc.id}`;
+      const out = sc.outcome === "yes" ? "y" : "n";
+      const names = sc.calledIt.map((n) => "@" + escHtml(n.replace(/^@+/, "")));
+      const calledIt = !names.length ? "Nobody called it."
+        : (names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " and " + names[names.length - 1]) + " called it.";
+      return '<div class="callc reveal"><div class="chat callc__chat">' + head(sc.settledAt ? '<span class="callc__when">' + ago(sc.settledAt) + "</span>" : "") + split
+        + '<figure class="callc__f"><img src="' + escHtml(frame) + '" alt="The stream as Oddie read it when it settled this call" width="640" height="360" loading="lazy">'
+        + "<figcaption>What Oddie saw</figcaption></figure>"
+        + '<p class="callc__r"><b class="' + out + '">' + (sc.outcome === "yes" ? "YES" : "NO") + "</b> Settled off the stream, seconds after the result.</p>"
+        + '<p class="callc__who">' + calledIt + "</p></div>"
+        + '<a class="callc__go" href="' + escHtml(page) + '">Every call from ' + who + ' <i aria-hidden="true">&rarr;</i></a></div>';
+    } catch {
+      return "";   // a read that failed leaves the scripted chat in place
+    }
+  })();
+
   /* THE BOARD COMES BACK BY ITSELF. It left the front door because it printed
      nothing until somebody was on it, and an empty or one-name board says
      "nobody is here". It returns under the live cards once BOARD_MIN real
@@ -610,6 +660,8 @@ async function renderLanding(): Promise<string> {
       + '</ol><a class="lboard__go" href="' + escHtml(`${APP_BASE_URL}/leaderboard`) + '">See the whole board <i aria-hidden="true">&rarr;</i></a></div>';
 
   const html = LANDING_HTML
+    // The real call takes the scripted chat's place; without one the chat stays.
+    .replace(/<!--TALE-->[\s\S]*?<!--\/TALE-->/, (tale) => callCard || tale)
     .replace("<!--BOARD-->", boardHtml)
     .replace("<!--LIVE-->", liveProof)
     .replace("<!--LIVESTRIP-->", liveStrip);
@@ -1979,13 +2031,17 @@ app.use(xLive.router);
    things every channel page already shows; one grouped read per visit. */
 app.get("/api/live/standings", async (req, res) => {
   res.set("Cache-Control", "no-store");
-  // ?range=week is this week's board (Monday 00:00 UTC on, Lev 16 Oct); anything else is all time.
-  const week = req.query.range === "week";
-  const rows = await allStandings(50, week ? { since: weekStart(Date.now()) } : {}).catch(() => null);
+  // ?range=season is this month's board, the season (Lev, 3 Nov); ?range=week
+  // this week's (Monday 00:00 UTC on, Lev 16 Oct); anything else is all time.
+  const now = Date.now();
+  const range = req.query.range === "season" ? "season" : req.query.range === "week" ? "week" : "all";
+  const since = range === "season" ? seasonStart(now) : range === "week" ? weekStart(now) : null;
+  const rows = await allStandings(50, since === null ? {} : { since }).catch(() => null);
   if (!rows) return res.status(503).json({ error: "unavailable" });
   const runs = await streaksFor(rows.map((s) => ({ platform: s.platform, userId: s.userId }))).catch(() => new Map<string, number>());
-  res.json({ range: week ? "week" : "all", standings: rows.map((s, i) => ({ rank: i + 1, platform: s.platform, username: s.username, channel: s.channel,
-    right: s.right, calls: s.calls, points: s.points, streak: runs.get(`${s.platform}:${s.userId}`) ?? 0 })) });
+  res.json({ range, ...(range === "season" ? { endsAt: new Date(seasonEnd(now)).toISOString() } : {}),
+    standings: rows.map((s, i) => ({ rank: i + 1, platform: s.platform, username: s.username, channel: s.channel,
+      right: s.right, calls: s.calls, points: s.points, streak: runs.get(`${s.platform}:${s.userId}`) ?? 0 })) });
 });
 
 /* YOUR CALLS ON PROFILE: somebody signed in with X here is the same X account

@@ -33,7 +33,7 @@ import { handleChat, type ChatMessage, type LiveDeps } from "../live/calls.js";
 import { accessToken, adoptTokens, botUserId, BOT_SCOPES, xConfigured } from "./client.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { paced, patiently } from "../live/pace.js";
-import { channelById, liveStore, saveChannel } from "../store/live.js";
+import { channelById, channelBySlug, liveStore, saveChannel } from "../store/live.js";
 import { botStateGet, botStateSet } from "../store/markets.js";
 import { splitForChat } from "../youtube/client.js";
 
@@ -581,7 +581,32 @@ export function xLiveRouter(d: XLiveRouteDeps): { router: Router; callback(state
     return true;
   }
 
-  /** The channel's page and its standings: shared with every platform. */
-  addChannelRoutes(r, "x", d);
+  /* THE LIVE PICTURE, for the channel page while a broadcast is on (Lev,
+     3 Nov, after CRSH's page with the stream above the question). X has no
+     player to embed, but broadcast.start hands over a live thumbnail renewed
+     about every two seconds; one fetch every few seconds serves every viewer. */
+  const pics = new Map<string, { at: number; jpeg: Buffer }>();
+  r.get("/api/live/x/:slug/picture", async (req, res) => {
+    const ch = await channelBySlug("x", req.params.slug).catch(() => null);
+    if (!ch || !liveIn.has(ch.channelId)) return res.status(404).end();
+    const hit = pics.get(ch.channelId);
+    let jpeg = hit && Date.now() - hit.at < 3_000 ? hit.jpeg : null;
+    if (!jpeg) {
+      const url = await xThumbnail(ch.channelId).catch(() => null);
+      jpeg = url ? await fetch(url, { signal: AbortSignal.timeout(4_000) })
+        .then(async (got) => (got.ok ? Buffer.from(await got.arrayBuffer()) : null)).catch(() => null) : null;
+      if (jpeg) pics.set(ch.channelId, { at: Date.now(), jpeg });
+    }
+    if (!jpeg) return res.status(404).end();
+    res.set("Cache-Control", "no-store").type("image/jpeg").send(jpeg);
+  });
+
+  /** The channel's page and its standings: shared with every platform. On air
+   *  is what the activity stream said; the broadcast's own link is where to watch. */
+  addChannelRoutes(r, "x", {
+    ...d,
+    streamLive: d.streamLive ?? (async (c) => (liveIn.has(c) ? true : ended.has(c) ? false : null)),
+    watchUrl: (c) => (liveIn.get(c) ? `https://x.com/i/broadcasts/${liveIn.get(c)}` : null),
+  });
   return { router: r, callback };
 }

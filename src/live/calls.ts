@@ -131,6 +131,18 @@ export function weekStart(ms: number): number {
   const d = new Date(ms);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
 }
+/** THE SEASON, a calendar month in UTC (Lev, 3 Nov, after CRSH's seasons with
+ *  an end date). At a few calls a show a week barely ranked anybody; a month
+ *  gives the board a name and a day it closes on. */
+export function seasonStart(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+}
+/** The first moment of the next season. */
+export function seasonEnd(ms: number): number {
+  const d = new Date(ms);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+}
 /** Somebody who called it, and their run of right calls with this one in. */
 export interface Winner { name: string; streak: number }
 /** What !me says: settled calls answered and right, the run now, the place in this channel this week. */

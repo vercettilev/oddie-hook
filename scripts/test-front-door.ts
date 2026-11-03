@@ -543,8 +543,10 @@ console.log("\nthe landing tells it once, as one chat (the hypercasual cut, roun
     && tale.includes('<p class="msg kc"><b class="k2">0xjules</b>: !oddie BTC hits 88k by Friday?</p>'));
   check("it moves only on screen, and never on its own with reduced motion",
     script.includes("if (reduced) { upTo(1); return; }") && script.includes("}, { threshold: 0.35 }).observe(tale);"));
-  check("the hero says the pitch once, to the streamer; the doors say where",
-    landing.includes("<span>Your chat calls the market. You earn 2%.</span>") && !landing.includes("It opens in seconds and pays out on its own."));
+  // The pitch carries the one number now (Lev, 3 Nov): a call settles in
+  // seconds. The 2% stays where it is true, under Streamers, checked below.
+  check("the hero says the pitch once, with its one number; the doors say where",
+    landing.includes("<span>Your chat calls it. Oddie settles it in seconds.</span>") && !landing.includes("It opens in seconds and pays out on its own."));
   check("the creators are a row per door, each still saying who earns",
     landing.includes("<p>Your channel earns <b>2%</b> on Kick and Twitch.</p>") && landing.includes("<p>You earn <b>2%</b>, either side.</p>")
     && landing.includes("<p>The opener earns <b>2%</b>.</p>"));

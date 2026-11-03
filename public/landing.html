@@ -20,16 +20,16 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
 <link rel="manifest" href="/site.webmanifest?v=3">
 <meta name="theme-color" content="#FCF604">
-<meta name="description" content="Your chat calls it: !oddie on Kick or Twitch opens a market in seconds, it settles itself, and the channel earns 2% of every pool. Also on X and Telegram.">
+<meta name="description" content="Your chat calls it, and Oddie reads the result off the stream and settles it in seconds. On Kick and Twitch the channel also earns 2% of every pool. Also on X and Telegram.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="oddie">
 <meta property="og:url" content="https://oddie.fun/">
 <meta property="og:title" content="Prediction markets for livestreams.">
-<meta property="og:description" content="Your chat calls it with !oddie on Kick or Twitch. A market opens in seconds, settles itself, and the channel earns 2% of every pool.">
+<meta property="og:description" content="Your chat calls it. Oddie reads the result off the stream and settles it in seconds. On Kick and Twitch the channel earns 2% of every pool.">
 <meta property="og:image" content="https://oddie.fun/og.png?v=3">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Prediction markets for livestreams.">
-<meta name="twitter:description" content="Your chat calls it with !oddie on Kick or Twitch. A market opens in seconds, settles itself, and the channel earns 2% of every pool.">
+<meta name="twitter:description" content="Your chat calls it. Oddie reads the result off the stream and settles it in seconds. On Kick and Twitch the channel earns 2% of every pool.">
 <meta name="twitter:image" content="https://oddie.fun/og.png?v=3">
 
 <style>
@@ -1048,6 +1048,40 @@
     color:var(--cream);box-shadow:6px 7px 0 var(--pink)}
   .chat__src{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
     letter-spacing:.12em;text-transform:uppercase;color:rgba(251,252,244,.66);margin:0 0 10px}
+  /* A REAL CALL (Lev, 3 Nov). The same chat window the scripted story used, so
+     the section keeps its look; inside it, the call as it happened: the
+     question, how the room split, the picture Oddie read and the result. */
+  .callc{grid-column:1/-1;width:100%;max-width:520px;margin:clamp(22px,3vw,40px) auto 0}
+  .callc__chat{rotate:-1deg}
+  .callc__src{justify-content:space-between;gap:12px}
+  .callc__at{display:flex;align-items:center;gap:8px;min-width:0}
+  .callc__when{flex:none;color:rgba(251,252,244,.5)}
+  .callc__live{flex:none;color:var(--ink);background:var(--yellow);padding:2px 7px;letter-spacing:.12em}
+  .callc__q{margin:2px 0 10px;font-family:var(--display);font-size:clamp(22px,2.6vw,30px);line-height:1.05;
+    text-transform:uppercase;color:var(--yellow)}
+  .callc__v{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0;font-family:var(--mono);font-size:12.5px;
+    color:rgba(251,252,244,.66)}
+  .callc__v .y{color:var(--yellow)}
+  .callc__v .n{color:var(--pink)}
+  .callc__bar{height:8px;background:var(--pink);margin:0 0 8px}
+  .callc__bar i{display:block;height:100%;background:var(--yellow)}
+  .callc__f{margin:12px 0 10px}
+  .callc__f img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;background:#000;
+    border:2px solid rgba(251,252,244,.22)}
+  .callc__f figcaption{margin:6px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:rgba(251,252,244,.5)}
+  .callc__r{margin:0;font-size:15px;line-height:1.45;color:var(--cream)}
+  .callc__r b{font-family:var(--display);font-weight:400;font-size:24px;margin-right:8px;vertical-align:-2px}
+  .callc__r b.y{color:var(--yellow)}
+  .callc__r b.n{color:var(--pink)}
+  .callc__who{margin:6px 0 0;font-size:14px;color:rgba(251,252,244,.72)}
+  .callc__how{margin:10px 0 0;font-size:14px;line-height:1.5;color:rgba(251,252,244,.8)}
+  .callc__how code{font-family:var(--mono);color:var(--yellow)}
+  .callc__go{display:inline-block;margin:18px 0 0;font-family:var(--display);font-size:18px;
+    text-transform:uppercase;color:var(--yellow);text-decoration:none}
+  .callc__go i{font-style:normal}
+  .callc__go:focus-visible{text-decoration:underline}
+  @media (hover:hover){.callc__go:hover{text-decoration:underline}}
   /* EACH DOOR LOOKS LIKE ITS OWN APP (Lev, 2 Oct: the X and Telegram chats
      did not look like X and Telegram). The screen under the frame's header is
      drawn the way that app draws it: Kick's chat lines, an X thread, a
@@ -1299,8 +1333,13 @@ html{-webkit-tap-highlight-color:transparent}
         <!-- ONE LINE NOW (Lev, 2 Oct, the hypercasual cut). The doors right
              under it say where you call it, and How it works plays what
              happens next, so the second sentence was saying both in advance. -->
+        <!-- ONE NUMBER, SAID EVERYWHERE (Lev, 3 Nov, after CRSH's "60 second
+             settlements"): ours is that a call settles seconds after the result
+             is on screen. "You earn 2%" also sat over the Add to X Live door,
+             and X Live runs votes with no 2%; the 2% is said where it is true,
+             under Streamers. -->
         <p class="pitch">
-          <span>Your chat calls the market. You earn 2%.</span>
+          <span>Your chat calls it. Oddie settles it in seconds.</span>
         </p>
         <!-- IT USED TO LAND ON /genesis, WHICH WAS RIGHT WHILE THERE WAS A
              CAMPAIGN AND A TICKET TO CLAIM. There is neither now, so a button
@@ -1399,6 +1438,12 @@ html{-webkit-tap-highlight-color:transparent}
            Without script it is the whole Kick conversation, static. With
            reduced motion it never moves on its own: the steps and the doors
            switch it. -->
+      <!-- A REAL CALL TAKES THIS PLACE (Lev, 3 Nov): the server swaps everything
+           between TALE and /TALE for the call taking answers on a streamer's
+           channel now, or the newest the screen settled, with the picture
+           Oddie read (renderLanding in src/server.ts). The scripted chat below
+           is what a page with no real call yet shows. -->
+      <!--TALE-->
       <div class="tale reveal" id="tale">
         <div class="tale__tabs" role="tablist" aria-label="How it works">
           <button class="tale__tab" type="button" role="tab" data-beat="0">1. Call it</button>
@@ -1423,6 +1468,7 @@ html{-webkit-tap-highlight-color:transparent}
           </div></div>
         </div>
       </div>
+      <!--/TALE-->
 
       <!-- THE PAGE ARGUED AND SHOWED NOTHING. Above this is an illustrated
            three-step figure; the whole claim is that these things exist with

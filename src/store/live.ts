@@ -737,6 +737,73 @@ export async function recentCalls(platform: Platform, channelId: string, limit =
     settledAt: r.settled_at ? new Date(r.settled_at).getTime() : null, frame: r.has_frame === true }));
 }
 
+/* ------------------------------------------------------ the front door --
+   WHAT A STRANGER SEES FIRST (Lev, 3 Nov, after CRSH: their site opens on a
+   live stream with a live question, ours opened on a made-up BTC market in a
+   Kick chat). One real call: the one taking answers now on a streamer's
+   channel, else the newest one the screen settled, with the picture Oddie
+   read. The house's own channels never stand in for a streamer's. */
+export interface ShowcaseCall {
+  id: string; platform: Platform; slug: string; name: string | null; avatar: string | null;
+  question: string; outcome: Side | null; yes: number; no: number;
+  openedAt: number; settledAt: number | null;
+  /** Who called it right, best first, the house left out. Empty while it is open. */
+  calledIt: string[];
+}
+
+/** Who answered a settled call right, best first, at most three. */
+async function rightCallers(callId: string, outcome: Side): Promise<string[]> {
+  if (!STORE_PERSISTENT) {
+    return memPicks.filter((p) => p.callId === callId && p.side === outcome && !isHouse(p.username))
+      .sort((a, b) => (b.points ?? 0) - (a.points ?? 0) || a.at - b.at).slice(0, 3).map((p) => p.username);
+  }
+  const { rows } = await storeDb().query<{ username: string }>(
+    `SELECT username FROM live_pick WHERE call_id = $1 AND side = $2 AND COALESCE(lower(username), '') <> ALL($3::text[])
+      ORDER BY points DESC NULLS LAST, at ASC LIMIT 3`, [callId, outcome, houseAccounts()]);
+  return rows.map((r) => r.username);
+}
+
+export async function showcaseCalls(): Promise<{ live: ShowcaseCall | null; settled: ShowcaseCall | null }> {
+  if (!STORE_PERSISTENT) {
+    const shown = (c: MemCall) => { const ch = memChannels.get(ck(c.platform, c.channelId)); return ch && ch.active && !isHouse(ch.slug) ? ch : null; };
+    const card = async (c: MemCall): Promise<ShowcaseCall> => {
+      const ch = shown(c)!;
+      const t = await liveStore.tally(c.id);
+      return { id: c.id, platform: c.platform, slug: ch.slug, name: ch.name, avatar: ch.avatar, question: c.question, outcome: c.outcome,
+        yes: t.yes, no: t.no, openedAt: c.openedAt, settledAt: c.settledAt, calledIt: c.outcome ? await rightCallers(c.id, c.outcome) : [] };
+    };
+    const calls = [...memCalls.values()].reverse();
+    const open = calls.find((c) => takingAnswers(c) && shown(c));
+    const read = calls.filter((c) => c.settledAt !== null && c.outcome !== null && memFrames.has(c.id) && shown(c))
+      .sort((a, b) => b.settledAt! - a.settledAt!)[0];
+    return { live: open ? await card(open) : null, settled: read ? await card(read) : null };
+  }
+  await schema();
+  type Row = { id: string; platform: Platform; question: string; outcome: Side | null; opened_at: Date; settled_at: Date | null;
+    slug: string; name: string | null; avatar: string | null; yes: number; no: number };
+  const cols = `c.id, c.platform, c.question, c.outcome, c.opened_at, c.settled_at, ch.slug, ch.name, ch.avatar,
+            count(p.*) FILTER (WHERE p.side = 'yes')::int AS yes, count(p.*) FILTER (WHERE p.side = 'no')::int AS no`;
+  const from = `FROM live_call c JOIN live_channel ch ON ch.platform = c.platform AND ch.channel_id = c.channel_id
+       LEFT JOIN live_pick p ON p.call_id = c.id`;
+  const [open, read] = await Promise.all([
+    storeDb().query<Row>(
+      `SELECT ${cols} ${from}
+        WHERE c.locked_at IS NULL AND c.settled_at IS NULL AND c.canceled_at IS NULL AND ch.active AND lower(ch.slug) <> ALL($1::text[])
+        GROUP BY c.id, ch.slug, ch.name, ch.avatar ORDER BY c.opened_at DESC LIMIT 1`, [houseAccounts()]),
+    storeDb().query<Row>(
+      `SELECT ${cols} ${from}
+        WHERE c.settled_at IS NOT NULL AND c.outcome IS NOT NULL AND ch.active AND lower(ch.slug) <> ALL($1::text[])
+          AND EXISTS (SELECT 1 FROM live_call_frame f WHERE f.call_id = c.id)
+        GROUP BY c.id, ch.slug, ch.name, ch.avatar ORDER BY c.settled_at DESC LIMIT 1`, [houseAccounts()]),
+  ]);
+  const card = async (r: Row): Promise<ShowcaseCall> => ({
+    id: String(r.id), platform: r.platform, slug: r.slug, name: r.name, avatar: r.avatar, question: r.question, outcome: r.outcome,
+    yes: r.yes, no: r.no, openedAt: new Date(r.opened_at).getTime(), settledAt: r.settled_at ? new Date(r.settled_at).getTime() : null,
+    calledIt: r.outcome ? await rightCallers(String(r.id), r.outcome) : [],
+  });
+  return { live: open.rows[0] ? await card(open.rows[0]) : null, settled: read.rows[0] ? await card(read.rows[0]) : null };
+}
+
 /** The largest picture kept: a full-size stream frame is a few hundred KB. */
 export const FRAME_MAX_BYTES = 2_000_000;
 
