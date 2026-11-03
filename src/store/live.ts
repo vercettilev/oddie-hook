@@ -804,6 +804,29 @@ export async function showcaseCalls(): Promise<{ live: ShowcaseCall | null; sett
   return { live: open.rows[0] ? await card(open.rows[0]) : null, settled: read.rows[0] ? await card(read.rows[0]) : null };
 }
 
+/** One settled call of this channel for its "called it" card: the question,
+ *  the result, who called it right and the picture, when the screen settled it. */
+export async function settledCall(platform: Platform, channelId: string, callId: string):
+  Promise<{ question: string; outcome: Side; calledIt: string[]; frame: Buffer | null } | null> {
+  if (!/^\d{1,18}$/.test(callId)) return null;
+  let found: { question: string; outcome: Side } | null = null;
+  if (!STORE_PERSISTENT) {
+    const c = memCalls.get(callId);
+    if (c && c.platform === platform && c.channelId === channelId && c.outcome && c.settledAt !== null && c.canceledAt === null) {
+      found = { question: c.question, outcome: c.outcome };
+    }
+  } else {
+    await schema();
+    const { rows } = await storeDb().query<{ question: string; outcome: Side }>(
+      `SELECT question, outcome FROM live_call WHERE id = $1 AND platform = $2 AND channel_id = $3
+          AND outcome IS NOT NULL AND settled_at IS NOT NULL AND canceled_at IS NULL`, [callId, platform, channelId]);
+    found = rows[0] ?? null;
+  }
+  if (!found) return null;
+  const [calledIt, pic] = await Promise.all([rightCallers(callId, found.outcome), callFrame(platform, channelId, callId)]);
+  return { ...found, calledIt, frame: pic?.jpeg ?? null };
+}
+
 /** The largest picture kept: a full-size stream frame is a few hundred KB. */
 export const FRAME_MAX_BYTES = 2_000_000;
 

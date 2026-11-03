@@ -9,6 +9,7 @@
  * out. The season is a calendar month in UTC.
  */
 import { seasonEnd, seasonStart } from "../src/live/calls.js";
+import { calledItLine, renderCalledItCard, wrapLines } from "../src/card/renderCalledItCard.js";
 import { _resetLiveStore, liveStore, saveCallFrame, saveChannel, showcaseCalls } from "../src/store/live.js";
 
 let failures = 0;
@@ -79,6 +80,24 @@ shown = await showcaseCalls();
 check("a streamer's call taking answers is live", shown.live?.question === "Will Bee close the next candle green?", shown.live?.question);
 check("...with nobody named while it is open", shown.live?.calledIt.length === 0 && shown.live?.yes === 1);
 check("...and the settled one is still there for when it closes", shown.settled?.question === "Can Roothlus beat StanCifka?");
+
+console.log("\nthe called-it card\n");
+check("names who called it, three at most", calledItLine(["a", "b"]) === "@a and @b called it."
+  && calledItLine(["a", "b", "c"]) === "@a, @b and @c called it.");
+check("nobody right says so", calledItLine([]) === "Nobody called it.");
+check("long names make room with 'and N more'",
+  calledItLine(["averyveryverylongname1", "averyveryverylongname2", "x"]) === "@averyveryverylongname1 and 2 more called it.",
+  calledItLine(["averyveryverylongname1", "averyveryverylongname2", "x"]));
+check("a question wraps to two lines and ends on an ellipsis past that",
+  wrapLines("WILL ALEKSA CRACK THE TOP 10 WITH 1066+ POINTS THIS RUN AND THEN DO IT AGAIN TOMORROW NIGHT?", 40, 2).length === 2
+  && wrapLines("WILL ALEKSA CRACK THE TOP 10 WITH 1066+ POINTS THIS RUN AND THEN DO IT AGAIN TOMORROW NIGHT?", 40, 2)[1].endsWith("…"));
+const svg = renderCalledItCard({ question: "Can Roothlus beat StanCifka?", outcome: "no", channel: "Aleksa Flamingo 🦩", where: "X Live",
+  calledIt: ["uncleogac"], frameJpeg: Buffer.from("jpeg") });
+check("the card draws the frame, the result and who called it", svg.includes("data:image/jpeg;base64,")
+  && svg.includes(">NO</text>") && svg.includes("@uncleogac called it."));
+check("an emoji in a channel's name is left out (the card's fonts draw none)", svg.includes(">ALEKSA FLAMINGO · X LIVE</text>"));
+check("a call settled by hand makes no claim about the screen",
+  !renderCalledItCard({ question: "q?", outcome: "yes", channel: "c", where: "Kick", calledIt: [], frameJpeg: null }).includes("off the stream"));
 
 console.log(failures === 0 ? "\nall front-door call checks passed.\n" : `\n${failures} front-door call check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);

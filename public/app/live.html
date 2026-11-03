@@ -312,6 +312,8 @@ h2{font-family:var(--display);font-weight:400;font-size:16px;letter-spacing:.04e
 .res__m{margin:0;font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
 .res__m .y{color:var(--yellow)} .res__m .n{color:var(--pink)}
 /* What Oddie saw: the picture a call was settled on. */
+.res__card{color:var(--yellow);text-decoration:none;font-weight:800}
+@media (hover:hover){.res__card:hover{text-decoration:underline}}
 .res__f{margin:8px 0 2px}
 .res__f img{display:block;width:100%;max-width:520px;height:auto;border-radius:8px;border:1px solid var(--fg-3);background:#000}
 .res__f figcaption{margin-top:5px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
@@ -972,7 +974,9 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
           + '<p class="res__m"><span class="' + (r.outcome === "yes" ? "y" : "n") + '">' + String(r.outcome).toUpperCase() + "</span> · "
           + p + "% said YES · " + t + (t === 1 ? " call" : " calls")
           // The most a right call earned: earlier ones scored more, so "each" stopped being true.
-          + (r.points ? " · up to +" + r.points : "") + (r.settledAt ? " · " + ago(r.settledAt) : "") + "</p>"
+          + (r.points ? " · up to +" + r.points : "") + (r.settledAt ? " · " + ago(r.settledAt) : "")
+          // The call as a picture to post (Lev, 3 Nov): the question, the result, who called it.
+          + (r.card ? ' · <a class="res__card" href="' + esc(r.card) + '" target="_blank" rel="noopener">Card</a>' : "") + "</p>"
           // The picture Oddie settled it on, when the screen did.
           + (r.frame ? '<figure class="res__f"><a href="' + esc(r.frame) + '" target="_blank" rel="noopener"><img src="' + esc(r.frame)
             + '" alt="The stream as Oddie read it when it settled this call" loading="lazy" width="520" height="292"></a>'

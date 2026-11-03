@@ -13,7 +13,9 @@ import { consumeChallenge, issueChallenge, verifyWalletSignature, WALLET_ADDRESS
 import { seasonEnd, seasonStart, weekStart, yesPct, type Platform } from "./calls.js";
 import { cookieValue, ownerCookieName, ownerKeyFromEnv, verifyOwnerToken } from "./owner.js";
 import type { ChannelMarket } from "../store/markets.js";
-import { callFrame, channelBySlug, channelStandings, liveStore, recentCalls, streaksFor, type StandingRow } from "../store/live.js";
+import { callFrame, channelBySlug, channelStandings, liveStore, recentCalls, settledCall, streaksFor, type StandingRow } from "../store/live.js";
+import { renderCalledItCard } from "../card/renderCalledItCard.js";
+import { renderCardPng } from "../card/renderPng.js";
 import { faceitConfigured } from "../games/faceit.js";
 import { gsiConfig } from "../games/gsi.js";
 import { GSI_STALE_MS } from "./gameCalls.js";
@@ -75,6 +77,12 @@ const LIVE_TTL_MS = 30_000;
    database, so this is empty there. */
 const DEV_ON_AIR = new Set(process.env.DATABASE_URL ? []
   : (process.env.DEV_STREAM_LIVE ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+
+/** A card is kept forever wherever it is fetched (immutable), so a new design
+ *  needs a new address: bump this and every link asks for the new picture. */
+const CARD_VERSION = 1;
+/** Where a channel streams, as its card says it. */
+const CARD_WHERE: Record<Platform, string> = { kick: "Kick", twitch: "Twitch", youtube: "YouTube Live", x: "X Live" };
 
 const CHANNEL_URL: Record<Platform, (slug: string) => string> = {
   kick: (s) => `https://kick.com/${s}`,
@@ -222,6 +230,8 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
         settledAt: c.settledAt ? new Date(c.settledAt).toISOString() : null,
         // The picture oddie settled it on, when the screen did (src/live/screenCalls.ts).
         frame: c.frame ? `/api/live/${platform}/${encodeURIComponent(ch.slug)}/frame/${c.id}` : null,
+        // The call as a picture to post after the show (the card route below).
+        card: c.outcome ? `/api/live/${platform}/${encodeURIComponent(ch.slug)}/card/${c.id}.png?v=${CARD_VERSION}` : null,
       })),
       standings: standings.map(row),
       standingsWeek: standingsWeek.map(row),
@@ -240,6 +250,28 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     if (!f) return res.status(404).json({ error: "unknown" });
     res.set("Cache-Control", "public, max-age=31536000, immutable");
     res.type("image/jpeg").send(f.jpeg);
+  });
+
+  /* THE "CALLED IT" CARD (Lev, 3 Nov, after CRSH's winner cards): a settled
+     call as a picture to post after the show, the frame Oddie read under the
+     question, the result and who called it right. A settled call never
+     changes, so a card is drawn once per server and kept anywhere after. */
+  const cards = new Map<string, Buffer>();
+  r.get(`/api/live/${platform}/:slug/card/:id.png`, async (req, res) => {
+    const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
+    const key = ch ? `${ch.channelId}:${req.params.id}` : "";
+    let png = cards.get(key) ?? null;
+    if (ch && !png) {
+      const call = await settledCall(platform, ch.channelId, req.params.id).catch(() => null);
+      if (call) {
+        png = renderCardPng(renderCalledItCard({ question: call.question, outcome: call.outcome, channel: ch.name || ch.slug,
+          where: CARD_WHERE[platform], calledIt: call.calledIt, frameJpeg: call.frame }));
+        if (cards.size >= 64) cards.delete(cards.keys().next().value as string);
+        cards.set(key, png);
+      }
+    }
+    if (!png) return res.status(404).json({ error: "unknown" });
+    res.set("Cache-Control", "public, max-age=31536000, immutable").type("image/png").send(png);
   });
 
   /* ------------------------------------------------ the streamer's 2% --
