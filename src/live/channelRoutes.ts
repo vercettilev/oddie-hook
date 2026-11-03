@@ -54,6 +54,9 @@ export interface ChannelPageDeps {
   /** Where to watch this broadcast, when the platform knows a better place
    *  than the channel itself (an X broadcast's own link). */
   watchUrl?(channelId: string): string | null;
+  /** The player for this broadcast, when the platform knows the broadcast
+   *  itself (YouTube's live video); absent or null, PLAYER below. */
+  player?(channelId: string): string | null;
 }
 
 /* THE STREAM ABOVE THE CALL (Lev, 3 Nov, after CRSH, whose page is the stream
@@ -65,6 +68,8 @@ const PLAYER: Record<Platform, (ch: { slug: string; channelId: string }) => stri
   // Twitch requires the embedding host as a parent: the page adds it, from where it runs.
   twitch: (c) => `https://player.twitch.tv/?channel=${encodeURIComponent(c.slug)}&muted=true`,
   kick: (c) => `https://player.kick.com/${encodeURIComponent(c.slug)}?muted=true&autoplay=true`,
+  // Only a fallback: by channel id YouTube often answers "video unavailable",
+  // so the YouTube router hands over the live video itself (d.player).
   youtube: (c) => `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(c.channelId)}&mute=1&autoplay=1`,
   x: (c) => `/api/live/x/${encodeURIComponent(c.slug)}/picture`,
 };
@@ -73,10 +78,12 @@ const PLAYER: Record<Platform, (ch: { slug: string; channelId: string }) => stri
 const LIVE_TTL_MS = 30_000;
 /* LOCAL PREVIEW ONLY. With no database (npm run dev), DEV_STREAM_LIVE names
    channels to treat as on air, as platform:slug comma separated, so the player
-   can be looked at without a platform account. Production always has a
-   database, so this is empty there. */
-const DEV_ON_AIR = new Set(process.env.DATABASE_URL ? []
-  : (process.env.DEV_STREAM_LIVE ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+   can be looked at without a platform account; youtube:slug=VIDEO_ID also
+   names the live video to embed. Production always has a database, so this
+   is empty there. */
+const DEV_ON_AIR = new Map<string, string>(process.env.DATABASE_URL ? []
+  : (process.env.DEV_STREAM_LIVE ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    .map((s) => { const [k, v] = s.split("="); return [k.toLowerCase(), v ?? ""] as [string, string]; }));
 
 /** A card is kept forever wherever it is fetched (immutable), so a new design
  *  needs a new address: bump this and every link asks for the new picture. */
@@ -104,6 +111,10 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
      markets under it change when somebody opens one: read a channel's list at
      most every fifteen seconds. */
   const marketCache = new Map<string, { at: number; rows: ChannelMarket[] }>();
+  const devPlayer = (slug: string): string | null => {
+    const video = DEV_ON_AIR.get(`${platform}:${slug.toLowerCase()}`);
+    return platform === "youtube" && video ? `https://www.youtube.com/embed/${encodeURIComponent(video)}?autoplay=1&mute=1` : null;
+  };
   const liveCache = new Map<string, { at: number; live: boolean | null }>();
   const onAir = async (channelId: string, slug: string): Promise<boolean | null> => {
     if (DEV_ON_AIR.has(`${platform}:${slug.toLowerCase()}`)) return true;
@@ -214,7 +225,7 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
       platform, slug: ch.slug, name: ch.name, avatar: ch.avatar, url: CHANNEL_URL[platform](ch.slug),
       ...(owner ? { owner } : {}),
       // On air: the player to show above the call, and where to watch it in full.
-      stream: live ? { live: true, player: PLAYER[platform](ch), watch: d.watchUrl?.(ch.channelId) ?? CHANNEL_URL[platform](ch.slug) } : null,
+      stream: live ? { live: true, player: devPlayer(ch.slug) ?? d.player?.(ch.channelId) ?? PLAYER[platform](ch), watch: d.watchUrl?.(ch.channelId) ?? CHANNEL_URL[platform](ch.slug) } : null,
       markets: markets.map((m) => ({ slug: m.slug, question: m.question, hook: m.hook, closesAt: m.closesAt, outcome: m.outcome })),
       current: current && tally ? {
         question: current.question, closesAt: new Date(current.closesAt).toISOString(), timed: current.timed,

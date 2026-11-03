@@ -529,7 +529,13 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
   });
 
   /** The channel's page and its standings: shared with Kick and Twitch. */
-  // The player above the call while the channel is on air (src/live/channelRoutes.ts).
-  addChannelRoutes(r, "youtube", { ...d, streamLive: d.streamLive ?? (async (c) => (onAir.has(c) ? onAir.get(c)! : null)) });
+  // The player above the call while the channel is on air (src/live/channelRoutes.ts):
+  // the live video the watcher found, which embeds where the channel id does not.
+  addChannelRoutes(r, "youtube", {
+    ...d,
+    streamLive: d.streamLive ?? (async (c) => (onAir.has(c) ? onAir.get(c)! : null)),
+    player: (c) => { const v = liveChats.get(c)?.videoId; return v ? `https://www.youtube.com/embed/${encodeURIComponent(v)}?autoplay=1&mute=1` : null; },
+    watchUrl: (c) => { const v = liveChats.get(c)?.videoId; return v ? `https://www.youtube.com/watch?v=${encodeURIComponent(v)}` : null; },
+  });
   return r;
 }

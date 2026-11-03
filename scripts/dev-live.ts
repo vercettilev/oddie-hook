@@ -50,6 +50,9 @@ const channels = [
   { platform: "x" as const, channelId: "1836067494009671680", slug: "Showdown_TCG", name: "Showdown" },
   { platform: "x" as const, channelId: "1084242319", slug: "AleksaFlamingo", name: "Aleksa Flamingo 🦩" },
   { platform: "twitch" as const, channelId: "1372956063", slug: "bee_empire", name: "Bee_Empire" },
+  // Two public channels, only so the Kick and YouTube players can be looked at (DEV_STREAM_LIVE).
+  { platform: "kick" as const, channelId: "dev-kick-xqc", slug: "xqc", name: "xQc" },
+  { platform: "youtube" as const, channelId: "UCSJ4gkVC6NrvII8umztf0Ow", slug: "LofiGirl", name: "Lofi Girl" },
 ];
 for (const c of channels) {
   await saveChannel({ ...c, avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
