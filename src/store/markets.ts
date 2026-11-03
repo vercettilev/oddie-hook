@@ -3382,10 +3382,13 @@ async function logFee(input: FeeLogInput): Promise<void> {
  *  - a missing row reads as "nothing recorded" to anything that sums this
  *    ledger, so a gap understates, the safe side for money owed, where a
  *    wrong row is a promise of money that never existed;
- *  - a provisional row has nowhere honest to live. `enforced = false` already
- *    means the era before the program charged anything, and a new column is a
- *    migration; either way a second writer has to come back and correct it,
- *    and two writers to one row is how a ledger starts to drift;
+ *  - a provisional row has nowhere honest to live. `enforced = false` means
+ *    logged, never charged: the era before the program charged anything, and
+ *    the rows the fallback booked on one-sided pools, marked so on 3 Nov 2026
+ *    once the report had held them against the chain. A row not known yet is
+ *    neither, and a new column is a migration; either way a second writer has
+ *    to come back and correct it, and two writers to one row is how a ledger
+ *    starts to drift;
  *  - a gap is loud: bookFeeAfterResolve (src/feeLedger.ts) logs
  *    `fee_log_gap`, and `npm run fee-ledger-report` finds every settled
  *    market whose rows are missing or wrong, against the chain.

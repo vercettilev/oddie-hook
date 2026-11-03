@@ -16,9 +16,14 @@
 //   npm run fee-ledger-report            the markets whose rows disagree
 //   npm run fee-ledger-report -- --all   every minted market, agreeing ones too
 //
-// Needs DATABASE_URL on production and the chain layer configured as for
+// Needs the production database and the chain layer configured as for
 // resolve-reconcile: readMarkets builds its client with the admin key, and
-// nothing here signs with it. It never prints key material.
+// nothing here signs with it. It never prints key material. From a laptop the
+// database is the Postgres service's DATABASE_PUBLIC_URL, because oddie-hook's
+// own DATABASE_URL is a `*.railway.internal` host that resolves only inside
+// Railway, and the chain is oddie-hook's, so the two runs nest:
+//
+//   railway run -p 508d41c0-e0ab-4dfd-94e8-a00881cd9e2e -e production -s Postgres -- railway run -p 508d41c0-e0ab-4dfd-94e8-a00881cd9e2e -e production -s oddie-hook -- npm run -s fee-ledger-report
 //
 // The comparison is src/feeLedger.ts (auditFeeLedger), tested in
 // scripts/test-fee-after-resolve.ts.
@@ -34,13 +39,18 @@ function die(msg: string): never {
   process.exit(1);
 }
 
-if (!process.env.DATABASE_URL) die("This reads market_fee_log, so it needs DATABASE_URL pointed at production.");
+// The public URL first, as check-sql reads it: see the header.
+const url = process.env.DATABASE_PUBLIC_URL ?? process.env.DATABASE_URL;
+if (!url) die("This reads market_fee_log, so it needs the production database: DATABASE_PUBLIC_URL from a laptop (see the header).");
 if (!isChainEnabled()) {
   die("This reads what resolve_market fixed, so it needs ONCHAIN_ENABLED and the chain layer resolve-reconcile uses. It signs nothing.");
 }
 
-const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
-await client.connect();
+const internal = /railway\.internal/.test(url);
+const client = new pg.Client({ connectionString: url, ssl: internal ? false : { rejectUnauthorized: false } });
+await client.connect().catch((e: Error) => die(internal
+  ? "DATABASE_URL is Railway's private host, which resolves only inside Railway. Run it as the header says, with the Postgres service's DATABASE_PUBLIC_URL."
+  : `Could not reach the database: ${e.message}`));
 let rows: FeeLedgerRow[];
 try {
   await client.query("BEGIN READ ONLY");

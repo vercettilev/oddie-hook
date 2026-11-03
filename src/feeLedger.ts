@@ -71,8 +71,9 @@ export async function bookFeeAfterResolve(slug: string, pubkey: string, deps: Fe
 
 /**
  * Every minted market with its real-money rows, summed by half, for the
- * report. Rows with enforced = false are left out: they are the era before the
- * program charged anything, logged as never charged, and they claim nothing.
+ * report. Rows with enforced = false are left out: logged, never charged (the
+ * era before the program charged anything, and the fallback's rows on
+ * one-sided pools, marked on 3 Nov 2026), they claim nothing.
  */
 export const FEE_LEDGER_SQL = `
   SELECT cm.slug, cm.onchain_pubkey,

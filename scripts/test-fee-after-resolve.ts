@@ -254,6 +254,13 @@ console.log("\nwired: every resolve that lands books its fee, and only then");
   check("...imports only readers from the chain, and nothing from the store",
     /import \{ cluster, isChainEnabled, readMarkets \} from "\.\.\/src\/chain\/oddieChain\.js";/.test(report)
     && !/src\/store\//.test(report) && !/logRealFee|resolveMarketOnChain|closeMarketOnChain|mintMarket|\.rpc\(/.test(report));
+  // oddie-hook's DATABASE_URL is a *.railway.internal host, which a laptop
+  // cannot resolve, so the report reads the database the way check-sql does.
+  check("...reaches the database from a laptop: the public URL first, SSL off Railway's private network",
+    /const url = process\.env\.DATABASE_PUBLIC_URL \?\? process\.env\.DATABASE_URL;/.test(report)
+    && /ssl: internal \? false : \{ rejectUnauthorized: false \}/.test(report));
+  check("...and its header says how to run it, the two services nested",
+    /-s Postgres -- railway run .* -s oddie-hook -- npm run -s fee-ledger-report/.test(readFileSync("scripts/fee-ledger-report.ts", "utf8")));
 }
 
 console.log(failures === 0 ? "\nall fee-after-resolve checks passed.\n" : `\n${failures} fee-after-resolve check(s) FAILED.\n`);
