@@ -1,0 +1,233 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Referrals</title>
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<style>
+  /* Operator tool, the roster's skin (public/roster.html): the brand's
+     colours, none of its theatre, no webfont. Opened to read a ledger and to
+     write down a payout that already happened, nothing else. */
+  :root{
+    --yellow:#FCF604; --pink:#FF2D78; --pink-deep:#A3053F;
+    --cream:#FBFCF4; --ink:#0B0D04; --ink-2:#494E2D; --line:#E3E5D6;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-family:var(--mono);font-size:15px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;margin:0 0 4px}
+  .sub{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin:0 0 22px}
+  .gate{border:3px solid var(--ink);background:#fff;padding:20px;max-width:460px;box-shadow:7px 8px 0 var(--pink-deep)}
+  .gate label{display:block;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin:0 0 8px}
+  .gate input{width:100%;font:inherit;font-family:var(--mono);padding:11px 12px;border:2px solid var(--ink);background:#fff;color:var(--ink)}
+  .gate input:focus{outline:3px solid var(--pink);outline-offset:2px}
+  button{font-family:var(--mono);font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;background:var(--yellow);
+    color:var(--ink);border:3px solid var(--ink);padding:9px 14px;cursor:pointer}
+  @media (hover:hover){button:hover{background:#FFFB3B}}
+  button:disabled{opacity:.6;cursor:progress}
+  .gate button{margin-top:12px}
+  .err{margin-top:10px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--pink-deep)}
+  .sums{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 14px}
+  .sum{border:3px solid var(--ink);background:#fff;padding:12px 16px;min-width:132px}
+  .sum b{display:block;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
+  .sum span{display:block;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-top:3px}
+  .terms{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin:0 0 20px}
+  table{width:100%;border-collapse:collapse;background:#fff;border:3px solid var(--ink)}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
+    background:var(--cream);border-bottom:3px solid var(--ink)}
+  .who{font-family:var(--mono);font-weight:700}
+  .name{display:block;font-size:12px;color:var(--ink-2);font-family:var(--sans);font-weight:400}
+  .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  .owed{font-weight:800}
+  .addr{font-family:var(--mono);font-size:12px;word-break:break-all}
+  .none{color:var(--ink-2);font-style:italic}
+  details{margin-top:6px;font-size:13px}
+  summary{cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+  .refs{margin:6px 0 0;padding:0 0 0 16px}
+  .refs li{margin:0 0 6px}
+  .mk{font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
+  .mk a{color:var(--pink-deep)}
+  .pay{display:grid;gap:6px;min-width:220px}
+  .pay input{font:inherit;font-family:var(--mono);font-size:12px;padding:7px 8px;border:2px solid var(--ink);background:#fff;color:var(--ink);width:100%}
+  .say{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--pink-deep);min-height:1em}
+  .empty{padding:26px;text-align:center;font-family:var(--mono);font-size:13px;color:var(--ink-2)}
+  @media (max-width:760px){.hide-sm{display:none}.wrap{padding:18px 12px 60px}}
+  html{-webkit-tap-highlight-color:transparent}
+</style>
+
+<div class="wrap">
+  <h1>Referrals</h1>
+  <p class="sub">Who brought whom, their part of Oddie's fee, and the payouts sent by hand. Nothing here sends SOL.</p>
+
+  <form class="gate" id="gate">
+    <label for="tok">Admin token</label>
+    <input id="tok" type="password" autocomplete="off" spellcheck="false">
+    <button type="submit">Open</button>
+    <div class="err" id="err" hidden></div>
+  </form>
+
+  <div id="out" hidden>
+    <div class="sums" id="sums"></div>
+    <p class="terms" id="terms"></p>
+    <table>
+      <thead><tr>
+        <th>Referrer</th>
+        <th class="hide-sm">Wallet</th>
+        <th class="num">Brought</th>
+        <th class="num">Earned</th>
+        <th class="num">Paid</th>
+        <th class="num">Owed</th>
+        <th>Record a payout</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function () {
+  var gate = document.getElementById("gate");
+  var err = document.getElementById("err");
+  var token = "";
+
+  /* sessionStorage, as the roster: an admin token should not outlive the tab it was typed into. */
+  try { token = sessionStorage.getItem("oddie_admin") || ""; } catch (e) { token = ""; }
+  if (token) load();
+
+  gate.addEventListener("submit", function (e) {
+    e.preventDefault();
+    token = document.getElementById("tok").value.trim();
+    load();
+  });
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[<>&"]/g, function (c) {
+    return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]; }); }
+
+  /* Lamports to SOL for reading, every digit kept: this is the ledger, not a card. */
+  function sol(l) {
+    var n = Number(l || 0), neg = n < 0, a = Math.abs(n);
+    var whole = Math.floor(a / 1e9), frac = String(a % 1e9).padStart(9, "0").replace(/0+$/, "");
+    return (neg ? "-" : "") + whole + (frac ? "." + frac : "");
+  }
+  /* SOL typed by a person to whole lamports, without a float on the way: "0.0125" is 12500000. */
+  function lamportsOf(text) {
+    // Six whole digits at most, so the lamports stay a whole number a double holds exactly.
+    var m = /^(\d{0,6})(?:\.(\d{0,9}))?$/.exec(String(text || "").trim());
+    if (!m || (!m[1] && !m[2])) return null;
+    return Number(m[1] || "0") * 1e9 + Number((m[2] || "").padEnd(9, "0"));
+  }
+  function day(iso) { return iso ? String(iso).slice(0, 10) : ""; }
+  function channelLabel(c) { return esc(c.platform) + ":" + esc(c.slug || c.channelId); }
+
+  function load() {
+    if (!token) return;
+    err.hidden = true;
+    fetch("/api/admin/referrals", { headers: { "x-oddie-admin": token }, cache: "no-store" })
+      .then(function (r) {
+        if (r.status === 401) throw new Error("That token was not accepted.");
+        if (!r.ok) throw new Error("Server said " + r.status + ".");
+        return r.json();
+      })
+      .then(function (j) {
+        try { sessionStorage.setItem("oddie_admin", token); } catch (e) { /* the page still works this once */ }
+        render(j);
+      })
+      .catch(function (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+        gate.hidden = false;
+        try { sessionStorage.removeItem("oddie_admin"); } catch (x) { /* nothing kept */ }
+      });
+  }
+
+  function sum(v, label) { return '<div class="sum"><b>' + v + "</b><span>" + label + "</span></div>"; }
+
+  function render(j) {
+    gate.hidden = true;
+    document.getElementById("out").hidden = false;
+    var list = j.referrers || [];
+    var brought = list.reduce(function (s, r) { return s + r.brought; }, 0);
+    document.getElementById("sums").innerHTML =
+      sum(sol(j.totals.owedLamports) + " SOL", "owed") +
+      sum(sol(j.totals.earnedLamports) + " SOL", "earned") +
+      sum(sol(j.totals.paidLamports) + " SOL", "paid") +
+      sum(list.length, "referrers") +
+      sum(brought, "channels brought");
+    var t = j.terms || {};
+    document.getElementById("terms").textContent = "New invites: " + (t.shareBps / 100) + "% of Oddie's fee on markets opened within "
+      + t.days + " days of the first connect. The invite is remembered " + t.cookieDays + " days. Streamers read: " + (t.line || "");
+
+    var rows = document.getElementById("rows");
+    if (!list.length) {
+      rows.innerHTML = '<tr><td colspan="7" class="empty">Nobody has joined through an invite yet.</td></tr>';
+      return;
+    }
+    rows.innerHTML = list.map(function (r, i) {
+      var refs = r.referrals.map(function (x) {
+        var counted = x.markets.filter(function (m) { return m.counted; });
+        return "<li><b>" + channelLabel(x) + "</b>" + (x.name ? " " + esc(x.name) : "")
+          + ' <span class="mk">joined ' + day(x.at) + ", counts until " + day(x.until)
+          + (x.earns ? " &middot; " + sol(x.earnedLamports) + " SOL from " + counted.length + " market" + (counted.length === 1 ? "" : "s") : " &middot; votes only, earns nothing")
+          + "</span>"
+          + (counted.length ? '<div class="mk">' + counted.map(function (m) {
+            return '<a href="/m/' + encodeURIComponent(m.slug) + '" target="_blank" rel="noopener">' + esc(m.slug) + "</a> "
+              + (m.protocolFeeLamports == null ? "no fee recorded yet" : "fee " + sol(m.protocolFeeLamports) + ", share " + sol(m.shareLamports));
+          }).join("<br>") + "</div>" : "")
+          + "</li>";
+      }).join("");
+      var paid = r.payouts.map(function (p) {
+        return "<li>" + sol(p.lamports) + " SOL on " + day(p.at) + (p.tx ? ' <span class="addr">' + esc(p.tx) + "</span>" : "")
+          + (p.note ? " &middot; " + esc(p.note) : "") + "</li>";
+      }).join("");
+      var form = r.owedLamports > 0
+        ? '<form class="pay" data-i="' + i + '">'
+          + '<input name="sol" inputmode="decimal" placeholder="SOL sent" value="' + esc(sol(r.owedLamports)) + '" aria-label="SOL sent">'
+          + '<input name="wallet" placeholder="Sent to (wallet)" value="' + esc(r.wallet || "") + '" aria-label="Wallet it was sent to">'
+          + '<input name="tx" placeholder="Transaction signature" aria-label="Transaction signature">'
+          + '<input name="note" placeholder="Note" maxlength="200" aria-label="Note">'
+          + '<button type="submit">Record</button><div class="say" role="status"></div></form>'
+        : '<span class="none">nothing owed</span>';
+      return "<tr>"
+        + '<td class="who">' + channelLabel(r) + (r.name ? '<span class="name">' + esc(r.name) + "</span>" : "")
+        + "<details><summary>" + r.brought + " brought" + (r.payouts.length ? ", " + r.payouts.length + " paid" : "") + "</summary>"
+        + '<ul class="refs">' + refs + "</ul>" + (paid ? '<ul class="refs">' + paid + "</ul>" : "") + "</details></td>"
+        + '<td class="hide-sm">' + (r.wallet ? '<span class="addr">' + esc(r.wallet) + "</span>" : '<span class="none">no wallet linked</span>') + "</td>"
+        + '<td class="num">' + r.brought + "</td>"
+        + '<td class="num">' + sol(r.earnedLamports) + "</td>"
+        + '<td class="num">' + sol(r.paidLamports) + "</td>"
+        + '<td class="num owed">' + sol(r.owedLamports) + "</td>"
+        + "<td>" + form + "</td>"
+        + "</tr>";
+    }).join("");
+    Array.prototype.forEach.call(rows.querySelectorAll("form.pay"), function (f) {
+      f.addEventListener("submit", function (e) { e.preventDefault(); record(f, list[Number(f.getAttribute("data-i"))]); });
+    });
+  }
+
+  function record(f, r) {
+    var say = f.querySelector(".say"), go = f.querySelector("button");
+    var lamports = lamportsOf(f.elements.namedItem("sol").value);
+    if (!lamports) { say.textContent = "Type the SOL that was sent, like 0.0125."; return; }
+    go.disabled = true; say.textContent = "";
+    fetch("/api/admin/referrals/payout", {
+      method: "POST", headers: { "content-type": "application/json", "x-oddie-admin": token },
+      body: JSON.stringify({ referrer: r.referrer, lamports: lamports, wallet: f.elements.namedItem("wallet").value.trim(),
+        tx: f.elements.namedItem("tx").value.trim(), note: f.elements.namedItem("note").value.trim() })
+    })
+      .then(function (res) { return res.json().catch(function () { return {}; }).then(function (b) { return { ok: res.ok, b: b }; }); })
+      .then(function (o) {
+        if (o.ok) { load(); return; }
+        go.disabled = false;
+        say.textContent = o.b.error === "more-than-owed" ? "That is more than the " + sol(o.b.owedLamports) + " SOL owed."
+          : o.b.error === "tx-recorded" ? "That transaction is recorded already."
+          : o.b.error === "wallet" ? "That wallet address does not read right."
+          : o.b.error === "tx" ? "That transaction signature does not read right."
+          : "Not recorded (" + (o.b.error || "error") + ").";
+      })
+      .catch(function () { go.disabled = false; say.textContent = "Not recorded. Try again."; });
+  }
+})();
+</script>

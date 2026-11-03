@@ -23,7 +23,9 @@ import {
 } from "./client.js";
 import { handleChat, type LiveDeps } from "../live/calls.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
+import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { paced, patiently } from "../live/pace.js";
+import { creditInvite } from "../live/referrals.js";
 import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
 
 /** Everything oddie asks of Google, in one place: the tests replace it. */
@@ -386,9 +388,10 @@ export async function watchYouTube(w: { engine: LiveDeps; log: Log; api?: YouTub
 
 const pending = new Map<string, { at: number }>();
 
-/** A channel oddie is in, as the store keeps it, from what YouTube said; a token it had stays. */
-async function keepChannel(found: YouTubeChannel, tokens: YouTubeTokens | null): Promise<{ before: LiveChannel | null }> {
-  const before = await channelById("youtube", found.channelId).catch(() => null);
+/** A channel oddie is in, as the store keeps it, from what YouTube said; a token it had stays.
+ *  `before` is undefined when it could not be read: never taken for a first connect. */
+async function keepChannel(found: YouTubeChannel, tokens: YouTubeTokens | null): Promise<{ before: LiveChannel | null | undefined }> {
+  const before = await channelById("youtube", found.channelId).catch(() => undefined);
   await saveChannel({
     platform: "youtube", channelId: found.channelId, slug: found.handle, name: found.name, avatar: found.avatar,
     accessToken: tokens ? tokens.accessToken : before?.accessToken ?? null,
@@ -431,11 +434,18 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
       const isVoice = !!voiceHandle() && who.handle.toLowerCase() === voiceHandle();
       // Only oddie's own channel keeps a token. Another channel signed in at this
       // door is added the way a pasted link adds it.
-      await keepChannel(who, isVoice ? t : null);
+      const { before } = await keepChannel(who, isVoice ? t : null);
       if (isVoice) {
         d.log(t.refreshToken ? "youtube voice connected" : "youtube voice connected WITHOUT a refresh token, sign in at /live/youtube/voice again", { channel: who.handle });
         return res.redirect(`${base}/live/youtube/${encodeURIComponent(who.handle)}?voice=1`);
       }
+      /* Google has just said which channel this browser is, the one YouTube
+         door that proves it (a pasted link proves nothing): the owner cookie,
+         as Kick's and Twitch's sign-ins leave it, so the page shows the
+         channel's own invite link (src/live/referrals.ts). */
+      await creditInvite(req.headers.cookie, { platform: "youtube", channelId: who.channelId, slug: who.handle }, before === null, d.log);
+      const key = ownerKeyFromEnv("youtube");
+      if (key) res.append("Set-Cookie", ownerCookie(ownerToken(who.channelId, key), base.startsWith("https:"), undefined, "youtube"));
       d.log("youtube channel added at oddie's own door", { channel: who.handle });
       res.redirect(`${base}/live/youtube/${encodeURIComponent(who.handle)}?added=1`);
     } catch (e) {
@@ -465,7 +475,8 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
     }
     if (!found) return res.status(404).json({ ok: false, error: "link" });
     if (found.channelId === voice.channelId) return res.status(400).json({ ok: false, error: "voice" });
-    const was = await channelById("youtube", found.channelId).catch(() => null);
+    // undefined, not null, when the read fails: never taken for a first add.
+    const was = await channelById("youtube", found.channelId).catch(() => undefined);
     if (!was?.active) {
       const n = (await liveStore.channels().catch(() => [])).filter((c) => c.platform === "youtube" && c.channelId !== voice.channelId).length;
       if (n >= maxChannels()) {
@@ -479,6 +490,10 @@ export function youtubeRouter(d: YouTubeRouteDeps): Router {
       return res.status(500).json({ ok: false, error: "retry" });
     }
     d.log(was?.active ? "youtube channel added again" : "youtube channel added", { channel: found.handle });
+    /* A first add through another channel's invite (src/live/referrals.ts).
+       A pasted link proves nothing about who pasted it, so this only counts
+       toward the invite: YouTube runs votes, and earns its referrer nothing. */
+    await creditInvite(req.headers.cookie, { platform: "youtube", channelId: found.channelId, slug: found.handle }, was === null, d.log);
     res.json({ ok: true, slug: found.handle, url: `/live/youtube/${encodeURIComponent(found.handle)}?added=1` });
   });
 

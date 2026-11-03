@@ -16,6 +16,7 @@ import { addChannelRoutes, type ChannelPayoutDeps } from "../live/channelRoutes.
 import { notNow, paced, patiently } from "../live/pace.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
+import { creditInvite } from "../live/referrals.js";
 import { kickChatSource, type ChannelMarket } from "../store/markets.js";
 import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
 
@@ -236,12 +237,16 @@ export function kickRouter(d: KickRouteDeps): Router {
     try {
       const t = await kick.exchangeCode(code, p.verifier, redirectUri);
       const [who, chan] = await Promise.all([kick.me(t.accessToken), kick.myChannel(t.accessToken)]);
-      const before = await channelById("kick", who.userId).catch(() => null);
+      // undefined, not null, when the read fails: only a channel we know was
+      // never here is a first connect, which an invite may claim.
+      const before = await channelById("kick", who.userId).catch(() => undefined);
       const ch: LiveChannel = {
         platform: "kick", channelId: who.userId, slug: chan.slug, name: who.name, avatar: who.avatar,
         accessToken: t.accessToken, refreshToken: t.refreshToken, tokenExpiresAt: t.expiresAt, active: true,
       };
       await saveChannel(ch);
+      // A first connect through another channel's invite (src/live/referrals.ts).
+      await creditInvite(req.headers.cookie, ch, before === null, d.log);
       await kick.subscribe(t.accessToken, ch.channelId).catch((e) => d.log("kick subscribe failed", { channel: ch.slug, err: (e as Error).message }));
       // Hello once. Signing in again to manage the 2% is not a second arrival.
       const fresh = !before?.active;

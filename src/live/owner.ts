@@ -70,9 +70,11 @@ export function verifyOwnerToken(token: string, key: Buffer, now = Date.now()): 
 }
 
 /** The Set-Cookie line. Host-only (no Domain), sent only to the channel API,
- *  and never on a request another site starts (SameSite=Lax). */
-export function ownerCookie(token: string, secure: boolean, maxAgeMs = OWNER_TTL_MS, platform: Platform = "kick"): string {
-  return `${ownerCookieName(platform)}=${token}; Path=/api/live/${platform}; Max-Age=${Math.floor(maxAgeMs / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+ *  and never on a request another site starts (SameSite=Lax). `domain` only
+ *  where a sign-in comes back to another host than the page's: X's one
+ *  callback lands on the landing's host (src/x/live.ts). */
+export function ownerCookie(token: string, secure: boolean, maxAgeMs = OWNER_TTL_MS, platform: Platform = "kick", domain: string | null = null): string {
+  return `${ownerCookieName(platform)}=${token}; Path=/api/live/${platform}; Max-Age=${Math.floor(maxAgeMs / 1000)}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}${domain ? `; Domain=${domain}` : ""}`;
 }
 
 export function cookieValue(header: string | undefined, name: string): string | null {

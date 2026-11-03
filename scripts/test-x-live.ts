@@ -126,7 +126,13 @@ console.log("\na streamer connects");
   check("the streamer is asked to let oddie read chat, not to write", /broadcast\.read/.test(scope) && !/broadcast\.write/.test(scope));
   check("they land on their page, which says how to open a vote", s.back.endsWith("/live/x/AleksaFlamingo?added=1"), s.back);
   const cookie = cb.headers.get("set-cookie") ?? "";
-  check("...and no owner cookie: X Live runs votes, there is no 2% wallet to offer", !cookie.includes(`${ownerCookieName("x")}=`), cookie);
+  // The owner cookie is back for the channel's own invite link (src/live/referrals.ts, 3 Nov).
+  check("...with X's owner cookie, for the channel's own invite link", cookie.startsWith(`${ownerCookieName("x")}=`) && /Path=\/api\/live\/x;/.test(cookie), cookie);
+  const owned = await (await fetch(`${base}/api/live/x/AleksaFlamingo`, { headers: { cookie: cookie.split(";")[0] } })).json() as { owner?: Record<string, unknown> };
+  const walletDoor = await fetch(`${base}/api/live/x/wallet/challenge`, { method: "POST", headers: { "content-type": "application/json", cookie: cookie.split(";")[0] },
+    body: JSON.stringify({ address: "4Nd1mYwJ8Ytt8i9cFEPzJEgUyAqRZVDkHmEHUmbFGhLU" }) });
+  check("...which shows the invite and still no 2% wallet: X Live runs votes",
+    !!owned.owner?.invite && !("wallet" in (owned.owner ?? {})) && walletDoor.status === 503, `${JSON.stringify(owned.owner)} ${walletDoor.status}`);
   check("their chat, and when they go live and stop, with their own token",
     subs.length === 3 && subs.every((x) => x.token === "at-streamer" && x.user === STREAMER)
     && ["broadcast.chat", "broadcast.start", "broadcast.end"].every((e) => subs.some((x) => x.ev === e)));

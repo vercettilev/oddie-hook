@@ -15,6 +15,7 @@ import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { notNow, paced, patiently } from "../live/pace.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
+import { creditInvite } from "../live/referrals.js";
 import { twitchChatSource } from "../store/markets.js";
 import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
 
@@ -241,12 +242,16 @@ export function twitchRouter(d: TwitchRouteDeps): Router {
     try {
       const t = await tw.exchangeCode(code, redirectUri);
       const who = await tw.me(t.accessToken);
-      const before = await channelById("twitch", who.userId).catch(() => null);
+      // undefined, not null, when the read fails: only a channel we know was
+      // never here is a first connect, which an invite may claim.
+      const before = await channelById("twitch", who.userId).catch(() => undefined);
       const ch: LiveChannel = {
         platform: "twitch", channelId: who.userId, slug: who.login, name: who.name, avatar: who.avatar,
         accessToken: t.accessToken, refreshToken: t.refreshToken, tokenExpiresAt: t.expiresAt, active: true,
       };
       await saveChannel(ch);
+      // A first connect through another channel's invite (src/live/referrals.ts).
+      await creditInvite(req.headers.cookie, ch, before === null, d.log);
       const secret = secretOf();
       if (secret) {
         await tw.subscribe(ch.channelId, callback, secret)
