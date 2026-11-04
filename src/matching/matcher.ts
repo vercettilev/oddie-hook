@@ -168,19 +168,25 @@ const PRICED_QUESTION = /\$\s?\d/;
 const HAS_NUMBER = /\d/;
 
 /**
- * Very rough horizon parser: "today" -> 0, "this week" -> 7, "this year" -> days to Dec 31, etc.
+ * Days until the end of the year a take names: "this year", "by end of year"
+ * and "eoy" run to Dec 31, "next year" to Dec 31 of the next. Very rough.
+ *
+ * Null for anything else, including a take that also names a nearer window
+ * ("today", "this week", "this month"): that is not a year-long claim. Those
+ * windows used to come back as 0, 7 and 30, guesses rather than dates, and the
+ * horizon filter never acted on them. It must not start to: a flat 30 for "this
+ * month", set against a real close time, throws out the month-end market
+ * itself in the month's last days.
  *
  * `now` is passed in, never read here, because "this year" is measured from it:
- * the same take is 175 days out on July 9 and 59 on Nov 2, under the 60-day bar
- * of the horizon filter. Read off the wall clock, the matcher's own test meant
- * something different every day, and went red on a clean main on Nov 2, 2026.
+ * the same take is 175 days out on July 9 and 59 on Nov 2. Read off the wall
+ * clock, the matcher's own test meant something different every day, and went
+ * red on a clean main on Nov 2, 2026.
  */
 function parseHorizonDays(text: string, now: number): number | null {
   const t = text.toLowerCase();
+  if (/\btoday\b|\bthis week\b|\bthis month\b/.test(t)) return null;
   const year = new Date(now).getFullYear();
-  if (/\btoday\b/.test(t)) return 0;
-  if (/\bthis week\b/.test(t)) return 7;
-  if (/\bthis month\b/.test(t)) return 30;
   if (/\bnext year\b/.test(t)) {
     const endNext = new Date(year + 1, 11, 31);
     return Math.ceil((endNext.getTime() - now) / 86_400_000);
@@ -276,12 +282,18 @@ function isDisqualified(tweetText: string, m: Market, now: number): boolean {
     }
   }
 
-  // 2) Tweet implies a long horizon ("this year") but the market resolves
-  //    within days -> by the time the tweet's claim could play out, this
-  //    market has already settled on unrelated timing. Exclude.
+  // 2) Tweet names a year ("this year") but the market resolves within days,
+  //    while the claim still has a week or more to run after it settles -> the
+  //    market asks about something sooner, on unrelated timing. Exclude.
+  //
+  //    The week is counted from the market's close, not from today. The rule
+  //    was "the take reaches 60+ days out", and "this year" drops under 60 on
+  //    Nov 2: from then to Dec 31 a year-end take landed on whichever next-day
+  //    market was busiest. From Dec 24 the year ends within a week of a
+  //    next-day market's close, and that market counts again.
   const tweetHorizon = parseHorizonDays(tweetText, now);
   const marketHorizon = daysUntil(m.closesAt, now);
-  if (tweetHorizon !== null && tweetHorizon >= 60 && marketHorizon !== null && marketHorizon <= 3) {
+  if (tweetHorizon !== null && marketHorizon !== null && marketHorizon <= 3 && tweetHorizon - marketHorizon >= 7) {
     return true;
   }
 
@@ -558,13 +570,19 @@ export function matchTweet(
   if (tokens.size === 0) return null;
 
   const candidates: MatchResult[] = [];
+  let bestDisqualified = 0; // the best score a hard filter took out, see the end
   for (const market of markets) {
-    if (isDisqualified(tweetText, market, now)) continue; // structured check wins over lexical score
     const score = scoreMarket(tokens, market);
     if (score < minScore) continue;
     // Overlap is hits/max(3, size), so this recovers hits exactly.
     const hits = Math.round(score * Math.max(OVERLAP_FLOOR, tokens.size));
     if (isShort(tokens.size) && hits < 2 && !corroborates(tweetText, market)) continue;
+    if (isDisqualified(tweetText, market, now)) {
+      // Structured check wins over lexical score. Asked after the gates, so
+      // only a market that would otherwise have been a candidate counts.
+      bestDisqualified = Math.max(bestDisqualified, score);
+      continue;
+    }
     candidates.push({ market, score });
   }
 
@@ -578,7 +596,32 @@ export function matchTweet(
     if (Math.abs(byOverlap) > TIE_EPSILON) return byOverlap;
     return b.market.volumeUsd - a.market.volumeUsd; // tie-break: the market people actually trade
   });
-  return survivors[0];
+  const best = survivors[0];
+
+  // ELIMINATION IS NOT SILENCE, for the hard filters too (see resolveFamilies).
+  // A filter removes a market that cannot answer the take. It does not say
+  // what can, and whatever ranked below is promoted: on the frozen board,
+  // "Toronto Tempo vs. Dallas Wings, Toronto Tempo this year" loses its own
+  // game market to the horizon filter at 0.800 and lands on the Dallas
+  // Cowboys' NFL title market at 0.200, on the one word `dallas`. So a
+  // disqualified market that scored STRICTLY better than the answer voids the
+  // match; with the referee on, matchSemantic asks it instead. A tie does not,
+  // for the reason given in resolveFamilies.
+  //
+  // Unless the answer is corroborated: then the structure the filters read
+  // chose it over the market they removed. "no way the fed cuts, they're
+  // hiking again" shares `fed` and `cuts` with the zero-cuts outcome of "How
+  // many Fed rate cuts in 2026?" (0.400) and loses it to the direction filter;
+  // the hike market it keeps (0.200) agrees on the direction. That is the
+  // calibration case MIN_OVERLAP is pinned to, and without the exception it
+  // went silent.
+  //
+  // Measured on the frozen board moved to 28 clocks, over its own questions
+  // with and without a year added: 660 runs go silent, every one the question
+  // of a market closing within days with a year added. The 140 runs the
+  // direction filter promotes keep their card, and so do the 908 ties.
+  if (bestDisqualified > best.score + TIE_EPSILON && !corroborates(tweetText, best.market)) return null;
+  return best;
 }
 
 /**

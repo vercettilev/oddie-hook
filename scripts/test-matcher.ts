@@ -16,9 +16,9 @@
 //
 // 3. Nothing here reads the wall clock. "this year" is measured from now, so a
 //    fixture timed off Date.now() meant something different every day: from
-//    Nov 2, 2026 (59 days left, under the 60-day bar) it went red on a clean
-//    main, and its Dec 31, 2026 closes would have kept it red from then on.
-//    Every check runs at NOW unless it moves the clock on purpose.
+//    Nov 2, 2026 (59 days left, under the 60-day bar the rule then had) it went
+//    red on a clean main, and its Dec 31, 2026 closes would have kept it red
+//    from then on. Every check runs at NOW unless it moves the clock on purpose.
 //
 // The overlap numbers asserted at the bottom are the ones MIN_OVERLAP is
 // calibrated against. They live here, executed, rather than only in a comment.
@@ -46,7 +46,7 @@ function got(m: ReturnType<typeof matchTweet>): string {
 
 /**
  * The suite's clock. July 9 is the day the 3-hour market below is named for;
- * "this year" then has 175 days left, well over the horizon filter's 60.
+ * "this year" then has 175 days left.
  */
 const NOW = Date.parse("2026-07-09T12:00:00Z");
 
@@ -135,8 +135,8 @@ console.log("nothing suitable");
 // "this year" is the days left to Dec 31, so the same take is a long horizon at
 // NOW and a short one in December. On Dec 31 it means today, and a market that
 // closes in three hours is inside it. The plumbing is checked from both ends: if
-// the horizon parser goes back to the wall clock, the checks above go red in
-// November and December, and this one in every other month.
+// the horizon parser goes back to the wall clock, the checks above go red from
+// Dec 24 on, and this one before it.
 //
 // 06:00 UTC, not noon: the parser reads the year in local time, and noon UTC on
 // Dec 31 is already New Year's Day in Auckland.
@@ -149,6 +149,45 @@ console.log("horizon follows the matcher's clock");
   });
   const r = matchTweetAt(BTC_TWEET, [closingSoon], undefined, DEC_31);
   check('on Dec 31 "this year" means today: a market closing in 3 hours still matches', r?.market.venueId === "BTC-DEC31", `got ${got(r)}`);
+}
+
+// ---------------------------------------------------------------------------
+// The horizon rule counts the week from the market's close.
+//
+// It used to ask whether the take reached 60+ days out, and "this year" drops
+// under 60 on Nov 2: from then to Dec 31 a year-end take landed on the busiest
+// next-day market. The decoy here is a next-day market with 100x the volume, so
+// a rule that goes back to an absolute bar fails the first three checks. The
+// dates keep clear of Dec 23, the last day the week still bites, because the
+// parser reads the year in local time.
+// ---------------------------------------------------------------------------
+console.log("horizon rule counts from the market's close");
+{
+  const nextDayAfter = (now: number) =>
+    mk("BTC-NEXT-DAY", "Will Bitcoin close above $150,000 tomorrow?", {
+      closesAt: new Date(now + 86_400_000).toISOString(),
+      volumeUsd: DECOY_VOLUME,
+    });
+  for (const day of ["2026-11-02", "2026-12-15", "2026-12-21"]) {
+    const now = Date.parse(`${day}T12:00:00Z`);
+    const r = matchTweetAt(BTC_TWEET, [nextDayAfter(now), btcRight], undefined, now);
+    check(`${day}: a "this year" take keeps the year-end market over a busier next-day one`, r?.market.venueId === "BTC-RIGHT", `got ${got(r)}`);
+  }
+  {
+    // From Dec 24 the year ends within a week of the next-day market's close.
+    const now = Date.parse("2026-12-28T12:00:00Z");
+    const r = matchTweetAt(BTC_TWEET, [nextDayAfter(now)], undefined, now);
+    check("Dec 28: with the year ending within a week, a next-day market counts", r?.market.venueId === "BTC-NEXT-DAY", `got ${got(r)}`);
+  }
+  {
+    // "this month" is a guess (it used to be a flat 30), not a date, and stays
+    // out of the rule. Counted against a real close, 30 would throw out the
+    // month-end market itself here.
+    const now = Date.parse("2026-11-28T12:00:00Z");
+    const november = mk("BTC-NOV", "Will Bitcoin reach $70,000 in November?", { closesAt: "2026-11-30T23:59:00Z" });
+    const r = matchTweetAt("bitcoin is definitely hitting 70k this month, no doubt", [november], undefined, now);
+    check('Nov 28: a "this month" take still reaches the month-end market', r?.market.venueId === "BTC-NOV", `got ${got(r)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -547,6 +586,44 @@ console.log("\nan eliminated tie does not veto the match");
   const r = matchTweet("no way the fed cuts, they're hiking again", [hike, winA, winB]);
   check("an eliminated family tied with the answer does not veto it", r?.market.venueId === "TIE-HIKE", `got ${got(r)}`);
   check("...and the answer keeps its 0.200", near(r?.score ?? -1, 0.2), `score ${r?.score.toFixed(3)}`);
+}
+
+// ---------------------------------------------------------------------------
+// A hard filter's elimination does not promote the runner-up.
+//
+// The filters remove a market that cannot answer the take. They do not pick one
+// that can, and whatever ranked below used to be published: on the frozen
+// board, "Toronto Tempo vs. Dallas Wings, Toronto Tempo this year" lost its own
+// game market (0.800) to the horizon filter and landed on the Dallas Cowboys at
+// 0.200, on the one word `dallas`. A disqualified market that scored STRICTLY
+// better than the answer now voids the match, unless the answer is corroborated.
+// Each part has a check that goes red without it: the first below if the rule
+// is removed, the second if a tie is allowed to veto, the last two if the
+// corroboration exception is dropped.
+// ---------------------------------------------------------------------------
+console.log("\na hard filter's elimination does not promote the runner-up");
+{
+  const take = "Toronto Tempo vs. Dallas Wings, Toronto Tempo this year";
+  const game = mk("WNBA-GAME", "Toronto Tempo vs. Dallas Wings — Toronto Tempo", { closesAt: IN_3H });
+  const nfl = mk("NFL-DAL", "NFL Champion 2027 — Dallas Cowboys", { volumeUsd: DECOY_VOLUME });
+  const r = matchTweet(take, [game, nfl]);
+  check('a game take that loses its game to the horizon filter does not land on "Dallas Cowboys"', r === null, `got ${got(r)}`);
+
+  // A tie is not a veto. The same matchup's season market scores what the game
+  // did, and it is the year-long question the take is asking.
+  const season = mk("WNBA-SEASON", "Toronto Tempo vs. Dallas Wings: season series — Toronto Tempo");
+  const tied = matchTweet(take, [game, nfl, season]);
+  check("...but a market that ties the removed one still answers it", tied?.market.venueId === "WNBA-SEASON", `got ${got(tied)}`);
+}
+{
+  // The exception, and the case that forced it: the 0.200 calibration take
+  // shares `fed` and `cuts` with the zero-cuts market (0.400), which the
+  // direction filter removes. The hike market agrees with the take's direction,
+  // so the filter itself chose it, and the card stands.
+  const zeroCuts = mk("FED-CUTS-0", "How many Fed rate cuts in 2026? — 0 (0 bps)", { volumeUsd: DECOY_VOLUME });
+  const r = matchTweet(HIKE_TWEET, [fedHike, zeroCuts]);
+  check("a corroborated answer survives a better-scoring market the direction filter removed", r?.market.venueId === "FED-HIKE", `got ${got(r)}`);
+  check("...at its own 0.200", near(r?.score ?? -1, 0.2), `score ${r?.score.toFixed(3)}`);
 }
 
 // ---------------------------------------------------------------------------

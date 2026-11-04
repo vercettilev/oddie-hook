@@ -85,6 +85,7 @@ import {
   takePositionFromTx, entryShareOf, chainHealth, readMarket, readMarkets, readPositions, forgetMarket,
 } from "./chain/oddieChain.js";
 import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
+import { bookFeeAfterResolve, type FeeBookDeps } from "./feeLedger.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { clientIp, edgeLockedOut, edgeMisconfigured, takeStamp, viaCloudflare } from "./net/edge.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
@@ -4901,6 +4902,16 @@ app.get("/api/community/market/:slug", requireAdmin, async (req, res) => {
   });
 });
 
+/** What a landed resolve books its fee with (src/feeLedger.ts). A fresh read
+ *  every time: the read cache can still hold the market as it was before the
+ *  verdict. */
+const feeBooking: FeeBookDeps = {
+  read: (pubkey) => readMarket(pubkey),
+  wait: (ms) => new Promise<void>((done) => setTimeout(done, ms)),
+  book: logRealFee,
+  log: (evt, extra) => console.error(JSON.stringify({ evt, ...extra })),
+};
+
 // Manual resolution: mark resolved, then settle every open position on the slug.
 /**
  * SETTLING A MARKET, IN ONE PLACE.
@@ -4973,6 +4984,24 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
           }));
           return;
         }
+        const pubkey = detail.onchainPubkey;
+        if (!pubkey) return;
+        /* THE FEE IS BOOKED ONCE THE VERDICT HAS LANDED. market_fee_log is
+           the audit trail of what the program fixed at resolve, so it is read
+           off the settled market and never worked out from the rate. The read
+           used to run beside resolve_market instead of after it, usually saw
+           the market unsettled, and booked the rate times the pool: more than
+           the program takes from a one-sided or capped pool. src/feeLedger.ts
+           has the one more look and the gap line for a read still behind.
+           Only when THIS call's transaction landed the verdict: a market that
+           was already resolved was settled by somebody else, who books it
+           (resolve-reconcile books the verdicts it lands), so one verdict is
+           never booked twice. Not awaited: nothing waiting on chainDone needs
+           the ledger. */
+        if (!r.alreadyResolved) {
+          void bookFeeAfterResolve(slug, pubkey, feeBooking)
+            .catch((e) => console.error("[fees] booking failed (non-fatal):", (e as Error).message));
+        }
         /* AN EMPTY MARKET IS CLOSED THE MOMENT IT CAN BE CLOSED.
            Rent is the largest fixed cost this product has and close_market is
            the only thing that ever gives it back, but it refuses any market
@@ -4985,24 +5014,12 @@ async function resolveCommunityMarket(slug: string, outcome: "yes" | "no"): Prom
            sending anything, and the program checks the vault balance again on
            its own side. One RPC read on a path that already does several, and
            no second copy of the rule to drift. */
-        if (!detail.onchainPubkey) return;
-        const closed = await closeMarketOnChain(detail.onchainPubkey).catch(() => null);
+        const closed = await closeMarketOnChain(pubkey).catch(() => null);
         if (closed?.ok) {
           console.log(JSON.stringify({
             evt: "market_rent_reclaimed", slug, lamports: closed.lamports, signature: closed.signature,
           }));
         }
-      }).catch(() => {});
-      // Real-money creator/protocol fee, logged as an audit trail of what the
-      // program fixed at resolve. The fee instructions are real and proven
-      // (npm run test-exit-path): claim_creator_fee and claim_protocol_fee both
-      // pay, once each, to the creator and the authority. Read the vault total
-      // straight from chain rather than trusting a stale value.
-      void fetchMarketOnChain(detail.onchainPubkey).then((state) => {
-        // state.creatorFeeBps, not the constant: the ledger must record what the
-        // program fixed on THIS market, which is 0 for one with no creator.
-        if (state) void logRealFee(slug, state.totalYesLamports + state.totalNoLamports, state.creatorFeeBps,
-          state.resolved ? { creator: state.creatorFeeLamports, protocol: state.protocolFeeLamports } : undefined);
       }).catch(() => {});
       return resolvedOnChain;
     }).catch(() => {});

@@ -159,9 +159,17 @@ console.log("\nreal-money fee: the creator fee, deducted on-chain at resolve");
   const realSlug = slugFor(m);
   await recordSurfacer(realSlug, { deviceId: CREATOR });
 
+  // A balanced 10 SOL pool, where the program's cap never bites: resolve_market
+  // fixed the full 2% on each half, and the ledger books exactly that.
   const TOTAL_LAMPORTS = 10_000_000_000; // 10 SOL
-  await logRealFee(realSlug, TOTAL_LAMPORTS);
+  await logRealFee(realSlug, TOTAL_LAMPORTS, CREATOR_FEE_BPS_REAL, { creator: 200_000_000, protocol: 200_000_000 });
   const log = (await feeLog(200)).filter((r) => r.slug === realSlug);
+
+  // There is no estimate path any more: a caller holding the rate but not the
+  // amounts the program fixed has nothing to book, and the compiler is what
+  // says so. Never called.
+  // @ts-expect-error the amounts resolve_market fixed are required
+  const _noEstimate = () => logRealFee(realSlug, TOTAL_LAMPORTS, CREATOR_FEE_BPS_REAL);
 
   // TWO rows now, and that is the change. The house fee stopped being zero
   // when the program grew claim_protocol_fee, so a settled market records both
@@ -198,7 +206,7 @@ console.log("\nreal-money fee: the creator fee, deducted on-chain at resolve");
 
   // An empty vault (nobody staked real money) logs nothing: there is no fee.
   const emptySlug = "fee-real-market-empty";
-  await logRealFee(emptySlug, 0);
+  await logRealFee(emptySlug, 0, CREATOR_FEE_BPS_REAL, { creator: 0, protocol: 0 });
   check("a zero-lamport vault logs nothing", (await feeLog(300)).every((r) => r.slug !== emptySlug));
 
   // The rate times the pool is only the most the program takes. Once the read

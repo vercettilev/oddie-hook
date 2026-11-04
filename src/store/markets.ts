@@ -3368,6 +3368,32 @@ async function logFee(input: FeeLogInput): Promise<void> {
  * resolve_market, held in the vault, and pulled by claim_protocol_fee. Both
  * halves of the 4% are real, and both are recorded here as deducted rather
  * than as collected.
+ *
+ * ONLY WHAT THE PROGRAM FIXED, NEVER AN ESTIMATE (3 Nov 2026). This used to
+ * fall back to the rate times the pool whenever the caller's read had not seen
+ * the market settled, and the resolve path read it beside resolve_market
+ * rather than after it, so the fallback was the common case. The rate times
+ * the pool is only the most the program takes: nothing from a one-sided pool,
+ * never more than the losing side staked. Both halves were overstated on
+ * exactly those markets, and everything reading this ledger inherited it. The
+ * chain moved the right money; only the record was wrong.
+ *
+ * With the amounts unknown the row is SKIPPED, not written as provisional:
+ *  - a missing row reads as "nothing recorded" to anything that sums this
+ *    ledger, so a gap understates, the safe side for money owed, where a
+ *    wrong row is a promise of money that never existed;
+ *  - a provisional row has nowhere honest to live. `enforced = false` means
+ *    logged, never charged: the era before the program charged anything, and
+ *    the rows the fallback booked on one-sided pools, marked so on 3 Nov 2026
+ *    once the report had held them against the chain. A row not known yet is
+ *    neither, and a new column is a migration; either way a second writer has
+ *    to come back and correct it, and two writers to one row is how a ledger
+ *    starts to drift;
+ *  - a gap is loud: bookFeeAfterResolve (src/feeLedger.ts) logs
+ *    `fee_log_gap`, and `npm run fee-ledger-report` finds every settled
+ *    market whose rows are missing or wrong, against the chain.
+ * Hence both are required: a caller with no settled market to read has
+ * nothing to book.
  */
 export async function logRealFee(
   slug: string,
@@ -3377,25 +3403,17 @@ export async function logRealFee(
    * the caller. Not every market charges the full rate any more: one with no
    * creator to pay is minted at 0, and recomputing from the constant booked a
    * 2% creator fee against a market the chain deducted nothing for -- a ledger
-   * that disagrees with the vault. Defaults to the constant for callers that
-   * have no state to hand, which is the correct reading for every market minted
-   * before rates could differ.
+   * that disagrees with the vault.
    */
-  creatorFeeBps: number = CREATOR_FEE_BPS_REAL,
-  /**
-   * The amounts resolve_market actually fixed, read off the settled market.
-   * The rate times the pool is only the most the program takes: it takes
-   * nothing from a pool with one side, and never more than the losing side
-   * staked, so a ledger recomputed from the rate booked fees the vault never
-   * deducted. Absent when the read did not see the market settled yet.
-   */
-  fixed?: { creator: number; protocol: number },
+  creatorFeeBps: number,
+  /** The amounts resolve_market fixed, read off the settled market. */
+  fixed: { creator: number; protocol: number },
 ): Promise<void> {
   try {
     if (totalVaultLamports <= 0) return;
     const surfacer = await surfacerFor(slug);
-    const creatorFeeAmount = fixed ? fixed.creator : Math.floor((totalVaultLamports * creatorFeeBps) / 10000);
-    const protocolFeeAmount = fixed ? fixed.protocol : Math.floor((totalVaultLamports * PROTOCOL_FEE_BPS_REAL) / 10000);
+    const creatorFeeAmount = fixed.creator;
+    const protocolFeeAmount = fixed.protocol;
     if (creatorFeeAmount > 0) {
       await logFee({
         slug, marketKind: "real", feeKind: "creator",
