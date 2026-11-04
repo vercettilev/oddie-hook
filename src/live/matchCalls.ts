@@ -45,6 +45,8 @@ export async function openMatchCall(deps: LiveDeps, ch: MatchChannel, key: strin
   if (!opened) return "not-opened"; // already opened for this match, by this clock a moment ago or by another instance
   const id = await sayQuiet(deps, ch, GAME_COPY.opened(name, map, await deps.standingsUrl(ch.platform, ch.channelId)));
   if (id && deps.pin) await deps.pin(ch.platform, ch.channelId, id).catch(() => {});
+  // Twitch's own Predictions panel too, where it fits (src/twitch/routes.ts).
+  await deps.predictionOpen?.(opened, null).catch(() => null);
   deps.log("live match call opened", { platform: ch.platform, channel: ch.channelId, id: opened.id, match: key, map, ...extra });
   return { call: opened };
 }
@@ -55,6 +57,7 @@ export async function settleMatchCall(deps: LiveDeps, ch: MatchChannel, call: Li
   const tally = await deps.store.tally(call.id);
   const done = await deps.store.settle(call.id, side, pointsFor(tally, side), now);
   if (!done) return false;
+  await deps.predictionEnd?.(call, side).catch(() => {});
   const url = await deps.standingsUrl(ch.platform, ch.channelId);
   await sayQuiet(deps, ch, `${GAME_COPY.result(ch.name || ch.slug, won, scoreTextFrom(score), map)} ${LIVE_COPY.settled(call.question, side, done.right, done.total, done.top, url, done.winners)}`);
   await sayStreamTop(deps, ch, now);
@@ -73,6 +76,7 @@ export async function handToMods(deps: LiveDeps, ch: MatchChannel, call: LiveCal
 /** A match that ended without a result before the next one started: canceled, said. */
 export async function abandonMatchCall(deps: LiveDeps, ch: MatchChannel, call: LiveCall, key: string, now: number): Promise<boolean> {
   if (!(await deps.store.cancel(call.id, now).catch(() => false))) return false;
+  await deps.predictionEnd?.(call, null).catch(() => {});
   await sayQuiet(deps, ch, GAME_COPY.abandoned(call.question));
   deps.log("live match call abandoned", { platform: ch.platform, channel: ch.channelId, id: call.id, match: key });
   return true;

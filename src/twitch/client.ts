@@ -25,13 +25,21 @@
  *   8 Oct with an app token: PUT, PATCH and DELETE /chat/pins answer 401 naming
  *   exactly those two scopes, and POST /chat/pins is 404. A channel that signed
  *   in before the scope was asked for is refused, and keeps the reminders.
+ *
+ *   A call also opens in the channel's own Predictions panel (Lev, 4 Nov):
+ *   POST /helix/predictions with the streamer's token and
+ *   channel:manage:predictions, and PATCH to resolve or cancel it. Twitch's
+ *   limits, from its reference on 4 Nov: a title of at most 45 characters,
+ *   2 to 10 outcomes of at most 25, a window of 30 to 1800 seconds, one
+ *   prediction at a time, and 24 hours after the window to resolve it before
+ *   Twitch cancels it and returns the points.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ChatMessage } from "../live/calls.js";
 
 const API = "https://api.twitch.tv/helix";
 const ID = "https://id.twitch.tv/oauth2";
-export const TWITCH_SCOPES = ["user:read:chat", "user:write:chat", "user:bot", "channel:bot", "moderator:manage:chat_messages"];
+export const TWITCH_SCOPES = ["user:read:chat", "user:write:chat", "user:bot", "channel:bot", "moderator:manage:chat_messages", "channel:manage:predictions"];
 /** How long a call's line stays pinned; the reminder pins the next one before it runs out. */
 export const PIN_SECONDS = 1800;
 const TIMEOUT_MS = 10_000;
@@ -183,6 +191,23 @@ export async function pinChat(token: string, broadcasterId: string, moderatorId:
 export async function unpinChat(token: string, broadcasterId: string, moderatorId: string, messageId: string): Promise<void> {
   const q = new URLSearchParams({ broadcaster_id: broadcasterId, moderator_id: moderatorId, message_id: messageId });
   await api(token, "DELETE", `/chat/pins?${q}`);
+}
+
+/** A Yes/No prediction in the channel's own panel, for `window` seconds: its id and the two outcomes' ids. */
+export async function createPrediction(token: string, broadcasterId: string, title: string, window: number): Promise<{ id: string; yes: string; no: string }> {
+  const j = await api<{ data?: Array<{ id: string; outcomes?: Array<{ id: string; title: string }> }> }>(token, "POST", "/predictions", {
+    broadcaster_id: broadcasterId, title, outcomes: [{ title: "Yes" }, { title: "No" }], prediction_window: window,
+  });
+  const p = j.data?.[0];
+  const yes = p?.outcomes?.find((o) => o.title === "Yes")?.id;
+  const no = p?.outcomes?.find((o) => o.title === "No")?.id;
+  if (!p?.id || !yes || !no) throw new Error("twitch predictions: no prediction or outcomes in the answer");
+  return { id: p.id, yes, no };
+}
+
+/** Resolve a prediction on its winning outcome, or cancel it and return the points. */
+export async function endPrediction(token: string, broadcasterId: string, id: string, status: "RESOLVED" | "CANCELED", winningOutcomeId?: string): Promise<void> {
+  await api(token, "PATCH", "/predictions", { broadcaster_id: broadcasterId, id, status, ...(winningOutcomeId ? { winning_outcome_id: winningOutcomeId } : {}) });
 }
 
 /* ---------------------------------------------------------- webhooks -- */

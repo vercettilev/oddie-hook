@@ -2061,6 +2061,9 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
     // Pins are Twitch's; on Kick and YouTube the reminder alone keeps a long call in sight.
     pin: (p, c, id) => (p === "twitch" && twEng.pin ? twEng.pin(p, c, id) : Promise.resolve()),
     unpin: (p, c) => (p === "twitch" && twEng.unpin ? twEng.unpin(p, c) : Promise.resolve()),
+    // Twitch's own Predictions: the clock's results (screen, price, a stream's end) reach the panel too.
+    predictionOpen: (call, m) => (call.platform === "twitch" && twEng.predictionOpen ? twEng.predictionOpen(call, m) : Promise.resolve(null)),
+    predictionEnd: (call, o) => (call.platform === "twitch" && twEng.predictionEnd ? twEng.predictionEnd(call, o) : Promise.resolve()),
     streamLive: (p, c) => {
       const eng = engOf(p);
       return eng.streamLive ? eng.streamLive(p, c) : Promise.resolve(null);

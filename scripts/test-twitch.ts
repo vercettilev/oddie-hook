@@ -7,10 +7,11 @@
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import express from "express";
-import { _resetLive, handleChat, LIVE_COPY } from "../src/live/calls.js";
+import { _resetLive, handleChat, LIVE_COPY, settleOnScreen } from "../src/live/calls.js";
+import { abandonMatchCall, openMatchCall, settleMatchCall } from "../src/live/matchCalls.js";
 import { liveStore, saveChannel, channelById, _resetLiveStore } from "../src/store/live.js";
 import { authorizeUrl, chatFromTwitch, verifyTwitchSignature, TWITCH_SCOPES, PIN_SECONDS } from "../src/twitch/client.js";
-import { twitchRouter, twitchEngineDeps, type TwitchChat, type TwitchSignIn } from "../src/twitch/routes.js";
+import { twitchRouter, twitchEngineDeps, _resetPredictions, PREDICTION_WINDOW_S, type TwitchChat, type TwitchSignIn } from "../src/twitch/routes.js";
 import { ownerCookieName } from "../src/live/owner.js";
 import { MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
 import {
@@ -247,6 +248,90 @@ console.log("\na call's line pinned, with the streamer's own token, never over t
   check("the call itself went on everywhere", sent.filter((x) => x.text.startsWith('call: "')).length === 4);
 }
 
+console.log("\nTwitch's own Predictions: a call opens there too, and oddie resolves it (Lev, 4 Nov)");
+{
+  _resetLiveStore(); _resetLive(); _resetPredictions();
+  process.env.LIVE_TOKEN_KEY = "live-token-key-for-tests";
+  check("the sign-in asks for predictions",
+    TWITCH_SCOPES.includes("channel:manage:predictions") && /channel%3Amanage%3Apredictions/.test(authorizeUrl({ state: "s", redirectUri: "https://app.oddie.fun/live/twitch/callback" })));
+  for (const [id, slug, tok] of [["8001", "predicts", "p-tok"], ["8002", "oldscope", "q-tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug, avatar: null, accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  let n = 0, pn = 0, tries = 0;
+  const sent: string[] = [];
+  const opened: Array<{ token: string; broadcaster: string; title: string; window: number; id: string }> = [];
+  const ended: Array<{ broadcaster: string; id: string; status: string; winner?: string }> = [];
+  const chat: TwitchChat = {
+    send: async (_t, _b, _s, text) => { sent.push(text); return `line-${++n}`; },
+    predict: async (token, b, title, window) => {
+      tries++;
+      if (b === "8002") { const e = new Error("twitch POST /predictions 401 missing channel:manage:predictions") as Error & { status?: number }; e.status = 401; throw e; }
+      const id = `pred-${++pn}`;
+      opened.push({ token, broadcaster: b, title, window, id });
+      return { id, yes: `${id}-yes`, no: `${id}-no` };
+    },
+    endPredict: async (_t, b, id, status, winner) => { ended.push({ broadcaster: b, id, status, winner }); },
+  };
+  const logs: string[] = [];
+  const engine = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  engine.streamLive = async () => true;
+  const msg = (channelId: string, text: string, i: number, canRun = true) => ({
+    platform: "twitch" as const, channelId, messageId: `p-${i}`, senderId: canRun ? channelId : `viewer-${i}`, senderName: canRun ? "owner" : `viewer${i}`, canRun, text,
+  });
+  await handleChat(msg("8001", "!call will I win this round?", 1), engine);
+  check("a call opens in the channel's own panel too, with the streamer's token, Yes or No for five minutes",
+    opened.length === 1 && opened[0].token === "p-tok" && opened[0].broadcaster === "8001" && opened[0].title === "will I win this round?" && opened[0].window === PREDICTION_WINDOW_S,
+    JSON.stringify(opened));
+  await handleChat(msg("8001", "!yes", 2, false), engine);
+  await handleChat(msg("8001", "!call yes", 3), engine);
+  check("its result resolves the prediction on the same side",
+    ended.length === 1 && ended[0].id === "pred-1" && ended[0].status === "RESOLVED" && ended[0].winner === "pred-1-yes", JSON.stringify(ended));
+  await handleChat(msg("8001", "!call 2m clutch this?", 4), engine);
+  check("a call with a length predicts for that long", opened[1]?.window === 120, JSON.stringify(opened[1]));
+  await handleChat(msg("8001", "!call cancel", 5), engine);
+  check("canceling it cancels the prediction, and the points go back",
+    ended[1]?.id === "pred-2" && ended[1].status === "CANCELED" && ended[1].winner === undefined, JSON.stringify(ended[1]));
+  const long = "will I win this round without anybody on my team getting a single kill?";
+  await handleChat(msg("8001", `!call ${long}`, 6), engine);
+  check("a question past 45 characters runs in chat, and the streamer hears why",
+    opened.length === 2 && sent.includes(LIVE_COPY.predictionLong) && (await liveStore.current("twitch", "8001"))?.question === long);
+  await handleChat(msg("8001", "!call cancel", 7), engine);
+  await handleChat(msg("8001", "!call repeat win the next one?", 8), engine);
+  const before = ended.length;
+  await handleChat(msg("8001", "!call no", 9), engine);
+  check("a repeat resolves the round first, then opens the next round's prediction",
+    ended.length === before + 1 && ended[before].winner === "pred-3-no" && opened[3]?.title === "win the next one?" && opened[3]?.id === "pred-4",
+    JSON.stringify({ ended: ended.slice(before), opened: opened.slice(3) }));
+  const round2 = await liveStore.current("twitch", "8001");
+  await settleOnScreen(round2!, "yes", "VICTORY", engine);
+  check("a result read off the screen resolves it too", ended.some((x) => x.id === "pred-4" && x.winner === "pred-4-yes"));
+  await handleChat(msg("8002", "!call first?", 11), engine);
+  check("a channel that signed in before predictions is refused, that is logged, and the call runs in chat",
+    logs.includes("twitch prediction refused, the channel signs in again to allow it") && (await liveStore.current("twitch", "8002"))?.question === "first?");
+  const t0 = tries;
+  await handleChat(msg("8002", "!call yes", 12), engine);
+  await handleChat(msg("8002", "!call second?", 13), engine);
+  check("...it is not asked again for a while", tries === t0);
+  check("...and a prediction never opened is never ended", !ended.some((x) => x.broadcaster === "8002"));
+
+  // A match oddie opens by itself (CS2 off the picture, GSI, FACEIT) predicts too.
+  _resetLiveStore(); _resetLive(); _resetPredictions();
+  for (const [id, slug, tok] of [["8003", "cs2guy", "c-tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug, avatar: null, accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  const ch = { platform: "twitch" as const, channelId: "8003", slug: "cs2guy", name: "cs2guy" };
+  const o = await openMatchCall(engine, ch, "frame:cs2:twitch:8003:1", "Mirage", Date.now());
+  const mc = typeof o === "object" ? o.call : null;
+  check("a match call opens its own prediction", mc !== null && opened.at(-1)?.broadcaster === "8003" && opened.at(-1)?.title === "cs2guy wins this match on Mirage?",
+    JSON.stringify(opened.at(-1)));
+  await settleMatchCall(engine, ch, mc!, false, { mine: 9, theirs: 13 }, "Mirage", "frame", Date.now());
+  const last = ended.at(-1);
+  check("...and the match's result resolves it", last?.broadcaster === "8003" && last.status === "RESOLVED" && last.winner === `${opened.at(-1)?.id}-no`, JSON.stringify(last));
+  const o2 = await openMatchCall(engine, ch, "frame:cs2:twitch:8003:2", null, Date.now());
+  await abandonMatchCall(engine, ch, typeof o2 === "object" ? o2.call : mc!, "frame:cs2:twitch:8003:2", Date.now());
+  check("...a match abandoned cancels it", ended.at(-1)?.status === "CANCELED" && ended.at(-1)?.id === opened.at(-1)?.id);
+}
+
 console.log("\n\"too quickly\" is no refusal (8 Oct: one 429 and oddie spoke as the streamer for ten minutes)");
 {
   _resetLiveStore(); _resetLive();
@@ -411,8 +496,8 @@ console.log("\nthe sign-in");
     return { loc, res: await fetch(`${base}/live/twitch/callback?state=${state}&code=abc`, { redirect: "manual" }) };
   };
   const first = await signInOnce();
-  check("the door goes to Twitch with the four chat scopes and the pin", first.loc.host === "id.twitch.tv"
-    && first.loc.searchParams.get("scope") === "user:read:chat user:write:chat user:bot channel:bot moderator:manage:chat_messages");
+  check("the door goes to Twitch with the four chat scopes, the pin and the predictions", first.loc.host === "id.twitch.tv"
+    && first.loc.searchParams.get("scope") === "user:read:chat user:write:chat user:bot channel:bot moderator:manage:chat_messages channel:manage:predictions");
   const setCookie = first.res.headers.get("set-cookie") ?? "";
   check("Twitch's sign-in ends with Twitch's own owner cookie, on its own path", setCookie.startsWith(`${ownerCookieName("twitch")}=`)
     && /Path=\/api\/live\/twitch/.test(setCookie) && /HttpOnly/.test(setCookie)

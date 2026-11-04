@@ -53,6 +53,7 @@ async function settleFromMatch(call: LiveCall, m: GameMatch, link: { id: string;
   const now = deps.now();
   if (m.status === "cancelled") {
     if (!(await deps.store.cancel(call.id, now))) return false;
+    await deps.predictionEnd?.(call, null).catch(() => {});
     await sayQuiet(deps, call, GAME_COPY.cancelled(call.question));
     deps.log("live match call canceled", { platform: call.platform, channel: call.channelId, id: call.id, match: m.id });
     return true;
@@ -69,6 +70,7 @@ async function settleFromMatch(call: LiveCall, m: GameMatch, link: { id: string;
   const tally = await deps.store.tally(call.id);
   const done = await deps.store.settle(call.id, r.side, pointsFor(tally, r.side), now);
   if (!done) return false;
+  await deps.predictionEnd?.(call, r.side).catch(() => {});
   const url = await deps.standingsUrl(call.platform, call.channelId);
   await sayQuiet(deps, call, `${GAME_COPY.result(link.name, r.side === "yes", scoreText(m, r.mine), m.map)} ${LIVE_COPY.settled(call.question, r.side, done.right, done.total, done.top, url, done.winners)}`);
   await sayStreamTop(deps, call, now);
@@ -128,6 +130,7 @@ export async function watchGames(deps: LiveDeps): Promise<number> {
     if (!opened) continue; // already opened for this match, by this clock a moment ago or by another instance
     const id = await sayQuiet(deps, ch, GAME_COPY.opened(link.name, m.map, await deps.standingsUrl(ch.platform, ch.channelId)));
     if (id && deps.pin) await deps.pin(ch.platform, ch.channelId, id).catch(() => {});
+    await deps.predictionOpen?.(opened, null).catch(() => null);
     deps.log("live match call opened", { platform: ch.platform, channel: ch.channelId, id: opened.id, match: m.id, map: m.map });
     n++;
   }

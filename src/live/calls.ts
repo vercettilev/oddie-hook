@@ -350,6 +350,7 @@ export const LIVE_COPY = {
   repeatOff: "Repeat off: no new round after this one.",
   repeatNone: "Nothing is repeating. Start one with !call repeat and the question.",
   repeatHow: "To bring a call back after every result: !call repeat <question>. !call stop ends it.",
+  predictionLong: "Twitch predictions take 45 characters at most, so this one runs in chat. A shorter question opens there too.",
   busy: (q: string) => `One call at a time: "${q}" is still running.`,
   settleFirst: (q: string) => `To settle "${short(q)}": !call yes or !call no.`,
   settleOnly: "To settle, type only !call yes or !call no. To open a call, start with the question.",
@@ -480,6 +481,12 @@ export interface LiveDeps {
   /** The operator hears about an outage only a person can fix (src/server.ts
    *  tgOpsAlert, on Telegram). Absent: a log line and nothing else. */
   alertOps?(text: string): Promise<void>;
+  /** The platform's own prediction panel (Twitch, src/twitch/routes.ts): a call
+   *  opens there too, and its result or cancel ends it. "too-long": the
+   *  question does not fit there. Absent, or refused: the call runs in chat alone. */
+  predictionOpen?(call: LiveCall, minutes: number | null): Promise<"opened" | "too-long" | null>;
+  /** null: canceled, the points go back. */
+  predictionEnd?(call: LiveCall, outcome: Side | null): Promise<void>;
 }
 
 /** A price call between its lock and its result. `atEnd`: a touch the price
@@ -676,6 +683,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   const done = await deps.store.settle(w.call.id, read.outcome, points, now);
   priceWaits.delete(w.call.id);
   if (!done) return false;
+  await deps.predictionEnd?.(w.call, read.outcome).catch(() => {});
   const url = await deps.standingsUrl(w.call.platform, w.call.channelId);
   await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners)}`);
   await sayStreamTop(deps, w.call, now);
@@ -911,6 +919,8 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     lastSaid.set(opened.id, now);
     const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId)));
     await pinQuiet(deps, msg, id);
+    const panel = await deps.predictionOpen?.(opened, minutes).catch(() => null);
+    if (panel === "too-long") await sayQuiet(deps, msg, LIVE_COPY.predictionLong, msg.messageId);
     if (cmd.repeat) await sayQuiet(deps, msg, LIVE_COPY.repeatOn);
     await sayLastWeek(deps, msg, now);
     deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null, repeat: cmd.repeat === true });
@@ -934,6 +944,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (cmd.kind === "cancel") {
     if (!(await deps.store.cancel(target.id, now))) return "no-call";
     lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id);
+    await deps.predictionEnd?.(target, null).catch(() => {});
     // Canceling the repeating call ends the repeat too.
     const rep = await deps.store.repeat?.(msg.platform, msg.channelId).catch(() => null);
     if (rep && sameQuestion(rep.question, target.question)) await deps.store.setRepeat?.(msg.platform, msg.channelId, null);
@@ -950,6 +961,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   const points = pointsFor(tally, cmd.outcome);
   const done = await deps.store.settle(target.id, cmd.outcome, points, now);
   if (!done) return "no-call";
+  await deps.predictionEnd?.(target, cmd.outcome).catch(() => {});
   await unpinIfIdle(deps, msg);
   await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.winners));
   await sayStreamTop(deps, msg, now);
@@ -982,6 +994,7 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   const tally = await deps.store.tally(call.id);
   const done = await deps.store.settle(call.id, outcome, pointsFor(tally, outcome), now);
   if (!done) return false;
+  await deps.predictionEnd?.(call, outcome).catch(() => {});
   // The picture it was settled on, so anybody can see what oddie saw (Lev, 27
   // Oct): kept on the channel page, since a live chat takes no picture.
   if (frame && deps.store.saveFrame) {
@@ -1024,6 +1037,7 @@ async function reopenRepeat(call: LiveCall, deps: LiveDeps): Promise<void> {
   lastSaid.set(opened.id, now);
   const id = await sayQuiet(deps, call, LIVE_COPY.next(opened.question, round, minutes));
   await pinQuiet(deps, call, id);
+  await deps.predictionOpen?.(opened, minutes).catch(() => null);
   deps.log("live call repeated", { platform: call.platform, channel: call.channelId, id: opened.id, round });
 }
 
@@ -1064,6 +1078,7 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
     for (const c of calls) {
       if (!(await deps.store.cancel(c.id, now).catch(() => false))) continue;
       lastSplit.delete(c.id); newSince.delete(c.id); lastSaid.delete(c.id);
+      await deps.predictionEnd?.(c, null).catch(() => {});
       await sayQuiet(deps, c, LIVE_COPY.noResult(c.question));
     }
     await deps.store.setRepeat?.(platform, channelId, null).catch(() => {});

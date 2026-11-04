@@ -7,16 +7,16 @@
 import express, { type Router } from "express";
 import { randomBytes } from "node:crypto";
 import {
-  appToken, authorizeUrl, chatFromTwitch, eventSubSecret, exchangeCode, me, pinChat, pinnedChat, refreshTokens, sendChat, streamInfo, streamIsLive, unpinChat,
+  appToken, authorizeUrl, chatFromTwitch, createPrediction, endPrediction, eventSubSecret, exchangeCode, me, pinChat, pinnedChat, refreshTokens, sendChat, streamInfo, streamIsLive, unpinChat,
   subscribeToChat, twitchConfigured, verifyTwitchSignature, WEBHOOK_MAX_AGE_MS, type TwitchTokens,
 } from "./client.js";
-import { handleChat, LIVE_COPY, type LiveDeps, type Platform } from "../live/calls.js";
+import { handleChat, LIVE_COPY, type LiveCall, type LiveDeps, type Platform, type Side } from "../live/calls.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { notNow, paced, patiently } from "../live/pace.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { creditInvite } from "../live/referrals.js";
-import { twitchChatSource } from "../store/markets.js";
+import { botStateGet, botStateSet, twitchChatSource } from "../store/markets.js";
 import { channelById, channelBySlug, liveStore, saveChannel, type LiveChannel } from "../store/live.js";
 
 export interface TwitchRouteDeps extends ChannelPageDeps {
@@ -50,8 +50,11 @@ export interface TwitchChat {
   pinned?(token: string, broadcasterId: string, moderatorId: string): Promise<string | null>;
   pin?(token: string, broadcasterId: string, moderatorId: string, messageId: string): Promise<void>;
   unpin?(token: string, broadcasterId: string, moderatorId: string, messageId: string): Promise<void>;
+  /** The channel's own Predictions panel (src/twitch/client.ts). */
+  predict?(token: string, broadcasterId: string, title: string, window: number): Promise<{ id: string; yes: string; no: string }>;
+  endPredict?(token: string, broadcasterId: string, id: string, status: "RESOLVED" | "CANCELED", winningOutcomeId?: string): Promise<void>;
 }
-const twitchChat: TwitchChat = { send: sendChat, pinned: pinnedChat, pin: pinChat, unpin: unpinChat };
+const twitchChat: TwitchChat = { send: sendChat, pinned: pinnedChat, pin: pinChat, unpin: unpinChat, predict: createPrediction, endPredict: endPrediction };
 
 const pending = new Map<string, number>();
 const seen = new Map<string, number>();
@@ -99,6 +102,24 @@ function remember(id: string | null): string | null {
 }
 const pinRefused = new Map<string, number>();
 const PIN_RETRY_MS = 6 * 60 * 60_000;
+
+/**
+ * TWITCH'S OWN PREDICTIONS (Lev, 4 Nov). Twitch streamers already run
+ * Predictions, where every viewer picks with a tap and channel points; asking
+ * their chat to type !yes is a step back. So a call opened in a Twitch chat
+ * opens there too, and oddie resolves it with the call's result, from the
+ * screen like any call, or cancels it with the call. It needs
+ * channel:manage:predictions: a channel that signed in before it was asked is
+ * refused, is not asked again for six hours, and keeps its chat votes. Twitch
+ * titles stop at 45 characters, so a longer question runs in chat only.
+ */
+export const PREDICTION_TITLE_MAX = 45;
+/** A call with no length: five minutes to predict, the way streamers set their own. Chat answers stay open into the game. */
+export const PREDICTION_WINDOW_S = 5 * 60;
+const predictRefused = new Map<string, number>();
+const predictionKey = (callId: string) => `twitch_prediction:${callId}`;
+/** Test seam. */
+export function _resetPredictions(): void { predictRefused.clear(); }
 
 export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" | "markets" | "voice">, chat: TwitchChat = twitchChat): LiveDeps {
   const base = d.appBaseUrl.replace(/\/+$/, "");
@@ -190,6 +211,48 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     // A pin that already ran out is fine: the line is down either way.
     await withToken(ch, (t) => chat.unpin!(t, channelId, channelId, id)).catch(() => {});
   };
+  const predictionOpen = async (call: LiveCall, minutes: number | null): Promise<"opened" | "too-long" | null> => {
+    if (!chat.predict) return null;
+    const title = call.question.trim();
+    if (title.length > PREDICTION_TITLE_MAX) return "too-long";
+    const refusedAt = predictRefused.get(call.channelId);
+    if (refusedAt !== undefined && Date.now() - refusedAt < PIN_RETRY_MS) return null;
+    const ch = await channelById("twitch", call.channelId).catch(() => null);
+    if (!ch?.active || !ch.accessToken) return null;
+    const window = Math.max(30, Math.min(1800, minutes === null ? PREDICTION_WINDOW_S : minutes * 60));
+    try {
+      const p = await withToken(ch, (t) => chat.predict!(t, call.channelId, title, window));
+      await botStateSet(predictionKey(call.id), JSON.stringify(p));
+      d.log("twitch prediction opened", { channel: call.channelId, call: call.id, window });
+      return "opened";
+    } catch (e) {
+      if (status(e) === 401 || status(e) === 403) {
+        predictRefused.set(call.channelId, Date.now());
+        d.log("twitch prediction refused, the channel signs in again to allow it", { channel: call.channelId, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
+        return null;
+      }
+      // Another prediction running, or a channel Twitch has not given predictions: the call goes on in chat.
+      d.log("twitch prediction not opened", { channel: call.channelId, call: call.id, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
+      return null;
+    }
+  };
+  const predictionEnd = async (call: LiveCall, outcome: Side | null): Promise<void> => {
+    if (!chat.endPredict) return;
+    const kept = await botStateGet(predictionKey(call.id)).catch(() => null);
+    if (!kept) return;
+    let p: { id: string; yes: string; no: string };
+    try { p = JSON.parse(kept); } catch { return; }
+    const ch = await channelById("twitch", call.channelId).catch(() => null);
+    if (!ch?.accessToken) return;
+    try {
+      await withToken(ch, (t) => chat.endPredict!(t, call.channelId, p.id, outcome ? "RESOLVED" : "CANCELED", outcome === "yes" ? p.yes : outcome === "no" ? p.no : undefined));
+      d.log("twitch prediction ended", { channel: call.channelId, call: call.id, outcome: outcome ?? "canceled" });
+    } catch (e) {
+      // The streamer ended it by hand, or Twitch already canceled it: nothing left to do.
+      d.log("twitch prediction not ended", { channel: call.channelId, call: call.id, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
+    }
+    await botStateSet(predictionKey(call.id), "").catch(() => {});
+  };
   const markets = d.markets;
   return {
     store: liveStore,
@@ -197,6 +260,8 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     say,
     pin,
     unpin,
+    predictionOpen,
+    predictionEnd,
     streamLive: async (_p, channelId) => streamIsLive(await appToken(), channelId),
     streamGame: async (_p, channelId) => streamInfo(await appToken(), channelId),
     market: markets ? (msg, claim) => openFromChat(msg, claim, {
