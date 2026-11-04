@@ -241,6 +241,38 @@ console.log("\nwhat does not settle");
   check("...and chat never hears about the balance", out.said.every((s) => !/balance|anthropic/i.test(s)));
 }
 
+console.log("\nthe last result may still be up (4 Nov, MW4 DMZ: a summary stayed 66 s, past the first minute)");
+{
+  const r = await room();
+  const Q = "will I extract with the loot?";
+  await handleChat(r.line("nova", `!call repeat ${Q}`, true), r.deps);
+  r.readings.push(unclear, yes(), yes());
+  const t1 = SCREEN_GRACE_MS + SCREEN_EVERY_MS + SCREEN_CONFIRM_MS;
+  await r.at(SCREEN_GRACE_MS); await r.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS); await r.at(t1);
+  const round2 = await liveStore.current("kick", "100");
+  check("round 1 settles off the screen and round 2 opens", round2?.question === Q && r.said.some((s) => s.startsWith("round 2:")));
+  r.readings.push(yes(0.95, "EXTRACTION SUMMARY"), yes(0.95, "EXTRACTION SUMMARY"));
+  await r.at(t1 + SCREEN_GRACE_MS); await r.at(t1 + SCREEN_GRACE_MS + SCREEN_CONFIRM_MS + SCREEN_EVERY_MS);
+  check("round 2 does not settle on round 1's summary, however sure", (await liveStore.current("kick", "100"))?.id === round2?.id && r.counts().asks === 5,
+    JSON.stringify({ asks: r.counts().asks }));
+  r.readings.push(unclear, yes(0.95, "EXTRACTION SUCCESSFUL"), yes(0.95, "EXTRACTION SUCCESSFUL"));
+  const t2 = t1 + SCREEN_GRACE_MS + 2 * SCREEN_EVERY_MS + SCREEN_CONFIRM_MS;
+  await r.at(t2); await r.at(t2 + SCREEN_EVERY_MS); await r.at(t2 + SCREEN_EVERY_MS + SCREEN_CONFIRM_MS);
+  check("...once it has seen the game, its own result settles it", r.said.some((s) => s.startsWith("round 3:")), JSON.stringify(r.said.slice(-2)));
+}
+{
+  const r = await room();
+  await handleChat(r.line("nova", "!call will I win this match?", true), r.deps);
+  await handleChat(r.line("nova", "!call yes", true), r.deps);
+  const later = 5 * 60_000 + 1_000;
+  await r.at(later);
+  await handleChat(r.line("nova", "!call will I win the next one?", true), r.deps);
+  r.readings.push(yes(), yes());
+  await r.at(later + SCREEN_GRACE_MS); await r.at(later + SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
+  check("a call opened well after the last result settles on its first sure reads, as before",
+    (await liveStore.unsettled("kick", "100")).length === 0, String(r.counts().asks));
+}
+
 console.log("\na tournament call and a game's call are read apart");
 {
   /* 22 Oct, Lev: "turnuvanın call'ı ile bir oyunun call'ı farklı işler".

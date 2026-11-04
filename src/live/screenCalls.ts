@@ -98,7 +98,11 @@ export const SCREEN_OPS_COPY: Record<"billing" | "auth" | "config", string> = {
   config: `oddie can't settle calls from the screen right now: no model key is set on Railway (INFERENCE_API_KEY).\n\n${OPEN_CALLS}`,
 };
 
-interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null }
+/** A call opened this soon after the channel's last result may open on that result, still on screen. */
+export const SCREEN_LINGER_MS = 5 * 60_000;
+
+/** clear: the reader has seen the stream with no result on it since the call opened. */
+interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null; clear: boolean }
 const looks = new Map<string, Look>();
 const spent = new Map<string, { hour: number; n: number }>();
 const liveAt = new Map<string, { at: number; live: boolean }>();
@@ -172,7 +176,10 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   for (const id of looks.keys()) if (!open.has(id)) looks.delete(id);
   for (const id of spent.keys()) if (!open.has(id)) spent.delete(id);
   if (!calls.length) return 0;
-  for (const c of calls) if (!looks.has(c.id)) looks.set(c.id, { nextAt: c.openedAt + SCREEN_GRACE_MS, decided: null });
+  for (const c of calls) {
+    if (looks.has(c.id)) continue;
+    looks.set(c.id, { nextAt: c.openedAt + SCREEN_GRACE_MS, decided: null, clear: !(await soonAfterResult(deps, c)) });
+  }
   const due = calls.filter((c) => now >= looks.get(c.id)!.nextAt).sort((a, b) => looks.get(a.id)!.nextAt - looks.get(b.id)!.nextAt);
   if (!due.length) return 0;
   const chans = await channelsNow(deps, now);
@@ -193,6 +200,19 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   return settled;
 }
 
+/**
+ * THE LAST RESULT MAY STILL BE UP. 4 Nov, MW4 DMZ test on Kick: a summary
+ * page stayed up 66 s, past the first minute's wait, and its last frames read
+ * as a sure YES. A call opened soon after the channel's last result (the next
+ * round of !call repeat, or a streamer's "next game?") so settles only after
+ * the reader has seen the stream without a result on it.
+ */
+async function soonAfterResult(deps: LiveDeps, call: LiveCall): Promise<boolean> {
+  const times = (await deps.store.settledTimes?.(call.platform, call.channelId, 3).catch(() => [] as number[])) ?? [];
+  const last = times.find((t) => t <= call.openedAt);
+  return last !== undefined && call.openedAt - last < SCREEN_LINGER_MS;
+}
+
 /** One look at one call: true when it settled the call. */
 async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>, call: LiveCall, name: string, now: number): Promise<boolean> {
   const l = looks.get(call.id);
@@ -204,7 +224,13 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
     deps.log("screen read", { platform: call.platform, channel: call.channelId, id: call.id, answer: r?.answer ?? null, sure: r?.sure ?? null, seen: r?.seen ?? null });
     // An event call is settled on the event's own page, never on one game's
     // result, however sure the answer beside it (src/games/screen.ts).
-    if (!r || r.answer === "unclear" || r.sure < SCREEN_SURE || (isEvent(call) && r.screen !== "event")) { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+    if (!r || r.answer === "unclear" || r.sure < SCREEN_SURE) { l.clear = true; l.nextAt = now + everyOf(call); l.decided = null; return false; }
+    if (isEvent(call) && r.screen !== "event") { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+    if (!l.clear) {
+      deps.log("screen: the last result may still be up", { platform: call.platform, channel: call.channelId, id: call.id, seen: r.seen });
+      l.nextAt = now + everyOf(call); l.decided = null;
+      return false;
+    }
     let seen = r.seen;
     if (isEvent(call) || isStat(call)) {
       // ...and only where the strong model reads the same page the same way,
