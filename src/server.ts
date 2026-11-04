@@ -2067,6 +2067,7 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
     },
     // YouTube's is "": no line there carries a link.
     standingsUrl: (p, c) => engOf(p).standingsUrl(p, c),
+    alertOps: (text) => tgOpsAlert(text),
   };
   // A tick can outlast five seconds now that a chat's lines go out a second
   // apart (src/live/pace.ts): the next one waits for it instead of reading the

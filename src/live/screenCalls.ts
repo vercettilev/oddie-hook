@@ -86,6 +86,17 @@ export const SCREEN_EVENT_MAX_AGE_MS = 8 * 60 * 60_000;
 export const SCREEN_IDLE_MS = 60_000;
 /** A reader outage only a person can fix pauses every look for this long. */
 export const SCREEN_OUTAGE_MS = 10 * 60_000;
+/** The operator hears about the same outage again only after this long.
+ *  2 Nov, Showdown ep 2: the balance ran out mid-show, the reader paused
+ *  with a log line, and nobody knew until the call had missed its result. */
+export const SCREEN_ALERT_GAP_MS = 3 * 60 * 60_000;
+const OPEN_CALLS = "Open calls stay open, and the streamer or a mod can settle one with !call yes or !call no.";
+export const SCREEN_OPS_COPY: Record<"billing" | "auth" | "config", string> = {
+  billing: "oddie can't settle calls from the screen right now: the Anthropic credit balance is empty.\n\n"
+    + `${OPEN_CALLS} Top up:\nhttps://console.anthropic.com/settings/billing`,
+  auth: `oddie can't settle calls from the screen right now: Anthropic refused the model key (INFERENCE_API_KEY on Railway).\n\n${OPEN_CALLS}`,
+  config: `oddie can't settle calls from the screen right now: no model key is set on Railway (INFERENCE_API_KEY).\n\n${OPEN_CALLS}`,
+};
 
 interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null }
 const looks = new Map<string, Look>();
@@ -94,13 +105,14 @@ const liveAt = new Map<string, { at: number; live: boolean }>();
 let channelsAt = 0;
 let channelInfo = new Map<string, { name: string; matchCalls: boolean }>();
 let outageUntil = 0;
+const alertedAt = new Map<string, number>();
 let listed: LiveCall[] = [];
 let listedAt = 0;
 
 /** Test seam. */
 export function _resetScreens(): void {
   looks.clear(); spent.clear(); liveAt.clear(); channelInfo = new Map(); channelsAt = 0; outageUntil = 0;
-  listed = []; listedAt = 0;
+  alertedAt.clear(); listed = []; listedAt = 0;
 }
 
 const keyOf = (c: { platform: string; channelId: string }) => `${c.platform}:${c.channelId}`;
@@ -214,8 +226,15 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
   } catch (e) {
     l.nextAt = now + everyOf(call); l.decided = null;
     const fix = personFixOutage((e as Error).message);
-    if (fix) { outageUntil = now + SCREEN_OUTAGE_MS; deps.log("screen paused: the reader is out", { why: fix, err: (e as Error).message.slice(0, 200) }); }
-    else deps.log("screen: call not read", { platform: call.platform, channel: call.channelId, id: call.id, err: (e as Error).message.slice(0, 200) });
+    if (fix) {
+      outageUntil = now + SCREEN_OUTAGE_MS;
+      deps.log("screen paused: the reader is out", { why: fix, err: (e as Error).message.slice(0, 200) });
+      const last = alertedAt.get(fix);
+      if (deps.alertOps && (last === undefined || now - last >= SCREEN_ALERT_GAP_MS)) {
+        alertedAt.set(fix, now);
+        await deps.alertOps(SCREEN_OPS_COPY[fix]).catch(() => {});
+      }
+    } else deps.log("screen: call not read", { platform: call.platform, channel: call.channelId, id: call.id, err: (e as Error).message.slice(0, 200) });
     return false;
   }
 }

@@ -8,7 +8,7 @@
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR } from "../src/live/screenCalls.js";
+import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
 import { callScope, cleanSeen, parseScreen, parseStat, screenPrompt, screenSource, statRule, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
@@ -217,6 +217,28 @@ console.log("\nwhat does not settle");
   y.readings.push(yes(), yes());
   await y.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS);
   check("a reader out of order pauses the looking rather than asking again and again", y.counts().asks === 1);
+
+  // 2 Nov, Showdown ep 2: the balance ran out mid-show and only a log line knew.
+  const out = await room();
+  const heard: string[] = [];
+  out.deps.alertOps = async (text) => { heard.push(text); };
+  const empty = () => new Error("screen 400 Your credit balance is too low to access the Anthropic API.");
+  await handleChat(out.line("nova", "!call will I win this match?", true), out.deps);
+  out.readings.push(empty());
+  await out.at(SCREEN_GRACE_MS);
+  check("an empty balance tells the operator, with what chat can do meanwhile",
+    heard.length === 1 && heard[0] === SCREEN_OPS_COPY.billing && /!call yes or !call no/.test(heard[0]), JSON.stringify(heard));
+  out.readings.push(empty());
+  await out.at(SCREEN_GRACE_MS + SCREEN_OUTAGE_MS + 1_000);
+  check("...the same outage ten minutes on is not told again", out.counts().asks === 2 && heard.length === 1,
+    JSON.stringify({ asks: out.counts().asks, heard: heard.length }));
+  await handleChat(out.line("nova", "!call cancel", true), out.deps);
+  await out.at(SCREEN_GRACE_MS + SCREEN_ALERT_GAP_MS);
+  await handleChat(out.line("nova", "!call will I win the next one?", true), out.deps);
+  out.readings.push(empty());
+  await out.at(2 * SCREEN_GRACE_MS + SCREEN_ALERT_GAP_MS);
+  check("...but is told again three hours on", heard.length === 2, String(heard.length));
+  check("...and chat never hears about the balance", out.said.every((s) => !/balance|anthropic/i.test(s)));
 }
 
 console.log("\na tournament call and a game's call are read apart");

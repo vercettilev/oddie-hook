@@ -449,6 +449,9 @@ export interface LiveDeps {
   frames?: FrameSource;
   /** Where a room call's answer is read off the stream (src/games/screen.ts). Absent: the screen settles nothing. */
   screen?: ScreenSource;
+  /** The operator hears about an outage only a person can fix (src/server.ts
+   *  tgOpsAlert, on Telegram). Absent: a log line and nothing else. */
+  alertOps?(text: string): Promise<void>;
 }
 
 /** A price call between its lock and its result. `atEnd`: a touch the price
