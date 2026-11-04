@@ -85,8 +85,12 @@ export interface ChatMessage {
 }
 
 export type LiveCommand =
-  /** minutes null: open until it is settled. */
-  | { kind: "open"; question: string; minutes: number | null }
+  /** minutes null: open until it is settled. repeat: `!call repeat`, it opens again after each result. */
+  | { kind: "open"; question: string; minutes: number | null; repeat?: boolean }
+  /** `!call stop`: the repeating call opens no new round. */
+  | { kind: "stop" }
+  /** A bare `!call repeat`: how it works. */
+  | { kind: "repeat-help" }
   | { kind: "pick"; side: Side }
   /** which: the call's number in the waiting list (1 = oldest), null when not said. */
   | { kind: "settle"; outcome: Side; which: number | null }
@@ -188,6 +192,16 @@ export function parseCommand(raw: string): LiveCommand | null {
   if (settle) return { kind: "settle", outcome: YES_WORD.test(settle[1]) ? "yes" : "no", which: settle[2] ? Number(settle[2]) : null };
   const cancel = /^(cancel|iptal)(?:\s+#?(\d{1,2}))?$/i.exec(rest);
   if (cancel) return { kind: "cancel", which: cancel[2] ? Number(cancel[2]) : null };
+  if (/^(stop|dur)$/i.test(rest)) return { kind: "stop" };
+  if (/^(repeat|tekrar)$/i.test(rest)) return { kind: "repeat-help" };
+  // "!call repeat <question>": the same question opens again after each result,
+  // a round or a run at a time, until !call stop (Lev, 4 Nov: on a show nobody
+  // should have to type a call between games).
+  const rep = /^(?:repeat|tekrar)\s+(.+)$/i.exec(rest);
+  if (rep) {
+    const inner = parseCommand(`!call ${rep[1]}`);
+    return inner?.kind === "open" ? { ...inner, repeat: true } : { kind: "repeat-help" };
+  }
   // A settle word with more after it is neither. Live on 8 Oct a streamer pasted
   // "!call yes in chat (the 13:30 utc candle closed ...)" from a DM and it opened
   // as a question on stream, while the call he meant stayed unsettled. Settling
@@ -328,10 +342,18 @@ export const LIVE_COPY = {
   which: (verb: string, qs: string[]) =>
     `Which one? ${qs.slice(0, 5).map((q, i) => `!call ${verb} ${i + 1} for "${short(q, 40)}"`).join(", ")}`,
   canceled: "Call canceled. The next one opens with !call.",
+  /* !call repeat (Lev, 4 Nov): one call that comes back after every result. The
+     round number keeps each line its own, and X refuses a line it just took. */
+  next: (q: string, round: number, minutes: number | null) =>
+    `round ${round}: "${q}" Type !yes or !no${minutes === null ? "" : `, locks in ${minutes} min`}`,
+  repeatOn: "It opens again after each result. !call stop ends it.",
+  repeatOff: "Repeat off: no new round after this one.",
+  repeatNone: "Nothing is repeating. Start one with !call repeat and the question.",
+  repeatHow: "To bring a call back after every result: !call repeat <question>. !call stop ends it.",
   busy: (q: string) => `One call at a time: "${q}" is still running.`,
   settleFirst: (q: string) => `To settle "${short(q)}": !call yes or !call no.`,
   settleOnly: "To settle, type only !call yes or !call no. To open a call, start with the question.",
-  help: "Mods: !call <question> opens a vote (!call 5m <question> locks in five minutes), chat answers !yes or !no. oddie settles price calls itself and reads results off the stream; mods can always settle with !call yes or !call no. !me shows your record.",
+  help: "Mods: !call <question> opens a vote (!call 5m <question> locks in five minutes, !call repeat <question> brings it back after each result), chat answers !yes or !no. oddie settles price calls itself and reads results off the stream; mods can always settle with !call yes or !call no. !me shows your record.",
   pickHelp: "No vote is open. Start one with !call <question>, then chat answers !yes or !no. Take a market's YES or NO on its link.",
   // No line of oddie's starts with a command: an echo of it is never one.
   marketHelp: "Open a market with !oddie and a claim with a yes or no and a date, anybody can take it and oddie settles it. Reply !oddie to a message to open one on it.",
@@ -415,7 +437,13 @@ export interface LiveStore {
   channels(): Promise<Array<{ platform: Platform; channelId: string; slug: string; name: string | null; faceitId: string | null; matchCalls: boolean; gsiSeenAt: number | null }>>;
   /** `!matches off` and `!matches on`: whether oddie may open match calls from the stream by itself. */
   setMatchCalls(platform: Platform, channelId: string, on: boolean): Promise<void>;
+  /** The channel's `!call repeat`, kept where a restart finds it. Absent: no repeats. */
+  repeat?(platform: Platform, channelId: string): Promise<Repeat | null>;
+  setRepeat?(platform: Platform, channelId: string, r: Repeat | null): Promise<void>;
 }
+
+/** A call that opens again after each of its results: who asked, and how many rounds so far. */
+export interface Repeat { question: string; minutes: number | null; byId: string; byName: string; round: number }
 
 export interface LiveDeps {
   store: LiveStore;
@@ -529,11 +557,29 @@ export async function sayStreamTop(deps: LiveDeps, m: { platform: Platform; chan
 
 /** The same words, and for a price question the same moment: "the next 5m
  *  candle" asked again once the candle has turned is the next round. */
-function sameCall(call: LiveCall, question: string, now: number): boolean {
+/** Two wordings of one question: case, spacing and a closing "?" or "!" do not count. */
+function sameQuestion(a: string, b: string): boolean {
   const words = (q: string) => q.toLowerCase().replace(/\s+/g, " ").replace(/[\s?!.]+$/, "").trim();
-  if (words(call.question) !== words(question)) return false;
+  return words(a) === words(b);
+}
+
+function sameCall(call: LiveCall, question: string, now: number): boolean {
+  if (!sameQuestion(call.question, question)) return false;
   const pc = parsePriceCall(question);
   return !pc || planFor(pc, now).to === planFor(pc, call.openedAt).to;
+}
+
+/** When a new call stops taking answers: its own length, or for a price call
+ *  three minutes by default and never past the moment its answer is known. */
+function closeFor(question: string, asked: number | null, now: number): { closesAt: number; minutes: number | null; pc: PriceCall | null } {
+  let minutes = asked;
+  let closesAt = now + (minutes === null ? CALL_OPEN_MAX_MS : minutes * 60_000);
+  const pc = minutes === null ? parsePriceCall(question) : null;
+  if (pc) {
+    closesAt = Math.min(now + PRICE_CALL_LOCK_MS, planFor(pc, now).to);
+    minutes = Math.max(1, Math.ceil((closesAt - now) / 60_000));
+  }
+  return { closesAt, minutes, pc };
 }
 
 /**
@@ -634,6 +680,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners)}`);
   await sayStreamTop(deps, w.call, now);
   deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome: read.outcome, right: done.right, total: done.total, by: "price" });
+  await reopenRepeat(w.call, deps);
   return true;
 }
 
@@ -811,6 +858,16 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
 
   if (cmd.kind === "help") { await sayQuiet(deps, msg, LIVE_COPY.help, msg.messageId); return "help"; }
   if (cmd.kind === "settle-help") { await sayQuiet(deps, msg, LIVE_COPY.settleOnly, msg.messageId); return "settle-help"; }
+  if (cmd.kind === "repeat-help") { await sayQuiet(deps, msg, LIVE_COPY.repeatHow, msg.messageId); return "repeat-help"; }
+  // !call stop: the call open now keeps its answers and its result; no round after it.
+  if (cmd.kind === "stop") {
+    const rep = await deps.store.repeat?.(msg.platform, msg.channelId).catch(() => null);
+    if (!rep) { await sayQuiet(deps, msg, LIVE_COPY.repeatNone, msg.messageId); return "no-repeat"; }
+    await deps.store.setRepeat?.(msg.platform, msg.channelId, null);
+    await sayQuiet(deps, msg, LIVE_COPY.repeatOff, msg.messageId);
+    deps.log("live repeat off", { platform: msg.platform, channel: msg.channelId, rounds: rep.round });
+    return "repeat-off";
+  }
 
   if (cmd.kind === "open") {
     const running = await deps.store.current(msg.platform, msg.channelId);
@@ -822,6 +879,11 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       lastSaid.set(running.id, now);
       const id = await sayQuiet(deps, msg, LIVE_COPY.reminder(running.question, await deps.store.tally(running.id), running.timed ? running.closesAt - now : null));
       await pinQuiet(deps, msg, id);
+      // "!call repeat" on the call already running: this one is round 1.
+      if (cmd.repeat) {
+        await deps.store.setRepeat?.(msg.platform, msg.channelId, { question: running.question, minutes: cmd.minutes, byId: msg.senderId, byName: msg.senderName, round: 1 });
+        await sayQuiet(deps, msg, LIVE_COPY.repeatOn);
+      }
       return "again";
     }
     // The new call takes the room. The one taking answers keeps them and waits
@@ -830,15 +892,8 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       lastSplit.delete(running.id); newSince.delete(running.id); lastSaid.delete(running.id);
       await sayQuiet(deps, msg, LIVE_COPY.switched(running.question, await deps.store.tally(running.id), await waitForPrice(running, deps)));
     }
-    // A price call oddie settles itself, so it does not stay open until a mod
-    // settles it: three minutes by default, never past the moment its answer is known.
-    let minutes = cmd.minutes;
-    let closesAt = now + (minutes === null ? CALL_OPEN_MAX_MS : minutes * 60_000);
-    const pc = minutes === null ? parsePriceCall(cmd.question) : null;
-    if (pc) {
-      closesAt = Math.min(now + PRICE_CALL_LOCK_MS, planFor(pc, now).to);
-      minutes = Math.max(1, Math.ceil((closesAt - now) / 60_000));
-    }
+    // A price call oddie settles itself, so it does not stay open until a mod settles it.
+    const { closesAt, minutes, pc } = closeFor(cmd.question, cmd.minutes, now);
     const opened = await deps.store.open({
       platform: msg.platform, channelId: msg.channelId, question: cmd.question,
       openedById: msg.senderId, openedByName: msg.senderName, openedAt: now, closesAt, timed: minutes !== null,
@@ -849,11 +904,16 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       if (other) await sayQuiet(deps, msg, LIVE_COPY.busy(other.question), msg.messageId);
       return "busy";
     }
+    // A different question means the show moved on: the old repeat opens no new round.
+    const rep = await deps.store.repeat?.(msg.platform, msg.channelId).catch(() => null);
+    if (cmd.repeat) await deps.store.setRepeat?.(msg.platform, msg.channelId, { question: opened.question, minutes: cmd.minutes, byId: msg.senderId, byName: msg.senderName, round: 1 });
+    else if (rep && !sameQuestion(rep.question, opened.question)) await deps.store.setRepeat?.(msg.platform, msg.channelId, null);
     lastSaid.set(opened.id, now);
     const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId)));
     await pinQuiet(deps, msg, id);
+    if (cmd.repeat) await sayQuiet(deps, msg, LIVE_COPY.repeatOn);
     await sayLastWeek(deps, msg, now);
-    deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null });
+    deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null, repeat: cmd.repeat === true });
     return "opened";
   }
 
@@ -874,6 +934,9 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (cmd.kind === "cancel") {
     if (!(await deps.store.cancel(target.id, now))) return "no-call";
     lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id);
+    // Canceling the repeating call ends the repeat too.
+    const rep = await deps.store.repeat?.(msg.platform, msg.channelId).catch(() => null);
+    if (rep && sameQuestion(rep.question, target.question)) await deps.store.setRepeat?.(msg.platform, msg.channelId, null);
     await unpinIfIdle(deps, msg);
     await sayQuiet(deps, msg, LIVE_COPY.canceled);
     return "canceled";
@@ -891,6 +954,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.winners));
   await sayStreamTop(deps, msg, now);
   deps.log("live call settled", { platform: msg.platform, channel: msg.channelId, id: target.id, outcome: cmd.outcome, right: done.right, total: done.total });
+  await reopenRepeat(target, deps);
   return "settled";
 }
 
@@ -929,7 +993,38 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   await sayQuiet(deps, call, LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners));
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
+  await reopenRepeat(call, deps);
   return true;
+}
+
+/**
+ * !CALL REPEAT (Lev, 4 Nov): once the repeating call has its result, the same
+ * question opens again, a round on, in the name of whoever started it. The
+ * screen still waits out its first minute (src/live/screenCalls.ts), so the
+ * result that is still up never settles the new round. A stream that went dark
+ * ends the repeat instead, and a call that took the room in between is left be.
+ */
+async function reopenRepeat(call: LiveCall, deps: LiveDeps): Promise<void> {
+  const rep = await deps.store.repeat?.(call.platform, call.channelId).catch(() => null);
+  if (!rep || !sameQuestion(rep.question, call.question)) return;
+  if (deps.streamLive && (await deps.streamLive(call.platform, call.channelId).catch(() => null)) === false) {
+    await deps.store.setRepeat?.(call.platform, call.channelId, null).catch(() => {});
+    deps.log("live repeat ended with the stream", { platform: call.platform, channel: call.channelId, rounds: rep.round });
+    return;
+  }
+  const now = deps.now();
+  const { closesAt, minutes } = closeFor(rep.question, rep.minutes, now);
+  const opened = await deps.store.open({
+    platform: call.platform, channelId: call.channelId, question: rep.question,
+    openedById: rep.byId, openedByName: rep.byName, openedAt: now, closesAt, timed: minutes !== null,
+  }).catch(() => null);
+  if (!opened) return;
+  const round = rep.round + 1;
+  await deps.store.setRepeat?.(call.platform, call.channelId, { ...rep, round }).catch(() => {});
+  lastSaid.set(opened.id, now);
+  const id = await sayQuiet(deps, call, LIVE_COPY.next(opened.question, round, minutes));
+  await pinQuiet(deps, call, id);
+  deps.log("live call repeated", { platform: call.platform, channel: call.channelId, id: opened.id, round });
 }
 
 /**
@@ -971,6 +1066,7 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
       lastSplit.delete(c.id); newSince.delete(c.id); lastSaid.delete(c.id);
       await sayQuiet(deps, c, LIVE_COPY.noResult(c.question));
     }
+    await deps.store.setRepeat?.(platform, channelId, null).catch(() => {});
     await unpinIfIdle(deps, calls[0]);
   }
 }

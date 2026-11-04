@@ -13,7 +13,7 @@ import bs58 from "bs58";
 import express from "express";
 import {
   parseCommand, handleChat, lockDue, remindOpen, sayVotes, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
-  EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, type ChatMessage, type LiveDeps,
+  EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, settleOnScreen, type ChatMessage, type LiveDeps,
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, houseAccounts, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
@@ -1083,6 +1083,95 @@ console.log("\nthis stream's best callers (Lev, 26 Oct)");
   check("...and whose best callers are its own: last stream's points stay with it", /^top callers this stream: @dee \d+ pts$/.test(next), next);
   const long = LIVE_COPY.streamTop([{ username: "a".repeat(15), points: 1000 }, { username: "b".repeat(15), points: 999 }, { username: "c".repeat(15), points: 998 }]);
   check("the line fits X live chat's 140 characters at its longest", long.length <= 140, String(long.length));
+}
+
+console.log("\na call that comes back after every result: !call repeat (Lev, 4 Nov)");
+{
+  const p = parseCommand("!call repeat will I win this round?");
+  check("!call repeat opens the question and marks it to come back",
+    p?.kind === "open" && p.question === "will I win this round?" && p.minutes === null && p.repeat === true, JSON.stringify(p));
+  const t = parseCommand("!call repeat 5m will BTC close the next 5m candle green?");
+  check("...a length after it still counts", t?.kind === "open" && t.minutes === 5 && t.repeat === true, JSON.stringify(t));
+  check("bare, or with a result word, it says how instead",
+    parseCommand("!call repeat")?.kind === "repeat-help" && parseCommand("!call repeat yes")?.kind === "repeat-help");
+  check("!call stop ends a repeat", parseCommand("!call stop")?.kind === "stop");
+  const plain = parseCommand("!call will I repeat this?");
+  check("...and the word inside a question is just a word", plain?.kind === "open" && !plain.repeat, JSON.stringify(plain));
+  check("no line about it starts with a command",
+    [LIVE_COPY.next("q?", 2, null), LIVE_COPY.repeatOn, LIVE_COPY.repeatOff, LIVE_COPY.repeatNone, LIVE_COPY.repeatHow].every((s) => !s.startsWith("!")));
+}
+{
+  const r = room();
+  const Q = "will I win this round?";
+  await handleChat(r.line("owner", `!call repeat ${Q}`, true), r.deps);
+  check("the first round opens like any call, and says it comes back",
+    r.said.some((x) => x.text.startsWith(`call: "${Q}"`)) && r.said.some((x) => x.text === LIVE_COPY.repeatOn));
+  await handleChat(r.line("a", "!yes"), r.deps);
+  r.tick(60_000);
+  await handleChat(r.line("owner", "!call yes", true), r.deps);
+  const open2 = await liveStore.current("kick", "100");
+  check("its result opens round 2: the same question, taking answers again",
+    open2?.question === Q && r.said.some((x) => x.text === LIVE_COPY.next(Q, 2, null)), JSON.stringify(r.said.slice(-3).map((x) => x.text)));
+  await handleChat(r.line("b", "!no"), r.deps);
+  check("...and its answers are its own", JSON.stringify(await liveStore.tally(open2?.id ?? "")) === JSON.stringify({ yes: 0, no: 1 }));
+  _resetLive();
+  r.tick(60_000);
+  await handleChat(r.line("owner", "!call no", true), r.deps);
+  check("a restart mid-show still opens the next round: the store keeps the repeat",
+    r.said.some((x) => x.text === LIVE_COPY.next(Q, 3, null)) && (await liveStore.repeat?.("kick", "100"))?.round === 3);
+  await handleChat(r.line("owner", "!call stop", true), r.deps);
+  check("!call stop: the round open now keeps going", r.said.some((x) => x.text === LIVE_COPY.repeatOff) && (await liveStore.current("kick", "100"))?.question === Q);
+  r.tick(60_000);
+  await handleChat(r.line("owner", "!call yes", true), r.deps);
+  check("...and no round opens after its result", (await liveStore.unsettled("kick", "100")).length === 0);
+  await handleChat(r.line("owner", "!call stop", true), r.deps);
+  check("...a second !call stop says nothing repeats", r.said.some((x) => x.text === LIVE_COPY.repeatNone));
+  await handleChat(r.line("a", "!call repeat will I win?"), r.deps);
+  check("viewers cannot start one", (await liveStore.unsettled("kick", "100")).length === 0);
+}
+{
+  const r = room();
+  await handleChat(r.line("owner", "!call repeat clutch this round?", true), r.deps);
+  await handleChat(r.line("owner", "!call cancel", true), r.deps);
+  check("canceling the repeating call ends the repeat", (await liveStore.repeat?.("kick", "100")) === null && (await liveStore.unsettled("kick", "100")).length === 0);
+
+  await handleChat(r.line("owner", "!call repeat clutch this round?", true), r.deps);
+  await handleChat(r.line("owner", "!call who wins the map?", true), r.deps);
+  check("a different question ends the repeat", (await liveStore.repeat?.("kick", "100")) === null);
+  await handleChat(r.line("owner", "!call yes 1", true), r.deps);
+  const left = await liveStore.unsettled("kick", "100");
+  check("...so the old round's result opens nothing", left.length === 1 && left[0].question === "who wins the map?", JSON.stringify(left.map((c) => c.question)));
+}
+{
+  const r = room();
+  const Q = "will Aleksa extract this run?";
+  await handleChat(r.line("owner", `!call repeat ${Q}`, true), r.deps);
+  const first = await liveStore.current("kick", "100");
+  r.tick(5 * 60_000);
+  await settleOnScreen(first!, "no", "MISSION FAILED", r.deps);
+  check("a result read off the screen opens the next round too", (await liveStore.current("kick", "100"))?.question === Q
+    && r.said.some((x) => x.text === LIVE_COPY.next(Q, 2, null)));
+}
+{
+  const r = room();
+  let live: boolean | null = true;
+  r.deps.streamLive = async () => live;
+  await handleChat(r.line("owner", "!call repeat will I win this round?", true), r.deps);
+  await lockDue(r.deps);
+  live = false;
+  r.tick(STREAM_POLL_MS); await lockDue(r.deps);
+  check("the stream ending cancels the round and ends the repeat",
+    (await liveStore.unsettled("kick", "100")).length === 0 && (await liveStore.repeat?.("kick", "100")) === null);
+}
+{
+  const r = room();
+  let live: boolean | null = true;
+  r.deps.streamLive = async () => live;
+  await handleChat(r.line("owner", "!call repeat last game of the night?", true), r.deps);
+  live = false;
+  await handleChat(r.line("owner", "!call yes", true), r.deps);
+  check("a result after the stream went dark opens no round, and ends the repeat",
+    (await liveStore.unsettled("kick", "100")).length === 0 && (await liveStore.repeat?.("kick", "100")) === null);
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall live checks passed.\n");

@@ -15,7 +15,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { storeDb, storeSchema, STORE_PERSISTENT } from "./markets.js";
-import { pointsAt, weekStart, type CallerRecord, type LiveCall, type LiveStore, type Platform, type Side, type Tally, type Winner } from "../live/calls.js";
+import { pointsAt, weekStart, type CallerRecord, type LiveCall, type LiveStore, type Platform, type Repeat, type Side, type Tally, type Winner } from "../live/calls.js";
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS live_channel (
@@ -217,6 +217,19 @@ const memPicks: MemPick[] = [];
 let memSeq = 0;
 /** The picture each call was settled on, by call id. */
 const memFrames = new Map<string, { jpeg: Buffer; seen: string }>();
+const memRepeats = new Map<string, Repeat>();
+const repeatKey = (p: Platform, id: string) => `live_repeat:${ck(p, id)}`;
+/** A kept repeat, or null for anything that is not one. */
+function readRepeat(v: string | undefined): Repeat | null {
+  try {
+    const r = JSON.parse(v ?? "") as Partial<Repeat>;
+    if (typeof r.question !== "string" || !r.question || typeof r.byId !== "string" || typeof r.byName !== "string" || !Number.isSafeInteger(r.round)) return null;
+    const minutes = typeof r.minutes === "number" && Number.isFinite(r.minutes) ? r.minutes : null;
+    return { question: r.question, minutes, byId: r.byId, byName: r.byName, round: r.round as number };
+  } catch {
+    return null;
+  }
+}
 
 type CallRow = { id: string; platform: Platform; channel_id: string; question: string; opened_at: Date; closes_at: Date;
   timed: boolean | null; locked_at: Date | null; outcome: Side | null; settled_at: Date | null; match_id?: string | null };
@@ -514,6 +527,25 @@ export const liveStore: LiveStore = {
     }
     await schema();
     await storeDb().query(`UPDATE live_channel SET match_calls = $3 WHERE platform = $1 AND channel_id = $2`, [platform, channelId, on]);
+  },
+  /* !call repeat, kept in bot_state so a restart mid-show still opens the next round. */
+  async repeat(platform, channelId) {
+    if (!STORE_PERSISTENT) { const r = memRepeats.get(ck(platform, channelId)); return r ? { ...r } : null; }
+    await schema();
+    const { rows } = await storeDb().query<{ v: string }>(`SELECT v FROM bot_state WHERE k = $1`, [repeatKey(platform, channelId)]);
+    return readRepeat(rows[0]?.v);
+  },
+  async setRepeat(platform, channelId, r) {
+    if (!STORE_PERSISTENT) {
+      if (r) memRepeats.set(ck(platform, channelId), { ...r }); else memRepeats.delete(ck(platform, channelId));
+      return;
+    }
+    await schema();
+    if (!r) { await storeDb().query(`DELETE FROM bot_state WHERE k = $1`, [repeatKey(platform, channelId)]); return; }
+    await storeDb().query(
+      `INSERT INTO bot_state (k, v, at) VALUES ($1, $2, now()) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v, at = now()`,
+      [repeatKey(platform, channelId), JSON.stringify(r)],
+    );
   },
   async markFaceitProbe(platform, channelId, at) {
     if (!STORE_PERSISTENT) {
@@ -854,4 +886,4 @@ export async function callFrame(platform: Platform, channelId: string, callId: s
 }
 
 /** Test seam. */
-export function _resetLiveStore(): void { memChannels.clear(); memCalls.clear(); memPicks.length = 0; memSeq = 0; memFrames.clear(); }
+export function _resetLiveStore(): void { memChannels.clear(); memCalls.clear(); memPicks.length = 0; memSeq = 0; memFrames.clear(); memRepeats.clear(); }
