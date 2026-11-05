@@ -10,8 +10,13 @@ import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
 import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
 import { callScope, cleanSeen, parseScreen, parseStat, screenPrompt, screenSource, statRule, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
-import { decodeFrame } from "../src/games/frames.js";
+import { decodeFrame, grabFrame } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { onXEvent, xEngineDeps, xThumbnail, _resetXLive, type XLiveApi, type XVoice } from "../src/x/live.js";
 
 let failures = 0;
@@ -497,6 +502,27 @@ console.log("\nTwitch and Kick pictures are read full size");
     check("a stream frame for the screen is decoded at full size", width(await decodeFrame(seg, ff, SCREEN_FRAME_WIDTH)) === 1280);
     check("...while the match reader keeps its small one", width(await decodeFrame(seg, ff)) === 640);
   }
+
+  // An fMP4 stream, the way renyan's Twitch VODs came (5 Nov): served here
+  // over HTTP, master, playlist, init and segments, and grabbed as the server does.
+  const dir = mkdtempSync(join(tmpdir(), "oddie-fmp4-"));
+  const hls = seg?.length ? spawnSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=30", "-t", "2", "-c:v", "libx264", "-g", "30",
+    "-f", "hls", "-hls_time", "1", "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4", join(dir, "720.m3u8")]) : null;
+  if (hls?.status !== 0) console.log("  (no ffmpeg with fMP4 here: skipped)");
+  else {
+    writeFileSync(join(dir, "master.m3u8"), "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\n720.m3u8\n");
+    const server = createServer((req, res) => {
+      try { res.end(readFileSync(join(dir, basename(req.url ?? "")))); } catch { res.statusCode = 404; res.end(); }
+    });
+    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const last = readFileSync(join(dir, "720.m3u8"), "utf8").trim().split("\n").filter((l) => !l.startsWith("#")).pop()!;
+    check("an fMP4 segment on its own gives no picture", (await decodeFrame(readFileSync(join(dir, last)), ff, SCREEN_FRAME_WIDTH)) === null);
+    check("...so its init goes in front of it, and the stream gives one full size",
+      width(await grabFrame(`${base}/master.m3u8`, ff, SCREEN_FRAME_WIDTH)) === 1280);
+    server.close();
+  }
+  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log(failures ? `\n${failures} FAILED` : "\nall screen checks passed.");

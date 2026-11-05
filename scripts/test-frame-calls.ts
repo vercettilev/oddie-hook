@@ -11,7 +11,7 @@ if (process.env.DATABASE_URL) {
 }
 process.env.LIVE_TOKEN_KEY = "test-key-for-sealing";
 import assert from "node:assert/strict";
-import { lastSegment, parseReading, pickVariant, type FrameReading, type FrameSource } from "../src/games/frames.js";
+import { lastSegment, parseReading, pickVariant, segmentInit, type FrameReading, type FrameSource } from "../src/games/frames.js";
 import { continues, decidedSide, FRAME_GONE_MS, FRAME_IDLE_MS, FRAME_MATCH_MS, FRAME_OFF_MS, FRAME_OUTAGE_MS, FRAME_POINT_MS, FRAMES_PER_PASS, gameOf, mineOf, watchFrames, _frameMatch, _resetFrames } from "../src/live/frameCalls.js";
 import { GAME_COPY, matchQuestion, _resetGames } from "../src/live/gameCalls.js";
 import { handleChat, LIVE_COPY, _resetLive, _forgetWaits, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
@@ -65,6 +65,13 @@ const eq = <T>(a: T, b: T, what: string) => { assert.deepEqual(a, b, what); chec
   const media = ["#EXTM3U", "#EXT-X-TARGETDURATION:2", "#EXTINF:2.000,live", "https://cdn/s100.ts", "#EXTINF:2.000,live", "s101.ts", "#EXT-X-TWITCH-PREFETCH:https://cdn/s102.ts", ""].join("\n");
   eq(lastSegment(media, "https://cdn/path/720.m3u8"), "https://cdn/path/s101.ts", "the newest segment, not the prefetch line");
   eq(lastSegment("#EXTM3U\n", "https://cdn/x.m3u8"), null, "no segments, nothing");
+  eq(segmentInit(media, "https://cdn/path/720.m3u8"), null, "an MPEG-TS stream has no init");
+  const fmp4 = ["#EXTM3U", '#EXT-X-MAP:URI="init-0.mp4"', "#EXTINF:2.000,live", "100.mp4", "#EXT-X-DISCONTINUITY",
+    '#EXT-X-MAP:URI="https://cdn/ad/init-1.mp4"', "#EXTINF:2.000,live", "101.mp4", ""].join("\n");
+  eq(segmentInit(fmp4, "https://cdn/path/720.m3u8"), "https://cdn/ad/init-1.mp4", "an fMP4 stream's init: the one above the newest segment");
+  eq(segmentInit(fmp4.replace("101.mp4", "101.mp4\n" + '#EXT-X-MAP:URI="later.mp4"'), "https://cdn/path/720.m3u8"), "https://cdn/ad/init-1.mp4", "...not one under it");
+  eq(segmentInit(fmp4.split("#EXT-X-DISCONTINUITY")[0], "https://cdn/path/720.m3u8"), "https://cdn/path/init-0.mp4", "...resolved against the playlist's own url");
+  eq(segmentInit('#EXTM3U\n#EXT-X-MAP:URI="all.mp4",BYTERANGE="720@0"\n#EXTINF:2,\nall.mp4\n', "https://cdn/x.m3u8"), null, "a map with a byte range is not read");
 }
 
 /* ----------------------------------------------------------- the engine -- */

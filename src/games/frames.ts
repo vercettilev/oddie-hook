@@ -141,6 +141,38 @@ export function lastSegment(media: string, mediaUrl: string): string | null {
   try { return new URL(url, mediaUrl).toString(); } catch { return null; }
 }
 
+/**
+ * AN fMP4 SEGMENT NEEDS ITS INIT (5 Nov, Twitch VODs). renyan's and joshseki's
+ * streams come as fMP4: the codec setup sits once in the playlist's
+ * #EXT-X-MAP file, and a segment on its own does not decode ("trun track id
+ * unknown, no tfhd was found"), so their pictures never came. MPEG-TS streams
+ * carry no map. The map in force is the last one above the newest segment. A
+ * map with a byte range is not read: its file holds more than the setup.
+ */
+export function segmentInit(media: string, mediaUrl: string): string | null {
+  const lines = media.split(/\r?\n/);
+  let i = lines.length - 1;
+  while (i >= 0 && (!lines[i] || lines[i].startsWith("#"))) i--;
+  for (i--; i >= 0; i--) {
+    if (!lines[i].startsWith("#EXT-X-MAP:")) continue;
+    const uri = /URI="([^"]+)"/.exec(lines[i]);
+    if (!uri || /BYTERANGE=/.test(lines[i])) return null;
+    try { return new URL(uri[1], mediaUrl).toString(); } catch { return null; }
+  }
+  return null;
+}
+
+/** A stream's init file stays the same while it is live: fetched once, not every look. */
+const inits = new Map<string, Buffer>();
+async function initBytes(url: string): Promise<Buffer> {
+  const had = inits.get(url);
+  if (had) return had;
+  const b = await fetchBytes(url);
+  if (inits.size >= 64) inits.delete(inits.keys().next().value!);
+  inits.set(url, b);
+  return b;
+}
+
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`frames playlist ${res.status}`);
@@ -226,9 +258,12 @@ export function decodeFrame(segment: Buffer, ffmpeg: string, width = FRAME_WIDTH
 export async function grabFrame(masterUrl: string, ffmpeg: string, width = FRAME_WIDTH): Promise<Buffer | null> {
   const variant = pickVariant(await fetchText(masterUrl), masterUrl);
   if (!variant) return null;
-  const seg = lastSegment(await fetchText(variant), variant);
+  const media = await fetchText(variant);
+  const seg = lastSegment(media, variant);
   if (!seg) return null;
-  return decodeFrame(await fetchBytes(seg), ffmpeg, width);
+  const init = segmentInit(media, variant);
+  const [head, body] = await Promise.all([init ? initBytes(init) : null, fetchBytes(seg)]);
+  return decodeFrame(head ? Buffer.concat([head, body]) : body, ffmpeg, width);
 }
 
 /* ---------------------------------------------------------------- model -- */
