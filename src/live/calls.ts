@@ -333,6 +333,8 @@ export const LIVE_COPY = {
     const shown = [...winners].sort((a, b) => runOf(b) - runOf(a));
     return `${it} Called it: ${shown.length ? who(shown, right) : `${right} of ${total}`}.${where}`;
   },
+  /** The screen gave the call up (screenGivesUp): the mods settle it. */
+  screenUnsure: (q: string) => `No sure result on "${short(q, 50)}" from the screen. Mods: !call yes or !call no settles it.`,
   /** !me, to the person who asked. Never a link: it is said on every platform. */
   me: (name: string, r: CallerRecord) => r.calls
     ? `${at(name)}: ${r.right}/${r.calls} right${fire(r.streak).replace(/^ /, " · ")}${r.weekRank ? ` · #${r.weekRank} here this week` : ""}`
@@ -1055,6 +1057,20 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
   await reopenRepeat(call, deps);
   return true;
+}
+
+/**
+ * THE SCREEN GIVES A CALL UP (5 Nov, Twitch VODs). A sure answer nothing
+ * confirmed, or two that disagree: the result went by too fast, or the
+ * picture misled. Left open, the call waited into the next game and settled
+ * on that one, a game late and as often wrong as right. So its voting closes,
+ * the mods are asked once, and the screen stops looking at it
+ * (src/live/screenCalls.ts). Their !call yes or !call no settles it as ever.
+ */
+export async function screenGivesUp(call: LiveCall, deps: LiveDeps): Promise<void> {
+  if (call.lockedAt === null) await deps.store.lock(call.id, deps.now()).catch(() => false);
+  await sayQuiet(deps, call, LIVE_COPY.screenUnsure(call.question));
+  deps.log("live call left to the mods", { platform: call.platform, channel: call.channelId, id: call.id });
 }
 
 /**

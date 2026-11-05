@@ -45,6 +45,29 @@ export interface ScreenSource {
   /** The same question on the strong model, asked only when an event call's
    *  page reads decided. Absent: no event call is settled from the screen. */
   confirm?(jpeg: Buffer, question: string, streamer: string): Promise<ScreenReading | null>;
+  /** The stream's frames a second either side of a picture `grab` took, where
+   *  the platform's stream has them (src/games/frames.ts nearFrames). Absent or
+   *  empty: a sure answer is looked at again a moment later instead. */
+  near?(jpeg: Buffer): Promise<Buffer[]>;
+}
+
+/*
+ * A ROUND IS NOT THE MATCH (5 Nov, Valorant and CS2 VODs on Twitch). Every
+ * round of a Valorant match ends on a WON or LOST banner over "ENEMY TEAM
+ * ELIMINATED", every round of CS2 on ROUND WON or ROUND LOST, and the reader
+ * took each one for the match: 31 banners mid-match, 31 sure answers, so
+ * "will I win this match?" settled in round one, on that round. Told in the
+ * prompt that a round is not the match, it still read ROUND LOST a sure NO 7
+ * times in 7. So the words it quotes decide: a call on a whole game never
+ * settles on one round's banner, and a call on one round ("this round?") still
+ * does. The VICTORY or DEFEAT that ends the match comes seconds later.
+ */
+const ROUND_BANNER = /\bROUND\s+(?:WON|LOST|WIN|LOSS|DRAW)\b|\b(?:ENEMY\s+)?TEAM\s+ELIMINATED\b|\bSPIKE\s+(?:DETONATED|DEFUSED)\b|^(?:WON|LOST)\b/i;
+/** A call on one part of a game, whose result is that part's banner. */
+const ONE_PART = /\b(?:this|that|the next|next|the last|last|the first|first)\s+(?:round|point|hand|fight|life|duel|pot|flip|spin|draw|kill|pull)\b/i;
+/** True when the evidence is one round's result and the call is on more than one round. */
+export function roundNotMatch(question: string, seen: string): boolean {
+  return ROUND_BANNER.test(seen) && !ONE_PART.test(question);
 }
 
 /** A Twitch or Kick frame is read this wide, the stream's own 720p, not the match
@@ -346,9 +369,10 @@ export async function fetchPicture(url: string): Promise<Buffer | null> {
 /**
  * The source the server uses, or null with the reason it cannot. `pictures`
  * says where each platform's picture comes from; a platform it does not name
- * is never looked at.
+ * is never looked at. `near`: the frames beside a picture, where one was taken
+ * from a stream.
  */
-export function screenSource(pictures: Partial<Record<Platform, (channelId: string) => Promise<Buffer | null>>>): { source: ScreenSource | null; why: string } {
+export function screenSource(pictures: Partial<Record<Platform, (channelId: string) => Promise<Buffer | null>>>, near?: (jpeg: Buffer) => Promise<Buffer[]>): { source: ScreenSource | null; why: string } {
   if (/^(off|0|false|no)$/i.test(process.env.SCREEN_SETTLE ?? "")) return { source: null, why: "SCREEN_SETTLE is off" };
   if (!inferenceEnabled()) return { source: null, why: "no inference key" };
   const on = Object.keys(pictures).join(", ") || "no platform";
@@ -361,6 +385,7 @@ export function screenSource(pictures: Partial<Record<Platform, (channelId: stri
       },
       ask: askScreen,
       confirm: confirmScreen,
+      ...(near ? { near } : {}),
     },
   };
 }

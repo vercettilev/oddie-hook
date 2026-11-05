@@ -8,9 +8,9 @@
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { watchScreens, _resetScreens, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
-import { callScope, cleanSeen, parseScreen, parseStat, screenPrompt, screenSource, statRule, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
-import { decodeFrame, grabFrame } from "../src/games/frames.js";
+import { watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
+import { callScope, cleanSeen, parseScreen, parseStat, roundNotMatch, screenPrompt, screenSource, statRule, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { decodeFrame, grabFrame, nearFrames } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -68,7 +68,7 @@ console.log("what the reader says");
 }
 
 const T0 = Date.UTC(2026, 9, 16, 12, 0, 0);
-async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boolean } = {}) {
+async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boolean; near?: boolean } = {}) {
   _resetLiveStore(); _resetLive(); _resetScreens();
   await saveChannel({ platform: "kick", channelId: "100", slug: "nova", name: "nova", avatar: null,
     accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
@@ -85,6 +85,7 @@ async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boole
     ...(over.strong === false ? {} : {
       confirm: async () => { confirms++; const r = strong.shift(); if (r instanceof Error) throw r; return r ?? { answer: "unclear", sure: 0, seen: "" }; },
     }),
+    ...(over.near ? { near: async () => [Buffer.from("a second on"), Buffer.from("a second before")] } : {}),
   };
   const deps: LiveDeps = {
     store: liveStore, now: () => clock,
@@ -133,6 +134,62 @@ console.log("\nthe streamer opens it, the screen settles it");
   check("a settled call is not looked at again", r.counts().asks === 3);
 }
 
+console.log("\nTwitch and Kick: the frames beside a sure answer");
+{
+  const r = await room({ near: true });
+  await handleChat(r.line("nova", "!call will I win this match?", true), r.deps);
+  r.readings.push(yes(0.95, "VICTORY 13-7"), yes(0.95, "VICTORY 13-7"));
+  await r.at(SCREEN_GRACE_MS);
+  check("a sure answer the frame a second on agrees with settles at once", (await liveStore.unsettled("kick", "100")).length === 0 && r.counts().asks === 2 && r.counts().grabs === 1);
+
+  const s = await room({ near: true });
+  await handleChat(s.line("nova", "!call will I win this match?", true), s.deps);
+  s.readings.push(yes(0.95, "VICTORY 13-7"), unclear, yes(0.95, "VICTORY 13-7"));
+  await s.at(SCREEN_GRACE_MS);
+  check("...or the frame a second before it", (await liveStore.unsettled("kick", "100")).length === 0 && s.counts().asks === 3);
+
+  const t = await room({ near: true });
+  await handleChat(t.line("nova", "!call will I win this match?", true), t.deps);
+  t.readings.push(yes(0.95, "VICTORY 13-7"), unclear, no(0.95, "DEFEAT 7-13"), yes(0.95, "VICTORY 13-7"));
+  await t.at(SCREEN_GRACE_MS);
+  check("neither agreeing: nothing settles yet", (await liveStore.unsettled("kick", "100")).length === 1 && t.counts().asks === 3);
+  await t.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
+  check("...and the next sure look that agrees settles it", (await liveStore.unsettled("kick", "100")).length === 0 && t.counts().asks === 4);
+
+  const u = await room({ near: true });
+  await handleChat(u.line("nova", "!call will I win this match?", true), u.deps);
+  u.readings.push(yes(0.95, "VICTORY 13-7"), yes(0.95, "WON ENEMY TEAM ELIMINATED"), yes(0.6, "VICTORY"));
+  await u.at(SCREEN_GRACE_MS);
+  check("a round's banner or an unsure read beside it agrees with nothing", (await liveStore.unsettled("kick", "100")).length === 1 && u.counts().asks === 3);
+}
+
+console.log("\na round is not the match");
+{
+  const r = await room({ near: true });
+  await handleChat(r.line("nova", "!call will I win this match?", true), r.deps);
+  r.readings.push(yes(0.95, "WON ENEMY TEAM ELIMINATED"), no(0.95, "ROUND LOST"), yes(0.95, "WON - ENEMY TEAM ELIMINATED"));
+  await r.at(SCREEN_GRACE_MS); await r.at(SCREEN_GRACE_MS + SCREEN_EVERY_MS); await r.at(SCREEN_GRACE_MS + 2 * SCREEN_EVERY_MS);
+  check("a round's banner never settles a call on the match", (await liveStore.unsettled("kick", "100")).length === 1 && r.counts().asks === 3);
+  check("...nor asks the mods anything", !r.said.includes(LIVE_COPY.screenUnsure("will I win this match?")));
+  r.readings.push(yes(0.95, "13 VICTORY 7"), yes(0.95, "VICTORY 13-7"));
+  await r.at(SCREEN_GRACE_MS + 3 * SCREEN_EVERY_MS);
+  check("...the match's own VICTORY does", (await liveStore.unsettled("kick", "100")).length === 0);
+
+  const s = await room({ near: true });
+  await handleChat(s.line("nova", "!call will we win this round?", true), s.deps);
+  s.readings.push(yes(0.95, "ROUND WON"), yes(0.95, "ROUND WON"));
+  await s.at(SCREEN_GRACE_MS);
+  check("a call on one round still settles on its banner", (await liveStore.unsettled("kick", "100")).length === 0);
+  // As the reader quoted them on the 5 Nov VODs, and the earlier tests' result screens.
+  const banners = ["WON ENEMY TEAM ELIMINATED", "LOST - TEAM ELIMINATED", "WON banner displayed on screen", "WON screen displayed, match completed",
+    "ROUND LOST banner displayed on screen", "ROUND WON - defended the planted bomb", "LOST SPIKE DETONATED"];
+  const results = ["13 VICTORY 7", "DEFEAT 6 13 score display", "2-13 DEFEAT banner displayed", "Rounds Played: 19 Rounds Won: 13",
+    "VICTORY WINNER: ALEKSAFLAMINGO", "ENEMY TIMEOUT WINNER: ALEKSAFLAMINGO", "EXTRACTION SUCCESSFUL", "SQUAD ELIMINATED PLACED #6", "SHIBARK DEFEATED", "#1 VICTORY ROYALE"];
+  check("Valorant's and CS2's round banners are rounds", banners.every((x) => roundNotMatch("will I win this match?", x)), banners.filter((x) => !roundNotMatch("will I win this match?", x)).join(" | "));
+  check("...and no game's end screen is", !results.some((x) => roundNotMatch("will I win this match?", x)), results.filter((x) => roundNotMatch("will I win this match?", x)).join(" | "));
+  check("...while on a call about one round they answer it", !roundNotMatch("will we win this round?", "ROUND WON") && !roundNotMatch("next point to me?", "WON"));
+}
+
 console.log("\nthe server's beat: every second, a look only when one falls due");
 {
   const r = await room();
@@ -160,22 +217,40 @@ console.log("\nwhat does not settle");
 {
   const r = await room();
   await handleChat(r.line("nova", "!call will I win this match?", true), r.deps);
-  r.readings.push(yes(), no(), no());
+  r.readings.push(yes(), no(), no(), no());
   await r.at(SCREEN_GRACE_MS);
   await r.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
   check("YES then NO is two different answers: nothing settles", (await liveStore.unsettled("kick", "100")).length === 1);
+  check("...the mods are asked instead", r.last() === LIVE_COPY.screenUnsure("will I win this match?"), r.last());
+  check("...in a line that never reads as a command", parseCommand(r.last()) === null);
+  check("...and its voting closes", (await liveStore.unsettled("kick", "100"))[0]?.lockedAt != null);
   await r.at(SCREEN_GRACE_MS + 2 * SCREEN_CONFIRM_MS);
-  check("...NO twice in a row then does", (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith('Result: NO on "'), r.last());
+  await r.at(SCREEN_GRACE_MS + 2 * SCREEN_CONFIRM_MS + SCREEN_EVERY_MS);
+  check("...the screen never looks at it again: NO twice after it settles nothing", (await liveStore.unsettled("kick", "100")).length === 1 && r.counts().asks === 2);
+  await handleChat(r.line("nova", "!call no", true), r.deps);
+  check("...the streamer's !call no settles it", (await liveStore.unsettled("kick", "100")).length === 0 && r.last().startsWith('Result: NO on "'), r.last());
 
   const s = await room();
   await handleChat(s.line("nova", "!call boss down first try?", true), s.deps);
-  s.readings.push(yes(), unclear, yes(), yes());
+  s.readings.push(yes(), unclear, yes());
   await s.at(SCREEN_GRACE_MS);
   await s.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
+  check("an unclear look after a sure one does not start over", (await liveStore.unsettled("kick", "100")).length === 1 && s.counts().asks === 2);
   await s.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS + SCREEN_EVERY_MS);
-  check("an unclear look in between starts over", (await liveStore.unsettled("kick", "100")).length === 1 && s.counts().asks === 3);
-  await s.at(SCREEN_GRACE_MS + 2 * SCREEN_CONFIRM_MS + SCREEN_EVERY_MS);
-  check("...and two sure looks in a row after it settle", (await liveStore.unsettled("kick", "100")).length === 0);
+  check("...the next sure look that agrees, within the minute, settles it", (await liveStore.unsettled("kick", "100")).length === 0 && s.counts().asks === 3);
+
+  const g = await room();
+  await handleChat(g.line("nova", "!call boss down first try?", true), g.deps);
+  g.readings.push(yes());
+  await g.at(SCREEN_GRACE_MS);
+  for (let at = SCREEN_GRACE_MS + SCREEN_CONFIRM_MS; at <= SCREEN_GRACE_MS + SCREEN_AGREE_MS; at += SCREEN_EVERY_MS) await g.at(at);
+  check("a sure answer nothing agrees with waits its minute", (await liveStore.unsettled("kick", "100")).length === 1 && !g.said.includes(LIVE_COPY.screenUnsure("boss down first try?")));
+  g.readings.push(yes());
+  const asks = g.counts().asks;
+  await g.at(SCREEN_GRACE_MS + SCREEN_AGREE_MS + SCREEN_EVERY_MS);
+  check("...then the mods are asked, with no picture read for it", g.last() === LIVE_COPY.screenUnsure("boss down first try?") && g.counts().asks === asks, g.last());
+  await g.at(SCREEN_GRACE_MS + SCREEN_AGREE_MS + 3 * SCREEN_EVERY_MS);
+  check("...and the result that went by never settles it a game late", (await liveStore.unsettled("kick", "100")).length === 1 && g.counts().asks === asks);
 
   const t = await room();
   await handleChat(t.line("nova", "!call will I win this match?", true), t.deps);
@@ -506,8 +581,8 @@ console.log("\nTwitch and Kick pictures are read full size");
   // An fMP4 stream, the way renyan's Twitch VODs came (5 Nov): served here
   // over HTTP, master, playlist, init and segments, and grabbed as the server does.
   const dir = mkdtempSync(join(tmpdir(), "oddie-fmp4-"));
-  const hls = seg?.length ? spawnSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=30", "-t", "2", "-c:v", "libx264", "-g", "30",
-    "-f", "hls", "-hls_time", "1", "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4", join(dir, "720.m3u8")]) : null;
+  const hls = seg?.length ? spawnSync(ff, ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=30", "-t", "4", "-c:v", "libx264", "-g", "30",
+    "-f", "hls", "-hls_time", "2", "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4", join(dir, "720.m3u8")]) : null;
   if (hls?.status !== 0) console.log("  (no ffmpeg with fMP4 here: skipped)");
   else {
     writeFileSync(join(dir, "master.m3u8"), "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\n720.m3u8\n");
@@ -518,8 +593,12 @@ console.log("\nTwitch and Kick pictures are read full size");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const last = readFileSync(join(dir, "720.m3u8"), "utf8").trim().split("\n").filter((l) => !l.startsWith("#")).pop()!;
     check("an fMP4 segment on its own gives no picture", (await decodeFrame(readFileSync(join(dir, last)), ff, SCREEN_FRAME_WIDTH)) === null);
-    check("...so its init goes in front of it, and the stream gives one full size",
-      width(await grabFrame(`${base}/master.m3u8`, ff, SCREEN_FRAME_WIDTH)) === 1280);
+    const pic = await grabFrame(`${base}/master.m3u8`, ff, SCREEN_FRAME_WIDTH);
+    check("...so its init goes in front of it, and the stream gives one full size", width(pic) === 1280);
+    const near = pic ? await nearFrames(pic, ff) : [];
+    check("the frames a second on and a second before it come from the same stream, full size",
+      near.length === 2 && near.every((j) => width(j) === 1280) && near.every((j) => !j.equals(pic!)) && !near[0].equals(near[1]));
+    check("...and a picture it did not take has none", (await nearFrames(Buffer.from("x"), ff)).length === 0);
     server.close();
   }
   rmSync(dir, { recursive: true, force: true });

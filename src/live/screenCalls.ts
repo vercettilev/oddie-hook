@@ -6,12 +6,11 @@
  * (src/games/screen.ts): a victory or defeat screen does not stay up long
  * (Lev, 16 Oct; Showdown's VICTORY screen stays about six seconds). One
  * reading never settles anything. A sure yes or no is looked at again two
- * seconds later, while it is still up, and only the same sure answer twice in
- * a row settles the call, with what was on screen said in front of the
- * result. On Twitch and Kick that second look is a new frame; on X it can be
- * the same picture, which X caches up to five seconds. Anything unclear in
- * between starts over. The streamer's own !call yes or !call no keeps working
- * the whole time; whoever is first settles it, once.
+ * seconds later, while it is still up, and only the same sure answer twice
+ * settles the call, with what was on screen said in front of the result. On
+ * Twitch and Kick that second look is a new frame; on X it can be the same
+ * picture, which X caches up to five seconds. The streamer's own !call yes or
+ * !call no keeps working the whole time; whoever is first settles it, once.
  *
  * WHY THESE NUMBERS (Aleksa's Showdown stream, 16 Oct, read 17 Oct: 470
  * frames, two questions, 940 reads, not one wrong sure answer). On its frames
@@ -21,6 +20,23 @@
  * runs every second so a look happens when it falls due, not at the next
  * five-second beat; a picture and a read take a couple of seconds, so on
  * Twitch and Kick the second look lands nearer three seconds after the first.
+ *
+ * SHORTER SCREENS, AND THE ONES THAT GO BY (5 Nov, Twitch VODs: Valorant,
+ * CS2 Premier, Apex). Valorant's VICTORY splash is up 2 to 4 s and Apex's
+ * "PLACED #N" 2 s, gone by that second look, and a call that missed its
+ * result stayed open and settled on the next game's. So a first sure answer
+ * on Twitch or Kick is read again at once on the frames a second either side
+ * of it (src/games/frames.ts nearFrames), and either one agreeing settles it.
+ * Otherwise the answer waits up to a minute for another sure look that agrees,
+ * unclear looks in between or not. One that disagrees, or none in that minute,
+ * and the screen gives the call up: its voting closes and the mods are asked
+ * (src/live/calls.ts screenGivesUp). Read a second apart over each end and
+ * looked at from every phase: Valorant settled right 25 times in 28 (8
+ * before), CS2 12 in 12 (4 before), Apex's "will I win this game?" 18 in 24
+ * (10 before), none wrong. The misses are the 2 s screens no look fell on:
+ * those calls still stay open. A round's own banner never settles a call on
+ * the whole game (src/games/screen.ts roundNotMatch). A restart forgets which
+ * calls were given up.
  *
  * WHAT IT COSTS. About 0.17 of a cent a look, every platform's picture being
  * full size (src/games/screen.ts SCREEN_FRAME_WIDTH), so about $1.50 an hour
@@ -52,16 +68,17 @@
  * a market: markets settle through their own resolution, never from a picture.
  */
 import { personFixOutage } from "../inference.js";
-import { callScope, statRule } from "../games/screen.js";
-import { isRoomCall, settleOnScreen, type LiveCall, type LiveDeps } from "./calls.js";
+import { callScope, roundNotMatch, statRule } from "../games/screen.js";
+import { isRoomCall, screenGivesUp, settleOnScreen, type LiveCall, type LiveDeps } from "./calls.js";
 
 /** How often an open room call's picture is read: a result screen does not stay up long. */
 export const SCREEN_EVERY_MS = 4_000;
 /** A sure answer is looked at again this soon, while the result is still on screen:
  *  six seconds later, Showdown's VICTORY screen was always gone. */
 export const SCREEN_CONFIRM_MS = 2_000;
-/** The second sure answer has to come within this long of the first. */
-export const SCREEN_AGREE_MS = 3 * 60_000;
+/** A first sure answer waits this long for a second that agrees; then the mods
+ *  are asked. Valorant's post-game screens are up about a minute after it. */
+export const SCREEN_AGREE_MS = 60_000;
 /** How sure the reader must be for an answer to count at all. */
 export const SCREEN_SURE = 0.85;
 /** No look in a call's first minute: the last result may still be on screen. */
@@ -104,6 +121,8 @@ export const SCREEN_LINGER_MS = 5 * 60_000;
 /** clear: the reader has seen the stream with no result on it since the call opened. */
 interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null; clear: boolean }
 const looks = new Map<string, Look>();
+/** Calls the screen gave up to the mods: never looked at again. */
+const handed = new Set<string>();
 const spent = new Map<string, { hour: number; n: number }>();
 const liveAt = new Map<string, { at: number; live: boolean }>();
 let channelsAt = 0;
@@ -115,7 +134,7 @@ let listedAt = 0;
 
 /** Test seam. */
 export function _resetScreens(): void {
-  looks.clear(); spent.clear(); liveAt.clear(); channelInfo = new Map(); channelsAt = 0; outageUntil = 0;
+  looks.clear(); handed.clear(); spent.clear(); liveAt.clear(); channelInfo = new Map(); channelsAt = 0; outageUntil = 0;
   alertedAt.clear(); listed = []; listedAt = 0;
 }
 
@@ -123,6 +142,16 @@ const keyOf = (c: { platform: string; channelId: string }) => `${c.platform}:${c
 const isEvent = (c: LiveCall) => callScope(c.question) === "event";
 /** A call on one number of a round's result panel (src/games/screen.ts statRule). */
 const isStat = (c: LiveCall) => statRule(c.question) !== null;
+/** A call the reader answers yes or no itself: neither an event's nor a number's. */
+const isGame = (c: LiveCall) => !isEvent(c) && !isStat(c);
+
+/** The screen hands the call to the mods, and never looks at it again. */
+async function giveUp(deps: LiveDeps, call: LiveCall): Promise<boolean> {
+  looks.delete(call.id);
+  handed.add(call.id);
+  await screenGivesUp(call, deps);
+  return false;
+}
 const everyOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_EVERY_MS : SCREEN_EVERY_MS);
 const maxAgeOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_MAX_AGE_MS : SCREEN_MAX_AGE_MS);
 
@@ -162,7 +191,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   if (!source) return 0;
   const now = deps.now();
   if (now < outageUntil) return 0;
-  const watched = (cs: LiveCall[]) => cs.filter((c) => isRoomCall(c) && now - c.openedAt <= maxAgeOf(c));
+  const watched = (cs: LiveCall[]) => cs.filter((c) => isRoomCall(c) && !handed.has(c.id) && now - c.openedAt <= maxAgeOf(c));
   // The store is asked again whenever a look falls due, so a call settled some
   // other way is never looked at after, and every five seconds for new calls;
   // a pass with nothing due only checks the time.
@@ -175,6 +204,8 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   const open = new Set(calls.map((c) => c.id));
   for (const id of looks.keys()) if (!open.has(id)) looks.delete(id);
   for (const id of spent.keys()) if (!open.has(id)) spent.delete(id);
+  const unsettled = new Set(listed.map((c) => c.id));
+  for (const id of handed) if (!unsettled.has(id)) handed.delete(id);
   if (!calls.length) return 0;
   for (const c of calls) {
     if (looks.has(c.id)) continue;
@@ -218,14 +249,22 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
   const l = looks.get(call.id);
   if (!l) return false;
   try {
+    // A sure answer nothing confirmed in time: the result went by.
+    if (l.decided && now - l.decided.at > SCREEN_AGREE_MS) return giveUp(deps, call);
     const jpeg = await source.grab(call.platform, call.channelId);
-    if (!jpeg) { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+    if (!jpeg) { l.nextAt = now + everyOf(call); return false; }
     const r = await source.ask(jpeg, call.question, name);
     deps.log("screen read", { platform: call.platform, channel: call.channelId, id: call.id, answer: r?.answer ?? null, sure: r?.sure ?? null, seen: r?.seen ?? null });
     // An event call is settled on the event's own page, never on one game's
     // result, however sure the answer beside it (src/games/screen.ts).
-    if (!r || r.answer === "unclear" || r.sure < SCREEN_SURE) { l.clear = true; l.nextAt = now + everyOf(call); l.decided = null; return false; }
-    if (isEvent(call) && r.screen !== "event") { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+    if (!r || r.answer === "unclear" || r.sure < SCREEN_SURE) { l.clear = true; l.nextAt = now + everyOf(call); return false; }
+    if (isEvent(call) && r.screen !== "event") { l.nextAt = now + everyOf(call); return false; }
+    // ...and a call on the whole game never on one round's banner.
+    if (isGame(call) && roundNotMatch(call.question, r.seen)) {
+      deps.log("screen: a round's result, not the game's", { platform: call.platform, channel: call.channelId, id: call.id, seen: r.seen });
+      l.clear = true; l.nextAt = now + everyOf(call);
+      return false;
+    }
     if (!l.clear) {
       deps.log("screen: the last result may still be up", { platform: call.platform, channel: call.channelId, id: call.id, seen: r.seen });
       l.nextAt = now + everyOf(call); l.decided = null;
@@ -238,19 +277,32 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
       // number into the same answer.
       const c = source.confirm ? await source.confirm(jpeg, call.question, name) : null;
       deps.log("screen confirm", { platform: call.platform, channel: call.channelId, id: call.id, answer: c?.answer ?? null, sure: c?.sure ?? null, screen: c?.screen ?? null, seen: c?.seen ?? null });
-      if (!c || c.answer !== r.answer || c.sure < SCREEN_SURE || (isEvent(call) && c.screen !== "event")) { l.nextAt = now + everyOf(call); l.decided = null; return false; }
+      if (!c || c.answer !== r.answer || c.sure < SCREEN_SURE || (isEvent(call) && c.screen !== "event")) { l.nextAt = now + everyOf(call); return false; }
       seen = c.seen || r.seen;
     }
-    if (l.decided && l.decided.answer === r.answer && now - l.decided.at <= SCREEN_AGREE_MS) {
+    if (l.decided) {
+      // Two sure answers that disagree: the screen cannot say, the mods can.
+      if (l.decided.answer !== r.answer) return giveUp(deps, call);
       looks.delete(call.id);
       return settleOnScreen(call, r.answer, seen || l.decided.seen, deps, jpeg);
     }
-    // The first sure answer: look again while it is still on screen.
+    // The first sure answer: the frames beside it, where the stream has them...
+    if (isGame(call) && source.near) {
+      for (const pic of await source.near(jpeg).catch(() => [] as Buffer[])) {
+        const n = await source.ask(pic, call.question, name);
+        deps.log("screen read", { platform: call.platform, channel: call.channelId, id: call.id, near: true, answer: n?.answer ?? null, sure: n?.sure ?? null, seen: n?.seen ?? null });
+        if (n && n.answer === r.answer && n.sure >= SCREEN_SURE && !roundNotMatch(call.question, n.seen)) {
+          looks.delete(call.id);
+          return settleOnScreen(call, r.answer, seen || n.seen, deps, jpeg);
+        }
+      }
+    }
+    // ...and a look again while it may still be on screen.
     l.decided = { answer: r.answer, at: now, seen };
     l.nextAt = now + SCREEN_CONFIRM_MS;
     return false;
   } catch (e) {
-    l.nextAt = now + everyOf(call); l.decided = null;
+    l.nextAt = now + everyOf(call);
     const fix = personFixOutage((e as Error).message);
     if (fix) {
       outageUntil = now + SCREEN_OUTAGE_MS;

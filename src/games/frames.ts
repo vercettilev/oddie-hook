@@ -58,6 +58,8 @@ export interface FrameSource {
   grab(playlistUrl: string, width?: number): Promise<Buffer | null>;
   /** What the picture shows, or null when the reader did not answer in JSON. */
   read(jpeg: Buffer): Promise<FrameReading | null>;
+  /** The frames a second either side of one `grab` took, newest first (nearFrames). */
+  near?(jpeg: Buffer): Promise<Buffer[]>;
 }
 
 /** The model that reads the picture: the fast one, as in src/matching/semantic.ts. */
@@ -134,32 +136,38 @@ export function pickVariant(master: string, masterUrl: string, want = 720): stri
   try { return new URL(best.url, masterUrl).toString(); } catch { return null; }
 }
 
-/** The last segment of a media playlist: the newest two seconds of the stream. */
-export function lastSegment(media: string, mediaUrl: string): string | null {
-  const url = media.split(/\r?\n/).reverse().find((x) => x && !x.startsWith("#"));
-  if (!url) return null;
-  try { return new URL(url, mediaUrl).toString(); } catch { return null; }
-}
-
 /**
  * AN fMP4 SEGMENT NEEDS ITS INIT (5 Nov, Twitch VODs). renyan's and joshseki's
  * streams come as fMP4: the codec setup sits once in the playlist's
  * #EXT-X-MAP file, and a segment on its own does not decode ("trun track id
  * unknown, no tfhd was found"), so their pictures never came. MPEG-TS streams
- * carry no map. The map in force is the last one above the newest segment. A
- * map with a byte range is not read: its file holds more than the setup.
+ * carry no map. A segment's map is the last one above it. A map with a byte
+ * range is not read: its file holds more than the setup.
  */
-export function segmentInit(media: string, mediaUrl: string): string | null {
-  const lines = media.split(/\r?\n/);
-  let i = lines.length - 1;
-  while (i >= 0 && (!lines[i] || lines[i].startsWith("#"))) i--;
-  for (i--; i >= 0; i--) {
-    if (!lines[i].startsWith("#EXT-X-MAP:")) continue;
-    const uri = /URI="([^"]+)"/.exec(lines[i]);
-    if (!uri || /BYTERANGE=/.test(lines[i])) return null;
-    try { return new URL(uri[1], mediaUrl).toString(); } catch { return null; }
+function segmentsOf(media: string, mediaUrl: string): Array<{ url: string; init: string | null }> {
+  const resolve = (u: string) => { try { return new URL(u, mediaUrl).toString(); } catch { return null; } };
+  const out: Array<{ url: string; init: string | null }> = [];
+  let init: string | null = null;
+  for (const line of media.split(/\r?\n/)) {
+    if (line.startsWith("#EXT-X-MAP:")) {
+      const uri = /URI="([^"]+)"/.exec(line);
+      init = uri && !/BYTERANGE=/.test(line) ? resolve(uri[1]) : null;
+    } else if (line && !line.startsWith("#")) {
+      const url = resolve(line);
+      if (url) out.push({ url, init });
+    }
   }
-  return null;
+  return out;
+}
+
+/** The last segment of a media playlist: the newest two seconds of the stream. */
+export function lastSegment(media: string, mediaUrl: string): string | null {
+  return segmentsOf(media, mediaUrl).at(-1)?.url ?? null;
+}
+
+/** The init file the newest segment needs, or null for MPEG-TS. */
+export function segmentInit(media: string, mediaUrl: string): string | null {
+  return segmentsOf(media, mediaUrl).at(-1)?.init ?? null;
 }
 
 /** A stream's init file stays the same while it is live: fetched once, not every look. */
@@ -240,10 +248,11 @@ function installedFfmpeg(): string | null {
 /** Test seam. */
 export function _setFfmpeg(path: string | null | undefined): void { ffmpegFound = path; }
 
-/** One picture out of a segment: the first frame, scaled to `width` (FRAME_WIDTH unless said), JPEG. */
-export function decodeFrame(segment: Buffer, ffmpeg: string, width = FRAME_WIDTH): Promise<Buffer | null> {
+/** One picture out of a segment: the first frame, or the one `at` seconds in,
+ *  scaled to `width` (FRAME_WIDTH unless said), JPEG. */
+export function decodeFrame(segment: Buffer, ffmpeg: string, width = FRAME_WIDTH, at = 0): Promise<Buffer | null> {
   return new Promise((resolve) => {
-    const p = spawn(ffmpeg, ["-loglevel", "error", "-i", "pipe:0", "-frames:v", "1", "-vf", `scale=${width}:-2`, "-f", "image2", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"], { stdio: ["pipe", "pipe", "ignore"] });
+    const p = spawn(ffmpeg, ["-loglevel", "error", "-i", "pipe:0", ...(at > 0 ? ["-ss", String(at)] : []), "-frames:v", "1", "-vf", `scale=${width}:-2`, "-f", "image2", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"], { stdio: ["pipe", "pipe", "ignore"] });
     const out: Buffer[] = [];
     const timer = setTimeout(() => { p.kill("SIGKILL"); }, DECODE_TIMEOUT_MS);
     p.stdout.on("data", (d: Buffer) => out.push(d));
@@ -254,16 +263,45 @@ export function decodeFrame(segment: Buffer, ffmpeg: string, width = FRAME_WIDTH
   });
 }
 
+/**
+ * THE FRAMES NEXT TO A PICTURE (5 Nov, Twitch VODs). A sure answer is read
+ * again before it settles anything, but Valorant's VICTORY splash is up 2 to
+ * 4 s and Apex's "PLACED #N" 2 s, gone by the next look two or three seconds
+ * on. The stream already holds the frames around the one read: a second into
+ * the same segment, and a second into the one before it. No wait for either.
+ * Each picture grabFrame takes keeps where it came from, for nearFrames.
+ */
+export const NEAR_S = 1;
+const grabbed = new WeakMap<Buffer, { before: { url: string; init: string | null } | null; head: Buffer | null; body: Buffer; width: number }>();
+
 /** One picture of the stream behind a master playlist. */
 export async function grabFrame(masterUrl: string, ffmpeg: string, width = FRAME_WIDTH): Promise<Buffer | null> {
   const variant = pickVariant(await fetchText(masterUrl), masterUrl);
   if (!variant) return null;
-  const media = await fetchText(variant);
-  const seg = lastSegment(media, variant);
+  const segs = segmentsOf(await fetchText(variant), variant);
+  const seg = segs.at(-1);
   if (!seg) return null;
-  const init = segmentInit(media, variant);
-  const [head, body] = await Promise.all([init ? initBytes(init) : null, fetchBytes(seg)]);
-  return decodeFrame(head ? Buffer.concat([head, body]) : body, ffmpeg, width);
+  const [head, body] = await Promise.all([seg.init ? initBytes(seg.init) : null, fetchBytes(seg.url)]);
+  const jpeg = await decodeFrame(head ? Buffer.concat([head, body]) : body, ffmpeg, width);
+  if (jpeg) grabbed.set(jpeg, { before: segs.at(-2) ?? null, head, body, width });
+  return jpeg;
+}
+
+/** The frames a second after and a second before one grabFrame took, newest
+ *  first; empty for a picture it did not take. */
+export async function nearFrames(jpeg: Buffer, ffmpeg: string): Promise<Buffer[]> {
+  const g = grabbed.get(jpeg);
+  if (!g) return [];
+  const out: Buffer[] = [];
+  const after = await decodeFrame(g.head ? Buffer.concat([g.head, g.body]) : g.body, ffmpeg, g.width, NEAR_S);
+  if (after) out.push(after);
+  if (g.before) {
+    const b = g.before;
+    const got = await Promise.all([b.init ? initBytes(b.init) : null, fetchBytes(b.url)]).catch(() => null);
+    const before = got ? await decodeFrame(got[0] ? Buffer.concat([got[0], got[1]]) : got[1], ffmpeg, g.width, NEAR_S) : null;
+    if (before) out.push(before);
+  }
+  return out;
 }
 
 /* ---------------------------------------------------------------- model -- */
@@ -301,6 +339,7 @@ export function frameSource(): { source: FrameSource | null; why: string } {
       playlist: (platform, slug) => (platform === "twitch" ? twitchPlaylist(slug) : kickPlaylist(slug)),
       grab: (url, width) => grabFrame(url, ffmpeg, width),
       read: readFrame,
+      near: (jpeg) => nearFrames(jpeg, ffmpeg),
     },
   };
 }

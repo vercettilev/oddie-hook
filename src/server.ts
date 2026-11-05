@@ -2134,7 +2134,7 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   const screen = screenSource({
     x: (channelId) => xPicture(channelId, { fetchPicture, log: liveLog, ...(frames.source ? { twitchFrame: (login: string) => frameOf("twitch", login) } : {}) }),
     ...(frames.source ? { twitch: fromStream("twitch"), kick: fromStream("kick") } : {}),
-  });
+  }, frames.source?.near);
   clock.screen = screen.source ?? undefined;
   liveLog(screen.source ? `screen on: ${screen.why}` : `screen off: ${screen.why}`);
   // Its own beat: a picture and a read take seconds, and the clock's tick
