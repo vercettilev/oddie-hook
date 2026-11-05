@@ -502,10 +502,20 @@ console.log("\nthe sign-in");
   check("Twitch's sign-in ends with Twitch's own owner cookie, on its own path", setCookie.startsWith(`${ownerCookieName("twitch")}=`)
     && /Path=\/api\/live\/twitch/.test(setCookie) && /HttpOnly/.test(setCookie)
     && first.res.headers.get("location") === "https://app.oddie.fun/live/twitch/newstreamer?connected=1", setCookie);
-  check("...the chat is subscribed, and oddie says hello once", subscribed === 1 && said.filter((t) => t === LIVE_COPY.hello).length === 1);
+  check("...the chat is subscribed, and oddie says hello once, naming calls and no market", subscribed === 1
+    && said.filter((t) => t === LIVE_COPY.helloCalls).length === 1 && !said.includes(LIVE_COPY.hello));
+  check("...and a channel new to oddie starts without real markets", (await channelById("twitch", "5005"))?.markets === false
+    && (await liveStore.marketsOn!("twitch", "5005")) === false);
   const again = await signInOnce();
-  check("signing in again is not a second hello", said.filter((t) => t === LIVE_COPY.hello).length === 1
+  check("signing in again is not a second hello", said.filter((t) => t === LIVE_COPY.helloCalls).length === 1
     && again.res.headers.get("location") === "https://app.oddie.fun/live/twitch/newstreamer");
+  // A channel that was here before 5 Nov, gone quiet, comes back: it keeps its markets and the hello that names them.
+  await saveChannel({ platform: "twitch", channelId: "5005", slug: "newstreamer", name: "NewStreamer", avatar: null,
+    accessToken: "acc", refreshToken: null, tokenExpiresAt: null, active: false });
+  await liveStore.setMarkets!("twitch", "5005", true);
+  await signInOnce();
+  check("a channel that had markets and comes back keeps them, and its hello names them",
+    (await channelById("twitch", "5005"))?.markets === true && said[said.length - 1] === LIVE_COPY.hello);
   const declined = await fetch(`${base}/live/twitch/callback?state=nope&error=access_denied`, { redirect: "manual" });
   check("declining on Twitch's screen comes back politely", declined.headers.get("location") === "https://app.oddie.fun/live?twitch=declined");
   server.close();
@@ -546,6 +556,28 @@ console.log("\nthe market door: !oddie in a Twitch chat");
     && (await streamThreadsForSlug("twitch", "tw-btc"))[0]?.channelId === "1001" && (await streamOpenedSlugs("kick", "1001")).length === 0);
   const twice = await eng.market!(msg, "BTC closes above 120k on Friday");
   check("the same line twice is one market", twice === "already-handled" && opened.length === 1);
+
+  // A chat without markets (a Twitch channel new since 5 Nov): !oddie runs no market, and only the streamer turns them on.
+  await liveStore.setMarkets!("twitch", "1001", false);
+  sent.length = 0;
+  const line = (text: string, over: Record<string, unknown> = {}) => chatFromTwitch(ev({ message: { text }, message_id: `m-${text}-${JSON.stringify(over)}`, ...over }))!;
+  check("in a chat without markets a viewer's !oddie opens nothing and says calls run here",
+    (await handleChat(line("!oddie BTC closes above 130k on Friday"), eng)) === "votes-only" && opened.length === 1
+    && sent[0]?.text === LIVE_COPY.votesHere, JSON.stringify(sent));
+  check("...a viewer cannot turn markets on", (await handleChat(line("!markets on"), eng)) === "not-allowed");
+  check("...a mod cannot either: money is the streamer's call",
+    (await handleChat(line("!markets on", { badges: [{ set_id: "moderator" }] }), eng)) === "markets-owner"
+    && (await liveStore.marketsOn!("twitch", "1001")) === false);
+  check("...a bare !markets says how", (await handleChat(line("!markets", { chatter_user_id: "1001" }), eng)) === "markets-how");
+  check("...the streamer turns them on", (await handleChat(line("!markets on", { chatter_user_id: "1001" }), eng)) === "markets-on"
+    && (await liveStore.marketsOn!("twitch", "1001")) === true);
+  const after = await handleChat(line("!oddie BTC closes above 140k on Friday", { message_id: "m-140k" }), eng);
+  check("...and then a viewer's !oddie opens a market again", after === "market-opened" && opened.length === 2, after);
+  check("a mod may turn them off", (await handleChat(line("!markets off", { badges: [{ set_id: "moderator" }] }), eng)) === "markets-off"
+    && (await liveStore.marketsOn!("twitch", "1001")) === false);
+  sent.length = 0;
+  check("...and with no call open, the streamer's !yes is told how to start one, with no market named",
+    (await handleChat(line("!yes", { chatter_user_id: "1001" }), eng)) === "pick-help" && sent[0]?.text === LIVE_COPY.pickHelpVotes, JSON.stringify(sent));
 }
 
 if (failures) { console.error(`\n${failures} twitch check(s) failed`); process.exit(1); }

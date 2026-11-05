@@ -106,7 +106,9 @@ export type LiveCommand =
   /** `!top`: this stream's best three callers so far. Anybody's. */
   | { kind: "top" }
   /** `!matches off` / `!matches on`: whether oddie opens a call per match from the stream by itself; bare, it says how. */
-  | { kind: "matches"; arg: string };
+  | { kind: "matches"; arg: string }
+  /** `!markets on` / `!markets off`: whether !oddie opens real markets in this chat; bare, it says how. */
+  | { kind: "markets"; arg: string };
 
 export const CALL_MINUTES_MAX = 30;
 /** A call with no length takes answers until it is settled; this only stops one
@@ -183,6 +185,9 @@ export function parseCommand(raw: string): LiveCommand | null {
   // Match calls read off the stream itself: on until the channel says otherwise.
   const mt = /^!matches(?=\s|$)\s*(.*)$/i.exec(text);
   if (mt) return { kind: "matches", arg: mt[1].trim().slice(0, 20) };
+  // Real markets in this chat: the streamer's to turn on (a new Twitch channel starts without).
+  const mk = /^!markets(?=\s|$)\s*(.*)$/i.exec(text);
+  if (mk) return { kind: "markets", arg: mk[1].trim().slice(0, 20) };
   const m = /^!call(?=\s|$)\s*(.*)$/i.exec(text);
   if (!m) return null;
   const rest = m[1].trim();
@@ -376,6 +381,13 @@ export const LIVE_COPY = {
   /* A channel that runs votes only (YouTube, whose rules keep money out of the chat): oddie
      never names a market there, and never posts a link. */
   helloVotes: "oddie is here. Mods open a vote with !call <question>, chat answers !yes or !no, and oddie settles price calls itself.",
+  /* A chat without real markets (a Twitch channel since 5 Nov, until its
+     streamer says !markets on): the hello names calls only. */
+  helloCalls: "oddie is here. Mods open a call with !call <question>, chat answers !yes or !no, and oddie settles it off the stream.",
+  marketsOn: "Markets on: !oddie <claim> opens a real market anybody can take, settled by oddie. !markets off turns them off.",
+  marketsOff: "Markets off: this chat runs calls only. !markets on brings them back.",
+  marketsHow: "Calls only here. The streamer can turn real markets on with !markets on, and !markets off turns them off again.",
+  marketsOwner: "Only the streamer can turn markets on.",
   votesHere: "Here oddie runs votes: mods open one with !call <question>, chat answers !yes or !no.",
   pickHelpVotes: "No vote is open. Start one with !call <question>, then chat answers !yes or !no.",
   matchesElsewhere: "Match calls read off the stream run on Twitch and Kick. Here mods open them with !call <question>.",
@@ -438,6 +450,10 @@ export interface LiveStore {
   channels(): Promise<Array<{ platform: Platform; channelId: string; slug: string; name: string | null; faceitId: string | null; matchCalls: boolean; gsiSeenAt: number | null }>>;
   /** `!matches off` and `!matches on`: whether oddie may open match calls from the stream by itself. */
   setMatchCalls(platform: Platform, channelId: string, on: boolean): Promise<void>;
+  /** Whether !oddie opens real markets in this chat. Absent: it does, where the platform allows them. */
+  marketsOn?(platform: Platform, channelId: string): Promise<boolean>;
+  /** `!markets on` and `!markets off`. */
+  setMarkets?(platform: Platform, channelId: string, on: boolean): Promise<void>;
   /** The channel's `!call repeat`, kept where a restart finds it. Absent: no repeats. */
   repeat?(platform: Platform, channelId: string): Promise<Repeat | null>;
   setRepeat?(platform: Platform, channelId: string, r: Repeat | null): Promise<void>;
@@ -720,6 +736,15 @@ async function settlePrices(deps: LiveDeps): Promise<number> {
  * price call is the exception: oddie reads it, and a mod's settle would beat
  * the number, so the line says what it waits for instead.
  */
+/** Whether !oddie opens real markets in this chat: never where the platform
+ *  runs votes only, and not where the channel has them off. A store that
+ *  cannot tell keeps them, as every channel had them before 5 Nov. */
+async function marketsHere(deps: LiveDeps, msg: ChatMessage): Promise<boolean> {
+  if (deps.votesOnly) return false;
+  if (!deps.store.marketsOn) return true;
+  return deps.store.marketsOn(msg.platform, msg.channelId).catch(() => true);
+}
+
 async function pickHelp(msg: ChatMessage, waiting: LiveCall | null, now: number, deps: LiveDeps, quiet = "no-open-call"): Promise<string> {
   if (!msg.canRun) return quiet;
   const key = `${roomKey(msg)}:${waiting?.id ?? ""}`;
@@ -728,7 +753,7 @@ async function pickHelp(msg: ChatMessage, waiting: LiveCall | null, now: number,
   for (const [k, at] of lastPickHelp) if (now - at >= PICK_HELP_GAP_MS) lastPickHelp.delete(k);
   lastPickHelp.set(key, now);
   const price = waiting ? priceWaits.get(waiting.id) : undefined;
-  const line = !waiting ? (deps.votesOnly ? LIVE_COPY.pickHelpVotes : LIVE_COPY.pickHelp)
+  const line = !waiting ? (await marketsHere(deps, msg) ? LIVE_COPY.pickHelp : LIVE_COPY.pickHelpVotes)
     : price ? LIVE_COPY.switched(waiting.question, await deps.store.tally(waiting.id), whenText(price.pc, price.plan, price.atEnd))
     : LIVE_COPY.settleFirst(waiting.question);
   await sayQuiet(deps, msg, line, msg.messageId);
@@ -778,7 +803,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   // The market door is for everybody, like a tag on X or Telegram. Bare, under
   // a message, it means that message; bare on its own it asks how.
   if (cmd.kind === "market") {
-    if (deps.votesOnly) { await sayQuiet(deps, msg, LIVE_COPY.votesHere, msg.messageId); return "votes-only"; }
+    if (!(await marketsHere(deps, msg))) { await sayQuiet(deps, msg, LIVE_COPY.votesHere, msg.messageId); return "votes-only"; }
     const claim = cmd.claim || (msg.replyText ?? "").trim();
     if (!claim || !deps.market) { await sayQuiet(deps, msg, LIVE_COPY.marketHelp, msg.messageId); return "market-help"; }
     return deps.market(msg, claim);
@@ -862,6 +887,28 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     }
     await sayQuiet(deps, msg, LIVE_COPY.matchesHow, msg.messageId);
     return "matches-how";
+  }
+
+  /* REAL MARKETS IN THIS CHAT (Lev, 5 Nov). Money is the streamer's call:
+     only the channel's own account turns markets on; a mod may turn them off.
+     The channel's id is its owner's user id on Twitch, Kick and YouTube. */
+  if (cmd.kind === "markets") {
+    if (deps.votesOnly || !deps.store.setMarkets) { await sayQuiet(deps, msg, LIVE_COPY.votesHere, msg.messageId); return "votes-only"; }
+    if (/^(off|stop|no)$/i.test(cmd.arg)) {
+      await deps.store.setMarkets(msg.platform, msg.channelId, false);
+      await sayQuiet(deps, msg, LIVE_COPY.marketsOff, msg.messageId);
+      deps.log("markets off", { platform: msg.platform, channel: msg.channelId });
+      return "markets-off";
+    }
+    if (/^(on|start|yes)$/i.test(cmd.arg)) {
+      if (msg.senderId !== msg.channelId) { await sayQuiet(deps, msg, LIVE_COPY.marketsOwner, msg.messageId); return "markets-owner"; }
+      await deps.store.setMarkets(msg.platform, msg.channelId, true);
+      await sayQuiet(deps, msg, LIVE_COPY.marketsOn, msg.messageId);
+      deps.log("markets on", { platform: msg.platform, channel: msg.channelId });
+      return "markets-on";
+    }
+    await sayQuiet(deps, msg, await marketsHere(deps, msg) ? LIVE_COPY.marketsOn : LIVE_COPY.marketsHow, msg.messageId);
+    return "markets-how";
   }
 
   if (cmd.kind === "help") { await sayQuiet(deps, msg, LIVE_COPY.help, msg.messageId); return "help"; }

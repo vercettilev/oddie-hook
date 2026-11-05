@@ -655,11 +655,25 @@ button,.btn,[role="button"]{-webkit-user-select:none;user-select:none;-webkit-to
       + '<p class="own__p">oddie answers as <b>@oddiefun</b> in every live you start. If your chat is open only to people you follow, follow @oddiefun.</p></section>';
   }
 
+  /* A chat without real markets (a Twitch channel since 5 Nov, until its
+     streamer says !markets on): no wallet to ask for, only how to run calls. */
+  function callsSteps() {
+    return '<section class="own" aria-labelledby="own-t">' + kicker()
+      + '<h2 class="own__t" id="own-t">Go live and open a call</h2>'
+      + '<p class="own__p">Type <code>!call repeat will I win this match?</code> in your chat once. Every match after that gets its own call'
+      + (P === "twitch" ? " that opens in your Predictions too" : "")
+      + ', and oddie settles it when the result shows on your stream. <code>!call yes</code> or <code>!call no</code> settles it any time, and <code>!call stop</code> ends it.</p>'
+      + '<p class="own__p">Real markets are off in your chat. <code>!markets on</code> turns them on.</p></section>';
+  }
+
   function paintOwner() {
     if (!ownEl) return;
     // X and YouTube pay no 2%: their owner's card is the invite, under the steps.
     if (!owner || P === "youtube" || P === "x") {
       ownEl.innerHTML = (P === "youtube" ? youtubeSteps() : P === "x" ? xSteps() : "") + inviteCard(); wireInvite(); return;
+    }
+    if (owner.callsOnly) {
+      ownEl.innerHTML = callsSteps(); ownEl.insertAdjacentHTML("beforeend", streamCard()); wireStream(); return;
     }
     if (!owner.wallet || ownMode === "ask") return askWallet();
     var n = Number(owner.markets || 0);

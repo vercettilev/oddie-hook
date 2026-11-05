@@ -930,13 +930,17 @@ console.log("\na streamer's 2%: which channel, which wallet, which markets");
   check("the page lists them newest first, with where each stands",
     listed.map((m) => m.slug).join() === [m2.slug, m1.slug].join() && listed[0]?.outcome === null && listed[1]?.outcome === "yes");
 
-  type Api = { owner?: { wallet: string | null; markets: number }; markets?: Array<{ slug: string }> };
+  type Api = { owner?: { wallet: string | null; markets: number; callsOnly?: boolean }; markets?: Array<{ slug: string }> };
   const read = (c?: string) => fetch(`${base}/api/live/kick/streamer`, { headers: c ? { cookie: c } : {} }).then((r) => r.json() as Promise<Api>);
   const pub = await read();
   check("everybody sees the markets from this chat", pub.markets?.length === 2);
   check("...and only the streamer sees where the 2% goes", pub.owner === undefined);
   const mine = await read(cookie);
   check("the streamer's own browser sees their 2% waiting for a wallet", mine.owner?.wallet === null && mine.owner?.markets === 2);
+  check("...a Kick channel keeps its markets, so the page asks for the wallet", mine.owner?.callsOnly === false);
+  await liveStore.setMarkets!("kick", "424242", false);
+  check("...with markets off, the page shows calls instead of a wallet", (await read(cookie)).owner?.callsOnly === true);
+  await liveStore.setMarkets!("kick", "424242", true);
   const otherCookie = `${OWNER_COOKIE}=${ownerToken("777", ownerKeyFromEnv() as Buffer)}`;
   check("...another channel's streamer does not", (await read(otherCookie)).owner === undefined);
 

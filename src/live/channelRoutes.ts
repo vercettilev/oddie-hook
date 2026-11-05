@@ -217,6 +217,9 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
         d.payout.openedSlugs(ch.channelId).catch(() => [] as string[]),
       ]).then(([wallet, slugs]) => ({
         wallet, markets: slugs.length,
+        // No real markets in this chat (a Twitch channel since 5 Nov, until
+        // !markets on): the page shows how to run calls, not a wallet.
+        callsOnly: ch.markets === false,
         // Their stream's two things: the overlay for OBS, and the CS2 account oddie reads matches from.
         overlayPath: `/live/${platform}/${encodeURIComponent(ch.slug)}/overlay`,
         faceit: ch.faceitNick ? { nick: ch.faceitNick } : null,

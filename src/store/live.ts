@@ -91,6 +91,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS live_channel_gsi_token_idx ON live_channel (gs
 -- Match calls read off the stream itself (src/live/frameCalls.ts): on for
 -- every channel until it says !matches off.
 ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS match_calls boolean NOT NULL DEFAULT true;
+-- Real markets (!oddie) in the chat. Every channel here before 5 Nov keeps
+-- them; a Twitch channel that connects after starts without them and its
+-- streamer says !markets on (Lev, 5 Nov: a Valorant chat promised Twitch
+-- predictions must not open with a real-money line).
+ALTER TABLE live_channel ADD COLUMN IF NOT EXISTS markets boolean NOT NULL DEFAULT true;
 -- A call about a FACEIT match carries the match id: one match, one call, ever.
 ALTER TABLE live_call ADD COLUMN IF NOT EXISTS match_id text;
 CREATE UNIQUE INDEX IF NOT EXISTS live_call_match_idx ON live_call (platform, channel_id, match_id) WHERE match_id IS NOT NULL;
@@ -150,6 +155,9 @@ export interface LiveChannel {
   gsiToken?: string | null; gsiSeenAt?: number | null;
   /** Whether oddie may open a call per match from the stream by itself (!matches off says no). */
   matchCalls?: boolean;
+  /** Whether !oddie opens real markets in this chat. Only a new row takes it
+   *  from a save; after that only !markets on and !markets off change it. */
+  markets?: boolean;
 }
 
 const memChannels = new Map<string, LiveChannel>();
@@ -161,13 +169,14 @@ export async function saveChannel(ch: LiveChannel): Promise<void> {
     memChannels.set(ck(ch.platform, ch.channelId), { ...ch, faceitId: ch.faceitId ?? was?.faceitId ?? null, faceitNick: ch.faceitNick ?? was?.faceitNick ?? null,
       faceitAuto: ch.faceitAuto ?? was?.faceitAuto ?? true, faceitProbedAt: ch.faceitProbedAt ?? was?.faceitProbedAt ?? null,
       gsiToken: ch.gsiToken ?? was?.gsiToken ?? null, gsiSeenAt: ch.gsiSeenAt ?? was?.gsiSeenAt ?? null,
-      matchCalls: ch.matchCalls ?? was?.matchCalls ?? true });
+      matchCalls: ch.matchCalls ?? was?.matchCalls ?? true,
+      markets: was ? was.markets !== false : ch.markets !== false });
     return;
   }
   await schema();
   await storeDb().query(
-    `INSERT INTO live_channel (platform, channel_id, slug, name, avatar, token_enc, refresh_enc, token_expires_at, active, faceit_id, faceit_nick)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    `INSERT INTO live_channel (platform, channel_id, slug, name, avatar, token_enc, refresh_enc, token_expires_at, active, faceit_id, faceit_nick, markets)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (platform, channel_id) DO UPDATE SET slug = EXCLUDED.slug, name = EXCLUDED.name, avatar = EXCLUDED.avatar,
        token_enc = EXCLUDED.token_enc, refresh_enc = EXCLUDED.refresh_enc, token_expires_at = EXCLUDED.token_expires_at,
        active = EXCLUDED.active, connected_at = now(),
@@ -175,13 +184,13 @@ export async function saveChannel(ch: LiveChannel): Promise<void> {
     [ch.platform, ch.channelId, ch.slug, ch.name, ch.avatar,
      ch.accessToken ? sealToken(ch.platform, ch.accessToken) : null,
      ch.refreshToken ? sealToken(ch.platform, ch.refreshToken) : null,
-     ch.tokenExpiresAt ? new Date(ch.tokenExpiresAt) : null, ch.active, ch.faceitId ?? null, ch.faceitNick ?? null]);
+     ch.tokenExpiresAt ? new Date(ch.tokenExpiresAt) : null, ch.active, ch.faceitId ?? null, ch.faceitNick ?? null, ch.markets !== false]);
 }
 
 type ChannelRow = { platform: Platform; channel_id: string; slug: string; name: string | null; avatar: string | null;
   token_enc: string | null; refresh_enc: string | null; token_expires_at: Date | null; active: boolean;
   faceit_id?: string | null; faceit_nick?: string | null; faceit_auto?: boolean | null; faceit_probed_at?: Date | null;
-  gsi_token?: string | null; gsi_seen_at?: Date | null; match_calls?: boolean | null };
+  gsi_token?: string | null; gsi_seen_at?: Date | null; match_calls?: boolean | null; markets?: boolean | null };
 const fromRow = (r: ChannelRow): LiveChannel => ({
   platform: r.platform, channelId: r.channel_id, slug: r.slug, name: r.name, avatar: r.avatar,
   accessToken: openToken(r.platform, r.token_enc), refreshToken: openToken(r.platform, r.refresh_enc),
@@ -190,6 +199,7 @@ const fromRow = (r: ChannelRow): LiveChannel => ({
   faceitAuto: r.faceit_auto !== false, faceitProbedAt: r.faceit_probed_at ? new Date(r.faceit_probed_at).getTime() : null,
   gsiToken: r.gsi_token ?? null, gsiSeenAt: r.gsi_seen_at ? new Date(r.gsi_seen_at).getTime() : null,
   matchCalls: r.match_calls !== false,
+  markets: r.markets !== false,
 });
 
 export async function channelById(platform: Platform, channelId: string): Promise<LiveChannel | null> {
@@ -527,6 +537,20 @@ export const liveStore: LiveStore = {
     }
     await schema();
     await storeDb().query(`UPDATE live_channel SET match_calls = $3 WHERE platform = $1 AND channel_id = $2`, [platform, channelId, on]);
+  },
+  /* !markets on / off. A channel oddie does not know keeps the old answer: markets on. */
+  async marketsOn(platform, channelId) {
+    const ch = await channelById(platform, channelId);
+    return ch?.markets !== false;
+  },
+  async setMarkets(platform, channelId, on) {
+    if (!STORE_PERSISTENT) {
+      const c = memChannels.get(ck(platform, channelId));
+      if (c) c.markets = on;
+      return;
+    }
+    await schema();
+    await storeDb().query(`UPDATE live_channel SET markets = $3 WHERE platform = $1 AND channel_id = $2`, [platform, channelId, on]);
   },
   /* !call repeat, kept in bot_state so a restart mid-show still opens the next round. */
   async repeat(platform, channelId) {

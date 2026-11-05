@@ -310,9 +310,14 @@ export function twitchRouter(d: TwitchRouteDeps): Router {
       // undefined, not null, when the read fails: only a channel we know was
       // never here is a first connect, which an invite may claim.
       const before = await channelById("twitch", who.userId).catch(() => undefined);
+      // A channel new to oddie starts without real markets (Lev, 5 Nov): it was
+      // promised Twitch predictions, and its streamer turns markets on with
+      // !markets on. One that was here before keeps what it had: a save only
+      // sets this on a new row.
       const ch: LiveChannel = {
         platform: "twitch", channelId: who.userId, slug: who.login, name: who.name, avatar: who.avatar,
         accessToken: t.accessToken, refreshToken: t.refreshToken, tokenExpiresAt: t.expiresAt, active: true,
+        markets: false,
       };
       await saveChannel(ch);
       // A first connect through another channel's invite (src/live/referrals.ts).
@@ -325,7 +330,8 @@ export function twitchRouter(d: TwitchRouteDeps): Router {
       // Hello once. Signing in again to manage the 2% is not a second arrival.
       const fresh = !before?.active;
       if (fresh) {
-        await engine.say("twitch", ch.channelId, LIVE_COPY.hello)
+        const withMarkets = before ? before.markets !== false : false;
+        await engine.say("twitch", ch.channelId, withMarkets ? LIVE_COPY.hello : LIVE_COPY.helloCalls)
           .catch((e) => d.log("twitch hello not delivered", { channel: ch.slug, err: (e as Error).message }));
       }
       const key = ownerKeyFromEnv("twitch");
