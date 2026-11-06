@@ -326,6 +326,36 @@ export function cleanSeen(raw: unknown): string {
   return s;
 }
 
+/* THE NAME ON THE BANNER DECIDES, NOT THE WORD ABOVE IT (6 Nov, the Beat Stan
+   replays on X). Showdown's banner is the view of the player on air, so the
+   guest's defeat reads VICTORY / WINNER: STANCIFKA. Asked "Can Roothlus beat
+   StanCifka?", the reader quoted exactly that and still answered a sure YES on
+   6 frames of 6, while "Can Ondrej beat StanCifka?" on the same banner was a
+   sure NO 4 times in 4. So once a reading has an answer and quotes the winner,
+   and a plain call names that winner, the name answers. It never makes an
+   answer out of "unclear", and a winner the call does not name changes nothing. */
+const WINNER_QUOTED = /\bWINNER:\s*([\p{L}\p{N}_.-]+)/iu;
+const CALL_NAME = String.raw`(\S+(?:\s+\S+)?)`;
+const CALL_OPEN = String.raw`^\s*(?:(?:can|could|will|would|does|did|do|is)\s+)?`;
+const CALL_REST = String.raw`(?:\s+(?:in\s+)?(?:this|that|the|next|the\s+next)\s+(?:game|match|hand|round|map|fight|battle|duel|race))?\s*[?!.]*\s*$`;
+const BEAT_CALL = new RegExp(`${CALL_OPEN}${CALL_NAME}\\s+(?:beats?|defeats?)\\s+${CALL_NAME}${CALL_REST}`, "i");
+const WIN_CALL = new RegExp(`${CALL_OPEN}${CALL_NAME}\\s+(?:to\\s+)?wins?${CALL_REST}`, "i");
+const CALL_NEGATED = /\b(?:not|never|cant|wont|dont|doesnt)\b|n['’]t\b/i;
+const NOT_A_NAME = /^(?:the|who|will|can|this|that|chat)$/;
+const foldName = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+export function winnerDecides(question: string, streamer: string, r: ScreenReading): ScreenReading {
+  if (r.answer === "unclear" || CALL_NEGATED.test(question)) return r;
+  const winner = foldName(WINNER_QUOTED.exec(r.seen)?.[1] ?? "");
+  if (winner.length < 3) return r;
+  const named = (who: string) => (/^(?:i|me)$/.test(foldName(who)) ? streamer : who).split(/\s+/).map(foldName)
+    .some((w) => w.length >= 3 && !NOT_A_NAME.test(w) && (winner.includes(w) || w.includes(winner)));
+  const beat = BEAT_CALL.exec(question);
+  const [first, second] = beat ? [named(beat[1]), named(beat[2])] : [named(WIN_CALL.exec(question)?.[1] ?? ""), false];
+  if (first === second) return r;
+  const answer = first ? "yes" : "no";
+  return answer === r.answer ? r : { ...r, answer };
+}
+
 async function readScreen(model: string, maxTokens: number, jpeg: Buffer, question: string, streamer: string): Promise<ScreenReading | null> {
   const res = await fetch(messagesUrl(), {
     method: "POST",
@@ -343,7 +373,9 @@ async function readScreen(model: string, maxTokens: number, jpeg: Buffer, questi
   const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
   const text = j.content?.find((c) => c.type === "text")?.text ?? "";
   const rule = statRule(question);
-  return rule ? parseStat(text, rule) : parseScreen(text);
+  if (rule) return parseStat(text, rule);
+  const reading = parseScreen(text);
+  return reading && winnerDecides(question, streamer, reading);
 }
 
 /** The question asked of the fast model. Throws on a refused or failed call. */

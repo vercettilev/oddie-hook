@@ -9,7 +9,7 @@
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
 import { watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
-import { callScope, cleanSeen, parseScreen, parseStat, roundNotMatch, screenPrompt, screenSource, statRule, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { askScreen, callScope, cleanSeen, parseScreen, parseStat, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame, grabFrame, nearFrames } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -198,6 +198,43 @@ console.log("\na round is not the match");
   m.readings.push(no(0.95, "FINAL KILL, KILLED BY KillerDeathGOD"));
   await m.at(SCREEN_GRACE_MS);
   check("...so the replay of round one leaves the call open", (await liveStore.unsettled("kick", "100")).length === 1 && m.counts().asks === 1);
+}
+
+console.log("\nthe name on the banner decides");
+{
+  const said = (q: string, answer: ScreenReading["answer"], seen: string, streamer = "Showdown") =>
+    winnerDecides(q, streamer, { answer, sure: 0.95, seen }).answer;
+  // As the reader quoted them on the Beat Stan replays and Aleksa's 16 Oct stream.
+  check("the guest lost: VICTORY on Stan's own view is no win for the guest",
+    said("Can Roothlus beat StanCifka?", "yes", "VICTORY WINNER: STANCIFKA AMOUNT WON: +…") === "no"
+    && said("Can Roothlus beat StanCifka?", "yes", "VICTORY screen shows WINNER: STANCIFKA,…") === "no"
+    && said("Can Vibhu beat StanCifka this game?", "yes", "VICTORY WINNER: StanCifka") === "no");
+  check("the guest won: DEFEAT on Stan's own view is the guest's win", said("Can Vibhu beat StanCifka?", "no", "DEFEAT WINNER: VIBHU") === "yes");
+  check("...and an in-game name holding the call's name counts", said("Can Ondrej beat StanCifka?", "no", "DEFEAT WINNER: ONDREJSHOWDOWN") === "yes");
+  check("a name the evidence cut short still counts", said("Can AleksaFlamingo win this game?", "no", "VICTORY screen with WINNER: ALEKSAFLAMI…") === "yes");
+  check("a win by timeout is a win, whatever the word above it", said("Can AleksaFlamingo win this game?", "no", "ENEMY TIMEOUT WINNER: ALEKSAFLAMINGO") === "yes");
+  check("I means the streamer",
+    said("will I win this game?", "no", "ENEMY TIMEOUT WINNER: ALEKSAFLAMINGO", "Aleksa Flamingo 🦩") === "yes"
+    && said("can I beat StanCifka?", "yes", "VICTORY WINNER: STANCIFKA", "Aleksa Flamingo 🦩") === "no");
+  check("a winner the call does not name changes nothing",
+    said("Can Vibhu beat StanCifka?", "no", "DEFEAT WINNER: SOMEONE") === "no"
+    && said("Can AleksaFlamingo win this game?", "no", "DEFEAT WINNER: PEACCC") === "no"
+    && said("will I win this game?", "yes", "VICTORY WINNER: NOVA99") === "yes"
+    && said("Will the streamer win this game?", "no", "DEFEAT WINNER: THEBEST") === "no");
+  check("an unclear reading stays unclear", said("Can Roothlus beat StanCifka?", "unclear", "WINNER: STANCIFKA") === "unclear");
+  check("a reading that names no winner keeps its answer",
+    said("Can Roothlus beat StanCifka?", "yes", "VICTORY screen displayed") === "yes"
+    && said("will I win this game?", "yes", "WINNER WINNER CHICKEN DINNER", "WINNER") === "yes");
+  const reader = ["Can Vibhu beat StanCifka in under 10 minutes?", "Will Vibhu not win this game?", "Can't Vibhu win this game?", "Will Vibhu lose this game?", "Will Vibhu win by 50 chips?"];
+  check("a call with a condition or a negation stays the reader's", reader.every((q) => said(q, "no", "DEFEAT WINNER: VIBHU") === "no"), reader.filter((q) => said(q, "no", "DEFEAT WINNER: VIBHU") !== "no").join(" | "));
+  const realFetch = globalThis.fetch, realKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  globalThis.fetch = (async () => new Response(JSON.stringify({ content: [{ type: "text", text: '{"answer":"yes","sure":0.95,"seen":"VICTORY WINNER: STANCIFKA"}' }] }))) as typeof fetch;
+  const asked = await askScreen(Buffer.from("x"), "Can Roothlus beat StanCifka?", "Showdown").finally(() => {
+    globalThis.fetch = realFetch;
+    if (realKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = realKey;
+  });
+  check("...and the server gets the name's answer from the reader", asked?.answer === "no" && asked.sure === 0.95, JSON.stringify(asked));
 }
 
 console.log("\nthe server's beat: every second, a look only when one falls due");
