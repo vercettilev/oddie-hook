@@ -61,8 +61,14 @@ export interface ScreenSource {
  * times in 7. So the words it quotes decide: a call on a whole game never
  * settles on one round's banner, and a call on one round ("this round?") still
  * does. The VICTORY or DEFEAT that ends the match comes seconds later.
+ *
+ * THE REPLAY AFTER A ROUND TOO (6 Nov, MW4 Search and Destroy VODs on Kick). Most
+ * rounds end on a FINAL KILL replay, 3 to 10 s of somebody dying, and the reader
+ * took it for a result: of 64 reads quoting those words, 50 were a sure answer,
+ * so "will I win this match?" settled in round one, on a round he won. No wording
+ * moved it, so these words decide as well.
  */
-const ROUND_BANNER = /\bROUND\s+(?:WON|LOST|WIN|LOSS|DRAW)\b|\b(?:ENEMY\s+)?TEAM\s+ELIMINATED\b|\bSPIKE\s+(?:DETONATED|DEFUSED)\b|^(?:WON|LOST)\b/i;
+const ROUND_BANNER = /\bROUND\s+(?:WON|LOST|WIN|LOSS|DRAW)\b|\b(?:ENEMY\s+)?TEAM\s+ELIMINATED\b|\bSPIKE\s+(?:DETONATED|DEFUSED)\b|\bFINAL\s+KILL(?:CAM)?\b|^(?:WON|LOST)\b/i;
 /** A call on one part of a game, whose result is that part's banner. */
 const ONE_PART = /\b(?:this|that|the next|next|the last|last|the first|first)\s+(?:round|point|hand|fight|life|duel|pot|flip|spin|draw|kill|pull)\b/i;
 /** True when the evidence is one round's result and the call is on more than one round. */

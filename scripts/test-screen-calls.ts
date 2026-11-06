@@ -188,6 +188,16 @@ console.log("\na round is not the match");
   check("Valorant's and CS2's round banners are rounds", banners.every((x) => roundNotMatch("will I win this match?", x)), banners.filter((x) => !roundNotMatch("will I win this match?", x)).join(" | "));
   check("...and no game's end screen is", !results.some((x) => roundNotMatch("will I win this match?", x)), results.filter((x) => roundNotMatch("will I win this match?", x)).join(" | "));
   check("...while on a call about one round they answer it", !roundNotMatch("will we win this round?", "ROUND WON") && !roundNotMatch("next point to me?", "WON"));
+
+  // As the reader quoted them on the 6 Nov MW4 Search and Destroy VODs.
+  const replays = ["FINAL KILL, KILLED BY [KIRA]TheLastManga", "FINAL KILL displayed at top of screen", "FINAL KILLCAM"];
+  check("MW4's replay after a round is no result on the match", replays.every((x) => roundNotMatch("will I win this match?", x)), replays.filter((x) => !roundNotMatch("will I win this match?", x)).join(" | "));
+  check("...and its own result screens still are", !["VICTORY 6 2", "DEFEAT score 4-6", "AFTER ACTION REPORT VICTORY"].some((x) => roundNotMatch("will I win this match?", x)));
+  const m = await room({ near: true });
+  await handleChat(m.line("nova", "!call will I win this match?", true), m.deps);
+  m.readings.push(no(0.95, "FINAL KILL, KILLED BY KillerDeathGOD"));
+  await m.at(SCREEN_GRACE_MS);
+  check("...so the replay of round one leaves the call open", (await liveStore.unsettled("kick", "100")).length === 1 && m.counts().asks === 1);
 }
 
 console.log("\nthe server's beat: every second, a look only when one falls due");
