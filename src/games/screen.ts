@@ -67,10 +67,14 @@ export interface ScreenSource {
  * took it for a result: of 64 reads quoting those words, 50 were a sure answer,
  * so "will I win this match?" settled in round one, on a round he won. No wording
  * moved it, so these words decide as well.
+ *
+ * THE GULAG TOO (6 Nov, Warzone). "GULAG DEFEAT / KILLED IN ACTION" stays up 3 s
+ * while the squad plays on, and 7 of 16 frames read a sure NO: "will I win this
+ * game?" settled on a game he won 18 minutes later.
  */
-const ROUND_BANNER = /\bROUND\s+(?:WON|LOST|WIN|LOSS|DRAW)\b|\b(?:ENEMY\s+)?TEAM\s+ELIMINATED\b|\bSPIKE\s+(?:DETONATED|DEFUSED)\b|\bFINAL\s+KILL(?:CAM)?\b|^(?:WON|LOST)\b/i;
+const ROUND_BANNER = /\bROUND\s+(?:WON|LOST|WIN|LOSS|DRAW)\b|\b(?:ENEMY\s+)?TEAM\s+ELIMINATED\b|\bSPIKE\s+(?:DETONATED|DEFUSED)\b|\bFINAL\s+KILL(?:CAM)?\b|\bGULAG\b|^(?:WON|LOST)\b/i;
 /** A call on one part of a game, whose result is that part's banner. */
-const ONE_PART = /\b(?:this|that|the next|next|the last|last|the first|first)\s+(?:round|point|hand|fight|life|duel|pot|flip|spin|draw|kill|pull)\b/i;
+const ONE_PART = /\b(?:this|that|the next|next|the last|last|the first|first)\s+(?:round|point|hand|fight|life|duel|pot|flip|spin|draw|kill|pull)\b|\bgulag\b/i;
 /** True when the evidence is one round's result and the call is on more than one round. */
 export function roundNotMatch(question: string, seen: string): boolean {
   return ROUND_BANNER.test(seen) && !ONE_PART.test(question);
@@ -356,6 +360,33 @@ export function winnerDecides(question: string, streamer: string, r: ScreenReadi
   return answer === r.answer ? r : { ...r, answer };
 }
 
+/* THE WORDS THE READER QUOTES ANSWER A PLAIN WIN CALL (6 Nov, 27 Warzone ends).
+   On a Warzone title the reader quotes what it sees and then calls the game still
+   going: "28TH PLA, game in progress", unclear on every place title, and "VICTOR
+   text displayed" on the streamer's own win with the camera over the last letter.
+   The enemy's win reads VICTORY a sure YES on the panel seconds later. Every prompt
+   sentence that fixed this also brought back the sure NO on Amiko's "<name>
+   DEFEATED". So when the call is about the streamer, these quotes answer it. A
+   title on screen is the streamer's own, so a call about anyone else stays the
+   reader's, and a report opened later ("After Action Report, 7th place") does not
+   start with the place, so it answers nothing. */
+const PLACE_QUOTED = /^(\d{1,3})(?:st|nd|rd|th)\s+pla/i;
+const ENEMY_WIN_QUOTED = /\bENEMY\s+VICTOR/i;
+const CUT_WIN_QUOTED = /^VICTO[RF]\b/;
+const NOT_OWN_WIN = /ENEMY|WINNER:/i;
+export function quotedResult(question: string, streamer: string, r: ScreenReading): ScreenReading {
+  const who = WIN_CALL.exec(question)?.[1];
+  if (!who || CALL_NEGATED.test(question)) return r;
+  const self = foldName(streamer);
+  const aboutStreamer = /^(?:i|me|we)$/.test(foldName(who)) || who.split(/\s+/).map(foldName)
+    .some((w) => w.length >= 3 && !NOT_A_NAME.test(w) && (self.includes(w) || w.includes(self)));
+  if (!aboutStreamer) return r;
+  const place = PLACE_QUOTED.exec(r.seen);
+  if ((place && Number(place[1]) !== 1) || ENEMY_WIN_QUOTED.test(r.seen)) return { ...r, answer: "no", sure: 0.95 };
+  if (CUT_WIN_QUOTED.test(r.seen) && !NOT_OWN_WIN.test(r.seen)) return { ...r, answer: "yes", sure: 0.95 };
+  return r;
+}
+
 async function readScreen(model: string, maxTokens: number, jpeg: Buffer, question: string, streamer: string): Promise<ScreenReading | null> {
   const res = await fetch(messagesUrl(), {
     method: "POST",
@@ -375,7 +406,7 @@ async function readScreen(model: string, maxTokens: number, jpeg: Buffer, questi
   const rule = statRule(question);
   if (rule) return parseStat(text, rule);
   const reading = parseScreen(text);
-  return reading && winnerDecides(question, streamer, reading);
+  return reading && winnerDecides(question, streamer, quotedResult(question, streamer, reading));
 }
 
 /** The question asked of the fast model. Throws on a refused or failed call. */

@@ -117,6 +117,11 @@ export const SCREEN_OPS_COPY: Record<"billing" | "auth" | "config", string> = {
 
 /** A call opened this soon after the channel's last result may open on that result, still on screen. */
 export const SCREEN_LINGER_MS = 5 * 60_000;
+/** A round on a whole game opened soon after a result first looks this late (6 Nov, Warzone):
+ *  the report and the summary still come and go by then, and no next game has ended (608 s at the
+ *  closest on Warzone, about 250 s on Apex). */
+export const SCREEN_AFTER_RESULT_MS = 200_000;
+const WHOLE_GAME = /\b(?:game|match)\b/i;
 
 /** clear: the reader has seen the stream with no result on it since the call opened. */
 interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null; clear: boolean }
@@ -209,7 +214,8 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   if (!calls.length) return 0;
   for (const c of calls) {
     if (looks.has(c.id)) continue;
-    looks.set(c.id, { nextAt: c.openedAt + SCREEN_GRACE_MS, decided: null, clear: !(await soonAfterResult(deps, c)) });
+    const soon = await soonAfterResult(deps, c);
+    looks.set(c.id, { nextAt: c.openedAt + (soon && WHOLE_GAME.test(c.question) ? SCREEN_AFTER_RESULT_MS : SCREEN_GRACE_MS), decided: null, clear: !soon });
   }
   const due = calls.filter((c) => now >= looks.get(c.id)!.nextAt).sort((a, b) => looks.get(a.id)!.nextAt - looks.get(b.id)!.nextAt);
   if (!due.length) return 0;

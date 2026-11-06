@@ -8,8 +8,8 @@
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
-import { askScreen, callScope, cleanSeen, parseScreen, parseStat, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { SCREEN_AFTER_RESULT_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
+import { askScreen, callScope, cleanSeen, parseScreen, parseStat, quotedResult, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame, grabFrame, nearFrames } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -237,6 +237,43 @@ console.log("\nthe name on the banner decides");
   check("...and the server gets the name's answer from the reader", asked?.answer === "no" && asked.sure === 0.95, JSON.stringify(asked));
 }
 
+console.log("\nthe words the reader quotes answer a plain win call");
+{
+  const Q = "will I win this game?";
+  const read = (seen: string, q = Q, streamer = "MATTLAFFF") => quotedResult(q, streamer, { answer: "unclear", sure: 0.15, seen });
+  // As the reader quoted them on the 6 Nov Warzone VODs.
+  const places = ["28TH PLA map screen, game in progress", "3RD PLACE shown on screen, game in prog…", "33rd place, 5 kills, 2 deaths, match in…", "5th Place, 3 Contracts, 11 Kills, 2 Dea…"];
+  check("a finishing place answers NO, as sure as a look needs", places.every((x) => read(x).answer === "no" && read(x).sure === 0.95), places.filter((x) => read(x).answer !== "no").join(" | "));
+  check("...but first place does not", read("1ST PLACE, 8 KILLS").answer === "unclear");
+  const reports = ["After Action Report showing 7th place,…", "After Action Report, 4th place, match i…", "After Action Report, placed 13th, match…", "PLACED 7TH"];
+  check("a report opened later answers nothing", reports.every((x) => read(x).answer === "unclear"), reports.filter((x) => read(x).answer !== "unclear").join(" | "));
+  check("another team's title answers NO", read("ENEMY VICTORY screen displayed, game in").answer === "no");
+  const cut = ["VICTOR text displayed, game appears in…", "VICTOF text visible, game stats shown,…"];
+  check("the streamer's own title, cut by the camera, answers YES", cut.every((x) => read(x).answer === "yes" && read(x).sure === 0.95));
+  const notCut = ["VICTORY ROAD, gym 3", "VICTORIA eliminated", "Victor text displayed", "Game in progress, no victory or defeat", "VICTOR WINNER: NOVA"];
+  check("...but nothing else starting that way does", notCut.every((x) => read(x).answer === "unclear"), notCut.filter((x) => read(x).answer !== "unclear").join(" | "));
+  check("the streamer's name is the streamer", read("13TH PLA, game in progress", "Will MATTLAFFF win this game?").answer === "no" && read("VICTOR displayed", "Will Aleksa win the next battle?", "Aleksa Flamingo 🦩").answer === "yes");
+  check("a call about anyone else stays the reader's", read("13TH PLA, game in progress", "Will Bob win this game?").answer === "unclear" && read("ENEMY VICTORY", "Can Roothlus beat StanCifka?", "Showdown").answer === "unclear");
+  const others = ["will I not win this game?", "will I finish top 5 this game?", "will I get 10 kills this game?", "Will Loochy extract with the loot?", "will I win this game by 10 kills?"];
+  check("a call with a condition, a negation or another goal stays the reader's", others.every((q) => read("3RD PLACE", q).answer === "unclear"), others.filter((q) => read("3RD PLACE", q).answer !== "unclear").join(" | "));
+  const realFetch = globalThis.fetch, realKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  globalThis.fetch = (async () => new Response(JSON.stringify({ content: [{ type: "text", text: '{"answer":"unclear","sure":0.15,"seen":"28TH PLA, game in progress"}' }] }))) as typeof fetch;
+  const asked = await askScreen(Buffer.from("x"), Q, "nova").finally(() => {
+    globalThis.fetch = realFetch;
+    if (realKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = realKey;
+  });
+  check("...and the server gets the quote's answer from the reader", asked?.answer === "no" && asked.sure === 0.95, JSON.stringify(asked));
+
+  check("a Gulag loss is no result on the game", roundNotMatch(Q, "GULAG DEFEAT KILLED IN ACTION") && roundNotMatch("will I win this match?", "GULAG DEFEAT"));
+  check("...while a call on the Gulag itself takes it", !roundNotMatch("will I survive this gulag?", "GULAG DEFEAT") && !roundNotMatch("Do I make it out of the Gulag?", "GULAG DEFEAT"));
+  const m = await room({ near: true });
+  await handleChat(m.line("nova", `!call ${Q}`, true), m.deps);
+  m.readings.push(no(0.95, "GULAG DEFEAT KILLED IN ACTION"));
+  await m.at(SCREEN_GRACE_MS);
+  check("...so a lost Gulag leaves the call open", (await liveStore.unsettled("kick", "100")).length === 1 && m.counts().asks === 1);
+}
+
 console.log("\nthe server's beat: every second, a look only when one falls due");
 {
   const r = await room();
@@ -386,6 +423,32 @@ console.log("\nthe last result may still be up (4 Nov, MW4 DMZ: a summary stayed
   const t2 = t1 + SCREEN_GRACE_MS + 2 * SCREEN_EVERY_MS + SCREEN_CONFIRM_MS;
   await r.at(t2); await r.at(t2 + SCREEN_EVERY_MS); await r.at(t2 + SCREEN_EVERY_MS + SCREEN_CONFIRM_MS);
   check("...once it has seen the game, its own result settles it", r.said.some((s) => s.startsWith("round 3:")), JSON.stringify(r.said.slice(-2)));
+}
+{
+  // 6 Nov, Warzone: with the result read off the title, the next round opens before the summary shows.
+  const r = await room();
+  await handleChat(r.line("nova", "!call repeat will I win this game?", true), r.deps);
+  r.readings.push(yes(), yes());
+  const t1 = SCREEN_GRACE_MS + SCREEN_CONFIRM_MS;
+  await r.at(SCREEN_GRACE_MS); await r.at(t1);
+  check("a round on a whole game opens after the result", r.said.some((s) => s.startsWith("round 2:")), JSON.stringify(r.said.slice(-2)));
+  const asks = r.counts().asks;
+  await r.at(t1 + SCREEN_GRACE_MS); await r.at(t1 + SCREEN_AFTER_RESULT_MS - 1_000);
+  check("...and does not look while the summary and the report still come and go", r.counts().asks === asks, JSON.stringify(r.counts()));
+  r.readings.push(unclear);
+  await r.at(t1 + SCREEN_AFTER_RESULT_MS);
+  check("...then looks as usual", r.counts().asks === asks + 1, JSON.stringify(r.counts()));
+}
+{
+  const r = await room();
+  await handleChat(r.line("nova", "!call repeat will I win this round?", true), r.deps);
+  r.readings.push(yes(), yes());
+  const t1 = SCREEN_GRACE_MS + SCREEN_CONFIRM_MS;
+  await r.at(SCREEN_GRACE_MS); await r.at(t1);
+  const asks = r.counts().asks;
+  r.readings.push(unclear);
+  await r.at(t1 + SCREEN_GRACE_MS);
+  check("a round on one part of a game keeps the first minute: the next one is close", r.counts().asks === asks + 1, JSON.stringify(r.counts()));
 }
 {
   const r = await room();
