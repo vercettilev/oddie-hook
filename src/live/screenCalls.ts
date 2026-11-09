@@ -8,9 +8,9 @@
  * reading never settles anything. A sure yes or no is looked at again two
  * seconds later, while it is still up, and only the same sure answer twice
  * settles the call, with what was on screen said in front of the result. On
- * Twitch and Kick that second look is a new frame; on X it can be the same
- * picture, which X caches up to five seconds. The streamer's own !call yes or
- * !call no keeps working the whole time; whoever is first settles it, once.
+ * Twitch and Kick that second look is a new frame; X is read differently
+ * (below). The streamer's own !call yes or !call no keeps working the whole
+ * time; whoever is first settles it, once.
  *
  * WHY THESE NUMBERS (Aleksa's Showdown stream, 16 Oct, read 17 Oct: 470
  * frames, two questions, 940 reads, not one wrong sure answer). On its frames
@@ -38,11 +38,24 @@
  * the whole game (src/games/screen.ts roundNotMatch). A restart forgets which
  * calls were given up.
  *
+ * X'S PICTURE, AND A RESULT THAT WENT BY UNREAD (9 Nov, Showdown's Beat Stan
+ * #3 on X). DEFEAT / WINNER: VIB was up 5.5 s and the lobby after it 2.5 s,
+ * and no look saw either: the look before read the last hand's pot going to
+ * 0, the one four seconds on the cameras. X renews its live thumbnail about
+ * every two seconds, but the CDN in front of it had kept a copy. So on X the
+ * picture is asked past that copy (src/games/screen.ts fetchPicture) every
+ * two seconds, a picture X has not renewed is not read twice, and, there
+ * being no frames beside it, a first sure answer is read again at once by the
+ * strong model on the same picture: the two agreeing settles it. Otherwise
+ * the minute's wait for another sure look, as on Twitch and Kick.
+ *
  * WHAT IT COSTS. About 0.17 of a cent a look, every platform's picture being
  * full size (src/games/screen.ts SCREEN_FRAME_WIDTH), so about $1.50 an hour
  * while a call is open: a Showdown game of ten to sixteen minutes, 25 to 40
- * cents. Only while a call is open and the stream live, never past a call's
- * third hour, and never more than 900 looks a call an hour.
+ * cents. On X, a look every two seconds is about $3 an hour, and a strong
+ * model's read about a cent and a half. Only while a call is open and the
+ * stream live, never past a call's third hour, and never more than 900 looks
+ * a call an hour, 1,800 on X.
  *
  * A TOURNAMENT IS NOT A GAME (Lev, 22 Oct). A call over more than one game,
  * a tournament, a series or a night of play (src/games/screen.ts callScope),
@@ -67,12 +80,18 @@
  * that is not live, or at a call past its hourly budget. It never touches
  * a market: markets settle through their own resolution, never from a picture.
  */
+import { createHash } from "node:crypto";
 import { personFixOutage } from "../inference.js";
 import { callScope, roundNotMatch, statRule } from "../games/screen.js";
 import { isRoomCall, screenGivesUp, settleOnScreen, type LiveCall, type LiveDeps } from "./calls.js";
 
 /** How often an open room call's picture is read: a result screen does not stay up long. */
 export const SCREEN_EVERY_MS = 4_000;
+/** On X, every two seconds: its picture is the live thumbnail, renewed about
+ *  that often, with no frames beside it to read the moment again (9 Nov, Beat
+ *  Stan #3: DEFEAT / WINNER: VIB was up 5.5 s and went by unread). A picture
+ *  X has not renewed since the last look is not read again. */
+export const SCREEN_X_EVERY_MS = 2_000;
 /** A sure answer is looked at again this soon, while the result is still on screen:
  *  six seconds later, Showdown's VICTORY screen was always gone. */
 export const SCREEN_CONFIRM_MS = 2_000;
@@ -87,6 +106,8 @@ export const SCREEN_GRACE_MS = 60_000;
 export const SCREENS_PER_PASS = 3;
 /** At most this many pictures a call an hour: one every four seconds. */
 export const SCREEN_PER_HOUR = 900;
+/** ...and on X, one every two seconds. */
+export const SCREEN_X_PER_HOUR = 1_800;
 /** An event call (a tournament, a series) is read this often: its result does
  *  not hang on a six-second banner, and it is open for hours. */
 export const SCREEN_EVENT_EVERY_MS = 8_000;
@@ -123,8 +144,9 @@ export const SCREEN_LINGER_MS = 5 * 60_000;
 export const SCREEN_AFTER_RESULT_MS = 200_000;
 const WHOLE_GAME = /\b(?:game|match)\b/i;
 
-/** clear: the reader has seen the stream with no result on it since the call opened. */
-interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null; clear: boolean }
+/** clear: the reader has seen the stream with no result on it since the call opened.
+ *  pic: the last X picture read, so the same one is not read twice. */
+interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null; clear: boolean; pic: string | null }
 const looks = new Map<string, Look>();
 /** Calls the screen gave up to the mods: never looked at again. */
 const handed = new Set<string>();
@@ -157,7 +179,8 @@ async function giveUp(deps: LiveDeps, call: LiveCall): Promise<boolean> {
   await screenGivesUp(call, deps);
   return false;
 }
-const everyOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_EVERY_MS : SCREEN_EVERY_MS);
+const everyOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_EVERY_MS : c.platform === "x" ? SCREEN_X_EVERY_MS : SCREEN_EVERY_MS);
+const perHourOf = (c: LiveCall) => (!isEvent(c) && c.platform === "x" ? SCREEN_X_PER_HOUR : SCREEN_PER_HOUR);
 const maxAgeOf = (c: LiveCall) => (isEvent(c) ? SCREEN_EVENT_MAX_AGE_MS : SCREEN_MAX_AGE_MS);
 
 async function channelsNow(deps: LiveDeps, now: number): Promise<Map<string, { name: string; matchCalls: boolean }>> {
@@ -181,11 +204,11 @@ async function isLive(deps: LiveDeps, call: LiveCall, now: number): Promise<bool
 }
 
 /** `k` is the call's id: each call counts its own looks. */
-function withinBudget(k: string, now: number): boolean {
+function withinBudget(k: string, now: number, perHour: number): boolean {
   const hour = Math.floor(now / 3_600_000);
   const s = spent.get(k);
   if (!s || s.hour !== hour) { spent.set(k, { hour, n: 1 }); return true; }
-  if (s.n >= SCREEN_PER_HOUR) return false;
+  if (s.n >= perHour) return false;
   s.n++;
   return true;
 }
@@ -215,7 +238,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   for (const c of calls) {
     if (looks.has(c.id)) continue;
     const soon = await soonAfterResult(deps, c);
-    looks.set(c.id, { nextAt: c.openedAt + (soon && WHOLE_GAME.test(c.question) ? SCREEN_AFTER_RESULT_MS : SCREEN_GRACE_MS), decided: null, clear: !soon });
+    looks.set(c.id, { nextAt: c.openedAt + (soon && WHOLE_GAME.test(c.question) ? SCREEN_AFTER_RESULT_MS : SCREEN_GRACE_MS), decided: null, clear: !soon, pic: null });
   }
   const due = calls.filter((c) => now >= looks.get(c.id)!.nextAt).sort((a, b) => looks.get(a.id)!.nextAt - looks.get(b.id)!.nextAt);
   if (!due.length) return 0;
@@ -226,7 +249,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
     const l = looks.get(call.id)!;
     const k = keyOf(call);
     const ch = chans.get(k);
-    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || !withinBudget(call.id, now)) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
+    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || !withinBudget(call.id, now, perHourOf(call))) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
     take.push({ call, name: ch.name });
   }
   // Side by side: three streams' reads take as long as one.
@@ -259,6 +282,12 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
     if (l.decided && now - l.decided.at > SCREEN_AGREE_MS) return giveUp(deps, call);
     const jpeg = await source.grab(call.platform, call.channelId);
     if (!jpeg) { l.nextAt = now + everyOf(call); return false; }
+    // X hands the same picture again until it renews it: nothing new to read.
+    if (call.platform === "x") {
+      const pic = createHash("sha1").update(jpeg).digest("hex");
+      if (pic === l.pic) { l.nextAt = now + everyOf(call); return false; }
+      l.pic = pic;
+    }
     const r = await source.ask(jpeg, call.question, name);
     deps.log("screen read", { platform: call.platform, channel: call.channelId, id: call.id, answer: r?.answer ?? null, sure: r?.sure ?? null, seen: r?.seen ?? null });
     // An event call is settled on the event's own page, never on one game's
@@ -293,13 +322,24 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
       return settleOnScreen(call, r.answer, seen || l.decided.seen, deps, jpeg);
     }
     // The first sure answer: the frames beside it, where the stream has them...
-    if (isGame(call) && source.near) {
-      for (const pic of await source.near(jpeg).catch(() => [] as Buffer[])) {
+    if (isGame(call)) {
+      const beside = source.near ? await source.near(jpeg).catch(() => [] as Buffer[]) : [];
+      for (const pic of beside) {
         const n = await source.ask(pic, call.question, name);
         deps.log("screen read", { platform: call.platform, channel: call.channelId, id: call.id, near: true, answer: n?.answer ?? null, sure: n?.sure ?? null, seen: n?.seen ?? null });
         if (n && n.answer === r.answer && n.sure >= SCREEN_SURE && !roundNotMatch(call.question, n.seen)) {
           looks.delete(call.id);
           return settleOnScreen(call, r.answer, seen || n.seen, deps, jpeg);
+        }
+      }
+      // ...or, where X's picture has none, the strong model reading the same
+      // picture: a result up a few seconds may be gone by the next look.
+      if (!beside.length && call.platform === "x" && source.confirm) {
+        const c = await source.confirm(jpeg, call.question, name);
+        deps.log("screen confirm", { platform: call.platform, channel: call.channelId, id: call.id, answer: c?.answer ?? null, sure: c?.sure ?? null, seen: c?.seen ?? null });
+        if (c && c.answer === r.answer && c.sure >= SCREEN_SURE && !roundNotMatch(call.question, c.seen)) {
+          looks.delete(call.id);
+          return settleOnScreen(call, r.answer, seen || c.seen, deps, jpeg);
         }
       }
     }

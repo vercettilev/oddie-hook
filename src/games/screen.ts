@@ -339,6 +339,11 @@ export function cleanSeen(raw: unknown): string {
    and a plain call names that winner, the name answers. It never makes an
    answer out of "unclear", and a winner the call does not name changes nothing. */
 const WINNER_QUOTED = /\bWINNER:\s*([\p{L}\p{N}_.-]+)/iu;
+/* ...or said in the reader's own words (9 Nov, Beat Stan #3's DEFEAT / WINNER:
+   VIB, read through the real loop): "DEFEAT screen showing VIB as WINNER" came
+   back a sure NO beside the strong model's YES, and the call went to the mods. */
+const WINNER_SAID = /([\p{L}\p{N}_.-]+)\s+(?:as|is)\s+(?:the\s+)?WINNER\b/iu;
+const NOBODY = /^(?:one|nobody|none|noone)$/;
 const CALL_NAME = String.raw`(\S+(?:\s+\S+)?)`;
 const CALL_OPEN = String.raw`^\s*(?:(?:can|could|will|would|does|did|do|is)\s+)?`;
 const CALL_REST = String.raw`(?:\s+(?:in\s+)?(?:this|that|the|next|the\s+next)\s+(?:game|match|hand|round|map|fight|battle|duel|race))?\s*[?!.]*\s*$`;
@@ -349,7 +354,8 @@ const NOT_A_NAME = /^(?:the|who|will|can|this|that|chat)$/;
 const foldName = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 export function winnerDecides(question: string, streamer: string, r: ScreenReading): ScreenReading {
   if (r.answer === "unclear" || CALL_NEGATED.test(question)) return r;
-  const winner = foldName(WINNER_QUOTED.exec(r.seen)?.[1] ?? "");
+  const winner = foldName(WINNER_QUOTED.exec(r.seen)?.[1] ?? WINNER_SAID.exec(r.seen)?.[1] ?? "");
+  if (NOT_A_NAME.test(winner) || NOBODY.test(winner)) return r;
   if (winner.length < 3) return r;
   const named = (who: string) => (/^(?:i|me)$/.test(foldName(who)) ? streamer : who).split(/\s+/).map(foldName)
     .some((w) => w.length >= 3 && !NOT_A_NAME.test(w) && (winner.includes(w) || w.includes(winner)));
@@ -425,14 +431,34 @@ export const askScreen = (jpeg: Buffer, question: string, streamer: string) => r
    asked rarely. */
 export const confirmScreen = (jpeg: Buffer, question: string, streamer: string) => readScreen(MODEL, 200, jpeg, question, streamer);
 
+/* A FRESH PICTURE FROM X (9 Nov, Beat Stan #3). X renews a stream's live
+   thumbnail about every two seconds, but the CDN in front of it keeps a copy up
+   to five (max-age=5, measured 16 Oct), so a look could see the stream seven
+   seconds late and the next one nine seconds on. DEFEAT / WINNER: VIB was up
+   5.5 s and the lobby after it 2.5 s: the look before read the last hand's pot
+   going to 0, the one after it the cameras. So each fetch asks the address with
+   a query of its own, which the CDN cannot have kept; a host that refuses that
+   while it serves the plain address is asked the plain address from then on. */
+const plainOnly = new Set<string>();
+
 /** A picture over plain HTTPS (X's live thumbnail), or null. */
-export async function fetchPicture(url: string): Promise<Buffer | null> {
+export async function fetchPicture(url: string, now = Date.now()): Promise<Buffer | null> {
+  const host = new URL(url).host;
+  if (plainOnly.has(host)) return (await getPicture(url)).jpeg;
+  const fresh = await getPicture(`${url}${url.includes("?") ? "&" : "?"}oddie_at=${now}`);
+  if (fresh.jpeg) return fresh.jpeg;
+  const plain = await getPicture(url);
+  if (plain.jpeg && fresh.status >= 400 && fresh.status < 500) plainOnly.add(host);
+  return plain.jpeg;
+}
+
+async function getPicture(url: string): Promise<{ status: number; jpeg: Buffer | null }> {
   const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!res.ok) return null;
+  if (!res.ok) return { status: res.status, jpeg: null };
   const type = res.headers.get("content-type") ?? "";
-  if (type && !/^image\/jpe?g/i.test(type)) return null;
+  if (type && !/^image\/jpe?g/i.test(type)) return { status: res.status, jpeg: null };
   const body = Buffer.from(await res.arrayBuffer());
-  return body.length ? body : null;
+  return { status: res.status, jpeg: body.length ? body : null };
 }
 
 /**

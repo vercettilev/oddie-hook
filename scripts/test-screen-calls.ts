@@ -8,8 +8,8 @@
 
 import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { SCREEN_AFTER_RESULT_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY } from "../src/live/screenCalls.js";
-import { askScreen, callScope, cleanSeen, parseScreen, parseStat, quotedResult, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { SCREEN_AFTER_RESULT_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY, SCREEN_X_EVERY_MS, SCREEN_X_PER_HOUR } from "../src/live/screenCalls.js";
+import { askScreen, callScope, cleanSeen, fetchPicture, parseScreen, parseStat, quotedResult, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame, grabFrame, nearFrames } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -68,19 +68,22 @@ console.log("what the reader says");
 }
 
 const T0 = Date.UTC(2026, 9, 16, 12, 0, 0);
-async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boolean; near?: boolean } = {}) {
+async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boolean; near?: boolean; x?: boolean } = {}) {
   _resetLiveStore(); _resetLive(); _resetScreens();
-  await saveChannel({ platform: "kick", channelId: "100", slug: "nova", name: "nova", avatar: null,
+  // On X every picture differs unless a test hands out the same one twice.
+  const platform = over.x ? "x" : "kick", channelId = over.x ? "200" : "100";
+  await saveChannel({ platform, channelId, slug: "nova", name: "nova", avatar: null,
     accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
-  if (over.matchCalls === false) await liveStore.setMatchCalls("kick", "100", false);
+  if (over.matchCalls === false) await liveStore.setMatchCalls(platform, channelId, false);
   let clock = T0;
   const said: string[] = [];
   const readings: Array<ScreenReading | Error> = [];
   const strong: Array<ScreenReading | Error> = [];
+  const pics: Buffer[] = [];
   let grabs = 0, asks = 0, confirms = 0;
   const asked: string[] = [];
   const screen: ScreenSource = {
-    grab: async () => { grabs++; return Buffer.from("jpeg"); },
+    grab: async () => { grabs++; return pics.shift() ?? Buffer.from(over.x ? `jpeg ${grabs}` : "jpeg"); },
     ask: async (_j, q) => { asks++; asked.push(q); const r = readings.shift(); if (r instanceof Error) throw r; return r ?? { answer: "unclear", sure: 0, seen: "" }; },
     ...(over.strong === false ? {} : {
       confirm: async () => { confirms++; const r = strong.shift(); if (r instanceof Error) throw r; return r ?? { answer: "unclear", sure: 0, seen: "" }; },
@@ -97,10 +100,11 @@ async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boole
   };
   let n = 0;
   const line = (who: string, text: string, canRun = false): ChatMessage => ({
-    platform: "kick", channelId: "100", messageId: `m${++n}`, senderId: who, senderName: who, canRun, text,
+    platform, channelId, messageId: `m${++n}`, senderId: who, senderName: who, canRun, text,
   });
   const at = async (ms: number) => { clock = T0 + ms; return watchScreens(deps); };
-  return { deps, said, readings, strong, line, at, counts: () => ({ grabs, asks, confirms }), asked: (q: string) => asked.filter((x) => x === q).length, last: () => said[said.length - 1] ?? "" };
+  return { deps, said, readings, strong, pics, line, at, counts: () => ({ grabs, asks, confirms }), asked: (q: string) => asked.filter((x) => x === q).length,
+    last: () => said[said.length - 1] ?? "", unsettled: () => liveStore.unsettled(platform, channelId) };
 }
 const yes = (sure = 0.92, seen = "VICTORY 13-11"): ScreenReading => ({ answer: "yes", sure, seen });
 const no = (sure = 0.92, seen = "DEFEAT 9-13"): ScreenReading => ({ answer: "no", sure, seen });
@@ -210,6 +214,12 @@ console.log("\nthe name on the banner decides");
     && said("Can Roothlus beat StanCifka?", "yes", "VICTORY screen shows WINNER: STANCIFKA,…") === "no"
     && said("Can Vibhu beat StanCifka this game?", "yes", "VICTORY WINNER: StanCifka") === "no");
   check("the guest won: DEFEAT on Stan's own view is the guest's win", said("Can Vibhu beat StanCifka?", "no", "DEFEAT WINNER: VIBHU") === "yes");
+  // As the reader put it in its own words on the 9 Nov replay, and the same the other way.
+  check("...also in the reader's own words",
+    said("Can Vib beat StanCifka?", "no", "DEFEAT screen showing VIB as WINNER") === "yes"
+    && said("Can Vib beat StanCifka?", "yes", "VICTORY, StanCifka is the winner") === "no");
+  check("...while nobody named as the winner changes nothing",
+    said("Can Vib beat StanCifka?", "no", "DEFEAT, no one as winner yet") === "no" && said("Can Vib beat StanCifka?", "yes", "who is the winner?") === "yes");
   check("...and an in-game name holding the call's name counts", said("Can Ondrej beat StanCifka?", "no", "DEFEAT WINNER: ONDREJSHOWDOWN") === "yes");
   check("a name the evidence cut short still counts", said("Can AleksaFlamingo win this game?", "no", "VICTORY screen with WINNER: ALEKSAFLAMI…") === "yes");
   check("a win by timeout is a win, whatever the word above it", said("Can AleksaFlamingo win this game?", "no", "ENEMY TIMEOUT WINNER: ALEKSAFLAMINGO") === "yes");
@@ -669,6 +679,85 @@ console.log("\nX's picture is its live thumbnail");
   check("broadcast.start's live thumbnail is the stream's picture", (await xThumbnail("200")) === "https://prod-fastly.example/latest.jpg?token=t");
   await onXEvent({ event_uuid: "e1", event_type: "broadcast.end", filter: { user_id: "200" }, payload: { broadcast_id: "b1" } }, w);
   check("...and the stream's end takes it away", (await xThumbnail("200")) === null);
+}
+
+console.log("\nX's picture, asked past the CDN's copy");
+{
+  /* 9 Nov, Showdown's Beat Stan #3: the CDN in front of X's live thumbnail
+     keeps a copy up to five seconds, and DEFEAT / WINNER: VIB went by unread. */
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+  const asked: string[] = [];
+  const serve = (mode: { refuse?: boolean; gone?: boolean }) => createServer((req, res) => {
+    asked.push(req.url ?? "");
+    if (mode.gone || (mode.refuse && /oddie_at=/.test(req.url ?? ""))) { res.statusCode = mode.gone ? 404 : 403; res.end(); return; }
+    res.setHeader("content-type", "image/jpeg"); res.end(jpeg);
+  });
+  const up = async (mode: { refuse?: boolean; gone?: boolean }) => {
+    const s = serve(mode);
+    await new Promise<void>((ok) => s.listen(0, "127.0.0.1", ok));
+    return { s, url: `http://127.0.0.1:${(s.address() as AddressInfo).port}/latest.jpg?token=t` };
+  };
+  const a = await up({});
+  const pic = await fetchPicture(a.url, 1234);
+  check("each fetch asks with a query of its own, which no CDN can have kept",
+    pic?.equals(jpeg) === true && asked.join(" ") === "/latest.jpg?token=t&oddie_at=1234", asked.join(" "));
+  a.s.close();
+
+  const b = await up({ refuse: true });
+  asked.length = 0;
+  const plain = await fetchPicture(b.url, 1);
+  check("a host that refuses the query is asked the plain address",
+    plain?.equals(jpeg) === true && asked.join(" ") === "/latest.jpg?token=t&oddie_at=1 /latest.jpg?token=t", asked.join(" "));
+  asked.length = 0;
+  await fetchPicture(b.url, 2);
+  check("...and only the plain one from then on", asked.join(" ") === "/latest.jpg?token=t", asked.join(" "));
+  b.s.close();
+
+  const c = await up({ gone: true });
+  asked.length = 0;
+  check("a stream that has ended gives no picture either way", (await fetchPicture(c.url, 1)) === null && asked.length === 2);
+  c.s.close();
+}
+
+console.log("\nX is looked at every two seconds, and one picture read by both models settles it");
+{
+  check("every two seconds on X, four on Twitch and Kick, and the hour's looks to match",
+    SCREEN_X_EVERY_MS === 2_000 && SCREEN_EVERY_MS === 4_000 && SCREEN_X_PER_HOUR * SCREEN_X_EVERY_MS === 3_600_000);
+  const Q = "Can Vib beat StanCifka?";
+  const r = await room({ x: true });
+  await handleChat(r.line("nova", `!call ${Q}`, true), r.deps);
+  await handleChat(r.line("mika", "!yes"), r.deps);
+  r.readings.push(unclear, unclear, unclear);
+  await r.at(SCREEN_GRACE_MS);
+  await r.at(SCREEN_GRACE_MS + SCREEN_X_EVERY_MS);
+  check("a call on X is looked at two seconds after the last look", r.counts().asks === 2, JSON.stringify(r.counts()));
+  const same = Buffer.from("a picture X has not renewed");
+  r.pics.push(same, same);
+  await r.at(SCREEN_GRACE_MS + 2 * SCREEN_X_EVERY_MS);
+  await r.at(SCREEN_GRACE_MS + 3 * SCREEN_X_EVERY_MS);
+  check("...and the same picture twice is read once", r.counts().grabs === 4 && r.counts().asks === 3, JSON.stringify(r.counts()));
+  r.readings.push(yes(0.95, "DEFEAT WINNER: VIB"));
+  r.strong.push(yes(0.95, "DEFEAT, WINNER: VIB"));
+  const n = await r.at(SCREEN_GRACE_MS + 4 * SCREEN_X_EVERY_MS);
+  check("one sure answer the strong model reads the same way on the same picture settles it at once",
+    n === 1 && (await r.unsettled()).length === 0 && r.counts().confirms === 1 && r.last() === `Result: YES on "${Q}" Called it: @mika.`, r.last());
+
+  const s = await room({ x: true });
+  await handleChat(s.line("nova", "!call will I win this game?", true), s.deps);
+  s.readings.push(yes(0.95, "VICTORY"));
+  s.strong.push(unclear);
+  await s.at(SCREEN_GRACE_MS);
+  check("one the strong model does not read the same way settles nothing", (await s.unsettled()).length === 1 && s.counts().confirms === 1);
+  s.readings.push(yes(0.95, "VICTORY"));
+  await s.at(SCREEN_GRACE_MS + SCREEN_CONFIRM_MS);
+  check("...and the next sure look agreeing settles it, as before, without asking the strong model again",
+    (await s.unsettled()).length === 0 && s.counts().confirms === 1, JSON.stringify(s.counts()));
+
+  const k = await room();
+  await handleChat(k.line("nova", "!call will I win this game?", true), k.deps);
+  k.readings.push(yes(0.95, "VICTORY"));
+  await k.at(SCREEN_GRACE_MS);
+  check("on Twitch and Kick the strong model is never asked for a game", k.counts().confirms === 0 && (await k.unsettled()).length === 1);
 }
 
 console.log("\nTwitch and Kick pictures are read full size");
