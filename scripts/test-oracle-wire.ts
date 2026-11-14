@@ -176,6 +176,10 @@ console.log("\nwhat leaves the process");
   // market after the first reads this prefix at about a tenth of the price.
   const sys = body.system as Array<Record<string, any>>;
   check("the system prompt demands verbatim quotes", String(sys?.[0]?.text).includes("character-for-character"));
+  // Bee's Fed market (14 Nov): a NO announced before the close was cited only
+  // from pages dated before it, and the audit refused it for a week.
+  check("...and sends a NO announced before the close to a page from after it",
+    /NO ANNOUNCED BEFORE THE CLOSE[^\n]*published AFTER the close/.test(String(sys?.[0]?.text)));
   check("...and is marked cacheable", sys?.[0]?.cache_control?.type === "ephemeral", JSON.stringify(sys?.[0]?.cache_control));
 }
 
