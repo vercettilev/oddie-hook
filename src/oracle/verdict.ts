@@ -151,6 +151,11 @@ Rules:
 - Never cite a page you did not open through search. Never construct a URL. The one exception is the X posts given to you in the message: those were read from X for you, and you cite one by the URL shown with it.
 - An X post given to you is what that account said, nothing more. It settles the market only where the criteria name that account as the source.`;
 
+/** The proposer's instructions, read by oracle.ts to version the oracle's rules. */
+export function proposerRules(): string {
+  return SYSTEM;
+}
+
 interface Block { type: string; id?: string; name?: string; input?: unknown; text?: string; tool_use_id?: string; content?: unknown }
 
 /**

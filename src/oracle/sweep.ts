@@ -15,7 +15,7 @@
  * Everything it touches is injected, so this file talks to no database, no
  * model and no chain. That is also what makes it testable without either.
  */
-import { shouldRetry, decisionWasPaid, decidableBeforeClose, type OracleDecision } from "./oracle.js";
+import { shouldRetry, decisionWasPaid, decidableBeforeClose, ORACLE_RULES, type OracleDecision } from "./oracle.js";
 import { xSourcesIn } from "./xPosts.js";
 import type { PriceCheck } from "../price/index.js";
 
@@ -45,9 +45,9 @@ export interface OracleSweepDeps {
    * minutes of model calls, so a mid-run reset is realistic.
    */
   criteria: (slug: string) => Promise<{ ok: true; criteria: string | null; priceCheck?: PriceCheck | null } | { ok: false; error: string }>;
-  attempt: (slug: string) => Promise<{ lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number }>;
+  attempt: (slug: string) => Promise<{ lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number; lastRules?: string | null }>;
   decide: (m: { slug: string; question: string; criteria: string | null; closeTime: string | null; priceCheck?: PriceCheck | null }, asOf?: Date) => Promise<OracleDecision>;
-  record: (d: OracleDecision & { paid: boolean }) => Promise<void>;
+  record: (d: OracleDecision & { paid: boolean; rules: string }) => Promise<void>;
   /**
    * Null means DRY RUN, and dry run is not a mock: every market is read, every
    * gate is applied and every decision is reached and recorded. It simply stops
@@ -139,7 +139,9 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
     // price every run, until a person rewrites them. One with a price rule
     // spends nothing, so its paid past does not hold it back.
     const attempt = await deps.attempt(m.slug).catch(() => ({ lastGate: null, lastDecidedAt: null, paidAttempts: 0 }));
-    const again = shouldRetry(attempt, deps.asOf, { priced: Boolean(read.priceCheck), xSourced: xSourcesIn(read.criteria ?? "").length > 0 });
+    const again = shouldRetry(attempt, deps.asOf, {
+      priced: Boolean(read.priceCheck), xSourced: xSourcesIn(read.criteria ?? "").length > 0, rules: ORACLE_RULES,
+    });
     if (!again.retry && !deps.force) {
       out.held++;
       deps.on?.held?.(m.slug, again.why);
@@ -158,7 +160,7 @@ export async function oracleSweep(deps: OracleSweepDeps): Promise<OracleSweepRes
 
     // Written down BEFORE anything is announced, and best-effort by
     // construction: the log going down must not take a settlement with it.
-    await deps.record({ ...d, paid: decisionWasPaid(d) }).catch(() => {});
+    await deps.record({ ...d, paid: decisionWasPaid(d), rules: ORACLE_RULES }).catch(() => {});
     deps.on?.decided?.(d);
 
     if (!d.settle || !deps.settle) continue;

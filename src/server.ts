@@ -6524,7 +6524,7 @@ function oracleSweepDeps(): Omit<OracleSweepDeps, "limit" | "scope" | "openFilte
         citations: d.audit?.citations ?? [],
         verified: d.audit?.verified ?? 0, undated: d.audit?.undated ?? 0, stale: d.audit?.stale ?? 0,
         absent: d.audit?.absent ?? 0, unreachable: d.audit?.unreachable ?? 0,
-        paid: d.paid,
+        paid: d.paid, rules: d.rules,
       }),
       // The SAME function the admin route calls, so the whole tail happens once
       // and in one place: off-chain settlement, the on-chain resolve, the fee

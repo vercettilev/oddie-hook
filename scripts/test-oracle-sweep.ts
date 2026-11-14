@@ -27,7 +27,7 @@
  * chain. Run with: npm run test-oracle-sweep
  */
 import { oracleSweep, type OracleSweepMarket } from "../src/oracle/sweep.js";
-import type { OracleDecision } from "../src/oracle/oracle.js";
+import { ORACLE_RULES, type OracleDecision } from "../src/oracle/oracle.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -48,17 +48,18 @@ const yes = (slug: string): OracleDecision =>
 function harness(board: OracleSweepMarket[], over: Partial<Parameters<typeof oracleSweep>[0]> = {}) {
   const asked: string[] = [];
   const recorded: string[] = [];
+  const ruled: string[] = [];
   const settled: string[] = [];
   const deps = {
     board: async () => board,
     criteria: async () => ({ ok: true as const, criteria: "a rule long enough to pass the code gate" }),
     attempt: async () => ({ lastGate: null, lastDecidedAt: null, paidAttempts: 0 }),
     decide: async (m: { slug: string }) => { asked.push(m.slug); return yes(m.slug); },
-    record: async (d: OracleDecision) => { recorded.push(d.slug); },
+    record: async (d: OracleDecision & { rules?: string }) => { recorded.push(d.slug); if (d.rules) ruled.push(d.rules); },
     settle: async (slug: string) => { settled.push(slug); return true; },
     ...over,
   };
-  return { deps: deps as Parameters<typeof oracleSweep>[0], asked, recorded, settled };
+  return { deps: deps as Parameters<typeof oracleSweep>[0], asked, recorded, ruled, settled };
 }
 
 console.log("\nmarkets that must never be touched");
@@ -164,6 +165,19 @@ console.log("\nthe limit bounds the bill, and counts the right thing");
   });
   await oracleSweep(h.deps);
   check("a held market does not eat a slot", h.asked.join(",") === "a,b", `asked ${h.asked.join(",")}`);
+}
+{
+  // 14 Nov, Bee's Fed market: refused under rules fixed the same morning and
+  // held a week by its backoff. A refusal under other rules is asked again.
+  const h = harness([market("old-rules"), market("current")], {
+    attempt: async (slug: string) => ({
+      lastGate: "citations-failed", lastDecidedAt: new Date().toISOString(), paidAttempts: 7,
+      lastRules: slug === "old-rules" ? "0123456789ab" : ORACLE_RULES,
+    }),
+  });
+  await oracleSweep(h.deps);
+  check("a market refused under older rules is asked again inside its backoff", h.asked.join(",") === "old-rules", `asked ${h.asked.join(",")}`);
+  check("...and the decision is recorded under the current rules", h.ruled.join(",") === ORACLE_RULES, h.ruled.join(","));
 }
 {
   // 20 Oct: the board comes newest first, its five newest were all still open,

@@ -24,8 +24,9 @@
 // something as a veto and nothing as a licence, so it is wired in one
 // direction only.
 
-import { auditCitations, auditSupports, type AuditResult } from "./audit.js";
-import { runPropose, type Proposal, type Side } from "./verdict.js";
+import { createHash } from "node:crypto";
+import { auditCitations, auditSupports, AUDIT_REVISION, type AuditResult } from "./audit.js";
+import { runPropose, proposerRules, type Proposal, type Side } from "./verdict.js";
 import { messagesUrl, authHeaders, MODEL, personFixOutage } from "../inference.js";
 import { checkPrice, decidedAtOpen, priceNow, type PriceCheck } from "../price/index.js";
 import { BYBIT_CHAIN } from "../price/feed.js";
@@ -87,6 +88,22 @@ Decide the outcome from those quotations ALONE. Do not use anything you remember
 A quotation dated before the market closed can show an event happened early. It can never show that an event failed to happen by a deadline that had not yet passed.
 
 A quotation showing a CURRENT value never establishes what that value was at an earlier moment. A live price, a table as it stands today, a count as of now: if the criteria ask about a specific past date and the quotation only shows the present, that is "undetermined".`;
+
+/**
+ * WHICH RULES A DECISION WAS REACHED UNDER (14 Nov, Bee's Fed market).
+ *
+ * A refusal is recorded and backs off, up to a week. That is right while the
+ * rules stand still, and wrong the moment they change: Bee's market was refused
+ * by rules three commits fixed the same morning, and the fixes would have
+ * reached it only when its week ran out, so a person had to force the retry.
+ * Every decision records this, and one refused under different rules is asked
+ * again at the next sweep (shouldRetry). It is derived from the instructions
+ * themselves, so changing a prompt cannot forget to change it; the audit's
+ * code rules carry their own revision number.
+ */
+export const ORACLE_RULES = createHash("sha256")
+  .update(proposerRules()).update("\0").update(VERIFY_SYSTEM).update("\0").update(String(AUDIT_REVISION))
+  .digest("hex").slice(0, 12);
 
 const VERIFY_SCHEMA = {
   type: "object",
@@ -416,9 +433,9 @@ export interface RetryVerdict {
  * suite can pin every branch of it.
  */
 export function shouldRetry(
-  a: { lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number },
+  a: { lastGate: string | null; lastDecidedAt: string | null; paidAttempts: number; lastRules?: string | null },
   now = new Date(),
-  opts: { priced?: boolean; xSourced?: boolean } = {},
+  opts: { priced?: boolean; xSourced?: boolean; rules?: string } = {},
 ): RetryVerdict {
   if (!a.lastGate) return { retry: true, why: "never tried" };
   if (FREE_GATES.has(a.lastGate as OracleDecision["gate"])) {
@@ -435,6 +452,15 @@ export function shouldRetry(
     return a.lastGate === "price-undetermined"
       ? { retry: false, why: "the price history cannot cover this market's window; a person has to look at it" }
       : { retry: true, why: "a price market is answered from published candles, which costs nothing" };
+  }
+  /* THE RULES CHANGED SINCE THE LAST ANSWER. Its refusal was a judgment under
+     instructions that no longer apply, so neither the backoff nor a "not
+     checkable" verdict is the last word on it: it is asked once under the
+     current rules, and from then on the usual schedule holds. See ORACLE_RULES.
+     A null lastRules is a row written before rules were recorded, which is
+     older rules; an absent one is a caller that does not track them at all. */
+  if (opts.rules && a.lastRules !== undefined && a.lastRules !== opts.rules) {
+    return { retry: true, why: "the oracle's rules changed since its last answer" };
   }
   if (PERMANENT_GATES.has(a.lastGate as OracleDecision["gate"])) {
     return { retry: false, why: "the criteria themselves are not checkable; a person has to rewrite them" };

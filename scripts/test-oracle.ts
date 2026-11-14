@@ -16,7 +16,7 @@ import {
   auditCitation, auditCitations, auditSupports, normalizeText, htmlToText, documentDateOf,
   quoteCoversDate, _setPageFetcher, type AuditResult,
 } from "../src/oracle/audit.js";
-import { decide, shouldRetry, X_QUICK_RETRIES, backoffMs, decisionWasPaid, _setSecondOpinion } from "../src/oracle/oracle.js";
+import { decide, shouldRetry, X_QUICK_RETRIES, backoffMs, decisionWasPaid, _setSecondOpinion, ORACLE_RULES } from "../src/oracle/oracle.js";
 import { recordOracleDecision, oracleAttemptFor, oracleGateCounts, _memOracleDecisions, _memBackdateOracle, _resetOracleDecisions } from "../src/store/markets.js";
 import { _setProposer, type Proposal, type Side } from "../src/oracle/verdict.js";
 
@@ -484,6 +484,18 @@ console.log("\nasking the same stuck market again, forever, at full price");
   check("...then on the usual schedule", !posted(X_QUICK_RETRIES + 1, 1.05).retry && posted(X_QUICK_RETRIES + 1, 97).retry, posted(X_QUICK_RETRIES + 1, 1.05).why);
   check("...and a rule naming none still waits six hours", !shouldRetry({ lastGate: "citations-failed", lastDecidedAt: new Date(Date.now() - 1.05 * H).toISOString(), paidAttempts: 1 }).retry);
 
+  // 14 NOV, Bee's Fed market: refused under rules three commits fixed the same
+  // morning, then held a week by its backoff, so a person had to force it.
+  const ruled = (lastGate: string, lastRules: string | null) =>
+    shouldRetry({ lastGate, lastDecidedAt: new Date(Date.now() - 1 * H).toISOString(), paidAttempts: 7, lastRules }, new Date(), { rules: ORACLE_RULES });
+  check("a refusal under older rules is asked again at once, backoff or not",
+    ruled("citations-failed", "0123456789ab").retry && ruled("citations-failed", "0123456789ab").why.includes("rules"), ruled("citations-failed", "0123456789ab").why);
+  check("...and so is one recorded before rules were recorded at all", ruled("citations-failed", null).retry);
+  check("...and an uncheckable verdict too: it was a judgment under the old instructions", ruled("not-checkable", "0123456789ab").retry);
+  check("...but under the current rules the backoff holds", !ruled("citations-failed", ORACLE_RULES).retry);
+  check("...and a caller that names no rules is unchanged", !shouldRetry({ lastGate: "citations-failed", lastDecidedAt: new Date(Date.now() - 1 * H).toISOString(), paidAttempts: 7, lastRules: null }).retry);
+  check("the rules are a short stable fingerprint", /^[0-9a-f]{12}$/.test(ORACLE_RULES), ORACLE_RULES);
+
   // A market whose every attempt times out would otherwise be free to retry at
   // full price forever, because runPropose can throw AFTER the request went out.
   check("an error counts as paid", decisionWasPaid({ slug: "s", settle: null, gate: "error", reason: "" }));
@@ -523,6 +535,15 @@ console.log("\nthe record is written, and it is what the policy reads");
   check("freshly decided, it is held", !shouldRetry(await oracleAttemptFor("m9")).retry);
   _memBackdateOracle("m9", 7 * 60);
   check("seven hours later, it is asked again", shouldRetry(await oracleAttemptFor("m9")).retry);
+  _resetOracleDecisions();
+
+  // The rules a refusal was reached under are written down and read back, so
+  // new rules reach a market held by its backoff without anybody forcing it.
+  await recordOracleDecision({ slug: "m11", settle: null, gate: "citations-failed", reason: "x", paid: true, rules: "0123456789ab" });
+  check("the rules of the last decision are read back", (await oracleAttemptFor("m11")).lastRules === "0123456789ab");
+  check("...so new rules ask it again at once", shouldRetry(await oracleAttemptFor("m11"), new Date(), { rules: ORACLE_RULES }).retry);
+  await recordOracleDecision({ slug: "m11", settle: null, gate: "citations-failed", reason: "x", paid: true, rules: ORACLE_RULES });
+  check("...and once asked under them, its backoff holds again", !shouldRetry(await oracleAttemptFor("m11"), new Date(), { rules: ORACLE_RULES }).retry);
   _resetOracleDecisions();
 
   // Rows written before the outage was known to be free say paid=true. The

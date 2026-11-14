@@ -130,7 +130,7 @@ const result = await oracleSweep({
     citations: d.audit?.citations ?? [],
     verified: d.audit?.verified ?? 0, undated: d.audit?.undated ?? 0, stale: d.audit?.stale ?? 0,
     absent: d.audit?.absent ?? 0, unreachable: d.audit?.unreachable ?? 0,
-    paid: d.paid,
+    paid: d.paid, rules: d.rules,
   }),
   settle: APPLY
     ? async (slug, outcome) => {

@@ -746,6 +746,11 @@ CREATE TABLE IF NOT EXISTS oracle_decision (
   acted_at          timestamptz
 );
 CREATE INDEX IF NOT EXISTS oracle_decision_slug_idx ON oracle_decision(slug, id DESC);
+-- The oracle rules a decision was reached under (oracle.ts ORACLE_RULES), so a
+-- refusal under older rules is asked again rather than waiting out a backoff
+-- that new rules have made pointless. Added 14 Nov 2026: rows before it are
+-- NULL, which reads as "older rules".
+ALTER TABLE oracle_decision ADD COLUMN IF NOT EXISTS rules text;
 
 -- The moment a wallet FIRST took a side, and what the crowd said at that moment.
 --
@@ -6814,6 +6819,9 @@ export interface OracleAttempt {
    *  free code gates decide before a token is spent and must not push a market
    *  further down the backoff for costing nothing. */
   paidAttempts: number;
+  /** The oracle rules the last decision was reached under; null before 14 Nov
+   *  2026, when it was first recorded. */
+  lastRules: string | null;
 }
 
 export interface OracleDecisionRow {
@@ -6831,6 +6839,7 @@ export interface OracleDecisionRow {
   absent: number;
   unreachable: number;
   paid: boolean;
+  rules: string | null;
   decidedAt: string;
 }
 
@@ -6857,6 +6866,8 @@ export interface OracleDecisionInput {
   unreachable?: number;
   /** Whether the model was actually called. */
   paid: boolean;
+  /** The oracle rules this decision was reached under (oracle.ts ORACLE_RULES). */
+  rules?: string | null;
 }
 
 /** Append exactly one row for one decide() call. Best-effort in the
@@ -6871,7 +6882,7 @@ export async function recordOracleDecision(d: OracleDecisionInput): Promise<void
         citations: d.citations ?? [],
         verified: d.verified ?? 0, undated: d.undated ?? 0, stale: d.stale ?? 0,
         absent: d.absent ?? 0, unreachable: d.unreachable ?? 0,
-        paid: d.paid, decidedAt: new Date().toISOString(),
+        paid: d.paid, rules: d.rules ?? null, decidedAt: new Date().toISOString(),
       });
       return;
     }
@@ -6882,12 +6893,13 @@ export async function recordOracleDecision(d: OracleDecisionInput): Promise<void
     await db().query(
       `INSERT INTO oracle_decision
          (slug, settle, gate, reason, confidence, second_opinion, citations,
-          cites_verified, cites_undated, cites_stale, cites_absent, cites_unreachable, paid)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13)`,
+          cites_verified, cites_undated, cites_stale, cites_absent, cites_unreachable, paid, rules)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14)`,
       [
         d.slug, d.settle, d.gate, d.reason, d.confidence ?? null, d.secondOpinion ?? null,
         JSON.stringify(d.citations ?? []),
         d.verified ?? 0, d.undated ?? 0, d.stale ?? 0, d.absent ?? 0, d.unreachable ?? 0, d.paid,
+        d.rules ?? null,
       ],
     );
   } catch (e) {
@@ -6904,14 +6916,15 @@ export async function oracleAttemptFor(slug: string): Promise<OracleAttempt> {
       lastGate: last?.gate ?? null,
       lastDecidedAt: last?.decidedAt ?? null,
       paidAttempts: rows.filter((r) => r.paid && !(r.gate === "error" && personFixOutage(r.reason))).length,
+      lastRules: last?.rules ?? null,
     };
   }
   await ensureSchema();
   // count(*) comes back as a bigint STRING unless it is cast at the edge, and a
   // `number` annotation on it would be an unchecked lie no in-memory test could
   // ever expose.
-  const { rows } = await db().query<{ gate: string | null; decided_at: Date | null }>(
-    `SELECT gate, decided_at FROM oracle_decision WHERE slug = $1 ORDER BY id DESC LIMIT 1`,
+  const { rows } = await db().query<{ gate: string | null; decided_at: Date | null; rules: string | null }>(
+    `SELECT gate, decided_at, rules FROM oracle_decision WHERE slug = $1 ORDER BY id DESC LIMIT 1`,
     [slug],
   );
   /* THE PAID ROWS ARE READ, NOT COUNTED IN SQL. Rows written before an outage
@@ -6928,6 +6941,7 @@ export async function oracleAttemptFor(slug: string): Promise<OracleAttempt> {
     lastGate: r?.gate ?? null,
     lastDecidedAt: r?.decided_at ? r.decided_at.toISOString() : null,
     paidAttempts: paid.rows.filter((x) => !(x.gate === "error" && personFixOutage(x.reason))).length,
+    lastRules: r?.rules ?? null,
   };
 }
 
@@ -6970,7 +6984,7 @@ interface OracleRow {
   id: string; slug: string; settle: "yes" | "no" | null; gate: string; reason: string;
   confidence: string | null; second_opinion: string | null; citations: unknown[];
   cites_verified: number; cites_undated: number; cites_stale: number;
-  cites_absent: number; cites_unreachable: number; paid: boolean; decided_at: Date;
+  cites_absent: number; cites_unreachable: number; paid: boolean; rules: string | null; decided_at: Date;
 }
 /** The one place `id` stops being a string. bigserial arrives from pg as text. */
 function rowToOracleDecision(r: OracleRow): OracleDecisionRow {
@@ -6980,7 +6994,7 @@ function rowToOracleDecision(r: OracleRow): OracleDecisionRow {
     citations: Array.isArray(r.citations) ? r.citations : [],
     verified: r.cites_verified, undated: r.cites_undated, stale: r.cites_stale,
     absent: r.cites_absent, unreachable: r.cites_unreachable,
-    paid: r.paid, decidedAt: r.decided_at.toISOString(),
+    paid: r.paid, rules: r.rules ?? null, decidedAt: r.decided_at.toISOString(),
   };
 }
 

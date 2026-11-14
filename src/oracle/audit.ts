@@ -31,6 +31,12 @@ const FETCH_TIMEOUT_MS = 12_000;
 const MAX_BYTES = 2_000_000; // a page bigger than this is not a source, it is a dump
 const UA = "oddie-oracle/1.0 (+https://oddie.fun)"; // plain ASCII: fetch rejects anything else in a header
 
+/** Bump when a rule in this file changes what a citation counts as. It is part
+ *  of ORACLE_RULES (oracle.ts), so a market refused under the old rules is
+ *  asked again at the next sweep rather than waiting out its backoff.
+ *  1 = 14 Nov 2026: a PDF is unreadable, not an absent quote. */
+export const AUDIT_REVISION = 1;
+
 export interface Citation {
   url: string;
   /** A SHORT verbatim span from the page. Short on purpose: the longer the
