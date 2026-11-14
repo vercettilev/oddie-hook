@@ -346,6 +346,15 @@ export async function auditCitation(c: Citation, closeTime: Date | null, opts: A
     return { ...base, status: "unreachable", datedAt: null, note: page.status ? `http ${page.status}` : "fetch failed" };
   }
 
+  // A PDF WAS NOT READ EITHER (14 Nov, Bee's Fed market). The proposer quoted
+  // the Fed's own statement PDF word for word, and the audit decoded its bytes
+  // as markup, found nothing, and called both quotes invented, which discarded
+  // the whole verdict. A PDF's text sits in compressed streams we do not unpack;
+  // the file opens with "%PDF-" whatever the server calls it.
+  if (page.html.trimStart().startsWith("%PDF-")) {
+    return { ...base, status: "unreachable", datedAt: null, note: "a PDF, whose text we do not read" };
+  }
+
   const datedAt = documentDateOf(page.html);
 
   // A PAGE THAT RENDERS ITS TEXT IN JAVASCRIPT WAS NOT READ, AND MUST NOT BE

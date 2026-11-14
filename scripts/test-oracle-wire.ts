@@ -180,6 +180,8 @@ console.log("\nwhat leaves the process");
   // from pages dated before it, and the audit refused it for a week.
   check("...and sends a NO announced before the close to a page from after it",
     /NO ANNOUNCED BEFORE THE CLOSE[^\n]*published AFTER the close/.test(String(sys?.[0]?.text)));
+  // The same market's next try quoted the Fed's statement PDF, which the audit cannot read.
+  check("...and asks for web pages rather than PDFs", /Cite web pages, not PDFs/.test(String(sys?.[0]?.text)));
   check("...and is marked cacheable", sys?.[0]?.cache_control?.type === "ephemeral", JSON.stringify(sys?.[0]?.cache_control));
 }
 

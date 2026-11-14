@@ -248,6 +248,21 @@ console.log("\na page that renders in JavaScript was not read, so it is not accu
   check("a small API response is still readable", api.status === "verified", `${api.status} / ${api.note}`);
 }
 
+console.log("\na PDF was not read, so it is not accused");
+{
+  // Bee's Fed market, 14 Nov: the Fed's statement PDF, quoted word for word,
+  // came back quote-absent twice and discarded the verdict.
+  const pdf = "%PDF-1.7\n%âãÏÓ\n1 0 obj\n<< /Length 90 /Filter /FlateDecode >>\nstream\n" +
+    "x\u009cµØËnÛ0\u0010".repeat(200) + "\nendstream\nendobj\n";
+  _setPageFetcher(async () => ({ ok: true, html: pdf, status: 200 }));
+  const p = await auditCitation({
+    url: "https://www.federalreserve.gov/monetarypolicy/files/monetary20261028a1.pdf",
+    quote: "The Committee decided to maintain the target range for the federal funds rate",
+  }, new Date("2026-10-28T23:59:00Z"));
+  check("a PDF is unreachable, not an absent quote", p.status === "unreachable", `${p.status} / ${p.note}`);
+  check("...and says why", p.note.includes("PDF"), p.note);
+}
+
 console.log("\na page we only half-read is not a page missing its words");
 {
   _setPageFetcher(async () => ({ ok: true, html: page("nothing relevant here"), status: 200, truncated: true }));
