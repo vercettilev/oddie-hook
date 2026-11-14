@@ -190,5 +190,38 @@ console.log("\na game's market closes when the game starts (23 Oct, Showdown's B
   }
 }
 
+console.log("\na scheduled announcement's market closes when it is published (14 Nov, Bee's Fed market)");
+{
+  // The Fed market closed at 23:59 UTC on the decision day, six hours after the
+  // statement: bets stayed open past the answer, and every report of it was
+  // dated before the close, which no NO can rest on.
+  const statement = new Date(Date.now() + 30 * 3600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const endOfDay = new Date(Date.now() + 36 * 3600_000).toISOString();
+  const answer = {
+    question: "Will the Federal Reserve raise its target federal funds rate at its next FOMC meeting?",
+    resolution_criteria: "Resolves YES if the FOMC announces an increase to the target range in the statement from its next scheduled meeting, per the official statement on federalreserve.gov. Resolves NO if the rate is held or cut.",
+    price_claim: null, close_time: endOfDay, close_time_inferred: true, starts_at: statement,
+    category: "Politics", resolvability: "clean", appropriate: true, appropriate_reason: "", reason: "clean", hook: "Fed to hike next FOMC?",
+  };
+  const realFetch = globalThis.fetch;
+  const hadKey = process.env.INFERENCE_API_KEY;
+  process.env.INFERENCE_API_KEY = "test";
+  let system = "";
+  try {
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      system = String((JSON.parse(String(init?.body ?? "{}")).system ?? [])[0]?.text ?? "");
+      return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(answer) }] }), { status: 200 });
+    }) as typeof fetch;
+    const ex = await extractClaim("will the fed hike at the next fomc?");
+    check("the market closes when the statement comes out, not at the end of its day",
+      Date.parse(ex.close_time ?? "") === Date.parse(statement) && ex.close_time_inferred === false, `${ex.close_time} vs ${statement}`);
+    check("...and the model is told an announcement's time is its start",
+      /scheduled announcement/i.test(system) && /FOMC statement comes out/.test(system), system.slice(0, 80));
+  } finally {
+    globalThis.fetch = realFetch;
+    if (hadKey === undefined) delete process.env.INFERENCE_API_KEY; else process.env.INFERENCE_API_KEY = hadKey;
+  }
+}
+
 console.log(`\n${fail === 0 ? "all unsettleable checks passed." : `${fail} FAILED`} (${pass} passed)`);
 if (fail) process.exit(1);
