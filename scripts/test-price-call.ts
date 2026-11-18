@@ -61,14 +61,19 @@ for (const q of [
   "will BTC be above 82k at 18:00",                    // whose 18:00?
   "will BTC be above 82k at 6 ET",                     // six in the morning or at night?
   "will BTC hit 83k",                                  // no time
-  "will BTC hit 83k today",                            // whose today?
   "will BTC stay above 82k for 10 minutes",            // every second of a window
   "will BTC pump 5% in 10 minutes",                    // a percentage is not a level
   "will BTC hit 83k or 80k in 10 min",                 // two levels
   "will BTC hit 83k in the next 4h candle",            // a window that has not started
   "will BTC be above 82k in 10 minutes or at 18:00 UTC", // two times
   "will btc go up in 10 minutes",                      // no level
-  "will BTC close the day green",                      // whose day?
+  "will BTC close the day green",                      // a candle's colour, not asked yet
+  "will BTC keep 5 green candles today",               // "keep 5" is not a price
+  "will BTC hold 80k for 5 minutes",                   // a length, not a window
+  "will BTC hold 80k at the 4h candle close",          // a close: a candle's, not a hold
+  "HYPE ATH this 4h candle close?",                    // ATH at a close, left alone
+  "will the hype last today",                          // a word, not $HYPE
+  "will BTC hold the low of 76k or 75k today",         // two levels
   "will BTC be above 82k this hour",                   // a close or a moment? left alone
 ]) eq(parsePriceCall(q), null, `left to the channel: ${q}`);
 
@@ -165,6 +170,55 @@ const fake: PriceSource = {
   eq(whenText(up, upPlan, true), "when the 30m candle closes", "the room hears when it is read: a candle's close");
   eq(whenText(down, downPlan, true), "at 14:43 UTC", "...or a moment");
   eq(whenText(down, downPlan), "the moment ETH touches 4,000, or at 14:43 UTC", "...and a touch still ahead keeps its line");
+}
+
+{
+  /* TODAY, HOLD AND ATH (18 Nov): Bee Empire's own lines. They went to the
+     room as moments and the stream ending canceled them with no result. */
+  const midnight = { kind: "clock", hour: 0, minute: 0, tz: "UTC", label: "UTC" } as const;
+  eq(parsePriceCall("will BTC hold the low of 76270 by the end of today?"), { kind: "hold", asset: "BTC", level: 76270, dir: "above", until: midnight }, "Bee, 2 Nov: hold the low by the end of today");
+  eq(parsePriceCall("will btc hold the low of 76560 today?"), { kind: "hold", asset: "BTC", level: 76560, dir: "above", until: midnight }, "Bee, 2 Nov: hold the low today");
+  eq(parsePriceCall("will BTC come back down to 84k at any point end of today UTC"), { kind: "touch", asset: "BTC", level: 84000, dir: "down", until: midnight }, "Bee, 21 Oct: come back down to, end of today UTC");
+  eq(parsePriceCall("HYPE ath today?"), { kind: "ath", asset: "HYPE", until: midnight }, "Bee, 30 Oct: ATH today");
+  eq(parsePriceCall("will BTC hit 83k today"), { kind: "touch", asset: "BTC", level: 83000, dir: "either", until: midnight }, "today is the UTC day");
+  eq(parsePriceCall("will ETH hit 4k by eod ET")?.kind === "touch" && (parsePriceCall("will ETH hit 4k by eod ET") as Extract<PriceCall, { kind: "touch" }>).until, { kind: "clock", hour: 0, minute: 0, tz: "America/New_York", label: "ET" }, "a zone named after the day is its midnight");
+  eq(parsePriceCall("will SOL stay above 150 this hour"), { kind: "hold", asset: "SOL", level: 150, dir: "above", until: { kind: "candle", size: "1h", which: "current" } }, "stay above, with a window");
+  eq(parsePriceCall("will ETH stay below 4k in the next 30 min"), { kind: "hold", asset: "ETH", level: 4000, dir: "below", until: { kind: "in", minutes: 30 } }, "stay below");
+  eq(parsePriceCall("will BTC hold the high of 90k today")?.kind, "hold", "the high of: under it");
+  eq((parsePriceCall("will BTC hold the high of 90k today") as Extract<PriceCall, { kind: "hold" }>).dir, "below", "...its way");
+  eq(parsePriceCall("will $HYPE make a new high in the next 4h"), { kind: "ath", asset: "HYPE", until: { kind: "in", minutes: 240 } }, "a new high in a window");
+
+  const day = Date.parse("2026-11-02T17:51:44.223Z"); // call 27 opened
+  const hold = parsePriceCall("will btc hold the low of 76560 today?")!;
+  const hp = planFor(hold, day);
+  eq(hp, { from: day, to: Date.parse("2026-11-03T00:00:00Z") }, "a hold runs to 00:00 UTC");
+  prices = { [day]: 76900 };
+  ex = { high: 77100, low: 76600 };
+  eq(await readPriceCall(hold, hp, day, fake, day + 3_600_000), "wait", "held so far, time left");
+  eq(await readPriceCall(hold, hp, day, fake, hp.to + 5_000), { outcome: "yes", said: "BTC low was 76,600 on Binance." }, "held to the end: YES");
+  ex = { high: 77100, low: 76559.99 };
+  eq(await readPriceCall(hold, hp, day, fake, day + 3_600_000), { outcome: "no", said: "BTC low was 76,559.99 on Binance." }, "a trade under the low: NO at once");
+  ex = { high: 77100, low: 76560 };
+  eq(await readPriceCall(hold, hp, day, fake, hp.to + 5_000), { outcome: "yes", said: "BTC low was 76,560 on Binance." }, "back on the low is still held");
+  prices = { [day]: 76400, [hp.to]: 76700 };
+  eq(await readPriceCall(hold, hp, day, fake, day + 3_600_000), "wait", "already under at the open: read at the end");
+  eq(await readPriceCall(hold, hp, day, fake, hp.to + 5_000), { outcome: "yes", said: "BTC was 76,700 at 00:00 UTC on Binance." }, "...where it is at 00:00 UTC");
+  eq(whenText(hold, hp), "the moment BTC trades below 76,560, or at 00:00 UTC", "what the room hears for a hold");
+
+  const ath = parsePriceCall("HYPE ath today?")!;
+  const ap = planFor(ath, day);
+  let asked: number | null = null;
+  const withAth: PriceSource = { ...fake, async highBefore(asset, t) { assert.equal(asset, "HYPE"); asked = t; return 59.4; } };
+  ex = { high: 58, low: 55 };
+  eq(await readPriceCall(ath, ap, day, withAth, day + 60_000), "wait", "under the old high, time left");
+  eq(asked, day, "the ATH is the high before the open");
+  eq(await readPriceCall(ath, ap, day, withAth, ap.to + 5_000), { outcome: "no", said: "HYPE high was 58 on Binance, all-time high before the call 59.4." }, "no new high by the end");
+  ex = { high: 59.41, low: 55 };
+  eq(await readPriceCall(ath, ap, day + 1, withAth, day + 60_000), { outcome: "yes", said: "HYPE high was 59.41 on Binance, all-time high before the call 59.4." }, "above it: YES at once");
+  ex = { high: 59.4, low: 55 };
+  eq(await readPriceCall(ath, ap, day + 2, withAth, ap.to + 5_000), { outcome: "no", said: "HYPE high was 59.4 on Binance, all-time high before the call 59.4." }, "equal to it is not a new high");
+  eq(await readPriceCall(ath, ap, day + 3, fake, day + 60_000), null, "a source with no history: to the mods");
+  eq(whenText(ath, ap), "the moment HYPE trades above its all-time high, or at 00:00 UTC", "what the room hears for an ATH");
 }
 
 /* -------------------------------------------------------------- engine -- */

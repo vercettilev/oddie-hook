@@ -58,7 +58,7 @@
  * votes only (deps.votesOnly).
  */
 
-import { binancePrices, parsePriceCall, planFor, readPriceCall, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
+import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, readsOnTheWay, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
 import type { ScreenSource } from "../games/screen.js";
@@ -639,16 +639,16 @@ async function waitForPrice(call: LiveCall, deps: LiveDeps): Promise<string | nu
   const pc = parsePriceCall(call.question);
   if (!pc) return null;
   const plan = planFor(pc, call.openedAt);
-  // A touch the price was already past at the open is read where its window
-  // ends, and the room hears that moment. Unread, it is looked for as a touch;
-  // readPriceCall reads the open again either way.
+  // A touch the price was already past at the open, or a hold it had already
+  // broken, is read where its window ends, and the room hears that moment.
+  // Unread, it is looked for on the way; readPriceCall reads the open again.
   let atEnd = false;
-  if (pc.kind === "touch") {
+  if (pc.kind === "touch" || pc.kind === "hold") {
     const ref = await (deps.prices ?? binancePrices).priceAt(pc.asset, call.openedAt).catch(() => null);
-    atEnd = ref !== null && touchAtOpen(pc, ref).met;
+    atEnd = ref !== null && (pc.kind === "touch" ? touchAtOpen(pc, ref).met : holdAtOpen(pc, ref).broken);
   }
-  // A touch is looked for from the lock on; anything else is read once its time is up.
-  priceWaits.set(call.id, { call, pc, plan, atEnd, nextTryAt: pc.kind === "touch" && !atEnd ? 0 : plan.to + PRICE_SETTLE_LAG_MS, busy: false });
+  // A touch, hold or ATH is looked for from the lock on; anything else is read once its time is up.
+  priceWaits.set(call.id, { call, pc, plan, atEnd, nextTryAt: readsOnTheWay(pc) && !atEnd ? 0 : plan.to + PRICE_SETTLE_LAG_MS, busy: false });
   return whenText(pc, plan, atEnd);
 }
 
@@ -684,7 +684,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
     return null;
   });
   if (read === "wait") {
-    w.nextTryAt = w.pc.kind === "touch" ? now + PRICE_POLL_MS : w.plan.to + PRICE_SETTLE_LAG_MS;
+    w.nextTryAt = readsOnTheWay(w.pc) && !w.atEnd ? now + PRICE_POLL_MS : w.plan.to + PRICE_SETTLE_LAG_MS;
     return false;
   }
   if (!read) {

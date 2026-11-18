@@ -7,19 +7,29 @@
  * see ("clutch this round?"). A price is not one of those: it is a public
  * number the second it happens, so the room should not wait on a mod.
  *
- * THREE SHAPES, each read the way a trader means it:
+ * FIVE SHAPES, each read the way a trader means it:
  *   candle  "will BTC close the 30m candle above 82k?"  the candle's close
  *           "will the next 5m BTC candle close green?"  close against open
  *   at      "will SOL be under 150 in 10 minutes?"      the price at that second
  *           "ETH above 4k at 18:00 UTC?"
  *   touch   "will BTC hit 83k in the next 15 min?"      the high or low on the way,
  *           "will BTC dip to 81k this hour?"            settled the moment it touches
+ *   hold    "will BTC hold the low of 76270 today?"     NO the moment it trades past,
+ *           "will SOL stay above 150 this hour?"        YES when the window ends
+ *   ath     "HYPE ath today?"                           a trade above the highest one
+ *                                                       before the call opened
+ *
+ * TODAY IS THE UTC DAY (Lev, 18 Nov). Bee Empire's "hold the low of 76270 by
+ * the end of today" and "come back down to 84k at any point end of today UTC"
+ * went to the room as moments, and the stream ending canceled them with no
+ * result. A trading stream's day is the exchange's daily candle, so "today",
+ * "end of day" and "eod" run to 00:00 UTC (or to midnight in a zone the
+ * question names), and the line says "at 00:00 UTC" so nobody guesses.
  *
  * NARROW ON PURPOSE. Only a question that names one coin, one level or colour
- * and one time is read. Anything else (two coins, "not", "stay above", a clock
- * time with no time zone, "today" whose day depends on where you sit) stays
- * the channel's, exactly as before. A wrong result in a live chat costs more
- * than a mod typing !call yes.
+ * and one time is read. Anything else (two coins, "not", "stay above" with no
+ * window, a clock time with no time zone) stays the channel's, exactly as
+ * before. A wrong result in a live chat costs more than a mod typing !call yes.
  *
  * ONE SOURCE, NAMED IN THE LINE. Binance's public market data (no key), the
  * venue most chart-watchers have open. The result line says which venue and
@@ -41,7 +51,11 @@ export type PriceCall =
   | { kind: "candle"; asset: string; size: CandleSize; which: "current" | "next"; test: CandleTest }
   | { kind: "at"; asset: string; when: Extract<When, { kind: "in" | "clock" }>; test: LevelTest }
   /** "either" is hit/touch/reach: up or down depends on where the price was when the call opened. */
-  | { kind: "touch"; asset: string; level: number; dir: "up" | "down" | "either"; until: When };
+  | { kind: "touch"; asset: string; level: number; dir: "up" | "down" | "either"; until: When }
+  /** "above": a trade below the level by `until` is a NO, none is a YES. */
+  | { kind: "hold"; asset: string; level: number; dir: "above" | "below"; until: When }
+  /** A trade above the highest trade before the call opened. */
+  | { kind: "ath"; asset: string; until: When };
 
 const MINUTES: Record<CandleSize, number> = {
   "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
@@ -57,17 +71,22 @@ const COINS: Record<string, string> = {
   bnb: "BNB", xrp: "XRP", doge: "DOGE", dogecoin: "DOGE", ada: "ADA", cardano: "ADA",
   avax: "AVAX", sui: "SUI", ltc: "LTC", litecoin: "LTC", trx: "TRX", tron: "TRX",
   pepe: "PEPE", wif: "WIF", bonk: "BONK", shib: "SHIB", chainlink: "LINK", polkadot: "DOT",
+  hyperliquid: "HYPE",
 };
 /** Tickers that are also English words: read only as $LINK or LINK. TON was one
  *  until every TON pair on Binance stopped trading (30 June 2026, all BREAK on
  *  20 Oct): oddie told the room it would settle a TON call, read nothing for ten
  *  minutes past its moment, then handed it to the mods. A TON call is the
  *  channel's from the start now, like any call no price can answer. */
-const SHOUTED_ONLY: Record<string, string> = { link: "LINK", dot: "DOT" };
+const SHOUTED_ONLY: Record<string, string> = { link: "LINK", dot: "DOT", hype: "HYPE" };
+
+/** Read for a stream vote, not yet for a market (18 Nov): a HYPE market keeps
+ *  the rail it opened on, and money markets change rails on their own day. */
+const CALLS_ONLY: ReadonlySet<string> = new Set(["HYPE"]);
 
 /** Every ticker above, each with a USDT pair on Binance: the coins whose price a
  *  market can read at its open when no token is pinned on chain (server.ts). */
-export const BINANCE_ASSETS: ReadonlySet<string> = new Set([...Object.values(COINS), ...Object.values(SHOUTED_ONLY)]);
+export const BINANCE_ASSETS: ReadonlySet<string> = new Set([...Object.values(COINS), ...Object.values(SHOUTED_ONLY)].filter((a) => !CALLS_ONLY.has(a)));
 
 /** Time zones a chat writes, to the zone that keeps its daylight saving right. */
 const ZONES: Record<string, string> = {
@@ -133,7 +152,7 @@ function levelTestFrom(text: string): LevelTest | null | "many" {
 }
 
 const UP_VERBS = String.raw`(?:go|goes|get|gets|rise|rises|pump|pumps|run|runs|move|moves|break|breaks|push|pushes)\s+(?:above|over|past|to)`;
-const DOWN_VERBS = String.raw`lose|loses|(?:dip|dips|drop|drops|fall|falls|dump|dumps|go|goes|get|gets|sink|sinks|slip|slips|break|breaks)\s+(?:below|under|to)`;
+const DOWN_VERBS = String.raw`lose|loses|(?:dip|dips|drop|drops|fall|falls|dump|dumps|go|goes|get|gets|sink|sinks|slip|slips|break|breaks)\s+(?:below|under|to)|(?:come|comes)\s+(?:back\s+)?down\s+(?:to|below|under)`;
 // "Break 80k" is down from 81k and up from 79k: these take their way from the price at the open.
 const EITHER_VERBS = String.raw`hit|hits|touch|touches|tag|tags|reach|reaches|see|sees|retest|retests|break|breaks|cross|crosses`;
 
@@ -208,8 +227,40 @@ function untilFrom(text: string): When | null {
   const clock = clockFrom(text, "by");
   if (clock === "many") return null;
   if (clock) ways.push(clock);
+  const day = todayFrom(text);
+  if (day) ways.push(day);
   return ways.length === 1 ? ways[0] : null;
 }
+
+/** "today", "by the end of today", "end of day", "eod": to the next midnight,
+ *  UTC unless the question names a zone right after it ("today ET"). */
+function todayFrom(text: string): Extract<When, { kind: "clock" }> | null {
+  if (!/\btoday\b|\bend of (?:the )?day\b|\beod\b/.test(text)) return null;
+  const named = new RegExp(String.raw`\b(?:today|day|eod)\s+(${Object.keys(ZONES).join("|")})\b`).exec(text);
+  const zone = named?.[1] ?? "utc";
+  return { kind: "clock", hour: 0, minute: 0, tz: ZONES[zone], label: zone.toUpperCase() };
+}
+
+const HOLD_WORDS = /\b(stay|stays|hold|holds|remain|remains|keep|keeps)\b/;
+// After the level: "hold 5 minutes" is a length, "hold 82k" a level.
+const NOT_A_LENGTH = String.raw`(?!\s*(?:s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|candles?)\b)`;
+
+/** "hold the low of 76270", "hold 80k", "stay above 150", "hold below the high of 2k". */
+function holdFrom(text: string): { level: number; dir: "above" | "below" } | null | "many" {
+  const re = new RegExp(String.raw`\b(?:(hold|holds)|stay|stays|remain|remains|keep|keeps)\s+(?:the\s+)?(?:(low|lows|support|floor|bottom)\s+(?:of|at)\s+|(above|over)\s+|(below|under)\s+(?:the\s+(?:high|top)\s+of\s+)?|(high|highs|top|resistance)\s+(?:of|at)\s+)?${NUM}${NOT_A_LENGTH}`, "g");
+  const found: Array<{ level: number; dir: "above" | "below" }> = [];
+  for (const m of text.matchAll(re)) {
+    const [, hold, low, above, below, high, num, unit] = m;
+    // A bare level only after "hold": "keep 5" is not a price.
+    if (!hold && !low && !above && !below && !high) continue;
+    const level = levelFrom(num, unit);
+    if (level !== null) found.push({ level, dir: below || high ? "below" : "above" });
+  }
+  if (found.length > 1) return "many";
+  return found[0] ?? null;
+}
+
+const ATH = /\b(?:aths?|all[- ]time highs?|new highs?)\b/;
 
 /* "Close the hour green" is a candle without the word. The pitch to the first
    YouTube host used exactly that, and it went to the room as a moment's call
@@ -256,17 +307,40 @@ function touchCall(text: string, asset: string): PriceCall | null {
   return { kind: "touch", asset, level: touch.level, dir: touch.dir, until };
 }
 
+/** A hold asks about every trade in a window, so it needs one, and nothing else
+ *  to answer: no colour, no move, no close ("hold 80k at the close" is a candle). */
+function holdCall(text: string, asset: string, hold: { level: number; dir: "above" | "below" }): PriceCall | null {
+  if (/\b(green|red)\b|\bclos(e|es|ed|ing)\b/.test(text) || ATH.test(text) || touchFrom(text)) return null;
+  const until = untilFrom(text);
+  if (!until) return null;
+  return { kind: "hold", asset, level: hold.level, dir: hold.dir, until };
+}
+
+/** "ATH today", "new high this hour": a touch whose level is the highest trade
+ *  before the open. At the close ("ATH this 4h candle close?") is left alone. */
+function athCall(text: string, asset: string): PriceCall | null {
+  if (/\b(green|red)\b|\bclos(e|es|ed|ing)\b/.test(text) || touchFrom(text) || levelTestFrom(text)) return null;
+  const until = untilFrom(text);
+  if (!until) return null;
+  return { kind: "ath", asset, until };
+}
+
 /** The price call in a question, or null when oddie should leave it to the channel. */
 export function parsePriceCall(question: string): PriceCall | null {
   const raw = String(question ?? "");
   const text = raw.toLowerCase().replace(/\s+/g, " ");
-  // "won't close above" turns the answer around, and "stay above" asks about
-  // every second of a window: not worth guessing at either.
-  if (/\bnot\b|n't\b|\bnever\b|\b(stay|stays|hold|holds|remain|remains|keep|keeps)\b/.test(text)) return null;
+  // "won't close above" turns the answer around: not worth guessing at.
+  if (/\bnot\b|n't\b|\bnever\b/.test(text)) return null;
   // "83k or 80k", "10 or 15 minutes": two answers to one question.
   if (/\b(or|and)\s+\$?\d/.test(text)) return null;
   const asset = assetFrom(raw);
   if (!asset) return null;
+  const hold = holdFrom(text);
+  if (hold === "many") return null;
+  if (hold) return holdCall(text, asset, hold);
+  // "Stay above" with no level it can read is still every second of something.
+  if (HOLD_WORDS.test(text)) return null;
+  if (ATH.test(text)) return athCall(text, asset);
   if (touchFrom(text)) return touchCall(text, asset);
   return candleCall(text, asset) ?? atCall(text, asset);
 }
@@ -350,6 +424,9 @@ export interface PriceSource {
   priceAt(asset: string, t: number): Promise<number | null>;
   /** The highest and lowest trade in [from, to). */
   extremes(asset: string, from: number, to: number): Promise<{ high: number; low: number } | null>;
+  /** The highest trade before `t`, over the pair's whole history: an ATH call's
+   *  level. A source without it hands ATH calls to the mods. */
+  highBefore?(asset: string, t: number): Promise<number | null>;
 }
 
 /** A price as chat reads it: 82,182.01 or 0.00001234. */
@@ -371,6 +448,32 @@ export const PRICE_SETTLE_LAG_MS = 3_000;
 export function touchAtOpen(pc: Extract<PriceCall, { kind: "touch" }>, ref: number): { dir: "up" | "down"; met: boolean } {
   const dir = pc.dir === "either" ? (pc.level >= ref ? "up" : "down") : pc.dir;
   return { dir, met: dir === "up" ? ref >= pc.level : ref <= pc.level };
+}
+
+/** A hold whose level the price was already past at the open: read, like a met
+ *  touch, where the price is when its window ends. */
+export function holdAtOpen(pc: Extract<PriceCall, { kind: "hold" }>, ref: number): { broken: boolean } {
+  return { broken: pc.dir === "above" ? ref < pc.level : ref > pc.level };
+}
+
+/** Read through the window, not once at its end: touch, hold and ATH. */
+export const readsOnTheWay = (pc: PriceCall): boolean => pc.kind === "touch" || pc.kind === "hold" || pc.kind === "ath";
+
+/** The highest trade before `t`, once per call: the ATH a call is measured
+ *  against does not move while it runs, and a minute's poll should not page
+ *  the whole history again. */
+const athMemo = new Map<string, Promise<number | null>>();
+function athBefore(source: PriceSource, asset: string, t: number): Promise<number | null> {
+  if (!source.highBefore) return Promise.resolve(null);
+  const key = `${source.venue}:${asset}:${t}`;
+  let p = athMemo.get(key);
+  if (!p) {
+    p = source.highBefore(asset, t);
+    p.catch(() => athMemo.delete(key));
+    if (athMemo.size > 200) athMemo.clear();
+    athMemo.set(key, p);
+  }
+  return p;
 }
 
 export type PriceRead = { outcome: "yes" | "no"; said: string };
@@ -401,6 +504,34 @@ export async function readPriceCall(pc: PriceCall, plan: PricePlan, openedAt: nu
   }
   const end = Math.min(plan.to, now - PRICE_SETTLE_LAG_MS);
   if (end <= plan.from) return "wait";
+  if (pc.kind === "hold") {
+    const ref = await source.priceAt(pc.asset, openedAt);
+    if (ref !== null && holdAtOpen(pc, ref).broken) {
+      if (!ready) return "wait";
+      const p = await source.priceAt(pc.asset, plan.to);
+      if (p === null) return null;
+      const zone = pc.until.kind === "clock" ? pc.until : undefined;
+      const yes = pc.dir === "above" ? p >= pc.level : p <= pc.level;
+      return { outcome: yes ? "yes" : "no", said: `${pc.asset} was ${priceText(p)} at ${timeLabel(plan.to, zone)} on ${source.venue}.` };
+    }
+    const ex = await source.extremes(pc.asset, plan.from, end);
+    if (!ex) return null;
+    const broke = pc.dir === "above" ? ex.low < pc.level : ex.high > pc.level;
+    const mark = pc.dir === "above" ? `${pc.asset} low was ${priceText(ex.low)}` : `${pc.asset} high was ${priceText(ex.high)}`;
+    if (broke) return { outcome: "no", said: `${mark} on ${source.venue}.` };
+    if (!ready) return "wait";
+    return { outcome: "yes", said: `${mark} on ${source.venue}.` };
+  }
+  if (pc.kind === "ath") {
+    const ath = await athBefore(source, pc.asset, openedAt);
+    if (ath === null) return null;
+    const ex = await source.extremes(pc.asset, plan.from, end);
+    if (!ex) return null;
+    const said = `${pc.asset} high was ${priceText(ex.high)} on ${source.venue}, all-time high before the call ${priceText(ath)}.`;
+    if (ex.high > ath) return { outcome: "yes", said };
+    if (!ready) return "wait";
+    return { outcome: "no", said };
+  }
   // The price at the open: which way an "either" looks, and whether any touch
   // was already met. An up or down touch with no price at the open is looked
   // for as before; an "either" cannot be.
@@ -432,7 +563,10 @@ export function whenText(pc: PriceCall, plan: PricePlan, atEnd = false): string 
   if (pc.kind === "at") return `at ${timeLabel(plan.to, pc.when.kind === "clock" ? pc.when : undefined)}`;
   const until = pc.until.kind === "candle" ? `when the ${sizeLabel(pc.until.size)} candle closes`
     : `at ${timeLabel(plan.to, pc.until.kind === "clock" ? pc.until : undefined)}`;
-  return atEnd ? until : `the moment ${pc.asset} touches ${priceText(pc.level)}, or ${until}`;
+  if (atEnd) return until;
+  if (pc.kind === "hold") return `the moment ${pc.asset} trades ${pc.dir === "above" ? "below" : "above"} ${priceText(pc.level)}, or ${until}`;
+  if (pc.kind === "ath") return `the moment ${pc.asset} trades above its all-time high, or ${until}`;
+  return `the moment ${pc.asset} touches ${priceText(pc.level)}, or ${until}`;
 }
 
 /* -------------------------------------------------------------- source -- */
@@ -488,6 +622,20 @@ export const binancePrices: PriceSource = {
     let low = Infinity;
     for (const k of rows) { high = Math.max(high, Number(k[2])); low = Math.min(low, Number(k[3])); }
     return Number.isFinite(high) && Number.isFinite(low) ? { high, low } : null;
+  },
+  async highBefore(asset, t) {
+    // Months before this one, days before today, minutes before this one, then seconds.
+    const d = new Date(t);
+    const month = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+    const day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    const minute = Math.floor(t / 60_000) * 60_000;
+    const rows = [
+      ...await klines(asset, "1M", 0, month), ...await klines(asset, "1d", month, day),
+      ...await klines(asset, "1m", day, minute), ...await klines(asset, "1s", minute, t),
+    ];
+    if (!rows.length) return null;
+    const high = Math.max(...rows.map((k) => Number(k[2])));
+    return Number.isFinite(high) ? high : null;
   },
 };
 
