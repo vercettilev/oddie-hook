@@ -17,6 +17,7 @@ import type { Extraction } from "../matching/extractClaim.js";
 import type { PriceClaim } from "../price/index.js";
 import type { MintResult } from "../x/mentionLoop.js";
 import type { ChatMessage } from "./calls.js";
+import { reportOpened } from "./openedMail.js";
 
 export interface ChatMarketDeps {
   extract(text: string): Promise<Extraction>;
@@ -113,6 +114,8 @@ export async function openFromChat(msg: ChatMessage, claimText: string, deps: Ch
     // "opened" is what the daily cap counts.
     await deps.settle(key, "replied", { slug: minted.slug, reason: "opened", claimText: text });
     deps.log("market opened from chat", { platform: msg.platform, channel: msg.channelId, slug: minted.slug });
+    // The operator's mail (src/live/openedMail.ts).
+    reportOpened({ kind: "market", platform: msg.platform, channelId: msg.channelId, question: minted.question || ex.question, by: msg.senderName, slug: minted.slug });
     return "market-opened";
   } catch (e) {
     await deps.say(msg, MARKET_COPY.later).catch(() => {});

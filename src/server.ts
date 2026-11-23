@@ -90,6 +90,7 @@ import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { clientIp, edgeLockedOut, edgeMisconfigured, takeStamp, viaCloudflare } from "./net/edge.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
+import { openedMailer, setOpenedSink } from "./live/openedMail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { renderPersonCard, type PersonCard } from "./card/renderPersonCard.js";
@@ -1927,6 +1928,24 @@ const KICK_MARKETS_PER_DAY = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
 })();
 const liveLog = (line: string, extra?: Record<string, unknown>) => console.log(JSON.stringify({ evt: "live", line, ...extra }));
+/* THE OPERATOR'S MAIL (src/live/openedMail.ts): every call and market a person
+   opens in a stream's chat, on any platform, one mail each. OPS_MAIL_TO is
+   lev@oddie.fun unless set, and "off" stops it; OPS_MAIL_DAILY_MAX (40) keeps
+   a busy day inside the mailer's free tier. */
+const OPS_MAIL_TO = (process.env.OPS_MAIL_TO ?? "lev@oddie.fun").trim();
+if (OPS_MAIL_TO && OPS_MAIL_TO.toLowerCase() !== "off") {
+  const max = Number(process.env.OPS_MAIL_DAILY_MAX ?? 40);
+  setOpenedSink(openedMailer({
+    to: OPS_MAIL_TO,
+    send: (m) => sendMail(m),
+    channel: (p, id) => channelById(p, id),
+    appBase: APP_BASE_URL,
+    dailyMax: Number.isFinite(max) && max > 0 ? Math.floor(max) : 40,
+    now: () => Date.now(),
+    log: liveLog,
+  }));
+  liveLog(`opened mail on: ${OPS_MAIL_TO.replace(/(.{2}).*(@.*)/, "$1…$2")}`);
+} else liveLog("opened mail off");
 /* `!oddie <claim>` in a stream: the same extractor, gate, mint and resolver as
    a tag on X or Telegram. The channel is the opener, so its 2%. */
 const kickMarkets = {

@@ -62,6 +62,7 @@ import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, read
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
 import type { ScreenSource } from "../games/screen.js";
+import { reportOpened } from "./openedMail.js";
 
 export type Platform = "kick" | "twitch" | "youtube" | "x";
 export type Side = "yes" | "no";
@@ -973,6 +974,8 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     if (cmd.repeat) await sayQuiet(deps, msg, LIVE_COPY.repeatOn);
     await sayLastWeek(deps, msg, now);
     deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null, repeat: cmd.repeat === true });
+    // The operator's mail (src/live/openedMail.ts): a person opened this one.
+    reportOpened({ kind: "call", platform: msg.platform, channelId: msg.channelId, question: opened.question, by: msg.senderName });
     return "opened";
   }
 
