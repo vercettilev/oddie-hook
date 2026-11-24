@@ -53,12 +53,19 @@
  * moment the answer is in. It takes answers for three minutes by default,
  * never past the moment its answer is known.
  *
+ * And one more, on Twitch and Kick (Lev, 24 Nov): the stream's own viewer
+ * count (src/live/viewerCall.ts). "Will we hit 500 viewers today?" is read
+ * off the platform's count from its open on, YES at the first reading there,
+ * NO when the stream ends first. Three minutes of answers too, so it runs
+ * behind the show's other calls instead of holding the room for hours.
+ *
  * Platform-free on purpose: Kick is the first adapter (src/kick), Twitch plugs
  * into the same engine with its own client, and YouTube (src/youtube) runs it
  * votes only (deps.votesOnly).
  */
 
 import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, readsOnTheWay, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
+import { parseViewerCall, viewerDeadline, viewerMet, viewerWhenText, viewersShort, viewersText, type ViewerCall } from "./viewerCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
 import type { ScreenSource } from "../games/screen.js";
@@ -121,8 +128,18 @@ export const EARLY_HALF_LIFE_MS = 30 * 60_000;
 export const EARLY_FLOOR = 0.1;
 /** A call still taking answers is said again this often, if chat moved since. */
 export const REMIND_GAP_MS = 15 * 60_000;
-/** A price call with no length takes answers this long, never past the moment its answer is known. */
+/** A price call with no length takes answers this long, never past the moment its answer is known.
+ *  A viewer-count call too (src/live/viewerCall.ts). */
 export const PRICE_CALL_LOCK_MS = 3 * 60_000;
+/** How often a viewer-count call's stream is asked for its count. */
+export const VIEWER_POLL_MS = 30_000;
+/** A count nobody could read for this long: the call goes back to the mods. */
+export const VIEWER_GIVE_UP_MS = 10 * 60_000;
+/** A stream dark on every reading for this long has ended. A shorter gap is a
+ *  dropped connection, and the same stream comes back. */
+export const VIEWER_DARK_MS = 2 * 60_000;
+/** The room hears once how close the count is, from this share of the way on. */
+export const VIEWER_CLOSE_SHARE = 0.9;
 export const QUESTION_MAX = 180;
 /** A run of right calls is said next to the name from this many on (🔥3). */
 export const STREAK_SHOWN = 3;
@@ -318,8 +335,8 @@ export const LIVE_COPY = {
    *  never seen !yes (Lev, 26 Oct, before Showdown's first stream). A call with
    *  no length takes answers into the game, so it says early answers score more,
    *  as a match's own call does (src/live/gameCalls.ts). */
-  opened: (q: string, minutes: number | null, url: string) =>
-    `call: "${q}" Type !yes or !no${minutes === null ? ", earlier calls score more" : `, locks in ${minutes} min`}${url ? `. Standings: ${url}` : ""}`,
+  opened: (q: string, minutes: number | null, url: string, note = "") =>
+    `call: "${q}" ${note ? `${note} ` : ""}Type !yes or !no${minutes === null ? ", earlier calls score more" : `, locks in ${minutes} min`}${url ? `. Standings: ${url}` : ""}`,
   noResult: (q: string) => `No result came in for "${short(q)}" before the stream ended, so it's canceled. No points.`,
   /** The answers since the last such line, by name, and where the room stands. */
   split: (t: Tally, yesBy: string[], noBy: string[], msLeft: number | null) => {
@@ -424,6 +441,20 @@ export const LIVE_COPY = {
   votesHere: "Here oddie runs votes: mods open one with !call <question>, chat answers !yes or !no.",
   pickHelpVotes: "No vote is open. Start one with !call <question>, then chat answers !yes or !no.",
   matchesElsewhere: "Match calls read off the stream run on Twitch and Kick. Here mods open them with !call <question>.",
+  /* A VIEWER-COUNT CALL (src/live/viewerCall.ts), on Twitch and Kick. */
+  /** In the opening line, after the question: where the count stands. */
+  viewersNow: (count: number) => `${viewersText(count)} watching now.`,
+  /** Asked for a number the stream already has: no call. */
+  viewersAlready: (count: number) => `Already at ${viewersText(count)} viewers. Ask for a number above that.`,
+  /** Once a call, nine tenths of the way there. */
+  viewersClose: (count: number, short: number) => `${viewersText(count)} watching, ${viewersText(short)} to go.`,
+  /** In front of the result line, the reading it was settled on. */
+  viewersYes: (count: number) => `${viewersText(count)} watching.`,
+  /** `peak`: the highest count read, when every reading since the open is in it. */
+  viewersEnded: (peak: number | null) => `The stream ended.${peak === null ? "" : ` Highest count read: ${viewersText(peak)}.`}`,
+  viewersTimeUp: (peak: number | null) => `Time is up.${peak === null ? "" : ` Highest count read: ${viewersText(peak)}.`}`,
+  /** !oddie on a viewer count: a number anybody can buy carries no money. */
+  viewersNoMarket: "A viewer count is a call, never a market. Mods open it with !call and the same question.",
 };
 
 /* --------------------------------------------------------------- engine -- */
@@ -523,8 +554,9 @@ export interface LiveDeps {
   /** Where FACEIT matches are read (src/games/faceit.ts). Absent: the one
    *  configured at boot from FACEIT_API_KEY, if any. */
   games?: GameSource;
-  /** The stream's state and category now, for the picture pass (src/live/frameCalls.ts). */
-  streamGame?(platform: Platform, channelId: string): Promise<{ live: boolean; game: string | null } | null>;
+  /** The stream's state and category now, for the picture pass (src/live/frameCalls.ts),
+   *  and how many are watching, for a viewer-count call (src/live/viewerCall.ts). */
+  streamGame?(platform: Platform, channelId: string): Promise<{ live: boolean; game: string | null; viewers?: number | null } | null>;
   /** Where a picture of the stream is taken and read (src/games/frames.ts). Absent: no picture pass. */
   frames?: FrameSource;
   /** Where a room call's answer is read off the stream (src/games/screen.ts). Absent: the screen settles nothing. */
@@ -553,8 +585,14 @@ export const PRICE_GIVE_UP_MS = 10 * 60_000;
 const lastSplit = new Map<string, number>();
 /** Who answered each call since its last split line, by side. */
 const newSince = new Map<string, { yes: string[]; no: string[] }>();
-/** A moment only the stream shows: settled off the stream or by a mod, not by a price or a match. */
-export const isRoomCall = (c: LiveCall): boolean => !c.matchId && !parsePriceCall(c.question);
+/** Where a stream's viewer count can be read (src/live/viewerCall.ts). X hands
+ *  none over; YouTube's is not read. */
+const VIEWER_PLATFORMS: ReadonlySet<Platform> = new Set<Platform>(["twitch", "kick"]);
+/** The viewer-count call in a question, where the platform publishes a count. Anywhere else it is a room call. */
+export const viewerCallOf = (c: { platform: Platform; question: string }): ViewerCall | null =>
+  (VIEWER_PLATFORMS.has(c.platform) ? parseViewerCall(c.question) : null);
+/** A moment only the stream shows: settled off the stream or by a mod, not by a price, a match or a viewer count. */
+export const isRoomCall = (c: LiveCall): boolean => !c.matchId && !parsePriceCall(c.question) && !viewerCallOf(c);
 /** Price calls oddie settles itself, from their lock on. Kept in memory: after
  *  a restart the clock gives each locked price call its wait back. */
 const priceWaits = new Map<string, PriceWait>();
@@ -563,6 +601,22 @@ const priceWaits = new Map<string, PriceWait>();
  *  back a minute after the hand-over too, and the room heard "yours to settle"
  *  every minute until a mod did. */
 const handedToMods = new Set<string>();
+/** A viewer-count call from its open to its result. Kept in memory: after a
+ *  restart the clock gives each one its wait back, without the readings it lost. */
+interface ViewerWait {
+  call: LiveCall; vc: ViewerCall; deadline: number | null; nextTryAt: number; busy: boolean;
+  /** The highest count read, and whether every reading since the open is in it. */
+  peak: number | null; whole: boolean;
+  /** When the platform last said something this call can be read from, and
+   *  since when it has not: no answer, or a stream never seen on air. */
+  readAt: number | null; unreadSince: number | null;
+  /** Seen on air since this wait began, and since when every reading found it
+   *  dark. Dark before it was ever seen on air is a stream not started yet. */
+  live: boolean; darkSince: number | null;
+  /** The room heard how close the count is. */
+  nudged: boolean;
+}
+const viewerWaits = new Map<string, ViewerWait>();
 const lastPickHelp = new Map<string, number>();
 /** When each person last heard their own record, per chat. */
 const lastMe = new Map<string, number>();
@@ -577,10 +631,10 @@ const lastSaid = new Map<string, number>();
 /** Test seam. */
 export function _resetLive(): void {
   lastSplit.clear(); newSince.clear(); lastPickHelp.clear(); lastMe.clear(); lastTop.clear(); lastActivity.clear(); lastSaid.clear(); priceWaits.clear(); handedToMods.clear();
-  seenLive.clear(); lastWatch = 0;
+  viewerWaits.clear(); seenLive.clear(); lastWatch = 0;
 }
 /** Test seam: what a restart forgets (the waits in memory), the store keeps. */
-export function _forgetWaits(): void { priceWaits.clear(); handedToMods.clear(); lastWatch = 0; }
+export function _forgetWaits(): void { priceWaits.clear(); viewerWaits.clear(); handedToMods.clear(); lastWatch = 0; }
 
 const roomKey = (m: { platform: Platform; channelId: string }) => `${m.platform}:${m.channelId}`;
 
@@ -637,13 +691,21 @@ function sameCall(call: LiveCall, question: string, now: number): boolean {
 }
 
 /** When a new call stops taking answers: its own length, or for a price call
- *  three minutes by default and never past the moment its answer is known. */
-function closeFor(question: string, asked: number | null, now: number): { closesAt: number; minutes: number | null; pc: PriceCall | null } {
+ *  three minutes by default and never past the moment its answer is known. A
+ *  viewer-count call the same: left open it would hold the room for the whole
+ *  stream, and the show's other calls open behind the one taking answers. */
+function closeFor(platform: Platform, question: string, asked: number | null, now: number): { closesAt: number; minutes: number | null; pc: PriceCall | null } {
   let minutes = asked;
   let closesAt = now + (minutes === null ? CALL_OPEN_MAX_MS : minutes * 60_000);
   const pc = minutes === null ? parsePriceCall(question) : null;
   if (pc) {
     closesAt = Math.min(now + PRICE_CALL_LOCK_MS, planFor(pc, now).to);
+    minutes = Math.max(1, Math.ceil((closesAt - now) / 60_000));
+  }
+  const vc = viewerCallOf({ platform, question });
+  if (vc) {
+    if (asked === null) closesAt = now + PRICE_CALL_LOCK_MS;
+    closesAt = Math.min(closesAt, viewerDeadline(vc, now) ?? closesAt);
     minutes = Math.max(1, Math.ceil((closesAt - now) / 60_000));
   }
   return { closesAt, minutes, pc };
@@ -694,6 +756,36 @@ async function waitForPrice(call: LiveCall, deps: LiveDeps): Promise<string | nu
   return whenText(pc, plan, atEnd);
 }
 
+/** How many are watching, as the platform said it: null when it gave no count. */
+function countOf(info: { live: boolean; viewers?: number | null } | null): number | null {
+  return info && info.live && typeof info.viewers === "number" && Number.isFinite(info.viewers) ? Math.max(0, Math.floor(info.viewers)) : null;
+}
+
+/** The first count that settles it: 500, or 501 for "more than 500". */
+const viewersNeeded = (vc: ViewerCall): number => (vc.above ? vc.target + 1 : vc.target);
+
+/** Start reading a viewer-count call's stream. `atOpen`: what the platform
+ *  said as the call opened, so every reading since is in its peak. Without it
+ *  (a restart) the peak is never said, the "close" line is taken as said, and
+ *  the stream has to be seen on air again before going dark can end it. */
+function watchViewers(call: LiveCall, vc: ViewerCall, now: number, atOpen?: { live: boolean; count: number | null }): ViewerWait {
+  const first = atOpen?.count ?? null;
+  const w: ViewerWait = {
+    call, vc, deadline: viewerDeadline(vc, call.openedAt), nextTryAt: first === null ? now : now + VIEWER_POLL_MS, busy: false,
+    peak: first, whole: atOpen !== undefined, readAt: first === null ? null : now, unreadSince: null, live: atOpen?.live === true, darkSince: null,
+    // An open already nine tenths of the way says so in its own line.
+    nudged: atOpen === undefined || (first !== null && first >= Math.ceil(viewersNeeded(vc) * VIEWER_CLOSE_SHARE)),
+  };
+  viewerWaits.set(call.id, w);
+  return w;
+}
+
+/** When a viewer-count call settles, for the room; null for any other call. */
+function viewerWhen(call: LiveCall): string | null {
+  const vc = viewerCallOf(call);
+  return vc ? viewerWhenText(vc, viewerDeadline(vc, call.openedAt)) : null;
+}
+
 /** The pin is for the call taking answers: with none left in the channel, it comes down. */
 async function unpinIfIdle(deps: LiveDeps, m: { platform: Platform; channelId: string }): Promise<void> {
   if (!deps.unpin) return;
@@ -706,9 +798,10 @@ async function lockAndSay(call: LiveCall, deps: LiveDeps): Promise<boolean> {
   if (!(await deps.store.lock(call.id, deps.now()))) return false;
   lastSplit.delete(call.id); newSince.delete(call.id); lastSaid.delete(call.id);
   const tally = await deps.store.tally(call.id);
-  const when = await waitForPrice(call, deps);
+  const when = (await waitForPrice(call, deps)) ?? viewerWhen(call);
   await sayQuiet(deps, call, when ? LIVE_COPY.lockedPrice(tally, when) : LIVE_COPY.locked(tally));
   await unpinIfIdle(deps, call);
+  if (viewerCallOf(call)) await resumeRepeat(deps, call);
   return true;
 }
 
@@ -774,6 +867,103 @@ async function settlePrices(deps: LiveDeps): Promise<number> {
 }
 
 /**
+ * A viewer-count call's result, said with the reading in front, as a price
+ * call's is. A mod who settled or canceled first wins: the store settles once.
+ */
+async function finishViewer(w: ViewerWait, outcome: Side, said: string, deps: LiveDeps): Promise<boolean> {
+  const now = deps.now();
+  const call = w.call;
+  viewerWaits.delete(call.id);
+  const wasOpen = await deps.store.lock(call.id, now).catch(() => false);
+  lastSplit.delete(call.id); newSince.delete(call.id); lastSaid.delete(call.id);
+  const tally = await deps.store.tally(call.id);
+  const done = await deps.store.settle(call.id, outcome, pointsFor(tally, outcome), now);
+  if (!done) return false;
+  await deps.predictionEnd?.(call, outcome).catch(() => {});
+  await unpinIfIdle(deps, call);
+  const { url, star } = await resultExtras(deps, call);
+  await sayQuiet(deps, call, `${said} ${LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners, star)}`);
+  await sayStreamTop(deps, call, now);
+  deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "viewers", target: w.vc.target, peak: w.peak });
+  // The operator's mail (src/live/openedMail.ts): a person's call has its result.
+  reportSettled({ platform: call.platform, channelId: call.channelId, callId: call.id, question: call.question, outcome,
+    source: "viewers", right: done.right, total: done.total, winners: (done.winners ?? []).map((x) => x.name), frame: false });
+  // It was still taking answers: the room is free for the repeat it kept waiting.
+  if (wasOpen) await resumeRepeat(deps, call);
+  return true;
+}
+
+/** A count oddie cannot read goes back to the mods in one line, as a price does. */
+async function viewersToMods(w: ViewerWait, deps: LiveDeps): Promise<false> {
+  viewerWaits.delete(w.call.id);
+  handedToMods.add(w.call.id);
+  const still = (await deps.store.unsettled(w.call.platform, w.call.channelId).catch(() => [] as LiveCall[])).some((c) => c.id === w.call.id);
+  if (still) await sayQuiet(deps, w.call, LIVE_COPY.priceToMods(w.call.question));
+  deps.log("live viewers handed to mods", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id });
+  return false;
+}
+
+/**
+ * One look at a viewer-count call's stream. The first count at the number is a
+ * YES. A stream that was on air and has been dark for two minutes has ended, a
+ * NO (a shorter gap is a dropped connection). A call with a length is a NO at
+ * its end, read then and not after. Ten minutes with no answer from the
+ * platform and the call is the mods'.
+ */
+async function settleViewer(w: ViewerWait, deps: LiveDeps): Promise<boolean> {
+  const now = deps.now();
+  const info = deps.streamGame
+    ? await deps.streamGame(w.call.platform, w.call.channelId).catch((e) => { deps.log("live viewers not read", { id: w.call.id, err: (e as Error).message.slice(0, 200) }); return null; })
+    : null;
+  const count = countOf(info);
+  const dark = info !== null && !info.live;
+  // The next look: half a minute on, and never past the end of its own length.
+  w.nextTryAt = w.deadline !== null && now < w.deadline ? Math.min(now + VIEWER_POLL_MS, w.deadline) : now + VIEWER_POLL_MS;
+  if (info?.live) { w.live = true; w.darkSince = null; }
+  else if (dark && w.darkSince === null) w.darkSince = now;
+  // Read: a count, or a stream that was on air and is dark. A stream never seen
+  // on air has nothing to read yet, and is not waited on forever.
+  const read = count !== null || (dark && w.live);
+  if (read) { w.readAt = now; w.unreadSince = null; }
+  else if (w.unreadSince === null) w.unreadSince = now;
+  const peak = () => (w.whole ? w.peak : null);
+  if (count !== null) {
+    if (w.peak === null || count > w.peak) w.peak = count;
+    if (viewerMet(w.vc, count)) return finishViewer(w, "yes", LIVE_COPY.viewersYes(count), deps);
+  }
+  if (dark && w.live && w.darkSince !== null && now - w.darkSince >= VIEWER_DARK_MS) return finishViewer(w, "no", LIVE_COPY.viewersEnded(peak()), deps);
+  if (w.deadline !== null && now >= w.deadline) {
+    // Short of it on this reading or the one before, or no stream at all: a NO.
+    // Not read for longer than that: nobody knows, and the mods say.
+    if (count !== null || dark || (w.readAt !== null && now - w.readAt <= 2 * VIEWER_POLL_MS)) return finishViewer(w, "no", LIVE_COPY.viewersTimeUp(peak()), deps);
+    return viewersToMods(w, deps);
+  }
+  if (w.unreadSince !== null && now - w.unreadSince >= VIEWER_GIVE_UP_MS) return viewersToMods(w, deps);
+  // Nine tenths of the way: the room hears it once, while there is something to do about it.
+  if (count !== null && !w.nudged && count >= Math.ceil(viewersNeeded(w.vc) * VIEWER_CLOSE_SHARE)) {
+    w.nudged = true;
+    await sayQuiet(deps, w.call, LIVE_COPY.viewersClose(count, viewersShort(w.vc, count)));
+  }
+  return false;
+}
+
+async function settleViewers(deps: LiveDeps): Promise<number> {
+  let n = 0;
+  for (const w of [...viewerWaits.values()]) {
+    if (w.busy || deps.now() < w.nextTryAt) continue;
+    w.busy = true;
+    try { if (await settleViewer(w, deps)) n++; }
+    catch (e) {
+      // The store blinked: the count is still there next time.
+      w.nextTryAt = deps.now() + VIEWER_POLL_MS;
+      deps.log("live viewers not settled", { id: w.call.id, err: (e as Error).message });
+    }
+    finally { w.busy = false; }
+  }
+  return n;
+}
+
+/**
  * !yes or !no with nothing taking answers, or a settle with nothing to settle.
  * From a viewer it is chat. From the channel's owner or a mod it is a mistake
  * worth one line: the first Twitch pilot typed !yes or !no with a market open
@@ -802,8 +992,10 @@ async function pickHelp(msg: ChatMessage, waiting: LiveCall | null, now: number,
   for (const [k, at] of lastPickHelp) if (now - at >= PICK_HELP_GAP_MS) lastPickHelp.delete(k);
   lastPickHelp.set(key, now);
   const price = waiting ? priceWaits.get(waiting.id) : undefined;
+  const counted = waiting && viewerWaits.has(waiting.id) ? viewerWhen(waiting) : null;
   const line = !waiting ? (await marketsHere(deps, msg) ? LIVE_COPY.pickHelp : LIVE_COPY.pickHelpVotes)
     : price ? LIVE_COPY.switched(waiting.question, await deps.store.tally(waiting.id), whenText(price.pc, price.plan, price.atEnd))
+    : counted ? LIVE_COPY.switched(waiting.question, await deps.store.tally(waiting.id), counted)
     : LIVE_COPY.settleFirst(waiting.question);
   await sayQuiet(deps, msg, line, msg.messageId);
   return "pick-help";
@@ -855,6 +1047,8 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     if (!(await marketsHere(deps, msg))) { await sayQuiet(deps, msg, LIVE_COPY.votesHere, msg.messageId); return "votes-only"; }
     const claim = cmd.claim || (msg.replyText ?? "").trim();
     if (!claim || !deps.market) { await sayQuiet(deps, msg, LIVE_COPY.marketHelp, msg.messageId); return "market-help"; }
+    // A viewer count is a number anybody can buy: a vote, never money (src/live/viewerCall.ts).
+    if (parseViewerCall(claim)) { await sayQuiet(deps, msg, LIVE_COPY.viewersNoMarket, msg.messageId); return "viewers-no-market"; }
     return deps.market(msg, claim);
   }
 
@@ -984,20 +1178,48 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       const id = await sayQuiet(deps, msg, LIVE_COPY.reminder(running.question, await deps.store.tally(running.id), running.timed ? running.closesAt - now : null));
       await pinQuiet(deps, msg, id);
       // "!call repeat" on the call already running: this one is round 1.
-      if (cmd.repeat) {
+      if (cmd.repeat && !viewerCallOf(running)) {
         await deps.store.setRepeat?.(msg.platform, msg.channelId, { question: running.question, minutes: cmd.minutes, byId: msg.senderId, byName: msg.senderName, round: 1 });
         await sayQuiet(deps, msg, LIVE_COPY.repeatOn);
       }
       return "again";
     }
+    /* A VIEWER-COUNT CALL (src/live/viewerCall.ts) is read off the platform's
+       count. The same number already waiting for its result is said again
+       instead of asked twice, and a number the stream already has is a call
+       decided at its open: either is said, and nothing in the room changes.
+       A stream not on air yet opens it all the same (the first minute of a
+       stream is when it is asked), and the count is read once there is one. */
+    const vc = viewerCallOf({ platform: msg.platform, question: cmd.question });
+    let atOpen: { live: boolean; count: number | null } | undefined;
+    if (vc) {
+      const twin = vc.minutes !== null ? undefined : (await deps.store.unsettled(msg.platform, msg.channelId).catch(() => [] as LiveCall[])).find((c) => {
+        const o = viewerCallOf(c);
+        return o !== null && o.minutes === null && o.target === vc.target && o.above === vc.above;
+      });
+      if (twin) {
+        const t = await deps.store.tally(twin.id);
+        await sayQuiet(deps, msg, twin.lockedAt === null ? LIVE_COPY.reminder(twin.question, t, twin.timed ? twin.closesAt - now : null)
+          : handedToMods.has(twin.id) ? LIVE_COPY.settleFirst(twin.question)
+          : LIVE_COPY.switched(twin.question, t, viewerWhen(twin)), msg.messageId);
+        return "again";
+      }
+      const info = deps.streamGame ? await deps.streamGame(msg.platform, msg.channelId).catch(() => null) : null;
+      if (info) atOpen = { live: info.live, count: countOf(info) };
+    }
+    // How many are watching as it opens, when the platform said.
+    const watching = atOpen?.count ?? null;
+    if (vc && watching !== null && viewerMet(vc, watching)) { await sayQuiet(deps, msg, LIVE_COPY.viewersAlready(watching), msg.messageId); return "viewers-already"; }
+    // A count that was reached stays reached: no round after it.
+    const repeat = cmd.repeat === true && !vc;
     // The new call takes the room. The one taking answers keeps them and waits
     // for its result, so nothing anybody said is lost.
     if (running && (await deps.store.lock(running.id, now))) {
       lastSplit.delete(running.id); newSince.delete(running.id); lastSaid.delete(running.id);
-      await sayQuiet(deps, msg, LIVE_COPY.switched(running.question, await deps.store.tally(running.id), await waitForPrice(running, deps)));
+      await sayQuiet(deps, msg, LIVE_COPY.switched(running.question, await deps.store.tally(running.id), (await waitForPrice(running, deps)) ?? viewerWhen(running)));
     }
     // A price call oddie settles itself, so it does not stay open until a mod settles it.
-    const { closesAt, minutes, pc } = closeFor(cmd.question, cmd.minutes, now);
+    const { closesAt, minutes, pc } = closeFor(msg.platform, cmd.question, cmd.minutes, now);
     const opened = await deps.store.open({
       platform: msg.platform, channelId: msg.channelId, question: cmd.question,
       openedById: msg.senderId, openedByName: msg.senderName, openedAt: now, closesAt, timed: minutes !== null,
@@ -1008,18 +1230,22 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       if (other) await sayQuiet(deps, msg, LIVE_COPY.busy(other.question), msg.messageId);
       return "busy";
     }
-    // A different question means the show moved on: the old repeat opens no new round.
+    // A different question means the show moved on: the old repeat opens no new
+    // round. Not a viewer-count call, which runs beside the show: the repeat
+    // stays, and comes back when this one stops taking answers (resumeRepeat).
     const rep = await deps.store.repeat?.(msg.platform, msg.channelId).catch(() => null);
-    if (cmd.repeat) await deps.store.setRepeat?.(msg.platform, msg.channelId, { question: opened.question, minutes: cmd.minutes, byId: msg.senderId, byName: msg.senderName, round: 1 });
-    else if (rep && !sameQuestion(rep.question, opened.question)) await deps.store.setRepeat?.(msg.platform, msg.channelId, null);
+    if (repeat) await deps.store.setRepeat?.(msg.platform, msg.channelId, { question: opened.question, minutes: cmd.minutes, byId: msg.senderId, byName: msg.senderName, round: 1 });
+    else if (rep && !vc && !sameQuestion(rep.question, opened.question)) await deps.store.setRepeat?.(msg.platform, msg.channelId, null);
     lastSaid.set(opened.id, now);
-    const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId)));
+    // Read from the open on: the count can get there while the room still answers.
+    if (vc) watchViewers(opened, vc, now, atOpen ?? { live: false, count: null });
+    const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId), watching === null ? "" : LIVE_COPY.viewersNow(watching)));
     await pinQuiet(deps, msg, id);
     const panel = await deps.predictionOpen?.(opened, minutes).catch(() => null);
     if (panel === "too-long") await sayQuiet(deps, msg, LIVE_COPY.predictionLong, msg.messageId);
-    if (cmd.repeat) await sayQuiet(deps, msg, LIVE_COPY.repeatOn);
+    if (repeat) await sayQuiet(deps, msg, LIVE_COPY.repeatOn);
     await sayLastWeek(deps, msg, now);
-    deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null, repeat: cmd.repeat === true });
+    deps.log("live call opened", { platform: msg.platform, channel: msg.channelId, id: opened.id, minutes, price: pc?.kind ?? null, viewers: vc?.target ?? null, repeat });
     // The operator's mail (src/live/openedMail.ts): a person opened this one.
     reportOpened({ kind: "call", platform: msg.platform, channelId: msg.channelId, question: opened.question, by: msg.senderName });
     return "opened";
@@ -1041,7 +1267,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
 
   if (cmd.kind === "cancel") {
     if (!(await deps.store.cancel(target.id, now))) return "no-call";
-    lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id);
+    lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id); viewerWaits.delete(target.id);
     await deps.predictionEnd?.(target, null).catch(() => {});
     // Canceling the repeating call ends the repeat too.
     const rep = await deps.store.repeat?.(msg.platform, msg.channelId).catch(() => null);
@@ -1054,7 +1280,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   // settle: a call still taking answers is locked first, so a late answer
   // cannot slip in after the result is known.
   if (target.lockedAt === null) await deps.store.lock(target.id, now);
-  lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id);
+  lastSplit.delete(target.id); newSince.delete(target.id); lastSaid.delete(target.id); priceWaits.delete(target.id); viewerWaits.delete(target.id);
   const tally = await deps.store.tally(target.id);
   const points = pointsFor(tally, cmd.outcome);
   const done = await deps.store.settle(target.id, cmd.outcome, points, now);
@@ -1082,6 +1308,7 @@ export async function lockDue(deps: LiveDeps): Promise<number> {
     if (await lockAndSay(call, deps).catch(() => false)) n++;
   }
   await settlePrices(deps);
+  await settleViewers(deps);
   await watchStreams(deps);
   return n;
 }
@@ -1143,13 +1370,33 @@ export async function screenGivesUp(call: LiveCall, deps: LiveDeps): Promise<voi
 async function reopenRepeat(call: LiveCall, deps: LiveDeps): Promise<void> {
   const rep = await deps.store.repeat?.(call.platform, call.channelId).catch(() => null);
   if (!rep || !sameQuestion(rep.question, call.question)) return;
+  await openRound(call, rep, deps);
+}
+
+/**
+ * THE REPEAT A VIEWER-COUNT CALL KEPT WAITING. A viewer-count call takes the
+ * room for its three minutes and leaves the channel's repeat alone. A round
+ * whose result came in meanwhile could not open its next one (one call takes
+ * answers at a time), so it opens here, the moment the room is free: nothing
+ * taking answers, and no round of the repeat still waiting for its result.
+ */
+async function resumeRepeat(deps: LiveDeps, m: { platform: Platform; channelId: string }): Promise<void> {
+  const rep = await deps.store.repeat?.(m.platform, m.channelId).catch(() => null);
+  if (!rep) return;
+  const waiting = await deps.store.unsettled(m.platform, m.channelId).catch(() => null);
+  if (!waiting || waiting.some((c) => c.lockedAt === null || sameQuestion(c.question, rep.question))) return;
+  await openRound(m, rep, deps);
+}
+
+/** The repeat's next round, in the name of whoever started it. */
+async function openRound(call: { platform: Platform; channelId: string }, rep: Repeat, deps: LiveDeps): Promise<void> {
   if (deps.streamLive && (await deps.streamLive(call.platform, call.channelId).catch(() => null)) === false) {
     await deps.store.setRepeat?.(call.platform, call.channelId, null).catch(() => {});
     deps.log("live repeat ended with the stream", { platform: call.platform, channel: call.channelId, rounds: rep.round });
     return;
   }
   const now = deps.now();
-  const { closesAt, minutes } = closeFor(rep.question, rep.minutes, now);
+  const { closesAt, minutes } = closeFor(call.platform, rep.question, rep.minutes, now);
   const opened = await deps.store.open({
     platform: call.platform, channelId: call.channelId, question: rep.question,
     openedById: rep.byId, openedByName: rep.byName, openedAt: now, closesAt, timed: minutes !== null,
@@ -1174,11 +1421,17 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
   const now = deps.now();
   if (now - lastWatch < STREAM_POLL_MS) return;
   lastWatch = now;
-  const all = await deps.store.everyUnsettled().catch(() => [] as LiveCall[]);
+  const all = await deps.store.everyUnsettled().catch(() => null);
+  if (!all) return;
+  // A viewer-count call settled or canceled some other way is not read again.
+  // One opened while the list was being read is not in it yet, and stays.
+  const open = new Set(all.map((c) => c.id));
+  for (const [id, w] of viewerWaits) if (!open.has(id) && w.call.openedAt < now) viewerWaits.delete(id);
   const roomsBy = new Map<string, LiveCall[]>();
   for (const c of all) {
     if (now - c.openedAt > CALL_FORGET_MS) {
       if (await deps.store.cancel(c.id, now).catch(() => false)) deps.log("live call forgotten", { platform: c.platform, channel: c.channelId, id: c.id });
+      viewerWaits.delete(c.id);
       continue;
     }
     if (parsePriceCall(c.question)) {
@@ -1187,6 +1440,13 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
     }
     // A match call is FACEIT's to settle, stream or no stream (src/live/gameCalls.ts).
     if (c.matchId) continue;
+    // A viewer-count call is the count's to settle (src/live/viewerCall.ts): a
+    // restart lost its wait, and the readings before it with it.
+    const vc = viewerCallOf(c);
+    if (vc) {
+      if (!viewerWaits.has(c.id) && !handedToMods.has(c.id)) watchViewers(c, vc, now);
+      continue;
+    }
     const k = roomKey(c);
     roomsBy.set(k, [...(roomsBy.get(k) ?? []), c]);
   }

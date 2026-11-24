@@ -166,11 +166,12 @@ export async function streamIsLive(app: string, userId: string): Promise<boolean
   return (await streamInfo(app, userId)).live;
 }
 
-/** The channel's stream now: live or not, and in which category ("Counter-Strike", "Dota 2", "Just Chatting"). */
-export async function streamInfo(app: string, userId: string): Promise<{ live: boolean; game: string | null }> {
-  const j = await api<{ data?: Array<{ game_name?: string }> }>(app, "GET", `/streams?user_id=${encodeURIComponent(userId)}&type=live`);
+/** The channel's stream now: live or not, in which category ("Counter-Strike", "Dota 2", "Just Chatting"),
+ *  and how many are watching, the count under the player (a viewer-count call reads it, src/live/viewerCall.ts). */
+export async function streamInfo(app: string, userId: string): Promise<{ live: boolean; game: string | null; viewers: number | null }> {
+  const j = await api<{ data?: Array<{ game_name?: string; viewer_count?: number }> }>(app, "GET", `/streams?user_id=${encodeURIComponent(userId)}&type=live`);
   const s = j.data?.[0];
-  return s ? { live: true, game: s.game_name || null } : { live: false, game: null };
+  return s ? { live: true, game: s.game_name || null, viewers: typeof s.viewer_count === "number" ? s.viewer_count : null } : { live: false, game: null, viewers: null };
 }
 
 /** The message pinned in a channel's chat now, if any (null: nothing pinned). */

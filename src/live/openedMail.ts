@@ -62,8 +62,8 @@ export interface Settled {
   callId: string;
   question: string;
   outcome: Side;
-  /** What settled it: the picture, the streamer or a mod, or the price. */
-  source: "screen" | "streamer" | "price";
+  /** What settled it: the picture, the streamer or a mod, the price, or the stream's viewer count. */
+  source: "screen" | "streamer" | "price" | "viewers";
   /** The streamer or mod who did, as the chat shows them. */
   by?: string;
   right: number;
@@ -178,7 +178,8 @@ export function settledMail(s: Settled, ch: ChannelInfo | null, appBase: string,
   const question = oneLine(s.question);
   const result = s.outcome === "yes" ? "YES" : "NO";
   const subject = `Call settled on ${clip(w.name, 40)} (${w.platform}): ${result}, "${clip(question, 80)}"`;
-  const who = s.source === "screen" ? "The screen" : s.source === "price" ? "The price" : `<b>${esc(oneLine(s.by ?? "") || "A mod")}</b>`;
+  const who = s.source === "screen" ? "The screen" : s.source === "price" ? "The price" : s.source === "viewers" ? "The viewer count"
+    : `<b>${esc(oneLine(s.by ?? "") || "A mod")}</b>`;
   const lead = `${who} settled it <b>${result}</b> on ${esc(w.name)}'s ${w.platform} stream:`;
   const names = s.winners.map((n) => oneLine(n)).filter(Boolean);
   const shown = names.slice(0, 8).map((n) => `@${esc(n)}`).join(" ");
