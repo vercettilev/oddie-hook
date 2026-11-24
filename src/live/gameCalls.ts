@@ -18,7 +18,7 @@ import { faceitConfigured, scoreText, sideFor, type GameMatch, type GameSource }
 
 /** A game that has not talked for this long is not on (src/live/gsiCalls.ts reads it too). */
 export const GSI_STALE_MS = 2 * 60_000;
-import { CALL_OPEN_MAX_MS, LIVE_COPY, pointsFor, sayStreamTop, type LiveCall, type LiveDeps, type Platform } from "./calls.js";
+import { CALL_OPEN_MAX_MS, LIVE_COPY, callPageUrl, pointsFor, sayStreamTop, type LiveCall, type LiveDeps, type Platform } from "./calls.js";
 
 /** How often linked channels are asked about their matches. */
 export const GAME_POLL_MS = 60_000;
@@ -71,8 +71,8 @@ async function settleFromMatch(call: LiveCall, m: GameMatch, link: { id: string;
   const done = await deps.store.settle(call.id, r.side, pointsFor(tally, r.side), now);
   if (!done) return false;
   await deps.predictionEnd?.(call, r.side).catch(() => {});
-  const url = await deps.standingsUrl(call.platform, call.channelId);
-  await sayQuiet(deps, call, `${GAME_COPY.result(link.name, r.side === "yes", scoreText(m, r.mine), m.map)} ${LIVE_COPY.settled(call.question, r.side, done.right, done.total, done.top, url, done.winners)}`);
+  const url = callPageUrl(await deps.standingsUrl(call.platform, call.channelId), call.id);
+  await sayQuiet(deps, call, `${GAME_COPY.result(link.name, r.side === "yes", scoreText(m, r.mine), m.map)} ${LIVE_COPY.settled(call.question, r.side, done.right, done.total, done.top, url, done.winners, link.name)}`);
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome: r.side, right: done.right, total: done.total, by: "faceit" });
   return true;

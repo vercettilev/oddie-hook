@@ -237,6 +237,8 @@ const msg = (text: string, senderId: string, canRun = false): ChatMessage => ({
   platform: "twitch", channelId: "1372956063", messageId: `m${Math.random()}`, senderId, senderName: senderId, canRun, text,
 });
 const last = () => said[said.length - 1];
+// A result line ends on the call's own page, whose number is the store's: read here as N.
+const lastResult = () => last().replace(/\/call\/\d+$/, "/call/N");
 const reset = () => { _resetLive(); _resetLiveStore(); said.length = 0; logged.length = 0; reads = 0; candle = real; prices = {}; ex = null; now = opened; };
 const lockAt = opened + 3 * 60_000 + 1_000;
 
@@ -256,7 +258,7 @@ eq(reads, 0, "nothing read before the close");
 now = Date.parse("2026-10-08T14:00:04Z");
 await lockDue(deps);
 eq(reads, 1, "read once after the close");
-eq(last(), `BTC 30m candle closed at 82,182.01 on Binance. Result: YES on "will BTC close current 30min candle above 82k?" Called it: @bee. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "the result line");
+eq(lastResult(), `BTC 30m candle closed at 82,182.01 on Binance. Result: YES on "will BTC close current 30min candle above 82k?" Called it: @bee. Card: https://app.oddie.fun/live/twitch/bee_empire/call/N`, "the result line");
 ok((await liveStore.unsettled("twitch", "1372956063")).every((c) => !c.question.includes("30min candle")), "settled: only the new call is left");
 ok(logged.includes("live call settled"), "logged as settled");
 await lockDue(deps);
@@ -279,7 +281,7 @@ eq(reads, before, "waits between looks");
 ex = { high: 83010, low: 82400 };
 now += 15_000;
 await lockDue(deps);
-eq(last(), `BTC high was 83,010 on Binance. Result: YES on "will BTC hit 83k in the next 15 min?" Called it: @viewer. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "touched: settled at once");
+eq(lastResult(), `BTC high was 83,010 on Binance. Result: YES on "will BTC hit 83k in the next 15 min?" Called it: @viewer. Card: https://app.oddie.fun/live/twitch/bee_empire/call/N`, "touched: settled at once");
 
 // The source is down: retries, then hands the call back to the mods.
 reset();
@@ -408,6 +410,6 @@ eq(reads, readsBeforeEnd, "not read again before the window ends");
 prices = { [opened]: 82500, [Date.parse("2026-10-08T14:00:00Z")]: 81900 };
 now = Date.parse("2026-10-08T14:00:04Z");
 await lockDue(deps);
-eq(last(), `BTC was 81,900 at 14:00 UTC on Binance. Result: NO on "will BTC go above 82k this 30m candle" Nobody called it. Standings: https://app.oddie.fun/live/twitch/bee_empire`, "settled on where it ended");
+eq(lastResult(), `BTC was 81,900 at 14:00 UTC on Binance. Result: NO on "will BTC go above 82k this 30m candle" Nobody called it. Card: https://app.oddie.fun/live/twitch/bee_empire/call/N`, "settled on where it ended");
 
 console.log(`test-price-call: ${checks} checks passed`);

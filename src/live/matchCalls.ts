@@ -10,7 +10,7 @@
  * WHAT, so a match call looks the same in the room whichever way it was seen.
  */
 import { scoreTextFrom } from "../games/faceit.js";
-import { CALL_OPEN_MAX_MS, LIVE_COPY, pointsFor, sayStreamTop, type LiveCall, type LiveDeps, type Platform } from "./calls.js";
+import { CALL_OPEN_MAX_MS, LIVE_COPY, callPageUrl, pointsFor, sayStreamTop, type LiveCall, type LiveDeps, type Platform } from "./calls.js";
 import { GAME_COPY, matchQuestion } from "./gameCalls.js";
 
 export interface MatchChannel { platform: Platform; channelId: string; slug: string; name: string | null }
@@ -58,8 +58,9 @@ export async function settleMatchCall(deps: LiveDeps, ch: MatchChannel, call: Li
   const done = await deps.store.settle(call.id, side, pointsFor(tally, side), now);
   if (!done) return false;
   await deps.predictionEnd?.(call, side).catch(() => {});
-  const url = await deps.standingsUrl(ch.platform, ch.channelId);
-  await sayQuiet(deps, ch, `${GAME_COPY.result(ch.name || ch.slug, won, scoreTextFrom(score), map)} ${LIVE_COPY.settled(call.question, side, done.right, done.total, done.top, url, done.winners)}`);
+  // A match call is about the streamer: a win the room voted against is theirs (LIVE_COPY.settled).
+  const url = callPageUrl(await deps.standingsUrl(ch.platform, ch.channelId), call.id);
+  await sayQuiet(deps, ch, `${GAME_COPY.result(ch.name || ch.slug, won, scoreTextFrom(score), map)} ${LIVE_COPY.settled(call.question, side, done.right, done.total, done.top, url, done.winners, ch.name || ch.slug)}`);
   await sayStreamTop(deps, ch, now);
   deps.log("live call settled", { platform: ch.platform, channel: ch.channelId, id: call.id, outcome: side, right: done.right, total: done.total, by });
   return true;

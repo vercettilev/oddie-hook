@@ -18,9 +18,10 @@
  *
  * SETTLED (Lev, 24 Nov: every result can be a post). A call a person opened
  * has its result, read off the screen, given by the streamer or a mod, or by
- * the price. The mail says who called it and links the picture the screen
- * settled it on, so the moment can become a post while it is fresh. Canceled
- * calls and oddie's own match calls do not mail.
+ * the price. The mail says who called it, says when chat voted the other way
+ * (the result worth posting first), and links the call's card, which is one
+ * tap from a post (src/live/callPage.ts), and the picture the screen settled
+ * it on. Canceled calls and oddie's own match calls do not mail.
  *
  * NEVER IN THE WAY. The chat has heard its line before the mail is asked for,
  * nothing waits for it, and a mail that fails is a log line. The mailer is
@@ -33,7 +34,8 @@
  * at most OPS_MAIL_DAILY_MAX (40) of each kind a UTC day, so a busy day of one
  * kind never silences the others. The last one of a kind that day says so.
  */
-import type { Platform, Side } from "./calls.js";
+import { chatVotedOf, type Platform, type Side } from "./calls.js";
+import { callPath } from "./callPage.js";
 
 export interface Opened {
   kind: "call" | "market";
@@ -181,13 +183,17 @@ export function settledMail(s: Settled, ch: ChannelInfo | null, appBase: string,
   const names = s.winners.map((n) => oneLine(n)).filter(Boolean);
   const shown = names.slice(0, 8).map((n) => `@${esc(n)}`).join(" ");
   const more = names.length > 8 ? ` and ${names.length - 8} more` : "";
-  const called = s.total === 0 ? "Nobody answered."
+  // The room voted the other way (chatVoted): the result that makes a post.
+  const voted = chatVotedOf(s.outcome, s.right, s.total);
+  const against = voted && voted !== s.outcome ? `<b>Chat voted ${voted}.</b> ` : "";
+  const called = against + (s.total === 0 ? "Nobody answered."
     : s.right === 0 ? `Nobody called it. ${s.total} answered.`
-    : `${s.right} of ${s.total} called it: ${shown}${more}`;
+    : `${s.right} of ${s.total} called it: ${shown}${more}`);
+  // The card's page is the channel's page with the card on top, so it stands in for that link here.
   const links: Array<[string, string]> = [
+    ["The card", w.base + callPath(s.platform, w.slug, s.callId)],
     ...(s.frame ? [["What Oddie saw", `${w.base}/api/live/${s.platform}/${encodeURIComponent(w.slug)}/frame/${encodeURIComponent(s.callId)}`] as [string, string]] : []),
     ["Watch the stream", watchUrl(s.platform, w.slug, s.channelId)],
-    ["Channel page", `${w.base}/live/${s.platform}/${encodeURIComponent(w.slug)}`],
   ];
   return { subject, html: page(lead, question, called, links, last) };
 }

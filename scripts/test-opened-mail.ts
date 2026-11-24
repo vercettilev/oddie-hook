@@ -269,6 +269,15 @@ console.log("\nthe mails themselves");
   check("...the body what settled it, who called it, and the picture it was settled on",
     screen.html.includes("The screen settled it <b>YES</b> on Bee's Twitch stream:") && screen.html.includes("2 of 3 called it: @ana @bo")
     && screen.html.includes('href="https://app.oddie.fun/api/live/twitch/bee_empire/frame/42"') && screen.html.includes(">What Oddie saw<"));
+  check("...and first of its links, the call's card, one tap from a post",
+    screen.html.includes('<a href="https://app.oddie.fun/live/twitch/bee_empire/call/42">The card</a> · <a href="https://app.oddie.fun/api/live/twitch/bee_empire/frame/42">What Oddie saw</a>')
+    && !screen.html.includes("Chat voted"), screen.html);
+  const against = settledMail({ kind: "settled", platform: "twitch", channelId: "7", callId: "43", question: "will I win this game?", outcome: "yes",
+    source: "screen", right: 1, total: 4, winners: ["ana"], frame: true }, { slug: "bee_empire", name: "Bee" }, base);
+  check("a result the room voted against says so, before who called it", against.html.includes("<b>Chat voted no.</b> 1 of 4 called it: @ana"), against.html);
+  check("...also when nobody called it, and never from two answers",
+    settledMail({ kind: "settled", platform: "kick", channelId: "9", callId: "7", question: "q?", outcome: "no", source: "streamer", by: "mod", right: 0, total: 3, winners: [], frame: false }, null, base)
+      .html.includes("<b>Chat voted yes.</b> Nobody called it. 3 answered."));
   const byMod = settledMail({ kind: "settled", platform: "kick", channelId: "9", callId: "7", question: "q?", outcome: "no",
     source: "streamer", by: "<b>mod</b>", right: 0, total: 2, winners: [], frame: false }, null, base);
   check("a mod's result names the mod, escaped, and has no picture",

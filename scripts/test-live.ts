@@ -14,6 +14,7 @@ import express from "express";
 import {
   parseCommand, handleChat, lockDue, remindOpen, sayVotes, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
   EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, settleOnScreen, type ChatMessage, type LiveDeps,
+  chatVoted, chatVotedOf, aboutStreamer, callPageUrl, CHAT_VOTE_MIN,
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, houseAccounts, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
@@ -106,6 +107,58 @@ function room() {
   return { deps, said, pins, unpins: () => unpins, line, tick: (ms: number) => { clock += ms; } };
 }
 
+console.log("\nthe room was wrong: the result line says how chat voted (24 Nov)");
+{
+  check("chat voted when three or more answered and one side led", chatVoted({ yes: 2, no: 1 }) === "yes" && chatVoted({ yes: 1, no: 4 }) === "no" && CHAT_VOTE_MIN === 3);
+  check("...two answers are not a vote, and a tie says nothing", chatVoted({ yes: 0, no: 2 }) === null && chatVoted({ yes: 2, no: 2 }) === null && chatVoted({ yes: 0, no: 0 }) === null);
+  check("...read the same from what a settle hands back", chatVotedOf("yes", 1, 4) === "no" && chatVotedOf("no", 1, 4) === "yes" && chatVotedOf("yes", 3, 4) === "yes" && chatVotedOf("no", 2, 4) === null);
+
+  check("a room that was right hears the plain line", LIVE_COPY.settled("q?", "yes", 3, 4, 0, "") === 'Result: YES on "q?" Called it: 3 of 4.');
+  check("a room that voted the other way hears it before who called it",
+    LIVE_COPY.settled("q?", "yes", 1, 4, 0, "", ["a"]) === 'Result: YES on "q?" Chat voted no. Called it: @a.',
+    LIVE_COPY.settled("q?", "yes", 1, 4, 0, "", ["a"]));
+  check("...also when nobody called it", LIVE_COPY.settled("q?", "no", 0, 3, 0, "") === 'Result: NO on "q?" Chat voted yes. Nobody called it.');
+  check("...two wrong answers are still only \"Nobody called it\"", LIVE_COPY.settled("q?", "no", 0, 2, 0, "") === 'Result: NO on "q?" Nobody called it.');
+  check("...and a tie says nothing about the vote", LIVE_COPY.settled("q?", "yes", 2, 4, 0, "") === 'Result: YES on "q?" Called it: 2 of 4.');
+
+  const mine = LIVE_COPY.settled("will I win this game?", "yes", 1, 4, 0, "", ["a"], "Bee");
+  check("a YES the room voted against, on a call about the streamer, is theirs",
+    mine === 'Result: YES on "will I win this game?" Chat voted no. Bee didn\'t check the chat. Called it: @a.', mine);
+  check("...never on a NO: no jab at a streamer who just lost",
+    LIVE_COPY.settled("will I win this game?", "no", 1, 4, 0, "", ["a"], "Bee") === 'Result: NO on "will I win this game?" Chat voted yes. Called it: @a.');
+  check("...and never when the room was right", LIVE_COPY.settled("will I win this game?", "yes", 3, 4, 0, "", [], "Bee") === 'Result: YES on "will I win this game?" Called it: 3 of 4.');
+  check("no result line reads as a command", [mine, LIVE_COPY.settled("q?", "no", 0, 3, 0, "https://app.oddie.fun/live/kick/s/call/9")].every((l) => parseCommand(l) === null));
+
+  check("a call in the first person is about the streamer", ["will I win this game?", "can i clutch this", "is this my best run?", "I'm cooked?", "who wins, me or chat"].every(aboutStreamer));
+  check("...one about somebody else, or a price, is not",
+    !["will he win this game?", "Can Vib beat StanCifka?", "will BTC hit 83k in the next 15 min?", "will mina win", "is Imane live"].some(aboutStreamer));
+
+  check("a call's page sits under its channel's", callPageUrl("https://app.oddie.fun/live/kick/streamer", "12") === "https://app.oddie.fun/live/kick/streamer/call/12"
+    && callPageUrl("https://app.oddie.fun/live/kick/streamer/", "12") === "https://app.oddie.fun/live/kick/streamer/call/12");
+  check("...and where the channel's page is not linked (X, YouTube) neither is the call's",
+    callPageUrl("", "12") === "" && !LIVE_COPY.settled("q?", "yes", 1, 4, 0, callPageUrl("", "12"), ["a"]).includes("Card:"));
+
+  // In a room: the streamer's own call, the room against them, and the name the channel goes by.
+  const r = room();
+  await saveChannel({ platform: "kick", channelId: "100", slug: "streamer", name: "Bee", avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
+  await handleChat(r.line("mod", "!call will I win this game?", true), r.deps);
+  for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!no"], ["d", "!no"]] as const) await handleChat(r.line(who, side), r.deps);
+  await handleChat(r.line("mod", "!call yes", true), r.deps);
+  const id = (await recentCalls("kick", "100"))[0]?.id;
+  check("in a room, a win the chat voted against names the streamer and links the call's card",
+    r.said[r.said.length - 1]?.text === `Result: YES on "will I win this game?" Chat voted no. Bee didn't check the chat. Called it: @a. Card: https://app.oddie.fun/live/kick/streamer/call/${id}`,
+    r.said[r.said.length - 1]?.text);
+
+  // The same room and vote, on a call about somebody else: the vote is said, the streamer is not.
+  const o = room();
+  await saveChannel({ platform: "kick", channelId: "100", slug: "streamer", name: "Bee", avatar: null, accessToken: null, refreshToken: null, tokenExpiresAt: null, active: true });
+  await handleChat(o.line("mod", "!call will he win this game?", true), o.deps);
+  for (const [who, side] of [["a", "!yes"], ["b", "!no"], ["c", "!no"], ["d", "!no"]] as const) await handleChat(o.line(who, side), o.deps);
+  await handleChat(o.line("mod", "!call yes", true), o.deps);
+  check("...a call about somebody else says the vote and names nobody",
+    /^Result: YES on "will he win this game\?" Chat voted no\. Called it: @a\. Card: /.test(o.said[o.said.length - 1]?.text ?? ""), o.said[o.said.length - 1]?.text);
+}
+
 console.log("\na call's first answer is said at once, the rest by the clock (Lev's live, 16 Oct)");
 {
   const r = room();
@@ -159,8 +212,9 @@ console.log("\na timed call, start to finish");
     r.said.length === before + 1 && r.said[before]?.text === LIVE_COPY.settleOnly);
   check("...a viewer's is still chat", (await handleChat(r.line("a", pasted), r.deps)) === "not-allowed" && r.said.length === before + 1);
   check("the mod settles", (await handleChat(r.line("mod", "!call yes", true), r.deps)) === "settled");
-  check("...and the room hears which call and who was right, earliest first",
-    r.said[r.said.length - 1]?.text === `Result: YES on "will he win this game?" Called it: @a @f. Standings: https://app.oddie.fun/live/kick/streamer`,
+  // Two said yes and four said no: the room voted against the result, and the line says so (24 Nov).
+  check("...and the room hears which call, how chat voted against it, who was right, and where its card is",
+    r.said[r.said.length - 1]?.text === `Result: YES on "will he win this game?" Chat voted no. Called it: @a @f. Card: https://app.oddie.fun/live/kick/streamer/call/${(await recentCalls("kick", "100"))[0]?.id}`,
     r.said[r.said.length - 1]?.text);
   const st = await channelStandings("kick", "100");
   check("the standings count only the right answers", st.length === 6 && st[0].points === 67 && st.filter((s) => s.points > 0).length === 2);

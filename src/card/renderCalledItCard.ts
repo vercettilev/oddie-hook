@@ -4,6 +4,10 @@
  * the card is the evidence and not a drawing of it; on top sit the question,
  * the result and who called it right. 16:9, the shape X shows in full, and
  * rasterised by renderCardPng like every other card, with the bundled fonts.
+ *
+ * WHEN THE ROOM WAS WRONG (Lev, 24 Nov) the card says so, in the colour of the
+ * side chat took, next to the result in the colour of the side that won: the
+ * two colours are the story before a word is read.
  */
 import { logoMark } from "./logoMark.js";
 
@@ -17,6 +21,9 @@ export interface CalledItCard {
   calledIt: string[];
   /** The picture the screen settled it on; a call settled by hand has none. */
   frameJpeg: Buffer | null;
+  /** The side most of the room took, when enough answered (chatVoted in
+   *  src/live/calls.ts). Drawn only when it is not the result. */
+  chatVoted?: "yes" | "no" | null;
 }
 
 const W = 1200;
@@ -74,6 +81,13 @@ export function renderCalledItCard(c: CalledItCard): string {
   const word = c.outcome === "yes" ? "YES" : "NO";
   const wordW = c.outcome === "yes" ? 128 : 86;
   const where = plain(`${c.channel} · ${c.where}`).toUpperCase();
+  const sayX = 40 + wordW + 22;
+  const wrong = c.chatVoted && c.chatVoted !== c.outcome ? c.chatVoted : null;
+  // Two lines beside the result when the room was wrong, one when it was not.
+  const said = wrong
+    ? `<text x="${sayX}" y="556" font-family="Nunito" font-weight="700" font-size="28" fill="${wrong === "yes" ? YELLOW : PINK}">Chat voted ${wrong}.</text>
+  <text x="${sayX}" y="592" font-family="Nunito" font-weight="700" font-size="28" fill="#fff">${esc(calledItLine(c.calledIt))}</text>`
+    : `<text x="${sayX}" y="580" font-family="Nunito" font-weight="700" font-size="30" fill="#fff">${esc(calledItLine(c.calledIt))}</text>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
     <linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
@@ -94,7 +108,7 @@ export function renderCalledItCard(c: CalledItCard): string {
   <text x="${W - 40}" y="72" text-anchor="end" font-family="Nunito" font-weight="700" font-size="22" letter-spacing="2" fill="#fff" fill-opacity=".85">${esc(where)}</text>
   ${q.map((l, i) => `<text x="40" y="${qFirst + i * lineH}" font-family="Anton" font-size="54" fill="${YELLOW}">${esc(l)}</text>`).join("\n  ")}
   <text x="40" y="592" font-family="Anton" font-size="80" fill="${c.outcome === "yes" ? YELLOW : PINK}">${word}</text>
-  <text x="${40 + wordW + 22}" y="580" font-family="Nunito" font-weight="700" font-size="30" fill="#fff">${esc(calledItLine(c.calledIt))}</text>
+  ${said}
   ${c.frameJpeg ? `<text x="40" y="${H - 30}" font-family="Nunito" font-weight="700" font-size="21" fill="#fff" fill-opacity=".72">Settled off the stream in seconds.</text>` : ""}
   <text x="${W - 40}" y="${H - 30}" text-anchor="end" font-family="Nunito" font-weight="700" font-size="21" fill="${YELLOW}">oddie.fun</text>
 </svg>`;

@@ -80,6 +80,8 @@ await call(aleksa, "Will Aleksa finish the run in under 8:00?", now - 2 * DAY - 
 await call(aleksa, "will aleksa finish the run in under 10:00?", now - 2 * DAY - 2 * 3_600_000, [["VSProtocol", "yes", 15_000], ["sol_mika", "yes", 50_000], ["degenpanda", "no", 80_000]], "yes", 11 * 60_000, pic(1));
 await call(aleksa, "Will Aleksa crack the top 10 with 1066+ points this run?", now - 2 * DAY - 3_600_000, [["VSProtocol", "no", 30_000], ["degenpanda", "yes", 45_000], ["sol_mika", "no", 90_000]], "no", 12 * 60_000, pic(0));
 await call(showdown, "Can Roothlus beat StanCifka?", now - DAY, [["mozaiiic", "yes", 50_000], ["uncleogac", "no", 70_000]], "no", 16 * 60_000);
+// The room voted the other way (chatVoted): the card and the call's page say so.
+await call(showdown, "Can Vib beat StanCifka?", now - 3 * 3_600_000, [["mozaiiic", "no", 20_000], ["uncleogac", "no", 40_000], ["pink_peony_rose", "no", 60_000], ["sol_mika", "yes", 75_000]], "yes", 16 * 60_000);
 if (process.env.DEV_LIVE_CALL) {
   await call(showdown, "Can StanCifka win this game?", now - 3 * 60_000, [["mozaiiic", "yes", 20_000], ["uncleogac", "yes", 40_000], ["pink_peony_rose", "no", 60_000]], null, 0);
 }

@@ -10,7 +10,8 @@
  */
 import express, { type Request, type Response, type Router } from "express";
 import { consumeChallenge, issueChallenge, verifyWalletSignature, WALLET_ADDRESS } from "../auth/wallet.js";
-import { seasonEnd, seasonStart, weekStart, yesPct, type Platform } from "./calls.js";
+import { chatVoted, seasonEnd, seasonStart, weekStart, yesPct, type Platform, type Side } from "./calls.js";
+import { callPageHtml, callPath, callPost, cardPath, postIntentUrl } from "./callPage.js";
 import { cookieValue, ownerCookieName, ownerKeyFromEnv, verifyOwnerToken } from "./owner.js";
 import type { ChannelMarket } from "../store/markets.js";
 import { callFrame, channelBySlug, channelStandings, liveStore, recentCalls, settledCall, streaksFor, type StandingRow } from "../store/live.js";
@@ -87,8 +88,10 @@ const DEV_ON_AIR = new Map<string, string>(process.env.DATABASE_URL ? []
     .map((s) => { const [k, v] = s.split("="); return [k.toLowerCase(), v ?? ""] as [string, string]; }));
 
 /** A card is kept forever wherever it is fetched (immutable), so a new design
- *  needs a new address: bump this and every link asks for the new picture. */
-const CARD_VERSION = 1;
+ *  needs a new address: bump this and every link asks for the new picture.
+ *  2: how chat voted, when it voted against the result (24 Nov). */
+const CARD_VERSION = 2;
+const CALL_ID = /^\d{1,18}$/;
 /** Where a channel streams, as its card says it. */
 const CARD_WHERE: Record<Platform, string> = { kick: "Kick", twitch: "Twitch", youtube: "YouTube Live", x: "X Live" };
 
@@ -141,6 +144,38 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     if (["connect", "callback", "webhook", "voice"].includes(req.params.slug)) return next();
     if (!d.pageOpen(req)) return d.pageClosed(res);
     res.set("Cache-Control", "no-cache").type("html").send(d.pageHtml());
+  });
+
+  /* A SETTLED CALL NEVER CHANGES, so what its page says is read once per
+     server: that page is polled like the channel's own. Its picture is not
+     kept here, only in the card drawn from it. */
+  type Shown = { id: string; question: string; outcome: Side; yes: number; no: number };
+  const shownCalls = new Map<string, Shown>();
+  const shownCall = async (channelId: string, id: string): Promise<Shown | null> => {
+    if (!CALL_ID.test(id)) return null;
+    const key = `${channelId}:${id}`;
+    const hit = shownCalls.get(key);
+    if (hit) return hit;
+    const c = await settledCall(platform, channelId, id).catch(() => null);
+    if (!c) return null;
+    const row: Shown = { id, question: c.question, outcome: c.outcome, yes: c.yes, no: c.no };
+    if (shownCalls.size >= 64) shownCalls.delete(shownCalls.keys().next().value as string);
+    shownCalls.set(key, row);
+    return row;
+  };
+  const appBase = d.appBaseUrl.replace(/\/+$/, "");
+
+  /* ONE SETTLED CALL (src/live/callPage.ts): the channel's page, with the
+     call's card on top and, for whoever unfurls the link, the tags that draw
+     it. A call that is not there still opens its channel's page. */
+  r.get(`/live/${platform}/:slug/call/:id`, async (req, res) => {
+    if (!d.pageOpen(req)) return d.pageClosed(res);
+    const ch = await channelBySlug(platform, req.params.slug).catch(() => null);
+    const call = ch ? await shownCall(ch.channelId, req.params.id) : null;
+    const html = ch && call
+      ? callPageHtml(d.pageHtml(), call, platform, ch, appBase + callPath(platform, ch.slug, call.id), appBase + cardPath(platform, ch.slug, call.id, CARD_VERSION))
+      : d.pageHtml();
+    res.set("Cache-Control", "no-cache").type("html").send(html);
   });
 
   /** The call on the picture: a transparent page for an OBS browser source. */
@@ -209,6 +244,8 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
     // The owner's invite link and what it brought (src/live/referrals.ts), on
     // every platform: on X and YouTube, which pay no 2%, it is their whole card.
     const invite = ownerOf(platform, req) === ch.channelId ? await inviteCard(ch).catch(() => null) : null;
+    // The call this page was opened for (/live/<platform>/<slug>/call/<id>): its card, and the post about it.
+    const shown = typeof req.query.call === "string" ? await shownCall(ch.channelId, req.query.call) : null;
     // Only to the streamer's own browser: where their 2% goes, and how many
     // markets pay it.
     const owner = d.payout && ownerOf(platform, req) === ch.channelId
@@ -244,13 +281,19 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
         const t = tallyOf(c.id);
         return { question: c.question, yes: t.yes, no: t.no, yesPct: yesPct(t) };
       }),
+      shown: shown ? {
+        id: shown.id, question: shown.question, outcome: shown.outcome,
+        card: cardPath(platform, ch.slug, shown.id, CARD_VERSION),
+        post: postIntentUrl(callPost(shown, platform, ch), appBase + callPath(platform, ch.slug, shown.id)),
+      } : null,
       recent: recent.filter((c) => c.settledAt !== null).map((c) => ({
-        question: c.question, outcome: c.outcome, yes: c.yes, no: c.no, points: c.points,
+        id: c.id, question: c.question, outcome: c.outcome, yes: c.yes, no: c.no, points: c.points,
         settledAt: c.settledAt ? new Date(c.settledAt).toISOString() : null,
         // The picture oddie settled it on, when the screen did (src/live/screenCalls.ts).
         frame: c.frame ? `/api/live/${platform}/${encodeURIComponent(ch.slug)}/frame/${c.id}` : null,
-        // The call as a picture to post after the show (the card route below).
-        card: c.outcome ? `/api/live/${platform}/${encodeURIComponent(ch.slug)}/card/${c.id}.png?v=${CARD_VERSION}` : null,
+        // The call as a picture to post after the show (the card route below), and the page that carries it.
+        card: c.outcome ? cardPath(platform, ch.slug, c.id, CARD_VERSION) : null,
+        page: c.outcome ? callPath(platform, ch.slug, c.id) : null,
       })),
       standings: standings.map(row),
       standingsWeek: standingsWeek.map(row),
@@ -284,7 +327,7 @@ export function addChannelRoutes(r: Router, platform: Platform, d: ChannelPageDe
       const call = await settledCall(platform, ch.channelId, req.params.id).catch(() => null);
       if (call) {
         png = renderCardPng(renderCalledItCard({ question: call.question, outcome: call.outcome, channel: ch.name || ch.slug,
-          where: CARD_WHERE[platform], calledIt: call.calledIt, frameJpeg: call.frame }));
+          where: CARD_WHERE[platform], calledIt: call.calledIt, frameJpeg: call.frame, chatVoted: chatVoted(call) }));
         if (cards.size >= 64) cards.delete(cards.keys().next().value as string);
         cards.set(key, png);
       }

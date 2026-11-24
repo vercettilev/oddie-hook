@@ -394,6 +394,7 @@ export const liveStore: LiveStore = {
   openedSince: (platform, channelId, since) => openedSince(platform, channelId, since),
   topCaller: (platform, channelId, since, until) => topCaller(platform, channelId, { since, until }),
   saveFrame: (callId, jpeg, seen) => saveCallFrame(callId, jpeg, seen),
+  channelName: async (platform, channelId) => { const ch = await channelById(platform, channelId); return ch ? ch.name || ch.slug : null; },
   settledTimes: (platform, channelId, limit) => settledTimes(platform, channelId, limit),
   topCallers: async (platform, channelId, since, limit) =>
     (await channelStandings(platform, channelId, limit, { since })).map((r) => ({ username: r.username, points: r.points })),
@@ -863,7 +864,7 @@ export async function showcaseCalls(): Promise<{ live: ShowcaseCall | null; sett
 /** One settled call of this channel for its "called it" card: the question,
  *  the result, who called it right and the picture, when the screen settled it. */
 export async function settledCall(platform: Platform, channelId: string, callId: string):
-  Promise<{ question: string; outcome: Side; calledIt: string[]; frame: Buffer | null } | null> {
+  Promise<{ question: string; outcome: Side; calledIt: string[]; frame: Buffer | null; yes: number; no: number } | null> {
   if (!/^\d{1,18}$/.test(callId)) return null;
   let found: { question: string; outcome: Side } | null = null;
   if (!STORE_PERSISTENT) {
@@ -879,8 +880,9 @@ export async function settledCall(platform: Platform, channelId: string, callId:
     found = rows[0] ?? null;
   }
   if (!found) return null;
-  const [calledIt, pic] = await Promise.all([rightCallers(callId, found.outcome), callFrame(platform, channelId, callId)]);
-  return { ...found, calledIt, frame: pic?.jpeg ?? null };
+  // How the room answered, as the page counts it (liveStore.tally): what "chat voted" is said from.
+  const [calledIt, pic, t] = await Promise.all([rightCallers(callId, found.outcome), callFrame(platform, channelId, callId), liveStore.tally(callId)]);
+  return { ...found, calledIt, frame: pic?.jpeg ?? null, yes: t.yes, no: t.no };
 }
 
 /** The largest picture kept: a full-size stream frame is a few hundred KB. */

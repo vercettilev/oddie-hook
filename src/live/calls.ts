@@ -271,6 +271,27 @@ export const yesPct = (t: Tally): number => {
   return total ? Math.round((t.yes / total) * 100) : 0;
 };
 
+/* HOW CHAT VOTED (Lev, 24 Nov). A result is a story when the room was wrong:
+   "Chat voted no." in the result line, on the card and in the post. It is said
+   only when it is exactly true: enough answers to be a vote, and one side
+   ahead. Two answers, or a tie, say nothing. */
+export const CHAT_VOTE_MIN = 3;
+export function chatVoted(t: Tally): Side | null {
+  if (t.yes + t.no < CHAT_VOTE_MIN || t.yes === t.no) return null;
+  return t.yes > t.no ? "yes" : "no";
+}
+/** The same, from what a settle hands back: how many were right, of how many. */
+export const chatVotedOf = (outcome: Side, right: number, total: number): Side | null =>
+  chatVoted(outcome === "yes" ? { yes: right, no: total - right } : { yes: total - right, no: right });
+
+/** A call about the streamer: asked in the first person ("will I win this
+ *  game?", the hello's own example), by them or by a mod typing for them. */
+export const aboutStreamer = (q: string): boolean => /(^|[^\p{L}\p{N}_'])(i|i'm|i'll|i've|im|my|me|myself)(?=$|[^\p{L}\p{N}_'])/iu.test(q);
+
+/** A settled call's own page, under its channel's (src/live/channelRoutes.ts):
+ *  the card to post. "" where the channel's page is not linked (X, YouTube). */
+export const callPageUrl = (channelUrl: string, callId: string): string => (channelUrl ? `${channelUrl.replace(/\/+$/, "")}/call/${callId}` : "");
+
 /* ----------------------------------------------------------------- copy -- */
 // One line each: stream chats do not keep line breaks, and a wall scrolls away.
 
@@ -325,14 +346,23 @@ export const LIVE_COPY = {
    *  who called it. The question stays, since a tournament's call can wait
    *  beside a game's. `winners`: who called it right, earliest first; a run of
    *  🔥3 or more is named first, so the streaks are what the room sees. `top`
-   *  stays on the page. */
-  settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, winners: Named[] = []) => {
+   *  stays on the page.
+   *
+   *  THE ROOM WAS WRONG (Lev, 24 Nov): when chat voted the other way
+   *  (chatVoted), the line says so, the one dry thing a streamer reads out
+   *  loud. `star` is the streamer's name on a call about them: a YES the room
+   *  voted against is theirs, "<star> didn't check the chat." Never on a NO,
+   *  which would be a jab at somebody who just lost. `url` is the call's own
+   *  page (callPageUrl), where its card is. */
+  settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, winners: Named[] = [], star: string | null = null) => {
     const it = `Result: ${outcome.toUpperCase()} on "${short(q, 50)}"`;
-    const where = url ? ` Standings: ${url}` : "";
+    const where = url ? ` Card: ${url}` : "";
     if (!total) return `${it} The next one opens with !call.${where}`;
-    if (!right) return `${it} Nobody called it.${where}`;
+    const voted = chatVotedOf(outcome, right, total);
+    const wrong = voted && voted !== outcome ? ` Chat voted ${voted}.${star && outcome === "yes" ? ` ${star} didn't check the chat.` : ""}` : "";
+    if (!right) return `${it}${wrong} Nobody called it.${where}`;
     const shown = [...winners].sort((a, b) => runOf(b) - runOf(a));
-    return `${it} Called it: ${shown.length ? who(shown, right) : `${right} of ${total}`}.${where}`;
+    return `${it}${wrong} Called it: ${shown.length ? who(shown, right) : `${right} of ${total}`}.${where}`;
   },
   /** The screen gave the call up (screenGivesUp): the mods settle it. */
   screenUnsure: (q: string) => `No sure result on "${short(q, 50)}" from the screen. Mods: !call yes or !call no settles it.`,
@@ -423,6 +453,8 @@ export interface LiveStore {
   topCaller?(platform: Platform, channelId: string, since: number, until: number): Promise<{ username: string; right: number; calls: number } | null>;
   /** Keeps the picture a call was settled on, for its channel page. Absent: nothing kept. */
   saveFrame?(callId: string, jpeg: Buffer, seen: string): Promise<void>;
+  /** The channel as its streamer is called, for a result about them (LIVE_COPY.settled). Absent: never named. */
+  channelName?(platform: Platform, channelId: string): Promise<string | null>;
   /** When the channel's latest results came in, newest first: where this stream's run of them starts. */
   settledTimes?(platform: Platform, channelId: string, limit: number): Promise<number[]>;
   /** The channel's best callers by points over results at or after `since`, best first; the house never ranks. */
@@ -573,6 +605,15 @@ async function streamTop(deps: LiveDeps, m: { platform: Platform; channelId: str
   return { results, top };
 }
 
+/** What a room call's result line carries besides the result: the call's own
+ *  page, and the streamer's name when the call is about them (aboutStreamer). */
+async function resultExtras(deps: LiveDeps, call: LiveCall): Promise<{ url: string; star: string | null }> {
+  const url = callPageUrl(await deps.standingsUrl(call.platform, call.channelId), call.id);
+  const star = aboutStreamer(call.question) && deps.store.channelName
+    ? await deps.store.channelName(call.platform, call.channelId).catch(() => null) : null;
+  return { url, star };
+}
+
 /** After a result, from the stream's second on, its best callers so far: X
  *  closes the chat with the stream, so the room sees them before it ends,
  *  wherever it ends. Never in the way of the result line said before it. */
@@ -703,8 +744,8 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   priceWaits.delete(w.call.id);
   if (!done) return false;
   await deps.predictionEnd?.(w.call, read.outcome).catch(() => {});
-  const url = await deps.standingsUrl(w.call.platform, w.call.channelId);
-  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners)}`);
+  const { url, star } = await resultExtras(deps, w.call);
+  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners, star)}`);
   await sayStreamTop(deps, w.call, now);
   deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome: read.outcome, right: done.right, total: done.total, by: "price" });
   // The operator's mail (src/live/openedMail.ts): a person's call has its result.
@@ -1020,7 +1061,8 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (!done) return "no-call";
   await deps.predictionEnd?.(target, cmd.outcome).catch(() => {});
   await unpinIfIdle(deps, msg);
-  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.winners));
+  const { url, star } = await resultExtras(deps, target);
+  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, url, done.winners, star));
   await sayStreamTop(deps, msg, now);
   deps.log("live call settled", { platform: msg.platform, channel: msg.channelId, id: target.id, outcome: cmd.outcome, right: done.right, total: done.total });
   // The operator's mail (src/live/openedMail.ts): a person's call has its result. Not oddie's own match calls.
@@ -1063,9 +1105,9 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
     await deps.store.saveFrame(call.id, frame, seen).catch((e) => deps.log("live frame not kept", { id: call.id, err: (e as Error).message.slice(0, 200) }));
   }
   await unpinIfIdle(deps, call);
-  const url = await deps.standingsUrl(call.platform, call.channelId);
+  const { url, star } = await resultExtras(deps, call);
   // What was read off the screen stays with the kept picture, not in the chat line.
-  await sayQuiet(deps, call, LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners));
+  await sayQuiet(deps, call, LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners, star));
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
   // The operator's mail (src/live/openedMail.ts), with the picture it was settled on.
