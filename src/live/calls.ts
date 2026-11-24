@@ -366,7 +366,7 @@ export const LIVE_COPY = {
   pickHelp: "No vote is open. Start one with !call <question>, then chat answers !yes or !no. Take a market's YES or NO on its link.",
   // No line of oddie's starts with a command: an echo of it is never one.
   marketHelp: "Open a market with !oddie and a claim with a yes or no and a date, anybody can take it and oddie settles it. Reply !oddie to a message to open one on it.",
-  hello: "oddie is here. !oddie <claim> opens a real market anybody can take, settled by oddie. Mods run votes with !call <question>, and chat answers !yes or !no.",
+  hello: "oddie is here. Mods: !call will I win this game? opens a call, chat answers !yes or !no and oddie settles it off the stream. Anybody can open a real market with !oddie <claim>.",
   /* CS2 on FACEIT (src/games/faceit.ts, src/live/gameCalls.ts). */
   faceitHow: "Mods: !faceit <nickname> links this channel's FACEIT account. Every CS2 match it plays then opens a call by itself, and oddie settles it from the result.",
   faceitStatus: (nick: string) => `FACEIT: linked to ${nick}. Every match opens a call by itself. !faceit off unlinks.`,
@@ -386,7 +386,7 @@ export const LIVE_COPY = {
   helloVotes: "oddie is here. Mods open a vote with !call <question>, chat answers !yes or !no, and oddie settles price calls itself.",
   /* A chat without real markets (a Twitch channel since 5 Nov, until its
      streamer says !markets on): the hello names calls only. */
-  helloCalls: "oddie is here. Mods open a call with !call <question>, chat answers !yes or !no, and oddie settles it off the stream.",
+  helloCalls: "oddie is here. Mods: !call will I win this game? opens a call, chat answers !yes or !no and oddie settles it off the stream.",
   marketsOn: "Markets on: !oddie <claim> opens a real market anybody can take, settled by oddie. !markets off turns them off.",
   marketsOff: "Markets off: this chat runs calls only. !markets on brings them back.",
   marketsHow: "Calls only here. The streamer can turn real markets on with !markets on, and !markets off turns them off again.",

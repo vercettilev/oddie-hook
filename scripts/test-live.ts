@@ -339,6 +339,11 @@ console.log("\nseen later: the reminder, and the pin again");
       LIVE_COPY.opened("q", null, "u"), LIVE_COPY.reminder("q", { yes: 1, no: 0 }, null), LIVE_COPY.switched("q", { yes: 0, no: 0 }),
       LIVE_COPY.split({ yes: 1, no: 1 }, ["a"], ["b"], null), LIVE_COPY.locked({ yes: 0, no: 0 }), LIVE_COPY.settled("q", "yes", 1, 2, 50, "u"), MARKET_COPY.unmarketable]
       .every((t) => parseCommand(t) === null));
+  // A streamer's first try copies the first command it sees (IsaacBeast, 24 Nov:
+  // two bare !oddie and no !call), so the hello opens on a whole !call.
+  check("the hello shows a whole !call first, the market after",
+    LIVE_COPY.hello.includes("!call will I win this game?") && LIVE_COPY.hello.indexOf("!call") < LIVE_COPY.hello.indexOf("!oddie")
+    && LIVE_COPY.helloCalls.includes("!call will I win this game?") && !LIVE_COPY.helloCalls.includes("!oddie"));
   check("the reminder copy never says bet, gambling, free or real money",
     !/\bbet(s|ting)?\b|gambl|\bfree\b|real money|real sol/i.test(LIVE_COPY.reminder("q", { yes: 1, no: 1 }, 60_000) + LIVE_COPY.switched("q", { yes: 1, no: 0 }) + LIVE_COPY.which("yes", ["a", "b"])));
 }
