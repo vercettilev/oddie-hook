@@ -1,24 +1,36 @@
 /**
- * THE OPERATOR HEARS ABOUT EVERY CALL AND MARKET A PERSON OPENS IN A STREAM'S
- * CHAT (Lev, 23 Nov: a mail to lev@oddie.fun whenever anybody opens a !call
- * or a market on a Twitch, Kick, X or YouTube stream), so a stream running
- * oddie is seen while it is still on.
+ * THE OPERATOR'S MAIL. Lev hears at lev@oddie.fun the moments a stream
+ * running oddie needs him, while the stream is still on.
  *
- * WHAT MAILS. A !call a person opened (a !call repeat once, at its first
- * round) and a market !oddie opened. Not oddie's own match calls (FACEIT, the
- * game, the picture) and not a repeat's later rounds: one stream would mail
- * every match and every round.
+ * OPENED (Lev, 23 Nov: a mail whenever anybody opens a !call or a market on a
+ * Twitch, Kick, X or YouTube stream). A !call a person opened (a !call repeat
+ * once, at its first round) and a market !oddie opened. Not oddie's own match
+ * calls (FACEIT, the game, the picture) and not a repeat's later rounds: one
+ * stream would mail every match and every round.
+ *
+ * LIVE (Lev, 24 Nov). A connected channel just went live, on any platform, so
+ * Lev can be in its chat while it is on: on X he opens the calls himself (an
+ * operator there, src/x/live.ts), elsewhere he nudges the streamer. Every
+ * active channel is asked every two minutes (src/server.ts). The first pass
+ * after a boot only learns who is on already, a read that failed changes
+ * nothing, and one channel mails at most once in two hours, so a stream that
+ * drops and comes back is not a new one.
+ *
+ * SETTLED (Lev, 24 Nov: every result can be a post). A call a person opened
+ * has its result, read off the screen, given by the streamer or a mod, or by
+ * the price. The mail says who called it and links the picture the screen
+ * settled it on, so the moment can become a post while it is fresh. Canceled
+ * calls and oddie's own match calls do not mail.
  *
  * NEVER IN THE WAY. The chat has heard its line before the mail is asked for,
- * the engine does not wait for it, and a mail that fails is a log line. The
- * mailer is src/mail.ts: without RESEND_API_KEY every mail is a dry run that
- * logs, so this runs safely before the key exists.
+ * nothing waits for it, and a mail that fails is a log line. The mailer is
+ * src/mail.ts: without RESEND_API_KEY every mail is a dry run that logs.
  *
  * WHERE AND HOW MANY. OPS_MAIL_TO (lev@oddie.fun when unset, "off" stops it),
- * at most OPS_MAIL_DAILY_MAX a UTC day (40): the mailer's free tier is 100 a
- * day. The last one that day says so, and the rest wait for the next day.
+ * at most OPS_MAIL_DAILY_MAX (40) of each kind a UTC day, so a busy day of one
+ * kind never silences the others. The last one of a kind that day says so.
  */
-import type { Platform } from "./calls.js";
+import type { Platform, Side } from "./calls.js";
 
 export interface Opened {
   kind: "call" | "market";
@@ -32,15 +44,49 @@ export interface Opened {
   slug?: string;
 }
 
-let sink: ((o: Opened) => void) | null = null;
+export interface WentLive {
+  kind: "live";
+  platform: Platform;
+  channelId: string;
+}
+
+export interface Settled {
+  kind: "settled";
+  platform: Platform;
+  channelId: string;
+  callId: string;
+  question: string;
+  outcome: Side;
+  /** What settled it: the picture, the streamer or a mod, or the price. */
+  source: "screen" | "streamer" | "price";
+  /** The streamer or mod who did, as the chat shows them. */
+  by?: string;
+  right: number;
+  total: number;
+  /** Who called it, first in first. */
+  winners: string[];
+  /** The screen's picture was kept: the mail links it. */
+  frame: boolean;
+}
+
+export type OpsEvent = Opened | WentLive | Settled;
+
+let sink: ((e: OpsEvent) => void) | null = null;
 
 /** Set once at boot (src/server.ts); null turns it off. */
-export function setOpenedSink(f: ((o: Opened) => void) | null): void { sink = f; }
+export function setOpsSink(f: ((e: OpsEvent) => void) | null): void { sink = f; }
 
-/** Where a call or a market opens. Never throws and never waits: the chat comes first. */
-export function reportOpened(o: Opened): void {
-  try { sink?.(o); } catch { /* a mail is never worth a chat line */ }
+/** Never throws and never waits: the chat comes first. */
+function emit(e: OpsEvent): void {
+  try { sink?.(e); } catch { /* a mail is never worth a chat line */ }
 }
+
+/** Where a call or a market opens. */
+export function reportOpened(o: Opened): void { emit(o); }
+/** A channel the watcher saw go live. */
+export function reportLive(l: Omit<WentLive, "kind">): void { emit({ kind: "live", ...l }); }
+/** Where a call a person opened gets its result. */
+export function reportSettled(s: Omit<Settled, "kind">): void { emit({ kind: "settled", ...s }); }
 
 export interface ChannelInfo { slug: string; name: string | null }
 
@@ -58,38 +104,93 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 
-/** The mail for one opening. `last`: the day's mails stop after this one. */
-export function openedMail(o: Opened, ch: ChannelInfo | null, appBase: string, last = false): { subject: string; html: string } {
-  const base = appBase.replace(/\/+$/, "");
-  const slug = ch?.slug || o.channelId;
-  const name = oneLine(ch?.name || slug);
-  const platform = PLATFORM_NAME[o.platform];
-  const question = oneLine(o.question);
-  const by = oneLine(o.by) || "somebody";
-  const what = o.kind === "market" ? "Market" : "Call";
-  const subject = `${what} opened on ${clip(name, 40)} (${platform}): "${clip(question, 90)}"`;
-  const links: Array<[string, string]> = [
-    ["Watch the stream", watchUrl(o.platform, slug, o.channelId)],
-    ...(o.kind === "market" && o.slug ? [["The market", `${base}/m/${encodeURIComponent(o.slug)}`] as [string, string]] : []),
-    ["Channel page", `${base}/live/${o.platform}/${encodeURIComponent(slug)}`],
-  ];
-  const lead = o.kind === "market"
-    ? `<b>${esc(by)}</b> opened a market in ${esc(name)}'s ${platform} chat:`
-    : `<b>${esc(by)}</b> opened a call on ${esc(name)}'s ${platform} stream:`;
-  const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:520px">
-  <p style="margin:0 0 10px">${lead}</p>
-  <p style="margin:0 0 16px;padding:10px 14px;border-left:4px solid #FCF604;background:#f6f6f6;font-weight:700">${esc(question)}</p>
+interface Where { base: string; slug: string; name: string; platform: string }
+
+function where(p: Platform, channelId: string, ch: ChannelInfo | null, appBase: string): Where {
+  const slug = ch?.slug || channelId;
+  return { base: appBase.replace(/\/+$/, ""), slug, name: oneLine(ch?.name || slug), platform: PLATFORM_NAME[p] };
+}
+
+/** The one layout every mail shares: a lead, the question set apart, the links. */
+function page(lead: string, quote: string | null, extra: string | null, links: Array<[string, string]>, last: boolean): string {
+  return `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:520px">
+  <p style="margin:0 0 10px">${lead}</p>${quote === null ? "" : `
+  <p style="margin:0 0 16px;padding:10px 14px;border-left:4px solid #FCF604;background:#f6f6f6;font-weight:700">${esc(quote)}</p>`}${extra === null ? "" : `
+  <p style="margin:0 0 16px">${extra}</p>`}
   <p style="margin:0 0 16px">${links.map(([t, u]) => `<a href="${esc(u)}">${t}</a>`).join(" · ")}</p>${last ? `
   <p style="margin:0;color:#6B7A88;font-size:13px">That's today's last mail of these. The next ones come after 00:00 UTC.</p>` : ""}
 </div>`;
-  return { subject, html };
 }
 
-export interface OpenedMailerDeps {
+/** The mail for one opening. `last`: the day's mails of this kind stop after this one. */
+export function openedMail(o: Opened, ch: ChannelInfo | null, appBase: string, last = false): { subject: string; html: string } {
+  const w = where(o.platform, o.channelId, ch, appBase);
+  const question = oneLine(o.question);
+  const by = oneLine(o.by) || "somebody";
+  const what = o.kind === "market" ? "Market" : "Call";
+  const subject = `${what} opened on ${clip(w.name, 40)} (${w.platform}): "${clip(question, 90)}"`;
+  const links: Array<[string, string]> = [
+    ["Watch the stream", watchUrl(o.platform, w.slug, o.channelId)],
+    ...(o.kind === "market" && o.slug ? [["The market", `${w.base}/m/${encodeURIComponent(o.slug)}`] as [string, string]] : []),
+    ["Channel page", `${w.base}/live/${o.platform}/${encodeURIComponent(w.slug)}`],
+  ];
+  const lead = o.kind === "market"
+    ? `<b>${esc(by)}</b> opened a market in ${esc(w.name)}'s ${w.platform} chat:`
+    : `<b>${esc(by)}</b> opened a call on ${esc(w.name)}'s ${w.platform} stream:`;
+  return { subject, html: page(lead, question, null, links, last) };
+}
+
+/** The mail for a channel that just went live. */
+export function liveMail(l: WentLive, ch: ChannelInfo | null, appBase: string, last = false): { subject: string; html: string } {
+  const w = where(l.platform, l.channelId, ch, appBase);
+  const subject = `${clip(w.name, 60)} is live on ${w.platform}`;
+  const lead = `<b>${esc(w.name)}</b> just went live on ${w.platform}.`;
+  // On X Lev is an operator in every connected chat; elsewhere the streamer or a mod opens.
+  const what = l.platform === "x"
+    ? "You can open calls in this chat yourself: type !call and a question."
+    : "A call opens when they or a mod type !call and a question.";
+  const links: Array<[string, string]> = [
+    ["Watch the stream", watchUrl(l.platform, w.slug, l.channelId)],
+    ["Channel page", `${w.base}/live/${l.platform}/${encodeURIComponent(w.slug)}`],
+  ];
+  return { subject, html: page(lead, null, what, links, last) };
+}
+
+/** The mail for a call a person opened that has its result. */
+export function settledMail(s: Settled, ch: ChannelInfo | null, appBase: string, last = false): { subject: string; html: string } {
+  const w = where(s.platform, s.channelId, ch, appBase);
+  const question = oneLine(s.question);
+  const result = s.outcome === "yes" ? "YES" : "NO";
+  const subject = `Call settled on ${clip(w.name, 40)} (${w.platform}): ${result}, "${clip(question, 80)}"`;
+  const who = s.source === "screen" ? "The screen" : s.source === "price" ? "The price" : `<b>${esc(oneLine(s.by ?? "") || "A mod")}</b>`;
+  const lead = `${who} settled it <b>${result}</b> on ${esc(w.name)}'s ${w.platform} stream:`;
+  const names = s.winners.map((n) => oneLine(n)).filter(Boolean);
+  const shown = names.slice(0, 8).map((n) => `@${esc(n)}`).join(" ");
+  const more = names.length > 8 ? ` and ${names.length - 8} more` : "";
+  const called = s.total === 0 ? "Nobody answered."
+    : s.right === 0 ? `Nobody called it. ${s.total} answered.`
+    : `${s.right} of ${s.total} called it: ${shown}${more}`;
+  const links: Array<[string, string]> = [
+    ...(s.frame ? [["What Oddie saw", `${w.base}/api/live/${s.platform}/${encodeURIComponent(w.slug)}/frame/${encodeURIComponent(s.callId)}`] as [string, string]] : []),
+    ["Watch the stream", watchUrl(s.platform, w.slug, s.channelId)],
+    ["Channel page", `${w.base}/live/${s.platform}/${encodeURIComponent(w.slug)}`],
+  ];
+  return { subject, html: page(lead, question, called, links, last) };
+}
+
+/** Any event's mail. */
+export function opsMail(e: OpsEvent, ch: ChannelInfo | null, appBase: string, last = false): { subject: string; html: string } {
+  if (e.kind === "live") return liveMail(e, ch, appBase, last);
+  if (e.kind === "settled") return settledMail(e, ch, appBase, last);
+  return openedMail(e, ch, appBase, last);
+}
+
+export interface OpsMailerDeps {
   to: string;
   send(msg: { to: string; subject: string; html: string }): Promise<"sent" | "dry-run" | "failed">;
   channel(p: Platform, channelId: string): Promise<ChannelInfo | null>;
   appBase: string;
+  /** Per kind: opened, live and settled each count their own. */
   dailyMax: number;
   now(): number;
   log(line: string, extra?: Record<string, unknown>): void;
@@ -97,23 +198,72 @@ export interface OpenedMailerDeps {
 
 const DAY_MS = 24 * 60 * 60_000;
 
-/** The sink: one mail per opening, the day's count kept in memory. */
-export function openedMailer(d: OpenedMailerDeps): (o: Opened) => void {
-  let day = -1;
-  let count = 0;
-  return (o) => {
+/** The sink: one mail per event, each kind's count for the day kept in memory. */
+export function opsMailer(d: OpsMailerDeps): (e: OpsEvent) => void {
+  const counts = new Map<string, { day: number; n: number }>();
+  return (e) => {
+    const label = e.kind === "live" ? "live mail" : e.kind === "settled" ? "settled mail" : "opened mail";
     const today = Math.floor(d.now() / DAY_MS);
-    if (today !== day) { day = today; count = 0; }
-    if (count >= d.dailyMax) {
-      d.log("opened mail skipped: the day's mails are used", { kind: o.kind, platform: o.platform, channel: o.channelId });
+    let c = counts.get(label);
+    if (!c || c.day !== today) { c = { day: today, n: 0 }; counts.set(label, c); }
+    if (c.n >= d.dailyMax) {
+      d.log(`${label} skipped: the day's mails are used`, { kind: e.kind, platform: e.platform, channel: e.channelId });
       return;
     }
-    count++;
-    const last = count === d.dailyMax;
+    c.n++;
+    const last = c.n === d.dailyMax;
     void (async () => {
-      const ch = await d.channel(o.platform, o.channelId).catch(() => null);
-      const out = await d.send({ to: d.to, ...openedMail(o, ch, d.appBase, last) });
-      d.log("opened mail", { kind: o.kind, platform: o.platform, channel: o.channelId, out });
-    })().catch((e) => d.log("opened mail failed", { err: (e as Error).message }));
+      const ch = await d.channel(e.platform, e.channelId).catch(() => null);
+      const out = await d.send({ to: d.to, ...opsMail(e, ch, d.appBase, last) });
+      d.log(label, { kind: e.kind, platform: e.platform, channel: e.channelId, out });
+    })().catch((err) => d.log(`${label} failed`, { err: (err as Error).message }));
+  };
+}
+
+export interface WentLiveDeps {
+  channels(): Promise<Array<{ platform: Platform; channelId: string }>>;
+  /** True, false, or null when the platform could not say. */
+  streamLive(p: Platform, channelId: string): Promise<boolean | null>;
+  now(): number;
+  report(c: { platform: Platform; channelId: string }): void;
+  /** One channel mails at most once in this long. */
+  quietMs?: number;
+}
+
+const QUIET_MS = 2 * 60 * 60_000;
+
+/**
+ * One pass over every active channel; it returns how many went live. The
+ * first pass only learns who is on. After it, a channel goes live when it
+ * reads live and was not known to be: off before, never read, or (on X,
+ * where nothing is known until a broadcast starts) unknown.
+ */
+export function wentLiveWatcher(d: WentLiveDeps): () => Promise<number> {
+  const seen = new Map<string, { live: boolean | null; mailedAt: number | null }>();
+  const quiet = d.quietMs ?? QUIET_MS;
+  let warm = false;
+  return async () => {
+    const chans = await d.channels();
+    let n = 0;
+    for (const ch of chans) {
+      const k = `${ch.platform}:${ch.channelId}`;
+      const live = await d.streamLive(ch.platform, ch.channelId).catch(() => null);
+      const prev = seen.get(k);
+      if (!warm) { seen.set(k, { live, mailedAt: null }); continue; }
+      // A read that failed changes nothing.
+      if (live === null) { if (!prev) seen.set(k, { live: null, mailedAt: null }); continue; }
+      let mailedAt = prev?.mailedAt ?? null;
+      if (live && prev?.live !== true) {
+        const now = d.now();
+        if (mailedAt === null || now - mailedAt >= quiet) {
+          d.report({ platform: ch.platform, channelId: ch.channelId });
+          mailedAt = now;
+          n++;
+        }
+      }
+      seen.set(k, { live, mailedAt });
+    }
+    warm = true;
+    return n;
   };
 }

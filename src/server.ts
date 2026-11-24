@@ -41,7 +41,7 @@ import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
 import { fetchPicture, screenSource, SCREEN_FRAME_WIDTH } from "./games/screen.js";
 import { SCREEN_TICK_MS, watchScreens } from "./live/screenCalls.js";
-import { allStandings, callerRecord, channelById, showcaseCalls, streaksFor, type ShowcaseCall } from "./store/live.js";
+import { allStandings, callerRecord, channelById, liveStore, showcaseCalls, streaksFor, type ShowcaseCall } from "./store/live.js";
 import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
@@ -90,7 +90,7 @@ import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { clientIp, edgeLockedOut, edgeMisconfigured, takeStamp, viaCloudflare } from "./net/edge.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
-import { openedMailer, setOpenedSink } from "./live/openedMail.js";
+import { opsMailer, reportLive, setOpsSink, wentLiveWatcher } from "./live/openedMail.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { renderPersonCard, type PersonCard } from "./card/renderPersonCard.js";
@@ -1928,14 +1928,16 @@ const KICK_MARKETS_PER_DAY = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
 })();
 const liveLog = (line: string, extra?: Record<string, unknown>) => console.log(JSON.stringify({ evt: "live", line, ...extra }));
-/* THE OPERATOR'S MAIL (src/live/openedMail.ts): every call and market a person
-   opens in a stream's chat, on any platform, one mail each. OPS_MAIL_TO is
-   lev@oddie.fun unless set, and "off" stops it; OPS_MAIL_DAILY_MAX (40) keeps
-   a busy day inside the mailer's free tier. */
+/* THE OPERATOR'S MAIL (src/live/openedMail.ts): a call or market a person
+   opens in a stream's chat, a connected channel going live, and a person's
+   call getting its result, on any platform, one mail each. OPS_MAIL_TO is
+   lev@oddie.fun unless set, and "off" stops it; OPS_MAIL_DAILY_MAX (40) is
+   each kind's ceiling a day. The went-live watcher runs with the clock below. */
 const OPS_MAIL_TO = (process.env.OPS_MAIL_TO ?? "lev@oddie.fun").trim();
-if (OPS_MAIL_TO && OPS_MAIL_TO.toLowerCase() !== "off") {
+const OPS_MAIL_ON = Boolean(OPS_MAIL_TO) && OPS_MAIL_TO.toLowerCase() !== "off";
+if (OPS_MAIL_ON) {
   const max = Number(process.env.OPS_MAIL_DAILY_MAX ?? 40);
-  setOpenedSink(openedMailer({
+  setOpsSink(opsMailer({
     to: OPS_MAIL_TO,
     send: (m) => sendMail(m),
     channel: (p, id) => channelById(p, id),
@@ -1944,8 +1946,8 @@ if (OPS_MAIL_TO && OPS_MAIL_TO.toLowerCase() !== "off") {
     now: () => Date.now(),
     log: liveLog,
   }));
-  liveLog(`opened mail on: ${OPS_MAIL_TO.replace(/(.{2}).*(@.*)/, "$1…$2")}`);
-} else liveLog("opened mail off");
+  liveLog(`ops mail on (opened, live, settled): ${OPS_MAIL_TO.replace(/(.{2}).*(@.*)/, "$1…$2")}`);
+} else liveLog("ops mail off");
 /* `!oddie <claim>` in a stream: the same extractor, gate, mint and resolver as
    a tag on X or Telegram. The channel is the opener, so its 2%. */
 const kickMarkets = {
@@ -2116,6 +2118,28 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   const frames = frameSource();
   // The picture is read on Twitch and Kick; a YouTube stream is not looked at.
   clock.streamGame = (p, c) => { if (p === "youtube" || p === "x") return Promise.resolve(null); const eng = engOf(p); return eng.streamGame ? eng.streamGame(p, c) : Promise.resolve(null); };
+  /* THE OPERATOR HEARS A STREAM GO LIVE (src/live/openedMail.ts): every active
+     channel asked every two minutes through its own platform; the first pass,
+     half a minute after boot, only learns who is on already. */
+  if (OPS_MAIL_ON) {
+    const pass = wentLiveWatcher({
+      channels: () => liveStore.channels(),
+      streamLive: (p, c) => (clock.streamLive ? clock.streamLive(p, c) : Promise.resolve(null)),
+      now: () => Date.now(),
+      report: (c) => reportLive(c),
+    });
+    let looking = false;
+    const look = () => {
+      if (looking) return;
+      looking = true;
+      void pass()
+        .then((n) => { if (n) liveLog("went live", { channels: n }); })
+        .catch((e) => liveLog("went-live pass failed", { err: (e as Error).message }))
+        .finally(() => { looking = false; });
+    };
+    setTimeout(look, 30_000);
+    setInterval(look, 120_000);
+  }
   /* YOUTUBE (src/youtube/routes.ts): once a minute the watcher looks for the
      connected channels' streams and reads each live chat over one connection. */
   if (youtubeConfigured()) {

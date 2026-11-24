@@ -62,7 +62,7 @@ import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, read
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
 import type { ScreenSource } from "../games/screen.js";
-import { reportOpened } from "./openedMail.js";
+import { reportOpened, reportSettled } from "./openedMail.js";
 
 export type Platform = "kick" | "twitch" | "youtube" | "x";
 export type Side = "yes" | "no";
@@ -707,6 +707,11 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners)}`);
   await sayStreamTop(deps, w.call, now);
   deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome: read.outcome, right: done.right, total: done.total, by: "price" });
+  // The operator's mail (src/live/openedMail.ts): a person's call has its result.
+  if (w.call.matchId === null) {
+    reportSettled({ platform: w.call.platform, channelId: w.call.channelId, callId: w.call.id, question: w.call.question, outcome: read.outcome,
+      source: "price", right: done.right, total: done.total, winners: (done.winners ?? []).map((x) => x.name), frame: false });
+  }
   await reopenRepeat(w.call, deps);
   return true;
 }
@@ -1018,6 +1023,11 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, await deps.standingsUrl(msg.platform, msg.channelId), done.winners));
   await sayStreamTop(deps, msg, now);
   deps.log("live call settled", { platform: msg.platform, channel: msg.channelId, id: target.id, outcome: cmd.outcome, right: done.right, total: done.total });
+  // The operator's mail (src/live/openedMail.ts): a person's call has its result. Not oddie's own match calls.
+  if (target.matchId === null) {
+    reportSettled({ platform: msg.platform, channelId: msg.channelId, callId: target.id, question: target.question, outcome: cmd.outcome,
+      source: "streamer", by: msg.senderName, right: done.right, total: done.total, winners: (done.winners ?? []).map((x) => x.name), frame: false });
+  }
   await reopenRepeat(target, deps);
   return "settled";
 }
@@ -1058,6 +1068,11 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   await sayQuiet(deps, call, LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners));
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
+  // The operator's mail (src/live/openedMail.ts), with the picture it was settled on.
+  if (call.matchId === null) {
+    reportSettled({ platform: call.platform, channelId: call.channelId, callId: call.id, question: call.question, outcome,
+      source: "screen", right: done.right, total: done.total, winners: (done.winners ?? []).map((x) => x.name), frame: Boolean(frame && deps.store.saveFrame) });
+  }
   await reopenRepeat(call, deps);
   return true;
 }
