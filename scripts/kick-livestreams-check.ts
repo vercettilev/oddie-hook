@@ -18,6 +18,13 @@
 //   3. kickStreamInfo for a channel that is off air: oddie's own, or the user ids given as
 //      arguments. "No row" has to come back as an answer, not as a refusal.
 //
+// Measured 24 Nov 2026, with production's credentials: the hundred channels Kick's own list
+// starts with and the hundred the deprecated list has as most watched (211,037 down to 2,224
+// watching) all came back, 200 of 200, every row with a count and a category name.
+// kickStreamInfo read the most watched of them, and said "not live" for oddie's own channel,
+// which /channels had off air. That is one moment: a call that ends "with the stream" on a
+// Kick channel still on air is the sign to run this again.
+//
 // It reads only: about ten GETs with the app's own token. It prints no credential.
 //
 //   railway run -p 508d41c0-e0ab-4dfd-94e8-a00881cd9e2e -e production -s oddie-hook -- npx tsx scripts/kick-livestreams-check.ts
