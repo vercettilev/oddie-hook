@@ -75,21 +75,30 @@ export async function kickAppToken(): Promise<string> {
   return t.accessToken;
 }
 
-/** Is the channel live now? /livestreams answers with one row for a live channel
- *  and none for one that is not (checked against the live API, 8 Oct). */
+/** Is the channel live now? Kick answers with the user's active livestream: one row for a
+ *  channel that is live, none for one that is not. */
 export async function kickStreamIsLive(broadcasterUserId: string): Promise<boolean> {
   return (await kickStreamInfo(broadcasterUserId)).live;
 }
 
-/** The channel's stream now: live or not, in which category ("Counter-Strike 2", "Dota 2"), and how
- *  many are watching (a viewer-count call reads it, src/live/viewerCall.ts). */
+/**
+ * The channel's stream now: live or not, in which category ("Counter-Strike 2", "Dota 2"), and how
+ * many are watching (a viewer-count call reads it, src/live/viewerCall.ts).
+ *
+ * Asked of GET /public/v1/users/livestreams?user_id=<id>, "the active livestreams for the given
+ * user IDs": the app's own token is enough, and a row is a LivestreamV2, with category.name and
+ * viewer_count where the older rows had them (docs.kick.com/apis/livestreams, read 24 Nov 2026).
+ * GET /public/v1/livestreams?broadcaster_user_id=<id>, asked until then, has been deprecated since
+ * 23 Jun 2026, and /public/v2/livestreams filters by category and language only: it cannot be
+ * asked for one channel. scripts/kick-livestreams-check.ts puts the operation to the live API.
+ */
 export async function kickStreamInfo(broadcasterUserId: string): Promise<{ live: boolean; game: string | null; viewers: number | null }> {
-  const res = await fetch(`${API}/livestreams?broadcaster_user_id=${encodeURIComponent(broadcasterUserId)}&limit=1`, {
+  const res = await fetch(`${API}/users/livestreams?user_id=${encodeURIComponent(broadcasterUserId)}`, {
     headers: { authorization: `Bearer ${await kickAppToken()}`, accept: "application/json" },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`kick livestreams ${res.status}`);
-  const j = (await res.json()) as { data?: Array<{ category?: { name?: string } | null; viewer_count?: number }> };
+  if (!res.ok) throw new Error(`kick users/livestreams ${res.status}`);
+  const j = (await res.json()) as { data?: Array<{ category?: { name?: string } | null; viewer_count?: number }> | null };
   const s = j.data?.[0];
   return s ? { live: true, game: s.category?.name || null, viewers: typeof s.viewer_count === "number" ? s.viewer_count : null } : { live: false, game: null, viewers: null };
 }

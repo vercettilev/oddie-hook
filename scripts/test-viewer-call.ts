@@ -448,17 +448,38 @@ console.log("\nthe count the platforms hand over\n");
   const realFetch = globalThis.fetch;
   const asked: string[] = [];
   let twitch: unknown = { data: [{ game_name: "Just Chatting", viewer_count: 431 }] };
-  let kick: unknown = { data: [{ category: { name: "Slots & Casino" }, viewer_count: 1204 }] };
+  // Kick's "livestreams for users" as its docs have it (docs.kick.com/apis/livestreams, read 24 Nov
+  // 2026): GET /public/v1/users/livestreams, user_id required and whole numbers, a token on every
+  // request, and in the answer the active livestreams of the users asked for and of nobody else,
+  // each a LivestreamV2. /public/v1/livestreams, asked until then, is deprecated: here it is gone.
+  const kickRow = {
+    id: "5f0c1e2a-9b7d-4c3e-8a61-2d4f6b8c0e13", title: "bonus hunt", started_at: "2026-11-24T16:02:11Z", viewer_count: 1204,
+    language_code: "en", tags: ["slots"], thumbnail: "https://kick.test/thumb.webp", has_mature_content: false,
+    broadcaster_user: { id: 88, username: "bee_empire", profile_picture: "https://kick.test/bee.webp" },
+    category: { id: 28, name: "Slots & Casino", thumbnail: "https://kick.test/slots.webp" },
+    channel: { slug: "bee_empire" },
+  };
+  let kickLive: Array<typeof kickRow> | null = [kickRow];
+  const kickAuth: Array<string | null> = [];
   process.env.KICK_CLIENT_ID ??= "test-id";
   process.env.KICK_CLIENT_SECRET ??= "test-secret";
-  globalThis.fetch = (async (u: string | URL | Request) => {
+  globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
     const url = String(u);
     asked.push(url);
     if (url.startsWith("https://api.twitch.tv/helix/streams")) return new Response(JSON.stringify(twitch), { status: 200 });
     if (url.startsWith("https://id.kick.com/oauth/token")) return new Response(JSON.stringify({ access_token: "app", expires_in: 3600 }), { status: 200 });
-    if (url.startsWith("https://api.kick.com/public/v1/livestreams")) return new Response(JSON.stringify(kick), { status: 200 });
+    if (url.startsWith("https://api.kick.com/public/v1/users/livestreams")) {
+      const auth = new Headers(init?.headers).get("authorization");
+      kickAuth.push(auth);
+      if (auth !== "Bearer app") return new Response(JSON.stringify({ data: {}, message: "Unauthorized" }), { status: 401 });
+      const ids = new URL(url).searchParams.getAll("user_id");
+      if (!ids.length || !ids.every((i) => /^\d+$/.test(i))) return new Response(JSON.stringify({ data: {}, message: "Bad Request" }), { status: 400 });
+      return new Response(JSON.stringify({ data: kickLive && kickLive.filter((s) => ids.includes(String(s.broadcaster_user.id))), message: "OK" }), { status: 200 });
+    }
     return new Response("{}", { status: 404 });
   }) as typeof fetch;
+  // What Kick was asked and what came of it: a refusal is a named failure below, not a crash.
+  const kickInfo = (id: string) => kickStreamInfo(id).catch((e) => `threw: ${(e as Error).message}`);
   try {
     check("Twitch: the stream's row carries its viewer_count", same(await streamInfo("app", "77"), { live: true, game: "Just Chatting", viewers: 431 }), JSON.stringify(await streamInfo("app", "77")));
     check("...asked for with the channel's id, live streams only", asked.some((a) => a === "https://api.twitch.tv/helix/streams?user_id=77&type=live"), asked.join(" "));
@@ -466,9 +487,20 @@ console.log("\nthe count the platforms hand over\n");
     check("...no row is a stream that is not on air", same(await streamInfo("app", "77"), { live: false, game: null, viewers: null }));
     twitch = { data: [{ game_name: "Just Chatting" }] };
     check("...and a row with no count is on air with nothing to read", same(await streamInfo("app", "77"), { live: true, game: "Just Chatting", viewers: null }));
-    check("Kick: the livestream's row carries its viewer_count", same(await kickStreamInfo("88"), { live: true, game: "Slots & Casino", viewers: 1204 }), JSON.stringify(await kickStreamInfo("88")));
-    kick = { data: [] };
-    check("...no row is a stream that is not on air", same(await kickStreamInfo("88"), { live: false, game: null, viewers: null }));
+    const onAir = await kickInfo("88");
+    check("Kick: the livestream's row carries its viewer_count", same(onAir, { live: true, game: "Slots & Casino", viewers: 1204 }), JSON.stringify(onAir));
+    const kickAsked = asked.filter((a) => a.startsWith("https://api.kick.com/"));
+    check("...asked of the users' livestreams, with the channel's id and nothing else", same(kickAsked, ["https://api.kick.com/public/v1/users/livestreams?user_id=88"]), kickAsked.join(" "));
+    check("...with the app's own token", same(kickAuth, ["Bearer app"]), JSON.stringify(kickAuth));
+    check("...and never of the deprecated /public/v1/livestreams", !asked.some((a) => a.startsWith("https://api.kick.com/public/v1/livestreams")), kickAsked.join(" "));
+    const other = await kickInfo("89");
+    check("...a channel with no row of its own is not on air, whoever else is", same(other, { live: false, game: null, viewers: null }), JSON.stringify(other));
+    kickLive = [];
+    const offAir = await kickInfo("88");
+    check("...no row is a stream that is not on air", same(offAir, { live: false, game: null, viewers: null }), JSON.stringify(offAir));
+    kickLive = null;
+    const noList = await kickInfo("88");
+    check("...and so is a list that comes back null", same(noList, { live: false, game: null, viewers: null }), JSON.stringify(noList));
   } finally {
     globalThis.fetch = realFetch;
   }
