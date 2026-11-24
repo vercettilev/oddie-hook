@@ -10,6 +10,11 @@
 //   npx tsx scripts/swsol-mainnet.ts rehearse <market> <sol>
 //   npx tsx scripts/swsol-mainnet.ts park     <market> <sol>      [--send]
 //   npx tsx scripts/swsol-mainnet.ts unpark   <market> <sol|all>  [--send]
+//   npx tsx scripts/swsol-mainnet.ts rewards                       [--send]
+//
+// rewards opens the swSOL account the staking rewards are paid into. Sanctum
+// mints them as swSOL to the attribution address's associated token account,
+// and sends nothing while that account does not exist (HY, 24 Nov 2026).
 //
 // rehearse is the round trip, park and unpark, as ONE simulated transaction:
 // both calls into Sanctum's real program, against the real pool, before any
@@ -54,9 +59,9 @@ function die(msg: string): never {
 
 const SEND = process.argv.includes("--send");
 const [cmd, marketArg, amountArg] = process.argv.slice(2).filter((a) => a !== "--send");
-if (!["status", "rehearse", "park", "unpark"].includes(cmd ?? "") || !marketArg || (cmd !== "status" && !amountArg)) {
-  die("usage: npx tsx scripts/swsol-mainnet.ts status <market> | rehearse <market> <sol> | park <market> <sol> [--send] | unpark <market> <sol|all> [--send]");
-}
+const USAGE = "usage: npx tsx scripts/swsol-mainnet.ts status <market> | rehearse <market> <sol> | park <market> <sol> [--send] | unpark <market> <sol|all> [--send] | rewards [--send]";
+const takesMarket = ["status", "rehearse", "park", "unpark"].includes(cmd ?? "");
+if (cmd !== "rewards" && (!takesMarket || !marketArg || (cmd !== "status" && !amountArg))) die(USAGE);
 if (SEND && cmd === "rehearse") die("rehearse only simulates. To move SOL, park.");
 
 const conn = new Connection(process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com", "confirmed");
@@ -170,20 +175,23 @@ function swsolIx(name: "park_swsol" | "unpark_swsol", signer: Pk, s: State, lamp
   });
 }
 
-/** The vault's swSOL account, created on the first park and a no-op after. */
-const createHeld = (payer: Pk, s: State) =>
+/** owner's swSOL account, created if it is missing and a no-op if it is there. */
+const createSwsolAccount = (payer: Pk, owner: Pk) =>
   new TransactionInstruction({
     programId: ATA_PROGRAM,
     keys: [
       { pubkey: payer, isSigner: true, isWritable: true },
-      { pubkey: s.held, isSigner: false, isWritable: true },
-      { pubkey: s.vault, isSigner: false, isWritable: false },
+      { pubkey: ataOf(owner), isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: false, isWritable: false },
       { pubkey: SWSOL_MINT, isSigner: false, isWritable: false },
       { pubkey: web3.SystemProgram.programId, isSigner: false, isWritable: false },
       { pubkey: TOKEN, isSigner: false, isWritable: false },
     ],
     data: Buffer.from([1]), // CreateIdempotent
   });
+
+/** The vault's swSOL account, created on the first park and a no-op after. */
+const createHeld = (payer: Pk, s: State) => createSwsolAccount(payer, s.vault);
 
 const memo = () => new TransactionInstruction({ programId: MEMO, keys: [], data: Buffer.from(`sols:${ATTRIBUTION}`, "utf8") });
 
@@ -221,7 +229,29 @@ async function run(instructions: InstanceType<typeof TransactionInstruction>[], 
   return sig;
 }
 
-const { address, label } = await findMarket(marketArg);
+if (cmd === "rewards") {
+  // Paid for and owned by the attribution address itself, so no other wallet
+  // is tied to it on chain. Its rent stays in the account and comes back if
+  // the account is ever closed.
+  const owner = new PublicKey(ATTRIBUTION);
+  const account = ataOf(owner);
+  const [held, payer] = await conn.getMultipleAccountsInfo([account, owner]);
+  const rent = BigInt(await conn.getMinimumBalanceForRentExemption(165));
+  console.log(`
+  rewards  Sanctum mints the staking rewards as swSOL into this account, and sends
+           nothing while it does not exist.
+  account  ${account.toBase58()}  ${held ? `${sol(held.data.readBigUInt64LE(64))} swSOL` : "not created yet"}
+  owner    ${owner.toBase58()}  ${sol(BigInt(payer?.lamports ?? 0))} SOL, pays the rent`);
+  if (held) {
+    console.log("  nothing to do: the account is there.\n");
+    process.exit(0);
+  }
+  console.log(`  rent     ${sol(rent)} SOL, kept in the account`);
+  await run([createSwsolAccount(owner, owner)], owner);
+  process.exit(0);
+}
+
+const { address, label } = await findMarket(marketArg ?? die(USAGE));
 const st = await readState(address);
 printState(label, st);
 
