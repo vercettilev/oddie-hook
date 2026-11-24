@@ -15,7 +15,7 @@ import { openFromChat, type ChatMarketDeps } from "../src/live/claims.js";
 import { openMatchCall } from "../src/live/matchCalls.js";
 import { claimMention, settleMention, kickChatSource } from "../src/store/markets.js";
 import {
-  liveMail, openedMail, opsMail, opsMailer, settledMail, setOpsSink, watchUrl, wentLiveWatcher,
+  alertMail, liveMail, openedMail, opsMail, opsMailer, settledMail, setOpsSink, watchUrl, wentLiveWatcher,
   type OpsEvent, type Opened, type Settled,
 } from "../src/live/openedMail.js";
 import type { Extraction } from "../src/matching/extractClaim.js";
@@ -282,7 +282,11 @@ console.log("\nthe mails themselves");
   check("a long list of callers names eight and counts the rest", crowd.html.includes("@p7 and 3 more") && !crowd.html.includes("@p8"));
   check("any event's mail is its kind's", opsMail({ kind: "live", platform: "kick", channelId: "72486" }, null, base).subject === "72486 is live on Kick"
     && opsMail({ kind: "call", platform: "kick", channelId: "9", question: "q?", by: "m" }, null, base).subject.startsWith("Call opened on 9"));
-  check("no em dash anywhere", !/—/.test([call, market, xLive, kickLive, screen, byMod, empty, crowd].map((m) => m.subject + m.html).join("")));
+  const alert = alertMail({ kind: "alert", title: "Oddie's Kick voice (oddiefun) is signed out", text: "oddiefun can no longer post <here>.", link: ["Sign it in again", "https://app.oddie.fun/live/kick/connect"] });
+  check("alert: the subject is the trouble, the body says it escaped, with the link that fixes it",
+    alert.subject === "Oddie's Kick voice (oddiefun) is signed out" && alert.html.includes("can no longer post &lt;here&gt;.")
+    && alert.html.includes('href="https://app.oddie.fun/live/kick/connect"'));
+  check("no em dash anywhere", !/—/.test([call, market, xLive, kickLive, screen, byMod, empty, crowd, alert].map((m) => m.subject + m.html).join("")));
 }
 
 console.log("\nthe mailer: one mail each, each kind its own cap a day");
@@ -311,6 +315,15 @@ console.log("\nthe mailer: one mail each, each kind its own cap a day");
   check("a day of openings never silences the live and settled mails", sent.length === 4
     && sent[2]!.subject === "Bee is live on Twitch" && sent[3]!.subject.startsWith("Call settled on Bee (Twitch): YES"), sent.map((m) => m.subject).join(" | "));
   check("...each logged as its kind", logs.includes("live mail") && logs.includes("settled mail"));
+  let looked = 0;
+  const alertSent: Array<{ to: string; subject: string; html: string }> = [];
+  const alertsOnly = opsMailer({
+    to: "lev@oddie.fun", send: async (m) => { alertSent.push(m); return "dry-run"; },
+    channel: async () => { looked++; return null; }, appBase: "https://app.oddie.fun", dailyMax: 2, now: () => now, log: (l) => { logs.push(l); },
+  });
+  alertsOnly({ kind: "alert", title: "Oddie's Kick voice (oddiefun) is signed out", text: "x" });
+  await flush();
+  check("an alert mails with no channel to look up", alertSent.length === 1 && looked === 0 && alertSent[0]!.subject.startsWith("Oddie's Kick voice") && logs.includes("alert mail"));
   now += 24 * 60 * 60_000;
   mail(o);
   await flush();

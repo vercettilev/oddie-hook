@@ -17,7 +17,8 @@ import {
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, houseAccounts, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
-import { kickRouter, kickEngineDeps, type KickChat, type KickSignIn } from "../src/kick/routes.js";
+import { kickRouter, kickEngineDeps, _resetKickVoice, type KickChat, type KickSignIn } from "../src/kick/routes.js";
+import { setOpsSink, type OpsEvent } from "../src/live/openedMail.js";
 import { openFromChat, MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
 import {
   cookieValue, OWNER_COOKIE, OWNER_TTL_MS, ownerCookie, ownerKey, ownerKeyFromEnv, ownerToken, verifyOwnerToken,
@@ -741,6 +742,56 @@ console.log("\noddie speaks as itself in every chat");
   sent.length = 0;
   await plain.say("kick", "900", "old way");
   check("with no voice set, a channel speaks for itself as before", sent.some((x) => x === "user:lev-tok:900:old way"), sent.join("|"));
+}
+
+console.log("\noddie's Kick voice signed out (23-24 Nov: three lines as IsaacBeast, and nobody told)");
+{
+  _resetLiveStore(); _resetKickVoice();
+  await saveChannel({ platform: "kick", channelId: "131980691", slug: "oddiefun", name: "oddiefun", avatar: null,
+    accessToken: "voice-tok", refreshToken: "dead-refresh", tokenExpiresAt: Date.now() - 1_000, active: true });
+  await saveChannel({ platform: "kick", channelId: "900", slug: "levvercetti", name: "levvercetti", avatar: null,
+    accessToken: "lev-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  const sent: string[] = [];
+  const logs: string[] = [];
+  const alerts: OpsEvent[] = [];
+  setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
+  const fail = (status: number) => { const e = new Error(`kick POST /chat ${status}`) as Error & { status?: number }; e.status = status; return e; };
+  const chat: KickChat = {
+    bot: async () => { throw fail(404); },
+    user: async (t, ch, text) => { sent.push(`user:${t}:${ch}:${text}`); },
+  };
+  const realFetch = globalThis.fetch;
+  let tokenCalls = 0;
+  let idServer: "refuses" | "down" = "refuses";
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("id.kick.com/oauth/token")) {
+      tokenCalls++;
+      if (idServer === "down") throw new TypeError("fetch failed");
+      return new Response("invalid_grant", { status: 400 });
+    }
+    return realFetch(url, init);
+  }) as typeof fetch;
+  try {
+    const deps = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+    await deps.say("kick", "900", "line one");
+    check("a voice whose sign-in Kick will not refresh hands the line to the channel", sent.join("|") === "user:lev-tok:900:line one", sent.join("|"));
+    const a = alerts[0];
+    check("...says so in the log and mails the operator, with the link that fixes it",
+      logs.some((l) => l.startsWith("kick voice is signed out")) && alerts.length === 1 && a?.kind === "alert"
+      && a.link?.[1] === "https://app.oddie.fun/live/kick/connect" && /oddiefun/.test(a.title) && /kick token 400/.test(a.text), JSON.stringify(a));
+    await deps.say("kick", "900", "line two");
+    check("...then rests: the next line asks Kick for no token and mails nothing more",
+      tokenCalls === 1 && alerts.length === 1 && sent.join("|") === "user:lev-tok:900:line one|user:lev-tok:900:line two", `${tokenCalls} token calls, ${alerts.length} mails`);
+    _resetKickVoice(); idServer = "down"; sent.length = 0; logs.length = 0;
+    await deps.say("kick", "900", "line three");
+    check("Kick's sign-in server not answering is a slow moment, not a lost sign-in",
+      logs.some((l) => l.startsWith("kick voice slowed down")) && !logs.some((l) => l.startsWith("kick voice is signed out")) && alerts.length === 1
+      && sent.join("|") === "user:lev-tok:900:line three", logs.join(" | "));
+  } finally {
+    globalThis.fetch = realFetch;
+    setOpsSink(null);
+    _resetKickVoice();
+  }
 }
 
 console.log("\na reply Kick will not take, on every path (Twitch, 1 Nov: two results never reached a chat)");

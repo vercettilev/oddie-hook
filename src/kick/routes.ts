@@ -14,6 +14,7 @@ import {
 import { handleChat, LIVE_COPY, lockDue, type LiveDeps, type Platform } from "../live/calls.js";
 import { addChannelRoutes, type ChannelPayoutDeps } from "../live/channelRoutes.js";
 import { notNow, paced, patiently } from "../live/pace.js";
+import { reportAlert } from "../live/openedMail.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { creditInvite } from "../live/referrals.js";
@@ -124,6 +125,21 @@ async function replyOrAlone(send: (replyTo?: string) => Promise<void>, replyTo?:
  */
 const voiceCannotPost = new Map<string, number>();
 const VOICE_RETRY_MS = 10 * 60_000;
+/**
+ * THE VOICE SIGNED OUT (24 Nov). oddiefun's own Kick sign-in can lapse: its
+ * token no longer refreshes, or a fresh one is refused. Read as a slow moment,
+ * every line then went out under the streamer's own name and nobody heard of
+ * it (IsaacBeast's chat, 23-24 Nov: three lines out of three). So a lost
+ * sign-in is told apart from a chat that will not take the voice: the voice
+ * rests in every chat for ten minutes instead of asking Kick again on each
+ * line, the reason is in the log, and the operator gets one mail every six
+ * hours until oddiefun signs in again at /live/kick/connect.
+ */
+let voiceSignedOutAt: number | null = null;
+let voiceAlertAt = 0;
+const VOICE_ALERT_GAP_MS = 6 * 60 * 60_000;
+/** Test seam: forget the chats that refused the voice and a lost sign-in. */
+export function _resetKickVoice(): void { voiceCannotPost.clear(); voiceSignedOutAt = null; voiceAlertAt = 0; }
 const voiceSlugFrom = (d: { voice?: string }): string =>
   (d.voice ?? process.env.KICK_VOICE_CHANNEL ?? "oddiefun").trim().toLowerCase();
 
@@ -147,6 +163,7 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
   /** True when oddie's own account said it. False hands the line on. */
   const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<boolean> => {
     if (!voiceSlug) return false;
+    if (voiceSignedOutAt !== null && Date.now() - voiceSignedOutAt < VOICE_RETRY_MS) return false;
     const failedAt = voiceCannotPost.get(channelId);
     if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return false;
     const voice = await channelBySlug("kick", voiceSlug).catch(() => null);
@@ -165,14 +182,31 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
         await send(true);
       }
       voiceCannotPost.delete(channelId);
+      voiceSignedOutAt = null;
       return true;
     } catch (e) {
+      const err = ((e as Error)?.message ?? String(e)).slice(0, 160);
+      // The sign-in itself, not this chat: a token Kick will not refresh, or a fresh one refused.
+      const signedOut = st(e) === 401 || (/^kick token /.test((e as Error)?.message ?? "") && !notNow(st(e)));
+      if (signedOut) {
+        voiceSignedOutAt = Date.now();
+        d.log("kick voice is signed out, lines go as each channel's account until it signs in again", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
+        if (Date.now() - voiceAlertAt >= VOICE_ALERT_GAP_MS) {
+          voiceAlertAt = Date.now();
+          reportAlert({
+            title: `Oddie's Kick voice (${voiceSlug}) is signed out`,
+            text: `${voiceSlug} can no longer post in Kick chats (${err}). Until it signs in again, oddie's lines there go out under each streamer's own name. Sign in to Kick as ${voiceSlug}, then open the link below once.`,
+            link: ["Sign it in again", `${base}/live/kick/connect`],
+          });
+        }
+        return false;
+      }
       if (notNow(st(e))) {
-        d.log("kick voice slowed down, this line goes as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null });
+        d.log("kick voice slowed down, this line goes as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
         return false;
       }
       voiceCannotPost.set(channelId, Date.now());
-      d.log("kick voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null });
+      d.log("kick voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
       return false;
     }
   };

@@ -52,7 +52,12 @@ async function tokenCall(params: Record<string, string>): Promise<KickTokens> {
     body: new URLSearchParams({ client_id: process.env.KICK_CLIENT_ID ?? "", client_secret: process.env.KICK_CLIENT_SECRET ?? "", ...params }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`kick token ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  if (!res.ok) {
+    // With its status, so a sign-in Kick will not refresh reads as refused, not as a slow moment (src/kick/routes.ts).
+    const err = new Error(`kick token ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
   const j = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };
   if (!j.access_token) throw new Error("kick token: no access_token");
   return {

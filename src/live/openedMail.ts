@@ -26,6 +26,9 @@
  * nothing waits for it, and a mail that fails is a log line. The mailer is
  * src/mail.ts: without RESEND_API_KEY every mail is a dry run that logs.
  *
+ * ALERT (24 Nov). Something only the operator can mend, like oddie's Kick
+ * voice signing out (src/kick/routes.ts): what broke and the link to fix it.
+ *
  * WHERE AND HOW MANY. OPS_MAIL_TO (lev@oddie.fun when unset, "off" stops it),
  * at most OPS_MAIL_DAILY_MAX (40) of each kind a UTC day, so a busy day of one
  * kind never silences the others. The last one of a kind that day says so.
@@ -69,7 +72,16 @@ export interface Settled {
   frame: boolean;
 }
 
-export type OpsEvent = Opened | WentLive | Settled;
+/** Something the operator has to fix by hand (src/kick/routes.ts: the Kick voice signed out). */
+export interface Alert {
+  kind: "alert";
+  title: string;
+  text: string;
+  /** What to open to fix it: [label, url]. */
+  link?: [string, string];
+}
+
+export type OpsEvent = Opened | WentLive | Settled | Alert;
 
 let sink: ((e: OpsEvent) => void) | null = null;
 
@@ -87,6 +99,8 @@ export function reportOpened(o: Opened): void { emit(o); }
 export function reportLive(l: Omit<WentLive, "kind">): void { emit({ kind: "live", ...l }); }
 /** Where a call a person opened gets its result. */
 export function reportSettled(s: Omit<Settled, "kind">): void { emit({ kind: "settled", ...s }); }
+/** Where something breaks that only the operator can mend. */
+export function reportAlert(a: Omit<Alert, "kind">): void { emit({ kind: "alert", ...a }); }
 
 export interface ChannelInfo { slug: string; name: string | null }
 
@@ -178,8 +192,14 @@ export function settledMail(s: Settled, ch: ChannelInfo | null, appBase: string,
   return { subject, html: page(lead, question, called, links, last) };
 }
 
+/** The mail for something the operator has to fix. */
+export function alertMail(a: Alert, last = false): { subject: string; html: string } {
+  return { subject: oneLine(a.title), html: page(esc(a.text), null, null, a.link ? [a.link] : [], last) };
+}
+
 /** Any event's mail. */
 export function opsMail(e: OpsEvent, ch: ChannelInfo | null, appBase: string, last = false): { subject: string; html: string } {
+  if (e.kind === "alert") return alertMail(e, last);
   if (e.kind === "live") return liveMail(e, ch, appBase, last);
   if (e.kind === "settled") return settledMail(e, ch, appBase, last);
   return openedMail(e, ch, appBase, last);
@@ -202,20 +222,21 @@ const DAY_MS = 24 * 60 * 60_000;
 export function opsMailer(d: OpsMailerDeps): (e: OpsEvent) => void {
   const counts = new Map<string, { day: number; n: number }>();
   return (e) => {
-    const label = e.kind === "live" ? "live mail" : e.kind === "settled" ? "settled mail" : "opened mail";
+    const label = e.kind === "alert" ? "alert mail" : e.kind === "live" ? "live mail" : e.kind === "settled" ? "settled mail" : "opened mail";
+    const where = e.kind === "alert" ? {} : { platform: e.platform, channel: e.channelId };
     const today = Math.floor(d.now() / DAY_MS);
     let c = counts.get(label);
     if (!c || c.day !== today) { c = { day: today, n: 0 }; counts.set(label, c); }
     if (c.n >= d.dailyMax) {
-      d.log(`${label} skipped: the day's mails are used`, { kind: e.kind, platform: e.platform, channel: e.channelId });
+      d.log(`${label} skipped: the day's mails are used`, { kind: e.kind, ...where });
       return;
     }
     c.n++;
     const last = c.n === d.dailyMax;
     void (async () => {
-      const ch = await d.channel(e.platform, e.channelId).catch(() => null);
+      const ch = e.kind === "alert" ? null : await d.channel(e.platform, e.channelId).catch(() => null);
       const out = await d.send({ to: d.to, ...opsMail(e, ch, d.appBase, last) });
-      d.log(label, { kind: e.kind, platform: e.platform, channel: e.channelId, out });
+      d.log(label, { kind: e.kind, ...where, out });
     })().catch((err) => d.log(`${label} failed`, { err: (err as Error).message }));
   };
 }
