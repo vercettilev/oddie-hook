@@ -12,7 +12,7 @@ import type { AddressInfo } from "node:net";
 import bs58 from "bs58";
 import express from "express";
 import {
-  parseCommand, handleChat, lockDue, remindOpen, sayVotes, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS,
+  parseCommand, handleChat, lockDue, remindOpen, sayVotes, pointsFor, pointsAt, earlyShare, LIVE_COPY, SPLIT_GAP_MS, PICK_HELP_GAP_MS, REMIND_GAP_MS, SETTLE_HINT_AFTER_MS,
   EARLY_HALF_LIFE_MS, CALL_OPEN_MAX_MS, STREAM_POLL_MS, CALL_FORGET_MS, _resetLive, _forgetWaits, settleOnScreen, type ChatMessage, type LiveDeps,
   chatVoted, chatVotedOf, aboutStreamer, callPageUrl, CHAT_VOTE_MIN,
 } from "../src/live/calls.js";
@@ -400,7 +400,59 @@ console.log("\nseen later: the reminder, and the pin again");
     LIVE_COPY.hello.includes("!call will I win this game?") && LIVE_COPY.hello.indexOf("!call") < LIVE_COPY.hello.indexOf("!oddie")
     && LIVE_COPY.helloCalls.includes("!call will I win this game?") && !LIVE_COPY.helloCalls.includes("!oddie"));
   check("the reminder copy never says bet, gambling, free or real money",
-    !/\bbet(s|ting)?\b|gambl|\bfree\b|real money|real sol/i.test(LIVE_COPY.reminder("q", { yes: 1, no: 1 }, 60_000) + LIVE_COPY.switched("q", { yes: 1, no: 0 }) + LIVE_COPY.which("yes", ["a", "b"])));
+    !/\bbet(s|ting)?\b|gambl|\bfree\b|real money|real sol/i.test(LIVE_COPY.reminder("q", { yes: 1, no: 1 }, 60_000) + LIVE_COPY.switched("q", { yes: 1, no: 0 }) + LIVE_COPY.which("yes", ["a", "b"])
+      + LIVE_COPY.reminder("q", { yes: 1, no: 1 }, null, "IsaacBeast")));
+}
+
+console.log("\nnot on screen yet: half an hour on, the reminder says who settles it (Lev, 25 Nov: IsaacBeast's first call hung 70 minutes)");
+{
+  const r = room();
+  await saveChannel({ platform: "kick", channelId: "100", slug: "isaacbeast", name: "IsaacBeast", avatar: null,
+    accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  await handleChat(r.line("owner", "!call will isaac die in the next mission", true), r.deps);
+  await handleChat(r.line("a", "!yes"), r.deps);
+  await handleChat(r.line("b", "!no"), r.deps);
+  r.tick(REMIND_GAP_MS);
+  await handleChat(r.line("v", "he is low"), r.deps);
+  let before = r.said.length;
+  check("a quarter hour in, the reminder is the plain one", (await remindOpen(r.deps)) === 1
+    && r.said[before]?.text === 'still open: "will isaac die in the next mission" 50% yes. !yes or !no', r.said[before]?.text);
+  r.tick(SETTLE_HINT_AFTER_MS - REMIND_GAP_MS);
+  await handleChat(r.line("v", "still going"), r.deps);
+  before = r.said.length;
+  check("half an hour in, it says the streamer, by name, or a mod settles it",
+    (await remindOpen(r.deps)) === 1
+    && r.said[before]?.text === 'still open: "will isaac die in the next mission" 50% yes. !yes or !no. Not on screen yet: IsaacBeast or a mod settles it with !call yes or !call no',
+    r.said[before]?.text);
+  check("...and the line is never read back as a command", parseCommand(r.said[before]?.text ?? "") === null);
+  await handleChat(r.line("owner", "!call no", true), r.deps);
+  check("...which settles it, as any !call no does", (await liveStore.unsettled("kick", "100")).length === 0);
+
+  // A channel without a name in the store is "the streamer".
+  const r2 = room();
+  await handleChat(r2.line("owner", "!call will I clutch this?", true), r2.deps);
+  r2.tick(SETTLE_HINT_AFTER_MS);
+  await handleChat(r2.line("v", "come on"), r2.deps);
+  before = r2.said.length;
+  await remindOpen(r2.deps);
+  check("a channel the store cannot name is \"the streamer\"", (r2.said[before]?.text ?? "").endsWith("Not on screen yet: the streamer or a mod settles it with !call yes or !call no"),
+    r2.said[before]?.text);
+
+  // Settled by their own source, or not read off a screen: the reminder stays plain.
+  const plain = async (platform: "kick" | "youtube", question: string) => {
+    const r3 = room();
+    const at = (t: string, who = "owner", run = true) => ({ ...r3.line(who, t, run), platform });
+    await handleChat(at(question), r3.deps);
+    r3.tick(SETTLE_HINT_AFTER_MS);
+    await handleChat(at("chat moves", "v", false), r3.deps);
+    const from = r3.said.length;
+    await remindOpen(r3.deps);
+    return r3.said.slice(from).map((x) => x.text).join(" | ");
+  };
+  const yt = await plain("youtube", "!call will I win this game?");
+  check("on YouTube, where the screen is not read, the reminder stays plain", yt.startsWith("still open:") && !yt.includes("Not on screen"), yt);
+  const price = await plain("kick", "!call will BTC hit 83k in the next 15 min?");
+  check("a price call, settled by its price, is never told it is not on screen", !price.includes("Not on screen"), price);
 }
 
 console.log("\nviewers never settle a call (Lev, 19 Oct: one viewer's !result closed the answers and decided it)");

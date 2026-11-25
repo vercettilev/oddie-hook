@@ -343,8 +343,9 @@ export const LIVE_COPY = {
     const sides = [yesBy.length ? `${who(yesBy)} yes` : "", noBy.length ? `${who(noBy)} no` : ""].filter(Boolean).join(" · ");
     return `${sides ? `${sides} → ` : ""}${leading(t)}${msLeft === null ? "" : `, ${left(msLeft)} left`}`;
   },
-  reminder: (q: string, t: Tally, msLeft: number | null) =>
-    `still open: "${q}"${t.yes + t.no ? ` ${leading(t)}` : ""}${msLeft === null ? "" : `, ${left(msLeft)} left`}. !yes or !no`,
+  /** `settleBy`: who settles a call the screen has not (SETTLE_HINT_AFTER_MS), else null. */
+  reminder: (q: string, t: Tally, msLeft: number | null, settleBy: string | null = null) =>
+    `still open: "${q}"${t.yes + t.no ? ` ${leading(t)}` : ""}${msLeft === null ? "" : `, ${left(msLeft)} left`}. !yes or !no${settleBy === null ? "" : `. Not on screen yet: ${settleBy} or a mod settles it with !call yes or !call no`}`,
   locked: (t: Tally) => t.yes + t.no
     ? `Calls are locked: ${split(t)}. Mods settle it with !call yes or !call no.`
     : "Calls are locked for this one. The next one is yours.",
@@ -1470,6 +1471,21 @@ async function watchStreams(deps: LiveDeps): Promise<void> {
 }
 
 /**
+ * NOT ON SCREEN YET (Lev, 25 Nov). IsaacBeast's first call, "will isaac die in
+ * the next mission", was read off his stream 1,041 times in 70 minutes and
+ * never settled: he lived, and GTA 6 ended that mission in a cutscene with
+ * no result on screen, so the NO it needed never showed. He paused for his last
+ * 26 minutes, talking to chat, then went off air, and the call was canceled
+ * with no points. So from half an hour on, the reminder of an open call that
+ * waits on the screen says who can settle it: the streamer or a mod, by name.
+ * Only where the screen reads (Twitch, Kick, X), only a call with no length of
+ * its own, and only a room call: a price, a viewer count or a FACEIT match is
+ * settled by its own source.
+ */
+export const SETTLE_HINT_AFTER_MS = 30 * 60_000;
+const SCREEN_READS: ReadonlySet<Platform> = new Set<Platform>(["twitch", "kick", "x"]);
+
+/**
  * The clock, too: a call taking answers is said again every REMIND_GAP_MS, and
  * pinned again, but only into a chat that moved since it was last said. A quiet
  * room is not talked at, and nobody who arrives in the second hour of a call
@@ -1486,7 +1502,9 @@ export async function remindOpen(deps: LiveDeps): Promise<number> {
     const said = lastSaid.get(call.id) ?? call.openedAt;
     if (now - said < REMIND_GAP_MS || (lastActivity.get(roomKey(call)) ?? 0) <= said) continue;
     lastSaid.set(call.id, now);
-    const id = await sayQuiet(deps, call, LIVE_COPY.reminder(call.question, await deps.store.tally(call.id), call.timed ? call.closesAt - now : null));
+    const settleBy = !call.timed && isRoomCall(call) && SCREEN_READS.has(call.platform) && now - call.openedAt >= SETTLE_HINT_AFTER_MS
+      ? ((await deps.store.channelName?.(call.platform, call.channelId).catch(() => null)) || "the streamer") : null;
+    const id = await sayQuiet(deps, call, LIVE_COPY.reminder(call.question, await deps.store.tally(call.id), call.timed ? call.closesAt - now : null, settleBy));
     await pinQuiet(deps, call, id);
     n++;
   }
