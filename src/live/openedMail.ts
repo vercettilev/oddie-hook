@@ -29,6 +29,8 @@
  *
  * ALERT (24 Nov). Something only the operator can mend, like oddie's Kick
  * voice signing out (src/kick/routes.ts): what broke and the link to fix it.
+ * Or something the operator has to hear of: a platform that stopped answering
+ * whether a channel is live (src/live/lookups.ts).
  *
  * WHERE AND HOW MANY. OPS_MAIL_TO (lev@oddie.fun when unset, "off" stops it),
  * at most OPS_MAIL_DAILY_MAX (40) of each kind a UTC day, so a busy day of one
@@ -74,7 +76,8 @@ export interface Settled {
   frame: boolean;
 }
 
-/** Something the operator has to fix by hand (src/kick/routes.ts: the Kick voice signed out). */
+/** Something the operator has to fix by hand (src/kick/routes.ts: the Kick voice signed out),
+ *  or to hear of (src/live/lookups.ts: a platform that stopped answering). */
 export interface Alert {
   kind: "alert";
   title: string;
@@ -106,7 +109,7 @@ export function reportAlert(a: Omit<Alert, "kind">): void { emit({ kind: "alert"
 
 export interface ChannelInfo { slug: string; name: string | null }
 
-const PLATFORM_NAME: Record<Platform, string> = { twitch: "Twitch", kick: "Kick", x: "X", youtube: "YouTube" };
+export const PLATFORM_NAME: Record<Platform, string> = { twitch: "Twitch", kick: "Kick", x: "X", youtube: "YouTube" };
 
 /** Where the stream itself is watched. */
 export function watchUrl(p: Platform, slug: string, channelId: string): string {

@@ -14,6 +14,7 @@ import {
 import { handleChat, LIVE_COPY, lockDue, type LiveDeps, type Platform } from "../live/calls.js";
 import { addChannelRoutes, type ChannelPayoutDeps } from "../live/channelRoutes.js";
 import { notNow, paced, patiently } from "../live/pace.js";
+import { counted } from "../live/lookups.js";
 import { reportAlert } from "../live/openedMail.js";
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
@@ -227,9 +228,11 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
     now: () => Date.now(),
     say,
     // Is the channel live? The clock asks for channels with calls waiting, so a
-    // stream's end can settle or cancel the moments only the room saw.
-    streamLive: async (_p, channelId) => (kickConfigured() ? kickStreamIsLive(channelId) : null),
-    streamGame: async (_p, channelId) => (kickConfigured() ? kickStreamInfo(channelId) : null),
+    // stream's end can settle or cancel the moments only the room saw. Counted,
+    // so a Kick that stops answering is told (src/live/lookups.ts); a Kick that
+    // is not set up is not asked, and not counted.
+    streamLive: async (_p, channelId) => (kickConfigured() ? counted("kick", channelId, d.log, () => kickStreamIsLive(channelId)) : null),
+    streamGame: async (_p, channelId) => (kickConfigured() ? counted("kick", channelId, d.log, () => kickStreamInfo(channelId)) : null),
     market: markets ? (msg, claim) => openFromChat(msg, claim, {
       ...markets,
       sourceFor: (m) => kickChatSource(m.channelSlug || m.channelId, m.messageId),
@@ -335,7 +338,7 @@ export function kickRouter(d: KickRouteDeps): Router {
 
   /** The channel's page, its standings, and the streamer's 2%: shared with Twitch. */
   // The player above the call while the channel is on air (src/live/channelRoutes.ts).
-  addChannelRoutes(r, "kick", { ...d, streamLive: async (c) => (kickConfigured() ? kickStreamIsLive(c) : null) });
+  addChannelRoutes(r, "kick", { ...d, streamLive: async (c) => (kickConfigured() ? counted("kick", c, d.log, () => kickStreamIsLive(c)) : null) });
 
   return r;
 }

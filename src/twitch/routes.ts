@@ -14,6 +14,7 @@ import { handleChat, LIVE_COPY, type LiveCall, type LiveDeps, type Platform, typ
 import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { notNow, paced, patiently } from "../live/pace.js";
+import { counted } from "../live/lookups.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { creditInvite } from "../live/referrals.js";
 import { botStateGet, botStateSet, twitchChatSource } from "../store/markets.js";
@@ -253,6 +254,14 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     }
     await botStateSet(predictionKey(call.id), "").catch(() => {});
   };
+  /**
+   * Is the channel live: counted, so a Twitch that stops answering is told
+   * (src/live/lookups.ts). A Twitch that is not set up is asked here all the
+   * same, as it always was, and what comes back is ours to mend, not Twitch
+   * gone quiet: not counted.
+   */
+  const lookup = <T>(channelId: string, ask: () => Promise<T>): Promise<T> =>
+    (twitchConfigured() ? counted("twitch", channelId, d.log, ask) : ask());
   const markets = d.markets;
   return {
     store: liveStore,
@@ -262,8 +271,8 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     unpin,
     predictionOpen,
     predictionEnd,
-    streamLive: async (_p, channelId) => streamIsLive(await appToken(), channelId),
-    streamGame: async (_p, channelId) => streamInfo(await appToken(), channelId),
+    streamLive: async (_p, channelId) => lookup(channelId, async () => streamIsLive(await appToken(), channelId)),
+    streamGame: async (_p, channelId) => lookup(channelId, async () => streamInfo(await appToken(), channelId)),
     market: markets ? (msg, claim) => openFromChat(msg, claim, {
       ...markets,
       sourceFor: (m) => twitchChatSource(m.channelSlug || m.channelId, m.messageId),
@@ -393,6 +402,6 @@ export function twitchRouter(d: TwitchRouteDeps): Router {
 
   /** The channel's page, its standings, and the streamer's 2%: shared with Kick. */
   // The player above the call while the channel is on air (src/live/channelRoutes.ts).
-  addChannelRoutes(r, "twitch", { ...d, streamLive: d.streamLive ?? (async (c) => (twitchConfigured() ? streamIsLive(await appToken(), c) : null)) });
+  addChannelRoutes(r, "twitch", { ...d, streamLive: d.streamLive ?? (async (c) => (twitchConfigured() ? counted("twitch", c, d.log, async () => streamIsLive(await appToken(), c)) : null)) });
   return r;
 }
