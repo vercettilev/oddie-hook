@@ -603,6 +603,17 @@ console.log("\nKick's side");
   check("...a subscriber may only answer", viewer?.canRun === false);
   const owner = chatFromKick({ ...payload, sender: { ...payload.sender, user_id: 123456789, identity: null } });
   check("...the channel's owner may run calls", owner?.canRun === true);
+  // Lev's own Kick account runs calls in every connected chat, as on X (26 Nov).
+  const lev = chatFromKick({ ...payload, sender: { ...payload.sender, user_id: 132108626, username: "levvercetti", identity: { badges: [] } } });
+  check("...so does Lev's own Kick account, by its id, in every connected chat", lev?.canRun === true);
+  const operatorsBefore = process.env.KICK_LIVE_OPERATORS;
+  process.env.KICK_LIVE_OPERATORS = "555, 777";
+  const listed = chatFromKick({ ...payload, sender: { ...payload.sender, user_id: 777, identity: null } });
+  const unlisted = chatFromKick({ ...payload, sender: { ...payload.sender, user_id: 132108626, identity: null } });
+  process.env.KICK_LIVE_OPERATORS = "";
+  const nobody = chatFromKick({ ...payload, sender: { ...payload.sender, user_id: 132108626, identity: null } });
+  if (operatorsBefore === undefined) delete process.env.KICK_LIVE_OPERATORS; else process.env.KICK_LIVE_OPERATORS = operatorsBefore;
+  check("...KICK_LIVE_OPERATORS names them instead, and empty names nobody", listed?.canRun === true && unlisted?.canRun === false && nobody?.canRun === false);
   check("...and anything else is ignored", chatFromKick({ hello: 1 }) === null);
 
   const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });

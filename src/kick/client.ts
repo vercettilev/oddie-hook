@@ -213,8 +213,17 @@ interface KickChatEvent {
 }
 const noEmotes = (s: string): string => s.replace(/\[emote:\d+:[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
 
+/** Accounts that run calls in every connected Kick chat as its host does, so a
+ *  streamer busy playing never has to type the !call: X's rule since 26 Oct
+ *  (src/x/live.ts xOperators), on Kick since 26 Nov, for a connected chat
+ *  where nobody opens a call. By Kick user id, which
+ *  never passes to someone else as a username can: Lev's own levvercetti
+ *  unless KICK_LIVE_OPERATORS lists others (empty: nobody). */
+const kickOperators = (): string[] => (process.env.KICK_LIVE_OPERATORS ?? "132108626").split(",").map((s) => s.trim()).filter(Boolean);
+
 /** A `chat.message.sent` payload as the engine reads it. The owner is the
- *  sender whose id is the broadcaster's; a moderator carries the badge. */
+ *  sender whose id is the broadcaster's; a moderator carries the badge; an
+ *  operator (above) is named by id. */
 export function chatFromKick(body: unknown): ChatMessage | null {
   const e = body as Partial<KickChatEvent> | null;
   if (!e || typeof e.content !== "string" || !e.sender || !e.broadcaster || !e.message_id) return null;
@@ -226,7 +235,7 @@ export function chatFromKick(body: unknown): ChatMessage | null {
     messageId: String(e.message_id),
     senderId: String(e.sender.user_id),
     senderName: String(e.sender.username ?? ""),
-    canRun: owner || mod,
+    canRun: owner || mod || kickOperators().includes(String(e.sender.user_id)),
     // Emotes arrive inline as [emote:id:name]; they are never part of a command.
     text: noEmotes(e.content),
     replyText: typeof e.replies_to?.content === "string" ? noEmotes(e.replies_to.content) : null,
