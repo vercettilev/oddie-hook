@@ -11,7 +11,8 @@ import { _resetLive, handleChat, LIVE_COPY, settleOnScreen } from "../src/live/c
 import { abandonMatchCall, openMatchCall, settleMatchCall } from "../src/live/matchCalls.js";
 import { liveStore, saveChannel, channelById, _resetLiveStore } from "../src/store/live.js";
 import { authorizeUrl, chatFromTwitch, verifyTwitchSignature, TWITCH_SCOPES, PIN_SECONDS } from "../src/twitch/client.js";
-import { twitchRouter, twitchEngineDeps, _resetPredictions, PREDICTION_WINDOW_S, type TwitchChat, type TwitchSignIn } from "../src/twitch/routes.js";
+import { twitchRouter, twitchEngineDeps, _resetPredictions, _resetTwitchVoice, PREDICTION_WINDOW_S, type TwitchChat, type TwitchSignIn } from "../src/twitch/routes.js";
+import { setOpsSink, type Alert } from "../src/live/openedMail.js";
 import { ownerCookieName } from "../src/live/owner.js";
 import { MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
 import {
@@ -128,9 +129,11 @@ console.log("\n!yes or !no with nothing open, through the real router and Twitch
 {
   // Live on 8 Oct: the first Twitch pilot's !yes or !no came in with no call
   // open, and the log said only action="no-open-call" runner=true.
-  _resetLiveStore(); _resetLive();
-  await saveChannel({ platform: "twitch", channelId: "1001", slug: "streamer", name: "Streamer", avatar: null,
-    accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  _resetLiveStore(); _resetLive(); _resetTwitchVoice();
+  for (const [id, slug, tok] of [["1001", "streamer", "tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug === "streamer" ? "Streamer" : slug, avatar: null,
+      accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
   const sent: Array<{ broadcaster: string; sender: string; text: string; replyTo?: string }> = [];
   const chat: TwitchChat = { send: async (_t, b, s, text, replyTo) => { sent.push({ broadcaster: b, sender: s, text, replyTo }); } };
   const did: Array<{ action: unknown; runner: unknown }> = [];
@@ -138,7 +141,7 @@ console.log("\n!yes or !no with nothing open, through the real router and Twitch
   app.use(twitchRouter({
     appBaseUrl: "https://app.oddie.fun", pageHtml: () => "<p>page</p>", pageOpen: () => true, pageClosed: (res) => { res.status(404).end(); },
     log: (line, extra) => { if (line === "twitch chat command") did.push({ action: extra?.action, runner: extra?.runner }); },
-    secret: () => SECRET, chat, voice: "",
+    secret: () => SECRET, chat, voice: "oddiefun",
   }));
   const server = app.listen(0);
   const port = (server.address() as AddressInfo).port;
@@ -160,8 +163,8 @@ console.log("\n!yes or !no with nothing open, through the real router and Twitch
   check("a viewer's !no is chat: nothing is said", viewer?.action === "no-open-call" && viewer.runner === false && sent.length === 0,
     JSON.stringify({ viewer, sent }));
   const first = await line("!no", { chatter_user_id: "1001", message_id: "b0b0b0b0-0000-4000-8000-000000000002" });
-  check("the streamer's !no hears how !yes and !no work, as a Twitch reply to it",
-    first?.action === "pick-help" && first.runner === true && sent.length === 1 && sent[0].broadcaster === "1001"
+  check("the streamer's !no hears how !yes and !no work, as a Twitch reply to it, from oddie's own account",
+    first?.action === "pick-help" && first.runner === true && sent.length === 1 && sent[0].broadcaster === "1001" && sent[0].sender === "9009"
     && sent[0].text === LIVE_COPY.pickHelp && sent[0].replyTo === "b0b0b0b0-0000-4000-8000-000000000002", JSON.stringify({ first, sent }));
   const again = await line("!yes", { chatter_user_id: "3003", badges: [{ set_id: "moderator" }], message_id: "b0b0b0b0-0000-4000-8000-000000000003" });
   check("...and a mod's !yes right after is not answered twice", again?.action === "no-open-call" && again.runner === true && sent.length === 1,
@@ -173,9 +176,11 @@ console.log("\noddie's own lines, coming back through Twitch's chat feed");
 {
   // Live on 8 Oct: oddie's "!oddie <a claim ...>" help line came back as a chat
   // message from oddiefun, was read as a claim, and oddie answered itself.
-  _resetLiveStore(); _resetLive();
-  await saveChannel({ platform: "twitch", channelId: "1001", slug: "streamer", name: "Streamer", avatar: null,
-    accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  _resetLiveStore(); _resetLive(); _resetTwitchVoice();
+  for (const [id, slug, tok] of [["1001", "streamer", "tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug === "streamer" ? "Streamer" : slug, avatar: null,
+      accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
   const sent: string[] = [];
   const did: unknown[] = [];
   const app = express();
@@ -361,20 +366,26 @@ console.log("\n\"too quickly\" is no refusal (8 Oct: one 429 and oddie spoke as 
   sent.length = 0; slow = 1;
   await eng.say("twitch", "7101", "patient");
   check("a 429 is waited out and the line still comes from oddie's account", sent.length === 1 && sent[0].token === "v-tok", JSON.stringify(sent));
+  const alerts: Alert[] = [];
+  setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
   sent.length = 0; slow = 5;
-  await eng.say("twitch", "7101", "handed on");
-  check("still too quick after waiting twice: that one line goes as the channel's account",
-    sent.length === 1 && sent[0].token === "b-tok" && logs.includes("twitch voice slowed down, this line goes as the channel's account"), JSON.stringify(sent));
+  await eng.say("twitch", "7101", "not said");
+  check("still too quick after waiting twice: that one line is not said, never from the streamer's account (Lev, 25 Nov)",
+    sent.length === 0 && logs.includes("twitch voice slowed down") && logs.includes("twitch line not said, oddie's own account cannot speak here"), JSON.stringify(sent));
+  check("...and a slow moment mails nobody", alerts.length === 0, JSON.stringify(alerts));
   slow = 0; sent.length = 0;
   await eng.say("twitch", "7101", "mine again");
   check("...and the next line is oddie's again: the voice was never benched",
-    sent.length === 1 && sent[0].token === "v-tok" && !logs.includes("twitch voice cannot post here, sending as the channel's account"), JSON.stringify(sent));
+    sent.length === 1 && sent[0].token === "v-tok" && !logs.includes("twitch voice cannot post here"), JSON.stringify(sent));
+  setOpsSink(null);
   _setPace({ gapMs: 0, retryMs: [0, 0] });
 }
 
 console.log("\na reply Twitch will not take goes on its own (1 Nov: two results never reached a pilot's chat)");
 {
-  _resetLiveStore(); _resetLive();
+  _resetLiveStore(); _resetLive(); _resetTwitchVoice();
+  const alerts: Alert[] = [];
+  setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
   for (const [id, slug, tok] of [["7201", "pilot", "p-tok"], ["7202", "banned", "n-tok"], ["7203", "broken", "k-tok"], ["9009", "oddiefun", "v-tok"]]) {
     await saveChannel({ platform: "twitch", channelId: id, slug, name: slug, avatar: null, accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
   }
@@ -398,7 +409,8 @@ console.log("\na reply Twitch will not take goes on its own (1 Nov: two results 
   const logs: string[] = [];
   const eng = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
   const result = `It's NO: "NEAR above $5?" Winners collect at https://app.oddie.fun/m/near-above-5`;
-  const benched = "twitch voice cannot post here, sending as the channel's account";
+  const benched = "twitch voice cannot post here";
+  const unsaid = "twitch line not said, oddie's own account cannot speak here";
   const reset = () => { tries.length = 0; sent.length = 0; logs.length = 0; };
   /** One line said, and the error it ended in: a lost line is a failed check, not a crash. */
   const say = (channel: string, text: string, replyTo?: string) =>
@@ -418,19 +430,88 @@ console.log("\na reply Twitch will not take goes on its own (1 Nov: two results 
   await say("7201", "a fresh answer", "just-now");
   check("a reply Twitch takes is still a reply, asked once", tries.length === 1 && sent[0]?.replyTo === "just-now", JSON.stringify(tries));
 
+  check("...and nobody was mailed over a reply", alerts.length === 0, JSON.stringify(alerts));
+
   reset();
   const lostHere = await say("7202", result, "opened-yesterday");
-  check("where oddie's account may not post, the channel's says it, on its own too",
-    !lostHere && sent.length === 1 && sent[0].token === "n-tok" && sent[0].replyTo === undefined && logs.includes(benched),
-    lostHere?.message ?? JSON.stringify({ sent, logs }));
-  check("...a refusal of the account is never asked again without the reply: once from oddie, twice from the channel",
-    tries.length === 3 && tries[0].token === "v-tok" && tries[1].token === "n-tok" && tries[1].replyTo === "opened-yesterday" && tries[2].replyTo === undefined,
-    JSON.stringify(tries));
+  check("where oddie's account may not post, nothing is said: never the streamer's account (Lev, 25 Nov)",
+    !lostHere && sent.length === 0 && logs.includes(benched) && logs.includes(unsaid), lostHere?.message ?? JSON.stringify({ sent, logs }));
+  check("...oddie's account is asked once, as the reply, and the streamer's never",
+    tries.length === 1 && tries[0].token === "v-tok" && tries[0].replyTo === "opened-yesterday", JSON.stringify(tries));
+  const m = alerts[0];
+  check("...and the operator gets one mail: which chat, Twitch's reason, and the channel to open",
+    alerts.length === 1 && m?.title === "Oddie can't talk in banned's Twitch chat" && /not permitted/.test(m.text)
+    && /says nothing in that chat/.test(m.text) && m.link?.[1] === "https://www.twitch.tv/banned", JSON.stringify(m));
+  reset();
+  await say("7202", "the next line");
+  check("...the next line there asks nobody and mails nobody: oddie rests in that chat",
+    tries.length === 0 && sent.length === 0 && alerts.length === 1 && logs.includes(unsaid), JSON.stringify({ tries, alerts: alerts.length }));
 
   reset();
   const failed = await say("7203", result, "opened-yesterday");
-  check("refused on its own as well, the line is not asked a third time: the 400 reaches the caller",
-    failed?.status === 400 && tries.length === 4 && tries.filter((x) => x.replyTo === undefined).length === 2 && sent.length === 0, JSON.stringify(tries));
+  check("refused on its own as well, the line is not asked a third time, and is not said",
+    !failed && tries.length === 2 && tries.every((x) => x.token === "v-tok") && tries[1].replyTo === undefined && sent.length === 0,
+    failed?.message ?? JSON.stringify(tries));
+  check("...a second chat that refuses oddie is a mail of its own", alerts.length === 2 && alerts[1].title === "Oddie can't talk in broken's Twitch chat",
+    JSON.stringify(alerts.map((a) => a.title)));
+  setOpsSink(null);
+}
+
+console.log("\noddie never speaks in a streamer's name on Twitch (Lev, 25 Nov: every line in IsaacBeast's Kick chat read as Isaac)");
+{
+  _resetLiveStore(); _resetLive(); _resetTwitchVoice();
+  const alerts: Alert[] = [];
+  setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
+  const sent: Array<{ token: string; b: string; sender: string; text: string }> = [];
+  let expired = false;
+  const deny = (code: number) => { const e = new Error(`twitch POST /chat/messages ${code}`) as Error & { status?: number }; e.status = code; return e; };
+  const chat: TwitchChat = {
+    send: async (token, b, sender, text) => {
+      if (token === "v-tok" && expired) throw deny(401);
+      sent.push({ token, b, sender, text }); return `n-${sent.length}`;
+    },
+  };
+  await saveChannel({ platform: "twitch", channelId: "7401", slug: "quietone", name: "QuietOne", avatar: null,
+    accessToken: "q-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  const logs: string[] = [];
+  const eng = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  await eng.say("twitch", "7401", "no voice yet");
+  check("with oddie's Twitch voice not connected, a streamer's chat hears nothing, never the streamer",
+    sent.length === 0 && logs.includes("twitch line not said, oddie's own account cannot speak here"), JSON.stringify(sent));
+  check("...and the operator hears once that the voice is not connected, with the link that connects it",
+    alerts.length === 1 && /not connected/.test(alerts[0].title) && alerts[0].link?.[1] === "https://app.oddie.fun/live/twitch/connect", JSON.stringify(alerts));
+  await eng.say("twitch", "7401", "still none");
+  check("...once: the next line mails nothing more", alerts.length === 1 && sent.length === 0);
+
+  await saveChannel({ platform: "twitch", channelId: "9009", slug: "oddiefun", name: "oddiefun", avatar: null,
+    accessToken: "v-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  await eng.say("twitch", "9009", "in my own chat");
+  check("in oddie's own chat the channel's account is oddie's, and says it", sent.length === 1 && sent[0].token === "v-tok" && sent[0].b === "9009",
+    JSON.stringify(sent));
+  sent.length = 0;
+  await eng.say("twitch", "7401", "here at last");
+  check("connected, oddie says it in the streamer's chat from its own account", sent.length === 1 && sent[0].token === "v-tok" && sent[0].sender === "9009",
+    JSON.stringify(sent));
+
+  sent.length = 0; logs.length = 0; expired = true;
+  await eng.say("twitch", "7401", "signed out");
+  check("a voice Twitch no longer takes (401 even after a fresh token) says nothing, never the streamer",
+    sent.length === 0 && logs.some((l) => l.startsWith("twitch voice is signed out")), JSON.stringify({ sent, logs }));
+  const out = alerts[1];
+  check("...and the operator gets the sign-in mail, with the link that signs it in again",
+    alerts.length === 2 && /signed out/.test(out?.title ?? "") && out?.link?.[1] === "https://app.oddie.fun/live/twitch/connect"
+    && /says nothing in Twitch chats/.test(out?.text ?? ""), JSON.stringify(out));
+  const asked = sent.length;
+  await eng.say("twitch", "7401", "resting");
+  check("...then rests everywhere: the next line asks Twitch for nothing and mails nothing more",
+    sent.length === asked && alerts.length === 2 && logs.filter((l) => l.startsWith("twitch voice is signed out")).length === 1, JSON.stringify(logs));
+
+  const off = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "" }, chat);
+  expired = false; sent.length = 0; _resetTwitchVoice();
+  await off.say("twitch", "7401", "no voice set");
+  check("with no voice set at all, nothing is said in a streamer's chat, and nobody is mailed for a choice",
+    sent.length === 0 && alerts.length === 2, JSON.stringify(sent));
+  setOpsSink(null);
 }
 
 console.log("\n...and through the real client, against Twitch's own 400");
@@ -523,9 +604,11 @@ console.log("\nthe sign-in");
 
 console.log("\nthe market door: !oddie in a Twitch chat");
 {
-  _resetLiveStore(); _resetLive();
-  await saveChannel({ platform: "twitch", channelId: "1001", slug: "streamer", name: "Streamer", avatar: null,
-    accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  _resetLiveStore(); _resetLive(); _resetTwitchVoice();
+  for (const [id, slug, tok] of [["1001", "streamer", "tok"], ["9009", "oddiefun", "v-tok"]]) {
+    await saveChannel({ platform: "twitch", channelId: id, slug, name: slug === "streamer" ? "Streamer" : slug, avatar: null,
+      accessToken: tok, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
   const sent: Array<{ broadcaster: string; sender: string; text: string; replyTo?: string }> = [];
   const chat: TwitchChat = { send: async (_t, b, s, text, replyTo) => { sent.push({ broadcaster: b, sender: s, text, replyTo }); } };
   const opened: Array<{ openerId: string; sourceUrl: string }> = [];
@@ -543,13 +626,13 @@ console.log("\nthe market door: !oddie in a Twitch chat");
     baseUrl: "https://app.oddie.fun",
     log: () => {},
   };
-  const eng = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, markets, voice: "" }, chat);
+  const eng = twitchEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, markets, voice: "oddiefun" }, chat);
   const msg = chatFromTwitch(ev({ message: { text: "!oddie BTC closes above 120k on Friday" } }))!;
   const out = await eng.market!(msg, "BTC closes above 120k on Friday");
   check("a viewer's !oddie opens a market the CHANNEL opened", out === "market-opened" && opened[0]?.openerId === "twitch:1001"
     && opened[0]?.sourceUrl === "twitch-chat:streamer/8f3c2c4e-1b2a-4d6e-9a1b-2c3d4e5f6a7b", JSON.stringify(opened));
-  check("...and says so in that chat, as a reply, naming who earns 2%",
-    sent[0]?.broadcaster === "1001" && sent[0]?.replyTo === msg.messageId && sent[0]?.text === MARKET_COPY.opened("BTC to 120k by Friday?", "https://app.oddie.fun/m/tw-btc", "streamer"),
+  check("...and says so in that chat, as a reply from oddie's own account, naming who earns 2%",
+    sent[0]?.broadcaster === "1001" && sent[0]?.sender === "9009" && sent[0]?.replyTo === msg.messageId && sent[0]?.text === MARKET_COPY.opened("BTC to 120k by Friday?", "https://app.oddie.fun/m/tw-btc", "streamer"),
     JSON.stringify(sent[0]));
   check("the channel's markets, opener and result thread are read off the ledger",
     (await streamOpenedSlugs("twitch", "1001")).includes("tw-btc") && (await streamOpenerOf("tw-btc")) === "twitch:1001"

@@ -15,6 +15,7 @@ import { openFromChat, type ChatMarketDeps } from "../live/claims.js";
 import { addChannelRoutes, type ChannelPageDeps } from "../live/channelRoutes.js";
 import { notNow, paced, patiently } from "../live/pace.js";
 import { counted } from "../live/lookups.js";
+import { reportAlert } from "../live/openedMail.js";
 import { ownerCookie, ownerKeyFromEnv, ownerToken } from "../live/owner.js";
 import { creditInvite } from "../live/referrals.js";
 import { botStateGet, botStateSet, twitchChatSource } from "../store/markets.js";
@@ -74,15 +75,38 @@ async function tokenFor(ch: LiveChannel, force = false): Promise<string> {
 }
 
 /**
- * ONE VOICE IN EVERY CHAT, as on Kick: a line goes out from oddie's own
- * account (the voice channel, once it has signed in like any streamer) so it
- * never reads as the streamer typing. Where that is refused (a ban,
- * followers-only, AutoMod) the streamer's own account says it, and the voice
- * is tried again ten minutes on. "Too quickly" is no refusal: the lines to a
- * chat go out a second apart and a 429 is waited out (src/live/pace.ts).
+ * ONE VOICE IN EVERY CHAT, AND NEVER THE STREAMER'S, as on Kick (Lev, 25 Nov):
+ * a line goes out from oddie's own account (the voice channel, once it has
+ * signed in like any streamer). Where Twitch refuses it (a ban, followers-only,
+ * a verified email the chat wants, AutoMod, a slow moment) the line used to go
+ * out from the streamer's own account; now it is not said: the call still runs
+ * and the answers still count, the log says why, and the operator gets a mail
+ * with what fixes it, once a chat every six hours. The voice is tried again in
+ * a chat ten minutes after it was refused there. A sign-in that no longer
+ * works is told apart from a chat that will not take the voice: the voice
+ * rests everywhere for ten minutes and the operator gets one mail every six
+ * hours. "Too quickly" is no refusal: the lines to a chat go out a second
+ * apart and a 429 is waited out (src/live/pace.ts).
  */
 const voiceCannotPost = new Map<string, number>();
 const VOICE_RETRY_MS = 10 * 60_000;
+const VOICE_ALERT_GAP_MS = 6 * 60 * 60_000;
+let voiceSignedOutAt: number | null = null;
+let voiceAlertAt = 0;
+/** The last mail about a chat that refused the voice, by channel; and about a voice not connected. */
+const chatAlertAt = new Map<string, number>();
+let voiceMissingAlertAt = 0;
+/** Test seam: forget the chats that refused the voice, a lost sign-in, and the mails about them. */
+export function _resetTwitchVoice(): void {
+  voiceCannotPost.clear(); voiceSignedOutAt = null; voiceAlertAt = 0; chatAlertAt.clear(); voiceMissingAlertAt = 0;
+}
+/** What oddie's own account did with a line, and why not when it did not (as on Kick). */
+interface VoiceTry {
+  said: boolean;
+  id: string | null;
+  why?: "off" | "missing" | "resting" | "signed-out" | "slow" | "refused";
+  err?: string;
+}
 
 /**
  * PINS. A call's line is pinned with the streamer's own token (they are a
@@ -153,24 +177,65 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
         return chat.send(t, channelId, from.channelId, text);
       }
     })) || null);
-  const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<{ said: boolean; id: string | null }> => {
-    const no = { said: false, id: null };
-    if (!voiceLogin) return no;
+  /** oddie's own account says it in a streamer's chat, or says why it did not. */
+  const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<VoiceTry> => {
+    if (!voiceLogin) return { said: false, id: null, why: "off" };
+    if (voiceSignedOutAt !== null && Date.now() - voiceSignedOutAt < VOICE_RETRY_MS) return { said: false, id: null, why: "signed-out" };
     const failedAt = voiceCannotPost.get(channelId);
-    if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return no;
-    const voice = await channelBySlug("twitch", voiceLogin).catch(() => null);
-    if (!voice?.active || !voice.accessToken || voice.channelId === channelId) return no;
-    try { const id = await patiently(() => as(voice, channelId, text, replyTo)); voiceCannotPost.delete(channelId); return { said: true, id }; }
-    catch (e) {
-      if (notNow(status(e))) {
-        d.log("twitch voice slowed down, this line goes as the channel's account", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
-        return no;
-      }
-      voiceCannotPost.set(channelId, Date.now());
+    if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return { said: false, id: null, why: "resting" };
+    // A store that does not answer is an outage, said as one, never a voice that is not there.
+    const voice = await channelBySlug("twitch", voiceLogin);
+    if (!voice?.active || !voice.accessToken) return { said: false, id: null, why: "missing" };
+    try {
+      const id = await patiently(() => as(voice, channelId, text, replyTo));
+      voiceCannotPost.delete(channelId); voiceSignedOutAt = null;
+      return { said: true, id };
+    } catch (e) {
       // The message carries Twitch's drop reason (followers-only, a verified
       // email the channel requires, a ban), which is the one thing worth knowing.
-      d.log("twitch voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err: (e as Error).message.slice(0, 200) });
-      return no;
+      const err = ((e as Error)?.message ?? String(e)).slice(0, 200);
+      // The sign-in itself, not this chat: a 401 after a fresh token, or a token Twitch will not refresh.
+      if (status(e) === 401 || (/^twitch token /.test((e as Error)?.message ?? "") && !notNow(status(e)))) {
+        voiceSignedOutAt = Date.now();
+        d.log("twitch voice is signed out, oddie says nothing on Twitch until it signs in again", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err });
+        if (Date.now() - voiceAlertAt >= VOICE_ALERT_GAP_MS) {
+          voiceAlertAt = Date.now();
+          reportAlert({
+            title: `Oddie's Twitch voice (${voiceLogin}) is signed out`,
+            text: `${voiceLogin} can no longer post in Twitch chats (${err}). Until it signs in again, oddie says nothing in Twitch chats: calls still open and answers still count. Sign in to Twitch as ${voiceLogin}, then open the link below once.`,
+            link: ["Sign it in again", `${base}/live/twitch/connect`],
+          });
+        }
+        return { said: false, id: null, why: "signed-out", err };
+      }
+      if (notNow(status(e))) {
+        d.log("twitch voice slowed down", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err });
+        return { said: false, id: null, why: "slow", err };
+      }
+      voiceCannotPost.set(channelId, Date.now());
+      d.log("twitch voice cannot post here", { channel: channelId, voice: voiceLogin, status: status(e) ?? null, err });
+      return { said: false, id: null, why: "refused", err };
+    }
+  };
+  /** A line nobody may say for oddie in this chat: not said, the log says why, and the operator hears what fixes it. */
+  const quiet = (ch: LiveChannel, v: VoiceTry) => {
+    d.log("twitch line not said, oddie's own account cannot speak here", { channel: ch.channelId, why: v.why ?? null });
+    const who = ch.name || ch.slug;
+    if (v.why === "refused" && Date.now() - (chatAlertAt.get(ch.channelId) ?? 0) >= VOICE_ALERT_GAP_MS) {
+      chatAlertAt.set(ch.channelId, Date.now());
+      reportAlert({
+        title: `Oddie can't talk in ${who}'s Twitch chat`,
+        text: `Twitch refused ${voiceLogin}'s line in ${who}'s chat (${v.err ?? "no reason given"}). Until ${voiceLogin} can post there, oddie says nothing in that chat: calls still open and answers still count. Most often the chat is followers-only or wants a verified email or phone: sign in to Twitch as ${voiceLogin}, follow the channel below and add what its chat asks for.`,
+        link: ["Open the channel", `https://www.twitch.tv/${encodeURIComponent(ch.slug)}`],
+      });
+    }
+    if (v.why === "missing" && Date.now() - voiceMissingAlertAt >= VOICE_ALERT_GAP_MS) {
+      voiceMissingAlertAt = Date.now();
+      reportAlert({
+        title: `Oddie's Twitch voice (${voiceLogin}) is not connected`,
+        text: `oddie speaks in Twitch chats only as ${voiceLogin}, and ${voiceLogin} is not connected. Until it is, oddie says nothing in Twitch chats: calls still open and answers still count. Sign in to Twitch as ${voiceLogin}, then open the link below once.`,
+        link: ["Connect it", `${base}/live/twitch/connect`],
+      });
     }
   };
   const say = (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<string | void> => paced(`twitch:${channelId}`, async () => {
@@ -178,7 +243,8 @@ export function twitchEngineDeps(d: Pick<TwitchRouteDeps, "appBaseUrl" | "log" |
     if (!ch?.active) return;
     const voice = await sayAsVoice(channelId, text, replyTo);
     if (voice.said) return voice.id ?? undefined;
-    return (await as(ch, channelId, text, replyTo)) ?? undefined;
+    quiet(ch, voice);
+    return undefined;
   });
   const pin = async (_p: Platform, channelId: string, messageId: string): Promise<void> => {
     if (!chat.pin) return;

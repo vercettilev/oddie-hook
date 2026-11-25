@@ -19,7 +19,7 @@ import {
 import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, houseAccounts, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
 import { kickRouter, kickEngineDeps, _resetKickVoice, type KickChat, type KickSignIn } from "../src/kick/routes.js";
-import { setOpsSink, type OpsEvent } from "../src/live/openedMail.js";
+import { setOpsSink, type Alert } from "../src/live/openedMail.js";
 import { openFromChat, MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
 import {
   cookieValue, OWNER_COOKIE, OWNER_TTL_MS, ownerCookie, ownerKey, ownerKeyFromEnv, ownerToken, verifyOwnerToken,
@@ -709,7 +709,9 @@ console.log("\nthe market door: !oddie <claim>, like a tag on X or Telegram");
 
 console.log("\nwhen Kick will not take a bot line");
 {
-  _resetLiveStore();
+  _resetLiveStore(); _resetKickVoice();
+  const alerts: Alert[] = [];
+  setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
   for (const id of ["555", "777"]) {
     await saveChannel({ platform: "kick", channelId: id, slug: `c${id}`, name: "C", avatar: null,
       accessToken: "tok", refreshToken: null, tokenExpiresAt: null, active: true });
@@ -723,20 +725,27 @@ console.log("\nwhen Kick will not take a bot line");
   const deps = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {} }, chat);
   await deps.say("kick", "555", "hello");
   await deps.say("kick", "555", "again");
-  check("a line Kick refuses from the bot goes out as the channel's own account",
-    sent.join("|") === "bot:hello|user:555:hello|user:555:again", sent.join("|"));
+  check("a line Kick refuses from the bot is never said as the channel's own account: with oddie's voice not connected, nothing is said (Lev, 25 Nov)",
+    sent.join("|") === "bot:hello", sent.join("|"));
   check("...and once refused there, the bot is not asked again in that channel", sent.filter((x) => x.startsWith("bot:")).length === 1);
+  check("...and the operator hears once that oddie's Kick voice is not connected, with the link that connects it",
+    alerts.length === 1 && /is not connected/.test(alerts[0].title) && alerts[0].link?.[1] === "https://app.oddie.fun/live/kick/connect"
+    && /says nothing in Kick chats/.test(alerts[0].text), JSON.stringify(alerts));
   const other = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {} }, {
     bot: async () => { throw fail(500); }, user: async () => { sent.push("user:777"); },
   });
   let threw = false;
   try { await other.say("kick", "777", "x"); } catch { threw = true; }
   check("...but an outage is an outage, not a reason to speak as the streamer", threw && !sent.includes("user:777"));
+  setOpsSink(null);
 }
 
-console.log("\noddie speaks as itself in every chat");
+console.log("\noddie speaks as itself in every chat, and never as the streamer (Lev, 25 Nov)");
 {
-  _resetLiveStore();
+  _resetLiveStore(); _resetKickVoice();
+  const alerts: Alert[] = [];
+  setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
+  const logs: string[] = [];
   await saveChannel({ platform: "kick", channelId: "131980691", slug: "oddiefun", name: "oddiefun", avatar: null,
     accessToken: "voice-tok", refreshToken: null, tokenExpiresAt: null, active: true });
   await saveChannel({ platform: "kick", channelId: "900", slug: "levvercetti", name: "levvercetti", avatar: null,
@@ -760,15 +769,44 @@ console.log("\noddie speaks as itself in every chat");
   check("...and in oddie's own chat, oddie's account is the channel's", sent.some((x) => x === "user:voice-tok:131980691:hello") && !sent.some((x) => x.includes(":900:")), sent.join("|"));
   sent.length = 0;
   refuse = 403;
-  const other = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "oddiefun" }, chat);
-  await saveChannel({ platform: "kick", channelId: "901", slug: "strict", name: "strict", avatar: null,
-    accessToken: "strict-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  const other = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  for (const [id, slug] of [["901", "strict"], ["902", "isaacbeast"]]) {
+    await saveChannel({ platform: "kick", channelId: id, slug, name: slug === "isaacbeast" ? "IsaacBeast" : slug, avatar: null,
+      accessToken: `${slug}-tok`, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
   await other.say("kick", "901", "one");
-  check("a chat that refuses oddie's account still hears the line, from the channel's own account",
-    sent.some((x) => x === "user:strict-tok:901:one"), sent.join("|"));
+  check("a chat that refuses oddie's account hears nothing: never the streamer's own account",
+    !sent.some((x) => x.startsWith("user:strict-tok")), sent.join("|"));
+  check("...the log says which line was not said, and why",
+    logs.includes("kick voice cannot post here") && logs.includes("kick line not said, oddie's own account cannot speak here"), logs.join(" | "));
+  const m = alerts[0];
+  check("...and the operator gets one mail: which chat, Kick's reason, and the channel to follow",
+    alerts.length === 1 && m?.title === "Oddie can't talk in strict's Kick chat" && /kick POST \/chat 403/.test(m.text)
+    && /follow it and accept its chat rules/.test(m.text) && /says nothing in that chat/.test(m.text) && m.link?.[1] === "https://kick.com/strict",
+    JSON.stringify(m));
   refuse = null; sent.length = 0;
   await other.say("kick", "901", "two");
-  check("...and oddie's account is not asked again there straight away", sent.every((x) => !x.startsWith("user:voice-tok")), sent.join("|"));
+  check("...and oddie's account is not asked again there straight away, nor the streamer's", sent.every((x) => !x.startsWith("user:")), sent.join("|"));
+  check("...nor is a second mail sent for it", alerts.length === 1, JSON.stringify(alerts.map((a) => a.title)));
+  refuse = 403; sent.length = 0;
+  await other.say("kick", "902", "hi");
+  check("another chat that refuses oddie is a mail of its own, named for its channel",
+    alerts.length === 2 && alerts[1].title === "Oddie can't talk in IsaacBeast's Kick chat" && alerts[1].link?.[1] === "https://kick.com/isaacbeast"
+    && !sent.some((x) => x.startsWith("user:isaacbeast-tok")), JSON.stringify({ titles: alerts.map((a) => a.title), sent }));
+  // Ten minutes on the voice is asked there again; refused again inside six hours, nobody is mailed twice.
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 11 * 60_000;
+    sent.length = 0;
+    await other.say("kick", "902", "again later");
+    check("ten minutes on, oddie's account is asked there again, and refused again it mails nobody inside six hours",
+      alerts.length === 2 && !sent.some((x) => x.startsWith("user:isaacbeast-tok")), JSON.stringify({ titles: alerts.map((a) => a.title), sent }));
+    Date.now = () => realNow() + 7 * 60 * 60_000;
+    await other.say("kick", "902", "the next evening");
+    check("...and still refused six hours on, the operator hears again", alerts.length === 3 && alerts[2].title === alerts[1].title,
+      JSON.stringify(alerts.map((a) => a.title)));
+  } finally { Date.now = realNow; _setPace({ gapMs: 0, retryMs: [0, 0] }); }
+  refuse = null;
   const noReply: string[] = [];
   const replyShy = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "oddiefun" }, {
     bot: async () => { throw fail(404); },
@@ -790,12 +828,15 @@ console.log("\noddie speaks as itself in every chat");
   await quick.say("kick", "900", "handed on");
   slow = 0;
   await quick.say("kick", "900", "mine again");
-  check("...still too quick after waiting: that one line goes as the channel's, the next is oddie's again",
-    sent.join("|") === "user:lev-tok:900:handed on|user:voice-tok:900:mine again", sent.join("|"));
+  check("...still too quick after waiting: that one line is not said, never as the channel's, and the next is oddie's again",
+    sent.join("|") === "user:voice-tok:900:mine again", sent.join("|"));
+  const mails = alerts.length;
   const plain = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: () => {}, voice: "" }, chat);
   sent.length = 0;
   await plain.say("kick", "900", "old way");
-  check("with no voice set, a channel speaks for itself as before", sent.some((x) => x === "user:lev-tok:900:old way"), sent.join("|"));
+  check("with no voice set, nothing is said in a streamer's chat, never the streamer's own account, and nobody is mailed for a choice",
+    !sent.some((x) => x.startsWith("user:")) && alerts.length === mails, sent.join("|"));
+  setOpsSink(null);
 }
 
 console.log("\noddie's Kick voice signed out (23-24 Nov: three lines as IsaacBeast, and nobody told)");
@@ -807,7 +848,7 @@ console.log("\noddie's Kick voice signed out (23-24 Nov: three lines as IsaacBea
     accessToken: "lev-tok", refreshToken: null, tokenExpiresAt: null, active: true });
   const sent: string[] = [];
   const logs: string[] = [];
-  const alerts: OpsEvent[] = [];
+  const alerts: Alert[] = [];
   setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
   const fail = (status: number) => { const e = new Error(`kick POST /chat ${status}`) as Error & { status?: number }; e.status = status; return e; };
   const chat: KickChat = {
@@ -828,19 +869,20 @@ console.log("\noddie's Kick voice signed out (23-24 Nov: three lines as IsaacBea
   try {
     const deps = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
     await deps.say("kick", "900", "line one");
-    check("a voice whose sign-in Kick will not refresh hands the line to the channel", sent.join("|") === "user:lev-tok:900:line one", sent.join("|"));
+    check("a voice whose sign-in Kick will not refresh says nothing in the streamer's chat, never as the streamer", sent.length === 0, sent.join("|"));
     const a = alerts[0];
     check("...says so in the log and mails the operator, with the link that fixes it",
       logs.some((l) => l.startsWith("kick voice is signed out")) && alerts.length === 1 && a?.kind === "alert"
-      && a.link?.[1] === "https://app.oddie.fun/live/kick/connect" && /oddiefun/.test(a.title) && /kick token 400/.test(a.text), JSON.stringify(a));
+      && a.link?.[1] === "https://app.oddie.fun/live/kick/connect" && /oddiefun/.test(a.title) && /kick token 400/.test(a.text)
+      && /says nothing in Kick chats/.test(a.text), JSON.stringify(a));
     await deps.say("kick", "900", "line two");
-    check("...then rests: the next line asks Kick for no token and mails nothing more",
-      tokenCalls === 1 && alerts.length === 1 && sent.join("|") === "user:lev-tok:900:line one|user:lev-tok:900:line two", `${tokenCalls} token calls, ${alerts.length} mails`);
+    check("...then rests: the next line asks Kick for no token, mails nothing more, and is not said either",
+      tokenCalls === 1 && alerts.length === 1 && sent.length === 0, `${tokenCalls} token calls, ${alerts.length} mails, ${sent.join("|")}`);
     _resetKickVoice(); idServer = "down"; sent.length = 0; logs.length = 0;
     await deps.say("kick", "900", "line three");
-    check("Kick's sign-in server not answering is a slow moment, not a lost sign-in",
+    check("Kick's sign-in server not answering is a slow moment, not a lost sign-in: the line is not said and nobody is mailed",
       logs.some((l) => l.startsWith("kick voice slowed down")) && !logs.some((l) => l.startsWith("kick voice is signed out")) && alerts.length === 1
-      && sent.join("|") === "user:lev-tok:900:line three", logs.join(" | "));
+      && sent.length === 0, logs.join(" | "));
   } finally {
     globalThis.fetch = realFetch;
     setOpsSink(null);
@@ -890,7 +932,7 @@ console.log("\na reply Kick will not take, on every path (Twitch, 1 Nov: two res
   check("the channel's bot, refused the reply, says the result once more on its own",
     !lost && sent.join("|") === `bot:bot-ok:${result}:-` && tries.join("|") === `bot:bot-ok:${OLD}|bot:bot-ok:-`, lost?.message ?? tries.join("|"));
   check("...and the bot is not benched in that channel for it",
-    !logs.includes("kick bot cannot post here, sending as the channel's account") && logs.includes("kick reply refused, the line goes on its own"), logs.join("|"));
+    !logs.includes("kick bot cannot post here") && logs.includes("kick reply refused, the line goes on its own"), logs.join("|"));
   reset();
   await say(own, "960", "the next line");
   check("...so the next line is the bot's too", sent.join("|") === "bot:bot-ok:the next line:-", sent.join("|"));
@@ -900,23 +942,22 @@ console.log("\na reply Kick will not take, on every path (Twitch, 1 Nov: two res
 
   reset();
   lost = await say(own, "961", result, OLD);
-  check("where the bot cannot post, the channel's account says it, on its own too",
-    !lost && sent.join("|") === `user:no-bot:961:${result}:-` && tries.join("|") === `bot:no-bot:${OLD}|user:no-bot:961:${OLD}|user:no-bot:961:-`,
-    lost?.message ?? tries.join("|"));
+  check("where the bot cannot post and oddie has no voice, nothing is said: never the channel's account (Lev, 25 Nov)",
+    !lost && sent.length === 0 && tries.join("|") === `bot:no-bot:${OLD}`, lost?.message ?? tries.join("|"));
   reset();
   lost = await say(own, "963", result, OLD);
   check("an outage is not the reply's fault: asked once, never again without it", lost?.status === 500 && tries.join("|") === `bot:down:${OLD}`, tries.join("|"));
   reset();
   lost = await say(own, "964", result, OLD);
-  check("refused on its own as well, the line is not asked a third time: the 400 reaches the caller",
-    lost?.status === 400 && tries.length === 4 && tries.filter((x) => x.endsWith(":-")).length === 2 && sent.length === 0, tries.join("|"));
+  check("refused on its own as well, the bot is asked twice and the line is not said: never the channel's account",
+    !lost && tries.join("|") === `bot:shut:${OLD}|bot:shut:-` && sent.length === 0, lost?.message ?? tries.join("|"));
 
   reset();
   const voiced = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
   expired = 1;
   lost = await say(voiced, "962", result, OLD);
   check("oddie's account, its token refreshed on the way, still says the result itself, on its own",
-    !lost && sent.join("|") === `user:voice-tok:962:${result}:-` && !logs.includes("kick voice cannot post here, sending as the channel's account"),
+    !lost && sent.join("|") === `user:voice-tok:962:${result}:-` && !logs.includes("kick voice cannot post here"),
     lost?.message ?? `${tries.join("|")} ${logs.join("|")}`);
 }
 

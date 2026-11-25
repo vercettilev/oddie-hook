@@ -88,9 +88,10 @@ const kickChat: KickChat = { bot: sendChat, user: sendChatAsUser };
  * A NEW APP'S BOT CANNOT POST YET. Found on the first live test (29 Sep):
  * every bot line from the freshly made oddie app came back 404 "Not found",
  * and other developers report the same for new apps with no answer from
- * Kick. So a line goes out as the bot first and, on 404 or 400, as the
- * account that authorized us, which is what the chat:write scope grants.
- * A channel where the bot has failed once skips straight to that.
+ * Kick. The bot is oddie's own and never a person, so it is still asked
+ * first; on 404 or 400 it is benched in that channel and not asked there
+ * again. The account that authorized us is no longer the next step: in a
+ * streamer's chat that account is the streamer (see ONE VOICE below).
  */
 const botCannotPost = new Set<string>();
 
@@ -114,62 +115,83 @@ async function replyOrAlone(send: (replyTo?: string) => Promise<void>, replyTo?:
 }
 
 /**
- * ONE VOICE IN EVERY CHAT. Speaking as the channel's own account meant that
- * in a stream oddie's answer arrived under the streamer's name: "oddiefun:
- * Market open..." in oddiefun's chat reads as the streamer typing it. So a
- * line goes out from oddie's own account (the voice channel, which authorized
- * us with chat:write like any other) into the channel it answers, the way any
- * viewer's line does. Where that is refused (followers-only chat, a ban), the
- * channel's own path takes over and the voice is tried again ten minutes on.
- * "Too quickly" is no refusal: the lines to a chat go out a second apart and a
- * 429 is waited out (src/live/pace.ts).
+ * ONE VOICE IN EVERY CHAT, AND NEVER THE STREAMER'S (Lev, 25 Nov). A line goes
+ * out from oddie's own account (the voice channel, which authorized us with
+ * chat:write like any other) into the channel it answers, the way any viewer's
+ * line does. Where Kick refused that (a followers-only chat, chat rules not
+ * accepted, a ban, a slow moment), the line used to go out from the streamer's
+ * own account instead: every line oddie said in IsaacBeast's chat on 24-25 Nov,
+ * the call's opening and its "canceled, no points" among them, read as Isaac
+ * typing it (his chat was followers-only, and oddiefun's own chat box there
+ * stayed locked until it followed him). Lev: oddie never speaks in a
+ * streamer's name. So a line oddie's account cannot say is not said: the
+ * call still runs and the answers still count, the log says why, and the
+ * operator gets a mail with what fixes it, once a chat every six hours. Only
+ * oddie's own bot (src/kick/client.ts sendChat) may still say it. The voice
+ * is tried again in a chat ten minutes after it was refused there. "Too
+ * quickly" is no refusal: the lines to a chat go out a second apart and a 429
+ * is waited out (src/live/pace.ts).
  */
 const voiceCannotPost = new Map<string, number>();
 const VOICE_RETRY_MS = 10 * 60_000;
 /**
  * THE VOICE SIGNED OUT (24 Nov). oddiefun's own Kick sign-in can lapse: its
  * token no longer refreshes, or a fresh one is refused. Read as a slow moment,
- * every line then went out under the streamer's own name and nobody heard of
- * it (IsaacBeast's chat, 23-24 Nov: three lines out of three). So a lost
- * sign-in is told apart from a chat that will not take the voice: the voice
- * rests in every chat for ten minutes instead of asking Kick again on each
- * line, the reason is in the log, and the operator gets one mail every six
- * hours until oddiefun signs in again at /live/kick/connect.
+ * it went unnoticed (IsaacBeast's chat, 23-24 Nov: three lines out of three).
+ * So a lost sign-in is told apart from a chat that will not take the voice:
+ * the voice rests in every chat for ten minutes instead of asking Kick again
+ * on each line, the reason is in the log, and the operator gets one mail every
+ * six hours until oddiefun signs in again at /live/kick/connect.
  */
 let voiceSignedOutAt: number | null = null;
 let voiceAlertAt = 0;
 const VOICE_ALERT_GAP_MS = 6 * 60 * 60_000;
-/** Test seam: forget the chats that refused the voice and a lost sign-in. */
-export function _resetKickVoice(): void { voiceCannotPost.clear(); voiceSignedOutAt = null; voiceAlertAt = 0; }
+/** The last mail about a chat that refused the voice, by channel; and about a voice not connected. */
+const chatAlertAt = new Map<string, number>();
+let voiceMissingAlertAt = 0;
+/** Test seam: forget the chats that refused the voice, a lost sign-in, and the mails about them. */
+export function _resetKickVoice(): void {
+  voiceCannotPost.clear(); voiceSignedOutAt = null; voiceAlertAt = 0; chatAlertAt.clear(); voiceMissingAlertAt = 0;
+}
 const voiceSlugFrom = (d: { voice?: string }): string =>
   (d.voice ?? process.env.KICK_VOICE_CHANNEL ?? "oddiefun").trim().toLowerCase();
 
+/** What oddie's own account did with a line, and why not when it did not. */
+interface VoiceTry {
+  said: boolean;
+  /** off: no voice set. missing: not connected. resting: refused in this chat a moment ago.
+   *  signed-out: Kick took its sign-in away. slow: Kick said "not now". refused: this chat will not take it. */
+  why?: "off" | "missing" | "resting" | "signed-out" | "slow" | "refused";
+  err?: string;
+}
+
 export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "markets" | "voice">, chat: KickChat = kickChat): LiveDeps {
   const base = d.appBaseUrl.replace(/\/+$/, "");
-  const deliver = async (token: string, channelId: string, text: string, replyTo?: string) => {
+  /** The line from oddie's own bot, which is never a person: true when it said it.
+   *  The token only lets the bot into that chat; the line is the bot's, not the token's owner's. */
+  const sayAsBot = async (token: string, channelId: string, text: string, replyTo?: string): Promise<boolean> => {
+    if (botCannotPost.has(channelId)) return false;
     const refused = (st: number) => d.log("kick reply refused, the line goes on its own", { channel: channelId, status: st });
-    if (!botCannotPost.has(channelId)) {
-      // A reply the bot may not make is no reason to bench it: only the line is.
-      try { await replyOrAlone((r) => chat.bot(token, text, r), replyTo, refused); return; }
-      catch (e) {
-        const st = (e as { status?: number }).status;
-        if (st !== 404 && st !== 400) throw e;
-        botCannotPost.add(channelId);
-        d.log("kick bot cannot post here, sending as the channel's account", { channel: channelId, status: st });
-      }
+    // A reply the bot may not make is no reason to bench it: only the line is.
+    try { await replyOrAlone((r) => chat.bot(token, text, r), replyTo, refused); return true; }
+    catch (e) {
+      const st = (e as { status?: number }).status;
+      if (st !== 404 && st !== 400) throw e;
+      botCannotPost.add(channelId);
+      d.log("kick bot cannot post here", { channel: channelId, status: st });
+      return false;
     }
-    await replyOrAlone((r) => chat.user(token, channelId, text, r), replyTo, refused);
   };
   const voiceSlug = voiceSlugFrom(d);
-  /** True when oddie's own account said it. False hands the line on. */
-  const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<boolean> => {
-    if (!voiceSlug) return false;
-    if (voiceSignedOutAt !== null && Date.now() - voiceSignedOutAt < VOICE_RETRY_MS) return false;
+  /** oddie's own account says it in a streamer's chat, or says why it did not. */
+  const sayAsVoice = async (channelId: string, text: string, replyTo?: string): Promise<VoiceTry> => {
+    if (!voiceSlug) return { said: false, why: "off" };
+    if (voiceSignedOutAt !== null && Date.now() - voiceSignedOutAt < VOICE_RETRY_MS) return { said: false, why: "signed-out" };
     const failedAt = voiceCannotPost.get(channelId);
-    if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return false;
-    const voice = await channelBySlug("kick", voiceSlug).catch(() => null);
-    // In its own chat the voice is the channel, and the channel's path is it.
-    if (!voice?.active || !voice.accessToken || voice.channelId === channelId) return false;
+    if (failedAt !== undefined && Date.now() - failedAt < VOICE_RETRY_MS) return { said: false, why: "resting" };
+    // A store that does not answer is an outage, said as one, never a voice that is not there.
+    const voice = await channelBySlug("kick", voiceSlug);
+    if (!voice?.active || !voice.accessToken) return { said: false, why: "missing" };
     const send = async (force: boolean) => {
       const token = await tokenFor(voice, force);
       await replyOrAlone((r) => patiently(() => chat.user(token, channelId, text, r)), replyTo);
@@ -184,43 +206,68 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
       }
       voiceCannotPost.delete(channelId);
       voiceSignedOutAt = null;
-      return true;
+      return { said: true };
     } catch (e) {
       const err = ((e as Error)?.message ?? String(e)).slice(0, 160);
       // The sign-in itself, not this chat: a token Kick will not refresh, or a fresh one refused.
       const signedOut = st(e) === 401 || (/^kick token /.test((e as Error)?.message ?? "") && !notNow(st(e)));
       if (signedOut) {
         voiceSignedOutAt = Date.now();
-        d.log("kick voice is signed out, lines go as each channel's account until it signs in again", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
+        d.log("kick voice is signed out, oddie says nothing on Kick until it signs in again", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
         if (Date.now() - voiceAlertAt >= VOICE_ALERT_GAP_MS) {
           voiceAlertAt = Date.now();
           reportAlert({
             title: `Oddie's Kick voice (${voiceSlug}) is signed out`,
-            text: `${voiceSlug} can no longer post in Kick chats (${err}). Until it signs in again, oddie's lines there go out under each streamer's own name. Sign in to Kick as ${voiceSlug}, then open the link below once.`,
+            text: `${voiceSlug} can no longer post in Kick chats (${err}). Until it signs in again, oddie says nothing in Kick chats: calls still open and answers still count. Sign in to Kick as ${voiceSlug}, then open the link below once.`,
             link: ["Sign it in again", `${base}/live/kick/connect`],
           });
         }
-        return false;
+        return { said: false, why: "signed-out", err };
       }
       if (notNow(st(e))) {
-        d.log("kick voice slowed down, this line goes as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
-        return false;
+        d.log("kick voice slowed down", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
+        return { said: false, why: "slow", err };
       }
       voiceCannotPost.set(channelId, Date.now());
-      d.log("kick voice cannot post here, sending as the channel's account", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
-      return false;
+      d.log("kick voice cannot post here", { channel: channelId, voice: voiceSlug, status: st(e) ?? null, err });
+      return { said: false, why: "refused", err };
+    }
+  };
+  /** A line nobody may say for oddie in this chat: not said, the log says why, and the operator hears what fixes it. */
+  const quiet = (ch: LiveChannel, v: VoiceTry) => {
+    d.log("kick line not said, oddie's own account cannot speak here", { channel: ch.channelId, why: v.why ?? null });
+    const who = ch.name || ch.slug;
+    if (v.why === "refused" && Date.now() - (chatAlertAt.get(ch.channelId) ?? 0) >= VOICE_ALERT_GAP_MS) {
+      chatAlertAt.set(ch.channelId, Date.now());
+      reportAlert({
+        title: `Oddie can't talk in ${who}'s Kick chat`,
+        text: `Kick refused ${voiceSlug}'s line in ${who}'s chat (${v.err ?? "no reason given"}). Until ${voiceSlug} can post there, oddie says nothing in that chat: calls still open and answers still count. Most often the chat is followers-only or has rules to accept: sign in to Kick as ${voiceSlug}, open the channel below, follow it and accept its chat rules if asked.`,
+        link: ["Open the channel", `https://kick.com/${encodeURIComponent(ch.slug)}`],
+      });
+    }
+    if (v.why === "missing" && Date.now() - voiceMissingAlertAt >= VOICE_ALERT_GAP_MS) {
+      voiceMissingAlertAt = Date.now();
+      reportAlert({
+        title: `Oddie's Kick voice (${voiceSlug}) is not connected`,
+        text: `oddie speaks in Kick chats only as ${voiceSlug}, and ${voiceSlug} is not connected. Until it is, oddie says nothing in Kick chats: calls still open and answers still count. Sign in to Kick as ${voiceSlug}, then open the link below once.`,
+        link: ["Connect it", `${base}/live/kick/connect`],
+      });
     }
   };
   const say = (_p: Platform, channelId: string, text: string, replyTo?: string): Promise<void> => paced(`kick:${channelId}`, async () => {
     const ch = await channelById("kick", channelId);
     if (!ch?.active) return;
-    if (await sayAsVoice(channelId, text, replyTo)) return;
-    try { await deliver(await tokenFor(ch), channelId, text, replyTo); }
+    const v = await sayAsVoice(channelId, text, replyTo);
+    if (v.said) return;
+    const send = async (force: boolean) => sayAsBot(await tokenFor(ch, force), channelId, text, replyTo);
+    let said: boolean;
+    try { said = await send(false); }
     catch (e) {
       // An expired token says 401: refresh once and say it again.
       if ((e as { status?: number }).status !== 401) throw e;
-      await deliver(await tokenFor(ch, true), channelId, text, replyTo);
+      said = await send(true);
     }
+    if (!said) quiet(ch, v);
   });
   const markets = d.markets;
   return {
