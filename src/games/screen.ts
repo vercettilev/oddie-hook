@@ -380,6 +380,15 @@ const PLACE_QUOTED = /^(\d{1,3})(?:st|nd|rd|th)\s+pla/i;
 const ENEMY_WIN_QUOTED = /\bENEMY\s+VICTOR/i;
 const CUT_WIN_QUOTED = /^VICTO[RF]\b/;
 const NOT_OWN_WIN = /ENEMY|WINNER:/i;
+/* OFF THE GRID'S RESULTS SCREEN (25 Nov, Aleksa's call "will Aleksa win this
+   match?"). A match ends on "SQUAD ZEROED / YOUR TEAM PLACED 2 OUT OF 8", or
+   "VICTORY / YOUR TEAM PLACED 1 OUT OF 20". The production reader quoted the
+   placing every time ("Squad zeroed, team placed 2 out of 8", "YOUR TEAM
+   PLACED 1 OUT OF 20") and answered "unclear" on all nine reads of three such
+   screens. The screen is the streamer's own, so for a plain win call about
+   the streamer the quoted placing answers it: first is YES, any other is NO.
+   Only with its "out of" total, so nothing else that says "placed" counts. */
+const TEAM_PLACED_QUOTED = /\bteam\s+placed\s+(\d{1,3})\s+out\s+of\s+\d{1,3}\b/i;
 /* GTA'S "wasted" ANSWERS A PLAIN DEATH CALL (25 Nov, IsaacBeast's GTA 6). His
    first call was "will isaac die in the next mission". On his own death the
    night before, GTA 6 put "wasted" over a red frame for about four and a half
@@ -407,6 +416,8 @@ export function quotedResult(question: string, streamer: string, r: ScreenReadin
   const who = WIN_CALL.exec(question)?.[1];
   if (!who || !namesStreamer(who, streamer)) return r;
   const place = PLACE_QUOTED.exec(r.seen);
+  const placed = TEAM_PLACED_QUOTED.exec(r.seen);
+  if (placed) return { ...r, answer: Number(placed[1]) === 1 ? "yes" : "no", sure: 0.95 };
   if ((place && Number(place[1]) !== 1) || ENEMY_WIN_QUOTED.test(r.seen)) return { ...r, answer: "no", sure: 0.95 };
   if (CUT_WIN_QUOTED.test(r.seen) && !NOT_OWN_WIN.test(r.seen)) return { ...r, answer: "yes", sure: 0.95 };
   return r;

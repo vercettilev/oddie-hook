@@ -289,6 +289,16 @@ console.log("\nthe words the reader quotes answer a plain win call");
   const notWasted = ["Mission in progress, red environment, g…", "chat says wasted lol", "Phone menu screen, mission not started…", "26 hours minutes before my games house…", "BUSTED"];
   check("...and only a reading that opens on it: chat quoting it, a red frame or Busted answer nothing",
     notWasted.every((x) => dead(x, "will isaac die in the next mission").answer === "unclear"), notWasted.filter((x) => dead(x, "will isaac die in the next mission").answer !== "unclear").join(" | "));
+  // Off The Grid's results screen (25 Nov), as the production reader quoted it.
+  const otg = (seen: string, q = "will Aleksa win this match?") => quotedResult(q, "Aleksa Flamingo 🦩", { answer: "unclear", sure: 0.95, seen });
+  check("Off The Grid: a placing other than first answers a plain win call NO",
+    ["Squad zeroed, team placed 2 out of 8, match over", "SQUAD ZEROED YOUR TEAM PLACED 12 OUT OF 20"].every((x) => otg(x).answer === "no" && otg(x).sure === 0.95));
+  check("...first answers it YES", ["YOUR TEAM PLACED 1 OUT OF 28", "YOUR TEAM PLACED 1 OUT OF 20 DAY 2", "Victory, your team placed 1 out of 20"].every((x) => otg(x).answer === "yes"));
+  check("...only with its total, only on a plain win call about the streamer",
+    otg("team placed 3rd").answer === "unclear" && otg("placed 2 out of 8").answer === "unclear"
+    && otg("YOUR TEAM PLACED 2 OUT OF 8", "will Bob win this match?").answer === "unclear"
+    && otg("YOUR TEAM PLACED 2 OUT OF 8", "will Aleksa not win this match?").answer === "unclear"
+    && otg("YOUR TEAM PLACED 2 OUT OF 8", "will Aleksa get 5 kills this match?").answer === "unclear");
   check("...while a win call's quotes still work beside it", read("VICTOR text displayed, game appears in…").answer === "yes" && read("13TH PLA, game in progress").answer === "no");
 
   check("a Gulag loss is no result on the game", roundNotMatch(Q, "GULAG DEFEAT KILLED IN ACTION") && roundNotMatch("will I win this match?", "GULAG DEFEAT"));
