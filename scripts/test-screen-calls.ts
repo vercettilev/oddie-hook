@@ -275,6 +275,22 @@ console.log("\nthe words the reader quotes answer a plain win call");
   });
   check("...and the server gets the quote's answer from the reader", asked?.answer === "no" && asked.sure === 0.95, JSON.stringify(asked));
 
+  // GTA 6's death screen (25 Nov): as the reader quoted it on IsaacBeast's own death, 24 Nov 02:29 TR.
+  const dead = (seen: string, q: string, streamer = "IsaacBeast") => quotedResult(q, streamer, { answer: "unclear", sure: 0.95, seen });
+  const wasted = ["wasted screen, mission appears active", "wasted screen, mission outcome unknown", "wasted - large text on screen", "wasted", "Wasted - red text on black screen"];
+  const dieCalls = ["will isaac die in the next mission", "will I die this mission?", "will I die?", "does Isaac die in this mission", "will I get killed in this mission?", "will IsaacBeast get wasted?"];
+  check("\"wasted\" answers a plain death call about the streamer YES, as sure as a look needs",
+    dieCalls.every((q) => wasted.every((x) => dead(x, q).answer === "yes" && dead(x, q).sure === 0.95)),
+    dieCalls.flatMap((q) => wasted.filter((x) => dead(x, q).answer !== "yes").map((x) => `${q}: ${x}`)).join(" | "));
+  const stays = ["will I make it through this mission without dying?", "will I survive this mission?", "will I not die this mission?", "will isaac not die in this mission?", "will I die before the heist ends?",
+    "will the cops die?", "will Lucia die in this mission?", "will I win this race?"];
+  check("...a survival, a negated, a longer or someone else's death call stays the reader's",
+    stays.every((q) => wasted.every((x) => dead(x, q).answer === "unclear")), stays.filter((q) => wasted.some((x) => dead(x, q).answer !== "unclear")).join(" | "));
+  const notWasted = ["Mission in progress, red environment, g…", "chat says wasted lol", "Phone menu screen, mission not started…", "26 hours minutes before my games house…", "BUSTED"];
+  check("...and only a reading that opens on it: chat quoting it, a red frame or Busted answer nothing",
+    notWasted.every((x) => dead(x, "will isaac die in the next mission").answer === "unclear"), notWasted.filter((x) => dead(x, "will isaac die in the next mission").answer !== "unclear").join(" | "));
+  check("...while a win call's quotes still work beside it", read("VICTOR text displayed, game appears in…").answer === "yes" && read("13TH PLA, game in progress").answer === "no");
+
   check("a Gulag loss is no result on the game", roundNotMatch(Q, "GULAG DEFEAT KILLED IN ACTION") && roundNotMatch("will I win this match?", "GULAG DEFEAT"));
   check("...while a call on the Gulag itself takes it", !roundNotMatch("will I survive this gulag?", "GULAG DEFEAT") && !roundNotMatch("Do I make it out of the Gulag?", "GULAG DEFEAT"));
   const m = await room({ near: true });

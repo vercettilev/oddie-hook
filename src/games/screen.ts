@@ -380,13 +380,32 @@ const PLACE_QUOTED = /^(\d{1,3})(?:st|nd|rd|th)\s+pla/i;
 const ENEMY_WIN_QUOTED = /\bENEMY\s+VICTOR/i;
 const CUT_WIN_QUOTED = /^VICTO[RF]\b/;
 const NOT_OWN_WIN = /ENEMY|WINNER:/i;
-export function quotedResult(question: string, streamer: string, r: ScreenReading): ScreenReading {
-  const who = WIN_CALL.exec(question)?.[1];
-  if (!who || CALL_NEGATED.test(question)) return r;
+/* GTA'S "wasted" ANSWERS A PLAIN DEATH CALL (25 Nov, IsaacBeast's GTA 6). His
+   first call was "will isaac die in the next mission". On his own death the
+   night before, GTA 6 put "wasted" over a red frame for about four and a half
+   seconds, then in red on black. Asked that call on those frames, the reader
+   quoted "wasted" on all five and answered a sure YES on three; the first and
+   the last came back "unclear" ("wasted screen, mission appears active"),
+   unsure the death was in "the next mission". Worded "will I die this mission?"
+   it was five sure YES of five, "without dying" five sure NO, and nothing else
+   in the twelve frames was ever a sure answer. So when a plain death call is
+   about the streamer, a reading that opens on "wasted" answers it YES. A call
+   that turns on surviving ("without dying", "make it") is not this shape and
+   stays the reader's, as does a negated one. */
+const DIE_CALL = new RegExp(`${CALL_OPEN}${CALL_NAME}\\s+(?:dies?|get(?:s)?\\s+(?:killed|wasted)|be\\s+killed)(?:\\s+(?:in\\s+)?(?:this|that|the|next|the\\s+next)\\s+(?:mission|game|match|round|fight|heist|chase|race|level))?\\s*[?!.]*\\s*$`, "i");
+const WASTED_QUOTED = /^wasted\b/i;
+/** Is the one a call names the streamer: "I", "me", "we", or a word of the streamer's name. */
+function namesStreamer(who: string, streamer: string): boolean {
   const self = foldName(streamer);
-  const aboutStreamer = /^(?:i|me|we)$/.test(foldName(who)) || who.split(/\s+/).map(foldName)
+  return /^(?:i|me|we)$/.test(foldName(who)) || who.split(/\s+/).map(foldName)
     .some((w) => w.length >= 3 && !NOT_A_NAME.test(w) && (self.includes(w) || w.includes(self)));
-  if (!aboutStreamer) return r;
+}
+export function quotedResult(question: string, streamer: string, r: ScreenReading): ScreenReading {
+  if (CALL_NEGATED.test(question)) return r;
+  const dies = DIE_CALL.exec(question)?.[1];
+  if (dies && namesStreamer(dies, streamer) && WASTED_QUOTED.test(r.seen)) return { ...r, answer: "yes", sure: 0.95 };
+  const who = WIN_CALL.exec(question)?.[1];
+  if (!who || !namesStreamer(who, streamer)) return r;
   const place = PLACE_QUOTED.exec(r.seen);
   if ((place && Number(place[1]) !== 1) || ENEMY_WIN_QUOTED.test(r.seen)) return { ...r, answer: "no", sure: 0.95 };
   if (CUT_WIN_QUOTED.test(r.seen) && !NOT_OWN_WIN.test(r.seen)) return { ...r, answer: "yes", sure: 0.95 };
