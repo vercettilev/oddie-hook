@@ -558,6 +558,20 @@ export async function readPriceCall(pc: PriceCall, plan: PricePlan, openedAt: nu
 
 /** What the room hears about when a price call settles. `atEnd`: a touch the
  *  price was already past at the open, read where its window ends. */
+/**
+ * WHEN IT SETTLES, SAID AS IT OPENS (Bee Empire, 26 Nov: a call on "the next
+ * 15m candle" opened at :51 settled at the quarter after next, and the close
+ * in between, with nothing said, read as oddie forgetting it). A candle under
+ * a day names its own minutes; anything else says when, as the lock does.
+ */
+export function settlesText(pc: PriceCall, plan: PricePlan): string {
+  if (pc.kind === "candle") {
+    if (plan.to - plan.from >= 24 * 60 * 60_000) return `Settles at ${timeLabel(plan.to)}, when the ${sizeLabel(pc.size)} candle closes.`;
+    return `Settles at ${timeLabel(plan.to)}, on the ${timeLabel(plan.from).replace(/ UTC$/, "")}-${timeLabel(plan.to).replace(/ UTC$/, "")} candle.`;
+  }
+  return `Settles ${whenText(pc, plan)}.`;
+}
+
 export function whenText(pc: PriceCall, plan: PricePlan, atEnd = false): string {
   if (pc.kind === "candle") return `when the ${sizeLabel(pc.size)} candle closes`;
   if (pc.kind === "at") return `at ${timeLabel(plan.to, pc.when.kind === "clock" ? pc.when : undefined)}`;

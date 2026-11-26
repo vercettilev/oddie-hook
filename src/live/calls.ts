@@ -66,7 +66,7 @@
  * votes only (deps.votesOnly).
  */
 
-import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, readsOnTheWay, timeLabel, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
+import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, readsOnTheWay, settlesText, timeLabel, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
 import { parseViewerCall, viewerDeadline, viewerMet, viewerWhenText, viewersShort, viewersText, type ViewerCall } from "./viewerCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
@@ -103,6 +103,8 @@ export type LiveCommand =
   | { kind: "repeat-help" }
   /** A bare `!call repeat`: the channel's last call comes back after every result. */
   | { kind: "repeat-last" }
+  /** `!call <a word or two that is no question>`: a typo or a word, never a call. */
+  | { kind: "not-question"; text: string }
   | { kind: "pick"; side: Side }
   /** which: the call's number in the waiting list (1 = oldest), null when not said. */
   | { kind: "settle"; outcome: Side; which: number | null }
@@ -245,6 +247,10 @@ export function parseCommand(raw: string): LiveCommand | null {
     question = dur[2].trim();
   }
   if (!question) return { kind: "help" };
+  // A call is a question (Bee Empire, 26 Nov: "!call cancle" opened a call named
+  // "cancle", and an earlier "!call end" one named "end"): three words at
+  // least, or one that ends in a question mark. Shorter is a typo or a word.
+  if (!/\?\s*$/.test(question) && question.split(" ").length < 3) return { kind: "not-question", text: question };
   if (question.length > QUESTION_MAX) question = question.slice(0, QUESTION_MAX - 1).trimEnd() + "…";
   return { kind: "open", question, minutes };
 }
@@ -406,9 +412,11 @@ export const LIVE_COPY = {
   canceled: "Call canceled. The next one opens with !call.",
   /* !call repeat (Lev, 4 Nov): one call that comes back after every result. The
      round number keeps each line its own, and X refuses a line it just took. */
-  next: (q: string, round: number, minutes: number | null) =>
-    `round ${round}: "${q}" Type !yes or !no${minutes === null ? "" : `, locks in ${minutes} min`}`,
+  next: (q: string, round: number, minutes: number | null, note = "") =>
+    `round ${round}: "${q}" ${note ? `${note} ` : ""}Type !yes or !no${minutes === null ? "" : `, locks in ${minutes} min`}`,
   repeatOn: "It opens again after each result. !call stop ends it.",
+  /** A word or two that is no question: nothing opens, and the room hears the two doors. */
+  notQuestion: (t: string) => `"${short(t, 30)}" isn't a question, so no call opened. To end one: !call cancel. To ask one: !call will I win?`,
   repeatOff: "Repeat off: no new round after this one.",
   repeatNone: "Nothing is repeating. !call repeat brings the last call back after every result.",
   repeatHow: "To bring a call back after every result: open it, then !call repeat. !call stop ends it.",
@@ -1185,6 +1193,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (cmd.kind === "help") { await sayQuiet(deps, msg, LIVE_COPY.help, msg.messageId); return "help"; }
   if (cmd.kind === "settle-help") { await sayQuiet(deps, msg, LIVE_COPY.settleOnly, msg.messageId); return "settle-help"; }
   if (cmd.kind === "repeat-help") { await sayQuiet(deps, msg, LIVE_COPY.repeatHow, msg.messageId); return "repeat-help"; }
+  if (cmd.kind === "not-question") { await sayQuiet(deps, msg, LIVE_COPY.notQuestion(cmd.text), msg.messageId); return "not-question"; }
   /* "!call repeat" ALONE (Bee Empire, 26 Nov: "!call repeat last command ...
      makes more sense than what you propose"): the channel's last call, the one
      a person opened, comes back after every result, without typing it again.
@@ -1287,7 +1296,9 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
     lastSaid.set(opened.id, now);
     // Read from the open on: the count can get there while the room still answers.
     if (vc) watchViewers(opened, vc, now, atOpen ?? { live: false, count: null });
-    const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId), watching === null ? "" : LIVE_COPY.viewersNow(watching)));
+    // A price call says when it settles as it opens, a viewer-count call how many are watching.
+    const note = pc ? settlesText(pc, planFor(pc, opened.openedAt)) : watching === null ? "" : LIVE_COPY.viewersNow(watching);
+    const id = await sayQuiet(deps, msg, LIVE_COPY.opened(opened.question, minutes, await deps.standingsUrl(msg.platform, msg.channelId), note));
     await pinQuiet(deps, msg, id);
     const panel = await deps.predictionOpen?.(opened, minutes).catch(() => null);
     if (panel === "too-long") await sayQuiet(deps, msg, LIVE_COPY.predictionLong, msg.messageId);
@@ -1485,7 +1496,7 @@ async function openRound(call: { platform: Platform; channelId: string }, rep: R
     return;
   }
   const now = deps.now();
-  const { closesAt, minutes } = closeFor(call.platform, rep.question, rep.minutes, now);
+  const { closesAt, minutes, pc } = closeFor(call.platform, rep.question, rep.minutes, now);
   const opened = await deps.store.open({
     platform: call.platform, channelId: call.channelId, question: rep.question,
     openedById: rep.byId, openedByName: rep.byName, openedAt: now, closesAt, timed: minutes !== null,
@@ -1494,7 +1505,7 @@ async function openRound(call: { platform: Platform; channelId: string }, rep: R
   const round = rep.round + 1;
   await deps.store.setRepeat?.(call.platform, call.channelId, { ...rep, round }).catch(() => {});
   lastSaid.set(opened.id, now);
-  const id = await sayQuiet(deps, call, LIVE_COPY.next(opened.question, round, minutes));
+  const id = await sayQuiet(deps, call, LIVE_COPY.next(opened.question, round, minutes, pc ? settlesText(pc, planFor(pc, opened.openedAt)) : ""));
   await pinQuiet(deps, call, id);
   await deps.predictionOpen?.(opened, minutes).catch(() => null);
   deps.log("live call repeated", { platform: call.platform, channel: call.channelId, id: opened.id, round });

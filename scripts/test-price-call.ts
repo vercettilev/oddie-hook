@@ -3,7 +3,7 @@
  * and what the room hears from lock to result. In memory, no network.
  */
 import assert from "node:assert/strict";
-import { nextClock, outcomeFor, parsePriceCall, planFor, readPriceCall, timeLabel, whenText, type PriceCall, type PriceSource } from "../src/live/priceCall.js";
+import { nextClock, outcomeFor, parsePriceCall, planFor, readPriceCall, settlesText, timeLabel, whenText, type PriceCall, type PriceSource } from "../src/live/priceCall.js";
 import { PRICE_GIVE_UP_MS, STREAM_POLL_MS, handleChat, lockDue, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { liveStore, _resetLiveStore } from "../src/store/live.js";
 
@@ -246,12 +246,13 @@ const lockAt = opened + 3 * 60_000 + 1_000;
 reset();
 eq(await handleChat(msg("!call will BTC close current 30min candle above 82k?", "bee", true), deps), "opened", "opens");
 ok(/Type !yes or !no, locks in 3 min/.test(said[0] ?? ""), `a candle call takes answers for three minutes: ${said[0]}`);
+ok(/" Settles at \d\d:\d\d UTC, on the \d\d:\d\d-\d\d:\d\d candle\. Type !yes or !no/.test(said[0] ?? ""), `...and says when it settles, on which candle, as it opens (26 Nov): ${said[0]}`);
 eq(await handleChat(msg("!yes", "bee", true), deps), "picked", "bee picks");
 eq(await handleChat(msg("!no", "viewer"), deps), "picked", "a viewer picks");
 now = lockAt;
 eq(await lockDue(deps), 1, "locks at three minutes");
 ok(/oddie settles it when the 30m candle closes\.$/.test(last()), `lock line names the candle: ${last()}`);
-eq(await handleChat(msg("!call next one", "bee", true), deps), "opened", "a new call opens while the candle call waits for its candle");
+eq(await handleChat(msg("!call will I win?", "bee", true), deps), "opened", "a new call opens while the candle call waits for its candle");
 now = Date.parse("2026-10-08T13:59:59Z");
 await lockDue(deps);
 eq(reads, 0, "nothing read before the close");
@@ -413,3 +414,15 @@ await lockDue(deps);
 eq(lastResult(), `BTC was 81,900 at 14:00 UTC on Binance. Result: NO on "will BTC go above 82k this 30m candle" Nobody called it. Card: https://app.oddie.fun/live/twitch/bee_empire/call/N`, "settled on where it ended");
 
 console.log(`test-price-call: ${checks} checks passed`);
+
+// WHEN IT SETTLES, SAID AS IT OPENS (Bee Empire, 26 Nov): "the next 15m candle"
+// opened at 14:51 is the 15:00-15:15 one, and the line says so.
+{
+  const at = Date.UTC(2026, 10, 26, 14, 51, 20);
+  const say = (q: string) => { const pc = parsePriceCall(q); return pc ? settlesText(pc, planFor(pc, at)) : null; };
+  eq(say("will BTC close the next 15m candle green?"), "Settles at 15:15 UTC, on the 15:00-15:15 candle.", "the next 15m candle names its own minutes");
+  eq(say("will BTC close the hour green?"), "Settles at 15:00 UTC, on the 14:00-15:00 candle.", "...as the hour's does");
+  eq(say("will ETH close the daily candle over $4,100"), "Settles at 00:00 UTC, when the daily candle closes.", "a daily candle says when it closes");
+  eq(say("will BTC be above 82k in 10 minutes?"), "Settles at 15:01 UTC.", "a price at a time says the time");
+  eq(say("will BTC hit 83k in the next 15 min?"), "Settles the moment BTC touches 83,000, or at 15:06 UTC.", "a touch says the moment, or the time");
+}

@@ -1355,6 +1355,33 @@ console.log("\nthis stream's best callers (Lev, 26 Oct)");
   check("the line fits X live chat's 140 characters at its longest", long.length <= 140, String(long.length));
 }
 
+console.log("\na call is a question: a typo or a word opens nothing (Bee Empire, 26 Nov)");
+{
+  check("a word or two with no question mark is no call",
+    parseCommand("!call cancle")?.kind === "not-question" && parseCommand("!call end")?.kind === "not-question"
+    && parseCommand("!call gg ez")?.kind === "not-question" && parseCommand("!call cancle 1")?.kind === "not-question");
+  check("...while a short one asked as a question, or three words, still opens",
+    parseCommand("!call win?")?.kind === "open" && parseCommand("!call will I win")?.kind === "open" && parseCommand("!call 5m clutch?")?.kind === "open");
+  const r = room();
+  check("the streamer's typo opens nothing, and the line says how to end a call or ask one",
+    (await handleChat(r.line("owner", "!call cancle", true), r.deps)) === "not-question" && (await liveStore.unsettled("kick", "100")).length === 0
+    && r.said.at(-1)?.text === LIVE_COPY.notQuestion("cancle") && /!call cancel/.test(LIVE_COPY.notQuestion("cancle")));
+  check("...a line no bot reads as a command", !LIVE_COPY.notQuestion("cancle").startsWith("!") && parseCommand(LIVE_COPY.notQuestion("cancle")) === null);
+  const before = r.said.length;
+  check("...and a viewer's typo, nothing at all", (await handleChat(r.line("viewer", "!call cancle"), r.deps)) === "not-allowed" && r.said.length === before);
+}
+{
+  // A price call says when it settles as it opens, and so does every round of its repeat.
+  const r = room();
+  const P = "will BTC close the next 15m candle green?";
+  await handleChat(r.line("owner", `!call repeat ${P}`, true), r.deps);
+  check("a price call's opening line says when it settles, and on which candle",
+    r.said.some((x) => x.text.startsWith(`call: "${P}" Settles at 08:30 UTC, on the 08:15-08:30 candle. Type !yes or !no`)), r.said.map((x) => x.text).join(" | "));
+  await handleChat(r.line("owner", "!call yes", true), r.deps);
+  check("...and so does the next round of its repeat",
+    r.said.some((x) => x.text.startsWith(`round 2: "${P}" Settles at 08:30 UTC, on the 08:15-08:30 candle. Type !yes or !no`)), r.said.map((x) => x.text).join(" | "));
+}
+
 console.log("\na call that comes back after every result: !call repeat (Lev, 4 Nov)");
 {
   const p = parseCommand("!call repeat will I win this round?");
