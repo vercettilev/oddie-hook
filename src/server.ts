@@ -93,6 +93,7 @@ import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { opsMailer, reportAlert, reportLive, setOpsSink, wentLiveWatcher } from "./live/openedMail.js";
 import { AUTO_CALL_AFTER_MS, autoCaller } from "./live/autoCall.js";
 import { digestEvents, digestMail, sendDigestIfDue } from "./live/dailyDigest.js";
+import { configureScreenBudget, screenDailyUsd } from "./games/screenBudget.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { renderPersonCard, type PersonCard } from "./card/renderPersonCard.js";
@@ -1950,6 +1951,16 @@ if (OPS_MAIL_ON) {
   }));
   liveLog(`ops mail on (opened, live, settled): ${OPS_MAIL_TO.replace(/(.{2}).*(@.*)/, "$1…$2")}`);
 } else liveLog("ops mail off");
+/* THE DAY'S SCREEN BUDGET (src/games/screenBudget.ts, Lev 26 Nov): past
+   SCREEN_DAILY_USD of paid looks in a UTC day nothing is read until the next,
+   the spend kept in bot_state across deploys, the crossing mailed once. */
+configureScreenBudget({
+  get: (k) => botStateGet(k),
+  set: (k, v) => botStateSet(k, v),
+  alert: (a) => reportAlert(a),
+  log: liveLog,
+});
+liveLog(`screen budget: $${screenDailyUsd()} a day (SCREEN_DAILY_USD)`);
 /* THE MORNING SUMMARY (src/live/dailyDigest.ts): what the store cannot say
    (who went live, Lev's own lines) kept as it happens, for 09:00 Istanbul. */
 const digest = digestEvents({

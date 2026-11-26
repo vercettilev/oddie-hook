@@ -28,6 +28,7 @@
  * This file never remembers anything and never decides anything: it fetches,
  * decodes and reads. The engine keeps the state.
  */
+import { recordScreenSpend, type Usage } from "./screenBudget.js";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { authHeaders, inferenceEnabled, messagesUrl } from "../inference.js";
@@ -323,7 +324,9 @@ export async function readFrame(jpeg: Buffer): Promise<FrameReading | null> {
     signal: AbortSignal.timeout(READ_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`frames ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
-  const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+  const j = (await res.json()) as { content?: Array<{ type: string; text?: string }>; usage?: Usage };
+  // Every look is paid: the day's budget counts it (src/games/screenBudget.ts).
+  void recordScreenSpend(FRAME_MODEL, j.usage).catch(() => {});
   return parseReading(j.content?.find((c) => c.type === "text")?.text ?? "");
 }
 

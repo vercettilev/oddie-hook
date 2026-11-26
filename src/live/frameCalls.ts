@@ -25,6 +25,7 @@
  * half: a reading of 5:7 after 7:5 is the same match. The streamer's side is
  * whatever the picture last said, and the end screen is believed over it.
  */
+import { screenBudgetSpent } from "../games/screenBudget.js";
 import { faceitConfigured } from "../games/faceit.js";
 import type { FrameGame, FrameReading, FrameSource } from "../games/frames.js";
 import { personFixOutage } from "../inference.js";
@@ -126,6 +127,8 @@ export async function watchFrames(deps: LiveDeps): Promise<number> {
     if (ch.gsiSeenAt != null && now - ch.gsiSeenAt < GSI_STALE_MS) { w.nextAt = now + FRAME_IDLE_MS; continue; }
     // FACEIT reads this channel (src/live/gameCalls.ts): one source per channel, one call per match.
     if (ch.faceitId && games) { w.nextAt = now + FRAME_OFF_MS; continue; }
+    // The day's screen budget is used (src/games/screenBudget.ts): nothing is read until 00:00 UTC.
+    if (await screenBudgetSpent(now)) { w.nextAt = now + FRAME_IDLE_MS; continue; }
     looked++;
     const out = await watchOne(deps, source, ch, w, now).catch((e) => {
       w.nextAt = now + FRAME_IDLE_MS;

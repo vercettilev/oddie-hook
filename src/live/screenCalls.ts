@@ -80,6 +80,7 @@
  * that is not live, or at a call past its hourly budget. It never touches
  * a market: markets settle through their own resolution, never from a picture.
  */
+import { screenBudgetSpent } from "../games/screenBudget.js";
 import { createHash } from "node:crypto";
 import { personFixOutage } from "../inference.js";
 import { callScope, deathWindowOf, roundNotMatch, statRule } from "../games/screen.js";
@@ -318,7 +319,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
     const l = looks.get(call.id)!;
     const k = keyOf(call);
     const ch = chans.get(k);
-    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || (await notAGame(deps, call, now)) || !withinBudget(call.id, now, perHourOf(call))) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
+    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || (await notAGame(deps, call, now)) || (await screenBudgetSpent(now)) || !withinBudget(call.id, now, perHourOf(call))) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
     take.push({ call, name: ch.name });
   }
   // Side by side: three streams' reads take as long as one.

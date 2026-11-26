@@ -8,7 +8,8 @@
 
 import { handleChat, lockDue, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { NOT_A_GAME, SCREEN_AFTER_RESULT_MS, SCREEN_DEATH_GRACE_MS, SCREEN_WINDOW_SLACK_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY, SCREEN_X_EVERY_MS, SCREEN_X_PER_HOUR } from "../src/live/screenCalls.js";
+import { NOT_A_GAME, SCREEN_AFTER_RESULT_MS, SCREEN_DEATH_GRACE_MS, SCREEN_IDLE_MS, SCREEN_WINDOW_SLACK_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY, SCREEN_X_EVERY_MS, SCREEN_X_PER_HOUR } from "../src/live/screenCalls.js";
+import { recordScreenSpend, _resetScreenBudget } from "../src/games/screenBudget.js";
 import { askScreen, callScope, cleanSeen, deathWindowOf, fetchPicture, parseScreen, parseStat, quotedResult, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame, grabFrame, nearFrames } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
@@ -439,6 +440,24 @@ console.log("\nno game, no look: a category that is no game is never read, every
   check("...and so is a stream the platform names no category for", x.counts().asks >= 2, JSON.stringify(x.counts()));
   check("the list is the platforms' own names, whole: a game named after a category word still reads",
     NOT_A_GAME.has("crypto") && !NOT_A_GAME.has("ea sports fc 26") && !NOT_A_GAME.has("music racer") && !NOT_A_GAME.has("sports"));
+}
+
+console.log("\nthe day's screen budget used: nothing is read until it is back (Lev, 26 Nov)");
+{
+  const before = process.env.SCREEN_DAILY_USD;
+  process.env.SCREEN_DAILY_USD = "0.001";
+  _resetScreenBudget();
+  await recordScreenSpend("claude-haiku-4-5-20251001", { input_tokens: 2000, output_tokens: 100 }, T0);
+  const r = await room();
+  await handleChat(r.line("nova", "!call will I win this match?", true), r.deps);
+  let t = SCREEN_GRACE_MS;
+  for (; t < SCREEN_GRACE_MS + 4 * SCREEN_EVERY_MS; t += SCREEN_EVERY_MS) await r.at(t);
+  check("a used budget reads nothing, and the call stays open", r.counts().grabs === 0 && r.counts().asks === 0 && (await r.unsettled()).length === 1,
+    JSON.stringify(r.counts()));
+  if (before === undefined) delete process.env.SCREEN_DAILY_USD; else process.env.SCREEN_DAILY_USD = before;
+  _resetScreenBudget();
+  for (t += SCREEN_IDLE_MS; t < SCREEN_GRACE_MS + 4 * SCREEN_EVERY_MS + SCREEN_IDLE_MS + 3 * SCREEN_EVERY_MS; t += SCREEN_EVERY_MS) await r.at(t);
+  check("...and with the budget back, the screen is read again", r.counts().asks >= 2, JSON.stringify(r.counts()));
 }
 
 console.log("\nthe server's beat: every second, a look only when one falls due");

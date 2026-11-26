@@ -21,6 +21,7 @@
  * progress, a lead, a menu or a guess is unclear: only an outcome the picture
  * shows as final counts.
  */
+import { recordScreenSpend, type Usage } from "./screenBudget.js";
 import { authHeaders, inferenceEnabled, messagesUrl, MODEL } from "../inference.js";
 import type { Platform } from "../live/calls.js";
 import { FRAME_MODEL } from "./frames.js";
@@ -458,7 +459,9 @@ async function readScreen(model: string, maxTokens: number, jpeg: Buffer, questi
     signal: AbortSignal.timeout(ASK_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`screen ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
-  const j = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+  const j = (await res.json()) as { content?: Array<{ type: string; text?: string }>; usage?: Usage };
+  // Every look is paid: the day's budget counts it (src/games/screenBudget.ts).
+  void recordScreenSpend(model, j.usage).catch(() => {});
   const text = j.content?.find((c) => c.type === "text")?.text ?? "";
   const rule = statRule(question);
   if (rule) return parseStat(text, rule);
