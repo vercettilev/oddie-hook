@@ -6,10 +6,10 @@
 //
 // Run with: npm run test-screen-calls
 
-import { handleChat, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
+import { handleChat, lockDue, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { SCREEN_AFTER_RESULT_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY, SCREEN_X_EVERY_MS, SCREEN_X_PER_HOUR } from "../src/live/screenCalls.js";
-import { askScreen, callScope, cleanSeen, fetchPicture, parseScreen, parseStat, quotedResult, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
+import { SCREEN_AFTER_RESULT_MS, SCREEN_DEATH_GRACE_MS, SCREEN_WINDOW_SLACK_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY, SCREEN_X_EVERY_MS, SCREEN_X_PER_HOUR } from "../src/live/screenCalls.js";
+import { askScreen, callScope, cleanSeen, deathWindowOf, fetchPicture, parseScreen, parseStat, quotedResult, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame, grabFrame, nearFrames } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -308,6 +308,83 @@ console.log("\nthe words the reader quotes answer a plain win call");
   m.readings.push(no(0.95, "GULAG DEFEAT KILLED IN ACTION"));
   await m.at(SCREEN_GRACE_MS);
   check("...so a lost Gulag leaves the call open", (await liveStore.unsettled("kick", "100")).length === 1 && m.counts().asks === 1);
+}
+
+console.log("\na death call with its own length: \"wasted\" inside it is YES, its end with none is NO (Lev, 26 Nov)");
+{
+  const S = "IsaacBeast";
+  check("its length is read in minutes or hours, on a death call about the streamer",
+    deathWindowOf("will isaac die in the next 15 minutes?", S) === 15 && deathWindowOf("will I die in the next 10 min?", S) === 10
+    && deathWindowOf("will isaac die within the next 2 hours?", S) === 120 && deathWindowOf("will isaac get wasted in 5 mins", S) === 5);
+  check("...never past two hours, negated, about somebody else, or with no length",
+    deathWindowOf("will isaac die in the next 3 hours?", S) === null && deathWindowOf("will isaac not die in the next 15 minutes?", S) === null
+    && deathWindowOf("will bob die in the next 15 minutes?", S) === null && deathWindowOf("will isaac die this mission?", S) === null
+    && deathWindowOf("will isaac die in the next 0 minutes?", S) === null && deathWindowOf("will I die before the heist ends?", S) === null);
+  check("GTA's \"wasted\" answers it YES, as it does a plain death call",
+    quotedResult("will isaac die in the next 15 minutes?", S, { answer: "unclear", sure: 0.95, seen: "wasted" }).answer === "yes");
+
+  const q = "will I die in the next 15 minutes?";
+  const END = 15 * 60_000;
+  const r = await room({ near: true });
+  await handleChat(r.line("nova", `!call ${q}`, true), r.deps);
+  const [open] = await r.unsettled();
+  check("answers close three minutes in, as a viewer count's", open !== undefined && open.closesAt - open.openedAt === 3 * 60_000,
+    JSON.stringify(open && { openedAt: open.openedAt, closesAt: open.closesAt }));
+  await r.at(SCREEN_DEATH_GRACE_MS - 1_000);
+  check("nothing is looked at in its first ten seconds", r.counts().grabs === 0);
+  r.readings.push(no(0.95, "MISSION COMPLETE"), no(0.95, "MISSION COMPLETE"), no(0.95, "MISSION COMPLETE"));
+  await r.at(SCREEN_DEATH_GRACE_MS);
+  check("...then it is, and a sure NO off the screen settles nothing: only its end says that",
+    r.counts().asks >= 1 && (await r.unsettled()).length === 1 && !r.said.includes(LIVE_COPY.screenUnsure(q)), r.said.join(" | "));
+  let k = SCREEN_DEATH_GRACE_MS + SCREEN_EVERY_MS;
+  for (; k < 3 * 60_000; k += SCREEN_EVERY_MS) await r.at(k);
+  const before = r.said.length;
+  await r.at(3 * 60_000);
+  await lockDue(r.deps);
+  check("...its answers lock with when it settles, never \"Mods settle it\"",
+    r.said.slice(before).some((x) => x.includes("oddie settles it the moment it happens on screen, or at 12:15 UTC")) && !r.said.slice(before).some((x) => /Mods settle it/.test(x)),
+    r.said.slice(before).join(" | "));
+  for (; k < END + SCREEN_WINDOW_SLACK_MS; k += SCREEN_EVERY_MS) await r.at(k);
+  check("still open through its end and the few seconds after, while the screen reads", (await r.unsettled()).length === 1);
+  await r.at(END + SCREEN_WINDOW_SLACK_MS);
+  check("its end with no death on screen settles it NO, with the time in front",
+    (await r.unsettled()).length === 0 && r.last().startsWith(`15 min, still alive. Result: NO on "${q}"`), r.last());
+
+  const s = await room({ near: true });
+  await handleChat(s.line("nova", `!call ${q}`, true), s.deps);
+  await handleChat(s.line("mika", "!yes"), s.deps);
+  s.readings.push(unclear, yes(0.95, "wasted"), yes(0.95, "wasted"));
+  await s.at(SCREEN_DEATH_GRACE_MS); await s.at(SCREEN_DEATH_GRACE_MS + SCREEN_EVERY_MS);
+  check("a death on screen inside its time settles it YES at once", (await s.unsettled()).length === 0 && s.last() === `Result: YES on "${q}" Called it: @mika.`, s.last());
+
+  const u = await room({ near: true });
+  await handleChat(u.line("nova", `!call ${q}`, true), u.deps);
+  await u.at(SCREEN_DEATH_GRACE_MS);
+  await u.at(END + SCREEN_WINDOW_SLACK_MS);
+  check("an end the screen did not watch all through is no NO: the mods are asked",
+    (await u.unsettled()).length === 1 && u.last() === LIVE_COPY.screenUnsure(q) && !u.said.some((x) => x.includes("still alive")), u.said.join(" | "));
+
+  const v = await room();
+  await handleChat(v.line("nova", `!call ${q}`, true), v.deps);
+  let t = SCREEN_DEATH_GRACE_MS;
+  for (; t + SCREEN_EVERY_MS < END + SCREEN_WINDOW_SLACK_MS; t += SCREEN_EVERY_MS) await v.at(t);
+  v.readings.push(yes(0.95, "wasted"), yes(0.95, "wasted"));
+  await v.at(t);
+  await v.at(END + SCREEN_WINDOW_SLACK_MS);
+  check("a death read once right at its end is not cut off by it", (await v.unsettled()).length === 1 && !v.said.some((x) => x.includes("still alive")), v.said.slice(-2).join(" | "));
+  await v.at(t + SCREEN_CONFIRM_MS);
+  check("...the next look confirms it, and it is YES", (await v.unsettled()).length === 0 && v.last().startsWith(`Result: YES on "${q}"`), v.last());
+
+  const w = await room({ near: true });
+  await handleChat(w.line("nova", "!call will bob die in the next 15 minutes?", true), w.deps);
+  for (let k = SCREEN_GRACE_MS; k < END + SCREEN_WINDOW_SLACK_MS + SCREEN_EVERY_MS; k += SCREEN_EVERY_MS) await w.at(k);
+  check("somebody else's death with a length stays the room's: no NO at its end",
+    (await w.unsettled()).length === 1 && !w.said.some((x) => x.includes("still alive") || x === LIVE_COPY.screenUnsure("will bob die in the next 15 minutes?")), w.said.join(" | "));
+
+  const x = await room({ near: true, matchCalls: false });
+  await handleChat(x.line("nova", `!call ${q}`, true), x.deps);
+  await x.at(END + SCREEN_WINDOW_SLACK_MS);
+  check("...as does one where the screen reads nothing at all", (await x.unsettled()).length === 1 && !x.said.some((l) => l.includes("still alive") || l === LIVE_COPY.screenUnsure(q)), x.said.join(" | "));
 }
 
 console.log("\nthe server's beat: every second, a look only when one falls due");

@@ -400,9 +400,30 @@ const TEAM_PLACED_QUOTED = /\bteam\s+placed\s+(\d{1,3})\s+out\s+of\s+\d{1,3}\b/i
    in the twelve frames was ever a sure answer. So when a plain death call is
    about the streamer, a reading that opens on "wasted" answers it YES. A call
    that turns on surviving ("without dying", "make it") is not this shape and
-   stays the reader's, as does a negated one. */
-const DIE_CALL = new RegExp(`${CALL_OPEN}${CALL_NAME}\\s+(?:dies?|get(?:s)?\\s+(?:killed|wasted)|be\\s+killed)(?:\\s+(?:in\\s+)?(?:this|that|the|next|the\\s+next)\\s+(?:mission|game|match|round|fight|heist|chase|race|level))?\\s*[?!.]*\\s*$`, "i");
+   stays the reader's, as does a negated one.
+
+   A DEATH CALL WITH ITS OWN LENGTH (Lev, 26 Nov): "will isaac die in the next
+   15 minutes?". Without one, a streamer who lived never got a result: GTA 6
+   ends a mission in a cutscene, no NO ever shows, and the call was canceled
+   at the stream's end with no points (IsaacBeast's first call, 25 Nov). With
+   one, a death on screen inside it is YES, and its end with none is NO
+   (src/live/screenCalls.ts). The number and its unit are captured. */
+const DEATH_WINDOW = String.raw`\s+(?:in|within)\s+(?:the\s+)?(?:next\s+)?(\d{1,3})\s*-?\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)`;
+const DIE_CALL = new RegExp(`${CALL_OPEN}${CALL_NAME}\\s+(?:dies?|get(?:s)?\\s+(?:killed|wasted)|be\\s+killed)(?:\\s+(?:in\\s+)?(?:this|that|the|next|the\\s+next)\\s+(?:mission|game|match|round|fight|heist|chase|race|level)|${DEATH_WINDOW})?\\s*[?!.]*\\s*$`, "i");
 const WASTED_QUOTED = /^wasted\b/i;
+/** The longest a death call's own length may be. Past it the call is the room's, as any other. */
+export const DEATH_WINDOW_MAX_MIN = 120;
+/** A death call with its own length ("will I die in the next 10 min?"), in minutes; null for
+ *  any other call, a negated one, or one past DEATH_WINDOW_MAX_MIN. With `streamer`, only one
+ *  about the streamer: a death nobody on the stream can show never ends as NO. */
+export function deathWindowOf(question: string, streamer?: string): number | null {
+  if (CALL_NEGATED.test(question)) return null;
+  const m = DIE_CALL.exec(question);
+  if (!m || !m[2] || !m[3]) return null;
+  if (streamer !== undefined && !namesStreamer(m[1], streamer)) return null;
+  const minutes = Number(m[2]) * (/^h/i.test(m[3]) ? 60 : 1);
+  return minutes >= 1 && minutes <= DEATH_WINDOW_MAX_MIN ? minutes : null;
+}
 /** Is the one a call names the streamer: "I", "me", "we", or a word of the streamer's name. */
 function namesStreamer(who: string, streamer: string): boolean {
   const self = foldName(streamer);

@@ -82,8 +82,8 @@
  */
 import { createHash } from "node:crypto";
 import { personFixOutage } from "../inference.js";
-import { callScope, roundNotMatch, statRule } from "../games/screen.js";
-import { isRoomCall, screenGivesUp, settleOnScreen, type LiveCall, type LiveDeps } from "./calls.js";
+import { callScope, deathWindowOf, roundNotMatch, statRule } from "../games/screen.js";
+import { isRoomCall, screenGivesUp, settleOnScreen, settleWindowOut, type LiveCall, type LiveDeps } from "./calls.js";
 
 /** How often an open room call's picture is read: a result screen does not stay up long. */
 export const SCREEN_EVERY_MS = 4_000;
@@ -102,6 +102,16 @@ export const SCREEN_AGREE_MS = 60_000;
 export const SCREEN_SURE = 0.85;
 /** No look in a call's first minute: the last result may still be on screen. */
 export const SCREEN_GRACE_MS = 60_000;
+/** ...but a death call with its own length (src/games/screen.ts deathWindowOf) is
+ *  looked at ten seconds in: GTA's "wasted" is gone by then, and a death in the
+ *  first minute of its time must not go unseen, since its end with none is NO. */
+export const SCREEN_DEATH_GRACE_MS = 10_000;
+/** A death call's time is up this long after its end: the stream and its reads run a few seconds behind. */
+export const SCREEN_WINDOW_SLACK_MS = 15_000;
+/** A death call's end is NO only where the screen was read all through its time: no
+ *  stretch longer than this without a read (an outage, the stream gone dark, a stuck
+ *  picture). Otherwise it goes to the mods, as a call the screen could not settle. */
+export const SCREEN_WINDOW_GAP_MS = 20_000;
 /** At most this many pictures a tick, read side by side. */
 export const SCREENS_PER_PASS = 3;
 /** At most this many pictures a call an hour: one every four seconds. */
@@ -146,7 +156,8 @@ const WHOLE_GAME = /\b(?:game|match)\b/i;
 
 /** clear: the reader has seen the stream with no result on it since the call opened.
  *  pic: the last X picture read, so the same one is not read twice. */
-interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null; clear: boolean; pic: string | null }
+/** `readAt`: the last picture read; `gap`: the longest stretch between two reads since the call opened. */
+interface Look { nextAt: number; decided: { answer: "yes" | "no"; at: number; seen: string } | null; clear: boolean; pic: string | null; readAt: number; gap: number }
 const looks = new Map<string, Look>();
 /** Calls the screen gave up to the mods: never looked at again. */
 const handed = new Set<string>();
@@ -235,14 +246,40 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   const unsettled = new Set(listed.map((c) => c.id));
   for (const id of handed) if (!unsettled.has(id)) handed.delete(id);
   if (!calls.length) return 0;
+  const chans = await channelsNow(deps, now);
+  const windowOf = (c: LiveCall): number | null => {
+    const ch = chans.get(keyOf(c));
+    // Only where the screen reads this channel at all: an end nobody watched is no NO.
+    return ch && ch.matchCalls ? deathWindowOf(c.question, ch.name) : null;
+  };
+  // A DEATH CALL WITH ITS OWN LENGTH (Lev, 26 Nov): its end with no death on
+  // screen is NO, never while a death read once is still being confirmed.
+  const timeUp = new Set<string>();
+  let ended = 0;
   for (const c of calls) {
+    const minutes = windowOf(c);
+    if (minutes === null || now < c.openedAt + minutes * 60_000 + SCREEN_WINDOW_SLACK_MS || looks.get(c.id)?.decided) continue;
+    const l = looks.get(c.id);
+    const end = c.openedAt + minutes * 60_000;
+    timeUp.add(c.id);
+    if (!l || Math.max(l.gap, end - l.readAt) > SCREEN_WINDOW_GAP_MS) {
+      deps.log("screen: time up, not watched all through", { platform: c.platform, channel: c.channelId, id: c.id, gap: l ? Math.max(l.gap, end - l.readAt) : null });
+      await giveUp(deps, c);
+      continue;
+    }
+    looks.delete(c.id);
+    if (await settleWindowOut(c, minutes, deps).catch((e) => { deps.log("screen: time up, not settled", { id: c.id, err: (e as Error).message }); return false; })) ended++;
+  }
+  if (timeUp.size) listedAt = 0;
+  const left = calls.filter((c) => !timeUp.has(c.id));
+  for (const c of left) {
     if (looks.has(c.id)) continue;
     const soon = await soonAfterResult(deps, c);
-    looks.set(c.id, { nextAt: c.openedAt + (soon && WHOLE_GAME.test(c.question) ? SCREEN_AFTER_RESULT_MS : SCREEN_GRACE_MS), decided: null, clear: !soon, pic: null });
+    const grace = windowOf(c) !== null ? SCREEN_DEATH_GRACE_MS : soon && WHOLE_GAME.test(c.question) ? SCREEN_AFTER_RESULT_MS : SCREEN_GRACE_MS;
+    looks.set(c.id, { nextAt: c.openedAt + grace, decided: null, clear: !soon, pic: null, readAt: c.openedAt, gap: 0 });
   }
-  const due = calls.filter((c) => now >= looks.get(c.id)!.nextAt).sort((a, b) => looks.get(a.id)!.nextAt - looks.get(b.id)!.nextAt);
-  if (!due.length) return 0;
-  const chans = await channelsNow(deps, now);
+  const due = left.filter((c) => now >= looks.get(c.id)!.nextAt).sort((a, b) => looks.get(a.id)!.nextAt - looks.get(b.id)!.nextAt);
+  if (!due.length) return ended;
   const take: Array<{ call: LiveCall; name: string }> = [];
   for (const call of due) {
     if (take.length >= SCREENS_PER_PASS) break;
@@ -257,7 +294,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
   const settled = outs.filter(Boolean).length;
   // A call this pass settled leaves the list at the next pass, not five seconds on.
   if (settled) listedAt = 0;
-  return settled;
+  return settled + ended;
 }
 
 /**
@@ -288,7 +325,10 @@ async function lookOnce(deps: LiveDeps, source: NonNullable<LiveDeps["screen"]>,
       if (pic === l.pic) { l.nextAt = now + everyOf(call); return false; }
       l.pic = pic;
     }
-    const r = await source.ask(jpeg, call.question, name);
+    const read = await source.ask(jpeg, call.question, name);
+    l.gap = Math.max(l.gap, now - l.readAt); l.readAt = now;
+    // A death call with its own length is never NO off the screen: only its end says that (watchScreens).
+    const r = read && read.answer === "no" && deathWindowOf(call.question, name) !== null ? { ...read, answer: "unclear" as const } : read;
     deps.log("screen read", { platform: call.platform, channel: call.channelId, id: call.id, answer: r?.answer ?? null, sure: r?.sure ?? null, seen: r?.seen ?? null });
     // An event call is settled on the event's own page, never on one game's
     // result, however sure the answer beside it (src/games/screen.ts).

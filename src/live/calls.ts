@@ -65,11 +65,11 @@
  * votes only (deps.votesOnly).
  */
 
-import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, readsOnTheWay, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
+import { binancePrices, holdAtOpen, parsePriceCall, planFor, readPriceCall, readsOnTheWay, timeLabel, touchAtOpen, whenText, PRICE_SETTLE_LAG_MS, type PriceCall, type PricePlan, type PriceSource } from "./priceCall.js";
 import { parseViewerCall, viewerDeadline, viewerMet, viewerWhenText, viewersShort, viewersText, type ViewerCall } from "./viewerCall.js";
 import { faceitConfigured, type GameSource } from "../games/faceit.js";
 import type { FrameSource } from "../games/frames.js";
-import type { ScreenSource } from "../games/screen.js";
+import { deathWindowOf, type ScreenSource } from "../games/screen.js";
 import { reportOpened, reportSettled } from "./openedMail.js";
 
 export type Platform = "kick" | "twitch" | "youtube" | "x";
@@ -457,6 +457,9 @@ export const LIVE_COPY = {
   viewersTimeUp: (peak: number | null) => `Time is up.${peak === null ? "" : ` Highest count read: ${viewersText(peak)}.`}`,
   /** !oddie on a viewer count: a number anybody can buy carries no money. */
   viewersNoMarket: "A viewer count is a call, never a market. Mods open it with !call and the same question.",
+  /* A DEATH CALL WITH ITS OWN LENGTH (src/games/screen.ts deathWindowOf). */
+  /** In front of the result line when its time ran out with no death on screen. */
+  windowOut: (minutes: number) => `${minutes} min, still alive.`,
 };
 
 /* --------------------------------------------------------------- engine -- */
@@ -710,6 +713,13 @@ function closeFor(platform: Platform, question: string, asked: number | null, no
     closesAt = Math.min(closesAt, viewerDeadline(vc, now) ?? closesAt);
     minutes = Math.max(1, Math.ceil((closesAt - now) / 60_000));
   }
+  // A death call with its own length the same: answers for three minutes, then
+  // the screen or the end of its time settles it (src/live/screenCalls.ts).
+  const window = asked === null && !pc && !vc ? deathWindowOf(question) : null;
+  if (window !== null) {
+    closesAt = now + Math.min(PRICE_CALL_LOCK_MS, window * 60_000);
+    minutes = Math.max(1, Math.ceil((closesAt - now) / 60_000));
+  }
   return { closesAt, minutes, pc };
 }
 
@@ -788,6 +798,14 @@ function viewerWhen(call: LiveCall): string | null {
   return vc ? viewerWhenText(vc, viewerDeadline(vc, call.openedAt)) : null;
 }
 
+/** When a death call with its own length about the streamer settles, for the room; null for any other call. */
+async function windowWhen(call: LiveCall, deps: LiveDeps): Promise<string | null> {
+  if (deathWindowOf(call.question) === null) return null;
+  const name = await deps.store.channelName?.(call.platform, call.channelId).catch(() => null);
+  const minutes = name ? deathWindowOf(call.question, name) : null;
+  return minutes === null ? null : `the moment it happens on screen, or at ${timeLabel(call.openedAt + minutes * 60_000)}`;
+}
+
 /** The pin is for the call taking answers: with none left in the channel, it comes down. */
 async function unpinIfIdle(deps: LiveDeps, m: { platform: Platform; channelId: string }): Promise<void> {
   if (!deps.unpin) return;
@@ -800,7 +818,7 @@ async function lockAndSay(call: LiveCall, deps: LiveDeps): Promise<boolean> {
   if (!(await deps.store.lock(call.id, deps.now()))) return false;
   lastSplit.delete(call.id); newSince.delete(call.id); lastSaid.delete(call.id);
   const tally = await deps.store.tally(call.id);
-  const when = (await waitForPrice(call, deps)) ?? viewerWhen(call);
+  const when = (await waitForPrice(call, deps)) ?? viewerWhen(call) ?? (await windowWhen(call, deps));
   await sayQuiet(deps, call, when ? LIVE_COPY.lockedPrice(tally, when) : LIVE_COPY.locked(tally));
   await unpinIfIdle(deps, call);
   if (viewerCallOf(call)) await resumeRepeat(deps, call);
@@ -1343,6 +1361,33 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   if (call.matchId === null) {
     reportSettled({ platform: call.platform, channelId: call.channelId, callId: call.id, question: call.question, outcome,
       source: "screen", right: done.right, total: done.total, winners: (done.winners ?? []).map((x) => x.name), frame: Boolean(frame && deps.store.saveFrame) });
+  }
+  await reopenRepeat(call, deps);
+  return true;
+}
+
+/**
+ * THE TIME RAN OUT (Lev, 26 Nov): a death call with its own length, about the
+ * streamer, whose end came with no death on screen (src/live/screenCalls.ts).
+ * Settled NO as a mod's !call no would, with the time in front. False when
+ * somebody settled it first.
+ */
+export async function settleWindowOut(call: LiveCall, minutes: number, deps: LiveDeps): Promise<boolean> {
+  const now = deps.now();
+  if (call.lockedAt === null) await deps.store.lock(call.id, now).catch(() => false);
+  lastSplit.delete(call.id); newSince.delete(call.id); lastSaid.delete(call.id);
+  const tally = await deps.store.tally(call.id);
+  const done = await deps.store.settle(call.id, "no", pointsFor(tally, "no"), now);
+  if (!done) return false;
+  await deps.predictionEnd?.(call, "no").catch(() => {});
+  await unpinIfIdle(deps, call);
+  const { url, star } = await resultExtras(deps, call);
+  await sayQuiet(deps, call, `${LIVE_COPY.windowOut(minutes)} ${LIVE_COPY.settled(call.question, "no", done.right, done.total, done.top, url, done.winners, star)}`);
+  await sayStreamTop(deps, call, now);
+  deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome: "no", right: done.right, total: done.total, by: "window", minutes });
+  if (call.matchId === null) {
+    reportSettled({ platform: call.platform, channelId: call.channelId, callId: call.id, question: call.question, outcome: "no",
+      source: "screen", right: done.right, total: done.total, winners: (done.winners ?? []).map((x) => x.name), frame: false });
   }
   await reopenRepeat(call, deps);
   return true;
