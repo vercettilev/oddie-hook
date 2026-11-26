@@ -21,8 +21,9 @@
  * moment no resolver can see ("clutch this round?"), run by the channel.
  *
  * WHO DOES WHAT. The channel's owner and its moderators open, settle and
- * cancel calls, and on X and Kick so does Lev's own account (src/x/live.ts,
- * src/kick/client.ts: operators); everybody answers. One answer per person, and an answer is
+ * cancel calls, and on X, Kick and Twitch so does Lev's own account
+ * (src/x/live.ts, src/kick/client.ts, src/twitch/client.ts: operators);
+ * everybody answers. One answer per person, and an answer is
  * final: a call changed after the room has moved is a call made with hindsight.
  *
  * OPEN UNTIL IT IS SETTLED (Lev, 8 Oct, after the first Twitch pilot). A call

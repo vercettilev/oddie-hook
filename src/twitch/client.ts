@@ -232,8 +232,17 @@ interface TwitchChatEvent {
   source_broadcaster_user_id?: string | null;
 }
 
+/** Accounts that run calls in every connected Twitch chat as its host does,
+ *  as on X and Kick (src/x/live.ts xOperators, src/kick/client.ts
+ *  kickOperators), so a connected chat where nobody opens a call still gets
+ *  one (Lev, 26 Nov: on every platform). By Twitch user id, which never
+ *  passes to someone else as a login can: Lev's own levvercetti unless
+ *  TWITCH_LIVE_OPERATORS lists others (empty: nobody). */
+const twitchOperators = (): string[] => (process.env.TWITCH_LIVE_OPERATORS ?? "1553273942").split(",").map((s) => s.trim()).filter(Boolean);
+
 /** A `channel.chat.message` event as the engine reads it. The owner is the
- *  chatter who is the broadcaster; a moderator carries the badge. */
+ *  chatter who is the broadcaster; a moderator carries the badge; an
+ *  operator (above) is named by id. */
 export function chatFromTwitch(event: unknown): ChatMessage | null {
   const e = event as Partial<TwitchChatEvent> | null;
   if (!e || typeof e.message?.text !== "string" || !e.chatter_user_id || !e.broadcaster_user_id || !e.message_id) return null;
@@ -251,7 +260,7 @@ export function chatFromTwitch(event: unknown): ChatMessage | null {
     messageId: String(e.message_id),
     senderId: String(e.chatter_user_id),
     senderName: String(e.chatter_user_login ?? ""),
-    canRun: owner || mod,
+    canRun: owner || mod || twitchOperators().includes(String(e.chatter_user_id)),
     text: reply && text.startsWith("@") ? text.replace(/^@\S+\s*/, "") : text,
     replyText: reply,
     channelSlug: e.broadcaster_user_login ?? undefined,

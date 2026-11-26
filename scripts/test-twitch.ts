@@ -56,6 +56,19 @@ const ev = (over: Record<string, unknown> = {}) => ({
     && m.text === "!call will I win?" && m.canRun === false && m.channelSlug === "streamer");
   check("the broadcaster can run calls", chatFromTwitch(ev({ chatter_user_id: "1001" }))?.canRun === true);
   check("...and so can a moderator", chatFromTwitch(ev({ badges: [{ set_id: "moderator" }] }))?.canRun === true);
+  // Lev's own Twitch account runs calls in every connected chat, as on X and Kick (26 Nov).
+  check("...so does Lev's own Twitch account, by its id, in every connected chat",
+    chatFromTwitch(ev({ chatter_user_id: "1553273942", chatter_user_login: "levvercetti" }))?.canRun === true);
+  check("...but not another account that takes his login", chatFromTwitch(ev({ chatter_user_login: "levvercetti" }))?.canRun === false);
+  const operatorsBefore = process.env.TWITCH_LIVE_OPERATORS;
+  process.env.TWITCH_LIVE_OPERATORS = "555, 777";
+  const listed = chatFromTwitch(ev({ chatter_user_id: "777" }));
+  const unlisted = chatFromTwitch(ev({ chatter_user_id: "1553273942" }));
+  process.env.TWITCH_LIVE_OPERATORS = "";
+  const nobody = chatFromTwitch(ev({ chatter_user_id: "1553273942" }));
+  if (operatorsBefore === undefined) delete process.env.TWITCH_LIVE_OPERATORS; else process.env.TWITCH_LIVE_OPERATORS = operatorsBefore;
+  check("...TWITCH_LIVE_OPERATORS names them instead, and empty names nobody",
+    listed?.canRun === true && unlisted?.canRun === false && nobody?.canRun === false);
   check("shared chat: a line from another channel is not answered here",
     chatFromTwitch(ev({ source_broadcaster_user_id: "3003" })) === null && chatFromTwitch(ev({ source_broadcaster_user_id: "1001" })) !== null);
   const r = chatFromTwitch(ev({ message: { text: "@bob !oddie" }, reply: { parent_message_body: "BTC hits 150k this year" } }));
