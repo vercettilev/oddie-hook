@@ -259,9 +259,12 @@ console.log("\nthe mails themselves");
     xLive.html.includes("<b>Showdown</b> just went live on X.") && xLive.html.includes("You can open calls in this chat yourself")
     && xLive.html.includes('href="https://x.com/ShowdownTV"') && xLive.html.includes('href="https://app.oddie.fun/live/x/ShowdownTV"'));
   const kickLive = liveMail({ kind: "live", platform: "kick", channelId: "72486" }, { slug: "isaacbeast", name: "IsaacBeast" }, base);
-  check("...elsewhere, that the streamer or a mod opens them",
-    kickLive.subject === "IsaacBeast is live on Kick" && kickLive.html.includes("A call opens when they or a mod type !call")
+  check("...on Kick and Twitch, that he can too, and that his account opens one by itself (26 Nov)",
+    kickLive.subject === "IsaacBeast is live on Kick" && kickLive.html.includes("You can open calls in this chat yourself") && kickLive.html.includes("If nobody has in 10 minutes, your account opens the one that fits.")
     && kickLive.html.includes('href="https://kick.com/isaacbeast"'));
+  const ytLive = liveMail({ kind: "live", platform: "youtube", channelId: "UC1" }, { slug: "someone", name: "Someone" }, base);
+  check("...on YouTube, where he runs nothing, that the streamer or a mod opens them",
+    ytLive.html.includes("A call opens when they or a mod type !call") && !ytLive.html.includes("yourself") && !ytLive.html.includes("10 minutes"));
 
   const screen = settledMail({ kind: "settled", platform: "twitch", channelId: "7", callId: "42", question: "will he clutch?", outcome: "yes",
     source: "screen", right: 2, total: 3, winners: ["ana", "bo"], frame: true }, { slug: "bee_empire", name: "Bee" }, base);
@@ -356,7 +359,7 @@ console.log("\nwired at boot");
   check("the server sets the sink with the mailer, lev@oddie.fun unless OPS_MAIL_TO says otherwise",
     /setOpsSink\(opsMailer\(/.test(server) && /process\.env\.OPS_MAIL_TO \?\? "lev@oddie\.fun"/.test(server));
   check("...and runs the went-live watcher every two minutes over every active channel",
-    /wentLiveWatcher\(\{[\s\S]{0,200}channels: \(\) => liveStore\.channels\(\)[\s\S]{0,300}report: \(c\) => \{ if \(OPS_MAIL_ON\) reportLive\(c\);/.test(server)
+    /wentLiveWatcher\(\{[\s\S]{0,200}channels: \(\) => liveStore\.channels\(\)[\s\S]{0,300}report: \(c\) => \{\s*if \(OPS_MAIL_ON\) reportLive\(c\);/.test(server)
     && /setInterval\(look, 120_000\)/.test(server) && /if \(OPS_MAIL_ON \|\| autoCalls\) \{\s*const pass = wentLiveWatcher/.test(server));
 }
 

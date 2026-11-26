@@ -228,9 +228,9 @@ console.log("\nwired at boot");
   check("the server says the line as levvercetti unless AUTO_CALL_FROM says otherwise, and AUTO_CALLS=off stops it",
     /process\.env\.AUTO_CALL_FROM \?\? "levvercetti"/.test(server) && /process\.env\.AUTO_CALLS \?\? "on"\)\.trim\(\)\.toLowerCase\(\) !== "off"/.test(server));
   check("...on Kick and Twitch through his own account",
-    /p === "kick" \? kickSayAsOperator\(autoCallFrom, c, text\)/.test(server) && /p === "twitch" \? twitchSayAsOperator\(autoCallFrom, c, text\)/.test(server));
+    /if \(p === "kick"\) await kickSayAsOperator\(autoCallFrom, c, text\)/.test(server) && /else if \(p === "twitch"\) await twitchSayAsOperator\(autoCallFrom, c, text\)/.test(server));
   check("...the went-live pass starts its clock, and a pass every half minute says what is due",
-    /report: \(c\) => \{ if \(OPS_MAIL_ON\) reportLive\(c\); autoCalls\?\.wentLive\(c\); \}/.test(server)
+    /report: \(c\) => \{\s*if \(OPS_MAIL_ON\) reportLive\(c\);\s*autoCalls\?\.wentLive\(c\);/.test(server)
     && /autoCalls\.tick\(\)[\s\S]{0,200}\}, 30_000\)/.test(server));
 }
 

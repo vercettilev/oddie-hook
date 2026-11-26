@@ -164,10 +164,14 @@ export function liveMail(l: WentLive, ch: ChannelInfo | null, appBase: string, l
   const w = where(l.platform, l.channelId, ch, appBase);
   const subject = `${clip(w.name, 60)} is live on ${w.platform}`;
   const lead = `<b>${esc(w.name)}</b> just went live on ${w.platform}.`;
-  // On X Lev is an operator in every connected chat; elsewhere the streamer or a mod opens.
-  const what = l.platform === "x"
-    ? "You can open calls in this chat yourself: type !call and a question."
-    : "A call opens when they or a mod type !call and a question.";
+  // Lev is an operator in every connected X, Kick and Twitch chat; on Kick and
+  // Twitch his account also opens the call that fits when nobody has
+  // (src/live/autoCall.ts). On YouTube only the streamer or a mod opens one.
+  const what = l.platform === "youtube"
+    ? "A call opens when they or a mod type !call and a question."
+    : l.platform === "x"
+      ? "You can open calls in this chat yourself: type !call and a question."
+      : "You can open calls in this chat yourself: type !call and a question. If nobody has in 10 minutes, your account opens the one that fits.";
   const links: Array<[string, string]> = [
     ["Watch the stream", watchUrl(l.platform, w.slug, l.channelId)],
     ["Channel page", `${w.base}/live/${l.platform}/${encodeURIComponent(w.slug)}`],

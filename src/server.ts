@@ -41,7 +41,7 @@ import { configureFaceit } from "./games/faceit.js";
 import { frameSource } from "./games/frames.js";
 import { fetchPicture, screenSource, SCREEN_FRAME_WIDTH } from "./games/screen.js";
 import { SCREEN_TICK_MS, watchScreens } from "./live/screenCalls.js";
-import { allStandings, callerRecord, channelById, liveStore, showcaseCalls, streaksFor, type ShowcaseCall } from "./store/live.js";
+import { allStandings, callerRecord, callsBetween, channelById, liveStore, showcaseCalls, streaksFor, type ShowcaseCall } from "./store/live.js";
 import { probePriceSource } from "./live/priceCall.js";
 import { startTgLogin, askTgLogin, confirmTgLogin, tgLoginStatus, describeBrowser } from "./telegram/login.js";
 import { marketsPaying } from "./opener.js";
@@ -92,6 +92,7 @@ import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { opsMailer, reportAlert, reportLive, setOpsSink, wentLiveWatcher } from "./live/openedMail.js";
 import { AUTO_CALL_AFTER_MS, autoCaller } from "./live/autoCall.js";
+import { digestEvents, digestMail, sendDigestIfDue } from "./live/dailyDigest.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { renderPersonCard, type PersonCard } from "./card/renderPersonCard.js";
@@ -1949,6 +1950,13 @@ if (OPS_MAIL_ON) {
   }));
   liveLog(`ops mail on (opened, live, settled): ${OPS_MAIL_TO.replace(/(.{2}).*(@.*)/, "$1…$2")}`);
 } else liveLog("ops mail off");
+/* THE MORNING SUMMARY (src/live/dailyDigest.ts): what the store cannot say
+   (who went live, Lev's own lines) kept as it happens, for 09:00 Istanbul. */
+const digest = digestEvents({
+  get: () => botStateGet("ops_digest_events"),
+  set: (v) => botStateSet("ops_digest_events", v),
+  now: () => Date.now(),
+});
 /* `!oddie <claim>` in a stream: the same extractor, gate, mint and resolver as
    a tag on X or Telegram. The channel is the opener, so its 2%. */
 const kickMarkets = {
@@ -2130,9 +2138,17 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
       stream: (p, c) => (clock.streamGame ? clock.streamGame(p, c) : Promise.resolve(null)),
       unsettled: (p, c) => liveStore.unsettled(p, c),
       openedSince: (p, c, since) => (liveStore.openedSince ? liveStore.openedSince(p, c, since) : Promise.resolve(0)),
-      say: (p, c, text) => p === "kick" ? kickSayAsOperator(autoCallFrom, c, text)
-        : p === "twitch" ? twitchSayAsOperator(autoCallFrom, c, text)
-        : Promise.reject(new Error(`no operator line on ${p}`)),
+      say: async (p, c, text) => {
+        try {
+          if (p === "kick") await kickSayAsOperator(autoCallFrom, c, text);
+          else if (p === "twitch") await twitchSayAsOperator(autoCallFrom, c, text);
+          else throw new Error(`no operator line on ${p}`);
+        } catch (e) {
+          void digest.record({ kind: "auto-refused", platform: p, channelId: c, at: Date.now(), text: ((e as Error)?.message ?? String(e)).slice(0, 200) });
+          throw e;
+        }
+        void digest.record({ kind: "auto-said", platform: p, channelId: c, at: Date.now(), text });
+      },
       from: autoCallFrom,
       now: () => Date.now(),
       log: liveLog,
@@ -2157,7 +2173,11 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
       channels: () => liveStore.channels(),
       streamLive: (p, c) => (clock.streamLive ? clock.streamLive(p, c) : Promise.resolve(null)),
       now: () => Date.now(),
-      report: (c) => { if (OPS_MAIL_ON) reportLive(c); autoCalls?.wentLive(c); },
+      report: (c) => {
+        if (OPS_MAIL_ON) reportLive(c);
+        autoCalls?.wentLive(c);
+        void digest.record({ kind: "live", platform: c.platform, channelId: c.channelId, at: Date.now() });
+      },
     });
     let looking = false;
     const look = () => {
@@ -2170,6 +2190,26 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
     };
     setTimeout(look, 30_000);
     setInterval(look, 120_000);
+  }
+  /* ...and the summary itself, once a day at 06:00 UTC, to the same address. */
+  if (OPS_MAIL_ON) {
+    let summing = false;
+    setInterval(() => {
+      if (summing) return;
+      summing = true;
+      void sendDigestIfDue({
+        now: () => Date.now(),
+        lastDay: () => botStateGet("ops_digest_day"),
+        setLastDay: (day) => botStateSet("ops_digest_day", day),
+        build: async (since, until) => digestMail({
+          since, until, calls: await callsBetween(since, until), events: await digest.between(since, until),
+          channel: (p, c) => channelById(p, c), from: autoCallFrom || "levvercetti",
+        }),
+        send: (m) => sendMail(m),
+        to: OPS_MAIL_TO,
+        log: liveLog,
+      }).catch((e) => liveLog("morning summary failed", { err: (e as Error).message })).finally(() => { summing = false; });
+    }, 60_000);
   }
   /* YOUTUBE (src/youtube/routes.ts): once a minute the watcher looks for the
      connected channels' streams and reads each live chat over one connection. */

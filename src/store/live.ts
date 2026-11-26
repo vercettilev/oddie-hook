@@ -861,6 +861,47 @@ export async function showcaseCalls(): Promise<{ live: ShowcaseCall | null; sett
   return { live: open.rows[0] ? await card(open.rows[0]) : null, settled: read.rows[0] ? await card(read.rows[0]) : null };
 }
 
+/** THE MORNING SUMMARY'S CALLS (src/live/dailyDigest.ts): every call opened
+ *  in [since, until), with its channel, who opened it, its answers and how it
+ *  ended. */
+export interface DigestCall {
+  id: string; platform: Platform; channelId: string; slug: string; name: string | null;
+  question: string; openedById: string | null; openedByName: string | null; openedAt: number;
+  outcome: Side | null; settledAt: number | null; canceledAt: number | null; yes: number; no: number;
+}
+export async function callsBetween(since: number, until: number): Promise<DigestCall[]> {
+  if (!STORE_PERSISTENT) {
+    const out: DigestCall[] = [];
+    for (const c of memCalls.values()) {
+      if (c.openedAt < since || c.openedAt >= until) continue;
+      const ch = memChannels.get(ck(c.platform, c.channelId));
+      const t = await liveStore.tally(c.id);
+      out.push({ id: c.id, platform: c.platform, channelId: c.channelId, slug: ch?.slug ?? c.channelId, name: ch?.name ?? null,
+        question: c.question, openedById: c.openedById ?? null, openedByName: c.openedByName ?? null, openedAt: c.openedAt,
+        outcome: c.outcome, settledAt: c.settledAt, canceledAt: c.canceledAt, yes: t.yes, no: t.no });
+    }
+    return out.sort((a, b) => a.openedAt - b.openedAt);
+  }
+  await schema();
+  type Row = { id: string; platform: Platform; channel_id: string; question: string; opened_by_id: string | null; opened_by_name: string | null;
+    opened_at: Date; outcome: Side | null; settled_at: Date | null; canceled_at: Date | null; slug: string | null; name: string | null; yes: number; no: number };
+  const { rows } = await storeDb().query<Row>(
+    `SELECT c.id, c.platform, c.channel_id, c.question, c.opened_by_id, c.opened_by_name, c.opened_at, c.outcome, c.settled_at, c.canceled_at,
+            ch.slug, ch.name,
+            count(p.*) FILTER (WHERE p.side = 'yes')::int AS yes, count(p.*) FILTER (WHERE p.side = 'no')::int AS no
+       FROM live_call c
+       LEFT JOIN live_channel ch ON ch.platform = c.platform AND ch.channel_id = c.channel_id
+       LEFT JOIN live_pick p ON p.call_id = c.id
+      WHERE c.opened_at >= $1 AND c.opened_at < $2
+      GROUP BY c.id, ch.slug, ch.name ORDER BY c.opened_at LIMIT 500`, [new Date(since), new Date(until)]);
+  return rows.map((r) => ({
+    id: String(r.id), platform: r.platform, channelId: r.channel_id, slug: r.slug ?? r.channel_id, name: r.name, question: r.question,
+    openedById: r.opened_by_id, openedByName: r.opened_by_name, openedAt: new Date(r.opened_at).getTime(), outcome: r.outcome,
+    settledAt: r.settled_at ? new Date(r.settled_at).getTime() : null, canceledAt: r.canceled_at ? new Date(r.canceled_at).getTime() : null,
+    yes: r.yes, no: r.no,
+  }));
+}
+
 /** One settled call of this channel for its "called it" card: the question,
  *  the result, who called it right and the picture, when the screen settled it. */
 export async function settledCall(platform: Platform, channelId: string, callId: string):
