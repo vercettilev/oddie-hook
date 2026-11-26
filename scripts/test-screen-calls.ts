@@ -383,6 +383,8 @@ console.log("\na death call with its own length: \"wasted\" inside it is YES, it
   check("...a round with no death ends NO at its time, and the next one opens",
     rp.said.some((x) => x.startsWith(`15 min, still alive. Result: NO on "${q}"`)) && round4 !== undefined && round4.id !== round3.id && round4.question === q,
     rp.said.slice(-3).join(" | "));
+  check("...and no round's result tells chat to open the next with !call, since it opens by itself",
+    !rp.said.some((x) => x.includes("The next one opens with !call")), rp.said.filter((x) => x.includes("Result:")).join(" | "));
 
   const u = await room({ near: true });
   await handleChat(u.line("nova", `!call ${q}`, true), u.deps);

@@ -374,10 +374,12 @@ export const LIVE_COPY = {
    *  voted against is theirs, "<star> didn't check the chat." Never on a NO,
    *  which would be a jab at somebody who just lost. `url` is the call's own
    *  page (callPageUrl), where its card is. */
-  settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, winners: Named[] = [], star: string | null = null) => {
+  settled: (q: string, outcome: Side, right: number, total: number, _top: number, url: string, winners: Named[] = [], star: string | null = null, repeats = false) => {
     const it = `Result: ${outcome.toUpperCase()} on "${short(q, 50)}"`;
     const where = url ? ` Card: ${url}` : "";
-    if (!total) return `${it} The next one opens with !call.${where}`;
+    // A round of a repeat opens the next by itself (reopenRepeat): nothing to
+    // tell about !call (Lev, 26 Nov, before Isaac's repeat death call).
+    if (!total) return repeats ? `${it}${where}` : `${it} The next one opens with !call.${where}`;
     const voted = chatVotedOf(outcome, right, total);
     const wrong = voted && voted !== outcome ? ` Chat voted ${voted}.${star && outcome === "yes" ? ` ${star} didn't check the chat.` : ""}` : "";
     if (!right) return `${it}${wrong} Nobody called it.${where}`;
@@ -859,7 +861,7 @@ async function settlePrice(w: PriceWait, deps: LiveDeps): Promise<boolean> {
   if (!done) return false;
   await deps.predictionEnd?.(w.call, read.outcome).catch(() => {});
   const { url, star } = await resultExtras(deps, w.call);
-  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners, star)}`);
+  await sayQuiet(deps, w.call, `${read.said} ${LIVE_COPY.settled(w.call.question, read.outcome, done.right, done.total, done.top, url, done.winners, star, await repeatsAfter(w.call, deps))}`);
   await sayStreamTop(deps, w.call, now);
   deps.log("live call settled", { platform: w.call.platform, channel: w.call.channelId, id: w.call.id, outcome: read.outcome, right: done.right, total: done.total, by: "price" });
   // The operator's mail (src/live/openedMail.ts): a person's call has its result.
@@ -903,7 +905,7 @@ async function finishViewer(w: ViewerWait, outcome: Side, said: string, deps: Li
   await deps.predictionEnd?.(call, outcome).catch(() => {});
   await unpinIfIdle(deps, call);
   const { url, star } = await resultExtras(deps, call);
-  await sayQuiet(deps, call, `${said} ${LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners, star)}`);
+  await sayQuiet(deps, call, `${said} ${LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners, star, await repeatsAfter(call, deps))}`);
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "viewers", target: w.vc.target, peak: w.peak });
   // The operator's mail (src/live/openedMail.ts): a person's call has its result.
@@ -1309,7 +1311,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   await deps.predictionEnd?.(target, cmd.outcome).catch(() => {});
   await unpinIfIdle(deps, msg);
   const { url, star } = await resultExtras(deps, target);
-  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, url, done.winners, star));
+  await sayQuiet(deps, msg, LIVE_COPY.settled(target.question, cmd.outcome, done.right, done.total, done.top, url, done.winners, star, await repeatsAfter(target, deps)));
   await sayStreamTop(deps, msg, now);
   deps.log("live call settled", { platform: msg.platform, channel: msg.channelId, id: target.id, outcome: cmd.outcome, right: done.right, total: done.total });
   // The operator's mail (src/live/openedMail.ts): a person's call has its result. Not oddie's own match calls.
@@ -1355,7 +1357,7 @@ export async function settleOnScreen(call: LiveCall, outcome: Side, seen: string
   await unpinIfIdle(deps, call);
   const { url, star } = await resultExtras(deps, call);
   // What was read off the screen stays with the kept picture, not in the chat line.
-  await sayQuiet(deps, call, LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners, star));
+  await sayQuiet(deps, call, LIVE_COPY.settled(call.question, outcome, done.right, done.total, done.top, url, done.winners, star, await repeatsAfter(call, deps)));
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome, right: done.right, total: done.total, by: "screen" });
   // The operator's mail (src/live/openedMail.ts), with the picture it was settled on.
@@ -1383,7 +1385,7 @@ export async function settleWindowOut(call: LiveCall, minutes: number, deps: Liv
   await deps.predictionEnd?.(call, "no").catch(() => {});
   await unpinIfIdle(deps, call);
   const { url, star } = await resultExtras(deps, call);
-  await sayQuiet(deps, call, `${LIVE_COPY.windowOut(minutes)} ${LIVE_COPY.settled(call.question, "no", done.right, done.total, done.top, url, done.winners, star)}`);
+  await sayQuiet(deps, call, `${LIVE_COPY.windowOut(minutes)} ${LIVE_COPY.settled(call.question, "no", done.right, done.total, done.top, url, done.winners, star, await repeatsAfter(call, deps))}`);
   await sayStreamTop(deps, call, now);
   deps.log("live call settled", { platform: call.platform, channel: call.channelId, id: call.id, outcome: "no", right: done.right, total: done.total, by: "window", minutes });
   if (call.matchId === null) {
@@ -1419,6 +1421,12 @@ async function reopenRepeat(call: LiveCall, deps: LiveDeps): Promise<void> {
   const rep = await deps.store.repeat?.(call.platform, call.channelId).catch(() => null);
   if (!rep || !sameQuestion(rep.question, call.question)) return;
   await openRound(call, rep, deps);
+}
+
+/** Whether this call's result opens the next round of a repeat (reopenRepeat), so its line needs no word about !call. */
+async function repeatsAfter(call: LiveCall, deps: LiveDeps): Promise<boolean> {
+  const rep = await deps.store.repeat?.(call.platform, call.channelId).catch(() => null);
+  return Boolean(rep && sameQuestion(rep.question, call.question));
 }
 
 /**

@@ -1400,6 +1400,22 @@ console.log("\na call that comes back after every result: !call repeat (Lev, 4 N
   check("viewers cannot start one", (await liveStore.unsettled("kick", "100")).length === 0);
 }
 {
+  // A round nobody answered: the next opens by itself, so its line says nothing about !call (26 Nov).
+  const r = room();
+  const Q = "will I win this round?";
+  await handleChat(r.line("owner", `!call repeat ${Q}`, true), r.deps);
+  r.tick(60_000);
+  await handleChat(r.line("owner", "!call no", true), r.deps);
+  const first = r.said.find((x) => x.text.startsWith(`Result: NO on "${Q}"`))?.text ?? "";
+  check("a repeat round nobody answered never tells chat to open the next with !call: it opens by itself",
+    first !== "" && !first.includes("The next one opens with !call") && r.said.some((x) => x.text === LIVE_COPY.next(Q, 2, null)), first);
+  await handleChat(r.line("owner", "!call stop", true), r.deps);
+  r.tick(60_000);
+  await handleChat(r.line("owner", "!call no", true), r.deps);
+  const last = [...r.said].reverse().find((x) => x.text.startsWith(`Result: NO on "${Q}"`))?.text ?? "";
+  check("...while after !call stop, the last round's line says it again", last !== first && last.includes("The next one opens with !call"), last);
+}
+{
   const r = room();
   await handleChat(r.line("owner", "!call repeat clutch this round?", true), r.deps);
   await handleChat(r.line("owner", "!call cancel", true), r.deps);
