@@ -99,8 +99,10 @@ export type LiveCommand =
   | { kind: "open"; question: string; minutes: number | null; repeat?: boolean }
   /** `!call stop`: the repeating call opens no new round. */
   | { kind: "stop" }
-  /** A bare `!call repeat`: how it works. */
+  /** `!call repeat` with something that is no question after it: how it works. */
   | { kind: "repeat-help" }
+  /** A bare `!call repeat`: the channel's last call comes back after every result. */
+  | { kind: "repeat-last" }
   | { kind: "pick"; side: Side }
   /** which: the call's number in the waiting list (1 = oldest), null when not said. */
   | { kind: "settle"; outcome: Side; which: number | null }
@@ -218,7 +220,7 @@ export function parseCommand(raw: string): LiveCommand | null {
   const cancel = /^(cancel|iptal)(?:\s+#?(\d{1,2}))?$/i.exec(rest);
   if (cancel) return { kind: "cancel", which: cancel[2] ? Number(cancel[2]) : null };
   if (/^(stop|dur)$/i.test(rest)) return { kind: "stop" };
-  if (/^(repeat|tekrar)$/i.test(rest)) return { kind: "repeat-help" };
+  if (/^(repeat|tekrar)$/i.test(rest)) return { kind: "repeat-last" };
   // "!call repeat <question>": the same question opens again after each result,
   // a round or a run at a time, until !call stop (Lev, 4 Nov: on a show nobody
   // should have to type a call between games).
@@ -408,8 +410,8 @@ export const LIVE_COPY = {
     `round ${round}: "${q}" Type !yes or !no${minutes === null ? "" : `, locks in ${minutes} min`}`,
   repeatOn: "It opens again after each result. !call stop ends it.",
   repeatOff: "Repeat off: no new round after this one.",
-  repeatNone: "Nothing is repeating. Start one with !call repeat and the question.",
-  repeatHow: "To bring a call back after every result: !call repeat <question>. !call stop ends it.",
+  repeatNone: "Nothing is repeating. !call repeat brings the last call back after every result.",
+  repeatHow: "To bring a call back after every result: open it, then !call repeat. !call stop ends it.",
   predictionLong: "Twitch predictions take 45 characters at most, so this one runs in chat. A shorter question opens there too.",
   busy: (q: string) => `One call at a time: "${q}" is still running.`,
   settleFirst: (q: string) => `To settle "${short(q)}": !call yes or !call no.`,
@@ -531,6 +533,8 @@ export interface LiveStore {
   /** The channel's `!call repeat`, kept where a restart finds it. Absent: no repeats. */
   repeat?(platform: Platform, channelId: string): Promise<Repeat | null>;
   setRepeat?(platform: Platform, channelId: string, r: Repeat | null): Promise<void>;
+  /** The channel's most recent call a person opened (never oddie's own match calls), in any state. */
+  lastCall?(platform: Platform, channelId: string): Promise<LiveCall | null>;
 }
 
 /** A call that opens again after each of its results: who asked, and how many rounds so far. */
@@ -1036,7 +1040,7 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   const now = deps.now();
   // Any line counts as the room moving; the reminder only speaks into a live chat.
   lastActivity.set(roomKey(msg), now);
-  const cmd = parseCommand(msg.text);
+  let cmd = parseCommand(msg.text);
   if (!cmd) return "chat";
 
   if (cmd.kind === "pick") {
@@ -1125,7 +1129,8 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
       deps.log("faceit unlinked", { platform: msg.platform, channel: msg.channelId });
       return "faceit-unlinked";
     }
-    const p = await games.player(cmd.arg).catch((e) => { deps.log("faceit player not read", { nick: cmd.arg, err: (e as Error).message }); return null; });
+    const nick = cmd.arg;
+    const p = await games.player(nick).catch((e) => { deps.log("faceit player not read", { nick, err: (e as Error).message }); return null; });
     if (!p) { await sayQuiet(deps, msg, LIVE_COPY.faceitNotFound(cmd.arg), msg.messageId); return "faceit-not-found"; }
     await deps.store.setFaceit(msg.platform, msg.channelId, { id: p.id, nick: p.nick });
     await sayQuiet(deps, msg, LIVE_COPY.faceitLinked(p.nick), msg.messageId);
@@ -1180,6 +1185,26 @@ export async function handleChat(msg: ChatMessage, deps: LiveDeps): Promise<stri
   if (cmd.kind === "help") { await sayQuiet(deps, msg, LIVE_COPY.help, msg.messageId); return "help"; }
   if (cmd.kind === "settle-help") { await sayQuiet(deps, msg, LIVE_COPY.settleOnly, msg.messageId); return "settle-help"; }
   if (cmd.kind === "repeat-help") { await sayQuiet(deps, msg, LIVE_COPY.repeatHow, msg.messageId); return "repeat-help"; }
+  /* "!call repeat" ALONE (Bee Empire, 26 Nov: "!call repeat last command ...
+     makes more sense than what you propose"): the channel's last call, the one
+     a person opened, comes back after every result, without typing it again.
+     Still taking answers or waiting for its result: it is round 1. Ended: it
+     opens again now, as round 1, through the same door as "!call repeat" with
+     the question. A viewer-count call never repeats (a count reached stays
+     reached); with none before it, how it works. */
+  if (cmd.kind === "repeat-last") {
+    const last = (await deps.store.lastCall?.(msg.platform, msg.channelId).catch(() => null)) ?? null;
+    if (!last || viewerCallOf(last)) { await sayQuiet(deps, msg, LIVE_COPY.repeatHow, msg.messageId); return "repeat-help"; }
+    const minutes = askedMinutes(last);
+    const waiting = await deps.store.unsettled(msg.platform, msg.channelId).catch(() => [] as LiveCall[]);
+    if (waiting.some((c) => c.id === last.id)) {
+      await deps.store.setRepeat?.(msg.platform, msg.channelId, { question: last.question, minutes, byId: msg.senderId, byName: msg.senderName, round: 1 });
+      await sayQuiet(deps, msg, LIVE_COPY.repeatOn, msg.messageId);
+      deps.log("live repeat on", { platform: msg.platform, channel: msg.channelId, last: last.id });
+      return "repeat-on";
+    }
+    cmd = { kind: "open", question: last.question, minutes, repeat: true };
+  }
   // !call stop: the call open now keeps its answers and its result; no round after it.
   if (cmd.kind === "stop") {
     const rep = await deps.store.repeat?.(msg.platform, msg.channelId).catch(() => null);
@@ -1421,6 +1446,14 @@ async function reopenRepeat(call: LiveCall, deps: LiveDeps): Promise<void> {
   const rep = await deps.store.repeat?.(call.platform, call.channelId).catch(() => null);
   if (!rep || !sameQuestion(rep.question, call.question)) return;
   await openRound(call, rep, deps);
+}
+
+/** The length a call was asked with ("!call 5m ..."), or null where its own
+ *  question sets it (a price, a viewer count, a death with its own length) or
+ *  it had none: what a repeat of it is opened with. */
+function askedMinutes(c: LiveCall): number | null {
+  if (!c.timed || parsePriceCall(c.question) || viewerCallOf(c) || deathWindowOf(c.question) !== null) return null;
+  return Math.max(1, Math.round((c.closesAt - c.openedAt) / 60_000));
 }
 
 /** Whether this call's result opens the next round of a repeat (reopenRepeat), so its line needs no word about !call. */

@@ -264,6 +264,20 @@ export const liveStore: LiveStore = {
     return rows[0] ? callFrom(rows[0]) : null;
   },
 
+  async lastCall(platform, channelId) {
+    if (!STORE_PERSISTENT) {
+      const c = [...memCalls.values()]
+        .filter((x) => x.platform === platform && x.channelId === channelId && x.openedById !== "oddie")
+        .sort((a, b) => b.openedAt - a.openedAt || Number(b.id) - Number(a.id))[0];
+      return c ? { ...c } : null;
+    }
+    await schema();
+    const { rows } = await storeDb().query<CallRow>(
+      `SELECT ${CALL_COLS} FROM live_call WHERE platform = $1 AND channel_id = $2 AND coalesce(opened_by_id, '') <> 'oddie'
+        ORDER BY opened_at DESC, id DESC LIMIT 1`, [platform, channelId]);
+    return rows[0] ? callFrom(rows[0]) : null;
+  },
+
   async unsettled(platform, channelId) {
     if (!STORE_PERSISTENT) {
       return [...memCalls.values()]

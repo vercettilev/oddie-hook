@@ -1362,8 +1362,8 @@ console.log("\na call that comes back after every result: !call repeat (Lev, 4 N
     p?.kind === "open" && p.question === "will I win this round?" && p.minutes === null && p.repeat === true, JSON.stringify(p));
   const t = parseCommand("!call repeat 5m will BTC close the next 5m candle green?");
   check("...a length after it still counts", t?.kind === "open" && t.minutes === 5 && t.repeat === true, JSON.stringify(t));
-  check("bare, or with a result word, it says how instead",
-    parseCommand("!call repeat")?.kind === "repeat-help" && parseCommand("!call repeat yes")?.kind === "repeat-help");
+  check("bare, it brings the channel's last call back (26 Nov); with a result word, it says how instead",
+    parseCommand("!call repeat")?.kind === "repeat-last" && parseCommand("!call tekrar")?.kind === "repeat-last" && parseCommand("!call repeat yes")?.kind === "repeat-help");
   check("!call stop ends a repeat", parseCommand("!call stop")?.kind === "stop");
   const plain = parseCommand("!call will I repeat this?");
   check("...and the word inside a question is just a word", plain?.kind === "open" && !plain.repeat, JSON.stringify(plain));
@@ -1414,6 +1414,63 @@ console.log("\na call that comes back after every result: !call repeat (Lev, 4 N
   await handleChat(r.line("owner", "!call no", true), r.deps);
   const last = [...r.said].reverse().find((x) => x.text.startsWith(`Result: NO on "${Q}"`))?.text ?? "";
   check("...while after !call stop, the last round's line says it again", last !== first && last.includes("The next one opens with !call"), last);
+}
+{
+  // A bare !call repeat (Bee Empire, 26 Nov: "!call repeat last command ... makes more sense"):
+  // the last call comes back after every result without typing it again.
+  const r = room();
+  const Q = "will I win this round?";
+  check("bare, with no call before it, it says how", (await handleChat(r.line("owner", "!call repeat", true), r.deps)) === "repeat-help"
+    && r.said.at(-1)?.text === LIVE_COPY.repeatHow);
+  await handleChat(r.line("owner", `!call ${Q}`, true), r.deps);
+  const first = await liveStore.current("kick", "100");
+  check("...after a call still taking answers, that call is round 1 and nothing new opens",
+    (await handleChat(r.line("owner", "!call repeat", true), r.deps)) === "repeat-on" && r.said.at(-1)?.text === LIVE_COPY.repeatOn
+    && (await liveStore.unsettled("kick", "100")).length === 1 && (await liveStore.repeat?.("kick", "100"))?.question === Q);
+  r.tick(60_000);
+  await handleChat(r.line("owner", "!call yes", true), r.deps);
+  const second = await liveStore.current("kick", "100");
+  check("...its result opens the next round", second !== null && second.id !== first?.id && second.question === Q
+    && r.said.some((x) => x.text === LIVE_COPY.next(Q, 2, null)));
+  await handleChat(r.line("owner", "!call stop", true), r.deps);
+  r.tick(60_000);
+  await handleChat(r.line("owner", "!call no", true), r.deps);
+  check("...and !call stop still ends it", (await liveStore.unsettled("kick", "100")).length === 0);
+  // oddie's own match call in between is never "the last call".
+  const match = await liveStore.open({ platform: "kick", channelId: "100", question: "will nova win this match?", openedById: "oddie", openedByName: "oddie",
+    openedAt: 1_800_000_000_000 + 10 * 60_000, closesAt: 1_800_000_000_000 + 60 * 60_000, timed: false, matchId: "m-1" });
+  await liveStore.cancel(match!.id, 1_800_000_000_000 + 11 * 60_000);
+  r.tick(60_000);
+  await handleChat(r.line("mod", "!call repeat", true), r.deps);
+  const again = await liveStore.current("kick", "100");
+  check("after a call that ended, it opens it again now as round 1, past oddie's own match call",
+    again !== null && again.question === Q && (await liveStore.repeat?.("kick", "100"))?.round === 1 && (await liveStore.repeat?.("kick", "100"))?.byName === "mod");
+  check("...and a viewer cannot", (await handleChat(r.line("viewer", "!call repeat"), r.deps)) === "not-allowed");
+}
+{
+  // The call Bee runs: its repeat is still a price call oddie settles itself, never a plain three-minute one.
+  const r = room();
+  const P = "will BTC close the next 15m candle green?";
+  await handleChat(r.line("owner", `!call ${P}`, true), r.deps);
+  await handleChat(r.line("owner", "!call cancel", true), r.deps);
+  await handleChat(r.line("owner", "!call repeat", true), r.deps);
+  const c = await liveStore.current("kick", "100");
+  const rep = await liveStore.repeat?.("kick", "100");
+  check("a price call brought back is the price call again: answers for three minutes, its length from the question",
+    c !== null && c.question === P && c.closesAt - c.openedAt === 3 * 60_000 && rep?.minutes === null, JSON.stringify({ c, rep }));
+  const s2 = room();
+  await handleChat(s2.line("owner", "!call 5m will I win?", true), s2.deps);
+  await handleChat(s2.line("owner", "!call cancel", true), s2.deps);
+  await handleChat(s2.line("owner", "!call repeat", true), s2.deps);
+  const t = await liveStore.current("kick", "100");
+  check("...and a call asked with a length keeps it", t !== null && t.question === "will I win?" && t.closesAt - t.openedAt === 5 * 60_000
+    && (await liveStore.repeat?.("kick", "100"))?.minutes === 5, JSON.stringify(t));
+  const v = room();
+  await handleChat(v.line("owner", "!call will we hit 30 viewers in the next 30 minutes?", true), v.deps);
+  await handleChat(v.line("owner", "!call cancel", true), v.deps);
+  check("...but a viewer count never comes back (a count reached stays reached): it says how instead",
+    (await handleChat(v.line("owner", "!call repeat", true), v.deps)) === "repeat-help" && (await liveStore.unsettled("kick", "100")).length === 0
+    && !(await liveStore.repeat?.("kick", "100")));
 }
 {
   const r = room();
