@@ -163,6 +163,8 @@ const looks = new Map<string, Look>();
 const handed = new Set<string>();
 const spent = new Map<string, { hour: number; n: number }>();
 const liveAt = new Map<string, { at: number; live: boolean }>();
+/** What each channel streams now, asked as often as whether it is live: a category no game is never read. */
+const gameAt = new Map<string, { at: number; game: string | null }>();
 let channelsAt = 0;
 let channelInfo = new Map<string, { name: string; matchCalls: boolean }>();
 let outageUntil = 0;
@@ -172,7 +174,7 @@ let listedAt = 0;
 
 /** Test seam. */
 export function _resetScreens(): void {
-  looks.clear(); handed.clear(); spent.clear(); liveAt.clear(); channelInfo = new Map(); channelsAt = 0; outageUntil = 0;
+  looks.clear(); handed.clear(); spent.clear(); liveAt.clear(); gameAt.clear(); channelInfo = new Map(); channelsAt = 0; outageUntil = 0;
   alertedAt.clear(); listed = []; listedAt = 0;
 }
 
@@ -212,6 +214,36 @@ async function isLive(deps: LiveDeps, call: LiveCall, now: number): Promise<bool
   const live = (await deps.streamLive(call.platform, call.channelId).catch(() => null)) === true;
   liveAt.set(k, { at: now, live });
   return live;
+}
+
+/**
+ * NO GAME, NO LOOK (Lev, 26 Nov). Every look is paid for, and on a stream
+ * whose category is no game the screen settles nothing: a trading chart, a
+ * chat. Live on 26 Nov a typo's call on Bee Empire's Crypto stream was read
+ * every four seconds for half an hour. By the platform's own category name,
+ * whole; a channel the platform names nothing for (X) is read as before.
+ * Casino and slots are read: a poker game such as Showdown (Lev: "showdown ı
+ * etkilemesin") can stream there, and its result is on the screen.
+ */
+export const NOT_A_GAME: ReadonlySet<string> = new Set([
+  "just chatting", "crypto", "crypto & trading", "irl", "talk shows & podcasts",
+  "asmr", "music", "art", "politics", "science & technology", "food & drink", "travel & outdoors", "fitness & health",
+  "makers & crafting", "beauty & body art", "software and game development", "pools, hot tubs, and beaches", "pools, hot tubs & bikinis",
+]);
+async function notAGame(deps: LiveDeps, call: LiveCall, now: number): Promise<boolean> {
+  if (!deps.streamGame) return false;
+  const k = keyOf(call);
+  let seen = gameAt.get(k);
+  if (!seen || now - seen.at >= SCREEN_IDLE_MS) {
+    const info = await deps.streamGame(call.platform, call.channelId).catch(() => null);
+    const game = info?.game?.trim() || null;
+    if (game && NOT_A_GAME.has(game.toLowerCase()) && (!seen || seen.game !== game)) {
+      deps.log("screen: no game on, not read", { platform: call.platform, channel: call.channelId, category: game });
+    }
+    seen = { at: now, game };
+    gameAt.set(k, seen);
+  }
+  return seen.game !== null && NOT_A_GAME.has(seen.game.toLowerCase());
 }
 
 /** `k` is the call's id: each call counts its own looks. */
@@ -286,7 +318,7 @@ export async function watchScreens(deps: LiveDeps): Promise<number> {
     const l = looks.get(call.id)!;
     const k = keyOf(call);
     const ch = chans.get(k);
-    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || !withinBudget(call.id, now, perHourOf(call))) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
+    if (!ch || !ch.matchCalls || !(await isLive(deps, call, now)) || (await notAGame(deps, call, now)) || !withinBudget(call.id, now, perHourOf(call))) { l.nextAt = now + SCREEN_IDLE_MS; l.decided = null; continue; }
     take.push({ call, name: ch.name });
   }
   // Side by side: three streams' reads take as long as one.

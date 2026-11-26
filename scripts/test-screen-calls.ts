@@ -8,7 +8,7 @@
 
 import { handleChat, lockDue, parseCommand, LIVE_COPY, _resetLive, type ChatMessage, type LiveDeps } from "../src/live/calls.js";
 import { callFrame, liveStore, recentCalls, saveChannel, _resetLiveStore } from "../src/store/live.js";
-import { SCREEN_AFTER_RESULT_MS, SCREEN_DEATH_GRACE_MS, SCREEN_WINDOW_SLACK_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY, SCREEN_X_EVERY_MS, SCREEN_X_PER_HOUR } from "../src/live/screenCalls.js";
+import { NOT_A_GAME, SCREEN_AFTER_RESULT_MS, SCREEN_DEATH_GRACE_MS, SCREEN_WINDOW_SLACK_MS, watchScreens, _resetScreens, SCREEN_AGREE_MS, SCREEN_GRACE_MS, SCREEN_EVERY_MS, SCREEN_CONFIRM_MS, SCREEN_MAX_AGE_MS, SCREEN_TICK_MS, SCREEN_EVENT_EVERY_MS, SCREEN_EVENT_MAX_AGE_MS, SCREEN_PER_HOUR, SCREEN_OUTAGE_MS, SCREEN_ALERT_GAP_MS, SCREEN_OPS_COPY, SCREEN_X_EVERY_MS, SCREEN_X_PER_HOUR } from "../src/live/screenCalls.js";
 import { askScreen, callScope, cleanSeen, deathWindowOf, fetchPicture, parseScreen, parseStat, quotedResult, roundNotMatch, screenPrompt, screenSource, statRule, winnerDecides, SCREEN_FRAME_WIDTH, type ScreenReading, type ScreenSource } from "../src/games/screen.js";
 import { decodeFrame, grabFrame, nearFrames } from "../src/games/frames.js";
 import { spawnSync } from "node:child_process";
@@ -68,7 +68,7 @@ console.log("what the reader says");
 }
 
 const T0 = Date.UTC(2026, 9, 16, 12, 0, 0);
-async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boolean; near?: boolean; x?: boolean } = {}) {
+async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boolean; near?: boolean; x?: boolean; game?: string | null } = {}) {
   _resetLiveStore(); _resetLive(); _resetScreens();
   // On X every picture differs unless a test hands out the same one twice.
   const platform = over.x ? "x" : "kick", channelId = over.x ? "200" : "100";
@@ -97,6 +97,8 @@ async function room(over: { live?: boolean; matchCalls?: boolean; strong?: boole
     streamLive: async () => over.live !== false,
     log: () => {},
     screen,
+    // The stream's category, where a test names one (the platform's own name).
+    ...(over.game !== undefined ? { streamGame: async () => ({ live: over.live !== false, game: over.game ?? null, viewers: 10 }) } : {}),
   };
   let n = 0;
   const line = (who: string, text: string, canRun = false): ChatMessage => ({
@@ -414,6 +416,29 @@ console.log("\na death call with its own length: \"wasted\" inside it is YES, it
   await handleChat(x.line("nova", `!call ${q}`, true), x.deps);
   await x.at(END + SCREEN_WINDOW_SLACK_MS);
   check("...as does one where the screen reads nothing at all", (await x.unsettled()).length === 1 && !x.said.some((l) => l.includes("still alive") || l === LIVE_COPY.screenUnsure(q)), x.said.join(" | "));
+}
+
+console.log("\nno game, no look: a category that is no game is never read, every look being paid (Lev, 26 Nov)");
+{
+  for (const game of ["Crypto", "Crypto & Trading", "Just Chatting", "IRL"]) {
+    const r = await room({ game });
+    await handleChat(r.line("nova", "!call will I win this match?", true), r.deps);
+    for (let t = SCREEN_GRACE_MS; t < SCREEN_GRACE_MS + 5 * SCREEN_EVERY_MS; t += SCREEN_EVERY_MS) await r.at(t);
+    check(`${game}: the call stays open and the screen is never asked`, r.counts().grabs === 0 && r.counts().asks === 0 && (await r.unsettled()).length === 1,
+      JSON.stringify(r.counts()));
+  }
+  for (const game of ["Grand Theft Auto VI", "Slots & Casino", "Poker"]) {
+    const g = await room({ game });
+    await handleChat(g.line("nova", "!call will I win this match?", true), g.deps);
+    for (let t = SCREEN_GRACE_MS; t < SCREEN_GRACE_MS + 3 * SCREEN_EVERY_MS; t += SCREEN_EVERY_MS) await g.at(t);
+    check(`${game}: read as before (a poker game like Showdown can stream under casino)`, g.counts().asks >= 2, JSON.stringify(g.counts()));
+  }
+  const x = await room({ game: null });
+  await handleChat(x.line("nova", "!call will I win this match?", true), x.deps);
+  for (let t = SCREEN_GRACE_MS; t < SCREEN_GRACE_MS + 3 * SCREEN_EVERY_MS; t += SCREEN_EVERY_MS) await x.at(t);
+  check("...and so is a stream the platform names no category for", x.counts().asks >= 2, JSON.stringify(x.counts()));
+  check("the list is the platforms' own names, whole: a game named after a category word still reads",
+    NOT_A_GAME.has("crypto") && !NOT_A_GAME.has("ea sports fc 26") && !NOT_A_GAME.has("music racer") && !NOT_A_GAME.has("sports"));
 }
 
 console.log("\nthe server's beat: every second, a look only when one falls due");
