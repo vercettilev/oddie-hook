@@ -356,8 +356,8 @@ console.log("\nwired at boot");
   check("the server sets the sink with the mailer, lev@oddie.fun unless OPS_MAIL_TO says otherwise",
     /setOpsSink\(opsMailer\(/.test(server) && /process\.env\.OPS_MAIL_TO \?\? "lev@oddie\.fun"/.test(server));
   check("...and runs the went-live watcher every two minutes over every active channel",
-    /wentLiveWatcher\(\{[\s\S]{0,200}channels: \(\) => liveStore\.channels\(\)[\s\S]{0,300}report: \(c\) => reportLive\(c\)/.test(server)
-    && /setInterval\(look, 120_000\)/.test(server) && /if \(OPS_MAIL_ON\) \{\s*const pass = wentLiveWatcher/.test(server));
+    /wentLiveWatcher\(\{[\s\S]{0,200}channels: \(\) => liveStore\.channels\(\)[\s\S]{0,300}report: \(c\) => \{ if \(OPS_MAIL_ON\) reportLive\(c\);/.test(server)
+    && /setInterval\(look, 120_000\)/.test(server) && /if \(OPS_MAIL_ON \|\| autoCalls\) \{\s*const pass = wentLiveWatcher/.test(server));
 }
 
 console.log(failures ? `\n${failures} failure(s)\n` : "\nall operator-mail checks passed.\n");

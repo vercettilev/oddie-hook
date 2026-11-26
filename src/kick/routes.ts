@@ -85,6 +85,23 @@ export interface KickChat {
 const kickChat: KickChat = { bot: sendChat, user: sendChatAsUser };
 
 /**
+ * LEV'S OWN LINE (src/live/autoCall.ts): his account says it in a connected
+ * chat, as he types it himself, on his own token, refreshed once on a 401. It
+ * comes back through the feed as his line (only the voice's name is oddie's
+ * own), so the engine runs it as it runs his.
+ */
+export async function kickSayAsOperator(fromSlug: string, channelId: string, text: string, chat: KickChat = kickChat): Promise<void> {
+  const from = await channelBySlug("kick", fromSlug);
+  if (!from?.active || !from.accessToken) throw new Error(`${fromSlug} is not connected on Kick`);
+  try {
+    await chat.user(await tokenFor(from), channelId, text);
+  } catch (e) {
+    if ((e as { status?: number }).status !== 401) throw e;
+    await chat.user(await tokenFor(from, true), channelId, text);
+  }
+}
+
+/**
  * A NEW APP'S BOT CANNOT POST YET. Found on the first live test (29 Sep):
  * every bot line from the freshly made oddie app came back 404 "Not found",
  * and other developers report the same for new apps with no answer from

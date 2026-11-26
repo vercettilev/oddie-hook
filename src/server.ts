@@ -25,9 +25,9 @@ import { postTelegramResolution, threadsFrom, solText } from "./telegram/resolut
 import { announceToRoom, roomChatId } from "./telegram/room.js";
 import { onBetLanded, type BetNotifyDeps } from "./social/bets.js";
 import { notifyFollowers, type FollowNotifyDeps } from "./social/follow.js";
-import { kickRouter, kickEngineDeps } from "./kick/routes.js";
+import { kickRouter, kickEngineDeps, kickSayAsOperator } from "./kick/routes.js";
 import { kickConfigured } from "./kick/client.js";
-import { twitchRouter, twitchEngineDeps } from "./twitch/routes.js";
+import { twitchRouter, twitchEngineDeps, twitchSayAsOperator } from "./twitch/routes.js";
 import { twitchConfigured } from "./twitch/client.js";
 import { youtubeRouter, youtubeEngineDeps, watchYouTube } from "./youtube/routes.js";
 import { youtubeConfigured } from "./youtube/client.js";
@@ -90,7 +90,8 @@ import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { clientIp, edgeLockedOut, edgeMisconfigured, takeStamp, viaCloudflare } from "./net/edge.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
-import { opsMailer, reportLive, setOpsSink, wentLiveWatcher } from "./live/openedMail.js";
+import { opsMailer, reportAlert, reportLive, setOpsSink, wentLiveWatcher } from "./live/openedMail.js";
+import { AUTO_CALL_AFTER_MS, autoCaller } from "./live/autoCall.js";
 import { TAGLINE } from "./brand.js";
 import { renderCard, renderReceiptCard } from "./card/renderCard.js";
 import { renderPersonCard, type PersonCard } from "./card/renderPersonCard.js";
@@ -2118,15 +2119,45 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
   const frames = frameSource();
   // The picture is read on Twitch and Kick; a YouTube stream is not looked at.
   clock.streamGame = (p, c) => { if (p === "youtube" || p === "x") return Promise.resolve(null); const eng = engOf(p); return eng.streamGame ? eng.streamGame(p, c) : Promise.resolve(null); };
+  /* A CALL IN EVERY CONNECTED STREAM (src/live/autoCall.ts, Lev 26 Nov): when
+     nobody has opened one AUTO_CALL_AFTER_MS after a connected Kick or Twitch
+     channel goes live, Lev's own account says the call that fits what is on.
+     AUTO_CALL_FROM is that account (levvercetti), AUTO_CALLS=off stops it. */
+  const autoCallFrom = (process.env.AUTO_CALL_FROM ?? "levvercetti").trim().toLowerCase();
+  const autoCalls = autoCallFrom && (process.env.AUTO_CALLS ?? "on").trim().toLowerCase() !== "off"
+    ? autoCaller({
+      channel: (p, c) => channelById(p, c),
+      stream: (p, c) => (clock.streamGame ? clock.streamGame(p, c) : Promise.resolve(null)),
+      unsettled: (p, c) => liveStore.unsettled(p, c),
+      openedSince: (p, c, since) => (liveStore.openedSince ? liveStore.openedSince(p, c, since) : Promise.resolve(0)),
+      say: (p, c, text) => p === "kick" ? kickSayAsOperator(autoCallFrom, c, text)
+        : p === "twitch" ? twitchSayAsOperator(autoCallFrom, c, text)
+        : Promise.reject(new Error(`no operator line on ${p}`)),
+      from: autoCallFrom,
+      now: () => Date.now(),
+      log: liveLog,
+      alert: (a) => reportAlert(a),
+    })
+    : null;
+  if (autoCalls) {
+    let calling = false;
+    setInterval(() => {
+      if (calling) return;
+      calling = true;
+      void autoCalls.tick().catch((e) => liveLog("auto call pass failed", { err: (e as Error).message })).finally(() => { calling = false; });
+    }, 30_000);
+    liveLog(`auto calls on: ${autoCallFrom}, ${AUTO_CALL_AFTER_MS / 60_000} min after a connected Kick or Twitch stream goes live`);
+  } else liveLog("auto calls off");
   /* THE OPERATOR HEARS A STREAM GO LIVE (src/live/openedMail.ts): every active
      channel asked every two minutes through its own platform; the first pass,
-     half a minute after boot, only learns who is on already. */
-  if (OPS_MAIL_ON) {
+     half a minute after boot, only learns who is on already. The same pass
+     starts the auto call's clock (above). */
+  if (OPS_MAIL_ON || autoCalls) {
     const pass = wentLiveWatcher({
       channels: () => liveStore.channels(),
       streamLive: (p, c) => (clock.streamLive ? clock.streamLive(p, c) : Promise.resolve(null)),
       now: () => Date.now(),
-      report: (c) => reportLive(c),
+      report: (c) => { if (OPS_MAIL_ON) reportLive(c); autoCalls?.wentLive(c); },
     });
     let looking = false;
     const look = () => {

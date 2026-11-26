@@ -75,6 +75,23 @@ async function tokenFor(ch: LiveChannel, force = false): Promise<string> {
 }
 
 /**
+ * LEV'S OWN LINE (src/live/autoCall.ts), as on Kick: his account says it in a
+ * connected chat on his own token, refreshed once on a 401. Unlike oddie's
+ * lines its id is not remembered: it must come back through the feed as his,
+ * for the engine to run it. A line Twitch drops throws (sendChat).
+ */
+export async function twitchSayAsOperator(fromLogin: string, channelId: string, text: string, chat: Pick<TwitchChat, "send"> = twitchChat): Promise<void> {
+  const from = await channelBySlug("twitch", fromLogin);
+  if (!from?.active || !from.accessToken) throw new Error(`${fromLogin} is not connected on Twitch`);
+  try {
+    await chat.send(await tokenFor(from), channelId, from.channelId, text);
+  } catch (e) {
+    if ((e as { status?: number }).status !== 401) throw e;
+    await chat.send(await tokenFor(from, true), channelId, from.channelId, text);
+  }
+}
+
+/**
  * ONE VOICE IN EVERY CHAT, AND NEVER THE STREAMER'S, as on Kick (Lev, 25 Nov):
  * a line goes out from oddie's own account (the voice channel, once it has
  * signed in like any streamer). Where Twitch refuses it (a ban, followers-only,
