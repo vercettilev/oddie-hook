@@ -18,7 +18,7 @@ import {
 } from "../src/live/calls.js";
 import { liveStore, saveChannel, channelStandings, allStandings, recentCalls, sealToken, openToken, houseAccounts, _resetLiveStore } from "../src/store/live.js";
 import { chatFromKick, verifyKickSignature, subscribeToChannel } from "../src/kick/client.js";
-import { kickRouter, kickEngineDeps, _resetKickVoice, type KickChat, type KickSignIn } from "../src/kick/routes.js";
+import { kickRouter, kickEngineDeps, _resetKickVoice, withoutLinks, type KickChat, type KickSignIn } from "../src/kick/routes.js";
 import { setOpsSink, type Alert } from "../src/live/openedMail.js";
 import { openFromChat, MARKET_COPY, type ChatMarketDeps } from "../src/live/claims.js";
 import {
@@ -899,6 +899,58 @@ console.log("\noddie speaks as itself in every chat, and never as the streamer (
   await plain.say("kick", "900", "old way");
   check("with no voice set, nothing is said in a streamer's chat, never the streamer's own account, and nobody is mailed for a choice",
     !sent.some((x) => x.startsWith("user:")) && alerts.length === mails, sent.join("|"));
+  setOpsSink(null);
+}
+
+console.log("\na Kick chat that takes no links (26 Nov, IsaacBeast's: 400 NO_LINKS_ERROR)");
+{
+  _resetLiveStore(); _resetKickVoice();
+  const alerts: Alert[] = [];
+  setOpsSink((e) => { if (e.kind === "alert") alerts.push(e); });
+  const logs: string[] = [];
+  await saveChannel({ platform: "kick", channelId: "131980691", slug: "oddiefun", name: "oddiefun", avatar: null,
+    accessToken: "voice-tok", refreshToken: null, tokenExpiresAt: null, active: true });
+  for (const [id, slug] of [["72486", "isaacbeast"], ["903", "linksok"]]) {
+    await saveChannel({ platform: "kick", channelId: id, slug, name: slug, avatar: null, accessToken: `${slug}-tok`, refreshToken: null, tokenExpiresAt: null, active: true });
+  }
+  const q = "will we hit 20 viewers in the next 30 minutes?";
+  const opened = LIVE_COPY.opened(q, 3, "https://app.oddie.fun/live/kick/isaacbeast");
+  const result = LIVE_COPY.settled(q, "no", 0, 0, 0, "https://app.oddie.fun/live/kick/isaacbeast/call/38");
+  check("a line without links: the opening ends where its page began",
+    withoutLinks(opened) === `call: "${q}" Type !yes or !no, locks in 3 min`, withoutLinks(opened));
+  check("...the result keeps everything but its card",
+    withoutLinks(result) === `Result: NO on "${q}" The next one opens with !call`
+    && withoutLinks(LIVE_COPY.settled("q?", "yes", 1, 2, 0, "https://app.oddie.fun/live/kick/x/call/9", ["a"])) === 'Result: YES on "q?" Called it: @a',
+    withoutLinks(result));
+  check("...and a line with no link is left as it is", withoutLinks("Calls are locked for this one. The next one is yours.") === "Calls are locked for this one. The next one is yours.");
+  const tried: string[] = [];
+  const noLinksError = () => {
+    const e = new Error('kick POST /chat 400 {"data":"NO_LINKS_ERROR","message":"Bad Request"}') as Error & { status?: number };
+    e.status = 400; return e;
+  };
+  let blockAll = false;
+  const chat: KickChat = {
+    bot: async () => { const e = new Error("kick POST /chat 404") as Error & { status?: number }; e.status = 404; throw e; },
+    user: async (_t, ch, text) => { tried.push(`${ch}:${text}`); if (ch === "72486" && (blockAll || /https?:\/\//.test(text))) throw noLinksError(); },
+  };
+  const deps = kickEngineDeps({ appBaseUrl: "https://app.oddie.fun", log: (l) => { logs.push(l); }, voice: "oddiefun" }, chat);
+  await deps.say("kick", "72486", opened);
+  check("a line Kick refuses for its link is said again without it, from oddie's account",
+    tried.join(" | ") === `72486:${opened} | 72486:${withoutLinks(opened)}`, tried.join(" | "));
+  check("...nobody is mailed and the chat is not benched",
+    alerts.length === 0 && !logs.includes("kick voice cannot post here") && logs.includes("kick chat takes no links, oddie says it without them"), logs.join(" | "));
+  tried.length = 0;
+  await deps.say("kick", "72486", result);
+  check("...and from then on that chat's lines go out without links the first time",
+    tried.join(" | ") === `72486:${withoutLinks(result)}`, tried.join(" | "));
+  tried.length = 0;
+  await deps.say("kick", "903", result);
+  check("...while a chat that takes links still gets the card", tried.join(" | ") === `903:${result}`, tried.join(" | "));
+  tried.length = 0; logs.length = 0; blockAll = true;
+  await deps.say("kick", "72486", "Calls are locked for this one. The next one is yours.");
+  check("a line with no link refused all the same is a refusal like any other: benched and mailed once",
+    tried.length === 1 && logs.includes("kick voice cannot post here") && alerts.length === 1 && alerts[0].title === "Oddie can't talk in isaacbeast's Kick chat",
+    JSON.stringify({ tried, logs, alerts: alerts.map((a) => a.title) }));
   setOpsSink(null);
 }
 

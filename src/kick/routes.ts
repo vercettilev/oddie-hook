@@ -149,9 +149,26 @@ const VOICE_ALERT_GAP_MS = 6 * 60 * 60_000;
 /** The last mail about a chat that refused the voice, by channel; and about a voice not connected. */
 const chatAlertAt = new Map<string, number>();
 let voiceMissingAlertAt = 0;
+/**
+ * A CHAT THAT TAKES NO LINKS (26 Nov, IsaacBeast's). A streamer can block
+ * links in their chat, and Kick then answers a line with one 400
+ * {"data":"NO_LINKS_ERROR"}: the call's opening ("Standings: <page>") and its
+ * result ("Card: <page>") were refused, the voice was benched and the
+ * operator mailed to follow the channel, which was already followed. The line
+ * is said again without its links instead, and every line in that chat from
+ * then on goes out without them. A line with no link refused all the same is
+ * a refusal like any other.
+ */
+const noLinks = new Set<string>();
+const linkRefused = (e: unknown): boolean =>
+  (e as { status?: number }).status === 400 && /NO_LINKS_ERROR/.test((e as Error)?.message ?? "");
+/** A line without its links: the page after "Standings:" or "Card:", and any other address. */
+export function withoutLinks(text: string): string {
+  return text.replace(/(?:\.\s*|\s+)(?:Standings|Card):\s*\S+/g, "").replace(/\s*https?:\/\/\S+/g, "").trim();
+}
 /** Test seam: forget the chats that refused the voice, a lost sign-in, and the mails about them. */
 export function _resetKickVoice(): void {
-  voiceCannotPost.clear(); voiceSignedOutAt = null; voiceAlertAt = 0; chatAlertAt.clear(); voiceMissingAlertAt = 0;
+  voiceCannotPost.clear(); voiceSignedOutAt = null; voiceAlertAt = 0; chatAlertAt.clear(); voiceMissingAlertAt = 0; noLinks.clear();
 }
 const voiceSlugFrom = (d: { voice?: string }): string =>
   (d.voice ?? process.env.KICK_VOICE_CHANNEL ?? "oddiefun").trim().toLowerCase();
@@ -192,17 +209,28 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
     // A store that does not answer is an outage, said as one, never a voice that is not there.
     const voice = await channelBySlug("kick", voiceSlug);
     if (!voice?.active || !voice.accessToken) return { said: false, why: "missing" };
+    let line = noLinks.has(channelId) ? withoutLinks(text) : text;
     const send = async (force: boolean) => {
       const token = await tokenFor(voice, force);
-      await replyOrAlone((r) => patiently(() => chat.user(token, channelId, text, r)), replyTo);
+      await replyOrAlone((r) => patiently(() => chat.user(token, channelId, line, r)), replyTo);
     };
     const st = (e: unknown) => (e as { status?: number }).status;
-    try {
-      // An expired token says 401: refresh once and say it again, reply and all.
+    // An expired token says 401: refresh once and say it again, reply and all.
+    const sendRefreshed = async () => {
       try { await send(false); }
       catch (e) {
         if (st(e) !== 401) throw e;
         await send(true);
+      }
+    };
+    try {
+      try { await sendRefreshed(); }
+      catch (e) {
+        if (!linkRefused(e) || withoutLinks(line) === line) throw e;
+        noLinks.add(channelId);
+        line = withoutLinks(line);
+        d.log("kick chat takes no links, oddie says it without them", { channel: channelId });
+        await sendRefreshed();
       }
       voiceCannotPost.delete(channelId);
       voiceSignedOutAt = null;
@@ -259,7 +287,7 @@ export function kickEngineDeps(d: Pick<KickRouteDeps, "appBaseUrl" | "log" | "ma
     if (!ch?.active) return;
     const v = await sayAsVoice(channelId, text, replyTo);
     if (v.said) return;
-    const send = async (force: boolean) => sayAsBot(await tokenFor(ch, force), channelId, text, replyTo);
+    const send = async (force: boolean) => sayAsBot(await tokenFor(ch, force), channelId, noLinks.has(channelId) ? withoutLinks(text) : text, replyTo);
     let said: boolean;
     try { said = await send(false); }
     catch (e) {
