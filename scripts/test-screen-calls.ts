@@ -357,6 +357,33 @@ console.log("\na death call with its own length: \"wasted\" inside it is YES, it
   await s.at(SCREEN_DEATH_GRACE_MS); await s.at(SCREEN_DEATH_GRACE_MS + SCREEN_EVERY_MS);
   check("a death on screen inside its time settles it YES at once", (await s.unsettled()).length === 0 && s.last() === `Result: YES on "${q}" Called it: @mika.`, s.last());
 
+  // !call repeat (Lev, 26 Nov: on Isaac's GTA stream the death call comes back all stream).
+  const rp = await room({ near: true });
+  await handleChat(rp.line("nova", `!call repeat ${q}`, true), rp.deps);
+  rp.readings.push(unclear, yes(0.95, "wasted"), yes(0.95, "wasted"));
+  const d1 = SCREEN_DEATH_GRACE_MS + SCREEN_EVERY_MS;
+  await rp.at(SCREEN_DEATH_GRACE_MS); await rp.at(d1);
+  const yesLines = () => rp.said.filter((x) => x.startsWith(`Result: YES on "${q}"`)).length;
+  const [round2] = await rp.unsettled();
+  check("repeat: a death settles the round YES, and the next opens with fifteen minutes of its own",
+    yesLines() === 1 && round2 !== undefined && round2.question === q && round2.openedAt === T0 + d1 && round2.closesAt - round2.openedAt === 3 * 60_000,
+    JSON.stringify({ said: rp.said, round2: round2 && { opened: round2.openedAt - T0, closes: round2.closesAt - T0 } }));
+  // The same "wasted" still up when the next round first looks, then the game, then a new death.
+  rp.readings.push(yes(0.95, "wasted"), yes(0.95, "wasted"), unclear, yes(0.95, "wasted"), yes(0.95, "wasted"));
+  let tr = d1;
+  for (; tr < d1 + SCREEN_DEATH_GRACE_MS + 2 * SCREEN_EVERY_MS; tr += SCREEN_TICK_MS) await rp.at(tr);
+  check("...the \"wasted\" still up at its first looks is the last death, never the next round's",
+    yesLines() === 1 && (await rp.unsettled()).length === 1, rp.said.join(" | "));
+  for (; tr < d1 + 60_000 && yesLines() < 2; tr += SCREEN_TICK_MS) await rp.at(tr);
+  const [round3] = await rp.unsettled();
+  check("...once the game is back, the next death is that round's YES, and a third round opens",
+    yesLines() === 2 && round3 !== undefined && round3.id !== round2.id && round3.question === q, rp.said.join(" | "));
+  for (tr += SCREEN_TICK_MS; tr <= round3.openedAt - T0 + END + SCREEN_WINDOW_SLACK_MS; tr += SCREEN_TICK_MS) await rp.at(tr);
+  const [round4] = await rp.unsettled();
+  check("...a round with no death ends NO at its time, and the next one opens",
+    rp.said.some((x) => x.startsWith(`15 min, still alive. Result: NO on "${q}"`)) && round4 !== undefined && round4.id !== round3.id && round4.question === q,
+    rp.said.slice(-3).join(" | "));
+
   const u = await room({ near: true });
   await handleChat(u.line("nova", `!call ${q}`, true), u.deps);
   await u.at(SCREEN_DEATH_GRACE_MS);
