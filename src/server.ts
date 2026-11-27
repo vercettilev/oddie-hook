@@ -2164,6 +2164,8 @@ if (kickConfigured() || twitchConfigured() || youtubeConfigured() || xLiveConfig
       now: () => Date.now(),
       log: liveLog,
       alert: (a) => reportAlert(a),
+      // Where his account signs in again: the same page a streamer connects on.
+      signIn: (p) => (p === "kick" || p === "twitch" ? `${APP_BASE_URL.replace(/\/+$/, "")}/live/${p}/connect` : null),
     })
     : null;
   if (autoCalls) {

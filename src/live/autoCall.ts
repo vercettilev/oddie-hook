@@ -29,7 +29,9 @@
  * Kick and Twitch only: X takes a chat line only on a token with
  * broadcast.write, which his sign-in does not carry, and YouTube has no
  * operator. Where a chat refuses his line, Lev hears what fixes it, once a
- * channel in six hours.
+ * channel in six hours. Where the platform refuses his sign-in itself (27 Nov,
+ * IsaacBeast: Kick would not refresh it), no chat there takes his line, so
+ * that is one mail for all of them, with the page that signs him in again.
  */
 import type { Platform } from "./calls.js";
 import { deathWindowOf } from "../games/screen.js";
@@ -77,7 +79,21 @@ export interface AutoCallDeps {
   now(): number;
   log(line: string, extra?: Record<string, unknown>): void;
   alert?(a: { title: string; text: string; link?: [string, string] }): void;
+  /** The page where Lev's account signs in again on that platform. */
+  signIn?(p: Platform): string | null;
   afterMs?: number;
+}
+
+/** His sign-in itself, not one chat: a token the platform will not refresh, or an
+ *  account no longer connected. A platform busy for a moment (429, 5xx) is not it,
+ *  as the voices read it (src/kick/routes.ts, src/twitch/routes.ts). Twitch's token
+ *  error carries its status only in the message (src/twitch/client.ts), so it is read there. */
+export function signedOut(e: unknown): boolean {
+  const msg = (e as Error)?.message ?? String(e);
+  const token = /^(?:kick|twitch) token (\d{3})\b/.exec(msg);
+  const status = (e as { status?: number })?.status ?? (token ? Number(token[1]) : undefined);
+  const busy = status === 429 || (status !== undefined && status >= 500);
+  return (!busy && (status === 401 || token !== null)) || / is not connected on /.test(msg);
 }
 
 const PLATFORM: Record<Platform, string> = { kick: "Kick", twitch: "Twitch", x: "X", youtube: "YouTube" };
@@ -120,9 +136,22 @@ export function autoCaller(d: AutoCallDeps): { wentLive(c: { platform: Platform;
             } catch (e) {
               const err = ((e as Error)?.message ?? String(e)).slice(0, 200);
               d.log("auto call refused", { ...where, from: d.from, err });
-              if (d.alert && d.now() - (alertedAt.get(k) ?? -Infinity) >= ALERT_GAP_MS) {
-                alertedAt.set(k, d.now());
+              const out = signedOut(e);
+              // A sign-in that is gone keeps his line out of every chat on that platform: one mail for all of them.
+              const key = out ? `sign-in:${w.platform}` : k;
+              if (d.alert && d.now() - (alertedAt.get(key) ?? -Infinity) >= ALERT_GAP_MS) {
+                alertedAt.set(key, d.now());
                 const who = ch.name || ch.slug;
+                const on = PLATFORM[w.platform];
+                const page = out ? d.signIn?.(w.platform) ?? null : null;
+                if (out) {
+                  d.alert({
+                    title: `${d.from} is signed out on ${on}`,
+                    text: `${on} no longer takes ${d.from}'s sign-in (${err}), so the call did not go into ${who}'s chat, and no ${on} chat gets one until ${d.from} signs in again. Sign in to ${on} as ${d.from}, then open the link below once.`,
+                    link: page ? ["Sign in again", page] : ["Open the channel", channelPage(w.platform, ch.slug)],
+                  });
+                  continue;
+                }
                 const fix = w.platform === "kick"
                   ? `On Kick, sign in as ${d.from}, follow the channel and accept its chat rules.`
                   : `On Twitch, sign in as ${d.from}, follow the channel and add what its chat asks for.`;

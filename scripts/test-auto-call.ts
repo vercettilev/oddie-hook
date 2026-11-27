@@ -8,7 +8,7 @@ import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import express from "express";
-import { AUTO_CALL_AFTER_MS, AUTO_CALL_OPENED_SLACK_MS, autoCaller, chooseCall, type AutoCallDeps } from "../src/live/autoCall.js";
+import { AUTO_CALL_AFTER_MS, AUTO_CALL_OPENED_SLACK_MS, autoCaller, chooseCall, signedOut, type AutoCallDeps } from "../src/live/autoCall.js";
 import { _resetLive, type Platform } from "../src/live/calls.js";
 import { deathWindowOf } from "../src/games/screen.js";
 import { parsePriceCall } from "../src/live/priceCall.js";
@@ -163,6 +163,66 @@ console.log("\nwhen Lev's account says it");
   check("...and once it takes his line, the call goes", (await auto.tick()) === 1 && said.at(-1)?.text === "!call will we hit 65 viewers in the next 30 minutes?");
 }
 
+console.log("\nwhen the platform refuses his sign-in itself");
+{
+  // IsaacBeast, 27 Nov 04:53 UTC: Kick would not refresh levvercetti's sign-in, and the
+  // mail told Lev to follow the channel and accept its chat rules, which mends nothing.
+  check("a token the platform will not refresh, or an account not connected, is the sign-in",
+    signedOut(Object.assign(new Error('kick token 401 {"error":"invalid_grant"}'), { status: 401 }))
+    && signedOut(new Error('twitch token 400 {"status":400,"message":"Invalid refresh token"}'))
+    && signedOut(new Error("levvercetti is not connected on Kick")));
+  check("...a platform busy for a moment, or a chat that wants a follow, is not",
+    !signedOut(Object.assign(new Error("kick token 503 upstream"), { status: 503 }))
+    && !signedOut(Object.assign(new Error("kick token 429 slow down"), { status: 429 }))
+    && !signedOut(Object.assign(new Error("403 Forbidden: follow first"), { status: 403 })));
+  // Twitch's token error has no status of its own, only the one in its message (src/twitch/client.ts).
+  check("...nor is Twitch busy for a moment, read off its message",
+    !signedOut(new Error("twitch token 503 upstream connect error"))
+    && !signedOut(new Error("twitch token 429 too many requests")));
+
+  let now = at("2026-11-27T04:43:02Z");
+  let gone = true;
+  const logs: string[] = [];
+  const said: string[] = [];
+  const alerts: Array<{ title: string; text: string; link?: [string, string] }> = [];
+  const names: Record<string, string> = { "72486": "IsaacBeast", "600": "Other", "1372956063": "Bee_Empire" };
+  const auto = autoCaller({
+    channel: async (_p, c) => ({ slug: names[c].toLowerCase(), name: names[c], matchCalls: true }),
+    stream: async () => ({ live: true, game: "Just Chatting", viewers: 8 }),
+    unsettled: async () => [],
+    openedSince: async () => 0,
+    say: async (p, _c, text) => {
+      if (gone) throw Object.assign(new Error(`${p} token 401 {"error":"invalid_grant"}`), { status: 401 });
+      said.push(text);
+    },
+    from: "levvercetti",
+    now: () => now,
+    log: (l) => logs.push(l),
+    alert: (a) => alerts.push(a),
+    signIn: (p) => `https://app.test/live/${p}/connect`,
+  });
+  auto.wentLive({ platform: "kick", channelId: "72486" });
+  auto.wentLive({ platform: "kick", channelId: "600" });
+  now += AUTO_CALL_AFTER_MS;
+  await auto.tick();
+  check("one mail for every Kick chat, saying he is signed out and where to sign in again", alerts.length === 1
+    && alerts[0].title === "levvercetti is signed out on Kick"
+    && /no Kick chat gets one until levvercetti signs in again\. Sign in to Kick as levvercetti, then open the link below once\./.test(alerts[0].text)
+    && alerts[0].link?.[0] === "Sign in again" && alerts[0].link?.[1] === "https://app.test/live/kick/connect"
+    && !/follow the channel/.test(alerts[0].text), JSON.stringify(alerts));
+  check("...and the log still names each chat that went without", logs.filter((l) => l === "auto call refused").length === 2);
+  auto.wentLive({ platform: "twitch", channelId: "1372956063" });
+  now += AUTO_CALL_AFTER_MS;
+  await auto.tick();
+  check("...Twitch is its own sign-in, its own mail and page", alerts.length === 2 && alerts[1].title === "levvercetti is signed out on Twitch"
+    && alerts[1].link?.[1] === "https://app.test/live/twitch/connect", JSON.stringify(alerts[1]));
+  gone = false;
+  auto.wentLive({ platform: "kick", channelId: "72486" });
+  now += AUTO_CALL_AFTER_MS;
+  check("...once he signs in again, the call goes", (await auto.tick()) === 1 && said.at(-1) === "!call will we hit 11 viewers in the next 30 minutes?",
+    JSON.stringify(said));
+}
+
 console.log("\nhis line goes out on his own token");
 {
   _resetLiveStore(); _resetLive();
@@ -232,6 +292,8 @@ console.log("\nwired at boot");
   check("...the went-live pass starts its clock, and a pass every half minute says what is due",
     /report: \(c\) => \{\s*if \(OPS_MAIL_ON\) reportLive\(c\);\s*autoCalls\?\.wentLive\(c\);/.test(server)
     && /autoCalls\.tick\(\)[\s\S]{0,200}\}, 30_000\)/.test(server));
+  check("...and a sign-in that is gone points at the page a streamer connects on",
+    /signIn: \(p\) => \(p === "kick" \|\| p === "twitch" \? `\$\{APP_BASE_URL\.replace\(\/\\\/\+\$\/, ""\)\}\/live\/\$\{p\}\/connect` : null\)/.test(server));
 }
 
 if (failures) { console.error(`\n${failures} auto call check(s) failed`); process.exit(1); }
