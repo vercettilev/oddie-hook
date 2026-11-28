@@ -88,6 +88,7 @@ import type { MarketRead, OnChainMarketState } from "./chain/oddieChain.js";
 import { bookFeeAfterResolve, type FeeBookDeps } from "./feeLedger.js";
 import { resolveClientCountry } from "./geo/resolveClientCountry.js";
 import { clientIp, edgeLockedOut, edgeMisconfigured, takeStamp, viaCloudflare } from "./net/edge.js";
+import { landingVisit } from "./net/landingVisit.js";
 import { GEOBLOCK_LIST_VERIFIED } from "./geo/restrictedRegions.js";
 import { sendMail, mailEnabled, MAIL_KEY_ENV } from "./mail.js";
 import { opsMailer, reportAlert, reportLive, setOpsSink, wentLiveWatcher } from "./live/openedMail.js";
@@ -672,6 +673,11 @@ app.get("/", async (req, res) => {
     if (!appOpenFor(req)) return appClosed(res);
     return res.set("Cache-Control", "no-cache").type("html").send(stampApp(MARKETS_HTML));
   }
+  // Where this visit came from, one line, nothing about the person
+  // (src/net/landingVisit.ts). Before the render, so a page that fails to
+  // render still counts as somebody arriving.
+  const visit = landingVisit(req);
+  if (visit) console.log(JSON.stringify({ evt: "landing_visit", ...visit }));
   res.set("Cache-Control", "no-cache");
   try {
     res.type("html").send(await renderLanding());
